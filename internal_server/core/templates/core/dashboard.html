@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Irrigation Dashboard</title>
+
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+
+    <!-- Custom Styles -->
+    <link rel="stylesheet" href="{% static 'css/style.css' %}">
+</head>
+<body>
+    <div class="dashboard-container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <h1>Irrigation Zones</h1>
+                <p class="zone-count">{{ zones|length }} zones</p>
+            </div>
+
+            <div class="zone-list">
+                {% for zone in zones %}
+                <div class="zone-item" data-zone-id="{{ zone.id }}" data-zone-code="{{ zone.code }}">
+                    <div class="zone-header">
+                        <span class="zone-code">{{ zone.code }}</span>
+                        <span class="status-badge status-{{ zone.status }}">{{ zone.get_status_display }}</span>
+                    </div>
+                    <div class="zone-name">{{ zone.name }}</div>
+                    <div class="zone-details">
+                        <span class="plant-count">{{ zone.plant_count }} plant{{ zone.plant_count|pluralize }}</span>
+                        <span class="work-order-status">
+                            {% if zone.pending_work_orders %}
+                                {{ zone.pending_work_orders }} pending
+                            {% else %}
+                                No pending
+                            {% endif %}
+                        </span>
+                    </div>
+                </div>
+                {% empty %}
+                <div class="no-zones">No zones configured</div>
+                {% endfor %}
+            </div>
+        </aside>
+
+        <!-- Map Container -->
+        <main class="map-container">
+            <div id="map"></div>
+        </main>
+    </div>
+
+    <!-- Zone data for JavaScript -->
+    <script id="zones-data" type="application/json">
+        {{ zones_json|safe }}
+    </script>
+
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <!-- Custom Map JS -->
+    <script src="{% static 'js/map.js' %}"></script>
+</body>
+</html>
