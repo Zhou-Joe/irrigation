@@ -6,4 +6,5 @@ compatibility_date = "2024-01-01"
 work_logs = { binding = "WORK_LOGS", id = "" }
 
 [env.production]
+# TODO: Update route pattern and zone_name for production deployment
 route = { pattern = "horticulture-relay.your-domain.workers.dev", zone_name = "your-domain.com" }

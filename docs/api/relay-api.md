@@ -1,5 +1,6 @@
 # Cloud Relay API
 
+<!-- TODO: Update base URL for production deployment -->
 Base URL: `https://horticulture-relay.your-domain.workers.dev`
 
 ## POST /api/upload

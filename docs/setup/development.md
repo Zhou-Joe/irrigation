@@ -20,7 +20,7 @@ pip install django djangorestframework psycopg2-binary
 export DEBUG=True
 export DB_NAME=horticulture
 export DB_USER=postgres
-export DB_PASSWORD=your-password
+export DB_PASSWORD=<your-password>
 export DB_HOST=localhost
 export DB_PORT=5432
 
