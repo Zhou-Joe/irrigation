@@ -1,0 +1,9 @@
+name = "horticulture-relay"
+main = "src/index.js"
+compatibility_date = "2024-01-01"
+
+[kv_namespaces]
+work_logs = { binding = "WORK_LOGS", id = "" }
+
+[env.production]
+route = { pattern = "horticulture-relay.your-domain.workers.dev", zone_name = "your-domain.com" }
