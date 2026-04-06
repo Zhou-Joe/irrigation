@@ -1,0 +1,323 @@
+{% extends 'core/base.html' %}
+
+{% load static %}
+
+{% block title %}{{ type_name }} - 工单详情{% endblock %}
+
+{% block extra_css %}
+<style>
+.detail-container {
+    padding: var(--space-lg);
+    max-width: 800px;
+    margin: 0 auto;
+}
+
+.detail-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: var(--space-lg);
+}
+
+.detail-title {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+}
+
+.detail-title h1 {
+    font-family: var(--font-display);
+    font-size: 1.5rem;
+    color: var(--color-primary);
+    margin: 0;
+}
+
+.type-badge {
+    display: inline-block;
+    padding: var(--space-xs) var(--space-sm);
+    border-radius: var(--radius-pill);
+    font-size: 0.75rem;
+    font-weight: 500;
+}
+
+.type-maintenance { background: rgba(27, 67, 50, 0.15); color: var(--color-primary); }
+.type-project_support { background: rgba(45, 106, 79, 0.15); color: var(--color-info); }
+.type-water { background: rgba(64, 145, 108, 0.15); color: var(--color-success); }
+
+.status-badge {
+    display: inline-block;
+    padding: var(--space-xs) var(--space-md);
+    border-radius: var(--radius-pill);
+    font-size: 0.875rem;
+    font-weight: 600;
+}
+
+.status-submitted { background: rgba(82, 183, 136, 0.15); color: var(--color-info); }
+.status-approved { background: rgba(64, 145, 108, 0.15); color: var(--color-success); }
+.status-rejected { background: rgba(155, 34, 38, 0.15); color: var(--color-error); }
+.status-info_needed { background: rgba(204, 119, 34, 0.15); color: var(--color-warning); }
+
+.detail-card {
+    background: var(--color-surface);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-sm);
+    overflow: hidden;
+    margin-bottom: var(--space-lg);
+}
+
+.detail-section {
+    padding: var(--space-lg);
+    border-bottom: 1px solid var(--color-surface-dark);
+}
+
+.detail-section:last-child {
+    border-bottom: none;
+}
+
+.detail-section h3 {
+    font-size: 0.875rem;
+    color: var(--color-text-secondary);
+    margin-bottom: var(--space-md);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.detail-row {
+    display: flex;
+    margin-bottom: var(--space-sm);
+}
+
+.detail-label {
+    width: 120px;
+    flex-shrink: 0;
+    color: var(--color-text-secondary);
+    font-size: 0.875rem;
+}
+
+.detail-value {
+    flex: 1;
+    font-weight: 500;
+}
+
+.detail-value.muted {
+    color: var(--color-text-muted);
+    font-weight: normal;
+}
+
+/* Admin actions */
+.admin-actions {
+    background: var(--color-surface-alt);
+    padding: var(--space-lg);
+    border-radius: var(--radius-lg);
+    margin-bottom: var(--space-lg);
+}
+
+.admin-actions h3 {
+    margin-top: 0;
+    margin-bottom: var(--space-md);
+    color: var(--color-primary);
+}
+
+.action-buttons {
+    display: flex;
+    gap: var(--space-sm);
+    flex-wrap: wrap;
+}
+
+.btn {
+    padding: var(--space-sm) var(--space-lg);
+    border-radius: var(--radius-md);
+    border: none;
+    cursor: pointer;
+    font-weight: 500;
+    transition: opacity 0.2s;
+}
+
+.btn:hover { opacity: 0.9; }
+.btn-approve { background: var(--color-success); color: white; }
+.btn-reject { background: var(--color-error); color: white; }
+.btn-info { background: var(--color-warning); color: white; }
+
+.notes-input {
+    width: 100%;
+    margin-bottom: var(--space-md);
+    padding: var(--space-sm);
+    border: 1px solid var(--color-surface-dark);
+    border-radius: var(--radius-md);
+    font-family: inherit;
+}
+
+.back-link {
+    margin-top: var(--space-lg);
+}
+
+.back-link a {
+    color: var(--color-primary);
+    text-decoration: none;
+}
+
+.back-link a:hover {
+    text-decoration: underline;
+}
+
+.approver-info {
+    background: rgba(64, 145, 108, 0.1);
+    border: 1px solid var(--color-success);
+    border-radius: var(--radius-md);
+    padding: var(--space-md);
+    margin-top: var(--space-md);
+}
+
+.approver-info.rejected {
+    background: rgba(155, 34, 38, 0.1);
+    border-color: var(--color-error);
+}
+
+.approver-info.info_needed {
+    background: rgba(204, 119, 34, 0.1);
+    border-color: var(--color-warning);
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="detail-container">
+    <div class="detail-header">
+        <div class="detail-title">
+            <span class="type-badge type-{{ type_code }}">
+                
+                {{ type_name }}
+            </span>
+            <h1>{{ req.zone.name }}</h1>
+        </div>
+        <span class="status-badge status-{{ req.status }}">{{ req.get_status_display }}</span>
+    </div>
+
+    {% if messages %}
+    <div class="messages">
+        {% for message in messages %}
+        <div class="message" style="padding: 10px; margin-bottom: 10px; border-radius: 8px; {% if message.tags == 'success' %}background: #d4edda; color: #155724;{% elif message.tags == 'error' %}background: #f8d7da; color: #721c24;{% endif %}">
+            {{ message }}
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    {% if is_admin and req.status == 'submitted' %}
+    <div class="admin-actions">
+        <h3>管理员操作</h3>
+        <p style="color: var(--color-text-secondary); margin-bottom: var(--space-md);">
+            当前用户: <strong>{{ current_worker.full_name }}</strong> ({{ current_worker.employee_id }})
+        </p>
+        <form action="{% url 'core:update_request_status' type_code req.id %}" method="post">
+            {% csrf_token %}
+            <textarea name="status_notes" class="notes-input" rows="2" placeholder="审批备注（可选）">{{ req.status_notes }}</textarea>
+            <div class="action-buttons">
+                <button type="submit" name="status" value="approved" class="btn btn-approve" onclick="return confirm('确认批准该工单？')">
+                    ✓ 批准
+                </button>
+                <button type="submit" name="status" value="rejected" class="btn btn-reject" onclick="return confirm('确认拒绝该工单？')">
+                    ✗ 拒绝
+                </button>
+                <button type="submit" name="status" value="info_needed" class="btn btn-info" onclick="return confirm('确认要求补充信息？')">
+                    ? 需补充信息
+                </button>
+            </div>
+        </form>
+    </div>
+    {% endif %}
+
+    {% if req.approver %}
+    <div class="approver-info {% if req.status == 'rejected' %}rejected{% elif req.status == 'info_needed' %}info_needed{% endif %}">
+        <strong>审批人:</strong> {{ req.approver.full_name }} ({{ req.approver.employee_id }})<br>
+        <strong>审批时间:</strong> {{ req.processed_at|date:"Y-m-d H:i" }}
+        {% if req.status_notes %}
+        <br><strong>备注:</strong> {{ req.status_notes }}
+        {% endif %}
+    </div>
+    {% endif %}
+
+    <div class="detail-card">
+        <div class="detail-section">
+            <h3>基本信息</h3>
+            <div class="detail-row">
+                <span class="detail-label">区域</span>
+                <span class="detail-value">{{ req.zone.name }} ({{ req.zone.code }})</span>
+            </div>
+            <div class="detail-row">
+                <span class="detail-label">提交人</span>
+                <span class="detail-value">{{ req.submitter.full_name }} ({{ req.submitter.employee_id }})</span>
+            </div>
+            <div class="detail-row">
+                <span class="detail-label">提交时间</span>
+                <span class="detail-value">{{ req.created_at|date:"Y-m-d H:i" }}</span>
+            </div>
+        </div>
+
+        {% if type_code == 'maintenance' or type_code == 'project_support' %}
+        <div class="detail-section">
+            <h3>工作安排</h3>
+            <div class="detail-row">
+                <span class="detail-label">日期</span>
+                <span class="detail-value">{{ extra_info.date }}</span>
+            </div>
+            <div class="detail-row">
+                <span class="detail-label">时间</span>
+                <span class="detail-value">{{ extra_info.start_time }} - {{ extra_info.end_time }}</span>
+            </div>
+            <div class="detail-row">
+                <span class="detail-label">参与人员</span>
+                <span class="detail-value">{{ extra_info.participants }}</span>
+            </div>
+        </div>
+
+        <div class="detail-section">
+            <h3>工作内容</h3>
+            <p>{{ extra_info.work_content }}</p>
+            {% if extra_info.materials %}
+            <p class="muted"><strong>材料损耗:</strong> {{ extra_info.materials }}</p>
+            {% endif %}
+            {% if extra_info.feedback %}
+            <p class="muted"><strong>问题反馈:</strong> {{ extra_info.feedback }}</p>
+            {% endif %}
+        </div>
+        {% else %}
+        <div class="detail-section">
+            <h3>需求信息</h3>
+            <div class="detail-row">
+                <span class="detail-label">用户类型</span>
+                <span class="detail-value">{{ extra_info.user_type }}</span>
+            </div>
+            {% if extra_info.user_type_other %}
+            <div class="detail-row">
+                <span class="detail-label">其他类型</span>
+                <span class="detail-value">{{ extra_info.user_type_other }}</span>
+            </div>
+            {% endif %}
+            <div class="detail-row">
+                <span class="detail-label">需求类别</span>
+                <span class="detail-value">{{ extra_info.request_type }}</span>
+            </div>
+            {% if extra_info.request_type_other %}
+            <div class="detail-row">
+                <span class="detail-label">其他需求</span>
+                <span class="detail-value">{{ extra_info.request_type_other }}</span>
+            </div>
+            {% endif %}
+            <div class="detail-row">
+                <span class="detail-label">起始时间</span>
+                <span class="detail-value">{{ extra_info.start_datetime|date:"Y-m-d H:i" }}</span>
+            </div>
+            <div class="detail-row">
+                <span class="detail-label">结束时间</span>
+                <span class="detail-value">{{ extra_info.end_datetime|date:"Y-m-d H:i" }}</span>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    <div class="back-link">
+        <a href="{% url 'core:requests' %}">← 返回工单列表</a>
+    </div>
+</div>
+{% endblock %}

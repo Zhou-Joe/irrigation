@@ -1,0 +1,4 @@
+[     179ms] [LOG] 初始化边界编辑器... @ http://localhost:8000/settings/zone/new/:125
+[     183ms] [LOG] 边界编辑器就绪 @ http://localhost:8000/settings/zone/new/:165
+[     183ms] [LOG] 自动定位中... @ http://localhost:8000/settings/zone/new/:344
+[     207ms] [LOG] 自动定位成功: 31.017722997922267 121.6410230294273 @ http://localhost:8000/settings/zone/new/:347

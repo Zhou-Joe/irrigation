@@ -1,0 +1,295 @@
+{% extends 'core/base.html' %}
+
+{% load static %}
+
+{% block title %}工单记录 - 灌溉管理{% endblock %}
+
+{% block extra_css %}
+<style>
+.requests-container {
+    padding: var(--space-lg);
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+.requests-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: var(--space-lg);
+}
+
+.requests-header h1 {
+    font-family: var(--font-display);
+    font-size: 1.75rem;
+    color: var(--color-primary);
+}
+
+.request-table {
+    width: 100%;
+    background: var(--color-surface);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    box-shadow: var(--shadow-sm);
+}
+
+.request-table th,
+.request-table td {
+    padding: var(--space-md);
+    text-align: left;
+    border-bottom: 1px solid var(--color-surface-dark);
+}
+
+.request-table th {
+    background: var(--color-surface-alt);
+    font-weight: 600;
+    color: var(--color-text-secondary);
+    font-size: 0.875rem;
+}
+
+.request-table tr:hover {
+    background: var(--color-surface-alt);
+}
+
+.type-badge {
+    display: inline-block;
+    padding: var(--space-xs) var(--space-sm);
+    border-radius: var(--radius-pill);
+    font-size: 0.75rem;
+    font-weight: 500;
+}
+
+.type-maintenance {
+    background: rgba(27, 67, 50, 0.15);
+    color: var(--color-primary);
+}
+
+.type-project-support {
+    background: rgba(45, 106, 79, 0.15);
+    color: var(--color-info);
+}
+
+.type-water {
+    background: rgba(64, 145, 108, 0.15);
+    color: var(--color-success);
+}
+
+.status-badge {
+    display: inline-block;
+    padding: var(--space-xs) var(--space-sm);
+    border-radius: var(--radius-pill);
+    font-size: 0.75rem;
+    font-weight: 500;
+}
+
+.status-submitted {
+    background: rgba(82, 183, 136, 0.15);
+    color: var(--color-info);
+}
+
+.status-approved {
+    background: rgba(64, 145, 108, 0.15);
+    color: var(--color-success);
+}
+
+.status-rejected {
+    background: rgba(155, 34, 38, 0.15);
+    color: var(--color-error);
+}
+
+.status-info_needed {
+    background: rgba(204, 119, 34, 0.15);
+    color: var(--color-warning);
+}
+
+.empty-state {
+    text-align: center;
+    padding: var(--space-xl);
+    color: var(--color-text-muted);
+}
+
+.back-link {
+    margin-top: var(--space-lg);
+}
+
+.back-link a {
+    color: var(--color-primary);
+    text-decoration: none;
+}
+
+.back-link a:hover {
+    text-decoration: underline;
+}
+
+/* Admin actions */
+.admin-actions {
+    display: flex;
+    gap: var(--space-xs);
+    flex-wrap: wrap;
+}
+
+.admin-actions form {
+    display: inline;
+}
+
+.btn-approve {
+    background: var(--color-success);
+    color: white;
+    border: none;
+    padding: var(--space-xs) var(--space-sm);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    font-size: 0.75rem;
+}
+
+.btn-reject {
+    background: var(--color-error);
+    color: white;
+    border: none;
+    padding: var(--space-xs) var(--space-sm);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    font-size: 0.75rem;
+}
+
+.btn-info {
+    background: var(--color-warning);
+    color: white;
+    border: none;
+    padding: var(--space-xs) var(--space-sm);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    font-size: 0.75rem;
+}
+
+.btn-approve:hover, .btn-reject:hover, .btn-info:hover {
+    opacity: 0.9;
+}
+
+.admin-hint {
+    background: rgba(82, 183, 136, 0.1);
+    border: 1px solid var(--color-info);
+    border-radius: var(--radius-md);
+    padding: var(--space-sm) var(--space-md);
+    margin-bottom: var(--space-md);
+    color: var(--color-text-secondary);
+    font-size: 0.875rem;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="requests-container">
+    <div class="requests-header">
+        <h1>工单记录</h1>
+        <div style="display: flex; align-items: center; gap: 15px;">
+            {% if user.is_authenticated and notification_count > 0 %}
+            <div class="notification-center" style="position: relative;">
+                <button class="notification-toggle" onclick="toggleNotifications()" style="background: white; border: 2px solid #1B4332; border-radius: 20px; padding: 8px 14px; cursor: pointer; font-size: 14px; display: flex; align-items: center; gap: 8px;">
+                    通知
+                    <span class="notification-badge" style="background: #CC7722; color: white; padding: 2px 8px; border-radius: 10px; font-size: 12px;">{{ notification_count }}</span>
+                </button>
+                <div class="notification-dropdown" id="notificationDropdown" style="position: absolute; top: 45px; right: 0; width: 320px; max-height: 350px; background: white; border-radius: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.15); display: none; overflow: hidden;">
+                    <div style="padding: 12px 16px; background: #1B4332; color: white; font-weight: 600;">待处理通知 ({{ notification_count }})</div>
+                    <div style="max-height: 280px; overflow-y: auto;">
+                        {% for item in notifications_list %}
+                        <div onclick="window.location.href='{{ item.url }}'" style="padding: 12px 16px; border-bottom: 1px solid #eee; cursor: pointer;">
+                            <div style="font-weight: 500; color: #1B4332; font-size: 14px;">
+                                 {{ item.title }}
+                            </div>
+                            <div style="font-size: 12px; color: #666; margin-top: 3px;">{{ item.description }}</div>
+                            <div style="font-size: 11px; color: #999; margin-top: 3px;">{{ item.created_at|date:"m-d H:i" }}</div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+            <span class="text-muted">{{ requests|length }} 条记录</span>
+        </div>
+    </div>
+
+    {% if messages %}
+    <div class="messages">
+        {% for message in messages %}
+        <div class="message message-{{ message.tags }}" style="padding: 10px; margin-bottom: 10px; border-radius: 8px; {% if message.tags == 'success' %}background: #d4edda; color: #155724;{% elif message.tags == 'error' %}background: #f8d7da; color: #721c24;{% endif %}">
+            {{ message }}
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    {% if is_admin %}
+    <div class="admin-hint">
+        您已以管理员身份登录，点击工单可查看详情并审批
+    </div>
+    {% endif %}
+
+    {% if requests %}
+    <table class="request-table">
+        <thead>
+            <tr>
+                <th>类型</th>
+                <th>区域</th>
+                <th>日期</th>
+                <th>提交人</th>
+                <th>详情</th>
+                <th>状态</th>
+                <th>提交时间</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for req in requests %}
+            <tr onclick="window.location.href='{% url 'core:request_detail' req.type_code req.id %}'" style="cursor: pointer;">
+                <td>
+                    <span class="type-badge type-{{ req.type_code }}">
+                        
+                        {{ req.type }}
+                    </span>
+                </td>
+                <td><strong>{{ req.zone.name }}</strong></td>
+                <td>{{ req.date }}</td>
+                <td>{{ req.submitter.full_name }}</td>
+                <td class="text-muted" style="font-size: 0.875rem;">{{ req.detail }}</td>
+                <td>
+                    <span class="status-badge status-{{ req.status }}">
+                        {{ req.status_display }}
+                    </span>
+                </td>
+                <td style="font-size: 0.875rem; color: var(--color-text-muted);">
+                    {{ req.created_at|date:"m-d H:i" }}
+                </td>
+                <td>
+                    <span style="color: var(--color-primary);">→</span>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div class="empty-state">
+        <p>暂无工单记录</p>
+    </div>
+    {% endif %}
+
+    <div class="back-link">
+        <a href="{% url 'core:dashboard' %}">← 返回总览</a>
+    </div>
+</div>
+
+<script>
+function toggleNotifications() {
+    const dropdown = document.getElementById('notificationDropdown');
+    dropdown.style.display = dropdown.style.display === 'none' ? 'block' : 'none';
+}
+
+document.addEventListener('click', function(event) {
+    const center = document.querySelector('.notification-center');
+    if (center && !center.contains(event.target)) {
+        const dropdown = document.getElementById('notificationDropdown');
+        if (dropdown) dropdown.style.display = 'none';
+    }
+});
+</script>
+{% endblock %}

@@ -61,6 +61,34 @@ class Command(BaseCommand):
             self.stderr.write(self.style.ERROR(f"Failed to fetch from cloud relay: {e}"))
             return None
 
+    def mark_processed(self, ids):
+        """Mark records as processed in the cloud relay."""
+        if not ids:
+            return True
+
+        url = f"{settings.CLOUD_RELAY_BASE_URL}/api/mark-processed"
+        headers = {"Content-Type": "application/json"}
+        if settings.CLOUD_RELAY_POLL_TOKEN:
+            headers["Authorization"] = f"Bearer {settings.CLOUD_RELAY_POLL_TOKEN}"
+
+        try:
+            response = requests.post(url, json={"ids": ids}, headers=headers, timeout=30)
+            response.raise_for_status()
+            data = response.json()
+            if data.get("success"):
+                self.stdout.write(
+                    self.style.SUCCESS(f"Marked {data.get('data', {}).get('updated', 0)} records as processed")
+                )
+                return True
+            else:
+                self.stderr.write(
+                    self.style.ERROR(f"Failed to mark processed: {data.get('error', 'Unknown error')}")
+                )
+                return False
+        except requests.exceptions.RequestException as e:
+            self.stderr.write(self.style.ERROR(f"Failed to mark processed: {e}"))
+            return False
+
     def get_or_create_worker(self, employee_id, full_name=None, phone=None):
         """Get or create a worker by employee_id."""
         worker, created = Worker.objects.get_or_create(
@@ -178,7 +206,9 @@ class Command(BaseCommand):
             self.stderr.write(self.style.ERROR("Aborting due to fetch failure"))
             return
 
-        records = data.get("records", [])
+        # Extract records from new response format
+        response_data = data.get("data", {})
+        records = response_data.get("records", data.get("records", []))
         total_records = len(records)
 
         self.stdout.write(f"Found {total_records} pending records")
@@ -191,6 +221,7 @@ class Command(BaseCommand):
         imported_count = 0
         skipped_count = 0
         error_count = 0
+        imported_relay_ids = []  # Track successfully imported relay IDs
 
         for i, record in enumerate(records, 1):
             self.stdout.write(f"[{i}/{total_records}] Processing record...")
@@ -199,12 +230,21 @@ class Command(BaseCommand):
             if success:
                 imported_count += 1
                 self.stdout.write(self.style.SUCCESS(f"  {message}"))
+                # Track relay_id for marking as processed (the 'id' field from the relay)
+                relay_id = record.get("id") or record.get("relay_id")
+                if relay_id and not dry_run:
+                    imported_relay_ids.append(relay_id)
             elif skipped:
                 skipped_count += 1
                 self.stdout.write(self.style.WARNING(f"  Skipped: {message}"))
             else:
                 error_count += 1
                 self.stderr.write(self.style.ERROR(f"  Error: {message}"))
+
+        # Mark processed records in the relay (only if not dry run and we have imports)
+        if imported_relay_ids and not dry_run:
+            self.stdout.write("Marking processed records in cloud relay...")
+            self.mark_processed(imported_relay_ids)
 
         # Print summary
         self.stdout.write("\n" + "=" * 50)

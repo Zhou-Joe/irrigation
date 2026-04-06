@@ -1,0 +1,132 @@
+- generic [ref=e2]:
+  - complementary [ref=e3]:
+    - generic [ref=e4]:
+      - heading "灌溉区域" [level=1] [ref=e5]
+      - paragraph [ref=e6]: 10 个区域
+    - generic [ref=e7]:
+      - generic [ref=e8] [cursor=pointer]:
+        - generic [ref=e9]:
+          - generic [ref=e10]: "201314"
+          - generic [ref=e11]: 已安排
+        - generic [ref=e12]: 古春苑
+        - generic [ref=e13]:
+          - generic [ref=e14]: 0 种植物
+          - generic [ref=e15]: 无待处理
+      - generic [ref=e16] [cursor=pointer]:
+        - generic [ref=e17]:
+          - generic [ref=e18]: ZA-001
+          - generic [ref=e19]: 已安排
+        - generic [ref=e20]: Zone A - Garden Beds
+        - generic [ref=e21]:
+          - generic [ref=e22]: 0 种植物
+          - generic [ref=e23]: 1 待处理
+        - generic [ref=e24]:
+          - generic [ref=e25]: 📍
+          - generic [ref=e26]: 37.78805, -122.4317
+      - generic [ref=e27] [cursor=pointer]:
+        - generic [ref=e28]:
+          - generic [ref=e29]: ZB-001
+          - generic [ref=e30]: 进行中
+        - generic [ref=e31]: Zone B - Orchard
+        - generic [ref=e32]:
+          - generic [ref=e33]: 0 种植物
+          - generic [ref=e34]: 无待处理
+        - generic [ref=e35]:
+          - generic [ref=e36]: 📍
+          - generic [ref=e37]: 37.78905, -122.4327
+      - generic [ref=e38] [cursor=pointer]:
+        - generic [ref=e39]:
+          - generic [ref=e40]: ZC-001
+          - generic [ref=e41]: 已完成
+        - generic [ref=e42]: Zone C - Greenhouse
+        - generic [ref=e43]:
+          - generic [ref=e44]: 0 种植物
+          - generic [ref=e45]: 无待处理
+        - generic [ref=e46]:
+          - generic [ref=e47]: 📍
+          - generic [ref=e48]: 37.78705, -122.4307
+      - generic [ref=e49] [cursor=pointer]:
+        - generic [ref=e50]:
+          - generic [ref=e51]: ZD-001
+          - generic [ref=e52]: 已延期
+        - generic [ref=e53]: Zone D - Flower Garden
+        - generic [ref=e54]:
+          - generic [ref=e55]: 0 种植物
+          - generic [ref=e56]: 无待处理
+        - generic [ref=e57]:
+          - generic [ref=e58]: 📍
+          - generic [ref=e59]: 37.79005, -122.4337
+      - generic [ref=e60] [cursor=pointer]:
+        - generic [ref=e61]:
+          - generic [ref=e62]: ZE-001
+          - generic [ref=e63]: 已安排
+        - generic [ref=e64]: Zone E - Vegetable Patch
+        - generic [ref=e65]:
+          - generic [ref=e66]: 0 种植物
+          - generic [ref=e67]: 无待处理
+        - generic [ref=e68]:
+          - generic [ref=e69]: 📍
+          - generic [ref=e70]: 37.78605, -122.4287
+      - generic [ref=e71] [cursor=pointer]:
+        - generic [ref=e72]:
+          - generic [ref=e73]: ZONE-A
+          - generic [ref=e74]: 已完成
+        - generic [ref=e75]: North Garden
+        - generic [ref=e76]:
+          - generic [ref=e77]: 2 种植物
+          - generic [ref=e78]: 无待处理
+        - generic [ref=e79]:
+          - generic [ref=e80]: 📍
+          - generic [ref=e81]: 40.7832, -73.9644
+      - generic [ref=e82] [cursor=pointer]:
+        - generic [ref=e83]:
+          - generic [ref=e84]: ZONE-B
+          - generic [ref=e85]: 进行中
+        - generic [ref=e86]: East Lawn
+        - generic [ref=e87]:
+          - generic [ref=e88]: 0 种植物
+          - generic [ref=e89]: 无待处理
+        - generic [ref=e90]:
+          - generic [ref=e91]: 📍
+          - generic [ref=e92]: 40.78425, -73.963
+      - generic [ref=e93] [cursor=pointer]:
+        - generic [ref=e94]:
+          - generic [ref=e95]: ZONE-C
+          - generic [ref=e96]: 已安排
+        - generic [ref=e97]: South Orchard
+        - generic [ref=e98]:
+          - generic [ref=e99]: 0 种植物
+          - generic [ref=e100]: 无待处理
+        - generic [ref=e101]:
+          - generic [ref=e102]: 📍
+          - generic [ref=e103]: 40.78225, -73.964
+      - generic [ref=e104] [cursor=pointer]:
+        - generic [ref=e105]:
+          - generic [ref=e106]: ZONE-D
+          - generic [ref=e107]: 已延期
+        - generic [ref=e108]: West Greenhouse
+        - generic [ref=e109]:
+          - generic [ref=e110]: 0 种植物
+          - generic [ref=e111]: 无待处理
+        - generic [ref=e112]:
+          - generic [ref=e113]: 📍
+          - generic [ref=e114]: 40.78375, -73.965
+    - link "⚙️ 系统设置" [ref=e116] [cursor=pointer]:
+      - /url: /settings/
+  - main [ref=e117]:
+    - generic [ref=e118]:
+      - generic:
+        - generic:
+          - img
+        - button [ref=e119] [cursor=pointer]
+      - generic:
+        - generic [ref=e121]:
+          - button "Zoom in" [ref=e122] [cursor=pointer]: +
+          - button "Zoom out" [ref=e123] [cursor=pointer]: −
+        - button "📍" [ref=e124] [cursor=pointer]
+        - generic [ref=e125]:
+          - link "Leaflet" [ref=e126] [cursor=pointer]:
+            - /url: https://leafletjs.com
+            - img [ref=e127]
+            - text: Leaflet
+          - text: "| © Esri, Maxar, Earthstar Geographics"
