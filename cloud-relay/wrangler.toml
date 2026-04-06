@@ -2,9 +2,17 @@ name = "horticulture-relay"
 main = "src/index.js"
 compatibility_date = "2024-01-01"
 
-[kv_namespaces]
-work_logs = { binding = "WORK_LOGS", id = "" }
+# KV namespace binding for work logs storage
+# Local development uses a preview namespace automatically
+# For production deployment:
+# 1. Run `wrangler login` to authenticate with Cloudflare
+# 2. Run `wrangler kv:namespace create WORK_LOGS` to create the namespace
+# 3. Copy the returned namespace ID below
+[[kv_namespaces]]
+binding = "WORK_LOGS"
+id = ""  # TODO: Fill in with actual KV namespace ID after running `wrangler kv:namespace create WORK_LOGS`
 
+# Production environment (update route after deployment)
 [env.production]
-# TODO: Update route pattern and zone_name for production deployment
-route = { pattern = "horticulture-relay.your-domain.workers.dev", zone_name = "your-domain.com" }
+# After initial deployment, update with your actual workers.dev subdomain
+# route = { pattern = "horticulture-relay.*.workers.dev" }

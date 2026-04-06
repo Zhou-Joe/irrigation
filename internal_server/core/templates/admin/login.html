@@ -1,0 +1,29 @@
+{% extends "admin/login.html" %}
+{% load static %}
+
+{% block extrahead %}
+{{ block.super }}
+<style>
+.registration-link {
+    text-align: center;
+    margin-top: 15px;
+    padding-top: 15px;
+    border-top: 1px solid #e0e0e0;
+}
+.registration-link a {
+    color: #1B4332;
+    text-decoration: none;
+    font-weight: 500;
+}
+.registration-link a:hover {
+    text-decoration: underline;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+{{ block.super }}
+<div class="registration-link">
+    没有账户？<a href="{% url 'core:register' %}">注册申请</a>
+</div>
+{% endblock %}

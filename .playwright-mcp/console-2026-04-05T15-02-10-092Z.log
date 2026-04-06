@@ -1,0 +1,212 @@
+[    1864ms] [LOG] Loaded zones: 10 zones @ http://localhost:8000/static/js/map.js:123
+[    1864ms] [LOG] renderZones called with 10 zones @ http://localhost:8000/static/js/map.js:135
+[    1864ms] [LOG] zonesLayerGroup cleared @ http://localhost:8000/static/js/map.js:137
+[    1864ms] [LOG] Processing zone: 古春苑 boundary_points: [] @ http://localhost:8000/static/js/map.js:140
+[    1866ms] [WARNING] Zone has no boundary points: 古春苑 @ http://localhost:8000/static/js/map.js:142
+[    1866ms] [LOG] Processing zone: Zone A - Garden Beds boundary_points: [Object, Object, Object, Object] @ http://localhost:8000/static/js/map.js:140
+[    1866ms] [LOG] Creating polygon for zone: Zone A - Garden Beds with 4 points: [Array(2), Array(2), Array(2), Array(2)] @ http://localhost:8000/static/js/map.js:162
+[    1868ms] [LOG] Added polygon to layer group. Total layers now: 1 @ http://localhost:8000/static/js/map.js:183
+[    1868ms] [LOG] Processing zone: Zone B - Orchard boundary_points: [Object, Object, Object, Object] @ http://localhost:8000/static/js/map.js:140
+[    1868ms] [LOG] Creating polygon for zone: Zone B - Orchard with 4 points: [Array(2), Array(2), Array(2), Array(2)] @ http://localhost:8000/static/js/map.js:162
+[    1868ms] [LOG] Added polygon to layer group. Total layers now: 2 @ http://localhost:8000/static/js/map.js:183
+[    1868ms] [LOG] Processing zone: Zone C - Greenhouse boundary_points: [Object, Object, Object, Object] @ http://localhost:8000/static/js/map.js:140
+[    1868ms] [LOG] Creating polygon for zone: Zone C - Greenhouse with 4 points: [Array(2), Array(2), Array(2), Array(2)] @ http://localhost:8000/static/js/map.js:162
+[    1868ms] [LOG] Added polygon to layer group. Total layers now: 3 @ http://localhost:8000/static/js/map.js:183
+[    1868ms] [LOG] Processing zone: Zone D - Flower Garden boundary_points: [Object, Object, Object, Object] @ http://localhost:8000/static/js/map.js:140
+[    1868ms] [LOG] Creating polygon for zone: Zone D - Flower Garden with 4 points: [Array(2), Array(2), Array(2), Array(2)] @ http://localhost:8000/static/js/map.js:162
+[    1868ms] [LOG] Added polygon to layer group. Total layers now: 4 @ http://localhost:8000/static/js/map.js:183
+[    1868ms] [LOG] Processing zone: Zone E - Vegetable Patch boundary_points: [Object, Object, Object, Object] @ http://localhost:8000/static/js/map.js:140
+[    1868ms] [LOG] Creating polygon for zone: Zone E - Vegetable Patch with 4 points: [Array(2), Array(2), Array(2), Array(2)] @ http://localhost:8000/static/js/map.js:162
+[    1869ms] [LOG] Added polygon to layer group. Total layers now: 5 @ http://localhost:8000/static/js/map.js:183
+[    1869ms] [LOG] Processing zone: North Garden boundary_points: [Array(2), Array(2), Array(2), Array(2)] @ http://localhost:8000/static/js/map.js:140
+[    1869ms] [LOG] Creating polygon for zone: North Garden with 4 points: [Array(2), Array(2), Array(2), Array(2)] @ http://localhost:8000/static/js/map.js:162
+[    1869ms] [LOG] Added polygon to layer group. Total layers now: 6 @ http://localhost:8000/static/js/map.js:183
+[    1869ms] [LOG] Processing zone: East Lawn boundary_points: [Array(2), Array(2), Array(2), Array(2)] @ http://localhost:8000/static/js/map.js:140
+[    1869ms] [LOG] Creating polygon for zone: East Lawn with 4 points: [Array(2), Array(2), Array(2), Array(2)] @ http://localhost:8000/static/js/map.js:162
+[    1869ms] [LOG] Added polygon to layer group. Total layers now: 7 @ http://localhost:8000/static/js/map.js:183
+[    1869ms] [LOG] Processing zone: South Orchard boundary_points: [Array(2), Array(2), Array(2), Array(2)] @ http://localhost:8000/static/js/map.js:140
+[    1869ms] [LOG] Creating polygon for zone: South Orchard with 4 points: [Array(2), Array(2), Array(2), Array(2)] @ http://localhost:8000/static/js/map.js:162
+[    1870ms] [LOG] Added polygon to layer group. Total layers now: 8 @ http://localhost:8000/static/js/map.js:183
+[    1870ms] [LOG] Processing zone: West Greenhouse boundary_points: [Array(2), Array(2), Array(2), Array(2)] @ http://localhost:8000/static/js/map.js:140
+[    1870ms] [LOG] Creating polygon for zone: West Greenhouse with 4 points: [Array(2), Array(2), Array(2), Array(2)] @ http://localhost:8000/static/js/map.js:162
+[    1870ms] [LOG] Added polygon to layer group. Total layers now: 9 @ http://localhost:8000/static/js/map.js:183
+[    1870ms] [LOG] Finished rendering. Total layers: 9 @ http://localhost:8000/static/js/map.js:192
+[    2719ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:8000/favicon.ico:0
+[    9877ms] [LOG] Auto-locate failed: Timeout expired @ http://localhost:8000/static/js/map.js:571
+[   23224ms] [LOG] Testing geolocation... @ :0
+[   28226ms] [LOG] Error: 3 Timeout expired @ :0
+[   83164ms] [LOG] Loaded zones: 10 zones @ http://localhost:8000/static/js/map.js:123
+[   83165ms] [LOG] renderZones called with 10 zones @ http://localhost:8000/static/js/map.js:135
+[   83165ms] [LOG] zonesLayerGroup cleared @ http://localhost:8000/static/js/map.js:137
+[   83165ms] [LOG] Processing zone: 古春苑 boundary_points: [] @ http://localhost:8000/static/js/map.js:140
+[   83165ms] [WARNING] Zone has no boundary points: 古春苑 @ http://localhost:8000/static/js/map.js:142
+[   83165ms] [LOG] Processing zone: Zone A - Garden Beds boundary_points: [Object, Object, Object, Object] @ http://localhost:8000/static/js/map.js:140
+[   83165ms] [LOG] Creating polygon for zone: Zone A - Garden Beds with 4 points: [Array(2), Array(2), Array(2), Array(2)] @ http://localhost:8000/static/js/map.js:162
+[   83165ms] [LOG] Added polygon to layer group. Total layers now: 1 @ http://localhost:8000/static/js/map.js:183
+[   83165ms] [LOG] Processing zone: Zone B - Orchard boundary_points: [Object, Object, Object, Object] @ http://localhost:8000/static/js/map.js:140
+[   83165ms] [LOG] Creating polygon for zone: Zone B - Orchard with 4 points: [Array(2), Array(2), Array(2), Array(2)] @ http://localhost:8000/static/js/map.js:162
+[   83165ms] [LOG] Added polygon to layer group. Total layers now: 2 @ http://localhost:8000/static/js/map.js:183
+[   83165ms] [LOG] Processing zone: Zone C - Greenhouse boundary_points: [Object, Object, Object, Object] @ http://localhost:8000/static/js/map.js:140
+[   83165ms] [LOG] Creating polygon for zone: Zone C - Greenhouse with 4 points: [Array(2), Array(2), Array(2), Array(2)] @ http://localhost:8000/static/js/map.js:162
+[   83165ms] [LOG] Added polygon to layer group. Total layers now: 3 @ http://localhost:8000/static/js/map.js:183
+[   83165ms] [LOG] Processing zone: Zone D - Flower Garden boundary_points: [Object, Object, Object, Object] @ http://localhost:8000/static/js/map.js:140
+[   83165ms] [LOG] Creating polygon for zone: Zone D - Flower Garden with 4 points: [Array(2), Array(2), Array(2), Array(2)] @ http://localhost:8000/static/js/map.js:162
+[   83165ms] [LOG] Added polygon to layer group. Total layers now: 4 @ http://localhost:8000/static/js/map.js:183
+[   83165ms] [LOG] Processing zone: Zone E - Vegetable Patch boundary_points: [Object, Object, Object, Object] @ http://localhost:8000/static/js/map.js:140
+[   83165ms] [LOG] Creating polygon for zone: Zone E - Vegetable Patch with 4 points: [Array(2), Array(2), Array(2), Array(2)] @ http://localhost:8000/static/js/map.js:162
+[   83165ms] [LOG] Added polygon to layer group. Total layers now: 5 @ http://localhost:8000/static/js/map.js:183
+[   83165ms] [LOG] Processing zone: North Garden boundary_points: [Array(2), Array(2), Array(2), Array(2)] @ http://localhost:8000/static/js/map.js:140
+[   83165ms] [LOG] Creating polygon for zone: North Garden with 4 points: [Array(2), Array(2), Array(2), Array(2)] @ http://localhost:8000/static/js/map.js:162
+[   83166ms] [LOG] Added polygon to layer group. Total layers now: 6 @ http://localhost:8000/static/js/map.js:183
+[   83166ms] [LOG] Processing zone: East Lawn boundary_points: [Array(2), Array(2), Array(2), Array(2)] @ http://localhost:8000/static/js/map.js:140
+[   83166ms] [LOG] Creating polygon for zone: East Lawn with 4 points: [Array(2), Array(2), Array(2), Array(2)] @ http://localhost:8000/static/js/map.js:162
+[   83166ms] [LOG] Added polygon to layer group. Total layers now: 7 @ http://localhost:8000/static/js/map.js:183
+[   83166ms] [LOG] Processing zone: South Orchard boundary_points: [Array(2), Array(2), Array(2), Array(2)] @ http://localhost:8000/static/js/map.js:140
+[   83166ms] [LOG] Creating polygon for zone: South Orchard with 4 points: [Array(2), Array(2), Array(2), Array(2)] @ http://localhost:8000/static/js/map.js:162
+[   83166ms] [LOG] Added polygon to layer group. Total layers now: 8 @ http://localhost:8000/static/js/map.js:183
+[   83166ms] [LOG] Processing zone: West Greenhouse boundary_points: [Array(2), Array(2), Array(2), Array(2)] @ http://localhost:8000/static/js/map.js:140
+[   83166ms] [LOG] Creating polygon for zone: West Greenhouse with 4 points: [Array(2), Array(2), Array(2), Array(2)] @ http://localhost:8000/static/js/map.js:162
+[   83166ms] [LOG] Added polygon to layer group. Total layers now: 9 @ http://localhost:8000/static/js/map.js:183
+[   83166ms] [LOG] Finished rendering. Total layers: 9 @ http://localhost:8000/static/js/map.js:192
+[   83171ms] [LOG] Auto-locating... @ http://localhost:8000/static/js/map.js:528
+[   83221ms] [LOG] Auto-locate success: 31.017723019828573 121.64102302700721 @ http://localhost:8000/static/js/map.js:531
+[   84965ms] [LOG] Loaded zones: 10 zones @ http://localhost:8000/static/js/map.js:123
+[   84965ms] [LOG] renderZones called with 10 zones @ http://localhost:8000/static/js/map.js:135
+[   84965ms] [LOG] zonesLayerGroup cleared @ http://localhost:8000/static/js/map.js:137
+[   84965ms] [LOG] Processing zone: 古春苑 boundary_points: [] @ http://localhost:8000/static/js/map.js:140
+[   84965ms] [WARNING] Zone has no boundary points: 古春苑 @ http://localhost:8000/static/js/map.js:142
+[   84965ms] [LOG] Processing zone: Zone A - Garden Beds boundary_points: [Object, Object, Object, Object] @ http://localhost:8000/static/js/map.js:140
+[   84965ms] [LOG] Creating polygon for zone: Zone A - Garden Beds with 4 points: [Array(2), Array(2), Array(2), Array(2)] @ http://localhost:8000/static/js/map.js:162
+[   84965ms] [LOG] Added polygon to layer group. Total layers now: 1 @ http://localhost:8000/static/js/map.js:183
+[   84965ms] [LOG] Processing zone: Zone B - Orchard boundary_points: [Object, Object, Object, Object] @ http://localhost:8000/static/js/map.js:140
+[   84965ms] [LOG] Creating polygon for zone: Zone B - Orchard with 4 points: [Array(2), Array(2), Array(2), Array(2)] @ http://localhost:8000/static/js/map.js:162
+[   84965ms] [LOG] Added polygon to layer group. Total layers now: 2 @ http://localhost:8000/static/js/map.js:183
+[   84965ms] [LOG] Processing zone: Zone C - Greenhouse boundary_points: [Object, Object, Object, Object] @ http://localhost:8000/static/js/map.js:140
+[   84965ms] [LOG] Creating polygon for zone: Zone C - Greenhouse with 4 points: [Array(2), Array(2), Array(2), Array(2)] @ http://localhost:8000/static/js/map.js:162
+[   84966ms] [LOG] Added polygon to layer group. Total layers now: 3 @ http://localhost:8000/static/js/map.js:183
+[   84966ms] [LOG] Processing zone: Zone D - Flower Garden boundary_points: [Object, Object, Object, Object] @ http://localhost:8000/static/js/map.js:140
+[   84966ms] [LOG] Creating polygon for zone: Zone D - Flower Garden with 4 points: [Array(2), Array(2), Array(2), Array(2)] @ http://localhost:8000/static/js/map.js:162
+[   84966ms] [LOG] Added polygon to layer group. Total layers now: 4 @ http://localhost:8000/static/js/map.js:183
+[   84966ms] [LOG] Processing zone: Zone E - Vegetable Patch boundary_points: [Object, Object, Object, Object] @ http://localhost:8000/static/js/map.js:140
+[   84966ms] [LOG] Creating polygon for zone: Zone E - Vegetable Patch with 4 points: [Array(2), Array(2), Array(2), Array(2)] @ http://localhost:8000/static/js/map.js:162
+[   84966ms] [LOG] Added polygon to layer group. Total layers now: 5 @ http://localhost:8000/static/js/map.js:183
+[   84966ms] [LOG] Processing zone: North Garden boundary_points: [Array(2), Array(2), Array(2), Array(2)] @ http://localhost:8000/static/js/map.js:140
+[   84966ms] [LOG] Creating polygon for zone: North Garden with 4 points: [Array(2), Array(2), Array(2), Array(2)] @ http://localhost:8000/static/js/map.js:162
+[   84966ms] [LOG] Added polygon to layer group. Total layers now: 6 @ http://localhost:8000/static/js/map.js:183
+[   84966ms] [LOG] Processing zone: East Lawn boundary_points: [Array(2), Array(2), Array(2), Array(2)] @ http://localhost:8000/static/js/map.js:140
+[   84966ms] [LOG] Creating polygon for zone: East Lawn with 4 points: [Array(2), Array(2), Array(2), Array(2)] @ http://localhost:8000/static/js/map.js:162
+[   84966ms] [LOG] Added polygon to layer group. Total layers now: 7 @ http://localhost:8000/static/js/map.js:183
+[   84966ms] [LOG] Processing zone: South Orchard boundary_points: [Array(2), Array(2), Array(2), Array(2)] @ http://localhost:8000/static/js/map.js:140
+[   84966ms] [LOG] Creating polygon for zone: South Orchard with 4 points: [Array(2), Array(2), Array(2), Array(2)] @ http://localhost:8000/static/js/map.js:162
+[   84966ms] [LOG] Added polygon to layer group. Total layers now: 8 @ http://localhost:8000/static/js/map.js:183
+[   84966ms] [LOG] Processing zone: West Greenhouse boundary_points: [Array(2), Array(2), Array(2), Array(2)] @ http://localhost:8000/static/js/map.js:140
+[   84966ms] [LOG] Creating polygon for zone: West Greenhouse with 4 points: [Array(2), Array(2), Array(2), Array(2)] @ http://localhost:8000/static/js/map.js:162
+[   84966ms] [LOG] Added polygon to layer group. Total layers now: 9 @ http://localhost:8000/static/js/map.js:183
+[   84966ms] [LOG] Finished rendering. Total layers: 9 @ http://localhost:8000/static/js/map.js:192
+[   84970ms] [LOG] Auto-locating... @ http://localhost:8000/static/js/map.js:528
+[   85009ms] [LOG] Auto-locate success: 31.017722997778844 121.64102302944265 @ http://localhost:8000/static/js/map.js:531
+[   92264ms] [LOG] Loaded zones: 10 zones @ http://localhost:8000/static/js/map.js:123
+[   92264ms] [LOG] renderZones called with 10 zones @ http://localhost:8000/static/js/map.js:135
+[   92264ms] [LOG] zonesLayerGroup cleared @ http://localhost:8000/static/js/map.js:137
+[   92264ms] [LOG] Processing zone: 古春苑 boundary_points: [] @ http://localhost:8000/static/js/map.js:140
+[   92264ms] [WARNING] Zone has no boundary points: 古春苑 @ http://localhost:8000/static/js/map.js:142
+[   92264ms] [LOG] Processing zone: Zone A - Garden Beds boundary_points: [Object, Object, Object, Object] @ http://localhost:8000/static/js/map.js:140
+[   92264ms] [LOG] Creating polygon for zone: Zone A - Garden Beds with 4 points: [Array(2), Array(2), Array(2), Array(2)] @ http://localhost:8000/static/js/map.js:162
+[   92264ms] [LOG] Added polygon to layer group. Total layers now: 1 @ http://localhost:8000/static/js/map.js:183
+[   92264ms] [LOG] Processing zone: Zone B - Orchard boundary_points: [Object, Object, Object, Object] @ http://localhost:8000/static/js/map.js:140
+[   92264ms] [LOG] Creating polygon for zone: Zone B - Orchard with 4 points: [Array(2), Array(2), Array(2), Array(2)] @ http://localhost:8000/static/js/map.js:162
+[   92265ms] [LOG] Added polygon to layer group. Total layers now: 2 @ http://localhost:8000/static/js/map.js:183
+[   92265ms] [LOG] Processing zone: Zone C - Greenhouse boundary_points: [Object, Object, Object, Object] @ http://localhost:8000/static/js/map.js:140
+[   92265ms] [LOG] Creating polygon for zone: Zone C - Greenhouse with 4 points: [Array(2), Array(2), Array(2), Array(2)] @ http://localhost:8000/static/js/map.js:162
+[   92265ms] [LOG] Added polygon to layer group. Total layers now: 3 @ http://localhost:8000/static/js/map.js:183
+[   92265ms] [LOG] Processing zone: Zone D - Flower Garden boundary_points: [Object, Object, Object, Object] @ http://localhost:8000/static/js/map.js:140
+[   92265ms] [LOG] Creating polygon for zone: Zone D - Flower Garden with 4 points: [Array(2), Array(2), Array(2), Array(2)] @ http://localhost:8000/static/js/map.js:162
+[   92265ms] [LOG] Added polygon to layer group. Total layers now: 4 @ http://localhost:8000/static/js/map.js:183
+[   92265ms] [LOG] Processing zone: Zone E - Vegetable Patch boundary_points: [Object, Object, Object, Object] @ http://localhost:8000/static/js/map.js:140
+[   92265ms] [LOG] Creating polygon for zone: Zone E - Vegetable Patch with 4 points: [Array(2), Array(2), Array(2), Array(2)] @ http://localhost:8000/static/js/map.js:162
+[   92265ms] [LOG] Added polygon to layer group. Total layers now: 5 @ http://localhost:8000/static/js/map.js:183
+[   92265ms] [LOG] Processing zone: North Garden boundary_points: [Array(2), Array(2), Array(2), Array(2)] @ http://localhost:8000/static/js/map.js:140
+[   92265ms] [LOG] Creating polygon for zone: North Garden with 4 points: [Array(2), Array(2), Array(2), Array(2)] @ http://localhost:8000/static/js/map.js:162
+[   92265ms] [LOG] Added polygon to layer group. Total layers now: 6 @ http://localhost:8000/static/js/map.js:183
+[   92265ms] [LOG] Processing zone: East Lawn boundary_points: [Array(2), Array(2), Array(2), Array(2)] @ http://localhost:8000/static/js/map.js:140
+[   92265ms] [LOG] Creating polygon for zone: East Lawn with 4 points: [Array(2), Array(2), Array(2), Array(2)] @ http://localhost:8000/static/js/map.js:162
+[   92265ms] [LOG] Added polygon to layer group. Total layers now: 7 @ http://localhost:8000/static/js/map.js:183
+[   92265ms] [LOG] Processing zone: South Orchard boundary_points: [Array(2), Array(2), Array(2), Array(2)] @ http://localhost:8000/static/js/map.js:140
+[   92265ms] [LOG] Creating polygon for zone: South Orchard with 4 points: [Array(2), Array(2), Array(2), Array(2)] @ http://localhost:8000/static/js/map.js:162
+[   92265ms] [LOG] Added polygon to layer group. Total layers now: 8 @ http://localhost:8000/static/js/map.js:183
+[   92265ms] [LOG] Processing zone: West Greenhouse boundary_points: [Array(2), Array(2), Array(2), Array(2)] @ http://localhost:8000/static/js/map.js:140
+[   92265ms] [LOG] Creating polygon for zone: West Greenhouse with 4 points: [Array(2), Array(2), Array(2), Array(2)] @ http://localhost:8000/static/js/map.js:162
+[   92265ms] [LOG] Added polygon to layer group. Total layers now: 9 @ http://localhost:8000/static/js/map.js:183
+[   92265ms] [LOG] Finished rendering. Total layers: 9 @ http://localhost:8000/static/js/map.js:192
+[   92268ms] [LOG] Auto-locating... @ http://localhost:8000/static/js/map.js:528
+[   92309ms] [LOG] Auto-locate success: 31.017722998075865 121.64102302940985 @ http://localhost:8000/static/js/map.js:531
+[   93789ms] [LOG] Loaded zones: 10 zones @ http://localhost:8000/static/js/map.js:123
+[   93789ms] [LOG] renderZones called with 10 zones @ http://localhost:8000/static/js/map.js:135
+[   93789ms] [LOG] zonesLayerGroup cleared @ http://localhost:8000/static/js/map.js:137
+[   93789ms] [LOG] Processing zone: 古春苑 boundary_points: [] @ http://localhost:8000/static/js/map.js:140
+[   93790ms] [WARNING] Zone has no boundary points: 古春苑 @ http://localhost:8000/static/js/map.js:142
+[   93790ms] [LOG] Processing zone: Zone A - Garden Beds boundary_points: [Object, Object, Object, Object] @ http://localhost:8000/static/js/map.js:140
+[   93790ms] [LOG] Creating polygon for zone: Zone A - Garden Beds with 4 points: [Array(2), Array(2), Array(2), Array(2)] @ http://localhost:8000/static/js/map.js:162
+[   93790ms] [LOG] Added polygon to layer group. Total layers now: 1 @ http://localhost:8000/static/js/map.js:183
+[   93790ms] [LOG] Processing zone: Zone B - Orchard boundary_points: [Object, Object, Object, Object] @ http://localhost:8000/static/js/map.js:140
+[   93790ms] [LOG] Creating polygon for zone: Zone B - Orchard with 4 points: [Array(2), Array(2), Array(2), Array(2)] @ http://localhost:8000/static/js/map.js:162
+[   93790ms] [LOG] Added polygon to layer group. Total layers now: 2 @ http://localhost:8000/static/js/map.js:183
+[   93790ms] [LOG] Processing zone: Zone C - Greenhouse boundary_points: [Object, Object, Object, Object] @ http://localhost:8000/static/js/map.js:140
+[   93790ms] [LOG] Creating polygon for zone: Zone C - Greenhouse with 4 points: [Array(2), Array(2), Array(2), Array(2)] @ http://localhost:8000/static/js/map.js:162
+[   93790ms] [LOG] Added polygon to layer group. Total layers now: 3 @ http://localhost:8000/static/js/map.js:183
+[   93791ms] [LOG] Processing zone: Zone D - Flower Garden boundary_points: [Object, Object, Object, Object] @ http://localhost:8000/static/js/map.js:140
+[   93791ms] [LOG] Creating polygon for zone: Zone D - Flower Garden with 4 points: [Array(2), Array(2), Array(2), Array(2)] @ http://localhost:8000/static/js/map.js:162
+[   93791ms] [LOG] Added polygon to layer group. Total layers now: 4 @ http://localhost:8000/static/js/map.js:183
+[   93791ms] [LOG] Processing zone: Zone E - Vegetable Patch boundary_points: [Object, Object, Object, Object] @ http://localhost:8000/static/js/map.js:140
+[   93791ms] [LOG] Creating polygon for zone: Zone E - Vegetable Patch with 4 points: [Array(2), Array(2), Array(2), Array(2)] @ http://localhost:8000/static/js/map.js:162
+[   93791ms] [LOG] Added polygon to layer group. Total layers now: 5 @ http://localhost:8000/static/js/map.js:183
+[   93791ms] [LOG] Processing zone: North Garden boundary_points: [Array(2), Array(2), Array(2), Array(2)] @ http://localhost:8000/static/js/map.js:140
+[   93791ms] [LOG] Creating polygon for zone: North Garden with 4 points: [Array(2), Array(2), Array(2), Array(2)] @ http://localhost:8000/static/js/map.js:162
+[   93791ms] [LOG] Added polygon to layer group. Total layers now: 6 @ http://localhost:8000/static/js/map.js:183
+[   93791ms] [LOG] Processing zone: East Lawn boundary_points: [Array(2), Array(2), Array(2), Array(2)] @ http://localhost:8000/static/js/map.js:140
+[   93791ms] [LOG] Creating polygon for zone: East Lawn with 4 points: [Array(2), Array(2), Array(2), Array(2)] @ http://localhost:8000/static/js/map.js:162
+[   93791ms] [LOG] Added polygon to layer group. Total layers now: 7 @ http://localhost:8000/static/js/map.js:183
+[   93791ms] [LOG] Processing zone: South Orchard boundary_points: [Array(2), Array(2), Array(2), Array(2)] @ http://localhost:8000/static/js/map.js:140
+[   93791ms] [LOG] Creating polygon for zone: South Orchard with 4 points: [Array(2), Array(2), Array(2), Array(2)] @ http://localhost:8000/static/js/map.js:162
+[   93791ms] [LOG] Added polygon to layer group. Total layers now: 8 @ http://localhost:8000/static/js/map.js:183
+[   93791ms] [LOG] Processing zone: West Greenhouse boundary_points: [Array(2), Array(2), Array(2), Array(2)] @ http://localhost:8000/static/js/map.js:140
+[   93791ms] [LOG] Creating polygon for zone: West Greenhouse with 4 points: [Array(2), Array(2), Array(2), Array(2)] @ http://localhost:8000/static/js/map.js:162
+[   93791ms] [LOG] Added polygon to layer group. Total layers now: 9 @ http://localhost:8000/static/js/map.js:183
+[   93791ms] [LOG] Finished rendering. Total layers: 9 @ http://localhost:8000/static/js/map.js:192
+[   93793ms] [LOG] Auto-locating... @ http://localhost:8000/static/js/map.js:528
+[   93823ms] [LOG] Auto-locate success: 31.017722998013646 121.64102302941643 @ http://localhost:8000/static/js/map.js:531
+[   97459ms] [LOG] Loaded zones: 10 zones @ http://localhost:8000/static/js/map.js:123
+[   97459ms] [LOG] renderZones called with 10 zones @ http://localhost:8000/static/js/map.js:135
+[   97459ms] [LOG] zonesLayerGroup cleared @ http://localhost:8000/static/js/map.js:137
+[   97459ms] [LOG] Processing zone: 古春苑 boundary_points: [] @ http://localhost:8000/static/js/map.js:140
+[   97459ms] [WARNING] Zone has no boundary points: 古春苑 @ http://localhost:8000/static/js/map.js:142
+[   97459ms] [LOG] Processing zone: Zone A - Garden Beds boundary_points: [Object, Object, Object, Object] @ http://localhost:8000/static/js/map.js:140
+[   97459ms] [LOG] Creating polygon for zone: Zone A - Garden Beds with 4 points: [Array(2), Array(2), Array(2), Array(2)] @ http://localhost:8000/static/js/map.js:162
+[   97460ms] [LOG] Added polygon to layer group. Total layers now: 1 @ http://localhost:8000/static/js/map.js:183
+[   97460ms] [LOG] Processing zone: Zone B - Orchard boundary_points: [Object, Object, Object, Object] @ http://localhost:8000/static/js/map.js:140
+[   97460ms] [LOG] Creating polygon for zone: Zone B - Orchard with 4 points: [Array(2), Array(2), Array(2), Array(2)] @ http://localhost:8000/static/js/map.js:162
+[   97460ms] [LOG] Added polygon to layer group. Total layers now: 2 @ http://localhost:8000/static/js/map.js:183
+[   97460ms] [LOG] Processing zone: Zone C - Greenhouse boundary_points: [Object, Object, Object, Object] @ http://localhost:8000/static/js/map.js:140
+[   97460ms] [LOG] Creating polygon for zone: Zone C - Greenhouse with 4 points: [Array(2), Array(2), Array(2), Array(2)] @ http://localhost:8000/static/js/map.js:162
+[   97460ms] [LOG] Added polygon to layer group. Total layers now: 3 @ http://localhost:8000/static/js/map.js:183
+[   97460ms] [LOG] Processing zone: Zone D - Flower Garden boundary_points: [Object, Object, Object, Object] @ http://localhost:8000/static/js/map.js:140
+[   97460ms] [LOG] Creating polygon for zone: Zone D - Flower Garden with 4 points: [Array(2), Array(2), Array(2), Array(2)] @ http://localhost:8000/static/js/map.js:162
+[   97460ms] [LOG] Added polygon to layer group. Total layers now: 4 @ http://localhost:8000/static/js/map.js:183
+[   97460ms] [LOG] Processing zone: Zone E - Vegetable Patch boundary_points: [Object, Object, Object, Object] @ http://localhost:8000/static/js/map.js:140
+[   97460ms] [LOG] Creating polygon for zone: Zone E - Vegetable Patch with 4 points: [Array(2), Array(2), Array(2), Array(2)] @ http://localhost:8000/static/js/map.js:162
+[   97460ms] [LOG] Added polygon to layer group. Total layers now: 5 @ http://localhost:8000/static/js/map.js:183
+[   97460ms] [LOG] Processing zone: North Garden boundary_points: [Array(2), Array(2), Array(2), Array(2)] @ http://localhost:8000/static/js/map.js:140
+[   97460ms] [LOG] Creating polygon for zone: North Garden with 4 points: [Array(2), Array(2), Array(2), Array(2)] @ http://localhost:8000/static/js/map.js:162
+[   97460ms] [LOG] Added polygon to layer group. Total layers now: 6 @ http://localhost:8000/static/js/map.js:183
+[   97460ms] [LOG] Processing zone: East Lawn boundary_points: [Array(2), Array(2), Array(2), Array(2)] @ http://localhost:8000/static/js/map.js:140
+[   97460ms] [LOG] Creating polygon for zone: East Lawn with 4 points: [Array(2), Array(2), Array(2), Array(2)] @ http://localhost:8000/static/js/map.js:162
+[   97460ms] [LOG] Added polygon to layer group. Total layers now: 7 @ http://localhost:8000/static/js/map.js:183
+[   97460ms] [LOG] Processing zone: South Orchard boundary_points: [Array(2), Array(2), Array(2), Array(2)] @ http://localhost:8000/static/js/map.js:140
+[   97460ms] [LOG] Creating polygon for zone: South Orchard with 4 points: [Array(2), Array(2), Array(2), Array(2)] @ http://localhost:8000/static/js/map.js:162
+[   97460ms] [LOG] Added polygon to layer group. Total layers now: 8 @ http://localhost:8000/static/js/map.js:183
+[   97460ms] [LOG] Processing zone: West Greenhouse boundary_points: [Array(2), Array(2), Array(2), Array(2)] @ http://localhost:8000/static/js/map.js:140
+[   97460ms] [LOG] Creating polygon for zone: West Greenhouse with 4 points: [Array(2), Array(2), Array(2), Array(2)] @ http://localhost:8000/static/js/map.js:162
+[   97461ms] [LOG] Added polygon to layer group. Total layers now: 9 @ http://localhost:8000/static/js/map.js:183
+[   97461ms] [LOG] Finished rendering. Total layers: 9 @ http://localhost:8000/static/js/map.js:192
+[   97463ms] [LOG] Auto-locating... @ http://localhost:8000/static/js/map.js:528
+[   97491ms] [LOG] Auto-locate success: 31.017722997924327 121.64102302942469 @ http://localhost:8000/static/js/map.js:531

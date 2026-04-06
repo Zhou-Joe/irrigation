@@ -1,66 +1,128 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    {% load static %}
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Irrigation Dashboard</title>
+{% extends 'core/base.html' %}
 
-    <!-- Leaflet CSS -->
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+{% load static %}
 
-    <!-- Custom Styles -->
-    <link rel="stylesheet" href="{% static 'css/style.css' %}">
-</head>
-<body>
-    <div class="dashboard-container">
-        <!-- Sidebar -->
-        <aside class="sidebar">
-            <div class="sidebar-header">
-                <h1>Irrigation Zones</h1>
-                <p class="zone-count">{{ zones|length }} zones</p>
-            </div>
+{% block title %}灌溉区域总览{% endblock %}
 
-            <div class="zone-list">
-                {% for zone in zones %}
-                <div class="zone-item" data-zone-id="{{ zone.id }}" data-zone-code="{{ zone.code }}">
-                    <div class="zone-header">
-                        <span class="zone-code">{{ zone.code }}</span>
-                        <span class="status-badge status-{{ zone.status }}">{{ zone.get_status_display }}</span>
-                    </div>
-                    <div class="zone-name">{{ zone.name }}</div>
-                    <div class="zone-details">
-                        <span class="plant-count">{{ zone.plant_count }} plant{{ zone.plant_count|pluralize }}</span>
-                        <span class="work-order-status">
-                            {% if zone.pending_work_orders %}
-                                {{ zone.pending_work_orders }} pending
-                            {% else %}
-                                No pending
-                            {% endif %}
-                        </span>
-                    </div>
+{% block extra_css %}
+<!-- Leaflet CSS -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+{% endblock %}
+
+{% block content %}
+<div class="dashboard-container">
+    <!-- 侧边栏 -->
+    <aside class="sidebar">
+        <div class="sidebar-header">
+            <h1>灌溉区域</h1>
+            <p class="zone-count">{{ zones|length }} 个区域</p>
+        </div>
+
+        <div class="zone-list stagger-reveal">
+            {% for zone in zones %}
+            <div class="zone-item" data-zone-id="{{ zone.id }}" data-zone-code="{{ zone.code }}">
+                <div class="zone-header">
+                    <span class="zone-code">{{ zone.code }}</span>
+                    <span class="status-badge status-{{ zone.status }}">{{ zone.get_status_display }}</span>
                 </div>
-                {% empty %}
-                <div class="no-zones">No zones configured</div>
-                {% endfor %}
+                <div class="zone-name">{{ zone.name }}</div>
+                <div class="zone-details">
+                    <span class="plant-count">{{ zone.plant_count }} 种植物</span>
+                    <span class="work-order-status">
+                        {% if zone.pending_work_orders %}
+                            {{ zone.pending_work_orders }} 待处理
+                        {% else %}
+                            无待处理
+                        {% endif %}
+                    </span>
+                </div>
+                {% if zone.center %}
+                <div class="zone-coords">
+                    <span class="coord-label"></span>
+                    <span class="coord-value">{{ zone.center.lat }}, {{ zone.center.lng }}</span>
+                </div>
+                {% endif %}
             </div>
-        </aside>
+            {% empty %}
+            <div class="no-zones">暂无区域数据</div>
+            {% endfor %}
+        </div>
 
-        <!-- Map Container -->
-        <main class="map-container">
-            <div id="map"></div>
-        </main>
-    </div>
+        <!-- 设置链接 -->
+        <div class="sidebar-footer">
+            <a href="{% url 'core:requests' %}" class="settings-link">工单记录</a>
+            <a href="{% url 'core:settings' %}" class="settings-link">系统设置</a>
+            {% if user.is_authenticated %}
+            <a href="{% url 'core:logout' %}" class="settings-link" style="color: var(--color-error);">退出登录</a>
+            {% else %}
+            <a href="{% url 'core:login' %}" class="settings-link" style="color: var(--color-primary);">登录</a>
+            <a href="{% url 'core:register' %}" class="settings-link" style="color: var(--color-success);">注册申请</a>
+            {% endif %}
+        </div>
+    </aside>
 
-    <!-- Zone data for JavaScript -->
-    <script id="zones-data" type="application/json">
-        {{ zones_json|escapejs }}
-    </script>
+    <!-- 地图容器 -->
+    <main class="map-container">
+        <div id="map"></div>
 
-    <!-- Leaflet JS -->
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+        <!-- 通知中心 -->
+        {% if user.is_authenticated and notification_count > 0 %}
+        <div class="notification-center">
+            <button class="notification-toggle" onclick="toggleNotifications()">
+                通知
+                <span class="notification-badge">{{ notification_count }}</span>
+            </button>
+            <div class="notification-dropdown" id="notificationDropdown">
+                <div class="notification-header">
+                    <span>待处理通知</span>
+                    <span>{{ notification_count }} 条</span>
+                </div>
+                <div class="notification-list">
+                    {% for item in notifications_list %}
+                    <div class="notification-item" onclick="window.location.href='{{ item.url }}'">
+                        <div class="notification-item-title">
+                            <span class="notification-icon {{ item.type }}">
+                                
+                            </span>
+                            {{ item.title }}
+                        </div>
+                        <div class="notification-item-desc">{{ item.description }}</div>
+                        <div class="notification-item-time">{{ item.created_at|date:"m-d H:i" }}</div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    </main>
+</div>
 
-    <!-- Custom Map JS -->
-    <script src="{% static 'js/map.js' %}"></script>
-</body>
-</html>
+<!-- 区域数据 -->
+<script id="zones-data" type="application/json">
+    {{ zones_json|safe }}
+</script>
+{% endblock %}
+
+{% block extra_js %}
+<!-- Leaflet JS -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<!-- Map Config -->
+<script src="{% static 'js/map-config.js' %}"></script>
+<!-- Custom Map JS -->
+<script src="{% static 'js/map.js' %}"></script>
+<!-- Notification Center -->
+<script>
+function toggleNotifications() {
+    const dropdown = document.getElementById('notificationDropdown');
+    dropdown.classList.toggle('show');
+}
+
+// Close dropdown when clicking outside
+document.addEventListener('click', function(event) {
+    const center = document.querySelector('.notification-center');
+    if (center && !center.contains(event.target)) {
+        document.getElementById('notificationDropdown').classList.remove('show');
+    }
+});
+</script>
+{% endblock %}

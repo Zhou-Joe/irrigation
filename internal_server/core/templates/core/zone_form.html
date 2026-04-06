@@ -1,0 +1,588 @@
+{% extends 'core/base.html' %}
+
+{% load static %}
+
+{% block title %}{% if zone %}编辑区域{% else %}新建区域{% endif %} - 灌溉管理{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'css/settings.css' %}">
+<!-- Leaflet CSS -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+{% endblock %}
+
+{% block content %}
+<div class="form-container">
+    <div class="form-header">
+        <h1>{% if zone %}编辑区域: {{ zone.name }}{% else %}新建区域{% endif %}</h1>
+        <a href="{% url 'core:settings' %}" class="btn btn-secondary">← 返回设置</a>
+    </div>
+
+    {% if messages %}
+    <div class="messages">
+        {% for message in messages %}
+        <div class="message message-{{ message.tags }}">
+            {{ message }}
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <form method="post" class="zone-form" id="zoneForm">
+        {% csrf_token %}
+
+        <div class="form-section">
+            <h2>基本信息</h2>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="name">区域名称 *</label>
+                    <input type="text" id="name" name="name" value="{% if zone %}{{ zone.name }}{% endif %}" required placeholder="例如: 东区花园">
+                </div>
+
+                <div class="form-group">
+                    <label for="code">区域编号 *</label>
+                    <input type="text" id="code" name="code" value="{% if zone %}{{ zone.code }}{% endif %}" required pattern="[A-Za-z0-9\-]+" placeholder="例如: ZONE-A">
+                    <small>仅限字母、数字和连字符</small>
+                </div>
+            </div>
+
+            <div class="form-group full-width">
+                <label for="description">描述说明</label>
+                <textarea id="description" name="description" rows="3" placeholder="区域的用途、特点等描述">{% if zone %}{{ zone.description }}{% endif %}</textarea>
+            </div>
+        </div>
+
+        <div class="form-section boundary-section">
+            <h2>边界范围</h2>
+            <p class="help-text">在地图上绘制或修改区域边界。点击地图添加边界点，拖动已有节点调整位置，右键点击节点可删除。</p>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="boundary_color">边界颜色</label>
+                    <div class="color-picker-wrapper">
+                        <input type="color" id="boundary_color" name="boundary_color" value="{% if zone %}{{ zone.boundary_color }}{% else %}#52B788{% endif %}">
+                        <input type="text" id="boundary_color_text" value="{% if zone %}{{ zone.boundary_color }}{% else %}#52B788{% endif %}" pattern="^#[0-9A-Fa-f]{6}$" maxlength="7" class="color-text-input">
+                    </div>
+                    <small>选择区域边界在地图上显示的颜色</small>
+                </div>
+            </div>
+
+            <div class="map-toolbar">
+                <button type="button" id="clearBoundary" class="btn btn-sm btn-danger">清除所有点</button>
+                <button type="button" id="undoAction" class="btn btn-sm btn-secondary" disabled>撤销</button>
+                <button type="button" id="locateMe" class="btn btn-sm btn-primary">定位我</button>
+                <span class="point-count">节点数: <strong id="pointCount">0</strong></span>
+            </div>
+
+            <div id="editMap"></div>
+
+            <div class="coordinates-section">
+                <h3>坐标列表</h3>
+                <div class="coord-list-header">
+                    <span>序号</span>
+                    <span>纬度</span>
+                    <span>经度</span>
+                    <span>操作</span>
+                </div>
+                <div id="coordList" class="coord-list"></div>
+            </div>
+
+            <input type="hidden" id="boundary_points" name="boundary_points" value="">
+        </div>
+
+        <div class="form-section">
+            <h2>植物信息</h2>
+            <p class="help-text">选择或添加该区域种植的植物。</p>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="plant_select">选择植物</label>
+                    <div style="display: flex; gap: 10px; align-items: flex-end;">
+                        <select id="plant_select" style="flex: 1;">
+                            <option value="">-- 选择植物 --</option>
+                            {% for plant in available_plants %}
+                            <option value="{{ plant }}">{{ plant }}</option>
+                            {% endfor %}
+                            <option value="__new__">+ 添加新植物</option>
+                        </select>
+                        <div id="new_plant_input" style="display: none; flex: 1;">
+                            <input type="text" id="new_plant_name" placeholder="输入新植物名称" style="width: 100%; padding: 12px; border: 2px solid var(--color-surface-dark); border-radius: 8px;">
+                        </div>
+                        <button type="button" id="add_plant_btn" class="btn btn-primary btn-sm">添加</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="selected-plants" style="margin-top: 16px;">
+                <label style="font-weight: 500; color: var(--color-text-secondary); font-size: 0.9rem; margin-bottom: 8px; display: block;">已选植物：</label>
+                <div id="selectedPlantsList" style="display: flex; flex-wrap: wrap; gap: 8px;">
+                    {% if zone %}
+                        {% for plant in zone.plants.all %}
+                        <span class="plant-tag" data-plant="{{ plant.name }}">
+                            {{ plant.name }}
+                            <button type="button" onclick="removePlantTag(this)" style="background: none; border: none; color: inherit; cursor: pointer; margin-left: 4px; font-size: 16px;">&times;</button>
+                        </span>
+                        {% endfor %}
+                    {% endif %}
+                </div>
+                <input type="hidden" id="plants_data" name="plants_data" value="">
+            </div>
+        </div>
+
+        <div class="form-actions">
+            <button type="submit" class="btn btn-primary">
+                {% if zone %}保存修改{% else %}创建区域{% endif %}
+            </button>
+            <a href="{% url 'core:settings' %}" class="btn btn-secondary">取消</a>
+        </div>
+    </form>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<!-- Leaflet JS -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script id="boundary-data" type="application/json">{{ boundary_json|safe }}</script>
+<script>
+// 区域边界编辑器
+(function() {
+    'use strict';
+
+    let editMap = null;
+    let polygon = null;
+    let markers = [];
+    let history = [];
+    let userLocationMarker = null;
+    let userAccuracyCircle = null;
+
+    function getPolygonStyle() {
+        const colorInput = document.getElementById('boundary_color');
+        const color = colorInput ? colorInput.value : '#52B788';
+        return {
+            color: color,
+            weight: 2,
+            fillColor: color,
+            fillOpacity: 0.25
+        };
+    }
+
+    function initEditMap() {
+        console.log('初始化边界编辑器...');
+
+        // Center point adjusted ~1.07km north-east, bounds (2km radius)
+        const centerLat = 31.145794 + 0.010; // offset ~1.1km north
+        const centerLng = 121.656804 + 0.012; // offset ~1.1km east
+        const latOffset = 0.018; // ~2km in latitude
+        const lngOffset = 0.021; // ~2km in longitude at lat 31°
+
+        const southWest = L.latLng(centerLat - latOffset, centerLng - lngOffset);
+        const northEast = L.latLng(centerLat + latOffset, centerLng + lngOffset);
+        const bounds = L.latLngBounds(southWest, northEast);
+
+        editMap = L.map('editMap', {
+            center: [centerLat, centerLng],
+            zoom: 15,
+            maxZoom: 19,
+            minZoom: 13,
+            maxBounds: bounds,
+            maxBoundsViscosity: 1.0
+        });
+
+        // 卫星图层
+        L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+            attribution: '&copy; Esri, Maxar',
+            maxZoom: 19
+        }).addTo(editMap);
+
+        // 加载现有点位
+        const boundaryDataEl = document.getElementById('boundary-data');
+        if (boundaryDataEl && boundaryDataEl.textContent) {
+            try {
+                const points = JSON.parse(boundaryDataEl.textContent);
+                console.log('Loaded boundary points:', points);
+                if (points && points.length > 0) {
+                    points.forEach(p => {
+                        const latlng = p.lat !== undefined ? L.latLng(p.lat, p.lng) : L.latLng(p[0], p[1]);
+                        createMarker(latlng);
+                    });
+                    updatePolygon();
+                    fitMapToPoints();
+                }
+            } catch (e) {
+                console.warn('无法解析边界点:', e, boundaryDataEl.textContent);
+            }
+        }
+
+        // 点击添加点位
+        editMap.on('click', function(e) {
+            saveHistory();
+            createMarker(e.latlng);
+            updatePolygon();
+            updateUI();
+        });
+
+        updateUI();
+        console.log('边界编辑器就绪');
+    }
+
+    function createMarker(latlng) {
+        const colorInput = document.getElementById('boundary_color');
+        const color = colorInput ? colorInput.value : '#1B4332';
+
+        const marker = L.marker(latlng, {
+            draggable: true,
+            icon: L.divIcon({
+                className: 'boundary-marker',
+                html: `<div class="marker-dot" style="width:14px;height:14px;background:${color};border:2px solid white;border-radius:50%;cursor:grab;"></div>`,
+                iconSize: [16, 16],
+                iconAnchor: [8, 8]
+            })
+        }).addTo(editMap);
+
+        marker.on('dragstart', saveHistory);
+        marker.on('drag', function() {
+            updatePolygon();
+            updateUI();
+        });
+        marker.on('contextmenu', function(e) {
+            L.DomEvent.stopPropagation(e);
+            removeMarker(marker);
+        });
+
+        markers.push(marker);
+    }
+
+    function updateMarkerColors() {
+        const colorInput = document.getElementById('boundary_color');
+        const color = colorInput ? colorInput.value : '#1B4332';
+
+        markers.forEach(marker => {
+            marker.setIcon(L.divIcon({
+                className: 'boundary-marker',
+                html: `<div class="marker-dot" style="width:14px;height:14px;background:${color};border:2px solid white;border-radius:50%;cursor:grab;"></div>`,
+                iconSize: [16, 16],
+                iconAnchor: [8, 8]
+            }));
+        });
+    }
+
+    function removeMarker(marker) {
+        saveHistory();
+        const index = markers.indexOf(marker);
+        if (index > -1) {
+            editMap.removeLayer(marker);
+            markers.splice(index, 1);
+            updatePolygon();
+            updateUI();
+        }
+    }
+
+    function updatePolygon() {
+        if (polygon) editMap.removeLayer(polygon);
+        if (markers.length >= 3) {
+            polygon = L.polygon(markers.map(m => m.getLatLng()), getPolygonStyle()).addTo(editMap);
+        }
+        document.getElementById('boundary_points').value = JSON.stringify(
+            markers.map(m => ({lat: +m.getLatLng().lat.toFixed(6), lng: +m.getLatLng().lng.toFixed(6)}))
+        );
+    }
+
+    function updateUI() {
+        document.getElementById('pointCount').textContent = markers.length;
+        const list = document.getElementById('coordList');
+        list.innerHTML = markers.map((m, i) => {
+            const ll = m.getLatLng();
+            return `<div class="coord-row">
+                <span class="coord-index">${i+1}</span>
+                <input type="number" step="any" class="coord-input" value="${ll.lat.toFixed(6)}" data-idx="${i}" data-type="lat">
+                <input type="number" step="any" class="coord-input" value="${ll.lng.toFixed(6)}" data-idx="${i}" data-type="lng">
+                <button type="button" class="coord-delete" data-idx="${i}">×</button>
+            </div>`;
+        }).join('');
+
+        list.querySelectorAll('.coord-input').forEach(inp => {
+            inp.addEventListener('change', function() {
+                saveHistory();
+                const m = markers[+this.dataset.idx];
+                const ll = m.getLatLng();
+                if (this.dataset.type === 'lat') m.setLatLng([+this.value, ll.lng]);
+                else m.setLatLng([ll.lat, +this.value]);
+                updatePolygon();
+            });
+        });
+
+        list.querySelectorAll('.coord-delete').forEach(btn => {
+            btn.addEventListener('click', function() { removeMarker(markers[+this.dataset.idx]); });
+        });
+    }
+
+    function fitMapToPoints() {
+        // Keep map at predefined center - don't auto-adjust
+        // Users can zoom/pan manually to see boundary points
+    }
+
+    function saveHistory() {
+        history.push(markers.map(m => ({lat: m.getLatLng().lat, lng: m.getLatLng().lng})));
+        if (history.length > 20) history.shift();
+        document.getElementById('undoAction').disabled = history.length <= 1;
+    }
+
+    function undo() {
+        if (history.length < 2) return;
+        history.pop();
+        const state = history[history.length - 1];
+        markers.forEach(m => editMap.removeLayer(m));
+        markers = [];
+        state.forEach(p => createMarker(L.latLng(p.lat, p.lng)));
+        updatePolygon();
+        updateUI();
+        document.getElementById('undoAction').disabled = history.length <= 1;
+    }
+
+    function clearAll() {
+        if (markers.length === 0) return;
+        if (!confirm('确定清除所有边界点吗？')) return;
+        saveHistory();
+        markers.forEach(m => editMap.removeLayer(m));
+        markers = [];
+        updatePolygon();
+        updateUI();
+    }
+
+    function locateUser() {
+        const btn = document.getElementById('locateMe');
+
+        if (!navigator.geolocation) {
+            alert('您的浏览器不支持定位功能');
+            return;
+        }
+
+        btn.disabled = true;
+        btn.textContent = '定位中...';
+
+        navigator.geolocation.getCurrentPosition(
+            function(position) {
+                const lat = position.coords.latitude;
+                const lng = position.coords.longitude;
+                const accuracy = position.coords.accuracy;
+
+                if (userLocationMarker) editMap.removeLayer(userLocationMarker);
+                if (userAccuracyCircle) editMap.removeLayer(userAccuracyCircle);
+
+                userAccuracyCircle = L.circle([lat, lng], {
+                    radius: accuracy,
+                    color: '#1B4332',
+                    fillColor: '#2D6A4F',
+                    fillOpacity: 0.15,
+                    weight: 1
+                }).addTo(editMap);
+
+                userLocationMarker = L.marker([lat, lng], {
+                    icon: L.divIcon({
+                        className: 'user-location-marker',
+                        html: '<div style="background:#D4A574;width:16px;height:16px;border:3px solid white;border-radius:50%;box-shadow:0 0 0 2px #D4A574,0 2px 8px rgba(212,165,74,0.4);"></div>',
+                        iconSize: [22, 22],
+                        iconAnchor: [11, 11]
+                    })
+                }).addTo(editMap);
+
+                editMap.flyTo([lat, lng], 17, {animate: true, duration: 1.0});
+
+                btn.disabled = false;
+                btn.textContent = '定位我';
+
+                L.popup()
+                    .setLatLng([lat, lng])
+                    .setContent(`<div><strong>您的位置</strong><br>纬度: ${lat.toFixed(6)}<br>经度: ${lng.toFixed(6)}<br>精度: ~${Math.round(accuracy)}米</div>`)
+                    .openOn(editMap);
+            },
+            function(error) {
+                btn.disabled = false;
+                btn.textContent = '定位我';
+
+                let msg = '无法获取您的位置';
+                if (error.code === error.PERMISSION_DENIED) {
+                    msg = '定位权限被拒绝，请在浏览器设置中允许定位。';
+                } else if (error.code === error.POSITION_UNAVAILABLE) {
+                    msg = '位置信息不可用。';
+                } else if (error.code === error.TIMEOUT) {
+                    msg = '定位请求超时，请重试。';
+                }
+                alert(msg);
+            },
+            {enableHighAccuracy: true, timeout: 15000, maximumAge: 0}
+        );
+    }
+
+    function autoLocate() {
+        if (!navigator.geolocation) return;
+
+        console.log('自动定位中...');
+        navigator.geolocation.getCurrentPosition(
+            function(position) {
+                console.log('自动定位成功:', position.coords.latitude, position.coords.longitude);
+                const lat = position.coords.latitude;
+                const lng = position.coords.longitude;
+
+                if (userLocationMarker) editMap.removeLayer(userLocationMarker);
+                if (userAccuracyCircle) editMap.removeLayer(userAccuracyCircle);
+
+                userAccuracyCircle = L.circle([lat, lng], {
+                    radius: position.coords.accuracy,
+                    color: '#1B4332',
+                    fillColor: '#2D6A4F',
+                    fillOpacity: 0.15,
+                    weight: 1
+                }).addTo(editMap);
+
+                userLocationMarker = L.marker([lat, lng], {
+                    icon: L.divIcon({
+                        className: 'user-location-marker',
+                        html: '<div style="background:#D4A574;width:16px;height:16px;border:3px solid white;border-radius:50%;box-shadow:0 0 0 2px #D4A574,0 2px 8px rgba(212,165,74,0.4);"></div>',
+                        iconSize: [22, 22],
+                        iconAnchor: [11, 11]
+                    })
+                }).addTo(editMap);
+
+                // Only fly to user if no existing boundary points
+                if (markers.length === 0) {
+                    editMap.flyTo([lat, lng], 17, {animate: true, duration: 1.0});
+                }
+            },
+            function(error) {
+                console.log('自动定位失败:', error.code, error.message);
+            },
+            {enableHighAccuracy: true, timeout: 15000, maximumAge: 60000}
+        );
+    }
+
+    document.addEventListener('DOMContentLoaded', function() {
+        initEditMap();
+        autoLocate();
+        document.getElementById('clearBoundary').addEventListener('click', clearAll);
+        document.getElementById('undoAction').addEventListener('click', undo);
+        document.getElementById('locateMe').addEventListener('click', locateUser);
+
+        // Color picker sync
+        const colorPicker = document.getElementById('boundary_color');
+        const colorText = document.getElementById('boundary_color_text');
+
+        if (colorPicker && colorText) {
+            // Sync color picker to text input
+            colorPicker.addEventListener('input', function() {
+                colorText.value = this.value.toUpperCase();
+                updatePolygon();
+                updateMarkerColors();
+            });
+
+            // Sync text input to color picker
+            colorText.addEventListener('input', function() {
+                const val = this.value.trim();
+                if (/^#[0-9A-Fa-f]{6}$/.test(val)) {
+                    colorPicker.value = val;
+                    updatePolygon();
+                    updateMarkerColors();
+                }
+            });
+
+            // Validate on blur
+            colorText.addEventListener('blur', function() {
+                const val = this.value.trim();
+                if (!/^#[0-9A-Fa-f]{6}$/.test(val)) {
+                    this.value = colorPicker.value.toUpperCase();
+                }
+            });
+        }
+    });
+})();
+</script>
+
+<script>
+// Plant management
+(function() {
+    const selectEl = document.getElementById('plant_select');
+    const newPlantInput = document.getElementById('new_plant_input');
+    const newPlantName = document.getElementById('new_plant_name');
+    const addBtn = document.getElementById('add_plant_btn');
+    const selectedList = document.getElementById('selectedPlantsList');
+    const plantsDataInput = document.getElementById('plants_data');
+
+    // Show/hide new plant input
+    selectEl.addEventListener('change', function() {
+        if (this.value === '__new__') {
+            newPlantInput.style.display = 'block';
+            newPlantName.focus();
+        } else {
+            newPlantInput.style.display = 'none';
+        }
+    });
+
+    // Add plant
+    function addPlant() {
+        let plantName = '';
+
+        if (selectEl.value === '__new__') {
+            plantName = newPlantName.value.trim();
+            if (!plantName) {
+                alert('请输入植物名称');
+                return;
+            }
+        } else if (selectEl.value) {
+            plantName = selectEl.value;
+        } else {
+            return;
+        }
+
+        // Check if already added
+        const existing = selectedList.querySelectorAll('.plant-tag');
+        for (let tag of existing) {
+            if (tag.dataset.plant.toLowerCase() === plantName.toLowerCase()) {
+                alert('该植物已添加');
+                return;
+            }
+        }
+
+        // Add tag
+        const tag = document.createElement('span');
+        tag.className = 'plant-tag';
+        tag.dataset.plant = plantName;
+        tag.innerHTML = plantName + '<button type="button" onclick="removePlantTag(this)">&times;</button>';
+        selectedList.appendChild(tag);
+
+        // Update hidden input
+        updatePlantsData();
+
+        // Reset form
+        selectEl.value = '';
+        newPlantName.value = '';
+        newPlantInput.style.display = 'none';
+    }
+
+    addBtn.addEventListener('click', addPlant);
+
+    // Enter key to add
+    newPlantName.addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            addPlant();
+        }
+    });
+
+    // Update hidden input
+    function updatePlantsData() {
+        const tags = selectedList.querySelectorAll('.plant-tag');
+        const names = Array.from(tags).map(t => t.dataset.plant);
+        plantsDataInput.value = names.join(',');
+    }
+
+    // Global function for removing tags
+    window.removePlantTag = function(btn) {
+        btn.parentElement.remove();
+        updatePlantsData();
+    };
+
+    // Initialize existing plants data
+    updatePlantsData();
+})();
+</script>
+{% endblock %}

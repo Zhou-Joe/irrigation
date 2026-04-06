@@ -1,34 +1,84 @@
+import uuid
 from django.db import models
 from django.contrib.auth.models import User
+from django.utils import timezone
+from datetime import date
 
 
 class Zone(models.Model):
     """Represents a work zone with boundary points and status tracking."""
 
-    STATUS_SCHEDULED = 'scheduled'
-    STATUS_WORKING = 'working'
-    STATUS_DONE = 'done'
-    STATUS_CANCELED = 'canceled'
-    STATUS_DELAYED = 'delayed'
+    # 状态由当天工单决定，不再存储在数据库
+    STATUS_UNARRANGED = 'unarranged'  # 未安排（当天无工单）
+    STATUS_IN_PROGRESS = 'in_progress'  # 处理中（工单已提交待审批）
+    STATUS_COMPLETED = 'completed'  # 已完成（工单已批准）
+    STATUS_CANCELED = 'canceled'  # 已取消（工单已拒绝）
+    STATUS_DELAYED = 'delayed'  # 已延期（需补充信息）
 
     STATUS_CHOICES = [
-        (STATUS_SCHEDULED, 'Scheduled'),
-        (STATUS_WORKING, 'Working'),
-        (STATUS_DONE, 'Done'),
-        (STATUS_CANCELED, 'Canceled'),
-        (STATUS_DELAYED, 'Delayed'),
+        (STATUS_UNARRANGED, '未安排'),
+        (STATUS_IN_PROGRESS, '处理中'),
+        (STATUS_COMPLETED, '已完成'),
+        (STATUS_CANCELED, '已取消'),
+        (STATUS_DELAYED, '已延期'),
     ]
 
     name = models.CharField(max_length=255, unique=True)
     code = models.CharField(max_length=50, unique=True)
     description = models.TextField(blank=True)
     boundary_points = models.JSONField(default=list)
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_SCHEDULED)
-    status_reason = models.CharField(max_length=255, blank=True)
-    scheduled_start = models.DateTimeField(null=True, blank=True)
-    scheduled_end = models.DateTimeField(null=True, blank=True)
+    boundary_color = models.CharField(max_length=7, default='#52B788', help_text='边界颜色 (十六进制)')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    @property
+    def status(self):
+        """Property to get today's status for template compatibility."""
+        return self.get_today_status()
+
+    def get_today_status(self, target_date=None):
+        """根据当天工单获取状态。状态只代表当天，工作是周而复始的。"""
+        if target_date is None:
+            target_date = date.today()
+
+        # 检查当天的维护维修请求
+        maintenance = self.maintenancerequest.filter(date=target_date).first()
+        if maintenance:
+            return self._map_request_status(maintenance.status)
+
+        # 检查当天的项目支持请求
+        project_support = self.projectsupportrequest.filter(date=target_date).first()
+        if project_support:
+            return self._map_request_status(project_support.status)
+
+        # 检查当天的浇水协调请求（按日期范围）
+        water = self.waterrequest.filter(
+            start_datetime__date__lte=target_date,
+            end_datetime__date__gte=target_date
+        ).first()
+        if water:
+            return self._map_request_status(water.status)
+
+        # 当天无工单，返回未安排
+        return self.STATUS_UNARRANGED
+
+    def _map_request_status(self, request_status):
+        """将请求状态映射到zone状态。"""
+        mapping = {
+            'submitted': self.STATUS_IN_PROGRESS,  # 已提交 → 处理中
+            'approved': self.STATUS_COMPLETED,     # 已批准 → 已完成
+            'rejected': self.STATUS_CANCELED,      # 已拒绝 → 已取消
+            'info_needed': self.STATUS_DELAYED,    # 需补充信息 → 已延期
+        }
+        return mapping.get(request_status, self.STATUS_UNARRANGED)
+
+    def get_status_display(self, target_date=None):
+        """获取状态的中文显示。"""
+        status = self.get_today_status(target_date)
+        for code, display in self.STATUS_CHOICES:
+            if code == status:
+                return display
+        return '未安排'
 
     def __str__(self):
         return f"{self.name} ({self.code})"
@@ -50,16 +100,75 @@ class Plant(models.Model):
 class Worker(models.Model):
     """Represents a worker/employee."""
 
+    DEPARTMENT_CHOICES = [
+        ('FES', 'FES'),
+        ('FAM', 'FAM'),
+        ('ENT', 'ENT'),
+        ('其他', '其他'),
+    ]
+
     user = models.OneToOneField(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='worker_profile')
     employee_id = models.CharField(max_length=50, unique=True)
     full_name = models.CharField(max_length=255)
     phone = models.CharField(max_length=20, blank=True)
+    department = models.CharField(max_length=20, choices=DEPARTMENT_CHOICES, blank=True)
+    department_other = models.CharField(max_length=50, blank=True, help_text='其他部门名称')
+    api_token = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
     active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    # Django auth compatibility properties
+    is_authenticated = True
+    is_anonymous = False
+
+    def regenerate_token(self):
+        """Generate a new API token."""
+        self.api_token = uuid.uuid4()
+        self.save(update_fields=['api_token', 'updated_at'])
+
+    def get_department_display_name(self):
+        """Return department display name."""
+        if self.department == '其他' and self.department_other:
+            return self.department_other
+        return self.get_department_display()
+
     def __str__(self):
         return f"{self.full_name} ({self.employee_id})"
+
+
+class RegistrationRequest(models.Model):
+    """Registration request pending admin approval."""
+
+    STATUS_PENDING = 'pending'
+    STATUS_APPROVED = 'approved'
+    STATUS_REJECTED = 'rejected'
+
+    STATUS_CHOICES = [
+        (STATUS_PENDING, '待审批'),
+        (STATUS_APPROVED, '已批准'),
+        (STATUS_REJECTED, '已拒绝'),
+    ]
+
+    full_name = models.CharField(max_length=255)
+    phone = models.CharField(max_length=20)
+    department = models.CharField(max_length=20, choices=Worker.DEPARTMENT_CHOICES)
+    department_other = models.CharField(max_length=50, blank=True, help_text='其他部门名称')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_PENDING)
+    status_notes = models.TextField(blank=True, help_text='审批备注')
+    created_at = models.DateTimeField(auto_now_add=True)
+    processed_at = models.DateTimeField(null=True, blank=True)
+    processed_by = models.ForeignKey(
+        Worker, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='processed_registrations'
+    )
+    created_worker = models.OneToOneField(
+        Worker, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='registration_request'
+    )
+
+    def __str__(self):
+        return f"注册申请 - {self.full_name} ({self.get_status_display()})"
 
 
 class WorkOrder(models.Model):
@@ -71,10 +180,10 @@ class WorkOrder(models.Model):
     STATUS_CANCELED = 'canceled'
 
     STATUS_CHOICES = [
-        (STATUS_PENDING, 'Pending'),
-        (STATUS_IN_PROGRESS, 'In Progress'),
-        (STATUS_COMPLETED, 'Completed'),
-        (STATUS_CANCELED, 'Canceled'),
+        (STATUS_PENDING, '待处理'),
+        (STATUS_IN_PROGRESS, '进行中'),
+        (STATUS_COMPLETED, '已完成'),
+        (STATUS_CANCELED, '已取消'),
     ]
 
     zone = models.ForeignKey(Zone, on_delete=models.CASCADE, related_name='work_orders')
@@ -122,3 +231,148 @@ class WorkLog(models.Model):
 
     def __str__(self):
         return f"{self.work_type} by {self.worker.full_name} at {self.zone.name} ({self.work_timestamp})"
+
+
+class WeatherData(models.Model):
+    """Stores daily weather data with hourly forecasts in JSON format."""
+
+    latitude = models.DecimalField(max_digits=8, decimal_places=5)
+    longitude = models.DecimalField(max_digits=8, decimal_places=5)
+    date = models.DateField(db_index=True)
+    hourly_data = models.JSONField(default=list, help_text='Hourly weather data: [{hour, temp, humidity, precipitation, wind_speed, weather_code}]')
+    fetched_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ['latitude', 'longitude', 'date']
+        ordering = ['-date']
+
+    def __str__(self):
+        return f"Weather ({self.latitude}, {self.longitude}) - {self.date}"
+
+    def get_weather_description(self, code):
+        """Convert WMO weather code to description."""
+        codes = {
+            0: '晴朗',
+            1: '基本晴朗', 2: '部分多云', 3: '阴天',
+            45: '雾', 48: '冻雾',
+            51: '小毛毛雨', 53: '中毛毛雨', 55: '大毛毛雨',
+            61: '小雨', 63: '中雨', 65: '大雨',
+            71: '小雪', 73: '中雪', 75: '大雪',
+            80: '小阵雨', 81: '中阵雨', 82: '大阵雨',
+            95: '雷暴', 96: '雷暴伴小冰雹', 99: '雷暴伴大冰雹',
+        }
+        return codes.get(code, '未知')
+
+
+class RequestBase(models.Model):
+    """Base model for all request types."""
+
+    STATUS_SUBMITTED = 'submitted'
+    STATUS_APPROVED = 'approved'
+    STATUS_REJECTED = 'rejected'
+    STATUS_INFO_NEEDED = 'info_needed'
+
+    STATUS_CHOICES = [
+        (STATUS_SUBMITTED, '已提交'),
+        (STATUS_APPROVED, '已批准'),
+        (STATUS_REJECTED, '已拒绝'),
+        (STATUS_INFO_NEEDED, '需补充信息'),
+    ]
+
+    zone = models.ForeignKey(Zone, on_delete=models.CASCADE, related_name='%(class)s')
+    submitter = models.ForeignKey(Worker, on_delete=models.CASCADE)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_SUBMITTED)
+    status_notes = models.TextField(blank=True, help_text='管理员处理备注')
+    approver = models.ForeignKey(
+        Worker, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='%(class)s_approved', help_text='审批人'
+    )
+    processed_at = models.DateTimeField(null=True, blank=True, help_text='审批时间')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        abstract = True
+
+
+class MaintenanceRequest(RequestBase):
+    """维护与维修 request."""
+
+    submitter = models.ForeignKey(
+        Worker, on_delete=models.CASCADE, related_name='maintenance_requests'
+    )
+
+    date = models.DateField()
+    start_time = models.TimeField()
+    end_time = models.TimeField()
+    participants = models.CharField(max_length=255, help_text='参与人员，逗号分隔')
+    work_content = models.TextField(help_text='工作内容')
+    materials = models.TextField(blank=True, help_text='材料损耗')
+    feedback = models.TextField(blank=True, help_text='问题反馈')
+    photos = models.JSONField(default=list, help_text='照片URL列表')
+
+    class Meta:
+        db_table = 'maintenance_requests'
+
+    def __str__(self):
+        return f"维护维修 - {self.zone.name} ({self.date})"
+
+
+class ProjectSupportRequest(RequestBase):
+    """项目支持 request."""
+
+    submitter = models.ForeignKey(
+        Worker, on_delete=models.CASCADE, related_name='project_support_requests'
+    )
+
+    date = models.DateField()
+    start_time = models.TimeField()
+    end_time = models.TimeField()
+    participants = models.CharField(max_length=255, help_text='参与人员，逗号分隔')
+    work_content = models.TextField(help_text='工作内容')
+    materials = models.TextField(blank=True, help_text='材料损耗')
+    feedback = models.TextField(blank=True, help_text='问题反馈')
+    photos = models.JSONField(default=list, help_text='照片URL列表')
+
+    class Meta:
+        db_table = 'project_support_requests'
+
+    def __str__(self):
+        return f"项目支持 - {self.zone.name} ({self.date})"
+
+
+class WaterRequest(RequestBase):
+    """浇水协调需求 request."""
+
+    submitter = models.ForeignKey(
+        Worker, on_delete=models.CASCADE, related_name='water_requests'
+    )
+
+    USER_TYPE_CHOICES = [
+        ('ENT', 'ENT'),
+        ('FAM', 'FAM'),
+        ('FES', 'FES'),
+        ('其他', '其他'),
+    ]
+
+    REQUEST_TYPE_CHOICES = [
+        ('停水需求', '停水需求'),
+        ('新苗程序', '新苗程序'),
+        ('减小水量', '减小水量'),
+        ('加大水量', '加大水量'),
+        ('其他需求', '其他需求'),
+    ]
+
+    user_type = models.CharField(max_length=20, choices=USER_TYPE_CHOICES, default='ENT')
+    user_type_other = models.CharField(max_length=50, blank=True, help_text='其他用户类型')
+    request_type = models.CharField(max_length=20, choices=REQUEST_TYPE_CHOICES, default='停水需求')
+    request_type_other = models.CharField(max_length=50, blank=True, help_text='其他需求类别')
+    start_datetime = models.DateTimeField(help_text='需求起始时间')
+    end_datetime = models.DateTimeField(help_text='需求结束时间')
+    photos = models.JSONField(default=list, help_text='照片URL列表')
+
+    class Meta:
+        db_table = 'water_requests'
+
+    def __str__(self):
+        return f"浇水协调 - {self.zone.name} ({self.request_type})"

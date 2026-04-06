@@ -1,0 +1,94 @@
+{% extends 'core/base.html' %}
+
+{% load static %}
+
+{% block title %}系统设置 - 灌溉管理{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'css/settings.css' %}">
+{% endblock %}
+
+{% block content %}
+<div class="settings-container">
+    <div class="settings-header">
+        <div class="header-content">
+            <h1>系统设置</h1>
+            <p class="subtitle">管理灌溉区域和系统配置</p>
+        </div>
+        <a href="{% url 'core:zone_new' %}" class="btn btn-primary">
+            + 新建区域
+        </a>
+    </div>
+
+    {% if messages %}
+    <div class="messages">
+        {% for message in messages %}
+        <div class="message message-{{ message.tags }}">
+            {{ message }}
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <div class="settings-section">
+        <h2>灌溉区域</h2>
+        <p class="section-description">配置区域边界和位置信息</p>
+
+        {% if zones %}
+        <div class="zone-table-container">
+            <table class="zone-table">
+                <thead>
+                    <tr>
+                        <th>编号</th>
+                        <th>名称</th>
+                        <th>描述</th>
+                        <th>边界点数</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for zone in zones %}
+                    <tr>
+                        <td><code class="zone-code-cell">{{ zone.code }}</code></td>
+                        <td><strong>{{ zone.name }}</strong></td>
+                        <td>{{ zone.description|truncatechars:30 }}</td>
+                        <td class="points-cell">
+                            {{ zone.boundary_points|length }} 个点
+                        </td>
+                        <td class="actions-cell">
+                            <a href="{% url 'core:zone_edit' zone.id %}" class="btn btn-sm btn-secondary">
+                                编辑
+                            </a>
+                            <form action="{% url 'core:zone_delete' zone.id %}" method="post" class="inline-form" onsubmit="return confirm('确定要删除该区域吗？');">
+                                {% csrf_token %}
+                                <button type="submit" class="btn btn-sm btn-danger">删除</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="empty-state">
+            <p>暂无区域数据</p>
+            <a href="{% url 'core:zone_new' %}" class="btn btn-primary">创建第一个区域</a>
+        </div>
+        {% endif %}
+    </div>
+
+    <div class="settings-section">
+        <h2>系统信息</h2>
+        <div class="info-grid">
+            <div class="info-item">
+                <span class="info-label">区域总数</span>
+                <span class="info-value">{{ zones.count }}</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="back-link">
+        <a href="{% url 'core:dashboard' %}">← 返回总览</a>
+    </div>
+</div>
+{% endblock %}
