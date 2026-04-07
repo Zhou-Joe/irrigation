@@ -490,26 +490,37 @@ def register(request):
     if request.method == 'POST':
         full_name = request.POST.get('full_name', '').strip()
         phone = request.POST.get('phone', '').strip()
+        requested_role = request.POST.get('requested_role', 'field_worker').strip()
+        employee_id = request.POST.get('employee_id', '').strip()
         department = request.POST.get('department', '')
         department_other = request.POST.get('department_other', '').strip()
+
+        # Valid role choices
+        valid_roles = ['field_worker', 'dept_user', 'manager']
 
         # Validation
         if not full_name:
             messages.error(request, '请输入姓名')
         elif not phone:
             messages.error(request, '请输入手机号')
+        elif not requested_role or requested_role not in valid_roles:
+            messages.error(request, '请选择有效的角色')
         elif not department:
             messages.error(request, '请选择部门')
         elif department == '其他' and not department_other:
             messages.error(request, '请输入其他部门名称')
         elif RegistrationRequest.objects.filter(phone=phone, status='pending').exists():
             messages.error(request, '该手机号已有待审批的注册申请')
+        elif employee_id and RegistrationRequest.objects.filter(employee_id=employee_id, status='pending').exists():
+            messages.error(request, '该工号已有待审批的注册申请')
         else:
             RegistrationRequest.objects.create(
                 full_name=full_name,
                 phone=phone,
                 department=department,
-                department_other=department_other if department == '其他' else ''
+                department_other=department_other if department == '其他' else '',
+                requested_role=requested_role,
+                employee_id=employee_id
             )
             messages.success(request, '注册申请已提交，请等待管理员审批')
             return redirect('core:register')
