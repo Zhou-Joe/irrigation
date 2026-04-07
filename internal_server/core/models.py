@@ -5,6 +5,20 @@ from django.utils import timezone
 from datetime import date
 
 
+# Role constants
+ROLE_SUPER_ADMIN = 'super_admin'
+ROLE_MANAGER = 'manager'
+ROLE_FIELD_WORKER = 'field_worker'
+ROLE_DEPT_USER = 'dept_user'
+
+ROLE_CHOICES = [
+    (ROLE_SUPER_ADMIN, '超级管理员'),
+    (ROLE_MANAGER, '管理员'),
+    (ROLE_FIELD_WORKER, '现场工作人员'),
+    (ROLE_DEPT_USER, '部门用户'),
+]
+
+
 class Zone(models.Model):
     """Represents a work zone with boundary points and status tracking."""
 
@@ -233,6 +247,12 @@ class RegistrationRequest(models.Model):
     phone = models.CharField(max_length=20)
     department = models.CharField(max_length=20, choices=Worker.DEPARTMENT_CHOICES)
     department_other = models.CharField(max_length=50, blank=True, help_text='其他部门名称')
+    requested_role = models.CharField(
+        max_length=20,
+        choices=ROLE_CHOICES,
+        default=ROLE_FIELD_WORKER
+    )
+    employee_id = models.CharField(max_length=50, blank=True, help_text='申请时填写的工号，留空则自动生成')
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_PENDING)
     status_notes = models.TextField(blank=True, help_text='审批备注')
     created_at = models.DateTimeField(auto_now_add=True)
@@ -245,9 +265,17 @@ class RegistrationRequest(models.Model):
         Worker, on_delete=models.SET_NULL, null=True, blank=True,
         related_name='registration_request'
     )
+    created_user = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='registration_request'
+    )
+
+    class Meta:
+        verbose_name = '注册申请'
+        verbose_name_plural = '注册申请'
 
     def __str__(self):
-        return f"注册申请 - {self.full_name} ({self.get_status_display()})"
+        return f"注册申请 - {self.full_name} ({self.get_requested_role_display()})"
 
 
 class WorkOrder(models.Model):
