@@ -10,11 +10,11 @@ class RegistrationRequestAdmin(admin.ModelAdmin):
     list_display = ('full_name', 'phone', 'department_display', 'requested_role_display', 'status', 'created_at', 'processed_at')
     list_filter = ('status', 'requested_role', 'department', 'created_at')
     search_fields = ('full_name', 'phone', 'employee_id')
-    readonly_fields = ('created_at', 'processed_at', 'processed_by', 'created_worker', 'created_user')
+    readonly_fields = ('created_at', 'processed_at', 'processed_by', 'created_user', 'username')
     actions = ['approve_requests', 'reject_requests']
     fieldsets = (
         ('申请人信息', {
-            'fields': ('full_name', 'phone', 'department', 'department_other', 'employee_id')
+            'fields': ('full_name', 'phone', 'username', 'department', 'department_other', 'employee_id')
         }),
         ('角色申请', {
             'fields': ('requested_role', 'status_notes')
@@ -23,7 +23,7 @@ class RegistrationRequestAdmin(admin.ModelAdmin):
             'fields': ('status', 'processed_at', 'processed_by')
         }),
         ('创建记录', {
-            'fields': ('created_worker', 'created_user', 'created_at'),
+            'fields': ('created_user', 'created_at'),
             'classes': ('collapse',)
         }),
     )
@@ -44,30 +44,14 @@ class RegistrationRequestAdmin(admin.ModelAdmin):
         for reg in queryset.filter(status='pending'):
             role = reg.requested_role
 
-            # Generate employee ID based on role
-            if role == ROLE_MANAGER:
-                prefix = 'ADM'
-                last_profile = ManagerProfile.objects.order_by('-id').first()
-                next_num = (int(last_profile.employee_id.replace('ADM', '')) + 1) if last_profile else 1
-            elif role == ROLE_DEPT_USER:
-                prefix = 'DEPT'
-                last_profile = DepartmentUserProfile.objects.order_by('-id').first()
-                next_num = (int(last_profile.employee_id.replace('DEPT', '')) + 1) if last_profile else 1
-            else:
-                prefix = 'EMP'
-                last_worker = Worker.objects.order_by('-id').first()
-                next_num = (int(last_worker.employee_id.replace('EMP', '')) + 1) if last_worker else 1
-
+            # Use submitted username (generate employee_id for profile only)
             employee_id = f'{prefix}{next_num:03d}'
+            username = reg.username
 
-            # Generate random password
-            import secrets
-            password = secrets.token_urlsafe(12)
-
-            # Create Django User
+            # Create Django User with submitted credentials
             user = User.objects.create_user(
-                username=employee_id,
-                password=password,
+                username=username,
+                password=reg.password,  # Already hashed during submission
                 first_name=reg.full_name
             )
 
@@ -80,7 +64,6 @@ class RegistrationRequestAdmin(admin.ModelAdmin):
                     phone=reg.phone,
                     active=True
                 )
-                created_profile = profile
             elif role == ROLE_DEPT_USER:
                 profile = DepartmentUserProfile.objects.create(
                     user=user,
@@ -91,9 +74,8 @@ class RegistrationRequestAdmin(admin.ModelAdmin):
                     department_other=reg.department_other,
                     active=True
                 )
-                created_profile = profile
             else:
-                worker = Worker.objects.create(
+                profile = Worker.objects.create(
                     user=user,
                     employee_id=employee_id,
                     full_name=reg.full_name,
@@ -102,17 +84,16 @@ class RegistrationRequestAdmin(admin.ModelAdmin):
                     department_other=reg.department_other,
                     active=True
                 )
-                created_profile = worker
 
             # Update registration request
             reg.status = 'approved'
+            reg.employee_id = employee_id  # Store generated employee_id
             reg.processed_at = timezone.now()
             reg.processed_by = get_worker_profile(request.user)
-            reg.created_worker = created_profile if role == ROLE_FIELD_WORKER else None
             reg.created_user = user
             reg.save()
 
-            self.message_user(request, f'已批准 {reg.full_name} 的注册申请，工号：{employee_id}')
+            self.message_user(request, f'已批准 {reg.full_name} 的注册申请，用户名：{username}，工号：{employee_id}')
     approve_requests.short_description = '批准选中的注册申请'
 
     def reject_requests(self, request, queryset):

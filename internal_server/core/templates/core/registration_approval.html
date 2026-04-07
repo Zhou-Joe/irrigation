@@ -354,10 +354,22 @@
                 <div class="request-info">
                     <h3>{{ request.full_name }}</h3>
                     <div class="meta">
+                        <span class="role-badge {{ request.requested_role }}">{{ request.get_requested_role_display }}</span>
+                        {% if request.department %}
+                        <span>部门: {% if request.department == '其他' %}{{ request.department_other }}{% else %}{{ request.department }}{% endif %}</span>
+                        {% endif %}
                         <span>📱 {{ request.phone }}</span>
-                        <span>📅 {{ request.created_at|date:"Y-m-d H:i" }}</span>
+                        {% if request.username %}
+                        <span>👤 {{ request.username }}</span>
+                        {% endif %}
+                    </div>
+                    <div class="meta" style="margin-top: 4px;">
+                        <span>📅 申请时间: {{ request.created_at|date:"Y-m-d H:i" }}</span>
                         {% if request.processed_at %}
-                        <span>✓ {{ request.processed_at|date:"Y-m-d H:i" }}</span>
+                        <span>✓ 处理时间: {{ request.processed_at|date:"Y-m-d H:i" }}</span>
+                        {% endif %}
+                        {% if request.employee_id %}
+                        <span>工号: {{ request.employee_id }}</span>
                         {% endif %}
                     </div>
                 </div>
@@ -367,28 +379,8 @@
             </div>
 
             <div class="request-details">
-                <div class="detail-item">
-                    <span class="label">申请角色</span>
-                    <span class="value">
-                        <span class="role-badge {{ request.requested_role }}">
-                            {{ request.get_requested_role_display }}
-                        </span>
-                    </span>
-                </div>
-                {% if request.department %}
-                <div class="detail-item">
-                    <span class="label">所属部门</span>
-                    <span class="value">
-                        {% if request.department == '其他' %}
-                            {{ request.department_other }}
-                        {% else %}
-                            {{ request.department }}
-                        {% endif %}
-                    </span>
-                </div>
-                {% endif %}
                 {% if request.status_notes %}
-                <div class="detail-item">
+                <div class="detail-item" style="grid-column: 1 / -1;">
                     <span class="label">审批备注</span>
                     <span class="value">{{ request.status_notes }}</span>
                 </div>

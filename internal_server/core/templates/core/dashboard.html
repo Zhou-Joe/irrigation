@@ -7,10 +7,258 @@
 {% block extra_css %}
 <!-- Leaflet CSS -->
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<style>
+/* View Toggle */
+.view-toggle {
+    position: absolute;
+    top: var(--space-md);
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 1000;
+    display: flex;
+    background: var(--color-surface);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-md);
+    overflow: hidden;
+}
+
+.view-toggle button {
+    padding: var(--space-sm) var(--space-lg);
+    border: none;
+    background: transparent;
+    color: var(--color-text-secondary);
+    font-weight: 500;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+
+.view-toggle button:hover {
+    background: var(--color-surface-dark);
+}
+
+.view-toggle button.active {
+    background: var(--color-primary);
+    color: white;
+}
+
+/* Dashboard View */
+.dashboard-view {
+    display: none;
+    padding: var(--space-xl);
+    max-width: 1400px;
+    margin: 0 auto;
+}
+
+.dashboard-view.show {
+    display: block;
+}
+
+.dashboard-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: var(--space-xl);
+}
+
+.dashboard-header h1 {
+    font-family: var(--font-display);
+    font-size: 1.75rem;
+    color: var(--color-primary);
+}
+
+/* Stats Grid */
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: var(--space-lg);
+    margin-bottom: var(--space-xl);
+}
+
+.stat-card {
+    background: var(--color-surface);
+    border-radius: var(--radius-lg);
+    padding: var(--space-lg);
+    box-shadow: var(--shadow-sm);
+}
+
+.stat-card .stat-icon {
+    font-size: 2rem;
+    margin-bottom: var(--space-sm);
+}
+
+.stat-card .stat-value {
+    font-size: 2rem;
+    font-weight: 700;
+    color: var(--color-primary);
+}
+
+.stat-card .stat-label {
+    color: var(--color-text-muted);
+    font-size: 0.875rem;
+}
+
+/* Charts Section */
+.charts-section {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+    gap: var(--space-xl);
+    margin-bottom: var(--space-xl);
+}
+
+.chart-card {
+    background: var(--color-surface);
+    border-radius: var(--radius-lg);
+    padding: var(--space-lg);
+    box-shadow: var(--shadow-sm);
+}
+
+.chart-card h3 {
+    font-size: 1rem;
+    color: var(--color-text-primary);
+    margin-bottom: var(--space-lg);
+    padding-bottom: var(--space-sm);
+    border-bottom: 1px solid var(--color-surface-dark);
+}
+
+.chart-container {
+    position: relative;
+    height: 250px;
+}
+
+/* Zone Status Table */
+.zone-table-section {
+    background: var(--color-surface);
+    border-radius: var(--radius-lg);
+    padding: var(--space-lg);
+    box-shadow: var(--shadow-sm);
+    margin-bottom: var(--space-xl);
+}
+
+.zone-table-section h3 {
+    font-size: 1rem;
+    color: var(--color-text-primary);
+    margin-bottom: var(--space-lg);
+    padding-bottom: var(--space-sm);
+    border-bottom: 1px solid var(--color-surface-dark);
+}
+
+.zone-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.zone-table th,
+.zone-table td {
+    padding: var(--space-sm) var(--space-md);
+    text-align: left;
+    border-bottom: 1px solid var(--color-surface-dark);
+}
+
+.zone-table th {
+    font-weight: 600;
+    color: var(--color-text-secondary);
+    font-size: 0.75rem;
+    text-transform: uppercase;
+}
+
+.zone-table td {
+    font-size: 0.875rem;
+    color: var(--color-text-primary);
+}
+
+.zone-table tr:hover {
+    background: var(--color-surface-dark);
+}
+
+/* Activity List */
+.activity-section {
+    background: var(--color-surface);
+    border-radius: var(--radius-lg);
+    padding: var(--space-lg);
+    box-shadow: var(--shadow-sm);
+}
+
+.activity-section h3 {
+    font-size: 1rem;
+    color: var(--color-text-primary);
+    margin-bottom: var(--space-lg);
+    padding-bottom: var(--space-sm);
+    border-bottom: 1px solid var(--color-surface-dark);
+}
+
+.activity-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-sm);
+}
+
+.activity-item {
+    display: flex;
+    align-items: center;
+    gap: var(--space-md);
+    padding: var(--space-sm);
+    border-radius: var(--radius-md);
+    transition: background var(--transition-fast);
+}
+
+.activity-item:hover {
+    background: var(--color-surface-dark);
+}
+
+.activity-icon {
+    width: 32px;
+    height: 32px;
+    border-radius: var(--radius-md);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1rem;
+}
+
+.activity-icon.maintenance {
+    background: rgba(64, 145, 108, 0.15);
+}
+
+.activity-icon.water {
+    background: rgba(45, 106, 79, 0.15);
+}
+
+.activity-content {
+    flex: 1;
+}
+
+.activity-title {
+    font-size: 0.875rem;
+    color: var(--color-text-primary);
+}
+
+.activity-meta {
+    font-size: 0.75rem;
+    color: var(--color-text-muted);
+}
+
+.activity-status {
+    font-size: 0.75rem;
+    padding: 2px 8px;
+    border-radius: var(--radius-full);
+}
+
+/* Hide map container when dashboard view is active */
+.dashboard-container.hide {
+    display: none;
+}
+</style>
 {% endblock %}
 
 {% block content %}
-<div class="dashboard-container">
+<!-- View Toggle -->
+<div class="view-toggle">
+    <button id="mapViewBtn" class="active" onclick="switchView('map')">🗺️ 地图视图</button>
+    <button id="dashboardViewBtn" onclick="switchView('dashboard')">📊 数据面板</button>
+</div>
+
+<!-- Map View Container -->
+<div class="dashboard-container" id="mapContainer">
     <!-- 侧边栏 -->
     <aside class="sidebar">
         <div class="sidebar-header">
@@ -72,40 +320,106 @@
     <!-- 地图容器 -->
     <main class="map-container">
         <div id="map"></div>
-
-        <!-- 通知中心 -->
-        {% if user.is_authenticated and notification_count > 0 %}
-        <div class="notification-center">
-            <button class="notification-toggle" onclick="toggleNotifications()">
-                通知
-                <span class="notification-badge">{{ notification_count }}</span>
-            </button>
-            <div class="notification-dropdown" id="notificationDropdown">
-                <div class="notification-header">
-                    <span>待处理通知</span>
-                    <span>{{ notification_count }} 条</span>
-                </div>
-                <div class="notification-list">
-                    {% for item in notifications_list %}
-                    <div class="notification-item" onclick="window.location.href='{{ item.url }}'">
-                        <div class="notification-item-title">
-                            <span class="notification-icon {{ item.type }}">
-                                
-                            </span>
-                            {{ item.title }}
-                        </div>
-                        <div class="notification-item-desc">{{ item.description }}</div>
-                        <div class="notification-item-time">{{ item.created_at|date:"m-d H:i" }}</div>
-                    </div>
-                    {% endfor %}
-                </div>
-            </div>
-        </div>
-        {% endif %}
     </main>
 </div>
 
-<!-- 区域数据 -->
+<!-- Dashboard View -->
+<div class="dashboard-view" id="dashboardView">
+    <div class="dashboard-header">
+        <h1>📊 数据面板</h1>
+    </div>
+
+    <!-- Stats Grid -->
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-icon">🌿</div>
+            <div class="stat-value">{{ total_zones }}</div>
+            <div class="stat-label">灌溉区域</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-icon">🌱</div>
+            <div class="stat-value">{{ total_plants }}</div>
+            <div class="stat-label">植物种类</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-icon">✅</div>
+            <div class="stat-value">{{ status_distribution.completed }}</div>
+            <div class="stat-label">今日已完成</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-icon">⏳</div>
+            <div class="stat-value">{{ status_distribution.in_progress }}</div>
+            <div class="stat-label">处理中</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-icon">📋</div>
+            <div class="stat-value">{{ status_distribution.unarranged }}</div>
+            <div class="stat-label">未安排</div>
+        </div>
+    </div>
+
+    <!-- Charts Section -->
+    <div class="charts-section">
+        <div class="chart-card">
+            <h3>区域状态分布</h3>
+            <div class="chart-container">
+                <canvas id="statusChart"></canvas>
+            </div>
+        </div>
+        <div class="chart-card">
+            <h3>工单类型统计</h3>
+            <div class="chart-container">
+                <canvas id="requestTypeChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <!-- Zone Status Table -->
+    <div class="zone-table-section">
+        <h3>区域状态列表</h3>
+        <table class="zone-table">
+            <thead>
+                <tr>
+                    <th>编号</th>
+                    <th>名称</th>
+                    <th>状态</th>
+                    <th>植物数</th>
+                    <th>维护记录</th>
+                    <th>浇水需求</th>
+                    <th>项目支持</th>
+                </tr>
+            </thead>
+            <tbody id="zoneTableBody">
+                <!-- Populated by JavaScript -->
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Recent Activity -->
+    <div class="activity-section">
+        <h3>近期活动</h3>
+        <div class="activity-list" id="activityList">
+            {% for activity in recent_activity %}
+            <div class="activity-item">
+                <div class="activity-icon {{ activity.type }}">
+                    {% if activity.type == 'maintenance' %}🔧{% elif activity.type == 'water' %}💧{% endif %}
+                </div>
+                <div class="activity-content">
+                    <div class="activity-title">{{ activity.type_display }} - {{ activity.zone }}</div>
+                    <div class="activity-meta">{{ activity.date }}</div>
+                </div>
+                <span class="activity-status status-badge status-{{ activity.status|lower }}">{{ activity.status }}</span>
+            </div>
+            {% empty %}
+            <div style="color: var(--color-text-muted); text-align: center; padding: var(--space-lg);">
+                暂无近期活动
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+
+<!-- Zone data for JavaScript -->
 <script id="zones-data" type="application/json">
     {{ zones_json|safe }}
 </script>
@@ -114,23 +428,163 @@
 {% block extra_js %}
 <!-- Leaflet JS -->
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<!-- Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <!-- Map Config -->
 <script src="{% static 'js/map-config.js' %}"></script>
 <!-- Custom Map JS -->
 <script src="{% static 'js/map.js' %}"></script>
-<!-- Notification Center -->
+<!-- Dashboard JS -->
 <script>
-function toggleNotifications() {
-    const dropdown = document.getElementById('notificationDropdown');
-    dropdown.classList.toggle('show');
-}
+// Zone data from server
+let zonesData = [];
 
-// Close dropdown when clicking outside
-document.addEventListener('click', function(event) {
-    const center = document.querySelector('.notification-center');
-    if (center && !center.contains(event.target)) {
-        document.getElementById('notificationDropdown').classList.remove('show');
+// Initialize
+document.addEventListener('DOMContentLoaded', function() {
+    const dataEl = document.getElementById('zones-data');
+    if (dataEl) {
+        zonesData = JSON.parse(dataEl.textContent);
     }
 });
+
+// View switching
+function switchView(view) {
+    const mapContainer = document.getElementById('mapContainer');
+    const dashboardView = document.getElementById('dashboardView');
+    const mapBtn = document.getElementById('mapViewBtn');
+    const dashBtn = document.getElementById('dashboardViewBtn');
+
+    if (view === 'map') {
+        mapContainer.classList.remove('hide');
+        dashboardView.classList.remove('show');
+        mapBtn.classList.add('active');
+        dashBtn.classList.remove('active');
+    } else {
+        mapContainer.classList.add('hide');
+        dashboardView.classList.add('show');
+        mapBtn.classList.remove('active');
+        dashBtn.classList.add('active');
+        initDashboardView();
+    }
+}
+
+// Dashboard view initialization
+let statusChartInstance = null;
+let requestTypeChartInstance = null;
+
+function initDashboardView() {
+    initStatusChart();
+    initRequestTypeChart();
+    populateZoneTable();
+}
+
+function initStatusChart() {
+    const ctx = document.getElementById('statusChart');
+    if (!ctx) return;
+
+    if (statusChartInstance) {
+        statusChartInstance.destroy();
+    }
+
+    const data = {{ status_distribution|safe }};
+
+    statusChartInstance = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+            labels: ['已完成', '处理中', '未安排', '已取消', '已延期'],
+            datasets: [{
+                data: [data.completed || 0, data.in_progress || 0, data.unarranged || 0, data.canceled || 0, data.delayed || 0],
+                backgroundColor: [
+                    '#40916C',
+                    '#CC7722',
+                    '#888888',
+                    '#9B2226',
+                    '#7B5544'
+                ],
+                borderWidth: 0
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'bottom'
+                }
+            }
+        }
+    });
+}
+
+function initRequestTypeChart() {
+    const ctx = document.getElementById('requestTypeChart');
+    if (!ctx) return;
+
+    if (requestTypeChartInstance) {
+        requestTypeChartInstance.destroy();
+    }
+
+    // Calculate totals from zonesData
+    let totalMaintenance = 0;
+    let totalWater = 0;
+    let totalProject = 0;
+
+    zonesData.forEach(zone => {
+        totalMaintenance += zone.maintenance_count || 0;
+        totalWater += zone.water_count || 0;
+        totalProject += zone.project_count || 0;
+    });
+
+    requestTypeChartInstance = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: ['维护维修', '浇水协调', '项目支持'],
+            datasets: [{
+                label: '记录数',
+                data: [totalMaintenance, totalWater, totalProject],
+                backgroundColor: [
+                    '#40916C',
+                    '#2D6A4F',
+                    '#52B788'
+                ],
+                borderRadius: 4
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    display: false
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        stepSize: 1
+                    }
+                }
+            }
+        }
+    });
+}
+
+function populateZoneTable() {
+    const tbody = document.getElementById('zoneTableBody');
+    if (!tbody || !zonesData.length) return;
+
+    tbody.innerHTML = zonesData.map(zone => `
+        <tr>
+            <td>${zone.code}</td>
+            <td>${zone.name}</td>
+            <td><span class="status-badge status-${zone.status}">${zone.statusDisplay}</span></td>
+            <td>${zone.plant_count || 0}</td>
+            <td>${zone.maintenance_count || 0}</td>
+            <td>${zone.water_count || 0}</td>
+            <td>${zone.project_count || 0}</td>
+        </tr>
+    `).join('');
+}
 </script>
 {% endblock %}

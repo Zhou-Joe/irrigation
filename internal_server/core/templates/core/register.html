@@ -196,7 +196,7 @@
         {% endif %}
 
         <div class="info-box">
-            <strong>提示：</strong>提交注册申请后，管理员将审核您的信息。审批通过后，您将收到员工编号和登录凭证。
+            <strong>提示：</strong>请设置您的登录用户名和密码。提交注册申请后，管理员将审核您的信息。审批通过后，即可使用您设置的账户登录。
         </div>
 
         <form method="post">
@@ -204,6 +204,16 @@
             <div class="form-group">
                 <label for="full_name">姓名 *</label>
                 <input type="text" id="full_name" name="full_name" placeholder="请输入您的姓名" required>
+            </div>
+
+            <div class="form-group">
+                <label for="username">登录用户名 *</label>
+                <input type="text" id="username" name="username" placeholder="请输入登录用户名（唯一）" required minlength="3" maxlength="150">
+            </div>
+
+            <div class="form-group">
+                <label for="password">登录密码 *</label>
+                <input type="password" id="password" name="password" placeholder="请输入登录密码" required minlength="6">
             </div>
 
             <div class="form-group">
