@@ -657,16 +657,29 @@ def update_request_status(request, type_code, request_id):
 def register(request):
     """
     User registration page - submit request for admin approval.
+
+    Department type determines role:
+    - 园艺一线 (field_worker) → Field Worker
+    - 园艺经理 (manager) → Manager
+    - 其他部门 (dept_user) → Department User (requires sub-department selection)
     """
     from core.models import RegistrationRequest, ROLE_FIELD_WORKER, ROLE_DEPT_USER, ROLE_MANAGER
 
     if request.method == 'POST':
         full_name = request.POST.get('full_name', '').strip()
         phone = request.POST.get('phone', '').strip()
+        department_type = request.POST.get('department_type', '').strip()
         requested_role = request.POST.get('requested_role', ROLE_FIELD_WORKER).strip()
-        employee_id = request.POST.get('employee_id', '').strip()
-        department = request.POST.get('department', '')
+        department = request.POST.get('department', '').strip()
         department_other = request.POST.get('department_other', '').strip()
+
+        # Map department_type to role if needed
+        if department_type == 'field_worker':
+            requested_role = ROLE_FIELD_WORKER
+        elif department_type == 'manager':
+            requested_role = ROLE_MANAGER
+        elif department_type == 'dept_user':
+            requested_role = ROLE_DEPT_USER
 
         # Valid role choices
         valid_roles = [ROLE_FIELD_WORKER, ROLE_DEPT_USER, ROLE_MANAGER]
@@ -676,24 +689,28 @@ def register(request):
             messages.error(request, '请输入姓名')
         elif not phone:
             messages.error(request, '请输入手机号')
-        elif not requested_role or requested_role not in valid_roles:
-            messages.error(request, '请选择有效的角色')
-        elif not department:
+        elif not department_type:
             messages.error(request, '请选择部门')
+        elif requested_role not in valid_roles:
+            messages.error(request, '请选择有效的角色')
+        elif department_type == 'dept_user' and not department:
+            messages.error(request, '请选择所属部门')
         elif department == '其他' and not department_other:
             messages.error(request, '请输入其他部门名称')
         elif RegistrationRequest.objects.filter(phone=phone, status='pending').exists():
             messages.error(request, '该手机号已有待审批的注册申请')
-        elif employee_id and RegistrationRequest.objects.filter(employee_id=employee_id, status='pending').exists():
-            messages.error(request, '该工号已有待审批的注册申请')
         else:
+            # For non-dept users, clear department info
+            if department_type != 'dept_user':
+                department = ''
+                department_other = ''
+
             RegistrationRequest.objects.create(
                 full_name=full_name,
                 phone=phone,
                 department=department,
                 department_other=department_other if department == '其他' else '',
                 requested_role=requested_role,
-                employee_id=employee_id
             )
             messages.success(request, '注册申请已提交，请等待管理员审批')
             return redirect('core:register')
