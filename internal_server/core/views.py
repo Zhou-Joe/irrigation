@@ -77,7 +77,8 @@ def dashboard(request):
     """
     Main dashboard view with interactive map showing irrigation zones.
     """
-    from datetime import date
+    from datetime import date, timedelta
+    from django.db.models.functions import TruncDate
     from core.models import (
         MaintenanceRequest, ProjectSupportRequest, WaterRequest,
         ManagerProfile, DepartmentUserProfile, RegistrationRequest, WorkOrder, Worker
@@ -85,6 +86,7 @@ def dashboard(request):
 
     user = request.user
     today = date.today()
+    week_ago = today - timedelta(days=7)
 
     # Determine user role
     is_admin = user.is_superuser or user.is_staff
@@ -124,7 +126,7 @@ def dashboard(request):
         )
     )
 
-    # Prepare zones data for template with center coordinates
+    # Prepare zones data for template with center coordinates and detailed info
     zones_list = []
     for zone in zones:
         center = get_zone_center(zone.boundary_points)
@@ -146,6 +148,28 @@ def dashboard(request):
                 'type_display': '浇水协调',
             })
 
+        # Get detailed zone info for cards
+        # Recent maintenance requests (last 7 days)
+        recent_maintenance = MaintenanceRequest.objects.filter(
+            zone=zone,
+            date__gte=week_ago
+        ).order_by('-date')[:3]
+
+        # Recent water requests
+        recent_water = WaterRequest.objects.filter(
+            zone=zone
+        ).order_by('-created_at')[:3]
+
+        # Recent project support
+        recent_project = ProjectSupportRequest.objects.filter(
+            zone=zone
+        ).order_by('-created_at')[:3]
+
+        # Counts for summary
+        maintenance_count = MaintenanceRequest.objects.filter(zone=zone).count()
+        water_count = WaterRequest.objects.filter(zone=zone).count()
+        project_count = ProjectSupportRequest.objects.filter(zone=zone).count()
+
         zones_list.append({
             'id': zone.id,
             'code': zone.code,
@@ -159,6 +183,38 @@ def dashboard(request):
             'pending_work_orders': zone.pending_work_orders or 0,
             'center': center,
             'pending_requests': pending_requests,
+            # Detailed info for cards
+            'maintenance_count': maintenance_count,
+            'water_count': water_count,
+            'project_count': project_count,
+            'recent_maintenance': [
+                {
+                    'id': m.id,
+                    'date': m.date.strftime('%Y-%m-%d'),
+                    'status': m.status,
+                    'status_display': m.get_status_display(),
+                    'work_content': m.work_content[:50] + '...' if len(m.work_content) > 50 else m.work_content,
+                } for m in recent_maintenance
+            ],
+            'recent_water': [
+                {
+                    'id': w.id,
+                    'type': w.get_request_type_display(),
+                    'status': w.status,
+                    'status_display': w.get_status_display(),
+                    'start': w.start_datetime.strftime('%m-%d %H:%M'),
+                    'end': w.end_datetime.strftime('%m-%d %H:%M'),
+                } for w in recent_water
+            ],
+            'recent_project': [
+                {
+                    'id': p.id,
+                    'date': p.date.strftime('%Y-%m-%d'),
+                    'status': p.status,
+                    'status_display': p.get_status_display(),
+                    'work_content': p.work_content[:50] + '...' if len(p.work_content) > 50 else p.work_content,
+                } for p in recent_project
+            ],
         })
 
     # Only admins see pending counts
@@ -172,6 +228,38 @@ def dashboard(request):
             'water': WaterRequest.objects.filter(status='submitted').count(),
         }
 
+    # Dashboard statistics
+    status_distribution = {
+        'unarranged': sum(1 for z in zones_list if z['status'] == 'unarranged'),
+        'in_progress': sum(1 for z in zones_list if z['status'] == 'in_progress'),
+        'completed': sum(1 for z in zones_list if z['status'] == 'completed'),
+        'canceled': sum(1 for z in zones_list if z['status'] == 'canceled'),
+        'delayed': sum(1 for z in zones_list if z['status'] == 'delayed'),
+    }
+
+    # Recent activity (last 7 days)
+    recent_activity = []
+    for req in MaintenanceRequest.objects.filter(created_at__date__gte=week_ago).order_by('-created_at')[:5]:
+        recent_activity.append({
+            'type': 'maintenance',
+            'type_display': '维护维修',
+            'zone': req.zone.name,
+            'date': req.created_at.strftime('%m-%d %H:%M'),
+            'status': req.get_status_display(),
+        })
+    for req in WaterRequest.objects.filter(created_at__date__gte=week_ago).order_by('-created_at')[:5]:
+        recent_activity.append({
+            'type': 'water',
+            'type_display': '浇水协调',
+            'zone': req.zone.name,
+            'date': req.created_at.strftime('%m-%d %H:%M'),
+            'status': req.get_status_display(),
+        })
+
+    # Sort by date
+    recent_activity.sort(key=lambda x: x['date'], reverse=True)
+    recent_activity = recent_activity[:10]
+
     context = {
         'zones': zones,
         'zones_json': json.dumps(zones_list),
@@ -180,6 +268,10 @@ def dashboard(request):
         'is_dept_user': is_dept_user,
         'is_field_worker': is_field_worker,
         'pending_counts': pending_counts,
+        'status_distribution': status_distribution,
+        'recent_activity': recent_activity,
+        'total_zones': len(zones_list),
+        'total_plants': sum(z['plant_count'] for z in zones_list),
     }
 
     return render(request, 'core/dashboard.html', context)
@@ -665,9 +757,13 @@ def register(request):
     - 其他部门 (dept_user) → Department User (requires sub-department selection)
     """
     from core.models import RegistrationRequest, ROLE_FIELD_WORKER, ROLE_DEPT_USER, ROLE_MANAGER
+    from django.contrib.auth.hashers import make_password
+    from django.contrib.auth.models import User
 
     if request.method == 'POST':
         full_name = request.POST.get('full_name', '').strip()
+        username = request.POST.get('username', '').strip()
+        password = request.POST.get('password', '').strip()
         phone = request.POST.get('phone', '').strip()
         department_type = request.POST.get('department_type', '').strip()
         requested_role = request.POST.get('requested_role', ROLE_FIELD_WORKER).strip()
@@ -688,6 +784,16 @@ def register(request):
         # Validation
         if not full_name:
             messages.error(request, '请输入姓名')
+        elif not username:
+            messages.error(request, '请输入用户名')
+        elif len(username) < 3:
+            messages.error(request, '用户名至少需要3个字符')
+        elif User.objects.filter(username=username).exists():
+            messages.error(request, '该用户名已存在')
+        elif not password:
+            messages.error(request, '请输入密码')
+        elif len(password) < 6:
+            messages.error(request, '密码至少需要6个字符')
         elif not phone:
             messages.error(request, '请输入手机号')
         elif not department_type:
@@ -698,6 +804,8 @@ def register(request):
             messages.error(request, '请选择所属部门')
         elif department == '其他' and not department_other:
             messages.error(request, '请输入其他部门名称')
+        elif RegistrationRequest.objects.filter(username=username).exists():
+            messages.error(request, '该用户名已有待审批的注册申请')
         elif RegistrationRequest.objects.filter(phone=phone, status='pending').exists():
             messages.error(request, '该手机号已有待审批的注册申请')
         else:
@@ -708,6 +816,8 @@ def register(request):
 
             RegistrationRequest.objects.create(
                 full_name=full_name,
+                username=username,
+                password=make_password(password),  # Hash the password
                 phone=phone,
                 department=department,
                 department_other=department_other if department == '其他' else '',
@@ -724,16 +834,14 @@ def registration_approval(request):
     """
     Registration approval page for admins/managers.
     Shows pending registration requests with approve/reject actions.
+    Uses applicant-submitted username and password.
     """
-    from django.contrib.auth.hashers import make_password
     from django.contrib.auth.models import User
     from core.models import (
         RegistrationRequest, ManagerProfile, DepartmentUserProfile, Worker,
         ROLE_MANAGER, ROLE_FIELD_WORKER, ROLE_DEPT_USER
     )
     from core.role_utils import is_admin
-    import secrets
-    import string
 
     # Check admin permission
     if not is_admin(request.user):
@@ -750,30 +858,28 @@ def registration_approval(request):
             reg = RegistrationRequest.objects.get(pk=request_id, status='pending')
 
             if action == 'approve':
-                # Generate password
-                password = ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(12))
+                # Use submitted username and password
+                username = reg.username
+                password = reg.password  # Already hashed during submission
 
-                # Generate employee_id if not set
-                employee_id = reg.employee_id
-                if not employee_id:
-                    if reg.requested_role == ROLE_MANAGER:
-                        prefix = 'ADM'
-                        last = ManagerProfile.objects.order_by('-id').first()
-                    elif reg.requested_role == ROLE_DEPT_USER:
-                        prefix = 'DEPT'
-                        last = DepartmentUserProfile.objects.order_by('-id').first()
-                    else:
-                        prefix = 'EMP'
-                        last = Worker.objects.order_by('-id').first()
+                # Generate employee_id
+                if reg.requested_role == ROLE_MANAGER:
+                    prefix = 'ADM'
+                    last = ManagerProfile.objects.order_by('-id').first()
+                elif reg.requested_role == ROLE_DEPT_USER:
+                    prefix = 'DEPT'
+                    last = DepartmentUserProfile.objects.order_by('-id').first()
+                else:
+                    prefix = 'EMP'
+                    last = Worker.objects.order_by('-id').first()
 
-                    next_num = (int(last.employee_id.replace(prefix, '')) + 1) if last else 1
-                    employee_id = f'{prefix}{next_num:03d}'
+                next_num = (int(last.employee_id.replace(prefix, '')) + 1) if last else 1
+                employee_id = f'{prefix}{next_num:03d}'
 
-                # Create Django User
-                username = employee_id.lower()
+                # Create Django User with submitted credentials
                 user = User.objects.create(
                     username=username,
-                    password=make_password(password),
+                    password=password,  # Already hashed
                     first_name=reg.full_name,
                 )
 
@@ -809,11 +915,12 @@ def registration_approval(request):
 
                 # Update registration
                 reg.status = 'approved'
+                reg.employee_id = employee_id
                 reg.processed_at = timezone.now()
                 reg.created_user = user
                 reg.save()
 
-                messages.success(request, f'已批准 {reg.full_name} 的注册申请，账号：{username}，初始密码：{password}')
+                messages.success(request, f'已批准 {reg.full_name} 的注册申请，用户名：{username}，工号：{employee_id}')
 
             elif action == 'reject':
                 reg.status = 'rejected'

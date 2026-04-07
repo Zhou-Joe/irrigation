@@ -245,14 +245,16 @@ class RegistrationRequest(models.Model):
 
     full_name = models.CharField(max_length=255)
     phone = models.CharField(max_length=20)
-    department = models.CharField(max_length=20, choices=Worker.DEPARTMENT_CHOICES)
+    username = models.CharField(max_length=150, unique=True, blank=True, null=True, help_text='登录用户名')
+    password = models.CharField(max_length=128, blank=True, help_text='登录密码（加密存储）')
+    department = models.CharField(max_length=20, choices=Worker.DEPARTMENT_CHOICES, blank=True)
     department_other = models.CharField(max_length=50, blank=True, help_text='其他部门名称')
     requested_role = models.CharField(
         max_length=20,
         choices=ROLE_CHOICES,
         default=ROLE_FIELD_WORKER
     )
-    employee_id = models.CharField(max_length=50, blank=True, help_text='申请时填写的工号，留空则自动生成')
+    employee_id = models.CharField(max_length=50, blank=True, help_text='工号，审批通过后自动生成')
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_PENDING)
     status_notes = models.TextField(blank=True, help_text='审批备注')
     created_at = models.DateTimeField(auto_now_add=True)
@@ -260,10 +262,6 @@ class RegistrationRequest(models.Model):
     processed_by = models.ForeignKey(
         Worker, on_delete=models.SET_NULL, null=True, blank=True,
         related_name='processed_registrations'
-    )
-    created_worker = models.OneToOneField(
-        Worker, on_delete=models.SET_NULL, null=True, blank=True,
-        related_name='registration_request'
     )
     created_user = models.ForeignKey(
         User, on_delete=models.SET_NULL, null=True, blank=True,
