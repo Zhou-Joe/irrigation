@@ -716,3 +716,137 @@ def register(request):
             return redirect('core:register')
 
     return render(request, 'core/register.html')
+
+
+@login_required(login_url='core:login')
+def registration_approval(request):
+    """
+    Registration approval page for admins/managers.
+    Shows pending registration requests with approve/reject actions.
+    """
+    from django.contrib.auth.hashers import make_password
+    from django.contrib.auth.models import User
+    from core.models import (
+        RegistrationRequest, ManagerProfile, DepartmentUserProfile, Worker,
+        ROLE_MANAGER, ROLE_FIELD_WORKER, ROLE_DEPT_USER
+    )
+    from core.role_utils import is_admin
+    import secrets
+    import string
+
+    # Check admin permission
+    if not is_admin(request.user):
+        messages.error(request, '无权限访问此页面')
+        return redirect('core:dashboard')
+
+    # Handle POST actions
+    if request.method == 'POST':
+        request_id = request.POST.get('request_id')
+        action = request.POST.get('action')
+        reason = request.POST.get('reason', '')
+
+        try:
+            reg = RegistrationRequest.objects.get(pk=request_id, status='pending')
+
+            if action == 'approve':
+                # Generate password
+                password = ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(12))
+
+                # Generate employee_id if not set
+                employee_id = reg.employee_id
+                if not employee_id:
+                    if reg.requested_role == ROLE_MANAGER:
+                        prefix = 'ADM'
+                        last = ManagerProfile.objects.order_by('-id').first()
+                    elif reg.requested_role == ROLE_DEPT_USER:
+                        prefix = 'DEPT'
+                        last = DepartmentUserProfile.objects.order_by('-id').first()
+                    else:
+                        prefix = 'EMP'
+                        last = Worker.objects.order_by('-id').first()
+
+                    next_num = (int(last.employee_id.replace(prefix, '')) + 1) if last else 1
+                    employee_id = f'{prefix}{next_num:03d}'
+
+                # Create Django User
+                username = employee_id.lower()
+                user = User.objects.create(
+                    username=username,
+                    password=make_password(password),
+                    first_name=reg.full_name,
+                )
+
+                # Create profile based on role
+                if reg.requested_role == ROLE_MANAGER:
+                    ManagerProfile.objects.create(
+                        user=user,
+                        employee_id=employee_id,
+                        full_name=reg.full_name,
+                        phone=reg.phone,
+                        is_super_admin=False,
+                        can_approve_registrations=True,
+                        can_approve_work_orders=True,
+                    )
+                elif reg.requested_role == ROLE_DEPT_USER:
+                    DepartmentUserProfile.objects.create(
+                        user=user,
+                        employee_id=employee_id,
+                        full_name=reg.full_name,
+                        phone=reg.phone,
+                        department=reg.department or 'ENT',
+                        department_other=reg.department_other if reg.department == '其他' else '',
+                    )
+                else:  # field_worker
+                    Worker.objects.create(
+                        user=user,
+                        employee_id=employee_id,
+                        full_name=reg.full_name,
+                        phone=reg.phone,
+                        department=reg.department or '',
+                        department_other=reg.department_other if reg.department == '其他' else '',
+                    )
+
+                # Update registration
+                reg.status = 'approved'
+                reg.processed_at = timezone.now()
+                reg.created_user = user
+                reg.save()
+
+                messages.success(request, f'已批准 {reg.full_name} 的注册申请，账号：{username}，初始密码：{password}')
+
+            elif action == 'reject':
+                reg.status = 'rejected'
+                reg.status_notes = reason
+                reg.processed_at = timezone.now()
+                reg.save()
+                messages.success(request, f'已拒绝 {reg.full_name} 的注册申请')
+
+        except RegistrationRequest.DoesNotExist:
+            messages.error(request, '注册申请不存在')
+
+        return redirect('core:registration_approval')
+
+    # GET request - show list
+    filter_status = request.GET.get('filter', 'pending')
+
+    if filter_status == 'all':
+        requests_qs = RegistrationRequest.objects.all()
+    else:
+        requests_qs = RegistrationRequest.objects.filter(status=filter_status)
+
+    requests_qs = requests_qs.order_by('-created_at')
+
+    # Stats
+    stats = {
+        'pending': RegistrationRequest.objects.filter(status='pending').count(),
+        'approved': RegistrationRequest.objects.filter(status='approved').count(),
+        'rejected': RegistrationRequest.objects.filter(status='rejected').count(),
+    }
+
+    context = {
+        'requests': requests_qs,
+        'stats': stats,
+        'filter': filter_status,
+    }
+
+    return render(request, 'core/registration_approval.html', context)

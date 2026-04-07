@@ -26,6 +26,7 @@ urlpatterns = [
     path('login/', views.user_login, name='login'),
     path('logout/', views.user_logout, name='logout'),
     path('register/', views.register, name='register'),
+    path('registration-approval/', views.registration_approval, name='registration_approval'),
     path('settings/', views.settings_page, name='settings'),
     path('settings/zone/<int:zone_id>/', views.zone_edit, name='zone_edit'),
     path('settings/zone/<int:zone_id>/delete/', views.zone_delete, name='zone_delete'),
