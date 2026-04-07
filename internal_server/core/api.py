@@ -5,8 +5,9 @@ from rest_framework.permissions import AllowAny
 from django.contrib.auth import authenticate, login
 from django.utils import timezone
 from datetime import timedelta, date
-from .models import Zone, Plant, Worker, WorkOrder, Event, WorkLog, WeatherData, MaintenanceRequest, ProjectSupportRequest, WaterRequest
+from .models import Zone, Plant, Worker, WorkOrder, Event, WorkLog, WeatherData, MaintenanceRequest, ProjectSupportRequest, WaterRequest, ManagerProfile, DepartmentUserProfile
 from .authentication import TokenAuthentication
+from .permissions import IsAdminOrReadOnly, IsOwnerOrAdmin, IsDeptUserWaterOnly, IsFieldWorker
 
 
 # Custom permission for token OR session auth
@@ -246,66 +247,102 @@ class AllRequestsSerializer(serializers.Serializer):
 
 # ViewSets
 class ZoneViewSet(viewsets.ModelViewSet):
-    """ViewSet for Zone CRUD operations."""
+    """ViewSet for Zone - all authenticated users can read, only admin can write."""
 
     queryset = Zone.objects.all()
     serializer_class = ZoneSerializer
     authentication_classes = [TokenAuthentication, authentication.SessionAuthentication]
-    permission_classes = [IsAuthenticatedByTokenOrSession]
+    permission_classes = [IsAdminOrReadOnly]
 
 
 class PlantViewSet(viewsets.ModelViewSet):
-    """ViewSet for Plant CRUD operations."""
-
     queryset = Plant.objects.all()
     serializer_class = PlantSerializer
     authentication_classes = [TokenAuthentication, authentication.SessionAuthentication]
-    permission_classes = [IsAuthenticatedByTokenOrSession]
+    permission_classes = [IsAdminOrReadOnly]
 
 
 class WorkerViewSet(viewsets.ModelViewSet):
-    """ViewSet for Worker CRUD operations."""
-
+    """ViewSet for Worker - admin only for write."""
     queryset = Worker.objects.all()
     serializer_class = WorkerSerializer
     authentication_classes = [TokenAuthentication, authentication.SessionAuthentication]
-    permission_classes = [IsAuthenticatedByTokenOrSession]
+    permission_classes = [IsAdminOrReadOnly]
 
 
 class WorkOrderViewSet(viewsets.ModelViewSet):
-    """ViewSet for WorkOrder CRUD operations."""
-
     queryset = WorkOrder.objects.all()
     serializer_class = WorkOrderSerializer
     authentication_classes = [TokenAuthentication, authentication.SessionAuthentication]
-    permission_classes = [IsAuthenticatedByTokenOrSession]
+    permission_classes = [IsAdminOrReadOnly]
 
 
 class EventViewSet(viewsets.ModelViewSet):
-    """ViewSet for Event CRUD operations."""
-
     queryset = Event.objects.all()
     serializer_class = EventSerializer
     authentication_classes = [TokenAuthentication, authentication.SessionAuthentication]
-    permission_classes = [IsAuthenticatedByTokenOrSession]
+    permission_classes = [IsAdminOrReadOnly]
 
 
 class WorkLogViewSet(viewsets.ModelViewSet):
-    """ViewSet for WorkLog CRUD operations."""
-
+    """ViewSet for WorkLog - admin sees all, field workers see own."""
     queryset = WorkLog.objects.all()
     serializer_class = WorkLogSerializer
     authentication_classes = [TokenAuthentication, authentication.SessionAuthentication]
-    permission_classes = [IsAuthenticatedByTokenOrSession]
+    permission_classes = [IsOwnerOrAdmin]
+
+    def get_queryset(self):
+        user = self.request.user
+        is_admin = user.is_superuser or user.is_staff
+        if not is_admin:
+            try:
+                ManagerProfile.objects.get(user=user, active=True)
+                is_admin = True
+            except ManagerProfile.DoesNotExist:
+                pass
+
+        if is_admin:
+            return WorkLog.objects.all()
+
+        try:
+            worker = Worker.objects.get(user=user, active=True)
+            return WorkLog.objects.filter(worker=worker)
+        except Worker.DoesNotExist:
+            return WorkLog.objects.none()
 
 
 class MaintenanceRequestViewSet(viewsets.ModelViewSet):
-    """ViewSet for MaintenanceRequest CRUD operations."""
-
+    """ViewSet for MaintenanceRequest - dept users cannot access."""
     queryset = MaintenanceRequest.objects.all().order_by('-created_at')
     serializer_class = MaintenanceRequestSerializer
     authentication_classes = [TokenAuthentication, authentication.SessionAuthentication]
-    permission_classes = [IsAuthenticatedByTokenOrSession]
+    permission_classes = [IsOwnerOrAdmin]
+
+    def get_queryset(self):
+        user = self.request.user
+        is_admin = user.is_superuser or user.is_staff
+        if not is_admin:
+            try:
+                ManagerProfile.objects.get(user=user, active=True)
+                is_admin = True
+            except ManagerProfile.DoesNotExist:
+                pass
+
+        # Check if dept user - deny access
+        try:
+            DepartmentUserProfile.objects.get(user=user, active=True)
+            return MaintenanceRequest.objects.none()
+        except DepartmentUserProfile.DoesNotExist:
+            pass
+
+        if is_admin:
+            return MaintenanceRequest.objects.all().order_by('-created_at')
+
+        try:
+            worker = Worker.objects.get(user=user, active=True)
+            return MaintenanceRequest.objects.filter(submitter=worker).order_by('-created_at')
+        except Worker.DoesNotExist:
+            return MaintenanceRequest.objects.none()
 
     def perform_create(self, serializer):
         # request.user is Worker when using token auth, or User when using session auth
@@ -316,12 +353,37 @@ class MaintenanceRequestViewSet(viewsets.ModelViewSet):
 
 
 class ProjectSupportRequestViewSet(viewsets.ModelViewSet):
-    """ViewSet for ProjectSupportRequest CRUD operations."""
-
+    """ViewSet for ProjectSupportRequest - dept users cannot access."""
     queryset = ProjectSupportRequest.objects.all().order_by('-created_at')
     serializer_class = ProjectSupportRequestSerializer
     authentication_classes = [TokenAuthentication, authentication.SessionAuthentication]
-    permission_classes = [IsAuthenticatedByTokenOrSession]
+    permission_classes = [IsOwnerOrAdmin]
+
+    def get_queryset(self):
+        user = self.request.user
+        is_admin = user.is_superuser or user.is_staff
+        if not is_admin:
+            try:
+                ManagerProfile.objects.get(user=user, active=True)
+                is_admin = True
+            except ManagerProfile.DoesNotExist:
+                pass
+
+        # Check if dept user - deny access
+        try:
+            DepartmentUserProfile.objects.get(user=user, active=True)
+            return ProjectSupportRequest.objects.none()
+        except DepartmentUserProfile.DoesNotExist:
+            pass
+
+        if is_admin:
+            return ProjectSupportRequest.objects.all().order_by('-created_at')
+
+        try:
+            worker = Worker.objects.get(user=user, active=True)
+            return ProjectSupportRequest.objects.filter(submitter=worker).order_by('-created_at')
+        except Worker.DoesNotExist:
+            return ProjectSupportRequest.objects.none()
 
     def perform_create(self, serializer):
         if isinstance(self.request.user, Worker):
@@ -331,12 +393,38 @@ class ProjectSupportRequestViewSet(viewsets.ModelViewSet):
 
 
 class WaterRequestViewSet(viewsets.ModelViewSet):
-    """ViewSet for WaterRequest CRUD operations."""
-
+    """ViewSet for WaterRequest - all roles can access with different permissions."""
     queryset = WaterRequest.objects.all().order_by('-created_at')
     serializer_class = WaterRequestSerializer
     authentication_classes = [TokenAuthentication, authentication.SessionAuthentication]
-    permission_classes = [IsAuthenticatedByTokenOrSession]
+    permission_classes = [IsOwnerOrAdmin]
+
+    def get_queryset(self):
+        user = self.request.user
+
+        # Check if dept user - sees all water requests
+        try:
+            DepartmentUserProfile.objects.get(user=user, active=True)
+            return WaterRequest.objects.all().order_by('-created_at')
+        except DepartmentUserProfile.DoesNotExist:
+            pass
+
+        is_admin = user.is_superuser or user.is_staff
+        if not is_admin:
+            try:
+                ManagerProfile.objects.get(user=user, active=True)
+                is_admin = True
+            except ManagerProfile.DoesNotExist:
+                pass
+
+        if is_admin:
+            return WaterRequest.objects.all().order_by('-created_at')
+
+        try:
+            worker = Worker.objects.get(user=user, active=True)
+            return WaterRequest.objects.filter(submitter=worker).order_by('-created_at')
+        except Worker.DoesNotExist:
+            return WaterRequest.objects.none()
 
     def perform_create(self, serializer):
         if isinstance(self.request.user, Worker):
