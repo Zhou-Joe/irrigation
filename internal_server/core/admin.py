@@ -1,15 +1,31 @@
 from django.contrib import admin
 from django.utils import timezone
-from .models import Zone, Plant, Worker, WorkOrder, Event, WorkLog, WeatherData, MaintenanceRequest, ProjectSupportRequest, WaterRequest, RegistrationRequest
+from django.contrib.auth.models import User
+from .models import Zone, Plant, Worker, WorkOrder, Event, WorkLog, WeatherData, MaintenanceRequest, ProjectSupportRequest, WaterRequest, RegistrationRequest, ManagerProfile, DepartmentUserProfile
 
 
 @admin.register(RegistrationRequest)
 class RegistrationRequestAdmin(admin.ModelAdmin):
-    list_display = ('full_name', 'phone', 'department_display', 'status', 'created_at', 'processed_at')
-    list_filter = ('status', 'department', 'created_at')
-    search_fields = ('full_name', 'phone')
-    readonly_fields = ('created_at', 'processed_at', 'processed_by')
+    list_display = ('full_name', 'phone', 'department_display', 'requested_role_display', 'status', 'created_at', 'processed_at')
+    list_filter = ('status', 'requested_role', 'department', 'created_at')
+    search_fields = ('full_name', 'phone', 'employee_id')
+    readonly_fields = ('created_at', 'processed_at', 'processed_by', 'created_worker', 'created_user')
     actions = ['approve_requests', 'reject_requests']
+    fieldsets = (
+        ('申请人信息', {
+            'fields': ('full_name', 'phone', 'department', 'department_other', 'employee_id')
+        }),
+        ('角色申请', {
+            'fields': ('requested_role', 'status_notes')
+        }),
+        ('审批状态', {
+            'fields': ('status', 'processed_at', 'processed_by')
+        }),
+        ('创建记录', {
+            'fields': ('created_worker', 'created_user', 'created_at'),
+            'classes': ('collapse',)
+        }),
+    )
 
     def department_display(self, obj):
         if obj.department == '其他' and obj.department_other:
@@ -17,29 +33,85 @@ class RegistrationRequestAdmin(admin.ModelAdmin):
         return obj.get_department_display()
     department_display.short_description = '部门'
 
-    def approve_requests(self, request, queryset):
-        for reg in queryset.filter(status='pending'):
-            # Generate employee ID
-            last_worker = Worker.objects.order_by('-id').first()
-            next_num = (int(last_worker.employee_id.replace('EMP', '')) + 1) if last_worker else 1
-            employee_id = f'EMP{next_num:03d}'
+    def requested_role_display(self, obj):
+        return obj.get_requested_role_display()
+    requested_role_display.short_description = '申请角色'
 
-            # Create Worker
-            worker = Worker.objects.create(
-                employee_id=employee_id,
-                full_name=reg.full_name,
-                phone=reg.phone,
-                department=reg.department,
-                department_other=reg.department_other,
-                active=True
+    def approve_requests(self, request, queryset):
+        from .models import ROLE_FIELD_WORKER, ROLE_MANAGER, ROLE_DEPT_USER
+
+        for reg in queryset.filter(status='pending'):
+            role = reg.requested_role
+
+            # Generate employee ID based on role
+            if role == ROLE_MANAGER:
+                prefix = 'ADM'
+                last_profile = ManagerProfile.objects.order_by('-id').first()
+                next_num = (int(last_profile.employee_id.replace('ADM', '')) + 1) if last_profile else 1
+            elif role == ROLE_DEPT_USER:
+                prefix = 'DEPT'
+                last_profile = DepartmentUserProfile.objects.order_by('-id').first()
+                next_num = (int(last_profile.employee_id.replace('DEPT', '')) + 1) if last_profile else 1
+            else:
+                prefix = 'EMP'
+                last_worker = Worker.objects.order_by('-id').first()
+                next_num = (int(last_worker.employee_id.replace('EMP', '')) + 1) if last_worker else 1
+
+            employee_id = f'{prefix}{next_num:03d}'
+
+            # Generate random password
+            import secrets
+            password = secrets.token_urlsafe(12)
+
+            # Create Django User
+            user = User.objects.create_user(
+                username=employee_id,
+                password=password,
+                first_name=reg.full_name
             )
+
+            # Create profile based on role
+            if role == ROLE_MANAGER:
+                profile = ManagerProfile.objects.create(
+                    user=user,
+                    employee_id=employee_id,
+                    full_name=reg.full_name,
+                    phone=reg.phone,
+                    active=True
+                )
+                created_profile = profile
+            elif role == ROLE_DEPT_USER:
+                profile = DepartmentUserProfile.objects.create(
+                    user=user,
+                    employee_id=employee_id,
+                    full_name=reg.full_name,
+                    phone=reg.phone,
+                    department=reg.department,
+                    department_other=reg.department_other,
+                    active=True
+                )
+                created_profile = profile
+            else:
+                worker = Worker.objects.create(
+                    user=user,
+                    employee_id=employee_id,
+                    full_name=reg.full_name,
+                    phone=reg.phone,
+                    department=reg.department,
+                    department_other=reg.department_other,
+                    active=True
+                )
+                created_profile = worker
 
             # Update registration request
             reg.status = 'approved'
             reg.processed_at = timezone.now()
             reg.processed_by = request.user.worker_profile if hasattr(request.user, 'worker_profile') else None
-            reg.created_worker = worker
+            reg.created_worker = created_profile if role == ROLE_FIELD_WORKER else None
+            reg.created_user = user
             reg.save()
+
+            self.message_user(request, f'已批准 {reg.full_name} 的注册申请，工号：{employee_id}')
     approve_requests.short_description = '批准选中的注册申请'
 
     def reject_requests(self, request, queryset):
@@ -208,3 +280,49 @@ class WeatherDataAdmin(admin.ModelAdmin):
         from django.utils.safestring import mark_safe
         return mark_safe(html)
     display_hourly_data.short_description = '逐时数据'
+
+
+@admin.register(ManagerProfile)
+class ManagerProfileAdmin(admin.ModelAdmin):
+    list_display = ('full_name', 'employee_id', 'phone', 'is_super_admin', 'can_approve_registrations', 'can_approve_work_orders', 'active', 'created_at')
+    list_filter = ('is_super_admin', 'can_approve_registrations', 'can_approve_work_orders', 'active', 'created_at')
+    search_fields = ('full_name', 'employee_id', 'phone')
+    readonly_fields = ('created_at', 'updated_at')
+    fieldsets = (
+        ('基本信息', {
+            'fields': ('user', 'employee_id', 'full_name', 'phone')
+        }),
+        ('权限设置', {
+            'fields': ('is_super_admin', 'can_approve_registrations', 'can_approve_work_orders', 'active')
+        }),
+        ('时间记录', {
+            'fields': ('created_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+    )
+
+
+@admin.register(DepartmentUserProfile)
+class DepartmentUserProfileAdmin(admin.ModelAdmin):
+    list_display = ('full_name', 'employee_id', 'phone', 'department_display', 'active', 'created_at')
+    list_filter = ('department', 'active', 'created_at')
+    search_fields = ('full_name', 'employee_id', 'phone')
+    readonly_fields = ('created_at', 'updated_at')
+    fieldsets = (
+        ('基本信息', {
+            'fields': ('user', 'employee_id', 'full_name', 'phone')
+        }),
+        ('部门信息', {
+            'fields': ('department', 'department_other', 'active')
+        }),
+        ('时间记录', {
+            'fields': ('created_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+    )
+
+    def department_display(self, obj):
+        if obj.department == '其他' and obj.department_other:
+            return obj.department_other
+        return obj.get_department_display()
+    department_display.short_description = '部门'
