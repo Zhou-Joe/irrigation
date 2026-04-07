@@ -434,25 +434,40 @@ def request_detail(request, type_code, request_id):
     """
     工单详情页面
     """
-    from core.models import MaintenanceRequest, ProjectSupportRequest, WaterRequest, Worker
+    from core.models import (
+        MaintenanceRequest, ProjectSupportRequest, WaterRequest,
+        ManagerProfile, DepartmentUserProfile, Worker
+    )
     from django.utils import timezone
 
-    # 检查是否是管理员（超级用户、staff 或 Worker 的 ADM 用户）
+    # Determine role
     is_admin = request.user.is_superuser or request.user.is_staff
     current_worker = None
+    current_dept_user = None
 
     if not is_admin:
         try:
-            current_worker = Worker.objects.get(user=request.user)
-            if current_worker.employee_id.startswith('ADM'):
-                is_admin = True
-        except Worker.DoesNotExist:
+            ManagerProfile.objects.get(user=request.user, active=True)
+            is_admin = True
+        except ManagerProfile.DoesNotExist:
             pass
-    else:
+
+    if not is_admin:
         try:
-            current_worker = Worker.objects.get(user=request.user)
+            current_worker = Worker.objects.get(user=request.user, active=True)
         except Worker.DoesNotExist:
             pass
+
+    if not is_admin and not current_worker:
+        try:
+            current_dept_user = DepartmentUserProfile.objects.get(user=request.user, active=True)
+        except DepartmentUserProfile.DoesNotExist:
+            pass
+
+    # For maintenance and project_support, dept users cannot access
+    if type_code in ['maintenance', 'project_support'] and current_dept_user:
+        messages.error(request, '无权限查看此工单')
+        return redirect('core:requests')
 
     # 获取对应的请求
     try:
@@ -497,6 +512,12 @@ def request_detail(request, type_code, request_id):
         messages.error(request, f'请求不存在: {e}')
         return redirect('core:requests')
 
+    # Check permissions - field workers can only see their own requests
+    if not is_admin:
+        if current_worker and hasattr(req, 'submitter') and req.submitter != current_worker:
+            messages.error(request, '无权限查看此工单')
+            return redirect('core:requests')
+
     context = {
         'req': req,
         'type_code': type_code,
@@ -504,6 +525,7 @@ def request_detail(request, type_code, request_id):
         'extra_info': extra_info,
         'is_admin': is_admin,
         'current_worker': current_worker,
+        'current_dept_user': current_dept_user,
     }
 
     return render(request, 'core/request_detail.html', context)
