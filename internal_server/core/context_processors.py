@@ -46,3 +46,58 @@ def notifications(request):
         'notifications_list': notifications_list,
         'notification_count': len(notifications_list),
     }
+
+
+def user_role(request):
+    """Add user role information to template context."""
+    if not request.user.is_authenticated:
+        return {
+            'is_admin': False,
+            'is_manager': False,
+            'is_field_worker': False,
+            'is_dept_user': False,
+            'user_role': None,
+        }
+
+    from .models import ManagerProfile, DepartmentUserProfile, Worker
+
+    is_admin = request.user.is_superuser or request.user.is_staff
+    is_manager = False
+    is_dept_user = False
+    is_field_worker = False
+    user_role = None
+
+    if is_admin:
+        user_role = 'super_admin'
+    else:
+        try:
+            ManagerProfile.objects.get(user=request.user, active=True)
+            is_admin = True
+            is_manager = True
+            user_role = 'manager'
+        except ManagerProfile.DoesNotExist:
+            pass
+
+    if not is_admin:
+        try:
+            Worker.objects.get(user=request.user, active=True)
+            is_field_worker = True
+            user_role = 'field_worker'
+        except Worker.DoesNotExist:
+            pass
+
+    if not is_admin and not is_field_worker:
+        try:
+            DepartmentUserProfile.objects.get(user=request.user, active=True)
+            is_dept_user = True
+            user_role = 'dept_user'
+        except DepartmentUserProfile.DoesNotExist:
+            pass
+
+    return {
+        'is_admin': is_admin,
+        'is_manager': is_manager,
+        'is_field_worker': is_field_worker,
+        'is_dept_user': is_dept_user,
+        'user_role': user_role,
+    }
