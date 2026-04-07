@@ -80,12 +80,21 @@
     color: var(--color-text-muted);
 }
 
-.department-other {
+.sub-department {
     margin-top: var(--space-md);
     display: none;
 }
 
-.department-other.show {
+.sub-department.show {
+    display: block;
+}
+
+.other-dept-name {
+    margin-top: var(--space-md);
+    display: none;
+}
+
+.other-dept-name.show {
     display: block;
 }
 
@@ -171,7 +180,7 @@
 <div class="register-container">
     <div class="register-card">
         <div class="register-header">
-            <div class="logo"></div>
+            <div class="logo">🌿</div>
             <h1>注册申请</h1>
             <p>创建账户需要管理员审批</p>
         </div>
@@ -202,29 +211,22 @@
                 <input type="tel" id="phone" name="phone" placeholder="请输入手机号" required>
             </div>
 
-            <!-- Add role selection -->
+            <!-- Department selection (determines role) -->
             <div class="form-group">
-                <label for="requested_role">申请角色</label>
-                <select name="requested_role" id="requested_role" class="form-control" required onchange="toggleDepartmentRequired()">
-                    <option value="">请选择角色</option>
-                    <option value="field_worker">现场工作人员</option>
-                    <option value="dept_user">部门用户 (FES/FAM/ENT)</option>
-                    <option value="manager">管理员</option>
+                <label for="department_type">部门 *</label>
+                <select name="department_type" id="department_type" required onchange="toggleSubDepartment()">
+                    <option value="">请选择部门</option>
+                    <option value="field_worker">园艺一线</option>
+                    <option value="manager">园艺经理</option>
+                    <option value="dept_user">其他部门</option>
                 </select>
             </div>
 
-            <!-- Add employee_id field -->
-            <div class="form-group">
-                <label for="employee_id">工号（选填）</label>
-                <input type="text" name="employee_id" id="employee_id" class="form-control"
-                       placeholder="如不填写则系统自动生成">
-                <small class="form-text text-muted">留空将由系统自动生成工号</small>
-            </div>
-
-            <div class="form-group">
-                <label for="department">部门 *</label>
-                <select id="department" name="department" required>
-                    <option value="">请选择部门</option>
+            <!-- Sub-department for "其他部门" -->
+            <div class="form-group sub-department" id="subDepartment">
+                <label for="department">所属部门 *</label>
+                <select id="department" name="department">
+                    <option value="">请选择所属部门</option>
                     <option value="FES">FES</option>
                     <option value="FAM">FAM</option>
                     <option value="ENT">ENT</option>
@@ -232,10 +234,14 @@
                 </select>
             </div>
 
-            <div class="form-group department-other" id="departmentOther">
-                <label for="department_other">其他部门名称 *</label>
+            <!-- Other department name -->
+            <div class="form-group other-dept-name" id="otherDeptName">
+                <label for="department_other">部门名称 *</label>
                 <input type="text" id="department_other" name="department_other" placeholder="请输入部门名称">
             </div>
+
+            <!-- Hidden field for role (set by JS) -->
+            <input type="hidden" name="requested_role" id="requested_role" value="field_worker">
 
             <button type="submit" class="btn-register">发送申请</button>
         </form>
@@ -248,24 +254,44 @@
 </div>
 
 <script>
-function toggleDepartmentRequired() {
-    var role = document.getElementById('requested_role').value;
+function toggleSubDepartment() {
+    var deptType = document.getElementById('department_type').value;
+    var subDept = document.getElementById('subDepartment');
     var deptSelect = document.getElementById('department');
-    if (role === 'dept_user') {
+    var roleInput = document.getElementById('requested_role');
+
+    // Set the role based on department type
+    roleInput.value = deptType;
+
+    if (deptType === 'dept_user') {
+        // Show sub-department dropdown for "其他部门"
+        subDept.classList.add('show');
         deptSelect.setAttribute('required', 'required');
     } else {
+        // Hide sub-department for 园艺一线 and 园艺经理
+        subDept.classList.remove('show');
         deptSelect.removeAttribute('required');
+        deptSelect.value = '';
+
+        // Also hide other department name
+        document.getElementById('otherDeptName').classList.remove('show');
+        document.getElementById('department_other').removeAttribute('required');
+        document.getElementById('department_other').value = '';
     }
 }
 
+// Show/hide "其他部门名称" based on department selection
 document.getElementById('department').addEventListener('change', function() {
-    const otherField = document.getElementById('departmentOther');
+    var otherDeptName = document.getElementById('otherDeptName');
+    var otherDeptInput = document.getElementById('department_other');
+
     if (this.value === '其他') {
-        otherField.classList.add('show');
-        otherField.querySelector('input').required = true;
+        otherDeptName.classList.add('show');
+        otherDeptInput.setAttribute('required', 'required');
     } else {
-        otherField.classList.remove('show');
-        otherField.querySelector('input').required = false;
+        otherDeptName.classList.remove('show');
+        otherDeptInput.removeAttribute('required');
+        otherDeptInput.value = '';
     }
 });
 </script>
