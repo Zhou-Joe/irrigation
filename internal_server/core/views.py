@@ -318,59 +318,90 @@ def requests_page(request):
     """
     工单记录页面 - 显示所有维护维修、项目支持、浇水协调请求
     """
-    from core.models import MaintenanceRequest, ProjectSupportRequest, WaterRequest, Worker
+    from core.models import (
+        MaintenanceRequest, ProjectSupportRequest, WaterRequest,
+        ManagerProfile, DepartmentUserProfile, Worker
+    )
     from datetime import date
 
     today = date.today()
+    user = request.user
 
-    # 检查是否是管理员（超级用户、staff 或 Worker 的 ADM 用户）
-    is_admin = request.user.is_superuser or request.user.is_staff
+    # Determine role
+    is_admin = user.is_superuser or user.is_staff
+    current_worker = None
+    current_dept_user = None
 
     if not is_admin:
         try:
-            worker = Worker.objects.get(user=request.user)
-            if worker.employee_id.startswith('ADM'):
-                is_admin = True
+            ManagerProfile.objects.get(user=user, active=True)
+            is_admin = True
+        except ManagerProfile.DoesNotExist:
+            pass
+
+    if not is_admin:
+        try:
+            current_worker = Worker.objects.get(user=user, active=True)
         except Worker.DoesNotExist:
             pass
 
-    # 获取所有请求并按日期排序
-    maintenance_requests = MaintenanceRequest.objects.select_related('zone', 'submitter').all()
-    project_support_requests = ProjectSupportRequest.objects.select_related('zone', 'submitter').all()
-    water_requests = WaterRequest.objects.select_related('zone', 'submitter').all()
+    if not is_admin and not current_worker:
+        try:
+            current_dept_user = DepartmentUserProfile.objects.get(user=user, active=True)
+        except DepartmentUserProfile.DoesNotExist:
+            pass
 
-    # 合并所有请求
+    # Get requests and filter based on role
     all_requests = []
 
-    for req in maintenance_requests:
-        all_requests.append({
-            'id': req.id,
-            'type': '维护与维修',
-            'type_code': 'maintenance',
-            'zone': req.zone,
-            'submitter': req.submitter,
-            'date': req.date,
-            'status': req.status,
-            'status_display': req.get_status_display(),
-            'created_at': req.created_at,
-            'detail': f"{req.start_time} - {req.end_time}, {req.participants}",
-        })
+    # Maintenance requests - only admins and field workers
+    if is_admin or current_worker:
+        maintenance_qs = MaintenanceRequest.objects.select_related('zone', 'submitter')
+        if current_worker:
+            maintenance_qs = maintenance_qs.filter(submitter=current_worker)
 
-    for req in project_support_requests:
-        all_requests.append({
-            'id': req.id,
-            'type': '项目支持',
-            'type_code': 'project_support',
-            'zone': req.zone,
-            'submitter': req.submitter,
-            'date': req.date,
-            'status': req.status,
-            'status_display': req.get_status_display(),
-            'created_at': req.created_at,
-            'detail': f"{req.start_time} - {req.end_time}, {req.participants}",
-        })
+        for req in maintenance_qs:
+            all_requests.append({
+                'id': req.id,
+                'type': '维护与维修',
+                'type_code': 'maintenance',
+                'zone': req.zone,
+                'submitter': req.submitter,
+                'date': req.date,
+                'status': req.status,
+                'status_display': req.get_status_display(),
+                'created_at': req.created_at,
+                'detail': f"{req.start_time} - {req.end_time}, {req.participants}",
+            })
 
-    for req in water_requests:
+    # Project support requests - only admins and field workers
+    if is_admin or current_worker:
+        project_qs = ProjectSupportRequest.objects.select_related('zone', 'submitter')
+        if current_worker:
+            project_qs = project_qs.filter(submitter=current_worker)
+
+        for req in project_qs:
+            all_requests.append({
+                'id': req.id,
+                'type': '项目支持',
+                'type_code': 'project_support',
+                'zone': req.zone,
+                'submitter': req.submitter,
+                'date': req.date,
+                'status': req.status,
+                'status_display': req.get_status_display(),
+                'created_at': req.created_at,
+                'detail': f"{req.start_time} - {req.end_time}, {req.participants}",
+            })
+
+    # Water requests - all roles can see
+    # Dept users see ALL, field workers see own, admins see all
+    water_qs = WaterRequest.objects.select_related('zone', 'submitter')
+    if current_worker:
+        water_qs = water_qs.filter(submitter=current_worker)
+    # Note: Dept users and admins see all water requests
+
+    for req in water_qs:
         all_requests.append({
             'id': req.id,
             'type': '浇水协调需求',
@@ -391,6 +422,8 @@ def requests_page(request):
         'requests': all_requests,
         'today': today,
         'is_admin': is_admin,
+        'is_dept_user': bool(current_dept_user),
+        'is_field_worker': bool(current_worker),
     }
 
     return render(request, 'core/requests.html', context)
