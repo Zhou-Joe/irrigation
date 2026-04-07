@@ -172,6 +172,50 @@ class ManagerProfile(models.Model):
         return f"{self.full_name} ({self.employee_id})"
 
 
+class DepartmentUserProfile(models.Model):
+    """Profile for department users (FES, FAM, ENT)."""
+
+    DEPARTMENT_CHOICES = [
+        ('FES', 'FES'),
+        ('FAM', 'FAM'),
+        ('ENT', 'ENT'),
+        ('其他', '其他'),
+    ]
+
+    user = models.OneToOneField(
+        User,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='dept_profile'
+    )
+    employee_id = models.CharField(max_length=50, unique=True)
+    full_name = models.CharField(max_length=255)
+    phone = models.CharField(max_length=20, blank=True)
+    department = models.CharField(max_length=20, choices=DEPARTMENT_CHOICES, default='ENT')
+    department_other = models.CharField(max_length=50, blank=True)
+
+    active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    # Django auth compatibility
+    is_authenticated = True
+    is_anonymous = False
+
+    class Meta:
+        verbose_name = '部门用户'
+        verbose_name_plural = '部门用户'
+
+    def get_department_display_name(self):
+        if self.department == '其他' and self.department_other:
+            return self.department_other
+        return self.get_department_display()
+
+    def __str__(self):
+        return f"{self.full_name} ({self.employee_id} - {self.get_department_display_name()})"
+
+
 class RegistrationRequest(models.Model):
     """Registration request pending admin approval."""
 
