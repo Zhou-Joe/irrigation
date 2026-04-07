@@ -202,6 +202,25 @@
                 <input type="tel" id="phone" name="phone" placeholder="请输入手机号" required>
             </div>
 
+            <!-- Add role selection -->
+            <div class="form-group">
+                <label for="requested_role">申请角色</label>
+                <select name="requested_role" id="requested_role" class="form-control" required onchange="toggleDepartmentRequired()">
+                    <option value="">请选择角色</option>
+                    <option value="field_worker">现场工作人员</option>
+                    <option value="dept_user">部门用户 (FES/FAM/ENT)</option>
+                    <option value="manager">管理员</option>
+                </select>
+            </div>
+
+            <!-- Add employee_id field -->
+            <div class="form-group">
+                <label for="employee_id">工号（选填）</label>
+                <input type="text" name="employee_id" id="employee_id" class="form-control"
+                       placeholder="如不填写则系统自动生成">
+                <small class="form-text text-muted">留空将由系统自动生成工号</small>
+            </div>
+
             <div class="form-group">
                 <label for="department">部门 *</label>
                 <select id="department" name="department" required>
@@ -229,6 +248,16 @@
 </div>
 
 <script>
+function toggleDepartmentRequired() {
+    var role = document.getElementById('requested_role').value;
+    var deptSelect = document.getElementById('department');
+    if (role === 'dept_user') {
+        deptSelect.setAttribute('required', 'required');
+    } else {
+        deptSelect.removeAttribute('required');
+    }
+}
+
 document.getElementById('department').addEventListener('change', function() {
     const otherField = document.getElementById('departmentOther');
     if (this.value === '其他') {
