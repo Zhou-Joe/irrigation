@@ -534,21 +534,21 @@ def request_detail(request, type_code, request_id):
 @require_POST
 @login_required(login_url='core:login')
 def update_request_status(request, type_code, request_id):
-    """
-    更新工单状态（管理员操作）
-    """
-    from core.models import MaintenanceRequest, ProjectSupportRequest, WaterRequest, Worker
+    """更新工单状态 - 仅限管理员操作"""
+    from core.models import (
+        MaintenanceRequest, ProjectSupportRequest, WaterRequest,
+        ManagerProfile, Worker
+    )
     from django.utils import timezone
 
-    # 检查是否是管理员（超级用户、staff 或 Worker 的 ADM 用户）
+    # Check admin permission
     is_admin = request.user.is_superuser or request.user.is_staff
 
     if not is_admin:
         try:
-            worker = Worker.objects.get(user=request.user)
-            if worker.employee_id.startswith('ADM'):
-                is_admin = True
-        except Worker.DoesNotExist:
+            ManagerProfile.objects.get(user=request.user, active=True)
+            is_admin = True
+        except ManagerProfile.DoesNotExist:
             pass
 
     if not is_admin:
