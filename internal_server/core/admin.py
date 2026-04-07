@@ -2,6 +2,7 @@ from django.contrib import admin
 from django.utils import timezone
 from django.contrib.auth.models import User
 from .models import Zone, Plant, Worker, WorkOrder, Event, WorkLog, WeatherData, MaintenanceRequest, ProjectSupportRequest, WaterRequest, RegistrationRequest, ManagerProfile, DepartmentUserProfile
+from .role_utils import get_worker_profile
 
 
 @admin.register(RegistrationRequest)
@@ -106,7 +107,7 @@ class RegistrationRequestAdmin(admin.ModelAdmin):
             # Update registration request
             reg.status = 'approved'
             reg.processed_at = timezone.now()
-            reg.processed_by = request.user.worker_profile if hasattr(request.user, 'worker_profile') else None
+            reg.processed_by = get_worker_profile(request.user)
             reg.created_worker = created_profile if role == ROLE_FIELD_WORKER else None
             reg.created_user = user
             reg.save()
@@ -115,10 +116,11 @@ class RegistrationRequestAdmin(admin.ModelAdmin):
     approve_requests.short_description = '批准选中的注册申请'
 
     def reject_requests(self, request, queryset):
+        worker = get_worker_profile(request.user)
         queryset.filter(status='pending').update(
             status='rejected',
             processed_at=timezone.now(),
-            processed_by=request.user.worker_profile if hasattr(request.user, 'worker_profile') else None
+            processed_by=worker
         )
     reject_requests.short_description = '拒绝选中的注册申请'
 

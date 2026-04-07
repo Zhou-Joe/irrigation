@@ -2,6 +2,7 @@
 Context processors for making data available to all templates.
 """
 from .models import RegistrationRequest, WaterRequest
+from .role_utils import get_user_role, is_admin, is_field_worker, is_dept_user
 
 
 def notifications(request):
@@ -13,13 +14,15 @@ def notifications(request):
     # Only show notifications for authenticated users
     if request.user.is_authenticated:
         # Check if user is admin (superuser, staff, or Worker with ADM employee_id)
-        is_admin = request.user.is_superuser or request.user.is_staff
+        user_is_admin = request.user.is_superuser or request.user.is_staff
 
-        if not is_admin:
-            if hasattr(request.user, 'worker_profile'):
-                is_admin = request.user.worker_profile.employee_id.startswith('ADM')
+        if not user_is_admin:
+            from .role_utils import get_worker_profile
+            worker = get_worker_profile(request.user)
+            if worker and worker.employee_id.startswith('ADM'):
+                user_is_admin = True
 
-        if is_admin:
+        if user_is_admin:
             # Pending registration requests
             for reg in RegistrationRequest.objects.filter(status='pending').order_by('-created_at')[:5]:
                 notifications_list.append({
@@ -59,45 +62,13 @@ def user_role(request):
             'user_role': None,
         }
 
-    from .models import ManagerProfile, DepartmentUserProfile, Worker
-
-    is_admin = request.user.is_superuser or request.user.is_staff
-    is_manager = False
-    is_dept_user = False
-    is_field_worker = False
-    user_role = None
-
-    if is_admin:
-        user_role = 'super_admin'
-    else:
-        try:
-            ManagerProfile.objects.get(user=request.user, active=True)
-            is_admin = True
-            is_manager = True
-            user_role = 'manager'
-        except ManagerProfile.DoesNotExist:
-            pass
-
-    if not is_admin:
-        try:
-            Worker.objects.get(user=request.user, active=True)
-            is_field_worker = True
-            user_role = 'field_worker'
-        except Worker.DoesNotExist:
-            pass
-
-    if not is_admin and not is_field_worker:
-        try:
-            DepartmentUserProfile.objects.get(user=request.user, active=True)
-            is_dept_user = True
-            user_role = 'dept_user'
-        except DepartmentUserProfile.DoesNotExist:
-            pass
+    user = request.user
+    role = get_user_role(user)
 
     return {
-        'is_admin': is_admin,
-        'is_manager': is_manager,
-        'is_field_worker': is_field_worker,
-        'is_dept_user': is_dept_user,
-        'user_role': user_role,
+        'is_admin': is_admin(user),
+        'is_manager': role == 'manager',
+        'is_field_worker': is_field_worker(user),
+        'is_dept_user': is_dept_user(user),
+        'user_role': role,
     }
