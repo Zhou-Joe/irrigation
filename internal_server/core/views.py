@@ -658,18 +658,18 @@ def register(request):
     """
     User registration page - submit request for admin approval.
     """
-    from core.models import RegistrationRequest
+    from core.models import RegistrationRequest, ROLE_FIELD_WORKER, ROLE_DEPT_USER, ROLE_MANAGER
 
     if request.method == 'POST':
         full_name = request.POST.get('full_name', '').strip()
         phone = request.POST.get('phone', '').strip()
-        requested_role = request.POST.get('requested_role', 'field_worker').strip()
+        requested_role = request.POST.get('requested_role', ROLE_FIELD_WORKER).strip()
         employee_id = request.POST.get('employee_id', '').strip()
         department = request.POST.get('department', '')
         department_other = request.POST.get('department_other', '').strip()
 
         # Valid role choices
-        valid_roles = ['field_worker', 'dept_user', 'manager']
+        valid_roles = [ROLE_FIELD_WORKER, ROLE_DEPT_USER, ROLE_MANAGER]
 
         # Validation
         if not full_name:

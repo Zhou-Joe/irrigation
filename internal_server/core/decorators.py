@@ -1,7 +1,7 @@
 from functools import wraps
-from django.contrib.auth.decorators import login_required
 from django.shortcuts import redirect
 from django.contrib import messages
+from .role_utils import is_admin, is_field_worker, is_dept_user
 
 
 def admin_required(view_func):
@@ -11,17 +11,7 @@ def admin_required(view_func):
         if not request.user.is_authenticated:
             return redirect('core:login')
 
-        # Check if admin or manager
-        is_admin = request.user.is_superuser or request.user.is_staff
-        if not is_admin:
-            try:
-                from .models import ManagerProfile
-                manager = ManagerProfile.objects.get(user=request.user, active=True)
-                is_admin = True
-            except ManagerProfile.DoesNotExist:
-                pass
-
-        if not is_admin:
+        if not is_admin(request.user):
             messages.error(request, '无权限访问此页面')
             return redirect('core:dashboard')
 
@@ -36,26 +26,11 @@ def field_worker_required(view_func):
         if not request.user.is_authenticated:
             return redirect('core:login')
 
-        # Allow if admin
-        if request.user.is_superuser or request.user.is_staff:
+        if is_admin(request.user) or is_field_worker(request.user):
             return view_func(request, *args, **kwargs)
 
-        # Check if manager
-        try:
-            from .models import ManagerProfile
-            ManagerProfile.objects.get(user=request.user, active=True)
-            return view_func(request, *args, **kwargs)
-        except ManagerProfile.DoesNotExist:
-            pass
-
-        # Check if field worker
-        try:
-            from .models import Worker
-            Worker.objects.get(user=request.user, active=True)
-            return view_func(request, *args, **kwargs)
-        except Worker.DoesNotExist:
-            messages.error(request, '无权限访问此页面')
-            return redirect('core:dashboard')
+        messages.error(request, '无权限访问此页面')
+        return redirect('core:dashboard')
     return wrapper
 
 
@@ -66,24 +41,9 @@ def dept_user_required(view_func):
         if not request.user.is_authenticated:
             return redirect('core:login')
 
-        # Allow if admin
-        if request.user.is_superuser or request.user.is_staff:
+        if is_admin(request.user) or is_dept_user(request.user):
             return view_func(request, *args, **kwargs)
 
-        # Check if manager
-        try:
-            from .models import ManagerProfile
-            ManagerProfile.objects.get(user=request.user, active=True)
-            return view_func(request, *args, **kwargs)
-        except ManagerProfile.DoesNotExist:
-            pass
-
-        # Check if department user
-        try:
-            from .models import DepartmentUserProfile
-            DepartmentUserProfile.objects.get(user=request.user, active=True)
-            return view_func(request, *args, **kwargs)
-        except DepartmentUserProfile.DoesNotExist:
-            messages.error(request, '无权限访问此页面')
-            return redirect('core:dashboard')
+        messages.error(request, '无权限访问此页面')
+        return redirect('core:dashboard')
     return wrapper
