@@ -9,7 +9,9 @@ from core.models import Zone
 
 
 def user_login(request):
-    """Login page for frontend."""
+    """Login page for frontend with role-based redirect."""
+    from .models import DepartmentUserProfile
+
     if request.user.is_authenticated:
         return redirect('core:dashboard')
 
@@ -20,7 +22,18 @@ def user_login(request):
         user = authenticate(request, username=username, password=password)
         if user is not None:
             login(request, user)
-            next_url = request.GET.get('next', 'core:dashboard')
+
+            # Determine redirect based on role
+            redirect_url = 'core:dashboard'
+
+            # Check if dept user - redirect to requests page (water requests focus)
+            try:
+                DepartmentUserProfile.objects.get(user=user, active=True)
+                redirect_url = 'core:requests'
+            except DepartmentUserProfile.DoesNotExist:
+                pass
+
+            next_url = request.GET.get('next', redirect_url)
             return redirect(next_url)
         else:
             messages.error(request, '用户名或密码错误')
