@@ -77,9 +77,41 @@ def dashboard(request):
     Main dashboard view with interactive map showing irrigation zones.
     """
     from datetime import date
-    from core.models import MaintenanceRequest, ProjectSupportRequest, WaterRequest
+    from core.models import (
+        MaintenanceRequest, ProjectSupportRequest, WaterRequest,
+        ManagerProfile, DepartmentUserProfile, RegistrationRequest, WorkOrder, Worker
+    )
 
+    user = request.user
     today = date.today()
+
+    # Determine user role
+    is_admin = user.is_superuser or user.is_staff
+    is_manager = False
+    is_dept_user = False
+    is_field_worker = False
+
+    if not is_admin:
+        try:
+            ManagerProfile.objects.get(user=user, active=True)
+            is_manager = True
+            is_admin = True
+        except ManagerProfile.DoesNotExist:
+            pass
+
+    if not is_admin:
+        try:
+            DepartmentUserProfile.objects.get(user=user, active=True)
+            is_dept_user = True
+        except DepartmentUserProfile.DoesNotExist:
+            pass
+
+    if not is_admin and not is_dept_user:
+        try:
+            Worker.objects.get(user=user, active=True)
+            is_field_worker = True
+        except Worker.DoesNotExist:
+            pass
 
     # Get all zones with annotations
     zones = Zone.objects.all().annotate(
@@ -128,9 +160,25 @@ def dashboard(request):
             'pending_requests': pending_requests,
         })
 
+    # Only admins see pending counts
+    pending_counts = None
+    if is_admin:
+        pending_counts = {
+            'registrations': RegistrationRequest.objects.filter(status='pending').count(),
+            'work_orders': WorkOrder.objects.filter(status='pending').count(),
+            'maintenance': MaintenanceRequest.objects.filter(status='submitted').count(),
+            'project_support': ProjectSupportRequest.objects.filter(status='submitted').count(),
+            'water': WaterRequest.objects.filter(status='submitted').count(),
+        }
+
     context = {
         'zones': zones,
         'zones_json': json.dumps(zones_list),
+        'is_admin': is_admin,
+        'is_manager': is_manager,
+        'is_dept_user': is_dept_user,
+        'is_field_worker': is_field_worker,
+        'pending_counts': pending_counts,
     }
 
     return render(request, 'core/dashboard.html', context)
