@@ -187,8 +187,23 @@ def dashboard(request):
 @login_required(login_url='core:login')
 def settings_page(request):
     """
-    Settings page to manage zones and system configuration.
+    Settings page to manage zones and system configuration - admin only.
     """
+    from .models import ManagerProfile
+
+    # Check admin permission
+    is_admin = request.user.is_superuser or request.user.is_staff
+    if not is_admin:
+        try:
+            ManagerProfile.objects.get(user=request.user, active=True)
+            is_admin = True
+        except ManagerProfile.DoesNotExist:
+            pass
+
+    if not is_admin:
+        messages.error(request, '无权限访问设置页面')
+        return redirect('core:dashboard')
+
     zones = Zone.objects.all().order_by('code')
 
     context = {
@@ -202,9 +217,23 @@ def settings_page(request):
 @login_required(login_url='core:login')
 def zone_edit(request, zone_id):
     """
-    Edit a specific zone.
+    Edit a specific zone - admin only.
     """
-    from core.models import Plant
+    from .models import ManagerProfile, Plant
+
+    # Check admin permission
+    is_admin = request.user.is_superuser or request.user.is_staff
+    if not is_admin:
+        try:
+            ManagerProfile.objects.get(user=request.user, active=True)
+            is_admin = True
+        except ManagerProfile.DoesNotExist:
+            pass
+
+    if not is_admin:
+        messages.error(request, '无权限修改区域')
+        return redirect('core:dashboard')
+
     zone = get_object_or_404(Zone, pk=zone_id)
 
     if request.method == 'POST':
@@ -253,9 +282,22 @@ def zone_edit(request, zone_id):
 @login_required(login_url='core:login')
 def zone_new(request):
     """
-    Create a new zone.
+    Create a new zone - admin only.
     """
-    from core.models import Plant
+    from .models import ManagerProfile, Plant
+
+    # Check admin permission
+    is_admin = request.user.is_superuser or request.user.is_staff
+    if not is_admin:
+        try:
+            ManagerProfile.objects.get(user=request.user, active=True)
+            is_admin = True
+        except ManagerProfile.DoesNotExist:
+            pass
+
+    if not is_admin:
+        messages.error(request, '无权限创建区域')
+        return redirect('core:dashboard')
 
     if request.method == 'POST':
         zone = Zone(
@@ -304,8 +346,23 @@ def zone_new(request):
 @login_required(login_url='core:login')
 def zone_delete(request, zone_id):
     """
-    Delete a zone.
+    Delete a zone - admin only.
     """
+    from .models import ManagerProfile
+
+    # Check admin permission
+    is_admin = request.user.is_superuser or request.user.is_staff
+    if not is_admin:
+        try:
+            ManagerProfile.objects.get(user=request.user, active=True)
+            is_admin = True
+        except ManagerProfile.DoesNotExist:
+            pass
+
+    if not is_admin:
+        messages.error(request, '无权限删除区域')
+        return redirect('core:dashboard')
+
     zone = get_object_or_404(Zone, pk=zone_id)
     zone_name = zone.name
     zone.delete()
