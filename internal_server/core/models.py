@@ -137,6 +137,41 @@ class Worker(models.Model):
         return f"{self.full_name} ({self.employee_id})"
 
 
+class ManagerProfile(models.Model):
+    """Profile for admin/manager users."""
+
+    user = models.OneToOneField(
+        User,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='manager_profile'
+    )
+    employee_id = models.CharField(max_length=50, unique=True)
+    full_name = models.CharField(max_length=255)
+    phone = models.CharField(max_length=20, blank=True)
+
+    # Permission flags
+    is_super_admin = models.BooleanField(default=False)
+    can_approve_registrations = models.BooleanField(default=True)
+    can_approve_work_orders = models.BooleanField(default=True)
+
+    active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    # Django auth compatibility
+    is_authenticated = True
+    is_anonymous = False
+
+    class Meta:
+        verbose_name = '管理员'
+        verbose_name_plural = '管理员'
+
+    def __str__(self):
+        return f"{self.full_name} ({self.employee_id})"
+
+
 class RegistrationRequest(models.Model):
     """Registration request pending admin approval."""
 
