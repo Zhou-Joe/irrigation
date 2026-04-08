@@ -11,15 +11,16 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _employeeIdController = TextEditingController();
-  final _phoneController = TextEditingController();
+  final _usernameController = TextEditingController();
+  final _passwordController = TextEditingController();
   bool _isLoading = false;
   String? _error;
+  bool _obscurePassword = true;
 
   @override
   void dispose() {
-    _employeeIdController.dispose();
-    _phoneController.dispose();
+    _usernameController.dispose();
+    _passwordController.dispose();
     super.dispose();
   }
 
@@ -32,8 +33,8 @@ class _LoginScreenState extends State<LoginScreen> {
     });
 
     final success = await context.read<AuthProvider>().login(
-      _employeeIdController.text.trim(),
-      _phoneController.text.trim(),
+      _usernameController.text.trim(),
+      _passwordController.text,
     );
 
     if (!mounted) return;
@@ -41,7 +42,7 @@ class _LoginScreenState extends State<LoginScreen> {
     setState(() {
       _isLoading = false;
       if (!success) {
-        _error = '登录失败，请检查工号和手机号';
+        _error = '登录失败，请检查用户名和密码';
       }
     });
   }
@@ -110,39 +111,45 @@ class _LoginScreenState extends State<LoginScreen> {
                       const SizedBox(height: 16),
                     ],
 
-                    // Employee ID
+                    // Username
                     TextFormField(
-                      controller: _employeeIdController,
+                      controller: _usernameController,
                       decoration: const InputDecoration(
-                        labelText: '工号',
-                        prefixIcon: Icon(Icons.badge),
+                        labelText: '用户名',
+                        prefixIcon: Icon(Icons.person),
                         border: OutlineInputBorder(),
                       ),
                       keyboardType: TextInputType.text,
                       textInputAction: TextInputAction.next,
                       validator: (value) {
                         if (value == null || value.trim().isEmpty) {
-                          return '请输入工号';
+                          return '请输入用户名';
                         }
                         return null;
                       },
                     ),
                     const SizedBox(height: 16),
 
-                    // Phone
+                    // Password
                     TextFormField(
-                      controller: _phoneController,
-                      decoration: const InputDecoration(
-                        labelText: '手机号',
-                        prefixIcon: Icon(Icons.phone),
-                        border: OutlineInputBorder(),
+                      controller: _passwordController,
+                      decoration: InputDecoration(
+                        labelText: '密码',
+                        prefixIcon: const Icon(Icons.lock),
+                        border: const OutlineInputBorder(),
+                        suffixIcon: IconButton(
+                          icon: Icon(_obscurePassword ? Icons.visibility : Icons.visibility_off),
+                          onPressed: () {
+                            setState(() => _obscurePassword = !_obscurePassword);
+                          },
+                        ),
                       ),
-                      keyboardType: TextInputType.phone,
+                      obscureText: _obscurePassword,
                       textInputAction: TextInputAction.done,
                       onFieldSubmitted: (_) => _login(),
                       validator: (value) {
-                        if (value == null || value.trim().isEmpty) {
-                          return '请输入手机号';
+                        if (value == null || value.isEmpty) {
+                          return '请输入密码';
                         }
                         return null;
                       },
@@ -167,7 +174,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
                     // Help text
                     Text(
-                      '示例: 工号 EMP001, 手机号 555-0101',
+                      '请联系管理员注册账户',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: Theme.of(context).colorScheme.onSurfaceVariant,
                       ),

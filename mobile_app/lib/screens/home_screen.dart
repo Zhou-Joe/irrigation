@@ -5,11 +5,9 @@ import 'package:geolocator/geolocator.dart';
 import 'package:provider/provider.dart';
 import '../models/zone.dart';
 import '../providers/auth_provider.dart';
-import '../services/api_service.dart';
-import 'work_log_screen.dart';
-import 'report_issue_screen.dart';
 import 'maintenance_screen.dart';
 import 'project_support_screen.dart';
+import 'water_request_screen.dart';
 import 'request_status_screen.dart';
 import 'request_detail_screen.dart';
 import 'settings_screen.dart';
@@ -220,27 +218,50 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     );
   }
 
+  void _goToWaterRequest() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => WaterRequestScreen(zone: _selectedZone!),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final auth = context.watch<AuthProvider>();
+    final isDeptUser = auth.isDeptUser;
+    final isAdmin = auth.isAdmin;
+
     return Scaffold(
       body: _currentIndex == 0
           ? _buildMapTab()
           : _currentIndex == 1
-              ? const RequestStatusScreen()
+              ? RequestStatusScreen(
+                  isAdmin: isAdmin,
+                  isDeptUser: isDeptUser,
+                )
               : const SettingsScreen(),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _currentIndex,
         onDestinationSelected: (index) => setState(() => _currentIndex = index),
-        destinations: const [
-          NavigationDestination(icon: Icon(Icons.map), label: '地图'),
-          NavigationDestination(icon: Icon(Icons.list_alt), label: '需求状态'),
-          NavigationDestination(icon: Icon(Icons.settings), label: '设置'),
+        destinations: [
+          const NavigationDestination(icon: Icon(Icons.map), label: '地图'),
+          NavigationDestination(
+            icon: const Icon(Icons.list_alt),
+            label: isDeptUser ? '浇水需求' : '需求状态',
+          ),
+          const NavigationDestination(icon: Icon(Icons.settings), label: '设置'),
         ],
       ),
     );
   }
 
   Widget _buildMapTab() {
+    final auth = context.watch<AuthProvider>();
+    final isDeptUser = auth.isDeptUser;
+    final isFieldWorker = auth.isFieldWorker;
+
     return Stack(
       children: [
         FlutterMap(
@@ -357,7 +378,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                     point: LatLng(_selectedZone!.center!['lat']!, _selectedZone!.center!['lng']!),
                     width: 135,
                     height: _selectedZone!.pendingRequests.isNotEmpty ? 100 : 85,
-                    child: _buildZonePopup(),
+                    child: _buildZonePopup(isDeptUser, isFieldWorker),
                   ),
                 ],
               ),
@@ -482,7 +503,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     );
   }
 
-  Widget _buildZonePopup() {
+  Widget _buildZonePopup(bool isDeptUser, bool isFieldWorker) {
     final statusColor = _getStatusColor(_selectedZone!.status);
     final hasPendingWater = _selectedZone!.pendingRequests.isNotEmpty;
 
@@ -593,18 +614,29 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                     ),
                   ),
                 const SizedBox(height: 3),
-                // Action buttons
+                // Action buttons - based on role
+                // Water request - all roles can submit
                 _buildPopupButton(
-                  icon: Icons.build,
-                  label: '维护与维修',
-                  onTap: _goToMaintenance,
+                  icon: Icons.water_drop,
+                  label: '浇水协调',
+                  onTap: _goToWaterRequest,
+                  color: const Color(0xFF2D6A4F),
                 ),
-                const SizedBox(height: 2),
-                _buildPopupButton(
-                  icon: Icons.support_agent,
-                  label: '项目支持',
-                  onTap: _goToProjectSupport,
-                ),
+                // Maintenance and Project Support - only field workers (not dept users)
+                if (!isDeptUser) ...[
+                  const SizedBox(height: 2),
+                  _buildPopupButton(
+                    icon: Icons.build,
+                    label: '维护与维修',
+                    onTap: _goToMaintenance,
+                  ),
+                  const SizedBox(height: 2),
+                  _buildPopupButton(
+                    icon: Icons.support_agent,
+                    label: '项目支持',
+                    onTap: _goToProjectSupport,
+                  ),
+                ],
               ],
             ),
           ),
@@ -617,25 +649,27 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     required IconData icon,
     required String label,
     required VoidCallback onTap,
+    Color? color,
   }) {
+    final btnColor = color ?? const Color(0xFF1B4332);
     return GestureDetector(
       onTap: onTap,
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 5),
         decoration: BoxDecoration(
-          color: const Color(0xFF1B4332).withOpacity(0.08),
+          color: btnColor.withOpacity(0.08),
           borderRadius: BorderRadius.circular(4),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(icon, color: const Color(0xFF1B4332), size: 11),
+            Icon(icon, color: btnColor, size: 11),
             const SizedBox(width: 3),
             Text(
               label,
-              style: const TextStyle(
-                color: Color(0xFF1B4332),
+              style: TextStyle(
+                color: btnColor,
                 fontSize: 9,
                 fontWeight: FontWeight.w500,
               ),

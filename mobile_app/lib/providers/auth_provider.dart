@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../models/worker.dart';
+import '../models/user.dart';
 import '../services/api_service.dart';
 
 class AuthProvider with ChangeNotifier {
@@ -9,14 +9,26 @@ class AuthProvider with ChangeNotifier {
 
   bool _isLoading = true;
   bool _isAuthenticated = false;
-  Worker? _worker;
+  User? _user;
   String? _token;
 
   bool get isLoading => _isLoading;
   bool get isAuthenticated => _isAuthenticated;
-  Worker? get worker => _worker;
+  User? get user => _user;
   String? get token => _token;
   ApiService get api => _api;
+
+  /// Check if user is admin/manager
+  bool get isAdmin => _user?.isAdmin ?? false;
+
+  /// Check if user is field worker
+  bool get isFieldWorker => _user?.isFieldWorker ?? false;
+
+  /// Check if user is department user
+  bool get isDeptUser => _user?.isDeptUser ?? false;
+
+  /// Get user role
+  String get role => _user?.role ?? '';
 
   Future<void> checkAuth() async {
     _isLoading = true;
@@ -25,11 +37,11 @@ class AuthProvider with ChangeNotifier {
     try {
       final prefs = await SharedPreferences.getInstance();
       _token = prefs.getString('auth_token');
-      final workerJson = prefs.getString('worker_data');
+      final userJson = prefs.getString('user_data');
 
-      if (_token != null && workerJson != null) {
+      if (_token != null && userJson != null) {
         _api.setToken(_token!);
-        _worker = Worker.fromJson(jsonDecode(workerJson));
+        _user = User.fromJson(jsonDecode(userJson));
         _isAuthenticated = true;
       }
     } catch (e) {
@@ -40,22 +52,16 @@ class AuthProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  Future<bool> login(String employeeId, String phone) async {
+  Future<bool> login(String username, String password) async {
     try {
-      _worker = await _api.login(employeeId, phone);
-      _token = _api.token;
+      final response = await _api.login(username, password);
+      _token = response['token'];
+      _user = User.fromJson(response['user']);
       _isAuthenticated = true;
 
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('auth_token', _token!);
-      await prefs.setString('employee_id', employeeId);
-      await prefs.setString('worker_data', jsonEncode({
-        'id': _worker!.id,
-        'employee_id': _worker!.employeeId,
-        'full_name': _worker!.fullName,
-        'phone': _worker!.phone,
-        'active': _worker!.active,
-      }));
+      await prefs.setString('user_data', jsonEncode(response['user']));
 
       notifyListeners();
       return true;
@@ -68,13 +74,12 @@ class AuthProvider with ChangeNotifier {
   Future<void> logout() async {
     _api.clearToken();
     _token = null;
-    _worker = null;
+    _user = null;
     _isAuthenticated = false;
 
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('auth_token');
-    await prefs.remove('employee_id');
-    await prefs.remove('worker_data');
+    await prefs.remove('user_data');
 
     notifyListeners();
   }

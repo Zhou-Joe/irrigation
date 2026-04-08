@@ -35,7 +35,7 @@ class _ProjectSupportScreenState extends State<ProjectSupportScreen> {
     _startTime = TimeOfDay.now();
     _endTime = TimeOfDay.now().replacing(hour: (TimeOfDay.now().hour + 1) % 24);
 
-    final user = context.read<AuthProvider>().worker;
+    final user = context.read<AuthProvider>().user;
     if (user != null) _participantsController.text = user.fullName;
   }
 

@@ -25,34 +25,111 @@ class IsAuthenticatedByTokenOrSession(permissions.BasePermission):
 @permission_classes([AllowAny])
 def worker_login(request):
     """
-    Authenticate a worker by employee_id and phone number.
-    Returns the worker's API token on success.
+    Authenticate a user by username and password.
+    Returns the user's API token and role info on success.
+    Supports: field_worker, manager, dept_user roles
     """
-    employee_id = request.data.get('employee_id')
-    phone = request.data.get('phone')
+    username = request.data.get('username')
+    password = request.data.get('password')
 
-    if not employee_id or not phone:
+    if not username or not password:
         return Response(
-            {'error': 'employee_id and phone are required'},
+            {'error': 'username and password are required'},
             status=status.HTTP_400_BAD_REQUEST
         )
 
-    try:
-        worker = Worker.objects.get(employee_id=employee_id, phone=phone, active=True)
-    except Worker.DoesNotExist:
+    # Try to authenticate with Django auth
+    from django.contrib.auth import authenticate
+    user = authenticate(request, username=username, password=password)
+
+    if user is None or not user.is_authenticated:
         return Response(
-            {'error': 'Invalid credentials or inactive worker'},
+            {'error': '用户名或密码错误'},
             status=status.HTTP_401_UNAUTHORIZED
         )
 
-    return Response({
-        'token': str(worker.api_token),
-        'worker': {
-            'id': worker.id,
-            'employee_id': worker.employee_id,
-            'full_name': worker.full_name,
-            'phone': worker.phone,
+    # Determine user role and get profile
+    role = None
+    profile_data = {}
+
+    # Check for Manager profile
+    try:
+        manager = ManagerProfile.objects.get(user=user, active=True)
+        role = 'manager'
+        profile_data = {
+            'id': manager.id,
+            'username': user.username,
+            'employee_id': manager.employee_id,
+            'full_name': manager.full_name,
+            'phone': manager.phone,
+            'role': 'manager',
+            'is_super_admin': manager.is_super_admin,
+            'can_approve_registrations': manager.can_approve_registrations,
+            'can_approve_work_orders': manager.can_approve_work_orders,
         }
+        # Use user's token or generate one
+        token = manager.api_token if hasattr(manager, 'api_token') else str(manager.id)
+    except ManagerProfile.DoesNotExist:
+        pass
+
+    # Check for Department User profile
+    if role is None:
+        try:
+            dept_user = DepartmentUserProfile.objects.get(user=user, active=True)
+            role = 'dept_user'
+            profile_data = {
+                'id': dept_user.id,
+                'username': user.username,
+                'employee_id': dept_user.employee_id,
+                'full_name': dept_user.full_name,
+                'phone': dept_user.phone,
+                'role': 'dept_user',
+                'department': dept_user.department,
+                'department_other': dept_user.department_other,
+            }
+            token = str(dept_user.id)
+        except DepartmentUserProfile.DoesNotExist:
+            pass
+
+    # Check for Worker profile (field worker)
+    if role is None:
+        try:
+            worker = Worker.objects.get(user=user, active=True)
+            role = 'field_worker'
+            profile_data = {
+                'id': worker.id,
+                'username': user.username,
+                'employee_id': worker.employee_id,
+                'full_name': worker.full_name,
+                'phone': worker.phone,
+                'role': 'field_worker',
+                'department': worker.department,
+                'department_other': worker.department_other,
+            }
+            token = str(worker.api_token)
+        except Worker.DoesNotExist:
+            pass
+
+    # Check for superuser (super admin)
+    if role is None and user.is_superuser:
+        role = 'super_admin'
+        profile_data = {
+            'id': user.id,
+            'username': user.username,
+            'full_name': user.first_name or user.username,
+            'role': 'super_admin',
+        }
+        token = str(user.id)
+
+    if role is None:
+        return Response(
+            {'error': '用户未关联任何角色，请联系管理员'},
+            status=status.HTTP_403_FORBIDDEN
+        )
+
+    return Response({
+        'token': token,
+        'user': profile_data,
     })
 
 
@@ -437,61 +514,91 @@ class WaterRequestViewSet(viewsets.ModelViewSet):
 @permission_classes([AllowAny])
 @authentication_classes([TokenAuthentication, authentication.SessionAuthentication])
 def get_all_requests(request):
-    """Get all requests combined for the status list."""
-    # request.user is Worker when using token auth, or User when using session auth
-    if isinstance(request.user, Worker):
-        worker = request.user
-    elif hasattr(request.user, 'worker_profile'):
-        worker = request.user.worker_profile
-    else:
-        worker = None
+    """Get all requests combined for the status list.
 
-    # For non-admin users, only show their own requests
-    # For admin users, show all requests
-    is_admin = worker and worker.employee_id.startswith('ADM')
+    Role-based filtering:
+    - Dept users: Only see water requests (all)
+    - Managers/Admins: See all requests (all)
+    - Field workers: See their own requests only
+    """
+    user = request.user
+    role = None
+    profile = None
+
+    # Determine user role
+    if user.is_superuser or user.is_staff:
+        role = 'admin'
+    else:
+        # Check for Manager profile
+        try:
+            manager = ManagerProfile.objects.get(user=user, active=True)
+            role = 'manager'
+            profile = manager
+        except ManagerProfile.DoesNotExist:
+            pass
+
+        # Check for Department User profile
+        if role is None:
+            try:
+                dept_user = DepartmentUserProfile.objects.get(user=user, active=True)
+                role = 'dept_user'
+                profile = dept_user
+            except DepartmentUserProfile.DoesNotExist:
+                pass
+
+        # Check for Worker profile (field worker)
+        if role is None:
+            try:
+                worker = Worker.objects.get(user=user, active=True)
+                role = 'field_worker'
+                profile = worker
+            except Worker.DoesNotExist:
+                pass
 
     results = []
 
-    # Maintenance requests
-    maintenance_qs = MaintenanceRequest.objects.all()
-    if not is_admin and worker:
-        maintenance_qs = maintenance_qs.filter(submitter=worker)
+    # Maintenance requests - only for non-dept users
+    if role != 'dept_user':
+        maintenance_qs = MaintenanceRequest.objects.all()
+        if role == 'field_worker' and profile:
+            maintenance_qs = maintenance_qs.filter(submitter=profile)
 
-    for req in maintenance_qs:
-        results.append({
-            'id': req.id,
-            'type': '维护与维修',
-            'type_code': 'maintenance',
-            'zone': req.zone.name,
-            'status': req.status,
-            'status_display': req.get_status_display(),
-            'date': str(req.date),
-            'user': req.submitter.full_name,
-            'created_at': req.created_at,
-        })
+        for req in maintenance_qs:
+            results.append({
+                'id': req.id,
+                'type': '维护与维修',
+                'type_code': 'maintenance',
+                'zone': req.zone.name,
+                'status': req.status,
+                'status_display': req.get_status_display(),
+                'date': str(req.date),
+                'user': req.submitter.full_name,
+                'created_at': req.created_at,
+            })
 
-    # Project support requests
-    project_qs = ProjectSupportRequest.objects.all()
-    if not is_admin and worker:
-        project_qs = project_qs.filter(submitter=worker)
+    # Project support requests - only for non-dept users
+    if role != 'dept_user':
+        project_qs = ProjectSupportRequest.objects.all()
+        if role == 'field_worker' and profile:
+            project_qs = project_qs.filter(submitter=profile)
 
-    for req in project_qs:
-        results.append({
-            'id': req.id,
-            'type': '项目支持',
-            'type_code': 'project_support',
-            'zone': req.zone.name,
-            'status': req.status,
-            'status_display': req.get_status_display(),
-            'date': str(req.date),
-            'user': req.submitter.full_name,
-            'created_at': req.created_at,
-        })
+        for req in project_qs:
+            results.append({
+                'id': req.id,
+                'type': '项目支持',
+                'type_code': 'project_support',
+                'zone': req.zone.name,
+                'status': req.status,
+                'status_display': req.get_status_display(),
+                'date': str(req.date),
+                'user': req.submitter.full_name,
+                'created_at': req.created_at,
+            })
 
-    # Water requests
+    # Water requests - all roles can see (dept users see all, others filtered)
     water_qs = WaterRequest.objects.all()
-    if not is_admin and worker:
-        water_qs = water_qs.filter(submitter=worker)
+    if role == 'field_worker' and profile:
+        water_qs = water_qs.filter(submitter=profile)
 
     for req in water_qs:
         results.append({
