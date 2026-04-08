@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../models/zone.dart';
-import '../models/worker.dart';
+import '../models/user.dart';
 import '../models/work_log.dart';
 
 class ApiService {
@@ -28,26 +28,28 @@ class ApiService {
     if (_token != null) 'Authorization': 'Token $_token',
   };
 
-  // 认证
-  Future<Worker> login(String employeeId, String phone) async {
+  /// Login with username and password
+  /// Returns user data with role information
+  Future<Map<String, dynamic>> login(String username, String password) async {
     final response = await http.post(
       Uri.parse('$baseUrl/auth/login'),
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode({
-        'employee_id': employeeId,
-        'phone': phone,
+        'username': username,
+        'password': password,
       }),
     );
 
     if (response.statusCode == 200) {
       final data = jsonDecode(response.body);
       _token = data['token'];
-      return Worker.fromJson(data['worker']);
+      return data;
     }
-    throw Exception('登录失败: ${response.body}');
+    final error = jsonDecode(response.body);
+    throw Exception(error['error'] ?? '登录失败');
   }
 
-  // 获取区域列表
+  /// Get zones list
   Future<List<Zone>> getZones() async {
     final response = await http.get(
       Uri.parse('$baseUrl/zones/'),
@@ -61,7 +63,7 @@ class ApiService {
     throw Exception('获取区域失败');
   }
 
-  // 获取单个区域
+  /// Get single zone
   Future<Zone> getZone(int id) async {
     final response = await http.get(
       Uri.parse('$baseUrl/zones/$id/'),
@@ -74,7 +76,7 @@ class ApiService {
     throw Exception('获取区域失败');
   }
 
-  // 提交工作日志
+  /// Submit work log
   Future<WorkLog> submitWorkLog(WorkLog log) async {
     final response = await http.post(
       Uri.parse('$baseUrl/work-logs/'),
@@ -88,7 +90,7 @@ class ApiService {
     throw Exception('提交失败: ${response.body}');
   }
 
-  // 获取工作类型列表
+  /// Get work types list
   Future<List<String>> getWorkTypes() async {
     final response = await http.get(
       Uri.parse('$baseUrl/work-types/'),
@@ -103,7 +105,7 @@ class ApiService {
     return ['浇水', '施肥', '修剪', '除草', '喷药', '种植', '收获', '其他'];
   }
 
-  // 获取所有需求状态
+  /// Get all requests (filtered by role on server)
   Future<List<Map<String, dynamic>>> getAllRequests() async {
     final response = await http.get(
       Uri.parse('$baseUrl/requests'),
@@ -117,7 +119,7 @@ class ApiService {
     throw Exception('获取需求列表失败');
   }
 
-  // 提交维护维修请求
+  /// Submit maintenance request
   Future<Map<String, dynamic>> submitMaintenanceRequest({
     required int zoneId,
     required String date,
@@ -151,7 +153,7 @@ class ApiService {
     throw Exception('提交失败: ${response.body}');
   }
 
-  // 提交项目支持请求
+  /// Submit project support request
   Future<Map<String, dynamic>> submitProjectSupportRequest({
     required int zoneId,
     required String date,
@@ -185,7 +187,7 @@ class ApiService {
     throw Exception('提交失败: ${response.body}');
   }
 
-  // 提交浇水协调需求
+  /// Submit water request
   Future<Map<String, dynamic>> submitWaterRequest({
     required int zoneId,
     required String userType,
@@ -217,7 +219,7 @@ class ApiService {
     throw Exception('提交失败: ${response.body}');
   }
 
-  // 更新请求状态（管理员）
+  /// Update request status (admin only)
   Future<void> updateRequestStatus({
     required String typeCode,
     required int requestId,
@@ -253,7 +255,7 @@ class ApiService {
     }
   }
 
-  // 获取单个请求详情
+  /// Get single request detail
   Future<Map<String, dynamic>> getRequestDetail(String typeCode, int requestId) async {
     String endpoint;
     switch (typeCode) {
@@ -281,7 +283,7 @@ class ApiService {
     throw Exception('获取详情失败: ${response.body}');
   }
 
-  // 更新请求详情
+  /// Update request detail
   Future<Map<String, dynamic>> updateRequestDetail({
     required String typeCode,
     required int requestId,
@@ -314,7 +316,7 @@ class ApiService {
     throw Exception('更新失败: ${response.body}');
   }
 
-  // 获取天气数据
+  /// Get weather data
   Future<List<Map<String, dynamic>>> getWeather() async {
     final response = await http.get(
       Uri.parse('$baseUrl/weather'),

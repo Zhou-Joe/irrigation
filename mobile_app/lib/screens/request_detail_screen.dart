@@ -189,8 +189,8 @@ class _RequestDetailScreenState extends State<RequestDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final user = context.watch<AuthProvider>().worker;
-    final isAdmin = user?.employeeId.startsWith('ADM') ?? false;
+    final auth = context.watch<AuthProvider>();
+    final isAdmin = auth.isAdmin;
     final canEdit = isAdmin || _status == 'submitted' || _status == 'info_needed';
 
     return Scaffold(

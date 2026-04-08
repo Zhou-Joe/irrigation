@@ -39,7 +39,7 @@ class _MaintenanceScreenState extends State<MaintenanceScreen> {
     _endTime = TimeOfDay.now().replacing(hour: (TimeOfDay.now().hour + 1) % 24);
 
     // Auto-fill current user name
-    final user = context.read<AuthProvider>().worker;
+    final user = context.read<AuthProvider>().user;
     if (user != null) {
       _participantsController.text = user.fullName;
     }

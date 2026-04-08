@@ -4,7 +4,14 @@ import '../providers/auth_provider.dart';
 import 'request_detail_screen.dart';
 
 class RequestStatusScreen extends StatefulWidget {
-  const RequestStatusScreen({super.key});
+  final bool isAdmin;
+  final bool isDeptUser;
+
+  const RequestStatusScreen({
+    super.key,
+    this.isAdmin = false,
+    this.isDeptUser = false,
+  });
 
   @override
   State<RequestStatusScreen> createState() => _RequestStatusScreenState();
@@ -14,6 +21,7 @@ class _RequestStatusScreenState extends State<RequestStatusScreen> {
   List<Map<String, dynamic>> _requests = [];
   bool _isLoading = true;
   String? _error;
+  String _filterType = 'all'; // 'all', 'water', 'maintenance', 'project_support'
 
   @override
   void initState() {
@@ -40,6 +48,11 @@ class _RequestStatusScreenState extends State<RequestStatusScreen> {
         _isLoading = false;
       });
     }
+  }
+
+  List<Map<String, dynamic>> get _filteredRequests {
+    if (_filterType == 'all') return _requests;
+    return _requests.where((r) => r['type_code'] == _filterType).toList();
   }
 
   Color _getStatusColor(String status) {
@@ -87,13 +100,9 @@ class _RequestStatusScreenState extends State<RequestStatusScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final user = context.watch<AuthProvider>().worker;
-    // For now, check if user can manage requests (could be based on employee_id pattern or other criteria)
-    final isAdmin = user?.employeeId.startsWith('ADM') ?? false;
-
     return Scaffold(
       appBar: AppBar(
-        title: const Text('需求状态'),
+        title: Text(widget.isDeptUser ? '浇水需求' : '需求状态'),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
@@ -101,36 +110,91 @@ class _RequestStatusScreenState extends State<RequestStatusScreen> {
           ),
         ],
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _error != null
-              ? Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text(_error!, style: const TextStyle(color: Colors.red)),
-                      const SizedBox(height: 16),
-                      ElevatedButton(
-                        onPressed: _loadRequests,
-                        child: const Text('重新加载'),
-                      ),
-                    ],
-                  ),
-                )
-              : _requests.isEmpty
-                  ? const Center(child: Text('暂无需求记录'))
-                  : ListView.builder(
-                      padding: const EdgeInsets.all(8),
-                      itemCount: _requests.length,
-                      itemBuilder: (context, index) {
-                        final request = _requests[index];
-                        return _buildRequestCard(request, isAdmin);
-                      },
-                    ),
+      body: Column(
+        children: [
+          // Filter chips (only for non-dept users)
+          if (!widget.isDeptUser)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
+                    _buildFilterChip('全部', 'all'),
+                    const SizedBox(width: 8),
+                    _buildFilterChip('浇水协调', 'water'),
+                    const SizedBox(width: 8),
+                    _buildFilterChip('维护维修', 'maintenance'),
+                    const SizedBox(width: 8),
+                    _buildFilterChip('项目支持', 'project_support'),
+                  ],
+                ),
+              ),
+            ),
+          // Request list
+          Expanded(
+            child: _isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : _error != null
+                    ? Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(_error!, style: const TextStyle(color: Colors.red)),
+                            const SizedBox(height: 16),
+                            ElevatedButton(
+                              onPressed: _loadRequests,
+                              child: const Text('重新加载'),
+                            ),
+                          ],
+                        ),
+                      )
+                    : _filteredRequests.isEmpty
+                        ? Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  widget.isDeptUser ? Icons.water_drop_outlined : Icons.article_outlined,
+                                  size: 64,
+                                  color: Colors.grey,
+                                ),
+                                const SizedBox(height: 16),
+                                Text(
+                                  widget.isDeptUser ? '暂无浇水需求记录' : '暂无需求记录',
+                                  style: const TextStyle(color: Colors.grey),
+                                ),
+                              ],
+                            ),
+                          )
+                        : ListView.builder(
+                            padding: const EdgeInsets.all(8),
+                            itemCount: _filteredRequests.length,
+                            itemBuilder: (context, index) {
+                              final request = _filteredRequests[index];
+                              return _buildRequestCard(request);
+                            },
+                          ),
+          ),
+        ],
+      ),
     );
   }
 
-  Widget _buildRequestCard(Map<String, dynamic> request, bool isAdmin) {
+  Widget _buildFilterChip(String label, String value) {
+    final isSelected = _filterType == value;
+    return FilterChip(
+      label: Text(label),
+      selected: isSelected,
+      onSelected: (selected) {
+        setState(() => _filterType = value);
+      },
+      selectedColor: const Color(0xFF52B788).withOpacity(0.3),
+      checkmarkColor: const Color(0xFF1B4332),
+    );
+  }
+
+  Widget _buildRequestCard(Map<String, dynamic> request) {
     final statusColor = _getStatusColor(request['status']);
 
     return Card(
@@ -201,7 +265,8 @@ class _RequestStatusScreenState extends State<RequestStatusScreen> {
                   const Icon(Icons.chevron_right, size: 16, color: Colors.grey),
                 ],
               ),
-              if (isAdmin && request['status'] == 'submitted')
+              // Quick actions for admin
+              if (widget.isAdmin && request['status'] == 'submitted')
                 Padding(
                   padding: const EdgeInsets.only(top: 12),
                   child: Row(
@@ -241,16 +306,20 @@ class _RequestStatusScreenState extends State<RequestStatusScreen> {
         status: newStatus,
       );
       await _loadRequests();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('状态已更新为: ${_getStatusText(newStatus)}'),
-          backgroundColor: const Color(0xFF40916C),
-        ),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('状态已更新为: ${_getStatusText(newStatus)}'),
+            backgroundColor: const Color(0xFF40916C),
+          ),
+        );
+      }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('更新失败: $e')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('更新失败: $e')),
+        );
+      }
     }
   }
 }
