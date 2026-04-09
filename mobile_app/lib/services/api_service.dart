@@ -28,6 +28,18 @@ class ApiService {
     if (_token != null) 'Authorization': 'Token $_token',
   };
 
+  /// Check server connectivity
+  Future<bool> checkConnection() async {
+    try {
+      final response = await http
+          .get(Uri.parse('$baseUrl/zones/'), headers: _headers)
+          .timeout(const Duration(seconds: 5));
+      return response.statusCode == 200 || response.statusCode == 401 || response.statusCode == 403;
+    } catch (_) {
+      return false;
+    }
+  }
+
   /// Login with username and password
   /// Returns user data with role information
   Future<Map<String, dynamic>> login(String username, String password) async {

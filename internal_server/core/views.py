@@ -866,15 +866,27 @@ def registration_approval(request):
                 # Generate employee_id
                 if reg.requested_role == ROLE_MANAGER:
                     prefix = 'ADM'
-                    last = ManagerProfile.objects.order_by('-id').first()
+                    model_class = ManagerProfile
                 elif reg.requested_role == ROLE_DEPT_USER:
                     prefix = 'DEPT'
-                    last = DepartmentUserProfile.objects.order_by('-id').first()
+                    model_class = DepartmentUserProfile
                 else:
                     prefix = 'EMP'
-                    last = Worker.objects.order_by('-id').first()
+                    model_class = Worker
 
-                next_num = (int(last.employee_id.replace(prefix, '')) + 1) if last else 1
+                # Find max employee_id number by scanning all records
+                max_num = 0
+                for profile in model_class.objects.all():
+                    eid = profile.employee_id or ''
+                    if eid.startswith(prefix):
+                        try:
+                            num = int(eid[len(prefix):])
+                            if num > max_num:
+                                max_num = num
+                        except ValueError:
+                            continue
+
+                next_num = max_num + 1
                 employee_id = f'{prefix}{next_num:03d}'
 
                 # Create Django User with submitted credentials
