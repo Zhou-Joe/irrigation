@@ -1,6 +1,7 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from core import views
+from core.sync_views import sync_receive, sync_status, agent_status
 from core.api import (
     ZoneViewSet, PlantViewSet, WorkerViewSet,
     WorkOrderViewSet, EventViewSet, WorkLogViewSet,
@@ -38,4 +39,8 @@ urlpatterns = [
     path('api/requests', get_all_requests, name='get_all_requests'),
     path('api/weather', get_weather, name='get_weather'),
     path('api/', include(router.urls)),
+    path('api/maxicom-dashboard', views.maxicom_dashboard_api, name='maxicom_dashboard_api'),
+    path('api/sync/receive', sync_receive, name='sync_receive'),
+    path('api/sync/status', sync_status, name='sync_status'),
+    path('api/sync/agent-status', agent_status, name='agent_status'),
 ]

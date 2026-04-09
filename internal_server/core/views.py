@@ -3,8 +3,9 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib import messages
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.decorators import login_required
-from django.db.models import Count, Q
+from django.db.models import Count, Q, Avg, Sum
 from django.views.decorators.http import require_POST
+from django.http import JsonResponse
 from django.utils import timezone
 from core.models import Zone
 
@@ -958,3 +959,145 @@ def registration_approval(request):
     }
 
     return render(request, 'core/registration_approval.html', context)
+
+
+@login_required(login_url='core:login')
+def maxicom_dashboard_api(request):
+    """API endpoint providing Maxicom2 irrigation data for the dashboard."""
+    from core.models import (
+        MaxicomSite, MaxicomController, MaxicomStation, MaxicomSchedule,
+        MaxicomFlowZone, MaxicomWeatherStation, MaxicomWeatherLog,
+        MaxicomEvent, MaxicomETCheckbook, MaxicomRuntime,
+    )
+
+    # System overview stats
+    stats = {
+        'sites': MaxicomSite.objects.count(),
+        'controllers': MaxicomController.objects.count(),
+        'stations': MaxicomStation.objects.count(),
+        'schedules': MaxicomSchedule.objects.count(),
+        'flow_zones': MaxicomFlowZone.objects.count(),
+        'weather_stations': MaxicomWeatherStation.objects.count(),
+        'weather_logs': MaxicomWeatherLog.objects.count(),
+        'events': MaxicomEvent.objects.count(),
+        'locked_stations': MaxicomStation.objects.filter(lockout=True).count(),
+    }
+
+    # Site hierarchy: sites with controller/station counts and station details
+    sites = []
+    for site in MaxicomSite.objects.all():
+        ctrl_count = site.controllers.count()
+        stn_count = site.stations.count()
+        sched_count = site.schedules.count()
+        fz_count = site.flow_zones.count()
+
+        # Station details for hierarchy table
+        station_list = []
+        for stn in site.stations.select_related('controller').all():
+            station_list.append({
+                'id': stn.id,
+                'name': stn.name or f'点位 {stn.controller_channel}',
+                'controller_channel': stn.controller_channel,
+                'controller_name': stn.controller.name if stn.controller else '-',
+                'precip_rate': stn.precip_rate,
+                'flow_rate': stn.flow_rate,
+                'cycle_time': stn.cycle_time,
+                'soak_time': stn.soak_time,
+                'lockout': stn.lockout,
+                'memo': stn.memo,
+            })
+
+        sites.append({
+            'id': site.id,
+            'mdb_index': site.mdb_index,
+            'name': site.name,
+            'site_number': site.site_number,
+            'et_current': site.et_current,
+            'et_default': site.et_default,
+            'water_pricing': site.water_pricing,
+            'rain_shutdown': site.rain_shutdown,
+            'controller_count': ctrl_count,
+            'station_count': stn_count,
+            'schedule_count': sched_count,
+            'flow_zone_count': fz_count,
+            'stations': station_list,
+        })
+
+    # Recent events (last 50)
+    recent_events = []
+    for ev in MaxicomEvent.objects.all()[:50]:
+        recent_events.append({
+            'timestamp': ev.timestamp,
+            'source': ev.source,
+            'flag': ev.flag,
+            'text': ev.text,
+        })
+
+    # Weather summary: latest reading per station
+    weather_summary = []
+    for ws in MaxicomWeatherStation.objects.all():
+        latest = ws.readings.order_by('-timestamp').first()
+        if latest:
+            weather_summary.append({
+                'station': ws.name,
+                'timestamp': latest.timestamp,
+                'temperature': latest.temperature,
+                'humidity': latest.humidity,
+                'rainfall': latest.rainfall,
+                'et': latest.et,
+                'wind_run': latest.wind_run,
+                'solar_radiation': latest.solar_radiation,
+            })
+
+    # ET trend: last 30 days of ET readings aggregated by day
+    et_trend = []
+    et_readings = MaxicomWeatherLog.objects.order_by('-timestamp')[:720]  # ~30 days * 24hrs
+    et_by_date = {}
+    for r in et_readings:
+        ts = r.timestamp or ''
+        if len(ts) >= 8:
+            date_str = ts[:8]  # YYYYMMDD
+            if date_str not in et_by_date:
+                et_by_date[date_str] = []
+            if r.et is not None:
+                et_by_date[date_str].append(r.et)
+    for date_str in sorted(et_by_date.keys()):
+        vals = et_by_date[date_str]
+        et_trend.append({
+            'date': f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:8]}",
+            'avg_et': round(sum(vals) / len(vals), 3) if vals else 0,
+            'count': len(vals),
+        })
+
+    # Station status breakdown
+    station_status = {
+        'total': MaxicomStation.objects.count(),
+        'locked': MaxicomStation.objects.filter(lockout=True).count(),
+        'active': MaxicomStation.objects.filter(lockout=False).count(),
+    }
+
+    # Top sites by station count
+    top_sites = sorted(sites, key=lambda x: x['station_count'], reverse=True)[:10]
+
+    # ET Checkbook latest
+    et_checkbook_latest = []
+    for ec in MaxicomETCheckbook.objects.select_related('site').order_by('-timestamp')[:20]:
+        et_checkbook_latest.append({
+            'site': ec.site.name,
+            'timestamp': ec.timestamp,
+            'soil_moisture': ec.soil_moisture,
+            'rainfall': ec.rainfall,
+            'et': ec.et,
+            'irrigation': ec.irrigation,
+        })
+
+    return JsonResponse({
+        'stats': stats,
+        'sites': sites,
+        'recent_events': recent_events,
+        'weather_summary': weather_summary,
+        'et_trend': et_trend,
+        'station_status': station_status,
+        'top_sites': top_sites,
+        'et_checkbook': et_checkbook_latest,
+    })

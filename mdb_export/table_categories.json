@@ -1,0 +1,87 @@
+{
+  "System": [
+    "M_SYSTEM",
+    "M_PWORD",
+    "M_PWFREE",
+    "INDICES"
+  ],
+  "Site Configuration": [
+    "SITE_CF"
+  ],
+  "Controller": [
+    "CTROL_CF",
+    "CTROL_TP"
+  ],
+  "Station": [
+    "STATN_CF"
+  ],
+  "Decoder": [
+    "DCODE_CF",
+    "DCODE_TP"
+  ],
+  "Connection": [
+    "CNECT_CF"
+  ],
+  "Contact": [
+    "CTACT_CF",
+    "CTACT_TP"
+  ],
+  "Schedule": [
+    "SCHED_CF",
+    "Station_Schedule"
+  ],
+  "Weather": [
+    "WETHR_CF",
+    "WETHR_TP"
+  ],
+  "Flow Zone": [
+    "FLOZO_CF"
+  ],
+  "Macros": [
+    "M_CYCLE",
+    "M_FLOWRT",
+    "M_MICLIM",
+    "M_PRECRT",
+    "M_SOAK",
+    "M_WTRBGT"
+  ],
+  "Weather Logs": [
+    "XA_WETHR",
+    "XA_ET",
+    "XA_ETCheckBook"
+  ],
+  "Signal Logs": [
+    "XA_LOG"
+  ],
+  "Events": [
+    "XA_EVENT"
+  ],
+  "Flow Logs": [
+    "XA_FLOZO",
+    "XA_FLOZO_TMP",
+    "XA_FlowProject"
+  ],
+  "Runtime": [
+    "XA_RuntimeProject"
+  ],
+  "Contact Logs": [
+    "XA_ContactLog"
+  ],
+  "Calendar": [
+    "XA_CLNDR"
+  ],
+  "Historical": [
+    "XA_HIST"
+  ],
+  "Memos": [
+    "XA_MEMO"
+  ],
+  "Diagnostics": [
+    "XA_WirelessDiagnosis",
+    "XA_WirelessDiagnosis_TMP"
+  ],
+  "Export Errors": [
+    "XA_LOG_ExportErrors",
+    "XA_WETHR_ExportErrors"
+  ]
+}

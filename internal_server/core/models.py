@@ -481,3 +481,275 @@ class WaterRequest(RequestBase):
 
     def __str__(self):
         return f"浇水协调 - {self.zone.name} ({self.request_type})"
+
+
+# ============================================
+# Maxicom2 Irrigation System Models
+# Data imported from Maxicom2.mdb (Rain Bird Central Control)
+# ============================================
+
+class MaxicomSite(models.Model):
+    """Irrigation site from Maxicom2 system. Linked to Zone if matching."""
+    zone = models.ForeignKey(Zone, on_delete=models.SET_NULL, null=True, blank=True, related_name='maxicom_sites')
+    mdb_index = models.IntegerField(help_text='Original IndexNumber from MDB')
+    name = models.CharField(max_length=255)
+    site_number = models.IntegerField()
+    time_zone = models.CharField(max_length=50, default='China')
+    water_pricing = models.FloatField(null=True, blank=True)
+    ccu_version = models.CharField(max_length=50, blank=True)
+    et_current = models.FloatField(null=True, blank=True, help_text='Current ET value')
+    et_default = models.FloatField(null=True, blank=True)
+    et_minimum = models.FloatField(null=True, blank=True)
+    et_maximum = models.FloatField(null=True, blank=True)
+    crop_coefficient = models.FloatField(null=True, blank=True)
+    rain_shutdown = models.BooleanField(default=False)
+    telephone = models.CharField(max_length=255, blank=True, help_text='CCU contact address')
+    date_open = models.CharField(max_length=20, blank=True)
+    date_close = models.CharField(max_length=20, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['site_number', 'mdb_index']
+        verbose_name = 'Maxicom站点'
+        verbose_name_plural = 'Maxicom站点'
+
+    def __str__(self):
+        return f"{self.name} (Site {self.site_number})"
+
+
+class MaxicomController(models.Model):
+    """Controller (CCU/SAT) from Maxicom2 system."""
+    site = models.ForeignKey(MaxicomSite, on_delete=models.CASCADE, related_name='controllers')
+    mdb_index = models.IntegerField()
+    name = models.CharField(max_length=255)
+    controller_type = models.CharField(max_length=255, blank=True)
+    site_number = models.IntegerField()
+    link_number = models.IntegerField()
+    link_channel = models.IntegerField()
+    enabled = models.BooleanField(default=True)
+    date_open = models.CharField(max_length=20, blank=True)
+
+    class Meta:
+        ordering = ['site', 'link_number', 'link_channel']
+        verbose_name = 'Maxicom控制器'
+        verbose_name_plural = 'Maxicom控制器'
+
+    def __str__(self):
+        return f"{self.name} (Site {self.site_number})"
+
+
+class MaxicomStation(models.Model):
+    """Irrigation station from Maxicom2 system."""
+    site = models.ForeignKey(MaxicomSite, on_delete=models.CASCADE, related_name='stations')
+    controller = models.ForeignKey(MaxicomController, on_delete=models.SET_NULL, null=True, blank=True, related_name='stations')
+    mdb_index = models.IntegerField(unique=True)
+    name = models.CharField(max_length=255, blank=True)
+    controller_channel = models.IntegerField()
+    precip_rate = models.FloatField(null=True, blank=True, help_text='Precipitation rate')
+    flow_rate = models.FloatField(null=True, blank=True, help_text='Flow rate')
+    microclimate_factor = models.IntegerField(null=True, blank=True)
+    cycle_time = models.IntegerField(null=True, blank=True, help_text='Cycle time in minutes')
+    soak_time = models.IntegerField(null=True, blank=True, help_text='Soak time in minutes')
+    memo = models.TextField(blank=True)
+    lockout = models.BooleanField(default=False)
+    flow_manager_priority = models.IntegerField(null=True, blank=True)
+    date_open = models.CharField(max_length=20, blank=True)
+
+    class Meta:
+        ordering = ['site', 'controller_channel']
+        verbose_name = 'Maxicom灌溉站'
+        verbose_name_plural = 'Maxicom灌溉站'
+
+    def __str__(self):
+        name = self.name or f"Station {self.controller_channel}"
+        return f"{name} @ {self.site.name}"
+
+
+class MaxicomSchedule(models.Model):
+    """Irrigation schedule from Maxicom2 system."""
+    site = models.ForeignKey(MaxicomSite, on_delete=models.CASCADE, related_name='schedules')
+    mdb_index = models.IntegerField()
+    name = models.CharField(max_length=255)
+    nominal_et = models.FloatField(null=True, blank=True)
+    water_budget_factor = models.IntegerField(null=True, blank=True)
+    flo_manage = models.BooleanField(default=False)
+    send_automatic = models.BooleanField(default=False)
+    send_protected = models.BooleanField(default=False)
+    instruction_file = models.CharField(max_length=255, blank=True)
+    sensitized_et = models.BooleanField(default=False)
+    date_open = models.CharField(max_length=20, blank=True)
+
+    class Meta:
+        verbose_name = 'Maxicom计划'
+        verbose_name_plural = 'Maxicom计划'
+
+    def __str__(self):
+        return f"{self.name} @ {self.site.name}"
+
+
+class MaxicomFlowZone(models.Model):
+    """Flow monitoring zone from Maxicom2 system."""
+    site = models.ForeignKey(MaxicomSite, on_delete=models.CASCADE, related_name='flow_zones')
+    mdb_index = models.IntegerField()
+    name = models.CharField(max_length=255)
+    join_site = models.BooleanField(default=False)
+
+    class Meta:
+        verbose_name = 'Maxicom流量区域'
+        verbose_name_plural = 'Maxicom流量区域'
+
+    def __str__(self):
+        return f"{self.name} @ {self.site.name}"
+
+
+class MaxicomWeatherStation(models.Model):
+    """Weather station from Maxicom2 system."""
+    mdb_index = models.IntegerField(unique=True)
+    name = models.CharField(max_length=255)
+    default_et = models.FloatField(null=True, blank=True)
+    time_zone = models.CharField(max_length=50, blank=True)
+
+    class Meta:
+        verbose_name = 'Maxicom气象站'
+        verbose_name_plural = 'Maxicom气象站'
+
+    def __str__(self):
+        return self.name
+
+
+class MaxicomWeatherLog(models.Model):
+    """Weather reading from Maxicom2 system."""
+    weather_station = models.ForeignKey(MaxicomWeatherStation, on_delete=models.CASCADE, related_name='readings')
+    timestamp = models.CharField(max_length=20, db_index=True)
+    temperature = models.FloatField(null=True, blank=True)
+    max_temp = models.FloatField(null=True, blank=True)
+    min_temp = models.FloatField(null=True, blank=True)
+    solar_radiation = models.FloatField(null=True, blank=True)
+    rainfall = models.FloatField(null=True, blank=True)
+    humidity = models.FloatField(null=True, blank=True)
+    wind_run = models.FloatField(null=True, blank=True)
+    et = models.FloatField(null=True, blank=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['weather_station', 'timestamp']),
+        ]
+        verbose_name = 'Maxicom气象数据'
+        verbose_name_plural = 'Maxicom气象数据'
+
+    def __str__(self):
+        return f"{self.weather_station.name} @ {self.timestamp}"
+
+
+class MaxicomEvent(models.Model):
+    """System event from Maxicom2 system."""
+    timestamp = models.CharField(max_length=20, db_index=True)
+    source = models.CharField(max_length=5, blank=True, help_text='Event source (S=Site, W=Weather)')
+    index = models.IntegerField(null=True, blank=True)
+    event_number = models.IntegerField(null=True, blank=True)
+    flag = models.CharField(max_length=5, blank=True, help_text='E=Error, W=Warning, I=Info')
+    text = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['-timestamp']
+        verbose_name = 'Maxicom事件'
+        verbose_name_plural = 'Maxicom事件'
+
+    def __str__(self):
+        return f"[{self.flag}] {self.text[:80]}"
+
+
+class MaxicomFlowReading(models.Model):
+    """Flow zone reading from Maxicom2 system (time series)."""
+    flow_zone = models.ForeignKey(MaxicomFlowZone, on_delete=models.CASCADE, related_name='readings')
+    timestamp = models.CharField(max_length=20, db_index=True)
+    value = models.IntegerField(null=True, blank=True)
+    multiplier = models.IntegerField(null=True, blank=True)
+    site_id = models.IntegerField(null=True, blank=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['flow_zone', 'timestamp']),
+        ]
+        verbose_name = 'Maxicom流量数据'
+        verbose_name_plural = 'Maxicom流量数据'
+
+    def __str__(self):
+        return f"{self.flow_zone.name} @ {self.timestamp}: {self.value}"
+
+
+class MaxicomSignalLog(models.Model):
+    """Signal log from Maxicom2 system."""
+    timestamp = models.CharField(max_length=20, db_index=True)
+    index = models.IntegerField(null=True, blank=True)
+    controller_channel = models.IntegerField(null=True, blank=True)
+    signal_index = models.IntegerField(null=True, blank=True)
+    signal_table = models.CharField(max_length=5, blank=True)
+    signal_type = models.CharField(max_length=5, blank=True)
+    signal_value = models.IntegerField(null=True, blank=True)
+    signal_multiplier = models.FloatField(null=True, blank=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['timestamp']),
+        ]
+        verbose_name = 'Maxicom信号日志'
+        verbose_name_plural = 'Maxicom信号日志'
+
+    def __str__(self):
+        return f"Signal @ {self.timestamp} ch{self.controller_channel}"
+
+
+class MaxicomETCheckbook(models.Model):
+    """ET checkbook (soil moisture balance) from Maxicom2 system."""
+    timestamp = models.CharField(max_length=20, db_index=True)
+    site = models.ForeignKey(MaxicomSite, on_delete=models.CASCADE, related_name='et_checkbooks')
+    soil_moisture = models.FloatField(null=True, blank=True)
+    rainfall = models.FloatField(null=True, blank=True)
+    et = models.FloatField(null=True, blank=True)
+    irrigation = models.FloatField(null=True, blank=True)
+    soil_moisture_capacity = models.FloatField(null=True, blank=True)
+    soil_refill_pct = models.IntegerField(null=True, blank=True)
+
+    class Meta:
+        verbose_name = 'Maxicom ET账本'
+        verbose_name_plural = 'Maxicom ET账本'
+
+    def __str__(self):
+        return f"ET Checkbook {self.site.name} @ {self.timestamp}"
+
+
+class SyncAgentHeartbeat(models.Model):
+    """Tracks the last heartbeat from the Maxicom2 sync agent."""
+    last_heartbeat = models.DateTimeField(auto_now=True)
+    last_sync_counts = models.JSONField(default=dict, blank=True, help_text='Record counts from last sync')
+    agent_version = models.CharField(max_length=50, blank=True, default='')
+
+    class Meta:
+        verbose_name = '同步代理心跳'
+        verbose_name_plural = '同步代理心跳'
+
+    def __str__(self):
+        return f"Sync Agent Heartbeat: {self.last_heartbeat}"
+
+    @classmethod
+    def get_instance(cls):
+        """Get or create the singleton heartbeat instance."""
+        obj, _ = cls.objects.get_or_create(pk=1)
+        return obj
+
+
+class MaxicomRuntime(models.Model):
+    """Runtime data from Maxicom2 system."""
+    timestamp = models.CharField(max_length=20, db_index=True)
+    station = models.ForeignKey(MaxicomStation, on_delete=models.CASCADE, related_name='runtimes', null=True, blank=True)
+    site = models.ForeignKey(MaxicomSite, on_delete=models.CASCADE, related_name='runtimes')
+    station_id_raw = models.IntegerField(help_text='Original StationID from MDB')
+    run_time = models.IntegerField(null=True, blank=True)
+
+    class Meta:
+        verbose_name = 'Maxicom运行时间'
+        verbose_name_plural = 'Maxicom运行时间'
+
+    def __str__(self):
+        return f"Runtime {self.site.name} @ {self.timestamp}"
