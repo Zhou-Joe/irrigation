@@ -3,8 +3,34 @@ import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../services/api_service.dart';
 
-class SettingsScreen extends StatelessWidget {
+class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
+
+  @override
+  State<SettingsScreen> createState() => _SettingsScreenState();
+}
+
+class _SettingsScreenState extends State<SettingsScreen> {
+  bool? _isConnected;
+  bool _isChecking = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkConnection();
+  }
+
+  Future<void> _checkConnection() async {
+    setState(() => _isChecking = true);
+    final api = context.read<AuthProvider>().api;
+    final connected = await api.checkConnection();
+    if (mounted) {
+      setState(() {
+        _isConnected = connected;
+        _isChecking = false;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -89,7 +115,7 @@ class SettingsScreen extends StatelessWidget {
           ListTile(
             leading: const Icon(Icons.badge),
             title: const Text('工号'),
-            subtitle: Text((user as dynamic?)?.employeeId ?? '-'),
+            subtitle: Text(user?.employeeId ?? '-'),
           ),
         ],
 
@@ -101,7 +127,7 @@ class SettingsScreen extends StatelessWidget {
           ListTile(
             leading: const Icon(Icons.business),
             title: const Text('部门'),
-            subtitle: Text((user as dynamic?)?.departmentDisplay ?? '-'),
+            subtitle: Text(user?.departmentDisplay ?? '-'),
           ),
         ],
 
@@ -144,6 +170,34 @@ class SettingsScreen extends StatelessWidget {
         const Padding(
           padding: EdgeInsets.fromLTRB(16, 24, 16, 8),
           child: Text('服务器设置', style: TextStyle(fontWeight: FontWeight.bold)),
+        ),
+        // Connection status
+        ListTile(
+          leading: _isChecking
+              ? const SizedBox(
+                  width: 24,
+                  height: 24,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : Icon(
+                  _isConnected == true ? Icons.cloud_done : Icons.cloud_off,
+                  color: _isConnected == true ? const Color(0xFF40916C) : Colors.red,
+                ),
+          title: const Text('服务器连接'),
+          subtitle: Text(
+            _isChecking
+                ? '检测中...'
+                : _isConnected == true
+                    ? '已连接'
+                    : '未连接',
+            style: TextStyle(
+              color: _isConnected == true ? const Color(0xFF40916C) : Colors.red,
+            ),
+          ),
+          trailing: IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: _isChecking ? null : _checkConnection,
+          ),
         ),
         ListTile(
           leading: const Icon(Icons.dns),
@@ -259,6 +313,7 @@ class SettingsScreen extends StatelessWidget {
             onPressed: () {
               ApiService.baseUrl = controller.text.trim();
               Navigator.pop(context);
+              _checkConnection();
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(content: Text('已更新服务器地址')),
               );

@@ -6,6 +6,9 @@ class User {
   final String? phone;
   final String role;
   final bool active;
+  final String? employeeId;
+  final String? department;
+  final String? departmentOther;
 
   User({
     required this.id,
@@ -14,6 +17,9 @@ class User {
     this.phone,
     required this.role,
     this.active = true,
+    this.employeeId,
+    this.department,
+    this.departmentOther,
   });
 
   factory User.fromJson(Map<String, dynamic> json) {
@@ -24,6 +30,9 @@ class User {
       phone: json['phone'],
       role: json['role'] ?? 'field_worker',
       active: json['active'] ?? true,
+      employeeId: json['employee_id'],
+      department: json['department'],
+      departmentOther: json['department_other'],
     );
   }
 
@@ -34,6 +43,9 @@ class User {
     'phone': phone,
     'role': role,
     'active': active,
+    'employee_id': employeeId,
+    'department': department,
+    'department_other': departmentOther,
   };
 
   /// Check if user is admin/manager
@@ -59,6 +71,14 @@ class User {
       default:
         return '未知';
     }
+  }
+
+  /// Get department display name
+  String get departmentDisplay {
+    if (department == '其他' && departmentOther != null && departmentOther!.isNotEmpty) {
+      return departmentOther!;
+    }
+    return department ?? '-';
   }
 }
 
