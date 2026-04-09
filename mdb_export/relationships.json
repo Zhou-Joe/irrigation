@@ -1,0 +1,184 @@
+[
+  [
+    "SITE_CF",
+    "IndexNumber",
+    "CTROL_CF",
+    "ControllerSiteNumber",
+    "A site has many controllers"
+  ],
+  [
+    "SITE_CF",
+    "IndexNumber",
+    "STATN_CF",
+    "StationSiteNumber",
+    "A site has many stations"
+  ],
+  [
+    "SITE_CF",
+    "IndexNumber",
+    "DCODE_CF",
+    "DecoderSiteNumber",
+    "A site has many decoders"
+  ],
+  [
+    "SITE_CF",
+    "IndexNumber",
+    "SCHED_CF",
+    "ScheduleSiteNumber",
+    "A site has many schedules"
+  ],
+  [
+    "SITE_CF",
+    "IndexNumber",
+    "CNECT_CF",
+    "ConnectSiteNumber",
+    "A site has many connections"
+  ],
+  [
+    "SITE_CF",
+    "IndexNumber",
+    "FLOZO_CF",
+    "FlowZoneSiteNumber",
+    "A site has many flow zones"
+  ],
+  [
+    "CTROL_CF",
+    "IndexNumber",
+    "STATN_CF",
+    "StationControllerNumber",
+    "A controller has many stations"
+  ],
+  [
+    "CTROL_CF",
+    "IndexNumber",
+    "DCODE_CF",
+    "DecoderControllerNumber",
+    "A controller has many decoders"
+  ],
+  [
+    "CTROL_TP",
+    "IndexNumber",
+    "CTROL_CF",
+    "TableIndexNumber",
+    "Controller type definition"
+  ],
+  [
+    "M_PRECRT",
+    "IndexNumber",
+    "STATN_CF",
+    "StationPrecipMacro",
+    "Station precipitation rate"
+  ],
+  [
+    "M_FLOWRT",
+    "IndexNumber",
+    "STATN_CF",
+    "StationFlowMacro",
+    "Station flow rate"
+  ],
+  [
+    "M_MICLIM",
+    "IndexNumber",
+    "STATN_CF",
+    "StationMicroclimeMacro",
+    "Station microclimate"
+  ],
+  [
+    "M_CYCLE",
+    "IndexNumber",
+    "STATN_CF",
+    "StationCycleMacro",
+    "Station cycle time"
+  ],
+  [
+    "M_SOAK",
+    "IndexNumber",
+    "STATN_CF",
+    "StationSoakMacro",
+    "Station soak time"
+  ],
+  [
+    "DCODE_TP",
+    "IndexNumber",
+    "DCODE_CF",
+    "TableIndexNumber",
+    "Decoder type definition"
+  ],
+  [
+    "WETHR_TP",
+    "IndexNumber",
+    "WETHR_CF",
+    "TableIndexNumber",
+    "Weather type definition"
+  ],
+  [
+    "WETHR_CF",
+    "IndexNumber",
+    "XA_WETHR",
+    "XactIndex",
+    "Weather readings per station"
+  ],
+  [
+    "SCHED_CF",
+    "IndexNumber",
+    "Station_Schedule",
+    "ScheduleNumber",
+    "Schedule assigned to stations"
+  ],
+  [
+    "CTACT_TP",
+    "IndexNumber",
+    "CTACT_CF",
+    "TableIndexNumber",
+    "Contact type definition"
+  ],
+  [
+    "SITE_CF",
+    "IndexNumber",
+    "XA_ETCheckBook",
+    "SiteID",
+    "ET checkbook per site"
+  ],
+  [
+    "SITE_CF",
+    "IndexNumber",
+    "XA_RuntimeProject",
+    "SiteID",
+    "Runtime per site"
+  ],
+  [
+    "SITE_CF",
+    "IndexNumber",
+    "XA_FlowProject",
+    "SiteID",
+    "Flow project per site"
+  ],
+  [
+    "STATN_CF",
+    "IndexNumber",
+    "XA_RuntimeProject",
+    "StationID",
+    "Runtime per station"
+  ],
+  [
+    "CTROL_CF",
+    "IndexNumber",
+    "XA_LOG",
+    "XactIndex",
+    "Signal log per controller"
+  ],
+  [
+    "FLOZO_CF",
+    "IndexNumber",
+    "XA_FLOZO",
+    "XactIndex",
+    "Flow zone readings"
+  ],
+  [
+    "CNECT_CF",
+    "IndexNumber",
+    "SITE_CF",
+    "SiteNumber",
+    "Connection linked to site"
+  ]
+]

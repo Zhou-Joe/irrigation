@@ -1,0 +1,104 @@
+================================================================================
+MAXICOM2 DATABASE INTEGRATION REPORT
+================================================================================
+Generated: 2026-04-08 11:43:08
+
+SYSTEM INFORMATION
+----------------------------------------
+  System Name: SHANGHAI DISNEY RESORT
+  System ID: 762029
+  Product Version: 4.4
+  Preferred Units: Liters
+  Currency: RMB
+  Water Price: 0.017032500356435776
+  TCP Port: 6789
+
+SITE SUMMARY
+----------------------------------------
+  Error: no such column: site.RainShutDownApplies
+
+TABLE ROW COUNTS
+----------------------------------------
+  CNECT_CF: 163 rows
+  CTACT_CF: 4 rows
+  CTACT_TP: 7 rows
+  CTROL_CF: 168 rows
+  CTROL_TP: 228 rows
+  DCODE_CF: 91 rows
+  DCODE_TP: 15 rows
+  FLOZO_CF: 93 rows
+  INDICES: 26 rows
+  M_CYCLE: 0 rows
+  M_FLOWRT: 0 rows
+  M_MICLIM: 0 rows
+  M_PRECRT: 4 rows
+  M_PWFREE: 0 rows
+  M_PWORD: 0 rows
+  M_SOAK: 0 rows
+  M_SYSTEM: 1 rows
+  M_WTRBGT: 1 rows
+  SCHED_CF: 11,205 rows
+  SITE_CF: 1,233 rows
+  STATN_CF: 3,802 rows
+  Station_Schedule: 1,285 rows
+  WETHR_CF: 26 rows
+  WETHR_TP: 7 rows
+  XA_CLNDR: 0 rows
+  XA_ContactLog: 25,254 rows
+  XA_ET: 24 rows
+  XA_ETCheckBook: 9,131 rows
+  XA_EVENT: 1,214 rows
+  XA_FLOZO: 4,046,349 rows
+  XA_FLOZO_TMP: 0 rows
+  XA_FlowProject: 2,356 rows
+  XA_HIST: 1,819 rows
+  XA_LOG: 432,056 rows
+  XA_LOG_ExportErrors: 402,846 rows
+  XA_MEMO: 0 rows
+  XA_RuntimeProject: 3,697 rows
+  XA_WETHR: 82,720 rows
+  XA_WETHR_ExportErrors: 9,352 rows
+  XA_WirelessDiagnosis: 0 rows
+  XA_WirelessDiagnosis_TMP: 0 rows
+
+INTEGRATED VIEWS
+----------------------------------------
+  v_connection_overview
+  v_et_checkbook
+  v_events
+  v_flow_zone_readings
+  v_irrigation_hierarchy
+  v_runtime
+  v_schedule_overview
+  v_site_summary
+  v_station_overview
+  v_weather_readings
+
+RECENT EVENTS (Last 20)
+----------------------------------------
+  20260403090216: [E] Site Automatic Receive Contact was successful. (COM4)
+  20260403090017: [E] Weather Source Automatic Receive Contact was successful. (COM1)
+  20260403085400: [W] False Alarm - FLO WATCH Zone 01 (Flow Zone 1 IRR)
+  20260403085300: [W] False Alarm - FLO WATCH Zone 02 (Flow Zone 2 WD)
+  20260403085200: [W] Excessive flow detected, SEEF started - FLO WATCH Zone 02 (Flow Zone 2 WD)
+  20260403085000: [W] Excessive flow detected, SEEF started - FLO WATCH Zone 01 (Flow Zone 1 IRR)
+  20260403084852: [E] Site Automatic Receive Contact was successful. (COM5)
+  20260403084845: [E] Site Automatic Receive Contact was successful. (COM4)
+  20260403084728: [E] Site Automatic Receive Contact was successful. (COM5)
+  20260403084608: [E] Site Automatic Receive Contact was successful. (COM4)
+  20260403084551: [E] Site Automatic Receive Contact was successful. (COM5)
+  20260403084452: [E] Site Automatic Receive Contact was successful. (COM5)
+  20260403084356: [E] Site Automatic Receive Contact was successful. (COM5)
+  20260403084352: [E] Site Automatic Receive Contact was successful. (COM4)
+  20260403084220: [E] Site Automatic Receive Contact was successful. (COM5)
+  20260403084220: [E] Site Automatic Receive Contact was successful. (COM4)
+  20260403084025: [E] Site Automatic Receive Contact was successful. (COM4)
+  20260403084025: [E] Site Automatic Receive Contact was successful. (COM5)
+  20260403083850: [E] Site Automatic Receive Contact was successful. (COM5)
+  20260403083837: [E] Site Automatic Receive Contact was successful. (COM4)
+
+================================================================================
+Output directory: C:\Users\czhou7\PythonProjects\irrigation\mdb_export
+SQLite database: C:\Users\czhou7\PythonProjects\irrigation\mdb_export\maxicom_integrated.db
+CSV files: C:\Users\czhou7\PythonProjects\irrigation\mdb_export\csv
+================================================================================

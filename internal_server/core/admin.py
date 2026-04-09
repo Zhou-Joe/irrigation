@@ -1,7 +1,15 @@
 from django.contrib import admin
 from django.utils import timezone
 from django.contrib.auth.models import User
-from .models import Zone, Plant, Worker, WorkOrder, Event, WorkLog, WeatherData, MaintenanceRequest, ProjectSupportRequest, WaterRequest, RegistrationRequest, ManagerProfile, DepartmentUserProfile
+from .models import (
+    Zone, Plant, Worker, WorkOrder, Event, WorkLog, WeatherData,
+    MaintenanceRequest, ProjectSupportRequest, WaterRequest,
+    RegistrationRequest, ManagerProfile, DepartmentUserProfile,
+    MaxicomSite, MaxicomController, MaxicomStation, MaxicomSchedule,
+    MaxicomFlowZone, MaxicomWeatherStation, MaxicomWeatherLog,
+    MaxicomEvent, MaxicomFlowReading, MaxicomSignalLog,
+    MaxicomETCheckbook, MaxicomRuntime,
+)
 from .role_utils import get_worker_profile
 
 
@@ -104,6 +112,163 @@ class RegistrationRequestAdmin(admin.ModelAdmin):
             processed_by=worker
         )
     reject_requests.short_description = '拒绝选中的注册申请'
+
+
+# ============================================
+# Maxicom2 Irrigation System Admin
+# ============================================
+
+class MaxicomControllerInline(admin.TabularInline):
+    model = MaxicomController
+    extra = 0
+    fields = ('name', 'controller_type', 'site_number', 'link_number', 'link_channel', 'enabled')
+    readonly_fields = ()
+
+
+class MaxicomStationInline(admin.TabularInline):
+    model = MaxicomStation
+    extra = 0
+    fields = ('name', 'controller', 'controller_channel', 'precip_rate', 'flow_rate', 'cycle_time', 'soak_time', 'lockout')
+    readonly_fields = ()
+
+
+class MaxicomScheduleInline(admin.TabularInline):
+    model = MaxicomSchedule
+    extra = 0
+    fields = ('name', 'nominal_et', 'water_budget_factor', 'flo_manage', 'send_automatic')
+    readonly_fields = ()
+
+
+@admin.register(MaxicomSite)
+class MaxicomSiteAdmin(admin.ModelAdmin):
+    list_display = ('name', 'site_number', 'zone', 'et_current', 'crop_coefficient', 'rain_shutdown', 'controller_count', 'station_count', 'created_at')
+    list_filter = ('rain_shutdown', 'time_zone', 'created_at')
+    list_editable = ('zone',)
+    search_fields = ('name', 'telephone')
+    readonly_fields = ('created_at', 'controller_count', 'station_count', 'schedule_count')
+    inlines = [MaxicomControllerInline, MaxicomStationInline, MaxicomScheduleInline]
+    fieldsets = (
+        ('基本信息', {
+            'fields': ('zone', 'mdb_index', 'name', 'site_number', 'time_zone', 'telephone')
+        }),
+        ('ET设置', {
+            'fields': ('et_current', 'et_default', 'et_minimum', 'et_maximum', 'crop_coefficient')
+        }),
+        ('其他设置', {
+            'fields': ('water_pricing', 'ccu_version', 'rain_shutdown', 'date_open', 'date_close')
+        }),
+        ('统计', {
+            'fields': ('controller_count', 'station_count', 'schedule_count', 'created_at'),
+            'classes': ('collapse',)
+        }),
+    )
+
+    def controller_count(self, obj):
+        return obj.controllers.count()
+    controller_count.short_description = '控制器数'
+
+    def station_count(self, obj):
+        return obj.stations.count()
+    station_count.short_description = '灌溉站数'
+
+    def schedule_count(self, obj):
+        return obj.schedules.count()
+    schedule_count.short_description = '计划数'
+
+
+@admin.register(MaxicomController)
+class MaxicomControllerAdmin(admin.ModelAdmin):
+    list_display = ('name', 'site', 'controller_type', 'site_number', 'link_number', 'link_channel', 'enabled')
+    list_filter = ('enabled', 'site', 'controller_type')
+    search_fields = ('name', 'site__name')
+    list_select_related = ('site',)
+
+
+@admin.register(MaxicomStation)
+class MaxicomStationAdmin(admin.ModelAdmin):
+    list_display = ('name', 'site', 'controller', 'controller_channel', 'precip_rate', 'flow_rate', 'cycle_time', 'soak_time', 'lockout')
+    list_filter = ('lockout', 'site', 'controller')
+    search_fields = ('name', 'site__name', 'memo')
+    list_select_related = ('site', 'controller')
+    list_editable = ('lockout',)
+
+
+@admin.register(MaxicomSchedule)
+class MaxicomScheduleAdmin(admin.ModelAdmin):
+    list_display = ('name', 'site', 'nominal_et', 'water_budget_factor', 'flo_manage', 'send_automatic', 'send_protected')
+    list_filter = ('flo_manage', 'send_automatic', 'send_protected', 'site')
+    search_fields = ('name', 'site__name')
+    list_select_related = ('site',)
+
+
+@admin.register(MaxicomFlowZone)
+class MaxicomFlowZoneAdmin(admin.ModelAdmin):
+    list_display = ('name', 'site', 'mdb_index', 'join_site')
+    list_filter = ('join_site', 'site')
+    search_fields = ('name', 'site__name')
+    list_select_related = ('site',)
+
+
+@admin.register(MaxicomWeatherStation)
+class MaxicomWeatherStationAdmin(admin.ModelAdmin):
+    list_display = ('name', 'mdb_index', 'default_et', 'time_zone')
+    search_fields = ('name',)
+
+
+@admin.register(MaxicomWeatherLog)
+class MaxicomWeatherLogAdmin(admin.ModelAdmin):
+    list_display = ('weather_station', 'timestamp', 'temperature', 'humidity', 'rainfall', 'et', 'solar_radiation', 'wind_run')
+    list_filter = ('weather_station', 'timestamp')
+    search_fields = ('weather_station__name',)
+    list_select_related = ('weather_station',)
+    readonly_fields = ()
+    ordering = ('-timestamp',)
+
+
+@admin.register(MaxicomEvent)
+class MaxicomEventAdmin(admin.ModelAdmin):
+    list_display = ('timestamp', 'source', 'flag', 'text_truncated')
+    list_filter = ('flag', 'source', 'timestamp')
+    search_fields = ('text',)
+    ordering = ('-timestamp',)
+    readonly_fields = ()
+
+    def text_truncated(self, obj):
+        return obj.text[:100] + '...' if len(obj.text) > 100 else obj.text
+    text_truncated.short_description = '事件内容'
+
+
+@admin.register(MaxicomFlowReading)
+class MaxicomFlowReadingAdmin(admin.ModelAdmin):
+    list_display = ('flow_zone', 'timestamp', 'value', 'multiplier', 'site_id')
+    list_filter = ('flow_zone', 'timestamp')
+    list_select_related = ('flow_zone',)
+    ordering = ('-timestamp',)
+
+
+@admin.register(MaxicomSignalLog)
+class MaxicomSignalLogAdmin(admin.ModelAdmin):
+    list_display = ('timestamp', 'index', 'controller_channel', 'signal_type', 'signal_value')
+    list_filter = ('signal_type', 'signal_table', 'timestamp')
+    ordering = ('-timestamp',)
+
+
+@admin.register(MaxicomETCheckbook)
+class MaxicomETCheckbookAdmin(admin.ModelAdmin):
+    list_display = ('site', 'timestamp', 'soil_moisture', 'rainfall', 'et', 'irrigation', 'soil_moisture_capacity', 'soil_refill_pct')
+    list_filter = ('site', 'timestamp')
+    search_fields = ('site__name',)
+    list_select_related = ('site',)
+    ordering = ('-timestamp',)
+
+
+@admin.register(MaxicomRuntime)
+class MaxicomRuntimeAdmin(admin.ModelAdmin):
+    list_display = ('timestamp', 'site', 'station', 'station_id_raw', 'run_time')
+    list_filter = ('site', 'timestamp')
+    search_fields = ('site__name',)
+    list_select_related = ('site', 'station')
+    ordering = ('-timestamp',)
 
 
 @admin.register(Zone)

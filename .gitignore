@@ -37,6 +37,24 @@ Thumbs.db
 .env
 .env.local
 
+# Database folder
+Database/
+
+# CSV exports
+*.csv
+
+# Large database files
+*.db
+
+# Flutter SDK
+flutter-master/
+
+# PyInstaller
+*.spec
+
+# Executables
+*.exe
+
 # Misc
 *.bak
 *.tmp
