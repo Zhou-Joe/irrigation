@@ -1,0 +1,9 @@
+# ─── Internal Server (Django Backend) ───
+django>=4.2,<6.0
+djangorestframework>=3.14
+django-cors-headers>=4.0
+requests>=2.31
+
+# ─── Sync Agent (PyQt5 GUI + MDB Reader) ───
+PyQt5>=5.15
+pywin32>=306
