@@ -1,13 +1,31 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
 import '../models/zone.dart';
 import '../models/user.dart';
 import '../models/work_log.dart';
 
 class ApiService {
-  // 根据实际部署修改这个地址
-  static String baseUrl = 'http://10.136.182.88:8000/api';
+  // Default server address - can be overridden via settings
+  static const String _defaultBaseUrl = 'http://10.136.182.88:8000/api';
+  static String baseUrl = _defaultBaseUrl;
+
+  /// Load saved server URL from SharedPreferences
+  static Future<void> loadSavedBaseUrl() async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getString('server_base_url');
+    if (saved != null && saved.isNotEmpty) {
+      baseUrl = saved;
+    }
+  }
+
+  /// Save server URL to SharedPreferences
+  static Future<void> setBaseUrl(String url) async {
+    baseUrl = url;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('server_base_url', url);
+  }
 
   String? _token;
   String? get token => _token;

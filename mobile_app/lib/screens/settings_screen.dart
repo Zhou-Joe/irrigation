@@ -310,13 +310,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
             child: const Text('取消'),
           ),
           FilledButton(
-            onPressed: () {
-              ApiService.baseUrl = controller.text.trim();
-              Navigator.pop(context);
-              _checkConnection();
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('已更新服务器地址')),
-              );
+            onPressed: () async {
+              await ApiService.setBaseUrl(controller.text.trim());
+              if (context.mounted) {
+                Navigator.pop(context);
+                _checkConnection();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('已更新服务器地址')),
+                );
+              }
             },
             child: const Text('保存'),
           ),

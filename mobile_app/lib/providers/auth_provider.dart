@@ -35,6 +35,9 @@ class AuthProvider with ChangeNotifier {
     notifyListeners();
 
     try {
+      // Load saved server URL first
+      await ApiService.loadSavedBaseUrl();
+
       final prefs = await SharedPreferences.getInstance();
       _token = prefs.getString('auth_token');
       final userJson = prefs.getString('user_data');
