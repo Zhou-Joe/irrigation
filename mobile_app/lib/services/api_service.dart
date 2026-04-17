@@ -7,10 +7,7 @@ import '../models/work_log.dart';
 
 class ApiService {
   // 根据实际部署修改这个地址
-  // Web需要使用127.0.0.1而不是localhost以避免某些CORS问题
-  static String baseUrl = kIsWeb
-      ? 'http://127.0.0.1:8000/api'
-      : 'http://localhost:8000/api';
+  static String baseUrl = 'http://10.136.182.88:8000/api';
 
   String? _token;
   String? get token => _token;
