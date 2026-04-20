@@ -753,3 +753,59 @@ class MaxicomRuntime(models.Model):
 
     def __str__(self):
         return f"Runtime {self.site.name} @ {self.timestamp}"
+
+
+class EquipmentCatalog(models.Model):
+    """Catalog of equipment models that can be reused across zones."""
+
+    EQUIPMENT_TYPE_CHOICES = [
+        ('sprinkler', '灌水器类型'),
+        ('solenoid_valve', '电磁阀'),
+        ('isolation_valve', '隔离阀'),
+        ('end_flush_valve', '末端冲洗阀'),
+        ('surface_flush_valve', '地面冲洗阀'),
+    ]
+
+    equipment_type = models.CharField(max_length=50, choices=EQUIPMENT_TYPE_CHOICES)
+    model_name = models.CharField(max_length=255, help_text='Equipment model name')
+    manufacturer = models.CharField(max_length=255, blank=True, help_text='Manufacturer/brand')
+    specifications = models.JSONField(default=dict, blank=True, help_text='Type-specific specifications (flow rate, pressure, size, etc.)')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['equipment_type', 'manufacturer', 'model_name']
+        verbose_name = 'Equipment Catalog'
+        verbose_name_plural = 'Equipment Catalog'
+
+    def __str__(self):
+        return f"{self.get_equipment_type_display()} - {self.manufacturer} {self.model_name}"
+
+
+class ZoneEquipment(models.Model):
+    """Equipment instance installed in a zone."""
+
+    STATUS_CHOICES = [
+        ('working', '正常工作'),
+        ('needs_repair', '需要维修'),
+        ('replaced', '已更换'),
+        ('inactive', '未使用'),
+    ]
+
+    zone = models.ForeignKey(Zone, on_delete=models.CASCADE, related_name='equipments')
+    equipment = models.ForeignKey(EquipmentCatalog, on_delete=models.PROTECT, related_name='zone_installations')
+    quantity = models.IntegerField(default=1, help_text='Number of this equipment in the zone')
+    installation_date = models.DateField(null=True, blank=True, help_text='Installation date')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='working')
+    location_in_zone = models.CharField(max_length=255, blank=True, help_text='Specific location within zone')
+    notes = models.TextField(blank=True, help_text='Additional notes or maintenance history')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['equipment__equipment_type', 'id']
+        verbose_name = 'Zone Equipment'
+        verbose_name_plural = 'Zone Equipment'
+
+    def __str__(self):
+        return f"{self.equipment.model_name} x{self.quantity} in {self.zone.name}"

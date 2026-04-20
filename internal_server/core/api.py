@@ -5,7 +5,7 @@ from rest_framework.permissions import AllowAny
 from django.contrib.auth import authenticate, login
 from django.utils import timezone
 from datetime import timedelta, date
-from .models import Zone, Plant, Worker, WorkOrder, Event, WorkLog, WeatherData, MaintenanceRequest, ProjectSupportRequest, WaterRequest, ManagerProfile, DepartmentUserProfile
+from .models import Zone, Plant, Worker, WorkOrder, Event, WorkLog, WeatherData, MaintenanceRequest, ProjectSupportRequest, WaterRequest, ManagerProfile, DepartmentUserProfile, EquipmentCatalog, ZoneEquipment
 from .authentication import TokenAuthentication
 from .permissions import IsAdminOrReadOnly, IsOwnerOrAdmin, IsDeptUserWaterOnly, IsFieldWorker
 
@@ -196,6 +196,25 @@ class PlantSerializer(serializers.ModelSerializer):
         fields = ['id', 'zone', 'name', 'scientific_name', 'quantity', 'notes']
 
 
+class EquipmentCatalogSerializer(serializers.ModelSerializer):
+    """Serializer for EquipmentCatalog model."""
+    equipment_type_display = serializers.CharField(source='get_equipment_type_display', read_only=True)
+
+    class Meta:
+        model = EquipmentCatalog
+        fields = ['id', 'equipment_type', 'equipment_type_display', 'model_name', 'manufacturer', 'specifications', 'created_at', 'updated_at']
+
+
+class ZoneEquipmentSerializer(serializers.ModelSerializer):
+    """Serializer for ZoneEquipment model."""
+    equipment_details = EquipmentCatalogSerializer(source='equipment', read_only=True)
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+
+    class Meta:
+        model = ZoneEquipment
+        fields = ['id', 'zone', 'equipment', 'equipment_details', 'quantity', 'installation_date', 'status', 'status_display', 'location_in_zone', 'notes', 'created_at', 'updated_at']
+
+
 class WorkerSerializer(serializers.ModelSerializer):
     """Serializer for Worker model."""
 
@@ -337,6 +356,46 @@ class PlantViewSet(viewsets.ModelViewSet):
     serializer_class = PlantSerializer
     authentication_classes = [TokenAuthentication, authentication.SessionAuthentication]
     permission_classes = [IsAdminOrReadOnly]
+
+
+class EquipmentCatalogViewSet(viewsets.ModelViewSet):
+    """ViewSet for EquipmentCatalog - admin only for write."""
+    queryset = EquipmentCatalog.objects.all()
+    serializer_class = EquipmentCatalogSerializer
+    authentication_classes = [TokenAuthentication, authentication.SessionAuthentication]
+    permission_classes = [IsAdminOrReadOnly]
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        equipment_type = self.request.query_params.get('equipment_type')
+        search = self.request.query_params.get('search')
+
+        if equipment_type:
+            queryset = queryset.filter(equipment_type=equipment_type)
+
+        if search:
+            from django.db.models import Q
+            queryset = queryset.filter(
+                Q(model_name__icontains=search) |
+                Q(manufacturer__icontains=search)
+            )
+
+        return queryset
+
+
+class ZoneEquipmentViewSet(viewsets.ModelViewSet):
+    """ViewSet for ZoneEquipment - admin only for write."""
+    queryset = ZoneEquipment.objects.all()
+    serializer_class = ZoneEquipmentSerializer
+    authentication_classes = [TokenAuthentication, authentication.SessionAuthentication]
+    permission_classes = [IsAdminOrReadOnly]
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        zone_id = self.request.query_params.get('zone')
+        if zone_id:
+            queryset = queryset.filter(zone_id=zone_id)
+        return queryset
 
 
 class WorkerViewSet(viewsets.ModelViewSet):

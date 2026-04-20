@@ -6,8 +6,10 @@ from core.api import (
     ZoneViewSet, PlantViewSet, WorkerViewSet,
     WorkOrderViewSet, EventViewSet, WorkLogViewSet,
     MaintenanceRequestViewSet, ProjectSupportRequestViewSet, WaterRequestViewSet,
+    EquipmentCatalogViewSet, ZoneEquipmentViewSet,
     worker_login, get_all_requests, get_weather
 )
+from core.views import equipment_catalog_autocomplete
 
 app_name = 'core'
 
@@ -21,6 +23,8 @@ router.register(r'work-logs', WorkLogViewSet)
 router.register(r'maintenance-requests', MaintenanceRequestViewSet)
 router.register(r'project-support-requests', ProjectSupportRequestViewSet)
 router.register(r'water-requests', WaterRequestViewSet)
+router.register(r'equipment-catalog', EquipmentCatalogViewSet)
+router.register(r'zone-equipment', ZoneEquipmentViewSet)
 
 urlpatterns = [
     path('', views.dashboard, name='dashboard'),
@@ -38,6 +42,7 @@ urlpatterns = [
     path('api/auth/login', worker_login, name='worker_login'),
     path('api/requests', get_all_requests, name='get_all_requests'),
     path('api/weather', get_weather, name='get_weather'),
+    path('api/equipment-catalog/autocomplete', equipment_catalog_autocomplete, name='equipment_catalog_autocomplete'),
     path('api/', include(router.urls)),
     path('api/maxicom-dashboard', views.maxicom_dashboard_api, name='maxicom_dashboard_api'),
     path('api/sync/receive', sync_receive, name='sync_receive'),
