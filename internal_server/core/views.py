@@ -313,7 +313,7 @@ def zone_edit(request, zone_id):
     """
     Edit a specific zone - admin only.
     """
-    from .models import ManagerProfile, Plant
+    from .models import ManagerProfile, Plant, ZoneEquipment
 
     # Check admin permission
     is_admin = request.user.is_superuser or request.user.is_staff
@@ -358,16 +358,41 @@ def zone_edit(request, zone_id):
             for name in plant_names:
                 Plant.objects.create(zone=zone, name=name)
 
+        # Handle equipment - JSON array in hidden field
+        equipment_data = request.POST.get('equipment_data', '')
+        if equipment_data:
+            try:
+                equipment_list = json.loads(equipment_data)
+                zone.equipments.all().delete()
+                for item in equipment_list:
+                    equipment_id = item.get('equipment_id')
+                    if equipment_id:
+                        ZoneEquipment.objects.create(
+                            zone=zone,
+                            equipment_id=equipment_id,
+                            quantity=item.get('quantity', 1),
+                            installation_date=item.get('installation_date') or None,
+                            status=item.get('status', 'working'),
+                            location_in_zone=item.get('location_in_zone', ''),
+                            notes=item.get('notes', '')
+                        )
+            except json.JSONDecodeError:
+                pass
+
         messages.success(request, f'Zone "{zone.name}" updated successfully.')
         return redirect('core:settings')
 
     # Get available plants (distinct names from all plants)
     available_plants = Plant.objects.values_list('name', flat=True).distinct().order_by('name')
 
+    # Get zone equipment
+    zone_equipments = zone.equipments.select_related('equipment').all()
+
     context = {
         'zone': zone,
         'boundary_json': json.dumps(zone.boundary_points),
         'available_plants': available_plants,
+        'zone_equipments': zone_equipments,
     }
 
     return render(request, 'core/zone_form.html', context)
@@ -378,7 +403,7 @@ def zone_new(request):
     """
     Create a new zone - admin only.
     """
-    from .models import ManagerProfile, Plant
+    from .models import ManagerProfile, Plant, ZoneEquipment
 
     # Check admin permission
     is_admin = request.user.is_superuser or request.user.is_staff
@@ -421,6 +446,26 @@ def zone_new(request):
             for name in plant_names:
                 Plant.objects.create(zone=zone, name=name)
 
+        # Handle equipment - JSON array in hidden field
+        equipment_data = request.POST.get('equipment_data', '')
+        if equipment_data:
+            try:
+                equipment_list = json.loads(equipment_data)
+                for item in equipment_list:
+                    equipment_id = item.get('equipment_id')
+                    if equipment_id:
+                        ZoneEquipment.objects.create(
+                            zone=zone,
+                            equipment_id=equipment_id,
+                            quantity=item.get('quantity', 1),
+                            installation_date=item.get('installation_date') or None,
+                            status=item.get('status', 'working'),
+                            location_in_zone=item.get('location_in_zone', ''),
+                            notes=item.get('notes', '')
+                        )
+            except json.JSONDecodeError:
+                pass
+
         messages.success(request, f'Zone "{zone.name}" created successfully.')
         return redirect('core:settings')
 
@@ -462,6 +507,39 @@ def zone_delete(request, zone_id):
     zone.delete()
     messages.success(request, f'Zone "{zone_name}" deleted successfully.')
     return redirect('core:settings')
+
+
+@login_required(login_url='core:login')
+def equipment_catalog_autocomplete(request):
+    """AJAX autocomplete endpoint for equipment catalog."""
+    from .models import EquipmentCatalog
+
+    equipment_type = request.GET.get('equipment_type', '')
+    search = request.GET.get('search', '')
+
+    results = []
+    if search and len(search) >= 2:
+        queryset = EquipmentCatalog.objects.all()
+
+        if equipment_type:
+            queryset = queryset.filter(equipment_type=equipment_type)
+
+        queryset = queryset.filter(
+            Q(model_name__icontains=search) |
+            Q(manufacturer__icontains=search)
+        )[:10]
+
+        for item in queryset:
+            label = f"{item.manufacturer} {item.model_name}" if item.manufacturer else item.model_name
+            results.append({
+                'id': item.id,
+                'label': label,
+                'model_name': item.model_name,
+                'manufacturer': item.manufacturer,
+                'equipment_type': item.equipment_type,
+            })
+
+    return JsonResponse({'results': results})
 
 
 @login_required(login_url='core:login')

@@ -129,6 +129,92 @@
             </div>
         </div>
 
+        <div class="form-section">
+            <h2>设备信息</h2>
+            <p class="help-text">添加该区域内的灌溉设备（灌水器、阀门等）。</p>
+
+            <!-- Equipment type selector -->
+            <div class="form-group">
+                <label for="equipment_type_select">设备类型</label>
+                <select id="equipment_type_select" style="width: 100%; padding: 12px; border: 2px solid var(--color-surface-dark); border-radius: 8px;">
+                    <option value="">-- 选择设备类型 --</option>
+                    <option value="sprinkler">灌水器类型</option>
+                    <option value="solenoid_valve">电磁阀</option>
+                    <option value="isolation_valve">隔离阀</option>
+                    <option value="end_flush_valve">末端冲洗阀</option>
+                    <option value="surface_flush_valve">地面冲洗阀</option>
+                </select>
+            </div>
+
+            <!-- Equipment selection with autocomplete -->
+            <div class="form-group">
+                <label for="equipment_search">选择设备型号</label>
+                <div style="display: flex; gap: 10px; align-items: flex-end;">
+                    <div style="flex: 1; position: relative;">
+                        <input type="text"
+                               id="equipment_search"
+                               placeholder="输入搜索（至少2个字符）"
+                               autocomplete="off"
+                               style="width: 100%; padding: 12px; border: 2px solid var(--color-surface-dark); border-radius: 8px;">
+                        <div id="equipment_autocomplete_results"
+                             style="position: absolute; top: 100%; left: 0; right: 0; background: white; border: 1px solid #ccc; max-height: 200px; overflow-y: auto; display: none; z-index: 1000; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+                        </div>
+                    </div>
+                    <button type="button" id="add_equipment_btn" class="btn btn-primary btn-sm">添加设备</button>
+                </div>
+                <p style="margin-top: 5px; font-size: 0.9em; color: var(--color-text-secondary);">
+                    或 <button type="button" id="create_new_equipment_btn" class="btn-link" style="padding: 0; background: none; border: none; color: var(--color-primary); text-decoration: underline; cursor: pointer;">创建新设备型号</button>
+                </p>
+            </div>
+
+            <!-- New equipment creation form (hidden by default) -->
+            <div id="new_equipment_form" style="display: none; background: var(--color-surface); padding: 15px; border-radius: 8px; margin-bottom: 15px; border: 1px solid var(--color-surface-dark);">
+                <h3 style="margin: 0 0 15px 0; font-size: 1.1em;">创建新设备型号</h3>
+                <div class="form-group">
+                    <label for="new_equipment_manufacturer">制造商</label>
+                    <input type="text" id="new_equipment_manufacturer" placeholder="例如：Hunter, Rain Bird" style="width: 100%; padding: 12px; border: 2px solid var(--color-surface-dark); border-radius: 8px;">
+                </div>
+                <div class="form-group">
+                    <label for="new_equipment_model">型号名称 *</label>
+                    <input type="text" id="new_equipment_model" placeholder="例如：PGV-101" style="width: 100%; padding: 12px; border: 2px solid var(--color-surface-dark); border-radius: 8px;">
+                </div>
+                <div class="form-group">
+                    <label for="new_equipment_specs">规格参数 (JSON格式)</label>
+                    <textarea id="new_equipment_specs" rows="3" placeholder='例如：{"flow_rate": "10 GPM", "pressure": "150 PSI"}' style="width: 100%; padding: 12px; border: 2px solid var(--color-surface-dark); border-radius: 8px; font-family: monospace;"></textarea>
+                </div>
+                <div style="display: flex; gap: 10px;">
+                    <button type="button" id="save_new_equipment_btn" class="btn btn-primary btn-sm">保存到目录</button>
+                    <button type="button" id="cancel_new_equipment_btn" class="btn btn-secondary btn-sm">取消</button>
+                </div>
+            </div>
+
+            <!-- Selected equipment list -->
+            <div id="equipment_list" style="margin-top: 15px;"></div>
+
+            <!-- Hidden input for form submission -->
+            <input type="hidden" id="equipment_data" name="equipment_data" value="">
+
+            <!-- Existing equipment (for edit mode) -->
+            {% if zone %}
+            <div id="existing_equipments" style="display: none;">
+                {% for eq in zone_equipments %}
+                <div class="existing-equipment"
+                     data-id="{{ eq.id }}"
+                     data-equipment-id="{{ eq.equipment.id }}"
+                     data-equipment-type="{{ eq.equipment.equipment_type }}"
+                     data-model="{{ eq.equipment.model_name }}"
+                     data-manufacturer="{{ eq.equipment.manufacturer }}"
+                     data-quantity="{{ eq.quantity }}"
+                     data-installation-date="{{ eq.installation_date|date:'Y-m-d'|default:'' }}"
+                     data-status="{{ eq.status }}"
+                     data-location="{{ eq.location_in_zone }}"
+                     data-notes="{{ eq.notes }}">
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+        </div>
+
         <div class="form-actions">
             <button type="submit" class="btn btn-primary">
                 {% if zone %}保存修改{% else %}创建区域{% endif %}
@@ -583,6 +669,376 @@
 
     // Initialize existing plants data
     updatePlantsData();
+})();
+</script>
+
+<script>
+// Equipment Management
+(function() {
+    let selectedEquipment = [];
+    let selectedEquipmentForAutocomplete = null;
+    let equipmentAutocompleteTimeout = null;
+
+    // Load existing equipment on page load
+    function loadExistingEquipment() {
+        const existingEquipments = document.querySelectorAll('.existing-equipment');
+        existingEquipments.forEach(el => {
+            const equipmentData = {
+                tempId: 'existing-' + el.dataset.id,
+                equipmentId: parseInt(el.dataset.equipmentId),
+                equipmentType: el.dataset.equipmentType,
+                model: el.dataset.model,
+                manufacturer: el.dataset.manufacturer,
+                quantity: parseInt(el.dataset.quantity) || 1,
+                installationDate: el.dataset.installationDate || '',
+                status: el.dataset.status || 'working',
+                location: el.dataset.location || '',
+                notes: el.dataset.notes || ''
+            };
+            selectedEquipment.push(equipmentData);
+        });
+        renderEquipmentList();
+    }
+
+    // Equipment type change handler
+    const equipmentTypeSelect = document.getElementById('equipment_type_select');
+    if (equipmentTypeSelect) {
+        equipmentTypeSelect.addEventListener('change', function() {
+            document.getElementById('equipment_search').value = '';
+            document.getElementById('equipment_autocomplete_results').style.display = 'none';
+        });
+    }
+
+    // Autocomplete search
+    const equipmentSearch = document.getElementById('equipment_search');
+    if (equipmentSearch) {
+        equipmentSearch.addEventListener('input', function() {
+            const search = this.value.trim();
+            const equipmentType = document.getElementById('equipment_type_select').value;
+
+            clearTimeout(equipmentAutocompleteTimeout);
+
+            if (search.length < 2) {
+                document.getElementById('equipment_autocomplete_results').style.display = 'none';
+                return;
+            }
+
+            if (!equipmentType) {
+                // Don't alert, just show visual feedback
+                this.style.borderColor = '#dc3545';
+                setTimeout(() => { this.style.borderColor = ''; }, 2000);
+                return;
+            }
+
+            equipmentAutocompleteTimeout = setTimeout(() => {
+                fetch(`/api/equipment-catalog/autocomplete?equipment_type=${equipmentType}&search=${encodeURIComponent(search)}`)
+                    .then(resp => resp.json())
+                    .then(data => {
+                        displayAutocompleteResults(data.results);
+                    })
+                    .catch(err => {
+                        console.error('Autocomplete error:', err);
+                    });
+            }, 300);
+        });
+    }
+
+    function displayAutocompleteResults(results) {
+        const resultsDiv = document.getElementById('equipment_autocomplete_results');
+        resultsDiv.innerHTML = '';
+
+        if (results.length === 0) {
+            resultsDiv.innerHTML = '<div style="padding: 10px; color: #666;">无匹配结果</div>';
+        } else {
+            results.forEach(item => {
+                const div = document.createElement('div');
+                div.style.cssText = 'padding: 10px; cursor: pointer; border-bottom: 1px solid #eee;';
+                div.textContent = item.label;
+                div.addEventListener('click', () => {
+                    selectEquipmentFromAutocomplete(item);
+                });
+                resultsDiv.appendChild(div);
+            });
+        }
+
+        resultsDiv.style.display = 'block';
+    }
+
+    function selectEquipmentFromAutocomplete(item) {
+        selectedEquipmentForAutocomplete = item;
+        document.getElementById('equipment_search').value = item.label;
+        document.getElementById('equipment_autocomplete_results').style.display = 'none';
+    }
+
+    // Add equipment to list
+    const addEquipmentBtn = document.getElementById('add_equipment_btn');
+    if (addEquipmentBtn) {
+        addEquipmentBtn.addEventListener('click', function() {
+            const equipmentType = document.getElementById('equipment_type_select').value;
+            const equipmentSearch = document.getElementById('equipment_search').value.trim();
+
+            if (!equipmentType) {
+                alert('请选择设备类型');
+                return;
+            }
+
+            if (!selectedEquipmentForAutocomplete || !selectedEquipmentForAutocomplete.id) {
+                alert('请从下拉列表中选择设备型号，或创建新设备型号');
+                return;
+            }
+
+            // Check for duplicates
+            const exists = selectedEquipment.some(eq =>
+                eq.equipmentId === selectedEquipmentForAutocomplete.id
+            );
+
+            if (exists) {
+                alert('该设备已在列表中');
+                return;
+            }
+
+            const equipmentData = {
+                tempId: 'new-' + Date.now(),
+                equipmentId: selectedEquipmentForAutocomplete.id,
+                equipmentType: equipmentType,
+                model: selectedEquipmentForAutocomplete.model_name,
+                manufacturer: selectedEquipmentForAutocomplete.manufacturer,
+                quantity: 1,
+                installationDate: '',
+                status: 'working',
+                location: '',
+                notes: ''
+            };
+
+            selectedEquipment.push(equipmentData);
+            renderEquipmentList();
+
+            // Reset form
+            document.getElementById('equipment_type_select').value = '';
+            document.getElementById('equipment_search').value = '';
+            selectedEquipmentForAutocomplete = null;
+        });
+    }
+
+    // Create new equipment form handlers
+    const createNewEquipmentBtn = document.getElementById('create_new_equipment_btn');
+    if (createNewEquipmentBtn) {
+        createNewEquipmentBtn.addEventListener('click', function() {
+            const equipmentType = document.getElementById('equipment_type_select').value;
+            if (!equipmentType) {
+                alert('请先选择设备类型');
+                return;
+            }
+            document.getElementById('new_equipment_form').style.display = 'block';
+            document.getElementById('new_equipment_manufacturer').focus();
+        });
+    }
+
+    const cancelNewEquipmentBtn = document.getElementById('cancel_new_equipment_btn');
+    if (cancelNewEquipmentBtn) {
+        cancelNewEquipmentBtn.addEventListener('click', function() {
+            document.getElementById('new_equipment_form').style.display = 'none';
+            document.getElementById('new_equipment_manufacturer').value = '';
+            document.getElementById('new_equipment_model').value = '';
+            document.getElementById('new_equipment_specs').value = '';
+        });
+    }
+
+    const saveNewEquipmentBtn = document.getElementById('save_new_equipment_btn');
+    if (saveNewEquipmentBtn) {
+        saveNewEquipmentBtn.addEventListener('click', async function() {
+            const equipmentType = document.getElementById('equipment_type_select').value;
+            const manufacturer = document.getElementById('new_equipment_manufacturer').value.trim();
+            const modelName = document.getElementById('new_equipment_model').value.trim();
+            const specsText = document.getElementById('new_equipment_specs').value.trim();
+
+            if (!modelName) {
+                alert('请输入型号名称');
+                return;
+            }
+
+            let specifications = {};
+            if (specsText) {
+                try {
+                    specifications = JSON.parse(specsText);
+                } catch (e) {
+                    alert('规格参数必须是有效的JSON格式');
+                    return;
+                }
+            }
+
+            try {
+                const csrftoken = getCookie('csrftoken');
+                const resp = await fetch('/api/equipment-catalog/', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': csrftoken
+                    },
+                    body: JSON.stringify({
+                        equipment_type: equipmentType,
+                        model_name: modelName,
+                        manufacturer: manufacturer,
+                        specifications: specifications
+                    })
+                });
+
+                if (!resp.ok) {
+                    const errorData = await resp.json();
+                    throw new Error(errorData.detail || 'Failed to create');
+                }
+
+                const data = await resp.json();
+
+                // Auto-select the newly created equipment
+                selectedEquipmentForAutocomplete = {
+                    id: data.id,
+                    model_name: data.model_name,
+                    manufacturer: data.manufacturer,
+                    label: (data.manufacturer ? data.manufacturer + ' ' : '') + data.model_name
+                };
+
+                document.getElementById('equipment_search').value = selectedEquipmentForAutocomplete.label;
+                document.getElementById('new_equipment_form').style.display = 'none';
+                document.getElementById('new_equipment_manufacturer').value = '';
+                document.getElementById('new_equipment_model').value = '';
+                document.getElementById('new_equipment_specs').value = '';
+
+                alert('新设备型号已创建');
+            } catch (err) {
+                console.error('Error creating equipment:', err);
+                alert('创建失败：' + err.message);
+            }
+        });
+    }
+
+    // Render equipment list
+    function renderEquipmentList() {
+        const listDiv = document.getElementById('equipment_list');
+        listDiv.innerHTML = '';
+
+        selectedEquipment.forEach((eq, index) => {
+            const card = document.createElement('div');
+            card.className = 'equipment-card';
+            card.style.cssText = 'background: var(--color-surface); padding: 15px; margin-bottom: 10px; border-radius: 8px; border: 1px solid var(--color-surface-dark);';
+
+            const typeLabels = {
+                'sprinkler': '灌水器类型',
+                'solenoid_valve': '电磁阀',
+                'isolation_valve': '隔离阀',
+                'end_flush_valve': '末端冲洗阀',
+                'surface_flush_valve': '地面冲洗阀'
+            };
+
+            card.innerHTML = `
+                <div style="display: flex; justify-content: space-between; align-items: start;">
+                    <div style="flex: 1;">
+                        <h4 style="margin: 0 0 10px 0; font-size: 1em;">${typeLabels[eq.equipmentType] || eq.equipmentType}</h4>
+                        <p style="margin: 5px 0; font-size: 0.9em;"><strong>型号：</strong>${eq.manufacturer ? eq.manufacturer + ' ' : ''}${eq.model}</p>
+                    </div>
+                    <button type="button" class="btn-danger" onclick="removeEquipment(${index})" style="padding: 5px 10px; background: #dc3545; color: white; border: none; border-radius: 4px; cursor: pointer;">删除</button>
+                </div>
+                <div style="margin-top: 10px;">
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px;">
+                        <div>
+                            <label style="font-size: 0.85em; display: block; margin-bottom: 3px;">数量：</label>
+                            <input type="number" min="1" value="${eq.quantity}"
+                                   onchange="updateEquipmentField(${index}, 'quantity', this.value)"
+                                   style="width: 100%; padding: 8px; border: 1px solid var(--color-surface-dark); border-radius: 4px;">
+                        </div>
+                        <div>
+                            <label style="font-size: 0.85em; display: block; margin-bottom: 3px;">安装日期：</label>
+                            <input type="date" value="${eq.installationDate}"
+                                   onchange="updateEquipmentField(${index}, 'installationDate', this.value)"
+                                   style="width: 100%; padding: 8px; border: 1px solid var(--color-surface-dark); border-radius: 4px;">
+                        </div>
+                        <div>
+                            <label style="font-size: 0.85em; display: block; margin-bottom: 3px;">状态：</label>
+                            <select onchange="updateEquipmentField(${index}, 'status', this.value)" style="width: 100%; padding: 8px; border: 1px solid var(--color-surface-dark); border-radius: 4px;">
+                                <option value="working" ${eq.status === 'working' ? 'selected' : ''}>正常工作</option>
+                                <option value="needs_repair" ${eq.status === 'needs_repair' ? 'selected' : ''}>需要维修</option>
+                                <option value="replaced" ${eq.status === 'replaced' ? 'selected' : ''}>已更换</option>
+                                <option value="inactive" ${eq.status === 'inactive' ? 'selected' : ''}>未使用</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div style="margin-top: 10px;">
+                        <label style="font-size: 0.85em; display: block; margin-bottom: 3px;">位置：</label>
+                        <input type="text" value="${eq.location}" placeholder="例如：区域东北角"
+                               onchange="updateEquipmentField(${index}, 'location', this.value)"
+                               style="width: 100%; padding: 8px; border: 1px solid var(--color-surface-dark); border-radius: 4px;">
+                    </div>
+                    <div style="margin-top: 10px;">
+                        <label style="font-size: 0.85em; display: block; margin-bottom: 3px;">备注：</label>
+                        <textarea rows="2" placeholder="维修记录、注意事项等"
+                                  onchange="updateEquipmentField(${index}, 'notes', this.value)"
+                                  style="width: 100%; padding: 8px; border: 1px solid var(--color-surface-dark); border-radius: 4px;">${eq.notes}</textarea>
+                    </div>
+                </div>
+            `;
+
+            listDiv.appendChild(card);
+        });
+
+        updateEquipmentDataField();
+    }
+
+    window.removeEquipment = function(index) {
+        if (confirm('确定删除此设备？')) {
+            selectedEquipment.splice(index, 1);
+            renderEquipmentList();
+        }
+    };
+
+    window.updateEquipmentField = function(index, field, value) {
+        selectedEquipment[index][field] = value;
+        updateEquipmentDataField();
+    };
+
+    function updateEquipmentDataField() {
+        const dataField = document.getElementById('equipment_data');
+        const submissionData = selectedEquipment.map(eq => ({
+            equipment_id: eq.equipmentId,
+            quantity: eq.quantity,
+            installation_date: eq.installationDate,
+            status: eq.status,
+            location_in_zone: eq.location,
+            notes: eq.notes
+        }));
+        dataField.value = JSON.stringify(submissionData);
+    }
+
+    // Click outside to close autocomplete
+    document.addEventListener('click', function(e) {
+        const resultsDiv = document.getElementById('equipment_autocomplete_results');
+        const searchInput = document.getElementById('equipment_search');
+        if (resultsDiv && searchInput && !resultsDiv.contains(e.target) && e.target !== searchInput) {
+            resultsDiv.style.display = 'none';
+        }
+    });
+
+    // Helper: Get CSRF token
+    function getCookie(name) {
+        let cookieValue = null;
+        if (document.cookie && document.cookie !== '') {
+            const cookies = document.cookie.split(';');
+            for (let i = 0; i < cookies.length; i++) {
+                const cookie = cookies[i].trim();
+                if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                    cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                    break;
+                }
+            }
+        }
+        return cookieValue;
+    }
+
+    // Initialize existing equipment on page load
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', loadExistingEquipment);
+    } else {
+        loadExistingEquipment();
+    }
 })();
 </script>
 {% endblock %}

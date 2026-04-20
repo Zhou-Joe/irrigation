@@ -14,8 +14,20 @@
     // Satellite tile layer (Esri World Imagery - works globally)
     const satelliteLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
         attribution: '&copy; Esri, Maxar, Earthstar Geographics',
-        maxZoom: 19
+        maxNativeZoom: 19,
+        maxZoom: 22
     });
+
+    // Fallback tile layer for high zoom levels (GeoQ)
+    const fallbackLayer = L.tileLayer('https://map.geoq.cn/ArcGIS/rest/services/ChinaOnlineCommunity/MapServer/tile/{z}/{y}/{x}', {
+        attribution: '&copy; GeoQ 智图',
+        minZoom: 19,
+        maxZoom: 22,
+        opacity: 0.7
+    });
+
+    // Hybrid layer group - satellite for normal zoom, fallback for high zoom
+    const hybridLayer = L.layerGroup([satelliteLayer, fallbackLayer]);
 
     // Zone layers group
     let zonesLayerGroup;
@@ -130,11 +142,11 @@
         map = L.map('map', {
             center: [centerLat, centerLng],
             zoom: 15,
-            maxZoom: 19,
+            maxZoom: 22,
             minZoom: 13,
             maxBounds: bounds,
             maxBoundsViscosity: 1.0,
-            layers: [satelliteLayer],
+            layers: [hybridLayer],
             zoomControl: true
         });
 

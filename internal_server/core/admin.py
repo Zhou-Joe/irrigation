@@ -9,6 +9,7 @@ from .models import (
     MaxicomFlowZone, MaxicomWeatherStation, MaxicomWeatherLog,
     MaxicomEvent, MaxicomFlowReading, MaxicomSignalLog,
     MaxicomETCheckbook, MaxicomRuntime,
+    EquipmentCatalog, ZoneEquipment,
 )
 from .role_utils import get_worker_profile
 
@@ -474,3 +475,19 @@ class DepartmentUserProfileAdmin(admin.ModelAdmin):
             return obj.department_other
         return obj.get_department_display()
     department_display.short_description = '部门'
+
+
+@admin.register(EquipmentCatalog)
+class EquipmentCatalogAdmin(admin.ModelAdmin):
+    list_display = ('equipment_type', 'manufacturer', 'model_name', 'created_at')
+    list_filter = ('equipment_type', 'manufacturer')
+    search_fields = ('model_name', 'manufacturer')
+    readonly_fields = ('created_at', 'updated_at')
+
+
+@admin.register(ZoneEquipment)
+class ZoneEquipmentAdmin(admin.ModelAdmin):
+    list_display = ('zone', 'equipment', 'quantity', 'status', 'installation_date')
+    list_filter = ('status', 'equipment__equipment_type', 'installation_date')
+    search_fields = ('zone__name', 'equipment__model_name', 'location_in_zone')
+    readonly_fields = ('created_at', 'updated_at')

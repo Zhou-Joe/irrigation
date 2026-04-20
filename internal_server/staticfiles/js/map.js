@@ -14,8 +14,20 @@
     // Satellite tile layer (Esri World Imagery - works globally)
     const satelliteLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
         attribution: '&copy; Esri, Maxar, Earthstar Geographics',
-        maxZoom: 19
+        maxNativeZoom: 19,
+        maxZoom: 22
     });
+
+    // Fallback tile layer for high zoom levels (GeoQ)
+    const fallbackLayer = L.tileLayer('https://map.geoq.cn/ArcGIS/rest/services/ChinaOnlineCommunity/MapServer/tile/{z}/{y}/{x}', {
+        attribution: '&copy; GeoQ 智图',
+        minZoom: 19,
+        maxZoom: 22,
+        opacity: 0.7
+    });
+
+    // Hybrid layer group - satellite for normal zoom, fallback for high zoom
+    const hybridLayer = L.layerGroup([satelliteLayer, fallbackLayer]);
 
     // Zone layers group
     let zonesLayerGroup;
@@ -116,11 +128,25 @@
      * Initialize the map
      */
     function initMap() {
-        // Create map centered on default location with satellite layer
+        // Center point adjusted ~1.07km north-east, bounds (2km radius)
+        const centerLat = 31.145794 + 0.010; // offset ~1.1km north
+        const centerLng = 121.656804 + 0.012; // offset ~1.1km east
+        const latOffset = 0.018; // ~2km in latitude
+        const lngOffset = 0.021; // ~2km in longitude at lat 31°
+
+        const southWest = L.latLng(centerLat - latOffset, centerLng - lngOffset);
+        const northEast = L.latLng(centerLat + latOffset, centerLng + lngOffset);
+        const bounds = L.latLngBounds(southWest, northEast);
+
+        // Create map centered on location with satellite layer
         map = L.map('map', {
-            center: [0, 0],
-            zoom: 3,
-            layers: [satelliteLayer],
+            center: [centerLat, centerLng],
+            zoom: 15,
+            maxZoom: 22,
+            minZoom: 13,
+            maxBounds: bounds,
+            maxBoundsViscosity: 1.0,
+            layers: [hybridLayer],
             zoomControl: true
         });
 
@@ -271,15 +297,14 @@
             })
         });
 
-        // Build tooltip content
+        // Build tooltip content (only water requests now)
         let tooltipLines = zone.pending_requests.map(req => {
-            const icon = req.type === 'maintenance' ? '🔧' : (req.type === 'project_support' ? '👷' : '💧');
-            return `${icon} ${req.type_display}`;
+            return `💧 ${req.type_display}`;
         }).join('<br>');
 
         marker.bindTooltip(`
             <div style="font-size: 12px;">
-                <strong>待审批工单 (${pendingCount})</strong><br>
+                <strong>待审批浇水需求 (${pendingCount})</strong><br>
                 ${tooltipLines}<br>
                 <span style="color: #888; font-size: 11px;">点击查看详情</span>
             </div>
@@ -309,15 +334,27 @@
             ? `${zone.pendingWorkOrders} 个待处理工单`
             : '无待处理工单';
 
+        // Pending water requests section
+        let pendingWaterHtml = '';
+        const pendingRequests = zone.pending_requests || zone.pendingRequests || [];
+        if (pendingRequests.length > 0) {
+            pendingWaterHtml = `
+                <div class="popup-pending-water" style="margin-top: 8px; padding-top: 8px; border-top: 1px solid #ddd;">
+                    <span style="color: #CC7722; font-weight: 600;">💧 ${pendingRequests.length} 个待审批浇水需求</span>
+                </div>
+            `;
+        }
+
         return `
             <div class="popup-content">
                 <h3>${zone.name}</h3>
                 <div class="popup-zone-code">编号: ${zone.code}</div>
                 <div class="popup-zone-status">
-                    <span class="status-badge ${statusClass}">${zone.statusDisplay}</span>
+                    <span class="status-badge ${statusClass}">${zone.statusDisplay || zone.status_display}</span>
                 </div>
                 <div class="popup-zone-plants">${plantText}</div>
                 <div class="popup-zone-work-orders">${workOrderText}</div>
+                ${pendingWaterHtml}
             </div>
         `;
     }
@@ -387,25 +424,8 @@
      * @param {Array} zones - Array of zone objects
      */
     function fitMapToBounds(zones) {
-        const allPoints = [];
-
-        zones.forEach(zone => {
-            if (zone.boundary_points && zone.boundary_points.length > 0) {
-                zone.boundary_points.forEach(point => {
-                    // Handle both formats: [lat, lng] arrays and {lat, lng} objects
-                    if (Array.isArray(point)) {
-                        allPoints.push([point[0], point[1]]);
-                    } else if (point.lat !== undefined && point.lng !== undefined) {
-                        allPoints.push([point.lat, point.lng]);
-                    }
-                });
-            }
-        });
-
-        if (allPoints.length > 0) {
-            const bounds = L.latLngBounds(allPoints);
-            map.fitBounds(bounds, { padding: [50, 50] });
-        }
+        // Keep map at predefined center - don't auto-adjust
+        // The map is already centered at the specified location
     }
 
     /**
@@ -610,15 +630,11 @@
             initMap();
             setupSidebarInteraction();
             addLocateButton();
-            // Auto locate on page load
-            autoLocate();
         });
     } else {
         initMap();
         setupSidebarInteraction();
         addLocateButton();
-        // Auto locate on page load
-        autoLocate();
     }
 
     /**
