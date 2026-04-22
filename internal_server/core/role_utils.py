@@ -58,3 +58,12 @@ def get_dept_profile(user):
         return DepartmentUserProfile.objects.get(user=user, active=True)
     except DepartmentUserProfile.DoesNotExist:
         return None
+
+
+def is_admin(user):
+    """Check if user has admin privileges (super_admin, staff, or manager)."""
+    if not user or not user.is_authenticated:
+        return False
+    if user.is_superuser or user.is_staff:
+        return True
+    return ManagerProfile.objects.filter(user=user, active=True).exists()
