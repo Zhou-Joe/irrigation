@@ -5,7 +5,7 @@ from rest_framework.permissions import AllowAny
 from django.contrib.auth import authenticate, login
 from django.utils import timezone
 from datetime import timedelta, date
-from .models import Zone, Plant, Worker, WorkOrder, Event, WorkLog, WeatherData, MaintenanceRequest, ProjectSupportRequest, WaterRequest, ManagerProfile, DepartmentUserProfile, EquipmentCatalog, ZoneEquipment
+from .models import Zone, Plant, Worker, WorkOrder, Event, WorkLog, WeatherData, MaintenanceRequest, ProjectSupportRequest, WaterRequest, ManagerProfile, DepartmentUserProfile, EquipmentCatalog, ZoneEquipment, Pipeline, Location, WorkCategory, InfoSource, FaultCategory, FaultSubType, WorkReport, WorkReportFault, DemandCategory, DemandDepartment, DemandRecord
 from .authentication import TokenAuthentication
 from .permissions import IsAdminOrReadOnly, IsOwnerOrAdmin, IsDeptUserWaterOnly, IsFieldWorker
 
@@ -393,8 +393,11 @@ class ZoneEquipmentViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         queryset = super().get_queryset()
         zone_id = self.request.query_params.get('zone')
+        zone_code = self.request.query_params.get('zone_code')
         if zone_id:
             queryset = queryset.filter(zone_id=zone_id)
+        if zone_code:
+            queryset = queryset.filter(zone__code=zone_code)
         return queryset
 
 
@@ -724,4 +727,709 @@ def get_weather(request):
         'date': str(today),
         'count': len(filtered_data),
         'data': filtered_data
+    })
+
+
+class PipelineSerializer(serializers.ModelSerializer):
+    line_color = serializers.ReadOnlyField()
+    pipeline_type_display = serializers.CharField(source='get_pipeline_type_display', read_only=True)
+    zone_names = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Pipeline
+        fields = [
+            'id', 'name', 'code', 'description',
+            'pipeline_type', 'pipeline_type_display',
+            'line_points', 'line_color', 'line_weight',
+            'zones', 'zone_names',
+            'created_at', 'updated_at'
+        ]
+        read_only_fields = ['created_at', 'updated_at']
+
+    def get_zone_names(self, obj):
+        return list(obj.zones.values_list('name', flat=True))
+
+
+class PipelineViewSet(viewsets.ModelViewSet):
+    queryset = Pipeline.objects.all()
+    serializer_class = PipelineSerializer
+    authentication_classes = [TokenAuthentication, authentication.SessionAuthentication]
+    permission_classes = [IsAdminOrReadOnly]
+
+
+# ==========================================================================
+# 维修工单系统 API
+# ==========================================================================
+
+
+class LocationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Location
+        fields = ['id', 'name', 'code', 'order', 'active']
+
+
+class WorkCategorySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = WorkCategory
+        fields = ['id', 'name', 'code', 'order', 'active']
+
+
+class InfoSourceSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = InfoSource
+        fields = ['id', 'name', 'code', 'order', 'active']
+
+
+class FaultSubTypeSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = FaultSubType
+        fields = ['id', 'category', 'name_zh', 'name_en', 'code', 'order', 'active']
+
+
+class FaultCategorySerializer(serializers.ModelSerializer):
+    sub_types = FaultSubTypeSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = FaultCategory
+        fields = ['id', 'name_zh', 'name_en', 'order', 'active', 'sub_types']
+
+
+class WorkReportFaultSerializer(serializers.ModelSerializer):
+    fault_subtype_name = serializers.CharField(source='fault_subtype.name_zh', read_only=True)
+    fault_category_name = serializers.CharField(source='fault_subtype.category.name_zh', read_only=True)
+    equipment_details = ZoneEquipmentSerializer(source='equipment', read_only=True)
+
+    class Meta:
+        model = WorkReportFault
+        fields = ['fault_subtype', 'count', 'fault_subtype_name', 'fault_category_name', 'equipment', 'equipment_details']
+
+
+class WorkReportSerializer(serializers.ModelSerializer):
+    fault_entries = WorkReportFaultSerializer(many=True, required=False)
+    worker_name = serializers.CharField(source='worker.full_name', read_only=True)
+    location_name = serializers.CharField(source='location.name', read_only=True)
+    work_category_name = serializers.CharField(source='work_category.name', read_only=True)
+    info_source_name = serializers.CharField(source='info_source.name', read_only=True, default=None)
+    zone_location_code = serializers.CharField(write_only=True, required=False, allow_null=True, allow_blank=True)
+    zone_location_display = serializers.SerializerMethodField()
+    total_faults = serializers.SerializerMethodField()
+
+    class Meta:
+        model = WorkReport
+        fields = [
+            'id', 'date', 'weather', 'worker', 'worker_name',
+            'location', 'location_name', 'work_category', 'work_category_name',
+            'zone_location', 'zone_location_code', 'zone_location_display',
+            'remark', 'info_source', 'info_source_name',
+            'is_difficult', 'is_difficult_resolved',
+            'fault_entries', 'total_faults',
+            'created_at', 'updated_at',
+        ]
+        read_only_fields = ['created_at', 'updated_at']
+        extra_kwargs = {
+            'zone_location': {'required': False, 'allow_null': True},
+            'worker': {'required': False},
+        }
+
+    def get_total_faults(self, obj):
+        return sum(e.count for e in obj.fault_entries.all())
+
+    def get_zone_location_display(self, obj):
+        return obj.zone_location.code if obj.zone_location else None
+
+    def validate_zone_location_code(self, value):
+        if value:
+            from core.models import Zone
+            zone = Zone.objects.filter(code=value).first()
+            if not zone:
+                raise serializers.ValidationError(f"Zone with code '{value}' not found")
+            return zone
+        return None
+
+    def create(self, validated_data):
+        fault_data = validated_data.pop('fault_entries', [])
+        zone = validated_data.pop('zone_location_code', None)
+        if zone:
+            validated_data['zone_location'] = zone
+        report = WorkReport.objects.create(**validated_data)
+        for entry in fault_data:
+            WorkReportFault.objects.create(work_report=report, **entry)
+        return report
+
+    def update(self, instance, validated_data):
+        fault_data = validated_data.pop('fault_entries', None)
+        zone = validated_data.pop('zone_location_code', None)
+        if zone:
+            validated_data['zone_location'] = zone
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.save()
+        if fault_data is not None:
+            instance.fault_entries.all().delete()
+            for entry in fault_data:
+                WorkReportFault.objects.create(work_report=instance, **entry)
+        return instance
+
+
+class LocationViewSet(viewsets.ReadOnlyModelViewSet):
+    queryset = Location.objects.filter(active=True).order_by('order', 'code')
+    serializer_class = LocationSerializer
+    authentication_classes = [TokenAuthentication, authentication.SessionAuthentication]
+    permission_classes = [IsAuthenticatedByTokenOrSession]
+
+
+class WorkCategoryViewSet(viewsets.ReadOnlyModelViewSet):
+    queryset = WorkCategory.objects.filter(active=True).order_by('order', 'code')
+    serializer_class = WorkCategorySerializer
+    authentication_classes = [TokenAuthentication, authentication.SessionAuthentication]
+    permission_classes = [IsAuthenticatedByTokenOrSession]
+
+
+class InfoSourceViewSet(viewsets.ReadOnlyModelViewSet):
+    queryset = InfoSource.objects.filter(active=True).order_by('order', 'code')
+    serializer_class = InfoSourceSerializer
+    authentication_classes = [TokenAuthentication, authentication.SessionAuthentication]
+    permission_classes = [IsAuthenticatedByTokenOrSession]
+
+
+class FaultCategoryViewSet(viewsets.ReadOnlyModelViewSet):
+    queryset = FaultCategory.objects.filter(active=True).prefetch_related('sub_types').order_by('order', 'id')
+    serializer_class = FaultCategorySerializer
+    authentication_classes = [TokenAuthentication, authentication.SessionAuthentication]
+    permission_classes = [IsAuthenticatedByTokenOrSession]
+
+
+class FaultSubTypeViewSet(viewsets.ReadOnlyModelViewSet):
+    queryset = FaultSubType.objects.filter(active=True).select_related('category').order_by('category__order', 'order', 'id')
+    serializer_class = FaultSubTypeSerializer
+    authentication_classes = [TokenAuthentication, authentication.SessionAuthentication]
+    permission_classes = [IsAuthenticatedByTokenOrSession]
+
+
+class WorkReportViewSet(viewsets.ModelViewSet):
+    serializer_class = WorkReportSerializer
+    authentication_classes = [TokenAuthentication, authentication.SessionAuthentication]
+    permission_classes = [IsAuthenticatedByTokenOrSession]
+
+    def get_queryset(self):
+        qs = WorkReport.objects.select_related(
+            'worker', 'location', 'work_category', 'info_source'
+        ).prefetch_related('fault_entries__fault_subtype__category').order_by('-date', '-id')
+
+        user = self.request.user
+        from .role_utils import is_admin
+        if not is_admin(user):
+            try:
+                worker = user.worker
+                qs = qs.filter(worker=worker)
+            except Exception:
+                qs = qs.none()
+
+        # Filters
+        date_from = self.request.query_params.get('date_from')
+        date_to = self.request.query_params.get('date_to')
+        location = self.request.query_params.get('location')
+        work_category = self.request.query_params.get('work_category')
+        worker_id = self.request.query_params.get('worker')
+        is_difficult = self.request.query_params.get('is_difficult')
+
+        if date_from:
+            qs = qs.filter(date__gte=date_from)
+        if date_to:
+            qs = qs.filter(date__lte=date_to)
+        if location:
+            qs = qs.filter(location_id=location)
+        if work_category:
+            qs = qs.filter(work_category_id=work_category)
+        if worker_id:
+            qs = qs.filter(worker_id=worker_id)
+        if is_difficult is not None:
+            qs = qs.filter(is_difficult=is_difficult.lower() in ('true', '1', 'yes'))
+
+        return qs
+
+    def perform_create(self, serializer):
+        # If worker was explicitly passed, use it
+        if 'worker' in serializer.validated_data:
+            serializer.save()
+            return
+        try:
+            worker = self.request.user.worker
+        except Exception:
+            from .models import Worker
+            worker, _ = Worker.objects.get_or_create(
+                employee_id=f"USR-{self.request.user.id}",
+                defaults={
+                    'full_name': self.request.user.get_full_name() or self.request.user.username,
+                },
+            )
+        serializer.save(worker=worker)
+
+
+# ==========================================================================
+# 需求周报系统 API
+# ==========================================================================
+
+
+class DemandCategorySerializer(serializers.ModelSerializer):
+    """Serializer for DemandCategory."""
+
+    category_type_display = serializers.CharField(source='get_category_type_display', read_only=True)
+
+    class Meta:
+        model = DemandCategory
+        fields = ['id', 'name', 'code', 'category_type', 'category_type_display', 'order', 'active']
+        read_only_fields = ['created_at', 'updated_at']
+
+
+class DemandDepartmentSerializer(serializers.ModelSerializer):
+    """Serializer for DemandDepartment."""
+
+    class Meta:
+        model = DemandDepartment
+        fields = ['id', 'name', 'code', 'order', 'active']
+        read_only_fields = ['created_at']
+
+
+class DemandRecordSerializer(serializers.ModelSerializer):
+    """Serializer for DemandRecord with full context."""
+
+    # Related fields
+    category_name = serializers.CharField(source='category.name', read_only=True)
+    category_type = serializers.CharField(source='category.category_type', read_only=True)
+    zone_name = serializers.CharField(source='zone.name', read_only=True)
+    zone_code = serializers.CharField(source='zone.code', read_only=True)
+    demand_department_name = serializers.CharField(source='demand_department.name', read_only=True)
+    submitter_name = serializers.SerializerMethodField()
+    approver_name = serializers.SerializerMethodField()
+
+    # Display fields
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+    time_display = serializers.SerializerMethodField()
+    duration_hours = serializers.SerializerMethodField()
+
+    class Meta:
+        model = DemandRecord
+        fields = [
+            'id', 'date', 'content', 'original_text',
+            'zone', 'zone_name', 'zone_code', 'zone_text',
+            'is_global_event',
+            'category', 'category_name', 'category_type', 'category_text',
+            'start_time', 'end_time', 'crosses_midnight', 'time_parsed',
+            'time_display', 'duration_hours',
+            'demand_department', 'demand_department_name', 'demand_department_text', 'demand_contact',
+            'status', 'status_display',
+            'submitter', 'submitter_name',
+            'approver', 'approver_name', 'processed_at', 'status_notes',
+            'work_order',
+            'created_at', 'updated_at',
+        ]
+        read_only_fields = ['created_at', 'updated_at', 'submitter', 'approver', 'processed_at']
+
+    def get_submitter_name(self, obj):
+        if obj.submitter:
+            return obj.submitter.full_name if hasattr(obj.submitter, 'full_name') else str(obj.submitter)
+        return None
+
+    def get_approver_name(self, obj):
+        if obj.approver:
+            return obj.approver.full_name if hasattr(obj.approver, 'full_name') else str(obj.approver)
+        return None
+
+    def get_time_display(self, obj):
+        if obj.start_time and obj.end_time:
+            return f"{obj.start_time.strftime('%H:%M')} - {obj.end_time.strftime('%H:%M')}"
+        return None
+
+    def get_duration_hours(self, obj):
+        if obj.start_time and obj.end_time:
+            start_minutes = obj.start_time.hour * 60 + obj.start_time.minute
+            end_minutes = obj.end_time.hour * 60 + obj.end_time.minute
+            if obj.crosses_midnight:
+                end_minutes += 24 * 60
+            duration = (end_minutes - start_minutes) / 60
+            return round(duration, 1)
+        return None
+
+
+class DemandCategoryViewSet(viewsets.ReadOnlyModelViewSet):
+    """ViewSet for DemandCategory - read-only for all authenticated users."""
+
+    queryset = DemandCategory.objects.filter(active=True).order_by('order', 'code')
+    serializer_class = DemandCategorySerializer
+    authentication_classes = [TokenAuthentication, authentication.SessionAuthentication]
+    permission_classes = [IsAuthenticatedByTokenOrSession]
+
+
+class DemandDepartmentViewSet(viewsets.ReadOnlyModelViewSet):
+    """ViewSet for DemandDepartment - read-only for all authenticated users."""
+
+    queryset = DemandDepartment.objects.filter(active=True).order_by('order', 'code')
+    serializer_class = DemandDepartmentSerializer
+    authentication_classes = [TokenAuthentication, authentication.SessionAuthentication]
+    permission_classes = [IsAuthenticatedByTokenOrSession]
+
+
+class DemandRecordViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet for DemandRecord with role-based access control.
+
+    Permissions:
+    - Admin/Manager: Full CRUD, view all, approve/reject
+    - Dept User: Create demands, view own department's demands
+    - Field Worker: View assigned demands (via work_order), update status
+    """
+
+    queryset = DemandRecord.objects.select_related(
+        'zone', 'category', 'demand_department', 'submitter', 'approver'
+    ).order_by('-date', '-id')
+    serializer_class = DemandRecordSerializer
+    authentication_classes = [TokenAuthentication, authentication.SessionAuthentication]
+    permission_classes = [IsAuthenticatedByTokenOrSession]
+
+    def get_queryset(self):
+        """Filter queryset based on user role."""
+        qs = super().get_queryset()
+        user = self.request.user
+
+        # Check admin status
+        is_admin_user = user.is_superuser or user.is_staff
+        if not is_admin_user:
+            try:
+                ManagerProfile.objects.get(user=user, active=True)
+                is_admin_user = True
+            except ManagerProfile.DoesNotExist:
+                pass
+
+        # Admin/Manager: see all with filters
+        if is_admin_user:
+            date_from = self.request.query_params.get('date_from')
+            date_to = self.request.query_params.get('date_to')
+            zone_id = self.request.query_params.get('zone')
+            category_id = self.request.query_params.get('category')
+            department_id = self.request.query_params.get('department')
+            status_val = self.request.query_params.get('status')
+            is_global = self.request.query_params.get('is_global')
+
+            if date_from:
+                qs = qs.filter(date__gte=date_from)
+            if date_to:
+                qs = qs.filter(date__lte=date_to)
+            if zone_id:
+                qs = qs.filter(zone_id=zone_id)
+            if category_id:
+                qs = qs.filter(category_id=category_id)
+            if department_id:
+                qs = qs.filter(demand_department_id=department_id)
+            if status_val:
+                qs = qs.filter(status=status_val)
+            if is_global:
+                qs = qs.filter(is_global_event=is_global.lower() in ('true', '1', 'yes'))
+
+            return qs
+
+        # Dept User: see demands from own department + can create
+        try:
+            dept_profile = DepartmentUserProfile.objects.get(user=user, active=True)
+            # Try to match department code to DemandDepartment
+            dept_code = dept_profile.department
+            demand_dept = DemandDepartment.objects.filter(code=dept_code).first()
+            if demand_dept:
+                return qs.filter(demand_department=demand_dept)
+            return qs.filter(demand_department_text__icontains=dept_profile.get_department_display_name())
+        except DepartmentUserProfile.DoesNotExist:
+            pass
+
+        # Field Worker: see demands linked to their work orders
+        try:
+            worker = Worker.objects.get(user=user, active=True)
+            return qs.filter(work_order__assigned_to=worker)
+        except Worker.DoesNotExist:
+            pass
+
+        return DemandRecord.objects.none()
+
+    def perform_create(self, serializer):
+        """Auto-set submitter for dept users."""
+        user = self.request.user
+
+        # Try to get department profile
+        try:
+            dept_profile = DepartmentUserProfile.objects.get(user=user, active=True)
+            dept_code = dept_profile.department
+            demand_dept = DemandDepartment.objects.filter(code=dept_code).first()
+
+            serializer.save(
+                submitter=dept_profile,
+                demand_department=demand_dept,
+                demand_department_text=dept_profile.get_department_display_name(),
+                demand_contact=dept_profile.full_name,
+            )
+            return
+        except DepartmentUserProfile.DoesNotExist:
+            pass
+
+        # Admin can also create
+        try:
+            manager = ManagerProfile.objects.get(user=user, active=True)
+            serializer.save(submitter=manager)
+            return
+        except ManagerProfile.DoesNotExist:
+            pass
+
+        serializer.save()
+
+    def perform_update(self, serializer):
+        """Handle approval/rejection by admin."""
+        user = self.request.user
+
+        # Check if user is admin
+        is_admin_user = user.is_superuser or user.is_staff
+        if not is_admin_user:
+            try:
+                ManagerProfile.objects.get(user=user, active=True)
+                is_admin_user = True
+            except ManagerProfile.DoesNotExist:
+                pass
+
+        if is_admin_user:
+            old_status = self.get_object().status
+            new_status = serializer.validated_data.get('status')
+
+            # If status changed to approved/rejected/in_progress/completed
+            if new_status in ['approved', 'rejected', 'in_progress', 'completed'] and old_status == 'submitted':
+                try:
+                    manager = ManagerProfile.objects.get(user=user, active=True)
+                    serializer.save(
+                        approver=manager,
+                        processed_at=timezone.now()
+                    )
+                    return
+                except ManagerProfile.DoesNotExist:
+                    pass
+
+        serializer.save()
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticatedByTokenOrSession])
+@authentication_classes([TokenAuthentication, authentication.SessionAuthentication])
+def demand_stats(request):
+    """
+    Statistics API for DemandRecord.
+
+    Query params:
+    - start_date: YYYY-MM-DD
+    - end_date: YYYY-MM-DD
+    - group_by: day|week|month|year
+    - dimension: zone|category|department|status
+
+    Returns aggregated statistics for reports.
+    """
+    from django.db.models import Count
+    from django.db.models.functions import TruncDay, TruncWeek, TruncMonth, TruncYear
+    from collections import defaultdict
+    from datetime import datetime
+
+    user = request.user
+
+    # Check admin status
+    is_admin_user = user.is_superuser or user.is_staff
+    if not is_admin_user:
+        try:
+            ManagerProfile.objects.get(user=user, active=True)
+            is_admin_user = True
+        except ManagerProfile.DoesNotExist:
+            pass
+
+    # Only admin can access stats
+    if not is_admin_user:
+        return Response({'error': '权限不足'}, status=403)
+
+    start_date = request.query_params.get('start_date')
+    end_date = request.query_params.get('end_date')
+    group_by = request.query_params.get('group_by', 'day')
+    dimension = request.query_params.get('dimension', 'zone')
+
+    # Parse dates
+    if not start_date:
+        start_date = date.today() - timedelta(days=30)
+    else:
+        start_date = datetime.strptime(start_date, '%Y-%m-%d').date()
+
+    if not end_date:
+        end_date = date.today()
+    else:
+        end_date = datetime.strptime(end_date, '%Y-%m-%d').date()
+
+    # Base queryset
+    qs = DemandRecord.objects.filter(date__gte=start_date, date__lte=end_date)
+
+    # Truncation function
+    trunc_map = {
+        'day': TruncDay('date'),
+        'week': TruncWeek('date'),
+        'month': TruncMonth('date'),
+        'year': TruncYear('date'),
+    }
+    trunc_func = trunc_map.get(group_by, TruncDay('date'))
+
+    # Annotate with time period
+    qs = qs.annotate(period=trunc_func)
+
+    results = []
+
+    if dimension == 'zone':
+        zone_stats = qs.values('zone', 'zone_text', 'period').annotate(
+            count=Count('id'),
+        ).order_by('period', 'zone_text')
+
+        period_data = defaultdict(list)
+        for stat in zone_stats:
+            period_key = stat['period'].strftime('%Y-%m-%d') if stat['period'] else 'Unknown'
+            period_data[period_key].append({
+                'zone_id': stat['zone'],
+                'zone_name': stat['zone_text'] or '全局事件',
+                'count': stat['count'],
+            })
+
+        results = [{'period': k, 'items': v} for k, v in sorted(period_data.items())]
+
+    elif dimension == 'category':
+        cat_stats = qs.values('category', 'category_text', 'period').annotate(
+            count=Count('id'),
+        ).order_by('period', 'category_text')
+
+        period_data = defaultdict(list)
+        for stat in cat_stats:
+            period_key = stat['period'].strftime('%Y-%m-%d') if stat['period'] else 'Unknown'
+            period_data[period_key].append({
+                'category_id': stat['category'],
+                'category_name': stat['category_text'] or '未知',
+                'count': stat['count'],
+            })
+
+        results = [{'period': k, 'items': v} for k, v in sorted(period_data.items())]
+
+    elif dimension == 'department':
+        dept_stats = qs.values('demand_department', 'demand_department_text', 'period').annotate(
+            count=Count('id'),
+        ).order_by('period', 'demand_department_text')
+
+        period_data = defaultdict(list)
+        for stat in dept_stats:
+            period_key = stat['period'].strftime('%Y-%m-%d') if stat['period'] else 'Unknown'
+            period_data[period_key].append({
+                'department_id': stat['demand_department'],
+                'department_name': stat['demand_department_text'] or '未知',
+                'count': stat['count'],
+            })
+
+        results = [{'period': k, 'items': v} for k, v in sorted(period_data.items())]
+
+    elif dimension == 'status':
+        status_stats = qs.values('status', 'period').annotate(
+            count=Count('id'),
+        ).order_by('period', 'status')
+
+        period_data = defaultdict(list)
+        for stat in status_stats:
+            period_key = stat['period'].strftime('%Y-%m-%d') if stat['period'] else 'Unknown'
+            status_display = dict(DemandRecord.STATUS_CHOICES).get(stat['status'], stat['status'])
+            period_data[period_key].append({
+                'status': stat['status'],
+                'status_display': status_display,
+                'count': stat['count'],
+            })
+
+        results = [{'period': k, 'items': v} for k, v in sorted(period_data.items())]
+
+    # Summary stats
+    total_count = qs.count()
+    summary = {
+        'total_records': total_count,
+        'by_status': dict(qs.values('status').annotate(count=Count('id')).values_list('status', 'count')),
+        'by_category': dict(qs.values('category_text').annotate(count=Count('id')).values_list('category_text', 'count')),
+        'by_department': dict(qs.values('demand_department_text').annotate(count=Count('id')).values_list('demand_department_text', 'count')),
+        'time_parsed_rate': qs.filter(time_parsed=True).count() * 100 / total_count if total_count > 0 else 0,
+        'zone_matched_rate': qs.filter(zone__isnull=False).count() * 100 / total_count if total_count > 0 else 0,
+    }
+
+    return Response({
+        'start_date': str(start_date),
+        'end_date': str(end_date),
+        'group_by': group_by,
+        'dimension': dimension,
+        'results': results,
+        'summary': summary,
+    })
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticatedByTokenOrSession])
+@authentication_classes([TokenAuthentication, authentication.SessionAuthentication])
+def demand_calendar(request):
+    """
+    Calendar view API for DemandRecord.
+
+    Returns demands grouped by date for calendar display.
+    """
+    from collections import defaultdict
+
+    user = request.user
+
+    # Check admin status
+    is_admin_user = user.is_superuser or user.is_staff
+    if not is_admin_user:
+        try:
+            ManagerProfile.objects.get(user=user, active=True)
+            is_admin_user = True
+        except ManagerProfile.DoesNotExist:
+            pass
+
+    year = request.query_params.get('year')
+    month = request.query_params.get('month')
+
+    if not year or not month:
+        today = date.today()
+        year = today.year
+        month = today.month
+
+    # Base queryset
+    qs = DemandRecord.objects.filter(date__year=int(year), date__month=int(month))
+
+    # Role-based filter
+    if not is_admin_user:
+        try:
+            dept_profile = DepartmentUserProfile.objects.get(user=user, active=True)
+            dept_code = dept_profile.department
+            demand_dept = DemandDepartment.objects.filter(code=dept_code).first()
+            if demand_dept:
+                qs = qs.filter(demand_department=demand_dept)
+            else:
+                qs = qs.filter(demand_department_text__icontains=dept_profile.get_department_display_name())
+        except DepartmentUserProfile.DoesNotExist:
+            qs = DemandRecord.objects.none()
+
+    # Group by date
+    calendar_data = defaultdict(list)
+
+    for record in qs.select_related('zone', 'category'):
+        date_key = str(record.date)
+        calendar_data[date_key].append({
+            'id': record.id,
+            'zone_name': record.zone_text or '全局',
+            'category_name': record.category_text or '未分类',
+            'content': record.content[:50] + '...' if len(record.content) > 50 else record.content,
+            'time_display': f"{record.start_time.strftime('%H:%M')}-{record.end_time.strftime('%H:%M')}" if record.start_time else None,
+            'status': record.status,
+            'status_display': record.get_status_display(),
+            'is_global': record.is_global_event,
+        })
+
+    return Response({
+        'year': year,
+        'month': month,
+        'calendar': dict(calendar_data),
+        'total': qs.count(),
     })

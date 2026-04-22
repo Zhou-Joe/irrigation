@@ -7,7 +7,11 @@ from core.api import (
     WorkOrderViewSet, EventViewSet, WorkLogViewSet,
     MaintenanceRequestViewSet, ProjectSupportRequestViewSet, WaterRequestViewSet,
     EquipmentCatalogViewSet, ZoneEquipmentViewSet,
-    worker_login, get_all_requests, get_weather
+    PipelineViewSet,
+    LocationViewSet, WorkCategoryViewSet, InfoSourceViewSet,
+    FaultCategoryViewSet, FaultSubTypeViewSet, WorkReportViewSet,
+    DemandCategoryViewSet, DemandDepartmentViewSet, DemandRecordViewSet,
+    worker_login, get_all_requests, get_weather, demand_stats, demand_calendar
 )
 from core.views import equipment_catalog_autocomplete
 
@@ -25,6 +29,16 @@ router.register(r'project-support-requests', ProjectSupportRequestViewSet)
 router.register(r'water-requests', WaterRequestViewSet)
 router.register(r'equipment-catalog', EquipmentCatalogViewSet)
 router.register(r'zone-equipment', ZoneEquipmentViewSet)
+router.register(r'pipelines', PipelineViewSet)
+router.register(r'locations', LocationViewSet)
+router.register(r'work-categories', WorkCategoryViewSet)
+router.register(r'info-sources', InfoSourceViewSet)
+router.register(r'fault-categories', FaultCategoryViewSet)
+router.register(r'fault-subtypes', FaultSubTypeViewSet)
+router.register(r'work-reports', WorkReportViewSet, basename='workreport')
+router.register(r'demand-categories', DemandCategoryViewSet)
+router.register(r'demand-departments', DemandDepartmentViewSet)
+router.register(r'demand-records', DemandRecordViewSet, basename='demandrecord')
 
 urlpatterns = [
     path('', views.dashboard, name='dashboard'),
@@ -36,12 +50,22 @@ urlpatterns = [
     path('settings/zone/<int:zone_id>/', views.zone_edit, name='zone_edit'),
     path('settings/zone/<int:zone_id>/delete/', views.zone_delete, name='zone_delete'),
     path('settings/zone/new/', views.zone_new, name='zone_new'),
+    path('settings/pipeline/new/', views.pipeline_new, name='pipeline_new'),
+    path('settings/pipeline/<int:pipeline_id>/', views.pipeline_edit, name='pipeline_edit'),
+    path('settings/pipeline/<int:pipeline_id>/delete/', views.pipeline_delete, name='pipeline_delete'),
     path('requests/', views.requests_page, name='requests'),
     path('requests/<str:type_code>/<int:request_id>/', views.request_detail, name='request_detail'),
     path('requests/<str:type_code>/<int:request_id>/update/', views.update_request_status, name='update_request_status'),
+    path('work-reports/', views.work_reports_list, name='work_reports'),
+    path('work-reports/new/', views.work_report_create, name='work_report_create'),
+    path('work-reports/<int:report_id>/', views.work_report_detail, name='work_report_detail'),
+    path('work-reports/<int:report_id>/edit/', views.work_report_edit, name='work_report_edit'),
+    path('work-reports/<int:report_id>/delete/', views.work_report_delete, name='work_report_delete'),
     path('api/auth/login', worker_login, name='worker_login'),
     path('api/requests', get_all_requests, name='get_all_requests'),
     path('api/weather', get_weather, name='get_weather'),
+    path('api/demand-stats', demand_stats, name='demand_stats'),
+    path('api/demand-calendar', demand_calendar, name='demand_calendar'),
     path('api/equipment-catalog/autocomplete', equipment_catalog_autocomplete, name='equipment_catalog_autocomplete'),
     path('api/', include(router.urls)),
     path('api/maxicom-dashboard', views.maxicom_dashboard_api, name='maxicom_dashboard_api'),
