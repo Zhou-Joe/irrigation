@@ -10,6 +10,10 @@ from .models import (
     MaxicomEvent, MaxicomFlowReading, MaxicomSignalLog,
     MaxicomETCheckbook, MaxicomRuntime,
     EquipmentCatalog, ZoneEquipment,
+    Pipeline,
+    Location, WorkCategory, InfoSource, FaultCategory, FaultSubType,
+    WorkReport, WorkReportFault,
+    DemandCategory, DemandDepartment, DemandRecord,
 )
 from .role_utils import get_worker_profile
 
@@ -491,3 +495,191 @@ class ZoneEquipmentAdmin(admin.ModelAdmin):
     list_filter = ('status', 'equipment__equipment_type', 'installation_date')
     search_fields = ('zone__name', 'equipment__model_name', 'location_in_zone')
     readonly_fields = ('created_at', 'updated_at')
+
+
+@admin.register(Pipeline)
+class PipelineAdmin(admin.ModelAdmin):
+    list_display = ('name', 'code', 'pipeline_type', 'line_color_display', 'point_count', 'zone_count', 'created_at')
+    list_filter = ('pipeline_type', 'created_at')
+    search_fields = ('name', 'code', 'description')
+    readonly_fields = ('created_at', 'updated_at', 'display_line_points')
+    filter_horizontal = ('zones',)
+
+    def point_count(self, obj):
+        return len(obj.line_points) if obj.line_points else 0
+    point_count.short_description = '坐标点数'
+
+    def zone_count(self, obj):
+        return obj.zones.count()
+    zone_count.short_description = '关联区域数'
+
+    def line_color_display(self, obj):
+        from django.utils.html import format_html
+        color = obj.line_color
+        return format_html(
+            '<span style="background: {}; color: white; padding: 4px 8px; border-radius: 12px;">{}</span>',
+            color, obj.get_pipeline_type_display()
+        )
+    line_color_display.short_description = '类型/颜色'
+
+    def display_line_points(self, obj):
+        if not obj.line_points:
+            return '无坐标点'
+        html = '<table style="border-collapse: collapse;"><thead><tr><th style="border: 1px solid #ddd; padding: 8px;">序号</th><th style="border: 1px solid #ddd; padding: 8px;">纬度</th><th style="border: 1px solid #ddd; padding: 8px;">经度</th></tr></thead><tbody>'
+        for i, p in enumerate(obj.line_points, 1):
+            if isinstance(p, dict):
+                lat = p.get('lat', '-')
+                lng = p.get('lng', '-')
+            else:
+                lat, lng = p[0], p[1]
+            html += f'<tr><td style="border: 1px solid #ddd; padding: 8px;">{i}</td><td style="border: 1px solid #ddd; padding: 8px;">{lat}</td><td style="border: 1px solid #ddd; padding: 8px;">{lng}</td></tr>'
+        html += '</tbody></table>'
+        from django.utils.safestring import mark_safe
+        return mark_safe(html)
+    display_line_points.short_description = '管线坐标点'
+
+
+# ==========================================================================
+# 维修工单系统 Admin
+# ==========================================================================
+
+
+class FaultSubTypeInline(admin.TabularInline):
+    model = FaultSubType
+    extra = 0
+
+
+@admin.register(Location)
+class LocationAdmin(admin.ModelAdmin):
+    list_display = ('code', 'name', 'order', 'active')
+    list_editable = ('order', 'active')
+    search_fields = ('name', 'code')
+    ordering = ('order', 'code')
+
+
+@admin.register(WorkCategory)
+class WorkCategoryAdmin(admin.ModelAdmin):
+    list_display = ('code', 'name', 'order', 'active')
+    list_editable = ('order', 'active')
+    search_fields = ('name', 'code')
+    ordering = ('order', 'code')
+
+
+@admin.register(InfoSource)
+class InfoSourceAdmin(admin.ModelAdmin):
+    list_display = ('code', 'name', 'order', 'active')
+    list_editable = ('order', 'active')
+    search_fields = ('name', 'code')
+    ordering = ('order', 'code')
+
+
+@admin.register(FaultCategory)
+class FaultCategoryAdmin(admin.ModelAdmin):
+    list_display = ('name_zh', 'name_en', 'order', 'active', 'sub_type_count')
+    list_editable = ('order', 'active')
+    search_fields = ('name_zh', 'name_en')
+    ordering = ('order', 'id')
+    inlines = [FaultSubTypeInline]
+
+    def sub_type_count(self, obj):
+        return obj.sub_types.count()
+    sub_type_count.short_description = '子类型数'
+
+
+@admin.register(FaultSubType)
+class FaultSubTypeAdmin(admin.ModelAdmin):
+    list_display = ('code', 'name_zh', 'name_en', 'category', 'order', 'active')
+    list_filter = ('category', 'active')
+    list_editable = ('order', 'active')
+    search_fields = ('name_zh', 'name_en', 'code')
+    ordering = ('category__order', 'order', 'id')
+
+
+class WorkReportFaultInline(admin.TabularInline):
+    model = WorkReportFault
+    extra = 0
+    autocomplete_fields = ('fault_subtype',)
+    readonly_fields = ()
+
+
+@admin.register(WorkReport)
+class WorkReportAdmin(admin.ModelAdmin):
+    list_display = ('date', 'worker', 'location', 'work_category', 'zone_location', 'is_difficult', 'created_at')
+    list_filter = ('date', 'work_category', 'location', 'is_difficult', 'weather')
+    search_fields = ('remark', 'zone_location', 'worker__full_name')
+    date_hierarchy = 'date'
+    inlines = [WorkReportFaultInline]
+    raw_id_fields = ('worker',)
+    ordering = ('-date', '-id')
+
+
+# ==========================================================================
+# 需求周报系统 Admin
+# ==========================================================================
+
+
+@admin.register(DemandCategory)
+class DemandCategoryAdmin(admin.ModelAdmin):
+    list_display = ('code', 'name', 'category_type', 'order', 'active')
+    list_filter = ('category_type', 'active')
+    list_editable = ('order', 'active')
+    search_fields = ('name', 'code')
+    ordering = ('order', 'code')
+
+
+@admin.register(DemandDepartment)
+class DemandDepartmentAdmin(admin.ModelAdmin):
+    list_display = ('code', 'name', 'order', 'active')
+    list_editable = ('order', 'active')
+    search_fields = ('name', 'code')
+    ordering = ('order', 'code')
+
+
+@admin.register(DemandRecord)
+class DemandRecordAdmin(admin.ModelAdmin):
+    list_display = ('date', 'zone_text', 'category_text', 'content_preview', 'time_display', 'status', 'is_global_event')
+    list_filter = ('date', 'category', 'status', 'is_global_event', 'time_parsed', 'zone')
+    search_fields = ('content', 'original_text', 'zone_text', 'category_text', 'demand_contact')
+    date_hierarchy = 'date'
+    readonly_fields = ('created_at', 'updated_at', 'time_parsed', 'crosses_midnight')
+    raw_id_fields = ('zone', 'submitter', 'approver', 'work_order')
+    filter_horizontal = ('affected_zones',)
+    ordering = ('-date', '-id')
+
+    fieldsets = (
+        ('基本信息', {
+            'fields': ('date', 'content', 'original_text', 'status')
+        }),
+        ('区域信息', {
+            'fields': ('zone', 'zone_text', 'is_global_event', 'affected_zones')
+        }),
+        ('类别信息', {
+            'fields': ('category', 'category_text')
+        }),
+        ('时间段', {
+            'fields': ('start_time', 'end_time', 'time_parsed', 'crosses_midnight')
+        }),
+        ('需求方信息', {
+            'fields': ('demand_department', 'demand_department_text', 'demand_contact')
+        }),
+        ('审批流程', {
+            'fields': ('submitter', 'approver', 'processed_at', 'status_notes')
+        }),
+        ('关联工单', {
+            'fields': ('work_order',)
+        }),
+        ('时间记录', {
+            'fields': ('created_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+    )
+
+    def content_preview(self, obj):
+        return obj.content[:50] + '...' if len(obj.content) > 50 else obj.content
+    content_preview.short_description = '内容'
+
+    def time_display(self, obj):
+        if obj.start_time and obj.end_time:
+            return f"{obj.start_time.strftime('%H:%M')} - {obj.end_time.strftime('%H:%M')}"
+        return '-'
+    time_display.short_description = '时间段'
