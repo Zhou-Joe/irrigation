@@ -1,0 +1,572 @@
+{% extends 'core/base.html' %}
+
+{% load static %}
+
+{% block title %}需求周报 - 灌溉管理{% endblock %}
+{% block nav_demands %}active{% endblock %}
+
+{% block extra_css %}
+<style>
+.demands-container {
+    padding: var(--space-lg);
+    max-width: 1400px;
+    margin: 0 auto;
+}
+
+.demands-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: var(--space-lg);
+    flex-wrap: wrap;
+    gap: var(--space-md);
+}
+
+.demands-header h1 {
+    font-family: var(--font-display);
+    font-size: 1.75rem;
+    color: var(--color-primary);
+}
+
+.filter-section {
+    display: flex;
+    gap: var(--space-sm);
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+.filter-section select,
+.filter-section input {
+    padding: 8px 12px;
+    border: 1px solid var(--color-surface-dark);
+    border-radius: var(--radius-sm);
+    font-size: 0.875rem;
+    background: var(--color-surface);
+}
+
+.filter-section select:focus,
+.filter-section input:focus {
+    outline: none;
+    border-color: var(--color-primary);
+}
+
+.stats-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: var(--space-md);
+    margin-bottom: var(--space-lg);
+}
+
+.stat-card {
+    background: var(--color-surface);
+    padding: var(--space-md);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-sm);
+}
+
+.stat-card h3 {
+    font-size: 0.875rem;
+    color: var(--color-text-secondary);
+    margin: 0 0 var(--space-sm) 0;
+}
+
+.stat-card .value {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--color-primary);
+}
+
+.stat-card .detail {
+    font-size: 0.75rem;
+    color: var(--color-text-muted);
+    margin-top: var(--space-xs);
+}
+
+.demand-table {
+    width: 100%;
+    background: var(--color-surface);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    box-shadow: var(--shadow-sm);
+}
+
+.demand-table th,
+.demand-table td {
+    padding: var(--space-md);
+    text-align: left;
+    border-bottom: 1px solid var(--color-surface-dark);
+}
+
+.demand-table th {
+    background: var(--color-surface-alt);
+    font-weight: 600;
+    color: var(--color-text-secondary);
+    font-size: 0.875rem;
+}
+
+.demand-table tr:hover {
+    background: var(--color-surface-alt);
+    cursor: pointer;
+}
+
+.zone-badge {
+    display: inline-block;
+    padding: var(--space-xs) var(--space-sm);
+    border-radius: var(--radius-pill);
+    font-size: 0.8rem;
+    font-weight: 500;
+    background: rgba(27, 67, 50, 0.1);
+    color: var(--color-primary);
+}
+
+.zone-badge.global {
+    background: rgba(204, 119, 34, 0.15);
+    color: var(--color-warning);
+}
+
+.category-badge {
+    display: inline-block;
+    padding: var(--space-xs) var(--space-sm);
+    border-radius: var(--radius-pill);
+    font-size: 0.75rem;
+    background: rgba(64, 145, 108, 0.1);
+    color: var(--color-success);
+}
+
+.status-badge {
+    display: inline-block;
+    padding: var(--space-xs) var(--space-sm);
+    border-radius: var(--radius-pill);
+    font-size: 0.75rem;
+    font-weight: 500;
+}
+
+.status-submitted { background: rgba(82, 183, 136, 0.15); color: var(--color-info); }
+.status-approved { background: rgba(64, 145, 108, 0.15); color: var(--color-success); }
+.status-rejected { background: rgba(155, 34, 38, 0.15); color: var(--color-error); }
+.status-in_progress { background: rgba(45, 106, 79, 0.15); color: #007BFF; }
+.status-completed { background: rgba(108, 117, 125, 0.15); color: #6C757D; }
+
+.time-cell {
+    font-size: 0.85rem;
+    color: var(--color-text-secondary);
+}
+
+.content-cell {
+    max-width: 300px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.empty-state {
+    text-align: center;
+    padding: var(--space-xl);
+    color: var(--color-text-muted);
+}
+
+.back-link {
+    margin-top: var(--space-lg);
+}
+
+.back-link a {
+    color: var(--color-primary);
+    text-decoration: none;
+}
+
+.back-link a:hover {
+    text-decoration: underline;
+}
+
+/* Calendar View Toggle */
+.view-toggle {
+    display: flex;
+    gap: var(--space-xs);
+    margin-left: auto;
+}
+
+.view-toggle button {
+    padding: 8px 16px;
+    border: 1px solid var(--color-surface-dark);
+    background: var(--color-surface);
+    cursor: pointer;
+    font-size: 0.85rem;
+    border-radius: var(--radius-sm);
+}
+
+.view-toggle button.active {
+    background: var(--color-primary);
+    color: white;
+    border-color: var(--color-primary);
+}
+
+/* Calendar View */
+.calendar-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 2px;
+    background: var(--color-surface-dark);
+    padding: 2px;
+    border-radius: var(--radius-lg);
+}
+
+.calendar-day {
+    background: var(--color-surface);
+    padding: var(--space-sm);
+    min-height: 80px;
+}
+
+.calendar-day.header {
+    background: var(--color-primary);
+    color: white;
+    font-weight: 600;
+    text-align: center;
+    min-height: auto;
+    padding: var(--space-sm);
+}
+
+.calendar-day.has-demand {
+    background: rgba(64, 145, 108, 0.1);
+}
+
+.calendar-day .date-num {
+    font-size: 0.85rem;
+    color: var(--color-text-secondary);
+}
+
+.calendar-day .demand-count {
+    font-size: 0.75rem;
+    color: var(--color-primary);
+    margin-top: 4px;
+}
+
+/* Detail Modal */
+.modal-overlay {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0,0,0,0.5);
+    z-index: 2000;
+}
+
+.modal-overlay.active {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.modal-content {
+    background: var(--color-surface);
+    border-radius: var(--radius-lg);
+    max-width: 600px;
+    width: 90%;
+    max-height: 80vh;
+    overflow-y: auto;
+    padding: var(--space-lg);
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: var(--space-md);
+}
+
+.modal-header h2 {
+    font-family: var(--font-display);
+    color: var(--color-primary);
+}
+
+.modal-close {
+    background: none;
+    border: none;
+    font-size: 1.5rem;
+    cursor: pointer;
+    color: var(--color-text-secondary);
+}
+
+.detail-row {
+    display: flex;
+    padding: var(--space-sm) 0;
+    border-bottom: 1px solid var(--color-surface-dark);
+}
+
+.detail-row label {
+    width: 100px;
+    font-weight: 600;
+    color: var(--color-text-secondary);
+}
+
+.detail-row .value {
+    flex: 1;
+}
+
+.status-actions {
+    display: flex;
+    gap: var(--space-sm);
+    margin-top: var(--space-lg);
+}
+
+.status-actions button {
+    padding: var(--space-sm) var(--space-md);
+    border: none;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    font-size: 0.875rem;
+}
+
+.btn-approve { background: var(--color-success); color: white; }
+.btn-reject { background: var(--color-error); color: white; }
+.btn-progress { background: #007BFF; color: white; }
+.btn-complete { background: #6C757D; color: white; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="demands-container">
+    <div class="demands-header">
+        <h1>需求周报</h1>
+        <div class="filter-section">
+            <input type="date" id="dateFrom" value="{{ date_from }}" onchange="applyFilters()">
+            <input type="date" id="dateTo" value="{{ date_to }}" onchange="applyFilters()">
+            <select id="statusFilter" onchange="applyFilters()">
+                <option value="">全部状态</option>
+                <option value="submitted" {% if status_filter == 'submitted' %}selected{% endif %}>已提交</option>
+                <option value="approved" {% if status_filter == 'approved' %}selected{% endif %}>已批准</option>
+                <option value="rejected" {% if status_filter == 'rejected' %}selected{% endif %}>已拒绝</option>
+                <option value="in_progress" {% if status_filter == 'in_progress' %}selected{% endif %}>进行中</option>
+                <option value="completed" {% if status_filter == 'completed' %}selected{% endif %}>已完成</option>
+            </select>
+            <select id="categoryFilter" onchange="applyFilters()">
+                <option value="">全部类别</option>
+                {% for cat in categories %}
+                <option value="{{ cat.id }}" {% if category_filter == cat.id %}selected{% endif %}>{{ cat.name }}</option>
+                {% endfor %}
+            </select>
+            <select id="departmentFilter" onchange="applyFilters()">
+                <option value="">全部部门</option>
+                {% for dept in departments %}
+                <option value="{{ dept.id }}" {% if department_filter == dept.id %}selected{% endif %}>{{ dept.name }}</option>
+                {% endfor %}
+            </select>
+            <button onclick="applyFilters()" style="background: var(--color-primary); color: white; padding: 8px 16px; border: none; border-radius: var(--radius-sm); cursor: pointer;">筛选</button>
+        </div>
+    </div>
+
+    <!-- Stats Cards -->
+    <div class="stats-cards">
+        <div class="stat-card">
+            <h3>总需求数</h3>
+            <div class="value">{{ stats.total }}</div>
+            <div class="detail">筛选范围内</div>
+        </div>
+        <div class="stat-card">
+            <h3>待处理</h3>
+            <div class="value">{{ stats.pending }}</div>
+            <div class="detail">已提交待审批</div>
+        </div>
+        <div class="stat-card">
+            <h3>已完成</h3>
+            <div class="value">{{ stats.completed }}</div>
+            <div class="detail">本月完成</div>
+        </div>
+        <div class="stat-card">
+            <h3>时间解析率</h3>
+            <div class="value">{{ stats.time_parsed_rate }}%</div>
+            <div class="detail">成功解析时间段</div>
+        </div>
+    </div>
+
+    {% if demands %}
+    <table class="demand-table">
+        <thead>
+            <tr>
+                <th>日期</th>
+                <th>区域</th>
+                <th>类别</th>
+                <th>时间段</th>
+                <th>需求内容</th>
+                <th>提出部门</th>
+                <th>状态</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for demand in demands %}
+            <tr onclick="showDetail({{ demand.id }})">
+                <td>{{ demand.date }}</td>
+                <td>
+                    {% if demand.is_global_event %}
+                    <span class="zone-badge global">{{ demand.category_text|default:"全局事件" }}</span>
+                    {% else %}
+                    <span class="zone-badge">{{ demand.zone_text|default:demand.zone.name|default:"-" }}</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if demand.category %}
+                    <span class="category-badge">{{ demand.category.name }}</span>
+                    {% elif demand.category_text %}
+                    <span class="category-badge">{{ demand.category_text }}</span>
+                    {% endif %}
+                </td>
+                <td class="time-cell">
+                    {% if demand.time_display %}
+                    {{ demand.time_display }}
+                    {% elif demand.start_time and demand.end_time %}
+                    {{ demand.start_time|date:"H:i" }} - {{ demand.end_time|date:"H:i" }}
+                    {% else %}
+                    -
+                    {% endif %}
+                </td>
+                <td class="content-cell">{{ demand.content|truncatechars:50 }}</td>
+                <td>{{ demand.demand_department_text|default:demand.demand_department.name|default:"-" }}</td>
+                <td>
+                    <span class="status-badge status-{{ demand.status }}">{{ demand.get_status_display }}</span>
+                </td>
+                <td><span style="color: var(--color-primary);">→</span></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div class="empty-state">
+        <p>暂无需求记录</p>
+        <p style="font-size: 0.85rem;">请调整筛选条件或等待需求提交</p>
+    </div>
+    {% endif %}
+
+    <div class="back-link">
+        <a href="{% url 'core:dashboard' %}">← 返回总览</a>
+    </div>
+</div>
+
+<!-- Detail Modal -->
+<div class="modal-overlay" id="detailModal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2>需求详情</h2>
+            <button class="modal-close" onclick="closeModal()">×</button>
+        </div>
+        <div id="detailContent"></div>
+    </div>
+</div>
+
+<script>
+function applyFilters() {
+    const dateFrom = document.getElementById('dateFrom').value;
+    const dateTo = document.getElementById('dateTo').value;
+    const status = document.getElementById('statusFilter').value;
+    const category = document.getElementById('categoryFilter').value;
+    const department = document.getElementById('departmentFilter').value;
+
+    let url = "{% url 'core:demands' %}";
+    const params = new URLSearchParams();
+    if (dateFrom) params.append('date_from', dateFrom);
+    if (dateTo) params.append('date_to', dateTo);
+    if (status) params.append('status', status);
+    if (category) params.append('category', category);
+    if (department) params.append('department', department);
+
+    if (params.toString()) {
+        url += '?' + params.toString();
+    }
+    window.location.href = url;
+}
+
+function showDetail(demandId) {
+    fetch(`/api/demand-records/${demandId}/`)
+        .then(response => response.json())
+        .then(data => {
+            const content = `
+                <div class="detail-row">
+                    <label>日期</label>
+                    <div class="value">${data.date}</div>
+                </div>
+                <div class="detail-row">
+                    <label>区域</label>
+                    <div class="value">${data.zone_name || data.zone_text || '全局事件'}</div>
+                </div>
+                <div class="detail-row">
+                    <label>类别</label>
+                    <div class="value">${data.category_name || data.category_text || '-'}</div>
+                </div>
+                <div class="detail-row">
+                    <label>时间段</label>
+                    <div class="value">${data.time_display || '-'}</div>
+                </div>
+                <div class="detail-row">
+                    <label>时长</label>
+                    <div class="value">${data.duration_hours ? data.duration_hours + ' 小时' : '-'}</div>
+                </div>
+                <div class="detail-row">
+                    <label>提出部门</label>
+                    <div class="value">${data.demand_department_name || data.demand_department_text || '-'}</div>
+                </div>
+                <div class="detail-row">
+                    <label>联系人</label>
+                    <div class="value">${data.demand_contact || '-'}</div>
+                </div>
+                <div class="detail-row">
+                    <label>状态</label>
+                    <div class="value"><span class="status-badge status-${data.status}">${data.status_display}</span></div>
+                </div>
+                <div class="detail-row">
+                    <label>提交人</label>
+                    <div class="value">${data.submitter_name || '-'}</div>
+                </div>
+                <div class="detail-row">
+                    <label>审批人</label>
+                    <div class="value">${data.approver_name || '-'}</div>
+                </div>
+                <div class="detail-row" style="border-bottom: none;">
+                    <label>需求内容</label>
+                    <div class="value" style="white-space: pre-wrap;">${data.content}</div>
+                </div>
+                {% if is_admin %}
+                <div class="status-actions">
+                    <button class="btn-approve" onclick="updateStatus(${data.id}, 'approved')">批准</button>
+                    <button class="btn-reject" onclick="updateStatus(${data.id}, 'rejected')">拒绝</button>
+                    <button class="btn-progress" onclick="updateStatus(${data.id}, 'in_progress')">进行中</button>
+                    <button class="btn-complete" onclick="updateStatus(${data.id}, 'completed')">完成</button>
+                </div>
+                {% endif %}
+            `;
+            document.getElementById('detailContent').innerHTML = content;
+            document.getElementById('detailModal').classList.add('active');
+        });
+}
+
+function closeModal() {
+    document.getElementById('detailModal').classList.remove('active');
+}
+
+{% if is_admin %}
+function updateStatus(demandId, status) {
+    fetch(`/api/demand-records/${demandId}/`, {
+        method: 'PATCH',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ status: status })
+    })
+    .then(response => {
+        if (response.ok) {
+            closeModal();
+            location.reload();
+        } else {
+            alert('更新失败');
+        }
+    });
+}
+{% endif %}
+
+document.getElementById('detailModal').addEventListener('click', function(e) {
+    if (e.target === this) {
+        closeModal();
+    }
+});
+</script>
+{% endblock %}

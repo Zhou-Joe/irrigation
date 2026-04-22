@@ -12,19 +12,124 @@
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet">
 
     <!-- Design System CSS -->
-    <link rel="stylesheet" href="{% static 'css/design-system.css' %}">
+    <link rel="stylesheet" href="{% static 'css/design-system.css' %}?v=20260421">
     <!-- Component Styles -->
-    <link rel="stylesheet" href="{% static 'css/style.css' %}">
+    <link rel="stylesheet" href="{% static 'css/style.css' %}?v=20260421">
 
     {% block extra_css %}{% endblock %}
 
     <style>
         body {
             font-family: 'Noto Sans SC', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            margin: 0;
+            padding: 0;
+        }
+
+        /* Top Navigation Bar */
+        .top-nav {
+            position: sticky;
+            top: 0;
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            height: 52px;
+            padding: 0 20px;
+            background: var(--color-primary);
+            color: var(--color-text-inverse);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+        }
+
+        .top-nav-left {
+            display: flex;
+            align-items: center;
+            gap: 24px;
+        }
+
+        .top-nav-brand {
+            font-size: 1.05rem;
+            font-weight: 700;
+            color: var(--color-text-inverse);
+            text-decoration: none;
+            white-space: nowrap;
+        }
+
+        .top-nav-links {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .top-nav-links a {
+            color: rgba(245, 240, 232, 0.8);
+            text-decoration: none;
+            padding: 6px 14px;
+            border-radius: 6px;
+            font-size: 0.88rem;
+            font-weight: 500;
+            transition: background 150ms, color 150ms;
+        }
+
+        .top-nav-links a:hover {
+            background: rgba(255,255,255,0.12);
+            color: #fff;
+        }
+
+        .top-nav-links a.active {
+            background: rgba(255,255,255,0.18);
+            color: #fff;
+        }
+
+        .top-nav-right {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 0.85rem;
+        }
+
+        .top-nav-user {
+            color: rgba(245, 240, 232, 0.85);
+        }
+
+        .top-nav-logout {
+            color: rgba(245, 240, 232, 0.7);
+            text-decoration: none;
+            padding: 4px 10px;
+            border-radius: 6px;
+            transition: background 150ms, color 150ms;
+        }
+
+        .top-nav-logout:hover {
+            background: rgba(255,255,255,0.12);
+            color: #fff;
         }
     </style>
 </head>
 <body>
+    {% if user.is_authenticated %}
+    <nav class="top-nav">
+        <div class="top-nav-left">
+            <a href="{% url 'core:dashboard' %}" class="top-nav-brand">灌溉管理系统</a>
+            <div class="top-nav-links">
+                <a href="{% url 'core:dashboard' %}" class="{% block nav_dashboard %}{% endblock %}">地图总览</a>
+                <a href="{% url 'core:work_reports' %}" class="{% block nav_work_reports %}{% endblock %}">维修日报</a>
+                <a href="{% url 'core:requests' %}" class="{% block nav_requests %}{% endblock %}">工单管理</a>
+                <a href="{% url 'core:demands' %}" class="{% block nav_demands %}{% endblock %}">需求周报</a>
+                {% if is_admin %}
+                <a href="{% url 'core:settings' %}" class="{% block nav_settings %}{% endblock %}">系统设置</a>
+                <a href="{% url 'core:registration_approval' %}" class="{% block nav_approval %}{% endblock %}">
+                    注册审批{% if pending_registrations %}<span style="background:var(--color-warning);color:#fff;padding:1px 6px;border-radius:10px;font-size:0.7rem;margin-left:4px;">{{ pending_registrations }}</span>{% endif %}
+                </a>
+                {% endif %}
+            </div>
+        </div>
+        <div class="top-nav-right">
+            <span class="top-nav-user">{{ user.get_full_name|default:user.username }}</span>
+            <a href="{% url 'core:logout' %}" class="top-nav-logout">退出</a>
+        </div>
+    </nav>
+    {% endif %}
+
     {% block content %}{% endblock %}
 
     {% block extra_js %}{% endblock %}
