@@ -10,6 +10,69 @@ from django.utils import timezone
 from core.models import Zone
 
 
+def _get_reference_map_data(exclude_zone_id=None, exclude_pipeline_id=None):
+    """Build JSON data for rendering existing zones and pipelines as reference layers on edit maps."""
+    from core.models import Pipeline
+
+    ref_zones = []
+    for z in Zone.objects.all():
+        if exclude_zone_id and z.id == exclude_zone_id:
+            continue
+        if z.boundary_points:
+            ref_zones.append({
+                'id': z.id, 'name': z.name, 'code': z.code,
+                'boundary_points': z.boundary_points,
+                'boundary_color': z.boundary_color or '#52B788',
+            })
+
+    ref_pipelines = []
+    for p in Pipeline.objects.all():
+        if exclude_pipeline_id and p.id == exclude_pipeline_id:
+            continue
+        if p.line_points and len(p.line_points) >= 2:
+            ref_pipelines.append({
+                'id': p.id, 'name': p.name, 'code': p.code,
+                'pipeline_type': p.pipeline_type,
+                'line_points': p.line_points,
+                'line_color': p.line_color,
+                'line_weight': p.line_weight,
+            })
+
+    return json.dumps(ref_zones), json.dumps(ref_pipelines)
+
+
+def _auto_pipeline_name_code(zone_ids, pipeline_type):
+    """Generate unique pipeline name and code from zone IDs and type."""
+    from .models import Pipeline
+
+    type_label = '灌溉水管' if pipeline_type == 'irrigation' else '冲洗水管'
+    type_prefix = 'IRR' if pipeline_type == 'irrigation' else 'FLU'
+
+    zones = Zone.objects.filter(id__in=zone_ids).order_by('code')
+    zone_names = list(zones.values_list('name', flat=True))
+    zone_codes = list(zones.values_list('code', flat=True))
+
+    if not zone_names:
+        return '', ''
+
+    base_name = '、'.join(zone_names) + ' - ' + type_label
+    base_code = type_prefix + '-' + '-'.join(zone_codes)
+
+    # Ensure uniqueness
+    name, code = base_name, base_code
+    suffix = 2
+    while Pipeline.objects.filter(code=code).exists():
+        name = f"{base_name} ({suffix})"
+        code = f"{base_code}-{suffix}"
+        suffix += 1
+
+    return name, code
+
+
+from django.views.decorators.csrf import ensure_csrf_cookie
+
+
+@ensure_csrf_cookie
 def user_login(request):
     """Login page for frontend with role-based redirect."""
     from .models import DepartmentUserProfile
@@ -50,20 +113,33 @@ def user_logout(request):
 
 
 def get_zone_center(boundary_points):
-    """Calculate the center point of a zone from its boundary points."""
+    """Calculate the center point of a zone from its boundary points. Supports multi-polygon format."""
     if not boundary_points or len(boundary_points) == 0:
         return None
 
     lats = []
     lngs = []
 
-    for point in boundary_points:
-        if isinstance(point, list) and len(point) >= 2:
-            lats.append(point[0])
-            lngs.append(point[1])
-        elif isinstance(point, dict) and 'lat' in point and 'lng' in point:
-            lats.append(point['lat'])
-            lngs.append(point['lng'])
+    def _extract_coords(points):
+        for point in points:
+            if isinstance(point, list) and len(point) >= 2:
+                lats.append(point[0])
+                lngs.append(point[1])
+            elif isinstance(point, dict) and 'lat' in point and 'lng' in point:
+                lats.append(point['lat'])
+                lngs.append(point['lng'])
+
+    # Detect multi-polygon format: [[{lat,lng},...], [{lat,lng},...]]
+    first = boundary_points[0]
+    is_multi = isinstance(first, list) and len(first) > 0 and (
+        isinstance(first[0], list) or (isinstance(first[0], dict) and 'lat' in first[0])
+    )
+
+    if is_multi:
+        for ring in boundary_points:
+            _extract_coords(ring)
+    else:
+        _extract_coords(boundary_points)
 
     if lats and lngs:
         return {
@@ -82,7 +158,8 @@ def dashboard(request):
     from django.db.models.functions import TruncDate
     from core.models import (
         MaintenanceRequest, ProjectSupportRequest, WaterRequest,
-        ManagerProfile, DepartmentUserProfile, RegistrationRequest, WorkOrder, Worker
+        ManagerProfile, DepartmentUserProfile, RegistrationRequest, WorkOrder, Worker,
+        Pipeline
     )
 
     user = request.user
@@ -120,12 +197,17 @@ def dashboard(request):
     # Get all zones with annotations
     zones = Zone.objects.all().annotate(
         plant_count=Count('plants', distinct=True),
+        equipment_count=Count('equipments', distinct=True),
         pending_work_orders=Count(
             'work_orders',
             filter=Q(work_orders__status='pending'),
             distinct=True
         )
     )
+
+    # Recent fault count (last 30 days)
+    thirty_days_ago = today - timedelta(days=30)
+    from django.db.models import Sum
 
     # Prepare zones data for template with center coordinates and detailed info
     zones_list = []
@@ -171,6 +253,13 @@ def dashboard(request):
         water_count = WaterRequest.objects.filter(zone=zone).count()
         project_count = ProjectSupportRequest.objects.filter(zone=zone).count()
 
+        # Recent fault count (last 30 days)
+        from core.models import WorkReportFault
+        recent_fault_count = WorkReportFault.objects.filter(
+            work_report__zone_location=zone,
+            work_report__date__gte=thirty_days_ago,
+        ).aggregate(total=Sum('count'))['total'] or 0
+
         zones_list.append({
             'id': zone.id,
             'code': zone.code,
@@ -181,9 +270,15 @@ def dashboard(request):
             'status': zone.get_today_status(),
             'statusDisplay': zone.get_status_display(),
             'plant_count': zone.plant_count or 0,
+            'equipment_count': zone.equipment_count or 0,
             'pending_work_orders': zone.pending_work_orders or 0,
+            'recent_fault_count': recent_fault_count,
             'center': center,
             'pending_requests': pending_requests,
+            # Patch info
+            'patch_id': zone.patch.id if zone.patch else None,
+            'patch_name': zone.patch.name if zone.patch else None,
+            'patch_code': zone.patch.code if zone.patch else None,
             # Detailed info for cards
             'maintenance_count': maintenance_count,
             'water_count': water_count,
@@ -216,6 +311,34 @@ def dashboard(request):
                     'work_content': p.work_content[:50] + '...' if len(p.work_content) > 50 else p.work_content,
                 } for p in recent_project
             ],
+        })
+
+    # Group zones by patch for sidebar display
+    from .models import Patch
+    patches = Patch.objects.all().prefetch_related('zones')
+
+    # Build grouped structure: patches with their zones, plus orphan zones (no patch)
+    grouped_zones = []
+    for patch in patches:
+        patch_zones = [z for z in zones_list if z['patch_id'] == patch.id]
+        if patch_zones:
+            grouped_zones.append({
+                'type': 'patch',
+                'id': patch.id,
+                'name': patch.name,
+                'code': patch.code,
+                'zones': patch_zones,
+                'zone_count': len(patch_zones),
+            })
+
+    # Add orphan zones (zones without patch)
+    orphan_zones = [z for z in zones_list if z['patch_id'] is None]
+    if orphan_zones:
+        grouped_zones.append({
+            'type': 'orphan',
+            'name': '未分配片区',
+            'zones': orphan_zones,
+            'zone_count': len(orphan_zones),
         })
 
     # Only admins see pending counts
@@ -261,9 +384,26 @@ def dashboard(request):
     recent_activity.sort(key=lambda x: x['date'], reverse=True)
     recent_activity = recent_activity[:10]
 
+    # Prepare pipelines data for map
+    pipelines_list = []
+    for pipeline in Pipeline.objects.all():
+        pipelines_list.append({
+            'id': pipeline.id,
+            'code': pipeline.code,
+            'name': pipeline.name,
+            'pipeline_type': pipeline.pipeline_type,
+            'pipeline_type_display': pipeline.get_pipeline_type_display(),
+            'line_points': pipeline.line_points,
+            'line_color': pipeline.line_color,
+            'line_weight': pipeline.line_weight,
+            'zone_names': list(pipeline.zones.values_list('name', flat=True)),
+        })
+
     context = {
         'zones': zones,
         'zones_json': json.dumps(zones_list),
+        'grouped_zones': grouped_zones,  # For hierarchical sidebar display
+        'pipelines_json': json.dumps(pipelines_list),
         'is_admin': is_admin,
         'is_manager': is_manager,
         'is_dept_user': is_dept_user,
@@ -283,7 +423,7 @@ def settings_page(request):
     """
     Settings page to manage zones and system configuration - admin only.
     """
-    from .models import ManagerProfile
+    from .models import ManagerProfile, Pipeline
 
     # Check admin permission
     is_admin = request.user.is_superuser or request.user.is_staff
@@ -299,10 +439,12 @@ def settings_page(request):
         return redirect('core:dashboard')
 
     zones = Zone.objects.all().order_by('code')
+    pipelines = Pipeline.objects.all().order_by('code')
 
     context = {
         'zones': zones,
         'status_choices': Zone.STATUS_CHOICES,
+        'pipelines': pipelines,
     }
 
     return render(request, 'core/settings.html', context)
@@ -313,7 +455,7 @@ def zone_edit(request, zone_id):
     """
     Edit a specific zone - admin only.
     """
-    from .models import ManagerProfile, Plant, ZoneEquipment
+    from .models import ManagerProfile, Plant, ZoneEquipment, Patch
 
     # Check admin permission
     is_admin = request.user.is_superuser or request.user.is_staff
@@ -336,6 +478,23 @@ def zone_edit(request, zone_id):
         zone.description = request.POST.get('description', zone.description)
         zone.boundary_color = request.POST.get('boundary_color', zone.boundary_color)
 
+        # Handle patch selection
+        patch_id = request.POST.get('patch')
+        new_patch_name = request.POST.get('new_patch_name', '').strip()
+
+        if new_patch_name and not patch_id:
+            # Create new patch
+            patch_code = new_patch_name[:10].replace(' ', '-')
+            patch, created = Patch.objects.get_or_create(
+                name=new_patch_name,
+                defaults={'code': patch_code}
+            )
+            zone.patch = patch
+        elif patch_id:
+            zone.patch_id = patch_id
+        else:
+            zone.patch = None
+
         # Parse boundary points from JSON
         boundary_json = request.POST.get('boundary_points', '[]')
         try:
@@ -346,17 +505,24 @@ def zone_edit(request, zone_id):
 
         zone.save()
 
-        # Handle plants - just names, comma separated in hidden field
+        # Handle plants - JSON array in hidden field
         plants_data = request.POST.get('plants_data', '')
         if plants_data:
-            plant_names = [p.strip() for p in plants_data.split(',') if p.strip()]
-
-            # Clear existing plants for this zone
-            zone.plants.all().delete()
-
-            # Add new plants
-            for name in plant_names:
-                Plant.objects.create(zone=zone, name=name)
+            try:
+                plants_list = json.loads(plants_data)
+                zone.plants.all().delete()
+                for item in plants_list:
+                    Plant.objects.create(
+                        zone=zone,
+                        name=item.get('name', ''),
+                        scientific_name=item.get('scientific_name', ''),
+                        quantity=item.get('quantity', 1),
+                        planting_date=item.get('planting_date') or None,
+                        end_date=item.get('end_date') or None,
+                        notes=item.get('notes', ''),
+                    )
+            except json.JSONDecodeError:
+                pass
 
         # Handle equipment - JSON array in hidden field
         equipment_data = request.POST.get('equipment_data', '')
@@ -388,11 +554,19 @@ def zone_edit(request, zone_id):
     # Get zone equipment
     zone_equipments = zone.equipments.select_related('equipment').all()
 
+    # Get all patches for selection
+    patches = Patch.objects.all()
+
+    ref_zones_json, ref_pipelines_json = _get_reference_map_data(exclude_zone_id=zone.id)
+
     context = {
         'zone': zone,
         'boundary_json': json.dumps(zone.boundary_points),
         'available_plants': available_plants,
         'zone_equipments': zone_equipments,
+        'patches': patches,
+        'ref_zones_json': ref_zones_json,
+        'ref_pipelines_json': ref_pipelines_json,
     }
 
     return render(request, 'core/zone_form.html', context)
@@ -403,7 +577,7 @@ def zone_new(request):
     """
     Create a new zone - admin only.
     """
-    from .models import ManagerProfile, Plant, ZoneEquipment
+    from .models import ManagerProfile, Plant, ZoneEquipment, Patch
 
     # Check admin permission
     is_admin = request.user.is_superuser or request.user.is_staff
@@ -426,6 +600,21 @@ def zone_new(request):
             boundary_color=request.POST.get('boundary_color', '#52B788'),
         )
 
+        # Handle patch selection
+        patch_id = request.POST.get('patch')
+        new_patch_name = request.POST.get('new_patch_name', '').strip()
+
+        if new_patch_name and not patch_id:
+            # Create new patch
+            patch_code = new_patch_name[:10].replace(' ', '-')
+            patch, created = Patch.objects.get_or_create(
+                name=new_patch_name,
+                defaults={'code': patch_code}
+            )
+            zone.patch = patch
+        elif patch_id:
+            zone.patch_id = patch_id
+
         # Parse boundary points from JSON
         boundary_json = request.POST.get('boundary_points', '[]')
         try:
@@ -439,12 +628,26 @@ def zone_new(request):
 
         zone.save()
 
-        # Handle plants - just names
+        # Handle plants - JSON array with full details
         plants_data = request.POST.get('plants_data', '')
         if plants_data:
-            plant_names = [p.strip() for p in plants_data.split(',') if p.strip()]
-            for name in plant_names:
-                Plant.objects.create(zone=zone, name=name)
+            try:
+                plants_list = json.loads(plants_data)
+                for item in plants_list:
+                    Plant.objects.create(
+                        zone=zone,
+                        name=item.get('name', ''),
+                        scientific_name=item.get('scientific_name', ''),
+                        quantity=item.get('quantity', 1),
+                        planting_date=item.get('planting_date') or None,
+                        end_date=item.get('end_date') or None,
+                        notes=item.get('notes', ''),
+                    )
+            except json.JSONDecodeError:
+                # Fallback to comma-separated names
+                plant_names = [p.strip() for p in plants_data.split(',') if p.strip()]
+                for name in plant_names:
+                    Plant.objects.create(zone=zone, name=name)
 
         # Handle equipment - JSON array in hidden field
         equipment_data = request.POST.get('equipment_data', '')
@@ -472,10 +675,18 @@ def zone_new(request):
     # Get available plants
     available_plants = Plant.objects.values_list('name', flat=True).distinct().order_by('name')
 
+    # Get all patches for selection
+    patches = Patch.objects.all()
+
+    ref_zones_json, ref_pipelines_json = _get_reference_map_data()
+
     context = {
         'zone': None,
         'boundary_json': '[]',
         'available_plants': available_plants,
+        'patches': patches,
+        'ref_zones_json': ref_zones_json,
+        'ref_pipelines_json': ref_pipelines_json,
     }
 
     return render(request, 'core/zone_form.html', context)
@@ -506,6 +717,207 @@ def zone_delete(request, zone_id):
     zone_name = zone.name
     zone.delete()
     messages.success(request, f'Zone "{zone_name}" deleted successfully.')
+    return redirect('core:settings')
+
+
+@login_required(login_url='core:login')
+def zone_detail_page(request, zone_id):
+    """
+    Zone detail page showing plants, equipment, and stats.
+    """
+    from django.db.models import Sum
+    from datetime import date, timedelta
+    from .models import Plant, ZoneEquipment, WorkReport, WorkReportFault
+
+    zone = get_object_or_404(Zone, pk=zone_id)
+    today = date.today()
+    thirty_days_ago = today - timedelta(days=30)
+
+    # Filter plants: current date is within the date range
+    plants = Plant.objects.filter(zone=zone).filter(
+        Q(planting_date__lte=today) | Q(planting_date__isnull=True)
+    ).filter(
+        Q(end_date__gte=today) | Q(end_date__isnull=True)
+    ).order_by('name')
+
+    # Filter equipment: installed and active
+    equipment = ZoneEquipment.objects.filter(zone=zone).select_related('equipment').filter(
+        Q(installation_date__lte=today) | Q(installation_date__isnull=True)
+    ).filter(status__in=['working', 'needs_repair'])
+
+    # Counts
+    plant_count = plants.count()
+    equipment_count = equipment.count()
+    work_report_count = WorkReport.objects.filter(zone_location=zone).count()
+
+    # Recent fault count (last 30 days)
+    recent_fault_count = WorkReportFault.objects.filter(
+        work_report__zone_location=zone,
+        work_report__date__gte=thirty_days_ago,
+    ).aggregate(total=Sum('count'))['total'] or 0
+
+    # Add status_display to equipment
+    for eq in equipment:
+        eq.status_display = eq.get_status_display()
+        eq.equipment_details = {
+            'equipment_type_display': eq.equipment.get_equipment_type_display(),
+            'manufacturer': eq.equipment.manufacturer,
+            'model_name': eq.equipment.model_name,
+        }
+
+    context = {
+        'zone': zone,
+        'plants': plants,
+        'equipment': equipment,
+        'plant_count': plant_count,
+        'equipment_count': equipment_count,
+        'work_report_count': work_report_count,
+        'recent_fault_count': recent_fault_count,
+    }
+
+    return render(request, 'core/zone_detail_page.html', context)
+
+
+@login_required(login_url='core:login')
+def pipeline_new(request):
+    from .models import ManagerProfile, Pipeline
+
+    is_admin = request.user.is_superuser or request.user.is_staff
+    if not is_admin:
+        try:
+            ManagerProfile.objects.get(user=request.user, active=True)
+            is_admin = True
+        except ManagerProfile.DoesNotExist:
+            pass
+
+    if not is_admin:
+        messages.error(request, '无权限创建水管')
+        return redirect('core:dashboard')
+
+    if request.method == 'POST':
+        pipeline_type = request.POST.get('pipeline_type', Pipeline.TYPE_IRRIGATION)
+        zone_ids = request.POST.getlist('zones')
+        name, code = _auto_pipeline_name_code(zone_ids, pipeline_type)
+
+        pipeline = Pipeline(
+            name=name,
+            code=code,
+            description=request.POST.get('description', ''),
+            pipeline_type=pipeline_type,
+            line_weight=int(request.POST.get('line_weight', 3)),
+        )
+
+        line_json = request.POST.get('line_points', '[]')
+        try:
+            pipeline.line_points = json.loads(line_json)
+        except json.JSONDecodeError:
+            messages.error(request, '坐标数据格式无效')
+            rz, rp = _get_reference_map_data()
+            return render(request, 'core/pipeline_form.html', {
+                'pipeline': pipeline,
+                'line_json': line_json,
+                'zones': Zone.objects.all().order_by('code'),
+                'ref_zones_json': rz,
+                'ref_pipelines_json': rp,
+            })
+
+        pipeline.save()
+
+        if zone_ids:
+            pipeline.zones.set(Zone.objects.filter(id__in=zone_ids))
+
+        messages.success(request, f'水管 "{pipeline.name}" 创建成功')
+        return redirect('core:settings')
+
+    ref_zones_json, ref_pipelines_json = _get_reference_map_data()
+
+    context = {
+        'pipeline': None,
+        'line_json': '[]',
+        'zones': Zone.objects.all().order_by('code'),
+        'ref_zones_json': ref_zones_json,
+        'ref_pipelines_json': ref_pipelines_json,
+    }
+    return render(request, 'core/pipeline_form.html', context)
+
+
+@login_required(login_url='core:login')
+def pipeline_edit(request, pipeline_id):
+    from .models import ManagerProfile, Pipeline
+
+    is_admin = request.user.is_superuser or request.user.is_staff
+    if not is_admin:
+        try:
+            ManagerProfile.objects.get(user=request.user, active=True)
+            is_admin = True
+        except ManagerProfile.DoesNotExist:
+            pass
+
+    if not is_admin:
+        messages.error(request, '无权限修改水管')
+        return redirect('core:dashboard')
+
+    pipeline = get_object_or_404(Pipeline, pk=pipeline_id)
+
+    if request.method == 'POST':
+        pipeline_type = request.POST.get('pipeline_type', pipeline.pipeline_type)
+        zone_ids = request.POST.getlist('zones')
+        name, code = _auto_pipeline_name_code(zone_ids, pipeline_type)
+
+        pipeline.name = name
+        pipeline.code = code
+        pipeline.pipeline_type = pipeline_type
+        pipeline.line_weight = int(request.POST.get('line_weight', pipeline.line_weight))
+
+        line_json = request.POST.get('line_points', '[]')
+        try:
+            pipeline.line_points = json.loads(line_json)
+        except json.JSONDecodeError:
+            messages.error(request, '坐标数据格式无效')
+            return redirect('core:pipeline_edit', pipeline_id=pipeline.id)
+
+        pipeline.save()
+
+        pipeline.zones.set(Zone.objects.filter(id__in=zone_ids))
+        pipeline.zones.set(Zone.objects.filter(id__in=zone_ids))
+
+        messages.success(request, f'水管 "{pipeline.name}" 更新成功')
+        return redirect('core:settings')
+
+    ref_zones_json, ref_pipelines_json = _get_reference_map_data(exclude_pipeline_id=pipeline.id)
+
+    context = {
+        'pipeline': pipeline,
+        'line_json': json.dumps(pipeline.line_points),
+        'zones': Zone.objects.all().order_by('code'),
+        'selected_zone_ids': list(pipeline.zones.values_list('id', flat=True)),
+        'ref_zones_json': ref_zones_json,
+        'ref_pipelines_json': ref_pipelines_json,
+    }
+    return render(request, 'core/pipeline_form.html', context)
+
+
+@require_POST
+@login_required(login_url='core:login')
+def pipeline_delete(request, pipeline_id):
+    from .models import ManagerProfile, Pipeline
+
+    is_admin = request.user.is_superuser or request.user.is_staff
+    if not is_admin:
+        try:
+            ManagerProfile.objects.get(user=request.user, active=True)
+            is_admin = True
+        except ManagerProfile.DoesNotExist:
+            pass
+
+    if not is_admin:
+        messages.error(request, '无权限删除水管')
+        return redirect('core:dashboard')
+
+    pipeline = get_object_or_404(Pipeline, pk=pipeline_id)
+    pipeline_name = pipeline.name
+    pipeline.delete()
+    messages.success(request, f'水管 "{pipeline_name}" 删除成功')
     return redirect('core:settings')
 
 
@@ -1191,3 +1603,377 @@ def maxicom_dashboard_api(request):
         'top_sites': top_sites,
         'et_checkbook': et_checkbook_latest,
     })
+
+
+# ==========================================================================
+# 维修工单系统 Views
+# ==========================================================================
+
+
+@login_required(login_url='core:login')
+def work_reports_list(request):
+    from core.models import WorkReport, Location, WorkCategory, Worker
+    from core.role_utils import is_admin
+
+    user = request.user
+    admin = is_admin(user)
+
+    qs = WorkReport.objects.select_related(
+        'worker', 'location', 'work_category', 'info_source'
+    ).prefetch_related('fault_entries__fault_subtype').order_by('-date', '-id')
+
+    if not admin:
+        try:
+            worker = user.worker
+            qs = qs.filter(worker=worker)
+        except Exception:
+            qs = qs.none()
+
+    # Filters
+    date_from = request.GET.get('date_from')
+    date_to = request.GET.get('date_to')
+    location_id = request.GET.get('location')
+    work_category_id = request.GET.get('work_category')
+    worker_id = request.GET.get('worker')
+    difficult = request.GET.get('is_difficult')
+
+    if date_from:
+        qs = qs.filter(date__gte=date_from)
+    if date_to:
+        qs = qs.filter(date__lte=date_to)
+    if location_id:
+        qs = qs.filter(location_id=location_id)
+    if work_category_id:
+        qs = qs.filter(work_category_id=work_category_id)
+    if worker_id:
+        qs = qs.filter(worker_id=worker_id)
+    if difficult:
+        qs = qs.filter(is_difficult=True)
+
+    reports = qs[:200]
+    locations = Location.objects.filter(active=True).order_by('order')
+    work_categories = WorkCategory.objects.filter(active=True).order_by('order')
+    workers = Worker.objects.all().order_by('full_name') if admin else []
+
+    return render(request, 'core/work_reports.html', {
+        'reports': reports,
+        'locations': locations,
+        'work_categories': work_categories,
+        'workers': workers,
+        'is_admin': admin,
+        'filters': {
+            'date_from': date_from or '',
+            'date_to': date_to or '',
+            'location': int(location_id) if location_id else '',
+            'work_category': int(work_category_id) if work_category_id else '',
+            'worker': int(worker_id) if worker_id else '',
+            'is_difficult': bool(difficult),
+        },
+    })
+
+
+@login_required(login_url='core:login')
+def work_report_detail(request, report_id):
+    from core.models import WorkReport
+    from core.role_utils import is_admin
+
+    report = get_object_or_404(
+        WorkReport.objects.select_related(
+            'worker', 'location', 'work_category', 'info_source'
+        ).prefetch_related('fault_entries__fault_subtype__category'),
+        pk=report_id
+    )
+
+    if not is_admin(request.user):
+        try:
+            if report.worker != request.user.worker:
+                messages.error(request, '无权查看此记录')
+                return redirect('core:work_reports')
+        except Exception:
+            messages.error(request, '无权查看此记录')
+            return redirect('core:work_reports')
+
+    return render(request, 'core/work_report_detail.html', {
+        'report': report,
+        'fault_entries': report.fault_entries.select_related('fault_subtype__category').all(),
+    })
+
+
+@login_required(login_url='core:login')
+def work_report_create(request):
+    from core.models import WorkReport, WorkReportFault, Location, WorkCategory, InfoSource, FaultCategory, Worker, Zone, ZoneEquipment
+    from core.role_utils import is_admin
+
+    if request.method == 'POST':
+        try:
+            worker = request.user.worker
+        except Exception:
+            messages.error(request, '当前用户未关联处理人账号')
+            return redirect('core:work_reports')
+
+        zone_code = request.POST.get('zone_location', '').strip()
+        zone = Zone.objects.filter(code=zone_code).first() if zone_code else None
+
+        report = WorkReport.objects.create(
+            date=request.POST.get('date'),
+            weather=request.POST.get('weather', ''),
+            worker=worker,
+            location_id=request.POST.get('location'),
+            work_category_id=request.POST.get('work_category'),
+            zone_location=zone,
+            remark=request.POST.get('remark', ''),
+            info_source_id=request.POST.get('info_source') or None,
+            is_difficult=bool(request.POST.get('is_difficult')),
+            is_difficult_resolved=bool(request.POST.get('is_difficult_resolved')),
+        )
+
+        # Parse fault entries
+        fault_json = request.POST.get('fault_entries', '[]')
+        try:
+            fault_data = json.loads(fault_json)
+            for entry in fault_data:
+                if entry.get('count', 0) > 0 and entry.get('fault_subtype'):
+                    WorkReportFault.objects.create(
+                        work_report=report,
+                        fault_subtype_id=entry['fault_subtype'],
+                        count=entry['count'],
+                        equipment_id=entry.get('equipment') or None,
+                    )
+        except (json.JSONDecodeError, KeyError):
+            pass
+
+        messages.success(request, f'工作日报已创建 (ID: {report.id})')
+
+        if request.POST.get('save_and_new'):
+            return redirect('core:work_report_create')
+        return redirect('core:work_reports')
+
+    locations = Location.objects.filter(active=True).order_by('order')
+    work_categories = WorkCategory.objects.filter(active=True).order_by('order')
+    info_sources = InfoSource.objects.filter(active=True).order_by('order')
+    fault_categories = FaultCategory.objects.filter(active=True).prefetch_related(
+        'sub_types'
+    ).order_by('order', 'id')
+    zones = Zone.objects.order_by('code')
+
+    # Build zone equipment map for frontend lookup
+    zone_equipment_map = {}
+    for ze in ZoneEquipment.objects.select_related('zone', 'equipment').all():
+        zone_code = ze.zone.code
+        if zone_code not in zone_equipment_map:
+            zone_equipment_map[zone_code] = []
+        zone_equipment_map[zone_code].append({
+            'id': ze.id,
+            'equipment_details': {
+                'equipment_type': ze.equipment.equipment_type,
+                'equipment_type_display': ze.equipment.get_equipment_type_display(),
+                'model_name': ze.equipment.model_name,
+            },
+            'location_in_zone': ze.location_in_zone or '',
+        })
+
+    from datetime import date
+    return render(request, 'core/work_report_form.html', {
+        'locations': locations,
+        'work_categories': work_categories,
+        'info_sources': info_sources,
+        'fault_categories': fault_categories,
+        'zones': zones,
+        'zone_equipment_json': json.dumps(zone_equipment_map),
+        'fault_categories_json': json.dumps([
+            {'id': c.id, 'name_zh': c.name_zh, 'name_en': c.name_en,
+             'sub_types': [{'id': s.id, 'name_zh': s.name_zh, 'name_en': s.name_en} for s in c.sub_types.all()]}
+            for c in fault_categories
+        ]),
+        'today': date.today().isoformat(),
+    })
+
+
+@login_required(login_url='core:login')
+def work_report_edit(request, report_id):
+    from core.models import WorkReport, WorkReportFault, Location, WorkCategory, InfoSource, FaultCategory, Zone, ZoneEquipment
+    from core.role_utils import is_admin
+
+    report = get_object_or_404(WorkReport, pk=report_id)
+
+    if not is_admin(request.user):
+        try:
+            if report.worker != request.user.worker:
+                messages.error(request, '无权编辑此记录')
+                return redirect('core:work_reports')
+        except Exception:
+            messages.error(request, '无权编辑此记录')
+            return redirect('core:work_reports')
+
+    if request.method == 'POST':
+        report.date = request.POST.get('date')
+        report.weather = request.POST.get('weather', '')
+        report.location_id = request.POST.get('location')
+        report.work_category_id = request.POST.get('work_category')
+        zone_code = request.POST.get('zone_location', '').strip()
+        report.zone_location = Zone.objects.filter(code=zone_code).first() if zone_code else None
+        report.remark = request.POST.get('remark', '')
+        report.info_source_id = request.POST.get('info_source') or None
+        report.is_difficult = bool(request.POST.get('is_difficult'))
+        report.is_difficult_resolved = bool(request.POST.get('is_difficult_resolved'))
+        report.save()
+
+        # Replace fault entries
+        report.fault_entries.all().delete()
+        fault_json = request.POST.get('fault_entries', '[]')
+        try:
+            fault_data = json.loads(fault_json)
+            for entry in fault_data:
+                if entry.get('count', 0) > 0 and entry.get('fault_subtype'):
+                    WorkReportFault.objects.create(
+                        work_report=report,
+                        fault_subtype_id=entry['fault_subtype'],
+                        count=entry['count'],
+                    )
+        except (json.JSONDecodeError, KeyError):
+            pass
+
+        messages.success(request, f'工作日报已更新 (ID: {report.id})')
+        return redirect('core:work_reports')
+
+    # GET — pre-populate form
+    locations = Location.objects.filter(active=True).order_by('order')
+    work_categories = WorkCategory.objects.filter(active=True).order_by('order')
+    info_sources = InfoSource.objects.filter(active=True).order_by('order')
+    fault_categories = FaultCategory.objects.filter(active=True).prefetch_related(
+        'sub_types'
+    ).order_by('order', 'id')
+    zones = Zone.objects.order_by('code')
+
+    # Build zone equipment map for frontend lookup
+    zone_equipment_map = {}
+    for ze in ZoneEquipment.objects.select_related('zone', 'equipment').all():
+        zone_code = ze.zone.code
+        if zone_code not in zone_equipment_map:
+            zone_equipment_map[zone_code] = []
+        zone_equipment_map[zone_code].append({
+            'id': ze.id,
+            'equipment_details': {
+                'equipment_type': ze.equipment.equipment_type,
+                'equipment_type_display': ze.equipment.get_equipment_type_display(),
+                'model_name': ze.equipment.model_name,
+            },
+            'location_in_zone': ze.location_in_zone or '',
+        })
+
+    existing_faults = {
+        str(e.fault_subtype_id): {'count': e.count, 'equipment': e.equipment_id}
+        for e in report.fault_entries.all()
+    }
+
+    return render(request, 'core/work_report_form.html', {
+        'report': report,
+        'existing_faults_json': json.dumps(existing_faults),
+        'locations': locations,
+        'work_categories': work_categories,
+        'info_sources': info_sources,
+        'fault_categories': fault_categories,
+        'zones': zones,
+        'zone_equipment_json': json.dumps(zone_equipment_map),
+        'fault_categories_json': json.dumps([
+            {'id': c.id, 'name_zh': c.name_zh, 'name_en': c.name_en,
+             'sub_types': [{'id': s.id, 'name_zh': s.name_zh, 'name_en': s.name_en} for s in c.sub_types.all()]}
+            for c in fault_categories
+        ]),
+        'today': report.date.isoformat(),
+    })
+
+
+@require_POST
+@login_required(login_url='core:login')
+def work_report_delete(request, report_id):
+    from core.models import WorkReport
+    from core.role_utils import is_admin
+
+    if not is_admin(request.user):
+        messages.error(request, '仅管理员可删除记录')
+        return redirect('core:work_reports')
+
+    report = get_object_or_404(WorkReport, pk=report_id)
+    report.delete()
+    messages.success(request, f'工作日报已删除')
+    return redirect('core:work_reports')
+
+
+@login_required(login_url='core:login')
+def demands_page(request):
+    """
+    需求周报列表页面 - 显示所有需求记录
+    """
+    from core.models import DemandRecord, DemandCategory, DemandDepartment, Zone
+    from core.role_utils import is_admin
+    from datetime import date, timedelta
+
+    user = request.user
+    admin = is_admin(user)
+
+    # Base queryset with role-based filtering
+    qs = DemandRecord.objects.select_related(
+        'zone', 'category', 'demand_department', 'submitter', 'approver'
+    ).order_by('-date', '-id')
+
+    if not admin:
+        # Non-admin users can only see approved/in-progress/completed demands
+        qs = qs.filter(status__in=['approved', 'in_progress', 'completed'])
+
+    # Filters from GET params
+    date_from = request.GET.get('date_from')
+    date_to = request.GET.get('date_to')
+    status_filter = request.GET.get('status')
+    category_filter = request.GET.get('category')
+    department_filter = request.GET.get('department')
+
+    if date_from:
+        qs = qs.filter(date__gte=date_from)
+    if date_to:
+        qs = qs.filter(date__lte=date_to)
+    if status_filter:
+        qs = qs.filter(status=status_filter)
+    if category_filter:
+        qs = qs.filter(category_id=category_filter)
+    if department_filter:
+        qs = qs.filter(demand_department_id=department_filter)
+
+    # Limit results
+    demands = qs[:200]
+
+    # Stats calculation
+    today = date.today()
+    month_start = today.replace(day=1)
+
+    base_qs = DemandRecord.objects.all()
+    if not admin:
+        base_qs = base_qs.filter(status__in=['approved', 'in_progress', 'completed'])
+
+    stats = {
+        'total': qs.count(),
+        'pending': base_qs.filter(status='submitted').count(),
+        'completed': base_qs.filter(status='completed', date__gte=month_start).count(),
+        'time_parsed_rate': round(
+            base_qs.filter(start_time__isnull=False).count() / max(base_qs.count(), 1) * 100, 1
+        ),
+    }
+
+    # Dropdown data
+    categories = DemandCategory.objects.filter(active=True).order_by('order')
+    departments = DemandDepartment.objects.filter(active=True).order_by('order')
+
+    context = {
+        'demands': demands,
+        'categories': categories,
+        'departments': departments,
+        'stats': stats,
+        'is_admin': admin,
+        'date_from': date_from or '',
+        'date_to': date_to or '',
+        'status_filter': status_filter or '',
+        'category_filter': int(category_filter) if category_filter else '',
+        'department_filter': int(department_filter) if department_filter else '',
+    }
+
+    return render(request, 'core/demands.html', context)
