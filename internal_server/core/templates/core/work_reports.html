@@ -1,0 +1,126 @@
+{% extends 'core/base.html' %}
+{% load static %}
+
+{% block title %}维修工作日报{% endblock %}
+{% block nav_work_reports %}active{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'css/settings.css' %}">
+{% endblock %}
+
+{% block content %}
+<div class="form-container">
+    <div class="form-header">
+        <h1>维修工作日报</h1>
+        <a href="{% url 'core:work_report_create' %}" class="btn btn-primary">+ 新建日报</a>
+    </div>
+
+    {% if messages %}
+    <div class="messages">
+        {% for message in messages %}
+        <div class="message message-{{ message.tags }}">{{ message }}</div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <!-- Filters -->
+    <div class="form-section" style="margin-bottom:16px;">
+        <form method="get" style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;">
+            <div class="form-group" style="margin:0;">
+                <label style="font-size:0.8rem;">起始日期</label>
+                <input type="date" name="date_from" value="{{ filters.date_from }}" style="padding:6px 10px;">
+            </div>
+            <div class="form-group" style="margin:0;">
+                <label style="font-size:0.8rem;">截止日期</label>
+                <input type="date" name="date_to" value="{{ filters.date_to }}" style="padding:6px 10px;">
+            </div>
+            <div class="form-group" style="margin:0;">
+                <label style="font-size:0.8rem;">位置/CCU</label>
+                <select name="location" style="padding:6px 10px;">
+                    <option value="">全部</option>
+                    {% for loc in locations %}
+                    <option value="{{ loc.id }}" {% if filters.location == loc.id %}selected{% endif %}>{{ loc.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group" style="margin:0;">
+                <label style="font-size:0.8rem;">工作分类</label>
+                <select name="work_category" style="padding:6px 10px;">
+                    <option value="">全部</option>
+                    {% for cat in work_categories %}
+                    <option value="{{ cat.id }}" {% if filters.work_category == cat.id %}selected{% endif %}>{{ cat.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            {% if is_admin %}
+            <div class="form-group" style="margin:0;">
+                <label style="font-size:0.8rem;">处理人</label>
+                <select name="worker" style="padding:6px 10px;">
+                    <option value="">全部</option>
+                    {% for w in workers %}
+                    <option value="{{ w.id }}" {% if filters.worker == w.id %}selected{% endif %}>{{ w.full_name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            {% endif %}
+            <label style="display:flex;align-items:center;gap:4px;font-size:0.85rem;cursor:pointer;padding-bottom:4px;">
+                <input type="checkbox" name="is_difficult" value="1" {% if filters.is_difficult %}checked{% endif %}> 疑难
+            </label>
+            <button type="submit" class="btn btn-sm btn-primary">筛选</button>
+            <a href="{% url 'core:work_reports' %}" class="btn btn-sm btn-secondary">重置</a>
+        </form>
+    </div>
+
+    <!-- Report List -->
+    <div style="overflow-x:auto;">
+        <table style="width:100%;border-collapse:collapse;font-size:0.85rem;">
+            <thead>
+                <tr style="background:var(--color-primary);color:var(--color-text-inverse);">
+                    <th style="padding:8px 12px;text-align:left;">日期</th>
+                    <th style="padding:8px 12px;text-align:left;">处理人</th>
+                    <th style="padding:8px 12px;text-align:left;">位置</th>
+                    <th style="padding:8px 12px;text-align:left;">工作分类</th>
+                    <th style="padding:8px 12px;text-align:left;">故障位置</th>
+                    <th style="padding:8px 12px;text-align:left;">备注</th>
+                    <th style="padding:8px 12px;text-align:center;">故障数</th>
+                    <th style="padding:8px 12px;text-align:center;">疑难</th>
+                    <th style="padding:8px 12px;text-align:center;">操作</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for report in reports %}
+                <tr style="border-bottom:1px solid var(--color-surface-dark);{% cycle '' 'background:var(--color-surface-alt);' %}">
+                    <td style="padding:8px 12px;white-space:nowrap;">{{ report.date }}</td>
+                    <td style="padding:8px 12px;">{{ report.worker.full_name }}</td>
+                    <td style="padding:8px 12px;">{{ report.location.name }}</td>
+                    <td style="padding:8px 12px;">{{ report.work_category.name }}</td>
+                    <td style="padding:8px 12px;">{% if report.zone_location %}{{ report.zone_location.code }}{% else %}-{% endif %}</td>
+                    <td style="padding:8px 12px;max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{{ report.remark }}">{{ report.remark }}</td>
+                    <td style="padding:8px 12px;text-align:center;">
+                        {% widthratio report.fault_entries.count 1 1 %}
+                    </td>
+                    <td style="padding:8px 12px;text-align:center;">
+                        {% if report.is_difficult %}
+                            <span style="color:var(--color-warning);font-weight:600;">是</span>
+                            {% if report.is_difficult_resolved %}
+                            <span style="color:var(--color-success);font-size:0.75rem;">(已处理)</span>
+                            {% endif %}
+                        {% else %}
+                            -
+                        {% endif %}
+                    </td>
+                    <td style="padding:8px 12px;text-align:center;white-space:nowrap;">
+                        <a href="{% url 'core:work_report_detail' report.id %}" style="color:var(--color-primary);margin-right:8px;">查看</a>
+                        <a href="{% url 'core:work_report_edit' report.id %}" style="color:var(--color-accent);">编辑</a>
+                    </td>
+                </tr>
+            {% empty %}
+                <tr>
+                    <td colspan="9" style="padding:32px;text-align:center;color:var(--color-text-muted);">暂无工作日报记录</td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

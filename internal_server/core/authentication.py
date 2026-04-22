@@ -1,15 +1,13 @@
 from rest_framework import authentication, exceptions
+from django.contrib.auth import get_user_model
 from .models import Worker
 
 
 class TokenAuthentication(authentication.BaseAuthentication):
     """
-    Custom token authentication for Worker API tokens.
-
-    Clients authenticate by passing the token in the Authorization header:
-        Authorization: Token <uuid>
+    Custom token authentication.
+    Accepts either a Worker api_token (UUID) or a User ID-based token from login.
     """
-
     keyword = 'Token'
 
     def authenticate(self, request):
@@ -31,20 +29,23 @@ class TokenAuthentication(authentication.BaseAuthentication):
         return self.authenticate_credentials(token)
 
     def authenticate_credentials(self, token):
-        """
-        Authenticate the worker by their API token.
-        Returns (worker, token) tuple on success.
-        """
+        # 1. Try Worker api_token (UUID format)
         try:
             worker = Worker.objects.get(api_token=token, active=True)
-        except Worker.DoesNotExist:
-            raise exceptions.AuthenticationFailed('Invalid or inactive worker token.')
+            return (worker, token)
+        except (Worker.DoesNotExist, Exception):
+            pass
 
-        if not worker.active:
-            raise exceptions.AuthenticationFailed('Worker is inactive.')
+        # 2. Try User ID-based token (from login endpoint)
+        try:
+            user_id = int(token)
+            User = get_user_model()
+            user = User.objects.get(id=user_id, is_active=True)
+            return (user, token)
+        except (ValueError, Exception):
+            pass
 
-        # Return the worker as the user for request.user
-        return (worker, token)
+        raise exceptions.AuthenticationFailed('Invalid or inactive token.')
 
     def authenticate_header(self, request):
         return self.keyword

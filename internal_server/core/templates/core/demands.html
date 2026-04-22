@@ -402,7 +402,7 @@
                     {% if demand.is_global_event %}
                     <span class="zone-badge global">{{ demand.category_text|default:"全局事件" }}</span>
                     {% else %}
-                    <span class="zone-badge">{{ demand.zone_text|default:demand.zone.name|default:"-" }}</span>
+                    <span class="zone-badge">{% if demand.zone_text %}{{ demand.zone_text }}{% elif demand.zone %}{{ demand.zone.name }}{% else %}-{% endif %}</span>
                     {% endif %}
                 </td>
                 <td>
@@ -422,7 +422,7 @@
                     {% endif %}
                 </td>
                 <td class="content-cell">{{ demand.content|truncatechars:50 }}</td>
-                <td>{{ demand.demand_department_text|default:demand.demand_department.name|default:"-" }}</td>
+                <td>{% if demand.demand_department_text %}{{ demand.demand_department_text }}{% elif demand.demand_department %}{{ demand.demand_department.name }}{% else %}-{% endif %}</td>
                 <td>
                     <span class="status-badge status-{{ demand.status }}">{{ demand.get_status_display }}</span>
                 </td>
@@ -544,11 +544,23 @@ function closeModal() {
 }
 
 {% if is_admin %}
+function getCSRFToken() {
+    const cookies = document.cookie.split(';');
+    for (let c of cookies) {
+        c = c.trim();
+        if (c.startsWith('csrftoken=')) {
+            return c.substring('csrftoken='.length);
+        }
+    }
+    return '';
+}
+
 function updateStatus(demandId, status) {
     fetch(`/api/demand-records/${demandId}/`, {
         method: 'PATCH',
         headers: {
             'Content-Type': 'application/json',
+            'X-CSRFToken': getCSRFToken(),
         },
         body: JSON.stringify({ status: status })
     })

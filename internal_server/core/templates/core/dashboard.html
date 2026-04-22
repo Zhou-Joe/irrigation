@@ -3,6 +3,7 @@
 {% load static %}
 
 {% block title %}灌溉区域总览{% endblock %}
+{% block nav_dashboard %}active{% endblock %}
 
 {% block extra_css %}
 <!-- Leaflet CSS -->
@@ -403,6 +404,101 @@
     display: none;
 }
 
+/* Adjust dashboard for top nav bar */
+.dashboard-container {
+    height: calc(100vh - 52px) !important;
+}
+
+.dashboard-view, .maxicom-section {
+    margin-top: 0;
+}
+
+.view-toggle {
+    top: 60px !important;
+}
+
+/* Compact zone list */
+.zone-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px !important;
+    border-radius: 6px !important;
+}
+.zone-item .zone-code {
+    font-size: 0.75rem;
+    padding: 1px 6px;
+    flex-shrink: 0;
+}
+.zone-item .zone-name {
+    font-size: 0.85rem;
+    font-weight: 500;
+    margin-bottom: 0 !important;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Patch group styling */
+.patch-group {
+    margin-bottom: 4px;
+}
+
+.patch-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    background: rgba(45,106,79,0.1);
+    border-radius: 8px;
+    cursor: pointer;
+    user-select: none;
+    transition: background 0.2s;
+}
+
+.patch-header:hover {
+    background: rgba(45,106,79,0.2);
+}
+
+.patch-toggle {
+    font-size: 0.7rem;
+    color: var(--color-primary);
+    transition: transform 0.2s;
+}
+
+.patch-group.collapsed .patch-toggle {
+    transform: rotate(-90deg);
+}
+
+.patch-name {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--color-primary);
+}
+
+.patch-count {
+    font-size: 0.75rem;
+    color: var(--color-text-secondary);
+    background: var(--color-surface);
+    padding: 2px 8px;
+    border-radius: 10px;
+}
+
+.patch-zones {
+    padding-left: 8px;
+    overflow: hidden;
+    transition: max-height 0.3s ease;
+}
+
+.patch-group.collapsed .patch-zones {
+    max-height: 0 !important;
+}
+
+.patch-zones .zone-item {
+    margin: 2px 0;
+    padding-left: 16px !important;
+}
+
 /* Sync Agent Status Indicator */
 .sync-agent-status {
     position: fixed;
@@ -542,33 +638,32 @@
     <aside class="sidebar">
         <div class="sidebar-header">
             <h1>灌溉区域</h1>
-            <p class="zone-count">{{ zones|length }} 个区域</p>
+            <p class="zone-count" id="zoneCount">{{ total_zones }} 个区域</p>
         </div>
 
-        <div class="zone-list stagger-reveal">
-            {% for zone in zones %}
-            <div class="zone-item" data-zone-id="{{ zone.id }}" data-zone-code="{{ zone.code }}">
-                <div class="zone-header">
-                    <span class="zone-code">{{ zone.code }}</span>
-                    <span class="status-badge status-{{ zone.status }}">{{ zone.get_status_display }}</span>
+        <!-- 搜索框 -->
+        <div class="zone-search" style="padding: 8px 12px;">
+            <input type="text" id="zoneSidebarSearch" placeholder="搜索区域名称或编号..." style="width: 100%; padding: 10px 14px; border: 2px solid var(--color-surface-dark); border-radius: 8px; font-size: 0.95em; background: var(--color-surface); color: var(--color-text-primary);">
+        </div>
+
+        <!-- 分级显示：片区 -> 区域 -->
+        <div class="zone-list stagger-reveal" id="zoneSidebarList">
+            {% for group in grouped_zones %}
+            <!-- 片区组 -->
+            <div class="patch-group" data-patch-id="{{ group.id }}" data-type="{{ group.type }}">
+                <div class="patch-header" onclick="togglePatchGroup(this)">
+                    <span class="patch-toggle">▼</span>
+                    <span class="patch-name">{{ group.name }}</span>
+                    <span class="patch-count">{{ group.zone_count }}</span>
                 </div>
-                <div class="zone-name">{{ zone.name }}</div>
-                <div class="zone-details">
-                    <span class="plant-count">{{ zone.plant_count }} 种植物</span>
-                    <span class="work-order-status">
-                        {% if zone.pending_work_orders %}
-                            {{ zone.pending_work_orders }} 待处理
-                        {% else %}
-                            无待处理
-                        {% endif %}
-                    </span>
+                <div class="patch-zones">
+                    {% for zone in group.zones %}
+                    <div class="zone-item" data-zone-id="{{ zone.id }}" data-zone-code="{{ zone.code }}" data-patch-id="{{ zone.patch_id }}">
+                        <span class="zone-code">{{ zone.code }}</span>
+                        <span class="zone-name">{{ zone.name }}</span>
+                    </div>
+                    {% endfor %}
                 </div>
-                {% if zone.center %}
-                <div class="zone-coords">
-                    <span class="coord-label"></span>
-                    <span class="coord-value">{{ zone.center.lat }}, {{ zone.center.lng }}</span>
-                </div>
-                {% endif %}
             </div>
             {% empty %}
             <div class="no-zones">暂无区域数据</div>
@@ -577,22 +672,6 @@
 
         <!-- 设置链接 -->
         <div class="sidebar-footer">
-            {% if is_admin %}
-            <a href="{% url 'core:requests' %}" class="settings-link">工单记录</a>
-            <a href="{% url 'core:registration_approval' %}" class="settings-link">
-                注册审批
-                {% if pending_counts and pending_counts.registrations > 0 %}
-                <span style="background: var(--color-warning); color: white; padding: 2px 6px; border-radius: 10px; font-size: 0.7rem; margin-left: 4px;">{{ pending_counts.registrations }}</span>
-                {% endif %}
-            </a>
-            <a href="{% url 'core:settings' %}" class="settings-link">系统设置</a>
-            {% endif %}
-            {% if user.is_authenticated %}
-            <a href="{% url 'core:logout' %}" class="settings-link" style="color: var(--color-error);">退出登录</a>
-            {% else %}
-            <a href="{% url 'core:login' %}" class="settings-link" style="color: var(--color-primary);">登录</a>
-            <a href="{% url 'core:register' %}" class="settings-link" style="color: var(--color-success);">注册申请</a>
-            {% endif %}
         </div>
     </aside>
 
@@ -819,6 +898,11 @@
 <script id="zones-data" type="application/json">
     {{ zones_json|safe }}
 </script>
+
+<!-- Pipeline data for JavaScript -->
+<script id="pipelines-data" type="application/json">
+    {{ pipelines_json|safe }}
+</script>
 {% endblock %}
 
 {% block extra_js %}
@@ -827,9 +911,9 @@
 <!-- Chart.js -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <!-- Map Config -->
-<script src="{% static 'js/map-config.js' %}"></script>
+<script src="{% static 'js/map-config.js' %}?v=20260422b"></script>
 <!-- Custom Map JS -->
-<script src="{% static 'js/map.js' %}"></script>
+<script src="{% static 'js/map.js' %}?v=20260422b"></script>
 <!-- Dashboard JS -->
 <script>
 // Zone data from server
@@ -841,7 +925,76 @@ document.addEventListener('DOMContentLoaded', function() {
     if (dataEl) {
         zonesData = JSON.parse(dataEl.textContent);
     }
+
+    // Zone sidebar search filter
+    initZoneSidebarSearch();
 });
+
+// Zone sidebar search filter
+function initZoneSidebarSearch() {
+    const searchInput = document.getElementById('zoneSidebarSearch');
+    const zoneList = document.getElementById('zoneSidebarList');
+    const countEl = document.getElementById('zoneCount');
+
+    if (!searchInput || !zoneList) return;
+
+    const patchGroups = zoneList.querySelectorAll('.patch-group');
+    let total = 0;
+    patchGroups.forEach(pg => {
+        total += pg.querySelectorAll('.zone-item').length;
+    });
+
+    searchInput.addEventListener('input', function() {
+        const query = this.value.toLowerCase().trim();
+        let visibleCount = 0;
+
+        patchGroups.forEach(patchGroup => {
+            const patchName = patchGroup.querySelector('.patch-name')?.textContent?.toLowerCase() || '';
+            const zoneItems = patchGroup.querySelectorAll('.zone-item');
+            let patchVisible = false;
+
+            // Check if patch name matches
+            if (query === '' || patchName.includes(query)) {
+                patchVisible = true;
+            }
+
+            // Check each zone
+            zoneItems.forEach(item => {
+                const code = (item.dataset.zoneCode || '').toLowerCase();
+                const name = (item.querySelector('.zone-name')?.textContent || '').toLowerCase();
+
+                const matches = query === '' || code.includes(query) || name.includes(query) || patchName.includes(query);
+                item.style.display = matches ? '' : 'none';
+                if (matches) {
+                    patchVisible = true;
+                    visibleCount++;
+                }
+            });
+
+            // Show/hide patch group based on visibility
+            patchGroup.style.display = patchVisible ? '' : 'none';
+
+            // Expand patch group if searching
+            if (query && patchVisible) {
+                patchGroup.classList.remove('collapsed');
+            }
+        });
+
+        if (query) {
+            countEl.textContent = `找到 ${visibleCount} 个区域`;
+        } else {
+            countEl.textContent = `${total} 个区域`;
+        }
+    });
+}
+
+// Toggle patch group collapse/expand
+function togglePatchGroup(header) {
+    const patchGroup = header.closest('.patch-group');
+    if (patchGroup) {
+        patchGroup.classList.toggle('collapsed');
+    }
+}
 
 // View switching
 function switchView(view) {

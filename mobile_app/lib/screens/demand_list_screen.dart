@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 import '../models/user.dart';
 import 'demand_form_screen.dart';
+import '../widgets/modern_ui.dart';
 
 class DemandListScreen extends StatefulWidget {
   final User user;
@@ -92,10 +93,7 @@ class _DemandListScreenState extends State<DemandListScreen> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(
-                    '需求详情',
-                    style: Theme.of(context).textTheme.titleLarge,
-                  ),
+                  Text('需求详情', style: Theme.of(context).textTheme.titleLarge),
                   IconButton(
                     icon: const Icon(Icons.close),
                     onPressed: () => Navigator.pop(context),
@@ -104,24 +102,40 @@ class _DemandListScreenState extends State<DemandListScreen> {
               ),
               const Divider(),
               _buildDetailRow('日期', demand['date'] ?? '-'),
-              _buildDetailRow('区域', demand['zone_name'] ?? demand['zone_text'] ?? '全局事件'),
-              _buildDetailRow('类别', demand['category_name'] ?? demand['category_text'] ?? '-'),
+              _buildDetailRow(
+                '区域',
+                demand['zone_name'] ?? demand['zone_text'] ?? '全局事件',
+              ),
+              _buildDetailRow(
+                '类别',
+                demand['category_name'] ?? demand['category_text'] ?? '-',
+              ),
               _buildDetailRow('时间段', demand['time_display'] ?? '-'),
               _buildDetailRow('状态', demand['status_display'] ?? '-'),
-              _buildDetailRow('提出部门', demand['demand_department_name'] ?? demand['demand_department_text'] ?? '-'),
+              _buildDetailRow(
+                '提出部门',
+                demand['demand_department_name'] ??
+                    demand['demand_department_text'] ??
+                    '-',
+              ),
               _buildDetailRow('联系人', demand['demand_contact'] ?? '-'),
               const SizedBox(height: 16),
               Text('需求内容', style: Theme.of(context).textTheme.titleMedium),
               const SizedBox(height: 8),
               Text(demand['content'] ?? demand['original_text'] ?? '-'),
-              if (demand['original_text'] != null && demand['content'] != demand['original_text']) ...[
+              if (demand['original_text'] != null &&
+                  demand['content'] != demand['original_text']) ...[
                 const SizedBox(height: 16),
                 Text('原始文本', style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(height: 8),
-                Text(demand['original_text'], style: const TextStyle(color: Colors.grey)),
+                Text(
+                  demand['original_text'],
+                  style: const TextStyle(color: Colors.grey),
+                ),
               ],
               // Admin can update status
-              if (widget.user.role == 'manager' || widget.user.role == 'super_admin') ...[
+              if (widget.user.role == 'manager' ||
+                  widget.user.role == 'super_admin') ...[
                 const SizedBox(height: 24),
                 ElevatedButton(
                   onPressed: () => _updateStatus(demand['id']),
@@ -143,7 +157,10 @@ class _DemandListScreenState extends State<DemandListScreen> {
         children: [
           SizedBox(
             width: 80,
-            child: Text(label, style: const TextStyle(fontWeight: FontWeight.bold)),
+            child: Text(
+              label,
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
           ),
           Expanded(child: Text(value)),
         ],
@@ -165,24 +182,28 @@ class _DemandListScreenState extends State<DemandListScreen> {
         title: const Text('选择状态'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
-          children: statuses.map((s) => ListTile(
-            title: Text(s.$2),
-            onTap: () async {
-              Navigator.pop(context);
-              try {
-                await widget.apiService.updateDemandRecord(
-                  id: demandId,
-                  status: s.$1,
-                );
-                Navigator.pop(this.context); // Close detail modal
-                _loadDemands();
-              } catch (e) {
-                ScaffoldMessenger.of(this.context).showSnackBar(
-                  SnackBar(content: Text('更新失败: $e')),
-                );
-              }
-            },
-          )).toList(),
+          children: statuses
+              .map(
+                (s) => ListTile(
+                  title: Text(s.$2),
+                  onTap: () async {
+                    Navigator.pop(context);
+                    try {
+                      await widget.apiService.updateDemandRecord(
+                        id: demandId,
+                        status: s.$1,
+                      );
+                      Navigator.pop(this.context); // Close detail modal
+                      _loadDemands();
+                    } catch (e) {
+                      ScaffoldMessenger.of(
+                        this.context,
+                      ).showSnackBar(SnackBar(content: Text('更新失败: $e')));
+                    }
+                  },
+                ),
+              )
+              .toList(),
         ),
       ),
     );
@@ -194,7 +215,9 @@ class _DemandListScreenState extends State<DemandListScreen> {
       appBar: AppBar(
         title: const Text('需求周报'),
         actions: [
-          if (widget.user.role == 'dept_user' || widget.user.role == 'manager' || widget.user.role == 'super_admin')
+          if (widget.user.role == 'dept_user' ||
+              widget.user.role == 'manager' ||
+              widget.user.role == 'super_admin')
             IconButton(
               icon: const Icon(Icons.add),
               onPressed: () async {
@@ -214,130 +237,181 @@ class _DemandListScreenState extends State<DemandListScreen> {
             ),
         ],
       ),
-      body: Column(
-        children: [
-          // Filters
-          Padding(
-            padding: const EdgeInsets.all(8),
-            child: Row(
-              children: [
-                // Month filter
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: () async {
-                      final picked = await showDatePicker(
-                        context: context,
-                        initialDate: _selectedMonth ?? DateTime.now(),
-                        firstDate: DateTime(2020),
-                        lastDate: DateTime(2030),
-                      );
-                      if (picked != null) {
-                        setState(() => _selectedMonth = picked);
-                        _loadDemands();
-                      }
-                    },
-                    child: Text(_selectedMonth != null
-                        ? '${_selectedMonth!.year}年${_selectedMonth!.month}月'
-                        : '选择月份'),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                // Status filter
-                Expanded(
-                  child: DropdownButton<String>(
-                    value: _selectedStatus,
-                    isExpanded: true,
-                    hint: const Text('状态'),
-                    items: const [
-                      DropdownMenuItem(value: null, child: Text('全部')),
-                      DropdownMenuItem(value: 'submitted', child: Text('已提交')),
-                      DropdownMenuItem(value: 'approved', child: Text('已批准')),
-                      DropdownMenuItem(value: 'rejected', child: Text('已拒绝')),
-                      DropdownMenuItem(value: 'in_progress', child: Text('进行中')),
-                      DropdownMenuItem(value: 'completed', child: Text('已完成')),
-                    ],
-                    onChanged: (value) {
-                      setState(() => _selectedStatus = value);
-                      _loadDemands();
-                    },
-                  ),
-                ),
-              ],
-            ),
-          ),
-          // List
-          Expanded(
-            child: _isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : _error != null
-                    ? Center(child: Text('错误: $_error'))
-                    : _demands.isEmpty
-                        ? const Center(child: Text('暂无需求记录'))
-                        : ListView.builder(
-                            itemCount: _demands.length,
-                            itemBuilder: (context, index) {
-                              final demand = _demands[index];
-                              final statusColor = _getStatusColor(demand['status'] ?? '');
-                              return Card(
-                                child: ListTile(
-                                  leading: CircleAvatar(
-                                    backgroundColor: Color(
-                                      int.parse(statusColor.replaceFirst('#', '0xFF')),
-                                    ),
-                                    child: Text(
-                                      (index + 1).toString(),
-                                      style: const TextStyle(color: Colors.white),
-                                    ),
-                                  ),
-                                  title: Text(
-                                    demand['zone_name'] ?? demand['zone_text'] ?? '全局事件',
-                                    style: const TextStyle(fontWeight: FontWeight.bold),
-                                  ),
-                                  subtitle: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(demand['date'] ?? '-'),
-                                      Text(
-                                        demand['content'] ?? '',
-                                        maxLines: 2,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ],
-                                  ),
-                                  trailing: Column(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                        decoration: BoxDecoration(
-                                          color: Color(
-                                            int.parse(statusColor.replaceFirst('#', '0xFF')),
-                                          ).withOpacity(0.2),
-                                          borderRadius: BorderRadius.circular(12),
-                                        ),
-                                        child: Text(
-                                          demand['status_display'] ?? '-',
-                                          style: TextStyle(
-                                            color: Color(
-                                              int.parse(statusColor.replaceFirst('#', '0xFF')),
-                                            ),
-                                            fontSize: 12,
-                                          ),
-                                        ),
-                                      ),
-                                      if (demand['time_display'] != null)
-                                        Text(
-                                          demand['time_display'],
-                                          style: const TextStyle(fontSize: 12),
-                                        ),
-                                    ],
-                                  ),
-                                  onTap: () => _showDemandDetail(demand),
-                                ),
-                              );
-                            },
+      body: AppBackground(
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+              child: AppCard(
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () async {
+                          final picked = await showDatePicker(
+                            context: context,
+                            initialDate: _selectedMonth ?? DateTime.now(),
+                            firstDate: DateTime(2020),
+                            lastDate: DateTime(2030),
+                          );
+                          if (picked != null) {
+                            setState(() => _selectedMonth = picked);
+                            _loadDemands();
+                          }
+                        },
+                        child: Text(
+                          _selectedMonth != null
+                              ? '${_selectedMonth!.year}年${_selectedMonth!.month}月'
+                              : '选择月份',
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: DropdownButton<String>(
+                        value: _selectedStatus,
+                        isExpanded: true,
+                        hint: const Text('状态'),
+                        underline: const SizedBox.shrink(),
+                        items: const [
+                          DropdownMenuItem(value: null, child: Text('全部')),
+                          DropdownMenuItem(
+                            value: 'submitted',
+                            child: Text('已提交'),
                           ),
-          ),
+                          DropdownMenuItem(
+                            value: 'approved',
+                            child: Text('已批准'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'rejected',
+                            child: Text('已拒绝'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'in_progress',
+                            child: Text('进行中'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'completed',
+                            child: Text('已完成'),
+                          ),
+                        ],
+                        onChanged: (value) {
+                          setState(() => _selectedStatus = value);
+                          _loadDemands();
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            Expanded(
+              child: _isLoading
+                  ? const Center(child: CircularProgressIndicator())
+                  : _error != null
+                  ? AppErrorState(message: '错误: $_error', onRetry: _loadDemands)
+                  : _demands.isEmpty
+                  ? const AppEmptyState(
+                      icon: Icons.event_note_outlined,
+                      title: '暂无需求记录',
+                      subtitle: '新建需求后会出现在这里。',
+                    )
+                  : ListView.builder(
+                      padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+                      itemCount: _demands.length,
+                      itemBuilder: (context, index) {
+                        final demand = _demands[index];
+                        final color = Color(
+                          int.parse(
+                            _getStatusColor(
+                              demand['status'] ?? '',
+                            ).replaceFirst('#', '0xFF'),
+                          ),
+                        );
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: AppCard(
+                            onTap: () => _showDemandDetail(demand),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        demand['zone_name'] ??
+                                            demand['zone_text'] ??
+                                            '全局事件',
+                                        style: Theme.of(
+                                          context,
+                                        ).textTheme.titleMedium,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    AppStatusBadge(
+                                      label: demand['status_display'] ?? '-',
+                                      color: color,
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 10),
+                                Text(
+                                  demand['content'] ?? '',
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: Theme.of(context).textTheme.bodyMedium
+                                      ?.copyWith(color: AppColors.muted),
+                                ),
+                                const SizedBox(height: 12),
+                                Wrap(
+                                  spacing: 8,
+                                  runSpacing: 8,
+                                  children: [
+                                    _metaChip(
+                                      Icons.calendar_today_outlined,
+                                      demand['date'] ?? '-',
+                                    ),
+                                    if (demand['time_display'] != null)
+                                      _metaChip(
+                                        Icons.schedule_outlined,
+                                        demand['time_display'],
+                                      ),
+                                    _metaChip(
+                                      Icons.category_outlined,
+                                      demand['category_name'] ??
+                                          demand['category_text'] ??
+                                          '-',
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _metaChip(IconData icon, String text) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceSoft.withOpacity(0.7),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: AppColors.muted),
+          const SizedBox(width: 6),
+          Text(text, style: const TextStyle(fontWeight: FontWeight.w600)),
         ],
       ),
     );

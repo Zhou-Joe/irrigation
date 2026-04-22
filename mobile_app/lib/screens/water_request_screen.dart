@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import '../models/zone.dart';
 import '../providers/auth_provider.dart';
+import '../widgets/modern_ui.dart';
 
 class WaterRequestScreen extends StatefulWidget {
   final Zone zone;
@@ -52,7 +53,10 @@ class _WaterRequestScreenState extends State<WaterRequestScreen> {
   }
 
   Future<void> _selectStartTime() async {
-    final picked = await showTimePicker(context: context, initialTime: _startTime);
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: _startTime,
+    );
     if (picked != null) setState(() => _startTime = picked);
   }
 
@@ -67,27 +71,40 @@ class _WaterRequestScreenState extends State<WaterRequestScreen> {
   }
 
   Future<void> _selectEndTime() async {
-    final picked = await showTimePicker(context: context, initialTime: _endTime);
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: _endTime,
+    );
     if (picked != null) setState(() => _endTime = picked);
   }
 
   Future<void> _takePhoto() async {
     if (_photos.length >= 5) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('最多5张照片')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('最多5张照片')));
       return;
     }
-    final XFile? photo = await _picker.pickImage(source: ImageSource.camera, maxWidth: 1920);
+    final XFile? photo = await _picker.pickImage(
+      source: ImageSource.camera,
+      maxWidth: 1920,
+    );
     if (photo != null) setState(() => _photos.add(File(photo.path)));
   }
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
     if (_userType == '其他' && _otherUserTypeController.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('请填写需求用户类型')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('请填写需求用户类型')));
       return;
     }
-    if (_requestType == '其他需求' && _otherRequestTypeController.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('请填写需求类别')));
+    if (_requestType == '其他需求' &&
+        _otherRequestTypeController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('请填写需求类别')));
       return;
     }
 
@@ -113,9 +130,13 @@ class _WaterRequestScreenState extends State<WaterRequestScreen> {
       await api.submitWaterRequest(
         zoneId: widget.zone.id,
         userType: _userType,
-        userTypeOther: _userType == '其他' ? _otherUserTypeController.text.trim() : null,
+        userTypeOther: _userType == '其他'
+            ? _otherUserTypeController.text.trim()
+            : null,
         requestType: _requestType,
-        requestTypeOther: _requestType == '其他需求' ? _otherRequestTypeController.text.trim() : null,
+        requestTypeOther: _requestType == '其他需求'
+            ? _otherRequestTypeController.text.trim()
+            : null,
         startDatetime: startDatetime.toIso8601String(),
         endDatetime: endDatetime.toIso8601String(),
       );
@@ -128,7 +149,9 @@ class _WaterRequestScreenState extends State<WaterRequestScreen> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('提交失败: $e')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('提交失败: $e')));
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -139,164 +162,237 @@ class _WaterRequestScreenState extends State<WaterRequestScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('浇水协调需求')),
-      body: Form(
-        key: _formKey,
-        child: ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            Text('区域: ${widget.zone.name}', style: const TextStyle(fontWeight: FontWeight.bold)),
-            const SizedBox(height: 16),
-
-            // 用户类型
-            DropdownButtonFormField<String>(
-              value: _userType,
-              decoration: const InputDecoration(
-                labelText: '需求用户',
-                prefixIcon: Icon(Icons.person),
-                border: OutlineInputBorder(),
+      body: AppBackground(
+        child: Form(
+          key: _formKey,
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+            children: [
+              AppHeroCard(
+                title: '浇水协调需求',
+                subtitle: '区域 ${widget.zone.name}',
+                icon: Icons.water_drop_rounded,
               ),
-              items: _userTypes.map((t) => DropdownMenuItem(value: t, child: Text(t))).toList(),
-              onChanged: (v) => setState(() => _userType = v!),
-            ),
-            if (_userType == '其他')
-              Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: TextFormField(
-                  controller: _otherUserTypeController,
-                  decoration: const InputDecoration(
-                    labelText: '请输入用户类型',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-              ),
-            const SizedBox(height: 16),
-
-            // 需求类别
-            DropdownButtonFormField<String>(
-              value: _requestType,
-              decoration: const InputDecoration(
-                labelText: '需求类别',
-                prefixIcon: Icon(Icons.category),
-                border: OutlineInputBorder(),
-              ),
-              items: _requestTypes.map((t) => DropdownMenuItem(value: t, child: Text(t))).toList(),
-              onChanged: (v) => setState(() => _requestType = v!),
-            ),
-            if (_requestType == '其他需求')
-              Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: TextFormField(
-                  controller: _otherRequestTypeController,
-                  decoration: const InputDecoration(
-                    labelText: '请输入需求类别',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-              ),
-            const SizedBox(height: 16),
-
-            // 起始时间
-            const Text('需求起始时间', style: TextStyle(fontWeight: FontWeight.w500)),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Expanded(
-                  child: InkWell(
-                    onTap: _selectStartDate,
-                    child: InputDecorator(
-                      decoration: const InputDecoration(labelText: '日期', border: OutlineInputBorder()),
-                      child: Text(DateFormat('MM-dd').format(_startDate)),
+              const SizedBox(height: 16),
+              AppCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const AppSectionTitle(
+                      title: '需求填写',
+                      subtitle: '确认需求类型和生效时间段',
                     ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: InkWell(
-                    onTap: _selectStartTime,
-                    child: InputDecorator(
-                      decoration: const InputDecoration(labelText: '时间', border: OutlineInputBorder()),
-                      child: Text(_startTime.format(context)),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
+                    const SizedBox(height: 12),
 
-            // 结束时间
-            const Text('需求结束时间', style: TextStyle(fontWeight: FontWeight.w500)),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Expanded(
-                  child: InkWell(
-                    onTap: _selectEndDate,
-                    child: InputDecorator(
-                      decoration: const InputDecoration(labelText: '日期', border: OutlineInputBorder()),
-                      child: Text(DateFormat('MM-dd').format(_endDate)),
+                    // 用户类型
+                    DropdownButtonFormField<String>(
+                      value: _userType,
+                      decoration: const InputDecoration(
+                        labelText: '需求用户',
+                        prefixIcon: Icon(Icons.person),
+                        border: OutlineInputBorder(),
+                      ),
+                      items: _userTypes
+                          .map(
+                            (t) => DropdownMenuItem(value: t, child: Text(t)),
+                          )
+                          .toList(),
+                      onChanged: (v) => setState(() => _userType = v!),
                     ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: InkWell(
-                    onTap: _selectEndTime,
-                    child: InputDecorator(
-                      decoration: const InputDecoration(labelText: '时间', border: OutlineInputBorder()),
-                      child: Text(_endTime.format(context)),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
+                    if (_userType == '其他')
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: TextFormField(
+                          controller: _otherUserTypeController,
+                          decoration: const InputDecoration(
+                            labelText: '请输入用户类型',
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
+                      ),
+                    const SizedBox(height: 16),
 
-            // 照片
-            Row(
-              children: [
-                ElevatedButton.icon(
-                  onPressed: _takePhoto,
-                  icon: const Icon(Icons.camera_alt),
-                  label: Text('拍照 (${_photos.length}/5)'),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: _photos.isEmpty
-                      ? const Text('暂无照片', style: TextStyle(color: Colors.grey))
-                      : SizedBox(
-                          height: 60,
-                          child: ListView.builder(
-                            scrollDirection: Axis.horizontal,
-                            itemCount: _photos.length,
-                            itemBuilder: (_, i) => Padding(
-                              padding: const EdgeInsets.only(right: 8),
-                              child: Stack(
-                                children: [
-                                  Image.file(_photos[i], width: 60, height: 60, fit: BoxFit.cover),
-                                  Positioned(
-                                    top: 0, right: 0,
-                                    child: GestureDetector(
-                                      onTap: () => setState(() => _photos.removeAt(i)),
-                                      child: const CircleAvatar(radius: 10, backgroundColor: Colors.red, child: Icon(Icons.close, size: 12, color: Colors.white)),
-                                    ),
-                                  ),
-                                ],
+                    // 需求类别
+                    DropdownButtonFormField<String>(
+                      value: _requestType,
+                      decoration: const InputDecoration(
+                        labelText: '需求类别',
+                        prefixIcon: Icon(Icons.category),
+                        border: OutlineInputBorder(),
+                      ),
+                      items: _requestTypes
+                          .map(
+                            (t) => DropdownMenuItem(value: t, child: Text(t)),
+                          )
+                          .toList(),
+                      onChanged: (v) => setState(() => _requestType = v!),
+                    ),
+                    if (_requestType == '其他需求')
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: TextFormField(
+                          controller: _otherRequestTypeController,
+                          decoration: const InputDecoration(
+                            labelText: '请输入需求类别',
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
+                      ),
+                    const SizedBox(height: 16),
+
+                    // 起始时间
+                    const Text(
+                      '需求起始时间',
+                      style: TextStyle(fontWeight: FontWeight.w500),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: InkWell(
+                            onTap: _selectStartDate,
+                            child: InputDecorator(
+                              decoration: const InputDecoration(
+                                labelText: '日期',
+                                border: OutlineInputBorder(),
+                              ),
+                              child: Text(
+                                DateFormat('MM-dd').format(_startDate),
                               ),
                             ),
                           ),
                         ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 32),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: InkWell(
+                            onTap: _selectStartTime,
+                            child: InputDecorator(
+                              decoration: const InputDecoration(
+                                labelText: '时间',
+                                border: OutlineInputBorder(),
+                              ),
+                              child: Text(_startTime.format(context)),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
 
-            FilledButton.icon(
-              onPressed: _isLoading ? null : _submit,
-              icon: _isLoading ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.send),
-              label: Text(_isLoading ? '发送中...' : '发出需求'),
-              style: FilledButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 16)),
-            ),
-          ],
+                    // 结束时间
+                    const Text(
+                      '需求结束时间',
+                      style: TextStyle(fontWeight: FontWeight.w500),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: InkWell(
+                            onTap: _selectEndDate,
+                            child: InputDecorator(
+                              decoration: const InputDecoration(
+                                labelText: '日期',
+                                border: OutlineInputBorder(),
+                              ),
+                              child: Text(DateFormat('MM-dd').format(_endDate)),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: InkWell(
+                            onTap: _selectEndTime,
+                            child: InputDecorator(
+                              decoration: const InputDecoration(
+                                labelText: '时间',
+                                border: OutlineInputBorder(),
+                              ),
+                              child: Text(_endTime.format(context)),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+
+                    // 照片
+                    Row(
+                      children: [
+                        ElevatedButton.icon(
+                          onPressed: _takePhoto,
+                          icon: const Icon(Icons.camera_alt),
+                          label: Text('拍照 (${_photos.length}/5)'),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: _photos.isEmpty
+                              ? const Text(
+                                  '暂无照片',
+                                  style: TextStyle(color: Colors.grey),
+                                )
+                              : SizedBox(
+                                  height: 60,
+                                  child: ListView.builder(
+                                    scrollDirection: Axis.horizontal,
+                                    itemCount: _photos.length,
+                                    itemBuilder: (_, i) => Padding(
+                                      padding: const EdgeInsets.only(right: 8),
+                                      child: Stack(
+                                        children: [
+                                          Image.file(
+                                            _photos[i],
+                                            width: 60,
+                                            height: 60,
+                                            fit: BoxFit.cover,
+                                          ),
+                                          Positioned(
+                                            top: 0,
+                                            right: 0,
+                                            child: GestureDetector(
+                                              onTap: () => setState(
+                                                () => _photos.removeAt(i),
+                                              ),
+                                              child: const CircleAvatar(
+                                                radius: 10,
+                                                backgroundColor: Colors.red,
+                                                child: Icon(
+                                                  Icons.close,
+                                                  size: 12,
+                                                  color: Colors.white,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 32),
+
+                    FilledButton.icon(
+                      onPressed: _isLoading ? null : _submit,
+                      icon: _isLoading
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Icon(Icons.send),
+                      label: Text(_isLoading ? '发送中...' : '发出需求'),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

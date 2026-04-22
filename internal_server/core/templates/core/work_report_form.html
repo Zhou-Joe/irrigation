@@ -1,0 +1,359 @@
+{% extends 'core/base.html' %}
+{% load static %}
+
+{% block title %}{% if report %}编辑日报{% else %}新建日报{% endif %}{% endblock %}
+{% block nav_work_reports %}active{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'css/settings.css' %}">
+<style>
+.fault-added-list { display: flex; flex-wrap: wrap; gap: 8px; min-height: 40px; padding: 8px 0; }
+.fault-chip { display: flex; flex-direction: column; gap: 6px; background: var(--color-surface); border: 1px solid var(--color-surface-dark); border-radius: 8px; padding: 8px 12px; font-size: 0.82rem; min-width: 180px; }
+.fault-chip-row { display: flex; align-items: center; gap: 6px; }
+.fault-chip .chip-cat { color: var(--color-text-muted); font-size: 0.72rem; }
+.fault-chip .chip-count { width: 48px; padding: 2px 6px; text-align: center; border: 1px solid var(--color-surface-dark); border-radius: 4px; font-weight: 600; font-size: 0.82rem; }
+.fault-chip .chip-count:focus { border-color: var(--color-primary); outline: none; }
+.fault-chip .chip-remove { cursor: pointer; color: var(--color-text-muted); font-size: 1rem; line-height: 1; margin-left: 2px; }
+.fault-chip .chip-remove:hover { color: var(--color-danger, #c0392b); }
+.fault-chip .chip-equip-row { display: flex; align-items: center; gap: 4px; font-size: 0.78rem; }
+.fault-chip .chip-equip-row select { flex: 1; padding: 2px 4px; font-size: 0.78rem; border: 1px solid var(--color-surface-dark); border-radius: 4px; background: #fff; }
+.btn-add-fault { display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; border: 2px dashed var(--color-surface-dark); border-radius: 8px; background: none; color: var(--color-primary); cursor: pointer; font-size: 0.85rem; font-weight: 500; }
+.btn-add-fault:hover { border-color: var(--color-primary); background: var(--color-surface); }
+.fault-empty { color: var(--color-text-muted); font-size: 0.82rem; padding: 8px 0; }
+/* Modal */
+.fault-modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 1000; justify-content: center; align-items: flex-start; padding-top: 10vh; }
+.fault-modal-overlay.open { display: flex; }
+.fault-modal { background: #fff; border-radius: 12px; width: 90%; max-width: 500px; max-height: 70vh; display: flex; flex-direction: column; box-shadow: 0 8px 32px rgba(0,0,0,0.15); }
+.fault-modal-header { display: flex; align-items: center; gap: 8px; padding: 14px 16px; border-bottom: 1px solid var(--color-surface-dark); }
+.fault-modal-header h3 { margin: 0; font-size: 1rem; flex: 1; }
+.fault-modal-header button { background: none; border: none; font-size: 0.85rem; color: var(--color-primary); cursor: pointer; }
+.fault-modal-body { overflow-y: auto; flex: 1; }
+.fault-modal-item { padding: 10px 16px; cursor: pointer; border-bottom: 1px solid var(--color-surface-dark); display: flex; justify-content: space-between; align-items: center; font-size: 0.85rem; }
+.fault-modal-item:hover { background: var(--color-surface); }
+.fault-modal-item .item-en { color: var(--color-text-muted); font-size: 0.75rem; }
+.fault-modal-item .item-added { color: var(--color-success); font-weight: 600; font-size: 0.78rem; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="form-container">
+    <div class="form-header">
+        <h1>{% if report %}编辑日报 #{{ report.id }}{% else %}新建维修工作日报{% endif %}</h1>
+        <a href="{% url 'core:work_reports' %}" class="btn btn-secondary">← 返回列表</a>
+    </div>
+
+    {% if messages %}
+    <div class="messages">
+        {% for message in messages %}
+        <div class="message message-{{ message.tags }}">{{ message }}</div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <form method="post" id="reportForm">
+        {% csrf_token %}
+        <input type="hidden" id="fault_entries" name="fault_entries" value="[]">
+
+        <div class="form-section">
+            <h2>基本信息</h2>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="date">日期 *</label>
+                    <input type="date" id="date" name="date" value="{% if report %}{{ report.date.isoformat }}{% else %}{{ today }}{% endif %}" required>
+                </div>
+                <div class="form-group">
+                    <label for="weather">天气</label>
+                    <input type="text" id="weather" name="weather" value="{% if report %}{{ report.weather }}{% endif %}" maxlength="50">
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="location">位置/CCU *</label>
+                    <select id="location" name="location" required>
+                        <option value="">-- 选择位置 --</option>
+                        {% for loc in locations %}
+                        <option value="{{ loc.id }}" {% if report and report.location_id == loc.id %}selected{% endif %}>{{ loc.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="work_category">工作分类 *</label>
+                    <select id="work_category" name="work_category" required>
+                        <option value="">-- 选择分类 --</option>
+                        {% for cat in work_categories %}
+                        <option value="{{ cat.id }}" {% if report and report.work_category_id == cat.id %}selected{% endif %}>{{ cat.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="zone_location">故障/事件位置</label>
+                    <input type="text" id="zone_location" name="zone_location" value="{% if report and report.zone_location %}{{ report.zone_location.code }}{% endif %}" maxlength="255" list="zoneList" placeholder="如 9-4-3、POC、WD">
+                    <datalist id="zoneList">
+                        {% for z in zones %}
+                        <option value="{{ z.code }}">
+                        {% endfor %}
+                    </datalist>
+                </div>
+                <div class="form-group">
+                    <label for="info_source">信息来源</label>
+                    <select id="info_source" name="info_source">
+                        <option value="">-- 不选 --</option>
+                        {% for src in info_sources %}
+                        <option value="{{ src.id }}" {% if report and report.info_source_id == src.id %}selected{% endif %}>{{ src.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+            <div class="form-group full-width">
+                <label for="remark">备注/工作内容 *</label>
+                <textarea id="remark" name="remark" rows="4" required>{% if report %}{{ report.remark }}{% endif %}</textarea>
+            </div>
+            <div class="form-row">
+                <div class="form-group" style="display:flex;align-items:center;gap:16px;padding-top:4px;">
+                    <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+                        <input type="checkbox" name="is_difficult" value="1" {% if report and report.is_difficult %}checked{% endif %}> 疑难问题
+                    </label>
+                    <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+                        <input type="checkbox" name="is_difficult_resolved" value="1" {% if report and report.is_difficult_resolved %}checked{% endif %}> 疑难已处理
+                    </label>
+                </div>
+            </div>
+        </div>
+
+        <div class="form-section">
+            <h2>故障计数</h2>
+            <div id="faultAddedList" class="fault-added-list">
+                <div class="fault-empty" id="faultEmpty">暂无故障记录，点击下方按钮添加</div>
+            </div>
+            <button type="button" class="btn-add-fault" onclick="openFaultPicker()">＋ 添加故障</button>
+        </div>
+
+        <!-- Fault picker modal -->
+        <div class="fault-modal-overlay" id="faultModal" onclick="if(event.target===this)closeFaultPicker()">
+            <div class="fault-modal">
+                <div class="fault-modal-header">
+                    <button type="button" id="faultModalBack" onclick="showFaultCategories()" style="display:none;">← 返回</button>
+                    <h3 id="faultModalTitle">选择故障大类</h3>
+                    <button type="button" onclick="closeFaultPicker()">关闭</button>
+                </div>
+                <div class="fault-modal-body" id="faultModalBody"></div>
+            </div>
+        </div>
+
+        <div class="form-actions">
+            <button type="submit" class="btn btn-primary">{% if report %}保存修改{% else %}创建日报{% endif %}</button>
+            {% if not report %}
+            <button type="submit" name="save_and_new" value="1" class="btn btn-secondary">保存并新建</button>
+            {% endif %}
+            <a href="{% url 'core:work_reports' %}" class="btn btn-secondary">取消</a>
+        </div>
+    </form>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function() {
+    // Fault data from server
+    const faultData = {{ fault_categories_json|default:"[]"|safe }};
+    const existingFaults = JSON.parse('{{ existing_faults_json|default:"{}"|escapejs }}');
+    const zoneEquipmentMap = JSON.parse('{{ zone_equipment_json|default:"{}"|escapejs }}');
+
+    // Build lookup maps
+    const categoryMap = {};
+    const subtypeMap = {};
+    faultData.forEach(cat => {
+        categoryMap[cat.id] = cat;
+        (cat.sub_types || []).forEach(sub => {
+            subtypeMap[sub.id] = { ...sub, catId: cat.id, catName: cat.name_zh };
+        });
+    });
+
+    // faultEntries: subId -> {count, equipment}
+    const faultEntries = {};
+    Object.entries(existingFaults).forEach(([subId, data]) => {
+        if (typeof data === 'object') {
+            faultEntries[subId] = { count: data.count || 0, equipment: data.equipment || null };
+        } else {
+            // Legacy format: just count
+            faultEntries[subId] = { count: data, equipment: null };
+        }
+    });
+
+    let currentZoneCode = '';
+
+    // Watch zone input changes
+    const zoneInput = document.getElementById('zone_location');
+    zoneInput.addEventListener('change', function() {
+        currentZoneCode = this.value.trim();
+        renderAddedList();
+    });
+    zoneInput.addEventListener('input', function() {
+        // Debounce
+        clearTimeout(this._zoneTimer);
+        this._zoneTimer = setTimeout(() => {
+            currentZoneCode = this.value.trim();
+            renderAddedList();
+        }, 500);
+    });
+    if (zoneInput.value) currentZoneCode = zoneInput.value.trim();
+
+    renderAddedList();
+
+    window.openFaultPicker = function() {
+        document.getElementById('faultModal').classList.add('open');
+        showFaultCategories();
+    };
+
+    window.closeFaultPicker = function() {
+        document.getElementById('faultModal').classList.remove('open');
+    };
+
+    window.showFaultCategories = function() {
+        document.getElementById('faultModalBack').style.display = 'none';
+        document.getElementById('faultModalTitle').textContent = '选择故障大类';
+        const body = document.getElementById('faultModalBody');
+        body.innerHTML = '';
+        faultData.forEach(cat => {
+            const subs = cat.sub_types || [];
+            let catTotal = 0;
+            subs.forEach(sub => { catTotal += (faultEntries[sub.id]?.count || 0); });
+            const div = document.createElement('div');
+            div.className = 'fault-modal-item';
+            div.innerHTML = '<span>' + cat.name_zh + (cat.name_en ? ' <span class="item-en">' + cat.name_en + '</span>' : '') + '</span>' +
+                (catTotal > 0 ? '<span class="item-added">' + catTotal + '</span>' : '');
+            div.onclick = () => showSubtypes(cat.id);
+            body.appendChild(div);
+        });
+    };
+
+    function showSubtypes(catId) {
+        const cat = categoryMap[catId];
+        document.getElementById('faultModalBack').style.display = '';
+        document.getElementById('faultModalTitle').textContent = cat.name_zh;
+        const body = document.getElementById('faultModalBody');
+        body.innerHTML = '';
+        (cat.sub_types || []).forEach(sub => {
+            const entry = faultEntries[sub.id];
+            const count = entry?.count || 0;
+            const div = document.createElement('div');
+            div.className = 'fault-modal-item';
+            div.innerHTML = '<span>' + sub.name_zh + (sub.name_en ? ' <span class="item-en">' + sub.name_en + '</span>' : '') + '</span>' +
+                (count > 0 ? '<span class="item-added">x' + count + ' ✓</span>' : '');
+            div.onclick = () => {
+                faultEntries[sub.id] = { count: (entry?.count || 0) + 1, equipment: null };
+                renderAddedList();
+                closeFaultPicker();
+            };
+            body.appendChild(div);
+        });
+    }
+
+    function getEquipmentOptions(zoneCode) {
+        const equipList = zoneEquipmentMap[zoneCode] || [];
+        let html = '<option value="">-- 不选 --</option>';
+        equipList.forEach(eq => {
+            const label = eq.equipment_details.equipment_type_display + ': ' + eq.equipment_details.model_name;
+            if (eq.location_in_zone) label += ' (' + eq.location_in_zone + ')';
+            html += '<option value="' + eq.id + '">' + label + '</option>';
+        });
+        return html;
+    }
+
+    function hasEquipment(zoneCode) {
+        const equipList = zoneEquipmentMap[zoneCode] || [];
+        return equipList.length > 0;
+    }
+
+    function renderAddedList() {
+        const list = document.getElementById('faultAddedList');
+        const empty = document.getElementById('faultEmpty');
+        const subIds = Object.keys(faultEntries).filter(id => faultEntries[id]?.count > 0);
+
+        // Remove old chips
+        list.querySelectorAll('.fault-chip').forEach(el => el.remove());
+
+        if (subIds.length === 0) {
+            if (empty) empty.style.display = '';
+        } else {
+            if (empty) empty.style.display = 'none';
+            subIds.forEach(subId => {
+                const info = subtypeMap[subId];
+                if (!info) return;
+                const entry = faultEntries[subId];
+                const chip = document.createElement('div');
+                chip.className = 'fault-chip';
+                chip.dataset.subId = subId;
+
+                // Row 1: category, subtype name, count, remove
+                let row1 = '<div class="fault-chip-row">' +
+                    '<span class="chip-cat">' + info.catName + '</span>' +
+                    '<span>' + info.name_zh + '</span>' +
+                    '<input type="number" class="chip-count" min="1" max="999" value="' + entry.count + '" data-sub-id="' + subId + '">' +
+                    '<span class="chip-remove" data-sub-id="' + subId + '">&times;</span>' +
+                    '</div>';
+
+                // Row 2: equipment selector (if zone has equipment)
+                let row2 = '';
+                if (hasEquipment(currentZoneCode)) {
+                    row2 = '<div class="chip-equip-row">' +
+                        '<span style="color:var(--color-text-muted);">设备:</span>' +
+                        '<select class="chip-equip" data-sub-id="' + subId + '">' + getEquipmentOptions(currentZoneCode) + '</select>' +
+                        '</div>';
+                }
+
+                chip.innerHTML = row1 + row2;
+                list.appendChild(chip);
+
+                // Set equipment value if we have existing equipment (and it's in the options)
+                if (entry.equipment && hasEquipment(currentZoneCode)) {
+                    const select = chip.querySelector('.chip-equip');
+                    if (select) select.value = entry.equipment;
+                }
+            });
+        }
+
+        // Bind events on new elements
+        list.querySelectorAll('.chip-count').forEach(inp => {
+            inp.onchange = function() {
+                const id = this.dataset.subId;
+                const val = Math.max(1, parseInt(this.value) || 1);
+                this.value = val;
+                faultEntries[id].count = val;
+                syncHiddenField();
+            };
+        });
+        list.querySelectorAll('.chip-remove').forEach(btn => {
+            btn.onclick = function() {
+                const id = this.dataset.subId;
+                delete faultEntries[id];
+                renderAddedList();
+            };
+        });
+        list.querySelectorAll('.chip-equip').forEach(sel => {
+            sel.onchange = function() {
+                const id = this.dataset.subId;
+                faultEntries[id].equipment = this.value ? parseInt(this.value) : null;
+                syncHiddenField();
+            };
+        });
+
+        syncHiddenField();
+    }
+
+    function syncHiddenField() {
+        const entries = [];
+        Object.entries(faultEntries).forEach(([subId, entry]) => {
+            if (entry?.count > 0) {
+                const obj = { fault_subtype: parseInt(subId), count: entry.count };
+                if (entry.equipment) obj.equipment = entry.equipment;
+                entries.push(obj);
+            }
+        });
+        document.getElementById('fault_entries').value = JSON.stringify(entries);
+    }
+})();
+</script>
+{% endblock %}

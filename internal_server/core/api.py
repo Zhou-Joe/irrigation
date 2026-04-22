@@ -1,9 +1,10 @@
 from rest_framework import serializers, viewsets, permissions, status, authentication
-from rest_framework.decorators import api_view, permission_classes, authentication_classes
+from rest_framework.decorators import api_view, permission_classes, authentication_classes, action
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny
 from django.contrib.auth import authenticate, login
 from django.utils import timezone
+from django.db import models
 from datetime import timedelta, date
 from .models import Zone, Plant, Worker, WorkOrder, Event, WorkLog, WeatherData, MaintenanceRequest, ProjectSupportRequest, WaterRequest, ManagerProfile, DepartmentUserProfile, EquipmentCatalog, ZoneEquipment, Pipeline, Location, WorkCategory, InfoSource, FaultCategory, FaultSubType, WorkReport, WorkReportFault, DemandCategory, DemandDepartment, DemandRecord
 from .authentication import TokenAuthentication
@@ -142,6 +143,10 @@ class ZoneSerializer(serializers.ModelSerializer):
     status_display = serializers.SerializerMethodField()
     pending_requests = serializers.SerializerMethodField()
     center = serializers.SerializerMethodField()
+    # Patch info for grouping
+    patch_id = serializers.SerializerMethodField()
+    patch_name = serializers.SerializerMethodField()
+    patch_code = serializers.SerializerMethodField()
 
     class Meta:
         model = Zone
@@ -149,9 +154,22 @@ class ZoneSerializer(serializers.ModelSerializer):
             'id', 'name', 'code', 'description', 'boundary_points',
             'boundary_color', 'status', 'status_display',
             'pending_requests', 'center',
+            'patch_id', 'patch_name', 'patch_code',
             'created_at', 'updated_at'
         ]
         read_only_fields = ['created_at', 'updated_at']
+
+    def get_patch_id(self, obj):
+        """返回片区ID。"""
+        return obj.patch.id if obj.patch else None
+
+    def get_patch_name(self, obj):
+        """返回片区名称。"""
+        return obj.patch.name if obj.patch else None
+
+    def get_patch_code(self, obj):
+        """返回片区编号。"""
+        return obj.patch.code if obj.patch else None
 
     def get_status(self, obj):
         """返回当天状态。"""
@@ -193,7 +211,7 @@ class PlantSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Plant
-        fields = ['id', 'zone', 'name', 'scientific_name', 'quantity', 'notes']
+        fields = ['id', 'zone', 'name', 'scientific_name', 'quantity', 'planting_date', 'end_date', 'notes']
 
 
 class EquipmentCatalogSerializer(serializers.ModelSerializer):
@@ -349,6 +367,50 @@ class ZoneViewSet(viewsets.ModelViewSet):
     serializer_class = ZoneSerializer
     authentication_classes = [TokenAuthentication, authentication.SessionAuthentication]
     permission_classes = [IsAdminOrReadOnly]
+
+    @action(detail=True, methods=['get'], url_path='zone-detail')
+    def zone_detail(self, request, pk=None):
+        zone = self.get_object()
+        today = date.today()
+
+        # Filter plants: current date is within the date range
+        # planting_date <= today (or null) AND (end_date >= today or end_date IS NULL)
+        plants = Plant.objects.filter(zone=zone).filter(
+            models.Q(planting_date__lte=today) | models.Q(planting_date__isnull=True)
+        ).filter(
+            models.Q(end_date__gte=today) | models.Q(end_date__isnull=True)
+        )
+
+        # Filter equipment: installation_date <= today (or null) AND status is active (working or needs_repair)
+        equipment = ZoneEquipment.objects.filter(zone=zone).select_related('equipment').filter(
+            models.Q(installation_date__lte=today) | models.Q(installation_date__isnull=True)
+        ).filter(status__in=['working', 'needs_repair'])
+
+        work_report_count = WorkReport.objects.filter(zone_location=zone).count()
+
+        from django.db.models import Count, Sum
+        from datetime import timedelta
+        thirty_days_ago = today - timedelta(days=30)
+        recent_fault_count = WorkReportFault.objects.filter(
+            work_report__zone_location=zone,
+            work_report__date__gte=thirty_days_ago,
+        ).aggregate(total=Sum('count'))['total'] or 0
+
+        return Response({
+            'id': zone.id,
+            'name': zone.name,
+            'code': zone.code,
+            'description': zone.description or '',
+            'status': zone.get_today_status(),
+            'status_display': zone.get_status_display(),
+            'boundary_color': zone.boundary_color,
+            'plants': PlantSerializer(plants, many=True).data,
+            'equipment': ZoneEquipmentSerializer(equipment, many=True).data,
+            'plant_count': plants.count(),
+            'equipment_count': equipment.count(),
+            'work_report_count': work_report_count,
+            'recent_fault_count': recent_fault_count,
+        })
 
 
 class PlantViewSet(viewsets.ModelViewSet):
@@ -813,6 +875,7 @@ class WorkReportSerializer(serializers.ModelSerializer):
     zone_location_code = serializers.CharField(write_only=True, required=False, allow_null=True, allow_blank=True)
     zone_location_display = serializers.SerializerMethodField()
     total_faults = serializers.SerializerMethodField()
+    photo_urls = serializers.SerializerMethodField()
 
     class Meta:
         model = WorkReport
@@ -822,7 +885,7 @@ class WorkReportSerializer(serializers.ModelSerializer):
             'zone_location', 'zone_location_code', 'zone_location_display',
             'remark', 'info_source', 'info_source_name',
             'is_difficult', 'is_difficult_resolved',
-            'fault_entries', 'total_faults',
+            'fault_entries', 'total_faults', 'photos', 'photo_urls',
             'created_at', 'updated_at',
         ]
         read_only_fields = ['created_at', 'updated_at']
@@ -833,6 +896,14 @@ class WorkReportSerializer(serializers.ModelSerializer):
 
     def get_total_faults(self, obj):
         return sum(e.count for e in obj.fault_entries.all())
+
+    def get_photo_urls(self, obj):
+        from django.conf import settings
+        request = self.context.get('request')
+        if not obj.photos:
+            return []
+        base = request.build_absolute_uri(settings.MEDIA_URL) if request else settings.MEDIA_URL
+        return [base + p for p in obj.photos]
 
     def get_zone_location_display(self, obj):
         return obj.zone_location.code if obj.zone_location else None
@@ -931,6 +1002,7 @@ class WorkReportViewSet(viewsets.ModelViewSet):
         location = self.request.query_params.get('location')
         work_category = self.request.query_params.get('work_category')
         worker_id = self.request.query_params.get('worker')
+        zone_id = self.request.query_params.get('zone')
         is_difficult = self.request.query_params.get('is_difficult')
 
         if date_from:
@@ -943,6 +1015,8 @@ class WorkReportViewSet(viewsets.ModelViewSet):
             qs = qs.filter(work_category_id=work_category)
         if worker_id:
             qs = qs.filter(worker_id=worker_id)
+        if zone_id:
+            qs = qs.filter(zone_location_id=zone_id)
         if is_difficult is not None:
             qs = qs.filter(is_difficult=is_difficult.lower() in ('true', '1', 'yes'))
 
@@ -965,8 +1039,62 @@ class WorkReportViewSet(viewsets.ModelViewSet):
             )
         serializer.save(worker=worker)
 
+    @action(detail=True, methods=['post'], url_path='upload-photos')
+    def upload_photos(self, request, pk=None):
+        """Upload photos for a work report. Accepts multipart form with 'files' field."""
+        report = self.get_object()
+        files = request.FILES.getlist('files')
 
-# ==========================================================================
+        if not files:
+            return Response({'error': 'No files provided'}, status=status.HTTP_400_BAD_REQUEST)
+
+        import os
+        from django.conf import settings
+        from datetime import datetime
+
+        photo_paths = list(report.photos or [])
+        upload_dir = os.path.join(settings.MEDIA_ROOT, 'work_reports', str(report.id))
+        os.makedirs(upload_dir, exist_ok=True)
+
+        for f in files:
+            ext = os.path.splitext(f.name)[1]
+            filename = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{len(photo_paths)}{ext}"
+            filepath = os.path.join(upload_dir, filename)
+            with open(filepath, 'wb') as dest:
+                for chunk in f.chunks():
+                    dest.write(chunk)
+            photo_paths.append(f"work_reports/{report.id}/{filename}")
+
+        report.photos = photo_paths
+        report.save(update_fields=['photos'])
+
+        return Response({
+            'photos': photo_paths,
+            'photo_urls': [request.build_absolute_uri(settings.MEDIA_URL + p) for p in photo_paths],
+        })
+
+    @action(detail=True, methods=['delete'], url_path='remove-photo')
+    def remove_photo(self, request, pk=None):
+        """Remove a photo from a work report. Pass 'photo' query param with the path."""
+        report = self.get_object()
+        photo = request.query_params.get('photo')
+        if not photo:
+            return Response({'error': 'photo parameter required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        import os
+        from django.conf import settings
+
+        photo_paths = list(report.photos or [])
+        if photo in photo_paths:
+            photo_paths.remove(photo)
+            report.photos = photo_paths
+            report.save(update_fields=['photos'])
+            # Delete file from disk
+            filepath = os.path.join(settings.MEDIA_ROOT, photo)
+            if os.path.exists(filepath):
+                os.remove(filepath)
+
+        return Response({'photos': photo_paths})
 # 需求周报系统 API
 # ==========================================================================
 
@@ -1193,11 +1321,9 @@ class DemandRecordViewSet(viewsets.ModelViewSet):
                 pass
 
         if is_admin_user:
-            old_status = self.get_object().status
             new_status = serializer.validated_data.get('status')
 
-            # If status changed to approved/rejected/in_progress/completed
-            if new_status in ['approved', 'rejected', 'in_progress', 'completed'] and old_status == 'submitted':
+            if new_status in ['approved', 'rejected', 'in_progress', 'completed']:
                 try:
                     manager = ManagerProfile.objects.get(user=user, active=True)
                     serializer.save(

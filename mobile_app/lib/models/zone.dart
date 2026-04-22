@@ -11,6 +11,10 @@ class Zone {
   final int pendingWorkOrders;
   final List<Map<String, dynamic>> pendingRequests;  // 待审批浇水协调需求
   final Map<String, double>? centerFromApi;
+  // Patch info for grouping
+  final int? patchId;
+  final String? patchName;
+  final String? patchCode;
 
   Zone({
     required this.id,
@@ -25,29 +29,50 @@ class Zone {
     this.pendingWorkOrders = 0,
     this.pendingRequests = const [],
     this.centerFromApi,
+    this.patchId,
+    this.patchName,
+    this.patchCode,
   });
 
   factory Zone.fromJson(Map<String, dynamic> json) {
+    // Parse patch info with proper type casting
+    int? patchId;
+    String? patchName;
+    String? patchCode;
+    if (json['patch'] != null && json['patch'] is Map) {
+      final patchMap = json['patch'] as Map<String, dynamic>;
+      patchId = patchMap['id'] is int ? patchMap['id'] : (patchMap['id'] as num?)?.toInt();
+      patchName = patchMap['name']?.toString();
+      patchCode = patchMap['code']?.toString();
+    } else if (json['patch_id'] != null) {
+      patchId = json['patch_id'] is int ? json['patch_id'] : (json['patch_id'] as num?)?.toInt();
+      patchName = json['patch_name']?.toString();
+      patchCode = json['patch_code']?.toString();
+    }
+
     return Zone(
-      id: json['id'],
-      code: json['code'],
-      name: json['name'],
-      description: json['description'],
-      status: json['status'] ?? 'unarranged',
-      statusDisplay: json['statusDisplay'] ?? json['status_display'] ?? '未安排',
-      boundaryColor: json['boundary_color'],
+      id: json['id'] is int ? json['id'] : (json['id'] as num).toInt(),
+      code: json['code']?.toString() ?? '',
+      name: json['name']?.toString() ?? '',
+      description: json['description']?.toString(),
+      status: json['status']?.toString() ?? 'unarranged',
+      statusDisplay: json['statusDisplay']?.toString() ?? json['status_display']?.toString() ?? '未安排',
+      boundaryColor: json['boundary_color']?.toString(),
       boundaryPoints: json['boundary_points'] ?? json['boundaryPoints'] ?? [],
-      plantCount: json['plant_count'] ?? json['plantCount'] ?? 0,
-      pendingWorkOrders: json['pending_work_orders'] ?? json['pendingWorkOrders'] ?? 0,
+      plantCount: json['plant_count'] is int ? json['plant_count'] : (json['plant_count'] as num?)?.toInt() ?? (json['plantCount'] as num?)?.toInt() ?? 0,
+      pendingWorkOrders: json['pending_work_orders'] is int ? json['pending_work_orders'] : (json['pending_work_orders'] as num?)?.toInt() ?? (json['pendingWorkOrders'] as num?)?.toInt() ?? 0,
       pendingRequests: (json['pending_requests'] as List?)
           ?.map((e) => Map<String, dynamic>.from(e))
           .toList() ?? [],
-      centerFromApi: json['center'] != null
+      centerFromApi: json['center'] != null && json['center'] is Map
           ? {
               'lat': (json['center']['lat'] as num).toDouble(),
               'lng': (json['center']['lng'] as num).toDouble(),
             }
           : null,
+      patchId: patchId,
+      patchName: patchName,
+      patchCode: patchCode,
     );
   }
 

@@ -1,7 +1,10 @@
 import 'dart:convert';
+import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
+import 'package:http_parser/http_parser.dart';
+import 'package:image_picker/image_picker.dart';
 import '../models/zone.dart';
 import '../models/user.dart';
 import '../models/work_log.dart';
@@ -115,6 +118,19 @@ class ApiService {
       return data.map((e) => e as Map<String, dynamic>).toList();
     }
     throw Exception('获取设备列表失败');
+  }
+
+  /// Get zone detail with plants, equipment, stats
+  Future<Map<String, dynamic>> getZoneDetail(int zoneId) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/zones/$zoneId/zone-detail/'),
+      headers: _headers,
+    );
+
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    }
+    throw Exception('获取区域详情失败');
   }
 
   /// Submit work log
@@ -385,6 +401,19 @@ class ApiService {
     throw Exception('获取工作分类失败');
   }
 
+  /// Get workers list (for admin filter)
+  Future<List<Map<String, dynamic>>> getWorkers() async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/workers/'),
+      headers: _headers,
+    );
+    if (response.statusCode == 200) {
+      final List<dynamic> data = jsonDecode(response.body);
+      return data.map((e) => e as Map<String, dynamic>).toList();
+    }
+    throw Exception('获取工人列表失败');
+  }
+
   /// Get info sources
   Future<List<Map<String, dynamic>>> getInfoSources() async {
     final response = await http.get(
@@ -418,6 +447,7 @@ class ApiService {
     int? location,
     int? workCategory,
     int? worker,
+    int? zone,
     bool? isDifficult,
   }) async {
     final params = <String, String>{};
@@ -426,6 +456,7 @@ class ApiService {
     if (location != null) params['location'] = location.toString();
     if (workCategory != null) params['work_category'] = workCategory.toString();
     if (worker != null) params['worker'] = worker.toString();
+    if (zone != null) params['zone'] = zone.toString();
     if (isDifficult == true) params['is_difficult'] = 'true';
 
     final query = params.entries.map((e) => '${e.key}=${e.value}').join('&');
@@ -530,6 +561,52 @@ class ApiService {
     );
     if (response.statusCode != 204) {
       throw Exception('删除失败: ${response.body}');
+    }
+  }
+
+  /// Upload photos for a work report
+  Future<Map<String, dynamic>> uploadWorkReportPhotos({
+    required int reportId,
+    required List<XFile> files,
+  }) async {
+    final request = http.MultipartRequest(
+      'POST',
+      Uri.parse('$baseUrl/work-reports/$reportId/upload-photos/'),
+    );
+    request.headers['Authorization'] = 'Token $_token';
+
+    for (int i = 0; i < files.length; i++) {
+      final file = files[i];
+      final ext = file.name.split('.').last.toLowerCase();
+      final mimeType = ext == 'png' ? 'image/png' : 'image/jpeg';
+      final bytes = await file.readAsBytes();
+      request.files.add(http.MultipartFile.fromBytes(
+        'files',
+        bytes,
+        filename: file.name.isNotEmpty ? file.name : 'photo_$i.$ext',
+        contentType: MediaType(mimeType.split('/')[0], mimeType.split('/')[1]),
+      ));
+    }
+
+    final streamed = await request.send();
+    final response = await http.Response.fromStream(streamed);
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    }
+    throw Exception('上传照片失败: ${response.body}');
+  }
+
+  /// Remove a photo from a work report
+  Future<void> removeWorkReportPhoto({
+    required int reportId,
+    required String photoPath,
+  }) async {
+    final response = await http.delete(
+      Uri.parse('$baseUrl/work-reports/$reportId/remove-photo/?photo=${Uri.encodeComponent(photoPath)}'),
+      headers: _headers,
+    );
+    if (response.statusCode != 200) {
+      throw Exception('删除照片失败');
     }
   }
 

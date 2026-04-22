@@ -32,6 +32,12 @@
     // Zone layers group
     let zonesLayerGroup;
 
+    // Pipeline layers group
+    let pipelinesLayerGroup;
+
+    // Zone code label markers
+    let zoneLabels = [];
+
     // Currently highlighted layer
     let highlightedLayer = null;
 
@@ -153,8 +159,17 @@
         // Initialize zones layer group
         zonesLayerGroup = L.layerGroup().addTo(map);
 
+        // Initialize pipelines layer group
+        pipelinesLayerGroup = L.layerGroup().addTo(map);
+
         // Load and render zones
         loadZones();
+
+        // Load and render pipelines
+        loadPipelines();
+
+        // Update zone label sizes on zoom
+        map.on('zoomend', updateLabelSizes);
     }
 
     /**
@@ -178,40 +193,100 @@
     }
 
     /**
-     * Render zones on the map
+     * Detect if boundary_points is multi-polygon format [[{lat,lng},...], [{lat,lng},...]]
+     * vs legacy single-polygon format [{lat,lng},...]
+     */
+    function isMultiPolygonFormat(boundaryPoints) {
+        if (!boundaryPoints || boundaryPoints.length === 0) return false;
+        const first = boundaryPoints[0];
+        // Multi-polygon: first element is an array (of points)
+        return Array.isArray(first) && first.length > 0 && (
+            Array.isArray(first[0]) || (first[0] && (first[0].lat !== undefined || first[0].lng !== undefined))
+        );
+    }
+
+    /**
+     * Convert a single ring of points to LatLng array
+     */
+    function pointsToLatLngs(points) {
+        return points.map(point => {
+            if (Array.isArray(point)) {
+                return [point[0], point[1]];
+            } else if (point.lat !== undefined && point.lng !== undefined) {
+                return [point.lat, point.lng];
+            }
+            return null;
+        }).filter(p => p !== null);
+    }
+
+    /**
+     * Add a zone code label at the centroid of a polygon
+     */
+    function addZoneLabel(code, latLngs) {
+        let latSum = 0, lngSum = 0, count = 0;
+        latLngs.forEach(p => {
+            const lat = Array.isArray(p) ? p[0] : p.lat;
+            const lng = Array.isArray(p) ? p[1] : p.lng;
+            if (lat !== undefined && lng !== undefined) {
+                latSum += lat;
+                lngSum += lng;
+                count++;
+            }
+        });
+        if (count === 0) return;
+        const center = [latSum / count, lngSum / count];
+
+        const size = getLabelFontSize(map.getZoom());
+        const label = L.marker(center, {
+            interactive: false,
+            icon: L.divIcon({
+                className: 'zone-label',
+                html: `<span style="font-size:${size}px">${code}</span>`,
+                iconSize: null,
+                iconAnchor: [0, 0]
+            })
+        });
+        zonesLayerGroup.addLayer(label);
+        zoneLabels.push(label);
+        return label;
+    }
+
+    /**
+     * Calculate label font size based on zoom level
+     */
+    function getLabelFontSize(zoom) {
+        return Math.max(8, Math.round(55 * Math.pow(0.7, 19 - zoom)));
+    }
+
+    /**
+     * Update all zone label sizes on zoom change
+     */
+    function updateLabelSizes() {
+        const size = getLabelFontSize(map.getZoom());
+        zoneLabels.forEach(label => {
+            const el = label.getElement();
+            if (el) {
+                const span = el.querySelector('span');
+                if (span) span.style.fontSize = size + 'px';
+            }
+        });
+    }
+
+    /**
+     * Render zones on the map (supports multi-polygon format)
      */
     function renderZones(zones) {
         console.log('renderZones called with', zones.length, 'zones');
         zonesLayerGroup.clearLayers();
-        console.log('zonesLayerGroup cleared');
+        zoneLabels = [];
 
         zones.forEach(zone => {
-            console.log('Processing zone:', zone.name, 'boundary_points:', zone.boundary_points);
             if (!zone.boundary_points || zone.boundary_points.length === 0) {
                 console.warn('Zone has no boundary points:', zone.name);
                 return;
             }
 
-            // Convert boundary points to LatLng array
-            const latLngs = zone.boundary_points.map(point => {
-                if (Array.isArray(point)) {
-                    return [point[0], point[1]];
-                } else if (point.lat !== undefined && point.lng !== undefined) {
-                    return [point.lat, point.lng];
-                }
-                console.warn('Invalid point format:', point);
-                return null;
-            }).filter(p => p !== null);
-
-            if (latLngs.length === 0) {
-                console.warn('No valid coordinates for zone:', zone.name);
-                return;
-            }
-
-            console.log('Creating polygon for zone:', zone.name, 'with', latLngs.length, 'points:', latLngs);
-
             try {
-                // Use custom boundary_color if set
                 let zoneStyle;
                 if (zone.boundary_color) {
                     zoneStyle = {
@@ -225,8 +300,8 @@
                     zoneStyle = getStyleForStatus(zone.status);
                 }
 
-                const polygon = L.polygon(latLngs, zoneStyle);
-                polygon.zoneData = {
+                const popupContent = createPopupContent(zone);
+                const zoneData = {
                     id: zone.id,
                     code: zone.code,
                     name: zone.name,
@@ -236,21 +311,41 @@
                     pendingWorkOrders: zone.pendingWorkOrders,
                     pendingRequests: zone.pending_requests || []
                 };
-                polygon.originalStyle = zoneStyle;
 
-                polygon.on('mouseover', handleMouseOver);
-                polygon.on('mouseout', handleMouseOut);
-                polygon.on('click', handleClick);
+                if (isMultiPolygonFormat(zone.boundary_points)) {
+                    // Multi-polygon: each element is a separate polygon ring
+                    zone.boundary_points.forEach((ring, ringIdx) => {
+                        const latLngs = pointsToLatLngs(ring);
+                        if (latLngs.length < 3) return;
 
-                zonesLayerGroup.addLayer(polygon);
-                console.log('Added polygon to layer group. Total layers now:', zonesLayerGroup.getLayers().length);
+                        const polygon = L.polygon(latLngs, zoneStyle);
+                        polygon.zoneData = zoneData;
+                        polygon.originalStyle = zoneStyle;
+                        polygon.bindPopup(popupContent);
+                        polygon.on('mouseover', handleMouseOver);
+                        polygon.on('mouseout', handleMouseOut);
+                        polygon.on('click', handleClick);
+                        zonesLayerGroup.addLayer(polygon);
+                        addZoneLabel(zone.code, latLngs);
+                    });
+                } else {
+                    // Legacy single-polygon format
+                    const latLngs = pointsToLatLngs(zone.boundary_points);
+                    if (latLngs.length < 3) return;
 
-                const popupContent = createPopupContent(zone);
-                polygon.bindPopup(popupContent);
+                    const polygon = L.polygon(latLngs, zoneStyle);
+                    polygon.zoneData = zoneData;
+                    polygon.originalStyle = zoneStyle;
+                    polygon.bindPopup(popupContent);
+                    polygon.on('mouseover', handleMouseOver);
+                    polygon.on('mouseout', handleMouseOut);
+                    polygon.on('click', handleClick);
+                    zonesLayerGroup.addLayer(polygon);
+                    addZoneLabel(zone.code, latLngs);
+                }
 
                 // Add pending request markers if any
                 if (zone.pending_requests && zone.pending_requests.length > 0 && zone.center) {
-                    console.log('Adding pending request marker for zone:', zone.name, 'count:', zone.pending_requests.length);
                     addPendingRequestMarker(zone);
                 }
             } catch (err) {
@@ -328,33 +423,66 @@
      * @returns {string} HTML content for popup
      */
     function createPopupContent(zone) {
-        const statusClass = `status-${zone.status}`;
-        const plantText = `${zone.plant_count || zone.plantCount || 0} 种植物`;
-        const workOrderText = zone.pendingWorkOrders > 0
-            ? `${zone.pendingWorkOrders} 个待处理工单`
-            : '无待处理工单';
+        // Stats summary
+        const plantCount = zone.plant_count || zone.plantCount || 0;
+        const equipmentCount = zone.equipment_count || 0;
+        const faultCount = zone.recent_fault_count || 0;
 
         // Pending water requests section
         let pendingWaterHtml = '';
         const pendingRequests = zone.pending_requests || zone.pendingRequests || [];
         if (pendingRequests.length > 0) {
             pendingWaterHtml = `
-                <div class="popup-pending-water" style="margin-top: 8px; padding-top: 8px; border-top: 1px solid #ddd;">
+                <div class="popup-pending-water" style="margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.2);">
                     <span style="color: #CC7722; font-weight: 600;">💧 ${pendingRequests.length} 个待审批浇水需求</span>
                 </div>
             `;
         }
 
-        return `
-            <div class="popup-content">
-                <h3>${zone.name}</h3>
-                <div class="popup-zone-code">编号: ${zone.code}</div>
-                <div class="popup-zone-status">
-                    <span class="status-badge ${statusClass}">${zone.statusDisplay || zone.status_display}</span>
+        // Fault warning (only show if there are faults)
+        let faultHtml = '';
+        if (faultCount > 0) {
+            faultHtml = `
+                <div style="display: inline-block; background: rgba(204,119,34,0.2); color: #CC7722; padding: 4px 10px; border-radius: 8px; font-size: 0.85em; margin-top: 8px;">
+                    ⚠️ 近30天 ${faultCount} 次故障
                 </div>
-                <div class="popup-zone-plants">${plantText}</div>
-                <div class="popup-zone-work-orders">${workOrderText}</div>
+            `;
+        }
+
+        return `
+            <div class="popup-content" style="min-width: 180px;">
+                <h3 style="margin: 0 0 4px 0; font-size: 1.1em; color: #1B4332;">${zone.name}</h3>
+                <div style="font-size: 0.85em; color: #666; margin-bottom: 8px;">编号: ${zone.code}</div>
+
+                <!-- Stats row -->
+                <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                    <div style="background: rgba(82,183,136,0.15); color: #52B788; padding: 4px 10px; border-radius: 8px; font-size: 0.85em;">
+                        🌱 ${plantCount} 种植物
+                    </div>
+                    <div style="background: rgba(64,145,108,0.15); color: #40916C; padding: 4px 10px; border-radius: 8px; font-size: 0.85em;">
+                        🔧 ${equipmentCount} 设备
+                    </div>
+                </div>
+
+                ${faultHtml}
                 ${pendingWaterHtml}
+
+                <!-- View detail button -->
+                <div style="margin-top: 12px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.2);">
+                    <button onclick="window.location.href='/zone/${zone.id}/detail/'" style="
+                        background: #2D6A4F;
+                        color: white;
+                        border: none;
+                        padding: 8px 16px;
+                        border-radius: 8px;
+                        cursor: pointer;
+                        font-size: 0.9em;
+                        width: 100%;
+                        transition: background 0.2s;
+                    " onmouseover="this.style.background='#1B4332'" onmouseout="this.style.background='#2D6A4F'">
+                        查看区域详情
+                    </button>
+                </div>
             </div>
         `;
     }
@@ -426,6 +554,92 @@
     function fitMapToBounds(zones) {
         // Keep map at predefined center - don't auto-adjust
         // The map is already centered at the specified location
+    }
+
+    /**
+     * Load pipelines from embedded JSON data
+     */
+    function loadPipelines() {
+        const pipelinesDataElement = document.getElementById('pipelines-data');
+        if (!pipelinesDataElement) {
+            console.log('No pipelines data element found');
+            return;
+        }
+
+        try {
+            const pipelines = JSON.parse(pipelinesDataElement.textContent);
+            console.log('Loaded pipelines:', pipelines.length);
+            renderPipelines(pipelines);
+        } catch (error) {
+            console.error('Error parsing pipelines data:', error);
+        }
+    }
+
+    /**
+     * Render pipelines as polylines on the map
+     */
+    function renderPipelines(pipelines) {
+        pipelinesLayerGroup.clearLayers();
+
+        pipelines.forEach(pipeline => {
+            if (!pipeline.line_points || pipeline.line_points.length < 2) {
+                return;
+            }
+
+            const latLngs = pipeline.line_points.map(point => {
+                if (Array.isArray(point)) {
+                    return [point[0], point[1]];
+                } else if (point.lat !== undefined && point.lng !== undefined) {
+                    return [point.lat, point.lng];
+                }
+                return null;
+            }).filter(p => p !== null);
+
+            if (latLngs.length < 2) return;
+
+            const lineStyle = {
+                color: pipeline.line_color,
+                weight: pipeline.line_weight || 3,
+                opacity: 0.9,
+            };
+
+            const polyline = L.polyline(latLngs, lineStyle);
+            polyline.pipelineData = {
+                id: pipeline.id,
+                code: pipeline.code,
+                name: pipeline.name,
+                pipeline_type: pipeline.pipeline_type,
+                pipeline_type_display: pipeline.pipeline_type_display,
+                zone_names: pipeline.zone_names || [],
+            };
+
+            const zoneList = pipeline.zone_names && pipeline.zone_names.length > 0
+                ? pipeline.zone_names.join(', ')
+                : '无关联区域';
+
+            const popupContent = `
+                <div class="popup-content">
+                    <h3>${pipeline.name}</h3>
+                    <div>编号: ${pipeline.code}</div>
+                    <div>
+                        <span style="background: ${pipeline.line_color}20; color: ${pipeline.line_color}; padding: 2px 8px; border-radius: 8px; font-size: 0.9em;">
+                            ${pipeline.pipeline_type_display}
+                        </span>
+                    </div>
+                    <div style="margin-top: 6px;">关联区域: ${zoneList}</div>
+                </div>
+            `;
+            polyline.bindPopup(popupContent);
+
+            polyline.on('mouseover', function(e) {
+                this.setStyle({ weight: (pipeline.line_weight || 3) + 2, opacity: 1 });
+            });
+            polyline.on('mouseout', function(e) {
+                this.setStyle({ weight: pipeline.line_weight || 3, opacity: 0.9 });
+            });
+
+            pipelinesLayerGroup.addLayer(polyline);
+        });
     }
 
     /**

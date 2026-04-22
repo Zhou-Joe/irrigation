@@ -1,0 +1,363 @@
+{% extends 'core/base.html' %}
+
+{% load static %}
+
+{% block title %}{{ zone.name }} - 区域详情{% endblock %}
+{% block nav_settings %}active{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'css/settings.css' %}">
+<style>
+.zone-detail-container {
+    max-width: 1000px;
+    margin: 0 auto;
+    padding: var(--space-xl);
+}
+
+.zone-detail-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: var(--space-xl);
+    padding-bottom: var(--space-lg);
+    border-bottom: 2px solid var(--color-surface-dark);
+}
+
+.zone-title-section h1 {
+    font-family: var(--font-display);
+    font-size: 2rem;
+    color: var(--color-primary);
+    margin: 0 0 var(--space-xs) 0;
+}
+
+.zone-code-badge {
+    display: inline-block;
+    background: var(--color-surface-dark);
+    padding: var(--space-xs) var(--space-md);
+    border-radius: var(--radius-md);
+    font-family: var(--font-mono);
+    font-size: 0.9em;
+}
+
+.zone-description {
+    color: var(--color-text-secondary);
+    margin-top: var(--space-sm);
+}
+
+.back-link {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-sm);
+    color: var(--color-primary);
+    text-decoration: none;
+    font-size: 0.9em;
+}
+
+.back-link:hover {
+    text-decoration: underline;
+}
+
+/* Stats Cards */
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: var(--space-md);
+    margin-bottom: var(--space-xl);
+}
+
+.stat-card {
+    background: var(--color-surface-alt);
+    border-radius: var(--radius-lg);
+    padding: var(--space-lg);
+    text-align: center;
+    border: 1px solid var(--color-surface-dark);
+}
+
+.stat-icon {
+    font-size: 2rem;
+    margin-bottom: var(--space-sm);
+}
+
+.stat-value {
+    font-size: 2rem;
+    font-weight: 700;
+    color: var(--color-primary);
+    margin-bottom: var(--space-xs);
+}
+
+.stat-label {
+    color: var(--color-text-secondary);
+    font-size: 0.9em;
+}
+
+.stat-card.plants { border-left: 4px solid #52B788; }
+.stat-card.plants .stat-value { color: #52B788; }
+.stat-card.equipment { border-left: 4px solid #40916C; }
+.stat-card.equipment .stat-value { color: #40916C; }
+.stat-card.reports { border-left: 4px solid #2D6A4F; }
+.stat-card.reports .stat-value { color: #2D6A4F; }
+.stat-card.faults { border-left: 4px solid #CC7722; }
+.stat-card.faults .stat-value { color: #CC7722; }
+
+/* Section Styles */
+.detail-section {
+    background: var(--color-surface-alt);
+    border-radius: var(--radius-lg);
+    padding: var(--space-xl);
+    margin-bottom: var(--space-xl);
+    border: 1px solid var(--color-surface-dark);
+}
+
+.section-title {
+    font-family: var(--font-display);
+    font-size: 1.3rem;
+    color: var(--color-primary);
+    margin: 0 0 var(--space-lg) 0;
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+}
+
+/* Plant Cards */
+.plant-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: var(--space-md);
+}
+
+.plant-card {
+    background: var(--color-surface);
+    border-radius: var(--radius-md);
+    padding: var(--space-md);
+    border: 1px solid rgba(82,183,136,0.2);
+}
+
+.plant-name {
+    font-weight: 600;
+    color: #52B788;
+    margin-bottom: var(--space-xs);
+}
+
+.plant-scientific {
+    font-style: italic;
+    color: var(--color-text-secondary);
+    font-size: 0.85em;
+    margin-bottom: var(--space-sm);
+}
+
+.plant-meta {
+    display: flex;
+    gap: var(--space-md);
+    font-size: 0.85em;
+    color: var(--color-text-secondary);
+}
+
+.plant-date-range {
+    display: flex;
+    align-items: center;
+    gap: var(--space-xs);
+}
+
+/* Equipment Cards */
+.equipment-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: var(--space-md);
+}
+
+.equipment-card {
+    background: var(--color-surface);
+    border-radius: var(--radius-md);
+    padding: var(--space-md);
+    border: 1px solid rgba(64,145,108,0.2);
+}
+
+.equipment-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: var(--space-sm);
+}
+
+.equipment-type {
+    font-size: 0.85em;
+    color: var(--color-text-secondary);
+}
+
+.equipment-model {
+    font-weight: 600;
+    color: #40916C;
+}
+
+.equipment-status {
+    display: inline-block;
+    padding: var(--space-xs) var(--space-sm);
+    border-radius: var(--radius-sm);
+    font-size: 0.8em;
+    font-weight: 600;
+}
+
+.equipment-status.working {
+    background: rgba(64,145,108,0.15);
+    color: #40916C;
+}
+
+.equipment-status.needs_repair {
+    background: rgba(204,119,34,0.15);
+    color: #CC7722;
+}
+
+.equipment-status.out_of_service {
+    background: rgba(155,34,38,0.15);
+    color: #9B2226;
+}
+
+.equipment-meta {
+    display: flex;
+    gap: var(--space-md);
+    font-size: 0.85em;
+    color: var(--color-text-secondary);
+}
+
+/* Empty state */
+.empty-state {
+    text-align: center;
+    padding: var(--space-xl);
+    color: var(--color-text-secondary);
+}
+
+.empty-state-icon {
+    font-size: 3rem;
+    opacity: 0.3;
+    margin-bottom: var(--space-md);
+}
+
+/* Mobile adjustments */
+@media (max-width: 768px) {
+    .zone-detail-header {
+        flex-direction: column;
+        gap: var(--space-md);
+    }
+
+    .stats-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="zone-detail-container">
+    <div class="zone-detail-header">
+        <div class="zone-title-section">
+            <h1>🌱 {{ zone.name }}</h1>
+            <span class="zone-code-badge">{{ zone.code }}</span>
+            {% if zone.description %}
+            <p class="zone-description">{{ zone.description }}</p>
+            {% endif %}
+        </div>
+        <a href="{% url 'core:dashboard' %}" class="back-link">← 返回地图</a>
+    </div>
+
+    <!-- Stats Overview -->
+    <div class="stats-grid">
+        <div class="stat-card plants">
+            <div class="stat-icon">🌱</div>
+            <div class="stat-value">{{ plant_count }}</div>
+            <div class="stat-label">种植物</div>
+        </div>
+        <div class="stat-card equipment">
+            <div class="stat-icon">🔧</div>
+            <div class="stat-value">{{ equipment_count }}</div>
+            <div class="stat-label">设备</div>
+        </div>
+        <div class="stat-card reports">
+            <div class="stat-icon">📋</div>
+            <div class="stat-value">{{ work_report_count }}</div>
+            <div class="stat-label">工作报告</div>
+        </div>
+        <div class="stat-card faults">
+            <div class="stat-icon">⚠️</div>
+            <div class="stat-value">{{ recent_fault_count }}</div>
+            <div class="stat-label">近30天故障</div>
+        </div>
+    </div>
+
+    <!-- Plants Section -->
+    <div class="detail-section">
+        <h2 class="section-title">🌱 当前植物</h2>
+        {% if plants %}
+        <div class="plant-grid">
+            {% for plant in plants %}
+            <div class="plant-card">
+                <div class="plant-name">{{ plant.name }}</div>
+                {% if plant.scientific_name %}
+                <div class="plant-scientific">{{ plant.scientific_name }}</div>
+                {% endif %}
+                <div class="plant-meta">
+                    <span>数量: {{ plant.quantity }}</span>
+                    {% if plant.planting_date %}
+                    <span class="plant-date-range">
+                        📅 {% if plant.end_date %}{{ plant.planting_date }} ~ {{ plant.end_date }}{% else %}{{ plant.planting_date }} ~ 持续{% endif %}
+                    </span>
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="empty-state">
+            <div class="empty-state-icon">🌱</div>
+            <p>暂无当前植物记录</p>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Equipment Section -->
+    <div class="detail-section">
+        <h2 class="section-title">🔧 当前设备</h2>
+        {% if equipment %}
+        <div class="equipment-grid">
+            {% for eq in equipment %}
+            <div class="equipment-card">
+                <div class="equipment-header">
+                    <div>
+                        <div class="equipment-type">{{ eq.equipment_details.equipment_type_display }}</div>
+                        <div class="equipment-model">{{ eq.equipment_details.manufacturer }} {{ eq.equipment_details.model_name }}</div>
+                    </div>
+                    <span class="equipment-status {{ eq.status }}">{{ eq.status_display }}</span>
+                </div>
+                <div class="equipment-meta">
+                    <span>数量: {{ eq.quantity }}</span>
+                    {% if eq.location_in_zone %}
+                    <span>位置: {{ eq.location_in_zone }}</span>
+                    {% endif %}
+                    {% if eq.installation_date %}
+                    <span>📅 安装: {{ eq.installation_date }}</span>
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="empty-state">
+            <div class="empty-state-icon">🔧</div>
+            <p>暂无当前设备记录</p>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Actions -->
+    <div class="detail-section">
+        <h2 class="section-title">📝 快捷操作</h2>
+        <div style="display: flex; gap: var(--space-md); flex-wrap: wrap;">
+            <a href="{% url 'core:zone_edit' zone.id %}" class="btn btn-secondary">编辑区域信息</a>
+            <a href="{% url 'core:work_report_create' %}?zone={{ zone.id }}" class="btn btn-primary">提交工作报告</a>
+        </div>
+    </div>
+
+    <div class="back-link" style="margin-top: var(--space-xl);">
+        <a href="{% url 'core:dashboard' %}">← 返回地图总览</a>
+    </div>
+</div>
+{% endblock %}
