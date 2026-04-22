@@ -110,6 +110,30 @@
     letter-spacing: 0.5px;
 }
 
+.zone-table th.sortable {
+    cursor: pointer;
+    user-select: none;
+    transition: background 0.15s;
+}
+
+.zone-table th.sortable:hover {
+    background: var(--color-surface-dark);
+}
+
+.zone-table th.sorted {
+    color: var(--color-primary);
+}
+
+.sort-icon {
+    margin-left: 6px;
+    font-size: 0.75em;
+    opacity: 0.5;
+}
+
+.zone-table th.sorted .sort-icon {
+    opacity: 1;
+}
+
 .zone-table tr:hover td {
     background: var(--color-surface);
 }
@@ -507,6 +531,46 @@
     background: rgba(155, 34, 38, 0.1);
 }
 
+/* Color Picker */
+.color-picker-wrapper {
+    display: flex;
+    align-items: center;
+    gap: var(--space-md);
+}
+
+.color-picker-wrapper input[type="color"] {
+    width: 50px;
+    height: 40px;
+    padding: 2px;
+    border: 2px solid var(--color-surface-dark);
+    border-radius: var(--radius-md);
+    cursor: pointer;
+}
+
+.color-picker-wrapper input[type="color"]::-webkit-color-swatch-wrapper {
+    padding: 2px;
+}
+
+.color-picker-wrapper input[type="color"]::-webkit-color-swatch {
+    border-radius: var(--radius-sm);
+    border: none;
+}
+
+.color-text-input {
+    width: 100px;
+    padding: var(--space-sm) var(--space-md);
+    border: 2px solid var(--color-surface-dark);
+    border-radius: var(--radius-md);
+    font-family: var(--font-mono);
+    font-size: 0.9rem;
+    text-transform: uppercase;
+}
+
+.color-text-input:focus {
+    outline: none;
+    border-color: var(--color-primary);
+}
+
 /* Responsive */
 @media (max-width: 600px) {
     .coord-list-header,
@@ -518,4 +582,35 @@
     #editMap {
         height: 300px;
     }
+}
+
+/* Plant Tags */
+.plant-tag {
+    display: inline-flex;
+    align-items: center;
+    padding: 6px 12px;
+    background: var(--color-primary);
+    color: white;
+    border-radius: 20px;
+    font-size: 0.875rem;
+    font-weight: 500;
+}
+
+.plant-tag button {
+    margin-left: 6px;
+    opacity: 0.8;
+}
+
+.plant-tag button:hover {
+    opacity: 1;
+}
+
+.selected-plants {
+    min-height: 40px;
+}
+
+.selected-plants:empty::before {
+    content: '暂未选择植物';
+    color: var(--color-text-muted);
+    font-size: 0.875rem;
 }

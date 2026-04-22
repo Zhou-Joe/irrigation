@@ -50,15 +50,22 @@ def user_role(request):
             'is_field_worker': False,
             'is_dept_user': False,
             'user_role': None,
+            'pending_registrations': 0,
         }
 
     user = request.user
     role = get_user_role(user)
+    admin = is_admin(user)
+
+    pending_reg = 0
+    if admin:
+        pending_reg = RegistrationRequest.objects.filter(status='pending').count()
 
     return {
-        'is_admin': is_admin(user),
+        'is_admin': admin,
         'is_manager': role == 'manager',
         'is_field_worker': is_field_worker(user),
         'is_dept_user': is_dept_user(user),
         'user_role': role,
+        'pending_registrations': pending_reg,
     }

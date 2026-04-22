@@ -389,6 +389,12 @@ small, .text-small {
     color: var(--color-delayed);
 }
 
+/* Status: Unarranged */
+.status-unarranged {
+    background: rgba(136, 136, 136, 0.15);
+    color: #888888;
+}
+
 /* ==========================================================================
    FORM ELEMENTS
    ========================================================================== */

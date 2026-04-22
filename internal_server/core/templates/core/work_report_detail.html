@@ -1,0 +1,69 @@
+{% extends 'core/base.html' %}
+{% load static %}
+
+{% block title %}日报详情 - {{ report.date }}{% endblock %}
+{% block nav_work_reports %}active{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'css/settings.css' %}">
+{% endblock %}
+
+{% block content %}
+<div class="form-container">
+    <div class="form-header">
+        <h1>日报详情 #{{ report.id }}</h1>
+        <div style="display:flex;gap:8px;">
+            <a href="{% url 'core:work_report_edit' report.id %}" class="btn btn-primary">编辑</a>
+            <a href="{% url 'core:work_reports' %}" class="btn btn-secondary">← 返回列表</a>
+        </div>
+    </div>
+
+    <div class="form-section">
+        <h2>基本信息</h2>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;font-size:0.9rem;">
+            <div><strong>日期:</strong> {{ report.date }}</div>
+            <div><strong>天气:</strong> {{ report.weather|default:"-" }}</div>
+            <div><strong>处理人:</strong> {{ report.worker.full_name }}</div>
+            <div><strong>位置:</strong> {{ report.location.name }}</div>
+            <div><strong>工作分类:</strong> {{ report.work_category.name }}</div>
+            <div><strong>故障/事件位置:</strong> {% if report.zone_location %}{{ report.zone_location.code }}{% else %}-{% endif %}</div>
+            <div><strong>信息来源:</strong> {{ report.info_source.name|default:"-" }}</div>
+            <div><strong>疑难问题:</strong>
+                {% if report.is_difficult %}
+                    是 {% if report.is_difficult_resolved %}<span style="color:var(--color-success);">(已处理)</span>{% else %}<span style="color:var(--color-warning);">(未处理)</span>{% endif %}
+                {% else %} 否 {% endif %}
+            </div>
+        </div>
+        <div style="margin-top:12px;">
+            <strong>备注/工作内容:</strong>
+            <p style="margin-top:4px;padding:12px;background:var(--color-surface);border-radius:8px;white-space:pre-wrap;">{{ report.remark }}</p>
+        </div>
+    </div>
+
+    <div class="form-section">
+        <h2>故障计数</h2>
+        {% if fault_entries %}
+        <table style="width:100%;border-collapse:collapse;font-size:0.85rem;">
+            <thead>
+                <tr style="background:var(--color-surface-dark);">
+                    <th style="padding:8px 12px;text-align:left;">故障大类</th>
+                    <th style="padding:8px 12px;text-align:left;">故障子类型</th>
+                    <th style="padding:8px 12px;text-align:center;">数量</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for entry in fault_entries %}
+                <tr style="border-bottom:1px solid var(--color-surface-dark);">
+                    <td style="padding:8px 12px;">{{ entry.fault_subtype.category.name_zh }}</td>
+                    <td style="padding:8px 12px;">{{ entry.fault_subtype.name_zh }}</td>
+                    <td style="padding:8px 12px;text-align:center;font-weight:600;">{{ entry.count }}</td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p style="color:var(--color-text-muted);">无故障记录</p>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

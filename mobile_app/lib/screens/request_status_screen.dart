@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import 'request_detail_screen.dart';
+import '../widgets/modern_ui.dart';
 
 class RequestStatusScreen extends StatefulWidget {
   final bool isAdmin;
@@ -21,7 +22,8 @@ class _RequestStatusScreenState extends State<RequestStatusScreen> {
   List<Map<String, dynamic>> _requests = [];
   bool _isLoading = true;
   String? _error;
-  String _filterType = 'all'; // 'all', 'water', 'maintenance', 'project_support'
+  String _filterType =
+      'all'; // 'all', 'water', 'maintenance', 'project_support'
 
   @override
   void initState() {
@@ -104,79 +106,57 @@ class _RequestStatusScreenState extends State<RequestStatusScreen> {
       appBar: AppBar(
         title: Text(widget.isDeptUser ? '浇水需求' : '需求状态'),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _loadRequests,
-          ),
+          IconButton(icon: const Icon(Icons.refresh), onPressed: _loadRequests),
         ],
       ),
-      body: Column(
-        children: [
-          // Filter chips (only for non-dept users)
-          if (!widget.isDeptUser)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-              child: SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(
-                  children: [
-                    _buildFilterChip('全部', 'all'),
-                    const SizedBox(width: 8),
-                    _buildFilterChip('浇水协调', 'water'),
-                    const SizedBox(width: 8),
-                    _buildFilterChip('维护维修', 'maintenance'),
-                    const SizedBox(width: 8),
-                    _buildFilterChip('项目支持', 'project_support'),
-                  ],
+      body: AppBackground(
+        child: Column(
+          children: [
+            if (!widget.isDeptUser)
+              Container(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      _buildFilterChip('全部', 'all'),
+                      const SizedBox(width: 8),
+                      _buildFilterChip('浇水协调', 'water'),
+                      const SizedBox(width: 8),
+                      _buildFilterChip('维护维修', 'maintenance'),
+                      const SizedBox(width: 8),
+                      _buildFilterChip('项目支持', 'project_support'),
+                    ],
+                  ),
                 ),
               ),
+            Expanded(
+              child: _isLoading
+                  ? const Center(child: CircularProgressIndicator())
+                  : _error != null
+                  ? AppErrorState(message: _error!, onRetry: _loadRequests)
+                  : _filteredRequests.isEmpty
+                  ? AppEmptyState(
+                      icon: widget.isDeptUser
+                          ? Icons.water_drop_outlined
+                          : Icons.article_outlined,
+                      title: widget.isDeptUser ? '暂无浇水需求记录' : '暂无需求记录',
+                      subtitle: '新提交的需求会在这里集中展示。',
+                    )
+                  : ListView.builder(
+                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 110),
+                      itemCount: _filteredRequests.length,
+                      itemBuilder: (context, index) {
+                        final request = _filteredRequests[index];
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: _buildRequestCard(request),
+                        );
+                      },
+                    ),
             ),
-          // Request list
-          Expanded(
-            child: _isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : _error != null
-                    ? Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Text(_error!, style: const TextStyle(color: Colors.red)),
-                            const SizedBox(height: 16),
-                            ElevatedButton(
-                              onPressed: _loadRequests,
-                              child: const Text('重新加载'),
-                            ),
-                          ],
-                        ),
-                      )
-                    : _filteredRequests.isEmpty
-                        ? Center(
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(
-                                  widget.isDeptUser ? Icons.water_drop_outlined : Icons.article_outlined,
-                                  size: 64,
-                                  color: Colors.grey,
-                                ),
-                                const SizedBox(height: 16),
-                                Text(
-                                  widget.isDeptUser ? '暂无浇水需求记录' : '暂无需求记录',
-                                  style: const TextStyle(color: Colors.grey),
-                                ),
-                              ],
-                            ),
-                          )
-                        : ListView.builder(
-                            padding: const EdgeInsets.all(8),
-                            itemCount: _filteredRequests.length,
-                            itemBuilder: (context, index) {
-                              final request = _filteredRequests[index];
-                              return _buildRequestCard(request);
-                            },
-                          ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -197,8 +177,8 @@ class _RequestStatusScreenState extends State<RequestStatusScreen> {
   Widget _buildRequestCard(Map<String, dynamic> request) {
     final statusColor = _getStatusColor(request['status']);
 
-    return Card(
-      margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+    return AppCard(
+      padding: const EdgeInsets.all(16),
       child: InkWell(
         onTap: () async {
           final result = await Navigator.push(
@@ -214,78 +194,102 @@ class _RequestStatusScreenState extends State<RequestStatusScreen> {
           );
           if (result == true) _loadRequests();
         },
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(24),
         child: Padding(
-          padding: const EdgeInsets.all(12),
+          padding: EdgeInsets.zero,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
                 children: [
-                  Icon(_getTypeIcon(request['type']), size: 20, color: const Color(0xFF1B4332)),
+                  Container(
+                    width: 42,
+                    height: 42,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF2E6B55).withOpacity(0.10),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: Icon(
+                      _getTypeIcon(request['type']),
+                      size: 20,
+                      color: const Color(0xFF1B4332),
+                    ),
+                  ),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
                       request['type'],
-                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                      ),
                     ),
                   ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: statusColor.withOpacity(0.2),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Text(
-                      _getStatusText(request['status']),
-                      style: TextStyle(color: statusColor, fontWeight: FontWeight.w500),
-                    ),
+                  AppStatusBadge(
+                    label: _getStatusText(request['status']),
+                    color: statusColor,
                   ),
                 ],
               ),
-              const SizedBox(height: 8),
-              Row(
+              const SizedBox(height: 14),
+              Wrap(
+                spacing: 12,
+                runSpacing: 8,
                 children: [
-                  const Icon(Icons.location_on, size: 16, color: Colors.grey),
-                  const SizedBox(width: 4),
-                  Text(request['zone'], style: TextStyle(color: Colors.grey[700])),
-                  const SizedBox(width: 16),
-                  const Icon(Icons.person, size: 16, color: Colors.grey),
-                  const SizedBox(width: 4),
-                  Text(request['user'], style: TextStyle(color: Colors.grey[700])),
+                  _buildMetaChip(Icons.location_on_outlined, request['zone']),
+                  _buildMetaChip(Icons.person_outline_rounded, request['user']),
+                  _buildMetaChip(
+                    Icons.calendar_today_outlined,
+                    request['date'],
+                  ),
                 ],
               ),
-              const SizedBox(height: 4),
-              Row(
-                children: [
-                  const Icon(Icons.calendar_today, size: 16, color: Colors.grey),
-                  const SizedBox(width: 4),
-                  Text(request['date'], style: TextStyle(color: Colors.grey[700])),
-                  const Spacer(),
-                  const Icon(Icons.chevron_right, size: 16, color: Colors.grey),
-                ],
+              const SizedBox(height: 10),
+              Align(
+                alignment: Alignment.centerRight,
+                child: Icon(
+                  Icons.chevron_right_rounded,
+                  color: Colors.grey.shade500,
+                ),
               ),
               // Quick actions for admin
               if (widget.isAdmin && request['status'] == 'submitted')
                 Padding(
                   padding: const EdgeInsets.only(top: 12),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
+                  child: Wrap(
+                    alignment: WrapAlignment.end,
+                    spacing: 6,
+                    runSpacing: 6,
                     children: [
                       TextButton.icon(
                         icon: const Icon(Icons.check, color: Color(0xFF40916C)),
                         label: const Text('批准'),
-                        onPressed: () => _handleAction(request['id'], request['type_code'] ?? 'maintenance', 'approved'),
+                        onPressed: () => _handleAction(
+                          request['id'],
+                          request['type_code'] ?? 'maintenance',
+                          'approved',
+                        ),
                       ),
                       TextButton.icon(
                         icon: const Icon(Icons.close, color: Color(0xFF9B2226)),
                         label: const Text('拒绝'),
-                        onPressed: () => _handleAction(request['id'], request['type_code'] ?? 'maintenance', 'rejected'),
+                        onPressed: () => _handleAction(
+                          request['id'],
+                          request['type_code'] ?? 'maintenance',
+                          'rejected',
+                        ),
                       ),
                       TextButton.icon(
-                        icon: const Icon(Icons.question_mark, color: Color(0xFFCC7722)),
+                        icon: const Icon(
+                          Icons.question_mark,
+                          color: Color(0xFFCC7722),
+                        ),
                         label: const Text('补充信息'),
-                        onPressed: () => _handleAction(request['id'], request['type_code'] ?? 'maintenance', 'info_needed'),
+                        onPressed: () => _handleAction(
+                          request['id'],
+                          request['type_code'] ?? 'maintenance',
+                          'info_needed',
+                        ),
                       ),
                     ],
                   ),
@@ -293,6 +297,30 @@ class _RequestStatusScreenState extends State<RequestStatusScreen> {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildMetaChip(IconData icon, String text) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceSoft.withOpacity(0.75),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 15, color: AppColors.muted),
+          const SizedBox(width: 6),
+          Text(
+            text,
+            style: const TextStyle(
+              color: AppColors.deepGreen,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -316,9 +344,9 @@ class _RequestStatusScreenState extends State<RequestStatusScreen> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('更新失败: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('更新失败: $e')));
       }
     }
   }

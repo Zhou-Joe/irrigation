@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import '../providers/auth_provider.dart';
+import '../widgets/modern_ui.dart';
 
 class RequestDetailScreen extends StatefulWidget {
   final String typeCode;
@@ -65,14 +66,18 @@ class _RequestDetailScreenState extends State<RequestDetailScreen> {
 
     try {
       final api = context.read<AuthProvider>().api;
-      final detail = await api.getRequestDetail(widget.typeCode, widget.requestId);
+      final detail = await api.getRequestDetail(
+        widget.typeCode,
+        widget.requestId,
+      );
 
       setState(() {
         _detail = detail;
         _status = detail['status'] ?? 'submitted';
         _statusNotesController.text = detail['status_notes'] ?? '';
 
-        if (widget.typeCode == 'maintenance' || widget.typeCode == 'project_support') {
+        if (widget.typeCode == 'maintenance' ||
+            widget.typeCode == 'project_support') {
           _date = DateTime.tryParse(detail['date'] ?? '') ?? DateTime.now();
           _startTime = _parseTime(detail['start_time']) ?? TimeOfDay.now();
           _endTime = _parseTime(detail['end_time']) ?? TimeOfDay.now();
@@ -85,8 +90,11 @@ class _RequestDetailScreenState extends State<RequestDetailScreen> {
           _userTypeOtherController.text = detail['user_type_other'] ?? '';
           _requestType = detail['request_type'] ?? '停水需求';
           _requestTypeOtherController.text = detail['request_type_other'] ?? '';
-          _startDateTime = DateTime.tryParse(detail['start_datetime'] ?? '') ?? DateTime.now();
-          _endDateTime = DateTime.tryParse(detail['end_datetime'] ?? '') ?? DateTime.now();
+          _startDateTime =
+              DateTime.tryParse(detail['start_datetime'] ?? '') ??
+              DateTime.now();
+          _endDateTime =
+              DateTime.tryParse(detail['end_datetime'] ?? '') ?? DateTime.now();
         }
 
         _isLoading = false;
@@ -116,11 +124,14 @@ class _RequestDetailScreenState extends State<RequestDetailScreen> {
       final api = context.read<AuthProvider>().api;
       Map<String, dynamic> data;
 
-      if (widget.typeCode == 'maintenance' || widget.typeCode == 'project_support') {
+      if (widget.typeCode == 'maintenance' ||
+          widget.typeCode == 'project_support') {
         data = {
           'date': DateFormat('yyyy-MM-dd').format(_date),
-          'start_time': '${_startTime.hour.toString().padLeft(2, '0')}:${_startTime.minute.toString().padLeft(2, '0')}:00',
-          'end_time': '${_endTime.hour.toString().padLeft(2, '0')}:${_endTime.minute.toString().padLeft(2, '0')}:00',
+          'start_time':
+              '${_startTime.hour.toString().padLeft(2, '0')}:${_startTime.minute.toString().padLeft(2, '0')}:00',
+          'end_time':
+              '${_endTime.hour.toString().padLeft(2, '0')}:${_endTime.minute.toString().padLeft(2, '0')}:00',
           'participants': _participantsController.text.trim(),
           'work_content': _workContentController.text.trim(),
           'materials': _materialsController.text.trim(),
@@ -149,15 +160,18 @@ class _RequestDetailScreenState extends State<RequestDetailScreen> {
       });
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('保存成功'), backgroundColor: Color(0xFF40916C)),
+        const SnackBar(
+          content: Text('保存成功'),
+          backgroundColor: Color(0xFF40916C),
+        ),
       );
 
       _loadDetail();
     } catch (e) {
       setState(() => _isSaving = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('保存失败: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('保存失败: $e')));
     }
   }
 
@@ -191,7 +205,8 @@ class _RequestDetailScreenState extends State<RequestDetailScreen> {
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
     final isAdmin = auth.isAdmin;
-    final canEdit = isAdmin || _status == 'submitted' || _status == 'info_needed';
+    final canEdit =
+        isAdmin || _status == 'submitted' || _status == 'info_needed';
 
     return Scaffold(
       appBar: AppBar(
@@ -204,59 +219,102 @@ class _RequestDetailScreenState extends State<RequestDetailScreen> {
             ),
         ],
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _error != null
-              ? Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text(_error!, style: const TextStyle(color: Colors.red)),
-                      const SizedBox(height: 16),
-                      ElevatedButton(onPressed: _loadDetail, child: const Text('重新加载')),
-                    ],
-                  ),
-                )
-              : SingleChildScrollView(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Status header
-                      _buildStatusHeader(),
-                      const SizedBox(height: 16),
-
-                      // Zone info
-                      _buildInfoRow('区域', widget.zoneName, Icons.location_on),
-                      const SizedBox(height: 8),
-                      _buildInfoRow('提交人', _detail?['submitter_name'] ?? '', Icons.person),
-                      const SizedBox(height: 16),
-
-                      // Type-specific content
-                      if (widget.typeCode == 'maintenance' || widget.typeCode == 'project_support')
-                        _buildMaintenanceContent()
-                      else
-                        _buildWaterContent(),
-
-                      const SizedBox(height: 24),
-
-                      // Save button (when editing)
-                      if (_isEditing)
-                        FilledButton.icon(
-                          onPressed: _isSaving ? null : _save,
-                          icon: _isSaving
-                              ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                              : const Icon(Icons.save),
-                          label: Text(_isSaving ? '保存中...' : '保存'),
-                          style: FilledButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(vertical: 16),
-                            backgroundColor: const Color(0xFF40916C),
+      body: AppBackground(
+        child: _isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : _error != null
+            ? AppErrorState(message: _error!, onRetry: _loadDetail)
+            : SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 40),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    AppHeroCard(
+                      title: widget.typeName,
+                      subtitle: '区域 ${widget.zoneName}',
+                      icon: _heroIcon,
+                      actions: [
+                        if (canEdit && !_isLoading)
+                          IconButton(
+                            style: IconButton.styleFrom(
+                              backgroundColor: Colors.white.withOpacity(0.14),
+                              foregroundColor: Colors.white,
+                            ),
+                            icon: Icon(
+                              _isEditing
+                                  ? Icons.close_rounded
+                                  : Icons.edit_rounded,
+                            ),
+                            onPressed: () =>
+                                setState(() => _isEditing = !_isEditing),
                           ),
-                        ),
-                    ],
-                  ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    _buildStatusHeader(),
+                    const SizedBox(height: 16),
+                    AppCard(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const AppSectionTitle(
+                            title: '基础信息',
+                            subtitle: '当前工单的提交人与归属区域',
+                          ),
+                          const SizedBox(height: 12),
+                          AppInfoRow(
+                            icon: Icons.location_on_outlined,
+                            label: '区域',
+                            value: widget.zoneName,
+                          ),
+                          AppInfoRow(
+                            icon: Icons.person_outline_rounded,
+                            label: '提交人',
+                            value: _detail?['submitter_name'] ?? '',
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    if (widget.typeCode == 'maintenance' ||
+                        widget.typeCode == 'project_support')
+                      _buildMaintenanceContent()
+                    else
+                      _buildWaterContent(),
+                    const SizedBox(height: 24),
+                    if (_isEditing)
+                      FilledButton.icon(
+                        onPressed: _isSaving ? null : _save,
+                        icon: _isSaving
+                            ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : const Icon(Icons.save_rounded),
+                        label: Text(_isSaving ? '保存中...' : '保存'),
+                      ),
+                  ],
                 ),
+              ),
+      ),
     );
+  }
+
+  IconData get _heroIcon {
+    switch (widget.typeCode) {
+      case 'maintenance':
+        return Icons.build_circle_outlined;
+      case 'project_support':
+        return Icons.support_agent_rounded;
+      case 'water':
+        return Icons.water_drop_rounded;
+      default:
+        return Icons.article_outlined;
+    }
   }
 
   Widget _buildStatusHeader() {
@@ -264,280 +322,372 @@ class _RequestDetailScreenState extends State<RequestDetailScreen> {
     final approverName = _detail?['approver_name'] ?? '';
     final processedAt = _detail?['processed_at'] ?? '';
 
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: statusColor.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: statusColor.withOpacity(0.3)),
-      ),
+    return AppCard(
+      color: statusColor.withOpacity(0.08),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Icon(Icons.info_outline, color: statusColor),
-              const SizedBox(width: 8),
-              Text('状态: ${_getStatusText(_status)}', style: TextStyle(color: statusColor, fontWeight: FontWeight.w600)),
+              AppStatusBadge(
+                label: _getStatusText(_status),
+                color: statusColor,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  '状态追踪',
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleMedium?.copyWith(color: AppColors.deepGreen),
+                ),
+              ),
             ],
           ),
           if (_detail?['status_notes']?.toString().isNotEmpty == true)
             Padding(
-              padding: const EdgeInsets.only(top: 8),
-              child: Text('备注: ${_detail?['status_notes']}', style: TextStyle(color: Colors.grey[600], fontSize: 12)),
+              padding: const EdgeInsets.only(top: 12),
+              child: Text(
+                _detail?['status_notes'],
+                style: TextStyle(color: Colors.grey[700]),
+              ),
             ),
           if (approverName.isNotEmpty) ...[
-            const SizedBox(height: 8),
+            const SizedBox(height: 12),
             Divider(color: statusColor.withOpacity(0.2)),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Icon(Icons.verified_user, size: 16, color: statusColor),
-                const SizedBox(width: 6),
-                Text(
-                  '审批人: $approverName',
-                  style: TextStyle(fontSize: 12, color: Colors.grey[700]),
-                ),
-                if (processedAt.isNotEmpty) ...[
-                  const SizedBox(width: 16),
-                  Text(
-                    processedAt.replaceAll('T', ' ').substring(0, 16),
-                    style: TextStyle(fontSize: 12, color: Colors.grey[500]),
-                  ),
-                ],
-              ],
+            const SizedBox(height: 12),
+            AppInfoRow(
+              icon: Icons.verified_user_outlined,
+              label: '审批人',
+              value: approverName,
             ),
+            if (processedAt.isNotEmpty)
+              AppInfoRow(
+                icon: Icons.schedule_rounded,
+                label: '处理时间',
+                value: processedAt.replaceAll('T', ' ').substring(0, 16),
+              ),
           ],
         ],
       ),
     );
   }
 
-  Widget _buildInfoRow(String label, String value, IconData icon) {
-    return Row(
-      children: [
-        Icon(icon, size: 18, color: Colors.grey),
-        const SizedBox(width: 8),
-        Text('$label: ', style: TextStyle(color: Colors.grey[600])),
-        Text(value, style: const TextStyle(fontWeight: FontWeight.w500)),
-      ],
-    );
-  }
-
   Widget _buildMaintenanceContent() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _buildSectionTitle('时间信息'),
-        const SizedBox(height: 8),
-        if (_isEditing)
-          Row(
-            children: [
-              Expanded(
-                child: InkWell(
-                  onTap: () async {
-                    final picked = await showDatePicker(
-                      context: context,
-                      initialDate: _date,
-                      firstDate: DateTime.now().subtract(const Duration(days: 30)),
-                      lastDate: DateTime.now().add(const Duration(days: 30)),
-                    );
-                    if (picked != null) setState(() => _date = picked);
-                  },
-                  child: InputDecorator(
-                    decoration: const InputDecoration(labelText: '日期', border: OutlineInputBorder()),
-                    child: Text(DateFormat('yyyy-MM-dd').format(_date)),
+    return AppCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const AppSectionTitle(title: '时间与工作内容', subtitle: '维护维修 / 项目支持的执行详情'),
+          const SizedBox(height: 14),
+          _buildSectionTitle('时间信息'),
+          const SizedBox(height: 8),
+          if (_isEditing)
+            Row(
+              children: [
+                Expanded(
+                  child: InkWell(
+                    onTap: () async {
+                      final picked = await showDatePicker(
+                        context: context,
+                        initialDate: _date,
+                        firstDate: DateTime.now().subtract(
+                          const Duration(days: 30),
+                        ),
+                        lastDate: DateTime.now().add(const Duration(days: 30)),
+                      );
+                      if (picked != null) setState(() => _date = picked);
+                    },
+                    child: InputDecorator(
+                      decoration: const InputDecoration(
+                        labelText: '日期',
+                        border: OutlineInputBorder(),
+                      ),
+                      child: Text(DateFormat('yyyy-MM-dd').format(_date)),
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: InkWell(
-                  onTap: () async {
-                    final picked = await showTimePicker(context: context, initialTime: _startTime);
-                    if (picked != null) setState(() => _startTime = picked);
-                  },
-                  child: InputDecorator(
-                    decoration: const InputDecoration(labelText: '开始时间', border: OutlineInputBorder()),
-                    child: Text(_startTime.format(context)),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: InkWell(
+                    onTap: () async {
+                      final picked = await showTimePicker(
+                        context: context,
+                        initialTime: _startTime,
+                      );
+                      if (picked != null) setState(() => _startTime = picked);
+                    },
+                    child: InputDecorator(
+                      decoration: const InputDecoration(
+                        labelText: '开始时间',
+                        border: OutlineInputBorder(),
+                      ),
+                      child: Text(_startTime.format(context)),
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: InkWell(
-                  onTap: () async {
-                    final picked = await showTimePicker(context: context, initialTime: _endTime);
-                    if (picked != null) setState(() => _endTime = picked);
-                  },
-                  child: InputDecorator(
-                    decoration: const InputDecoration(labelText: '结束时间', border: OutlineInputBorder()),
-                    child: Text(_endTime.format(context)),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: InkWell(
+                    onTap: () async {
+                      final picked = await showTimePicker(
+                        context: context,
+                        initialTime: _endTime,
+                      );
+                      if (picked != null) setState(() => _endTime = picked);
+                    },
+                    child: InputDecorator(
+                      decoration: const InputDecoration(
+                        labelText: '结束时间',
+                        border: OutlineInputBorder(),
+                      ),
+                      child: Text(_endTime.format(context)),
+                    ),
                   ),
                 ),
-              ),
-            ],
-          )
-        else
-          Text('日期: ${_detail?['date']}  时间: ${_detail?['start_time']} - ${_detail?['end_time']}'),
-        const SizedBox(height: 16),
+              ],
+            )
+          else
+            Text(
+              '日期: ${_detail?['date']}  时间: ${_detail?['start_time']} - ${_detail?['end_time']}',
+            ),
+          const SizedBox(height: 16),
 
-        _buildSectionTitle('工作信息'),
-        const SizedBox(height: 8),
-        if (_isEditing)
-          Column(
-            children: [
-              TextFormField(
-                controller: _participantsController,
-                decoration: const InputDecoration(labelText: '参与人员', border: OutlineInputBorder()),
-              ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: _workContentController,
-                decoration: const InputDecoration(labelText: '工作内容', border: OutlineInputBorder()),
-                maxLines: 3,
-              ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: _materialsController,
-                decoration: const InputDecoration(labelText: '材料损耗', border: OutlineInputBorder()),
-                maxLines: 2,
-              ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: _feedbackController,
-                decoration: const InputDecoration(labelText: '问题反馈', border: OutlineInputBorder()),
-                maxLines: 2,
-              ),
-            ],
-          )
-        else
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _buildDetailRow('参与人员', _detail?['participants'] ?? ''),
-              _buildDetailRow('工作内容', _detail?['work_content'] ?? ''),
-              _buildDetailRow('材料损耗', _detail?['materials'] ?? ''),
-              _buildDetailRow('问题反馈', _detail?['feedback'] ?? ''),
-            ],
-          ),
-      ],
+          _buildSectionTitle('工作信息'),
+          const SizedBox(height: 8),
+          if (_isEditing)
+            Column(
+              children: [
+                TextFormField(
+                  controller: _participantsController,
+                  decoration: const InputDecoration(
+                    labelText: '参与人员',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _workContentController,
+                  decoration: const InputDecoration(
+                    labelText: '工作内容',
+                    border: OutlineInputBorder(),
+                  ),
+                  maxLines: 3,
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _materialsController,
+                  decoration: const InputDecoration(
+                    labelText: '材料损耗',
+                    border: OutlineInputBorder(),
+                  ),
+                  maxLines: 2,
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _feedbackController,
+                  decoration: const InputDecoration(
+                    labelText: '问题反馈',
+                    border: OutlineInputBorder(),
+                  ),
+                  maxLines: 2,
+                ),
+              ],
+            )
+          else
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildDetailRow('参与人员', _detail?['participants'] ?? ''),
+                _buildDetailRow('工作内容', _detail?['work_content'] ?? ''),
+                _buildDetailRow('材料损耗', _detail?['materials'] ?? ''),
+                _buildDetailRow('问题反馈', _detail?['feedback'] ?? ''),
+              ],
+            ),
+        ],
+      ),
     );
   }
 
   Widget _buildWaterContent() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _buildSectionTitle('需求信息'),
-        const SizedBox(height: 8),
-        if (_isEditing)
-          Column(
-            children: [
-              DropdownButtonFormField<String>(
-                value: _userType,
-                decoration: const InputDecoration(labelText: '用户类型', border: OutlineInputBorder()),
-                items: const [
-                  DropdownMenuItem(value: 'ENT', child: Text('ENT')),
-                  DropdownMenuItem(value: 'FAM', child: Text('FAM')),
-                  DropdownMenuItem(value: 'FES', child: Text('FES')),
-                  DropdownMenuItem(value: '其他', child: Text('其他')),
-                ],
-                onChanged: (v) => setState(() => _userType = v!),
-              ),
-              if (_userType == '其他')
-                Padding(
-                  padding: const EdgeInsets.only(top: 12),
-                  child: TextFormField(
-                    controller: _userTypeOtherController,
-                    decoration: const InputDecoration(labelText: '其他用户类型', border: OutlineInputBorder()),
+    return AppCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const AppSectionTitle(title: '需求信息', subtitle: '浇水协调需求的用户类型与时间段'),
+          const SizedBox(height: 14),
+          if (_isEditing)
+            Column(
+              children: [
+                DropdownButtonFormField<String>(
+                  value: _userType,
+                  decoration: const InputDecoration(
+                    labelText: '用户类型',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: const [
+                    DropdownMenuItem(value: 'ENT', child: Text('ENT')),
+                    DropdownMenuItem(value: 'FAM', child: Text('FAM')),
+                    DropdownMenuItem(value: 'FES', child: Text('FES')),
+                    DropdownMenuItem(value: '其他', child: Text('其他')),
+                  ],
+                  onChanged: (v) => setState(() => _userType = v!),
+                ),
+                if (_userType == '其他')
+                  Padding(
+                    padding: const EdgeInsets.only(top: 12),
+                    child: TextFormField(
+                      controller: _userTypeOtherController,
+                      decoration: const InputDecoration(
+                        labelText: '其他用户类型',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                  ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String>(
+                  value: _requestType,
+                  decoration: const InputDecoration(
+                    labelText: '需求类别',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: const [
+                    DropdownMenuItem(value: '停水需求', child: Text('停水需求')),
+                    DropdownMenuItem(value: '新苗程序', child: Text('新苗程序')),
+                    DropdownMenuItem(value: '减小水量', child: Text('减小水量')),
+                    DropdownMenuItem(value: '加大水量', child: Text('加大水量')),
+                    DropdownMenuItem(value: '其他需求', child: Text('其他需求')),
+                  ],
+                  onChanged: (v) => setState(() => _requestType = v!),
+                ),
+                if (_requestType == '其他需求')
+                  Padding(
+                    padding: const EdgeInsets.only(top: 12),
+                    child: TextFormField(
+                      controller: _requestTypeOtherController,
+                      decoration: const InputDecoration(
+                        labelText: '其他需求类别',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                  ),
+                const SizedBox(height: 16),
+                InkWell(
+                  onTap: () async {
+                    final picked = await showDatePicker(
+                      context: context,
+                      initialDate: _startDateTime,
+                      firstDate: DateTime.now().subtract(
+                        const Duration(days: 30),
+                      ),
+                      lastDate: DateTime.now().add(const Duration(days: 30)),
+                    );
+                    if (picked != null) {
+                      final time = await showTimePicker(
+                        context: context,
+                        initialTime: TimeOfDay.fromDateTime(_startDateTime),
+                      );
+                      if (time != null) {
+                        setState(
+                          () => _startDateTime = DateTime(
+                            picked.year,
+                            picked.month,
+                            picked.day,
+                            time.hour,
+                            time.minute,
+                          ),
+                        );
+                      }
+                    }
+                  },
+                  child: InputDecorator(
+                    decoration: const InputDecoration(
+                      labelText: '起始时间',
+                      border: OutlineInputBorder(),
+                    ),
+                    child: Text(
+                      DateFormat('yyyy-MM-dd HH:mm').format(_startDateTime),
+                    ),
                   ),
                 ),
-              const SizedBox(height: 12),
-              DropdownButtonFormField<String>(
-                value: _requestType,
-                decoration: const InputDecoration(labelText: '需求类别', border: OutlineInputBorder()),
-                items: const [
-                  DropdownMenuItem(value: '停水需求', child: Text('停水需求')),
-                  DropdownMenuItem(value: '新苗程序', child: Text('新苗程序')),
-                  DropdownMenuItem(value: '减小水量', child: Text('减小水量')),
-                  DropdownMenuItem(value: '加大水量', child: Text('加大水量')),
-                  DropdownMenuItem(value: '其他需求', child: Text('其他需求')),
-                ],
-                onChanged: (v) => setState(() => _requestType = v!),
-              ),
-              if (_requestType == '其他需求')
-                Padding(
-                  padding: const EdgeInsets.only(top: 12),
-                  child: TextFormField(
-                    controller: _requestTypeOtherController,
-                    decoration: const InputDecoration(labelText: '其他需求类别', border: OutlineInputBorder()),
+                const SizedBox(height: 12),
+                InkWell(
+                  onTap: () async {
+                    final picked = await showDatePicker(
+                      context: context,
+                      initialDate: _endDateTime,
+                      firstDate: DateTime.now().subtract(
+                        const Duration(days: 30),
+                      ),
+                      lastDate: DateTime.now().add(const Duration(days: 30)),
+                    );
+                    if (picked != null) {
+                      final time = await showTimePicker(
+                        context: context,
+                        initialTime: TimeOfDay.fromDateTime(_endDateTime),
+                      );
+                      if (time != null) {
+                        setState(
+                          () => _endDateTime = DateTime(
+                            picked.year,
+                            picked.month,
+                            picked.day,
+                            time.hour,
+                            time.minute,
+                          ),
+                        );
+                      }
+                    }
+                  },
+                  child: InputDecorator(
+                    decoration: const InputDecoration(
+                      labelText: '结束时间',
+                      border: OutlineInputBorder(),
+                    ),
+                    child: Text(
+                      DateFormat('yyyy-MM-dd HH:mm').format(_endDateTime),
+                    ),
                   ),
                 ),
-              const SizedBox(height: 16),
-              InkWell(
-                onTap: () async {
-                  final picked = await showDatePicker(
-                    context: context,
-                    initialDate: _startDateTime,
-                    firstDate: DateTime.now().subtract(const Duration(days: 30)),
-                    lastDate: DateTime.now().add(const Duration(days: 30)),
-                  );
-                  if (picked != null) {
-                    final time = await showTimePicker(context: context, initialTime: TimeOfDay.fromDateTime(_startDateTime));
-                    if (time != null) {
-                      setState(() => _startDateTime = DateTime(picked.year, picked.month, picked.day, time.hour, time.minute));
-                    }
-                  }
-                },
-                child: InputDecorator(
-                  decoration: const InputDecoration(labelText: '起始时间', border: OutlineInputBorder()),
-                  child: Text(DateFormat('yyyy-MM-dd HH:mm').format(_startDateTime)),
+              ],
+            )
+          else
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildDetailRow(
+                  '用户类型',
+                  _detail?['user_type_display'] ?? _detail?['user_type'] ?? '',
                 ),
-              ),
-              const SizedBox(height: 12),
-              InkWell(
-                onTap: () async {
-                  final picked = await showDatePicker(
-                    context: context,
-                    initialDate: _endDateTime,
-                    firstDate: DateTime.now().subtract(const Duration(days: 30)),
-                    lastDate: DateTime.now().add(const Duration(days: 30)),
-                  );
-                  if (picked != null) {
-                    final time = await showTimePicker(context: context, initialTime: TimeOfDay.fromDateTime(_endDateTime));
-                    if (time != null) {
-                      setState(() => _endDateTime = DateTime(picked.year, picked.month, picked.day, time.hour, time.minute));
-                    }
-                  }
-                },
-                child: InputDecorator(
-                  decoration: const InputDecoration(labelText: '结束时间', border: OutlineInputBorder()),
-                  child: Text(DateFormat('yyyy-MM-dd HH:mm').format(_endDateTime)),
+                if (_detail?['user_type_other']?.toString().isNotEmpty == true)
+                  _buildDetailRow('其他类型', _detail?['user_type_other'] ?? ''),
+                _buildDetailRow(
+                  '需求类别',
+                  _detail?['request_type_display'] ??
+                      _detail?['request_type'] ??
+                      '',
                 ),
-              ),
-            ],
-          )
-        else
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _buildDetailRow('用户类型', _detail?['user_type_display'] ?? _detail?['user_type'] ?? ''),
-              if (_detail?['user_type_other']?.toString().isNotEmpty == true)
-                _buildDetailRow('其他类型', _detail?['user_type_other'] ?? ''),
-              _buildDetailRow('需求类别', _detail?['request_type_display'] ?? _detail?['request_type'] ?? ''),
-              if (_detail?['request_type_other']?.toString().isNotEmpty == true)
-                _buildDetailRow('其他需求', _detail?['request_type_other'] ?? ''),
-              _buildDetailRow('起始时间', _detail?['start_datetime'] ?? ''),
-              _buildDetailRow('结束时间', _detail?['end_datetime'] ?? ''),
-            ],
-          ),
-      ],
+                if (_detail?['request_type_other']?.toString().isNotEmpty ==
+                    true)
+                  _buildDetailRow('其他需求', _detail?['request_type_other'] ?? ''),
+                _buildDetailRow('起始时间', _detail?['start_datetime'] ?? ''),
+                _buildDetailRow('结束时间', _detail?['end_datetime'] ?? ''),
+              ],
+            ),
+        ],
+      ),
     );
   }
 
   Widget _buildSectionTitle(String title) {
-    return Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF1B4332)));
+    return Text(
+      title,
+      style: const TextStyle(
+        fontSize: 16,
+        fontWeight: FontWeight.bold,
+        color: Color(0xFF1B4332),
+      ),
+    );
   }
 
   Widget _buildDetailRow(String label, String value) {
@@ -547,7 +697,10 @@ class _RequestDetailScreenState extends State<RequestDetailScreen> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SizedBox(width: 80, child: Text('$label: ', style: TextStyle(color: Colors.grey[600]))),
+          SizedBox(
+            width: 80,
+            child: Text('$label: ', style: TextStyle(color: Colors.grey[600])),
+          ),
           Expanded(child: Text(value)),
         ],
       ),

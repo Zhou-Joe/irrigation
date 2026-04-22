@@ -19,6 +19,24 @@ ROLE_CHOICES = [
 ]
 
 
+class Patch(models.Model):
+    """片区 - 多个zone可以属于同一个片区"""
+
+    name = models.CharField('片区名称', max_length=255, unique=True)
+    code = models.CharField('片区编号', max_length=50, unique=True)
+    description = models.TextField('描述', blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = '片区'
+        verbose_name_plural = '片区'
+        ordering = ['code']
+
+    def __str__(self):
+        return f"{self.name} ({self.code})"
+
+
 class Zone(models.Model):
     """Represents a work zone with boundary points and status tracking."""
 
@@ -37,6 +55,7 @@ class Zone(models.Model):
         (STATUS_DELAYED, '已延期'),
     ]
 
+    patch = models.ForeignKey(Patch, on_delete=models.SET_NULL, null=True, blank=True, related_name='zones', verbose_name='所属片区')
     name = models.CharField(max_length=255, unique=True)
     code = models.CharField(max_length=50, unique=True)
     description = models.TextField(blank=True)
@@ -112,7 +131,13 @@ class Plant(models.Model):
     name = models.CharField(max_length=255)
     scientific_name = models.CharField(max_length=255, blank=True)
     quantity = models.IntegerField(default=1)
+    planting_date = models.DateField(null=True, blank=True, verbose_name='开始日期')
+    end_date = models.DateField(null=True, blank=True, verbose_name='结束日期')
     notes = models.TextField(blank=True)
+
+    class Meta:
+        verbose_name = '植物'
+        verbose_name_plural = '植物'
 
     def __str__(self):
         return f"{self.name} in {self.zone.name}"
@@ -934,6 +959,7 @@ class WorkReport(models.Model):
     is_difficult = models.BooleanField('疑难问题', default=False)
     is_difficult_resolved = models.BooleanField('疑难问题已处理', default=False)
     fault_subtypes = models.ManyToManyField(FaultSubType, through='WorkReportFault', blank=True, related_name='work_reports')
+    photos = models.JSONField(default=list, blank=True, verbose_name='照片列表', help_text='照片文件路径列表')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -952,6 +978,14 @@ class WorkReportFault(models.Model):
     work_report = models.ForeignKey(WorkReport, on_delete=models.CASCADE, related_name='fault_entries')
     fault_subtype = models.ForeignKey(FaultSubType, on_delete=models.PROTECT, related_name='report_entries')
     count = models.PositiveIntegerField('数量', default=0)
+    equipment = models.ForeignKey(
+        ZoneEquipment,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='fault_entries',
+        verbose_name='故障设备'
+    )
 
     class Meta:
         unique_together = ('work_report', 'fault_subtype')
