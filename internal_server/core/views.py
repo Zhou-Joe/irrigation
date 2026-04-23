@@ -112,6 +112,125 @@ def user_logout(request):
     return redirect('core:login')
 
 
+@login_required(login_url='core:login')
+def profile_page(request):
+    """User profile page - view and edit personal information."""
+    from core.models import Worker, ManagerProfile, DepartmentUserProfile
+
+    user = request.user
+    profile_data = {}
+    profile_type = None
+
+    # Priority: ManagerProfile > DepartmentUserProfile > Worker > System User
+    # This ensures admin users show as managers even if they also have Worker records
+    try:
+        manager = ManagerProfile.objects.get(user=user, active=True)
+        profile_type = 'manager'
+        profile_data = {
+            'type': '管理员',
+            'employee_id': manager.employee_id,
+            'full_name': manager.full_name,
+            'phone': manager.phone,
+            'is_super_admin': manager.is_super_admin,
+            'can_approve_registrations': manager.can_approve_registrations,
+            'can_approve_work_orders': manager.can_approve_work_orders,
+        }
+    except ManagerProfile.DoesNotExist:
+        pass
+
+    if not profile_type:
+        try:
+            dept_user = DepartmentUserProfile.objects.get(user=user, active=True)
+            profile_type = 'dept_user'
+            profile_data = {
+                'type': '部门用户',
+                'employee_id': dept_user.employee_id,
+                'full_name': dept_user.full_name,
+                'phone': dept_user.phone,
+                'department': dept_user.get_department_display_name(),
+            }
+        except DepartmentUserProfile.DoesNotExist:
+            pass
+
+    if not profile_type:
+        try:
+            worker = Worker.objects.get(user=user, active=True)
+            profile_type = 'worker'
+            profile_data = {
+                'type': '现场工作人员',
+                'employee_id': worker.employee_id,
+                'full_name': worker.full_name,
+                'phone': worker.phone,
+                'department': worker.get_department_display_name(),
+                'api_token': str(worker.api_token),
+            }
+        except Worker.DoesNotExist:
+            pass
+
+    if not profile_type:
+        profile_data = {
+            'type': '系统用户',
+            'username': user.username,
+            'email': user.email,
+        }
+
+    if request.method == 'POST':
+        action = request.POST.get('action')
+
+        if action == 'regenerate_token' and profile_type == 'worker':
+            try:
+                worker = Worker.objects.get(user=user, active=True)
+                worker.regenerate_token()
+                messages.success(request, 'API令牌已重新生成')
+                return redirect('core:profile')
+            except Worker.DoesNotExist:
+                messages.error(request, '未找到工作人员档案')
+        elif action == 'update_profile':
+            phone = request.POST.get('phone', '').strip()
+            full_name = request.POST.get('full_name', '').strip()
+            employee_id = request.POST.get('employee_id', '').strip()
+            email = request.POST.get('email', '').strip()
+
+            # Update profile if exists
+            if profile_type in ['worker', 'manager', 'dept_user']:
+                try:
+                    if profile_type == 'worker':
+                        profile = Worker.objects.get(user=user, active=True)
+                    elif profile_type == 'manager':
+                        profile = ManagerProfile.objects.get(user=user, active=True)
+                    else:
+                        profile = DepartmentUserProfile.objects.get(user=user, active=True)
+
+                    if full_name:
+                        profile.full_name = full_name
+                    if phone:
+                        profile.phone = phone
+                    if employee_id:
+                        # Check uniqueness for employee_id
+                        model_class = Worker if profile_type == 'worker' else (ManagerProfile if profile_type == 'manager' else DepartmentUserProfile)
+                        if model_class.objects.filter(employee_id=employee_id).exclude(pk=profile.pk).exists():
+                            messages.error(request, f'工号 {employee_id} 已被使用')
+                        else:
+                            profile.employee_id = employee_id
+                    profile.save()
+                except Exception as e:
+                    messages.error(request, f'Profile更新失败: {str(e)}')
+
+            # Update user email
+            if email:
+                user.email = email
+                user.save()
+
+            messages.success(request, '个人信息已更新')
+            return redirect('core:profile')
+
+    return render(request, 'core/profile.html', {
+        'profile_data': profile_data,
+        'profile_type': profile_type,
+        'user': user,
+    })
+
+
 def get_zone_center(boundary_points):
     """Calculate the center point of a zone from its boundary points. Supports multi-polygon format."""
     if not boundary_points or len(boundary_points) == 0:
@@ -1198,7 +1317,7 @@ def update_request_status(request, type_code, request_id):
 
     # 获取 approver（Worker 或 None）
     try:
-        approver = Worker.objects.get(user=request.user)
+        approver = Worker.objects.get(user=request.user, active=True)
     except Worker.DoesNotExist:
         approver = None
 
@@ -1614,6 +1733,9 @@ def maxicom_dashboard_api(request):
 def work_reports_list(request):
     from core.models import WorkReport, Location, WorkCategory, Worker
     from core.role_utils import is_admin
+    from django.db.models import Count, Q
+    from django.utils import timezone
+    from datetime import datetime, timedelta, date
 
     user = request.user
     admin = is_admin(user)
@@ -1624,7 +1746,7 @@ def work_reports_list(request):
 
     if not admin:
         try:
-            worker = user.worker
+            worker = user.worker_profile
             qs = qs.filter(worker=worker)
         except Exception:
             qs = qs.none()
@@ -1636,6 +1758,7 @@ def work_reports_list(request):
     work_category_id = request.GET.get('work_category')
     worker_id = request.GET.get('worker')
     difficult = request.GET.get('is_difficult')
+    week_param = request.GET.get('week')  # Format: YYYY-MM-DD (Monday of the week)
 
     if date_from:
         qs = qs.filter(date__gte=date_from)
@@ -1655,12 +1778,220 @@ def work_reports_list(request):
     work_categories = WorkCategory.objects.filter(active=True).order_by('order')
     workers = Worker.objects.all().order_by('full_name') if admin else []
 
+    # Weekly summary statistics
+    # Determine which week to show
+    if week_param:
+        try:
+            week_start = datetime.strptime(week_param, '%Y-%m-%d').date()
+            # Ensure it's a Monday
+            week_start = week_start - timedelta(days=week_start.weekday())
+        except:
+            week_start = timezone.now().date() - timedelta(days=timezone.now().date().weekday())
+    else:
+        today = timezone.now().date()
+        week_start = today - timedelta(days=today.weekday())
+
+    week_end = week_start + timedelta(days=6)
+
+    # Get ISO week number
+    week_number = week_start.isocalendar()[1]
+
+    # Generate week options for selector (current year and previous year)
+    years = []
+    year_weeks = {}
+    current_year = timezone.now().date().year
+
+    for year in [current_year - 1, current_year, current_year + 1]:
+        weeks = []
+        # Get all Mondays in this year
+        jan_1 = date(year, 1, 1)
+        # Find first Monday
+        first_monday = jan_1
+        while first_monday.weekday() != 0:
+            first_monday = first_monday + timedelta(days=1)
+
+        week_start_iter = first_monday
+        week_num = 1
+
+        while week_start_iter.year == year or (week_start_iter.year == year + 1 and week_start_iter.month == 1 and week_num <= 53):
+            week_end_iter = week_start_iter + timedelta(days=6)
+            weeks.append({
+                'week': week_num,
+                'start': week_start_iter,
+                'end': week_end_iter
+            })
+            week_start_iter = week_start_iter + timedelta(days=7)
+            week_num += 1
+
+            if week_num > 53:
+                break
+
+        if weeks:
+            years.append(year)
+            year_weeks[year] = weeks
+
+    # Base queryset for this week (respecting user permissions)
+    week_qs = WorkReport.objects.select_related('worker', 'location', 'work_category')
+    if not admin:
+        try:
+            worker = user.worker_profile
+            week_qs = week_qs.filter(worker=worker)
+        except Exception:
+            week_qs = week_qs.none()
+
+    week_qs = week_qs.filter(date__gte=week_start, date__lte=week_end)
+
+    # Total this week
+    total_this_week = week_qs.count()
+
+    # Reports by day
+    reports_by_day = []
+    for i in range(7):
+        day = week_start + timedelta(days=i)
+        count = week_qs.filter(date=day).count()
+        reports_by_day.append({
+            'date': day.strftime('%m-%d'),
+            'weekday': ['周一', '周二', '周三', '周四', '周五', '周六', '周日'][i],
+            'count': count
+        })
+
+    # Reports by location
+    reports_by_location = list(
+        week_qs.values('location__name', 'location__code')
+        .annotate(count=Count('id'))
+        .order_by('-count')[:10]
+    )
+
+    # Reports by zone/fault location
+    reports_by_zone = list(
+        week_qs.values('zone_location__name', 'zone_location__code')
+        .annotate(count=Count('id'))
+        .exclude(zone_location__isnull=True)
+        .order_by('-count')[:10]
+    )
+
+    # Reports by work category
+    reports_by_category = list(
+        week_qs.values('work_category__name', 'work_category__code')
+        .annotate(count=Count('id'))
+        .order_by('-count')[:10]
+    )
+
+    # Top fault types this week
+    top_faults = list(
+        week_qs.filter(fault_entries__isnull=False)
+        .values('fault_entries__fault_subtype__name_zh', 'fault_entries__fault_subtype__category__name_zh')
+        .annotate(count=Count('fault_entries__fault_subtype'))
+        .order_by('-count')[:10]
+    )
+
+    # Zone-Fault Type Matrix (多维度统计)
+    from collections import defaultdict
+
+    # Get all fault entries for the week with zone and fault type
+    fault_entries_data = list(
+        week_qs.filter(fault_entries__isnull=False)
+        .values('zone_location__code', 'zone_location__name', 'fault_entries__fault_subtype__name_zh')
+        .annotate(count=Count('fault_entries__fault_subtype'))
+    )
+
+    # Build matrix
+    fault_types_set = set()
+    zones_dict = defaultdict(lambda: defaultdict(int))
+
+    for entry in fault_entries_data:
+        zone_code = entry.get('zone_location__code') or '未指定'
+        zone_name = entry.get('zone_location__name') or zone_code
+        fault_type = entry.get('fault_entries__fault_subtype__name_zh') or '未分类'
+        count = entry['count']
+
+        fault_types_set.add(fault_type)
+        zones_dict[zone_code][fault_type] += count
+        zones_dict[zone_code]['_zone_name'] = zone_name
+
+    # Sort fault types by total occurrences
+    fault_type_totals = defaultdict(int)
+    for zone_data in zones_dict.values():
+        for fault_type, count in zone_data.items():
+            if fault_type != '_zone_name':
+                fault_type_totals[fault_type] += count
+
+    sorted_fault_types = sorted(fault_types_set, key=lambda x: fault_type_totals[x], reverse=True)[:8]  # Top 8
+
+    # Build matrix rows
+    zone_fault_matrix = {
+        'fault_types': [{'name': ft} for ft in sorted_fault_types],
+        'rows': [],
+        'column_totals': [fault_type_totals[ft] for ft in sorted_fault_types],
+        'grand_total': 0
+    }
+
+    # Calculate row totals and build rows
+    zone_totals = {}
+    grand_total = 0
+
+    for zone_code, zone_data in sorted(zones_dict.items()):
+        if zone_code == '_zone_name':
+            continue
+
+        row = {
+            'zone_name': zone_data.get('_zone_name', zone_code),
+            'zone_code': zone_code,
+            'counts': [],
+            'total': 0
+        }
+
+        for fault_type in sorted_fault_types:
+            count = zone_data.get(fault_type, 0)
+            row['counts'].append(count)
+            row['total'] += count
+
+        zone_totals[zone_code] = row['total']
+        grand_total += row['total']
+
+        # Only include zones with faults
+        if row['total'] > 0:
+            zone_fault_matrix['rows'].append(row)
+
+    # Sort rows by total (descending)
+    zone_fault_matrix['rows'].sort(key=lambda x: x['total'], reverse=True)
+    zone_fault_matrix['rows'] = zone_fault_matrix['rows'][:10]  # Top 10 zones
+    zone_fault_matrix['column_totals'].append(grand_total)
+    zone_fault_matrix['grand_total'] = grand_total
+
+    # Worker performance (if admin)
+    worker_stats = []
+    if admin:
+        worker_stats = list(
+            week_qs.values('worker__full_name', 'worker__employee_id')
+            .annotate(
+                total=Count('id'),
+                difficult=Count('id', filter=Q(is_difficult=True))
+            )
+            .order_by('-total')[:10]
+        )
+
     return render(request, 'core/work_reports.html', {
         'reports': reports,
         'locations': locations,
         'work_categories': work_categories,
         'workers': workers,
         'is_admin': admin,
+        # Weekly summary data
+        'week_start': week_start,
+        'week_end': week_end,
+        'week_number': week_number,
+        'week_iso': week_start.isoformat(),
+        'years': years,
+        'year_weeks': year_weeks,
+        'total_this_week': total_this_week,
+        'reports_by_day': reports_by_day,
+        'reports_by_location': reports_by_location,
+        'reports_by_zone': reports_by_zone,
+        'reports_by_category': reports_by_category,
+        'top_faults': top_faults,
+        'zone_fault_matrix': zone_fault_matrix,
+        'worker_stats': worker_stats,
         'filters': {
             'date_from': date_from or '',
             'date_to': date_to or '',
@@ -1686,7 +2017,7 @@ def work_report_detail(request, report_id):
 
     if not is_admin(request.user):
         try:
-            if report.worker != request.user.worker:
+            if report.worker != request.user.worker_profile:
                 messages.error(request, '无权查看此记录')
                 return redirect('core:work_reports')
         except Exception:
@@ -1706,7 +2037,7 @@ def work_report_create(request):
 
     if request.method == 'POST':
         try:
-            worker = request.user.worker
+            worker = request.user.worker_profile
         except Exception:
             messages.error(request, '当前用户未关联处理人账号')
             return redirect('core:work_reports')
@@ -1798,7 +2129,7 @@ def work_report_edit(request, report_id):
 
     if not is_admin(request.user):
         try:
-            if report.worker != request.user.worker:
+            if report.worker != request.user.worker_profile:
                 messages.error(request, '无权编辑此记录')
                 return redirect('core:work_reports')
         except Exception:

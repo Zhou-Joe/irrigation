@@ -112,9 +112,9 @@
             <a href="{% url 'core:dashboard' %}" class="top-nav-brand">灌溉管理系统</a>
             <div class="top-nav-links">
                 <a href="{% url 'core:dashboard' %}" class="{% block nav_dashboard %}{% endblock %}">地图总览</a>
-                <a href="{% url 'core:work_reports' %}" class="{% block nav_work_reports %}{% endblock %}">维修日报</a>
+                <a href="{% url 'core:work_reports' %}" class="{% block nav_work_reports %}{% endblock %}">维修日志</a>
                 <a href="{% url 'core:requests' %}" class="{% block nav_requests %}{% endblock %}">工单管理</a>
-                <a href="{% url 'core:demands' %}" class="{% block nav_demands %}{% endblock %}">需求周报</a>
+                <a href="{% url 'core:demands' %}" class="{% block nav_demands %}{% endblock %}">需求日志</a>
                 {% if is_admin %}
                 <a href="{% url 'core:settings' %}" class="{% block nav_settings %}{% endblock %}">系统设置</a>
                 <a href="{% url 'core:registration_approval' %}" class="{% block nav_approval %}{% endblock %}">
@@ -124,7 +124,7 @@
             </div>
         </div>
         <div class="top-nav-right">
-            <span class="top-nav-user">{{ user.get_full_name|default:user.username }}</span>
+            <a href="{% url 'core:profile' %}" class="top-nav-user">{{ user.get_full_name|default:user.username }}</a>
             <a href="{% url 'core:logout' %}" class="top-nav-logout">退出</a>
         </div>
     </nav>

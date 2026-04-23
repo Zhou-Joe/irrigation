@@ -1,7 +1,7 @@
 {% extends 'core/base.html' %}
 {% load static %}
 
-{% block title %}{% if report %}编辑日报{% else %}新建日报{% endif %}{% endblock %}
+{% block title %}{% if report %}编辑维修日志{% else %}新建维修日志{% endif %}{% endblock %}
 {% block nav_work_reports %}active{% endblock %}
 
 {% block extra_css %}
@@ -38,7 +38,7 @@
 {% block content %}
 <div class="form-container">
     <div class="form-header">
-        <h1>{% if report %}编辑日报 #{{ report.id }}{% else %}新建维修工作日报{% endif %}</h1>
+        <h1>{% if report %}编辑日志 #{{ report.id }}{% else %}新建维修日志{% endif %}</h1>
         <a href="{% url 'core:work_reports' %}" class="btn btn-secondary">← 返回列表</a>
     </div>
 
