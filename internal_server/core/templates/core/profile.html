@@ -1,0 +1,279 @@
+{% extends 'core/base.html' %}
+{% load static %}
+
+{% block title %}个人资料 - 灌溉管理{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'css/settings.css' %}">
+<style>
+.profile-container {
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 20px;
+}
+.profile-header {
+    background: var(--color-primary);
+    color: var(--color-text-inverse);
+    padding: 24px;
+    border-radius: 8px 8px 0 0;
+    text-align: center;
+}
+.profile-header h1 {
+    margin: 0 0 8px 0;
+    font-size: 1.5rem;
+}
+.profile-header .user-type {
+    font-size: 0.9rem;
+    opacity: 0.9;
+}
+.profile-section {
+    background: white;
+    padding: 24px;
+    border-bottom: 1px solid var(--color-surface-dark);
+}
+.profile-section:last-child {
+    border-bottom: none;
+    border-radius: 0 0 8px 8px;
+}
+.section-title {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--color-primary);
+    margin-bottom: 16px;
+    padding-bottom: 8px;
+    border-bottom: 2px solid var(--color-primary);
+}
+.info-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 16px;
+}
+.info-item {
+    display: flex;
+    flex-direction: column;
+}
+.info-label {
+    font-size: 0.8rem;
+    color: var(--color-text-muted);
+    margin-bottom: 4px;
+}
+.info-value {
+    font-size: 1rem;
+    color: var(--color-text);
+}
+.token-box {
+    background: var(--color-surface-alt);
+    padding: 12px;
+    border-radius: 6px;
+    font-family: monospace;
+    font-size: 0.9rem;
+    word-break: break-all;
+    border: 1px solid var(--color-border);
+}
+.form-group {
+    margin-bottom: 16px;
+}
+.form-group label {
+    display: block;
+    margin-bottom: 6px;
+    font-weight: 500;
+    font-size: 0.9rem;
+}
+.form-group input {
+    width: 100%;
+    max-width: 300px;
+    padding: 8px 12px;
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    font-size: 0.9rem;
+}
+.btn-group {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+.badge {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 12px;
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+.badge-success {
+    background: var(--color-success);
+    color: white;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="profile-container">
+    {% if messages %}
+    <div class="messages">
+        {% for message in messages %}
+        <div class="message message-{{ message.tags }}">{{ message }}</div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <div class="profile-header">
+        <h1>{% if profile_data.full_name %}{{ profile_data.full_name }}{% elif profile_data.username %}{{ profile_data.username }}{% else %}{{ user.username }}{% endif %}</h1>
+        <div class="user-type">
+            <span class="badge badge-success">{{ profile_data.type }}</span>
+        </div>
+    </div>
+
+    <!-- 基本信息 -->
+    <div class="profile-section">
+        <h2 class="section-title">基本信息</h2>
+        <div class="info-grid">
+            {% if profile_data.employee_id %}
+            <div class="info-item">
+                <span class="info-label">工号</span>
+                <span class="info-value">{{ profile_data.employee_id }}</span>
+            </div>
+            {% endif %}
+            {% if profile_data.full_name %}
+            <div class="info-item">
+                <span class="info-label">姓名</span>
+                <span class="info-value">{{ profile_data.full_name }}</span>
+            </div>
+            {% endif %}
+            {% if not profile_type %}
+            <div class="info-item">
+                <span class="info-label">用户名</span>
+                <span class="info-value">{{ user.username }}</span>
+            </div>
+            {% endif %}
+            {% if user.email %}
+            <div class="info-item">
+                <span class="info-label">邮箱</span>
+                <span class="info-value">{{ user.email }}</span>
+            </div>
+            {% endif %}
+            {% if profile_data.department %}
+            <div class="info-item">
+                <span class="info-label">部门</span>
+                <span class="info-value">{{ profile_data.department }}</span>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    {% if profile_type == 'worker' or profile_type == 'manager' or profile_type == 'dept_user' %}
+    <!-- 编辑资料 -->
+    <div class="profile-section">
+        <h2 class="section-title">编辑资料</h2>
+        <form method="post">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="update_profile">
+
+            {% if profile_data.employee_id %}
+            <div class="form-group">
+                <label for="employee_id">工号</label>
+                <input type="text" id="employee_id" name="employee_id" value="{{ profile_data.employee_id }}" placeholder="请输入工号">
+                <small style="color: var(--color-text-muted); font-size: 0.75rem;">工号必须唯一，修改前请确认</small>
+            </div>
+            {% endif %}
+
+            {% if profile_data.full_name %}
+            <div class="form-group">
+                <label for="full_name">姓名</label>
+                <input type="text" id="full_name" name="full_name" value="{{ profile_data.full_name }}" placeholder="请输入姓名">
+            </div>
+            {% endif %}
+
+            <div class="form-group">
+                <label for="phone">联系电话</label>
+                <input type="tel" id="phone" name="phone" value="{{ profile_data.phone }}" placeholder="请输入联系电话">
+            </div>
+
+            <div class="form-group">
+                <label for="email">邮箱</label>
+                <input type="email" id="email" name="email" value="{{ user.email }}" placeholder="请输入邮箱">
+            </div>
+
+            <div class="btn-group">
+                <button type="submit" class="btn btn-primary">保存更改</button>
+            </div>
+        </form>
+    </div>
+    {% endif %}
+
+    {% if profile_type == 'worker' %}
+    <!-- API令牌 -->
+    <div class="profile-section">
+        <h2 class="section-title">API令牌</h2>
+        <p style="font-size: 0.85rem; color: var(--color-text-muted); margin-bottom: 12px;">
+            此令牌用于移动应用API访问。请妥善保管，不要泄露给他人。
+        </p>
+        <div class="token-box">
+            {{ profile_data.api_token }}
+        </div>
+        <form method="post" style="margin-top: 16px;">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="regenerate_token">
+            <button type="submit" class="btn btn-secondary" onclick="return confirm('确定要重新生成API令牌吗？旧令牌将立即失效。');">
+                重新生成令牌
+            </button>
+        </form>
+    </div>
+    {% endif %}
+
+    {% if profile_type == 'manager' %}
+    <!-- 管理员权限 -->
+    <div class="profile-section">
+        <h2 class="section-title">管理员权限</h2>
+        <div class="info-grid">
+            <div class="info-item">
+                <span class="info-label">超级管理员</span>
+                <span class="info-value">
+                    {% if profile_data.is_super_admin %}✓ 是{% else %}否{% endif %}
+                </span>
+            </div>
+            <div class="info-item">
+                <span class="info-label">可审批注册</span>
+                <span class="info-value">
+                    {% if profile_data.can_approve_registrations %}✓ 是{% else %}否{% endif %}
+                </span>
+            </div>
+            <div class="info-item">
+                <span class="info-label">可审批工单</span>
+                <span class="info-value">
+                    {% if profile_data.can_approve_work_orders %}✓ 是{% else %}否{% endif %}
+                </span>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- 账户信息 -->
+    <div class="profile-section">
+        <h2 class="section-title">账户信息</h2>
+        <div class="info-grid">
+            <div class="info-item">
+                <span class="info-label">用户名</span>
+                <span class="info-value">{{ user.username }}</span>
+            </div>
+            <div class="info-item">
+                <span class="info-label">邮箱</span>
+                <span class="info-value">{{ user.email|default:"未设置" }}</span>
+            </div>
+            <div class="info-item">
+                <span class="info-label">上次登录</span>
+                <span class="info-value">{{ user.last_login|date:"Y-m-d H:i" }}</span>
+            </div>
+            <div class="info-item">
+                <span class="info-label">账户状态</span>
+                <span class="info-value">
+                    {% if user.is_active %}
+                        <span class="badge badge-success">正常</span>
+                    {% else %}
+                        <span class="badge" style="background: var(--color-error);">已禁用</span>
+                    {% endif %}
+                </span>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

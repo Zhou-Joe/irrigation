@@ -2,7 +2,7 @@
 
 {% load static %}
 
-{% block title %}需求周报 - 灌溉管理{% endblock %}
+{% block title %}需求日志 - 灌溉管理{% endblock %}
 {% block nav_demands %}active{% endblock %}
 
 {% block extra_css %}
@@ -328,7 +328,7 @@
 {% block content %}
 <div class="demands-container">
     <div class="demands-header">
-        <h1>需求周报</h1>
+        <h1>需求日志</h1>
         <div class="filter-section">
             <input type="date" id="dateFrom" value="{{ date_from }}" onchange="applyFilters()">
             <input type="date" id="dateTo" value="{{ date_to }}" onchange="applyFilters()">
@@ -372,11 +372,6 @@
             <h3>已完成</h3>
             <div class="value">{{ stats.completed }}</div>
             <div class="detail">本月完成</div>
-        </div>
-        <div class="stat-card">
-            <h3>时间解析率</h3>
-            <div class="value">{{ stats.time_parsed_rate }}%</div>
-            <div class="detail">成功解析时间段</div>
         </div>
     </div>
 

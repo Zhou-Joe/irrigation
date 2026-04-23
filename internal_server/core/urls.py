@@ -44,6 +44,7 @@ urlpatterns = [
     path('', views.dashboard, name='dashboard'),
     path('login/', views.user_login, name='login'),
     path('logout/', views.user_logout, name='logout'),
+    path('profile/', views.profile_page, name='profile'),
     path('register/', views.register, name='register'),
     path('registration-approval/', views.registration_approval, name='registration_approval'),
     path('settings/', views.settings_page, name='settings'),

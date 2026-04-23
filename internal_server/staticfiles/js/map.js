@@ -314,6 +314,7 @@
 
                 if (isMultiPolygonFormat(zone.boundary_points)) {
                     // Multi-polygon: each element is a separate polygon ring
+                    let allLatLngs = [];
                     zone.boundary_points.forEach((ring, ringIdx) => {
                         const latLngs = pointsToLatLngs(ring);
                         if (latLngs.length < 3) return;
@@ -326,8 +327,12 @@
                         polygon.on('mouseout', handleMouseOut);
                         polygon.on('click', handleClick);
                         zonesLayerGroup.addLayer(polygon);
-                        addZoneLabel(zone.code, latLngs);
+                        allLatLngs = allLatLngs.concat(latLngs);
                     });
+                    // Only one label per zone, centered on all rings combined
+                    if (allLatLngs.length > 0) {
+                        addZoneLabel(zone.code, allLatLngs);
+                    }
                 } else {
                     // Legacy single-polygon format
                     const latLngs = pointsToLatLngs(zone.boundary_points);

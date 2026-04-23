@@ -1324,15 +1324,22 @@ class DemandRecordViewSet(viewsets.ModelViewSet):
             new_status = serializer.validated_data.get('status')
 
             if new_status in ['approved', 'rejected', 'in_progress', 'completed']:
+                # Try to get approver - ManagerProfile first, then Worker, then User
+                approver = None
                 try:
-                    manager = ManagerProfile.objects.get(user=user, active=True)
+                    approver = ManagerProfile.objects.get(user=user, active=True)
+                except ManagerProfile.DoesNotExist:
+                    try:
+                        approver = Worker.objects.get(user=user, active=True)
+                    except Worker.DoesNotExist:
+                        pass
+
+                if approver:
                     serializer.save(
-                        approver=manager,
+                        approver=approver,
                         processed_at=timezone.now()
                     )
                     return
-                except ManagerProfile.DoesNotExist:
-                    pass
 
         serializer.save()
 

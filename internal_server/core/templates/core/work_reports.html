@@ -1,18 +1,221 @@
 {% extends 'core/base.html' %}
 {% load static %}
+{% load dict_lookup %}
 
-{% block title %}维修工作日报{% endblock %}
+{% block title %}维修日志{% endblock %}
 {% block nav_work_reports %}active{% endblock %}
 
 {% block extra_css %}
 <link rel="stylesheet" href="{% static 'css/settings.css' %}">
+<style>
+.weekly-dashboard {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 16px;
+    margin-bottom: 20px;
+}
+.dashboard-card {
+    background: white;
+    border-radius: 8px;
+    padding: 16px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+.dashboard-card h3 {
+    margin: 0 0 12px 0;
+    font-size: 0.95rem;
+    color: var(--color-primary);
+    border-bottom: 2px solid var(--color-primary);
+    padding-bottom: 8px;
+}
+.stat-number {
+    font-size: 2.5rem;
+    font-weight: 700;
+    color: var(--color-primary);
+    line-height: 1;
+    margin-bottom: 4px;
+}
+.stat-label {
+    font-size: 0.85rem;
+    color: var(--color-text-muted);
+}
+.stat-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--color-surface-dark);
+    font-size: 0.85rem;
+}
+.stat-row:last-child {
+    border-bottom: none;
+}
+.stat-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+}
+.stat-bar-label {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.stat-bar-track {
+    flex: 2;
+    height: 8px;
+    background: var(--color-surface-dark);
+    border-radius: 4px;
+    overflow: hidden;
+}
+.stat-bar-fill {
+    height: 100%;
+    background: var(--color-primary);
+    border-radius: 4px;
+    transition: width 0.3s ease;
+}
+.stat-bar-value {
+    min-width: 40px;
+    text-align: right;
+    font-weight: 600;
+}
+.day-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 4px;
+    margin-top: 8px;
+}
+.day-item {
+    text-align: center;
+    padding: 6px 4px;
+    background: var(--color-surface-dark);
+    border-radius: 4px;
+}
+.day-item.active {
+    background: var(--color-primary);
+    color: var(--color-text-inverse);
+}
+.day-label {
+    font-size: 0.7rem;
+    display: block;
+    margin-bottom: 2px;
+}
+.day-count {
+    font-size: 1.1rem;
+    font-weight: 600;
+}
+.difficult-item {
+    padding: 8px;
+    background: var(--color-warning-bg, #fff3cd);
+    border-left: 3px solid var(--color-warning);
+    border-radius: 4px;
+    margin-bottom: 8px;
+    font-size: 0.85rem;
+}
+.difficult-item.resolved {
+    background: var(--color-success-bg, #d4edda);
+    border-left-color: var(--color-success);
+}
+.difficult-meta {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 4px;
+    font-size: 0.75rem;
+    color: var(--color-text-muted);
+}
+.chart-empty {
+    text-align: center;
+    padding: 20px;
+    color: var(--color-text-muted);
+    font-size: 0.85rem;
+}
+.week-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+}
+.week-range {
+    font-size: 0.9rem;
+    color: var(--color-text-muted);
+}
+.week-badge {
+    background: var(--color-accent);
+    color: white;
+    padding: 4px 12px;
+    border-radius: 12px;
+    font-size: 0.8rem;
+    font-weight: 600;
+}
+.week-nav {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+    padding: 12px;
+    background: var(--color-surface-alt);
+    border-radius: 8px;
+}
+.week-nav-btn {
+    background: var(--color-primary);
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    transition: background 0.2s;
+}
+.week-nav-btn:hover {
+    background: var(--color-primary-dark);
+}
+.week-nav-btn:disabled {
+    background: var(--color-text-muted);
+    cursor: not-allowed;
+}
+.week-selector {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+.week-selector select {
+    padding: 6px 12px;
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    font-size: 0.9rem;
+}
+.week-current {
+    text-align: center;
+    flex: 1;
+}
+.week-current-label {
+    font-size: 0.75rem;
+    color: var(--color-text-muted);
+    margin-bottom: 2px;
+}
+.week-current-range {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--color-primary);
+}
+.week-indicator {
+    display: inline-block;
+    padding: 4px 12px;
+    background: var(--color-accent);
+    color: white;
+    border-radius: 12px;
+    font-size: 0.8rem;
+    margin-left: 8px;
+}
+</style>
 {% endblock %}
 
 {% block content %}
 <div class="form-container">
     <div class="form-header">
-        <h1>维修工作日报</h1>
-        <a href="{% url 'core:work_report_create' %}" class="btn btn-primary">+ 新建日报</a>
+        <h1>维修日志</h1>
+        <a href="{% url 'core:work_report_create' %}" class="btn btn-primary">+ 新建日志</a>
     </div>
 
     {% if messages %}
@@ -23,9 +226,196 @@
     </div>
     {% endif %}
 
-    <!-- Filters -->
+    <!-- Weekly Summary Dashboard -->
+    <div class="weekly-dashboard">
+        <!-- Week Navigation -->
+        <div class="dashboard-card" style="grid-column: span 2;">
+            <div class="week-nav">
+                <button class="week-nav-btn" onclick="navigateWeek(-1)">← 前一周</button>
+                <div class="week-selector">
+                    <div class="week-current">
+                        <div class="week-current-label">当前查看周次</div>
+                        <div class="week-current-range">
+                            {{ week_start|date:"Y年" }}第{{ week_number }}周
+                            <span class="week-indicator">{{ week_start|date:"m月d日" }} - {{ week_end|date:"m月d日" }}</span>
+                        </div>
+                    </div>
+                    <select id="weekSelector" onchange="jumpToWeek()">
+                        {% for y in years %}
+                        <optgroup label="{{ y }}年">
+                            {% for w in year_weeks|dict_lookup:y %}
+                            <option value="{{ y }}-{{ w.week }}" {% if y == week_start.year and w.week == week_number %}selected{% endif %}>
+                                第{{ w.week }}周 ({{ w.start|date:"m/d" }}-{{ w.end|date:"m/d" }})
+                            </option>
+                            {% endfor %}
+                        </optgroup>
+                        {% endfor %}
+                    </select>
+                </div>
+                <button class="week-nav-btn" onclick="navigateWeek(1)">后一周 →</button>
+            </div>
+        </div>
+
+        <!-- Total This Week -->
+        <div class="dashboard-card">
+            <h3>本周统计</h3>
+            <div class="stat-number">{{ total_this_week }}</div>
+            <div class="stat-label">工作日报总数</div>
+        </div>
+
+        <!-- Reports by Day -->
+        <div class="dashboard-card">
+            <h3>每日趋势</h3>
+            {% if reports_by_day %}
+                <div class="day-grid">
+                    {% for day in reports_by_day %}
+                    <div class="day-item {% if day.count > 0 %}active{% endif %}">
+                        <span class="day-label">{{ day.weekday }}</span>
+                        <span class="day-count">{{ day.count }}</span>
+                    </div>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <div class="chart-empty">本周暂无数据</div>
+            {% endif %}
+        </div>
+
+        <!-- CCU Distribution -->
+        <div class="dashboard-card">
+            <h3>CCU分布 (Top 10)</h3>
+            {% if reports_by_location %}
+                {% for item in reports_by_location %}
+                <div class="stat-row">
+                    <div class="stat-bar">
+                        <span class="stat-bar-label">{{ item.location__name|default:item.location__code }}</span>
+                        <span class="stat-bar-value">{{ item.count }}</span>
+                    </div>
+                </div>
+                {% endfor %}
+            {% else %}
+                <div class="chart-empty">本周暂无数据</div>
+            {% endif %}
+        </div>
+
+        <!-- Zone/Fault Location Distribution -->
+        <div class="dashboard-card">
+            <h3>区域/故障位置分布 (Top 10)</h3>
+            {% if reports_by_zone %}
+                {% for item in reports_by_zone %}
+                <div class="stat-row">
+                    <div class="stat-bar">
+                        <span class="stat-bar-label" title="{{ item.zone_location__name }}">{{ item.zone_location__code|default:"未指定" }}</span>
+                        <span class="stat-bar-value">{{ item.count }}</span>
+                    </div>
+                </div>
+                {% endfor %}
+            {% else %}
+                <div class="chart-empty">本周暂无数据</div>
+            {% endif %}
+        </div>
+
+        <!-- Reports by Category -->
+        <div class="dashboard-card">
+            <h3>工作分类 (Top 10)</h3>
+            {% if reports_by_category %}
+                {% for item in reports_by_category %}
+                <div class="stat-row">
+                    <div class="stat-bar">
+                        <span class="stat-bar-label">{{ item.work_category__name }}</span>
+                        <span class="stat-bar-value">{{ item.count }}</span>
+                    </div>
+                </div>
+                {% endfor %}
+            {% else %}
+                <div class="chart-empty">本周暂无数据</div>
+            {% endif %}
+        </div>
+
+        <!-- Top Faults -->
+        <div class="dashboard-card">
+            <h3>故障类型 (Top 10)</h3>
+            {% if top_faults %}
+                {% for item in top_faults %}
+                <div class="stat-row">
+                    <div class="stat-bar">
+                        <span class="stat-bar-label" title="{{ item.fault_entries__fault_subtype__category__name_zh }}">
+                            {{ item.fault_entries__fault_subtype__name_zh }}
+                        </span>
+                        <span class="stat-bar-value">{{ item.count }}</span>
+                    </div>
+                </div>
+                {% endfor %}
+            {% else %}
+                <div class="chart-empty">本周暂无故障记录</div>
+            {% endif %}
+        </div>
+
+        <!-- Zone-Fault Type Matrix -->
+        <div class="dashboard-card" style="grid-column: span 2;">
+            <h3>故障区域 × 故障类型矩阵 (本周)</h3>
+            {% if zone_fault_matrix %}
+                <div style="overflow-x:auto;">
+                    <table style="width:100%;border-collapse:collapse;font-size:0.8rem;">
+                        <thead>
+                            <tr style="background:var(--color-primary);color:var(--color-text-inverse);">
+                                <th style="padding:8px;text-align:left;position:sticky;left:0;background:var(--color-primary);z-index:10;">区域</th>
+                                {% for fault_type in zone_fault_matrix.fault_types %}
+                                <th style="padding:8px;text-align:center;min-width:80px;">{{ fault_type.name }}</th>
+                                {% endfor %}
+                                <th style="padding:8px;text-align:center;background:var(--color-accent);">合计</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for row in zone_fault_matrix.rows %}
+                            <tr style="{% cycle '' 'background:var(--color-surface-alt);' %}">
+                                <td style="padding:8px;font-weight:600;position:sticky;left:0;{% cycle 'background:white' 'background:var(--color-surface-alt);' %};z-index:5;">{{ row.zone_name }}</td>
+                                {% for count in row.counts %}
+                                <td style="padding:8px;text-align:center;">
+                                    {% if count > 0 %}
+                                        <span style="display:inline-block;min-width:24px;padding:2px 6px;background:{% if count >= 5 %}var(--color-error){% elif count >= 3 %}var(--color-warning){% else %}var(--color-success-bg,#d4edda){% endif %};color:{% if count >= 3 %}white{% else %}var(--color-text){% endif %};border-radius:4px;font-weight:600;">{{ count }}</span>
+                                    {% else %}
+                                        <span style="color:var(--color-text-muted);">-</span>
+                                    {% endif %}
+                                </td>
+                                {% endfor %}
+                                <td style="padding:8px;text-align:center;font-weight:600;background:var(--color-surface-dark);">{{ row.total }}</td>
+                            </tr>
+                            {% endfor %}
+                            <tr style="background:var(--color-accent);color:white;font-weight:600;">
+                                <td style="padding:8px;">总计</td>
+                                {% for count in zone_fault_matrix.column_totals %}
+                                <td style="padding:8px;text-align:center;">{{ count }}</td>
+                                {% endfor %}
+                                <td style="padding:8px;text-align:center;background:var(--color-primary);">{{ zone_fault_matrix.grand_total }}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            {% else %}
+                <div class="chart-empty">本周暂无故障数据</div>
+            {% endif %}
+        </div>
+
+        <!-- Worker Performance (Admin Only) -->
+        {% if is_admin and worker_stats %}
+        <div class="dashboard-card">
+            <h3>工作人员统计 (Top 10)</h3>
+            {% for stat in worker_stats %}
+            <div class="stat-row">
+                <div class="stat-bar">
+                    <span class="stat-bar-label">{{ stat.worker__full_name }}</span>
+                    <span class="stat-bar-value">{{ stat.total }}</span>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Filters (for table) -->
     <div class="form-section" style="margin-bottom:16px;">
         <form method="get" style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;">
+            <input type="hidden" name="week" value="{{ week_iso }}">
             <div class="form-group" style="margin:0;">
                 <label style="font-size:0.8rem;">起始日期</label>
                 <input type="date" name="date_from" value="{{ filters.date_from }}" style="padding:6px 10px;">
@@ -35,11 +425,11 @@
                 <input type="date" name="date_to" value="{{ filters.date_to }}" style="padding:6px 10px;">
             </div>
             <div class="form-group" style="margin:0;">
-                <label style="font-size:0.8rem;">位置/CCU</label>
+                <label style="font-size:0.8rem;">CCU</label>
                 <select name="location" style="padding:6px 10px;">
                     <option value="">全部</option>
                     {% for loc in locations %}
-                    <option value="{{ loc.id }}" {% if filters.location == loc.id %}selected{% endif %}>{{ loc.name }}</option>
+                    <option value="{{ loc.id }}" {% if filters.location == loc.id %}selected{% endif %}">{{ loc.name }}</option>
                     {% endfor %}
                 </select>
             </div>
@@ -48,7 +438,7 @@
                 <select name="work_category" style="padding:6px 10px;">
                     <option value="">全部</option>
                     {% for cat in work_categories %}
-                    <option value="{{ cat.id }}" {% if filters.work_category == cat.id %}selected{% endif %}>{{ cat.name }}</option>
+                    <option value="{{ cat.id }}" {% if filters.work_category == cat.id %}selected{% endif %}">{{ cat.name }}</option>
                     {% endfor %}
                 </select>
             </div>
@@ -58,7 +448,7 @@
                 <select name="worker" style="padding:6px 10px;">
                     <option value="">全部</option>
                     {% for w in workers %}
-                    <option value="{{ w.id }}" {% if filters.worker == w.id %}selected{% endif %}>{{ w.full_name }}</option>
+                    <option value="{{ w.id }}" {% if filters.worker == w.id %}selected{% endif %}">{{ w.full_name }}</option>
                     {% endfor %}
                 </select>
             </div>
@@ -78,7 +468,7 @@
                 <tr style="background:var(--color-primary);color:var(--color-text-inverse);">
                     <th style="padding:8px 12px;text-align:left;">日期</th>
                     <th style="padding:8px 12px;text-align:left;">处理人</th>
-                    <th style="padding:8px 12px;text-align:left;">位置</th>
+                    <th style="padding:8px 12px;text-align:left;">CCU</th>
                     <th style="padding:8px 12px;text-align:left;">工作分类</th>
                     <th style="padding:8px 12px;text-align:left;">故障位置</th>
                     <th style="padding:8px 12px;text-align:left;">备注</th>
@@ -123,4 +513,38 @@
         </table>
     </div>
 </div>
+
+<script>
+function navigateWeek(direction) {
+    const urlParams = new URLSearchParams(window.location.search);
+    const currentWeek = urlParams.get('week') || new Date().toISOString().slice(0, 10);
+    const currentDate = new Date(currentWeek);
+    const newDate = new Date(currentDate);
+    newDate.setDate(newDate.getDate() + (direction * 7));
+
+    // Get the Monday of that week
+    const day = newDate.getDay();
+    const diff = newDate.getDate() - day + (day === 0 ? -6 : 1);
+    const monday = new Date(newDate.setDate(diff));
+
+    urlParams.set('week', monday.toISOString().slice(0, 10));
+    window.location.search = urlParams.toString();
+}
+
+function jumpToWeek() {
+    const select = document.getElementById('weekSelector');
+    const value = select.value;
+    const [year, week] = value.split('-');
+
+    // Calculate the date of the Monday of that week
+    const date = new Date(year, 0, 1 + (week - 1) * 7);
+    const day = date.getDay();
+    const diff = date.getDate() - day + (day === 0 ? -6 : 1);
+    const monday = new Date(date.setDate(diff));
+
+    const urlParams = new URLSearchParams(window.location.search);
+    urlParams.set('week', monday.toISOString().slice(0, 10));
+    window.location.search = urlParams.toString();
+}
+</script>
 {% endblock %}
