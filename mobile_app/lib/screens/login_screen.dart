@@ -20,6 +20,7 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _obscurePassword = true;
   bool _isTestingConnection = false;
   String? _connectionStatus; // null = not tested, 'ok', 'fail'
+  String? _connectionError;
 
   @override
   void initState() {
@@ -103,10 +104,11 @@ class _LoginScreenState extends State<LoginScreen> {
                               }
                               setSheetState(() => _isTestingConnection = true);
                               final api = context.read<AuthProvider>().api;
-                              final ok = await api.checkConnection();
+                              final result = await api.checkConnection();
                               setSheetState(() {
                                 _isTestingConnection = false;
-                                _connectionStatus = ok ? 'ok' : 'fail';
+                                _connectionStatus = result.$1 ? 'ok' : 'fail';
+                                _connectionError = result.$2;
                               });
                               setState(() {});
                             },
@@ -144,6 +146,20 @@ class _LoginScreenState extends State<LoginScreen> {
                   ],
                 ],
               ),
+              if (_connectionStatus == 'fail' && _connectionError != null) ...[
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.red.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    _connectionError!,
+                    style: TextStyle(fontSize: 11, color: Colors.red.shade700),
+                  ),
+                ),
+              ],
               const SizedBox(height: 16),
               FilledButton(
                 onPressed: () async {

@@ -46,15 +46,18 @@ class ApiService {
     if (_token != null) 'Authorization': 'Token $_token',
   };
 
-  /// Check server connectivity
-  Future<bool> checkConnection() async {
+  /// Check server connectivity - returns (success, errorMessage)
+  Future<(bool, String?)> checkConnection() async {
     try {
       final response = await http
           .get(Uri.parse('$baseUrl/zones/'), headers: _headers)
-          .timeout(const Duration(seconds: 5));
-      return response.statusCode == 200 || response.statusCode == 401 || response.statusCode == 403;
-    } catch (_) {
-      return false;
+          .timeout(const Duration(seconds: 10));
+      if (response.statusCode == 200 || response.statusCode == 401 || response.statusCode == 403) {
+        return (true, null);
+      }
+      return (false, 'HTTP ${response.statusCode}: ${response.body.substring(0, (response.body.length > 100 ? 100 : response.body.length))}');
+    } catch (e) {
+      return (false, e.toString());
     }
   }
 

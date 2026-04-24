@@ -24,10 +24,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _checkConnection() async {
     setState(() => _isChecking = true);
     final api = context.read<AuthProvider>().api;
-    final connected = await api.checkConnection();
+    final result = await api.checkConnection();
     if (mounted) {
       setState(() {
-        _isConnected = connected;
+        _isConnected = result.$1;
         _isChecking = false;
       });
     }
