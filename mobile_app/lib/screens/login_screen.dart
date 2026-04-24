@@ -83,7 +83,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 controller: controller,
                 decoration: const InputDecoration(
                   labelText: '服务器地址',
-                  hintText: 'http://192.168.1.100:8000/api',
+                  hintText: 'https://www.zctestbench.asia/api',
                   prefixIcon: Icon(Icons.dns),
                   border: OutlineInputBorder(),
                 ),
