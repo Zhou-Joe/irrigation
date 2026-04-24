@@ -1,8 +1,10 @@
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
+import 'package:http/io_client.dart';
 import 'package:http_parser/http_parser.dart';
 import 'package:image_picker/image_picker.dart';
 import '../models/zone.dart';
@@ -11,23 +13,92 @@ import '../models/work_log.dart';
 
 class ApiService {
   // Default server address - can be overridden via settings
-  static const String _defaultBaseUrl = 'http://127.0.0.1:8000/api';
+  static const String _defaultBaseUrl = 'https://www.zctestbench.asia/api';
   static String baseUrl = _defaultBaseUrl;
+
+  // DNS-over-HTTPS cache: hostname -> IP
+  static String? _cachedDnsIp;
+
+  /// Normalize URL: ensure it has a scheme and no trailing slash
+  static String _normalizeUrl(String url) {
+    url = url.trim();
+    if (url.isEmpty) return _defaultBaseUrl;
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+      url = 'https://$url';
+    }
+    while (url.endsWith('/')) {
+      url = url.substring(0, url.length - 1);
+    }
+    return url;
+  }
 
   /// Load saved server URL from SharedPreferences
   static Future<void> loadSavedBaseUrl() async {
     final prefs = await SharedPreferences.getInstance();
     final saved = prefs.getString('server_base_url');
     if (saved != null && saved.isNotEmpty) {
-      baseUrl = saved;
+      baseUrl = _normalizeUrl(saved);
     }
   }
 
   /// Save server URL to SharedPreferences
   static Future<void> setBaseUrl(String url) async {
+    url = _normalizeUrl(url);
     baseUrl = url;
+    _cachedDnsIp = null; // reset DNS cache when URL changes
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('server_base_url', url);
+  }
+
+  /// Resolve hostname via DNS-over-HTTPS when system DNS fails.
+  /// Uses top-level http.get to avoid circular dependency with _client.
+  static Future<String?> _resolveViaDoh(String hostname) async {
+    for (final dohUrl in [
+      'https://dns.alidns.com/resolve?name=$hostname&type=A',
+      'https://dns.google/resolve?name=$hostname&type=A',
+    ]) {
+      try {
+        final dohResponse = await http
+            .get(Uri.parse(dohUrl))
+            .timeout(const Duration(seconds: 5));
+        final data = jsonDecode(dohResponse.body);
+        if (data['Answer'] != null) {
+          for (final answer in data['Answer']) {
+            if (answer['type'] == 1) {
+              return answer['data'] as String;
+            }
+          }
+        }
+      } catch (_) {
+        continue;
+      }
+    }
+    return null;
+  }
+
+  // Custom HTTP client with DNS-over-HTTPS fallback.
+  // Lazily initialized so it's created after the app starts.
+  http.Client? _innerClient;
+  http.Client get _client => _innerClient ??= _createClient();
+
+  http.Client _createClient() {
+    final httpClient = HttpClient();
+    httpClient.connectionFactory = (uri, proxyHost, proxyPort) async {
+      try {
+        return await Socket.startConnect(uri.host, uri.port)
+            .timeout(const Duration(seconds: 3));
+      } catch (e) {
+        // System DNS failed or timed out — try DNS-over-HTTPS
+        final ip = _cachedDnsIp ?? await _resolveViaDoh(uri.host);
+        if (ip != null) {
+          _cachedDnsIp = ip;
+          return await Socket.startConnect(ip, uri.port)
+              .timeout(const Duration(seconds: 5));
+        }
+        rethrow;
+      }
+    };
+    return IOClient(httpClient);
   }
 
   String? _token;
@@ -49,22 +120,26 @@ class ApiService {
   /// Check server connectivity - returns (success, errorMessage)
   Future<(bool, String?)> checkConnection() async {
     try {
-      final response = await http
+      final response = await _client
           .get(Uri.parse('$baseUrl/zones/'), headers: _headers)
-          .timeout(const Duration(seconds: 10));
+          .timeout(const Duration(seconds: 15));
       if (response.statusCode == 200 || response.statusCode == 401 || response.statusCode == 403) {
-        return (true, null);
+        return (true, _cachedDnsIp != null ? '连接成功 (DNS-over-HTTPS: $_cachedDnsIp)' : null);
       }
       return (false, 'HTTP ${response.statusCode}: ${response.body.substring(0, (response.body.length > 100 ? 100 : response.body.length))}');
     } catch (e) {
-      return (false, e.toString());
+      final errStr = e.toString();
+      if (errStr.contains('failed host lookup') || errStr.contains('no address associated')) {
+        return (false, 'DNS解析失败: 无法连接服务器\n\n请尝试:\n1. 设置 → 网络 → 私人DNS → dns.alidns.com\n2. 切换飞行模式后重试\n3. 更换WiFi/移动网络');
+      }
+      return (false, errStr);
     }
   }
 
   /// Login with username and password
   /// Returns user data with role information
   Future<Map<String, dynamic>> login(String username, String password) async {
-    final response = await http.post(
+    final response = await _client.post(
       Uri.parse('$baseUrl/auth/login'),
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode({
@@ -84,7 +159,7 @@ class ApiService {
 
   /// Get zones list
   Future<List<Zone>> getZones() async {
-    final response = await http.get(
+    final response = await _client.get(
       Uri.parse('$baseUrl/zones/'),
       headers: _headers,
     );
@@ -107,7 +182,7 @@ class ApiService {
 
   /// Get single zone
   Future<Zone> getZone(int id) async {
-    final response = await http.get(
+    final response = await _client.get(
       Uri.parse('$baseUrl/zones/$id/'),
       headers: _headers,
     );
@@ -120,7 +195,7 @@ class ApiService {
 
   /// Get equipment for a zone by zone code
   Future<List<Map<String, dynamic>>> getZoneEquipment(String zoneCode) async {
-    final response = await http.get(
+    final response = await _client.get(
       Uri.parse('$baseUrl/zone-equipment/?zone_code=$zoneCode'),
       headers: _headers,
     );
@@ -134,7 +209,7 @@ class ApiService {
 
   /// Get zone detail with plants, equipment, stats
   Future<Map<String, dynamic>> getZoneDetail(int zoneId) async {
-    final response = await http.get(
+    final response = await _client.get(
       Uri.parse('$baseUrl/zones/$zoneId/zone-detail/'),
       headers: _headers,
     );
@@ -147,7 +222,7 @@ class ApiService {
 
   /// Submit work log
   Future<WorkLog> submitWorkLog(WorkLog log) async {
-    final response = await http.post(
+    final response = await _client.post(
       Uri.parse('$baseUrl/work-logs/'),
       headers: _headers,
       body: jsonEncode(log.toJson()),
@@ -161,7 +236,7 @@ class ApiService {
 
   /// Get work types list
   Future<List<String>> getWorkTypes() async {
-    final response = await http.get(
+    final response = await _client.get(
       Uri.parse('$baseUrl/work-types/'),
       headers: _headers,
     );
@@ -170,13 +245,12 @@ class ApiService {
       final List<dynamic> data = jsonDecode(response.body);
       return data.map((e) => e.toString()).toList();
     }
-    // 返回默认工作类型
     return ['浇水', '施肥', '修剪', '除草', '喷药', '种植', '收获', '其他'];
   }
 
   /// Get all requests (filtered by role on server)
   Future<List<Map<String, dynamic>>> getAllRequests() async {
-    final response = await http.get(
+    final response = await _client.get(
       Uri.parse('$baseUrl/requests'),
       headers: _headers,
     );
@@ -200,7 +274,7 @@ class ApiService {
     String? feedback,
     List<String>? photos,
   }) async {
-    final response = await http.post(
+    final response = await _client.post(
       Uri.parse('$baseUrl/maintenance-requests/'),
       headers: _headers,
       body: jsonEncode({
@@ -234,7 +308,7 @@ class ApiService {
     String? feedback,
     List<String>? photos,
   }) async {
-    final response = await http.post(
+    final response = await _client.post(
       Uri.parse('$baseUrl/project-support-requests/'),
       headers: _headers,
       body: jsonEncode({
@@ -267,7 +341,7 @@ class ApiService {
     required String endDatetime,
     List<String>? photos,
   }) async {
-    final response = await http.post(
+    final response = await _client.post(
       Uri.parse('$baseUrl/water-requests/'),
       headers: _headers,
       body: jsonEncode({
@@ -310,7 +384,7 @@ class ApiService {
         throw Exception('未知请求类型');
     }
 
-    final response = await http.patch(
+    final response = await _client.patch(
       Uri.parse(endpoint),
       headers: _headers,
       body: jsonEncode({
@@ -341,7 +415,7 @@ class ApiService {
         throw Exception('未知请求类型');
     }
 
-    final response = await http.get(
+    final response = await _client.get(
       Uri.parse(endpoint),
       headers: _headers,
     );
@@ -373,7 +447,7 @@ class ApiService {
         throw Exception('未知请求类型');
     }
 
-    final response = await http.patch(
+    final response = await _client.patch(
       Uri.parse(endpoint),
       headers: _headers,
       body: jsonEncode(data),
@@ -389,7 +463,7 @@ class ApiService {
 
   /// Get locations (CCU list)
   Future<List<Map<String, dynamic>>> getLocations() async {
-    final response = await http.get(
+    final response = await _client.get(
       Uri.parse('$baseUrl/locations/'),
       headers: _headers,
     );
@@ -402,7 +476,7 @@ class ApiService {
 
   /// Get work categories
   Future<List<Map<String, dynamic>>> getWorkCategories() async {
-    final response = await http.get(
+    final response = await _client.get(
       Uri.parse('$baseUrl/work-categories/'),
       headers: _headers,
     );
@@ -415,7 +489,7 @@ class ApiService {
 
   /// Get workers list (for admin filter)
   Future<List<Map<String, dynamic>>> getWorkers() async {
-    final response = await http.get(
+    final response = await _client.get(
       Uri.parse('$baseUrl/workers/'),
       headers: _headers,
     );
@@ -428,7 +502,7 @@ class ApiService {
 
   /// Get info sources
   Future<List<Map<String, dynamic>>> getInfoSources() async {
-    final response = await http.get(
+    final response = await _client.get(
       Uri.parse('$baseUrl/info-sources/'),
       headers: _headers,
     );
@@ -441,7 +515,7 @@ class ApiService {
 
   /// Get fault categories with nested sub_types
   Future<List<Map<String, dynamic>>> getFaultCategories() async {
-    final response = await http.get(
+    final response = await _client.get(
       Uri.parse('$baseUrl/fault-categories/'),
       headers: _headers,
     );
@@ -474,7 +548,7 @@ class ApiService {
     final query = params.entries.map((e) => '${e.key}=${e.value}').join('&');
     final url = query.isNotEmpty ? '$baseUrl/work-reports/?$query' : '$baseUrl/work-reports/';
 
-    final response = await http.get(Uri.parse(url), headers: _headers);
+    final response = await _client.get(Uri.parse(url), headers: _headers);
     if (response.statusCode == 200) {
       final List<dynamic> data = jsonDecode(response.body);
       return data.map((e) => e as Map<String, dynamic>).toList();
@@ -484,7 +558,7 @@ class ApiService {
 
   /// Get single work report
   Future<Map<String, dynamic>> getWorkReport(int id) async {
-    final response = await http.get(
+    final response = await _client.get(
       Uri.parse('$baseUrl/work-reports/$id/'),
       headers: _headers,
     );
@@ -507,7 +581,7 @@ class ApiService {
     bool isDifficultResolved = false,
     required List<Map<String, dynamic>> faultEntries,
   }) async {
-    final response = await http.post(
+    final response = await _client.post(
       Uri.parse('$baseUrl/work-reports/'),
       headers: _headers,
       body: jsonEncode({
@@ -543,7 +617,7 @@ class ApiService {
     bool isDifficultResolved = false,
     required List<Map<String, dynamic>> faultEntries,
   }) async {
-    final response = await http.put(
+    final response = await _client.put(
       Uri.parse('$baseUrl/work-reports/$id/'),
       headers: _headers,
       body: jsonEncode({
@@ -567,7 +641,7 @@ class ApiService {
 
   /// Delete work report
   Future<void> deleteWorkReport(int id) async {
-    final response = await http.delete(
+    final response = await _client.delete(
       Uri.parse('$baseUrl/work-reports/$id/'),
       headers: _headers,
     );
@@ -600,7 +674,8 @@ class ApiService {
       ));
     }
 
-    final streamed = await request.send();
+    // Use custom client to send (gets DNS-over-HTTPS fallback)
+    final streamed = await _client.send(request);
     final response = await http.Response.fromStream(streamed);
     if (response.statusCode == 200) {
       return jsonDecode(response.body) as Map<String, dynamic>;
@@ -613,7 +688,7 @@ class ApiService {
     required int reportId,
     required String photoPath,
   }) async {
-    final response = await http.delete(
+    final response = await _client.delete(
       Uri.parse('$baseUrl/work-reports/$reportId/remove-photo/?photo=${Uri.encodeComponent(photoPath)}'),
       headers: _headers,
     );
@@ -628,7 +703,7 @@ class ApiService {
 
   /// Get demand categories
   Future<List<Map<String, dynamic>>> getDemandCategories() async {
-    final response = await http.get(
+    final response = await _client.get(
       Uri.parse('$baseUrl/demand-categories/'),
       headers: _headers,
     );
@@ -641,7 +716,7 @@ class ApiService {
 
   /// Get demand departments
   Future<List<Map<String, dynamic>>> getDemandDepartments() async {
-    final response = await http.get(
+    final response = await _client.get(
       Uri.parse('$baseUrl/demand-departments/'),
       headers: _headers,
     );
@@ -674,7 +749,7 @@ class ApiService {
     final query = params.entries.map((e) => '${e.key}=${e.value}').join('&');
     final url = query.isNotEmpty ? '$baseUrl/demand-records/?$query' : '$baseUrl/demand-records/';
 
-    final response = await http.get(Uri.parse(url), headers: _headers);
+    final response = await _client.get(Uri.parse(url), headers: _headers);
     if (response.statusCode == 200) {
       final List<dynamic> data = jsonDecode(response.body);
       return data.map((e) => e as Map<String, dynamic>).toList();
@@ -684,7 +759,7 @@ class ApiService {
 
   /// Get single demand record
   Future<Map<String, dynamic>> getDemandRecord(int id) async {
-    final response = await http.get(
+    final response = await _client.get(
       Uri.parse('$baseUrl/demand-records/$id/'),
       headers: _headers,
     );
@@ -726,7 +801,7 @@ class ApiService {
     if (demandDepartmentText != null) body['demand_department_text'] = demandDepartmentText;
     if (demandContact != null) body['demand_contact'] = demandContact;
 
-    final response = await http.post(
+    final response = await _client.post(
       Uri.parse('$baseUrl/demand-records/'),
       headers: _headers,
       body: jsonEncode(body),
@@ -749,7 +824,7 @@ class ApiService {
     if (statusNotes != null) body['status_notes'] = statusNotes;
     if (content != null) body['content'] = content;
 
-    final response = await http.patch(
+    final response = await _client.patch(
       Uri.parse('$baseUrl/demand-records/$id/'),
       headers: _headers,
       body: jsonEncode(body),
@@ -775,7 +850,7 @@ class ApiService {
     if (endDate != null) params['end_date'] = endDate;
 
     final query = params.entries.map((e) => '${e.key}=${e.value}').join('&');
-    final response = await http.get(
+    final response = await _client.get(
       Uri.parse('$baseUrl/demand-stats?$query'),
       headers: _headers,
     );
@@ -797,7 +872,7 @@ class ApiService {
     final query = params.entries.map((e) => '${e.key}=${e.value}').join('&');
     final url = query.isNotEmpty ? '$baseUrl/demand-calendar?$query' : '$baseUrl/demand-calendar';
 
-    final response = await http.get(Uri.parse(url), headers: _headers);
+    final response = await _client.get(Uri.parse(url), headers: _headers);
     if (response.statusCode == 200) {
       return jsonDecode(response.body) as Map<String, dynamic>;
     }
@@ -808,7 +883,7 @@ class ApiService {
 
   /// Get weather data
   Future<List<Map<String, dynamic>>> getWeather() async {
-    final response = await http.get(
+    final response = await _client.get(
       Uri.parse('$baseUrl/weather'),
       headers: _headers,
     );

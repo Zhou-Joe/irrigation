@@ -340,7 +340,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         content: TextField(
           controller: controller,
           decoration: const InputDecoration(
-            hintText: 'http://example.com/api',
+            hintText: 'https://www.zctestbench.asia/api',
             border: OutlineInputBorder(),
           ),
           keyboardType: TextInputType.url,
