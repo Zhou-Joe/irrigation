@@ -88,7 +88,16 @@ class ApiService {
 
     if (response.statusCode == 200) {
       final List<dynamic> data = jsonDecode(response.body);
-      return data.map((json) => Zone.fromJson(json)).toList();
+      return data
+          .map((json) {
+            try {
+              return Zone.fromJson(json);
+            } catch (_) {
+              return null;
+            }
+          })
+          .whereType<Zone>()
+          .toList();
     }
     throw Exception('获取区域失败');
   }

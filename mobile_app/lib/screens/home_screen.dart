@@ -339,6 +339,16 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     );
   }
 
+  void _goToWorkReportList() {
+    final auth = context.read<AuthProvider>();
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => WorkReportListScreen(isAdmin: auth.isAdmin),
+      ),
+    );
+  }
+
   void _goToDemandList() {
     final auth = context.read<AuthProvider>();
     final user = auth.user;
@@ -394,7 +404,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           const NavigationDestination(icon: Icon(Icons.map), label: '地图'),
           const NavigationDestination(
             icon: Icon(Icons.assignment),
-            label: '维修日报',
+            label: '维修日志',
           ),
           const NavigationDestination(icon: Icon(Icons.settings), label: '设置'),
         ],
@@ -526,8 +536,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 markers: [
                   Marker(
                     point: LatLng(
-                      _selectedZone!.center!['lat']!,
-                      _selectedZone!.center!['lng']!,
+                      _selectedZone!.center!['lat'] ?? 31.0,
+                      _selectedZone!.center!['lng'] ?? 121.6,
                     ),
                     width: 180,
                     height: _selectedZone!.pendingRequests.isNotEmpty
@@ -611,14 +621,14 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     final items = <_QuickActionItem>[];
 
     if (!isDeptUser) {
-      items.add(_QuickActionItem(Icons.post_add_rounded, '新建日报', _goToWorkReport));
+      items.add(_QuickActionItem(Icons.post_add_rounded, '新建工单', _goToWorkReport));
     }
     items.add(_QuickActionItem(
-      isDeptUser ? Icons.water_drop : Icons.rule_folder_outlined,
-      isDeptUser ? '浇水需求' : '工单状态',
-      _goToRequestStatus,
+      isDeptUser ? Icons.water_drop : Icons.assignment_outlined,
+      isDeptUser ? '浇水需求' : '维修日志',
+      isDeptUser ? _goToRequestStatus : _goToWorkReportList,
     ));
-    items.add(_QuickActionItem(Icons.event_note_rounded, '需求周报', _goToDemandList));
+    items.add(_QuickActionItem(Icons.event_note_rounded, '需求日志', _goToDemandList));
     items.add(_QuickActionItem(
       Icons.place_outlined,
       _selectedZone == null ? '选择区域' : _selectedZone!.name,

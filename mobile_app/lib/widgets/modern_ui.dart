@@ -26,39 +26,7 @@ class AppBackground extends StatelessWidget {
           colors: [Color(0xFFF7FAF6), Color(0xFFF0F5EF), AppColors.background],
         ),
       ),
-      child: Stack(
-        children: [
-          Positioned(
-            top: -40,
-            right: -30,
-            child: IgnorePointer(
-              child: Container(
-                width: 180,
-                height: 180,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: AppColors.accent.withOpacity(0.10),
-                ),
-              ),
-            ),
-          ),
-          Positioned(
-            top: 60,
-            left: -70,
-            child: IgnorePointer(
-              child: Container(
-                width: 210,
-                height: 210,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: AppColors.primary.withOpacity(0.08),
-                ),
-              ),
-            ),
-          ),
-          child,
-        ],
-      ),
+      child: child,
     );
   }
 }
@@ -126,7 +94,7 @@ class AppIconBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bg = backgroundColor ?? color.withValues(alpha: 0.14);
+    final bg = backgroundColor ?? color.withOpacity(0.14);
     final lightIcon = color == Colors.white;
     return SizedBox(
       width: size + 22,
@@ -141,8 +109,8 @@ class AppIconBadge extends StatelessWidget {
               shape: BoxShape.circle,
               gradient: LinearGradient(
                 colors: [
-                  color.withValues(alpha: 0.16),
-                  AppColors.accent.withValues(alpha: 0.12),
+                  color.withOpacity(0.16),
+                  AppColors.accent.withOpacity(0.12),
                 ],
               ),
             ),
@@ -157,12 +125,12 @@ class AppIconBadge extends StatelessWidget {
             height: size,
             decoration: BoxDecoration(
               color: lightIcon
-                  ? Colors.white.withValues(alpha: 0.18)
-                  : Colors.white.withValues(alpha: 0.92),
+                  ? Colors.white.withOpacity(0.18)
+                  : Colors.white.withOpacity(0.92),
               borderRadius: BorderRadius.circular(size * 0.34),
               boxShadow: [
                 BoxShadow(
-                  color: color.withValues(alpha: 0.18),
+                  color: color.withOpacity(0.18),
                   blurRadius: 16,
                   offset: const Offset(0, 8),
                 ),
@@ -219,7 +187,7 @@ class AppHeroCard extends StatelessWidget {
                   icon: icon,
                   size: 54,
                   color: Colors.white,
-                  backgroundColor: Colors.white.withValues(alpha: 0.12),
+                  backgroundColor: Colors.white.withOpacity(0.12),
                 ),
                 const Spacer(),
                 ...actions,
@@ -411,7 +379,7 @@ class AppEmptyState extends StatelessWidget {
                           height: 30,
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
-                            color: AppColors.accent.withValues(alpha: 0.16),
+                            color: AppColors.accent.withOpacity(0.16),
                           ),
                         ),
                       ),
@@ -423,7 +391,7 @@ class AppEmptyState extends StatelessWidget {
                           height: 18,
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
-                            color: AppColors.primary.withValues(alpha: 0.16),
+                            color: AppColors.primary.withOpacity(0.16),
                           ),
                         ),
                       ),
@@ -434,7 +402,7 @@ class AppEmptyState extends StatelessWidget {
                           height: 18,
                           decoration: BoxDecoration(
                             borderRadius: BorderRadius.circular(999),
-                            color: AppColors.primary.withValues(alpha: 0.08),
+                            color: AppColors.primary.withOpacity(0.08),
                           ),
                         ),
                       ),
@@ -571,9 +539,9 @@ class AppQuickActionButton extends StatelessWidget {
           width: 148,
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.12),
+            color: Colors.white.withOpacity(0.12),
             borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
+            border: Border.all(color: Colors.white.withOpacity(0.14)),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -582,7 +550,7 @@ class AppQuickActionButton extends StatelessWidget {
                 width: 38,
                 height: 38,
                 decoration: BoxDecoration(
-                  color: color.withValues(alpha: 0.16),
+                  color: color.withOpacity(0.16),
                   borderRadius: BorderRadius.circular(14),
                 ),
                 child: Icon(icon, color: Colors.white, size: 20),
@@ -600,7 +568,7 @@ class AppQuickActionButton extends StatelessWidget {
                 Text(
                   subtitle!,
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Colors.white.withValues(alpha: 0.74),
+                    color: Colors.white.withOpacity(0.74),
                   ),
                 ),
               ],

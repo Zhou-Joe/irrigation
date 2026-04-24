@@ -5,7 +5,9 @@ import '../models/user.dart';
 import '../services/api_service.dart';
 
 class AuthProvider with ChangeNotifier {
-  final ApiService _api = ApiService();
+  AuthProvider({ApiService? api}) : _api = api ?? ApiService();
+
+  final ApiService _api;
 
   bool _isLoading = true;
   bool _isAuthenticated = false;

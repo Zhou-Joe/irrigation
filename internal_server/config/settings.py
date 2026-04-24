@@ -79,14 +79,15 @@ MEDIA_ROOT = BASE_DIR / 'media'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-# Security settings
-SECURE_SSL_REDIRECT = True
-SESSION_COOKIE_SECURE = True
-CSRF_COOKIE_SECURE = True
-SECURE_HSTS_SECONDS = 31536000
-SECURE_HSTS_INCLUDE_SUBDOMAINS = True
-SECURE_HSTS_PRELOAD = True
-SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+# Security settings (disabled for local dev; enable in production)
+# if not DEBUG:
+#     SECURE_SSL_REDIRECT = True
+#     SESSION_COOKIE_SECURE = True
+#     CSRF_COOKIE_SECURE = True
+#     SECURE_HSTS_SECONDS = 31536000
+#     SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+#     SECURE_HSTS_PRELOAD = True
+#     SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 
 # Login settings
 LOGIN_URL = '/login/'
@@ -99,9 +100,15 @@ CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOWED_ORIGINS = [
     'https://zctestbench.asia',
     'https://www.zctestbench.asia',
+    'http://localhost:5001',
+    'http://localhost:5000',
+    'http://127.0.0.1:5001',
+    'http://127.0.0.1:5000',
 ]
 CORS_ALLOWED_ORIGIN_REGEXES = [
     r'^https?://(.*\.)?zctestbench\.asia$',
+    r'^https?://localhost:\d+$',
+    r'^https?://127\.0\.0\.1:\d+$',
 ]
 
 # Cloud Relay settings

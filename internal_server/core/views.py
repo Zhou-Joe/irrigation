@@ -131,6 +131,7 @@ def profile_page(request):
             'employee_id': manager.employee_id,
             'full_name': manager.full_name,
             'phone': manager.phone,
+            'api_token': str(manager.api_token),
             'is_super_admin': manager.is_super_admin,
             'can_approve_registrations': manager.can_approve_registrations,
             'can_approve_work_orders': manager.can_approve_work_orders,
@@ -147,6 +148,7 @@ def profile_page(request):
                 'employee_id': dept_user.employee_id,
                 'full_name': dept_user.full_name,
                 'phone': dept_user.phone,
+                'api_token': str(dept_user.api_token),
                 'department': dept_user.get_department_display_name(),
             }
         except DepartmentUserProfile.DoesNotExist:
@@ -177,14 +179,19 @@ def profile_page(request):
     if request.method == 'POST':
         action = request.POST.get('action')
 
-        if action == 'regenerate_token' and profile_type == 'worker':
+        if action == 'regenerate_token' and profile_type in ['worker', 'manager', 'dept_user']:
             try:
-                worker = Worker.objects.get(user=user, active=True)
-                worker.regenerate_token()
+                if profile_type == 'worker':
+                    profile = Worker.objects.get(user=user, active=True)
+                elif profile_type == 'manager':
+                    profile = ManagerProfile.objects.get(user=user, active=True)
+                else:
+                    profile = DepartmentUserProfile.objects.get(user=user, active=True)
+                profile.regenerate_token()
                 messages.success(request, 'API令牌已重新生成')
                 return redirect('core:profile')
-            except Worker.DoesNotExist:
-                messages.error(request, '未找到工作人员档案')
+            except Exception:
+                messages.error(request, '未找到用户档案')
         elif action == 'update_profile':
             phone = request.POST.get('phone', '').strip()
             full_name = request.POST.get('full_name', '').strip()
@@ -1375,6 +1382,7 @@ def register(request):
         username = request.POST.get('username', '').strip()
         password = request.POST.get('password', '').strip()
         phone = request.POST.get('phone', '').strip()
+        employee_id = request.POST.get('employee_id', '').strip()
         department_type = request.POST.get('department_type', '').strip()
         requested_role = request.POST.get('requested_role', ROLE_FIELD_WORKER).strip()
         department = request.POST.get('department', '').strip()
@@ -1429,6 +1437,7 @@ def register(request):
                 username=username,
                 password=make_password(password),  # Hash the password
                 phone=phone,
+                employee_id=employee_id,
                 department=department,
                 department_other=department_other if department == '其他' else '',
                 requested_role=requested_role,
@@ -1483,20 +1492,24 @@ def registration_approval(request):
                     prefix = 'EMP'
                     model_class = Worker
 
-                # Find max employee_id number by scanning all records
-                max_num = 0
-                for profile in model_class.objects.all():
-                    eid = profile.employee_id or ''
-                    if eid.startswith(prefix):
-                        try:
-                            num = int(eid[len(prefix):])
-                            if num > max_num:
-                                max_num = num
-                        except ValueError:
-                            continue
+                # Use submitted employee_id if provided, otherwise auto-generate
+                if reg.employee_id:
+                    employee_id = reg.employee_id
+                else:
+                    # Find max employee_id number by scanning all records
+                    max_num = 0
+                    for profile in model_class.objects.all():
+                        eid = profile.employee_id or ''
+                        if eid.startswith(prefix):
+                            try:
+                                num = int(eid[len(prefix):])
+                                if num > max_num:
+                                    max_num = num
+                            except ValueError:
+                                continue
 
-                next_num = max_num + 1
-                employee_id = f'{prefix}{next_num:03d}'
+                    next_num = max_num + 1
+                    employee_id = f'{prefix}{next_num:03d}'
 
                 # Create Django User with submitted credentials
                 user = User.objects.create(

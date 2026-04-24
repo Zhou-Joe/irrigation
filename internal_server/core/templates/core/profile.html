@@ -139,10 +139,10 @@
                 <span class="info-value">{{ profile_data.full_name }}</span>
             </div>
             {% endif %}
-            {% if not profile_type %}
+            {% if profile_data.phone %}
             <div class="info-item">
-                <span class="info-label">用户名</span>
-                <span class="info-value">{{ user.username }}</span>
+                <span class="info-label">电话</span>
+                <span class="info-value">{{ profile_data.phone }}</span>
             </div>
             {% endif %}
             {% if user.email %}
@@ -157,10 +157,13 @@
                 <span class="info-value">{{ profile_data.department }}</span>
             </div>
             {% endif %}
+            <div class="info-item">
+                <span class="info-label">用户名</span>
+                <span class="info-value">{{ user.username }}</span>
+            </div>
         </div>
     </div>
 
-    {% if profile_type == 'worker' or profile_type == 'manager' or profile_type == 'dept_user' %}
     <!-- 编辑资料 -->
     <div class="profile-section">
         <h2 class="section-title">编辑资料</h2>
@@ -168,20 +171,16 @@
             {% csrf_token %}
             <input type="hidden" name="action" value="update_profile">
 
-            {% if profile_data.employee_id %}
             <div class="form-group">
                 <label for="employee_id">工号</label>
                 <input type="text" id="employee_id" name="employee_id" value="{{ profile_data.employee_id }}" placeholder="请输入工号">
                 <small style="color: var(--color-text-muted); font-size: 0.75rem;">工号必须唯一，修改前请确认</small>
             </div>
-            {% endif %}
 
-            {% if profile_data.full_name %}
             <div class="form-group">
                 <label for="full_name">姓名</label>
                 <input type="text" id="full_name" name="full_name" value="{{ profile_data.full_name }}" placeholder="请输入姓名">
             </div>
-            {% endif %}
 
             <div class="form-group">
                 <label for="phone">联系电话</label>
@@ -198,9 +197,8 @@
             </div>
         </form>
     </div>
-    {% endif %}
 
-    {% if profile_type == 'worker' %}
+    {% if profile_data.api_token %}
     <!-- API令牌 -->
     <div class="profile-section">
         <h2 class="section-title">API令牌</h2>
