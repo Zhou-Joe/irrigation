@@ -121,17 +121,19 @@ class _WorkReportFormScreenState extends State<WorkReportFormScreen> {
     setState(() => _isLoading = true);
     try {
       final api = context.read<AuthProvider>().api;
-      final locFuture = api.getLocations();
-      final wcFuture = api.getWorkCategories();
-      final isFuture = api.getInfoSources();
-      final fcFuture = api.getFaultCategories();
-      final zoneFuture = api.getZones();
+      final results = await Future.wait<dynamic>([
+        api.getLocations(),
+        api.getWorkCategories(),
+        api.getInfoSources(),
+        api.getFaultCategories(),
+        api.getZones(),
+      ]);
 
-      final locations = await locFuture;
-      final workCategories = await wcFuture;
-      final infoSources = await isFuture;
-      final faultCategories = await fcFuture;
-      final zones = await zoneFuture;
+      final locations = (results[0] as List).cast<Map<String, dynamic>>();
+      final workCategories = (results[1] as List).cast<Map<String, dynamic>>();
+      final infoSources = (results[2] as List).cast<Map<String, dynamic>>();
+      final faultCategories = (results[3] as List).cast<Map<String, dynamic>>();
+      final zones = (results[4] as List).cast<Zone>();
 
       // Try to get user location for distance sorting
       _getUserLocation();
@@ -633,7 +635,7 @@ class _WorkReportFormScreenState extends State<WorkReportFormScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(
-          _isEditing ? '编辑日报 #${widget.existingReport!['id']}' : '新建维修工作日报',
+          _isEditing ? '编辑工单 #${widget.existingReport!['id']}' : '新建维修工单',
         ),
       ),
       body: AppBackground(
@@ -645,7 +647,7 @@ class _WorkReportFormScreenState extends State<WorkReportFormScreen> {
                   padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
                   children: [
                     AppHeroCard(
-                      title: _isEditing ? '编辑维修工作日报' : '新建维修工作日报',
+                      title: _isEditing ? '编辑维修工单' : '新建维修工单',
                       subtitle: '把基础信息、故障计数和照片整理成更清晰的日报。',
                       icon: Icons.assignment_turned_in_outlined,
                     ),
@@ -959,7 +961,9 @@ class _WorkReportFormScreenState extends State<WorkReportFormScreen> {
           ),
         const SizedBox(height: 8),
         // Add photo buttons
-        Row(
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
           children: [
             OutlinedButton.icon(
               onPressed: _pickFromCamera,
@@ -970,7 +974,6 @@ class _WorkReportFormScreenState extends State<WorkReportFormScreen> {
                 side: const BorderSide(color: Color(0xFFB7E4C7)),
               ),
             ),
-            const SizedBox(width: 8),
             OutlinedButton.icon(
               onPressed: _pickFromGallery,
               icon: const Icon(Icons.photo_library, size: 18),

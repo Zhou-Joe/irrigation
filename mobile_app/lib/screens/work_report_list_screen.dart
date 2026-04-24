@@ -176,15 +176,10 @@ class _WorkReportListScreenState extends State<WorkReportListScreen> {
     final totalFaults = report['total_faults'] ?? 0;
     final isDifficult = report['is_difficult'] ?? false;
     final isDifficultResolved = report['is_difficult_resolved'] ?? false;
-    final locationName = report['location'] is Map
-        ? report['location']['name'] ?? '-'
-        : '-';
-    final workCategoryName = report['work_category'] is Map
-        ? report['work_category']['name'] ?? '-'
-        : '-';
-    final workerName = report['worker'] is Map
-        ? report['worker']['full_name'] ?? '-'
-        : '-';
+    // API returns: location (ID), location_name (string)
+    final locationName = report['location_name'] ?? '-';
+    final workCategoryName = report['work_category_name'] ?? '-';
+    final workerName = report['worker_name'] ?? '-';
     final remark = report['remark'] ?? '';
 
     return AppCard(
@@ -350,21 +345,15 @@ class _WorkReportListScreenState extends State<WorkReportListScreen> {
     Map<String, dynamic> report,
     ScrollController controller,
   ) {
-    final locationName = report['location'] is Map
-        ? report['location']['name'] ?? '-'
-        : '-';
-    final workCategoryName = report['work_category'] is Map
-        ? report['work_category']['name'] ?? '-'
-        : '-';
-    final workerName = report['worker'] is Map
-        ? report['worker']['full_name'] ?? '-'
-        : '-';
-    final infoSourceName = report['info_source'] is Map
-        ? report['info_source']['name'] ?? '-'
-        : '-';
+    final locationName = report['location_name'] ?? '-';
+    final workCategoryName = report['work_category_name'] ?? '-';
+    final workerName = report['worker_name'] ?? '-';
+    final infoSourceName = report['info_source_name'] ?? '-';
     final faultEntries = report['fault_entries'] as List? ?? [];
     final isDifficult = report['is_difficult'] ?? false;
     final isDifficultResolved = report['is_difficult_resolved'] ?? false;
+    final totalFaults = faultEntries.fold<int>(0, (sum, e) => sum + (e['count'] as int? ?? 0));
+    final photoUrls = report['photo_urls'] as List? ?? [];
 
     return SingleChildScrollView(
       controller: controller,
@@ -372,6 +361,7 @@ class _WorkReportListScreenState extends State<WorkReportListScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Handle bar
           Center(
             child: Container(
               width: 40,
@@ -383,133 +373,352 @@ class _WorkReportListScreenState extends State<WorkReportListScreen> {
             ),
           ),
           const SizedBox(height: 16),
+
+          // Header with ID and badges
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF40916C),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  '#${report['id']}',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
               Text(
-                '日报详情 #${report['id']}',
+                report['date'] ?? '-',
                 style: const TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
                   color: Color(0xFF1B4332),
                 ),
               ),
+              const Spacer(),
+              if (isDifficult)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: isDifficultResolved ? const Color(0xFF52B788) : const Color(0xFFE3A85B),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        isDifficultResolved ? Icons.check_circle : Icons.warning,
+                        size: 14,
+                        color: Colors.white,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        isDifficultResolved ? '疑难已处理' : '疑难问题',
+                        style: const TextStyle(color: Colors.white, fontSize: 12),
+                      ),
+                    ],
+                  ),
+                ),
+              const SizedBox(width: 8),
               IconButton(
-                icon: const Icon(Icons.edit),
+                icon: const Icon(Icons.edit_note, color: Color(0xFF40916C)),
                 onPressed: () async {
                   Navigator.pop(context);
                   final result = await Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (_) =>
-                          WorkReportFormScreen(existingReport: report),
+                      builder: (_) => WorkReportFormScreen(existingReport: report),
                     ),
                   );
                   if (result == true) _loadReports();
                 },
+                tooltip: '编辑',
               ),
+            ],
+          ),
+          const SizedBox(height: 16),
+
+          // 基本信息卡片
+          _buildDetailCard(
+            title: '基本信息',
+            icon: Icons.info_outline,
+            children: [
+              _buildDetailRow(Icons.calendar_today, '日期', report['date'] ?? '-'),
+              _buildDetailRow(Icons.wb_cloudy, '天气', report['weather'] ?? '未记录'),
+              _buildDetailRow(Icons.person_outline, '处理人', workerName),
             ],
           ),
           const SizedBox(height: 12),
 
-          _buildInfoGrid([
-            _InfoItem(Icons.calendar_today, '日期', report['date'] ?? '-'),
-            _InfoItem(Icons.wb_cloudy, '天气', report['weather'] ?? '-'),
-            _InfoItem(Icons.person, '处理人', workerName),
-            _InfoItem(Icons.location_on, '位置', locationName),
-            _InfoItem(Icons.category, '工作分类', workCategoryName),
-            _InfoItem(
-              Icons.place,
-              '故障位置',
-              report['zone_location_display'] ?? '-',
-            ),
-            _InfoItem(Icons.info_outline, '信息来源', infoSourceName),
-            _InfoItem(
-              isDifficult ? Icons.warning : Icons.check_circle,
-              '疑难问题',
-              isDifficult ? (isDifficultResolved ? '是 (已处理)' : '是 (未处理)') : '否',
-            ),
-          ]),
-
-          const SizedBox(height: 16),
-          const Text(
-            '备注/工作内容',
-            style: TextStyle(
-              fontWeight: FontWeight.w600,
-              color: Color(0xFF1B4332),
-            ),
+          // 工作信息卡片
+          _buildDetailCard(
+            title: '工作信息',
+            icon: Icons.work_outline,
+            children: [
+              _buildDetailRow(Icons.location_on_outlined, '位置/CCU', locationName),
+              _buildDetailRow(Icons.category_outlined, '工作分类', workCategoryName),
+              _buildDetailRow(Icons.place_outlined, '故障位置', report['zone_location_display'] ?? '未指定'),
+              _buildDetailRow(Icons.source_outlined, '信息来源', infoSourceName.isNotEmpty ? infoSourceName : '未记录'),
+            ],
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: 12),
+
+          // 故障计数卡片
+          _buildDetailCard(
+            title: '故障计数',
+            icon: Icons.bug_report_outlined,
+            trailing: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: const Color(0xFF2D6A4F),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                '总计 $totalFaults',
+                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 13),
+              ),
+            ),
+            children: faultEntries.isEmpty
+                ? [
+                    Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Text('暂无故障记录', style: TextStyle(color: Colors.grey.shade500)),
+                      ),
+                    ),
+                  ]
+                : faultEntries.map((entry) {
+                    final subName = entry['fault_subtype_name'] ?? '-';
+                    final catName = entry['fault_category_name'] ?? '';
+                    final count = entry['count'] ?? 0;
+                    return _buildFaultEntryRow(catName, subName, count);
+                  }).toList(),
+          ),
+          const SizedBox(height: 12),
+
+          // 备注卡片
+          _buildDetailCard(
+            title: '备注/工作内容',
+            icon: Icons.notes_outlined,
+            children: [
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  report['remark'] ?? '未填写备注',
+                  style: const TextStyle(fontSize: 14, height: 1.5),
+                ),
+              ),
+            ],
+          ),
+
+          // 照片区域
+          if (photoUrls.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            _buildDetailCard(
+              title: '现场照片',
+              icon: Icons.photo_library_outlined,
+              trailing: Text(
+                '${photoUrls.length} 张',
+                style: const TextStyle(color: Color(0xFF40916C), fontWeight: FontWeight.w600),
+              ),
+              children: [
+                SizedBox(
+                  height: 100,
+                  child: ListView.builder(
+                    scrollDirection: Axis.horizontal,
+                    itemCount: photoUrls.length,
+                    itemBuilder: (context, index) {
+                      return Container(
+                        margin: const EdgeInsets.only(right: 8),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: Image.network(
+                            photoUrls[index],
+                            width: 100,
+                            height: 100,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => Container(
+                              width: 100,
+                              height: 100,
+                              color: Colors.grey.shade200,
+                              child: const Icon(Icons.broken_image, color: Colors.grey),
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ],
+
+          const SizedBox(height: 24),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDetailCard({
+    required String title,
+    required IconData icon,
+    Widget? trailing,
+    required List<Widget> children,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFD8E8E0)),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF1B4332).withOpacity(0.06),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Card header
           Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.grey.shade50,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: Colors.grey.shade200),
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+            decoration: const BoxDecoration(
+              border: Border(bottom: BorderSide(color: Color(0xFFE8F0EA))),
             ),
-            child: Text(
-              report['remark'] ?? '',
-              style: const TextStyle(fontSize: 14),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF40916C).withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(icon, size: 18, color: const Color(0xFF2D6A4F)),
+                ),
+                const SizedBox(width: 10),
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF1B4332),
+                  ),
+                ),
+                if (trailing != null) ...[
+                  const Spacer(),
+                  trailing,
+                ],
+              ],
             ),
           ),
+          // Card content
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: children,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
-          if (faultEntries.isNotEmpty) ...[
-            const SizedBox(height: 16),
-            const Text(
-              '故障计数',
-              style: TextStyle(
-                fontWeight: FontWeight.w600,
+  Widget _buildDetailRow(IconData icon, String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        children: [
+          Icon(icon, size: 18, color: const Color(0xFF52796F)),
+          const SizedBox(width: 8),
+          SizedBox(
+            width: 80,
+            child: Text(
+              label,
+              style: const TextStyle(
+                fontSize: 13,
+                color: Color(0xFF52796F),
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
                 color: Color(0xFF1B4332),
               ),
             ),
-            const SizedBox(height: 8),
-            ...faultEntries.map((entry) {
-              final subName = entry['fault_subtype'] is Map
-                  ? entry['fault_subtype']['name_zh'] ?? '-'
-                  : '-';
-              final catName = entry['fault_subtype'] is Map
-                  ? (entry['fault_subtype']['category'] is Map
-                        ? entry['fault_subtype']['category']['name_zh'] ?? ''
-                        : '')
-                  : '';
-              final count = entry['count'] ?? 0;
-              return Padding(
-                padding: const EdgeInsets.symmetric(vertical: 2),
-                child: Row(
-                  children: [
-                    if (catName.isNotEmpty) ...[
-                      Text(
-                        catName,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey.shade600,
-                        ),
-                      ),
-                      const Text(
-                        ' / ',
-                        style: TextStyle(fontSize: 12, color: Colors.grey),
-                      ),
-                    ],
-                    Expanded(
-                      child: Text(
-                        subName,
-                        style: const TextStyle(fontSize: 13),
-                      ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFaultEntryRow(String categoryName, String subTypeName, int count) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF7FAF8),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFE0EBE5)),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (categoryName.isNotEmpty)
+                  Text(
+                    categoryName,
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: Colors.grey.shade500,
+                      fontWeight: FontWeight.w500,
                     ),
-                    Text(
-                      '$count',
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w700,
-                        fontSize: 14,
-                        color: Color(0xFF40916C),
-                      ),
-                    ),
-                  ],
+                  ),
+                Text(
+                  subTypeName,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                    color: Color(0xFF1B4332),
+                  ),
                 ),
-              );
-            }),
-          ],
+              ],
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+            decoration: BoxDecoration(
+              color: const Color(0xFF40916C),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Text(
+              '$count',
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w700,
+                fontSize: 14,
+              ),
+            ),
+          ),
         ],
       ),
     );

@@ -68,8 +68,7 @@ def worker_login(request):
             'can_approve_registrations': manager.can_approve_registrations,
             'can_approve_work_orders': manager.can_approve_work_orders,
         }
-        # Use user's token or generate one
-        token = manager.api_token if hasattr(manager, 'api_token') else str(manager.id)
+        token = str(manager.api_token)
     except ManagerProfile.DoesNotExist:
         pass
 
@@ -88,7 +87,7 @@ def worker_login(request):
                 'department': dept_user.department,
                 'department_other': dept_user.department_other,
             }
-            token = str(dept_user.id)
+            token = str(dept_user.api_token)
         except DepartmentUserProfile.DoesNotExist:
             pass
 
@@ -493,23 +492,13 @@ class WorkLogViewSet(viewsets.ModelViewSet):
     permission_classes = [IsOwnerOrAdmin]
 
     def get_queryset(self):
-        user = self.request.user
-        is_admin = user.is_superuser or user.is_staff
-        if not is_admin:
-            try:
-                ManagerProfile.objects.get(user=user, active=True)
-                is_admin = True
-            except ManagerProfile.DoesNotExist:
-                pass
-
-        if is_admin:
+        from .role_utils import is_admin, get_worker_for_user
+        if is_admin(self.request.user):
             return WorkLog.objects.all()
-
-        try:
-            worker = Worker.objects.get(user=user, active=True)
+        worker = get_worker_for_user(self.request.user)
+        if worker:
             return WorkLog.objects.filter(worker=worker)
-        except Worker.DoesNotExist:
-            return WorkLog.objects.none()
+        return WorkLog.objects.none()
 
 
 class MaintenanceRequestViewSet(viewsets.ModelViewSet):
@@ -520,30 +509,15 @@ class MaintenanceRequestViewSet(viewsets.ModelViewSet):
     permission_classes = [IsOwnerOrAdmin]
 
     def get_queryset(self):
-        user = self.request.user
-        is_admin = user.is_superuser or user.is_staff
-        if not is_admin:
-            try:
-                ManagerProfile.objects.get(user=user, active=True)
-                is_admin = True
-            except ManagerProfile.DoesNotExist:
-                pass
-
-        # Check if dept user - deny access
-        try:
-            DepartmentUserProfile.objects.get(user=user, active=True)
+        from .role_utils import is_admin, is_dept_user, get_worker_for_user
+        if is_dept_user(self.request.user):
             return MaintenanceRequest.objects.none()
-        except DepartmentUserProfile.DoesNotExist:
-            pass
-
-        if is_admin:
+        if is_admin(self.request.user):
             return MaintenanceRequest.objects.all().order_by('-created_at')
-
-        try:
-            worker = Worker.objects.get(user=user, active=True)
+        worker = get_worker_for_user(self.request.user)
+        if worker:
             return MaintenanceRequest.objects.filter(submitter=worker).order_by('-created_at')
-        except Worker.DoesNotExist:
-            return MaintenanceRequest.objects.none()
+        return MaintenanceRequest.objects.none()
 
     def perform_create(self, serializer):
         # request.user is Worker when using token auth, or User when using session auth
@@ -561,30 +535,15 @@ class ProjectSupportRequestViewSet(viewsets.ModelViewSet):
     permission_classes = [IsOwnerOrAdmin]
 
     def get_queryset(self):
-        user = self.request.user
-        is_admin = user.is_superuser or user.is_staff
-        if not is_admin:
-            try:
-                ManagerProfile.objects.get(user=user, active=True)
-                is_admin = True
-            except ManagerProfile.DoesNotExist:
-                pass
-
-        # Check if dept user - deny access
-        try:
-            DepartmentUserProfile.objects.get(user=user, active=True)
+        from .role_utils import is_admin as is_admin_user, is_dept_user, get_worker_for_user
+        if is_dept_user(self.request.user):
             return ProjectSupportRequest.objects.none()
-        except DepartmentUserProfile.DoesNotExist:
-            pass
-
-        if is_admin:
+        if is_admin_user(self.request.user):
             return ProjectSupportRequest.objects.all().order_by('-created_at')
-
-        try:
-            worker = Worker.objects.get(user=user, active=True)
+        worker = get_worker_for_user(self.request.user)
+        if worker:
             return ProjectSupportRequest.objects.filter(submitter=worker).order_by('-created_at')
-        except Worker.DoesNotExist:
-            return ProjectSupportRequest.objects.none()
+        return ProjectSupportRequest.objects.none()
 
     def perform_create(self, serializer):
         if isinstance(self.request.user, Worker):
@@ -601,31 +560,15 @@ class WaterRequestViewSet(viewsets.ModelViewSet):
     permission_classes = [IsOwnerOrAdmin]
 
     def get_queryset(self):
-        user = self.request.user
-
-        # Check if dept user - sees all water requests
-        try:
-            DepartmentUserProfile.objects.get(user=user, active=True)
+        from .role_utils import is_admin, is_dept_user, get_worker_for_user
+        if is_dept_user(self.request.user):
             return WaterRequest.objects.all().order_by('-created_at')
-        except DepartmentUserProfile.DoesNotExist:
-            pass
-
-        is_admin = user.is_superuser or user.is_staff
-        if not is_admin:
-            try:
-                ManagerProfile.objects.get(user=user, active=True)
-                is_admin = True
-            except ManagerProfile.DoesNotExist:
-                pass
-
-        if is_admin:
+        if is_admin(self.request.user):
             return WaterRequest.objects.all().order_by('-created_at')
-
-        try:
-            worker = Worker.objects.get(user=user, active=True)
+        worker = get_worker_for_user(self.request.user)
+        if worker:
             return WaterRequest.objects.filter(submitter=worker).order_by('-created_at')
-        except Worker.DoesNotExist:
-            return WaterRequest.objects.none()
+        return WaterRequest.objects.none()
 
     def perform_create(self, serializer):
         if isinstance(self.request.user, Worker):
@@ -649,8 +592,17 @@ def get_all_requests(request):
     role = None
     profile = None
 
-    # Determine user role
-    if user.is_superuser or user.is_staff:
+    # Determine user role - handle both Django User and profile model instances
+    if isinstance(user, ManagerProfile):
+        role = 'admin'
+        profile = user
+    elif isinstance(user, DepartmentUserProfile):
+        role = 'dept_user'
+        profile = user
+    elif isinstance(user, Worker):
+        role = 'field_worker'
+        profile = user
+    elif getattr(user, 'is_superuser', False) or getattr(user, 'is_staff', False):
         role = 'admin'
     else:
         # Check for Manager profile
@@ -987,13 +939,12 @@ class WorkReportViewSet(viewsets.ModelViewSet):
             'worker', 'location', 'work_category', 'info_source'
         ).prefetch_related('fault_entries__fault_subtype__category').order_by('-date', '-id')
 
-        user = self.request.user
-        from .role_utils import is_admin
-        if not is_admin(user):
-            try:
-                worker = user.worker
+        from .role_utils import is_admin, get_worker_for_user
+        if not is_admin(self.request.user):
+            worker = get_worker_for_user(self.request.user)
+            if worker:
                 qs = qs.filter(worker=worker)
-            except Exception:
+            else:
                 qs = qs.none()
 
         # Filters
@@ -1027,14 +978,15 @@ class WorkReportViewSet(viewsets.ModelViewSet):
         if 'worker' in serializer.validated_data:
             serializer.save()
             return
-        try:
-            worker = self.request.user.worker
-        except Exception:
+        from .role_utils import get_worker_for_user
+        worker = get_worker_for_user(self.request.user)
+        if worker is None:
             from .models import Worker
+            django_user = getattr(self.request.user, 'user', self.request.user)
             worker, _ = Worker.objects.get_or_create(
-                employee_id=f"USR-{self.request.user.id}",
+                employee_id=f"USR-{django_user.id}",
                 defaults={
-                    'full_name': self.request.user.get_full_name() or self.request.user.username,
+                    'full_name': getattr(django_user, 'get_full_name', lambda: '')() or getattr(django_user, 'username', ''),
                 },
             )
         serializer.save(worker=worker)
@@ -1221,13 +1173,8 @@ class DemandRecordViewSet(viewsets.ModelViewSet):
         user = self.request.user
 
         # Check admin status
-        is_admin_user = user.is_superuser or user.is_staff
-        if not is_admin_user:
-            try:
-                ManagerProfile.objects.get(user=user, active=True)
-                is_admin_user = True
-            except ManagerProfile.DoesNotExist:
-                pass
+        from .role_utils import is_admin as check_admin, is_dept_user as check_dept_user, get_worker_for_user
+        is_admin_user = check_admin(user)
 
         # Admin/Manager: see all with filters
         if is_admin_user:
@@ -1257,23 +1204,31 @@ class DemandRecordViewSet(viewsets.ModelViewSet):
             return qs
 
         # Dept User: see demands from own department + can create
-        try:
-            dept_profile = DepartmentUserProfile.objects.get(user=user, active=True)
+        from .role_utils import get_django_user
+        if isinstance(user, DepartmentUserProfile):
+            dept_profile = user
+        else:
+            django_user = get_django_user(user)
+            if django_user:
+                try:
+                    dept_profile = DepartmentUserProfile.objects.get(user=django_user, active=True)
+                except DepartmentUserProfile.DoesNotExist:
+                    dept_profile = None
+            else:
+                dept_profile = None
+
+        if dept_profile:
             # Try to match department code to DemandDepartment
             dept_code = dept_profile.department
             demand_dept = DemandDepartment.objects.filter(code=dept_code).first()
             if demand_dept:
                 return qs.filter(demand_department=demand_dept)
             return qs.filter(demand_department_text__icontains=dept_profile.get_department_display_name())
-        except DepartmentUserProfile.DoesNotExist:
-            pass
 
-        # Field Worker: see demands linked to their work orders
-        try:
-            worker = Worker.objects.get(user=user, active=True)
-            return qs.filter(work_order__assigned_to=worker)
-        except Worker.DoesNotExist:
-            pass
+        # Field Worker: can view all demands (read-only)
+        worker = get_worker_for_user(user)
+        if worker:
+            return qs
 
         return DemandRecord.objects.none()
 
@@ -1312,27 +1267,16 @@ class DemandRecordViewSet(viewsets.ModelViewSet):
         user = self.request.user
 
         # Check if user is admin
-        is_admin_user = user.is_superuser or user.is_staff
-        if not is_admin_user:
-            try:
-                ManagerProfile.objects.get(user=user, active=True)
-                is_admin_user = True
-            except ManagerProfile.DoesNotExist:
-                pass
+        from .role_utils import is_admin as check_admin
+        is_admin_user = check_admin(user)
 
         if is_admin_user:
             new_status = serializer.validated_data.get('status')
 
             if new_status in ['approved', 'rejected', 'in_progress', 'completed']:
                 # Try to get approver - ManagerProfile first, then Worker, then User
-                approver = None
-                try:
-                    approver = ManagerProfile.objects.get(user=user, active=True)
-                except ManagerProfile.DoesNotExist:
-                    try:
-                        approver = Worker.objects.get(user=user, active=True)
-                    except Worker.DoesNotExist:
-                        pass
+                from .role_utils import get_manager_profile, get_worker_for_user
+                approver = get_manager_profile(user) or get_worker_for_user(user)
 
                 if approver:
                     serializer.save(
@@ -1367,13 +1311,8 @@ def demand_stats(request):
     user = request.user
 
     # Check admin status
-    is_admin_user = user.is_superuser or user.is_staff
-    if not is_admin_user:
-        try:
-            ManagerProfile.objects.get(user=user, active=True)
-            is_admin_user = True
-        except ManagerProfile.DoesNotExist:
-            pass
+    from .role_utils import is_admin as check_admin
+    is_admin_user = check_admin(user)
 
     # Only admin can access stats
     if not is_admin_user:
@@ -1512,13 +1451,8 @@ def demand_calendar(request):
     user = request.user
 
     # Check admin status
-    is_admin_user = user.is_superuser or user.is_staff
-    if not is_admin_user:
-        try:
-            ManagerProfile.objects.get(user=user, active=True)
-            is_admin_user = True
-        except ManagerProfile.DoesNotExist:
-            pass
+    from .role_utils import is_admin as check_admin
+    is_admin_user = check_admin(user)
 
     year = request.query_params.get('year')
     month = request.query_params.get('month')
@@ -1533,16 +1467,25 @@ def demand_calendar(request):
 
     # Role-based filter
     if not is_admin_user:
-        try:
-            dept_profile = DepartmentUserProfile.objects.get(user=user, active=True)
+        if isinstance(user, DepartmentUserProfile):
+            dept_profile = user
             dept_code = dept_profile.department
             demand_dept = DemandDepartment.objects.filter(code=dept_code).first()
             if demand_dept:
                 qs = qs.filter(demand_department=demand_dept)
             else:
                 qs = qs.filter(demand_department_text__icontains=dept_profile.get_department_display_name())
-        except DepartmentUserProfile.DoesNotExist:
-            qs = DemandRecord.objects.none()
+        else:
+            try:
+                dept_profile = DepartmentUserProfile.objects.get(user=user, active=True)
+                dept_code = dept_profile.department
+                demand_dept = DemandDepartment.objects.filter(code=dept_code).first()
+                if demand_dept:
+                    qs = qs.filter(demand_department=demand_dept)
+                else:
+                    qs = qs.filter(demand_department_text__icontains=dept_profile.get_department_display_name())
+            except DepartmentUserProfile.DoesNotExist:
+                qs = DemandRecord.objects.none()
 
     # Group by date
     calendar_data = defaultdict(list)

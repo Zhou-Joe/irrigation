@@ -202,6 +202,7 @@ class ManagerProfile(models.Model):
     can_approve_registrations = models.BooleanField(default=True)
     can_approve_work_orders = models.BooleanField(default=True)
 
+    api_token = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
     active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -216,6 +217,10 @@ class ManagerProfile(models.Model):
 
     def __str__(self):
         return f"{self.full_name} ({self.employee_id})"
+
+    def regenerate_token(self):
+        self.api_token = uuid.uuid4()
+        self.save(update_fields=['api_token', 'updated_at'])
 
 
 class DepartmentUserProfile(models.Model):
@@ -241,6 +246,7 @@ class DepartmentUserProfile(models.Model):
     department = models.CharField(max_length=20, choices=DEPARTMENT_CHOICES, default='ENT')
     department_other = models.CharField(max_length=50, blank=True)
 
+    api_token = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
     active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

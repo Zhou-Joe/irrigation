@@ -213,7 +213,7 @@ class _DemandListScreenState extends State<DemandListScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('需求周报'),
+        title: const Text('需求日志'),
         actions: [
           if (widget.user.role == 'dept_user' ||
               widget.user.role == 'manager' ||

@@ -1,6 +1,6 @@
 from rest_framework import permissions
 from .models import ManagerProfile, DepartmentUserProfile, Worker
-from .role_utils import is_admin as is_admin_user
+from .role_utils import is_admin as is_admin_user, is_dept_user as is_dept_user_check
 
 
 class AdminCheckMixin:
@@ -31,11 +31,10 @@ class IsOwnerOrAdmin(AdminCheckMixin, permissions.BasePermission):
             return True
 
         if hasattr(obj, 'submitter'):
-            try:
-                worker = Worker.objects.get(user=request.user, active=True)
-                return obj.submitter == worker
-            except Worker.DoesNotExist:
-                pass
+            from .role_utils import get_worker_for_user
+            worker = get_worker_for_user(request.user)
+            if worker and obj.submitter == worker:
+                return True
 
             submitter_user = getattr(obj.submitter, 'user', None)
             if submitter_user:
@@ -53,25 +52,19 @@ class IsDeptUserWaterOnly(permissions.BasePermission):
         if not user or not user.is_authenticated:
             return False
 
-        try:
-            DepartmentUserProfile.objects.get(user=user, active=True)
+        if is_dept_user_check(user):
             return view.basename in ['waterrequest', 'zone']
-        except DepartmentUserProfile.DoesNotExist:
-            pass
 
         return True
 
     def has_object_permission(self, request, view, obj):
         user = request.user
 
-        try:
-            DepartmentUserProfile.objects.get(user=user, active=True)
+        if is_dept_user_check(user):
             from .models import WaterRequest
             if isinstance(obj, WaterRequest):
                 return True
             return False
-        except DepartmentUserProfile.DoesNotExist:
-            pass
 
         return True
 
@@ -88,8 +81,5 @@ class IsFieldWorker(permissions.BasePermission):
         if is_admin_user(user):
             return True
 
-        try:
-            Worker.objects.get(user=user, active=True)
-            return True
-        except Worker.DoesNotExist:
-            return False
+        from .role_utils import is_field_worker as is_field_worker_check
+        return is_field_worker_check(user)

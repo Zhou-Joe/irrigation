@@ -65,10 +65,15 @@ class Zone {
           ?.map((e) => Map<String, dynamic>.from(e))
           .toList() ?? [],
       centerFromApi: json['center'] != null && json['center'] is Map
-          ? {
-              'lat': (json['center']['lat'] as num).toDouble(),
-              'lng': (json['center']['lng'] as num).toDouble(),
-            }
+          ? (() {
+              final c = json['center'] as Map;
+              final lat = c['lat'];
+              final lng = c['lng'];
+              if (lat is num && lng is num) {
+                return {'lat': lat.toDouble(), 'lng': lng.toDouble()};
+              }
+              return null;
+            })()
           : null,
       patchId: patchId,
       patchName: patchName,
