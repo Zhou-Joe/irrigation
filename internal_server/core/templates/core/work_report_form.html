@@ -32,6 +32,27 @@
 .fault-modal-item:hover { background: var(--color-surface); }
 .fault-modal-item .item-en { color: var(--color-text-muted); font-size: 0.75rem; }
 .fault-modal-item .item-added { color: var(--color-success); font-weight: 600; font-size: 0.78rem; }
+/* Photo grid */
+.photo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; }
+.photo-thumb { position: relative; aspect-ratio: 1; border-radius: 8px; overflow: hidden; cursor: pointer; border: 2px solid var(--color-surface-dark); transition: border-color 0.2s, transform 0.2s; }
+.photo-thumb:hover { border-color: var(--color-primary); transform: scale(1.03); }
+.photo-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.photo-thumb .photo-del { position: absolute; top: 4px; right: 4px; width: 24px; height: 24px; background: rgba(0,0,0,0.6); color: #fff; border: none; border-radius: 50%; font-size: 14px; line-height: 24px; text-align: center; cursor: pointer; opacity: 0; transition: opacity 0.2s; }
+.photo-thumb:hover .photo-del { opacity: 1; }
+.photo-thumb .photo-del:hover { background: var(--color-danger, #c0392b); }
+.no-photos { color: var(--color-text-muted); font-size: 0.85rem; padding: 16px 0; }
+.btn-upload-photos { display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; border: 2px dashed var(--color-surface-dark); border-radius: 8px; background: none; color: var(--color-primary); cursor: pointer; font-size: 0.85rem; font-weight: 500; margin-top: 8px; }
+.btn-upload-photos:hover { border-color: var(--color-primary); background: var(--color-surface); }
+/* Lightbox */
+.lb-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.85); z-index: 3000; justify-content: center; align-items: center; }
+.lb-overlay.show { display: flex; }
+.lb-img { max-width: 90vw; max-height: 85vh; object-fit: contain; border-radius: 4px; }
+.lb-close { position: absolute; top: 16px; right: 20px; background: none; border: none; color: #fff; font-size: 2rem; cursor: pointer; z-index: 3001; }
+.lb-nav { position: absolute; top: 50%; transform: translateY(-50%); background: rgba(255,255,255,0.15); border: none; color: #fff; font-size: 2.5rem; padding: 12px 16px; cursor: pointer; border-radius: 8px; }
+.lb-nav:hover { background: rgba(255,255,255,0.3); }
+.lb-prev { left: 16px; }
+.lb-next { right: 16px; }
+.lb-counter { position: absolute; bottom: 20px; color: #fff; font-size: 0.9rem; }
 </style>
 {% endblock %}
 
@@ -142,6 +163,25 @@
             </div>
         </div>
 
+        {% if report %}
+        <div class="form-section">
+            <h2>现场照片</h2>
+            <div id="photoGrid" class="photo-grid">
+                {% for photo in report.photos %}
+                <div class="photo-thumb" data-photo="{{ photo }}">
+                    <img src="/media/{{ photo }}" alt="照片 {{ forloop.counter }}" loading="lazy" onclick="openLightbox({{ forloop.counter0 }})">
+                    <button type="button" class="photo-del" onclick="event.stopPropagation();removePhoto('{{ photo }}', this)">&times;</button>
+                </div>
+                {% endfor %}
+            </div>
+            {% if not report.photos %}
+            <p class="no-photos">暂无照片</p>
+            {% endif %}
+            <input type="file" id="photoInput" multiple accept="image/*" style="display:none" onchange="uploadPhotos()">
+            <button type="button" class="btn-upload-photos" onclick="document.getElementById('photoInput').click()">＋ 上传照片</button>
+        </div>
+        {% endif %}
+
         <div class="form-actions">
             <button type="submit" class="btn btn-primary">{% if report %}保存修改{% else %}创建日报{% endif %}</button>
             {% if not report %}
@@ -150,12 +190,114 @@
             <a href="{% url 'core:work_reports' %}" class="btn btn-secondary">取消</a>
         </div>
     </form>
+
+    {% if report %}
+    <div class="lb-overlay" id="lightbox" onclick="if(event.target===this)closeLightbox()">
+        <button class="lb-close" onclick="closeLightbox()">&times;</button>
+        <button class="lb-nav lb-prev" onclick="event.stopPropagation();navLightbox(-1)">&#8249;</button>
+        <img class="lb-img" id="lbImg" src="" alt="">
+        <button class="lb-nav lb-next" onclick="event.stopPropagation();navLightbox(1)">&#8250;</button>
+        <div class="lb-counter" id="lbCounter"></div>
+    </div>
+    {% endif %}
 </div>
 {% endblock %}
 
 {% block extra_js %}
 <script>
 (function() {
+    {% if report %}
+    var photos = {{ report.photos|safe }};
+    var currentIdx = 0;
+    var reportId = {{ report.id }};
+    var csrftoken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+
+    function getCSRFHeaders() { return {'X-CSRFToken': csrftoken}; }
+
+    // Lightbox
+    window.openLightbox = function(idx) {
+        currentIdx = idx;
+        showPhoto();
+        document.getElementById('lightbox').classList.add('show');
+        document.addEventListener('keydown', lbKeyHandler);
+    };
+    function closeLightbox() {
+        document.getElementById('lightbox').classList.remove('show');
+        document.removeEventListener('keydown', lbKeyHandler);
+    }
+    window.closeLightbox = closeLightbox;
+    window.navLightbox = function(dir) {
+        currentIdx = (currentIdx + dir + photos.length) % photos.length;
+        showPhoto();
+    };
+    function showPhoto() {
+        document.getElementById('lbImg').src = '/media/' + photos[currentIdx];
+        document.getElementById('lbCounter').textContent = (currentIdx + 1) + ' / ' + photos.length;
+    }
+    function lbKeyHandler(e) {
+        if (e.key === 'Escape') closeLightbox();
+        else if (e.key === 'ArrowLeft') navLightbox(-1);
+        else if (e.key === 'ArrowRight') navLightbox(1);
+    }
+
+    // Upload photos
+    window.uploadPhotos = function() {
+        var input = document.getElementById('photoInput');
+        var files = input.files;
+        if (!files.length) return;
+        var fd = new FormData();
+        for (var i = 0; i < files.length; i++) fd.append('files', files[i]);
+        fetch('/work-reports/' + reportId + '/upload-photo/', {method:'POST', headers:getCSRFHeaders(), body:fd})
+        .then(r => r.json())
+        .then(data => {
+            if (data.photos) {
+                photos = data.photos;
+                renderPhotoGrid();
+            }
+            input.value = '';
+        });
+    };
+
+    // Remove photo
+    window.removePhoto = function(photoPath, btn) {
+        if (!confirm('确定删除此照片？')) return;
+        var fd = new FormData();
+        fd.append('photo', photoPath);
+        fetch('/work-reports/' + reportId + '/remove-photo/', {method:'POST', headers:getCSRFHeaders(), body:fd})
+        .then(r => r.json())
+        .then(data => {
+            if (data.photos) {
+                photos = data.photos;
+                renderPhotoGrid();
+            }
+        });
+    };
+
+    function renderPhotoGrid() {
+        var grid = document.getElementById('photoGrid');
+        var noPhotos = grid.parentElement.querySelector('.no-photos');
+        grid.innerHTML = '';
+        if (photos.length === 0) {
+            if (!noPhotos) {
+                var p = document.createElement('p');
+                p.className = 'no-photos';
+                p.textContent = '暂无照片';
+                grid.parentElement.insertBefore(p, grid.nextSibling);
+            }
+        } else {
+            if (noPhotos) noPhotos.remove();
+            photos.forEach(function(photo, idx) {
+                var div = document.createElement('div');
+                div.className = 'photo-thumb';
+                div.dataset.photo = photo;
+                div.innerHTML = '<img src="/media/' + photo + '" alt="照片 ' + (idx+1) + '" loading="lazy" onclick="openLightbox(' + idx + ')">' +
+                    '<button type="button" class="photo-del" onclick="event.stopPropagation();removePhoto(\'' + photo + '\', this)">&times;</button>';
+                grid.appendChild(div);
+            });
+        }
+    }
+    {% endif %}
+
     // Fault data from server
     const faultData = {{ fault_categories_json|default:"[]"|safe }};
     const existingFaults = JSON.parse('{{ existing_faults_json|default:"{}"|escapejs }}');
