@@ -499,6 +499,12 @@
     padding-left: 16px !important;
 }
 
+/* Zone table patch group toggle */
+.zt-patch-row td { background: rgba(45,106,79,0.08); transition: background 0.15s; }
+.zt-patch-row:hover td { background: rgba(45,106,79,0.15); }
+.zt-arrow { display: inline-block; width: 16px; font-size: 0.75rem; color: var(--color-primary-light); transition: transform 0.2s; }
+.zt-patch-row:not(.collapsed) .zt-arrow { transform: rotate(90deg); }
+
 /* Sync Agent Status Indicator */
 .sync-agent-status {
     position: fixed;
@@ -738,6 +744,7 @@
         <table class="zone-table">
             <thead>
                 <tr>
+                    <th>片区</th>
                     <th>编号</th>
                     <th>名称</th>
                     <th>状态</th>
@@ -1124,17 +1131,78 @@ function populateZoneTable() {
     const tbody = document.getElementById('zoneTableBody');
     if (!tbody || !zonesData.length) return;
 
-    tbody.innerHTML = zonesData.map(zone => `
-        <tr>
-            <td>${zone.code}</td>
-            <td>${zone.name}</td>
-            <td><span class="status-badge status-${zone.status}">${zone.statusDisplay}</span></td>
-            <td>${zone.plant_count || 0}</td>
-            <td>${zone.maintenance_count || 0}</td>
-            <td>${zone.water_count || 0}</td>
-            <td>${zone.project_count || 0}</td>
-        </tr>
-    `).join('');
+    // Group zones by patch
+    const groups = {};
+    const orphanZones = [];
+    zonesData.forEach(zone => {
+        const patchName = zone.patch_name || '';
+        if (patchName) {
+            if (!groups[patchName]) groups[patchName] = [];
+            groups[patchName].push(zone);
+        } else {
+            orphanZones.push(zone);
+        }
+    });
+
+    let html = '';
+    const sortedGroups = Object.entries(groups).sort((a, b) => a[0].localeCompare(b[0]));
+    let groupIdx = 0;
+    sortedGroups.forEach(([patchName, zones]) => {
+        const gid = 'pg-' + groupIdx++;
+        // Patch header row — collapsed by default
+        html += `<tr class="zt-patch-row collapsed" data-gid="${gid}" onclick="toggleZoneGroup('${gid}')">
+            <td colspan="8" style="padding: 8px 12px; cursor: pointer; user-select: none;">
+                <span class="zt-arrow">▸</span>
+                <strong style="color: var(--color-primary); font-size: 0.9rem;">${patchName}</strong>
+                <span style="font-size: 0.75rem; color: var(--color-text-secondary); background: var(--color-surface); padding: 2px 8px; border-radius: 10px; margin-left: 8px;">${zones.length}</span>
+            </td>
+        </tr>`;
+        zones.forEach(zone => {
+            html += `<tr class="zt-zone-row" data-gid="${gid}" style="display:none;">
+                <td style="color: var(--color-text-secondary); font-size: 0.85em;">${patchName}</td>
+                <td>${zone.code}</td>
+                <td>${zone.name}</td>
+                <td><span class="status-badge status-${zone.status}">${zone.statusDisplay}</span></td>
+                <td>${zone.plant_count || 0}</td>
+                <td>${zone.maintenance_count || 0}</td>
+                <td>${zone.water_count || 0}</td>
+                <td>${zone.project_count || 0}</td>
+            </tr>`;
+        });
+    });
+
+    if (orphanZones.length) {
+        const gid = 'pg-orphan';
+        html += `<tr class="zt-patch-row collapsed" data-gid="${gid}" onclick="toggleZoneGroup('${gid}')">
+            <td colspan="8" style="padding: 8px 12px; cursor: pointer; user-select: none;">
+                <span class="zt-arrow">▸</span>
+                <strong style="color: var(--color-text-secondary); font-size: 0.9rem;">未分配片区</strong>
+                <span style="font-size: 0.75rem; color: var(--color-text-secondary); background: var(--color-surface); padding: 2px 8px; border-radius: 10px; margin-left: 8px;">${orphanZones.length}</span>
+            </td>
+        </tr>`;
+        orphanZones.forEach(zone => {
+            html += `<tr class="zt-zone-row" data-gid="${gid}" style="display:none;">
+                <td style="color: var(--color-text-secondary); font-size: 0.85em;">—</td>
+                <td>${zone.code}</td>
+                <td>${zone.name}</td>
+                <td><span class="status-badge status-${zone.status}">${zone.statusDisplay}</span></td>
+                <td>${zone.plant_count || 0}</td>
+                <td>${zone.maintenance_count || 0}</td>
+                <td>${zone.water_count || 0}</td>
+                <td>${zone.project_count || 0}</td>
+            </tr>`;
+        });
+    }
+
+    tbody.innerHTML = html;
+}
+
+function toggleZoneGroup(gid) {
+    const header = document.querySelector(`.zt-patch-row[data-gid="${gid}"]`);
+    const rows = document.querySelectorAll(`.zt-zone-row[data-gid="${gid}"]`);
+    const collapsed = header.classList.toggle('collapsed');
+    rows.forEach(r => r.style.display = collapsed ? 'none' : '');
+    header.querySelector('.zt-arrow').textContent = collapsed ? '▸' : '▾';
 }
 
 // ========== Maxicom Dashboard ==========

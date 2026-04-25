@@ -8,12 +8,13 @@ import 'package:http/io_client.dart';
 import 'package:http_parser/http_parser.dart';
 import 'package:image_picker/image_picker.dart';
 import '../models/zone.dart';
+import '../models/pipeline.dart';
 import '../models/user.dart';
 import '../models/work_log.dart';
 
 class ApiService {
   // Default server address - can be overridden via settings
-  static const String _defaultBaseUrl = 'https://www.zctestbench.asia/api';
+  static const String _defaultBaseUrl = 'http://47.100.237.113/api';
   static String baseUrl = _defaultBaseUrl;
 
   // DNS-over-HTTPS cache: hostname -> IP
@@ -893,5 +894,19 @@ class ApiService {
       return List<Map<String, dynamic>>.from(data['data']);
     }
     throw Exception('获取天气失败');
+  }
+
+  /// Get pipelines list
+  Future<List<Pipeline>> getPipelines() async {
+    final response = await _client.get(
+      Uri.parse('$baseUrl/pipelines/'),
+      headers: _headers,
+    );
+
+    if (response.statusCode == 200) {
+      final List<dynamic> data = jsonDecode(response.body);
+      return data.map((json) => Pipeline.fromJson(json)).toList();
+    }
+    throw Exception('获取管线列表失败');
   }
 }

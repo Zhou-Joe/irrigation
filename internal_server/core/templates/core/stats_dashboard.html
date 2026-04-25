@@ -1,0 +1,526 @@
+{% extends 'core/base.html' %}
+{% load static %}
+
+{% block title %}数据报表{% endblock %}
+{% block nav_stats %}active{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'css/settings.css' %}">
+<style>
+.page-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+.page-header h1 {
+    margin: 0;
+    color: var(--color-primary);
+}
+.section-title {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--color-primary);
+    margin: 24px 0 12px 0;
+    padding-bottom: 8px;
+    border-bottom: 2px solid var(--color-primary);
+}
+.weekly-dashboard {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 16px;
+    margin-bottom: 20px;
+}
+.dashboard-card {
+    background: white;
+    border-radius: 8px;
+    padding: 16px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+.dashboard-card h3 {
+    margin: 0 0 12px 0;
+    font-size: 0.95rem;
+    color: var(--color-primary);
+    border-bottom: 2px solid var(--color-primary);
+    padding-bottom: 8px;
+}
+.stat-number {
+    font-size: 2.5rem;
+    font-weight: 700;
+    color: var(--color-primary);
+    line-height: 1;
+    margin-bottom: 4px;
+}
+.stat-label {
+    font-size: 0.85rem;
+    color: var(--color-text-muted);
+}
+.stat-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--color-surface-dark);
+    font-size: 0.85rem;
+}
+.stat-row:last-child {
+    border-bottom: none;
+}
+.stat-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+}
+.stat-bar-label {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.stat-bar-track {
+    flex: 2;
+    height: 8px;
+    background: var(--color-surface-dark);
+    border-radius: 4px;
+    overflow: hidden;
+}
+.stat-bar-fill {
+    height: 100%;
+    background: var(--color-primary);
+    border-radius: 4px;
+    transition: width 0.3s ease;
+}
+.stat-bar-value {
+    min-width: 40px;
+    text-align: right;
+    font-weight: 600;
+}
+.day-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 4px;
+    margin-top: 8px;
+}
+.day-item {
+    text-align: center;
+    padding: 6px 4px;
+    background: var(--color-surface-dark);
+    border-radius: 4px;
+}
+.day-item.active {
+    background: var(--color-primary);
+    color: var(--color-text-inverse);
+}
+.day-label {
+    font-size: 0.7rem;
+    display: block;
+    margin-bottom: 2px;
+}
+.day-count {
+    font-size: 1.1rem;
+    font-weight: 600;
+}
+.week-nav {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+    padding: 12px;
+    background: var(--color-surface-alt);
+    border-radius: 8px;
+}
+.week-nav-btn {
+    background: var(--color-primary);
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    transition: background 0.2s;
+}
+.week-nav-btn:hover {
+    background: var(--color-primary-dark);
+}
+.week-nav-btn:disabled {
+    background: var(--color-text-muted);
+    cursor: not-allowed;
+}
+.week-selector {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+.week-selector select {
+    padding: 6px 12px;
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    font-size: 0.9rem;
+}
+.week-current {
+    text-align: center;
+    flex: 1;
+}
+.week-current-label {
+    font-size: 0.75rem;
+    color: var(--color-text-muted);
+    margin-bottom: 2px;
+}
+.week-current-range {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--color-primary);
+}
+.week-badge {
+    background: var(--color-accent);
+    color: white;
+    padding: 4px 12px;
+    border-radius: 12px;
+    font-size: 0.8rem;
+    font-weight: 600;
+}
+.chart-empty {
+    text-align: center;
+    padding: 20px;
+    color: var(--color-text-muted);
+    font-size: 0.85rem;
+}
+.matrix-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.8rem;
+}
+.matrix-table th, .matrix-table td {
+    padding: 6px 8px;
+    text-align: center;
+    border: 1px solid var(--color-surface-dark);
+}
+.matrix-table th {
+    background: var(--color-primary);
+    color: var(--color-text-inverse);
+    font-weight: 600;
+    white-space: nowrap;
+}
+.matrix-table td.count-cell {
+    font-weight: 600;
+    color: var(--color-primary);
+}
+.matrix-table td.row-total {
+    background: var(--color-surface-alt);
+    font-weight: 700;
+}
+.matrix-table tfoot td {
+    background: var(--color-surface-alt);
+    font-weight: 700;
+    border-top: 2px solid var(--color-primary);
+}
+.demand-stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 16px;
+    margin-bottom: 20px;
+}
+.demand-stat-card {
+    background: white;
+    border-radius: 8px;
+    padding: 16px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    text-align: center;
+}
+.demand-stat-card .stat-number {
+    font-size: 2rem;
+}
+.demand-stat-card .stat-label {
+    margin-top: 4px;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="form-container">
+    <div class="page-header">
+        <h1>数据报表</h1>
+    </div>
+
+    <!-- ========== 维修日志周统计 ========== -->
+    <div class="section-title">维修日志 — 周报统计</div>
+
+    <!-- Week Navigation -->
+    <div class="week-nav">
+        <button class="week-nav-btn" onclick="navWeek(-7)">上一周</button>
+        <div class="week-selector">
+            <select id="yearSelect" onchange="jumpToWeek()">
+                {% for year in years %}
+                <option value="{{ year }}" {% if year == week_start.year %}selected{% endif %}>{{ year }}年</option>
+                {% endfor %}
+            </select>
+            <select id="weekSelect" onchange="jumpToWeek()">
+                {% for year, weeks in year_weeks.items %}
+                {% for w in weeks %}
+                <option value="{{ w.start.isoformat }}" data-year="{{ year }}"
+                    {% if w.start == week_start %}selected{% endif %}>
+                    第{{ w.week }}周 ({{ w.start|date:"m/d" }}-{{ w.end|date:"m/d" }})
+                </option>
+                {% endfor %}
+                {% endfor %}
+            </select>
+        </div>
+        <div class="week-current">
+            <div class="week-current-label">当前查看</div>
+            <div class="week-current-range">
+                {{ week_start|date:"Y/m/d" }} — {{ week_end|date:"Y/m/d" }}
+                <span class="week-badge">W{{ week_number }}</span>
+            </div>
+        </div>
+        <button class="week-nav-btn" onclick="navWeek(7)">下一周</button>
+    </div>
+
+    <!-- Dashboard Cards -->
+    <div class="weekly-dashboard">
+        <!-- Total + Daily Trend -->
+        <div class="dashboard-card" style="grid-column: span 2;">
+            <h3>本周概览 (共 {{ total_this_week }} 条)</h3>
+            <div class="day-grid">
+                {% for day in reports_by_day %}
+                <div class="day-item {% if day.count > 0 %}active{% endif %}">
+                    <span class="day-label">{{ day.weekday }}</span>
+                    <span class="day-count">{{ day.count }}</span>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+
+        <!-- CCU Distribution -->
+        <div class="dashboard-card">
+            <h3>CCU 分布</h3>
+            {% if reports_by_location %}
+            {% for loc in reports_by_location %}
+            <div class="stat-bar">
+                <span class="stat-bar-label">{{ loc.location__name|default:loc.location__code }}</span>
+                <div class="stat-bar-track">
+                    <div class="stat-bar-fill" style="width:{% widthratio loc.count total_this_week 100 %}%"></div>
+                </div>
+                <span class="stat-bar-value">{{ loc.count }}</span>
+            </div>
+            {% endfor %}
+            {% else %}
+            <div class="chart-empty">暂无数据</div>
+            {% endif %}
+        </div>
+
+        <!-- Zone Distribution -->
+        <div class="dashboard-card">
+            <h3>区域分布</h3>
+            {% if reports_by_zone %}
+            {% for z in reports_by_zone %}
+            <div class="stat-bar">
+                <span class="stat-bar-label">{{ z.zone_location__name|default:z.zone_location__code }}</span>
+                <div class="stat-bar-track">
+                    <div class="stat-bar-fill" style="width:{% widthratio z.count total_this_week 100 %}%"></div>
+                </div>
+                <span class="stat-bar-value">{{ z.count }}</span>
+            </div>
+            {% endfor %}
+            {% else %}
+            <div class="chart-empty">暂无数据</div>
+            {% endif %}
+        </div>
+
+        <!-- Work Category -->
+        <div class="dashboard-card">
+            <h3>工作分类</h3>
+            {% if reports_by_category %}
+            {% for cat in reports_by_category %}
+            <div class="stat-bar">
+                <span class="stat-bar-label">{{ cat.work_category__name|default:cat.work_category__code }}</span>
+                <div class="stat-bar-track">
+                    <div class="stat-bar-fill" style="width:{% widthratio cat.count total_this_week 100 %}%"></div>
+                </div>
+                <span class="stat-bar-value">{{ cat.count }}</span>
+            </div>
+            {% endfor %}
+            {% else %}
+            <div class="chart-empty">暂无数据</div>
+            {% endif %}
+        </div>
+
+        <!-- Top Fault Types -->
+        <div class="dashboard-card">
+            <h3>故障类型 Top10</h3>
+            {% if top_faults %}
+            {% for f in top_faults %}
+            <div class="stat-row">
+                <span>{{ f.fault_entries__fault_subtype__name_zh|default:"未分类" }}</span>
+                <span style="font-weight:600;color:var(--color-primary);">{{ f.count }}</span>
+            </div>
+            {% endfor %}
+            {% else %}
+            <div class="chart-empty">暂无故障记录</div>
+            {% endif %}
+        </div>
+
+        <!-- Zone × Fault Type Matrix -->
+        <div class="dashboard-card" style="grid-column: span 2;">
+            <h3>区域 × 故障类型矩阵</h3>
+            {% if zone_fault_matrix.rows %}
+            <div style="overflow-x:auto;">
+                <table class="matrix-table">
+                    <thead>
+                        <tr>
+                            <th>区域</th>
+                            {% for ft in zone_fault_matrix.fault_types %}
+                            <th>{{ ft.name }}</th>
+                            {% endfor %}
+                            <th>合计</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in zone_fault_matrix.rows %}
+                        <tr>
+                            <td style="text-align:left;font-weight:500;">{{ row.zone_name }} ({{ row.zone_code }})</td>
+                            {% for count in row.counts %}
+                            <td class="count-cell">{{ count|default:"-" }}</td>
+                            {% endfor %}
+                            <td class="row-total">{{ row.total }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                    <tfoot>
+                        <tr>
+                            <td style="text-align:left;">合计</td>
+                            {% for ct in zone_fault_matrix.column_totals %}
+                            <td>{{ ct }}</td>
+                            {% endfor %}
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+            {% else %}
+            <div class="chart-empty">暂无故障矩阵数据</div>
+            {% endif %}
+        </div>
+
+        <!-- Worker Stats (admin only) -->
+        {% if is_admin and worker_stats %}
+        <div class="dashboard-card">
+            <h3>人员统计</h3>
+            {% for ws in worker_stats %}
+            <div class="stat-row">
+                <span>{{ ws.worker__full_name }} ({{ ws.worker__employee_id }})</span>
+                <span>
+                    <span style="font-weight:600;color:var(--color-primary);">{{ ws.total }}</span>
+                    {% if ws.difficult %}
+                    <span style="font-size:0.75rem;color:var(--color-warning);margin-left:4px;">疑难{{ ws.difficult }}</span>
+                    {% endif %}
+                </span>
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- ========== 需求日志统计 ========== -->
+    <div class="section-title" style="margin-top:32px;">需求日志 — 统计</div>
+
+    <div class="demand-stats-grid">
+        <div class="demand-stat-card">
+            <div class="stat-number">{{ demand_stats.total }}</div>
+            <div class="stat-label">总需求数</div>
+        </div>
+        <div class="demand-stat-card">
+            <div class="stat-number" style="color:var(--color-info);">{{ demand_stats.pending }}</div>
+            <div class="stat-label">待处理</div>
+        </div>
+        <div class="demand-stat-card">
+            <div class="stat-number" style="color:var(--color-success);">{{ demand_stats.approved }}</div>
+            <div class="stat-label">已批准</div>
+        </div>
+        <div class="demand-stat-card">
+            <div class="stat-number" style="color:#007BFF;">{{ demand_stats.in_progress }}</div>
+            <div class="stat-label">进行中</div>
+        </div>
+        <div class="demand-stat-card">
+            <div class="stat-number" style="color:#6C757D;">{{ demand_stats.completed }}</div>
+            <div class="stat-label">已完成</div>
+        </div>
+    </div>
+
+    <div class="weekly-dashboard">
+        <!-- Demand by Category -->
+        <div class="dashboard-card">
+            <h3>按类别分布</h3>
+            {% if demand_by_category %}
+            {% for cat in demand_by_category %}
+            <div class="stat-bar">
+                <span class="stat-bar-label">{{ cat.category__name }}</span>
+                <div class="stat-bar-track">
+                    <div class="stat-bar-fill" style="width:{% widthratio cat.count demand_stats.total 100 %}%"></div>
+                </div>
+                <span class="stat-bar-value">{{ cat.count }}</span>
+            </div>
+            {% endfor %}
+            {% else %}
+            <div class="chart-empty">暂无数据</div>
+            {% endif %}
+        </div>
+
+        <!-- Demand by Department -->
+        <div class="dashboard-card">
+            <h3>按部门分布</h3>
+            {% if demand_by_department %}
+            {% for dept in demand_by_department %}
+            <div class="stat-bar">
+                <span class="stat-bar-label">{{ dept.demand_department__name }}</span>
+                <div class="stat-bar-track">
+                    <div class="stat-bar-fill" style="width:{% widthratio dept.count demand_stats.total 100 %}%"></div>
+                </div>
+                <span class="stat-bar-value">{{ dept.count }}</span>
+            </div>
+            {% endfor %}
+            {% else %}
+            <div class="chart-empty">暂无数据</div>
+            {% endif %}
+        </div>
+
+        <!-- Demand by Status -->
+        <div class="dashboard-card">
+            <h3>按状态分布</h3>
+            {% for s in demand_by_status %}
+            <div class="stat-row">
+                <span>
+                    {% if s.status == 'submitted' %}已提交
+                    {% elif s.status == 'approved' %}已批准
+                    {% elif s.status == 'rejected' %}已拒绝
+                    {% elif s.status == 'in_progress' %}进行中
+                    {% elif s.status == 'completed' %}已完成
+                    {% else %}{{ s.status }}{% endif %}
+                </span>
+                <span style="font-weight:600;color:var(--color-primary);">{{ s.count }}</span>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+
+<script>
+function navWeek(delta) {
+    var current = '{{ week_iso }}';
+    var d = new Date(current);
+    d.setDate(d.getDate() + delta);
+    var iso = d.toISOString().split('T')[0];
+    window.location.href = '{% url "core:stats_dashboard" %}?week=' + iso;
+}
+
+function jumpToWeek() {
+    var sel = document.getElementById('weekSelect');
+    var val = sel.value;
+    if (val) {
+        window.location.href = '{% url "core:stats_dashboard" %}?week=' + val;
+    }
+}
+</script>
+{% endblock %}

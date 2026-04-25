@@ -109,13 +109,20 @@
             </div>
             <div class="form-row">
                 <div class="form-group">
-                    <label for="zone_location">故障/事件位置</label>
-                    <input type="text" id="zone_location" name="zone_location" value="{% if report and report.zone_location %}{{ report.zone_location.code }}{% endif %}" maxlength="255" list="zoneList" placeholder="如 9-4-3、POC、WD">
-                    <datalist id="zoneList">
-                        {% for z in zones %}
-                        <option value="{{ z.code }}">
+                    <label for="zone_location_select">故障/事件位置</label>
+                    <select id="zone_location_select" onchange="document.getElementById('zone_location').value = this.value;">
+                        <option value="">-- 选择区域 --</option>
+                        {% for group in grouped_zones %}
+                        <optgroup label="{{ group.name }} ({{ group.zone_count }})">
+                            {% for zone in group.zones %}
+                            <option value="{{ zone.code }}" {% if report and report.zone_location and report.zone_location.code == zone.code %}selected{% endif %}>
+                                {{ zone.code }} - {{ zone.name }}
+                            </option>
+                            {% endfor %}
+                        </optgroup>
                         {% endfor %}
-                    </datalist>
+                    </select>
+                    <input type="hidden" id="zone_location" name="zone_location" value="{% if report and report.zone_location %}{{ report.zone_location.code }}{% endif %}">
                 </div>
                 <div class="form-group">
                     <label for="info_source">信息来源</label>

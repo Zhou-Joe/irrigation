@@ -1,6 +1,7 @@
 {% extends 'core/base.html' %}
 
 {% load static %}
+{% load dict_lookup %}
 
 {% block title %}系统设置 - 灌溉管理{% endblock %}
 {% block nav_settings %}active{% endblock %}
@@ -16,9 +17,6 @@
             <h1>系统设置</h1>
             <p class="subtitle">管理灌溉区域和系统配置</p>
         </div>
-        <a href="{% url 'core:zone_new' %}" class="btn btn-primary">
-            + 新建区域
-        </a>
     </div>
 
     {% if messages %}
@@ -32,15 +30,68 @@
     {% endif %}
 
     <div class="settings-section">
+        <h2>片区管理</h2>
+        <p class="section-description">管理灌溉片区和区域分组</p>
+
+        {% if site_patches %}
+        <div class="zone-table-container">
+            <div style="margin-bottom: 12px; display: flex; align-items: center; gap: 12px;">
+                <input type="text" id="patchSearch" placeholder="搜索片区名称或编号..." style="width: 100%; max-width: 400px; padding: 10px 14px; border: 2px solid var(--color-surface-dark); border-radius: 8px; font-size: 0.95em;">
+                <span id="patchSearchCount" style="color: var(--color-text-secondary); font-size: 0.85em; white-space: nowrap;"></span>
+                <a href="{% url 'core:patch_new' %}" class="btn btn-primary" style="white-space: nowrap; margin-left: auto;">+ 新建片区</a>
+            </div>
+            <table class="zone-table" id="patchTable">
+                <thead>
+                    <tr>
+                        <th>编号</th>
+                        <th>名称</th>
+                        <th>区域数</th>
+                        <th>关联数据</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody id="patchTableBody">
+                    {% for p in site_patches %}
+                    <tr class="patch-row" data-code="{{ p.code }}" data-name="{{ p.name }}">
+                        <td><code class="zone-code-cell">{{ p.code }}</code></td>
+                        <td>
+                            <strong>{{ p.name }}</strong>
+                            {% if p.description %}
+                            <br><small style="color: var(--color-text-secondary);">{{ p.description|truncatechars:40 }}</small>
+                            {% endif %}
+                        </td>
+                        <td>{{ patch_zone_counts|dict_lookup:p.id|default:"0" }}</td>
+                        <td>{{ child_counts|dict_lookup:p.id|default:"0" }} 条</td>
+                        <td class="actions-cell">
+                            <a href="{% url 'core:patch_edit' p.id %}" class="btn btn-sm btn-secondary">编辑</a>
+                            <form action="{% url 'core:patch_delete' p.id %}" method="post" class="inline-form" onsubmit="return confirm('确定要删除该片区吗？区域不会被删除，只是取消关联。');">
+                                {% csrf_token %}
+                                <button type="submit" class="btn btn-sm btn-danger">删除</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="empty-state">
+            <p>暂无片区数据</p>
+            <a href="{% url 'core:patch_new' %}" class="btn btn-primary">创建第一个片区</a>
+        </div>
+        {% endif %}
+    </div>
+
+    <div class="settings-section">
         <h2>灌溉区域</h2>
         <p class="section-description">配置区域边界和位置信息</p>
 
         {% if zones %}
         <div class="zone-table-container">
-            <!-- Search input -->
-            <div style="margin-bottom: 12px;">
+            <div style="margin-bottom: 12px; display: flex; align-items: center; gap: 12px;">
                 <input type="text" id="zoneSearch" placeholder="搜索区域名称或编号..." style="width: 100%; max-width: 400px; padding: 10px 14px; border: 2px solid var(--color-surface-dark); border-radius: 8px; font-size: 0.95em;">
-                <span id="zoneSearchCount" style="margin-left: 10px; color: var(--color-text-secondary); font-size: 0.85em;"></span>
+                <span id="zoneSearchCount" style="color: var(--color-text-secondary); font-size: 0.85em; white-space: nowrap;"></span>
+                <a href="{% url 'core:zone_new' %}" class="btn btn-primary" style="white-space: nowrap; margin-left: auto;">+ 新建区域</a>
             </div>
             <table class="zone-table" id="zoneTable">
                 <thead>
@@ -48,18 +99,27 @@
                         <th class="sortable" data-col="0">编号 <span class="sort-icon">↕</span></th>
                         <th class="sortable" data-col="1">名称 <span class="sort-icon">↕</span></th>
                         <th class="sortable" data-col="2">描述 <span class="sort-icon">↕</span></th>
-                        <th class="sortable" data-col="3">边界点数 <span class="sort-icon">↕</span></th>
+                        <th class="sortable" data-col="3">边界数量 <span class="sort-icon">↕</span></th>
                         <th>操作</th>
                     </tr>
                 </thead>
-                <tbody>
-                    {% for zone in zones %}
-                    <tr>
+                <tbody id="zoneTableBody">
+                    {% for group in grouped_zones %}
+                    <!-- Patch header row -->
+                    <tr class="patch-row" data-patch-id="{{ group.id }}" data-patch-name="{{ group.name }}">
+                        <td colspan="5" style="padding: 10px 12px; background: rgba(45,106,79,0.08); cursor: pointer; user-select: none;" onclick="togglePatchRow(this)">
+                            <span class="patch-toggle" style="font-size: 0.7rem; color: var(--color-primary); margin-right: 6px; display: inline-block; transition: transform 0.2s;">▼</span>
+                            <strong style="color: var(--color-primary); font-size: 0.9rem;">{{ group.name }}</strong>
+                            <span style="font-size: 0.75rem; color: var(--color-text-secondary); background: var(--color-surface); padding: 2px 8px; border-radius: 10px; margin-left: 8px;">{{ group.zone_count }}</span>
+                        </td>
+                    </tr>
+                    {% for zone in group.zones %}
+                    <tr class="zone-row" data-patch-id="{{ group.id }}" data-code="{{ zone.code }}" data-name="{{ zone.name }}">
                         <td><code class="zone-code-cell">{{ zone.code }}</code></td>
                         <td><strong>{{ zone.name }}</strong></td>
                         <td>{{ zone.description|truncatechars:30 }}</td>
                         <td class="points-cell">
-                            {{ zone.boundary_points|length }} 个点
+                            {{ zone.boundary_points|boundary_count }} 个边界
                         </td>
                         <td class="actions-cell">
                             <a href="{% url 'core:zone_edit' zone.id %}" class="btn btn-sm btn-secondary">
@@ -71,6 +131,7 @@
                             </form>
                         </td>
                     </tr>
+                    {% endfor %}
                     {% endfor %}
                 </tbody>
             </table>
@@ -164,7 +225,7 @@
 
 {% block extra_js %}
 <script>
-// Zone search filter and column sorting
+// Zone search filter and column sorting with patch grouping
 (function() {
     const searchInput = document.getElementById('zoneSearch');
     const table = document.getElementById('zoneTable');
@@ -172,53 +233,67 @@
 
     if (!searchInput || !table) return;
 
-    const tbody = table.querySelector('tbody');
-    const originalRows = Array.from(tbody.querySelectorAll('tr'));
-    const total = originalRows.length;
+    const tbody = document.getElementById('zoneTableBody');
+    const allZoneRows = Array.from(tbody.querySelectorAll('.zone-row'));
+    const total = allZoneRows.length;
     countSpan.textContent = `共 ${total} 个区域`;
 
     // Sorting state
     let currentSortCol = null;
     let currentSortDir = 'asc';
 
+    // Toggle patch group collapse
+    window.togglePatchRow = function(headerTd) {
+        const patchRow = headerTd.closest('tr');
+        const patchId = patchRow.dataset.patchId;
+        const isCollapsed = patchRow.classList.toggle('collapsed');
+        const zoneRows = tbody.querySelectorAll(`.zone-row[data-patch-id="${patchId}"]`);
+        zoneRows.forEach(row => {
+            row.style.display = isCollapsed ? 'none' : '';
+        });
+        const toggle = headerTd.querySelector('.patch-toggle');
+        if (toggle) toggle.style.transform = isCollapsed ? 'rotate(-90deg)' : '';
+    };
+
     // Extract cell text for comparison
     function getCellValue(row, colIndex) {
         const cell = row.querySelector(`td:nth-child(${colIndex + 1})`);
         if (!cell) return '';
-
-        // For points column (col 3), extract numeric value
         if (colIndex === 3) {
             const text = cell.textContent || '';
             const match = text.match(/(\d+)/);
             return match ? parseInt(match[1]) : 0;
         }
-
-        // For other columns, get text content
         const codeEl = cell.querySelector('code');
         const strongEl = cell.querySelector('strong');
         return (codeEl?.textContent || strongEl?.textContent || cell.textContent || '').toLowerCase().trim();
     }
 
-    // Sort rows
+    // Sort rows within each patch group
     function sortRows(colIndex, direction) {
-        const sortedRows = [...originalRows].sort((a, b) => {
-            const aVal = getCellValue(a, colIndex);
-            const bVal = getCellValue(b, colIndex);
-
-            // Numeric comparison for points column
-            if (colIndex === 3) {
-                return direction === 'asc' ? aVal - bVal : bVal - aVal;
-            }
-
-            // String comparison for other columns
-            if (aVal < bVal) return direction === 'asc' ? -1 : 1;
-            if (aVal > bVal) return direction === 'asc' ? 1 : -1;
-            return 0;
+        const patchRows = Array.from(tbody.querySelectorAll('.patch-row'));
+        patchRows.forEach(patchRow => {
+            const patchId = patchRow.dataset.patchId;
+            const zoneRows = Array.from(tbody.querySelectorAll(`.zone-row[data-patch-id="${patchId}"]`));
+            zoneRows.sort((a, b) => {
+                const aVal = getCellValue(a, colIndex);
+                const bVal = getCellValue(b, colIndex);
+                if (colIndex === 3) {
+                    return direction === 'asc' ? aVal - bVal : bVal - aVal;
+                }
+                if (aVal < bVal) return direction === 'asc' ? -1 : 1;
+                if (aVal > bVal) return direction === 'asc' ? 1 : -1;
+                return 0;
+            });
+            // Re-insert sorted zone rows after their patch header
+            zoneRows.forEach((row, i) => {
+                if (i === 0) {
+                    patchRow.after(row);
+                } else {
+                    zoneRows[i - 1].after(row);
+                }
+            });
         });
-
-        // Re-render tbody
-        tbody.innerHTML = '';
-        sortedRows.forEach(row => tbody.appendChild(row));
 
         // Update sort icons
         table.querySelectorAll('.sortable').forEach(th => {
@@ -239,36 +314,43 @@
         th.style.cursor = 'pointer';
         th.addEventListener('click', function() {
             const colIndex = parseInt(this.dataset.col);
-
             if (currentSortCol === colIndex) {
                 currentSortDir = currentSortDir === 'asc' ? 'desc' : 'asc';
             } else {
                 currentSortCol = colIndex;
                 currentSortDir = 'asc';
             }
-
             sortRows(colIndex, currentSortDir);
-
-            // Reapply search filter after sorting
             if (searchInput.value.trim()) {
                 filterRows(searchInput.value.toLowerCase().trim());
             }
         });
     });
 
-    // Search filter
+    // Search filter — respects grouping
     function filterRows(query) {
-        const rows = tbody.querySelectorAll('tr');
         let visibleCount = 0;
+        const patchRows = Array.from(tbody.querySelectorAll('.patch-row'));
 
-        rows.forEach(row => {
-            const code = row.querySelector('td:nth-child(1)')?.textContent?.toLowerCase() || '';
-            const name = row.querySelector('td:nth-child(2)')?.textContent?.toLowerCase() || '';
-            const desc = row.querySelector('td:nth-child(3)')?.textContent?.toLowerCase() || '';
+        patchRows.forEach(patchRow => {
+            const patchId = patchRow.dataset.patchId;
+            const patchName = patchRow.dataset.patchName || '';
+            const zoneRows = tbody.querySelectorAll(`.zone-row[data-patch-id="${patchId}"]`);
+            let patchHasVisible = false;
 
-            const matches = query === '' || code.includes(query) || name.includes(query) || desc.includes(query);
-            row.style.display = matches ? '' : 'none';
-            if (matches) visibleCount++;
+            zoneRows.forEach(row => {
+                const code = row.dataset.code?.toLowerCase() || '';
+                const name = row.dataset.name?.toLowerCase() || '';
+                const desc = row.querySelector('td:nth-child(3)')?.textContent?.toLowerCase() || '';
+                const matches = query === '' || code.includes(query) || name.includes(query) || desc.includes(query) || patchName.toLowerCase().includes(query);
+                row.style.display = matches ? '' : 'none';
+                if (matches) {
+                    visibleCount++;
+                    patchHasVisible = true;
+                }
+            });
+
+            patchRow.style.display = patchHasVisible ? '' : 'none';
         });
 
         if (query) {
@@ -281,6 +363,35 @@
     searchInput.addEventListener('input', function() {
         filterRows(this.value.toLowerCase().trim());
     });
+})();
+
+// Patch search filter (flat list)
+(function() {
+    const searchInput = document.getElementById('patchSearch');
+    const table = document.getElementById('patchTable');
+    const countSpan = document.getElementById('patchSearchCount');
+    if (!table) return;
+
+    const tbody = document.getElementById('patchTableBody');
+    const rows = Array.from(tbody.querySelectorAll('.patch-row'));
+    let total = rows.length;
+    if (countSpan) countSpan.textContent = `共 ${total} 个片区`;
+
+    if (searchInput) {
+        searchInput.addEventListener('input', function() {
+            const q = this.value.toLowerCase().trim();
+            let visible = 0;
+            rows.forEach(row => {
+                const code = row.dataset.code?.toLowerCase() || '';
+                const name = row.dataset.name?.toLowerCase() || '';
+                const desc = row.querySelector('td:nth-child(2)')?.textContent?.toLowerCase() || '';
+                const match = !q || code.includes(q) || name.includes(q) || desc.includes(q);
+                row.style.display = match ? '' : 'none';
+                if (match) visible++;
+            });
+            countSpan.textContent = q ? `找到 ${visible} 个片区` : `共 ${total} 个片区`;
+        });
+    }
 })();
 </script>
 {% endblock %}
