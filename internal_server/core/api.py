@@ -6,7 +6,7 @@ from django.contrib.auth import authenticate, login
 from django.utils import timezone
 from django.db import models
 from datetime import timedelta, date
-from .models import Zone, Plant, Worker, WorkOrder, Event, WorkLog, WeatherData, MaintenanceRequest, ProjectSupportRequest, WaterRequest, ManagerProfile, DepartmentUserProfile, EquipmentCatalog, ZoneEquipment, Pipeline, Location, WorkCategory, InfoSource, FaultCategory, FaultSubType, WorkReport, WorkReportFault, DemandCategory, DemandDepartment, DemandRecord
+from .models import Zone, Plant, Worker, WorkOrder, Event, WorkLog, WeatherData, MaintenanceRequest, ProjectSupportRequest, WaterRequest, ManagerProfile, DepartmentUserProfile, EquipmentCatalog, ZoneEquipment, Pipeline, Patch, WorkCategory, InfoSource, FaultCategory, FaultSubType, WorkReport, WorkReportFault, DemandCategory, DemandDepartment, DemandRecord
 from .authentication import TokenAuthentication
 from .permissions import IsAdminOrReadOnly, IsOwnerOrAdmin, IsDeptUserWaterOnly, IsFieldWorker
 
@@ -778,7 +778,7 @@ class PipelineViewSet(viewsets.ModelViewSet):
 
 class LocationSerializer(serializers.ModelSerializer):
     class Meta:
-        model = Location
+        model = Patch
         fields = ['id', 'name', 'code', 'order', 'active']
 
 
@@ -895,7 +895,7 @@ class WorkReportSerializer(serializers.ModelSerializer):
 
 
 class LocationViewSet(viewsets.ReadOnlyModelViewSet):
-    queryset = Location.objects.filter(active=True).order_by('order', 'code')
+    queryset = Patch.objects.filter(type=Patch.TYPE_LOCATION, active=True).order_by('order', 'code')
     serializer_class = LocationSerializer
     authentication_classes = [TokenAuthentication, authentication.SessionAuthentication]
     permission_classes = [IsAuthenticatedByTokenOrSession]

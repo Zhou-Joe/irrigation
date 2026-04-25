@@ -8,10 +8,11 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 from django.utils import timezone
 from core.models import (
-    MaxicomSite, MaxicomController, MaxicomStation, MaxicomSchedule,
+    MaxicomController, MaxicomSchedule,
     MaxicomFlowZone, MaxicomWeatherStation, MaxicomWeatherLog,
     MaxicomEvent, MaxicomFlowReading, MaxicomSignalLog,
     MaxicomETCheckbook, MaxicomRuntime, SyncAgentHeartbeat,
+    Patch,
 )
 
 SYNC_API_KEY = os.environ.get('SYNC_API_KEY', 'dev-sync-key-change-in-production')
@@ -68,13 +69,18 @@ def sync_receive(request):
     })
 
 
+def _site_by_mdb(idx):
+    """Lookup a site-type Patch by mdb_index."""
+    return Patch.objects.filter(type=Patch.TYPE_SITE, mdb_index=idx).first()
+
+
 @csrf_exempt
 def sync_status(request):
     """Return current sync status — last record counts per table."""
     counts = {
-        'sites': MaxicomSite.objects.count(),
+        'sites': Patch.objects.filter(type=Patch.TYPE_SITE).count(),
+        'stations': Patch.objects.filter(type=Patch.TYPE_STATION).count(),
         'controllers': MaxicomController.objects.count(),
-        'stations': MaxicomStation.objects.count(),
         'schedules': MaxicomSchedule.objects.count(),
         'flow_zones': MaxicomFlowZone.objects.count(),
         'weather_stations': MaxicomWeatherStation.objects.count(),
@@ -158,8 +164,10 @@ def _upsert_sites(records):
                 'date_open': r.get('DateOpen', '') or '',
                 'date_close': r.get('DateClose', '') or '',
             }
-            _, created_flag = MaxicomSite.objects.update_or_create(
-                mdb_index=idx, defaults=defaults
+            _, created_flag = Patch.objects.update_or_create(
+                type=Patch.TYPE_SITE,
+                mdb_index=idx,
+                defaults=defaults
             )
             if created_flag:
                 created += 1
@@ -176,7 +184,7 @@ def _upsert_controllers(records):
         try:
             idx = r.get('IndexNumber')
             site_idx = r.get('ControllerSiteNumber')
-            site = MaxicomSite.objects.filter(mdb_index=site_idx).first()
+            site = _site_by_mdb(site_idx)
             if not site or idx is None:
                 continue
             defaults = {
@@ -200,32 +208,34 @@ def _upsert_controllers(records):
 
 
 def _upsert_stations(records):
+    """Upsert stations as station-type Patch records."""
     created, updated, errors = 0, 0, 0
     for r in records:
         try:
             idx = r.get('IndexNumber')
             site_idx = r.get('StationSiteNumber')
-            ctrl_idx = r.get('StationControllerNumber')
-            site = MaxicomSite.objects.filter(mdb_index=site_idx).first()
+            site = _site_by_mdb(site_idx)
             if not site or idx is None:
                 continue
-            ctrl = MaxicomController.objects.filter(mdb_index=ctrl_idx).first()
-            defaults = {
-                'site': site,
-                'controller': ctrl,
-                'name': (r.get('IndexName') or '').strip(),
-                'controller_channel': r.get('StationControllerChannel', 0) or 0,
-                'precip_rate': r.get('StationPrecipFactor'),
-                'flow_rate': r.get('StationFlowFactor'),
-                'microclimate_factor': r.get('StationMicroclimeFactor'),
-                'cycle_time': r.get('StationCycleTime'),
-                'soak_time': r.get('StationSoakTime'),
-                'memo': r.get('StationMemo', '') or '',
-                'lockout': bool(r.get('Lockout', 0)),
-                'flow_manager_priority': r.get('FloManagerPriorityLevel'),
-                'date_open': r.get('DateOpen', '') or '',
-            }
-            _, c = MaxicomStation.objects.update_or_create(mdb_index=idx, defaults=defaults)
+            _, c = Patch.objects.update_or_create(
+                type=Patch.TYPE_STATION,
+                mdb_index=idx,
+                defaults={
+                    'name': (r.get('IndexName') or '').strip(),
+                    'site_number': site_idx,
+                    'parent': site,
+                    'controller_channel': r.get('StationControllerChannel', 0) or 0,
+                    'precip_rate': r.get('StationPrecipFactor'),
+                    'flow_rate': r.get('StationFlowFactor'),
+                    'microclimate_factor': r.get('StationMicroclimeFactor'),
+                    'cycle_time': r.get('StationCycleTime'),
+                    'soak_time': r.get('StationSoakTime'),
+                    'description': r.get('StationMemo', '') or '',
+                    'lockout': bool(r.get('Lockout', 0)),
+                    'flow_manager_priority': r.get('FloManagerPriorityLevel'),
+                    'date_open': r.get('DateOpen', '') or '',
+                }
+            )
             if c:
                 created += 1
             else:
@@ -241,7 +251,7 @@ def _upsert_schedules(records):
         try:
             idx = r.get('IndexNumber')
             site_idx = r.get('ScheduleSiteNumber')
-            site = MaxicomSite.objects.filter(mdb_index=site_idx).first()
+            site = _site_by_mdb(site_idx)
             if not site or idx is None:
                 continue
             defaults = {
@@ -272,7 +282,7 @@ def _upsert_flow_zones(records):
         try:
             idx = r.get('IndexNumber')
             site_idx = r.get('FlowZoneSiteNumber')
-            site = MaxicomSite.objects.filter(mdb_index=site_idx).first()
+            site = _site_by_mdb(site_idx)
             if not site or idx is None:
                 continue
             defaults = {
@@ -373,7 +383,7 @@ def _append_et_checkbook(records):
     inserted, skipped = 0, 0
     for r in records:
         try:
-            site = MaxicomSite.objects.filter(mdb_index=r.get('SiteID')).first()
+            site = _site_by_mdb(r.get('SiteID'))
             if not site:
                 skipped += 1
                 continue
@@ -402,11 +412,11 @@ def _append_runtime(records):
     inserted, skipped = 0, 0
     for r in records:
         try:
-            site = MaxicomSite.objects.filter(mdb_index=r.get('SiteID')).first()
+            site = _site_by_mdb(r.get('SiteID'))
             if not site:
                 skipped += 1
                 continue
-            stn = MaxicomStation.objects.filter(mdb_index=r.get('StationID')).first()
+            stn = Patch.objects.filter(type=Patch.TYPE_STATION, mdb_index=r.get('StationID')).first()
             _, c = MaxicomRuntime.objects.get_or_create(
                 timestamp=r.get('TimeStamps', '') or '',
                 site=site,

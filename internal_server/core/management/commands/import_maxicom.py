@@ -5,10 +5,11 @@ import os
 from datetime import datetime
 from django.core.management.base import BaseCommand
 from core.models import (
-    MaxicomSite, MaxicomController, MaxicomStation, MaxicomSchedule,
+    MaxicomController, MaxicomSchedule,
     MaxicomFlowZone, MaxicomWeatherStation, MaxicomWeatherLog,
     MaxicomEvent, MaxicomFlowReading, MaxicomSignalLog,
     MaxicomETCheckbook, MaxicomRuntime,
+    Patch,
 )
 
 # Default path: project_root/mdb_export/maxicom_integrated.db
@@ -108,25 +109,27 @@ class Command(BaseCommand):
         MaxicomWeatherLog.objects.all().delete()
         MaxicomRuntime.objects.all().delete()
         MaxicomSchedule.objects.all().delete()
-        MaxicomStation.objects.all().delete()
+        Patch.objects.filter(type=Patch.TYPE_STATION).delete()
         MaxicomController.objects.all().delete()
         MaxicomFlowZone.objects.all().delete()
         MaxicomWeatherStation.objects.all().delete()
-        MaxicomSite.objects.all().delete()
+        Patch.objects.filter(type=Patch.TYPE_SITE).delete()
 
     def _import_sites(self, conn):
-        """Import SITE_CF -> MaxicomSite"""
+        """Import SITE_CF -> Patch (type='site')"""
         cursor = conn.execute('SELECT * FROM SITE_CF')
-        site_map = {}  # mdb_index -> MaxicomSite
+        site_map = {}  # mdb_index -> Patch
         for row in cursor.fetchall():
             r = dict(row)
             idx = r['IndexNumber']
             # Only take rows with DateClose = None (currently active)
             if r.get('DateClose'):
                 continue
-            site = MaxicomSite.objects.create(
+            site = Patch.objects.create(
+                type=Patch.TYPE_SITE,
                 mdb_index=idx,
                 name=(r.get('IndexName') or '').strip(),
+                code=f'site-{idx}',
                 site_number=r.get('SiteNumber', 0) or 0,
                 time_zone=r.get('SiteTimeZone', 'China') or 'China',
                 water_pricing=r.get('SiteWaterPricing'),
@@ -209,7 +212,7 @@ class Command(BaseCommand):
         return fz_map
 
     def _import_stations(self, conn, site_map, ctrl_map):
-        """Import STATN_CF -> MaxicomStation"""
+        """Import STATN_CF -> Patch (type='station')"""
         cursor = conn.execute('SELECT * FROM STATN_CF')
         stn_map = {}
         for row in cursor.fetchall():
@@ -225,18 +228,20 @@ class Command(BaseCommand):
             lockout_val = r.get('Lockout', 0)
             if idx in stn_map:
                 continue  # Skip duplicate mdb_index
-            stn = MaxicomStation.objects.create(
-                site=site,
-                controller=ctrl,
+            stn = Patch.objects.create(
+                type=Patch.TYPE_STATION,
+                parent=site,
+                site_number=site_idx,
                 mdb_index=idx,
                 name=(r.get('IndexName') or '').strip(),
+                code=f'station-{idx}',
                 controller_channel=r.get('StationControllerChannel', 0) or 0,
                 precip_rate=r.get('StationPrecipFactor'),
                 flow_rate=r.get('StationFlowFactor'),
                 microclimate_factor=r.get('StationMicroclimeFactor'),
                 cycle_time=r.get('StationCycleTime'),
                 soak_time=r.get('StationSoakTime'),
-                memo=r.get('StationMemo', '') or '',
+                description=r.get('StationMemo', '') or '',
                 lockout=bool(lockout_val),
                 flow_manager_priority=r.get('FloManagerPriorityLevel'),
                 date_open=r.get('DateOpen', '') or '',

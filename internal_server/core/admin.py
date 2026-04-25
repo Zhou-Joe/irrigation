@@ -5,15 +5,16 @@ from .models import (
     Zone, Plant, Worker, WorkOrder, Event, WorkLog, WeatherData,
     MaintenanceRequest, ProjectSupportRequest, WaterRequest,
     RegistrationRequest, ManagerProfile, DepartmentUserProfile,
-    MaxicomSite, MaxicomController, MaxicomStation, MaxicomSchedule,
+    MaxicomController, MaxicomSchedule,
     MaxicomFlowZone, MaxicomWeatherStation, MaxicomWeatherLog,
     MaxicomEvent, MaxicomFlowReading, MaxicomSignalLog,
     MaxicomETCheckbook, MaxicomRuntime,
     EquipmentCatalog, ZoneEquipment,
-    Pipeline,
-    Location, WorkCategory, InfoSource, FaultCategory, FaultSubType,
+    Pipeline, Patch,
+    WorkCategory, InfoSource, FaultCategory, FaultSubType,
     WorkReport, WorkReportFault,
     DemandCategory, DemandDepartment, DemandRecord,
+    SyncAgentHeartbeat,
 )
 from .role_utils import get_worker_profile
 
@@ -127,102 +128,23 @@ class MaxicomControllerInline(admin.TabularInline):
     model = MaxicomController
     extra = 0
     fields = ('name', 'controller_type', 'site_number', 'link_number', 'link_channel', 'enabled')
-    readonly_fields = ()
-
-
-class MaxicomStationInline(admin.TabularInline):
-    model = MaxicomStation
-    extra = 0
-    fields = ('name', 'controller', 'controller_channel', 'precip_rate', 'flow_rate', 'cycle_time', 'soak_time', 'lockout')
-    readonly_fields = ()
 
 
 class MaxicomScheduleInline(admin.TabularInline):
     model = MaxicomSchedule
     extra = 0
     fields = ('name', 'nominal_et', 'water_budget_factor', 'flo_manage', 'send_automatic')
-    readonly_fields = ()
-
-
-@admin.register(MaxicomSite)
-class MaxicomSiteAdmin(admin.ModelAdmin):
-    list_display = ('name', 'site_number', 'zone', 'et_current', 'crop_coefficient', 'rain_shutdown', 'controller_count', 'station_count', 'created_at')
-    list_filter = ('rain_shutdown', 'time_zone', 'created_at')
-    list_editable = ('zone',)
-    search_fields = ('name', 'telephone')
-    readonly_fields = ('created_at', 'controller_count', 'station_count', 'schedule_count')
-    inlines = [MaxicomControllerInline, MaxicomStationInline, MaxicomScheduleInline]
-    fieldsets = (
-        ('基本信息', {
-            'fields': ('zone', 'mdb_index', 'name', 'site_number', 'time_zone', 'telephone')
-        }),
-        ('ET设置', {
-            'fields': ('et_current', 'et_default', 'et_minimum', 'et_maximum', 'crop_coefficient')
-        }),
-        ('其他设置', {
-            'fields': ('water_pricing', 'ccu_version', 'rain_shutdown', 'date_open', 'date_close')
-        }),
-        ('统计', {
-            'fields': ('controller_count', 'station_count', 'schedule_count', 'created_at'),
-            'classes': ('collapse',)
-        }),
-    )
-
-    def controller_count(self, obj):
-        return obj.controllers.count()
-    controller_count.short_description = '控制器数'
-
-    def station_count(self, obj):
-        return obj.stations.count()
-    station_count.short_description = '灌溉站数'
-
-    def schedule_count(self, obj):
-        return obj.schedules.count()
-    schedule_count.short_description = '计划数'
-
-
-@admin.register(MaxicomController)
-class MaxicomControllerAdmin(admin.ModelAdmin):
-    list_display = ('name', 'site', 'controller_type', 'site_number', 'link_number', 'link_channel', 'enabled')
-    list_filter = ('enabled', 'site', 'controller_type')
-    search_fields = ('name', 'site__name')
-    list_select_related = ('site',)
-
-
-@admin.register(MaxicomStation)
-class MaxicomStationAdmin(admin.ModelAdmin):
-    list_display = ('name', 'site', 'controller', 'controller_channel', 'precip_rate', 'flow_rate', 'cycle_time', 'soak_time', 'lockout')
-    list_filter = ('lockout', 'site', 'controller')
-    search_fields = ('name', 'site__name', 'memo')
-    list_select_related = ('site', 'controller')
-    list_editable = ('lockout',)
-
-
-@admin.register(MaxicomSchedule)
-class MaxicomScheduleAdmin(admin.ModelAdmin):
-    list_display = ('name', 'site', 'nominal_et', 'water_budget_factor', 'flo_manage', 'send_automatic', 'send_protected')
-    list_filter = ('flo_manage', 'send_automatic', 'send_protected', 'site')
-    search_fields = ('name', 'site__name')
-    list_select_related = ('site',)
-
-
-@admin.register(MaxicomFlowZone)
-class MaxicomFlowZoneAdmin(admin.ModelAdmin):
-    list_display = ('name', 'site', 'mdb_index', 'join_site')
-    list_filter = ('join_site', 'site')
-    search_fields = ('name', 'site__name')
-    list_select_related = ('site',)
 
 
 @admin.register(MaxicomWeatherStation)
 class MaxicomWeatherStationAdmin(admin.ModelAdmin):
-    list_display = ('name', 'mdb_index', 'default_et', 'time_zone')
+    list_display = ('name', 'mdb_index', 'default_et', 'time_zone', 'id')
     search_fields = ('name',)
 
 
 @admin.register(MaxicomWeatherLog)
 class MaxicomWeatherLogAdmin(admin.ModelAdmin):
-    list_display = ('weather_station', 'timestamp', 'temperature', 'humidity', 'rainfall', 'et', 'solar_radiation', 'wind_run')
+    list_display = ('weather_station', 'timestamp', 'temperature', 'max_temp', 'min_temp', 'humidity', 'rainfall', 'et', 'solar_radiation', 'wind_run', 'id')
     list_filter = ('weather_station', 'timestamp')
     search_fields = ('weather_station__name',)
     list_select_related = ('weather_station',)
@@ -232,7 +154,7 @@ class MaxicomWeatherLogAdmin(admin.ModelAdmin):
 
 @admin.register(MaxicomEvent)
 class MaxicomEventAdmin(admin.ModelAdmin):
-    list_display = ('timestamp', 'source', 'flag', 'text_truncated')
+    list_display = ('timestamp', 'source', 'index', 'event_number', 'flag', 'text_truncated')
     list_filter = ('flag', 'source', 'timestamp')
     search_fields = ('text',)
     ordering = ('-timestamp',)
@@ -245,7 +167,7 @@ class MaxicomEventAdmin(admin.ModelAdmin):
 
 @admin.register(MaxicomFlowReading)
 class MaxicomFlowReadingAdmin(admin.ModelAdmin):
-    list_display = ('flow_zone', 'timestamp', 'value', 'multiplier', 'site_id')
+    list_display = ('flow_zone', 'timestamp', 'value', 'multiplier', 'site_id', 'id')
     list_filter = ('flow_zone', 'timestamp')
     list_select_related = ('flow_zone',)
     ordering = ('-timestamp',)
@@ -253,14 +175,14 @@ class MaxicomFlowReadingAdmin(admin.ModelAdmin):
 
 @admin.register(MaxicomSignalLog)
 class MaxicomSignalLogAdmin(admin.ModelAdmin):
-    list_display = ('timestamp', 'index', 'controller_channel', 'signal_type', 'signal_value')
+    list_display = ('timestamp', 'index', 'controller_channel', 'signal_index', 'signal_table', 'signal_type', 'signal_value', 'signal_multiplier', 'id')
     list_filter = ('signal_type', 'signal_table', 'timestamp')
     ordering = ('-timestamp',)
 
 
 @admin.register(MaxicomETCheckbook)
 class MaxicomETCheckbookAdmin(admin.ModelAdmin):
-    list_display = ('site', 'timestamp', 'soil_moisture', 'rainfall', 'et', 'irrigation', 'soil_moisture_capacity', 'soil_refill_pct')
+    list_display = ('site', 'timestamp', 'soil_moisture', 'rainfall', 'et', 'irrigation', 'soil_moisture_capacity', 'soil_refill_pct', 'id')
     list_filter = ('site', 'timestamp')
     search_fields = ('site__name',)
     list_select_related = ('site',)
@@ -269,17 +191,29 @@ class MaxicomETCheckbookAdmin(admin.ModelAdmin):
 
 @admin.register(MaxicomRuntime)
 class MaxicomRuntimeAdmin(admin.ModelAdmin):
-    list_display = ('timestamp', 'site', 'station', 'station_id_raw', 'run_time')
+    list_display = ('timestamp', 'site', 'station', 'station_id_raw', 'run_time', 'id')
     list_filter = ('site', 'timestamp')
     search_fields = ('site__name',)
     list_select_related = ('site', 'station')
     ordering = ('-timestamp',)
 
 
+@admin.register(Patch)
+class PatchAdmin(admin.ModelAdmin):
+    list_display = ('name', 'code', 'type', 'parent', 'mdb_index', 'order', 'active', 'created_at')
+    list_filter = ('type', 'active', 'parent')
+    search_fields = ('name', 'code', 'description')
+    readonly_fields = ('created_at', 'updated_at')
+    list_editable = ('order', 'active')
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).select_related('parent')
+
+
 @admin.register(Zone)
 class ZoneAdmin(admin.ModelAdmin):
-    list_display = ('name', 'code', 'boundary_color', 'point_count', 'today_status', 'created_at')
-    list_filter = ('created_at',)
+    list_display = ('name', 'code', 'patch', 'description', 'boundary_color', 'point_count', 'today_status', 'created_at', 'updated_at')
+    list_filter = ('patch', 'created_at')
     search_fields = ('name', 'code', 'description')
     readonly_fields = ('created_at', 'updated_at', 'display_boundary_points', 'today_status_display')
 
@@ -329,7 +263,7 @@ class ZoneAdmin(admin.ModelAdmin):
 
 @admin.register(Plant)
 class PlantAdmin(admin.ModelAdmin):
-    list_display = ('name', 'scientific_name', 'zone', 'quantity')
+    list_display = ('name', 'scientific_name', 'zone', 'quantity', 'planting_date', 'end_date', 'notes')
     list_filter = ('zone',)
     search_fields = ('name', 'scientific_name', 'notes')
     readonly_fields = ()
@@ -337,7 +271,7 @@ class PlantAdmin(admin.ModelAdmin):
 
 @admin.register(Worker)
 class WorkerAdmin(admin.ModelAdmin):
-    list_display = ('full_name', 'employee_id', 'phone', 'department_display', 'active', 'created_at')
+    list_display = ('full_name', 'employee_id', 'phone', 'department_display', 'department_other', 'api_token', 'active', 'created_at', 'updated_at')
     list_filter = ('active', 'department', 'created_at')
     search_fields = ('full_name', 'employee_id', 'phone')
     readonly_fields = ('created_at', 'updated_at')
@@ -351,7 +285,7 @@ class WorkerAdmin(admin.ModelAdmin):
 
 @admin.register(WorkOrder)
 class WorkOrderAdmin(admin.ModelAdmin):
-    list_display = ('title', 'zone', 'assigned_to', 'status', 'priority', 'scheduled_date', 'due_date')
+    list_display = ('title', 'zone', 'assigned_to', 'status', 'priority', 'scheduled_date', 'due_date', 'created_at', 'updated_at')
     list_filter = ('status', 'priority', 'scheduled_date', 'due_date')
     search_fields = ('title', 'description')
     readonly_fields = ('created_at', 'updated_at')
@@ -359,7 +293,7 @@ class WorkOrderAdmin(admin.ModelAdmin):
 
 @admin.register(Event)
 class EventAdmin(admin.ModelAdmin):
-    list_display = ('name', 'start_date', 'end_date', 'created_at')
+    list_display = ('name', 'description', 'start_date', 'end_date', 'created_at')
     list_filter = ('start_date', 'end_date')
     search_fields = ('name', 'description')
     readonly_fields = ('created_at',)
@@ -368,7 +302,7 @@ class EventAdmin(admin.ModelAdmin):
 
 @admin.register(WorkLog)
 class WorkLogAdmin(admin.ModelAdmin):
-    list_display = ('work_type', 'worker', 'zone', 'work_order', 'work_timestamp', 'uploaded_at')
+    list_display = ('work_type', 'worker', 'zone', 'work_order', 'notes', 'latitude', 'longitude', 'work_timestamp', 'relay_id', 'uploaded_at')
     list_filter = ('work_type', 'work_timestamp', 'uploaded_at')
     search_fields = ('notes', 'relay_id')
     readonly_fields = ('uploaded_at',)
@@ -376,7 +310,7 @@ class WorkLogAdmin(admin.ModelAdmin):
 
 @admin.register(MaintenanceRequest)
 class MaintenanceRequestAdmin(admin.ModelAdmin):
-    list_display = ('zone', 'submitter', 'date', 'status', 'start_time', 'end_time', 'created_at')
+    list_display = ('zone', 'submitter', 'date', 'status', 'start_time', 'end_time', 'participants', 'work_content', 'materials', 'feedback', 'approver', 'processed_at', 'status_notes', 'created_at', 'updated_at')
     list_filter = ('status', 'date', 'created_at')
     search_fields = ('zone__name', 'submitter__full_name', 'work_content')
     readonly_fields = ('created_at', 'updated_at')
@@ -384,7 +318,7 @@ class MaintenanceRequestAdmin(admin.ModelAdmin):
 
 @admin.register(ProjectSupportRequest)
 class ProjectSupportRequestAdmin(admin.ModelAdmin):
-    list_display = ('zone', 'submitter', 'date', 'status', 'start_time', 'end_time', 'created_at')
+    list_display = ('zone', 'submitter', 'date', 'status', 'start_time', 'end_time', 'participants', 'work_content', 'materials', 'feedback', 'approver', 'processed_at', 'status_notes', 'created_at', 'updated_at')
     list_filter = ('status', 'date', 'created_at')
     search_fields = ('zone__name', 'submitter__full_name', 'work_content')
     readonly_fields = ('created_at', 'updated_at')
@@ -392,7 +326,7 @@ class ProjectSupportRequestAdmin(admin.ModelAdmin):
 
 @admin.register(WaterRequest)
 class WaterRequestAdmin(admin.ModelAdmin):
-    list_display = ('zone', 'submitter', 'user_type', 'request_type', 'status', 'start_datetime', 'end_datetime', 'created_at')
+    list_display = ('zone', 'submitter', 'user_type', 'user_type_other', 'request_type', 'request_type_other', 'status', 'start_datetime', 'end_datetime', 'approver', 'processed_at', 'status_notes', 'created_at', 'updated_at')
     list_filter = ('status', 'user_type', 'request_type', 'created_at')
     search_fields = ('zone__name', 'submitter__full_name')
     readonly_fields = ('created_at', 'updated_at')
@@ -483,7 +417,7 @@ class DepartmentUserProfileAdmin(admin.ModelAdmin):
 
 @admin.register(EquipmentCatalog)
 class EquipmentCatalogAdmin(admin.ModelAdmin):
-    list_display = ('equipment_type', 'manufacturer', 'model_name', 'created_at')
+    list_display = ('equipment_type', 'manufacturer', 'model_name', 'specifications', 'created_at', 'updated_at')
     list_filter = ('equipment_type', 'manufacturer')
     search_fields = ('model_name', 'manufacturer')
     readonly_fields = ('created_at', 'updated_at')
@@ -491,7 +425,7 @@ class EquipmentCatalogAdmin(admin.ModelAdmin):
 
 @admin.register(ZoneEquipment)
 class ZoneEquipmentAdmin(admin.ModelAdmin):
-    list_display = ('zone', 'equipment', 'quantity', 'status', 'installation_date')
+    list_display = ('zone', 'equipment', 'quantity', 'status', 'installation_date', 'location_in_zone', 'notes', 'created_at', 'updated_at')
     list_filter = ('status', 'equipment__equipment_type', 'installation_date')
     search_fields = ('zone__name', 'equipment__model_name', 'location_in_zone')
     readonly_fields = ('created_at', 'updated_at')
@@ -549,17 +483,9 @@ class FaultSubTypeInline(admin.TabularInline):
     extra = 0
 
 
-@admin.register(Location)
-class LocationAdmin(admin.ModelAdmin):
-    list_display = ('code', 'name', 'order', 'active')
-    list_editable = ('order', 'active')
-    search_fields = ('name', 'code')
-    ordering = ('order', 'code')
-
-
 @admin.register(WorkCategory)
 class WorkCategoryAdmin(admin.ModelAdmin):
-    list_display = ('code', 'name', 'order', 'active')
+    list_display = ('code', 'name', 'order', 'active', 'created_at', 'updated_at')
     list_editable = ('order', 'active')
     search_fields = ('name', 'code')
     ordering = ('order', 'code')
@@ -567,7 +493,7 @@ class WorkCategoryAdmin(admin.ModelAdmin):
 
 @admin.register(InfoSource)
 class InfoSourceAdmin(admin.ModelAdmin):
-    list_display = ('code', 'name', 'order', 'active')
+    list_display = ('code', 'name', 'order', 'active', 'created_at', 'updated_at')
     list_editable = ('order', 'active')
     search_fields = ('name', 'code')
     ordering = ('order', 'code')
@@ -575,7 +501,7 @@ class InfoSourceAdmin(admin.ModelAdmin):
 
 @admin.register(FaultCategory)
 class FaultCategoryAdmin(admin.ModelAdmin):
-    list_display = ('name_zh', 'name_en', 'order', 'active', 'sub_type_count')
+    list_display = ('name_zh', 'name_en', 'order', 'active', 'sub_type_count', 'created_at', 'updated_at')
     list_editable = ('order', 'active')
     search_fields = ('name_zh', 'name_en')
     ordering = ('order', 'id')
@@ -588,7 +514,7 @@ class FaultCategoryAdmin(admin.ModelAdmin):
 
 @admin.register(FaultSubType)
 class FaultSubTypeAdmin(admin.ModelAdmin):
-    list_display = ('code', 'name_zh', 'name_en', 'category', 'order', 'active')
+    list_display = ('code', 'name_zh', 'name_en', 'category', 'order', 'active', 'created_at', 'updated_at')
     list_filter = ('category', 'active')
     list_editable = ('order', 'active')
     search_fields = ('name_zh', 'name_en', 'code')
@@ -604,7 +530,7 @@ class WorkReportFaultInline(admin.TabularInline):
 
 @admin.register(WorkReport)
 class WorkReportAdmin(admin.ModelAdmin):
-    list_display = ('date', 'worker', 'location', 'work_category', 'zone_location', 'is_difficult', 'created_at')
+    list_display = ('date', 'weather', 'worker', 'location', 'work_category', 'zone_location', 'remark', 'info_source', 'is_difficult', 'is_difficult_resolved', 'created_at', 'updated_at')
     list_filter = ('date', 'work_category', 'location', 'is_difficult', 'weather')
     search_fields = ('remark', 'zone_location', 'worker__full_name')
     date_hierarchy = 'date'
@@ -620,7 +546,7 @@ class WorkReportAdmin(admin.ModelAdmin):
 
 @admin.register(DemandCategory)
 class DemandCategoryAdmin(admin.ModelAdmin):
-    list_display = ('code', 'name', 'category_type', 'order', 'active')
+    list_display = ('code', 'name', 'category_type', 'order', 'active', 'created_at', 'updated_at')
     list_filter = ('category_type', 'active')
     list_editable = ('order', 'active')
     search_fields = ('name', 'code')
@@ -629,7 +555,7 @@ class DemandCategoryAdmin(admin.ModelAdmin):
 
 @admin.register(DemandDepartment)
 class DemandDepartmentAdmin(admin.ModelAdmin):
-    list_display = ('code', 'name', 'order', 'active')
+    list_display = ('code', 'name', 'order', 'active', 'created_at')
     list_editable = ('order', 'active')
     search_fields = ('name', 'code')
     ordering = ('order', 'code')
@@ -683,3 +609,14 @@ class DemandRecordAdmin(admin.ModelAdmin):
             return f"{obj.start_time.strftime('%H:%M')} - {obj.end_time.strftime('%H:%M')}"
         return '-'
     time_display.short_description = '时间段'
+
+
+# ==========================================================================
+# 同步代理 Admin
+# ==========================================================================
+
+
+@admin.register(SyncAgentHeartbeat)
+class SyncAgentHeartbeatAdmin(admin.ModelAdmin):
+    list_display = ('id', 'last_heartbeat', 'agent_version', 'last_sync_counts')
+    readonly_fields = ('last_heartbeat', 'last_sync_counts', 'agent_version')
