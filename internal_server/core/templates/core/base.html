@@ -117,8 +117,8 @@
                 <a href="{% url 'core:demands' %}" class="{% block nav_demands %}{% endblock %}">需求日志</a>
                 {% if is_admin %}
                 <a href="{% url 'core:settings' %}" class="{% block nav_settings %}{% endblock %}">系统设置</a>
-                <a href="{% url 'core:registration_approval' %}" class="{% block nav_approval %}{% endblock %}">
-                    注册审批{% if pending_registrations %}<span style="background:var(--color-warning);color:#fff;padding:1px 6px;border-radius:10px;font-size:0.7rem;margin-left:4px;">{{ pending_registrations }}</span>{% endif %}
+                <a href="{% url 'core:user_management' %}" class="{% block nav_user_mgmt %}{% endblock %}">
+                    用户管理{% if pending_registrations %}<span style="background:var(--color-warning);color:#fff;padding:1px 6px;border-radius:10px;font-size:0.7rem;margin-left:4px;">{{ pending_registrations }}</span>{% endif %}
                 </a>
                 {% endif %}
             </div>

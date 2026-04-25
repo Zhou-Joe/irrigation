@@ -6,6 +6,89 @@
 
 {% block extra_css %}
 <link rel="stylesheet" href="{% static 'css/settings.css' %}">
+<style>
+.photo-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 12px;
+}
+.photo-thumb {
+    aspect-ratio: 1;
+    border-radius: 8px;
+    overflow: hidden;
+    cursor: pointer;
+    border: 2px solid var(--color-surface-dark);
+    transition: border-color 0.2s, transform 0.2s;
+}
+.photo-thumb:hover {
+    border-color: var(--color-primary);
+    transform: scale(1.03);
+}
+.photo-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+.no-photos {
+    color: var(--color-text-muted);
+    font-size: 0.85rem;
+    padding: 16px 0;
+}
+/* Lightbox */
+.lb-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.85);
+    z-index: 3000;
+    justify-content: center;
+    align-items: center;
+}
+.lb-overlay.show { display: flex; }
+.lb-img {
+    max-width: 90vw;
+    max-height: 85vh;
+    border-radius: 8px;
+    object-fit: contain;
+}
+.lb-close {
+    position: absolute;
+    top: 16px;
+    right: 24px;
+    color: #fff;
+    font-size: 2rem;
+    cursor: pointer;
+    background: none;
+    border: none;
+    line-height: 1;
+}
+.lb-nav {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #fff;
+    font-size: 2.5rem;
+    cursor: pointer;
+    background: rgba(0,0,0,0.4);
+    border: none;
+    border-radius: 50%;
+    width: 48px;
+    height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.lb-prev { left: 16px; }
+.lb-next { right: 16px; }
+.lb-counter {
+    position: absolute;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: rgba(255,255,255,0.7);
+    font-size: 0.85rem;
+}
+</style>
 {% endblock %}
 
 {% block content %}
@@ -65,5 +148,62 @@
         <p style="color:var(--color-text-muted);">无故障记录</p>
         {% endif %}
     </div>
+
+    <div class="form-section">
+        <h2>现场照片</h2>
+        {% if report.photos %}
+        <div class="photo-grid">
+            {% for photo in report.photos %}
+            <div class="photo-thumb" onclick="openLightbox({{ forloop.counter0 }})">
+                <img src="/media/{{ photo }}" alt="照片 {{ forloop.counter }}" loading="lazy">
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="no-photos">暂无照片</p>
+        {% endif %}
+    </div>
 </div>
+
+<!-- Lightbox -->
+<div class="lb-overlay" id="lightbox" onclick="if(event.target===this)closeLightbox()">
+    <button class="lb-close" onclick="closeLightbox()">&times;</button>
+    <button class="lb-nav lb-prev" onclick="event.stopPropagation();navLightbox(-1)">&#8249;</button>
+    <img class="lb-img" id="lbImg" src="" alt="">
+    <button class="lb-nav lb-next" onclick="event.stopPropagation();navLightbox(1)">&#8250;</button>
+    <div class="lb-counter" id="lbCounter"></div>
+</div>
+
+<script>
+var photos = {{ report.photos|safe }};
+var currentIdx = 0;
+
+function openLightbox(idx) {
+    currentIdx = idx;
+    showPhoto();
+    document.getElementById('lightbox').classList.add('show');
+    document.addEventListener('keydown', lbKeyHandler);
+}
+
+function closeLightbox() {
+    document.getElementById('lightbox').classList.remove('show');
+    document.removeEventListener('keydown', lbKeyHandler);
+}
+
+function navLightbox(dir) {
+    currentIdx = (currentIdx + dir + photos.length) % photos.length;
+    showPhoto();
+}
+
+function showPhoto() {
+    document.getElementById('lbImg').src = '/media/' + photos[currentIdx];
+    document.getElementById('lbCounter').textContent = (currentIdx + 1) + ' / ' + photos.length;
+}
+
+function lbKeyHandler(e) {
+    if (e.key === 'Escape') closeLightbox();
+    else if (e.key === 'ArrowLeft') navLightbox(-1);
+    else if (e.key === 'ArrowRight') navLightbox(1);
+}
+</script>
 {% endblock %}

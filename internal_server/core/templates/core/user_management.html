@@ -1,0 +1,797 @@
+{% extends 'core/base.html' %}
+
+{% load static %}
+
+{% block title %}用户管理 - 灌溉管理系统{% endblock %}
+{% block nav_user_mgmt %}active{% endblock %}
+
+{% block extra_css %}
+<style>
+.mgmt-container {
+    padding: var(--space-lg);
+    max-width: 1400px;
+    margin: 0 auto;
+}
+
+.page-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: var(--space-lg);
+}
+
+.page-header h1 {
+    font-family: var(--font-display);
+    font-size: 1.75rem;
+    color: var(--color-primary);
+}
+
+/* Main Tab Bar */
+.main-tabs {
+    display: flex;
+    gap: var(--space-xs);
+    margin-bottom: var(--space-lg);
+    border-bottom: 2px solid var(--color-surface-dark);
+    padding-bottom: var(--space-xs);
+}
+
+.main-tab {
+    padding: 10px 24px;
+    border: none;
+    background: transparent;
+    color: var(--color-text-secondary);
+    font-size: 0.95rem;
+    font-weight: 500;
+    cursor: pointer;
+    border-radius: var(--radius-md) var(--radius-md) 0 0;
+    transition: all var(--transition-fast);
+}
+
+.main-tab:hover {
+    background: var(--color-surface-dark);
+}
+
+.main-tab.active {
+    background: var(--color-primary);
+    color: white;
+}
+
+.tab-badge {
+    display: inline-block;
+    background: var(--color-warning);
+    color: white;
+    padding: 1px 8px;
+    border-radius: 10px;
+    font-size: 0.7rem;
+    margin-left: 6px;
+}
+
+.tab-panel {
+    display: none;
+}
+
+.tab-panel.active {
+    display: block;
+}
+
+/* Stats Bar */
+.stats-bar {
+    display: flex;
+    gap: var(--space-md);
+    margin-bottom: var(--space-lg);
+}
+
+.stat-card {
+    background: var(--color-surface);
+    border-radius: var(--radius-lg);
+    padding: var(--space-md) var(--space-lg);
+    flex: 1;
+    box-shadow: var(--shadow-sm);
+}
+
+.stat-card .stat-number {
+    font-size: 1.75rem;
+    font-weight: 700;
+    color: var(--color-primary);
+}
+
+.stat-card .stat-label {
+    color: var(--color-text-muted);
+    font-size: 0.8rem;
+}
+
+.stat-card.pending .stat-number { color: var(--color-warning); }
+.stat-card.approved .stat-number { color: var(--color-success); }
+.stat-card.rejected .stat-number { color: var(--color-error); }
+
+/* User Table */
+.user-table {
+    width: 100%;
+    background: var(--color-surface);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    box-shadow: var(--shadow-sm);
+    border-collapse: collapse;
+}
+
+.user-table th,
+.user-table td {
+    padding: var(--space-md);
+    text-align: left;
+    border-bottom: 1px solid var(--color-surface-dark);
+}
+
+.user-table th {
+    background: var(--color-surface-alt);
+    font-weight: 600;
+    color: var(--color-text-secondary);
+    font-size: 0.85rem;
+}
+
+.user-table tr:hover {
+    background: var(--color-surface-alt);
+}
+
+.text-mono {
+    font-family: monospace;
+    font-size: 0.85rem;
+}
+
+/* Role Badges */
+.role-badge {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: var(--radius-sm);
+    font-size: 0.75rem;
+    font-weight: 500;
+}
+
+.role-badge.role-super_admin { background: rgba(27, 67, 50, 0.15); color: #1B4332; font-weight: 600; }
+.role-badge.role-manager { background: rgba(45, 106, 79, 0.15); color: #2D6A4F; }
+.role-badge.role-field_worker { background: rgba(64, 145, 108, 0.15); color: #40916C; }
+.role-badge.role-dept_user { background: rgba(212, 165, 116, 0.15); color: #B8956A; }
+
+.status-active {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: var(--radius-sm);
+    font-size: 0.75rem;
+    font-weight: 500;
+    background: rgba(64, 145, 108, 0.15);
+    color: var(--color-success);
+}
+
+.status-inactive {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: var(--radius-sm);
+    font-size: 0.75rem;
+    font-weight: 500;
+    background: rgba(108, 117, 125, 0.15);
+    color: #6C757D;
+}
+
+.btn {
+    padding: 6px 14px;
+    border: none;
+    border-radius: var(--radius-md);
+    font-size: 0.85rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+
+.btn-sm {
+    padding: 4px 10px;
+    font-size: 0.8rem;
+}
+
+.btn-primary {
+    background: var(--color-primary);
+    color: white;
+}
+
+.btn-primary:hover {
+    opacity: 0.9;
+}
+
+.btn-secondary {
+    background: var(--color-surface-dark);
+    color: var(--color-text-primary);
+}
+
+.btn-secondary:hover {
+    background: #d1d5db;
+}
+
+.btn-approve {
+    background: var(--color-success);
+    color: white;
+}
+
+.btn-reject {
+    background: var(--color-error);
+    color: white;
+}
+
+/* Edit Modal */
+.modal-overlay {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 1000;
+    align-items: center;
+    justify-content: center;
+}
+
+.modal-overlay.show {
+    display: flex;
+}
+
+.modal {
+    background: var(--color-surface);
+    border-radius: var(--radius-xl);
+    padding: var(--space-xl);
+    max-width: 480px;
+    width: 90%;
+}
+
+.modal h3 {
+    margin-bottom: var(--space-lg);
+    color: var(--color-primary);
+}
+
+.form-group {
+    margin-bottom: var(--space-md);
+}
+
+.form-group label {
+    display: block;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--color-text-secondary);
+    margin-bottom: 4px;
+}
+
+.form-group input[type="text"],
+.form-group select {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid var(--color-surface-dark);
+    border-radius: var(--radius-md);
+    font-size: 0.875rem;
+    background: var(--color-surface);
+}
+
+.form-group input[type="text"]:focus,
+.form-group select:focus {
+    outline: none;
+    border-color: var(--color-primary);
+}
+
+.form-group input[type="checkbox"] {
+    margin-right: 6px;
+}
+
+.modal-actions {
+    display: flex;
+    gap: var(--space-md);
+    justify-content: flex-end;
+    margin-top: var(--space-lg);
+}
+
+/* Approval Tab Styles */
+.filter-tabs {
+    display: flex;
+    gap: var(--space-sm);
+    margin-bottom: var(--space-lg);
+    border-bottom: 2px solid var(--color-surface-dark);
+    padding-bottom: var(--space-xs);
+}
+
+.filter-tab {
+    padding: var(--space-sm) var(--space-lg);
+    border: none;
+    background: transparent;
+    color: var(--color-text-secondary);
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+    border-radius: var(--radius-md) var(--radius-md) 0 0;
+    transition: all var(--transition-fast);
+}
+
+.filter-tab:hover {
+    background: var(--color-surface-dark);
+}
+
+.filter-tab.active {
+    background: var(--color-primary);
+    color: white;
+}
+
+.requests-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-md);
+}
+
+.request-card {
+    background: var(--color-surface);
+    border-radius: var(--radius-lg);
+    padding: var(--space-lg);
+    box-shadow: var(--shadow-sm);
+    border-left: 4px solid var(--color-text-muted);
+    transition: all var(--transition-fast);
+}
+
+.request-card:hover {
+    box-shadow: var(--shadow-md);
+}
+
+.request-card.pending { border-left-color: var(--color-warning); }
+.request-card.approved { border-left-color: var(--color-success); opacity: 0.7; }
+.request-card.rejected { border-left-color: var(--color-error); opacity: 0.7; }
+
+.request-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: var(--space-md);
+}
+
+.request-info h3 {
+    font-size: 1.05rem;
+    color: var(--color-text-primary);
+    margin: 0 0 var(--space-xs) 0;
+}
+
+.request-info .meta {
+    display: flex;
+    gap: var(--space-md);
+    color: var(--color-text-muted);
+    font-size: 0.85rem;
+    flex-wrap: wrap;
+}
+
+.request-status {
+    padding: var(--space-xs) var(--space-md);
+    border-radius: var(--radius-full);
+    font-size: 0.75rem;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.request-status.pending { background: rgba(204, 119, 34, 0.15); color: var(--color-warning); }
+.request-status.approved { background: rgba(64, 145, 108, 0.15); color: var(--color-success); }
+.request-status.rejected { background: rgba(155, 34, 38, 0.15); color: var(--color-error); }
+
+.request-details {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: var(--space-md);
+    padding: var(--space-md) 0;
+    border-top: 1px solid var(--color-surface-dark);
+    border-bottom: 1px solid var(--color-surface-dark);
+}
+
+.detail-item .label {
+    font-size: 0.75rem;
+    color: var(--color-text-muted);
+}
+
+.detail-item .value {
+    font-size: 0.875rem;
+    color: var(--color-text-primary);
+}
+
+.request-actions {
+    display: flex;
+    gap: var(--space-md);
+    margin-top: var(--space-md);
+}
+
+.empty-state {
+    text-align: center;
+    padding: var(--space-xl);
+    color: var(--color-text-muted);
+}
+
+.toast {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    padding: 12px 20px;
+    border-radius: var(--radius-md);
+    color: white;
+    font-size: 0.875rem;
+    z-index: 2000;
+    opacity: 0;
+    transition: opacity 0.3s;
+}
+
+.toast.show { opacity: 1; }
+.toast.success { background: var(--color-success); }
+.toast.error { background: var(--color-error); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="mgmt-container">
+    <div class="page-header">
+        <h1>用户管理</h1>
+        <a href="{% url 'core:dashboard' %}" class="btn btn-secondary">返回首页</a>
+    </div>
+
+    <!-- Main Tabs -->
+    <div class="main-tabs">
+        <button class="main-tab {% if active_tab == 'users' %}active{% endif %}"
+                onclick="switchTab('users')">
+            用户列表 ({{ total_users }})
+        </button>
+        <button class="main-tab {% if active_tab == 'approval' %}active{% endif %}"
+                onclick="switchTab('approval')">
+            注册审批
+            {% if stats.pending > 0 %}
+            <span class="tab-badge">{{ stats.pending }}</span>
+            {% endif %}
+        </button>
+    </div>
+
+    <!-- Tab 1: User List -->
+    <div id="tab-users" class="tab-panel {% if active_tab == 'users' %}active{% endif %}">
+        <div class="stats-bar">
+            <div class="stat-card">
+                <div class="stat-number">{{ total_users }}</div>
+                <div class="stat-label">总用户</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" style="color: var(--color-success)">{{ active_users }}</div>
+                <div class="stat-label">活跃</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" style="color: var(--color-text-muted)">{{ inactive_users }}</div>
+                <div class="stat-label">停用</div>
+            </div>
+        </div>
+
+        {% if users_list %}
+        <table class="user-table">
+            <thead>
+                <tr>
+                    <th>姓名</th>
+                    <th>用户名</th>
+                    <th>工号</th>
+                    <th>角色</th>
+                    <th>部门</th>
+                    <th>电话</th>
+                    <th>状态</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for u in users_list %}
+                <tr data-profile-type="{{ u.profile_type }}" data-profile-id="{{ u.profile_id }}">
+                    <td>{{ u.full_name }}</td>
+                    <td>{{ u.username }}</td>
+                    <td class="text-mono">{{ u.employee_id }}</td>
+                    <td><span class="role-badge role-{{ u.role }}">{{ u.role_display }}</span></td>
+                    <td>{{ u.department|default:"-" }}</td>
+                    <td>{{ u.phone|default:"-" }}</td>
+                    <td>
+                        {% if u.active %}
+                        <span class="status-active">活跃</span>
+                        {% else %}
+                        <span class="status-inactive">停用</span>
+                        {% endif %}
+                    </td>
+                    <td><button class="btn btn-sm btn-secondary" onclick="editUser(this)">编辑</button></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div class="empty-state">
+            <p>暂无用户</p>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Tab 2: Registration Approval -->
+    <div id="tab-approval" class="tab-panel {% if active_tab == 'approval' %}active{% endif %}">
+        <div class="stats-bar">
+            <div class="stat-card pending">
+                <div class="stat-number">{{ stats.pending }}</div>
+                <div class="stat-label">待审批</div>
+            </div>
+            <div class="stat-card approved">
+                <div class="stat-number">{{ stats.approved }}</div>
+                <div class="stat-label">已批准</div>
+            </div>
+            <div class="stat-card rejected">
+                <div class="stat-number">{{ stats.rejected }}</div>
+                <div class="stat-label">已拒绝</div>
+            </div>
+        </div>
+
+        <div class="filter-tabs">
+            <button class="filter-tab {% if filter == 'pending' %}active{% endif %}" onclick="setFilter('pending')">待审批</button>
+            <button class="filter-tab {% if filter == 'approved' %}active{% endif %}" onclick="setFilter('approved')">已批准</button>
+            <button class="filter-tab {% if filter == 'rejected' %}active{% endif %}" onclick="setFilter('rejected')">已拒绝</button>
+            <button class="filter-tab {% if filter == 'all' %}active{% endif %}" onclick="setFilter('all')">全部</button>
+        </div>
+
+        <div class="requests-list">
+            {% for req in requests %}
+            <div class="request-card {{ req.status }}">
+                <div class="request-header">
+                    <div class="request-info">
+                        <h3>{{ req.full_name }}</h3>
+                        <div class="meta">
+                            <span class="role-badge {{ req.requested_role }}">{{ req.get_requested_role_display }}</span>
+                            {% if req.department %}
+                            <span>部门: {% if req.department == '其他' %}{{ req.department_other }}{% else %}{{ req.department }}{% endif %}</span>
+                            {% endif %}
+                            <span>{{ req.phone }}</span>
+                            {% if req.username %}
+                            <span>{{ req.username }}</span>
+                            {% endif %}
+                        </div>
+                        <div class="meta" style="margin-top: 4px;">
+                            <span>申请时间: {{ req.created_at|date:"Y-m-d H:i" }}</span>
+                            {% if req.processed_at %}
+                            <span>处理时间: {{ req.processed_at|date:"Y-m-d H:i" }}</span>
+                            {% endif %}
+                            {% if req.employee_id %}
+                            <span>工号: {{ req.employee_id }}</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                    <span class="request-status {{ req.status }}">{{ req.get_status_display }}</span>
+                </div>
+
+                <div class="request-details">
+                    {% if req.status_notes %}
+                    <div class="detail-item" style="grid-column: 1 / -1;">
+                        <span class="label">审批备注</span>
+                        <span class="value">{{ req.status_notes }}</span>
+                    </div>
+                    {% endif %}
+                    {% if req.created_user %}
+                    <div class="detail-item">
+                        <span class="label">创建账户</span>
+                        <span class="value">{{ req.created_user.username }}</span>
+                    </div>
+                    {% endif %}
+                </div>
+
+                {% if req.status == 'pending' %}
+                <div class="request-actions">
+                    <button class="btn btn-approve" onclick="approveRequest({{ req.id }})">批准</button>
+                    <button class="btn btn-reject" onclick="showRejectModal({{ req.id }})">拒绝</button>
+                </div>
+                {% endif %}
+            </div>
+            {% empty %}
+            <div class="empty-state">
+                <p>暂无{% if filter != 'all' %}{{ filter }}{% endif %}注册申请</p>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+
+<!-- Edit User Modal -->
+<div class="modal-overlay" id="editModal">
+    <div class="modal">
+        <h3>编辑用户</h3>
+        <div class="form-group">
+            <label>姓名</label>
+            <input type="text" id="edit_full_name">
+        </div>
+        <div class="form-group">
+            <label>电话</label>
+            <input type="text" id="edit_phone">
+        </div>
+        <div class="form-group" id="dept_group">
+            <label>部门</label>
+            <select id="edit_department">
+                <option value="FES">FES</option>
+                <option value="FAM">FAM</option>
+                <option value="ENT">ENT</option>
+                <option value="其他">其他</option>
+            </select>
+            <input type="text" id="edit_department_other" placeholder="其他部门名称" style="display:none; margin-top:8px; width:100%; padding:8px 12px; border:1px solid var(--color-surface-dark); border-radius:var(--radius-md); font-size:0.875rem;">
+        </div>
+        <div class="form-group">
+            <label>
+                <input type="checkbox" id="edit_active"> 活跃
+            </label>
+        </div>
+        <div class="modal-actions">
+            <button class="btn btn-secondary" onclick="closeEditModal()">取消</button>
+            <button class="btn btn-primary" onclick="saveEdit()">保存</button>
+        </div>
+    </div>
+</div>
+
+<!-- Reject Modal -->
+<div class="modal-overlay" id="rejectModal">
+    <div class="modal">
+        <h3>拒绝申请</h3>
+        <textarea id="rejectReason" placeholder="请输入拒绝原因（可选）" style="width:100%; padding:var(--space-md); border:2px solid var(--color-surface-dark); border-radius:var(--radius-md); font-size:0.875rem; min-height:100px; resize:vertical; margin-bottom:var(--space-lg);"></textarea>
+        <div class="modal-actions">
+            <button class="btn btn-secondary" onclick="closeRejectModal()">取消</button>
+            <button class="btn btn-reject" onclick="confirmReject()">确认拒绝</button>
+        </div>
+    </div>
+</div>
+
+<form id="actionForm" method="post" style="display: none;">
+    {% csrf_token %}
+    <input type="hidden" name="request_id" id="request_id">
+    <input type="hidden" name="action" id="action_type">
+    <input type="hidden" name="reason" id="reject_reason">
+</form>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// --- Tab Switching ---
+function switchTab(tab) {
+    document.querySelectorAll('.main-tab').forEach(function(el, i) {
+        el.classList.toggle('active', (i === 0 && tab === 'users') || (i === 1 && tab === 'approval'));
+    });
+    document.getElementById('tab-users').classList.toggle('active', tab === 'users');
+    document.getElementById('tab-approval').classList.toggle('active', tab === 'approval');
+    var params = '?tab=' + tab;
+    if (tab === 'approval') params += '&filter=' + currentFilter;
+    history.replaceState(null, '', params);
+}
+
+// --- Approval Tab ---
+var currentFilter = '{{ filter }}';
+
+function setFilter(filter) {
+    window.location.href = '/user-management/?tab=approval&filter=' + filter;
+}
+
+var currentRequestId = null;
+
+function approveRequest(id) {
+    if (confirm('确定要批准此注册申请吗？')) {
+        document.getElementById('request_id').value = id;
+        document.getElementById('action_type').value = 'approve';
+        document.getElementById('actionForm').submit();
+    }
+}
+
+function showRejectModal(id) {
+    currentRequestId = id;
+    document.getElementById('rejectModal').classList.add('show');
+}
+
+function closeRejectModal() {
+    document.getElementById('rejectModal').classList.remove('show');
+    document.getElementById('rejectReason').value = '';
+    currentRequestId = null;
+}
+
+function confirmReject() {
+    document.getElementById('request_id').value = currentRequestId;
+    document.getElementById('action_type').value = 'reject';
+    document.getElementById('reject_reason').value = document.getElementById('rejectReason').value;
+    document.getElementById('actionForm').submit();
+}
+
+document.getElementById('rejectModal').addEventListener('click', function(e) {
+    if (e.target === this) closeRejectModal();
+});
+
+// --- Edit User ---
+var editProfileType = null;
+var editProfileId = null;
+
+function editUser(btn) {
+    var row = btn.closest('tr');
+    editProfileType = row.dataset.profileType;
+    editProfileId = row.dataset.profileId;
+
+    var cells = row.querySelectorAll('td');
+    document.getElementById('edit_full_name').value = cells[0].textContent.trim();
+    document.getElementById('edit_phone').value = cells[5].textContent.trim() === '-' ? '' : cells[5].textContent.trim();
+    document.getElementById('edit_active').checked = cells[6].querySelector('.status-active') !== null;
+
+    var deptGroup = document.getElementById('dept_group');
+    if (editProfileType === 'manager') {
+        deptGroup.style.display = 'none';
+    } else {
+        deptGroup.style.display = 'block';
+        var deptText = cells[4].textContent.trim();
+        var deptSelect = document.getElementById('edit_department');
+        var matched = false;
+        for (var i = 0; i < deptSelect.options.length; i++) {
+            if (deptSelect.options[i].value === deptText || deptSelect.options[i].textContent === deptText) {
+                deptSelect.value = deptSelect.options[i].value;
+                matched = true;
+                break;
+            }
+        }
+        if (!matched) {
+            deptSelect.value = '其他';
+            document.getElementById('edit_department_other').value = deptText;
+            document.getElementById('edit_department_other').style.display = 'block';
+        } else {
+            document.getElementById('edit_department_other').style.display = 'none';
+            document.getElementById('edit_department_other').value = '';
+        }
+    }
+
+    document.getElementById('editModal').classList.add('show');
+}
+
+document.getElementById('edit_department').addEventListener('change', function() {
+    document.getElementById('edit_department_other').style.display = this.value === '其他' ? 'block' : 'none';
+});
+
+function closeEditModal() {
+    document.getElementById('editModal').classList.remove('show');
+    editProfileType = null;
+    editProfileId = null;
+}
+
+document.getElementById('editModal').addEventListener('click', function(e) {
+    if (e.target === this) closeEditModal();
+});
+
+function getCSRFToken() {
+    var cookies = document.cookie.split(';');
+    for (var c of cookies) {
+        c = c.trim();
+        if (c.startsWith('csrftoken=')) return c.substring('csrftoken='.length);
+    }
+    return '';
+}
+
+function showToast(msg, type) {
+    var toast = document.getElementById('toast');
+    toast.textContent = msg;
+    toast.className = 'toast show ' + type;
+    setTimeout(function() { toast.className = 'toast'; }, 3000);
+}
+
+function saveEdit() {
+    var data = new FormData();
+    data.append('full_name', document.getElementById('edit_full_name').value);
+    data.append('phone', document.getElementById('edit_phone').value);
+    data.append('active', document.getElementById('edit_active').checked ? 'true' : 'false');
+    if (editProfileType !== 'manager') {
+        data.append('department', document.getElementById('edit_department').value);
+        if (document.getElementById('edit_department').value === '其他') {
+            data.append('department_other', document.getElementById('edit_department_other').value);
+        }
+    }
+
+    fetch('/user-management/' + editProfileType + '/' + editProfileId + '/edit/', {
+        method: 'POST',
+        headers: { 'X-CSRFToken': getCSRFToken() },
+        body: data,
+    })
+    .then(function(resp) { return resp.json(); })
+    .then(function(data) {
+        if (data.success) {
+            closeEditModal();
+            showToast(data.message, 'success');
+            setTimeout(function() { location.reload(); }, 800);
+        } else {
+            showToast(data.error || '更新失败', 'error');
+        }
+    })
+    .catch(function() { showToast('请求失败', 'error'); });
+}
+</script>
+{% endblock %}
