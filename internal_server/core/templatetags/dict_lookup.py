@@ -10,3 +10,14 @@ def dict_lookup(d, key):
     Usage: {{ mydict|dict_lookup:key }}
     """
     return d.get(key, [])
+
+
+@register.filter
+def boundary_count(bp):
+    """Count the number of closed loops in boundary_points."""
+    if not bp:
+        return 0
+    first = bp[0]
+    if isinstance(first, list):
+        return len(bp)
+    return 1

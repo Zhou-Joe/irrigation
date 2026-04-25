@@ -41,7 +41,7 @@
                         <select id="patch" name="patch" style="flex: 1; padding: 12px; border: 2px solid var(--color-surface-dark); border-radius: 8px;">
                             <option value="">-- 不选择片区 --</option>
                             {% for patch in patches %}
-                            <option value="{{ patch.id }}" {% if zone and zone.patch.id == patch.id %}selected{% endif %}>{{ patch.name }} ({{ patch.code }})</option>
+                            <option value="{{ patch.id }}" {% if zone and zone.patch_id == patch.id %}selected{% elif zone and derived_patch_id == patch.id %}selected{% endif %}>{{ patch.name }} ({{ patch.code }})</option>
                             {% endfor %}
                         </select>
                         <div id="new_patch_input" style="display: none; flex: 1;">

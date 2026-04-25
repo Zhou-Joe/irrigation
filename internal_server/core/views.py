@@ -2283,12 +2283,246 @@ def maxicom_dashboard_api(request):
 
 
 @login_required(login_url='core:login')
-def work_reports_list(request):
-    from core.models import WorkReport, Patch, WorkCategory, Worker
+def stats_dashboard(request):
+    """Data statistics dashboard with weekly work report stats and demand stats."""
+    from core.models import WorkReport, DemandRecord, Patch
     from core.role_utils import is_admin
     from django.db.models import Count, Q
     from django.utils import timezone
     from datetime import datetime, timedelta, date
+    from collections import defaultdict
+
+    user = request.user
+    admin = is_admin(user)
+
+    # === Work Report Weekly Stats ===
+    week_param = request.GET.get('week')
+    if week_param:
+        try:
+            week_start = datetime.strptime(week_param, '%Y-%m-%d').date()
+            week_start = week_start - timedelta(days=week_start.weekday())
+        except Exception:
+            week_start = timezone.now().date() - timedelta(days=timezone.now().date().weekday())
+    else:
+        today = timezone.now().date()
+        week_start = today - timedelta(days=today.weekday())
+
+    week_end = week_start + timedelta(days=6)
+    week_number = week_start.isocalendar()[1]
+
+    # Generate week options
+    years = []
+    year_weeks = {}
+    current_year = timezone.now().date().year
+
+    for year in [current_year - 1, current_year, current_year + 1]:
+        weeks = []
+        jan_1 = date(year, 1, 1)
+        first_monday = jan_1
+        while first_monday.weekday() != 0:
+            first_monday = first_monday + timedelta(days=1)
+
+        week_start_iter = first_monday
+        week_num = 1
+
+        while week_start_iter.year == year or (week_start_iter.year == year + 1 and week_start_iter.month == 1 and week_num <= 53):
+            week_end_iter = week_start_iter + timedelta(days=6)
+            weeks.append({
+                'week': week_num,
+                'start': week_start_iter,
+                'end': week_end_iter
+            })
+            week_start_iter = week_start_iter + timedelta(days=7)
+            week_num += 1
+            if week_num > 53:
+                break
+
+        if weeks:
+            years.append(year)
+            year_weeks[year] = weeks
+
+    # Base queryset for this week
+    week_qs = WorkReport.objects.select_related('worker', 'location', 'work_category')
+    if not admin:
+        try:
+            worker = user.worker_profile
+            week_qs = week_qs.filter(worker=worker)
+        except Exception:
+            week_qs = week_qs.none()
+
+    week_qs = week_qs.filter(date__gte=week_start, date__lte=week_end)
+
+    total_this_week = week_qs.count()
+
+    reports_by_day = []
+    for i in range(7):
+        day = week_start + timedelta(days=i)
+        count = week_qs.filter(date=day).count()
+        reports_by_day.append({
+            'date': day.strftime('%m-%d'),
+            'weekday': ['周一', '周二', '周三', '周四', '周五', '周六', '周日'][i],
+            'count': count
+        })
+
+    reports_by_location = list(
+        week_qs.values('location__name', 'location__code')
+        .annotate(count=Count('id'))
+        .order_by('-count')[:10]
+    )
+
+    reports_by_zone = list(
+        week_qs.values('zone_location__name', 'zone_location__code')
+        .annotate(count=Count('id'))
+        .exclude(zone_location__isnull=True)
+        .order_by('-count')[:10]
+    )
+
+    reports_by_category = list(
+        week_qs.values('work_category__name', 'work_category__code')
+        .annotate(count=Count('id'))
+        .order_by('-count')[:10]
+    )
+
+    top_faults = list(
+        week_qs.filter(fault_entries__isnull=False)
+        .values('fault_entries__fault_subtype__name_zh', 'fault_entries__fault_subtype__category__name_zh')
+        .annotate(count=Count('fault_entries__fault_subtype'))
+        .order_by('-count')[:10]
+    )
+
+    # Zone-Fault Type Matrix
+    fault_entries_data = list(
+        week_qs.filter(fault_entries__isnull=False)
+        .values('zone_location__code', 'zone_location__name', 'fault_entries__fault_subtype__name_zh')
+        .annotate(count=Count('fault_entries__fault_subtype'))
+    )
+
+    fault_types_set = set()
+    zones_dict = defaultdict(lambda: defaultdict(int))
+
+    for entry in fault_entries_data:
+        zone_code = entry.get('zone_location__code') or '未指定'
+        zone_name = entry.get('zone_location__name') or zone_code
+        fault_type = entry.get('fault_entries__fault_subtype__name_zh') or '未分类'
+        count = entry['count']
+
+        fault_types_set.add(fault_type)
+        zones_dict[zone_code][fault_type] += count
+        zones_dict[zone_code]['_zone_name'] = zone_name
+
+    fault_type_totals = defaultdict(int)
+    for zone_data in zones_dict.values():
+        for fault_type, count in zone_data.items():
+            if fault_type != '_zone_name':
+                fault_type_totals[fault_type] += count
+
+    sorted_fault_types = sorted(fault_types_set, key=lambda x: fault_type_totals[x], reverse=True)[:8]
+
+    zone_fault_matrix = {
+        'fault_types': [{'name': ft} for ft in sorted_fault_types],
+        'rows': [],
+        'column_totals': [fault_type_totals[ft] for ft in sorted_fault_types],
+        'grand_total': 0
+    }
+
+    grand_total = 0
+    for zone_code, zone_data in sorted(zones_dict.items()):
+        if zone_code == '_zone_name':
+            continue
+        row = {
+            'zone_name': zone_data.get('_zone_name', zone_code),
+            'zone_code': zone_code,
+            'counts': [],
+            'total': 0
+        }
+        for fault_type in sorted_fault_types:
+            count = zone_data.get(fault_type, 0)
+            row['counts'].append(count)
+            row['total'] += count
+        grand_total += row['total']
+        if row['total'] > 0:
+            zone_fault_matrix['rows'].append(row)
+
+    zone_fault_matrix['rows'].sort(key=lambda x: x['total'], reverse=True)
+    zone_fault_matrix['rows'] = zone_fault_matrix['rows'][:10]
+    zone_fault_matrix['column_totals'].append(grand_total)
+    zone_fault_matrix['grand_total'] = grand_total
+
+    worker_stats = []
+    if admin:
+        worker_stats = list(
+            week_qs.values('worker__full_name', 'worker__employee_id')
+            .annotate(
+                total=Count('id'),
+                difficult=Count('id', filter=Q(is_difficult=True))
+            )
+            .order_by('-total')[:10]
+        )
+
+    # === Demand Stats ===
+    demand_qs = DemandRecord.objects.all()
+    today = timezone.now().date()
+    month_start = today.replace(day=1)
+
+    demand_stats = {
+        'total': demand_qs.count(),
+        'pending': demand_qs.filter(status='submitted').count(),
+        'approved': demand_qs.filter(status='approved').count(),
+        'in_progress': demand_qs.filter(status='in_progress').count(),
+        'completed': demand_qs.filter(status='completed').count(),
+        'completed_this_month': demand_qs.filter(status='completed', date__gte=month_start).count(),
+    }
+
+    demand_by_category = list(
+        demand_qs.values('category__name')
+        .annotate(count=Count('id'))
+        .exclude(category__isnull=True)
+        .order_by('-count')[:10]
+    )
+
+    demand_by_department = list(
+        demand_qs.values('demand_department__name')
+        .annotate(count=Count('id'))
+        .exclude(demand_department__isnull=True)
+        .order_by('-count')[:10]
+    )
+
+    demand_by_status = list(
+        demand_qs.values('status')
+        .annotate(count=Count('id'))
+        .order_by('-count')
+    )
+
+    context = {
+        'is_admin': admin,
+        # Work report weekly stats
+        'week_start': week_start,
+        'week_end': week_end,
+        'week_number': week_number,
+        'week_iso': week_start.isoformat(),
+        'years': years,
+        'year_weeks': year_weeks,
+        'total_this_week': total_this_week,
+        'reports_by_day': reports_by_day,
+        'reports_by_location': reports_by_location,
+        'reports_by_zone': reports_by_zone,
+        'reports_by_category': reports_by_category,
+        'top_faults': top_faults,
+        'zone_fault_matrix': zone_fault_matrix,
+        'worker_stats': worker_stats,
+        # Demand stats
+        'demand_stats': demand_stats,
+        'demand_by_category': demand_by_category,
+        'demand_by_department': demand_by_department,
+        'demand_by_status': demand_by_status,
+    }
+
+    return render(request, 'core/stats_dashboard.html', context)
+
+
+def work_reports_list(request):
+    from core.models import WorkReport, Patch, WorkCategory, Worker
+    from core.role_utils import is_admin
 
     user = request.user
     admin = is_admin(user)
@@ -2311,7 +2545,6 @@ def work_reports_list(request):
     work_category_id = request.GET.get('work_category')
     worker_id = request.GET.get('worker')
     difficult = request.GET.get('is_difficult')
-    week_param = request.GET.get('week')  # Format: YYYY-MM-DD (Monday of the week)
 
     if date_from:
         qs = qs.filter(date__gte=date_from)
@@ -2331,220 +2564,12 @@ def work_reports_list(request):
     work_categories = WorkCategory.objects.filter(active=True).order_by('order')
     workers = Worker.objects.all().order_by('full_name') if admin else []
 
-    # Weekly summary statistics
-    # Determine which week to show
-    if week_param:
-        try:
-            week_start = datetime.strptime(week_param, '%Y-%m-%d').date()
-            # Ensure it's a Monday
-            week_start = week_start - timedelta(days=week_start.weekday())
-        except:
-            week_start = timezone.now().date() - timedelta(days=timezone.now().date().weekday())
-    else:
-        today = timezone.now().date()
-        week_start = today - timedelta(days=today.weekday())
-
-    week_end = week_start + timedelta(days=6)
-
-    # Get ISO week number
-    week_number = week_start.isocalendar()[1]
-
-    # Generate week options for selector (current year and previous year)
-    years = []
-    year_weeks = {}
-    current_year = timezone.now().date().year
-
-    for year in [current_year - 1, current_year, current_year + 1]:
-        weeks = []
-        # Get all Mondays in this year
-        jan_1 = date(year, 1, 1)
-        # Find first Monday
-        first_monday = jan_1
-        while first_monday.weekday() != 0:
-            first_monday = first_monday + timedelta(days=1)
-
-        week_start_iter = first_monday
-        week_num = 1
-
-        while week_start_iter.year == year or (week_start_iter.year == year + 1 and week_start_iter.month == 1 and week_num <= 53):
-            week_end_iter = week_start_iter + timedelta(days=6)
-            weeks.append({
-                'week': week_num,
-                'start': week_start_iter,
-                'end': week_end_iter
-            })
-            week_start_iter = week_start_iter + timedelta(days=7)
-            week_num += 1
-
-            if week_num > 53:
-                break
-
-        if weeks:
-            years.append(year)
-            year_weeks[year] = weeks
-
-    # Base queryset for this week (respecting user permissions)
-    week_qs = WorkReport.objects.select_related('worker', 'location', 'work_category')
-    if not admin:
-        try:
-            worker = user.worker_profile
-            week_qs = week_qs.filter(worker=worker)
-        except Exception:
-            week_qs = week_qs.none()
-
-    week_qs = week_qs.filter(date__gte=week_start, date__lte=week_end)
-
-    # Total this week
-    total_this_week = week_qs.count()
-
-    # Reports by day
-    reports_by_day = []
-    for i in range(7):
-        day = week_start + timedelta(days=i)
-        count = week_qs.filter(date=day).count()
-        reports_by_day.append({
-            'date': day.strftime('%m-%d'),
-            'weekday': ['周一', '周二', '周三', '周四', '周五', '周六', '周日'][i],
-            'count': count
-        })
-
-    # Reports by location
-    reports_by_location = list(
-        week_qs.values('location__name', 'location__code')
-        .annotate(count=Count('id'))
-        .order_by('-count')[:10]
-    )
-
-    # Reports by zone/fault location
-    reports_by_zone = list(
-        week_qs.values('zone_location__name', 'zone_location__code')
-        .annotate(count=Count('id'))
-        .exclude(zone_location__isnull=True)
-        .order_by('-count')[:10]
-    )
-
-    # Reports by work category
-    reports_by_category = list(
-        week_qs.values('work_category__name', 'work_category__code')
-        .annotate(count=Count('id'))
-        .order_by('-count')[:10]
-    )
-
-    # Top fault types this week
-    top_faults = list(
-        week_qs.filter(fault_entries__isnull=False)
-        .values('fault_entries__fault_subtype__name_zh', 'fault_entries__fault_subtype__category__name_zh')
-        .annotate(count=Count('fault_entries__fault_subtype'))
-        .order_by('-count')[:10]
-    )
-
-    # Zone-Fault Type Matrix (多维度统计)
-    from collections import defaultdict
-
-    # Get all fault entries for the week with zone and fault type
-    fault_entries_data = list(
-        week_qs.filter(fault_entries__isnull=False)
-        .values('zone_location__code', 'zone_location__name', 'fault_entries__fault_subtype__name_zh')
-        .annotate(count=Count('fault_entries__fault_subtype'))
-    )
-
-    # Build matrix
-    fault_types_set = set()
-    zones_dict = defaultdict(lambda: defaultdict(int))
-
-    for entry in fault_entries_data:
-        zone_code = entry.get('zone_location__code') or '未指定'
-        zone_name = entry.get('zone_location__name') or zone_code
-        fault_type = entry.get('fault_entries__fault_subtype__name_zh') or '未分类'
-        count = entry['count']
-
-        fault_types_set.add(fault_type)
-        zones_dict[zone_code][fault_type] += count
-        zones_dict[zone_code]['_zone_name'] = zone_name
-
-    # Sort fault types by total occurrences
-    fault_type_totals = defaultdict(int)
-    for zone_data in zones_dict.values():
-        for fault_type, count in zone_data.items():
-            if fault_type != '_zone_name':
-                fault_type_totals[fault_type] += count
-
-    sorted_fault_types = sorted(fault_types_set, key=lambda x: fault_type_totals[x], reverse=True)[:8]  # Top 8
-
-    # Build matrix rows
-    zone_fault_matrix = {
-        'fault_types': [{'name': ft} for ft in sorted_fault_types],
-        'rows': [],
-        'column_totals': [fault_type_totals[ft] for ft in sorted_fault_types],
-        'grand_total': 0
-    }
-
-    # Calculate row totals and build rows
-    zone_totals = {}
-    grand_total = 0
-
-    for zone_code, zone_data in sorted(zones_dict.items()):
-        if zone_code == '_zone_name':
-            continue
-
-        row = {
-            'zone_name': zone_data.get('_zone_name', zone_code),
-            'zone_code': zone_code,
-            'counts': [],
-            'total': 0
-        }
-
-        for fault_type in sorted_fault_types:
-            count = zone_data.get(fault_type, 0)
-            row['counts'].append(count)
-            row['total'] += count
-
-        zone_totals[zone_code] = row['total']
-        grand_total += row['total']
-
-        # Only include zones with faults
-        if row['total'] > 0:
-            zone_fault_matrix['rows'].append(row)
-
-    # Sort rows by total (descending)
-    zone_fault_matrix['rows'].sort(key=lambda x: x['total'], reverse=True)
-    zone_fault_matrix['rows'] = zone_fault_matrix['rows'][:10]  # Top 10 zones
-    zone_fault_matrix['column_totals'].append(grand_total)
-    zone_fault_matrix['grand_total'] = grand_total
-
-    # Worker performance (if admin)
-    worker_stats = []
-    if admin:
-        worker_stats = list(
-            week_qs.values('worker__full_name', 'worker__employee_id')
-            .annotate(
-                total=Count('id'),
-                difficult=Count('id', filter=Q(is_difficult=True))
-            )
-            .order_by('-total')[:10]
-        )
-
     return render(request, 'core/work_reports.html', {
         'reports': reports,
         'locations': locations,
         'work_categories': work_categories,
         'workers': workers,
         'is_admin': admin,
-        # Weekly summary data
-        'week_start': week_start,
-        'week_end': week_end,
-        'week_number': week_number,
-        'week_iso': week_start.isoformat(),
-        'years': years,
-        'year_weeks': year_weeks,
-        'total_this_week': total_this_week,
-        'reports_by_day': reports_by_day,
-        'reports_by_location': reports_by_location,
-        'reports_by_zone': reports_by_zone,
-        'reports_by_category': reports_by_category,
-        'top_faults': top_faults,
-        'zone_fault_matrix': zone_fault_matrix,
-        'worker_stats': worker_stats,
         'filters': {
             'date_from': date_from or '',
             'date_to': date_to or '',
@@ -2855,23 +2880,19 @@ def demands_page(request):
     """
     需求周报列表页面 - 显示所有需求记录
     """
-    from core.models import DemandRecord, DemandCategory, DemandDepartment, Zone
+    from core.models import DemandRecord, DemandCategory, DemandDepartment
     from core.role_utils import is_admin
-    from datetime import date, timedelta
 
     user = request.user
     admin = is_admin(user)
 
-    # Base queryset with role-based filtering
     qs = DemandRecord.objects.select_related(
         'zone', 'category', 'demand_department', 'submitter', 'approver'
     ).order_by('-date', '-id')
 
     if not admin:
-        # Non-admin users can only see approved/in-progress/completed demands
         qs = qs.filter(status__in=['approved', 'in_progress', 'completed'])
 
-    # Filters from GET params
     date_from = request.GET.get('date_from')
     date_to = request.GET.get('date_to')
     status_filter = request.GET.get('status')
@@ -2889,27 +2910,7 @@ def demands_page(request):
     if department_filter:
         qs = qs.filter(demand_department_id=department_filter)
 
-    # Limit results
     demands = qs[:200]
-
-    # Stats calculation
-    today = date.today()
-    month_start = today.replace(day=1)
-
-    base_qs = DemandRecord.objects.all()
-    if not admin:
-        base_qs = base_qs.filter(status__in=['approved', 'in_progress', 'completed'])
-
-    stats = {
-        'total': qs.count(),
-        'pending': base_qs.filter(status='submitted').count(),
-        'completed': base_qs.filter(status='completed', date__gte=month_start).count(),
-        'time_parsed_rate': round(
-            base_qs.filter(start_time__isnull=False).count() / max(base_qs.count(), 1) * 100, 1
-        ),
-    }
-
-    # Dropdown data
     categories = DemandCategory.objects.filter(active=True).order_by('order')
     departments = DemandDepartment.objects.filter(active=True).order_by('order')
 
@@ -2917,7 +2918,6 @@ def demands_page(request):
         'demands': demands,
         'categories': categories,
         'departments': departments,
-        'stats': stats,
         'is_admin': admin,
         'date_from': date_from or '',
         'date_to': date_to or '',

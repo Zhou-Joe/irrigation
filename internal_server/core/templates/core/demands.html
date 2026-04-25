@@ -50,38 +50,6 @@
     border-color: var(--color-primary);
 }
 
-.stats-cards {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: var(--space-md);
-    margin-bottom: var(--space-lg);
-}
-
-.stat-card {
-    background: var(--color-surface);
-    padding: var(--space-md);
-    border-radius: var(--radius-lg);
-    box-shadow: var(--shadow-sm);
-}
-
-.stat-card h3 {
-    font-size: 0.875rem;
-    color: var(--color-text-secondary);
-    margin: 0 0 var(--space-sm) 0;
-}
-
-.stat-card .value {
-    font-size: 1.5rem;
-    font-weight: 700;
-    color: var(--color-primary);
-}
-
-.stat-card .detail {
-    font-size: 0.75rem;
-    color: var(--color-text-muted);
-    margin-top: var(--space-xs);
-}
-
 .demand-table {
     width: 100%;
     background: var(--color-surface);
@@ -353,25 +321,6 @@
                 {% endfor %}
             </select>
             <button onclick="applyFilters()" style="background: var(--color-primary); color: white; padding: 8px 16px; border: none; border-radius: var(--radius-sm); cursor: pointer;">筛选</button>
-        </div>
-    </div>
-
-    <!-- Stats Cards -->
-    <div class="stats-cards">
-        <div class="stat-card">
-            <h3>总需求数</h3>
-            <div class="value">{{ stats.total }}</div>
-            <div class="detail">筛选范围内</div>
-        </div>
-        <div class="stat-card">
-            <h3>待处理</h3>
-            <div class="value">{{ stats.pending }}</div>
-            <div class="detail">已提交待审批</div>
-        </div>
-        <div class="stat-card">
-            <h3>已完成</h3>
-            <div class="value">{{ stats.completed }}</div>
-            <div class="detail">本月完成</div>
         </div>
     </div>
 

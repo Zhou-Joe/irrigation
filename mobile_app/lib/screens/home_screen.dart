@@ -4,6 +4,7 @@ import 'package:latlong2/latlong.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:provider/provider.dart';
 import '../models/zone.dart';
+import '../models/pipeline.dart';
 import '../providers/auth_provider.dart';
 import 'demand_list_screen.dart';
 import 'water_request_screen.dart';
@@ -25,6 +26,7 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   int _currentIndex = 0;
   List<Zone> _zones = [];
+  List<Pipeline> _pipelines = [];
   bool _isLoading = true;
   String? _error;
   MapController? _mapController;
@@ -106,8 +108,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     try {
       final api = context.read<AuthProvider>().api;
       final zones = await api.getZones();
+      final pipelines = await api.getPipelines();
       setState(() {
         _zones = zones;
+        _pipelines = pipelines;
         _isLoading = false;
       });
     } catch (e) {
@@ -203,6 +207,30 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       }
     }
     return points;
+  }
+
+  // Helper to extract LatLng list from pipeline line_points
+  List<LatLng> _extractPipelinePoints(List<dynamic> linePoints) {
+    final List<LatLng> points = [];
+    for (var item in linePoints) {
+      if (item is List && item.length >= 2 && item[0] is num) {
+        points.add(LatLng((item[0] as num).toDouble(), (item[1] as num).toDouble()));
+      } else if (item is Map) {
+        final lat = item['lat'];
+        final lng = item['lng'];
+        if (lat is num && lng is num) {
+          points.add(LatLng(lat.toDouble(), lng.toDouble()));
+        }
+      }
+    }
+    return points;
+  }
+
+  // Parse hex color string like '#CC3333' to Flutter Color
+  Color _parseHexColor(String hex) {
+    hex = hex.replaceFirst('#', '');
+    if (hex.length == 6) hex = 'FF$hex';
+    return Color(int.parse(hex, radix: 16));
   }
 
   void _flyToZone(Zone zone) {
@@ -471,6 +499,50 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   .whereType<Polygon>()
                   .toList(),
             ),
+            // Zone text labels on map canvas
+            MarkerLayer(
+              markers: _zones.where((z) => z.center != null).map((zone) {
+                return Marker(
+                  point: LatLng(zone.center!['lat']!, zone.center!['lng']!),
+                  width: 120,
+                  height: 24,
+                  child: Center(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withOpacity(0.35),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        zone.name,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          shadows: [Shadow(color: Colors.black45, blurRadius: 3)],
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+            // Pipeline rendering
+            if (_pipelines.isNotEmpty)
+              PolylineLayer(
+                polylines: _pipelines.map((pipeline) {
+                  final points = _extractPipelinePoints(pipeline.linePoints);
+                  if (points.length < 2) return null;
+                  return Polyline(
+                    points: points,
+                    color: _parseHexColor(pipeline.lineColor),
+                    strokeWidth: (pipeline.lineWeight * 0.6).clamp(1.0, 5.0),
+                  );
+                }).whereType<Polyline>().toList(),
+              ),
             // User marker
             if (_currentPosition != null)
               MarkerLayer(

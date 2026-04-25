@@ -53,16 +53,150 @@
 
             <div class="form-group">
                 <label>关联区域 *</label>
-                <p class="help-text" style="margin-bottom: 10px;">选择此水管覆盖的灌溉区域，名称和编号将自动生成。</p>
-                <div id="zoneCheckboxes" style="display: flex; flex-wrap: wrap; gap: 10px;">
-                    {% for zone in zones %}
-                    <label class="zone-checkbox-label" style="display: flex; align-items: center; gap: 6px; padding: 8px 12px; background: var(--color-surface); border: 1px solid var(--color-surface-dark); border-radius: 8px; cursor: pointer; transition: all 150ms ease;">
-                        <input type="checkbox" name="zones" value="{{ zone.id }}" data-zone-name="{{ zone.name }}" data-zone-code="{{ zone.code }}"
-                               {% if zone.id in selected_zone_ids %}checked{% endif %}>
-                        <span>{{ zone.name }}</span>
-                    </label>
+                <p class="help-text">选择此水管覆盖的灌溉区域，名称和编号将自动生成。</p>
+                <div id="zoneSearchWrap" style="margin-bottom: var(--space-md);">
+                    <input type="text" id="zoneSearchInput" placeholder="搜索区域..." style="width: 100%; max-width: 320px; padding: 8px 14px; border: 2px solid var(--color-surface-dark); border-radius: var(--radius-md); font-size: 0.9rem; background: var(--color-surface); color: var(--color-text-primary);">
+                    <span id="zoneSearchCount" style="margin-left: 8px; font-size: 0.8rem; color: var(--color-text-secondary);"></span>
+                </div>
+                <div id="zoneCheckboxes" class="zone-picker">
+                    {% for group in grouped_zones %}
+                    <div class="zone-picker-group" data-patch-name="{{ group.name }}">
+                        <div class="zone-picker-header" onclick="this.parentElement.classList.toggle('collapsed')">
+                            <span class="zone-picker-arrow">▾</span>
+                            <span class="zone-picker-title">{{ group.name }}</span>
+                            <span class="zone-picker-count">{{ group.zone_count }}</span>
+                        </div>
+                        <div class="zone-picker-body">
+                            {% for zone in group.zones %}
+                            <label class="zone-chip{% if zone.id in selected_zone_ids %} checked{% endif %}">
+                                <input type="checkbox" name="zones" value="{{ zone.id }}" data-zone-name="{{ zone.name }}" data-zone-code="{{ zone.code }}"
+                                       {% if zone.id in selected_zone_ids %}checked{% endif %}>
+                                <span class="zone-chip-check"></span>
+                                <span class="zone-chip-text">{{ zone.name }}</span>
+                                <code class="zone-chip-code">{{ zone.code }}</code>
+                            </label>
+                            {% endfor %}
+                        </div>
+                    </div>
                     {% endfor %}
                 </div>
+                <style>
+                    .zone-picker {
+                        max-height: 420px;
+                        overflow-y: auto;
+                        border: 2px solid var(--color-surface-dark);
+                        border-radius: var(--radius-lg);
+                        background: var(--color-surface);
+                    }
+                    .zone-picker-group { border-bottom: 1px solid var(--color-surface-dark); }
+                    .zone-picker-group:last-child { border-bottom: none; }
+                    .zone-picker-header {
+                        display: flex;
+                        align-items: center;
+                        gap: var(--space-sm);
+                        padding: 10px 16px;
+                        background: rgba(27, 67, 50, 0.06);
+                        cursor: pointer;
+                        user-select: none;
+                        transition: background var(--transition-fast);
+                    }
+                    .zone-picker-header:hover { background: rgba(27, 67, 50, 0.12); }
+                    .zone-picker-arrow {
+                        font-size: 0.7rem;
+                        color: var(--color-primary-light);
+                        transition: transform var(--transition-fast);
+                        width: 14px;
+                        text-align: center;
+                    }
+                    .zone-picker-group.collapsed .zone-picker-arrow { transform: rotate(-90deg); }
+                    .zone-picker-title {
+                        font-weight: 600;
+                        font-size: 0.85rem;
+                        color: var(--color-primary);
+                    }
+                    .zone-picker-count {
+                        font-size: 0.7rem;
+                        color: var(--color-text-secondary);
+                        background: var(--color-surface-alt);
+                        padding: 2px 8px;
+                        border-radius: var(--radius-pill);
+                        margin-left: auto;
+                    }
+                    .zone-picker-body {
+                        display: flex;
+                        flex-wrap: wrap;
+                        gap: 8px;
+                        padding: 12px 16px;
+                        transition: max-height 0.25s ease, padding 0.25s ease, opacity 0.2s ease;
+                        overflow: hidden;
+                    }
+                    .zone-picker-group.collapsed .zone-picker-body {
+                        max-height: 0 !important;
+                        padding-top: 0;
+                        padding-bottom: 0;
+                        opacity: 0;
+                    }
+                    .zone-chip {
+                        display: inline-flex;
+                        align-items: center;
+                        gap: 6px;
+                        padding: 6px 12px;
+                        background: var(--color-surface-alt);
+                        border: 2px solid var(--color-surface-dark);
+                        border-radius: var(--radius-md);
+                        cursor: pointer;
+                        font-size: 0.85rem;
+                        transition: all var(--transition-fast);
+                    }
+                    .zone-chip:hover {
+                        border-color: var(--color-primary-light);
+                        background: var(--color-surface);
+                    }
+                    .zone-chip input { display: none; }
+                    .zone-chip-check {
+                        width: 16px;
+                        height: 16px;
+                        border: 2px solid var(--color-surface-dark);
+                        border-radius: 4px;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        transition: all var(--transition-fast);
+                        flex-shrink: 0;
+                    }
+                    .zone-chip-check::after {
+                        content: '✓';
+                        font-size: 11px;
+                        color: white;
+                        opacity: 0;
+                        transform: scale(0);
+                        transition: all var(--transition-fast);
+                    }
+                    .zone-chip.checked .zone-chip-check,
+                    .zone-chip input:checked ~ .zone-chip-check {
+                        background: var(--color-primary);
+                        border-color: var(--color-primary);
+                    }
+                    .zone-chip.checked .zone-chip-check::after,
+                    .zone-chip input:checked ~ .zone-chip-check::after {
+                        opacity: 1;
+                        transform: scale(1);
+                    }
+                    .zone-chip.checked,
+                    .zone-chip input:checked ~ .zone-chip-text {
+                        background: rgba(27, 67, 50, 0.08);
+                        border-color: var(--color-primary);
+                    }
+                    .zone-chip-text { color: var(--color-text-primary); }
+                    .zone-chip-code {
+                        font-family: var(--font-mono);
+                        font-size: 0.75rem;
+                        color: var(--color-text-muted);
+                        background: var(--color-surface);
+                        padding: 1px 6px;
+                        border-radius: var(--radius-sm);
+                    }
+                </style>
 
                 {% if not zones %}
                 <p style="color: var(--color-text-secondary);">暂无区域，请先创建区域。</p>
@@ -505,10 +639,40 @@
             updatePolyline();
         });
 
-        // Zone checkbox changes update auto-generated name/code
+        // Zone checkbox changes update auto-generated name/code + chip visual
         document.querySelectorAll('input[name="zones"]').forEach(cb => {
-            cb.addEventListener('change', updateAutoInfo);
+            cb.addEventListener('change', function() {
+                this.closest('.zone-chip').classList.toggle('checked', this.checked);
+                updateAutoInfo();
+            });
         });
+
+        // Zone search filter
+        const zoneSearch = document.getElementById('zoneSearchInput');
+        const zoneSearchCount = document.getElementById('zoneSearchCount');
+        if (zoneSearch) {
+            const allGroups = document.querySelectorAll('.zone-picker-group');
+            const allChips = document.querySelectorAll('.zone-chip');
+            zoneSearchCount.textContent = `共 ${allChips.length} 个区域`;
+
+            zoneSearch.addEventListener('input', function() {
+                const q = this.value.toLowerCase().trim();
+                let visible = 0;
+                allGroups.forEach(g => {
+                    const patchName = g.dataset.patchName?.toLowerCase() || '';
+                    const chips = g.querySelectorAll('.zone-chip');
+                    let anyVisible = false;
+                    chips.forEach(chip => {
+                        const text = chip.textContent.toLowerCase();
+                        const match = !q || text.includes(q) || patchName.includes(q);
+                        chip.style.display = match ? '' : 'none';
+                        if (match) { visible++; anyVisible = true; }
+                    });
+                    g.style.display = anyVisible ? '' : 'none';
+                });
+                zoneSearchCount.textContent = q ? `找到 ${visible} 个区域` : `共 ${allChips.length} 个区域`;
+            });
+        }
 
         // Initial auto-info update (for edit mode)
         updateAutoInfo();

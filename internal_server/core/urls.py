@@ -42,6 +42,7 @@ router.register(r'demand-records', DemandRecordViewSet, basename='demandrecord')
 
 urlpatterns = [
     path('', views.dashboard, name='dashboard'),
+    path('stats/', views.stats_dashboard, name='stats_dashboard'),
     path('login/', views.user_login, name='login'),
     path('logout/', views.user_logout, name='logout'),
     path('profile/', views.profile_page, name='profile'),
