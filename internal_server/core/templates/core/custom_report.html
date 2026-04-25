@@ -1,0 +1,571 @@
+{% extends 'core/base.html' %}
+{% load static %}
+
+{% block title %}自定义报表{% endblock %}
+{% block nav_stats %}active{% endblock %}
+
+{% block extra_css %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+.cr-container {
+    padding: var(--space-lg);
+    max-width: 1400px;
+    margin: 0 auto;
+}
+.cr-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: var(--space-lg);
+    flex-wrap: wrap;
+    gap: var(--space-md);
+}
+.cr-header h1 {
+    font-family: var(--font-display);
+    font-size: 1.5rem;
+    color: var(--color-primary);
+    margin: 0;
+}
+
+/* Chart Builder */
+.chart-builder {
+    background: var(--color-surface);
+    border-radius: var(--radius-lg);
+    padding: var(--space-lg);
+    box-shadow: var(--shadow-sm);
+    margin-bottom: var(--space-lg);
+}
+.chart-builder h3 {
+    margin: 0 0 var(--space-md) 0;
+    font-size: 1rem;
+    color: var(--color-primary);
+}
+.builder-row {
+    display: flex;
+    gap: var(--space-md);
+    flex-wrap: wrap;
+    align-items: flex-end;
+}
+.builder-group {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 140px;
+}
+.builder-group label {
+    font-size: 0.8rem;
+    color: var(--color-text-secondary);
+    font-weight: 500;
+}
+.builder-group select,
+.builder-group input {
+    padding: 8px 12px;
+    border: 1px solid var(--color-surface-dark);
+    border-radius: var(--radius-sm);
+    font-size: 0.875rem;
+    background: var(--color-surface);
+}
+.builder-group select:focus,
+.builder-group input:focus {
+    outline: none;
+    border-color: var(--color-primary);
+}
+.btn-add-chart {
+    padding: 8px 20px;
+    background: var(--color-primary);
+    color: white;
+    border: none;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    font-size: 0.875rem;
+    font-weight: 500;
+    transition: background 0.2s;
+    white-space: nowrap;
+    align-self: flex-end;
+}
+.btn-add-chart:hover {
+    background: var(--color-primary-dark);
+}
+.btn-clear-all {
+    padding: 8px 20px;
+    background: var(--color-error);
+    color: white;
+    border: none;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    font-size: 0.875rem;
+    font-weight: 500;
+    transition: opacity 0.2s;
+    white-space: nowrap;
+    align-self: flex-end;
+}
+.btn-clear-all:hover { opacity: 0.9; }
+
+/* Chart Cards */
+.charts-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(450px, 1fr));
+    gap: var(--space-lg);
+}
+.chart-card {
+    background: var(--color-surface);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-sm);
+    overflow: hidden;
+    position: relative;
+}
+.chart-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: var(--space-md) var(--space-lg);
+    border-bottom: 1px solid var(--color-surface-dark);
+}
+.chart-card-title {
+    font-weight: 600;
+    font-size: 0.95rem;
+    color: var(--color-primary);
+}
+.chart-card-actions {
+    display: flex;
+    gap: 8px;
+}
+.chart-card-actions button {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 1rem;
+    color: var(--color-text-muted);
+    padding: 2px 6px;
+    border-radius: 4px;
+    transition: background 0.2s, color 0.2s;
+}
+.chart-card-actions button:hover {
+    background: var(--color-surface-dark);
+    color: var(--color-text);
+}
+.chart-card-body {
+    padding: var(--space-md);
+    position: relative;
+    min-height: 250px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.chart-card-body canvas {
+    width: 100% !important;
+    max-height: 400px;
+}
+.chart-card-loading {
+    color: var(--color-text-muted);
+    font-size: 0.9rem;
+}
+.chart-card-empty {
+    color: var(--color-text-muted);
+    font-size: 0.85rem;
+    text-align: center;
+}
+
+/* Empty State */
+.empty-state {
+    text-align: center;
+    padding: var(--space-xl);
+    color: var(--color-text-muted);
+}
+.empty-state-icon {
+    font-size: 3rem;
+    margin-bottom: var(--space-md);
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="cr-container">
+    <div class="cr-header">
+        <h1>自定义报表</h1>
+    </div>
+
+    <!-- Chart Builder -->
+    <div class="chart-builder">
+        <h3>+ 添加图表</h3>
+        <div class="builder-row">
+            <div class="builder-group">
+                <label>数据源</label>
+                <select id="dataSource">
+                    <option value="work_reports">维修日志</option>
+                    <option value="demand_records">需求日志</option>
+                </select>
+            </div>
+            <div class="builder-group">
+                <label>指标</label>
+                <select id="metric"></select>
+            </div>
+            <div class="builder-group">
+                <label>图表类型</label>
+                <select id="chartType">
+                    <option value="bar">柱状图</option>
+                    <option value="pie">饼图</option>
+                    <option value="line">折线图</option>
+                    <option value="doughnut">环形图</option>
+                </select>
+            </div>
+            <div class="builder-group">
+                <label>起始日期</label>
+                <input type="date" id="dateFrom">
+            </div>
+            <div class="builder-group">
+                <label>截止日期</label>
+                <input type="date" id="dateTo">
+            </div>
+            <div class="builder-group">
+                <label>图表标题</label>
+                <input type="text" id="chartTitle" placeholder="自动生成" style="width:120px;">
+            </div>
+            <button class="btn-add-chart" onclick="addChart()">添加图表</button>
+            <button class="btn-clear-all" onclick="clearAll()">清空全部</button>
+        </div>
+    </div>
+
+    <!-- Charts Grid -->
+    <div class="charts-grid" id="chartsGrid">
+        <div class="empty-state" id="emptyState">
+            <div class="empty-state-icon">📊</div>
+            <p>点击上方「添加图表」开始创建自定义报表</p>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Metric definitions per data source
+var METRICS = {
+    work_reports: [
+        { value: 'daily_trend', label: '每日趋势' },
+        { value: 'by_location', label: 'CCU 分布' },
+        { value: 'by_zone', label: '区域分布' },
+        { value: 'by_category', label: '工作分类' },
+        { value: 'by_fault_type', label: '故障类型' },
+        {% if is_admin %}
+        { value: 'by_worker', label: '人员统计' },
+        {% endif %}
+    ],
+    demand_records: [
+        { value: 'daily_trend', label: '每日趋势' },
+        { value: 'by_category', label: '类别分布' },
+        { value: 'by_department', label: '部门分布' },
+        { value: 'by_status', label: '状态分布' },
+        { value: 'global_events', label: '全局事件' },
+    ]
+};
+
+var charts = [];
+var chartInstances = {};
+var chartIdCounter = 0;
+
+// Initialize
+document.addEventListener('DOMContentLoaded', function() {
+    // Set default dates (last 30 days)
+    var today = new Date();
+    var thirtyDaysAgo = new Date(today);
+    thirtyDaysAgo.setDate(today.getDate() - 29);
+    document.getElementById('dateFrom').value = formatDate(thirtyDaysAgo);
+    document.getElementById('dateTo').value = formatDate(today);
+
+    // Populate metrics
+    updateMetrics();
+
+    // Listen for data source change
+    document.getElementById('dataSource').addEventListener('change', updateMetrics);
+
+    // Load saved charts from localStorage
+    try {
+        var saved = localStorage.getItem('customReportCharts');
+        if (saved) {
+            charts = JSON.parse(saved);
+            chartIdCounter = charts.length > 0 ? Math.max.apply(null, charts.map(function(c){return c.id})) + 1 : 0;
+            renderAllCharts();
+            fetchChartData();
+        }
+    } catch(e) {}
+});
+
+function formatDate(d) {
+    return d.toISOString().split('T')[0];
+}
+
+function updateMetrics() {
+    var ds = document.getElementById('dataSource').value;
+    var sel = document.getElementById('metric');
+    sel.innerHTML = '';
+    METRICS[ds].forEach(function(m) {
+        var opt = document.createElement('option');
+        opt.value = m.value;
+        opt.textContent = m.label;
+        sel.appendChild(opt);
+    });
+}
+
+function getMetricLabel(ds, metric) {
+    var metrics = METRICS[ds] || [];
+    for (var i = 0; i < metrics.length; i++) {
+        if (metrics[i].value === metric) return metrics[i].label;
+    }
+    return metric;
+}
+
+function getDSLabel(ds) {
+    return ds === 'work_reports' ? '维修日志' : '需求日志';
+}
+
+function addChart() {
+    var ds = document.getElementById('dataSource').value;
+    var metric = document.getElementById('metric').value;
+    var chartType = document.getElementById('chartType').value;
+    var dateFrom = document.getElementById('dateFrom').value;
+    var dateTo = document.getElementById('dateTo').value;
+    var title = document.getElementById('chartTitle').value.trim();
+
+    if (!title) {
+        title = getDSLabel(ds) + ' - ' + getMetricLabel(ds, metric);
+    }
+
+    var cfg = {
+        id: chartIdCounter++,
+        dataSource: ds,
+        metric: metric,
+        chartType: chartType,
+        dateFrom: dateFrom,
+        dateTo: dateTo,
+        title: title
+    };
+
+    charts.push(cfg);
+    saveCharts();
+    renderAllCharts();
+    fetchChartData();
+}
+
+function removeChart(id) {
+    charts = charts.filter(function(c) { return c.id !== id; });
+    if (chartInstances[id]) {
+        chartInstances[id].destroy();
+        delete chartInstances[id];
+    }
+    saveCharts();
+    renderAllCharts();
+}
+
+function clearAll() {
+    if (charts.length === 0) return;
+    if (!confirm('确认清空所有图表？')) return;
+    Object.keys(chartInstances).forEach(function(k) {
+        chartInstances[k].destroy();
+    });
+    chartInstances = {};
+    charts = [];
+    chartIdCounter = 0;
+    saveCharts();
+    renderAllCharts();
+}
+
+function saveCharts() {
+    try {
+        localStorage.setItem('customReportCharts', JSON.stringify(charts));
+    } catch(e) {}
+}
+
+function renderAllCharts() {
+    var grid = document.getElementById('chartsGrid');
+    grid.innerHTML = '';
+
+    if (charts.length === 0) {
+        grid.innerHTML = '<div class="empty-state" id="emptyState"><div class="empty-state-icon">📊</div><p>点击上方「添加图表」开始创建自定义报表</p></div>';
+        return;
+    }
+
+    charts.forEach(function(cfg) {
+        var card = document.createElement('div');
+        card.className = 'chart-card';
+        card.id = 'chartCard-' + cfg.id;
+        card.innerHTML =
+            '<div class="chart-card-header">' +
+                '<span class="chart-card-title">' + escapeHtml(cfg.title) + '</span>' +
+                '<div class="chart-card-actions">' +
+                    '<button onclick="removeChart(' + cfg.id + ')" title="删除">&times;</button>' +
+                '</div>' +
+            '</div>' +
+            '<div class="chart-card-body">' +
+                '<canvas id="chart-' + cfg.id + '"></canvas>' +
+            '</div>';
+        grid.appendChild(card);
+    });
+}
+
+function fetchChartData() {
+    if (charts.length === 0) return;
+
+    var payload = charts.map(function(cfg) {
+        return {
+            id: cfg.id,
+            dataSource: cfg.dataSource,
+            metric: cfg.metric,
+            dateFrom: cfg.dateFrom,
+            dateTo: cfg.dateTo,
+            chartType: cfg.chartType,
+            title: cfg.title
+        };
+    });
+
+    fetch('{% url "core:custom_report_api" %}', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCSRFToken(),
+        },
+        body: JSON.stringify({ charts: payload })
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+        var results = data.charts || [];
+        results.forEach(function(result) {
+            renderChart(result);
+        });
+    })
+    .catch(function(err) {
+        console.error('Failed to fetch chart data:', err);
+    });
+}
+
+function renderChart(result) {
+    var id = result.id;
+    var canvas = document.getElementById('chart-' + id);
+    if (!canvas) return;
+
+    // Destroy existing instance
+    if (chartInstances[id]) {
+        chartInstances[id].destroy();
+    }
+
+    if (result.error) {
+        canvas.parentElement.innerHTML = '<div class="chart-card-empty">' + escapeHtml(result.error) + '</div>';
+        return;
+    }
+
+    var isPie = result.chartType === 'pie' || result.chartType === 'doughnut';
+    var isLine = result.chartType === 'line';
+
+    var datasets = result.datasets.map(function(ds, i) {
+        var cfg = {
+            label: ds.label,
+            data: ds.data,
+        };
+
+        if (isPie) {
+            cfg.backgroundColor = ds.backgroundColor || getDefaultPieColors(ds.data.length);
+            cfg.borderColor = '#fff';
+            cfg.borderWidth = 2;
+        } else if (isLine) {
+            cfg.borderColor = ds.borderColor || 'rgba(27, 67, 50, 1)';
+            cfg.backgroundColor = (ds.borderColor || 'rgba(27, 67, 50, 1)').replace('1)', '0.1)');
+            cfg.fill = true;
+            cfg.tension = 0.3;
+            cfg.pointRadius = 3;
+            cfg.pointHoverRadius = 6;
+        } else {
+            // Bar
+            cfg.backgroundColor = ds.backgroundColor || 'rgba(27, 67, 50, 0.7)';
+            cfg.borderColor = ds.borderColor || 'rgba(27, 67, 50, 1)';
+            cfg.borderWidth = 1;
+            cfg.borderRadius = 4;
+        }
+
+        return cfg;
+    });
+
+    var chartConfig = {
+        type: isPie ? result.chartType : (isLine ? 'line' : 'bar'),
+        data: {
+            labels: result.labels,
+            datasets: datasets
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            plugins: {
+                legend: {
+                    display: isPie || datasets.length > 1,
+                    position: isPie ? 'bottom' : 'top',
+                    labels: { font: { size: 11 } }
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(ctx) {
+                            return ctx.dataset.label + ': ' + ctx.parsed.y;
+                        }
+                    }
+                }
+            },
+            scales: isPie ? {} : {
+                y: {
+                    beginAtZero: true,
+                    ticks: { font: { size: 11 } }
+                },
+                x: {
+                    ticks: {
+                        font: { size: 10 },
+                        maxRotation: 45,
+                        autoSkip: true,
+                        maxTicksLimit: 20
+                    }
+                }
+            }
+        }
+    };
+
+    chartInstances[id] = new Chart(canvas.getContext('2d'), chartConfig);
+}
+
+function getDefaultPieColors(n) {
+    var colors = [
+        'rgba(27, 67, 50, 0.8)',
+        'rgba(45, 106, 79, 0.8)',
+        'rgba(64, 145, 108, 0.8)',
+        'rgba(82, 183, 136, 0.8)',
+        'rgba(204, 119, 34, 0.8)',
+        'rgba(155, 34, 38, 0.8)',
+        'rgba(45, 106, 150, 0.8)',
+        'rgba(108, 117, 125, 0.8)',
+        'rgba(27, 67, 100, 0.8)',
+        'rgba(120, 50, 120, 0.8)',
+        'rgba(180, 80, 40, 0.8)',
+        'rgba(60, 140, 140, 0.8)',
+        'rgba(140, 100, 40, 0.8)',
+        'rgba(80, 60, 140, 0.8)',
+        'rgba(160, 60, 80, 0.8)',
+    ];
+    var result = [];
+    for (var i = 0; i < n; i++) {
+        result.push(colors[i % colors.length]);
+    }
+    return result;
+}
+
+function getCSRFToken() {
+    var cookies = document.cookie.split(';');
+    for (var i = 0; i < cookies.length; i++) {
+        var c = cookies[i].trim();
+        if (c.startsWith('csrftoken=')) {
+            return c.substring('csrftoken='.length);
+        }
+    }
+    return '';
+}
+
+function escapeHtml(text) {
+    var div = document.createElement('div');
+    div.appendChild(document.createTextNode(text));
+    return div.innerHTML;
+}
+</script>
+{% endblock %}
