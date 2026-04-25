@@ -2772,6 +2772,70 @@ def work_report_edit(request, report_id):
 
 @require_POST
 @login_required(login_url='core:login')
+def work_report_upload_photo(request, report_id):
+    import os
+    from django.conf import settings
+    from datetime import datetime
+    from core.models import WorkReport
+    from core.role_utils import is_admin
+
+    if not is_admin(request.user):
+        return JsonResponse({'error': '仅管理员可上传照片'}, status=403)
+
+    report = get_object_or_404(WorkReport, pk=report_id)
+    files = request.FILES.getlist('files')
+    if not files:
+        return JsonResponse({'error': '未选择文件'}, status=400)
+
+    photo_paths = list(report.photos or [])
+    upload_dir = os.path.join(settings.MEDIA_ROOT, 'work_reports', str(report.id))
+    os.makedirs(upload_dir, exist_ok=True)
+
+    for f in files:
+        ext = os.path.splitext(f.name)[1]
+        filename = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{len(photo_paths)}{ext}"
+        filepath = os.path.join(upload_dir, filename)
+        with open(filepath, 'wb') as dest:
+            for chunk in f.chunks():
+                dest.write(chunk)
+        photo_paths.append(f"work_reports/{report.id}/{filename}")
+
+    report.photos = photo_paths
+    report.save(update_fields=['photos'])
+
+    return JsonResponse({'photos': photo_paths})
+
+
+@require_POST
+@login_required(login_url='core:login')
+def work_report_remove_photo(request, report_id):
+    import os
+    from django.conf import settings
+    from core.models import WorkReport
+    from core.role_utils import is_admin
+
+    if not is_admin(request.user):
+        return JsonResponse({'error': '仅管理员可删除照片'}, status=403)
+
+    report = get_object_or_404(WorkReport, pk=report_id)
+    photo = request.POST.get('photo')
+    if not photo:
+        return JsonResponse({'error': '缺少照片参数'}, status=400)
+
+    photo_paths = list(report.photos or [])
+    if photo in photo_paths:
+        photo_paths.remove(photo)
+        report.photos = photo_paths
+        report.save(update_fields=['photos'])
+        filepath = os.path.join(settings.MEDIA_ROOT, photo)
+        if os.path.exists(filepath):
+            os.remove(filepath)
+
+    return JsonResponse({'photos': photo_paths})
+
+
+@require_POST
+@login_required(login_url='core:login')
 def work_report_delete(request, report_id):
     from core.models import WorkReport
     from core.role_utils import is_admin
