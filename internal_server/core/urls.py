@@ -77,6 +77,8 @@ urlpatterns = [
     path('api/weather', get_weather, name='get_weather'),
     path('api/demand-stats', demand_stats, name='demand_stats'),
     path('api/demand-calendar', demand_calendar, name='demand_calendar'),
+    path('api/custom-report', views.custom_report_api, name='custom_report_api'),
+    path('custom-report/', views.custom_report, name='custom_report'),
     path('api/equipment-catalog/autocomplete', equipment_catalog_autocomplete, name='equipment_catalog_autocomplete'),
     path('api/', include(router.urls)),
     path('api/maxicom-dashboard', views.maxicom_dashboard_api, name='maxicom_dashboard_api'),

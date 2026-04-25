@@ -2520,6 +2520,299 @@ def stats_dashboard(request):
     return render(request, 'core/stats_dashboard.html', context)
 
 
+# ==========================================================================
+# Custom Report API
+# ==========================================================================
+
+from django.http import JsonResponse
+from django.views.decorators.http import require_POST
+import json
+
+
+@require_POST
+@login_required(login_url='core:login')
+def custom_report_api(request):
+    """Return aggregated data for custom chart configurations."""
+    from core.models import WorkReport, DemandRecord
+    from django.db.models import Count, Q
+    from django.utils import timezone
+    from collections import defaultdict
+
+    try:
+        body = json.loads(request.body)
+        charts = body.get('charts', [])
+    except (json.JSONDecodeError, AttributeError):
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+    user = request.user
+    try:
+        worker = user.worker_profile
+        is_worker_user = True
+    except Exception:
+        is_worker_user = False
+
+    try:
+        is_admin_user = user.manager_profile.is_super_admin or user.manager_profile.can_approve_work_orders
+    except Exception:
+        is_admin_user = False
+
+    results = []
+
+    for chart_cfg in charts:
+        chart_id = chart_cfg.get('id', '')
+        data_source = chart_cfg.get('dataSource', '')
+        metric = chart_cfg.get('metric', '')
+        date_from = chart_cfg.get('dateFrom', '')
+        date_to = chart_cfg.get('dateTo', '')
+        chart_type = chart_cfg.get('chartType', 'bar')
+        title = chart_cfg.get('title', '')
+
+        chart_data = _build_chart_data(data_source, metric, date_from, date_to,
+                                        is_admin_user, is_worker_user, worker)
+        if chart_data is None:
+            results.append({'id': chart_id, 'error': 'No data'})
+            continue
+
+        chart_data['chartType'] = chart_type
+        chart_data['title'] = title
+        results.append(chart_data)
+
+    return JsonResponse({'charts': results})
+
+
+def _build_chart_data(data_source, metric, date_from, date_to,
+                      is_admin, is_worker, worker):
+    """Build chart data dict for a given metric. Returns None if no data."""
+    from core.models import WorkReport, DemandRecord
+    from django.db.models import Count, Q
+    from django.utils import timezone
+    from datetime import timedelta, datetime
+
+    # Apply date filter helper
+    def date_filter(qs, date_field='date'):
+        if date_from:
+            qs = qs.filter(**{f'{date_field}__gte': date_from})
+        if date_to:
+            qs = qs.filter(**{f'{date_field}__lte': date_to})
+        return qs
+
+    # === WORK REPORTS ===
+    if data_source == 'work_reports':
+        qs = WorkReport.objects.select_related('worker', 'location', 'work_category')
+        if not is_admin:
+            if is_worker:
+                qs = qs.filter(worker=worker)
+            else:
+                qs = qs.none()
+
+        qs = date_filter(qs)
+
+        if metric == 'daily_trend':
+            if not date_from or not date_to:
+                today = timezone.now().date()
+                date_from = (today - timedelta(days=29)).isoformat()
+                date_to = today.isoformat()
+                qs = date_filter(qs)
+            entries = list(qs.values('date').annotate(count=Count('id')).order_by('date'))
+            if not entries:
+                return None
+            return {
+                'labels': [str(e['date']) for e in entries],
+                'datasets': [{
+                    'label': '维修日志数',
+                    'data': [e['count'] for e in entries],
+                    'backgroundColor': 'rgba(27, 67, 50, 0.7)',
+                    'borderColor': 'rgba(27, 67, 50, 1)',
+                }]
+            }
+
+        elif metric == 'by_location':
+            entries = list(qs.values('location__name').annotate(count=Count('id')).order_by('-count')[:15])
+            if not entries:
+                return None
+            return {
+                'labels': [e['location__name'] or '未指定' for e in entries],
+                'datasets': [{
+                    'label': '日志数',
+                    'data': [e['count'] for e in entries],
+                    'backgroundColor': _chart_colors(len(entries)),
+                }]
+            }
+
+        elif metric == 'by_zone':
+            entries = list(qs.values('zone_location__name').annotate(count=Count('id')).exclude(zone_location__isnull=True).order_by('-count')[:15])
+            if not entries:
+                return None
+            return {
+                'labels': [e['zone_location__name'] or '未指定' for e in entries],
+                'datasets': [{
+                    'label': '日志数',
+                    'data': [e['count'] for e in entries],
+                    'backgroundColor': _chart_colors(len(entries)),
+                }]
+            }
+
+        elif metric == 'by_category':
+            entries = list(qs.values('work_category__name').annotate(count=Count('id')).order_by('-count')[:15])
+            if not entries:
+                return None
+            return {
+                'labels': [e['work_category__name'] or '未指定' for e in entries],
+                'datasets': [{
+                    'label': '日志数',
+                    'data': [e['count'] for e in entries],
+                    'backgroundColor': _chart_colors(len(entries)),
+                }]
+            }
+
+        elif metric == 'by_fault_type':
+            entries = list(qs.filter(fault_entries__isnull=False).values('fault_entries__fault_subtype__name_zh').annotate(count=Count('fault_entries__fault_subtype')).order_by('-count')[:15])
+            if not entries:
+                return None
+            return {
+                'labels': [e['fault_entries__fault_subtype__name_zh'] or '未分类' for e in entries],
+                'datasets': [{
+                    'label': '故障数',
+                    'data': [e['count'] for e in entries],
+                    'backgroundColor': _chart_colors(len(entries)),
+                }]
+            }
+
+        elif metric == 'by_worker' and is_admin:
+            entries = list(qs.values('worker__full_name').annotate(
+                total=Count('id'),
+                difficult=Count('id', filter=Q(is_difficult=True))
+            ).order_by('-total')[:15])
+            if not entries:
+                return None
+            return {
+                'labels': [e['worker__full_name'] or '未指定' for e in entries],
+                'datasets': [
+                    {
+                        'label': '总数',
+                        'data': [e['total'] for e in entries],
+                        'backgroundColor': 'rgba(27, 67, 50, 0.7)',
+                        'borderColor': 'rgba(27, 67, 50, 1)',
+                    },
+                    {
+                        'label': '疑难',
+                        'data': [e['difficult'] for e in entries],
+                        'backgroundColor': 'rgba(204, 119, 34, 0.7)',
+                        'borderColor': 'rgba(204, 119, 34, 1)',
+                    }
+                ]
+            }
+
+    # === DEMAND RECORDS ===
+    elif data_source == 'demand_records':
+        qs = DemandRecord.objects.all()
+        qs = date_filter(qs)
+
+        if metric == 'daily_trend':
+            if not date_from or not date_to:
+                today = timezone.now().date()
+                date_from = (today - timedelta(days=29)).isoformat()
+                date_to = today.isoformat()
+                qs = date_filter(qs)
+            entries = list(qs.values('date').annotate(count=Count('id')).order_by('date'))
+            if not entries:
+                return None
+            return {
+                'labels': [str(e['date']) for e in entries],
+                'datasets': [{
+                    'label': '需求日志数',
+                    'data': [e['count'] for e in entries],
+                    'backgroundColor': 'rgba(64, 145, 108, 0.7)',
+                    'borderColor': 'rgba(64, 145, 108, 1)',
+                }]
+            }
+
+        elif metric == 'by_category':
+            entries = list(qs.values('category__name').annotate(count=Count('id')).exclude(category__isnull=True).order_by('-count')[:15])
+            if not entries:
+                return None
+            return {
+                'labels': [e['category__name'] or '未指定' for e in entries],
+                'datasets': [{
+                    'label': '需求数',
+                    'data': [e['count'] for e in entries],
+                    'backgroundColor': _chart_colors(len(entries)),
+                }]
+            }
+
+        elif metric == 'by_department':
+            entries = list(qs.values('demand_department__name').annotate(count=Count('id')).exclude(demand_department__isnull=True).order_by('-count')[:15])
+            if not entries:
+                return None
+            return {
+                'labels': [e['demand_department__name'] or '未指定' for e in entries],
+                'datasets': [{
+                    'label': '需求数',
+                    'data': [e['count'] for e in entries],
+                    'backgroundColor': _chart_colors(len(entries)),
+                }]
+            }
+
+        elif metric == 'by_status':
+            status_map = {'submitted': '已提交', 'approved': '已批准', 'rejected': '已拒绝', 'in_progress': '进行中', 'completed': '已完成'}
+            entries = list(qs.values('status').annotate(count=Count('id')).order_by('-count'))
+            if not entries:
+                return None
+            return {
+                'labels': [status_map.get(e['status'], e['status']) for e in entries],
+                'datasets': [{
+                    'label': '需求数',
+                    'data': [e['count'] for e in entries],
+                    'backgroundColor': _chart_colors(len(entries)),
+                }]
+            }
+
+        elif metric == 'global_events':
+            entries = list(qs.filter(is_global_event=True).values('category__name').annotate(count=Count('id')).order_by('-count')[:15])
+            if not entries:
+                return None
+            return {
+                'labels': [e['category__name'] or '未指定' for e in entries],
+                'datasets': [{
+                    'label': '全局事件数',
+                    'data': [e['count'] for e in entries],
+                    'backgroundColor': _chart_colors(len(entries)),
+                }]
+            }
+
+    return None
+
+
+def _chart_colors(n):
+    """Return a list of n distinct chart background colors."""
+    palette = [
+        'rgba(27, 67, 50, 0.7)',
+        'rgba(45, 106, 79, 0.7)',
+        'rgba(64, 145, 108, 0.7)',
+        'rgba(82, 183, 136, 0.7)',
+        'rgba(204, 119, 34, 0.7)',
+        'rgba(155, 34, 38, 0.7)',
+        'rgba(45, 106, 150, 0.7)',
+        'rgba(108, 117, 125, 0.7)',
+        'rgba(27, 67, 100, 0.7)',
+        'rgba(120, 50, 120, 0.7)',
+        'rgba(180, 80, 40, 0.7)',
+        'rgba(60, 140, 140, 0.7)',
+        'rgba(140, 100, 40, 0.7)',
+        'rgba(80, 60, 140, 0.7)',
+        'rgba(160, 60, 80, 0.7)',
+    ]
+    return palette[:n]
+
+
+@login_required(login_url='core:login')
+def custom_report(request):
+    """Custom report page - user selects data and generates charts."""
+    from core.role_utils import is_admin
+    admin = is_admin(request.user)
+    return render(request, 'core/custom_report.html', {'is_admin': admin})
+
+
 def work_reports_list(request):
     from core.models import WorkReport, Patch, WorkCategory, Worker
     from core.role_utils import is_admin
