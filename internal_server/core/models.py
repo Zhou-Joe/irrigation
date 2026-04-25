@@ -20,21 +20,71 @@ ROLE_CHOICES = [
 
 
 class Patch(models.Model):
-    """片区 - 多个zone可以属于同一个片区"""
+    """Unified location/area hierarchy. 片区, Maxicom站点, Maxicom灌溉站, 位置/CCU, 需求区域 all live here."""
 
-    name = models.CharField('片区名称', max_length=255, unique=True)
-    code = models.CharField('片区编号', max_length=50, unique=True)
+    TYPE_PATCH = 'patch'
+    TYPE_SITE = 'site'
+    TYPE_STATION = 'station'
+    TYPE_LOCATION = 'location'
+    TYPE_ZONE_TEXT = 'zone_text'
+
+    TYPE_CHOICES = [
+        (TYPE_PATCH, '片区'),
+        (TYPE_SITE, 'Maxicom站点'),
+        (TYPE_STATION, 'Maxicom灌溉站'),
+        (TYPE_LOCATION, '位置/CCU'),
+        (TYPE_ZONE_TEXT, '需求区域'),
+    ]
+
+    parent = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True, related_name='children', verbose_name='上级')
+    name = models.CharField(max_length=255, unique=True)
+    code = models.CharField(max_length=50, unique=True)
     description = models.TextField('描述', blank=True)
+    type = models.CharField(max_length=20, choices=TYPE_CHOICES, default=TYPE_PATCH)
+    order = models.PositiveIntegerField('排序', default=0)
+    active = models.BooleanField('启用', default=True)
+
+    # MaxicomSite fields
+    mdb_index = models.IntegerField('Maxicom索引', null=True, blank=True, help_text='Original IndexNumber from MDB')
+    site_number = models.IntegerField('站点编号', null=True, blank=True)
+    time_zone = models.CharField(max_length=50, blank=True, default='China')
+    water_pricing = models.FloatField(null=True, blank=True)
+    ccu_version = models.CharField(max_length=50, blank=True)
+    et_current = models.FloatField(null=True, blank=True, help_text='Current ET value')
+    et_default = models.FloatField(null=True, blank=True)
+    et_minimum = models.FloatField(null=True, blank=True)
+    et_maximum = models.FloatField(null=True, blank=True)
+    crop_coefficient = models.FloatField(null=True, blank=True)
+    rain_shutdown = models.BooleanField(default=False)
+    telephone = models.CharField(max_length=255, blank=True, help_text='CCU contact address')
+    date_open = models.CharField(max_length=20, blank=True)
+    date_close = models.CharField(max_length=20, blank=True)
+
+    # MaxicomStation fields
+    controller_channel = models.IntegerField('控制器通道', null=True, blank=True)
+    precip_rate = models.FloatField(null=True, blank=True, help_text='Precipitation rate')
+    flow_rate = models.FloatField(null=True, blank=True, help_text='Flow rate')
+    microclimate_factor = models.IntegerField(null=True, blank=True)
+    cycle_time = models.IntegerField(null=True, blank=True, help_text='Cycle time in minutes')
+    soak_time = models.IntegerField(null=True, blank=True, help_text='Soak time in minutes')
+    lockout = models.BooleanField(default=False)
+    flow_manager_priority = models.IntegerField(null=True, blank=True)
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        verbose_name = '片区'
-        verbose_name_plural = '片区'
-        ordering = ['code']
+        verbose_name = '区域'
+        verbose_name_plural = '区域'
+        ordering = ['type', 'code']
+
+    @property
+    def zones(self):
+        return Zone.objects.filter(patch=self)
 
     def __str__(self):
-        return f"{self.name} ({self.code})"
+        type_label = self.get_type_display()
+        return f"[{type_label}] {self.name} ({self.code})"
 
 
 class Zone(models.Model):
@@ -526,38 +576,10 @@ class WaterRequest(RequestBase):
 # Data imported from Maxicom2.mdb (Rain Bird Central Control)
 # ============================================
 
-class MaxicomSite(models.Model):
-    """Irrigation site from Maxicom2 system. Linked to Zone if matching."""
-    zone = models.ForeignKey(Zone, on_delete=models.SET_NULL, null=True, blank=True, related_name='maxicom_sites')
-    mdb_index = models.IntegerField(help_text='Original IndexNumber from MDB')
-    name = models.CharField(max_length=255)
-    site_number = models.IntegerField()
-    time_zone = models.CharField(max_length=50, default='China')
-    water_pricing = models.FloatField(null=True, blank=True)
-    ccu_version = models.CharField(max_length=50, blank=True)
-    et_current = models.FloatField(null=True, blank=True, help_text='Current ET value')
-    et_default = models.FloatField(null=True, blank=True)
-    et_minimum = models.FloatField(null=True, blank=True)
-    et_maximum = models.FloatField(null=True, blank=True)
-    crop_coefficient = models.FloatField(null=True, blank=True)
-    rain_shutdown = models.BooleanField(default=False)
-    telephone = models.CharField(max_length=255, blank=True, help_text='CCU contact address')
-    date_open = models.CharField(max_length=20, blank=True)
-    date_close = models.CharField(max_length=20, blank=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        ordering = ['site_number', 'mdb_index']
-        verbose_name = 'Maxicom站点'
-        verbose_name_plural = 'Maxicom站点'
-
-    def __str__(self):
-        return f"{self.name} (Site {self.site_number})"
-
 
 class MaxicomController(models.Model):
     """Controller (CCU/SAT) from Maxicom2 system."""
-    site = models.ForeignKey(MaxicomSite, on_delete=models.CASCADE, related_name='controllers')
+    site = models.ForeignKey(Patch, on_delete=models.CASCADE, related_name='controllers')
     mdb_index = models.IntegerField()
     name = models.CharField(max_length=255)
     controller_type = models.CharField(max_length=255, blank=True)
@@ -576,36 +598,10 @@ class MaxicomController(models.Model):
         return f"{self.name} (Site {self.site_number})"
 
 
-class MaxicomStation(models.Model):
-    """Irrigation station from Maxicom2 system."""
-    site = models.ForeignKey(MaxicomSite, on_delete=models.CASCADE, related_name='stations')
-    controller = models.ForeignKey(MaxicomController, on_delete=models.SET_NULL, null=True, blank=True, related_name='stations')
-    mdb_index = models.IntegerField(unique=True)
-    name = models.CharField(max_length=255, blank=True)
-    controller_channel = models.IntegerField()
-    precip_rate = models.FloatField(null=True, blank=True, help_text='Precipitation rate')
-    flow_rate = models.FloatField(null=True, blank=True, help_text='Flow rate')
-    microclimate_factor = models.IntegerField(null=True, blank=True)
-    cycle_time = models.IntegerField(null=True, blank=True, help_text='Cycle time in minutes')
-    soak_time = models.IntegerField(null=True, blank=True, help_text='Soak time in minutes')
-    memo = models.TextField(blank=True)
-    lockout = models.BooleanField(default=False)
-    flow_manager_priority = models.IntegerField(null=True, blank=True)
-    date_open = models.CharField(max_length=20, blank=True)
-
-    class Meta:
-        ordering = ['site', 'controller_channel']
-        verbose_name = 'Maxicom灌溉站'
-        verbose_name_plural = 'Maxicom灌溉站'
-
-    def __str__(self):
-        name = self.name or f"Station {self.controller_channel}"
-        return f"{name} @ {self.site.name}"
-
 
 class MaxicomSchedule(models.Model):
     """Irrigation schedule from Maxicom2 system."""
-    site = models.ForeignKey(MaxicomSite, on_delete=models.CASCADE, related_name='schedules')
+    site = models.ForeignKey(Patch, on_delete=models.CASCADE, related_name='schedules')
     mdb_index = models.IntegerField()
     name = models.CharField(max_length=255)
     nominal_et = models.FloatField(null=True, blank=True)
@@ -627,7 +623,7 @@ class MaxicomSchedule(models.Model):
 
 class MaxicomFlowZone(models.Model):
     """Flow monitoring zone from Maxicom2 system."""
-    site = models.ForeignKey(MaxicomSite, on_delete=models.CASCADE, related_name='flow_zones')
+    site = models.ForeignKey(Patch, on_delete=models.CASCADE, related_name='flow_zones')
     mdb_index = models.IntegerField()
     name = models.CharField(max_length=255)
     join_site = models.BooleanField(default=False)
@@ -741,7 +737,7 @@ class MaxicomSignalLog(models.Model):
 class MaxicomETCheckbook(models.Model):
     """ET checkbook (soil moisture balance) from Maxicom2 system."""
     timestamp = models.CharField(max_length=20, db_index=True)
-    site = models.ForeignKey(MaxicomSite, on_delete=models.CASCADE, related_name='et_checkbooks')
+    site = models.ForeignKey(Patch, on_delete=models.CASCADE, related_name='et_checkbooks')
     soil_moisture = models.FloatField(null=True, blank=True)
     rainfall = models.FloatField(null=True, blank=True)
     et = models.FloatField(null=True, blank=True)
@@ -780,8 +776,8 @@ class SyncAgentHeartbeat(models.Model):
 class MaxicomRuntime(models.Model):
     """Runtime data from Maxicom2 system."""
     timestamp = models.CharField(max_length=20, db_index=True)
-    station = models.ForeignKey(MaxicomStation, on_delete=models.CASCADE, related_name='runtimes', null=True, blank=True)
-    site = models.ForeignKey(MaxicomSite, on_delete=models.CASCADE, related_name='runtimes')
+    station = models.ForeignKey(Patch, on_delete=models.CASCADE, related_name='runtime_as_station', null=True, blank=True)
+    site = models.ForeignKey(Patch, on_delete=models.CASCADE, related_name='runtime_as_site')
     station_id_raw = models.IntegerField(help_text='Original StationID from MDB')
     run_time = models.IntegerField(null=True, blank=True)
 
@@ -853,24 +849,6 @@ class ZoneEquipment(models.Model):
 # 维修工单系统 (Maintenance Work Report System)
 # ==========================================================================
 
-
-class Location(models.Model):
-    """位置/CCU - irrigation controller locations."""
-
-    name = models.CharField('名称', max_length=100)
-    code = models.CharField('编号', max_length=50, unique=True)
-    order = models.PositiveIntegerField('排序', default=0)
-    active = models.BooleanField('启用', default=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    class Meta:
-        ordering = ['order', 'code']
-        verbose_name = '位置/CCU'
-        verbose_name_plural = '位置/CCU'
-
-    def __str__(self):
-        return self.name
 
 
 class WorkCategory(models.Model):
@@ -957,7 +935,7 @@ class WorkReport(models.Model):
     date = models.DateField('日期')
     weather = models.CharField('天气', max_length=50, blank=True)
     worker = models.ForeignKey(Worker, on_delete=models.PROTECT, related_name='work_reports', verbose_name='处理人')
-    location = models.ForeignKey(Location, on_delete=models.PROTECT, related_name='work_reports', verbose_name='位置/CCU')
+    location = models.ForeignKey(Patch, on_delete=models.PROTECT, related_name='work_reports', verbose_name='位置/CCU')
     work_category = models.ForeignKey(WorkCategory, on_delete=models.PROTECT, related_name='work_reports', verbose_name='工作分类')
     zone_location = models.ForeignKey(Zone, on_delete=models.SET_NULL, null=True, blank=True, related_name='work_reports', verbose_name='故障/事件位置')
     remark = models.TextField('备注/工作内容')

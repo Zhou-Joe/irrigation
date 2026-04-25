@@ -1599,46 +1599,47 @@ def registration_approval(request):
 def maxicom_dashboard_api(request):
     """API endpoint providing Maxicom2 irrigation data for the dashboard."""
     from core.models import (
-        MaxicomSite, MaxicomController, MaxicomStation, MaxicomSchedule,
+        MaxicomController, MaxicomSchedule,
         MaxicomFlowZone, MaxicomWeatherStation, MaxicomWeatherLog,
         MaxicomEvent, MaxicomETCheckbook, MaxicomRuntime,
+        Patch,
     )
 
     # System overview stats
     stats = {
-        'sites': MaxicomSite.objects.count(),
+        'sites': Patch.objects.filter(type=Patch.TYPE_SITE).count(),
         'controllers': MaxicomController.objects.count(),
-        'stations': MaxicomStation.objects.count(),
+        'stations': Patch.objects.filter(type=Patch.TYPE_STATION).count(),
         'schedules': MaxicomSchedule.objects.count(),
         'flow_zones': MaxicomFlowZone.objects.count(),
         'weather_stations': MaxicomWeatherStation.objects.count(),
         'weather_logs': MaxicomWeatherLog.objects.count(),
         'events': MaxicomEvent.objects.count(),
-        'locked_stations': MaxicomStation.objects.filter(lockout=True).count(),
+        'locked_stations': Patch.objects.filter(type=Patch.TYPE_STATION, lockout=True).count(),
     }
 
     # Site hierarchy: sites with controller/station counts and station details
     sites = []
-    for site in MaxicomSite.objects.all():
+    for site in Patch.objects.filter(type=Patch.TYPE_SITE).all():
         ctrl_count = site.controllers.count()
-        stn_count = site.stations.count()
+        stn_count = site.children.filter(type=Patch.TYPE_STATION).count()
         sched_count = site.schedules.count()
         fz_count = site.flow_zones.count()
 
         # Station details for hierarchy table
         station_list = []
-        for stn in site.stations.select_related('controller').all():
+        for stn in site.children.filter(type=Patch.TYPE_STATION).all():
             station_list.append({
                 'id': stn.id,
                 'name': stn.name or f'点位 {stn.controller_channel}',
                 'controller_channel': stn.controller_channel,
-                'controller_name': stn.controller.name if stn.controller else '-',
+                'controller_name': '-',
                 'precip_rate': stn.precip_rate,
                 'flow_rate': stn.flow_rate,
                 'cycle_time': stn.cycle_time,
                 'soak_time': stn.soak_time,
                 'lockout': stn.lockout,
-                'memo': stn.memo,
+                'memo': stn.description,
             })
 
         sites.append({
@@ -1705,9 +1706,9 @@ def maxicom_dashboard_api(request):
 
     # Station status breakdown
     station_status = {
-        'total': MaxicomStation.objects.count(),
-        'locked': MaxicomStation.objects.filter(lockout=True).count(),
-        'active': MaxicomStation.objects.filter(lockout=False).count(),
+        'total': Patch.objects.filter(type=Patch.TYPE_STATION).count(),
+        'locked': Patch.objects.filter(type=Patch.TYPE_STATION, lockout=True).count(),
+        'active': Patch.objects.filter(type=Patch.TYPE_STATION, lockout=False).count(),
     }
 
     # Top sites by station count
@@ -1744,7 +1745,7 @@ def maxicom_dashboard_api(request):
 
 @login_required(login_url='core:login')
 def work_reports_list(request):
-    from core.models import WorkReport, Location, WorkCategory, Worker
+    from core.models import WorkReport, Patch, WorkCategory, Worker
     from core.role_utils import is_admin
     from django.db.models import Count, Q
     from django.utils import timezone
@@ -1787,7 +1788,7 @@ def work_reports_list(request):
         qs = qs.filter(is_difficult=True)
 
     reports = qs[:200]
-    locations = Location.objects.filter(active=True).order_by('order')
+    locations = Patch.objects.filter(type=Patch.TYPE_LOCATION, active=True).order_by('order')
     work_categories = WorkCategory.objects.filter(active=True).order_by('order')
     workers = Worker.objects.all().order_by('full_name') if admin else []
 
@@ -2045,7 +2046,7 @@ def work_report_detail(request, report_id):
 
 @login_required(login_url='core:login')
 def work_report_create(request):
-    from core.models import WorkReport, WorkReportFault, Location, WorkCategory, InfoSource, FaultCategory, Worker, Zone, ZoneEquipment
+    from core.models import WorkReport, WorkReportFault, Patch, WorkCategory, InfoSource, FaultCategory, Worker, Zone, ZoneEquipment
     from core.role_utils import is_admin
 
     if request.method == 'POST':
@@ -2092,7 +2093,7 @@ def work_report_create(request):
             return redirect('core:work_report_create')
         return redirect('core:work_reports')
 
-    locations = Location.objects.filter(active=True).order_by('order')
+    locations = Patch.objects.filter(type=Patch.TYPE_LOCATION, active=True).order_by('order')
     work_categories = WorkCategory.objects.filter(active=True).order_by('order')
     info_sources = InfoSource.objects.filter(active=True).order_by('order')
     fault_categories = FaultCategory.objects.filter(active=True).prefetch_related(
@@ -2135,7 +2136,7 @@ def work_report_create(request):
 
 @login_required(login_url='core:login')
 def work_report_edit(request, report_id):
-    from core.models import WorkReport, WorkReportFault, Location, WorkCategory, InfoSource, FaultCategory, Zone, ZoneEquipment
+    from core.models import WorkReport, WorkReportFault, Patch, WorkCategory, InfoSource, FaultCategory, Zone, ZoneEquipment
     from core.role_utils import is_admin
 
     report = get_object_or_404(WorkReport, pk=report_id)
@@ -2181,7 +2182,7 @@ def work_report_edit(request, report_id):
         return redirect('core:work_reports')
 
     # GET — pre-populate form
-    locations = Location.objects.filter(active=True).order_by('order')
+    locations = Patch.objects.filter(type=Patch.TYPE_LOCATION, active=True).order_by('order')
     work_categories = WorkCategory.objects.filter(active=True).order_by('order')
     info_sources = InfoSource.objects.filter(active=True).order_by('order')
     fault_categories = FaultCategory.objects.filter(active=True).prefetch_related(
