@@ -20,7 +20,7 @@ def notifications(request):
                 'id': reg.id,
                 'title': f'新注册申请: {reg.full_name}',
                 'description': f'{reg.get_requested_role_display()} - {reg.phone}',
-                'url': '/registration-approval/',
+                'url': '/user-management/?tab=approval',
                 'created_at': reg.created_at,
             })
 

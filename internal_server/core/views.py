@@ -10,6 +10,81 @@ from django.utils import timezone
 from core.models import Zone
 
 
+def _build_grouped_zones(zones_qs=None):
+    """Build Patch→Zone grouped structure for template rendering.
+
+    Groups zones by their Patch FK, or by deriving the group from the zone
+    code prefix (e.g. "3-2-1" → site "3 Tomorrowland"). Returns a list of
+    dicts: {id, name, code, type, zone_count, zones: [{id, name, code, ...}]}
+    Includes an 'orphan' group for unmatched zones.
+    """
+    import re
+    from core.models import Patch
+
+    if zones_qs is None:
+        zones_qs = Zone.objects.all().order_by('code')
+
+    # Build a lookup: numeric prefix → site Patch
+    site_patches = {}
+    for p in Patch.objects.filter(type=Patch.TYPE_SITE):
+        m = re.match(r'^(\d+)\s', p.name)
+        if m:
+            site_patches[m.group(1)] = p
+
+    zones_data = []
+    for z in zones_qs:
+        # Use FK if set, otherwise derive from code prefix
+        patch_name = z.patch.name if z.patch else None
+        patch_id = z.patch_id
+        if not patch_name:
+            prefix = z.code.split('-')[0] if '-' in z.code else z.code
+            sp = site_patches.get(prefix)
+            if sp:
+                patch_name = sp.name
+                patch_id = sp.id
+
+        zones_data.append({
+            'id': z.id,
+            'name': z.name,
+            'code': z.code,
+            'description': z.description or '',
+            'patch_id': patch_id,
+            'patch_name': patch_name,
+            'boundary_points': z.boundary_points,
+            'boundary_color': z.boundary_color,
+        })
+
+    # Group by patch_name
+    groups = {}
+    orphans = []
+    for z in zones_data:
+        pn = z['patch_name']
+        if pn:
+            groups.setdefault(pn, []).append(z)
+        else:
+            orphans.append(z)
+
+    grouped = []
+    for name, zones in sorted(groups.items()):
+        grouped.append({
+            'type': 'patch',
+            'id': zones[0]['patch_id'],
+            'name': name,
+            'zones': zones,
+            'zone_count': len(zones),
+        })
+
+    if orphans:
+        grouped.append({
+            'type': 'orphan',
+            'name': '未分配片区',
+            'zones': orphans,
+            'zone_count': len(orphans),
+        })
+
+    return grouped
+
+
 def _get_reference_map_data(exclude_zone_id=None, exclude_pipeline_id=None):
     """Build JSON data for rendering existing zones and pipelines as reference layers on edit maps."""
     from core.models import Pipeline
@@ -331,6 +406,15 @@ def dashboard(request):
         )
     )
 
+    # Build site prefix lookup for deriving patch from zone code
+    from core.models import Patch as _Patch
+    import re as _re
+    _site_prefix_map = {}
+    for _p in _Patch.objects.filter(type=_Patch.TYPE_SITE):
+        _m = _re.match(r'^(\d+)\s', _p.name)
+        if _m:
+            _site_prefix_map[_m.group(1)] = _p
+
     # Recent fault count (last 30 days)
     thirty_days_ago = today - timedelta(days=30)
     from django.db.models import Sum
@@ -401,10 +485,10 @@ def dashboard(request):
             'recent_fault_count': recent_fault_count,
             'center': center,
             'pending_requests': pending_requests,
-            # Patch info
-            'patch_id': zone.patch.id if zone.patch else None,
-            'patch_name': zone.patch.name if zone.patch else None,
-            'patch_code': zone.patch.code if zone.patch else None,
+            # Patch info (use FK, or derive from zone code prefix)
+            'patch_id': (zone.patch.id if zone.patch else None) or (_site_prefix_map.get(zone.code.split('-')[0]).id if zone.code.split('-')[0] in _site_prefix_map else None),
+            'patch_name': (zone.patch.name if zone.patch else None) or (_site_prefix_map[zone.code.split('-')[0]].name if zone.code.split('-')[0] in _site_prefix_map else None),
+            'patch_code': (zone.patch.code if zone.patch else None) or (_site_prefix_map[zone.code.split('-')[0]].code if zone.code.split('-')[0] in _site_prefix_map else None),
             # Detailed info for cards
             'maintenance_count': maintenance_count,
             'water_count': water_count,
@@ -549,7 +633,7 @@ def settings_page(request):
     """
     Settings page to manage zones and system configuration - admin only.
     """
-    from .models import ManagerProfile, Pipeline
+    from .models import ManagerProfile, Pipeline, Patch
 
     # Check admin permission
     is_admin = request.user.is_superuser or request.user.is_staff
@@ -566,11 +650,30 @@ def settings_page(request):
 
     zones = Zone.objects.all().order_by('code')
     pipelines = Pipeline.objects.all().order_by('code')
+    # Only show site-type patches as 片区 in the UI
+    site_patches = Patch.objects.filter(type=Patch.TYPE_SITE).order_by('code')
+
+    # Precompute zone counts per patch (FK + derived from code prefix)
+    grouped_zones_data = _build_grouped_zones(zones)
+    patch_zone_counts = {}
+    for group in grouped_zones_data:
+        pid = group.get('id')
+        if pid:
+            patch_zone_counts[pid] = group['zone_count']
+
+    # Precompute linked patch counts (children via parent FK)
+    child_counts = {}
+    for p in site_patches:
+        child_counts[p.id] = p.children.count()
 
     context = {
         'zones': zones,
+        'grouped_zones': grouped_zones_data,
         'status_choices': Zone.STATUS_CHOICES,
         'pipelines': pipelines,
+        'site_patches': site_patches,
+        'patch_zone_counts': patch_zone_counts,
+        'child_counts': child_counts,
     }
 
     return render(request, 'core/settings.html', context)
@@ -683,10 +786,22 @@ def zone_edit(request, zone_id):
     # Get all patches for selection
     patches = Patch.objects.all()
 
+    # Derive patch from zone code prefix if FK is not set
+    derived_patch_id = None
+    if not zone.patch:
+        import re as _re
+        prefix = zone.code.split('-')[0]
+        for _p in Patch.objects.filter(type=Patch.TYPE_SITE):
+            _m = _re.match(r'^(\d+)\s', _p.name)
+            if _m and _m.group(1) == prefix:
+                derived_patch_id = _p.id
+                break
+
     ref_zones_json, ref_pipelines_json = _get_reference_map_data(exclude_zone_id=zone.id)
 
     context = {
         'zone': zone,
+        'derived_patch_id': derived_patch_id,
         'boundary_json': json.dumps(zone.boundary_points),
         'available_plants': available_plants,
         'zone_equipments': zone_equipments,
@@ -957,10 +1072,12 @@ def pipeline_new(request):
 
     ref_zones_json, ref_pipelines_json = _get_reference_map_data()
 
+    zones = Zone.objects.all().order_by('code')
     context = {
         'pipeline': None,
         'line_json': '[]',
-        'zones': Zone.objects.all().order_by('code'),
+        'zones': zones,
+        'grouped_zones': _build_grouped_zones(zones),
         'ref_zones_json': ref_zones_json,
         'ref_pipelines_json': ref_pipelines_json,
     }
@@ -1012,10 +1129,12 @@ def pipeline_edit(request, pipeline_id):
 
     ref_zones_json, ref_pipelines_json = _get_reference_map_data(exclude_pipeline_id=pipeline.id)
 
+    zones = Zone.objects.all().order_by('code')
     context = {
         'pipeline': pipeline,
         'line_json': json.dumps(pipeline.line_points),
-        'zones': Zone.objects.all().order_by('code'),
+        'zones': zones,
+        'grouped_zones': _build_grouped_zones(zones),
         'selected_zone_ids': list(pipeline.zones.values_list('id', flat=True)),
         'ref_zones_json': ref_zones_json,
         'ref_pipelines_json': ref_pipelines_json,
@@ -1044,6 +1163,197 @@ def pipeline_delete(request, pipeline_id):
     pipeline_name = pipeline.name
     pipeline.delete()
     messages.success(request, f'水管 "{pipeline_name}" 删除成功')
+    return redirect('core:settings')
+
+
+@login_required(login_url='core:login')
+def patch_new(request):
+    """Create a new patch — admin only."""
+    from .models import ManagerProfile, Patch
+
+    is_admin = request.user.is_superuser or request.user.is_staff
+    if not is_admin:
+        try:
+            ManagerProfile.objects.get(user=request.user, active=True)
+            is_admin = True
+        except ManagerProfile.DoesNotExist:
+            pass
+
+    if not is_admin:
+        messages.error(request, '无权限创建片区')
+        return redirect('core:dashboard')
+
+    if request.method == 'POST':
+        name = request.POST.get('name', '').strip()
+        code = request.POST.get('code', '').strip()
+        p_type = request.POST.get('type', Patch.TYPE_SITE)
+        description = request.POST.get('description', '').strip()
+
+        if not name:
+            messages.error(request, '片区名称不能为空')
+        elif not code:
+            messages.error(request, '片区编号不能为空')
+        elif Patch.objects.filter(name=name).exists():
+            messages.error(request, f'片区名称 "{name}" 已存在')
+        elif Patch.objects.filter(code=code).exists():
+            messages.error(request, f'片区编号 "{code}" 已存在')
+        else:
+            Patch.objects.create(name=name, code=code, type=Patch.TYPE_SITE, description=description)
+            messages.success(request, f'片区 "{name}" 创建成功')
+            return redirect('core:settings')
+
+    return render(request, 'core/patch_form.html', {
+        'mode': 'new',
+    })
+
+
+@login_required(login_url='core:login')
+def patch_edit(request, patch_id):
+    """Edit a patch with zone assignment — admin only."""
+    from .models import ManagerProfile, Patch
+
+    is_admin = request.user.is_superuser or request.user.is_staff
+    if not is_admin:
+        try:
+            ManagerProfile.objects.get(user=request.user, active=True)
+            is_admin = True
+        except ManagerProfile.DoesNotExist:
+            pass
+
+    if not is_admin:
+        messages.error(request, '无权限编辑片区')
+        return redirect('core:dashboard')
+
+    patch = get_object_or_404(Patch, pk=patch_id)
+
+    # Fields that propagate from 片区 to linked child patches
+    PROPAGATE_FIELDS = [
+        'description', 'active', 'time_zone', 'water_pricing',
+        'et_current', 'et_default', 'et_minimum', 'et_maximum',
+        'crop_coefficient', 'rain_shutdown', 'date_open', 'date_close',
+    ]
+
+    if request.method == 'POST':
+        name = request.POST.get('name', '').strip()
+        code = request.POST.get('code', '').strip()
+        description = request.POST.get('description', '').strip()
+
+        # Validate uniqueness excluding self
+        errors = []
+        if not name:
+            errors.append('片区名称不能为空')
+        elif not code:
+            errors.append('片区编号不能为空')
+        elif Patch.objects.filter(name=name).exclude(pk=patch.pk).exists():
+            errors.append(f'片区名称 "{name}" 已存在')
+        elif Patch.objects.filter(code=code).exclude(pk=patch.pk).exists():
+            errors.append(f'片区编号 "{code}" 已存在')
+
+        if errors:
+            for err in errors:
+                messages.error(request, err)
+        else:
+            patch.name = name
+            patch.code = code
+            patch.description = description
+            patch.active = request.POST.get('active') is not None
+            patch.time_zone = request.POST.get('time_zone', 'China')
+            patch.water_pricing = request.POST.get('water_pricing') or None
+            patch.et_current = request.POST.get('et_current') or None
+            patch.et_default = request.POST.get('et_default') or None
+            patch.et_minimum = request.POST.get('et_minimum') or None
+            patch.et_maximum = request.POST.get('et_maximum') or None
+            patch.crop_coefficient = request.POST.get('crop_coefficient') or None
+            patch.rain_shutdown = request.POST.get('rain_shutdown') is not None
+            patch.date_open = request.POST.get('date_open', '')
+            patch.date_close = request.POST.get('date_close', '')
+            patch.save()
+
+            # Handle zone assignment
+            all_zone_ids = request.POST.getlist('zones')
+            Zone.objects.filter(patch=patch).exclude(id__in=all_zone_ids).update(patch=None)
+            Zone.objects.filter(id__in=all_zone_ids, patch__isnull=True).update(patch=patch)
+            Zone.objects.filter(id__in=all_zone_ids).exclude(patch=patch).update(patch=patch)
+
+            # Handle linked patch assignment (location/zone_text only, stations managed by sync)
+            linked_ids = request.POST.getlist('linked_patches')
+            # Clear parent for children that were linked but are now unchecked
+            Patch.objects.filter(parent=patch).exclude(
+                type=Patch.TYPE_STATION
+            ).exclude(id__in=linked_ids).update(parent=None)
+            # Set parent for newly checked patches
+            Patch.objects.filter(id__in=linked_ids).update(parent=patch)
+
+            # Propagate shared fields to all children
+            children = patch.children.all()
+            if children:
+                update_kwargs = {}
+                for f in PROPAGATE_FIELDS:
+                    update_kwargs[f] = getattr(patch, f)
+                children.update(**update_kwargs)
+
+            messages.success(request, f'片区 "{name}" 已更新')
+            return redirect('core:settings')
+
+    # Build grouped zones for the zone picker
+    all_zones = Zone.objects.all().order_by('code')
+    grouped_zones = _build_grouped_zones(all_zones)
+
+    # IDs of zones assigned to this patch (FK + derived from code prefix)
+    selected_zone_ids = set()
+    for group in grouped_zones:
+        for z in group['zones']:
+            if z['patch_id'] == patch.id:
+                selected_zone_ids.add(z['id'])
+
+    # Linked patches (children via parent FK), grouped by type
+    linked_patch_ids = set(patch.children.values_list('id', flat=True))
+    linkable = Patch.objects.exclude(type__in=[Patch.TYPE_SITE, Patch.TYPE_PATCH]).order_by('type', 'code')
+    linked_groups = []
+    for ptype, plabel in Patch.TYPE_CHOICES:
+        if ptype == Patch.TYPE_SITE:
+            continue
+        items = linkable.filter(type=ptype)
+        if items.exists():
+            linked_groups.append({
+                'type': ptype,
+                'label': plabel,
+                'patches': items,
+                'is_sync_managed': ptype == Patch.TYPE_STATION,
+            })
+
+    return render(request, 'core/patch_form.html', {
+        'mode': 'edit',
+        'patch': patch,
+        'grouped_zones': grouped_zones,
+        'selected_zone_ids': selected_zone_ids,
+        'linked_patch_ids': linked_patch_ids,
+        'linked_groups': linked_groups,
+    })
+
+
+@login_required(login_url='core:login')
+@require_POST
+def patch_delete(request, patch_id):
+    """Delete a patch — admin only. Zones are SET_NULL, not deleted."""
+    from .models import ManagerProfile, Patch
+
+    is_admin = request.user.is_superuser or request.user.is_staff
+    if not is_admin:
+        try:
+            ManagerProfile.objects.get(user=request.user, active=True)
+            is_admin = True
+        except ManagerProfile.DoesNotExist:
+            pass
+
+    if not is_admin:
+        messages.error(request, '无权限删除片区')
+        return redirect('core:dashboard')
+
+    patch = get_object_or_404(Patch, pk=patch_id)
+    patch_name = patch.name
+    patch.delete()
+    messages.success(request, f'片区 "{patch_name}" 已删除')
     return redirect('core:settings')
 
 
@@ -1249,6 +1559,7 @@ def request_detail(request, type_code, request_id):
                 'work_content': req.work_content,
                 'materials': req.materials,
                 'feedback': req.feedback,
+                'photos': req.photos or [],
             }
         elif type_code == 'project_support':
             req = ProjectSupportRequest.objects.select_related('zone', 'submitter', 'approver').get(pk=request_id)
@@ -1261,6 +1572,7 @@ def request_detail(request, type_code, request_id):
                 'work_content': req.work_content,
                 'materials': req.materials,
                 'feedback': req.feedback,
+                'photos': req.photos or [],
             }
         elif type_code == 'water':
             req = WaterRequest.objects.select_related('zone', 'submitter', 'approver').get(pk=request_id)
@@ -1272,6 +1584,7 @@ def request_detail(request, type_code, request_id):
                 'request_type_other': req.request_type_other,
                 'start_datetime': req.start_datetime,
                 'end_datetime': req.end_datetime,
+                'photos': req.photos or [],
             }
         else:
             raise ValueError('Invalid type')
@@ -1593,6 +1906,232 @@ def registration_approval(request):
     }
 
     return render(request, 'core/registration_approval.html', context)
+
+
+@login_required(login_url='core:login')
+def user_management(request):
+    """
+    User management page with two tabs: User List and Registration Approval.
+    """
+    from django.contrib.auth.models import User
+    from core.models import (
+        RegistrationRequest, ManagerProfile, DepartmentUserProfile, Worker,
+        ROLE_MANAGER, ROLE_FIELD_WORKER, ROLE_DEPT_USER,
+        ROLE_SUPER_ADMIN
+    )
+    from core.role_utils import is_admin
+
+    if not is_admin(request.user):
+        messages.error(request, '无权限访问此页面')
+        return redirect('core:dashboard')
+
+    # Handle POST actions (registration approval/rejection)
+    if request.method == 'POST':
+        request_id = request.POST.get('request_id')
+        action = request.POST.get('action')
+        reason = request.POST.get('reason', '')
+
+        try:
+            reg = RegistrationRequest.objects.get(pk=request_id, status='pending')
+
+            if action == 'approve':
+                username = reg.username
+                password = reg.password
+
+                if reg.requested_role == ROLE_MANAGER:
+                    prefix = 'ADM'
+                    model_class = ManagerProfile
+                elif reg.requested_role == ROLE_DEPT_USER:
+                    prefix = 'DEPT'
+                    model_class = DepartmentUserProfile
+                else:
+                    prefix = 'EMP'
+                    model_class = Worker
+
+                if reg.employee_id:
+                    employee_id = reg.employee_id
+                else:
+                    max_num = 0
+                    for profile in model_class.objects.all():
+                        eid = profile.employee_id or ''
+                        if eid.startswith(prefix):
+                            try:
+                                num = int(eid[len(prefix):])
+                                if num > max_num:
+                                    max_num = num
+                            except ValueError:
+                                continue
+                    next_num = max_num + 1
+                    employee_id = f'{prefix}{next_num:03d}'
+
+                user = User.objects.create(
+                    username=username,
+                    password=password,
+                    first_name=reg.full_name,
+                )
+
+                if reg.requested_role == ROLE_MANAGER:
+                    ManagerProfile.objects.create(
+                        user=user, employee_id=employee_id,
+                        full_name=reg.full_name, phone=reg.phone,
+                        is_super_admin=False,
+                        can_approve_registrations=True,
+                        can_approve_work_orders=True,
+                    )
+                elif reg.requested_role == ROLE_DEPT_USER:
+                    DepartmentUserProfile.objects.create(
+                        user=user, employee_id=employee_id,
+                        full_name=reg.full_name, phone=reg.phone,
+                        department=reg.department or 'ENT',
+                        department_other=reg.department_other if reg.department == '其他' else '',
+                    )
+                else:
+                    Worker.objects.create(
+                        user=user, employee_id=employee_id,
+                        full_name=reg.full_name, phone=reg.phone,
+                        department=reg.department or '',
+                        department_other=reg.department_other if reg.department == '其他' else '',
+                    )
+
+                reg.status = 'approved'
+                reg.employee_id = employee_id
+                reg.processed_at = timezone.now()
+                reg.created_user = user
+                reg.save()
+                messages.success(request, f'已批准 {reg.full_name} 的注册申请，用户名：{username}，工号：{employee_id}')
+
+            elif action == 'reject':
+                reg.status = 'rejected'
+                reg.status_notes = reason
+                reg.processed_at = timezone.now()
+                reg.save()
+                messages.success(request, f'已拒绝 {reg.full_name} 的注册申请')
+
+        except RegistrationRequest.DoesNotExist:
+            messages.error(request, '注册申请不存在')
+
+        return redirect('/user-management/?tab=approval')
+
+    # GET request
+    active_tab = request.GET.get('tab', 'users')
+    filter_status = request.GET.get('filter', 'pending')
+
+    # Build user list
+    users_list = []
+
+    for mp in ManagerProfile.objects.select_related('user').all():
+        users_list.append({
+            'profile_type': 'manager',
+            'profile_id': mp.id,
+            'user_id': mp.user.id if mp.user else None,
+            'username': mp.user.username if mp.user else '-',
+            'full_name': mp.full_name,
+            'employee_id': mp.employee_id,
+            'phone': mp.phone,
+            'department': '',
+            'role': ROLE_SUPER_ADMIN if mp.is_super_admin else ROLE_MANAGER,
+            'role_display': '超级管理员' if mp.is_super_admin else '管理员',
+            'active': mp.active,
+        })
+
+    for dup in DepartmentUserProfile.objects.select_related('user').all():
+        users_list.append({
+            'profile_type': 'dept_user',
+            'profile_id': dup.id,
+            'user_id': dup.user.id if dup.user else None,
+            'username': dup.user.username if dup.user else '-',
+            'full_name': dup.full_name,
+            'employee_id': dup.employee_id,
+            'phone': dup.phone,
+            'department': dup.get_department_display_name() if hasattr(dup, 'get_department_display_name') else (dup.department_other or dup.department),
+            'role': ROLE_DEPT_USER,
+            'role_display': '部门用户',
+            'active': dup.active,
+        })
+
+    for w in Worker.objects.select_related('user').all():
+        users_list.append({
+            'profile_type': 'worker',
+            'profile_id': w.id,
+            'user_id': w.user.id if w.user else None,
+            'username': w.user.username if w.user else '-',
+            'full_name': w.full_name,
+            'employee_id': w.employee_id,
+            'phone': w.phone,
+            'department': w.get_department_display_name() if hasattr(w, 'get_department_display_name') else (w.department_other or w.department),
+            'role': ROLE_FIELD_WORKER,
+            'role_display': '现场工作人员',
+            'active': w.active,
+        })
+
+    users_list.sort(key=lambda x: x['full_name'])
+
+    # Registration approval data
+    if filter_status == 'all':
+        requests_qs = RegistrationRequest.objects.all()
+    else:
+        requests_qs = RegistrationRequest.objects.filter(status=filter_status)
+    requests_qs = requests_qs.order_by('-created_at')
+
+    stats = {
+        'pending': RegistrationRequest.objects.filter(status='pending').count(),
+        'approved': RegistrationRequest.objects.filter(status='approved').count(),
+        'rejected': RegistrationRequest.objects.filter(status='rejected').count(),
+    }
+
+    context = {
+        'active_tab': active_tab,
+        'filter': filter_status,
+        'users_list': users_list,
+        'total_users': len(users_list),
+        'active_users': sum(1 for u in users_list if u['active']),
+        'inactive_users': sum(1 for u in users_list if not u['active']),
+        'requests': requests_qs,
+        'stats': stats,
+    }
+
+    return render(request, 'core/user_management.html', context)
+
+
+@login_required(login_url='core:login')
+def user_edit(request, profile_type, profile_id):
+    """Edit user profile via AJAX."""
+    from core.role_utils import is_admin
+    from core.models import ManagerProfile, DepartmentUserProfile, Worker
+
+    if not is_admin(request.user):
+        return JsonResponse({'error': '无权限'}, status=403)
+
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Method not allowed'}, status=405)
+
+    model_map = {
+        'manager': ManagerProfile,
+        'dept_user': DepartmentUserProfile,
+        'worker': Worker,
+    }
+    model_class = model_map.get(profile_type)
+    if not model_class:
+        return JsonResponse({'error': 'Invalid profile type'}, status=400)
+
+    profile = get_object_or_404(model_class, pk=profile_id)
+
+    if 'full_name' in request.POST:
+        profile.full_name = request.POST['full_name']
+    if 'phone' in request.POST:
+        profile.phone = request.POST['phone']
+    if 'active' in request.POST:
+        profile.active = request.POST['active'] in ('true', '1', 'True')
+    if profile_type in ('worker', 'dept_user') and 'department' in request.POST:
+        dept = request.POST['department']
+        profile.department = dept
+        if dept == '其他' and 'department_other' in request.POST:
+            profile.department_other = request.POST['department_other']
+        else:
+            profile.department_other = ''
+
+    profile.save()
+    return JsonResponse({'success': True, 'message': f'已更新 {profile.full_name}'})
 
 
 @login_required(login_url='core:login')
@@ -2124,6 +2663,7 @@ def work_report_create(request):
         'info_sources': info_sources,
         'fault_categories': fault_categories,
         'zones': zones,
+        'grouped_zones': _build_grouped_zones(zones),
         'zone_equipment_json': json.dumps(zone_equipment_map),
         'fault_categories_json': json.dumps([
             {'id': c.id, 'name_zh': c.name_zh, 'name_en': c.name_en,
@@ -2219,6 +2759,7 @@ def work_report_edit(request, report_id):
         'info_sources': info_sources,
         'fault_categories': fault_categories,
         'zones': zones,
+        'grouped_zones': _build_grouped_zones(zones),
         'zone_equipment_json': json.dumps(zone_equipment_map),
         'fault_categories_json': json.dumps([
             {'id': c.id, 'name_zh': c.name_zh, 'name_en': c.name_en,
