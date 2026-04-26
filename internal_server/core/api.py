@@ -821,7 +821,7 @@ class WorkReportFaultSerializer(serializers.ModelSerializer):
 class WorkReportSerializer(serializers.ModelSerializer):
     fault_entries = WorkReportFaultSerializer(many=True, required=False)
     worker_name = serializers.CharField(source='worker.full_name', read_only=True)
-    patch = serializers.IntegerField(write_only=True, required=False)
+    patch = serializers.IntegerField(write_only=True, required=True, source='location_id')
     location_name = serializers.CharField(source='location.name', read_only=True, default=None)
     work_category_name = serializers.CharField(source='work_category.name', read_only=True, default=None)
     info_source_name = serializers.CharField(source='info_source.name', read_only=True, default=None)
@@ -834,11 +834,11 @@ class WorkReportSerializer(serializers.ModelSerializer):
         model = WorkReport
         fields = [
             'id', 'date', 'weather', 'worker', 'worker_name',
-            'location', 'location_name', 'work_category', 'work_category_name',
+            'patch', 'location_name', 'work_category', 'work_category_name',
             'zone_location', 'zone_location_code', 'zone_location_display',
             'remark', 'info_source', 'info_source_name',
             'is_difficult', 'is_difficult_resolved',
-            'patch', 'fault_entries', 'total_faults', 'photos', 'photo_urls',
+            'fault_entries', 'total_faults', 'photos', 'photo_urls',
             'created_at', 'updated_at',
         ]
         read_only_fields = ['created_at', 'updated_at']
@@ -873,9 +873,6 @@ class WorkReportSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         fault_data = validated_data.pop('fault_entries', [])
         zone = validated_data.pop('zone_location_code', None)
-        patch_id = validated_data.pop('patch', None)
-        if patch_id is not None:
-            validated_data['location_id'] = patch_id
         if zone:
             validated_data['zone_location'] = zone
         report = WorkReport.objects.create(**validated_data)
@@ -886,9 +883,6 @@ class WorkReportSerializer(serializers.ModelSerializer):
     def update(self, instance, validated_data):
         fault_data = validated_data.pop('fault_entries', None)
         zone = validated_data.pop('zone_location_code', None)
-        patch_id = validated_data.pop('patch', None)
-        if patch_id is not None:
-            validated_data['location_id'] = patch_id
         if zone:
             validated_data['zone_location'] = zone
         for attr, value in validated_data.items():

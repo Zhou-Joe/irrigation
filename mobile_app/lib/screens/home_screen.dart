@@ -78,17 +78,13 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     if (_isLoadingWeather) return;
     setState(() => _isLoadingWeather = true);
 
-    try {
-      final api = context.read<AuthProvider>().api;
-      final weather = await api.getWeather();
-      if (mounted) {
-        setState(() {
-          _weatherResponse = weather;
-          _isLoadingWeather = false;
-        });
-      }
-    } catch (e) {
-      if (mounted) setState(() => _isLoadingWeather = false);
+    final api = context.read<AuthProvider>().api;
+    final weather = await api.getWeather();
+    if (mounted) {
+      setState(() {
+        _weatherResponse = weather;
+        _isLoadingWeather = false;
+      });
     }
   }
 
