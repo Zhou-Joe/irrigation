@@ -884,16 +884,23 @@ class ApiService {
 
   /// Get weather data
   /// Returns a map with 'currentHour', 'date', and 'data' keys.
-  Future<Map<String, dynamic>> getWeather() async {
-    final response = await _client.get(
-      Uri.parse('$baseUrl/weather'),
-      headers: _headers,
-    );
+  Future<Map<String, dynamic>?> getWeather() async {
+    try {
+      final response = await _client.get(
+        Uri.parse('$baseUrl/weather'),
+        headers: _headers,
+      );
 
-    if (response.statusCode == 200) {
-      return jsonDecode(response.body) as Map<String, dynamic>;
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data is Map<String, dynamic>) {
+          return data;
+        }
+      }
+    } catch (e) {
+      // Silently fail — weather is optional
     }
-    throw Exception('获取天气失败');
+    return null;
   }
 
   /// Get pipelines list
