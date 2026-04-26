@@ -1,0 +1,8 @@
+{
+  "server_url": "http://localhost:8000",
+  "api_key": "dev-sync-key-change-in-production",
+  "mdb_path": "/Users/chen/development/maxicom/Database/Maxicom2.mdb",
+  "mdb_password": "RLM6808",
+  "sync_interval_minutes": 5,
+  "overlap_buffer_minutes": 2
+}

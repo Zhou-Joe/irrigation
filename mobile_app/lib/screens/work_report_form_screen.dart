@@ -14,11 +14,17 @@ import '../widgets/modern_ui.dart';
 class WorkReportFormScreen extends StatefulWidget {
   final Map<String, dynamic>? existingReport;
   final String? initialZoneCode;
+  final int? initialPatchId;
+  final String? initialPatchName;
+  final String? initialPatchCode;
 
   const WorkReportFormScreen({
     super.key,
     this.existingReport,
     this.initialZoneCode,
+    this.initialPatchId,
+    this.initialPatchName,
+    this.initialPatchCode,
   });
 
   @override
@@ -59,6 +65,7 @@ class _WorkReportFormScreenState extends State<WorkReportFormScreen> {
   // Photos
   final List<XFile> _selectedPhotos = [];
   List<String> _existingPhotoUrls = [];
+  List<String> _removedExistingPhotos = []; // Track photos removed from existing ones
   final ImagePicker _imagePicker = ImagePicker();
 
   // Zone picker data
@@ -166,6 +173,16 @@ class _WorkReportFormScreenState extends State<WorkReportFormScreen> {
           if (match != null) _selectedZone = match;
         }
 
+        // Auto-select location (分区) from patch
+        if (!_isEditing && widget.initialPatchId != null) {
+          final matchedLocation = _locations
+              .where((loc) => loc['id'] == widget.initialPatchId)
+              .firstOrNull;
+          if (matchedLocation != null) {
+            _selectedLocation = matchedLocation['id'];
+          }
+        }
+
         // Build subtype info cache
         for (var cat in _faultCategories) {
           final catName = cat['name_zh'] ?? '';
@@ -247,7 +264,7 @@ class _WorkReportFormScreenState extends State<WorkReportFormScreen> {
     if (_selectedLocation == null) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('请选择位置/CCU')));
+      ).showSnackBar(const SnackBar(content: Text('请选择分区')));
       return;
     }
     if (_selectedWorkCategory == null) {
@@ -258,12 +275,6 @@ class _WorkReportFormScreenState extends State<WorkReportFormScreen> {
     }
 
     final faultEntries = _getFaultEntries();
-    if (faultEntries.isEmpty) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('请至少填写一个故障计数')));
-      return;
-    }
 
     setState(() => _isSaving = true);
 
@@ -297,6 +308,15 @@ class _WorkReportFormScreenState extends State<WorkReportFormScreen> {
           isDifficultResolved: params.isDifficultResolved,
           faultEntries: params.faultEntries,
         );
+        // Remove deleted photos
+        for (final photoPath in _removedExistingPhotos) {
+          try {
+            await api.removeWorkReportPhoto(
+              reportId: widget.existingReport!['id'],
+              photoPath: photoPath,
+            );
+          } catch (_) {}
+        }
         // Upload new photos
         if (_selectedPhotos.isNotEmpty) {
           await api.uploadWorkReportPhotos(
@@ -646,21 +666,16 @@ class _WorkReportFormScreenState extends State<WorkReportFormScreen> {
                 child: ListView(
                   padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
                   children: [
-                    AppHeroCard(
-                      title: _isEditing ? '编辑维修工单' : '新建维修工单',
-                      subtitle: '把基础信息、故障计数和照片整理成更清晰的日报。',
-                      icon: Icons.assignment_turned_in_outlined,
-                    ),
-                    const SizedBox(height: 16),
                     AppCard(
+                      padding: const EdgeInsets.all(14),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           const AppSectionTitle(
                             title: '基本信息',
-                            subtitle: '先确认日期、位置、分类与工作内容',
+                            subtitle: '日期、位置、分类与工作内容',
                           ),
-                          const SizedBox(height: 12),
+                          const SizedBox(height: 8),
 
                           // Date + Weather
                           Row(
@@ -696,7 +711,7 @@ class _WorkReportFormScreenState extends State<WorkReportFormScreen> {
                               ),
                             ],
                           ),
-                          const SizedBox(height: 12),
+                          const SizedBox(height: 8),
 
                           // Location + Work Category
                           Row(
@@ -704,12 +719,17 @@ class _WorkReportFormScreenState extends State<WorkReportFormScreen> {
                               Expanded(
                                 child: DropdownButtonFormField<int>(
                                   value: _selectedLocation,
+                                  isDense: true,
                                   decoration: const InputDecoration(
-                                    labelText: '位置/CCU *',
+                                    labelText: '分区 *',
                                     border: OutlineInputBorder(),
                                     prefixIcon: Icon(
                                       Icons.location_on,
                                       size: 18,
+                                    ),
+                                    contentPadding: EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 8,
                                     ),
                                   ),
                                   items: _locations
@@ -753,7 +773,7 @@ class _WorkReportFormScreenState extends State<WorkReportFormScreen> {
                               ),
                             ],
                           ),
-                          const SizedBox(height: 12),
+                          const SizedBox(height: 8),
 
                           // Zone Location + Info Source
                           Row(
@@ -816,7 +836,7 @@ class _WorkReportFormScreenState extends State<WorkReportFormScreen> {
                               ),
                             ],
                           ),
-                          const SizedBox(height: 12),
+                          const SizedBox(height: 8),
 
                           // Remark
                           TextFormField(
@@ -826,7 +846,7 @@ class _WorkReportFormScreenState extends State<WorkReportFormScreen> {
                               border: OutlineInputBorder(),
                               prefixIcon: Icon(Icons.description, size: 18),
                             ),
-                            maxLines: 3,
+                            maxLines: 2,
                             validator: (v) =>
                                 v?.trim().isEmpty == true ? '请填写工作内容' : null,
                           ),
@@ -845,7 +865,7 @@ class _WorkReportFormScreenState extends State<WorkReportFormScreen> {
                                   }),
                                   title: const Text(
                                     '疑难问题',
-                                    style: TextStyle(fontSize: 14),
+                                    style: TextStyle(fontSize: 13),
                                   ),
                                   contentPadding: EdgeInsets.zero,
                                   controlAffinity:
@@ -864,7 +884,7 @@ class _WorkReportFormScreenState extends State<WorkReportFormScreen> {
                                       : null,
                                   title: const Text(
                                     '疑难已处理',
-                                    style: TextStyle(fontSize: 14),
+                                    style: TextStyle(fontSize: 13),
                                   ),
                                   contentPadding: EdgeInsets.zero,
                                   controlAffinity:
@@ -874,7 +894,7 @@ class _WorkReportFormScreenState extends State<WorkReportFormScreen> {
                               ),
                             ],
                           ),
-                          const SizedBox(height: 20),
+                          const SizedBox(height: 12),
 
                           // Fault counts section
                           _buildSectionTitle('故障计数'),
@@ -893,18 +913,18 @@ class _WorkReportFormScreenState extends State<WorkReportFormScreen> {
                             style: OutlinedButton.styleFrom(
                               foregroundColor: const Color(0xFF40916C),
                               side: const BorderSide(color: Color(0xFFB7E4C7)),
-                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              padding: const EdgeInsets.symmetric(vertical: 8),
                             ),
                           ),
 
-                          const SizedBox(height: 24),
+                          const SizedBox(height: 12),
 
                           // Photos section
                           _buildSectionTitle('照片'),
                           const SizedBox(height: 8),
                           _buildPhotoSection(),
 
-                          const SizedBox(height: 24),
+                          const SizedBox(height: 16),
 
                           // Submit button
                           FilledButton.icon(
@@ -922,7 +942,7 @@ class _WorkReportFormScreenState extends State<WorkReportFormScreen> {
                             label: Text(
                               _isSaving
                                   ? (_isEditing ? '保存中...' : '提交中...')
-                                  : (_isEditing ? '保存修改' : '创建日报'),
+                                  : (_isEditing ? '保存修改' : '创建工单'),
                             ),
                           ),
                         ],
@@ -1004,6 +1024,26 @@ class _WorkReportFormScreenState extends State<WorkReportFormScreen> {
               height: 80,
               color: Colors.grey.shade200,
               child: const Icon(Icons.broken_image, color: Colors.grey),
+            ),
+          ),
+        ),
+        Positioned(
+          top: -4,
+          right: -4,
+          child: GestureDetector(
+            onTap: () {
+              setState(() {
+                _existingPhotoUrls.remove(url);
+                _removedExistingPhotos.add(url);
+              });
+            },
+            child: Container(
+              padding: const EdgeInsets.all(2),
+              decoration: const BoxDecoration(
+                color: Colors.red,
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.close, size: 14, color: Colors.white),
             ),
           ),
         ),

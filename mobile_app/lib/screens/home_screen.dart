@@ -9,7 +9,6 @@ import '../providers/auth_provider.dart';
 import 'demand_list_screen.dart';
 import 'water_request_screen.dart';
 import 'request_detail_screen.dart';
-import 'request_status_screen.dart';
 import 'work_report_form_screen.dart';
 import 'work_report_list_screen.dart';
 import 'zone_detail_screen.dart';
@@ -174,39 +173,51 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     _flyToZone(zone);
   }
 
-  // Helper to extract flat list of LatLng from boundary points
-  List<LatLng> _extractPoints(List<dynamic> boundaryPoints) {
-    final List<LatLng> points = [];
+  // Helper to extract multiple closed-loop LatLng lists from boundary points.
+  // Handles: flat array of coords, or array-of-arrays where each inner array is a separate loop.
+  List<List<LatLng>> _extractBoundaryLoops(List<dynamic> boundaryPoints) {
+    if (boundaryPoints.isEmpty) return [];
+
+    // Detect structure by examining the first element
+    final first = boundaryPoints[0];
+    if (first is List && first.isNotEmpty && first[0] is num) {
+      // Flat structure — all coordinates form one single closed loop
+      final List<LatLng> points = [];
+      for (var item in boundaryPoints) {
+        if (item is List && item.length >= 2 && item[0] is num) {
+          points.add(LatLng((item[0] as num).toDouble(), (item[1] as num).toDouble()));
+        }
+      }
+      return points.isEmpty ? [] : [points];
+    }
+
+    // Nested structure — each top-level element may be a separate closed loop
+    final List<List<LatLng>> loops = [];
     for (var item in boundaryPoints) {
+      final List<LatLng> loop = [];
       if (item is List) {
-        if (item.isNotEmpty && item[0] is num) {
-          points.add(
-            LatLng((item[0] as num).toDouble(), (item[1] as num).toDouble()),
-          );
-        } else if (item.isNotEmpty) {
-          for (var sub in item) {
-            if (sub is List && sub.length >= 2 && sub[0] is num) {
-              points.add(
-                LatLng((sub[0] as num).toDouble(), (sub[1] as num).toDouble()),
-              );
-            } else if (sub is Map) {
-              final lat = sub['lat'];
-              final lng = sub['lng'];
-              if (lat is num && lng is num) {
-                points.add(LatLng(lat.toDouble(), lng.toDouble()));
-              }
+        for (var coord in item) {
+          if (coord is List && coord.length >= 2 && coord[0] is num) {
+            loop.add(LatLng((coord[0] as num).toDouble(), (coord[1] as num).toDouble()));
+          } else if (coord is Map) {
+            final lat = coord['lat'];
+            final lng = coord['lng'];
+            if (lat is num && lng is num) {
+              loop.add(LatLng(lat.toDouble(), lng.toDouble()));
             }
           }
         }
+        if (loop.isNotEmpty) loops.add(loop);
       } else if (item is Map) {
         final lat = item['lat'];
         final lng = item['lng'];
         if (lat is num && lng is num) {
-          points.add(LatLng(lat.toDouble(), lng.toDouble()));
+          loop.add(LatLng(lat.toDouble(), lng.toDouble()));
         }
+        if (loop.isNotEmpty) loops.add(loop);
       }
     }
-    return points;
+    return loops;
   }
 
   // Helper to extract LatLng list from pipeline line_points
@@ -240,11 +251,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     if (zone.center != null) {
       target = LatLng(zone.center!['lat']!, zone.center!['lng']!);
     } else if (zone.boundaryPoints.isNotEmpty) {
-      final points = _extractPoints(zone.boundaryPoints);
-      if (points.isNotEmpty) {
-        double sumLat = points.fold(0.0, (sum, p) => sum + p.latitude);
-        double sumLng = points.fold(0.0, (sum, p) => sum + p.longitude);
-        target = LatLng(sumLat / points.length, sumLng / points.length);
+      final loops = _extractBoundaryLoops(zone.boundaryPoints);
+      final allPoints = loops.expand((l) => l).toList();
+      if (allPoints.isNotEmpty) {
+        double sumLat = allPoints.fold(0.0, (sum, p) => sum + p.latitude);
+        double sumLng = allPoints.fold(0.0, (sum, p) => sum + p.longitude);
+        target = LatLng(sumLat / allPoints.length, sumLng / allPoints.length);
       }
     }
 
@@ -285,13 +297,15 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     for (final zone in _zones) {
       if (zone.boundaryPoints.isEmpty) continue;
 
-      final points = _extractPoints(zone.boundaryPoints);
+      final loops = _extractBoundaryLoops(zone.boundaryPoints);
 
-      if (points.isEmpty) continue;
+      for (final points in loops) {
+        if (points.isEmpty) continue;
 
-      if (_isPointInPolygon(point, points)) {
-        _selectZone(zone);
-        return;
+        if (_isPointInPolygon(point, points)) {
+          _selectZone(zone);
+          return;
+        }
       }
     }
 
@@ -341,69 +355,25 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
   void _goToWorkReport() {
     final zoneCode = _selectedZone?.code;
+    final zonePatchId = _selectedZone?.patchId;
+    final zonePatchName = _selectedZone?.patchName;
+    final zonePatchCode = _selectedZone?.patchCode;
     _popupAnimationController.reverse().then((_) {
       setState(() => _selectedZone = null);
     });
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => WorkReportFormScreen(initialZoneCode: zoneCode),
+        builder: (_) => WorkReportFormScreen(
+          initialZoneCode: zoneCode,
+          initialPatchId: zonePatchId,
+          initialPatchName: zonePatchName,
+          initialPatchCode: zonePatchCode,
+        ),
       ),
     ).then((result) {
       if (result == true) setState(() {});
     });
-  }
-
-  void _goToRequestStatus() {
-    final auth = context.read<AuthProvider>();
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => RequestStatusScreen(
-          isAdmin: auth.isAdmin,
-          isDeptUser: auth.isDeptUser,
-        ),
-      ),
-    );
-  }
-
-  void _goToWorkReportList() {
-    final auth = context.read<AuthProvider>();
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => WorkReportListScreen(isAdmin: auth.isAdmin),
-      ),
-    );
-  }
-
-  void _goToDemandList() {
-    final auth = context.read<AuthProvider>();
-    final user = auth.user;
-    if (user == null) return;
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => DemandListScreen(user: user, apiService: auth.api),
-      ),
-    );
-  }
-
-  void _goToSelectedZoneDetail() {
-    final zone = _selectedZone;
-    if (zone == null) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('先在地图上选择一个区域')));
-      return;
-    }
-
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => ZoneDetailScreen(zoneId: zone.id, zoneName: zone.name),
-      ),
-    );
   }
 
   void _focusCurrentLocation() {
@@ -420,24 +390,94 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     final isAdmin = auth.isAdmin;
 
     return Scaffold(
-      body: _currentIndex == 0
-          ? _buildMapTab()
-          : _currentIndex == 1
-          ? WorkReportListScreen(isAdmin: isAdmin)
-          : const SettingsScreen(),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _currentIndex,
-        onDestinationSelected: (index) => setState(() => _currentIndex = index),
-        destinations: [
-          const NavigationDestination(icon: Icon(Icons.map), label: '地图'),
-          const NavigationDestination(
-            icon: Icon(Icons.assignment),
-            label: '维修日志',
+      body: Stack(
+        children: [
+          IndexedStack(
+            index: _currentIndex,
+            children: [
+              _buildMapTab(),
+              WorkReportListScreen(isAdmin: isAdmin),
+              _buildDemandLogTab(auth),
+              const SettingsScreen(),
+            ],
           ),
-          const NavigationDestination(icon: Icon(Icons.settings), label: '设置'),
+          Positioned(left: 0, right: 0, bottom: 0, child: _buildFloatingBottomNav()),
         ],
       ),
     );
+  }
+
+  Widget _buildFloatingBottomNav() {
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.92),
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(color: AppColors.outline.withOpacity(0.3)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.08),
+                blurRadius: 16,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              _buildNavItem(0, Icons.map, '地图'),
+              _buildNavItem(1, Icons.assignment, '维修日志'),
+              _buildNavItem(2, Icons.event_note, '需求日志'),
+              _buildNavItem(3, Icons.settings, '设置'),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildNavItem(int index, IconData icon, String label) {
+    final isSelected = _currentIndex == index;
+    return Expanded(
+      child: InkWell(
+        onTap: () => setState(() => _currentIndex = index),
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          decoration: BoxDecoration(
+            color: isSelected ? const Color(0xFF52B788).withOpacity(0.12) : Colors.transparent,
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                icon,
+                size: 20,
+                color: isSelected ? const Color(0xFF2D6A4F) : const Color(0xFF607065),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                  color: isSelected ? const Color(0xFF1B4332) : const Color(0xFF607065),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDemandLogTab(AuthProvider auth) {
+    final user = auth.user;
+    if (user == null) return const Center(child: Text('未登录'));
+    return DemandListScreen(user: user, apiService: auth.api);
   }
 
   Widget _buildMapTab() {
@@ -465,10 +505,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             PolygonLayer(
               polygons: _zones
                   .where((z) => z.boundaryPoints.isNotEmpty)
-                  .map((zone) {
-                    final points = _extractPoints(zone.boundaryPoints);
-
-                    if (points.isEmpty) return null;
+                  .expand((zone) {
+                    final loops = _extractBoundaryLoops(zone.boundaryPoints);
+                    if (loops.isEmpty) return <Polygon>[];
 
                     // Use custom boundary color if set, otherwise use status color
                     Color color;
@@ -488,15 +527,14 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                     }
 
                     final isSelected = _selectedZone?.id == zone.id;
-                    return Polygon(
+                    return loops.map((points) => Polygon(
                       points: points,
                       color: (isSelected ? const Color(0xFFD4A574) : color)
                           .withOpacity(isSelected ? 0.4 : 0.25),
                       borderColor: isSelected ? const Color(0xFFD4A574) : color,
                       borderStrokeWidth: isSelected ? 3 : 2,
-                    );
+                    ));
                   })
-                  .whereType<Polygon>()
                   .toList(),
             ),
             // Zone text labels on map canvas
@@ -505,7 +543,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 return Marker(
                   point: LatLng(zone.center!['lat']!, zone.center!['lng']!),
                   width: 120,
-                  height: 24,
+                  height: 32,
                   child: Center(
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
@@ -513,17 +551,34 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                         color: Colors.black.withOpacity(0.35),
                         borderRadius: BorderRadius.circular(4),
                       ),
-                      child: Text(
-                        zone.name,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          shadows: [Shadow(color: Colors.black45, blurRadius: 3)],
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        textAlign: TextAlign.center,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            zone.name,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              shadows: [Shadow(color: Colors.black45, blurRadius: 3)],
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            textAlign: TextAlign.center,
+                          ),
+                          const SizedBox(height: 1),
+                          Text(
+                            zone.code,
+                            style: const TextStyle(
+                              color: Colors.white70,
+                              fontSize: 9,
+                              shadows: [Shadow(color: Colors.black45, blurRadius: 3)],
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            textAlign: TextAlign.center,
+                          ),
+                        ],
                       ),
                     ),
                   ),
@@ -622,9 +677,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           ],
         ),
 
-        Positioned(top: 0, left: 0, right: 0, child: _buildQuickActionBar(auth)),
-
-        _buildZoneDrawer(topOffset: 80),
+        _buildZoneDrawer(topOffset: 12),
 
         if (_isLoading)
           Container(
@@ -663,7 +716,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             ),
           ),
 
-        Positioned(right: 12, bottom: 20, child: _buildMapFloatingActions()),
+        Positioned(right: 12, bottom: 88, child: _buildMapFloatingActions(auth)),
 
         // Map attribution at bottom left
         Positioned(
@@ -688,80 +741,28 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     );
   }
 
-  Widget _buildQuickActionBar(AuthProvider auth) {
-    final isDeptUser = auth.isDeptUser;
-    final items = <_QuickActionItem>[];
-
-    if (!isDeptUser) {
-      items.add(_QuickActionItem(Icons.post_add_rounded, '新建工单', _goToWorkReport));
+  Widget _buildMapFloatingActions(AuthProvider auth) {
+    final children = <Widget>[];
+    if (!auth.isDeptUser) {
+      children.add(FloatingActionButton.small(
+        heroTag: 'map-new-work',
+        onPressed: _goToWorkReport,
+        child: const Icon(Icons.post_add_rounded),
+      ));
+      children.add(const SizedBox(height: 10));
     }
-    items.add(_QuickActionItem(
-      isDeptUser ? Icons.water_drop : Icons.assignment_outlined,
-      isDeptUser ? '浇水需求' : '维修日志',
-      isDeptUser ? _goToRequestStatus : _goToWorkReportList,
+    children.add(FloatingActionButton.small(
+      heroTag: 'map-refresh',
+      onPressed: _loadData,
+      child: const Icon(Icons.refresh_rounded),
     ));
-    items.add(_QuickActionItem(Icons.event_note_rounded, '需求日志', _goToDemandList));
-    items.add(_QuickActionItem(
-      Icons.place_outlined,
-      _selectedZone == null ? '选择区域' : _selectedZone!.name,
-      _goToSelectedZoneDetail,
+    children.add(const SizedBox(height: 10));
+    children.add(FloatingActionButton.small(
+      heroTag: 'map-location',
+      onPressed: _focusCurrentLocation,
+      child: const Icon(Icons.my_location_rounded),
     ));
-
-    return SafeArea(
-      child: Container(
-        margin: const EdgeInsets.fromLTRB(8, 8, 8, 0),
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-        decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.92),
-          borderRadius: BorderRadius.circular(12),
-          boxShadow: [
-            BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 8),
-          ],
-        ),
-        child: Row(
-          children: items.map((item) => Expanded(
-            child: InkWell(
-              onTap: item.onTap,
-              borderRadius: BorderRadius.circular(8),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 6),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(item.icon, size: 18, color: const Color(0xFF40916C)),
-                    const SizedBox(height: 3),
-                    Text(item.label,
-                      style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: Color(0xFF1B4332)),
-                      textAlign: TextAlign.center,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          )).toList(),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildMapFloatingActions() {
-    return Column(
-      children: [
-        FloatingActionButton.small(
-          heroTag: 'map-refresh',
-          onPressed: _loadData,
-          child: const Icon(Icons.refresh_rounded),
-        ),
-        const SizedBox(height: 10),
-        FloatingActionButton.small(
-          heroTag: 'map-location',
-          onPressed: _focusCurrentLocation,
-          child: const Icon(Icons.my_location_rounded),
-        ),
-      ],
-    );
+    return Column(children: children);
   }
 
   Widget _buildZonePopup(bool isDeptUser, bool isFieldWorker) {
@@ -895,19 +896,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 if (!isDeptUser) ...[
                   _buildPopupButton(
                     icon: Icons.assignment,
-                    label: '新建日报',
+                    label: '新建工单',
                     onTap: _goToWorkReport,
                     color: const Color(0xFF40916C),
                   ),
-                  const SizedBox(height: 6),
                 ],
-                // Water request - all roles can submit
-                _buildPopupButton(
-                  icon: Icons.water_drop,
-                  label: '浇水协调',
-                  onTap: _goToWaterRequest,
-                  color: const Color(0xFF2D6A4F),
-                ),
               ],
             ),
           ),
@@ -1006,14 +999,14 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 200),
           curve: Curves.easeOut,
-          width: 220,
+          width: 180,
           height: _isZoneDrawerExpanded
-              ? (MediaQuery.of(context).size.height - topOffset - 140).clamp(200.0, 450.0)
-              : 48,
+              ? (MediaQuery.of(context).size.height - topOffset - 140).clamp(200.0, 400.0)
+              : 38,
           margin: const EdgeInsets.all(12),
           decoration: BoxDecoration(
             color: Colors.white.withOpacity(0.92),
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(10),
             boxShadow: [
               BoxShadow(
                 color: Colors.black.withOpacity(0.1),
@@ -1022,7 +1015,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             ],
           ),
           child: ClipRRect(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(10),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -1031,15 +1024,15 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   onTap: () => setState(
                     () => _isZoneDrawerExpanded = !_isZoneDrawerExpanded,
                   ),
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(10),
                   child: Container(
-                    height: 48,
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    height: 38,
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
                     child: Row(
                       children: [
                         Icon(
                           Icons.map,
-                          size: 18,
+                          size: 16,
                           color: const Color(0xFF1B4332),
                         ),
                         const SizedBox(width: 6),
@@ -1048,7 +1041,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                             '区域 ${_zones.length}',
                             style: const TextStyle(
                               fontWeight: FontWeight.w600,
-                              fontSize: 13,
+                              fontSize: 12,
                               color: const Color(0xFF1B4332),
                             ),
                           ),
@@ -1068,8 +1061,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   // Search box
                   Container(
                     padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 8,
+                      horizontal: 12,
+                      vertical: 6,
                     ),
                     decoration: BoxDecoration(
                       border: Border(
@@ -1200,7 +1193,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             });
           },
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
             decoration: BoxDecoration(
               color: const Color(0xFF52B788).withOpacity(0.1),
               borderRadius: BorderRadius.circular(6),
@@ -1259,10 +1252,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       onTap: () => _selectZone(zone),
       child: Container(
         padding: const EdgeInsets.only(
-          left: 24,
-          right: 12,
-          top: 6,
-          bottom: 6,
+          left: 20,
+          right: 10,
+          top: 5,
+          bottom: 5,
         ), // Indented under patch
         decoration: BoxDecoration(
           color: isSelected ? const Color(0xFF52B788).withOpacity(0.15) : null,
@@ -1312,11 +1305,4 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       ),
     );
   }
-}
-
-class _QuickActionItem {
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-  const _QuickActionItem(this.icon, this.label, this.onTap);
 }

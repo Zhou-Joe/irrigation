@@ -6,6 +6,7 @@
 
 {% block extra_css %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <style>
 .cr-container {
     padding: var(--space-lg);
@@ -25,6 +26,67 @@
     font-size: 1.5rem;
     color: var(--color-primary);
     margin: 0;
+}
+
+/* Presentation Mode */
+body.presentation-mode .top-nav,
+body.presentation-mode .sidebar {
+    display: none !important;
+}
+body.presentation-mode .main-content {
+    margin-left: 0 !important;
+    padding: 0 !important;
+}
+body.presentation-mode .cr-header,
+body.presentation-mode .chart-builder {
+    display: none !important;
+}
+body.presentation-mode .charts-grid {
+    grid-template-columns: repeat(auto-fit, minmax(500px, 1fr)) !important;
+    gap: var(--space-xl) !important;
+    padding: var(--space-xl) !important;
+    background: #f5f5f5;
+    min-height: 100vh;
+}
+body.presentation-mode .chart-card {
+    border-radius: var(--radius-lg);
+    box-shadow: 0 4px 24px rgba(0,0,0,0.1);
+}
+body.presentation-mode .chart-card-actions {
+    display: none !important;
+}
+body.presentation-mode .chart-card-body {
+    min-height: 350px;
+}
+body.presentation-mode .chart-card-body canvas {
+    max-height: 500px;
+}
+.present-toggle-btn {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    z-index: 999;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: var(--color-primary);
+    color: white;
+    border: none;
+    cursor: pointer;
+    font-size: 1.2rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.2);
+    transition: transform 0.2s, background 0.2s;
+    opacity: 0.8;
+}
+.present-toggle-btn:hover {
+    opacity: 1;
+    transform: scale(1.1);
+}
+body.presentation-mode .present-toggle-btn {
+    background: var(--color-error);
 }
 
 /* Chart Builder */
@@ -166,6 +228,39 @@
     text-align: center;
 }
 
+/* Data Table */
+.cr-data-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+}
+.cr-data-table th {
+    background: var(--color-surface-dark);
+    padding: 8px 12px;
+    text-align: left;
+    font-weight: 600;
+    color: var(--color-primary);
+    border-bottom: 2px solid var(--color-text-muted);
+    position: sticky;
+    top: 0;
+}
+.cr-data-table th:last-child {
+    text-align: right;
+}
+.cr-data-table td {
+    padding: 6px 12px;
+    border-bottom: 1px solid var(--color-surface-dark);
+}
+.cr-data-table td:first-child {
+    font-weight: 500;
+}
+.cr-data-table td:last-child {
+    text-align: right;
+}
+.cr-data-table tbody tr:hover {
+    background: rgba(27, 67, 50, 0.04);
+}
+
 /* Empty State */
 .empty-state {
     text-align: center;
@@ -183,6 +278,14 @@
 <div class="cr-container">
     <div class="cr-header">
         <h1>自定义报表</h1>
+        <div class="dashboard-controls" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+            <select id="dashboardSelector" onchange="selectDashboard(this.value); renderAllCharts(); fetchChartData();" style="padding:6px 12px;border:1px solid var(--color-surface-dark);border-radius:var(--radius-sm);font-size:0.875rem;background:var(--color-surface);min-width:140px;">
+            </select>
+            <button class="btn-add-chart" onclick="createDashboard()" title="新建仪表盘">+ 新建</button>
+            <button class="btn-add-chart" onclick="renameDashboard()" title="重命名" style="background:var(--color-text-muted);">重命名</button>
+            <button class="btn-clear-all" onclick="deleteDashboard()" title="删除当前仪表盘" style="padding:6px 12px;font-size:0.8rem;">删除</button>
+            <button class="btn-add-chart" onclick="exportDashboard()" title="导出整个仪表盘为Excel" style="background:#217346;">导出全部</button>
+        </div>
     </div>
 
     <!-- Chart Builder -->
@@ -202,20 +305,44 @@
             </div>
             <div class="builder-group">
                 <label>图表类型</label>
-                <select id="chartType">
-                    <option value="bar">柱状图</option>
-                    <option value="pie">饼图</option>
-                    <option value="line">折线图</option>
-                    <option value="doughnut">环形图</option>
-                </select>
+                <div style="display:flex;gap:8px;align-items:center;">
+                    <select id="chartType">
+                        <option value="bar">柱状图</option>
+                        <option value="pie">饼图</option>
+                        <option value="line">折线图</option>
+                        <option value="doughnut">环形图</option>
+                        <option value="table">表格</option>
+                    </select>
+                    <select id="barMode" style="display:none;min-width:80px;font-size:0.875rem;">
+                        <option value="stacked">堆叠</option>
+                        <option value="grouped">分组</option>
+                    </select>
+                </div>
+            </div>
+            <div class="builder-group" id="stackByGroup" style="display:none;">
+                <label>堆叠维度</label>
+                <select id="stackBy"></select>
             </div>
             <div class="builder-group">
                 <label>起始日期</label>
-                <input type="date" id="dateFrom">
+                <div style="display:flex;gap:4px;align-items:center;">
+                    <select id="dateMode" style="padding:8px 8px;border:1px solid var(--color-surface-dark);border-radius:var(--radius-sm);font-size:0.875rem;background:var(--color-surface);">
+                        <option value="relative">最近</option>
+                        <option value="fixed">固定日期</option>
+                    </select>
+                    <input type="number" id="dateDays" min="1" max="3650" value="30" style="width:60px;padding:8px 4px;border:1px solid var(--color-surface-dark);border-radius:var(--radius-sm);font-size:0.875rem;">
+                    <span id="dateDaysLabel" style="font-size:0.8rem;color:var(--color-text-muted);white-space:nowrap;">天</span>
+                    <input type="date" id="dateFrom" style="display:none;">
+                </div>
             </div>
             <div class="builder-group">
                 <label>截止日期</label>
-                <input type="date" id="dateTo">
+                <div style="display:flex;gap:4px;align-items:center;">
+                    <input type="date" id="dateTo">
+                    <label style="font-size:0.75rem;white-space:nowrap;display:flex;align-items:center;gap:2px;">
+                        <input type="checkbox" id="dateToNow"> 至今
+                    </label>
+                </div>
             </div>
             <div class="builder-group">
                 <label>图表标题</label>
@@ -233,6 +360,8 @@
             <p>点击上方「添加图表」开始创建自定义报表</p>
         </div>
     </div>
+
+    <button class="present-toggle-btn" id="presentToggle" title="演示模式" onclick="togglePresentation()">&#x26F6;</button>
 </div>
 {% endblock %}
 
@@ -246,9 +375,13 @@ var METRICS = {
         { value: 'by_zone', label: '区域分布' },
         { value: 'by_category', label: '工作分类' },
         { value: 'by_fault_type', label: '故障类型' },
-        {% if is_admin %}
+        { value: 'by_info_source', label: '信息来源' },
+        { value: 'by_fault_category', label: '故障大类' },
+        { value: 'by_equipment', label: '设备型号' },
+        { value: 'by_worker_department', label: '人员部门' },
+        { value: 'difficult_rate_by_category', label: '疑难率(按分类)' }{% if is_admin %},
         { value: 'by_worker', label: '人员统计' },
-        {% endif %}
+        { value: 'difficult_rate_by_worker', label: '疑难率(按人员)' }{% endif %}
     ],
     demand_records: [
         { value: 'daily_trend', label: '每日趋势' },
@@ -256,39 +389,240 @@ var METRICS = {
         { value: 'by_department', label: '部门分布' },
         { value: 'by_status', label: '状态分布' },
         { value: 'global_events', label: '全局事件' },
+        { value: 'by_zone', label: '区域分布' },
+        { value: 'by_contact', label: '联系人' },
+        { value: 'by_submitter', label: '提交人' },
+        { value: 'global_event_volume', label: '全局事件趋势' },
     ]
 };
 
+// Stack-by dimensions per data source
+var STACK_BY = {
+    work_reports: [
+        { value: '', label: '无' },
+        { value: 'worker', label: '按人员' },
+        { value: 'location', label: '按CCU' },
+        { value: 'work_category', label: '按工作分类' },
+        { value: 'zone', label: '按区域' },
+        { value: 'info_source', label: '按信息来源' },
+        { value: 'fault_subtype', label: '按故障类型' },
+    ],
+    demand_records: [
+        { value: '', label: '无' },
+        { value: 'category', label: '按类别' },
+        { value: 'department', label: '按部门' },
+        { value: 'zone', label: '按区域' },
+        { value: 'status', label: '按状态' },
+        { value: 'contact', label: '按联系人' },
+    ]
+};
+
+var CURRENT_USER = '{{ request.user.username }}';
+var DASHBOARDS_KEY = 'customReportDashboards_' + CURRENT_USER;
+var ACTIVE_DASHBOARD_KEY = 'customReportActiveDashboard_' + CURRENT_USER;
+
+var dashboards = []; // [{ id, name, charts: [...] }]
+var activeDashboardId = null;
 var charts = [];
 var chartInstances = {};
+var chartDataCache = {}; // { id: { labels, datasets, title, chartType } }
 var chartIdCounter = 0;
 
 // Initialize
 document.addEventListener('DOMContentLoaded', function() {
+    var chartType = document.getElementById('chartType');
+    var barMode = document.getElementById('barMode');
+    var stackByGroup = document.getElementById('stackByGroup');
+    var dateToNow = document.getElementById('dateToNow');
+    var dateTo = document.getElementById('dateTo');
+    var dateMode = document.getElementById('dateMode');
+    var dateDays = document.getElementById('dateDays');
+    var dateDaysLabel = document.getElementById('dateDaysLabel');
+    var dateFrom = document.getElementById('dateFrom');
+
     // Set default dates (last 30 days)
     var today = new Date();
     var thirtyDaysAgo = new Date(today);
     thirtyDaysAgo.setDate(today.getDate() - 29);
-    document.getElementById('dateFrom').value = formatDate(thirtyDaysAgo);
-    document.getElementById('dateTo').value = formatDate(today);
+    dateTo.value = formatDate(today);
+    dateFrom.value = formatDate(thirtyDaysAgo);
 
-    // Populate metrics
+    // Populate metrics and stackBy
     updateMetrics();
+    updateStackBy();
+
+    // Show bar controls on init
+    barMode.style.display = '';
+    stackByGroup.style.display = 'flex';
 
     // Listen for data source change
-    document.getElementById('dataSource').addEventListener('change', updateMetrics);
+    document.getElementById('dataSource').addEventListener('change', function() {
+        updateMetrics();
+        updateStackBy();
+    });
 
-    // Load saved charts from localStorage
-    try {
-        var saved = localStorage.getItem('customReportCharts');
-        if (saved) {
-            charts = JSON.parse(saved);
-            chartIdCounter = charts.length > 0 ? Math.max.apply(null, charts.map(function(c){return c.id})) + 1 : 0;
-            renderAllCharts();
-            fetchChartData();
+    // Date mode toggle: relative vs fixed
+    dateMode.addEventListener('change', function() {
+        var isRelative = dateMode.value === 'relative';
+        dateDays.style.display = isRelative ? '' : 'none';
+        dateDaysLabel.style.display = isRelative ? '' : 'none';
+        dateFrom.style.display = isRelative ? 'none' : '';
+    });
+
+    // "至今" checkbox: toggle dateTo input
+    dateToNow.addEventListener('change', function() {
+        dateTo.disabled = dateToNow.checked;
+        if (dateToNow.checked) {
+            dateTo.value = formatDate(new Date());
         }
-    } catch(e) {}
+    });
+
+    // Bar mode selector: show/hide when chartType changes
+    chartType.addEventListener('change', function() {
+        var isBarOrTable = chartType.value === 'bar' || chartType.value === 'table';
+        barMode.style.display = isBarOrTable ? '' : 'none';
+        stackByGroup.style.display = isBarOrTable ? 'flex' : 'none';
+    });
+
+    // Load saved dashboards from localStorage (per-user)
+    try {
+        var savedDashboards = localStorage.getItem(DASHBOARDS_KEY);
+        if (savedDashboards) {
+            dashboards = JSON.parse(savedDashboards);
+        }
+        var savedActive = localStorage.getItem(ACTIVE_DASHBOARD_KEY);
+        if (savedActive && dashboards.length > 0) {
+            var found = dashboards.find(function(d) { return d.id === savedActive; });
+            if (found) activeDashboardId = found.id;
+        }
+        // If no active dashboard set or no dashboards exist, create default
+        if (!activeDashboardId || dashboards.length === 0) {
+            // Migrate old STORAGE_KEY if it exists
+            var oldCharts = null;
+            try { oldCharts = JSON.parse(localStorage.getItem('customReportCharts_' + CURRENT_USER)); } catch(e) {}
+            var defaultDash = {
+                id: generateDashboardId(),
+                name: '我的报表',
+                charts: oldCharts || []
+            };
+            dashboards.unshift(defaultDash);
+            activeDashboardId = defaultDash.id;
+            saveDashboards();
+            // Clean up old key
+            localStorage.removeItem('customReportCharts_' + CURRENT_USER);
+        }
+        // Load active dashboard
+        var active = dashboards.find(function(d) { return d.id === activeDashboardId; });
+        if (active) {
+            charts = active.charts || [];
+            chartIdCounter = charts.length > 0 ? Math.max.apply(null, charts.map(function(c){return c.id})) + 1 : 0;
+        }
+    } catch(e) {
+        var defaultDash = { id: generateDashboardId(), name: '我的报表', charts: [] };
+        dashboards = [defaultDash];
+        activeDashboardId = defaultDash.id;
+    }
+
+    populateDashboardSelector();
+    selectDashboard(activeDashboardId);
+    renderAllCharts();
+    fetchChartData();
 });
+
+function generateDashboardId() {
+    return 'dash_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
+}
+
+function populateDashboardSelector() {
+    var sel = document.getElementById('dashboardSelector');
+    sel.innerHTML = '';
+    dashboards.forEach(function(d) {
+        var opt = document.createElement('option');
+        opt.value = d.id;
+        opt.textContent = d.name;
+        sel.appendChild(opt);
+    });
+    sel.value = activeDashboardId;
+}
+
+function selectDashboard(id) {
+    // Destroy all chart instances
+    Object.keys(chartInstances).forEach(function(k) {
+        chartInstances[k].destroy();
+    });
+    chartInstances = {};
+    chartDataCache = {};
+
+    activeDashboardId = id;
+    localStorage.setItem(ACTIVE_DASHBOARD_KEY, id);
+    var active = dashboards.find(function(d) { return d.id === id; });
+    if (active) {
+        charts = active.charts || [];
+        chartIdCounter = charts.length > 0 ? Math.max.apply(null, charts.map(function(c){return c.id})) + 1 : 0;
+    } else {
+        charts = [];
+        chartIdCounter = 0;
+    }
+}
+
+function createDashboard() {
+    var name = prompt('仪表盘名称：');
+    if (!name || !name.trim()) return;
+    name = name.trim();
+    var newDash = {
+        id: generateDashboardId(),
+        name: name,
+        charts: []
+    };
+    dashboards.push(newDash);
+    saveDashboards();
+    populateDashboardSelector();
+    selectDashboard(newDash.id);
+    renderAllCharts();
+    fetchChartData();
+}
+
+function renameDashboard() {
+    var active = dashboards.find(function(d) { return d.id === activeDashboardId; });
+    if (!active) return;
+    var name = prompt('新名称：', active.name);
+    if (!name || !name.trim()) return;
+    active.name = name.trim();
+    saveDashboards();
+    populateDashboardSelector();
+}
+
+function deleteDashboard() {
+    if (dashboards.length <= 1) {
+        alert('至少保留一个仪表盘');
+        return;
+    }
+    var active = dashboards.find(function(d) { return d.id === activeDashboardId; });
+    if (!active) return;
+    if (!confirm('确认删除仪表盘「' + active.name + '」？')) return;
+    dashboards = dashboards.filter(function(d) { return d.id !== activeDashboardId; });
+    saveDashboards();
+    selectDashboard(dashboards[0].id);
+    populateDashboardSelector();
+    renderAllCharts();
+    fetchChartData();
+}
+
+function saveCurrentDashboard() {
+    var active = dashboards.find(function(d) { return d.id === activeDashboardId; });
+    if (active) {
+        active.charts = charts;
+    }
+    saveDashboards();
+}
+
+function saveDashboards() {
+    try {
+        // Sync current charts into active dashboard before saving
+        saveCurrentDashboard();
+        localStorage.setItem(DASHBOARDS_KEY, JSON.stringify(dashboards));
+    } catch(e) {}
+}
 
 function formatDate(d) {
     return d.toISOString().split('T')[0];
@@ -299,6 +633,18 @@ function updateMetrics() {
     var sel = document.getElementById('metric');
     sel.innerHTML = '';
     METRICS[ds].forEach(function(m) {
+        var opt = document.createElement('option');
+        opt.value = m.value;
+        opt.textContent = m.label;
+        sel.appendChild(opt);
+    });
+}
+
+function updateStackBy() {
+    var ds = document.getElementById('dataSource').value;
+    var sel = document.getElementById('stackBy');
+    sel.innerHTML = '';
+    (STACK_BY[ds] || []).forEach(function(m) {
         var opt = document.createElement('option');
         opt.value = m.value;
         opt.textContent = m.label;
@@ -322,8 +668,13 @@ function addChart() {
     var ds = document.getElementById('dataSource').value;
     var metric = document.getElementById('metric').value;
     var chartType = document.getElementById('chartType').value;
+    var dateMode = document.getElementById('dateMode').value;
+    var dateDays = document.getElementById('dateDays').value;
     var dateFrom = document.getElementById('dateFrom').value;
     var dateTo = document.getElementById('dateTo').value;
+    var dateToNow = document.getElementById('dateToNow').checked;
+    var barMode = document.getElementById('barMode').value;
+    var stackBy = document.getElementById('stackBy').value;
     var title = document.getElementById('chartTitle').value.trim();
 
     if (!title) {
@@ -335,8 +686,13 @@ function addChart() {
         dataSource: ds,
         metric: metric,
         chartType: chartType,
-        dateFrom: dateFrom,
-        dateTo: dateTo,
+        dateMode: dateMode,
+        dateDays: dateMode === 'relative' ? parseInt(dateDays) : null,
+        dateFrom: dateMode === 'fixed' ? dateFrom : null,
+        dateTo: dateToNow ? null : dateTo,
+        dateToNow: dateToNow,
+        barMode: barMode,
+        stackBy: stackBy,
         title: title
     };
 
@@ -354,6 +710,7 @@ function removeChart(id) {
     }
     saveCharts();
     renderAllCharts();
+    fetchChartData();
 }
 
 function clearAll() {
@@ -363,16 +720,16 @@ function clearAll() {
         chartInstances[k].destroy();
     });
     chartInstances = {};
+    chartDataCache = {};
     charts = [];
     chartIdCounter = 0;
     saveCharts();
     renderAllCharts();
+    fetchChartData();
 }
 
 function saveCharts() {
-    try {
-        localStorage.setItem('customReportCharts', JSON.stringify(charts));
-    } catch(e) {}
+    saveDashboards();
 }
 
 function renderAllCharts() {
@@ -388,15 +745,24 @@ function renderAllCharts() {
         var card = document.createElement('div');
         card.className = 'chart-card';
         card.id = 'chartCard-' + cfg.id;
+
+        var bodyContent;
+        if (cfg.chartType === 'table') {
+            bodyContent = '<div id="tableContainer-' + cfg.id + '" style="padding:var(--space-md);overflow-x:auto;"></div>';
+        } else {
+            bodyContent = '<canvas id="chart-' + cfg.id + '"></canvas>';
+        }
+
         card.innerHTML =
             '<div class="chart-card-header">' +
                 '<span class="chart-card-title">' + escapeHtml(cfg.title) + '</span>' +
                 '<div class="chart-card-actions">' +
+                    '<button onclick="exportChart(' + cfg.id + ')" title="导出Excel" style="font-size:0.75rem;padding:2px 6px;">导出</button>' +
                     '<button onclick="removeChart(' + cfg.id + ')" title="删除">&times;</button>' +
                 '</div>' +
             '</div>' +
             '<div class="chart-card-body">' +
-                '<canvas id="chart-' + cfg.id + '"></canvas>' +
+                bodyContent +
             '</div>';
         grid.appendChild(card);
     });
@@ -405,14 +771,25 @@ function renderAllCharts() {
 function fetchChartData() {
     if (charts.length === 0) return;
 
+    var today = formatDate(new Date());
     var payload = charts.map(function(cfg) {
+        var resolvedDateFrom;
+        if (cfg.dateMode === 'relative' && cfg.dateDays) {
+            var d = new Date();
+            d.setDate(d.getDate() - cfg.dateDays + 1);
+            resolvedDateFrom = formatDate(d);
+        } else {
+            resolvedDateFrom = cfg.dateFrom || '';
+        }
         return {
             id: cfg.id,
             dataSource: cfg.dataSource,
             metric: cfg.metric,
-            dateFrom: cfg.dateFrom,
-            dateTo: cfg.dateTo,
+            dateFrom: resolvedDateFrom,
+            dateTo: cfg.dateToNow ? today : cfg.dateTo,
             chartType: cfg.chartType,
+            barMode: cfg.barMode || 'stacked',
+            stackBy: cfg.stackBy || '',
             title: cfg.title
         };
     });
@@ -438,6 +815,11 @@ function fetchChartData() {
 }
 
 function renderChart(result) {
+    if (result.chartType === 'table') {
+        renderTable(result);
+        return;
+    }
+
     var id = result.id;
     var canvas = document.getElementById('chart-' + id);
     if (!canvas) return;
@@ -452,8 +834,17 @@ function renderChart(result) {
         return;
     }
 
+    // Cache data for export
+    chartDataCache[id] = {
+        title: result.title,
+        chartType: result.chartType,
+        labels: result.labels,
+        datasets: result.datasets
+    };
+
     var isPie = result.chartType === 'pie' || result.chartType === 'doughnut';
     var isLine = result.chartType === 'line';
+    var isStacked = result.barMode === 'stacked' && !isPie && !isLine && result.datasets.length > 1;
 
     var datasets = result.datasets.map(function(ds, i) {
         var cfg = {
@@ -509,6 +900,7 @@ function renderChart(result) {
             scales: isPie ? {} : {
                 y: {
                     beginAtZero: true,
+                    stacked: isStacked,
                     ticks: { font: { size: 11 } }
                 },
                 x: {
@@ -517,13 +909,62 @@ function renderChart(result) {
                         maxRotation: 45,
                         autoSkip: true,
                         maxTicksLimit: 20
-                    }
+                    },
+                    stacked: isStacked
                 }
             }
         }
     };
 
     chartInstances[id] = new Chart(canvas.getContext('2d'), chartConfig);
+}
+
+function renderTable(result) {
+    var container = document.getElementById('tableContainer-' + result.id);
+    if (!container) return;
+
+    if (result.error) {
+        container.innerHTML = '<div class="chart-card-empty">' + escapeHtml(result.error) + '</div>';
+        return;
+    }
+
+    var labels = result.labels || [];
+    var datasets = result.datasets || [];
+
+    // Cache data for export
+    chartDataCache[result.id] = {
+        title: result.title,
+        chartType: result.chartType,
+        labels: labels,
+        datasets: datasets
+    };
+
+    if (labels.length === 0) {
+        container.innerHTML = '<div class="chart-card-empty">No data</div>';
+        return;
+    }
+
+    var html = '<table class="cr-data-table"><thead><tr><th></th>';
+    // Header row: one column per dataset
+    for (var d = 0; d < datasets.length; d++) {
+        html += '<th>' + escapeHtml(datasets[d].label || '') + '</th>';
+    }
+    html += '<th>合计</th></tr></thead><tbody>';
+
+    // Data rows
+    for (var i = 0; i < labels.length; i++) {
+        html += '<tr><td>' + escapeHtml(labels[i]) + '</td>';
+        var rowTotal = 0;
+        for (var d = 0; d < datasets.length; d++) {
+            var val = datasets[d].data[i] || 0;
+            rowTotal += val;
+            html += '<td>' + val + '</td>';
+        }
+        html += '<td><strong>' + rowTotal + '</strong></td></tr>';
+    }
+    html += '</tbody></table>';
+
+    container.innerHTML = html;
 }
 
 function getDefaultPieColors(n) {
@@ -566,6 +1007,129 @@ function escapeHtml(text) {
     var div = document.createElement('div');
     div.appendChild(document.createTextNode(text));
     return div.innerHTML;
+}
+
+// Presentation mode
+function togglePresentation() {
+    var isPresent = document.body.classList.toggle('presentation-mode');
+    localStorage.setItem('customReportPresent_' + CURRENT_USER, isPresent ? '1' : '');
+    var btn = document.getElementById('presentToggle');
+    btn.title = isPresent ? '退出演示' : '演示模式';
+}
+
+// Check URL parameter or saved state
+(function() {
+    var params = new URLSearchParams(window.location.search);
+    var presentParam = params.get('present');
+    var saved = localStorage.getItem('customReportPresent_' + CURRENT_USER);
+    if (presentParam === '1' || (presentParam === null && saved === '1')) {
+        document.body.classList.add('presentation-mode');
+        var btn = document.getElementById('presentToggle');
+        if (btn) btn.title = '退出演示';
+    }
+})();
+
+// Export single chart to Excel
+function exportChart(id) {
+    var data = chartDataCache[id];
+    if (!data) {
+        alert('图表数据尚未加载');
+        return;
+    }
+
+    var wb = XLSX.utils.book_new();
+
+    // Build worksheet: first column = labels, subsequent columns = datasets
+    var wsData = [];
+    // Header row
+    var header = [''];
+    for (var d = 0; d < data.datasets.length; d++) {
+        header.push(data.datasets[d].label || '');
+    }
+    header.push('合计');
+    wsData.push(header);
+
+    // Data rows
+    for (var i = 0; i < data.labels.length; i++) {
+        var row = [data.labels[i]];
+        var rowTotal = 0;
+        for (var d = 0; d < data.datasets.length; d++) {
+            var val = data.datasets[d].data[i] || 0;
+            row.push(val);
+            rowTotal += val;
+        }
+        row.push(rowTotal);
+        wsData.push(row);
+    }
+
+    var ws = XLSX.utils.aoa_to_sheet(wsData);
+
+    // Column width hints
+    var cols = [{ wch: 20 }];
+    for (var d = 0; d < data.datasets.length; d++) {
+        cols.push({ wch: 12 });
+    }
+    cols.push({ wch: 10 });
+    ws['!cols'] = cols;
+
+    XLSX.utils.book_append_sheet(wb, ws, data.title.substring(0, 31));
+    XLSX.writeFile(wb, data.title + '.xlsx');
+}
+
+// Export entire dashboard to Excel (one sheet per chart)
+function exportDashboard() {
+    if (charts.length === 0) {
+        alert('当前仪表盘没有图表');
+        return;
+    }
+
+    var active = dashboards.find(function(d) { return d.id === activeDashboardId; });
+    var dashName = active ? active.name : '报表';
+
+    var wb = XLSX.utils.book_new();
+    var hasData = false;
+
+    charts.forEach(function(cfg) {
+        var data = chartDataCache[cfg.id];
+        if (!data || data.labels.length === 0) return;
+        hasData = true;
+
+        var wsData = [];
+        var header = [''];
+        for (var d = 0; d < data.datasets.length; d++) {
+            header.push(data.datasets[d].label || '');
+        }
+        header.push('合计');
+        wsData.push(header);
+
+        for (var i = 0; i < data.labels.length; i++) {
+            var row = [data.labels[i]];
+            var rowTotal = 0;
+            for (var dd = 0; dd < data.datasets.length; dd++) {
+                var val = data.datasets[dd].data[i] || 0;
+                row.push(val);
+                rowTotal += val;
+            }
+            row.push(rowTotal);
+            wsData.push(row);
+        }
+
+        var ws = XLSX.utils.aoa_to_sheet(wsData);
+        var sheetName = data.title.substring(0, 31);
+        // Ensure unique sheet names
+        var existingNames = wb.SheetNames;
+        if (existingNames.indexOf(sheetName) !== -1) {
+            sheetName = sheetName.substring(0, 28) + '_' + existingNames.length;
+        }
+        XLSX.utils.book_append_sheet(wb, ws, sheetName);
+    });
+
+    if (!hasData) {
+        alert('没有可导出的数据');
+        return;
+    }
+
+    XLSX.writeFile(wb, dashName + '.xlsx');
 }
 </script>
 {% endblock %}

@@ -135,39 +135,47 @@ class _WorkReportListScreenState extends State<WorkReportListScreen> {
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () async {
-          final result = await Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => const WorkReportFormScreen()),
-          );
-          if (result == true) _loadReports();
-        },
-        backgroundColor: const Color(0xFF40916C),
-        child: const Icon(Icons.add, color: Colors.white),
-      ),
-      body: AppBackground(
-        child: _isLoading
-            ? const Center(child: CircularProgressIndicator())
-            : _error != null
-            ? AppErrorState(message: _error!, onRetry: _loadReports)
-            : _reports.isEmpty
-            ? const AppEmptyState(
-                icon: Icons.assignment_outlined,
-                title: '暂无工作日报记录',
-                subtitle: '新建日报后会在这里展示。',
-              )
-            : RefreshIndicator(
-                onRefresh: _loadReports,
-                child: ListView.builder(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 96),
-                  itemCount: _reports.length,
-                  itemBuilder: (context, index) => Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    child: _buildReportCard(_reports[index]),
+      body: Stack(
+        children: [
+          AppBackground(
+            child: _isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : _error != null
+                ? AppErrorState(message: _error!, onRetry: _loadReports)
+                : _reports.isEmpty
+                ? const AppEmptyState(
+                    icon: Icons.assignment_outlined,
+                    title: '暂无工作日报记录',
+                    subtitle: '新建日报后会在这里展示。',
+                  )
+                : RefreshIndicator(
+                    onRefresh: _loadReports,
+                    child: ListView.builder(
+                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 140),
+                      itemCount: _reports.length,
+                      itemBuilder: (context, index) => Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: _buildReportCard(_reports[index]),
+                      ),
+                    ),
                   ),
-                ),
-              ),
+          ),
+          Positioned(
+            right: 16,
+            bottom: 88,
+            child: FloatingActionButton(
+              onPressed: () async {
+                final result = await Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const WorkReportFormScreen()),
+                );
+                if (result == true) _loadReports();
+              },
+              backgroundColor: const Color(0xFF40916C),
+              child: const Icon(Icons.add, color: Colors.white),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -192,9 +200,25 @@ class _WorkReportListScreenState extends State<WorkReportListScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Row 1: date, location, category
+              // ID badge + date row
               Row(
                 children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF40916C),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      '#${report['id']}',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
                   Icon(
                     Icons.calendar_today,
                     size: 14,
@@ -208,7 +232,19 @@ class _WorkReportListScreenState extends State<WorkReportListScreen> {
                       fontSize: 14,
                     ),
                   ),
-                  const SizedBox(width: 12),
+                  const Spacer(),
+                  AppStatusBadge(
+                    label: '故障 $totalFaults',
+                    color: totalFaults > 0
+                        ? const Color(0xFF40916C)
+                        : Colors.grey,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              // Row 2: location, category
+              Row(
+                children: [
                   Icon(
                     Icons.location_on,
                     size: 14,
@@ -229,7 +265,7 @@ class _WorkReportListScreenState extends State<WorkReportListScreen> {
                 ],
               ),
               const SizedBox(height: 6),
-              // Row 2: worker, zone location, fault count
+              // Row 2: worker, zone location
               Row(
                 children: [
                   Icon(Icons.person, size: 14, color: Colors.grey.shade600),
@@ -250,13 +286,6 @@ class _WorkReportListScreenState extends State<WorkReportListScreen> {
                       ),
                     ),
                   ],
-                  const Spacer(),
-                  AppStatusBadge(
-                    label: '故障 $totalFaults',
-                    color: totalFaults > 0
-                        ? const Color(0xFF40916C)
-                        : Colors.grey,
-                  ),
                 ],
               ),
               // Remark preview
