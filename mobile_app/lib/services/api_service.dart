@@ -462,7 +462,7 @@ class ApiService {
 
   // ==================== Work Report System ====================
 
-  /// Get locations (CCU list)
+  /// Get locations (legacy CCU list — use Zone.patchId instead for patch selection)
   Future<List<Map<String, dynamic>>> getLocations() async {
     final response = await _client.get(
       Uri.parse('$baseUrl/locations/'),
@@ -531,7 +531,7 @@ class ApiService {
   Future<List<Map<String, dynamic>>> getWorkReports({
     String? dateFrom,
     String? dateTo,
-    int? location,
+    int? patch,
     int? workCategory,
     int? worker,
     int? zone,
@@ -540,7 +540,7 @@ class ApiService {
     final params = <String, String>{};
     if (dateFrom != null) params['date_from'] = dateFrom;
     if (dateTo != null) params['date_to'] = dateTo;
-    if (location != null) params['location'] = location.toString();
+    if (patch != null) params['patch'] = patch.toString();
     if (workCategory != null) params['work_category'] = workCategory.toString();
     if (worker != null) params['worker'] = worker.toString();
     if (zone != null) params['zone'] = zone.toString();
@@ -573,7 +573,7 @@ class ApiService {
   Future<Map<String, dynamic>> submitWorkReport({
     required String date,
     String weather = '',
-    required int location,
+    required int patch,
     required int workCategory,
     String zoneLocation = '',
     required String remark,
@@ -588,7 +588,7 @@ class ApiService {
       body: jsonEncode({
         'date': date,
         'weather': weather,
-        'location': location,
+        'patch': patch,
         'work_category': workCategory,
         'zone_location_code': zoneLocation,
         'remark': remark,
@@ -609,7 +609,7 @@ class ApiService {
     required int id,
     required String date,
     String weather = '',
-    required int location,
+    required int patch,
     required int workCategory,
     String zoneLocation = '',
     required String remark,
@@ -624,7 +624,7 @@ class ApiService {
       body: jsonEncode({
         'date': date,
         'weather': weather,
-        'location': location,
+        'patch': patch,
         'work_category': workCategory,
         'zone_location_code': zoneLocation,
         'remark': remark,
@@ -883,15 +883,15 @@ class ApiService {
   // ==================== End Demand Record System ====================
 
   /// Get weather data
-  Future<List<Map<String, dynamic>>> getWeather() async {
+  /// Returns a map with 'currentHour', 'date', and 'data' keys.
+  Future<Map<String, dynamic>> getWeather() async {
     final response = await _client.get(
       Uri.parse('$baseUrl/weather'),
       headers: _headers,
     );
 
     if (response.statusCode == 200) {
-      final data = jsonDecode(response.body);
-      return List<Map<String, dynamic>>.from(data['data']);
+      return jsonDecode(response.body) as Map<String, dynamic>;
     }
     throw Exception('获取天气失败');
   }

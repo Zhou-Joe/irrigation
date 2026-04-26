@@ -9,6 +9,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 import '../providers/auth_provider.dart';
 import '../models/zone.dart';
+import '../theme/app_theme.dart';
 import '../widgets/modern_ui.dart';
 
 class WorkReportFormScreen extends StatefulWidget {
@@ -17,6 +18,7 @@ class WorkReportFormScreen extends StatefulWidget {
   final int? initialPatchId;
   final String? initialPatchName;
   final String? initialPatchCode;
+  final String? initialWeather;
 
   const WorkReportFormScreen({
     super.key,
@@ -25,6 +27,7 @@ class WorkReportFormScreen extends StatefulWidget {
     this.initialPatchId,
     this.initialPatchName,
     this.initialPatchCode,
+    this.initialWeather,
   });
 
   @override
@@ -45,13 +48,16 @@ class _WorkReportFormScreenState extends State<WorkReportFormScreen> {
   late DateTime _date;
 
   // Dropdown data
-  List<Map<String, dynamic>> _locations = [];
   List<Map<String, dynamic>> _workCategories = [];
   List<Map<String, dynamic>> _infoSources = [];
   List<Map<String, dynamic>> _faultCategories = [];
   List<Map<String, dynamic>> _zoneEquipment = [];
 
-  int? _selectedLocation;
+  // Patch data derived from zones (replaces legacy CCU /locations/ API)
+  // Each patch: {id, name, code}
+  List<Map<String, dynamic>> _patches = [];
+
+  int? _selectedPatch;
   int? _selectedWorkCategory;
   int? _selectedInfoSource;
 
@@ -87,7 +93,7 @@ class _WorkReportFormScreenState extends State<WorkReportFormScreen> {
       _remarkController.text = r['remark'] ?? '';
       _isDifficult = r['is_difficult'] ?? false;
       _isDifficultResolved = r['is_difficult_resolved'] ?? false;
-      _selectedLocation = r['location'] is Map
+      _selectedPatch = r['location'] is Map
           ? r['location']['id']
           : r['location'];
       _selectedWorkCategory = r['work_category'] is Map
@@ -121,6 +127,10 @@ class _WorkReportFormScreenState extends State<WorkReportFormScreen> {
       _zoneLocationController.text = widget.initialZoneCode!;
     }
 
+    if (!_isEditing && widget.initialWeather != null) {
+      _weatherController.text = widget.initialWeather!;
+    }
+
     _loadDropdownData();
   }
 
@@ -129,29 +139,28 @@ class _WorkReportFormScreenState extends State<WorkReportFormScreen> {
     try {
       final api = context.read<AuthProvider>().api;
       final results = await Future.wait<dynamic>([
-        api.getLocations(),
         api.getWorkCategories(),
         api.getInfoSources(),
         api.getFaultCategories(),
         api.getZones(),
       ]);
 
-      final locations = (results[0] as List).cast<Map<String, dynamic>>();
-      final workCategories = (results[1] as List).cast<Map<String, dynamic>>();
-      final infoSources = (results[2] as List).cast<Map<String, dynamic>>();
-      final faultCategories = (results[3] as List).cast<Map<String, dynamic>>();
-      final zones = (results[4] as List).cast<Zone>();
+      final workCategories = (results[0] as List).cast<Map<String, dynamic>>();
+      final infoSources = (results[1] as List).cast<Map<String, dynamic>>();
+      final faultCategories = (results[2] as List).cast<Map<String, dynamic>>();
+      final zones = (results[3] as List).cast<Zone>();
 
       // Try to get user location for distance sorting
       _getUserLocation();
 
       if (mounted) {
         setState(() {
-          _locations = locations;
           _workCategories = workCategories;
           _infoSources = infoSources;
           _faultCategories = faultCategories;
           _allZones = zones;
+          // Derive patches from zones (not from legacy CCU /locations/ API)
+          _derivePatchesFromZones();
           _isLoading = false;
         });
 
@@ -173,13 +182,13 @@ class _WorkReportFormScreenState extends State<WorkReportFormScreen> {
           if (match != null) _selectedZone = match;
         }
 
-        // Auto-select location (分区) from patch
+        // Auto-select patch (分区) from initialPatchId
         if (!_isEditing && widget.initialPatchId != null) {
-          final matchedLocation = _locations
-              .where((loc) => loc['id'] == widget.initialPatchId)
+          final matchedPatch = _patches
+              .where((p) => p['id'] == widget.initialPatchId)
               .firstOrNull;
-          if (matchedLocation != null) {
-            _selectedLocation = matchedLocation['id'];
+          if (matchedPatch != null) {
+            _selectedPatch = matchedPatch['id'];
           }
         }
 
@@ -207,6 +216,23 @@ class _WorkReportFormScreenState extends State<WorkReportFormScreen> {
         ).showSnackBar(SnackBar(content: Text('加载数据失败: $e')));
       }
     }
+  }
+
+  /// Derive patch list from zones, replacing the legacy CCU /locations/ API.
+  /// Each unique patch from the zone list becomes a dropdown item.
+  void _derivePatchesFromZones() {
+    final Map<int, Map<String, dynamic>> patchMap = {};
+    for (var zone in _allZones) {
+      if (zone.patchId != null) {
+        patchMap[zone.patchId!] = {
+          'id': zone.patchId,
+          'name': zone.patchName ?? '未知片区',
+          'code': zone.patchCode ?? '',
+        };
+      }
+    }
+    _patches = patchMap.values.toList()
+      ..sort((a, b) => (a['name'] as String).compareTo(b['name'] as String));
   }
 
   Future<void> _loadZoneEquipment(String zoneCode) async {
@@ -261,7 +287,7 @@ class _WorkReportFormScreenState extends State<WorkReportFormScreen> {
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
-    if (_selectedLocation == null) {
+    if (_selectedPatch == null) {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('请选择分区')));
@@ -284,7 +310,7 @@ class _WorkReportFormScreenState extends State<WorkReportFormScreen> {
       final params = (
         date: dateStr,
         weather: _weatherController.text.trim(),
-        location: _selectedLocation!,
+        patch: _selectedPatch!,
         workCategory: _selectedWorkCategory!,
         zoneLocation: _zoneLocationController.text.trim(),
         remark: _remarkController.text.trim(),
@@ -299,7 +325,7 @@ class _WorkReportFormScreenState extends State<WorkReportFormScreen> {
           id: widget.existingReport!['id'],
           date: params.date,
           weather: params.weather,
-          location: params.location,
+          patch: params.patch,
           workCategory: params.workCategory,
           zoneLocation: params.zoneLocation,
           remark: params.remark,
@@ -328,7 +354,7 @@ class _WorkReportFormScreenState extends State<WorkReportFormScreen> {
         final result = await api.submitWorkReport(
           date: params.date,
           weather: params.weather,
-          location: params.location,
+          patch: params.patch,
           workCategory: params.workCategory,
           zoneLocation: params.zoneLocation,
           remark: params.remark,
@@ -350,7 +376,7 @@ class _WorkReportFormScreenState extends State<WorkReportFormScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(_isEditing ? '保存成功' : '提交成功'),
-            backgroundColor: const Color(0xFF40916C),
+            backgroundColor: AppTheme.greenMedium,
           ),
         );
         Navigator.pop(context, true);
@@ -380,26 +406,22 @@ class _WorkReportFormScreenState extends State<WorkReportFormScreen> {
   Widget _buildAddedFaultChips() {
     final entries = _faultCounts.entries.where((e) => e.value > 0).toList();
     if (entries.isEmpty) {
-      return const Padding(
-        padding: EdgeInsets.symmetric(vertical: 8),
-        child: Text(
-          '暂无故障记录，点击下方按钮添加',
-          style: TextStyle(color: Colors.grey, fontSize: 13),
-        ),
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Text('暂无故障记录，点击下方按钮添加', style: AppTheme.tsOverline),
       );
     }
     return Column(
       children: entries.map((entry) {
-        final info =
-            _subtypeInfo[entry.key] ?? {'name_zh': '?', 'catName': '?'};
+        final info = _subtypeInfo[entry.key] ?? {'name_zh': '?', 'catName': '?'};
         final equipId = _faultEquipment[entry.key];
         return Container(
           margin: const EdgeInsets.only(bottom: 8),
           padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(
-            color: const Color(0xFF40916C).withOpacity(0.06),
-            border: Border.all(color: const Color(0xFFB7E4C7)),
-            borderRadius: BorderRadius.circular(8),
+            color: AppTheme.greenPrimary.withOpacity(0.06),
+            border: Border.all(color: AppTheme.greenPale),
+            borderRadius: BorderRadius.circular(10),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -410,40 +432,27 @@ class _WorkReportFormScreenState extends State<WorkReportFormScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          info['catName']!,
-                          style: const TextStyle(
-                            fontSize: 10,
-                            color: Colors.grey,
-                          ),
-                        ),
-                        Text(
-                          info['name_zh']!,
-                          style: const TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
+                        Text(info['catName']!, style: AppTheme.tsOverline),
+                        Text(info['name_zh']!, style: AppTheme.tsCaption.copyWith(fontWeight: FontWeight.w500)),
                       ],
                     ),
                   ),
                   SizedBox(
-                    width: 50,
+                    width: 45,
                     child: TextFormField(
                       initialValue: entry.value.toString(),
                       keyboardType: TextInputType.number,
                       textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        fontSize: 13,
+                      style: AppTheme.tsCaption.copyWith(
                         fontWeight: FontWeight.w700,
-                        color: Color(0xFF40916C),
+                        color: AppTheme.greenMedium,
                       ),
                       decoration: const InputDecoration(
                         isDense: true,
                         contentPadding: EdgeInsets.symmetric(vertical: 4),
                         border: OutlineInputBorder(),
                         focusedBorder: OutlineInputBorder(
-                          borderSide: BorderSide(color: Color(0xFF40916C)),
+                          borderSide: BorderSide(color: AppTheme.greenMedium),
                         ),
                       ),
                       onChanged: (val) {
@@ -465,11 +474,7 @@ class _WorkReportFormScreenState extends State<WorkReportFormScreen> {
                       _faultCounts.remove(entry.key);
                       _faultEquipment.remove(entry.key);
                     }),
-                    child: const Icon(
-                      Icons.close,
-                      size: 18,
-                      color: Colors.grey,
-                    ),
+                    child: Icon(Icons.close, size: 18, color: AppTheme.textSecondary),
                   ),
                 ],
               ),
@@ -477,57 +482,34 @@ class _WorkReportFormScreenState extends State<WorkReportFormScreen> {
                 const SizedBox(height: 8),
                 Row(
                   children: [
-                    const Icon(
-                      Icons.settings_input_component,
-                      size: 14,
-                      color: Colors.grey,
-                    ),
+                    Icon(Icons.settings_input_component, size: 14, color: AppTheme.textSecondary),
                     const SizedBox(width: 4),
                     Expanded(
                       child: DropdownButton<int?>(
                         value: equipId,
                         isExpanded: true,
-                        hint: const Text(
-                          '关联设备',
-                          style: TextStyle(fontSize: 12, color: Colors.grey),
-                        ),
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: Colors.black87,
-                        ),
-                        underline: Container(
-                          height: 1,
-                          color: Colors.grey.shade300,
-                        ),
+                        hint: Text('关联设备', style: AppTheme.tsOverline),
+                        style: AppTheme.tsOverline,
+                        underline: Container(height: 1, color: AppTheme.outline),
                         items: [
                           const DropdownMenuItem<int?>(
                             value: null,
-                            child: Text(
-                              '-- 不选 --',
-                              style: TextStyle(fontSize: 12),
-                            ),
+                            child: Text('-- 不选 --', style: TextStyle(fontSize: 11)),
                           ),
                           ..._zoneEquipment.map(
                             (e) => DropdownMenuItem<int?>(
                               value: e['id'],
-                              child: Text(
-                                _getEquipmentName(e['id']),
-                                style: const TextStyle(fontSize: 12),
-                                overflow: TextOverflow.ellipsis,
-                              ),
+                              child: Text(_getEquipmentName(e['id']),
+                                  style: const TextStyle(fontSize: 11),
+                                  overflow: TextOverflow.ellipsis),
                             ),
                           ),
                         ],
-                        onChanged: (v) =>
-                            setState(() => _faultEquipment[entry.key] = v),
+                        onChanged: (v) => setState(() => _faultEquipment[entry.key] = v),
                       ),
                     ),
                     if (_isLoadingEquipment)
-                      const SizedBox(
-                        width: 12,
-                        height: 12,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
+                      const SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 2)),
                   ],
                 ),
               ],
@@ -664,288 +646,233 @@ class _WorkReportFormScreenState extends State<WorkReportFormScreen> {
             : Form(
                 key: _formKey,
                 child: ListView(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+                  padding: const EdgeInsets.fromLTRB(
+                    AppTheme.pagePadding, 12, AppTheme.pagePadding, 32,
+                  ),
                   children: [
-                    AppCard(
-                      padding: const EdgeInsets.all(14),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const AppSectionTitle(
-                            title: '基本信息',
-                            subtitle: '日期、位置、分类与工作内容',
-                          ),
-                          const SizedBox(height: 8),
-
-                          // Date + Weather
-                          Row(
-                            children: [
-                              Expanded(
-                                child: InkWell(
-                                  onTap: _selectDate,
-                                  child: InputDecorator(
-                                    decoration: const InputDecoration(
-                                      labelText: '日期 *',
-                                      border: OutlineInputBorder(),
-                                      prefixIcon: Icon(
-                                        Icons.calendar_today,
-                                        size: 18,
-                                      ),
-                                    ),
-                                    child: Text(
-                                      DateFormat('yyyy-MM-dd').format(_date),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: TextFormField(
-                                  controller: _weatherController,
-                                  decoration: const InputDecoration(
-                                    labelText: '天气',
-                                    border: OutlineInputBorder(),
-                                    prefixIcon: Icon(Icons.wb_cloudy, size: 18),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-
-                          // Location + Work Category
-                          Row(
-                            children: [
-                              Expanded(
-                                child: DropdownButtonFormField<int>(
-                                  value: _selectedLocation,
-                                  isDense: true,
-                                  decoration: const InputDecoration(
-                                    labelText: '分区 *',
-                                    border: OutlineInputBorder(),
-                                    prefixIcon: Icon(
-                                      Icons.location_on,
-                                      size: 18,
-                                    ),
-                                    contentPadding: EdgeInsets.symmetric(
-                                      horizontal: 12,
-                                      vertical: 8,
-                                    ),
-                                  ),
-                                  items: _locations
-                                      .map<DropdownMenuItem<int>>(
-                                        (loc) => DropdownMenuItem<int>(
-                                          value: loc['id'],
-                                          child: Text(
-                                            loc['name'],
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
-                                        ),
-                                      )
-                                      .toList(),
-                                  onChanged: (v) =>
-                                      setState(() => _selectedLocation = v),
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: DropdownButtonFormField<int>(
-                                  value: _selectedWorkCategory,
-                                  decoration: const InputDecoration(
-                                    labelText: '工作分类 *',
-                                    border: OutlineInputBorder(),
-                                    prefixIcon: Icon(Icons.category, size: 18),
-                                  ),
-                                  items: _workCategories
-                                      .map<DropdownMenuItem<int>>(
-                                        (cat) => DropdownMenuItem<int>(
-                                          value: cat['id'],
-                                          child: Text(
-                                            cat['name'],
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
-                                        ),
-                                      )
-                                      .toList(),
-                                  onChanged: (v) =>
-                                      setState(() => _selectedWorkCategory = v),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-
-                          // Zone Location + Info Source
-                          Row(
-                            children: [
-                              Expanded(
-                                child: InkWell(
-                                  onTap: _allZones.isEmpty
-                                      ? null
-                                      : _openZonePicker,
-                                  child: InputDecorator(
-                                    decoration: const InputDecoration(
-                                      labelText: '故障/事件位置',
-                                      border: OutlineInputBorder(),
-                                      prefixIcon: Icon(Icons.place, size: 18),
-                                    ),
-                                    child: Text(
-                                      _selectedZone != null
-                                          ? '${_selectedZone!.name} (${_selectedZone!.code})'
-                                          : '点击选择区域',
-                                      style: TextStyle(
-                                        fontSize: 14,
-                                        color: _selectedZone != null
-                                            ? Colors.black87
-                                            : Colors.grey,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: DropdownButtonFormField<int>(
-                                  value: _selectedInfoSource,
-                                  decoration: const InputDecoration(
-                                    labelText: '信息来源',
-                                    border: OutlineInputBorder(),
-                                    prefixIcon: Icon(
-                                      Icons.info_outline,
-                                      size: 18,
-                                    ),
-                                  ),
-                                  items: [
-                                    const DropdownMenuItem<int>(
-                                      value: null,
-                                      child: Text('-- 不选 --'),
-                                    ),
-                                    ..._infoSources.map<DropdownMenuItem<int>>(
-                                      (src) => DropdownMenuItem<int>(
-                                        value: src['id'],
-                                        child: Text(
-                                          src['name'],
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                  onChanged: (v) =>
-                                      setState(() => _selectedInfoSource = v),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-
-                          // Remark
-                          TextFormField(
-                            controller: _remarkController,
+                    // ── Section 1: Basic info ──────────────────
+                    AppFormSection(
+                      title: '基本信息',
+                      icon: Icons.info_outline_rounded,
+                      children: [
+                        // Date
+                        InkWell(
+                          onTap: _selectDate,
+                          child: InputDecorator(
                             decoration: const InputDecoration(
-                              labelText: '备注/工作内容 *',
+                              labelText: '日期 *',
                               border: OutlineInputBorder(),
-                              prefixIcon: Icon(Icons.description, size: 18),
+                              prefixIcon: Icon(Icons.calendar_today, size: 18),
                             ),
-                            maxLines: 2,
-                            validator: (v) =>
-                                v?.trim().isEmpty == true ? '请填写工作内容' : null,
+                            child: Text(
+                              DateFormat('yyyy-MM-dd').format(_date),
+                              style: AppTheme.tsCaption,
+                            ),
                           ),
-                          const SizedBox(height: 12),
+                        ),
+                        const SizedBox(height: AppTheme.fieldGap),
 
-                          // Difficult toggles
-                          Row(
-                            children: [
-                              Expanded(
-                                child: CheckboxListTile(
-                                  value: _isDifficult,
-                                  onChanged: (v) => setState(() {
-                                    _isDifficult = v ?? false;
-                                    if (!_isDifficult)
-                                      _isDifficultResolved = false;
-                                  }),
-                                  title: const Text(
-                                    '疑难问题',
-                                    style: TextStyle(fontSize: 13),
-                                  ),
-                                  contentPadding: EdgeInsets.zero,
-                                  controlAffinity:
-                                      ListTileControlAffinity.leading,
-                                  dense: true,
-                                ),
-                              ),
-                              Expanded(
-                                child: CheckboxListTile(
-                                  value: _isDifficultResolved,
-                                  onChanged: _isDifficult
-                                      ? (v) => setState(
-                                          () =>
-                                              _isDifficultResolved = v ?? false,
-                                        )
-                                      : null,
-                                  title: const Text(
-                                    '疑难已处理',
-                                    style: TextStyle(fontSize: 13),
-                                  ),
-                                  contentPadding: EdgeInsets.zero,
-                                  controlAffinity:
-                                      ListTileControlAffinity.leading,
-                                  dense: true,
-                                ),
-                              ),
-                            ],
+                        // Weather
+                        TextFormField(
+                          controller: _weatherController,
+                          decoration: const InputDecoration(
+                            labelText: '天气',
+                            border: OutlineInputBorder(),
+                            prefixIcon: Icon(Icons.wb_cloudy, size: 18),
                           ),
-                          const SizedBox(height: 12),
+                          style: AppTheme.tsCaption,
+                        ),
+                        const SizedBox(height: AppTheme.fieldGap),
 
-                          // Fault counts section
-                          _buildSectionTitle('故障计数'),
-                          const SizedBox(height: 8),
+                        // Patch (分区)
+                        DropdownButtonFormField<int>(
+                          value: _selectedPatch,
+                          isDense: true,
+                          decoration: const InputDecoration(
+                            labelText: '分区 *',
+                            border: OutlineInputBorder(),
+                            prefixIcon: Icon(Icons.location_on, size: 18),
+                            contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          ),
+                          items: _patches
+                              .map<DropdownMenuItem<int>>((patch) => DropdownMenuItem<int>(
+                                    value: patch['id'],
+                                    child: Text(patch['name'],
+                                        style: AppTheme.tsCaption,
+                                        overflow: TextOverflow.ellipsis),
+                                  ))
+                              .toList(),
+                          onChanged: (v) => setState(() => _selectedPatch = v),
+                        ),
+                        const SizedBox(height: AppTheme.fieldGap),
 
-                          // Added fault chips
-                          _buildAddedFaultChips(),
+                        // Zone (区域)
+                        InkWell(
+                          onTap: _allZones.isEmpty ? null : _openZonePicker,
+                          child: InputDecorator(
+                            decoration: const InputDecoration(
+                              labelText: '区域',
+                              border: OutlineInputBorder(),
+                              prefixIcon: Icon(Icons.place, size: 18),
+                            ),
+                            child: Text(
+                              _selectedZone != null
+                                  ? '${_selectedZone!.name} (${_selectedZone!.code})'
+                                  : '点击选择区域',
+                              style: _selectedZone != null
+                                  ? AppTheme.tsCaption
+                                  : AppTheme.tsCaption.copyWith(color: AppTheme.textHint),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: AppTheme.fieldGap),
 
-                          const SizedBox(height: 8),
+                        // Work Category
+                        DropdownButtonFormField<int>(
+                          value: _selectedWorkCategory,
+                          isDense: true,
+                          decoration: const InputDecoration(
+                            labelText: '工作分类 *',
+                            border: OutlineInputBorder(),
+                            prefixIcon: Icon(Icons.category, size: 18),
+                            contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          ),
+                          items: _workCategories
+                              .map<DropdownMenuItem<int>>((cat) => DropdownMenuItem<int>(
+                                    value: cat['id'],
+                                    child: Text(cat['name'],
+                                        style: AppTheme.tsCaption,
+                                        overflow: TextOverflow.ellipsis),
+                                  ))
+                              .toList(),
+                          onChanged: (v) => setState(() => _selectedWorkCategory = v),
+                        ),
+                        const SizedBox(height: AppTheme.fieldGap),
 
-                          // Add fault button
-                          OutlinedButton.icon(
+                        // Info source
+                        DropdownButtonFormField<int>(
+                          value: _selectedInfoSource,
+                          isDense: true,
+                          decoration: const InputDecoration(
+                            labelText: '信息来源',
+                            border: OutlineInputBorder(),
+                            prefixIcon: Icon(Icons.info_outline, size: 18),
+                            contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          ),
+                          items: [
+                            const DropdownMenuItem<int>(value: null, child: Text('-- 不选 --', style: AppTheme.tsCaption)),
+                            ..._infoSources.map<DropdownMenuItem<int>>(
+                              (src) => DropdownMenuItem<int>(
+                                value: src['id'],
+                                child: Text(src['name'],
+                                    style: AppTheme.tsCaption,
+                                    overflow: TextOverflow.ellipsis),
+                              ),
+                            ),
+                          ],
+                          onChanged: (v) => setState(() => _selectedInfoSource = v),
+                        ),
+                        const SizedBox(height: AppTheme.fieldGap),
+
+                        // Remark
+                        TextFormField(
+                          controller: _remarkController,
+                          decoration: const InputDecoration(
+                            labelText: '备注/工作内容 *',
+                            border: OutlineInputBorder(),
+                            prefixIcon: Icon(Icons.description, size: 18),
+                            alignLabelWithHint: true,
+                          ),
+                          style: AppTheme.tsCaption,
+                          maxLines: 3,
+                          validator: (v) => v?.trim().isEmpty == true ? '请填写工作内容' : null,
+                        ),
+                        const SizedBox(height: AppTheme.fieldGap),
+
+                        // Difficult toggles
+                        Row(
+                          children: [
+                            Expanded(
+                              child: CheckboxListTile(
+                                value: _isDifficult,
+                                onChanged: (v) => setState(() {
+                                  _isDifficult = v ?? false;
+                                  if (!_isDifficult) _isDifficultResolved = false;
+                                }),
+                                title: Text('疑难问题', style: AppTheme.tsCaption),
+                                contentPadding: EdgeInsets.zero,
+                                controlAffinity: ListTileControlAffinity.leading,
+                                dense: true,
+                              ),
+                            ),
+                            Expanded(
+                              child: CheckboxListTile(
+                                value: _isDifficultResolved,
+                                onChanged: _isDifficult
+                                    ? (v) => setState(() => _isDifficultResolved = v ?? false)
+                                    : null,
+                                title: Text('疑难已处理', style: AppTheme.tsCaption),
+                                contentPadding: EdgeInsets.zero,
+                                controlAffinity: ListTileControlAffinity.leading,
+                                dense: true,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: AppTheme.itemGap),
+
+                    // ── Section 2: Fault counts ────────────────
+                    AppFormSection(
+                      title: '故障计数',
+                      icon: Icons.bug_report_outlined,
+                      children: [
+                        _buildAddedFaultChips(),
+                        const SizedBox(height: AppTheme.fieldGap),
+                        SizedBox(
+                          width: double.infinity,
+                          child: OutlinedButton.icon(
                             onPressed: _openFaultPicker,
                             icon: const Icon(Icons.add, size: 18),
-                            label: const Text('添加故障'),
+                            label: const Text('添加故障', style: AppTheme.tsBody),
                             style: OutlinedButton.styleFrom(
-                              foregroundColor: const Color(0xFF40916C),
-                              side: const BorderSide(color: Color(0xFFB7E4C7)),
-                              padding: const EdgeInsets.symmetric(vertical: 8),
+                              foregroundColor: AppTheme.greenMedium,
+                              side: const BorderSide(color: AppTheme.greenPale, width: 1.5),
+                              padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(AppTheme.buttonRadius),
+                              ),
                             ),
                           ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: AppTheme.itemGap),
 
-                          const SizedBox(height: 12),
+                    // ── Section 3: Photos ──────────────────────
+                    AppFormSection(
+                      title: '现场照片',
+                      icon: Icons.camera_alt_outlined,
+                      children: [
+                        _buildPhotoSection(),
+                      ],
+                    ),
+                    const SizedBox(height: AppTheme.sectionGap),
 
-                          // Photos section
-                          _buildSectionTitle('照片'),
-                          const SizedBox(height: 8),
-                          _buildPhotoSection(),
-
-                          const SizedBox(height: 16),
-
-                          // Submit button
-                          FilledButton.icon(
-                            onPressed: _isSaving ? null : _submit,
-                            icon: _isSaving
-                                ? const SizedBox(
-                                    width: 20,
-                                    height: 20,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      color: Colors.white,
-                                    ),
-                                  )
-                                : Icon(_isEditing ? Icons.save : Icons.send),
-                            label: Text(
-                              _isSaving
-                                  ? (_isEditing ? '保存中...' : '提交中...')
-                                  : (_isEditing ? '保存修改' : '创建工单'),
-                            ),
-                          ),
-                        ],
+                    // ── Submit ─────────────────────────────────
+                    FilledButton.icon(
+                      onPressed: _isSaving ? null : _submit,
+                      icon: _isSaving
+                          ? const SizedBox(
+                              width: 20, height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                            )
+                          : Icon(_isEditing ? Icons.save : Icons.send),
+                      label: Text(
+                        _isSaving
+                            ? (_isEditing ? '保存中...' : '提交中...')
+                            : (_isEditing ? '保存修改' : '创建工单'),
                       ),
                     ),
                   ],
@@ -959,28 +886,19 @@ class _WorkReportFormScreenState extends State<WorkReportFormScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Existing photos (when editing)
         if (_existingPhotoUrls.isNotEmpty)
           Wrap(
             spacing: 8,
             runSpacing: 8,
-            children: _existingPhotoUrls
-                .map((url) => _buildExistingPhotoThumb(url))
-                .toList(),
+            children: _existingPhotoUrls.map((url) => _buildExistingPhotoThumb(url)).toList(),
           ),
-        // Newly selected photos
         if (_selectedPhotos.isNotEmpty)
           Wrap(
             spacing: 8,
             runSpacing: 8,
-            children: _selectedPhotos
-                .asMap()
-                .entries
-                .map((e) => _buildNewPhotoThumb(e.key, e.value))
-                .toList(),
+            children: _selectedPhotos.asMap().entries.map((e) => _buildNewPhotoThumb(e.key, e.value)).toList(),
           ),
         const SizedBox(height: 8),
-        // Add photo buttons
         Wrap(
           spacing: 8,
           runSpacing: 8,
@@ -990,8 +908,8 @@ class _WorkReportFormScreenState extends State<WorkReportFormScreen> {
               icon: const Icon(Icons.camera_alt, size: 18),
               label: const Text('拍照'),
               style: OutlinedButton.styleFrom(
-                foregroundColor: const Color(0xFF40916C),
-                side: const BorderSide(color: Color(0xFFB7E4C7)),
+                foregroundColor: AppTheme.greenMedium,
+                side: const BorderSide(color: AppTheme.greenPale),
               ),
             ),
             OutlinedButton.icon(
@@ -999,8 +917,8 @@ class _WorkReportFormScreenState extends State<WorkReportFormScreen> {
               icon: const Icon(Icons.photo_library, size: 18),
               label: const Text('相册'),
               style: OutlinedButton.styleFrom(
-                foregroundColor: const Color(0xFF40916C),
-                side: const BorderSide(color: Color(0xFFB7E4C7)),
+                foregroundColor: AppTheme.greenMedium,
+                side: const BorderSide(color: AppTheme.greenPale),
               ),
             ),
           ],
@@ -1013,36 +931,28 @@ class _WorkReportFormScreenState extends State<WorkReportFormScreen> {
     return Stack(
       children: [
         ClipRRect(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(10),
           child: Image.network(
             url,
-            width: 80,
-            height: 80,
+            width: 90, height: 90,
             fit: BoxFit.cover,
             errorBuilder: (_, __, ___) => Container(
-              width: 80,
-              height: 80,
-              color: Colors.grey.shade200,
-              child: const Icon(Icons.broken_image, color: Colors.grey),
+              width: 90, height: 90,
+              color: AppTheme.surfaceAlt,
+              child: const Icon(Icons.broken_image, color: AppTheme.textSecondary),
             ),
           ),
         ),
         Positioned(
-          top: -4,
-          right: -4,
+          top: -4, right: -4,
           child: GestureDetector(
-            onTap: () {
-              setState(() {
-                _existingPhotoUrls.remove(url);
-                _removedExistingPhotos.add(url);
-              });
-            },
+            onTap: () => setState(() {
+              _existingPhotoUrls.remove(url);
+              _removedExistingPhotos.add(url);
+            }),
             child: Container(
               padding: const EdgeInsets.all(2),
-              decoration: const BoxDecoration(
-                color: Colors.red,
-                shape: BoxShape.circle,
-              ),
+              decoration: const BoxDecoration(color: AppTheme.danger, shape: BoxShape.circle),
               child: const Icon(Icons.close, size: 14, color: Colors.white),
             ),
           ),
@@ -1055,44 +965,30 @@ class _WorkReportFormScreenState extends State<WorkReportFormScreen> {
     return Stack(
       children: [
         ClipRRect(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(10),
           child: FutureBuilder<Uint8List>(
             future: file.readAsBytes(),
             builder: (_, snapshot) {
               if (snapshot.hasData) {
-                return Image.memory(
-                  snapshot.data!,
-                  width: 80,
-                  height: 80,
-                  fit: BoxFit.cover,
-                );
+                return Image.memory(snapshot.data!, width: 90, height: 90, fit: BoxFit.cover);
               }
               return Container(
-                width: 80,
-                height: 80,
-                color: Colors.grey.shade200,
+                width: 90, height: 90,
+                color: AppTheme.surfaceAlt,
                 child: const Center(
-                  child: SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
+                  child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)),
                 ),
               );
             },
           ),
         ),
         Positioned(
-          top: -4,
-          right: -4,
+          top: -4, right: -4,
           child: GestureDetector(
             onTap: () => setState(() => _selectedPhotos.removeAt(index)),
             child: Container(
               padding: const EdgeInsets.all(2),
-              decoration: const BoxDecoration(
-                color: Colors.red,
-                shape: BoxShape.circle,
-              ),
+              decoration: const BoxDecoration(color: AppTheme.danger, shape: BoxShape.circle),
               child: const Icon(Icons.close, size: 14, color: Colors.white),
             ),
           ),
@@ -1141,14 +1037,7 @@ class _WorkReportFormScreenState extends State<WorkReportFormScreen> {
   }
 
   Widget _buildSectionTitle(String title) {
-    return Text(
-      title,
-      style: const TextStyle(
-        fontSize: 16,
-        fontWeight: FontWeight.bold,
-        color: Color(0xFF1B4332),
-      ),
-    );
+    return Text(title, style: AppTheme.tsSubtitle);
   }
 
   @override
@@ -1242,33 +1131,21 @@ class _FaultPickerSheetState extends State<_FaultPickerSheet> {
         return ListTile(
           title: Text(
             cat['name_zh'] ?? '',
-            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+            style: AppTheme.tsBody.copyWith(fontWeight: FontWeight.w500),
           ),
           subtitle:
               cat['name_en'] != null && (cat['name_en'] as String).isNotEmpty
-              ? Text(
-                  cat['name_en'],
-                  style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
-                )
+              ? Text(cat['name_en'], style: AppTheme.tsOverline)
               : null,
           trailing: catTotal > 0
               ? Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 2,
-                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF40916C).withOpacity(0.15),
+                    color: AppTheme.greenMedium.withOpacity(0.15),
                     borderRadius: BorderRadius.circular(10),
                   ),
-                  child: Text(
-                    '$catTotal',
-                    style: const TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFF40916C),
-                    ),
-                  ),
+                  child: Text('$catTotal',
+                      style: AppTheme.tsBadge.copyWith(color: AppTheme.greenMedium, fontSize: 12)),
                 )
               : null,
           onTap: () => setState(() => _selectedCategory = cat),
@@ -1288,26 +1165,14 @@ class _FaultPickerSheetState extends State<_FaultPickerSheet> {
         final subId = sub['id'];
         final count = widget.faultCounts[subId] ?? 0;
         return ListTile(
-          title: Text(
-            sub['name_zh'] ?? '',
-            style: const TextStyle(fontSize: 14),
-          ),
+          title: Text(sub['name_zh'] ?? '', style: AppTheme.tsBody),
           subtitle:
               sub['name_en'] != null && (sub['name_en'] as String).isNotEmpty
-              ? Text(
-                  sub['name_en'],
-                  style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
-                )
+              ? Text(sub['name_en'], style: AppTheme.tsOverline)
               : null,
           trailing: count > 0
-              ? Text(
-                  'x$count ✓',
-                  style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF40916C),
-                  ),
-                )
+              ? Text('x$count ✓',
+                  style: AppTheme.tsBadge.copyWith(color: AppTheme.greenMedium, fontSize: 12))
               : null,
           onTap: () {
             widget.onSelected(subId, catName, sub['name_zh'] ?? '');
@@ -1402,21 +1267,14 @@ class _ZonePickerSheetState extends State<_ZonePickerSheet> {
           ),
           // Title
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
+            padding: const EdgeInsets.symmetric(horizontal: AppTheme.pagePadding),
             child: Row(
               children: [
-                const Text(
-                  '选择区域',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: Color(0xFF1B4332),
-                  ),
-                ),
+                const Text('选择区域', style: AppTheme.tsSectionTitle),
                 const Spacer(),
                 Text(
                   '${widget.zonesByPatch.values.fold(0, (s, l) => s + l.length)} 个区域',
-                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                  style: AppTheme.tsCaption,
                 ),
               ],
             ),
@@ -1480,18 +1338,11 @@ class _ZonePickerSheetState extends State<_ZonePickerSheet> {
                                   ? Icons.expand_less
                                   : Icons.expand_more,
                               size: 18,
-                              color: const Color(0xFF52B788),
+                              color: AppTheme.greenLight,
                             ),
                             const SizedBox(width: 4),
                             Expanded(
-                              child: Text(
-                                patchName,
-                                style: const TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w600,
-                                  color: Color(0xFF1B4332),
-                                ),
-                              ),
+                              child: Text(patchName, style: AppTheme.tsLabel.copyWith(fontSize: 13)),
                             ),
                             Container(
                               padding: const EdgeInsets.symmetric(
@@ -1533,34 +1384,22 @@ class _ZonePickerSheetState extends State<_ZonePickerSheet> {
                             ),
                             decoration: BoxDecoration(
                               color: isSelected
-                                  ? const Color(0xFF52B788).withOpacity(0.12)
+                                  ? AppTheme.greenLight.withOpacity(0.12)
                                   : null,
                             ),
                             child: Row(
                               children: [
                                 Expanded(
                                   child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
+                                    crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
-                                      Text(
-                                        zone.name,
-                                        style: TextStyle(
-                                          fontSize: 13,
-                                          fontWeight: isSelected
-                                              ? FontWeight.w600
-                                              : FontWeight.w500,
-                                        ),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                      Text(
-                                        zone.code,
-                                        style: TextStyle(
-                                          fontSize: 10,
-                                          color: Colors.grey.shade600,
-                                        ),
-                                      ),
+                                      Text(zone.name,
+                                          style: AppTheme.tsBody.copyWith(
+                                            fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis),
+                                      Text(zone.code, style: AppTheme.tsOverline),
                                     ],
                                   ),
                                 ),
@@ -1573,11 +1412,7 @@ class _ZonePickerSheetState extends State<_ZonePickerSheet> {
                                     ),
                                   ),
                                 if (isSelected)
-                                  const Icon(
-                                    Icons.check,
-                                    size: 16,
-                                    color: Color(0xFF40916C),
-                                  ),
+                                  const Icon(Icons.check, size: 16, color: AppTheme.greenMedium),
                               ],
                             ),
                           ),

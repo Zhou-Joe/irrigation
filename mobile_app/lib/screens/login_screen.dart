@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../services/api_service.dart';
+import '../theme/app_theme.dart';
 import '../widgets/modern_ui.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -120,6 +121,10 @@ class _LoginScreenState extends State<LoginScreen> {
                             )
                           : const Icon(Icons.wifi_tethering, size: 18),
                       label: const Text('测试连接'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppTheme.greenMedium,
+                        side: const BorderSide(color: AppTheme.greenPale),
+                      ),
                     ),
                   ),
                   if (_connectionStatus != null) ...[
@@ -129,16 +134,16 @@ class _LoginScreenState extends State<LoginScreen> {
                           ? Icons.check_circle
                           : Icons.cancel,
                       color: _connectionStatus == 'ok'
-                          ? const Color(0xFF40916C)
-                          : Colors.red,
+                          ? AppTheme.greenMedium
+                          : AppTheme.danger,
                       size: 24,
                     ),
                     Text(
                       _connectionStatus == 'ok' ? '连接成功' : '连接失败',
                       style: TextStyle(
                         color: _connectionStatus == 'ok'
-                            ? const Color(0xFF40916C)
-                            : Colors.red,
+                            ? AppTheme.greenMedium
+                            : AppTheme.danger,
                         fontWeight: FontWeight.w600,
                         fontSize: 13,
                       ),
@@ -151,12 +156,12 @@ class _LoginScreenState extends State<LoginScreen> {
                 Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: Colors.red.shade50,
+                    color: AppTheme.dangerLight,
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
                     _connectionError!,
-                    style: TextStyle(fontSize: 11, color: Colors.red.shade700),
+                    style: AppTheme.tsOverline.copyWith(color: AppTheme.danger),
                   ),
                 ),
               ],
@@ -173,7 +178,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   }
                 },
                 style: FilledButton.styleFrom(
-                  backgroundColor: const Color(0xFF40916C),
+                  backgroundColor: AppTheme.greenMedium,
                   padding: const EdgeInsets.symmetric(vertical: 14),
                 ),
                 child: const Text('保存'),
@@ -222,8 +227,9 @@ class _LoginScreenState extends State<LoginScreen> {
                   children: [
                     const SizedBox(height: 12),
                     const AppHeroCard(
-                      title: '园艺管理',
-                      subtitle: '把区域、需求、日报和现场协作放在同一张清晰的工作界面里。',
+                      title: '灌溉信息管理平台',
+                      subtitle: 'FOS-Horticulture',
+                      subtitleAlign: TextAlign.right,
                       icon: Icons.park_rounded,
                     ),
                     const SizedBox(height: 22),
@@ -238,12 +244,7 @@ class _LoginScreenState extends State<LoginScreen> {
                               style: Theme.of(context).textTheme.headlineSmall
                                   ?.copyWith(color: AppColors.deepGreen),
                             ),
-                            const SizedBox(height: 6),
-                            Text(
-                              '登录后继续处理区域巡检、浇水协调和维修日报。',
-                              style: Theme.of(context).textTheme.bodyMedium
-                                  ?.copyWith(color: AppColors.muted),
-                            ),
+                            const SizedBox(height: 20),
                             if (_error != null) ...[
                               const SizedBox(height: 20),
                               Container(
@@ -355,35 +356,16 @@ class _LoginScreenState extends State<LoginScreen> {
                               ),
                             ),
                             const SizedBox(height: 18),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 14,
-                                vertical: 12,
-                              ),
-                              decoration: BoxDecoration(
-                                color: AppColors.surfaceSoft.withOpacity(0.7),
-                                borderRadius: BorderRadius.circular(18),
-                              ),
-                              child: Row(
-                                children: [
-                                  const Icon(
-                                    Icons.info_outline_rounded,
-                                    size: 18,
-                                    color: AppColors.primary,
-                                  ),
-                                  const SizedBox(width: 10),
-                                  Expanded(
-                                    child: Text(
-                                      '请联系管理员注册账户或确认服务器地址无误。',
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .bodySmall
-                                          ?.copyWith(color: AppColors.muted),
-                                    ),
-                                  ),
-                                ],
+                            Center(
+                              child: Text(
+                                'v0.1.0',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: AppColors.muted,
+                                ),
                               ),
                             ),
+                            const SizedBox(height: 8),
                           ],
                         ),
                       ),

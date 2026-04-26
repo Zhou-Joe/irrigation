@@ -78,11 +78,11 @@ class _ZoneDetailScreenState extends State<ZoneDetailScreen> {
         .cast<Map<String, dynamic>>();
 
     return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+      padding: const EdgeInsets.fromLTRB(AppTheme.pagePadding, AppTheme.itemGap, AppTheme.pagePadding, 32),
       children: [
         // Header card
         _buildHeaderCard(d),
-        const SizedBox(height: 16),
+        const SizedBox(height: AppTheme.sectionGap),
 
         // Stats row
         Wrap(
@@ -93,53 +93,53 @@ class _ZoneDetailScreenState extends State<ZoneDetailScreen> {
               '植物',
               d['plant_count'] ?? 0,
               Icons.local_florist,
-              const Color(0xFF52B788),
+              AppTheme.greenLight,
             ),
             _buildStatCard(
               '设备',
               d['equipment_count'] ?? 0,
               Icons.settings_input_component,
-              const Color(0xFF40916C),
+              AppTheme.greenMedium,
             ),
             _buildStatCard(
               '日报',
               d['work_report_count'] ?? 0,
               Icons.assignment,
-              const Color(0xFF2D6A4F),
+              AppTheme.greenDark,
             ),
             _buildStatCard(
               '近30天故障',
               d['recent_fault_count'] ?? 0,
               Icons.warning,
-              const Color(0xFFCC7722),
+              AppTheme.statusInProgress,
             ),
           ],
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: AppTheme.sectionGap),
 
         // Plants section
         const AppSectionTitle(title: '植物'),
-        const SizedBox(height: 8),
+        const SizedBox(height: AppTheme.fieldGap),
         if (plants.isEmpty)
-          const AppCard(
+          AppCard(
             child: Text(
               '暂无植物记录',
-              style: TextStyle(color: Colors.grey, fontSize: 13),
+              style: AppTheme.tsCaption,
             ),
           )
         else
           ...plants.map((p) => _buildPlantCard(p)),
 
-        const SizedBox(height: 16),
+        const SizedBox(height: AppTheme.sectionGap),
 
         // Equipment section
         const AppSectionTitle(title: '设备'),
-        const SizedBox(height: 8),
+        const SizedBox(height: AppTheme.fieldGap),
         if (equipment.isEmpty)
-          const AppCard(
+          AppCard(
             child: Text(
               '暂无设备记录',
-              style: TextStyle(color: Colors.grey, fontSize: 13),
+              style: AppTheme.tsCaption,
             ),
           )
         else
@@ -149,7 +149,7 @@ class _ZoneDetailScreenState extends State<ZoneDetailScreen> {
   }
 
   Widget _buildHeaderCard(Map<String, dynamic> d) {
-    final statusColor = _getStatusColor(d['status'] ?? 'unarranged');
+    final statusColor = AppTheme.statusColor(d['status'] ?? 'unarranged');
     return AppCard(
       child: Padding(
         padding: EdgeInsets.zero,
@@ -164,7 +164,7 @@ class _ZoneDetailScreenState extends State<ZoneDetailScreen> {
                     style: const TextStyle(
                       fontSize: 20,
                       fontWeight: FontWeight.bold,
-                      color: Color(0xFF1B4332),
+                      color: AppTheme.greenDarkest,
                     ),
                   ),
                 ),
@@ -179,11 +179,7 @@ class _ZoneDetailScreenState extends State<ZoneDetailScreen> {
                   ),
                   child: Text(
                     d['status_display'] ?? '-',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: statusColor,
-                    ),
+                    style: AppTheme.tsBadge.copyWith(color: statusColor),
                   ),
                 ),
               ],
@@ -191,11 +187,11 @@ class _ZoneDetailScreenState extends State<ZoneDetailScreen> {
             const SizedBox(height: 4),
             Text(
               '编号: ${d['code'] ?? '-'}',
-              style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+              style: AppTheme.tsCaption,
             ),
             if ((d['description'] ?? '').isNotEmpty) ...[
               const SizedBox(height: 4),
-              Text(d['description'], style: const TextStyle(fontSize: 13)),
+              Text(d['description'], style: AppTheme.tsBody),
             ],
           ],
         ),
@@ -218,7 +214,7 @@ class _ZoneDetailScreenState extends State<ZoneDetailScreen> {
               ),
               child: Icon(icon, size: 22, color: color),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: AppTheme.itemGap),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -233,7 +229,7 @@ class _ZoneDetailScreenState extends State<ZoneDetailScreen> {
                   ),
                   Text(
                     label,
-                    style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                    style: AppTheme.tsBadge.copyWith(color: AppTheme.textSecondary),
                   ),
                 ],
               ),
@@ -259,7 +255,7 @@ class _ZoneDetailScreenState extends State<ZoneDetailScreen> {
     }
 
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.only(bottom: AppTheme.fieldGap),
       child: AppCard(
         child: Padding(
           padding: EdgeInsets.zero,
@@ -270,22 +266,19 @@ class _ZoneDetailScreenState extends State<ZoneDetailScreen> {
                 children: [
                   const Icon(
                     Icons.local_florist,
-                    color: Color(0xFF52B788),
+                    color: AppTheme.greenLight,
                     size: 16,
                   ),
                   const SizedBox(width: 6),
                   Expanded(
                     child: Text(
                       p['name'] ?? '-',
-                      style: const TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w500,
-                      ),
+                      style: AppTheme.tsCaption.copyWith(fontWeight: FontWeight.w500),
                     ),
                   ),
                   Text(
                     '数量: ${p['quantity'] ?? 0}',
-                    style: const TextStyle(fontSize: 12),
+                    style: AppTheme.tsBadge,
                   ),
                 ],
               ),
@@ -296,11 +289,7 @@ class _ZoneDetailScreenState extends State<ZoneDetailScreen> {
                     Expanded(
                       child: Text(
                         p['scientific_name'],
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: Colors.grey.shade500,
-                          fontStyle: FontStyle.italic,
-                        ),
+                        style: AppTheme.tsOverline.copyWith(fontStyle: FontStyle.italic),
                       ),
                     ),
                   if (dateRange.isNotEmpty) ...[
@@ -308,15 +297,12 @@ class _ZoneDetailScreenState extends State<ZoneDetailScreen> {
                     Icon(
                       Icons.calendar_today,
                       size: 12,
-                      color: Colors.grey.shade500,
+                      color: AppTheme.textSecondary,
                     ),
                     const SizedBox(width: 4),
                     Text(
                       dateRange,
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: Colors.grey.shade600,
-                      ),
+                      style: AppTheme.tsOverline,
                     ),
                   ],
                 ],
@@ -337,14 +323,10 @@ class _ZoneDetailScreenState extends State<ZoneDetailScreen> {
     final location = e['location_in_zone'] ?? '';
     final installationDate = e['installation_date'];
 
-    final statusColor = status == 'working'
-        ? const Color(0xFF40916C)
-        : status == 'needs_repair'
-        ? const Color(0xFFCC7722)
-        : Colors.grey;
+    final statusColor = AppTheme.statusColor(status);
 
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.only(bottom: AppTheme.fieldGap),
       child: AppCard(
         child: Padding(
           padding: EdgeInsets.zero,
@@ -356,16 +338,13 @@ class _ZoneDetailScreenState extends State<ZoneDetailScreen> {
                   const Icon(
                     Icons.settings_input_component,
                     size: 16,
-                    color: Color(0xFF40916C),
+                    color: AppTheme.greenMedium,
                   ),
                   const SizedBox(width: 6),
                   Expanded(
                     child: Text(
                       '$typeDisplay: $modelName',
-                      style: const TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w500,
-                      ),
+                      style: AppTheme.tsCaption.copyWith(fontWeight: FontWeight.w500),
                     ),
                   ),
                   Container(
@@ -379,11 +358,7 @@ class _ZoneDetailScreenState extends State<ZoneDetailScreen> {
                     ),
                     child: Text(
                       statusDisplay,
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w500,
-                        color: statusColor,
-                      ),
+                      style: AppTheme.tsOverline.copyWith(color: statusColor),
                     ),
                   ),
                 ],
@@ -393,33 +368,27 @@ class _ZoneDetailScreenState extends State<ZoneDetailScreen> {
                 children: [
                   Text(
                     '数量: ${e['quantity'] ?? 1}',
-                    style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                    style: AppTheme.tsBadge.copyWith(color: AppTheme.textSecondary),
                   ),
                   if (location.isNotEmpty) ...[
-                    const SizedBox(width: 12),
+                    const SizedBox(width: AppTheme.itemGap),
                     Text(
                       '位置: $location',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey.shade600,
-                      ),
+                      style: AppTheme.tsBadge.copyWith(color: AppTheme.textSecondary),
                     ),
                   ],
                   if (installationDate != null &&
                       installationDate.isNotEmpty) ...[
-                    const SizedBox(width: 12),
+                    const SizedBox(width: AppTheme.itemGap),
                     Icon(
                       Icons.calendar_today,
                       size: 12,
-                      color: Colors.grey.shade500,
+                      color: AppTheme.textSecondary,
                     ),
                     const SizedBox(width: 4),
                     Text(
                       '安装: $installationDate',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey.shade600,
-                      ),
+                      style: AppTheme.tsBadge.copyWith(color: AppTheme.textSecondary),
                     ),
                   ],
                 ],
@@ -431,16 +400,4 @@ class _ZoneDetailScreenState extends State<ZoneDetailScreen> {
     );
   }
 
-  Color _getStatusColor(String status) {
-    switch (status) {
-      case 'watering':
-        return const Color(0xFF2D6A4F);
-      case 'maintenance':
-        return const Color(0xFFCC7722);
-      case 'completed':
-        return const Color(0xFF40916C);
-      default:
-        return Colors.grey;
-    }
-  }
 }

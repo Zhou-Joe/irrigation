@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import '../models/zone.dart';
 import '../providers/auth_provider.dart';
+import '../theme/app_theme.dart';
 
 class ReportIssueScreen extends StatefulWidget {
   final List<Zone> zones;
@@ -380,7 +381,7 @@ class _ReportIssueScreenState extends State<ReportIssueScreen> {
               label: Text(_isLoading ? '提交中...' : '提交报告'),
               style: FilledButton.styleFrom(
                 padding: const EdgeInsets.symmetric(vertical: 16),
-                backgroundColor: const Color(0xFFCC7722),
+                backgroundColor: AppTheme.statusInProgress,
               ),
             ),
           ],
