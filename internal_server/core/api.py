@@ -702,7 +702,7 @@ def get_weather(request):
     lat = request.query_params.get('lat')
     lon = request.query_params.get('lon')
 
-    now = timezone.now()
+    now = timezone.localtime()  # Use local time (Shanghai)
     current_hour = now.hour
     today = now.date()
 

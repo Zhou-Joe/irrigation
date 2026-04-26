@@ -45,11 +45,22 @@ class Command(BaseCommand):
             zone = Zone.objects.filter(boundary_points__isnull=False).exclude(boundary_points=[]).first()
             if zone and zone.boundary_points:
                 points = zone.boundary_points
-                lats = [p.get('lat', p[0] if isinstance(p, list) else 0) for p in points]
-                lons = [p.get('lng', p[1] if isinstance(p, list) else 0) for p in points]
-                lat = sum(lats) / len(lats)
-                lon = sum(lons) / len(lons)
-                self.stdout.write(f"Using zone center: ({lat:.4f}, {lon:.4f})")
+                # boundary_points is a list of polygons, each polygon is a list of {lat, lng} dicts
+                all_coords = []
+                for polygon in points:
+                    if isinstance(polygon, list):
+                        for coord in polygon:
+                            if isinstance(coord, dict):
+                                all_coords.append(coord)
+                if all_coords:
+                    lats = [c.get('lat', 0) for c in all_coords]
+                    lons = [c.get('lng', 0) for c in all_coords]
+                    lat = sum(lats) / len(lats)
+                    lon = sum(lons) / len(lons)
+                    self.stdout.write(f"Using zone center: ({lat:.4f}, {lon:.4f})")
+                else:
+                    lat, lon = 31.2, 121.5
+                    self.stdout.write(f"No valid coords in zone, using default: ({lat}, {lon})")
             else:
                 # Default to Shanghai area
                 lat, lon = 31.2, 121.5
