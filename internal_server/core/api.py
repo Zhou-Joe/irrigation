@@ -821,10 +821,9 @@ class WorkReportFaultSerializer(serializers.ModelSerializer):
 class WorkReportSerializer(serializers.ModelSerializer):
     fault_entries = WorkReportFaultSerializer(many=True, required=False)
     worker_name = serializers.CharField(source='worker.full_name', read_only=True)
-    patch = serializers.IntegerField(write_only=True, required=True)
-    location = serializers.IntegerField(read_only=True)
-    location_name = serializers.CharField(source='location.name', read_only=True)
-    work_category_name = serializers.CharField(source='work_category.name', read_only=True)
+    patch = serializers.IntegerField(write_only=True, required=False)
+    location_name = serializers.CharField(source='location.name', read_only=True, default=None)
+    work_category_name = serializers.CharField(source='work_category.name', read_only=True, default=None)
     info_source_name = serializers.CharField(source='info_source.name', read_only=True, default=None)
     zone_location_code = serializers.CharField(write_only=True, required=False, allow_null=True, allow_blank=True)
     zone_location_display = serializers.SerializerMethodField()
@@ -835,26 +834,18 @@ class WorkReportSerializer(serializers.ModelSerializer):
         model = WorkReport
         fields = [
             'id', 'date', 'weather', 'worker', 'worker_name',
-            'patch', 'location', 'location_name', 'work_category', 'work_category_name',
+            'location', 'location_name', 'work_category', 'work_category_name',
             'zone_location', 'zone_location_code', 'zone_location_display',
             'remark', 'info_source', 'info_source_name',
             'is_difficult', 'is_difficult_resolved',
-            'fault_entries', 'total_faults', 'photos', 'photo_urls',
+            'patch', 'fault_entries', 'total_faults', 'photos', 'photo_urls',
             'created_at', 'updated_at',
         ]
-        read_only_fields = ['created_at', 'updated_at', 'location']
+        read_only_fields = ['created_at', 'updated_at']
         extra_kwargs = {
             'zone_location': {'required': False, 'allow_null': True},
             'worker': {'required': False},
         }
-
-    def validate_patch(self, value):
-        from core.models import Patch
-        try:
-            Patch.objects.get(pk=value)
-        except Patch.DoesNotExist:
-            raise serializers.ValidationError(f"Patch with id {value} not found")
-        return value
 
     def get_total_faults(self, obj):
         return sum(e.count for e in obj.fault_entries.all())
@@ -977,7 +968,7 @@ class WorkReportViewSet(viewsets.ModelViewSet):
         if date_to:
             qs = qs.filter(date__lte=date_to)
         if patch:
-            qs = qs.filter(location_id=location)
+            qs = qs.filter(location_id=patch)
         if work_category:
             qs = qs.filter(work_category_id=work_category)
         if worker_id:
