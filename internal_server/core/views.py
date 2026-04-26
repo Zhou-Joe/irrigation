@@ -13,63 +13,48 @@ from core.models import Zone
 def _build_grouped_zones(zones_qs=None):
     """Build Patch→Zone grouped structure for template rendering.
 
-    Groups zones by their Patch FK, or by deriving the group from the zone
-    code prefix (e.g. "3-2-1" → site "3 Tomorrowland"). Returns a list of
+    Groups zones by their Patch FK. Returns a list of
     dicts: {id, name, code, type, zone_count, zones: [{id, name, code, ...}]}
-    Includes an 'orphan' group for unmatched zones.
+    Includes an 'orphan' group for zones without a patch.
     """
-    import re
     from core.models import Patch
 
     if zones_qs is None:
         zones_qs = Zone.objects.all().order_by('code')
 
-    # Build a lookup: numeric prefix → site Patch
-    site_patches = {}
-    for p in Patch.objects.filter(type=Patch.TYPE_SITE):
-        m = re.match(r'^(\d+)\s', p.name)
-        if m:
-            site_patches[m.group(1)] = p
-
     zones_data = []
     for z in zones_qs:
-        # Use FK if set, otherwise derive from code prefix
-        patch_name = z.patch.name if z.patch else None
-        patch_id = z.patch_id
-        if not patch_name:
-            prefix = z.code.split('-')[0] if '-' in z.code else z.code
-            sp = site_patches.get(prefix)
-            if sp:
-                patch_name = sp.name
-                patch_id = sp.id
-
         zones_data.append({
             'id': z.id,
             'name': z.name,
             'code': z.code,
             'description': z.description or '',
-            'patch_id': patch_id,
-            'patch_name': patch_name,
+            'patch_id': z.patch_id,
+            'patch_name': z.patch.name if z.patch else None,
+            'patch_code': z.patch.code if z.patch else None,
+            'patch_type': z.patch.type if z.patch else None,
+            'patch_type_display': z.patch.get_type_display() if z.patch else None,
             'boundary_points': z.boundary_points,
             'boundary_color': z.boundary_color,
         })
 
-    # Group by patch_name
+    # Group by patch_id (preserving FK order)
     groups = {}
     orphans = []
     for z in zones_data:
-        pn = z['patch_name']
-        if pn:
-            groups.setdefault(pn, []).append(z)
+        if z['patch_id'] is not None:
+            groups.setdefault(z['patch_id'], []).append(z)
         else:
             orphans.append(z)
 
     grouped = []
-    for name, zones in sorted(groups.items()):
+    for patch_id, zones in sorted(groups.items()):
         grouped.append({
-            'type': 'patch',
-            'id': zones[0]['patch_id'],
-            'name': name,
+            'type': zones[0]['patch_type'],
+            'id': patch_id,
+            'name': zones[0]['patch_name'],
+            'code': zones[0]['patch_code'],
+            'type_display': zones[0]['patch_type_display'],
             'zones': zones,
             'zone_count': len(zones),
         })
@@ -406,15 +391,6 @@ def dashboard(request):
         )
     )
 
-    # Build site prefix lookup for deriving patch from zone code
-    from core.models import Patch as _Patch
-    import re as _re
-    _site_prefix_map = {}
-    for _p in _Patch.objects.filter(type=_Patch.TYPE_SITE):
-        _m = _re.match(r'^(\d+)\s', _p.name)
-        if _m:
-            _site_prefix_map[_m.group(1)] = _p
-
     # Recent fault count (last 30 days)
     thirty_days_ago = today - timedelta(days=30)
     from django.db.models import Sum
@@ -485,10 +461,12 @@ def dashboard(request):
             'recent_fault_count': recent_fault_count,
             'center': center,
             'pending_requests': pending_requests,
-            # Patch info (use FK, or derive from zone code prefix)
-            'patch_id': (zone.patch.id if zone.patch else None) or (_site_prefix_map.get(zone.code.split('-')[0]).id if zone.code.split('-')[0] in _site_prefix_map else None),
-            'patch_name': (zone.patch.name if zone.patch else None) or (_site_prefix_map[zone.code.split('-')[0]].name if zone.code.split('-')[0] in _site_prefix_map else None),
-            'patch_code': (zone.patch.code if zone.patch else None) or (_site_prefix_map[zone.code.split('-')[0]].code if zone.code.split('-')[0] in _site_prefix_map else None),
+            # Patch info
+            'patch_id': zone.patch.id if zone.patch else None,
+            'patch_name': zone.patch.name if zone.patch else None,
+            'patch_code': zone.patch.code if zone.patch else None,
+            'patch_type': zone.patch.type if zone.patch else None,
+            'patch_type_display': zone.patch.get_type_display() if zone.patch else None,
             # Detailed info for cards
             'maintenance_count': maintenance_count,
             'water_count': water_count,
@@ -786,22 +764,10 @@ def zone_edit(request, zone_id):
     # Get all patches for selection
     patches = Patch.objects.all()
 
-    # Derive patch from zone code prefix if FK is not set
-    derived_patch_id = None
-    if not zone.patch:
-        import re as _re
-        prefix = zone.code.split('-')[0]
-        for _p in Patch.objects.filter(type=Patch.TYPE_SITE):
-            _m = _re.match(r'^(\d+)\s', _p.name)
-            if _m and _m.group(1) == prefix:
-                derived_patch_id = _p.id
-                break
-
     ref_zones_json, ref_pipelines_json = _get_reference_map_data(exclude_zone_id=zone.id)
 
     context = {
         'zone': zone,
-        'derived_patch_id': derived_patch_id,
         'boundary_json': json.dumps(zone.boundary_points),
         'available_plants': available_plants,
         'zone_equipments': zone_equipments,

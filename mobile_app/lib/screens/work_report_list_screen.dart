@@ -37,13 +37,11 @@ class _WorkReportListScreenState extends State<WorkReportListScreen> {
     for (final z in _zones) {
       final patchId = z['patch_id'] as int?;
       final patchName = z['patch_name'] as String?;
-      final patchTypeDisplay = z['patch_type_display'] as String?;
       if (patchId != null) {
         patchMap[patchId] = {
           'id': patchId,
           'name': patchName ?? '未知区域',
           'code': z['patch_code'] as String? ?? '',
-          'typeDisplay': patchTypeDisplay,
         };
       }
     }
@@ -89,7 +87,6 @@ class _WorkReportListScreenState extends State<WorkReportListScreen> {
                     'patch_id': zone.patchId,
                     'patch_name': zone.patchName,
                     'patch_code': zone.patchCode,
-                    'patch_type_display': zone.patchTypeDisplay,
                   })
               .toList();
           if (results.length > 2) _workers = results[2];
@@ -562,15 +559,7 @@ class _WorkReportListScreenState extends State<WorkReportListScreen> {
                   const DropdownMenuItem<int>(value: null, child: Text('全部')),
                   ..._derivePatchesFromZones().map((p) => DropdownMenuItem<int>(
                       value: p['id'],
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          if (p['typeDisplay'] != null)
-                            Text('[${p['typeDisplay']}] ',
-                                style: const TextStyle(fontSize: 11, color: Colors.grey)),
-                          Text(p['name']),
-                        ],
-                      ))),
+                      child: Text(p['name']))),
                 ],
                 onChanged: (v) {
                   setSheetState(() => _filterPatch = v);
