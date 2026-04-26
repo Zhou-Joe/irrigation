@@ -146,6 +146,8 @@ class ZoneSerializer(serializers.ModelSerializer):
     patch_id = serializers.SerializerMethodField()
     patch_name = serializers.SerializerMethodField()
     patch_code = serializers.SerializerMethodField()
+    patch_type = serializers.SerializerMethodField()
+    patch_type_display = serializers.SerializerMethodField()
 
     class Meta:
         model = Zone
@@ -154,6 +156,7 @@ class ZoneSerializer(serializers.ModelSerializer):
             'boundary_color', 'status', 'status_display',
             'pending_requests', 'center',
             'patch_id', 'patch_name', 'patch_code',
+            'patch_type', 'patch_type_display',
             'created_at', 'updated_at'
         ]
         read_only_fields = ['created_at', 'updated_at']
@@ -169,6 +172,12 @@ class ZoneSerializer(serializers.ModelSerializer):
     def get_patch_code(self, obj):
         """返回片区编号。"""
         return obj.patch.code if obj.patch else None
+
+    def get_patch_type(self, obj):
+        return obj.patch.type if obj.patch else None
+
+    def get_patch_type_display(self, obj):
+        return obj.patch.get_type_display() if obj.patch else None
 
     def get_status(self, obj):
         """返回当天状态。"""

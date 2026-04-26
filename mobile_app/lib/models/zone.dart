@@ -15,6 +15,8 @@ class Zone {
   final int? patchId;
   final String? patchName;
   final String? patchCode;
+  final String? patchType;
+  final String? patchTypeDisplay;
 
   Zone({
     required this.id,
@@ -32,6 +34,8 @@ class Zone {
     this.patchId,
     this.patchName,
     this.patchCode,
+    this.patchType,
+    this.patchTypeDisplay,
   });
 
   factory Zone.fromJson(Map<String, dynamic> json) {
@@ -78,6 +82,8 @@ class Zone {
       patchId: patchId,
       patchName: patchName,
       patchCode: patchCode,
+      patchType: json['patch_type']?.toString(),
+      patchTypeDisplay: json['patch_type_display']?.toString(),
     );
   }
 
