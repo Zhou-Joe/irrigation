@@ -25,8 +25,8 @@ body {
 
 /* Sidebar Styles */
 .sidebar {
-    width: 350px;
-    min-width: 350px;
+    width: 260px;
+    min-width: 260px;
     background: var(--color-surface-alt);
     border-right: 1px solid var(--color-surface-dark);
     display: flex;

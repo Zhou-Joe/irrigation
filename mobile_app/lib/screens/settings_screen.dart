@@ -56,111 +56,118 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
 
     return AppBackground(
-      child: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 120),
-        children: [
-          AppHeroCard(
-            title: user?.fullName ?? '未知用户',
-            subtitle:
-                '${user?.roleDisplay ?? '未知角色'} · ${user?.username ?? '-'}',
-            icon: Icons.account_circle_rounded,
-            actions: [
-              AppStatusBadge(
-                label: _isChecking
-                    ? '检测中'
-                    : _isConnected == true
-                    ? '在线'
-                    : '离线',
-                color: _isConnected == true
-                    ? const Color(0xFF9EE6BD)
-                    : const Color(0xFFFFD7D7),
-              ),
-            ],
-          ),
-          const SizedBox(height: 18),
-          AppCard(
-            child: Row(
+      child: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
+          children: [
+            // Compact user info card
+            AppCard(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                CircleAvatar(
-                  radius: 28,
-                  backgroundColor: roleColor.withOpacity(0.16),
-                  child: Text(
-                    user?.fullName.substring(0, 1) ?? '?',
-                    style: TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.w700,
-                      color: roleColor,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        user?.fullName ?? '未知用户',
-                        style: Theme.of(context).textTheme.titleLarge,
+                Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            user?.fullName ?? '未知用户',
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                              color: Color(0xFF1B4332),
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            '${user?.roleDisplay ?? '未知角色'} · @${user?.username ?? '-'}',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: AppColors.muted,
+                            ),
+                          ),
+                        ],
                       ),
-                      const SizedBox(height: 4),
-                      Text(
-                        '用户名 ${user?.username ?? '-'}',
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: AppColors.muted,
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 5,
+                      ),
+                      decoration: BoxDecoration(
+                        color: roleColor.withOpacity(0.12),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        user?.roleDisplay ?? '未知角色',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: roleColor,
+                          fontWeight: FontWeight.w700,
                         ),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 5,
+                      ),
+                      decoration: BoxDecoration(
+                        color: _isConnected == true
+                            ? const Color(0xFF40916C).withOpacity(0.1)
+                            : const Color(0xFFB84C4C).withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        _isChecking
+                            ? '检测中'
+                            : _isConnected == true
+                            ? '在线'
+                            : '离线',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: _isConnected == true
+                              ? const Color(0xFF40916C)
+                              : const Color(0xFFB84C4C),
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                if (user?.isFieldWorker ?? false) ...[
+                  const Divider(height: 16),
+                  Row(
+                    children: [
+                      const Icon(Icons.badge_outlined, size: 16, color: AppColors.muted),
+                      const SizedBox(width: 4),
+                      Text('工号: ${user?.employeeId ?? '-'}',
+                        style: const TextStyle(fontSize: 13, color: AppColors.muted),
                       ),
                     ],
                   ),
-                ),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 8,
+                ],
+                if (user?.isDeptUser ?? false) ...[
+                  const Divider(height: 16),
+                  Row(
+                    children: [
+                      const Icon(Icons.apartment_rounded, size: 16, color: AppColors.muted),
+                      const SizedBox(width: 4),
+                      Text('部门: ${user?.departmentDisplay ?? '-'}',
+                        style: const TextStyle(fontSize: 13, color: AppColors.muted),
+                      ),
+                    ],
                   ),
-                  decoration: BoxDecoration(
-                    color: roleColor.withOpacity(0.14),
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: Text(
-                    user?.roleDisplay ?? '未知角色',
-                    style: TextStyle(
-                      color: roleColor,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
+                ],
               ],
             ),
           ),
-          if (user?.isFieldWorker ?? false) ...[
-            const SizedBox(height: 18),
-            const AppSectionTitle(title: '工作信息'),
-            const SizedBox(height: 10),
-            AppCard(
-              child: ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: const Icon(Icons.badge_outlined),
-                title: const Text('工号'),
-                subtitle: Text(user?.employeeId ?? '-'),
-              ),
-            ),
-          ],
-          if (user?.isDeptUser ?? false) ...[
-            const SizedBox(height: 18),
-            const AppSectionTitle(title: '部门信息'),
-            const SizedBox(height: 10),
-            AppCard(
-              child: ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: const Icon(Icons.apartment_rounded),
-                title: const Text('部门'),
-                subtitle: Text(user?.departmentDisplay ?? '-'),
-              ),
-            ),
-          ],
-          const SizedBox(height: 18),
+          const SizedBox(height: 12),
           const AppSectionTitle(title: '功能权限', subtitle: '根据当前角色展示可用能力'),
-          const SizedBox(height: 10),
+          const SizedBox(height: 6),
           AppCard(
             padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
             child: Column(
@@ -197,16 +204,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ],
             ),
           ),
-          const SizedBox(height: 18),
+          const SizedBox(height: 12),
           AppSectionTitle(
             title: '服务器设置',
             subtitle: '管理接口连接与环境地址',
             trailing: IconButton(
               onPressed: _isChecking ? null : _checkConnection,
-              icon: const Icon(Icons.refresh_rounded),
+              icon: const Icon(Icons.refresh_rounded, size: 20),
             ),
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 6),
           AppCard(
             child: Column(
               children: [
@@ -252,9 +259,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ],
             ),
           ),
-          const SizedBox(height: 18),
+          const SizedBox(height: 12),
           const AppSectionTitle(title: '应用设置', subtitle: '当前客户端的基础偏好'),
-          const SizedBox(height: 10),
+          const SizedBox(height: 6),
           AppCard(
             child: Column(
               children: [
@@ -275,30 +282,32 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ],
             ),
           ),
-          const SizedBox(height: 18),
+          const SizedBox(height: 12),
           const AppSectionTitle(title: '关于'),
-          const SizedBox(height: 10),
+          const SizedBox(height: 6),
           const AppCard(
             child: ListTile(
               contentPadding: EdgeInsets.zero,
               leading: Icon(Icons.info_outline_rounded),
               title: Text('版本'),
-              subtitle: Text('1.1.0'),
+              subtitle: Text('0.1.0'),
             ),
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 12),
           OutlinedButton.icon(
             onPressed: () => _logout(context),
-            icon: const Icon(Icons.logout_rounded),
+            icon: const Icon(Icons.logout_rounded, size: 18),
             label: const Text('退出登录'),
             style: OutlinedButton.styleFrom(
               foregroundColor: Theme.of(context).colorScheme.error,
               side: BorderSide(
                 color: Theme.of(context).colorScheme.error.withOpacity(0.25),
               ),
+              padding: const EdgeInsets.symmetric(vertical: 10),
             ),
           ),
         ],
+      ),
       ),
     );
   }
@@ -310,21 +319,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
     String? subtitle,
   }) {
     return ListTile(
-      contentPadding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+      dense: true,
       leading: Icon(
         icon,
+        size: 20,
         color: enabled ? const Color(0xFF40916C) : Colors.grey,
       ),
-      title: Text(title, style: TextStyle(color: enabled ? null : Colors.grey)),
+      title: Text(title, style: const TextStyle(fontSize: 14),),
       subtitle: Text(
         subtitle ?? (enabled ? '已启用' : '未启用'),
         style: TextStyle(
           color: enabled ? const Color(0xFF40916C) : Colors.grey,
-          fontSize: 12,
+          fontSize: 11,
         ),
       ),
       trailing: Icon(
         enabled ? Icons.check_circle : Icons.cancel,
+        size: 20,
         color: enabled ? const Color(0xFF40916C) : Colors.grey,
       ),
     );

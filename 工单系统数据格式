@@ -1,0 +1,574 @@
+# 灌溉维修工作日报系统 — 需求规格说明书
+
+---
+
+## 1. 项目概述
+
+### 1.1 业务背景
+
+本系统服务于**上海迪士尼度假区（SHDR）灌溉维修团队**的日常工作记录管理。当前团队使用 Excel 电子表格记录每日维修工作内容，包括灌溉系统的各类故障处理、项目配合、巡检等工作。随着数据量增长和多人协作需求，亟需一套结构化的数字系统替代手工填表。
+
+### 1.2 系统目标
+
+开发一套**小程序（微信小程序或 H5 网页）+ Django 后端**系统，实现以下目标：
+
+- 通过**账号登录**进行身份认证与权限控制
+- 通过**下拉选择 + 数字输入 + 文本输入**方式快速填报每日工作记录
+- 数据存储至 **Django 后端数据库**
+- 支持按周/月/年自动生成**统计汇总**
+- 支持数据**导出为 Excel**，格式兼容现有模板
+
+### 1.3 当前数据规模参考
+
+| 指标 | 数值 |
+|------|------|
+| 现有数据总记录数 | **2,194 条** |
+| 数据日期范围 | 2026-01-01 至 2027-01-04 |
+| 每周汇总行数 | **53 行**（全年约53周） |
+| 故障分类子类型总数 | **约 164 个** |
+| 故障分类父级大类数 | **约 33 个** |
+| 处理人（操作工） | **11 人** |
+| CCU 控制器 / 位置 | **28 个** |
+
+---
+
+## 2. 数据结构详细说明
+
+### 2.1 基本信息字段（共 11 个字段）
+
+每条工作记录包含以下基本信息：
+
+| 序号 | 中文字段名 | 英文字段名 | 数据类型 | 是否必填 | 说明 |
+|------|-----------|-----------|---------|---------|------|
+| 1 | 序号 | — | 自增整数 | 自动 | 系统自动生成 |
+| 2 | 天气 | Weather (Rain, Thunder) | 文本（可选） | 否 | 当日天气，如"雨"、"雷电"等，大部分为空 |
+| 3 | 日期 | Date | 日期 | **是** | 格式 YYYY-MM-DD |
+| 4 | 处理人 | Reported by | 枚举选择 | **是** | 从人员列表中选择，详见 3.1 |
+| 5 | 位置 | CCU No. | 枚举选择 | **是** | CCU 控制器编号或特殊位置，详见 3.3 |
+| 6 | 工作分类 | — | 枚举选择 | **是** | 工作性质分类，详见 3.2 |
+| 7 | 故障/事件位置 | Zone No. | 自由文本 | 否 | 具体区域/阀区编号，如"9-4-3"、"POC"、"WD"等自由输入 |
+| 8 | 备注 | Remark | 长文本 | **是** | 工作内容详细描述 |
+| 9 | 信息来源 | — | 枚举选择 | 否 | 故障信息来源渠道，详见 3.4 |
+| 10 | 疑难问题 | — | 布尔值 | 否 | 是否标记为疑难问题（是 / 空） |
+| 11 | 疑难问题已处理 | — | 布尔值 | 否 | 该疑难问题是否已解决（预留字段） |
+
+---
+
+### 2.2 故障分类计数字段
+
+除基本信息外，每条记录还包含大量**故障分类计数列**，用于记录该条工作中涉及的各类故障数量。
+
+**数据类型：** 全部为**非负整数**（0 或正整数），表示该类故障发生的数量。大部分记录中绝大多数故障列为 0（空）。
+
+**结构特点：**
+- 故障类型采用**两级分类**：父级大类 → 子级具体类型
+- 填报时建议按**父级大类折叠展开**，仅展示/填写有数据的子类
+- 输入数量 > 0 的子类型建议自动高亮显示
+
+完整故障分类层级结构见下方 **第 4 章**。
+
+---
+
+### 2.3 汇总行结构
+
+原 Excel 中存在两类汇总行，新系统需支持**自动计算生成**：
+
+| 汇总类型 | 说明 | 出现频率 |
+|---------|------|---------|
+| **本周小计** | 每周末自动汇总该周所有记录的各故障类型数量之和 | 每周 1 行，全年约 53 行 |
+| **年度小计** | 全年所有故障类型的累计统计 | 每年 1 行 |
+
+汇总行仅统计故障计数列（第 12~175 列对应字段），基本信息列（日期、处理人等）为空。
+
+---
+
+## 3. 枚举值字典
+
+> ⚠️ 以下所有枚举值列表需支持**管理员在后台增删改**，不可硬编码。
+
+### 3.1 处理人（当前 11 人）
+
+| 编号 | 姓名 |
+|------|------|
+| 1 | Bud |
+| 2 | 刘亮 |
+| 3 | 唐明欢 |
+| 4 | 姚圣广 |
+| 5 | 尚磊 |
+| 6 | 巩旭东 |
+| 7 | 张作选 |
+| 8 | 彭虎 |
+| 9 | 白映林 |
+| 10 | 符庆智 |
+| 11 | 罗本根 |
+
+### 3.2 工作分类（当前 9 类）
+
+| 编号 | 分类名称 |
+|------|---------|
+| 1 | 常规维护 |
+| 2 | 应急维修 |
+| 3 | FAM项目 |
+| 4 | WDI项目 |
+| 5 | 其它项目 |
+| 6 | 园艺项目 |
+| 7 | 内场重点区域 |
+| 8 | 仓库整理 |
+| 9 | 绿化排水 |
+
+### 3.3 位置 / CCU（当前 28 个）
+
+**CCU 控制器（22 个）：**
+
+| CCU1 | CCU2 | CCU3 | CCU5 | CCU6 | CCU7 |
+|------|------|------|------|------|------|
+| CCU8 | CCU9 | CCU10 | CCU11 | CCU12 | CCU13 |
+| CCU14 | CCU35 | CCU36 | CCU37 | CCU38 | CCU39 |
+| CCU40 | CCU43 | CCU44 | CCU45 | — | — |
+
+**特殊位置（6 个）：**
+
+| 仓库 | 其它 | 内场重点区域 | 水厂 | 申迪范围 | 苗圃 |
+|------|------|-----------|------|---------|------|
+
+### 3.4 信息来源（当前 3 类 + 空值）
+
+| 值 | 说明 |
+|----|------|
+| （空/不选） | 默认，自行巡检发现 |
+| 保洁同事报 | 保洁人员报告 |
+| 其他部门报 | 其他部门报告 |
+| 绿化同事报 | 绿化组同事报告 |
+
+### 3.5 疑难问题标记
+
+| 字段名 | 可选值 | 说明 |
+|--------|--------|------|
+| 疑难问题 | 是 / 空 | 标记该记录是否为疑难问题 |
+| 疑难问题已处理 | 是 / 空 | 标记疑难问题是否已解决（预留） |
+
+---
+
+## 4. 故障分类完整层级结构
+
+以下为所有故障类型的**父级大类 → 子级类型**完整清单，每个子类型的值为**非负整数**（故障数量）。
+
+---
+
+### 📁 4.1 项目配合
+
+| 中文名 | 英文名 |
+|--------|--------|
+| 项目配合 | Project |
+
+### 📁 4.2 新苗/保湿
+
+| 中文名 | 英文名 |
+|--------|--------|
+| 新苗/保湿 | New Planting |
+
+### 📁 4.3 控水
+
+| 中文名 | 英文名 |
+|--------|--------|
+| 控水 | Pause Watering |
+
+### 📁 4.4 系数调整
+
+| 中文名 | 英文名 |
+|--------|--------|
+| 系数调整 | LC Adjust |
+
+### 📁 4.5 喷头 Sprinkler
+
+| 中文名 | 英文名 |
+|--------|--------|
+| 喷头盖掉/松/坏 | Sprinkler Cap Loose/Drop |
+| 喷头脱落 | Sprinkler Drop |
+| 喷嘴丢/坏 | Nozzle Damaged |
+| 喷芯掉或坏 | Internal Damaged/Dropped |
+| 喷嘴无机物堵 | Debris Clogged |
+| 喷嘴螺蛳苗堵 | Shell Clogged |
+| 弹簧丢/伸缩卡 | Sprinkler Spring Lost/Fail Up-down |
+| 止溢胶圈变形/缺失漏水 | SAM Seal Ring Leakage |
+| 易坏喷头加套管 | Add Pop-up Sleeve |
+| 养护作业机械损坏喷头 | Sprinkler Broken (by maintenance) |
+| 喷头断/掉 | Sprinkler Broken |
+| 壳体裂/掉 | Body Crack/Drop |
+| 喷头丝口坏 | Body Inlet Damaged |
+| 喷头被埋 | Buried |
+| 喷头冻坏 | — |
+| 喷嘴不匹配 | — |
+| 喷嘴角度不对 | — |
+
+### 📁 4.6 铰接 Swing Joint
+
+| 中文名 | 英文名 |
+|--------|--------|
+| 黑弯头断 | Black Elbow Broken |
+| 树根挤压破坏 | Root Damage |
+| 黑弯头丝坏 | Thread Damaged |
+| 三通坏 | Tee Damaged |
+| 弯头断在三通里 | Black Elbow Broken inside Tee |
+
+### 📁 4.7 喷头调整 Sprinkler Adjustment
+
+| 中文名 | 英文名 |
+|--------|--------|
+| 加高 | Height Increase |
+| 降低 | Height Decrease |
+| 加装喷头 | Add Sprinkler |
+| 改喷头 | Change Nozzle or Sprinkler |
+| 移位/歪斜 | Relocation |
+| 主动埋/拆/堵喷头 | Cap Head |
+| 恢复锁闭的喷嘴 | Resume Watering |
+| 堵/调喷嘴/取消喷头 | Plug/Adjust Arc/Cancel Head |
+
+### 📁 4.8 喷头立管/加长杆
+
+| 中文名 | 英文名 |
+|--------|--------|
+| 断 | Broken |
+| 脱落 | Dropped |
+
+### 📁 4.9 滴灌无水/漏水
+
+| 中文名 | 英文名 |
+|--------|--------|
+| 滴灌无水/漏水 | Drip Fault |
+
+### 📁 4.10 主管隔离阀 Isolate Valve
+
+| 中文名 | 英文名 |
+|--------|--------|
+| 卡死 | Stuck |
+| 关不了 | ON/OFF Check |
+
+### 📁 4.11 电磁阀及阀箱 Solenoid Valve & Valve Box
+
+| 中文名 | 英文名 |
+|--------|--------|
+| 调压器未装或坏 | Pressure Regulator Not in Place |
+| 调压器堵 | PRS-Low Pressure/Clog |
+| 蜂巢 | Bee Net |
+| 不能开/喷头无法弹起 | Fail to Turn ON/Fail to Pop-up |
+| 电磁头烧 | Solenoid Shorted |
+| 电磁阀进垃圾 | Debris inside Solenoid Valve |
+| 电磁头松动/铁芯生锈 | Solenoid Loose |
+| 电磁阀关不住水 | Fail to Turn OFF |
+| 流量手柄断 | Flow Bleed Broken |
+| 电磁阀漏水 | Leakage on Solenoid Valve |
+| 阀体有裂缝 | Crack |
+| 球阀漏水 | Leakage on Ball Valve |
+| 活接弯头漏水 | Leakage on Union Elbow |
+| 主动关球阀 | OFF Ball Valve as Site Required |
+| 球阀被关 | Ball Valve OFFed |
+| 阀箱被埋/提升 | Valve Box Buried |
+| 降低阀门箱 | Valve Box (Lowering) |
+| 密封/胶垫坏 | Seal Break |
+| 阀箱损坏或丢失 | Box Damaged or Missed |
+
+### 📁 4.12 CCU
+
+| 中文名 | 英文名 |
+|--------|--------|
+| 控制线不通 | Control Wire Open |
+| 通讯断 | Comm Disconnected |
+| 假数据 | Unreasonable Data |
+
+### 📁 4.13 控制器 Satellite Controller
+
+| 中文名 | 英文名 |
+|--------|--------|
+| 可控硅坏/异常输出 | TRAC Shorted |
+| 保险丝烧 | Fuse Burnt |
+| PC反馈故障 | PC显示异常/现场正常 |
+| PC显示正常/现场异常 | — |
+| 故障灯闪 | Fault Lit Flashing |
+| 通讯故障 | Comm Fault |
+| 通讯板故障 | Comm Board Fault |
+| 非中控 | Standalone Status |
+| 撞坏 | Crashed by Accident |
+| 电源断 | Power OFFed |
+| 控制柜进水 | Water Penetration |
+| 排线故障 | Ribbon Cable |
+| 液晶屏故障 | LCD Issue |
+| 拔线忘了恢复 | — |
+| 线缆被打地锚损坏 | — |
+| 其它故障 | — |
+
+### 📁 4.14 中控 Central Control
+
+| 中文名 | 英文名 |
+|--------|--------|
+| 该浇没浇 | Should Water but Didn't |
+| 显示没浇实浇 | Display No Water but Actually Watered |
+| CCU掉线 | CCU Offline |
+| 反常流量 | Suspicious Leak |
+| 现场查中控反馈故障 | Site Check Fault CC Reported |
+
+### 📁 4.15 遥控器 Remote Controller
+
+| 中文名 | 英文名 |
+|--------|--------|
+| 未知开 | Turn ON Unknown |
+| 继电器或电源或烧保险 | Relay/Power/Fuse Burnt |
+| 掉线 | OFFline |
+| 无输出 | No Output |
+| 数据线不通 | Data Cable out of Work |
+| App失灵 | App out of Work |
+
+### 📁 4.16 冲洗阀 Wash-down
+
+| 中文名 | 英文名 |
+|--------|--------|
+| 卡石子/杂物漏水 | Leakage, Fail to Seal by Debris/Stone |
+| 铜管钥匙破裂 | Copper Key Cracked by Accident |
+| 漏水查漏 | Leakage, Unknown |
+| 排水堵 | Fail to Drainage |
+| 更换设施地插 | Replace Regular WD |
+| 地插短管缺补 | — |
+| 地插清堵 | — |
+| 地插车撞 | — |
+| 钥匙开裂/丝断 | Key Was Cracked |
+| 铜短管开裂 | Copper Nipple Was Cracked |
+| 活接漏水 | — |
+| 胶圈漏水 | — |
+
+### 📁 4.17 取水阀 Quick Coupling Valve
+
+| 中文名 | 英文名 |
+|--------|--------|
+| 漏水 | Leakage |
+| 钥匙弯头坏 | Copper Key Elbow Damaged |
+| 新安装 | New Add |
+| 移位 | Relocation |
+| 阀门箱盖子缺失 | Valve Box Lip Lost |
+| 降低阀箱高度 | Valve Box Adjusting |
+
+### 📁 4.18 POC
+
+| 中文名 | 英文名 |
+|--------|--------|
+| 主阀被手动关 | Manual OFFed Master Valve |
+| 主阀不能关 | Master Valve Failed to Turn OFF |
+| 主阀不能开 | Master Valve Failed to Turn ON |
+| 小铜管球阀不能开关/漏水 | Pilot Valve Failed |
+| 过滤器滤网堵 | Y-Strainer, Screen Clogged |
+| 主阀滤网堵/丢 | Master Valve Filter, Screen Clogged |
+| 防冻排空 | Freezing Protection |
+| 排气阀漏水 | — |
+| 管件漏水 | Fitting Leakage |
+| 闸阀故障 | Gate Valve Fault |
+| 压力表故障 | Function Fail Pres. Gauge |
+| 针形阀密封漏 | Fail to Seal, the Needle Valve |
+
+### 📁 4.19 主管 Mainline
+
+| 中文名 | 英文名 |
+|--------|--------|
+| 查漏 | Leakage Investigation |
+| 管道漏水 | Repair, Mainline Leakage |
+| 管件漏水 | Repair, Fitting Leakage |
+| 改管道 | Mainline Relocation to Coordination |
+| 阀箱加高或降低 | Pressure Pipe Valve Box Adjustment |
+| 修管道 | Mainline Repair to Coordination |
+
+### 📁 4.20 角阀 Angle Valve
+
+| 中文名 | 英文名 |
+|--------|--------|
+| 角阀坏 | Fail On/Off |
+| 沉降漏水 | Settlement Leak |
+
+### 📁 4.21 支管 Lateral
+
+| 中文名 | 英文名 |
+|--------|--------|
+| 改管道 | Lateral Relocation to Coordination |
+| 修管道 | Lateral Repair to Coordination |
+| 修接头 | Repair, Fitting Leakage |
+| 脱胶 | Poor Glue Connection |
+| 查漏 | Leakage Investigation |
+| 其它施工破坏 | Damaged by Other Construction |
+
+### 📁 4.22 雨量桶 Site Rain Gauge
+
+| 中文名 | 英文名 |
+|--------|--------|
+| 无信号 | No Signal Input |
+| 电脑异常/现场正常 | Abnormal Signal Input |
+| 电脑异常/现场异常 | — |
+| 有杂物 | Debris Inside |
+
+### 📁 4.23 流量计 Flow Sensor
+
+| 中文名 | 英文名 |
+|--------|--------|
+| 脉冲发生器故障 | Pulse Transmitter out of Work |
+| 流量计故障 | Flow Sensor out of Work |
+| 流量计更换 | Replace FS |
+| 解码器故障 | Decoder out of Work |
+| 数据异常 | Unreasonable Data |
+
+### 📁 4.24 控制线 Control Wire
+
+| 中文名 | 英文名 |
+|--------|--------|
+| 断路 | Discontinue |
+| 接地 | Grounding Fault |
+| 拔控制线停水 | Disconnect Control Wire, Stop-watering |
+| 地锚打坏线 | — |
+
+### 📁 4.25 临时停水 Temp OFF Watering
+
+| 中文名 | 英文名 |
+|--------|--------|
+| 临时停水 | OFF Watering Temp |
+
+### 📁 4.26 临时补水 Temp Watering by Remote Controller
+
+| 中文名 | 英文名 |
+|--------|--------|
+| 换/补植物 | New Plant/Seeding |
+| 施肥 | Fertilizer Application |
+| 打药 | Chemical Application |
+| 地锚打坏主管/支管 | Duckbill Damage Mainline |
+
+### 📁 4.27 其他 Other
+
+| 中文名 | 英文名 |
+|--------|--------|
+| 其他 | Other |
+
+### 📁 4.28 车撞破坏 Traffic Damage
+
+| 中文名 | 英文名 |
+|--------|--------|
+| 车撞破坏维修 | Traffic Damage |
+
+### 📁 4.29 施工破坏 Damage by Site Construction
+
+| 中文名 | 英文名 |
+|--------|--------|
+| 施工破坏 | Damage by Site Job |
+
+### 📁 4.30 现场跟进 Site Support
+
+| 中文名 | 英文名 |
+|--------|--------|
+| 现场跟进 | Site Support |
+
+### 📁 4.31 上游停水 No Water
+
+| 中文名 | 英文名 |
+|--------|--------|
+| 上游停水 | Stop Water Supplying Upstream POC |
+
+### 📁 4.32 现场水分 Soil Moisture Status
+
+| 中文名 | 英文名 |
+|--------|--------|
+| 和绿化一起看现场植物长势 | Plant Status Check with Lnd Team Together |
+| 灌溉组独立查看现场植物长势 | Plant Status Check by Irrigation Team |
+| 积水/排水不够 | Flood/Poor Drainage |
+| 土壤水分偏湿 | Soil Moisture Too High |
+| 土壤水分偏干 | Soil Moisture Too Low |
+
+### 📁 4.33 其他辅助分类
+
+| 中文名 | 英文名 |
+|--------|--------|
+| 材料库存 | — |
+| 转出工单 | — |
+| 树根损坏 | — |
+| 滴灌损坏 | — |
+
+---
+
+## 5. 小程序功能需求
+
+### 5.1 用户认证与权限
+
+| 功能 | 说明 |
+|------|------|
+| 账号登录 | 用户名 + 密码登录 |
+| 角色：操作工 | 只能**填报和查看自己的记录** |
+| 角色：管理员 | 可查看所有人记录、编辑枚举值（人员/分类/位置等）、导出数据 |
+| 自动关联 | 登录后系统自动关联当前用户为"处理人"，减少重复操作 |
+
+### 5.2 新建工作记录（核心页面）
+
+这是用户日常使用最频繁的页面，需特别注重**填报效率**。
+
+**上半部分 — 基本信息区：**
+
+| 控件 | 字段 | 交互方式 |
+|------|------|---------|
+| 日期选择器 | 日期 | 默认今天，可切换 |
+| 下拉选择（可选） | 天气 | 晴/雨/雷电等 |
+| 下拉搜索 | 位置/CCU | 从 28 个选项中选择 |
+| 下拉选择 | 工作分类 | 从 9 个选项中选择 |
+| 文本输入 | 故障/事件位置 | 自由输入区域编号 |
+| 多行文本 | 备注 | 工作内容详细描述 |
+| 下拉选择 | 信息来源 | 4 个选项（含"不选"） |
+| 开关按钮 | 疑难问题 | 是/否 |
+
+**下半部分 — 故障计数区：**
+
+- 按**父级大类**以折叠面板形式展示（共 33 个大类）
+- 点击展开后显示该大类下的所有子类型
+- 每个子类型为**数字输入框**，默认值为 0
+- 输入数量 > 0 的子类型自动**高亮显示**
+- 建议将最常用的故障大类（如"喷头"、"电磁阀及阀箱"）**默认置顶**
+- 保存后可选择**"保存并新建"**，快速录入同一天的多条记录
+
+### 5.3 记录查看与编辑
+
+| 功能 | 说明 |
+|------|------|
+| 按日期筛选 | 默认展示今日记录，可切换日期范围 |
+| 按人员筛选 | 管理员可按处理人筛选（操作工只看自己） |
+| 按位置筛选 | 可按 CCU / 位置筛选 |
+| 按工作分类筛选 | 可按工作分类筛选 |
+| 记录详情 | 展示完整基本信息 + 仅显示数量 > 0 的故障计数 |
+| 编辑 | 操作工可编辑**当日自己的记录**；管理员可编辑所有 |
+| 删除 | 需二次确认，管理员权限 |
+
+### 5.4 统计汇总
+
+| 功能 | 说明 |
+|------|------|
+| 本周小计 | 自动按周汇总各故障类型发生数量之和 |
+| 月度汇总 | 按月汇总各故障类型统计 |
+| 年度汇总 | 全年各故障类型累计统计（对应原 Excel 第3行"2026小计"） |
+| 按人员统计 | 每位处理人的工作量统计（记录数、故障总数等） |
+| 按位置统计 | 各 CCU/位置的故障频次统计 |
+| 高频故障排名 | 最常见的故障类型 TOP 10 排名展示 |
+
+### 5.5 数据导出
+
+| 功能 | 说明 |
+|------|------|
+| 导出 Excel | 按日期范围导出，**格式尽量与现有 Excel 模板一致**（含表头、故障分类列、汇总行） |
+| 导出 CSV | 备用导出格式 |
+
+### 5.6 后台管理（管理员）
+
+| 功能 | 说明 |
+|------|------|
+| 人员管理 | 增删改处理人列表 |
+| 位置管理 | 增删改 CCU/位置列表 |
+| 工作分类管理 | 增删改工作分类选项 |
+| 故障分类管理 | 增删改故障大类与子类型（支持中英文名称） |
+| 信息来源管理 | 增删改信息来源选项 |
+
+---
+
+## 6. 历史数据迁移
+
+现有 Excel 文件中有 **2,194 条历史记录**需导入新系统。要求：
+
+- 提供数据导入工具，支持从现有格式的 Excel 文件**批量导入**
+- 导入时自动创建不存在的枚举值（处理人、位置等）
+- 导入后需验证数据完整性（总记录数、各故障类型汇总数与原 Excel 一致）

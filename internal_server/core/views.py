@@ -2545,43 +2545,53 @@ def custom_report_api(request):
         return JsonResponse({'error': 'Invalid JSON'}, status=400)
 
     user = request.user
+    is_worker_user = False
+    worker = None
     try:
         worker = user.worker_profile
         is_worker_user = True
     except Exception:
-        is_worker_user = False
+        pass
 
-    try:
-        is_admin_user = user.manager_profile.is_super_admin or user.manager_profile.can_approve_work_orders
-    except Exception:
-        is_admin_user = False
+    from core.role_utils import is_admin as check_is_admin
+
+    is_admin_user = check_is_admin(user)
 
     results = []
 
     for chart_cfg in charts:
-        chart_id = chart_cfg.get('id', '')
-        data_source = chart_cfg.get('dataSource', '')
-        metric = chart_cfg.get('metric', '')
-        date_from = chart_cfg.get('dateFrom', '')
-        date_to = chart_cfg.get('dateTo', '')
-        chart_type = chart_cfg.get('chartType', 'bar')
-        title = chart_cfg.get('title', '')
+        try:
+            chart_id = chart_cfg.get('id', '')
+            data_source = chart_cfg.get('dataSource', '')
+            metric = chart_cfg.get('metric', '')
+            date_from = chart_cfg.get('dateFrom', '')
+            date_to = chart_cfg.get('dateTo', '')
+            chart_type = chart_cfg.get('chartType', 'bar')
+            bar_mode = chart_cfg.get('barMode', 'stacked')
+            stack_by = chart_cfg.get('stackBy', '')
+            title = chart_cfg.get('title', '')
 
-        chart_data = _build_chart_data(data_source, metric, date_from, date_to,
-                                        is_admin_user, is_worker_user, worker)
-        if chart_data is None:
-            results.append({'id': chart_id, 'error': 'No data'})
-            continue
+            chart_data = _build_chart_data(data_source, metric, date_from, date_to,
+                                            is_admin_user, is_worker_user, worker,
+                                            bar_mode, stack_by)
+            if chart_data is None:
+                results.append({'id': chart_id, 'error': 'No data'})
+                continue
 
-        chart_data['chartType'] = chart_type
-        chart_data['title'] = title
-        results.append(chart_data)
+            chart_data['id'] = chart_id
+            chart_data['chartType'] = chart_type
+            chart_data['barMode'] = bar_mode
+            chart_data['title'] = title
+            results.append(chart_data)
+        except Exception as e:
+            import traceback
+            results.append({'id': chart_cfg.get('id', ''), 'error': str(e), 'traceback': traceback.format_exc()})
 
     return JsonResponse({'charts': results})
 
 
 def _build_chart_data(data_source, metric, date_from, date_to,
-                      is_admin, is_worker, worker):
+                      is_admin, is_worker, worker, bar_mode='stacked', stack_by=''):
     """Build chart data dict for a given metric. Returns None if no data."""
     from core.models import WorkReport, DemandRecord
     from django.db.models import Count, Q
@@ -2598,7 +2608,7 @@ def _build_chart_data(data_source, metric, date_from, date_to,
 
     # === WORK REPORTS ===
     if data_source == 'work_reports':
-        qs = WorkReport.objects.select_related('worker', 'location', 'work_category')
+        qs = WorkReport.objects.select_related('worker', 'location', 'work_category', 'info_source')
         if not is_admin:
             if is_worker:
                 qs = qs.filter(worker=worker)
@@ -2606,6 +2616,49 @@ def _build_chart_data(data_source, metric, date_from, date_to,
                 qs = qs.none()
 
         qs = date_filter(qs)
+
+        # Stacked bar chart: two-level group-by
+        if stack_by:
+            primary, stack_field = _get_metric_groupings(data_source, metric, stack_by)
+            if primary is None:
+                return None
+            entries = list(qs.values(primary, stack_field)
+                           .annotate(count=Count('id'))
+                           .order_by(primary))
+            if not entries:
+                return None
+            labels_seen = []
+            label_set = set()
+            stack_values = []
+            data_map = {}
+            for e in entries:
+                label = str(e[primary] or '未指定')
+                sv = e.get(stack_field) or '未指定'
+                if label not in label_set:
+                    labels_seen.append(label)
+                    label_set.add(label)
+                if sv not in stack_values:
+                    stack_values.append(sv)
+                data_map.setdefault(label, {})[sv] = e['count']
+
+            datasets = []
+            for i, sv in enumerate(stack_values[:15]):
+                ds_data = []
+                for lbl in labels_seen:
+                    ds_data.append(data_map.get(lbl, {}).get(sv, 0))
+                color_idx = i % len(_chart_colors_palette())
+                datasets.append({
+                    'label': str(sv),
+                    'data': ds_data,
+                    'backgroundColor': _chart_colors_palette()[color_idx],
+                    'borderColor': 'rgba(255,255,255,1)',
+                    'borderWidth': 1,
+                })
+
+            return {
+                'labels': labels_seen,
+                'datasets': datasets,
+            }
 
         if metric == 'daily_trend':
             if not date_from or not date_to:
@@ -2678,6 +2731,91 @@ def _build_chart_data(data_source, metric, date_from, date_to,
                 }]
             }
 
+        elif metric == 'by_info_source':
+            entries = list(qs.values('info_source__name').annotate(count=Count('id'))
+                           .exclude(info_source__isnull=True).order_by('-count')[:15])
+            if not entries:
+                return None
+            return {
+                'labels': [e['info_source__name'] or '未指定' for e in entries],
+                'datasets': [{
+                    'label': '日志数',
+                    'data': [e['count'] for e in entries],
+                    'backgroundColor': _chart_colors(len(entries)),
+                }]
+            }
+
+        elif metric == 'by_fault_category':
+            entries = list(qs.filter(fault_entries__isnull=False)
+                           .values('fault_entries__fault_subtype__category__name_zh')
+                           .annotate(count=Count('fault_entries__fault_subtype'))
+                           .order_by('-count')[:15])
+            if not entries:
+                return None
+            return {
+                'labels': [e['fault_entries__fault_subtype__category__name_zh'] or '未分类' for e in entries],
+                'datasets': [{
+                    'label': '故障数',
+                    'data': [e['count'] for e in entries],
+                    'backgroundColor': _chart_colors(len(entries)),
+                }]
+            }
+
+        elif metric == 'by_equipment':
+            entries = list(qs.filter(fault_entries__isnull=False)
+                           .filter(fault_entries__equipment__isnull=False)
+                           .values('fault_entries__equipment__equipment__model_name')
+                           .annotate(count=Count('fault_entries__equipment'))
+                           .order_by('-count')[:15])
+            if not entries:
+                return None
+            return {
+                'labels': [e['fault_entries__equipment__equipment__model_name'] or '未指定' for e in entries],
+                'datasets': [{
+                    'label': '故障数',
+                    'data': [e['count'] for e in entries],
+                    'backgroundColor': _chart_colors(len(entries)),
+                }]
+            }
+
+        elif metric == 'by_worker_department':
+            entries = list(qs.values('worker__department').annotate(count=Count('id')).order_by('-count'))
+            if not entries:
+                return None
+            return {
+                'labels': [e['worker__department'] or '未指定' for e in entries],
+                'datasets': [{
+                    'label': '日志数',
+                    'data': [e['count'] for e in entries],
+                    'backgroundColor': _chart_colors(len(entries)),
+                }]
+            }
+
+        elif metric == 'difficult_rate_by_category':
+            entries = list(qs.values('work_category__name').annotate(
+                total=Count('id'),
+                difficult=Count('id', filter=Q(is_difficult=True))
+            ).order_by('-total')[:15])
+            if not entries:
+                return None
+            return {
+                'labels': [e['work_category__name'] or '未指定' for e in entries],
+                'datasets': [
+                    {
+                        'label': '总数',
+                        'data': [e['total'] for e in entries],
+                        'backgroundColor': 'rgba(27, 67, 50, 0.7)',
+                        'borderColor': 'rgba(27, 67, 50, 1)',
+                    },
+                    {
+                        'label': '疑难',
+                        'data': [e['difficult'] for e in entries],
+                        'backgroundColor': 'rgba(204, 119, 34, 0.7)',
+                        'borderColor': 'rgba(204, 119, 34, 1)',
+                    }
+                ]
+            }
+
         elif metric == 'by_worker' and is_admin:
             entries = list(qs.values('worker__full_name').annotate(
                 total=Count('id'),
@@ -2703,10 +2841,85 @@ def _build_chart_data(data_source, metric, date_from, date_to,
                 ]
             }
 
+        elif metric == 'difficult_rate_by_worker' and is_admin:
+            entries = list(qs.values('worker__full_name').annotate(
+                total=Count('id'),
+                difficult=Count('id', filter=Q(is_difficult=True)),
+                resolved=Count('id', filter=Q(is_difficult=True, is_difficult_resolved=True))
+            ).order_by('-total')[:15])
+            if not entries:
+                return None
+            return {
+                'labels': [e['worker__full_name'] or '未指定' for e in entries],
+                'datasets': [
+                    {
+                        'label': '总数',
+                        'data': [e['total'] for e in entries],
+                        'backgroundColor': 'rgba(27, 67, 50, 0.7)',
+                        'borderColor': 'rgba(27, 67, 50, 1)',
+                    },
+                    {
+                        'label': '疑难',
+                        'data': [e['difficult'] for e in entries],
+                        'backgroundColor': 'rgba(204, 119, 34, 0.7)',
+                        'borderColor': 'rgba(204, 119, 34, 1)',
+                    },
+                    {
+                        'label': '已处理',
+                        'data': [e['resolved'] for e in entries],
+                        'backgroundColor': 'rgba(64, 145, 108, 0.7)',
+                        'borderColor': 'rgba(64, 145, 108, 1)',
+                    }
+                ]
+            }
+
     # === DEMAND RECORDS ===
     elif data_source == 'demand_records':
-        qs = DemandRecord.objects.all()
+        qs = DemandRecord.objects.select_related('zone', 'category', 'submitter', 'approver')
         qs = date_filter(qs)
+
+        # Stacked bar chart: two-level group-by
+        if stack_by:
+            primary, stack_field = _get_metric_groupings(data_source, metric, stack_by)
+            if primary is None:
+                return None
+            entries = list(qs.values(primary, stack_field)
+                           .annotate(count=Count('id'))
+                           .order_by(primary))
+            if not entries:
+                return None
+            labels_seen = []
+            label_set = set()
+            stack_values = []
+            data_map = {}
+            for e in entries:
+                label = str(e[primary] or '未指定')
+                sv = e.get(stack_field) or '未指定'
+                if label not in label_set:
+                    labels_seen.append(label)
+                    label_set.add(label)
+                if sv not in stack_values:
+                    stack_values.append(sv)
+                data_map.setdefault(label, {})[sv] = e['count']
+
+            datasets = []
+            for i, sv in enumerate(stack_values[:15]):
+                ds_data = []
+                for lbl in labels_seen:
+                    ds_data.append(data_map.get(lbl, {}).get(sv, 0))
+                color_idx = i % len(_chart_colors_palette())
+                datasets.append({
+                    'label': str(sv),
+                    'data': ds_data,
+                    'backgroundColor': _chart_colors_palette()[color_idx],
+                    'borderColor': 'rgba(255,255,255,1)',
+                    'borderWidth': 1,
+                })
+
+            return {
+                'labels': labels_seen,
+                'datasets': datasets,
+            }
 
         if metric == 'daily_trend':
             if not date_from or not date_to:
@@ -2780,7 +2993,161 @@ def _build_chart_data(data_source, metric, date_from, date_to,
                 }]
             }
 
+        elif metric == 'by_zone':
+            entries = list(qs.filter(zone__isnull=False)
+                           .values('zone__name').annotate(count=Count('id'))
+                           .order_by('-count')[:15])
+            if not entries:
+                return None
+            return {
+                'labels': [e['zone__name'] or '未指定' for e in entries],
+                'datasets': [{
+                    'label': '需求数',
+                    'data': [e['count'] for e in entries],
+                    'backgroundColor': _chart_colors(len(entries)),
+                }]
+            }
+
+        elif metric == 'by_contact':
+            entries = list(qs.exclude(demand_contact='')
+                           .values('demand_contact').annotate(count=Count('id'))
+                           .order_by('-count')[:15])
+            if not entries:
+                return None
+            return {
+                'labels': [e['demand_contact'] or '未指定' for e in entries],
+                'datasets': [{
+                    'label': '需求数',
+                    'data': [e['count'] for e in entries],
+                    'backgroundColor': _chart_colors(len(entries)),
+                }]
+            }
+
+        elif metric == 'by_submitter':
+            entries = list(qs.filter(submitter__isnull=False)
+                           .values('submitter__full_name').annotate(count=Count('id'))
+                           .order_by('-count')[:15])
+            if not entries:
+                return None
+            return {
+                'labels': [e['submitter__full_name'] or '未指定' for e in entries],
+                'datasets': [{
+                    'label': '需求数',
+                    'data': [e['count'] for e in entries],
+                    'backgroundColor': _chart_colors(len(entries)),
+                }]
+            }
+
+        elif metric == 'global_event_volume':
+            if not date_from or not date_to:
+                today = timezone.now().date()
+                date_from = (today - timedelta(days=29)).isoformat()
+                date_to = today.isoformat()
+                qs = date_filter(qs)
+            entries = list(qs.filter(is_global_event=True)
+                           .values('date').annotate(count=Count('id')).order_by('date'))
+            if not entries:
+                return None
+            return {
+                'labels': [str(e['date']) for e in entries],
+                'datasets': [{
+                    'label': '全局事件数',
+                    'data': [e['count'] for e in entries],
+                    'backgroundColor': 'rgba(155, 34, 38, 0.7)',
+                    'borderColor': 'rgba(155, 34, 38, 1)',
+                }]
+            }
+
     return None
+
+
+def _get_metric_groupings(data_source, metric, stack_by):
+    """Return (primary_field, stack_field) for stacked bar chart. Returns (None, None) if invalid."""
+    mapping = {
+        'work_reports': {
+            'worker': ('worker__full_name', 'worker__full_name'),
+            'location': ('location__name', 'location__name'),
+            'work_category': ('work_category__name', 'work_category__name'),
+            'zone': ('zone_location__name', 'zone_location__name'),
+            'info_source': ('info_source__name', 'info_source__name'),
+            'fault_subtype': ('fault_entries__fault_subtype__name_zh', 'fault_entries__fault_subtype__name_zh'),
+            'date': ('date', 'date'),
+        },
+        'demand_records': {
+            'category': ('category__name', 'category__name'),
+            'department': ('demand_department__name', 'demand_department__name'),
+            'zone': ('zone__name', 'zone__name'),
+            'status': ('status', 'status'),
+            'contact': ('demand_contact', 'demand_contact'),
+            'date': ('date', 'date'),
+        },
+    }
+
+    table = mapping.get(data_source, {})
+    stack_field = table.get(stack_by)
+    if not stack_field:
+        return None, None
+
+    # Determine primary (label) field based on metric
+    primary_map = {
+        'work_reports': {
+            'daily_trend': 'date',
+            'by_location': ('location__name', 'location__name'),
+            'by_zone': ('zone_location__name', 'zone_location__name'),
+            'by_category': ('work_category__name', 'work_category__name'),
+            'by_fault_type': ('fault_entries__fault_subtype__name_zh', 'fault_entries__fault_subtype__name_zh'),
+            'by_info_source': ('info_source__name', 'info_source__name'),
+            'by_fault_category': ('fault_entries__fault_subtype__category__name_zh', 'fault_entries__fault_subtype__category__name_zh'),
+            'by_equipment': ('fault_entries__equipment__equipment__model_name', 'fault_entries__equipment__equipment__model_name'),
+            'by_worker_department': ('worker__department', 'worker__department'),
+            'difficult_rate_by_category': ('work_category__name', 'work_category__name'),
+            'by_worker': ('worker__full_name', 'worker__full_name'),
+            'difficult_rate_by_worker': ('worker__full_name', 'worker__full_name'),
+        },
+        'demand_records': {
+            'daily_trend': 'date',
+            'by_category': ('category__name', 'category__name'),
+            'by_department': ('demand_department__name', 'demand_department__name'),
+            'by_status': ('status', 'status'),
+            'global_events': ('category__name', 'category__name'),
+            'by_zone': ('zone__name', 'zone__name'),
+            'by_contact': ('demand_contact', 'demand_contact'),
+            'by_submitter': ('submitter__full_name', 'submitter__full_name'),
+            'global_event_volume': 'date',
+        },
+    }
+
+    primary_entry = primary_map.get(data_source, {}).get(metric)
+    if primary_entry is None:
+        return None, None
+
+    if isinstance(primary_entry, str):
+        # Single field metric (e.g. daily_trend) — use that as primary, stack_by as stack
+        return primary_entry, stack_field[0]
+
+    # Two-element tuple: (group_field, display_field)
+    return primary_entry[0], stack_field[0]
+
+
+def _chart_colors_palette():
+    """Return the full color palette for stacked charts."""
+    return [
+        'rgba(27, 67, 50, 0.7)',
+        'rgba(45, 106, 79, 0.7)',
+        'rgba(64, 145, 108, 0.7)',
+        'rgba(82, 183, 136, 0.7)',
+        'rgba(204, 119, 34, 0.7)',
+        'rgba(155, 34, 38, 0.7)',
+        'rgba(45, 106, 150, 0.7)',
+        'rgba(108, 117, 125, 0.7)',
+        'rgba(27, 67, 100, 0.7)',
+        'rgba(120, 50, 120, 0.7)',
+        'rgba(180, 80, 40, 0.7)',
+        'rgba(60, 140, 140, 0.7)',
+        'rgba(140, 100, 40, 0.7)',
+        'rgba(80, 60, 140, 0.7)',
+        'rgba(160, 60, 80, 0.7)',
+    ]
 
 
 def _chart_colors(n):
