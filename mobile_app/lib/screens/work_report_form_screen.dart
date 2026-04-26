@@ -228,8 +228,6 @@ class _WorkReportFormScreenState extends State<WorkReportFormScreen> {
           'id': zone.patchId,
           'name': zone.patchName ?? '未知区域',
           'code': zone.patchCode ?? '',
-          'type': zone.patchType,
-          'typeDisplay': zone.patchTypeDisplay,
         };
       }
     }
@@ -561,14 +559,12 @@ class _WorkReportFormScreenState extends State<WorkReportFormScreen> {
     // Group zones by patch
     final Map<int?, List<Zone>> zonesByPatch = {};
     final Map<int?, String> patchNames = {};
-    final Map<int?, String> patchTypeDisplays = {};
 
     for (var zone in _allZones) {
       final patchId = zone.patchId;
       zonesByPatch.putIfAbsent(patchId, () => []).add(zone);
       if (patchId != null && !patchNames.containsKey(patchId)) {
         patchNames[patchId] = zone.patchName ?? '未知区域';
-        patchTypeDisplays[patchId] = zone.patchTypeDisplay ?? '区域';
       }
     }
 
@@ -601,7 +597,6 @@ class _WorkReportFormScreenState extends State<WorkReportFormScreen> {
       builder: (context) => _ZonePickerSheet(
         zonesByPatch: zonesByPatch,
         patchNames: patchNames,
-        patchTypeDisplays: patchTypeDisplays,
         orderedKeys: orderedKeys,
         userLocation: _userLocation,
         selectedZone: _selectedZone,
@@ -702,22 +697,9 @@ class _WorkReportFormScreenState extends State<WorkReportFormScreen> {
                           items: _patches
                               .map<DropdownMenuItem<int>>((patch) => DropdownMenuItem<int>(
                                     value: patch['id'],
-                                    child: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        if (patch['typeDisplay'] != null)
-                                          Text(
-                                            '[${patch['typeDisplay']}] ',
-                                            style: AppTheme.tsCaption.copyWith(
-                                              fontSize: 10,
-                                              color: AppTheme.textSecondary,
-                                            ),
-                                          ),
-                                        Text(patch['name'],
-                                            style: AppTheme.tsCaption,
-                                            overflow: TextOverflow.ellipsis),
-                                      ],
-                                    ),
+                                    child: Text(patch['name'],
+                                        style: AppTheme.tsCaption,
+                                        overflow: TextOverflow.ellipsis),
                                   ))
                               .toList(),
                           onChanged: (v) => setState(() => _selectedPatch = v),
@@ -1206,7 +1188,6 @@ class _FaultPickerSheetState extends State<_FaultPickerSheet> {
 class _ZonePickerSheet extends StatefulWidget {
   final Map<int?, List<Zone>> zonesByPatch;
   final Map<int?, String> patchNames;
-  final Map<int?, String> patchTypeDisplays;
   final List<int?> orderedKeys;
   final LatLng? userLocation;
   final Zone? selectedZone;
@@ -1215,7 +1196,6 @@ class _ZonePickerSheet extends StatefulWidget {
   const _ZonePickerSheet({
     required this.zonesByPatch,
     required this.patchNames,
-    required this.patchTypeDisplays,
     required this.orderedKeys,
     this.userLocation,
     this.selectedZone,
@@ -1336,9 +1316,6 @@ class _ZonePickerSheetState extends State<_ZonePickerSheet> {
                 final patchName = isOrphan
                     ? '未分配'
                     : (widget.patchNames[key] ?? '未知区域');
-                final patchType = isOrphan
-                    ? ''
-                    : (widget.patchTypeDisplays[key] ?? '区域');
                 final isExpanded = _expanded.contains(key);
 
                 return Column(
@@ -1363,17 +1340,7 @@ class _ZonePickerSheetState extends State<_ZonePickerSheet> {
                               size: 18,
                               color: AppTheme.greenLight,
                             ),
-                            const SizedBox(width: 4),
-                            if (patchType.isNotEmpty)
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                                decoration: BoxDecoration(
-                                  color: AppTheme.greenLight.withOpacity(0.15),
-                                  borderRadius: BorderRadius.circular(4),
-                                ),
-                                child: Text(patchType, style: AppTheme.tsOverline.copyWith(color: AppTheme.greenLight)),
-                              ),
-                            if (patchType.isNotEmpty) const SizedBox(width: 4),
+                            const SizedBox(width: 6),
                             Expanded(
                               child: Text(patchName, style: AppTheme.tsLabel.copyWith(fontSize: 13)),
                             ),

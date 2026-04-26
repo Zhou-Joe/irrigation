@@ -43,7 +43,6 @@ class _DemandFormScreenState extends State<DemandFormScreen> {
 
   final Map<int?, List<Zone>> _zonesByPatch = {};
   final Map<int?, String> _patchNames = {};
-  final Map<int?, String> _patchTypeDisplays = {};
 
   @override
   void initState() {
@@ -55,13 +54,11 @@ class _DemandFormScreenState extends State<DemandFormScreen> {
   void _groupByPatches() {
     _zonesByPatch.clear();
     _patchNames.clear();
-    _patchTypeDisplays.clear();
     for (var zone in _allZones) {
       final patchId = zone.patchId;
       _zonesByPatch.putIfAbsent(patchId, () => []).add(zone);
       if (patchId != null && !_patchNames.containsKey(patchId)) {
         _patchNames[patchId] = zone.patchName ?? '未知区域';
-        _patchTypeDisplays[patchId] = zone.patchTypeDisplay ?? '区域';
       }
     }
   }
@@ -178,12 +175,10 @@ class _DemandFormScreenState extends State<DemandFormScreen> {
                   if (i < keys.length) {
                     final patchId = keys[i];
                     final patchName = _patchNames[patchId]!;
-                    final patchType = _patchTypeDisplays[patchId] ?? '';
                     final zoneCount = _zonesByPatch[patchId]?.length ?? 0;
                     final isSelected = _selectedPatch == patchId;
                     return _PickerItem(
                       title: patchName,
-                      typeLabel: patchType,
                       count: zoneCount,
                       isSelected: isSelected,
                       onTap: () {
@@ -200,7 +195,6 @@ class _DemandFormScreenState extends State<DemandFormScreen> {
                     final isSelected = _selectedPatch == -1;
                     return _PickerItem(
                       title: '未分配',
-                      typeLabel: '',
                       count: orphanZones.length,
                       isSelected: isSelected,
                       onTap: () {
@@ -617,14 +611,12 @@ class _DemandFormScreenState extends State<DemandFormScreen> {
 // ── Picker list item ────────────────────────────────────────────
 class _PickerItem extends StatelessWidget {
   final String title;
-  final String typeLabel;
   final int count;
   final bool isSelected;
   final VoidCallback onTap;
 
   const _PickerItem({
     required this.title,
-    required this.typeLabel,
     required this.count,
     required this.isSelected,
     required this.onTap,
@@ -650,17 +642,6 @@ class _PickerItem extends StatelessWidget {
           ),
           child: Row(
             children: [
-              if (typeLabel.isNotEmpty) ...[
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                  decoration: BoxDecoration(
-                    color: AppTheme.greenLight.withOpacity(0.15),
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: Text(typeLabel, style: AppTheme.tsOverline.copyWith(color: AppTheme.greenLight)),
-                ),
-                const SizedBox(width: 6),
-              ],
               Expanded(
                 child: Text(title, style: AppTheme.tsBody.copyWith(
                   fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,

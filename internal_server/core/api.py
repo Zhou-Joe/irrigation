@@ -162,15 +162,12 @@ class ZoneSerializer(serializers.ModelSerializer):
         read_only_fields = ['created_at', 'updated_at']
 
     def get_patch_id(self, obj):
-        """返回片区ID。"""
         return obj.patch.id if obj.patch else None
 
     def get_patch_name(self, obj):
-        """返回片区名称。"""
         return obj.patch.name if obj.patch else None
 
     def get_patch_code(self, obj):
-        """返回片区编号。"""
         return obj.patch.code if obj.patch else None
 
     def get_patch_type(self, obj):

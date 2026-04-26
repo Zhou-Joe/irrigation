@@ -1020,7 +1020,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             'id': patchId,
             'name': zone.patchName ?? '未知区域',
             'code': zone.patchCode ?? '',
-            'typeDisplay': zone.patchTypeDisplay ?? '区域',
           };
         }
       }
@@ -1203,9 +1202,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                                 final patchCode = isOrphan
                                     ? ''
                                     : (patchInfo[patchId]?['code'] ?? '');
-                                final patchTypeDisplay = isOrphan
-                                    ? ''
-                                    : (patchInfo[patchId]?['typeDisplay'] ?? '区域');
 
                                 final isExpanded = isOrphan
                                     ? _expandedOrphanGroup != null
@@ -1215,7 +1211,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                                   patchId: patchId,
                                   patchName: patchName,
                                   patchCode: patchCode,
-                                  patchTypeDisplay: patchTypeDisplay,
                                   zones: zones,
                                   isExpanded: isExpanded,
                                   isOrphan: isOrphan,
@@ -1237,7 +1232,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     required int? patchId,
     required String patchName,
     required String patchCode,
-    required String patchTypeDisplay,
     required List<Zone> zones,
     required bool isExpanded,
     required bool isOrphan,
@@ -1273,21 +1267,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   size: 16,
                   color: AppTheme.greenLight,
                 ),
-                if (patchTypeDisplay.isNotEmpty) ...[
-                  const SizedBox(width: 4),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                    decoration: BoxDecoration(
-                      color: AppTheme.greenLight.withOpacity(0.15),
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: Text(patchTypeDisplay,
-                        style: const TextStyle(fontSize: 10, color: AppTheme.greenLight)),
-                  ),
-                  const SizedBox(width: 4),
-                ] else ...[
-                  const SizedBox(width: 6),
-                ],
+                const SizedBox(width: 6),
                 Expanded(
                   child: Text(
                     patchCode.isNotEmpty
