@@ -3,6 +3,7 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:provider/provider.dart';
+import 'package:intl/intl.dart';
 import '../models/zone.dart';
 import '../models/pipeline.dart';
 import '../providers/auth_provider.dart';
@@ -32,7 +33,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   bool _isZoneDrawerExpanded = false;
   LatLng? _currentPosition;
   Zone? _selectedZone;
-  List<Map<String, dynamic>> _weatherData = [];
+  Map<String, dynamic>? _weatherResponse;
   bool _isLoadingWeather = false;
   String _zoneSearchQuery = '';
   // Patch grouping
@@ -82,7 +83,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       final weather = await api.getWeather();
       if (mounted) {
         setState(() {
-          _weatherData = weather;
+          _weatherResponse = weather;
           _isLoadingWeather = false;
         });
       }
@@ -149,20 +150,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 
   Color _getStatusColor(String status) {
-    switch (status) {
-      case 'completed':
-        return const Color(0xFF40916C); // 已完成 - 绿色
-      case 'in_progress':
-        return const Color(0xFFCC7722); // 处理中 - 橙色
-      case 'canceled':
-        return const Color(0xFF9B2226); // 已取消 - 红色
-      case 'delayed':
-        return const Color(0xFF7B5544); // 已延期 - 深棕色
-      case 'unarranged':
-        return const Color(0xFF888888); // 未安排 - 灰色
-      default:
-        return const Color(0xFF52B788);
-    }
+    return AppTheme.statusColor(status);
   }
 
   void _selectZone(Zone zone) {
@@ -358,6 +346,22 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     final zonePatchId = _selectedZone?.patchId;
     final zonePatchName = _selectedZone?.patchName;
     final zonePatchCode = _selectedZone?.patchCode;
+
+    // Build weather summary from current weather data
+    String? weatherSummary;
+    if (_weatherResponse != null && _weatherResponse!['data'] is List) {
+      final data = _weatherResponse!['data'] as List;
+      final currentHour = _weatherResponse!['current_hour'];
+      final current = data.where((e) => e['hour'] == currentHour).firstOrNull
+          ?? (data.isNotEmpty ? data.first : null);
+      if (current != null) {
+        final temp = current['temperature']?.toStringAsFixed(1) ?? '--';
+        final humidity = current['humidity'] ?? '--';
+        final desc = current['weather_description'] ?? '';
+        weatherSummary = '$desc ${temp}°C 湿度${humidity}%';
+      }
+    }
+
     _popupAnimationController.reverse().then((_) {
       setState(() => _selectedZone = null);
     });
@@ -369,6 +373,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           initialPatchId: zonePatchId,
           initialPatchName: zonePatchName,
           initialPatchCode: zonePatchCode,
+          initialWeather: weatherSummary,
         ),
       ),
     ).then((result) {
@@ -390,87 +395,46 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     final isAdmin = auth.isAdmin;
 
     return Scaffold(
-      body: Stack(
+      body: IndexedStack(
+        index: _currentIndex,
         children: [
-          IndexedStack(
-            index: _currentIndex,
-            children: [
-              _buildMapTab(),
-              WorkReportListScreen(isAdmin: isAdmin),
-              _buildDemandLogTab(auth),
-              const SettingsScreen(),
-            ],
-          ),
-          Positioned(left: 0, right: 0, bottom: 0, child: _buildFloatingBottomNav()),
+          _buildMapTab(),
+          WorkReportListScreen(isAdmin: isAdmin),
+          _buildDemandLogTab(auth),
+          const SettingsScreen(),
         ],
       ),
+      bottomNavigationBar: _buildBottomNav(),
     );
   }
 
-  Widget _buildFloatingBottomNav() {
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-          decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.92),
-            borderRadius: BorderRadius.circular(22),
-            border: Border.all(color: AppColors.outline.withOpacity(0.3)),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.08),
-                blurRadius: 16,
-                offset: const Offset(0, 8),
-              ),
-            ],
-          ),
-          child: Row(
-            children: [
-              _buildNavItem(0, Icons.map, '地图'),
-              _buildNavItem(1, Icons.assignment, '维修日志'),
-              _buildNavItem(2, Icons.event_note, '需求日志'),
-              _buildNavItem(3, Icons.settings, '设置'),
-            ],
-          ),
+  Widget _buildBottomNav() {
+    return NavigationBar(
+      selectedIndex: _currentIndex,
+      onDestinationSelected: (i) => setState(() => _currentIndex = i),
+      indicatorColor: AppTheme.greenLight.withOpacity(0.12),
+      destinations: const [
+        NavigationDestination(
+          icon: Icon(Icons.map_outlined),
+          selectedIcon: Icon(Icons.map),
+          label: '地图',
         ),
-      ),
-    );
-  }
-
-  Widget _buildNavItem(int index, IconData icon, String label) {
-    final isSelected = _currentIndex == index;
-    return Expanded(
-      child: InkWell(
-        onTap: () => setState(() => _currentIndex = index),
-        borderRadius: BorderRadius.circular(16),
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          decoration: BoxDecoration(
-            color: isSelected ? const Color(0xFF52B788).withOpacity(0.12) : Colors.transparent,
-            borderRadius: BorderRadius.circular(14),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                icon,
-                size: 20,
-                color: isSelected ? const Color(0xFF2D6A4F) : const Color(0xFF607065),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 10,
-                  fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                  color: isSelected ? const Color(0xFF1B4332) : const Color(0xFF607065),
-                ),
-              ),
-            ],
-          ),
+        NavigationDestination(
+          icon: Icon(Icons.assignment_outlined),
+          selectedIcon: Icon(Icons.assignment),
+          label: '维修日志',
         ),
-      ),
+        NavigationDestination(
+          icon: Icon(Icons.event_note_outlined),
+          selectedIcon: Icon(Icons.event_note),
+          label: '需求日志',
+        ),
+        NavigationDestination(
+          icon: Icon(Icons.settings_outlined),
+          selectedIcon: Icon(Icons.settings),
+          label: '设置',
+        ),
+      ],
     );
   }
 
@@ -478,6 +442,105 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     final user = auth.user;
     if (user == null) return const Center(child: Text('未登录'));
     return DemandListScreen(user: user, apiService: auth.api);
+  }
+
+  Widget _buildWeatherWidget() {
+    Map<String, dynamic>? current;
+
+    if (_weatherResponse != null && _weatherResponse!['data'] is List) {
+      final data = _weatherResponse!['data'] as List;
+      final currentHour = _weatherResponse!['current_hour'];
+      // Find the entry matching current_hour
+      current = data.where((e) => e['hour'] == currentHour).firstOrNull
+          ?? (data.isNotEmpty ? data.first : null);
+    }
+
+    IconData weatherIcon;
+    Color iconColor;
+
+    if (_isLoadingWeather || current == null) {
+      weatherIcon = Icons.cloud_outlined;
+      iconColor = AppTheme.textHint;
+    } else {
+      final code = current['weather_code'] ?? -1;
+      if (code == 0 || code == 1) {
+        weatherIcon = Icons.wb_sunny_outlined;
+        iconColor = Colors.amber;
+      } else if (code == 2) {
+        weatherIcon = Icons.cloud_outlined;
+        iconColor = AppTheme.textSecondary;
+      } else if (code == 3) {
+        weatherIcon = Icons.cloud;
+        iconColor = AppTheme.textSecondary;
+      } else if (code >= 61 && code <= 67) {
+        weatherIcon = Icons.grain_outlined;
+        iconColor = Colors.blue;
+      } else if (code >= 71 && code <= 77) {
+        weatherIcon = Icons.ac_unit;
+        iconColor = Colors.lightBlue;
+      } else if (code >= 95) {
+        weatherIcon = Icons.thunderstorm_outlined;
+        iconColor = Colors.purple;
+      } else {
+        weatherIcon = Icons.cloud_outlined;
+        iconColor = AppTheme.textSecondary;
+      }
+    }
+
+    final temp = current != null
+        ? '${current['temperature']?.toStringAsFixed(1) ?? '--'}°C'
+        : '--°C';
+
+    final apiTime = _weatherResponse != null
+        ? DateFormat('MM-dd HH:mm').format(DateTime.parse(
+            '${_weatherResponse!['date']}T${_weatherResponse!['current_hour']}:00'))
+        : DateFormat('MM-dd HH:mm').format(DateTime.now());
+
+    return Positioned(
+      right: 12,
+      top: 12,
+      child: SafeArea(
+        child: Container(
+          margin: const EdgeInsets.all(12),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.92),
+            borderRadius: BorderRadius.circular(10),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.08),
+                blurRadius: 8,
+              ),
+            ],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (_isLoadingWeather)
+                const SizedBox(
+                  width: 14, height: 14,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              else
+                Icon(weatherIcon, size: 16, color: iconColor),
+              const SizedBox(width: 4),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(temp,
+                      style: const TextStyle(
+                          fontSize: 12, fontWeight: FontWeight.w600)),
+                  Text(apiTime,
+                      style: TextStyle(
+                          fontSize: 9, color: AppTheme.textHint)),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   Widget _buildMapTab() {
@@ -492,6 +555,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           options: MapOptions(
             initialCenter: _currentPosition ?? const LatLng(31.0, 121.6),
             initialZoom: 10,
+            maxZoom: 19,
             onTap: (tapPosition, point) => _handleMapTap(point),
           ),
           children: [
@@ -500,7 +564,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
               userAgentPackageName: 'com.maxicom.horticulture',
               maxNativeZoom: 19,
-              maxZoom: 20,
+              maxZoom: 19,
             ),
             PolygonLayer(
               polygons: _zones
@@ -529,9 +593,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                     final isSelected = _selectedZone?.id == zone.id;
                     return loops.map((points) => Polygon(
                       points: points,
-                      color: (isSelected ? const Color(0xFFD4A574) : color)
+                      color: (isSelected ? AppTheme.accent : color)
                           .withOpacity(isSelected ? 0.4 : 0.25),
-                      borderColor: isSelected ? const Color(0xFFD4A574) : color,
+                      borderColor: isSelected ? AppTheme.accent : color,
                       borderStrokeWidth: isSelected ? 3 : 2,
                     ));
                   })
@@ -608,7 +672,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                     height: 20,
                     child: Container(
                       decoration: BoxDecoration(
-                        color: const Color(0xFFD4A574),
+                        color: AppTheme.accent,
                         shape: BoxShape.circle,
                         border: Border.all(color: Colors.white, width: 2),
                       ),
@@ -631,7 +695,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                         onTap: () => _selectZone(zone),
                         child: Container(
                           decoration: BoxDecoration(
-                            color: const Color(0xFFCC7722),
+                            color: AppTheme.statusInProgress,
                             shape: BoxShape.circle,
                             border: Border.all(color: Colors.white, width: 2),
                             boxShadow: [
@@ -644,10 +708,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                           child: Center(
                             child: Text(
                               '${zone.pendingRequests.length}',
-                              style: const TextStyle(
+                              style: TextStyle(
                                 color: Colors.white,
                                 fontWeight: FontWeight.bold,
-                                fontSize: 14,
+                                fontSize: AppTheme.tsBody.fontSize,
                               ),
                             ),
                           ),
@@ -678,6 +742,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         ),
 
         _buildZoneDrawer(topOffset: 12),
+
+        _buildWeatherWidget(),
 
         if (_isLoading)
           Container(
@@ -716,7 +782,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             ),
           ),
 
-        Positioned(right: 12, bottom: 88, child: _buildMapFloatingActions(auth)),
+        Positioned(right: 12, bottom: 16, child: _buildMapFloatingActions(auth)),
 
         // Map attribution at bottom left
         Positioned(
@@ -779,7 +845,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
               color: Colors.white.withOpacity(0.95),
-              borderRadius: BorderRadius.circular(22),
+              borderRadius: BorderRadius.circular(AppTheme.cardRadius),
               border: Border.all(color: AppColors.outline),
               boxShadow: [
                 BoxShadow(
@@ -803,7 +869,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                         style: const TextStyle(
                           fontWeight: FontWeight.w600,
                           fontSize: 12,
-                          color: Color(0xFF1B4332),
+                          color: AppTheme.greenDarkest,
                         ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
@@ -846,7 +912,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                         horizontal: 8,
                       ),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFCC7722).withOpacity(0.15),
+                        color: AppTheme.statusInProgress.withOpacity(0.15),
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: Row(
@@ -854,14 +920,14 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                         children: [
                           const Icon(
                             Icons.water_drop,
-                            color: Color(0xFFCC7722),
+                            color: AppTheme.statusInProgress,
                             size: 12,
                           ),
                           const SizedBox(width: 4),
                           Text(
                             '浇水协调需求 (${_selectedZone!.pendingRequests.length})',
                             style: const TextStyle(
-                              color: Color(0xFFCC7722),
+                              color: AppTheme.statusInProgress,
                               fontSize: 10,
                               fontWeight: FontWeight.w700,
                             ),
@@ -889,7 +955,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                       ),
                     );
                   },
-                  color: const Color(0xFF1B4332),
+                  color: AppTheme.greenDarkest,
                 ),
                 const SizedBox(height: 2),
                 // Action buttons - Work Report for non-dept users
@@ -898,7 +964,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                     icon: Icons.assignment,
                     label: '新建工单',
                     onTap: _goToWorkReport,
-                    color: const Color(0xFF40916C),
+                    color: AppTheme.greenMedium,
                   ),
                 ],
               ],
@@ -915,7 +981,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     required VoidCallback onTap,
     Color? color,
   }) {
-    final btnColor = color ?? const Color(0xFF1B4332);
+    final btnColor = color ?? AppTheme.greenDarkest;
     return GestureDetector(
       onTap: onTap,
       child: Container(
@@ -1033,7 +1099,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                         Icon(
                           Icons.map,
                           size: 16,
-                          color: const Color(0xFF1B4332),
+                          color: AppTheme.greenDarkest,
                         ),
                         const SizedBox(width: 6),
                         Expanded(
@@ -1042,7 +1108,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                             style: const TextStyle(
                               fontWeight: FontWeight.w600,
                               fontSize: 12,
-                              color: const Color(0xFF1B4332),
+                              color: AppTheme.greenDarkest,
                             ),
                           ),
                         ),
@@ -1050,7 +1116,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                           _isZoneDrawerExpanded
                               ? Icons.expand_less
                               : Icons.expand_more,
-                          color: const Color(0xFF52B788),
+                          color: AppTheme.greenLight,
                         ),
                       ],
                     ),
@@ -1066,7 +1132,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                     ),
                     decoration: BoxDecoration(
                       border: Border(
-                        bottom: BorderSide(color: Colors.grey.shade200),
+                        bottom: BorderSide(color: AppTheme.outline),
                       ),
                     ),
                     child: TextField(
@@ -1076,7 +1142,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                         hintText: '搜索区域...',
                         hintStyle: TextStyle(
                           fontSize: 13,
-                          color: Colors.grey.shade500,
+                          color: AppTheme.textSecondary,
                         ),
                         prefixIcon: const Icon(
                           Icons.search,
@@ -1091,16 +1157,16 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                         contentPadding: const EdgeInsets.symmetric(vertical: 8),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(16),
-                          borderSide: BorderSide(color: Colors.grey.shade300),
+                          borderSide: BorderSide(color: AppTheme.outline),
                         ),
                         enabledBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(16),
-                          borderSide: BorderSide(color: Colors.grey.shade300),
+                          borderSide: BorderSide(color: AppTheme.outline),
                         ),
                         focusedBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(16),
                           borderSide: const BorderSide(
-                            color: Color(0xFF52B788),
+                            color: AppTheme.greenLight,
                           ),
                         ),
                       ),
@@ -1112,7 +1178,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                     child: Container(
                       decoration: BoxDecoration(
                         border: Border(
-                          top: BorderSide(color: Colors.grey.shade200),
+                          top: BorderSide(color: AppTheme.outline),
                         ),
                       ),
                       child: filteredZonesByPatch.isEmpty
@@ -1195,7 +1261,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
             decoration: BoxDecoration(
-              color: const Color(0xFF52B788).withOpacity(0.1),
+              color: AppTheme.greenLight.withOpacity(0.1),
               borderRadius: BorderRadius.circular(6),
             ),
             child: Row(
@@ -1203,7 +1269,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 Icon(
                   isExpanded ? Icons.expand_less : Icons.expand_more,
                   size: 16,
-                  color: const Color(0xFF52B788),
+                  color: AppTheme.greenLight,
                 ),
                 const SizedBox(width: 6),
                 Expanded(
@@ -1214,7 +1280,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                     style: const TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
-                      color: const Color(0xFF1B4332),
+                      color: AppTheme.greenDarkest,
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -1226,12 +1292,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                     vertical: 2,
                   ),
                   decoration: BoxDecoration(
-                    color: Colors.grey.shade200,
+                    color: AppTheme.outline,
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
                     '${zones.length}',
-                    style: TextStyle(fontSize: 10, color: Colors.grey.shade600),
+                    style: TextStyle(fontSize: 10, color: AppTheme.textSecondary),
                   ),
                 ),
               ],
@@ -1258,10 +1324,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           bottom: 5,
         ), // Indented under patch
         decoration: BoxDecoration(
-          color: isSelected ? const Color(0xFF52B788).withOpacity(0.15) : null,
+          color: isSelected ? AppTheme.greenLight.withOpacity(0.15) : null,
           border: isSelected
               ? const Border(
-                  left: BorderSide(color: Color(0xFF52B788), width: 3),
+                  left: BorderSide(color: AppTheme.greenLight, width: 3),
                 )
               : null,
         ),
@@ -1293,7 +1359,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   ),
                   Text(
                     zone.code,
-                    style: TextStyle(fontSize: 9, color: Colors.grey.shade600),
+                    style: TextStyle(fontSize: 9, color: AppTheme.textSecondary),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),

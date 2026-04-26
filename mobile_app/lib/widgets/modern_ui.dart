@@ -1,19 +1,26 @@
 import 'package:flutter/material.dart';
+import '../theme/app_theme.dart';
 
+export '../theme/app_theme.dart' show AppTheme;
+
+// ── Re-export semantic aliases for convenience ──────────────────
 class AppColors {
-  static const deepGreen = Color(0xFF183126);
-  static const primary = Color(0xFF2E6B55);
-  static const accent = Color(0xFFE3A85B);
-  static const surface = Color(0xFFFCFDF9);
-  static const surfaceSoft = Color(0xFFE8F0EA);
-  static const outline = Color(0xFFD7E1D8);
-  static const background = Color(0xFFF4F7F3);
-  static const muted = Color(0xFF607065);
+  static const deepGreen = AppTheme.greenDarkest;
+  static const primary = AppTheme.greenPrimary;
+  static const accent = AppTheme.accent;
+  static const surface = AppTheme.surface;
+  static const surfaceSoft = AppTheme.surfaceAlt;
+  static const outline = AppTheme.outline;
+  static const background = AppTheme.background;
+  static const muted = AppTheme.textSecondary;
 }
 
+// ── Status helper (single source of truth) ──────────────────────
+Color appStatusColor(String? status) => AppTheme.statusColor(status);
+
+// ── Background gradient ─────────────────────────────────────────
 class AppBackground extends StatelessWidget {
   final Widget child;
-
   const AppBackground({super.key, required this.child});
 
   @override
@@ -23,7 +30,7 @@ class AppBackground extends StatelessWidget {
         gradient: LinearGradient(
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
-          colors: [Color(0xFFF7FAF6), Color(0xFFF0F5EF), AppColors.background],
+          colors: [Color(0xFFF7FAF6), Color(0xFFF0F5EF), AppTheme.background],
         ),
       ),
       child: child,
@@ -31,6 +38,7 @@ class AppBackground extends StatelessWidget {
   }
 }
 
+// ── Card ────────────────────────────────────────────────────────
 class AppCard extends StatelessWidget {
   final Widget child;
   final EdgeInsetsGeometry? padding;
@@ -50,13 +58,13 @@ class AppCard extends StatelessWidget {
     final card = Container(
       decoration: BoxDecoration(
         color: color ?? Colors.white.withOpacity(0.88),
-        borderRadius: BorderRadius.circular(26),
-        border: Border.all(color: AppColors.outline),
-        boxShadow: [
+        borderRadius: BorderRadius.circular(AppTheme.cardRadius),
+        border: Border.all(color: AppTheme.outline),
+        boxShadow: const [
           BoxShadow(
-            color: const Color(0x141A2E1F),
+            color: Color(0x141A2E1F),
             blurRadius: 30,
-            offset: const Offset(0, 12),
+            offset: Offset(0, 12),
           ),
         ],
       ),
@@ -71,13 +79,14 @@ class AppCard extends StatelessWidget {
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(26),
+        borderRadius: BorderRadius.circular(AppTheme.cardRadius),
         child: card,
       ),
     );
   }
 }
 
+// ── Icon badge (decorative) ─────────────────────────────────────
 class AppIconBadge extends StatelessWidget {
   final IconData icon;
   final double size;
@@ -88,7 +97,7 @@ class AppIconBadge extends StatelessWidget {
     super.key,
     required this.icon,
     this.size = 56,
-    this.color = AppColors.primary,
+    this.color = AppTheme.greenPrimary,
     this.backgroundColor,
   });
 
@@ -110,7 +119,7 @@ class AppIconBadge extends StatelessWidget {
               gradient: LinearGradient(
                 colors: [
                   color.withOpacity(0.16),
-                  AppColors.accent.withOpacity(0.12),
+                  AppTheme.accent.withOpacity(0.12),
                 ],
               ),
             ),
@@ -144,16 +153,19 @@ class AppIconBadge extends StatelessWidget {
   }
 }
 
+// ── Hero card (login) ───────────────────────────────────────────
 class AppHeroCard extends StatelessWidget {
   final String title;
-  final String subtitle;
+  final String? subtitle;
+  final TextAlign? subtitleAlign;
   final IconData icon;
   final List<Widget> actions;
 
   const AppHeroCard({
     super.key,
     required this.title,
-    required this.subtitle,
+    this.subtitle,
+    this.subtitleAlign,
     required this.icon,
     this.actions = const [],
   });
@@ -166,11 +178,15 @@ class AppHeroCard extends StatelessWidget {
         gradient: const LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [Color(0xFF214635), Color(0xFF2E6B55), Color(0xFF4C8F74)],
+          colors: [
+            AppTheme.greenDarkest,
+            AppTheme.greenPrimary,
+            AppTheme.greenLight,
+          ],
         ),
         boxShadow: [
           BoxShadow(
-            color: AppColors.primary.withOpacity(0.20),
+            color: AppTheme.greenPrimary.withOpacity(0.20),
             blurRadius: 34,
             offset: const Offset(0, 18),
           ),
@@ -201,13 +217,16 @@ class AppHeroCard extends StatelessWidget {
                 fontWeight: FontWeight.w700,
               ),
             ),
-            const SizedBox(height: 8),
-            Text(
-              subtitle,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: Colors.white.withOpacity(0.86),
+            if (subtitle != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                subtitle!,
+                textAlign: subtitleAlign,
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: Colors.white.withOpacity(0.86),
+                ),
               ),
-            ),
+            ],
           ],
         ),
       ),
@@ -215,6 +234,7 @@ class AppHeroCard extends StatelessWidget {
   }
 }
 
+// ── Section title ───────────────────────────────────────────────
 class AppSectionTitle extends StatelessWidget {
   final String title;
   final String? subtitle;
@@ -236,20 +256,10 @@ class AppSectionTitle extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                title,
-                style: Theme.of(
-                  context,
-                ).textTheme.titleLarge?.copyWith(color: AppColors.deepGreen),
-              ),
+              Text(title, style: AppTheme.tsSectionTitle),
               if (subtitle != null) ...[
                 const SizedBox(height: 4),
-                Text(
-                  subtitle!,
-                  style: Theme.of(
-                    context,
-                  ).textTheme.bodyMedium?.copyWith(color: AppColors.muted),
-                ),
+                Text(subtitle!, style: AppTheme.tsCaption),
               ],
             ],
           ),
@@ -260,6 +270,7 @@ class AppSectionTitle extends StatelessWidget {
   }
 }
 
+// ── Status badge (pill) ─────────────────────────────────────────
 class AppStatusBadge extends StatelessWidget {
   final String label;
   final Color color;
@@ -274,18 +285,12 @@ class AppStatusBadge extends StatelessWidget {
         color: color.withOpacity(0.13),
         borderRadius: BorderRadius.circular(999),
       ),
-      child: Text(
-        label,
-        style: TextStyle(
-          color: color,
-          fontSize: 12,
-          fontWeight: FontWeight.w700,
-        ),
-      ),
+      child: Text(label, style: AppTheme.tsBadge.copyWith(color: color)),
     );
   }
 }
 
+// ── Info row ────────────────────────────────────────────────────
 class AppInfoRow extends StatelessWidget {
   final IconData icon;
   final String label;
@@ -306,19 +311,17 @@ class AppInfoRow extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, size: 18, color: AppColors.muted),
+          Icon(icon, size: 18, color: AppTheme.textSecondary),
           const SizedBox(width: 10),
           Expanded(
             child: RichText(
               text: TextSpan(
-                style: Theme.of(
-                  context,
-                ).textTheme.bodyMedium?.copyWith(color: AppColors.deepGreen),
+                style: AppTheme.tsBody,
                 children: [
                   TextSpan(
                     text: '$label  ',
                     style: const TextStyle(
-                      color: AppColors.muted,
+                      color: AppTheme.textSecondary,
                       fontWeight: FontWeight.w500,
                     ),
                   ),
@@ -336,6 +339,7 @@ class AppInfoRow extends StatelessWidget {
   }
 }
 
+// ── Empty state ─────────────────────────────────────────────────
 class AppEmptyState extends StatelessWidget {
   final IconData icon;
   final String title;
@@ -379,7 +383,7 @@ class AppEmptyState extends StatelessWidget {
                           height: 30,
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
-                            color: AppColors.accent.withOpacity(0.16),
+                            color: AppTheme.accent.withOpacity(0.16),
                           ),
                         ),
                       ),
@@ -391,7 +395,7 @@ class AppEmptyState extends StatelessWidget {
                           height: 18,
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
-                            color: AppColors.primary.withOpacity(0.16),
+                            color: AppTheme.greenPrimary.withOpacity(0.16),
                           ),
                         ),
                       ),
@@ -402,32 +406,26 @@ class AppEmptyState extends StatelessWidget {
                           height: 18,
                           decoration: BoxDecoration(
                             borderRadius: BorderRadius.circular(999),
-                            color: AppColors.primary.withOpacity(0.08),
+                            color: AppTheme.greenPrimary.withOpacity(0.08),
                           ),
                         ),
                       ),
                       AppIconBadge(
                         icon: icon,
                         size: 72,
-                        color: AppColors.primary,
-                        backgroundColor: AppColors.surfaceSoft,
+                        color: AppTheme.greenPrimary,
+                        backgroundColor: AppTheme.surfaceAlt,
                       ),
                     ],
                   ),
                 ),
                 const SizedBox(height: 6),
-                Text(
-                  title,
-                  style: Theme.of(context).textTheme.titleMedium,
-                  textAlign: TextAlign.center,
-                ),
+                Text(title, style: AppTheme.tsSubtitle, textAlign: TextAlign.center),
                 if (subtitle != null) ...[
                   const SizedBox(height: 8),
                   Text(
                     subtitle!,
-                    style: Theme.of(
-                      context,
-                    ).textTheme.bodyMedium?.copyWith(color: AppColors.muted),
+                    style: AppTheme.tsCaption,
                     textAlign: TextAlign.center,
                   ),
                 ],
@@ -441,6 +439,7 @@ class AppEmptyState extends StatelessWidget {
   }
 }
 
+// ── Error state ─────────────────────────────────────────────────
 class AppErrorState extends StatelessWidget {
   final String message;
   final VoidCallback? onRetry;
@@ -464,6 +463,7 @@ class AppErrorState extends StatelessWidget {
   }
 }
 
+// ── Stat pill ───────────────────────────────────────────────────
 class AppStatPill extends StatelessWidget {
   final IconData icon;
   final String label;
@@ -494,16 +494,8 @@ class AppStatPill extends StatelessWidget {
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                value,
-                style: TextStyle(color: color, fontWeight: FontWeight.w700),
-              ),
-              Text(
-                label,
-                style: Theme.of(
-                  context,
-                ).textTheme.bodySmall?.copyWith(color: AppColors.muted),
-              ),
+              Text(value, style: TextStyle(color: color, fontWeight: FontWeight.w700)),
+              Text(label, style: AppTheme.tsOverline),
             ],
           ),
         ],
@@ -512,6 +504,7 @@ class AppStatPill extends StatelessWidget {
   }
 }
 
+// ── Quick action button ─────────────────────────────────────────
 class AppQuickActionButton extends StatelessWidget {
   final IconData icon;
   final String label;
@@ -525,7 +518,7 @@ class AppQuickActionButton extends StatelessWidget {
     required this.label,
     required this.onTap,
     this.subtitle,
-    this.color = AppColors.primary,
+    this.color = AppTheme.greenPrimary,
   });
 
   @override
@@ -558,16 +551,18 @@ class AppQuickActionButton extends StatelessWidget {
               const SizedBox(height: 12),
               Text(
                 label,
-                style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                  color: Colors.white,
+                style: const TextStyle(
+                  fontSize: 14,
                   fontWeight: FontWeight.w700,
+                  color: Colors.white,
                 ),
               ),
               if (subtitle != null) ...[
                 const SizedBox(height: 4),
                 Text(
                   subtitle!,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  style: TextStyle(
+                    fontSize: 12,
                     color: Colors.white.withOpacity(0.74),
                   ),
                 ),
@@ -575,6 +570,208 @@ class AppQuickActionButton extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+// ── Form section card ───────────────────────────────────────────
+class AppFormSection extends StatelessWidget {
+  final String title;
+  final IconData icon;
+  final List<Widget> children;
+
+  const AppFormSection({
+    super.key,
+    required this.title,
+    required this.icon,
+    required this.children,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return AppCard(
+      padding: const EdgeInsets.all(AppTheme.pagePadding),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  color: AppTheme.greenPrimary.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(icon, size: 18, color: AppTheme.greenDark),
+              ),
+              const SizedBox(width: 10),
+              Text(title, style: AppTheme.tsLabel),
+            ],
+          ),
+          const SizedBox(height: AppTheme.sectionGap),
+          ...children,
+        ],
+      ),
+    );
+  }
+}
+
+// ── Skeleton loading ────────────────────────────────────────────
+class AppSkeletonBox extends StatefulWidget {
+  final double width;
+  final double height;
+  final BorderRadius borderRadius;
+
+  const AppSkeletonBox({
+    super.key,
+    this.width = double.infinity,
+    this.height = 16,
+    this.borderRadius = const BorderRadius.all(Radius.circular(6)),
+  });
+
+  @override
+  State<AppSkeletonBox> createState() => _AppSkeletonBoxState();
+}
+
+class _AppSkeletonBoxState extends State<AppSkeletonBox>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        final t = _controller.value;
+        return ShaderMask(
+          blendMode: BlendMode.srcATop,
+          shaderCallback: (bounds) {
+            final w = bounds.width;
+            return LinearGradient(
+              colors: const [
+                Color(0xFFE8F0EA),
+                Color(0xFFF4F7F3),
+                Color(0xFFE8F0EA),
+              ],
+              stops: [
+                (t - 0.3).clamp(0.0, 1.0),
+                t.clamp(0.0, 1.0),
+                (t + 0.3).clamp(0.0, 1.0),
+              ],
+            ).createShader(Rect.fromLTWH(0, 0, w, bounds.height));
+          },
+          child: child,
+        );
+      },
+      child: Container(
+        width: widget.width,
+        height: widget.height,
+        decoration: BoxDecoration(
+          color: AppTheme.surfaceAlt,
+          borderRadius: widget.borderRadius,
+        ),
+      ),
+    );
+  }
+}
+
+/// A pre-built skeleton card that mimics a list item.
+class AppSkeletonCard extends StatelessWidget {
+  const AppSkeletonCard({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return AppCard(
+      padding: const EdgeInsets.all(AppTheme.pagePadding),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const AppSkeletonBox(width: 48, height: 20, borderRadius: BorderRadius.all(Radius.circular(6))),
+              const SizedBox(width: 12),
+              const AppSkeletonBox(width: 80, height: 14),
+              const Spacer(),
+              AppSkeletonBox(width: 60, height: 26, borderRadius: BorderRadius.all(Radius.circular(12))),
+            ],
+          ),
+          const SizedBox(height: 12),
+          const AppSkeletonBox(height: 14),
+          const SizedBox(height: 8),
+          const AppSkeletonBox(width: 200, height: 14),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              AppSkeletonBox(width: 90, height: 28, borderRadius: BorderRadius.all(Radius.circular(14))),
+              const SizedBox(width: 8),
+              AppSkeletonBox(width: 70, height: 28, borderRadius: BorderRadius.all(Radius.circular(14))),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Shows a column of skeleton cards for list loading states.
+class AppSkeletonList extends StatelessWidget {
+  final int count;
+  const AppSkeletonList({super.key, this.count = 5});
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView.builder(
+      physics: const NeverScrollableScrollPhysics(),
+      padding: const EdgeInsets.fromLTRB(
+        AppTheme.pagePadding, 12, AppTheme.pagePadding, 140,
+      ),
+      itemCount: count,
+      itemBuilder: (_, __) => const Padding(
+        padding: EdgeInsets.only(bottom: AppTheme.itemGap),
+        child: AppSkeletonCard(),
+      ),
+    );
+  }
+}
+
+// ── Meta chip (reusable tag) ────────────────────────────────────
+class AppMetaChip extends StatelessWidget {
+  final IconData icon;
+  final String text;
+  const AppMetaChip({super.key, required this.icon, required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: AppTheme.surfaceAlt.withOpacity(0.7),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: AppTheme.textSecondary),
+          const SizedBox(width: 6),
+          Text(text, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+        ],
       ),
     );
   }

@@ -43,13 +43,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
     switch (user?.role) {
       case 'super_admin':
       case 'manager':
-        roleColor = const Color(0xFF1B4332);
+        roleColor = AppTheme.greenDarkest;
         break;
       case 'dept_user':
-        roleColor = const Color(0xFF40916C);
+        roleColor = AppTheme.greenMedium;
         break;
       case 'field_worker':
-        roleColor = const Color(0xFF52B788);
+        roleColor = AppTheme.greenLight;
         break;
       default:
         roleColor = Colors.grey;
@@ -58,7 +58,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return AppBackground(
       child: SafeArea(
         child: ListView(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
+          padding: const EdgeInsets.all(AppTheme.pagePadding),
           children: [
             // Compact user info card
             AppCard(
@@ -74,19 +74,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         children: [
                           Text(
                             user?.fullName ?? '未知用户',
-                            style: const TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w700,
-                              color: Color(0xFF1B4332),
-                            ),
+                            style: AppTheme.tsSubtitle.copyWith(color: AppTheme.greenDarkest),
                           ),
                           const SizedBox(height: 2),
                           Text(
                             '${user?.roleDisplay ?? '未知角色'} · @${user?.username ?? '-'}',
-                            style: const TextStyle(
-                              fontSize: 12,
-                              color: AppColors.muted,
-                            ),
+                            style: AppTheme.tsCaption.copyWith(color: AppTheme.textSecondary),
                           ),
                         ],
                       ),
@@ -102,11 +95,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ),
                       child: Text(
                         user?.roleDisplay ?? '未知角色',
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: roleColor,
-                          fontWeight: FontWeight.w700,
-                        ),
+                        style: AppTheme.tsOverline.copyWith(color: roleColor, fontWeight: FontWeight.w700),
                       ),
                     ),
                     const SizedBox(width: 6),
@@ -117,8 +106,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ),
                       decoration: BoxDecoration(
                         color: _isConnected == true
-                            ? const Color(0xFF40916C).withOpacity(0.1)
-                            : const Color(0xFFB84C4C).withOpacity(0.1),
+                            ? AppTheme.greenMedium.withOpacity(0.1)
+                            : AppTheme.danger.withOpacity(0.1),
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: Text(
@@ -127,11 +116,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             : _isConnected == true
                             ? '在线'
                             : '离线',
-                        style: TextStyle(
-                          fontSize: 11,
+                        style: AppTheme.tsOverline.copyWith(
                           color: _isConnected == true
-                              ? const Color(0xFF40916C)
-                              : const Color(0xFFB84C4C),
+                              ? AppTheme.greenMedium
+                              : AppTheme.danger,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
@@ -142,10 +130,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   const Divider(height: 16),
                   Row(
                     children: [
-                      const Icon(Icons.badge_outlined, size: 16, color: AppColors.muted),
+                      const Icon(Icons.badge_outlined, size: 16, color: AppTheme.textSecondary),
                       const SizedBox(width: 4),
                       Text('工号: ${user?.employeeId ?? '-'}',
-                        style: const TextStyle(fontSize: 13, color: AppColors.muted),
+                        style: AppTheme.tsCaption.copyWith(color: AppTheme.textSecondary),
                       ),
                     ],
                   ),
@@ -154,10 +142,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   const Divider(height: 16),
                   Row(
                     children: [
-                      const Icon(Icons.apartment_rounded, size: 16, color: AppColors.muted),
+                      const Icon(Icons.apartment_rounded, size: 16, color: AppTheme.textSecondary),
                       const SizedBox(width: 4),
                       Text('部门: ${user?.departmentDisplay ?? '-'}',
-                        style: const TextStyle(fontSize: 13, color: AppColors.muted),
+                        style: AppTheme.tsCaption.copyWith(color: AppTheme.textSecondary),
                       ),
                     ],
                   ),
@@ -165,7 +153,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ],
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: AppTheme.itemGap),
           const AppSectionTitle(title: '功能权限', subtitle: '根据当前角色展示可用能力'),
           const SizedBox(height: 6),
           AppCard(
@@ -204,7 +192,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ],
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: AppTheme.itemGap),
           AppSectionTitle(
             title: '服务器设置',
             subtitle: '管理接口连接与环境地址',
@@ -230,19 +218,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               ? Icons.cloud_done_rounded
                               : Icons.cloud_off_rounded,
                           color: _isConnected == true
-                              ? const Color(0xFF40916C)
+                              ? AppTheme.greenMedium
                               : Theme.of(context).colorScheme.error,
                         ),
-                  title: const Text('服务器连接'),
+                  title: Text('服务器连接', style: AppTheme.tsBody),
                   subtitle: Text(
                     _isChecking
                         ? '检测中...'
                         : _isConnected == true
                         ? '当前网络与接口连接正常'
                         : '暂时无法连接服务器',
-                    style: TextStyle(
+                    style: AppTheme.tsCaption.copyWith(
                       color: _isConnected == true
-                          ? const Color(0xFF40916C)
+                          ? AppTheme.greenMedium
                           : Theme.of(context).colorScheme.error,
                     ),
                   ),
@@ -251,15 +239,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ListTile(
                   contentPadding: EdgeInsets.zero,
                   leading: const Icon(Icons.dns_rounded),
-                  title: const Text('服务器地址'),
-                  subtitle: Text(ApiService.baseUrl),
+                  title: Text('服务器地址', style: AppTheme.tsBody),
+                  subtitle: Text(ApiService.baseUrl, style: AppTheme.tsCaption),
                   trailing: const Icon(Icons.edit_outlined, size: 20),
                   onTap: () => _showServerDialog(context),
                 ),
               ],
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: AppTheme.itemGap),
           const AppSectionTitle(title: '应用设置', subtitle: '当前客户端的基础偏好'),
           const SizedBox(height: 6),
           AppCard(
@@ -268,32 +256,32 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 const ListTile(
                   contentPadding: EdgeInsets.zero,
                   leading: Icon(Icons.language_rounded),
-                  title: Text('语言'),
-                  subtitle: Text('简体中文'),
+                  title: Text('语言', style: AppTheme.tsBody),
+                  subtitle: Text('简体中文', style: AppTheme.tsCaption),
                 ),
                 const Divider(height: 20),
                 ListTile(
                   contentPadding: EdgeInsets.zero,
                   leading: const Icon(Icons.location_on_outlined),
-                  title: const Text('位置服务'),
-                  subtitle: const Text('用于记录工作位置'),
+                  title: Text('位置服务', style: AppTheme.tsBody),
+                  subtitle: Text('用于记录工作位置', style: AppTheme.tsCaption),
                   trailing: Switch(value: true, onChanged: null),
                 ),
               ],
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: AppTheme.itemGap),
           const AppSectionTitle(title: '关于'),
           const SizedBox(height: 6),
           const AppCard(
             child: ListTile(
               contentPadding: EdgeInsets.zero,
               leading: Icon(Icons.info_outline_rounded),
-              title: Text('版本'),
-              subtitle: Text('0.1.0'),
+              title: Text('版本', style: AppTheme.tsBody),
+              subtitle: Text('0.1.0', style: AppTheme.tsCaption),
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: AppTheme.itemGap),
           OutlinedButton.icon(
             onPressed: () => _logout(context),
             icon: const Icon(Icons.logout_rounded, size: 18),
@@ -324,20 +312,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
       leading: Icon(
         icon,
         size: 20,
-        color: enabled ? const Color(0xFF40916C) : Colors.grey,
+        color: enabled ? AppTheme.greenMedium : Colors.grey,
       ),
-      title: Text(title, style: const TextStyle(fontSize: 14),),
+      title: Text(title, style: AppTheme.tsBody),
       subtitle: Text(
         subtitle ?? (enabled ? '已启用' : '未启用'),
-        style: TextStyle(
-          color: enabled ? const Color(0xFF40916C) : Colors.grey,
-          fontSize: 11,
+        style: AppTheme.tsOverline.copyWith(
+          color: enabled ? AppTheme.greenMedium : Colors.grey,
         ),
       ),
       trailing: Icon(
         enabled ? Icons.check_circle : Icons.cancel,
         size: 20,
-        color: enabled ? const Color(0xFF40916C) : Colors.grey,
+        color: enabled ? AppTheme.greenMedium : Colors.grey,
       ),
     );
   }

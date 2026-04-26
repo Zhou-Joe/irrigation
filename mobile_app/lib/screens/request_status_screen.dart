@@ -58,18 +58,7 @@ class _RequestStatusScreenState extends State<RequestStatusScreen> {
   }
 
   Color _getStatusColor(String status) {
-    switch (status) {
-      case 'approved':
-        return const Color(0xFF40916C);
-      case 'rejected':
-        return const Color(0xFF9B2226);
-      case 'info_needed':
-        return const Color(0xFFCC7722);
-      case 'submitted':
-        return const Color(0xFF52B788);
-      default:
-        return Colors.grey;
-    }
+    return AppTheme.statusColor(status);
   }
 
   String _getStatusText(String status) {
@@ -169,8 +158,8 @@ class _RequestStatusScreenState extends State<RequestStatusScreen> {
       onSelected: (selected) {
         setState(() => _filterType = value);
       },
-      selectedColor: const Color(0xFF52B788).withOpacity(0.3),
-      checkmarkColor: const Color(0xFF1B4332),
+      selectedColor: AppTheme.greenLight.withOpacity(0.3),
+      checkmarkColor: AppTheme.greenDarkest,
     );
   }
 
@@ -206,13 +195,13 @@ class _RequestStatusScreenState extends State<RequestStatusScreen> {
                     width: 42,
                     height: 42,
                     decoration: BoxDecoration(
-                      color: const Color(0xFF2E6B55).withOpacity(0.10),
+                      color: AppTheme.greenPrimary.withOpacity(0.10),
                       borderRadius: BorderRadius.circular(14),
                     ),
                     child: Icon(
                       _getTypeIcon(request['type']),
                       size: 20,
-                      color: const Color(0xFF1B4332),
+                      color: AppTheme.greenDarkest,
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -249,7 +238,7 @@ class _RequestStatusScreenState extends State<RequestStatusScreen> {
                 alignment: Alignment.centerRight,
                 child: Icon(
                   Icons.chevron_right_rounded,
-                  color: Colors.grey.shade500,
+                  color: AppTheme.textSecondary,
                 ),
               ),
               // Quick actions for admin
@@ -262,7 +251,7 @@ class _RequestStatusScreenState extends State<RequestStatusScreen> {
                     runSpacing: 6,
                     children: [
                       TextButton.icon(
-                        icon: const Icon(Icons.check, color: Color(0xFF40916C)),
+                        icon: const Icon(Icons.check, color: AppTheme.greenMedium),
                         label: const Text('批准'),
                         onPressed: () => _handleAction(
                           request['id'],
@@ -271,7 +260,7 @@ class _RequestStatusScreenState extends State<RequestStatusScreen> {
                         ),
                       ),
                       TextButton.icon(
-                        icon: const Icon(Icons.close, color: Color(0xFF9B2226)),
+                        icon: const Icon(Icons.close, color: AppTheme.statusCanceled),
                         label: const Text('拒绝'),
                         onPressed: () => _handleAction(
                           request['id'],
@@ -282,7 +271,7 @@ class _RequestStatusScreenState extends State<RequestStatusScreen> {
                       TextButton.icon(
                         icon: const Icon(
                           Icons.question_mark,
-                          color: Color(0xFFCC7722),
+                          color: AppTheme.statusInProgress,
                         ),
                         label: const Text('补充信息'),
                         onPressed: () => _handleAction(
@@ -338,7 +327,7 @@ class _RequestStatusScreenState extends State<RequestStatusScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('状态已更新为: ${_getStatusText(newStatus)}'),
-            backgroundColor: const Color(0xFF40916C),
+            backgroundColor: AppTheme.greenMedium,
           ),
         );
       }

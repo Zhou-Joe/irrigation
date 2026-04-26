@@ -821,6 +821,8 @@ class WorkReportFaultSerializer(serializers.ModelSerializer):
 class WorkReportSerializer(serializers.ModelSerializer):
     fault_entries = WorkReportFaultSerializer(many=True, required=False)
     worker_name = serializers.CharField(source='worker.full_name', read_only=True)
+    patch = serializers.IntegerField(write_only=True, required=True)
+    location = serializers.IntegerField(read_only=True)
     location_name = serializers.CharField(source='location.name', read_only=True)
     work_category_name = serializers.CharField(source='work_category.name', read_only=True)
     info_source_name = serializers.CharField(source='info_source.name', read_only=True, default=None)
@@ -833,18 +835,26 @@ class WorkReportSerializer(serializers.ModelSerializer):
         model = WorkReport
         fields = [
             'id', 'date', 'weather', 'worker', 'worker_name',
-            'location', 'location_name', 'work_category', 'work_category_name',
+            'patch', 'location', 'location_name', 'work_category', 'work_category_name',
             'zone_location', 'zone_location_code', 'zone_location_display',
             'remark', 'info_source', 'info_source_name',
             'is_difficult', 'is_difficult_resolved',
             'fault_entries', 'total_faults', 'photos', 'photo_urls',
             'created_at', 'updated_at',
         ]
-        read_only_fields = ['created_at', 'updated_at']
+        read_only_fields = ['created_at', 'updated_at', 'location']
         extra_kwargs = {
             'zone_location': {'required': False, 'allow_null': True},
             'worker': {'required': False},
         }
+
+    def validate_patch(self, value):
+        from core.models import Patch
+        try:
+            Patch.objects.get(pk=value)
+        except Patch.DoesNotExist:
+            raise serializers.ValidationError(f"Patch with id {value} not found")
+        return value
 
     def get_total_faults(self, obj):
         return sum(e.count for e in obj.fault_entries.all())
@@ -872,6 +882,9 @@ class WorkReportSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         fault_data = validated_data.pop('fault_entries', [])
         zone = validated_data.pop('zone_location_code', None)
+        patch_id = validated_data.pop('patch', None)
+        if patch_id is not None:
+            validated_data['location_id'] = patch_id
         if zone:
             validated_data['zone_location'] = zone
         report = WorkReport.objects.create(**validated_data)
@@ -882,6 +895,9 @@ class WorkReportSerializer(serializers.ModelSerializer):
     def update(self, instance, validated_data):
         fault_data = validated_data.pop('fault_entries', None)
         zone = validated_data.pop('zone_location_code', None)
+        patch_id = validated_data.pop('patch', None)
+        if patch_id is not None:
+            validated_data['location_id'] = patch_id
         if zone:
             validated_data['zone_location'] = zone
         for attr, value in validated_data.items():
@@ -950,7 +966,7 @@ class WorkReportViewSet(viewsets.ModelViewSet):
         # Filters
         date_from = self.request.query_params.get('date_from')
         date_to = self.request.query_params.get('date_to')
-        location = self.request.query_params.get('location')
+        patch = self.request.query_params.get('patch') or self.request.query_params.get('location')
         work_category = self.request.query_params.get('work_category')
         worker_id = self.request.query_params.get('worker')
         zone_id = self.request.query_params.get('zone')
@@ -960,7 +976,7 @@ class WorkReportViewSet(viewsets.ModelViewSet):
             qs = qs.filter(date__gte=date_from)
         if date_to:
             qs = qs.filter(date__lte=date_to)
-        if location:
+        if patch:
             qs = qs.filter(location_id=location)
         if work_category:
             qs = qs.filter(work_category_id=work_category)

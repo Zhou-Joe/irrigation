@@ -162,7 +162,7 @@ class _RequestDetailScreenState extends State<RequestDetailScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('保存成功'),
-          backgroundColor: Color(0xFF40916C),
+          backgroundColor: AppTheme.greenMedium,
         ),
       );
 
@@ -176,16 +176,7 @@ class _RequestDetailScreenState extends State<RequestDetailScreen> {
   }
 
   Color _getStatusColor(String status) {
-    switch (status) {
-      case 'approved':
-        return const Color(0xFF40916C);
-      case 'rejected':
-        return const Color(0xFF9B2226);
-      case 'info_needed':
-        return const Color(0xFFCC7722);
-      default:
-        return const Color(0xFF52B788);
-    }
+    return AppTheme.statusColor(status);
   }
 
   String _getStatusText(String status) {
@@ -685,7 +676,7 @@ class _RequestDetailScreenState extends State<RequestDetailScreen> {
       style: const TextStyle(
         fontSize: 16,
         fontWeight: FontWeight.bold,
-        color: Color(0xFF1B4332),
+        color: AppTheme.greenDarkest,
       ),
     );
   }
@@ -699,7 +690,7 @@ class _RequestDetailScreenState extends State<RequestDetailScreen> {
         children: [
           SizedBox(
             width: 80,
-            child: Text('$label: ', style: TextStyle(color: Colors.grey[600])),
+            child: Text('$label: ', style: const TextStyle(color: AppTheme.textSecondary)),
           ),
           Expanded(child: Text(value)),
         ],
