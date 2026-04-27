@@ -18,7 +18,8 @@ class WorkReportListScreen extends StatefulWidget {
 class _WorkReportListScreenState extends State<WorkReportListScreen> {
   List<Map<String, dynamic>> _reports = [];
   List<Map<String, dynamic>> _workCategories = [];
-  List<Map<String, dynamic>> _zones = [];
+  List<Zone> _zones = [];
+  List<Map<String, dynamic>> _patches = [];
   List<Map<String, dynamic>> _workers = [];
   bool _isLoading = true;
   String? _error;
@@ -31,23 +32,19 @@ class _WorkReportListScreenState extends State<WorkReportListScreen> {
   int? _filterWorker;
   bool _filterDifficult = false;
 
-  /// Derive patch list from zones, replacing the legacy CCU /locations/ API.
-  List<Map<String, dynamic>> _derivePatchesFromZones() {
+  void _derivePatchesFromZones() {
     final Map<int, Map<String, dynamic>> patchMap = {};
-    for (final z in _zones) {
-      final patchId = z['patch_id'] as int?;
-      final patchName = z['patch_name'] as String?;
-      if (patchId != null) {
-        patchMap[patchId] = {
-          'id': patchId,
-          'name': patchName ?? '未知区域',
-          'code': z['patch_code'] as String? ?? '',
+    for (final zone in _zones) {
+      if (zone.patchId != null) {
+        patchMap[zone.patchId!] = {
+          'id': zone.patchId,
+          'name': zone.patchName ?? '未知区域',
+          'code': zone.patchCode ?? '',
         };
       }
     }
-    final patches = patchMap.values.toList()
+    _patches = patchMap.values.toList()
       ..sort((a, b) => (a['name'] as String).compareTo(b['name'] as String));
-    return patches;
   }
 
   @override
@@ -60,39 +57,30 @@ class _WorkReportListScreenState extends State<WorkReportListScreen> {
   }
 
   Future<void> _loadFilters() async {
+    final api = context.read<AuthProvider>().api;
+    final auth = context.read<AuthProvider>();
+
+    if (auth.isFieldWorker && auth.user != null) {
+      _filterWorker = auth.user!.id;
+    }
+
     try {
-      final api = context.read<AuthProvider>().api;
-      final auth = context.read<AuthProvider>();
-
-      if (auth.isFieldWorker && auth.user != null) {
-        _filterWorker = auth.user!.id;
-      }
-
-      final futures = <Future>[
-        api.getWorkCategories(),
-        api.getZones(),
-      ];
-      if (auth.isAdmin) futures.add(api.getWorkers());
-
-      final results = await Future.wait(futures);
+      final results = await Future.wait([
+        api.getWorkCategories().catchError((_) => <Map<String, dynamic>>[]),
+        api.getZones().catchError((_) => <Zone>[]),
+        auth.isAdmin ? api.getWorkers().catchError((_) => <Map<String, dynamic>>[]) : Future.value(<Map<String, dynamic>>[]),
+      ]);
       if (mounted) {
         setState(() {
-          _workCategories = results[0];
-          _zones = results[1]
-              .map<Zone>((z) => z as Zone)
-              .map((zone) => {
-                    'id': zone.id,
-                    'name': zone.name,
-                    'code': zone.code,
-                    'patch_id': zone.patchId,
-                    'patch_name': zone.patchName,
-                    'patch_code': zone.patchCode,
-                  })
-              .toList();
-          if (results.length > 2) _workers = results[2];
+          _workCategories = results[0] as List<Map<String, dynamic>>;
+          _zones = results[1] as List<Zone>;
+          if (auth.isAdmin) _workers = results[2] as List<Map<String, dynamic>>;
         });
+        _derivePatchesFromZones();
       }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('Error loading filters: $e');
+    }
   }
 
   Future<void> _loadReports() async {
@@ -557,7 +545,7 @@ class _WorkReportListScreenState extends State<WorkReportListScreen> {
                 decoration: const InputDecoration(labelText: '分区', border: OutlineInputBorder()),
                 items: [
                   const DropdownMenuItem<int>(value: null, child: Text('全部')),
-                  ..._derivePatchesFromZones().map((p) => DropdownMenuItem<int>(
+                  ..._patches.map((p) => DropdownMenuItem<int>(
                       value: p['id'],
                       child: Text(p['name']))),
                 ],
@@ -589,7 +577,7 @@ class _WorkReportListScreenState extends State<WorkReportListScreen> {
                 items: [
                   const DropdownMenuItem<int>(value: null, child: Text('全部')),
                   ..._zones.map((z) => DropdownMenuItem<int>(
-                      value: z['id'], child: Text('${z['name']} (${z['code']})'))),
+                      value: z.id, child: Text('${z.name} (${z.code})'))),
                 ],
                 onChanged: (v) {
                   setSheetState(() => _filterZone = v);

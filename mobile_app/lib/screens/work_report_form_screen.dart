@@ -556,21 +556,14 @@ class _WorkReportFormScreenState extends State<WorkReportFormScreen> {
   }
 
   void _openZonePicker() {
-    // Group zones by patch
-    final Map<int?, List<Zone>> zonesByPatch = {};
-    final Map<int?, String> patchNames = {};
+    // If a patch is selected, only show zones from that patch
+    final List<Zone> availableZones = _selectedPatch != null
+        ? _allZones.where((z) => z.patchId == _selectedPatch).toList()
+        : _allZones;
 
-    for (var zone in _allZones) {
-      final patchId = zone.patchId;
-      zonesByPatch.putIfAbsent(patchId, () => []).add(zone);
-      if (patchId != null && !patchNames.containsKey(patchId)) {
-        patchNames[patchId] = zone.patchName ?? '未知区域';
-      }
-    }
-
-    // Sort zones within each patch by distance
-    for (var zones in zonesByPatch.values) {
-      zones.sort((a, b) {
+    // Sort zones by distance if available
+    if (_userLocation != null) {
+      availableZones.sort((a, b) {
         final da = _zoneDistance(a);
         final db = _zoneDistance(b);
         if (da == null && db == null) return 0;
@@ -580,27 +573,26 @@ class _WorkReportFormScreenState extends State<WorkReportFormScreen> {
       });
     }
 
-    // Order: patches first, orphan last
-    final orderedKeys = zonesByPatch.keys.toList()
-      ..sort((a, b) {
-        if (a == null) return 1;
-        if (b == null) return -1;
-        return (patchNames[a] ?? '').compareTo(patchNames[b] ?? '');
-      });
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (context) => _ZonePickerSheet(
-        zonesByPatch: zonesByPatch,
-        patchNames: patchNames,
-        orderedKeys: orderedKeys,
-        userLocation: _userLocation,
-        selectedZone: _selectedZone,
-        onSelected: (zone) {
+    // Build zone items eagerly
+    final List<Widget> zoneItems = [];
+    for (final zone in availableZones) {
+      final isSelected = _selectedZone?.id == zone.id;
+      zoneItems.add(ListTile(
+        selected: isSelected,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        leading: Container(
+          width: 8, height: 8,
+          decoration: BoxDecoration(
+            color: AppTheme.statusColor(zone.status),
+            shape: BoxShape.circle,
+          ),
+        ),
+        title: Text(zone.name, style: AppTheme.tsBody),
+        subtitle: Text(zone.code, style: AppTheme.tsOverline),
+        trailing: isSelected
+            ? const Icon(Icons.check, size: 16, color: AppTheme.greenMedium)
+            : null,
+        onTap: () {
           Navigator.pop(context);
           setState(() {
             _selectedZone = zone;
@@ -608,6 +600,57 @@ class _WorkReportFormScreenState extends State<WorkReportFormScreen> {
           });
           _loadZoneEquipment(zone.code);
         },
+      ));
+    }
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      builder: (context) => DraggableScrollableSheet(
+        initialChildSize: 0.5,
+        minChildSize: 0.3,
+        maxChildSize: 0.7,
+        expand: false,
+        builder: (ctx, scrollController) => Column(
+          children: [
+            Center(
+              child: Container(
+                width: 40, height: 4,
+                margin: const EdgeInsets.symmetric(vertical: 12),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: AppTheme.pagePadding),
+              child: Row(
+                children: [
+                  Text('选择区域', style: AppTheme.tsSectionTitle),
+                  const Spacer(),
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('关闭'),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
+            Expanded(
+              child: ListView(
+                controller: scrollController,
+                padding: const EdgeInsets.symmetric(horizontal: AppTheme.pagePadding),
+                children: zoneItems.isEmpty
+                    ? [const Center(child: Text('暂无区域'))]
+                    : zoneItems,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1181,264 +1224,5 @@ class _FaultPickerSheetState extends State<_FaultPickerSheet> {
         );
       },
     );
-  }
-}
-
-// Zone picker bottom sheet with search, patch grouping, distance sorting
-class _ZonePickerSheet extends StatefulWidget {
-  final Map<int?, List<Zone>> zonesByPatch;
-  final Map<int?, String> patchNames;
-  final List<int?> orderedKeys;
-  final LatLng? userLocation;
-  final Zone? selectedZone;
-  final void Function(Zone) onSelected;
-
-  const _ZonePickerSheet({
-    required this.zonesByPatch,
-    required this.patchNames,
-    required this.orderedKeys,
-    this.userLocation,
-    this.selectedZone,
-    required this.onSelected,
-  });
-
-  @override
-  State<_ZonePickerSheet> createState() => _ZonePickerSheetState();
-}
-
-class _ZonePickerSheetState extends State<_ZonePickerSheet> {
-  String _search = '';
-  final Set<int?> _expanded = {};
-
-  String _fmtDist(double meters) {
-    if (meters < 1000) return '${meters.round()}m';
-    return '${(meters / 1000).toStringAsFixed(1)}km';
-  }
-
-  List<int?> get _filteredKeys {
-    if (_search.isEmpty) return widget.orderedKeys;
-    final q = _search.toLowerCase();
-    return widget.orderedKeys.where((key) {
-      final zones = widget.zonesByPatch[key]!;
-      return zones.any(
-        (z) =>
-            z.name.toLowerCase().contains(q) ||
-            z.code.toLowerCase().contains(q) ||
-            (z.patchName?.toLowerCase().contains(q) ?? false),
-      );
-    }).toList();
-  }
-
-  List<Zone> _filteredZones(List<Zone> zones) {
-    if (_search.isEmpty) return zones;
-    final q = _search.toLowerCase();
-    return zones
-        .where(
-          (z) =>
-              z.name.toLowerCase().contains(q) ||
-              z.code.toLowerCase().contains(q) ||
-              (z.patchName?.toLowerCase().contains(q) ?? false),
-        )
-        .toList();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final keys = _filteredKeys;
-
-    return DraggableScrollableSheet(
-      initialChildSize: 0.7,
-      minChildSize: 0.4,
-      maxChildSize: 0.9,
-      expand: false,
-      builder: (context, scrollController) => Column(
-        children: [
-          // Handle
-          Center(
-            child: Container(
-              width: 40,
-              height: 4,
-              margin: const EdgeInsets.symmetric(vertical: 12),
-              decoration: BoxDecoration(
-                color: Colors.grey.shade300,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-          ),
-          // Title
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: AppTheme.pagePadding),
-            child: Row(
-              children: [
-                const Text('选择区域', style: AppTheme.tsSectionTitle),
-                const Spacer(),
-                Text(
-                  '${widget.zonesByPatch.values.fold(0, (s, l) => s + l.length)} 个区域',
-                  style: AppTheme.tsCaption,
-                ),
-              ],
-            ),
-          ),
-          // Search
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-            child: TextField(
-              onChanged: (v) => setState(() => _search = v),
-              decoration: InputDecoration(
-                hintText: '搜索区域名称或编号...',
-                hintStyle: TextStyle(fontSize: 13, color: Colors.grey.shade500),
-                prefixIcon: const Icon(
-                  Icons.search,
-                  size: 18,
-                  color: Colors.grey,
-                ),
-                isDense: true,
-                contentPadding: const EdgeInsets.symmetric(vertical: 10),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-              ),
-              style: const TextStyle(fontSize: 13),
-            ),
-          ),
-          // List
-          Expanded(
-            child: ListView.builder(
-              controller: scrollController,
-              padding: const EdgeInsets.symmetric(vertical: 4),
-              itemCount: keys.length,
-              itemBuilder: (context, index) {
-                final key = keys[index];
-                final zones = _filteredZones(widget.zonesByPatch[key]!);
-                if (zones.isEmpty) return const SizedBox.shrink();
-
-                final isOrphan = key == null;
-                final patchName = isOrphan
-                    ? '未分配'
-                    : (widget.patchNames[key] ?? '未知区域');
-                final isExpanded = _expanded.contains(key);
-
-                return Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // Patch header
-                    InkWell(
-                      onTap: () => setState(() {
-                        isExpanded ? _expanded.remove(key) : _expanded.add(key);
-                      }),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 8,
-                        ),
-                        child: Row(
-                          children: [
-                            Icon(
-                              isExpanded
-                                  ? Icons.expand_less
-                                  : Icons.expand_more,
-                              size: 18,
-                              color: AppTheme.greenLight,
-                            ),
-                            const SizedBox(width: 6),
-                            Expanded(
-                              child: Text(patchName, style: AppTheme.tsLabel.copyWith(fontSize: 13)),
-                            ),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 6,
-                                vertical: 2,
-                              ),
-                              decoration: BoxDecoration(
-                                color: Colors.grey.shade200,
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: Text(
-                                '${zones.length}',
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  color: Colors.grey.shade600,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    // Zones
-                    if (isExpanded)
-                      ...zones.map((zone) {
-                        final isSelected = widget.selectedZone?.id == zone.id;
-                        final dist = widget.userLocation != null
-                            ? _zoneDist(zone)
-                            : null;
-
-                        return InkWell(
-                          onTap: () => widget.onSelected(zone),
-                          child: Container(
-                            padding: const EdgeInsets.only(
-                              left: 36,
-                              right: 16,
-                              top: 6,
-                              bottom: 6,
-                            ),
-                            decoration: BoxDecoration(
-                              color: isSelected
-                                  ? AppTheme.greenLight.withOpacity(0.12)
-                                  : null,
-                            ),
-                            child: Row(
-                              children: [
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(zone.name,
-                                          style: AppTheme.tsBody.copyWith(
-                                            fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
-                                          ),
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis),
-                                      Text(zone.code, style: AppTheme.tsOverline),
-                                    ],
-                                  ),
-                                ),
-                                if (dist != null)
-                                  Text(
-                                    _fmtDist(dist),
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      color: Colors.grey.shade500,
-                                    ),
-                                  ),
-                                if (isSelected)
-                                  const Icon(Icons.check, size: 16, color: AppTheme.greenMedium),
-                              ],
-                            ),
-                          ),
-                        );
-                      }),
-                  ],
-                );
-              },
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  double? _zoneDist(Zone zone) {
-    if (widget.userLocation == null || zone.center == null) return null;
-    final lat1 = widget.userLocation!.latitude * pi / 180;
-    final lng1 = widget.userLocation!.longitude * pi / 180;
-    final lat2 = zone.center!['lat']! * pi / 180;
-    final lng2 = zone.center!['lng']! * pi / 180;
-    final dLat = lat2 - lat1;
-    final dLng = lng2 - lng1;
-    final a =
-        sin(dLat / 2) * sin(dLat / 2) +
-        cos(lat1) * cos(lat2) * sin(dLng / 2) * sin(dLng / 2);
-    return 6371000 * 2 * atan2(sqrt(a), sqrt(1 - a));
   }
 }

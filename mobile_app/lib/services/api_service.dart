@@ -462,6 +462,19 @@ class ApiService {
 
   // ==================== Work Report System ====================
 
+  /// Get patches (分区 list for filters)
+  Future<List<Map<String, dynamic>>> getPatches() async {
+    final response = await _client.get(
+      Uri.parse('$baseUrl/patches/'),
+      headers: _headers,
+    );
+    if (response.statusCode == 200) {
+      final List<dynamic> data = jsonDecode(response.body);
+      return data.map((e) => e as Map<String, dynamic>).toList();
+    }
+    throw Exception('获取分区列表失败');
+  }
+
   /// Get locations (legacy CCU list — use Zone.patchId instead for patch selection)
   Future<List<Map<String, dynamic>>> getLocations() async {
     final response = await _client.get(

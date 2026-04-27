@@ -138,7 +138,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       });
 
       Future.delayed(const Duration(milliseconds: 500), () {
-        _mapController?.move(_currentPosition!, 15);
+        final zoom = _mapController?.camera.zoom ?? 15;
+        _mapController?.move(_currentPosition!, zoom);
       });
     } catch (e) {
       debugPrint('获取位置失败: $e');
@@ -378,11 +379,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 
   void _focusCurrentLocation() {
-    if (_currentPosition == null) {
-      _getCurrentLocation();
-      return;
-    }
-    _mapController?.move(_currentPosition!, 15);
+    _getCurrentLocation();
   }
 
   @override
