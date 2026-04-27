@@ -22,6 +22,7 @@ class DemandFormScreen extends StatefulWidget {
 class _DemandFormScreenState extends State<DemandFormScreen> {
   final _formKey = GlobalKey<FormState>();
   bool _isLoading = false;
+  bool _isSaving = false;
 
   DateTime _selectedDate = DateTime.now();
   String _content = '';
@@ -64,6 +65,7 @@ class _DemandFormScreenState extends State<DemandFormScreen> {
   }
 
   Future<void> _loadDropdowns() async {
+    setState(() => _isLoading = true);
     try {
       final zones = await widget.apiService.getZones();
       final categories = await widget.apiService.getDemandCategories();
@@ -73,9 +75,11 @@ class _DemandFormScreenState extends State<DemandFormScreen> {
         _categories = categories;
         _departments = departments;
         _groupByPatches();
+        _isLoading = false;
       });
     } catch (e) {
       if (mounted) {
+        setState(() => _isLoading = false);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('加载数据失败: $e')),
         );
@@ -86,7 +90,7 @@ class _DemandFormScreenState extends State<DemandFormScreen> {
   Future<void> _submitForm() async {
     if (!_formKey.currentState!.validate()) return;
 
-    setState(() => _isLoading = true);
+    setState(() => _isSaving = true);
 
     try {
       final startTimeStr = _startTime != null
@@ -111,7 +115,7 @@ class _DemandFormScreenState extends State<DemandFormScreen> {
       );
 
       if (mounted) {
-        setState(() => _isLoading = false);
+        setState(() => _isSaving = false);
         Navigator.pop(context, true);
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('需求提交成功')),
@@ -119,7 +123,7 @@ class _DemandFormScreenState extends State<DemandFormScreen> {
       }
     } catch (e) {
       if (mounted) {
-        setState(() => _isLoading = false);
+        setState(() => _isSaving = false);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('提交失败: $e')),
         );
@@ -128,6 +132,46 @@ class _DemandFormScreenState extends State<DemandFormScreen> {
   }
 
   void _openPatchPicker() {
+    // Build the list of patch items eagerly before opening the sheet
+    final List<Widget> patchItems = [];
+    for (final entry in _patchNames.entries) {
+      final patchId = entry.key;
+      final patchName = entry.value;
+      final zoneCount = _zonesByPatch[patchId]?.length ?? 0;
+      final isSelected = _selectedPatch == patchId;
+      patchItems.add(_PickerItem(
+        title: patchName,
+        count: zoneCount,
+        isSelected: isSelected,
+        onTap: () {
+          Navigator.pop(context);
+          setState(() {
+            _selectedPatch = patchId;
+            _selectedZone = null;
+            _selectedPatchName = patchName;
+          });
+        },
+      ));
+    }
+    // Add orphan entry if present
+    if (_zonesByPatch.containsKey(null)) {
+      final orphanZones = _zonesByPatch[null] ?? [];
+      final isSelected = _selectedPatch == -1;
+      patchItems.add(_PickerItem(
+        title: '未分配',
+        count: orphanZones.length,
+        isSelected: isSelected,
+        onTap: () {
+          Navigator.pop(context);
+          setState(() {
+            _selectedPatch = -1;
+            _selectedZone = null;
+            _selectedPatchName = '未分配';
+          });
+        },
+      ));
+    }
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -166,48 +210,12 @@ class _DemandFormScreenState extends State<DemandFormScreen> {
             ),
             const SizedBox(height: 8),
             Expanded(
-              child: ListView.builder(
+              child: ListView(
                 controller: scrollController,
                 padding: const EdgeInsets.symmetric(horizontal: AppTheme.pagePadding),
-                itemCount: _patchNames.length + (_zonesByPatch.containsKey(null) ? 1 : 0),
-                itemBuilder: (ctx, i) {
-                  final keys = _patchNames.keys.toList();
-                  if (i < keys.length) {
-                    final patchId = keys[i];
-                    final patchName = _patchNames[patchId]!;
-                    final zoneCount = _zonesByPatch[patchId]?.length ?? 0;
-                    final isSelected = _selectedPatch == patchId;
-                    return _PickerItem(
-                      title: patchName,
-                      count: zoneCount,
-                      isSelected: isSelected,
-                      onTap: () {
-                        Navigator.pop(context);
-                        setState(() {
-                          _selectedPatch = patchId;
-                          _selectedZone = null;
-                          _selectedPatchName = patchName;
-                        });
-                      },
-                    );
-                  } else {
-                    final orphanZones = _zonesByPatch[null] ?? [];
-                    final isSelected = _selectedPatch == -1;
-                    return _PickerItem(
-                      title: '未分配',
-                      count: orphanZones.length,
-                      isSelected: isSelected,
-                      onTap: () {
-                        Navigator.pop(context);
-                        setState(() {
-                          _selectedPatch = -1;
-                          _selectedZone = null;
-                          _selectedPatchName = '未分配';
-                        });
-                      },
-                    );
-                  }
-                },
+                children: patchItems.isEmpty
+                    ? [const Center(child: Text('暂无分区'))]
+                    : patchItems,
               ),
             ),
           ],
@@ -226,6 +234,35 @@ class _DemandFormScreenState extends State<DemandFormScreen> {
 
     final patchId = _selectedPatch == -1 ? null : _selectedPatch;
     final patchZones = _zonesByPatch[patchId] ?? [];
+
+    // Build zone items eagerly
+    final List<Widget> zoneItems = [];
+    for (final zone in patchZones) {
+      final isSelected = _selectedZone == zone.id;
+      zoneItems.add(ListTile(
+        selected: isSelected,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        leading: Container(
+          width: 8, height: 8,
+          decoration: BoxDecoration(
+            color: AppTheme.statusColor(zone.status),
+            shape: BoxShape.circle,
+          ),
+        ),
+        title: Text(zone.name, style: AppTheme.tsBody),
+        subtitle: Text(zone.code, style: AppTheme.tsOverline),
+        trailing: isSelected
+            ? const Icon(Icons.check, size: 16, color: AppTheme.greenMedium)
+            : null,
+        onTap: () {
+          Navigator.pop(context);
+          setState(() {
+            _selectedZone = zone.id;
+            _zoneText = '${zone.name} (${zone.code})';
+          });
+        },
+      ));
+    }
 
     showModalBottomSheet(
       context: context,
@@ -265,37 +302,12 @@ class _DemandFormScreenState extends State<DemandFormScreen> {
             ),
             const SizedBox(height: 8),
             Expanded(
-              child: ListView.builder(
+              child: ListView(
                 controller: scrollController,
                 padding: const EdgeInsets.symmetric(horizontal: AppTheme.pagePadding),
-                itemCount: patchZones.length,
-                itemBuilder: (ctx, i) {
-                  final zone = patchZones[i];
-                  final isSelected = _selectedZone == zone.id;
-                  return ListTile(
-                    selected: isSelected,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    leading: Container(
-                      width: 8, height: 8,
-                      decoration: BoxDecoration(
-                        color: AppTheme.statusColor(zone.status),
-                        shape: BoxShape.circle,
-                      ),
-                    ),
-                    title: Text(zone.name, style: AppTheme.tsBody),
-                    subtitle: Text(zone.code, style: AppTheme.tsOverline),
-                    trailing: isSelected
-                        ? const Icon(Icons.check, size: 16, color: AppTheme.greenMedium)
-                        : null,
-                    onTap: () {
-                      Navigator.pop(context);
-                      setState(() {
-                        _selectedZone = zone.id;
-                        _zoneText = '${zone.name} (${zone.code})';
-                      });
-                    },
-                  );
-                },
+                children: zoneItems.isEmpty
+                    ? [const Center(child: Text('暂无区域'))]
+                    : zoneItems,
               ),
             ),
           ],
@@ -309,7 +321,9 @@ class _DemandFormScreenState extends State<DemandFormScreen> {
     return Scaffold(
       appBar: AppBar(title: const Text('提交需求')),
       body: AppBackground(
-        child: Form(
+        child: _isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : Form(
           key: _formKey,
           child: ListView(
             padding: const EdgeInsets.fromLTRB(
@@ -591,14 +605,14 @@ class _DemandFormScreenState extends State<DemandFormScreen> {
 
               // ── Submit ──────────────────────────────────────
               FilledButton.icon(
-                onPressed: _isLoading ? null : _submitForm,
-                icon: _isLoading
+                onPressed: _isSaving ? null : _submitForm,
+                icon: _isSaving
                     ? const SizedBox(
                         width: 20, height: 20,
                         child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                       )
                     : const Icon(Icons.send_rounded),
-                label: Text(_isLoading ? '提交中...' : '提交需求'),
+                label: Text(_isSaving ? '提交中...' : '提交需求'),
               ),
             ],
           ),

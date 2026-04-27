@@ -840,6 +840,7 @@ class WorkReportSerializer(serializers.ModelSerializer):
     fault_entries = WorkReportFaultSerializer(many=True, required=False)
     worker_name = serializers.CharField(source='worker.full_name', read_only=True)
     patch = serializers.IntegerField(write_only=True, required=True, source='location_id')
+    location = serializers.IntegerField(source='location_id', read_only=True, allow_null=True)
     location_name = serializers.CharField(source='location.name', read_only=True, default=None)
     work_category_name = serializers.CharField(source='work_category.name', read_only=True, default=None)
     info_source_name = serializers.CharField(source='info_source.name', read_only=True, default=None)
@@ -852,7 +853,7 @@ class WorkReportSerializer(serializers.ModelSerializer):
         model = WorkReport
         fields = [
             'id', 'date', 'weather', 'worker', 'worker_name',
-            'patch', 'location_name', 'work_category', 'work_category_name',
+            'patch', 'location', 'location_name', 'work_category', 'work_category_name',
             'zone_location', 'zone_location_code', 'zone_location_display',
             'remark', 'info_source', 'info_source_name',
             'is_difficult', 'is_difficult_resolved',
@@ -911,6 +912,13 @@ class WorkReportSerializer(serializers.ModelSerializer):
             for entry in fault_data:
                 WorkReportFault.objects.create(work_report=instance, **entry)
         return instance
+
+
+class PatchViewSet(viewsets.ReadOnlyModelViewSet):
+    queryset = Patch.objects.filter(type=Patch.TYPE_PATCH, active=True).order_by('order', 'code')
+    serializer_class = LocationSerializer
+    authentication_classes = [TokenAuthentication, authentication.SessionAuthentication]
+    permission_classes = [IsAuthenticatedByTokenOrSession]
 
 
 class LocationViewSet(viewsets.ReadOnlyModelViewSet):
@@ -1255,14 +1263,25 @@ class DemandRecordViewSet(viewsets.ModelViewSet):
         """Auto-set submitter for dept users."""
         user = self.request.user
 
-        # Try to get department profile
+        # Token auth: request.user is already the profile object
+        if isinstance(user, DepartmentUserProfile):
+            demand_dept = DemandDepartment.objects.filter(code=user.department).first()
+            serializer.save(
+                demand_department=demand_dept,
+                demand_department_text=user.get_department_display_name(),
+                demand_contact=user.full_name,
+            )
+            return
+
+        if isinstance(user, ManagerProfile):
+            serializer.save()
+            return
+
+        # Session auth: request.user is a Django User
         try:
             dept_profile = DepartmentUserProfile.objects.get(user=user, active=True)
-            dept_code = dept_profile.department
-            demand_dept = DemandDepartment.objects.filter(code=dept_code).first()
-
+            demand_dept = DemandDepartment.objects.filter(code=dept_profile.department).first()
             serializer.save(
-                submitter=dept_profile,
                 demand_department=demand_dept,
                 demand_department_text=dept_profile.get_department_display_name(),
                 demand_contact=dept_profile.full_name,
@@ -1271,10 +1290,9 @@ class DemandRecordViewSet(viewsets.ModelViewSet):
         except DepartmentUserProfile.DoesNotExist:
             pass
 
-        # Admin can also create
         try:
-            manager = ManagerProfile.objects.get(user=user, active=True)
-            serializer.save(submitter=manager)
+            ManagerProfile.objects.get(user=user, active=True)
+            serializer.save()
             return
         except ManagerProfile.DoesNotExist:
             pass
