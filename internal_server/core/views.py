@@ -2697,8 +2697,7 @@ def _build_chart_data(data_source, metric, date_from, date_to,
                 'datasets': [{
                     'label': '维修日志数',
                     'data': [e['count'] for e in entries],
-                    'backgroundColor': 'rgba(27, 67, 50, 0.7)',
-                    'borderColor': 'rgba(27, 67, 50, 1)',
+                    'backgroundColor': _chart_colors(len(entries)),
                 }]
             }
 
@@ -2958,8 +2957,7 @@ def _build_chart_data(data_source, metric, date_from, date_to,
                 'datasets': [{
                     'label': '需求日志数',
                     'data': [e['count'] for e in entries],
-                    'backgroundColor': 'rgba(64, 145, 108, 0.7)',
-                    'borderColor': 'rgba(64, 145, 108, 1)',
+                    'backgroundColor': _chart_colors(len(entries)),
                 }]
             }
 
@@ -3076,8 +3074,7 @@ def _build_chart_data(data_source, metric, date_from, date_to,
                 'datasets': [{
                     'label': '全局事件数',
                     'data': [e['count'] for e in entries],
-                    'backgroundColor': 'rgba(155, 34, 38, 0.7)',
-                    'borderColor': 'rgba(155, 34, 38, 1)',
+                    'backgroundColor': _chart_colors(len(entries)),
                 }]
             }
 
