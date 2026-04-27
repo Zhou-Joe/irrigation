@@ -183,42 +183,6 @@
     font-weight: 400;
 }
 
-.magic-tagline {
-    font-size: 0.7rem;
-    color: #9ca3af;
-    margin-top: 6px;
-    letter-spacing: 1px;
-}
-
-.magic-tagline span {
-    position: relative;
-}
-
-.magic-tagline span::before,
-.magic-tagline span::after {
-    content: '✦';
-    position: absolute;
-    font-size: 8px;
-    color: #40916C;
-    opacity: 0.6;
-    animation: star-twinkle 2s ease-in-out infinite;
-}
-
-.magic-tagline span::before {
-    left: -12px;
-    animation-delay: 0s;
-}
-
-.magic-tagline span::after {
-    right: -12px;
-    animation-delay: 1s;
-}
-
-@keyframes star-twinkle {
-    0%, 100% { opacity: 0.3; transform: scale(1); }
-    50% { opacity: 0.8; transform: scale(1.2); }
-}
-
 /* Messages */
 .messages {
     margin-bottom: 20px;
@@ -565,9 +529,6 @@
         <div class="register-header">
             <h1>注册申请</h1>
             <p class="subtitle">创建账户需要管理员审批</p>
-            <p class="magic-tagline">
-                <span>开启您的管理之旅</span>
-            </p>
         </div>
 
         {% if messages %}
