@@ -6,82 +6,324 @@
 
 {% block extra_css %}
 <style>
+/* ===== Modern Login/Register Page Design ===== */
+
 .register-container {
     min-height: 100vh;
     display: flex;
     align-items: center;
     justify-content: center;
-    background: linear-gradient(135deg, #1B4332 0%, #2D6A4F 50%, #40916C 100%);
-    padding: var(--space-lg);
+    position: relative;
+    overflow: hidden;
+    /* Magical gradient background */
+    background: linear-gradient(135deg,
+        #0a1628 0%,
+        #1B4332 25%,
+        #2D6A4F 50%,
+        #1a3a4a 75%,
+        #0d1f2d 100%);
 }
 
-.register-card {
-    background: var(--color-surface);
-    border-radius: var(--radius-xl);
-    box-shadow: var(--shadow-lg);
+/* Sparkle particles animation */
+.sparkle-container {
+    position: absolute;
+    top: 0;
+    left: 0;
     width: 100%;
-    max-width: 420px;
-    padding: var(--space-xl);
+    height: 100%;
+    overflow: hidden;
+    pointer-events: none;
+}
+
+.sparkle {
+    position: absolute;
+    width: 4px;
+    height: 4px;
+    background: radial-gradient(circle, #fff 0%, rgba(255,255,255,0) 70%);
+    border-radius: 50%;
+    animation: sparkle-float 8s ease-in-out infinite;
+    opacity: 0;
+}
+
+.sparkle:nth-child(1) { left: 10%; animation-delay: 0s; animation-duration: 6s; }
+.sparkle:nth-child(2) { left: 20%; animation-delay: 1s; animation-duration: 8s; }
+.sparkle:nth-child(3) { left: 30%; animation-delay: 2s; animation-duration: 7s; }
+.sparkle:nth-child(4) { left: 40%; animation-delay: 0.5s; animation-duration: 9s; }
+.sparkle:nth-child(5) { left: 50%; animation-delay: 3s; animation-duration: 6s; }
+.sparkle:nth-child(6) { left: 60%; animation-delay: 1.5s; animation-duration: 8s; }
+.sparkle:nth-child(7) { left: 70%; animation-delay: 2.5s; animation-duration: 7s; }
+.sparkle:nth-child(8) { left: 80%; animation-delay: 4s; animation-duration: 9s; }
+.sparkle:nth-child(9) { left: 90%; animation-delay: 0.8s; animation-duration: 6s; }
+.sparkle:nth-child(10) { left: 15%; animation-delay: 3.5s; animation-duration: 8s; }
+
+@keyframes sparkle-float {
+    0%, 100% {
+        transform: translateY(100vh) scale(0);
+        opacity: 0;
+    }
+    10% {
+        opacity: 0.8;
+        transform: translateY(90vh) scale(1);
+    }
+    90% {
+        opacity: 0.6;
+        transform: translateY(10vh) scale(0.8);
+    }
+    100% {
+        opacity: 0;
+        transform: translateY(0vh) scale(0);
+    }
+}
+
+/* Hidden Mickey - subtle shape */
+.hidden-mickey {
+    position: absolute;
+    bottom: -50px;
+    left: -80px;
+    width: 200px;
+    height: 200px;
+    opacity: 0.03;
+    pointer-events: none;
+}
+
+.hidden-mickey::before,
+.hidden-mickey::after,
+.hidden-mickey-main {
+    content: '';
+    position: absolute;
+    border-radius: 50%;
+    background: #fff;
+}
+
+.hidden-mickey-main {
+    width: 80px;
+    height: 80px;
+    bottom: 60px;
+    left: 80px;
+}
+
+.hidden-mickey::before {
+    width: 50px;
+    height: 50px;
+    bottom: 130px;
+    left: 60px;
+}
+
+.hidden-mickey::after {
+    width: 50px;
+    height: 50px;
+    bottom: 130px;
+    left: 120px;
+}
+
+/* Register card with magical styling */
+.register-card {
+    background: rgba(255, 255, 255, 0.95);
+    border-radius: 24px;
+    box-shadow:
+        0 25px 50px rgba(0, 0, 0, 0.25),
+        0 0 100px rgba(64, 145, 108, 0.1),
+        inset 0 1px 0 rgba(255, 255, 255, 0.8);
+    width: 100%;
+    max-width: 440px;
+    padding: 40px 36px;
+    position: relative;
+    animation: card-entrance 0.8s ease-out;
+    backdrop-filter: blur(10px);
+}
+
+/* Castle silhouette logo */
+.castle-logo {
+    position: relative;
+    width: 80px;
+    height: 65px;
+    margin: 0 auto 20px;
+    animation: logo-glow 3s ease-in-out infinite;
+}
+
+.castle-logo svg {
+    width: 100%;
+    height: 100%;
+    filter: drop-shadow(0 4px 8px rgba(27, 67, 50, 0.3));
+}
+
+@keyframes logo-glow {
+    0%, 100% { filter: drop-shadow(0 4px 8px rgba(27, 67, 50, 0.3)); }
+    50% { filter: drop-shadow(0 4px 12px rgba(64, 145, 108, 0.5)); }
+}
+
+@keyframes card-entrance {
+    from {
+        opacity: 0;
+        transform: translateY(30px) scale(0.95);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
 }
 
 .register-header {
     text-align: center;
-    margin-bottom: var(--space-xl);
-}
-
-.register-header .logo {
-    font-size: 3rem;
-    margin-bottom: var(--space-md);
+    margin-bottom: 24px;
 }
 
 .register-header h1 {
-    font-family: var(--font-display);
-    font-size: 1.75rem;
-    color: var(--color-primary);
-    margin-bottom: var(--space-xs);
+    font-family: 'Georgia', serif;
+    font-size: 1.6rem;
+    color: #1B4332;
+    margin-bottom: 6px;
+    letter-spacing: 2px;
+    font-weight: 600;
 }
 
-.register-header p {
-    color: var(--color-text-muted);
-    font-size: 0.875rem;
+.register-header .subtitle {
+    color: #6b7280;
+    font-size: 0.85rem;
+    font-weight: 400;
 }
 
+.magic-tagline {
+    font-size: 0.7rem;
+    color: #9ca3af;
+    margin-top: 6px;
+    letter-spacing: 1px;
+}
+
+.magic-tagline span {
+    position: relative;
+}
+
+.magic-tagline span::before,
+.magic-tagline span::after {
+    content: '✦';
+    position: absolute;
+    font-size: 8px;
+    color: #40916C;
+    opacity: 0.6;
+    animation: star-twinkle 2s ease-in-out infinite;
+}
+
+.magic-tagline span::before {
+    left: -12px;
+    animation-delay: 0s;
+}
+
+.magic-tagline span::after {
+    right: -12px;
+    animation-delay: 1s;
+}
+
+@keyframes star-twinkle {
+    0%, 100% { opacity: 0.3; transform: scale(1); }
+    50% { opacity: 0.8; transform: scale(1.2); }
+}
+
+/* Messages */
+.messages {
+    margin-bottom: 20px;
+}
+
+.message {
+    padding: 12px 16px;
+    border-radius: 12px;
+    margin-bottom: 10px;
+    font-size: 0.85rem;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.message.error {
+    background: linear-gradient(135deg, rgba(155, 34, 38, 0.1), rgba(155, 34, 38, 0.05));
+    color: #9b2226;
+    border: 1px solid rgba(155, 34, 38, 0.2);
+}
+
+.message.success {
+    background: linear-gradient(135deg, rgba(64, 145, 108, 0.1), rgba(64, 145, 108, 0.05));
+    color: #40916C;
+    border: 1px solid rgba(64, 145, 108, 0.2);
+}
+
+/* Info box */
+.info-box {
+    background: linear-gradient(135deg, rgba(82, 183, 136, 0.08), rgba(64, 145, 108, 0.05));
+    border: 1px solid rgba(64, 145, 108, 0.2);
+    border-radius: 12px;
+    padding: 14px 16px;
+    margin-bottom: 20px;
+    font-size: 0.85rem;
+    color: #374151;
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+}
+
+.info-box .info-icon {
+    color: #40916C;
+    font-size: 1rem;
+}
+
+/* Form styling */
 .form-group {
-    margin-bottom: var(--space-lg);
+    margin-bottom: 18px;
+    position: relative;
 }
 
 .form-group label {
     display: block;
     font-weight: 500;
-    color: var(--color-text-secondary);
-    margin-bottom: var(--space-sm);
-    font-size: 0.875rem;
+    color: #374151;
+    margin-bottom: 6px;
+    font-size: 0.8rem;
+    letter-spacing: 0.5px;
+}
+
+.form-group .input-wrapper {
+    position: relative;
+}
+
+.form-group .input-icon {
+    position: absolute;
+    left: 14px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #9ca3af;
+    font-size: 1rem;
+    transition: color 0.3s ease;
 }
 
 .form-group input,
 .form-group select {
     width: 100%;
-    padding: var(--space-md);
-    border: 2px solid var(--color-surface-dark);
-    border-radius: var(--radius-md);
-    font-size: 1rem;
-    transition: border-color var(--transition-fast);
-    background: var(--color-surface);
-    color: var(--color-text-primary);
+    padding: 12px 14px 12px 42px;
+    border: 2px solid #e5e7eb;
+    border-radius: 10px;
+    font-size: 0.95rem;
+    transition: all 0.3s ease;
+    background: #fff;
+    color: #1f2937;
 }
 
 .form-group input:focus,
 .form-group select:focus {
     outline: none;
-    border-color: var(--color-primary);
+    border-color: #40916C;
+    box-shadow: 0 0 0 4px rgba(64, 145, 108, 0.1);
+}
+
+.form-group .input-wrapper:focus-within .input-icon {
+    color: #40916C;
 }
 
 .form-group input::placeholder {
-    color: var(--color-text-muted);
+    color: #9ca3af;
 }
 
+/* Sub/other dept toggles */
 .sub-department {
-    margin-top: var(--space-md);
+    margin-top: 10px;
     display: none;
 }
 
@@ -90,7 +332,7 @@
 }
 
 .other-dept-name {
-    margin-top: var(--space-md);
+    margin-top: 10px;
     display: none;
 }
 
@@ -98,22 +340,42 @@
     display: block;
 }
 
+/* Register button */
 .btn-register {
     width: 100%;
-    padding: var(--space-md) var(--space-lg);
-    background: var(--color-primary);
+    padding: 14px 20px;
+    background: linear-gradient(135deg, #1B4332 0%, #2D6A4F 50%, #40916C 100%);
     color: white;
     border: none;
-    border-radius: var(--radius-md);
+    border-radius: 12px;
     font-size: 1rem;
     font-weight: 600;
     cursor: pointer;
-    transition: all var(--transition-fast);
+    transition: all 0.3s ease;
+    position: relative;
+    overflow: hidden;
+    letter-spacing: 2px;
+    margin-top: 8px;
+}
+
+.btn-register::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+    transition: left 0.5s ease;
+}
+
+.btn-register:hover::before {
+    left: 100%;
 }
 
 .btn-register:hover {
-    background: var(--color-primary-dark);
-    transform: translateY(-1px);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 25px rgba(27, 67, 50, 0.3);
 }
 
 .btn-register:disabled {
@@ -146,75 +408,177 @@
     to { transform: rotate(360deg); }
 }
 
-.messages {
-    margin-bottom: var(--space-lg);
-}
-
-.message {
-    padding: var(--space-md);
-    border-radius: var(--radius-md);
-    margin-bottom: var(--space-sm);
-    font-size: 0.875rem;
-}
-
-.message.success {
-    background: rgba(64, 145, 108, 0.15);
-    color: var(--color-success);
-    border: 1px solid var(--color-success);
-}
-
-.message.error {
-    background: rgba(155, 34, 38, 0.15);
-    color: var(--color-error);
-    border: 1px solid var(--color-error);
-}
-
+/* Footer links */
 .footer-links {
-    margin-top: var(--space-lg);
+    margin-top: 24px;
     text-align: center;
-    padding-top: var(--space-lg);
-    border-top: 1px solid var(--color-surface-dark);
+    padding-top: 20px;
+    border-top: 1px solid #e5e7eb;
+    display: flex;
+    justify-content: center;
+    gap: 20px;
 }
 
 .footer-links a {
-    color: var(--color-primary);
+    color: #6b7280;
     text-decoration: none;
-    font-size: 0.875rem;
+    font-size: 0.85rem;
+    transition: all 0.3s ease;
+    position: relative;
 }
 
 .footer-links a:hover {
-    text-decoration: underline;
+    color: #1B4332;
 }
 
-.info-box {
-    background: rgba(82, 183, 136, 0.1);
-    border: 1px solid var(--color-info);
-    border-radius: var(--radius-md);
-    padding: var(--space-md);
-    margin-bottom: var(--space-lg);
-    font-size: 0.875rem;
-    color: var(--color-text-secondary);
+.footer-links a::after {
+    content: '';
+    position: absolute;
+    bottom: -2px;
+    left: 0;
+    width: 0;
+    height: 2px;
+    background: linear-gradient(90deg, #1B4332, #40916C);
+    transition: width 0.3s ease;
 }
 
-.info-box strong {
-    color: var(--color-primary);
+.footer-links a:hover::after {
+    width: 100%;
+}
+
+/* Version info */
+.version-info {
+    text-align: center;
+    margin-top: 18px;
+    font-size: 0.65rem;
+    color: #9ca3af;
+    letter-spacing: 1px;
+}
+
+.version-info .fos-hint {
+    opacity: 0.5;
+    font-weight: 500;
+}
+
+/* Stars background */
+.stars {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+}
+
+.star {
+    position: absolute;
+    width: 2px;
+    height: 2px;
+    background: #fff;
+    border-radius: 50%;
+    opacity: 0.3;
+    animation: star-blink 3s ease-in-out infinite;
+}
+
+.star:nth-child(1) { top: 10%; left: 5%; animation-delay: 0s; }
+.star:nth-child(2) { top: 15%; left: 15%; animation-delay: 0.5s; }
+.star:nth-child(3) { top: 8%; left: 25%; animation-delay: 1s; }
+.star:nth-child(4) { top: 20%; left: 35%; animation-delay: 1.5s; }
+.star:nth-child(5) { top: 12%; left: 45%; animation-delay: 2s; }
+.star:nth-child(6) { top: 25%; left: 55%; animation-delay: 0.3s; }
+.star:nth-child(7) { top: 18%; left: 65%; animation-delay: 0.8s; }
+.star:nth-child(8) { top: 30%; left: 75%; animation-delay: 1.3s; }
+.star:nth-child(9) { top: 22%; left: 85%; animation-delay: 1.8s; }
+.star:nth-child(10) { top: 35%; left: 95%; animation-delay: 0.2s; }
+
+@keyframes star-blink {
+    0%, 100% { opacity: 0.2; transform: scale(1); }
+    50% { opacity: 0.6; transform: scale(1.5); }
+}
+
+@media (max-width: 480px) {
+    .register-card {
+        padding: 30px 20px;
+        margin: 16px;
+    }
+    .castle-logo {
+        width: 70px;
+        height: 55px;
+    }
 }
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="register-container">
+    <!-- Stars background -->
+    <div class="stars">
+        <div class="star"></div>
+        <div class="star"></div>
+        <div class="star"></div>
+        <div class="star"></div>
+        <div class="star"></div>
+        <div class="star"></div>
+        <div class="star"></div>
+        <div class="star"></div>
+        <div class="star"></div>
+        <div class="star"></div>
+    </div>
+
+    <!-- Sparkle particles -->
+    <div class="sparkle-container">
+        <div class="sparkle"></div>
+        <div class="sparkle"></div>
+        <div class="sparkle"></div>
+        <div class="sparkle"></div>
+        <div class="sparkle"></div>
+        <div class="sparkle"></div>
+        <div class="sparkle"></div>
+        <div class="sparkle"></div>
+        <div class="sparkle"></div>
+        <div class="sparkle"></div>
+    </div>
+
+    <!-- Hidden Mickey shape -->
+    <div class="hidden-mickey">
+        <div class="hidden-mickey-main"></div>
+    </div>
+
     <div class="register-card">
+        <!-- Castle silhouette logo -->
+        <div class="castle-logo">
+            <svg viewBox="0 0 120 100" fill="none">
+                <rect x="35" y="40" width="50" height="60" fill="#1B4332" rx="2"/>
+                <polygon points="60,10 45,40 75,40" fill="#2D6A4F"/>
+                <polygon points="40,25 30,40 50,40" fill="#40916C"/>
+                <polygon points="80,25 70,40 90,40" fill="#40916C"/>
+                <rect x="25" y="20" width="8" height="25" fill="#1B4332"/>
+                <polygon points="29,5 22,20 36,20" fill="#2D6A4F"/>
+                <rect x="87" y="20" width="8" height="25" fill="#1B4332"/>
+                <polygon points="91,5 84,20 98,20" fill="#2D6A4F"/>
+                <rect x="50" y="55" width="20" height="30" fill="#0a1628" rx="10" ry="10"/>
+                <rect x="55" y="15" width="10" height="8" fill="#40916C"/>
+                <circle cx="60" cy="12" r="4" fill="#52B788"/>
+            </svg>
+        </div>
+
         <div class="register-header">
-            <div class="logo">🌿</div>
             <h1>注册申请</h1>
-            <p>创建账户需要管理员审批</p>
+            <p class="subtitle">创建账户需要管理员审批</p>
+            <p class="magic-tagline">
+                <span>开启您的管理之旅</span>
+            </p>
         </div>
 
         {% if messages %}
         <div class="messages">
             {% for message in messages %}
             <div class="message {{ message.tags }}">
+                {% if message.tags == 'error' %}
+                <span>⚠</span>
+                {% else %}
+                <span>✓</span>
+                {% endif %}
                 {{ message }}
             </div>
             {% endfor %}
@@ -222,66 +586,91 @@
         {% endif %}
 
         <div class="info-box">
-            <strong>提示：</strong>请设置您的登录用户名和密码。提交注册申请后，管理员将审核您的信息。审批通过后，即可使用您设置的账户登录。
+            <span class="info-icon">💡</span>
+            <span>请设置您的登录用户名和密码。提交后管理员将审核，审批通过即可登录。</span>
         </div>
 
         <form method="post">
             {% csrf_token %}
             <div class="form-group">
                 <label for="full_name">姓名 *</label>
-                <input type="text" id="full_name" name="full_name" placeholder="请输入您的姓名" required>
+                <div class="input-wrapper">
+                    <input type="text" id="full_name" name="full_name" placeholder="请输入您的姓名" required>
+                    <span class="input-icon">👤</span>
+                </div>
             </div>
 
             <div class="form-group">
                 <label for="username">登录用户名 *</label>
-                <input type="text" id="username" name="username" placeholder="请输入登录用户名（唯一）" required minlength="3" maxlength="150">
+                <div class="input-wrapper">
+                    <input type="text" id="username" name="username" placeholder="请输入登录用户名（唯一）" required minlength="3" maxlength="150">
+                    <span class="input-icon">📝</span>
+                </div>
             </div>
 
             <div class="form-group">
                 <label for="password">登录密码 *</label>
-                <input type="password" id="password" name="password" placeholder="请输入登录密码" required minlength="6">
+                <div class="input-wrapper">
+                    <input type="password" id="password" name="password" placeholder="请输入登录密码" required minlength="6">
+                    <span class="input-icon">🔒</span>
+                </div>
             </div>
 
             <div class="form-group">
                 <label for="phone">手机号 *</label>
-                <input type="tel" id="phone" name="phone" placeholder="请输入手机号" required>
+                <div class="input-wrapper">
+                    <input type="tel" id="phone" name="phone" placeholder="请输入手机号" required>
+                    <span class="input-icon">📱</span>
+                </div>
             </div>
 
             <div class="form-group">
                 <label for="employee_id">工号</label>
-                <input type="text" id="employee_id" name="employee_id" placeholder="请输入工号（选填，不填则自动生成）">
+                <div class="input-wrapper">
+                    <input type="text" id="employee_id" name="employee_id" placeholder="选填，不填则自动生成">
+                    <span class="input-icon">🆔</span>
+                </div>
             </div>
 
-            <!-- Department selection (determines role) -->
+            <!-- Department selection -->
             <div class="form-group">
                 <label for="department_type">部门 *</label>
-                <select name="department_type" id="department_type" required onchange="toggleSubDepartment()">
-                    <option value="">请选择部门</option>
-                    <option value="field_worker">园艺一线</option>
-                    <option value="manager">园艺经理</option>
-                    <option value="dept_user">其他部门</option>
-                </select>
+                <div class="input-wrapper">
+                    <select name="department_type" id="department_type" required onchange="toggleSubDepartment()">
+                        <option value="">请选择部门</option>
+                        <option value="field_worker">园艺一线</option>
+                        <option value="manager">园艺经理</option>
+                        <option value="dept_user">其他部门</option>
+                    </select>
+                    <span class="input-icon">🏢</span>
+                </div>
             </div>
 
             <!-- Sub-department for "其他部门" -->
             <div class="form-group sub-department" id="subDepartment">
                 <label for="department">所属部门 *</label>
-                <select id="department" name="department">
-                    <option value="">请选择所属部门</option>
-                    <option value="FES">FES</option>
-                    <option value="FAM">FAM</option>
-                    <option value="ENT">ENT</option>
-                    <option value="其他">其他</option>
-                </select>
+                <div class="input-wrapper">
+                    <select id="department" name="department">
+                        <option value="">请选择所属部门</option>
+                        <option value="FES">FES</option>
+                        <option value="FAM">FAM</option>
+                        <option value="ENT">ENT</option>
+                        <option value="其他">其他</option>
+                    </select>
+                    <span class="input-icon">📂</span>
+                </div>
             </div>
 
             <!-- Other department name -->
             <div class="form-group other-dept-name" id="otherDeptName">
                 <label for="department_other">部门名称 *</label>
-                <input type="text" id="department_other" name="department_other" placeholder="请输入部门名称">
+                <div class="input-wrapper">
+                    <input type="text" id="department_other" name="department_other" placeholder="请输入部门名称">
+                    <span class="input-icon">📁</span>
+                </div>
             </div>
 
-            <!-- Hidden field for role (set by JS) -->
+            <!-- Hidden field for role -->
             <input type="hidden" name="requested_role" id="requested_role" value="field_worker">
 
             <button type="submit" class="btn-register" id="registerBtn">
@@ -292,13 +681,17 @@
 
         <div class="footer-links">
             <a href="{% url 'core:login' %}">已有账户？登录</a>
-            <a href="/admin/">管理员登录</a>
+            <a href="/admin/">管理员入口</a>
+        </div>
+
+        <div class="version-info">
+            <span class="fos-hint">FOS</span> · v2.0
         </div>
     </div>
 </div>
 
 <script>
-// Disable submit button on click to prevent CSRF errors from double-click
+// Disable submit button on click
 document.querySelector('form').addEventListener('submit', function(e) {
     var btn = document.getElementById('registerBtn');
     if (btn.disabled) {
@@ -315,27 +708,21 @@ function toggleSubDepartment() {
     var deptSelect = document.getElementById('department');
     var roleInput = document.getElementById('requested_role');
 
-    // Set the role based on department type
     roleInput.value = deptType;
 
     if (deptType === 'dept_user') {
-        // Show sub-department dropdown for "其他部门"
         subDept.classList.add('show');
         deptSelect.setAttribute('required', 'required');
     } else {
-        // Hide sub-department for 园艺一线 and 园艺经理
         subDept.classList.remove('show');
         deptSelect.removeAttribute('required');
         deptSelect.value = '';
-
-        // Also hide other department name
         document.getElementById('otherDeptName').classList.remove('show');
         document.getElementById('department_other').removeAttribute('required');
         document.getElementById('department_other').value = '';
     }
 }
 
-// Show/hide "其他部门名称" based on department selection
 document.getElementById('department').addEventListener('change', function() {
     var otherDeptName = document.getElementById('otherDeptName');
     var otherDeptInput = document.getElementById('department_other');

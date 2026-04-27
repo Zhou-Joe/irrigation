@@ -6,94 +6,340 @@
 
 {% block extra_css %}
 <style>
+/* ===== Modern Login Page Design ===== */
+
 .login-container {
     min-height: 100vh;
     display: flex;
     align-items: center;
     justify-content: center;
-    background: linear-gradient(135deg, #1B4332 0%, #2D6A4F 50%, #40916C 100%);
-    padding: var(--space-lg);
+    position: relative;
+    overflow: hidden;
+    /* Magical gradient background */
+    background: linear-gradient(135deg,
+        #0a1628 0%,
+        #1B4332 25%,
+        #2D6A4F 50%,
+        #1a3a4a 75%,
+        #0d1f2d 100%);
 }
 
-.login-card {
-    background: var(--color-surface);
-    border-radius: var(--radius-xl);
-    box-shadow: var(--shadow-lg);
+/* Sparkle particles animation */
+.sparkle-container {
+    position: absolute;
+    top: 0;
+    left: 0;
     width: 100%;
-    max-width: 400px;
-    padding: var(--space-xl);
+    height: 100%;
+    overflow: hidden;
+    pointer-events: none;
+}
+
+.sparkle {
+    position: absolute;
+    width: 4px;
+    height: 4px;
+    background: radial-gradient(circle, #fff 0%, rgba(255,255,255,0) 70%);
+    border-radius: 50%;
+    animation: sparkle-float 8s ease-in-out infinite;
+    opacity: 0;
+}
+
+.sparkle:nth-child(1) { left: 10%; animation-delay: 0s; animation-duration: 6s; }
+.sparkle:nth-child(2) { left: 20%; animation-delay: 1s; animation-duration: 8s; }
+.sparkle:nth-child(3) { left: 30%; animation-delay: 2s; animation-duration: 7s; }
+.sparkle:nth-child(4) { left: 40%; animation-delay: 0.5s; animation-duration: 9s; }
+.sparkle:nth-child(5) { left: 50%; animation-delay: 3s; animation-duration: 6s; }
+.sparkle:nth-child(6) { left: 60%; animation-delay: 1.5s; animation-duration: 8s; }
+.sparkle:nth-child(7) { left: 70%; animation-delay: 2.5s; animation-duration: 7s; }
+.sparkle:nth-child(8) { left: 80%; animation-delay: 4s; animation-duration: 9s; }
+.sparkle:nth-child(9) { left: 90%; animation-delay: 0.8s; animation-duration: 6s; }
+.sparkle:nth-child(10) { left: 15%; animation-delay: 3.5s; animation-duration: 8s; }
+.sparkle:nth-child(11) { left: 85%; animation-delay: 1.8s; animation-duration: 7s; }
+.sparkle:nth-child(12) { left: 5%; animation-delay: 2.8s; animation-duration: 9s; }
+
+@keyframes sparkle-float {
+    0%, 100% {
+        transform: translateY(100vh) scale(0);
+        opacity: 0;
+    }
+    10% {
+        opacity: 0.8;
+        transform: translateY(90vh) scale(1);
+    }
+    90% {
+        opacity: 0.6;
+        transform: translateY(10vh) scale(0.8);
+    }
+    100% {
+        opacity: 0;
+        transform: translateY(0vh) scale(0);
+    }
+}
+
+/* Hidden Mickey - subtle shape in background */
+.hidden-mickey {
+    position: absolute;
+    bottom: -50px;
+    right: -80px;
+    width: 200px;
+    height: 200px;
+    opacity: 0.03;
+    pointer-events: none;
+}
+
+.hidden-mickey::before,
+.hidden-mickey::after,
+.hidden-mickey-main {
+    content: '';
+    position: absolute;
+    border-radius: 50%;
+    background: #fff;
+}
+
+.hidden-mickey-main {
+    width: 80px;
+    height: 80px;
+    bottom: 60px;
+    right: 80px;
+}
+
+.hidden-mickey::before {
+    width: 50px;
+    height: 50px;
+    bottom: 130px;
+    right: 60px;
+}
+
+.hidden-mickey::after {
+    width: 50px;
+    height: 50px;
+    bottom: 130px;
+    right: 120px;
+}
+
+/* Login card with magical styling */
+.login-card {
+    background: rgba(255, 255, 255, 0.95);
+    border-radius: 24px;
+    box-shadow:
+        0 25px 50px rgba(0, 0, 0, 0.25),
+        0 0 100px rgba(64, 145, 108, 0.1),
+        inset 0 1px 0 rgba(255, 255, 255, 0.8);
+    width: 100%;
+    max-width: 440px;
+    padding: 48px 40px;
+    position: relative;
+    animation: card-entrance 0.8s ease-out;
+    backdrop-filter: blur(10px);
+}
+
+/* Subtle castle silhouette - insiders recognize, outsiders see as garden structure */
+.castle-logo {
+    position: relative;
+    width: 120px;
+    height: 100px;
+    margin: 0 auto 24px;
+    animation: logo-glow 3s ease-in-out infinite;
+}
+
+.castle-logo svg {
+    width: 100%;
+    height: 100%;
+    filter: drop-shadow(0 4px 8px rgba(27, 67, 50, 0.3));
+}
+
+@keyframes logo-glow {
+    0%, 100% { filter: drop-shadow(0 4px 8px rgba(27, 67, 50, 0.3)); }
+    50% { filter: drop-shadow(0 4px 12px rgba(64, 145, 108, 0.5)); }
+}
+
+@keyframes card-entrance {
+    from {
+        opacity: 0;
+        transform: translateY(30px) scale(0.95);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
 }
 
 .login-header {
     text-align: center;
-    margin-bottom: var(--space-xl);
-}
-
-.login-header .logo {
-    font-size: 3.5rem;
-    margin-bottom: var(--space-md);
+    margin-bottom: 36px;
 }
 
 .login-header h1 {
-    font-family: var(--font-display);
-    font-size: 1.75rem;
-    color: var(--color-primary);
-    margin-bottom: var(--space-xs);
+    font-family: 'Georgia', serif;
+    font-size: 1.85rem;
+    color: #1B4332;
+    margin-bottom: 8px;
+    letter-spacing: 2px;
+    font-weight: 600;
 }
 
-.login-header p {
-    color: var(--color-text-muted);
+.login-header .subtitle {
+    color: #6b7280;
+    font-size: 0.9rem;
+    font-weight: 400;
+    margin-bottom: 16px;
+}
+
+/* Tagline with subtle magic reference - insiders connect to Disney values */
+.magic-tagline {
+    font-size: 0.75rem;
+    color: #9ca3af;
+    margin-top: 8px;
+    letter-spacing: 1px;
+}
+
+.magic-tagline span {
+    position: relative;
+}
+
+.magic-tagline span::before,
+.magic-tagline span::after {
+    content: '✦';
+    position: absolute;
+    font-size: 8px;
+    color: #40916C;
+    opacity: 0.6;
+    animation: star-twinkle 2s ease-in-out infinite;
+}
+
+.magic-tagline span::before {
+    left: -12px;
+    animation-delay: 0s;
+}
+
+.magic-tagline span::after {
+    right: -12px;
+    animation-delay: 1s;
+}
+
+@keyframes star-twinkle {
+    0%, 100% { opacity: 0.3; transform: scale(1); }
+    50% { opacity: 0.8; transform: scale(1.2); }
+}
+
+/* Messages styling */
+.messages {
+    margin-bottom: 24px;
+}
+
+.message {
+    padding: 14px 16px;
+    border-radius: 12px;
+    margin-bottom: 12px;
     font-size: 0.875rem;
+    display: flex;
+    align-items: center;
+    gap: 10px;
 }
 
+.message.error {
+    background: linear-gradient(135deg, rgba(155, 34, 38, 0.1), rgba(155, 34, 38, 0.05));
+    color: #9b2226;
+    border: 1px solid rgba(155, 34, 38, 0.2);
+}
+
+.message.success {
+    background: linear-gradient(135deg, rgba(64, 145, 108, 0.1), rgba(64, 145, 108, 0.05));
+    color: #40916C;
+    border: 1px solid rgba(64, 145, 108, 0.2);
+}
+
+/* Modern form styling */
 .form-group {
-    margin-bottom: var(--space-lg);
+    margin-bottom: 24px;
+    position: relative;
 }
 
 .form-group label {
     display: block;
     font-weight: 500;
-    color: var(--color-text-secondary);
-    margin-bottom: var(--space-sm);
+    color: #374151;
+    margin-bottom: 8px;
     font-size: 0.875rem;
+    letter-spacing: 0.5px;
+}
+
+.form-group .input-wrapper {
+    position: relative;
+}
+
+.form-group .input-icon {
+    position: absolute;
+    left: 16px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #9ca3af;
+    font-size: 1.1rem;
+    transition: color 0.3s ease;
 }
 
 .form-group input {
     width: 100%;
-    padding: var(--space-md);
-    border: 2px solid var(--color-surface-dark);
-    border-radius: var(--radius-md);
+    padding: 14px 16px 14px 48px;
+    border: 2px solid #e5e7eb;
+    border-radius: 12px;
     font-size: 1rem;
-    transition: border-color var(--transition-fast);
-    background: var(--color-surface);
-    color: var(--color-text-primary);
+    transition: all 0.3s ease;
+    background: #fff;
+    color: #1f2937;
 }
 
 .form-group input:focus {
     outline: none;
-    border-color: var(--color-primary);
+    border-color: #40916C;
+    box-shadow: 0 0 0 4px rgba(64, 145, 108, 0.1);
+}
+
+.form-group input:focus + .input-icon,
+.form-group .input-wrapper:focus-within .input-icon {
+    color: #40916C;
 }
 
 .form-group input::placeholder {
-    color: var(--color-text-muted);
+    color: #9ca3af;
 }
 
+/* Login button with magical styling */
 .btn-login {
     width: 100%;
-    padding: var(--space-md) var(--space-lg);
-    background: var(--color-primary);
+    padding: 16px 24px;
+    background: linear-gradient(135deg, #1B4332 0%, #2D6A4F 50%, #40916C 100%);
     color: white;
     border: none;
-    border-radius: var(--radius-md);
-    font-size: 1rem;
+    border-radius: 12px;
+    font-size: 1.05rem;
     font-weight: 600;
     cursor: pointer;
-    transition: all var(--transition-fast);
+    transition: all 0.3s ease;
+    position: relative;
+    overflow: hidden;
+    letter-spacing: 2px;
+}
+
+.btn-login::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+    transition: left 0.5s ease;
+}
+
+.btn-login:hover::before {
+    left: 100%;
 }
 
 .btn-login:hover {
-    background: var(--color-primary-dark);
-    transform: translateY(-1px);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 25px rgba(27, 67, 50, 0.3);
 }
 
 .btn-login:disabled {
@@ -104,13 +350,13 @@
 
 .btn-login .spinner {
     display: none;
-    width: 16px;
-    height: 16px;
+    width: 18px;
+    height: 18px;
     border: 2px solid #fff;
     border-top-color: transparent;
     border-radius: 50%;
     animation: spin 0.8s linear infinite;
-    margin-right: 8px;
+    margin-right: 10px;
     vertical-align: middle;
 }
 
@@ -126,62 +372,197 @@
     to { transform: rotate(360deg); }
 }
 
-.messages {
-    margin-bottom: var(--space-lg);
-}
-
-.message {
-    padding: var(--space-md);
-    border-radius: var(--radius-md);
-    margin-bottom: var(--space-sm);
-    font-size: 0.875rem;
-}
-
-.message.error {
-    background: rgba(155, 34, 38, 0.15);
-    color: var(--color-error);
-    border: 1px solid var(--color-error);
-}
-
-.message.success {
-    background: rgba(64, 145, 108, 0.15);
-    color: var(--color-success);
-    border: 1px solid var(--color-success);
-}
-
+/* Footer links with subtle FOS reference */
 .footer-links {
-    margin-top: var(--space-lg);
+    margin-top: 32px;
     text-align: center;
-    padding-top: var(--space-lg);
-    border-top: 1px solid var(--color-surface-dark);
+    padding-top: 24px;
+    border-top: 1px solid #e5e7eb;
+    display: flex;
+    justify-content: center;
+    gap: 24px;
 }
 
 .footer-links a {
-    color: var(--color-primary);
+    color: #6b7280;
     text-decoration: none;
     font-size: 0.875rem;
-    margin: 0 var(--space-sm);
+    transition: all 0.3s ease;
+    position: relative;
 }
 
 .footer-links a:hover {
-    text-decoration: underline;
+    color: #1B4332;
+}
+
+.footer-links a::after {
+    content: '';
+    position: absolute;
+    bottom: -2px;
+    left: 0;
+    width: 0;
+    height: 2px;
+    background: linear-gradient(90deg, #1B4332, #40916C);
+    transition: width 0.3s ease;
+}
+
+.footer-links a:hover::after {
+    width: 100%;
+}
+
+/* Version info with subtle FOS hint */
+.version-info {
+    text-align: center;
+    margin-top: 24px;
+    font-size: 0.7rem;
+    color: #9ca3af;
+    letter-spacing: 1px;
+}
+
+.version-info .fos-hint {
+    opacity: 0.5;
+    font-weight: 500;
+}
+
+/* Responsive adjustments */
+@media (max-width: 480px) {
+    .login-card {
+        padding: 36px 24px;
+        border-radius: 20px;
+        margin: 16px;
+    }
+
+    .login-header h1 {
+        font-size: 1.5rem;
+    }
+
+    .castle-logo {
+        width: 100px;
+        height: 80px;
+    }
+}
+
+/* Night sky stars effect */
+.stars {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+}
+
+.star {
+    position: absolute;
+    width: 2px;
+    height: 2px;
+    background: #fff;
+    border-radius: 50%;
+    opacity: 0.3;
+    animation: star-blink 3s ease-in-out infinite;
+}
+
+.star:nth-child(1) { top: 10%; left: 5%; animation-delay: 0s; }
+.star:nth-child(2) { top: 15%; left: 15%; animation-delay: 0.5s; }
+.star:nth-child(3) { top: 8%; left: 25%; animation-delay: 1s; }
+.star:nth-child(4) { top: 20%; left: 35%; animation-delay: 1.5s; }
+.star:nth-child(5) { top: 12%; left: 45%; animation-delay: 2s; }
+.star:nth-child(6) { top: 25%; left: 55%; animation-delay: 0.3s; }
+.star:nth-child(7) { top: 18%; left: 65%; animation-delay: 0.8s; }
+.star:nth-child(8) { top: 30%; left: 75%; animation-delay: 1.3s; }
+.star:nth-child(9) { top: 22%; left: 85%; animation-delay: 1.8s; }
+.star:nth-child(10) { top: 35%; left: 95%; animation-delay: 0.2s; }
+.star:nth-child(11) { top: 5%; left: 70%; animation-delay: 2.2s; }
+.star:nth-child(12) { top: 40%; left: 10%; animation-delay: 0.7s; }
+
+@keyframes star-blink {
+    0%, 100% { opacity: 0.2; transform: scale(1); }
+    50% { opacity: 0.6; transform: scale(1.5); }
 }
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="login-container">
+    <!-- Stars background -->
+    <div class="stars">
+        <div class="star"></div>
+        <div class="star"></div>
+        <div class="star"></div>
+        <div class="star"></div>
+        <div class="star"></div>
+        <div class="star"></div>
+        <div class="star"></div>
+        <div class="star"></div>
+        <div class="star"></div>
+        <div class="star"></div>
+        <div class="star"></div>
+        <div class="star"></div>
+    </div>
+
+    <!-- Sparkle particles -->
+    <div class="sparkle-container">
+        <div class="sparkle"></div>
+        <div class="sparkle"></div>
+        <div class="sparkle"></div>
+        <div class="sparkle"></div>
+        <div class="sparkle"></div>
+        <div class="sparkle"></div>
+        <div class="sparkle"></div>
+        <div class="sparkle"></div>
+        <div class="sparkle"></div>
+        <div class="sparkle"></div>
+        <div class="sparkle"></div>
+        <div class="sparkle"></div>
+    </div>
+
+    <!-- Hidden Mickey shape (very subtle) -->
+    <div class="hidden-mickey">
+        <div class="hidden-mickey-main"></div>
+    </div>
+
     <div class="login-card">
+        <!-- Castle silhouette logo - subtle Disney reference -->
+        <div class="castle-logo">
+            <svg viewBox="0 0 120 100" fill="none">
+                <!-- Subtle castle silhouette that also looks like a greenhouse/garden structure -->
+                <!-- Main towers -->
+                <rect x="35" y="40" width="50" height="60" fill="#1B4332" rx="2"/>
+                <!-- Tower roof peaks -->
+                <polygon points="60,10 45,40 75,40" fill="#2D6A4F"/>
+                <polygon points="40,25 30,40 50,40" fill="#40916C"/>
+                <polygon points="80,25 70,40 90,40" fill="#40916C"/>
+                <!-- Small spires -->
+                <rect x="25" y="20" width="8" height="25" fill="#1B4332"/>
+                <polygon points="29,5 22,20 36,20" fill="#2D6A4F"/>
+                <rect x="87" y="20" width="8" height="25" fill="#1B4332"/>
+                <polygon points="91,5 84,20 98,20" fill="#2D6A4F"/>
+                <!-- Window/door hints -->
+                <rect x="50" y="55" width="20" height="30" fill="#0a1628" rx="10" ry="10"/>
+                <!-- Decorative top -->
+                <rect x="55" y="15" width="10" height="8" fill="#40916C"/>
+                <circle cx="60" cy="12" r="4" fill="#52B788"/>
+            </svg>
+        </div>
+
         <div class="login-header">
-            <div class="logo"></div>
-            <h1>灌溉管理系统</h1>
-            <p>请登录您的账户</p>
+            <h1>园艺管理系统</h1>
+            <p class="subtitle">智能灌溉 · 精准管理</p>
+            <!-- Tagline with subtle magic reference -->
+            <p class="magic-tagline">
+                <span>让每一滴水绽放生机</span>
+            </p>
         </div>
 
         {% if messages %}
         <div class="messages">
             {% for message in messages %}
             <div class="message {{ message.tags }}">
+                {% if message.tags == 'error' %}
+                <span>⚠</span>
+                {% else %}
+                <span>✓</span>
+                {% endif %}
                 {{ message }}
             </div>
             {% endfor %}
@@ -192,12 +573,18 @@
             {% csrf_token %}
             <div class="form-group">
                 <label for="username">用户名</label>
-                <input type="text" id="username" name="username" placeholder="请输入用户名" required autofocus>
+                <div class="input-wrapper">
+                    <input type="text" id="username" name="username" placeholder="请输入用户名" required autofocus>
+                    <span class="input-icon">👤</span>
+                </div>
             </div>
 
             <div class="form-group">
                 <label for="password">密码</label>
-                <input type="password" id="password" name="password" placeholder="请输入密码" required>
+                <div class="input-wrapper">
+                    <input type="password" id="password" name="password" placeholder="请输入密码" required>
+                    <span class="input-icon">🔒</span>
+                </div>
             </div>
 
             <button type="submit" class="btn-login" id="loginBtn">
@@ -208,7 +595,12 @@
 
         <div class="footer-links">
             <a href="{% url 'core:register' %}">注册申请</a>
-            <a href="/admin/">管理员登录</a>
+            <a href="/admin/">管理员入口</a>
+        </div>
+
+        <!-- Version info with subtle FOS hint -->
+        <div class="version-info">
+            <span class="fos-hint">FOS</span> · v2.0
         </div>
     </div>
 </div>
@@ -216,6 +608,7 @@
 
 {% block extra_js %}
 <script>
+// Disable submit button on click to prevent CSRF errors from double-click
 document.querySelector('form').addEventListener('submit', function(e) {
     var btn = document.getElementById('loginBtn');
     if (btn.disabled) {
@@ -224,6 +617,22 @@ document.querySelector('form').addEventListener('submit', function(e) {
     }
     btn.disabled = true;
     btn.classList.add('loading');
+});
+
+// Add subtle parallax effect on mouse move
+document.querySelector('.login-container').addEventListener('mousemove', function(e) {
+    var card = document.querySelector('.login-card');
+    var rect = card.getBoundingClientRect();
+    var x = e.clientX - rect.left - rect.width / 2;
+    var y = e.clientY - rect.top - rect.height / 2;
+
+    // Very subtle movement
+    card.style.transform = 'translateY(' + (y * 0.02) + 'px) rotateX(' + (-y * 0.02) + 'deg) rotateY(' + (x * 0.02) + 'deg)';
+});
+
+document.querySelector('.login-container').addEventListener('mouseleave', function() {
+    var card = document.querySelector('.login-card');
+    card.style.transform = '';
 });
 </script>
 {% endblock %}
