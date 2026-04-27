@@ -312,8 +312,8 @@
     function initEditMap() {
         const centerLat = 31.145794 + 0.010;
         const centerLng = 121.656804 + 0.012;
-        const latOffset = 0.018;
-        const lngOffset = 0.021;
+        const latOffset = 0.027; // ~3km
+        const lngOffset = 0.032; // ~3km
         const southWest = L.latLng(centerLat - latOffset, centerLng - lngOffset);
         const northEast = L.latLng(centerLat + latOffset, centerLng + lngOffset);
 
@@ -362,6 +362,14 @@
             } catch(e) { console.warn('ref pipes error:', e); }
         }
 
+        // Check if a polygon is already closed (first point == last point)
+        function isPolygonClosed(pts) {
+            if (pts.length < 3) return false;
+            const first = pts[0];
+            const last = pts[pts.length - 1];
+            return Math.abs(first.lat - last.lat) < 0.000001 && Math.abs(first.lng - last.lng) < 0.000001;
+        }
+
         // Load existing boundary data
         const boundaryDataEl = document.getElementById('boundary-data');
         if (boundaryDataEl && boundaryDataEl.textContent) {
@@ -370,13 +378,13 @@
                 if (raw && raw.length > 0) {
                     const polys = normalizeBoundaryData(raw);
                     if (polys.length > 0) {
-                        // Load all but the last as completed shapes, last as current editing
+                        // Load polygons: closed ones as completed shapes, unclosed ones as current editing
                         polys.forEach((pts, i) => {
-                            if (i < polys.length - 1 || pts.length < 3) {
-                                // Completed shape
-                                if (pts.length >= 3) completeShapeFromPoints(pts);
-                            } else {
-                                // Last shape → load as current markers for editing
+                            if (pts.length >= 3 && isPolygonClosed(pts)) {
+                                // Already closed → load as completed shape
+                                completeShapeFromPoints(pts);
+                            } else if (pts.length >= 3) {
+                                // Not closed → load as current editing markers
                                 pts.forEach(p => createMarker(L.latLng(p.lat, p.lng)));
                             }
                         });

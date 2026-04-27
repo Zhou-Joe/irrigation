@@ -373,6 +373,18 @@ class ZoneViewSet(viewsets.ModelViewSet):
     authentication_classes = [TokenAuthentication, authentication.SessionAuthentication]
     permission_classes = [IsAdminOrReadOnly]
 
+    def perform_create(self, serializer):
+        """Auto-close boundary polygons before saving."""
+        from .views import auto_close_boundary_points
+        boundary_points = serializer.validated_data.get('boundary_points', [])
+        serializer.save(boundary_points=auto_close_boundary_points(boundary_points))
+
+    def perform_update(self, serializer):
+        """Auto-close boundary polygons before saving."""
+        from .views import auto_close_boundary_points
+        boundary_points = serializer.validated_data.get('boundary_points', [])
+        serializer.save(boundary_points=auto_close_boundary_points(boundary_points))
+
     @action(detail=True, methods=['get'], url_path='zone-detail')
     def zone_detail(self, request, pk=None):
         zone = self.get_object()
