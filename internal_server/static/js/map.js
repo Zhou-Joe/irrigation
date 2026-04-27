@@ -13,14 +13,14 @@
 
     // Satellite tile layer (Esri World Imagery - works globally)
     const satelliteLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-        attribution: '&copy; Esri, Maxar, Earthstar Geographics',
+        attribution: '<a href="https://www.esri.com" target="_blank" style="font-size:9px;color:#888">Esri</a>',
         maxNativeZoom: 19,
         maxZoom: 22
     });
 
     // Fallback tile layer for high zoom levels (GeoQ)
     const fallbackLayer = L.tileLayer('https://map.geoq.cn/ArcGIS/rest/services/ChinaOnlineCommunity/MapServer/tile/{z}/{y}/{x}', {
-        attribution: '&copy; GeoQ 智图',
+        attribution: '',
         minZoom: 19,
         maxZoom: 22,
         opacity: 0.7
@@ -255,7 +255,7 @@
      * Calculate label font size based on zoom level
      */
     function getLabelFontSize(zoom) {
-        return Math.max(8, Math.round(55 * Math.pow(0.7, 19 - zoom)));
+        return Math.max(5, Math.round(55 * Math.pow(0.7, 19 - zoom)));
     }
 
     /**
