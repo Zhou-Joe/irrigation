@@ -96,8 +96,34 @@
     transform: translateY(-1px);
 }
 
-.btn-login:active {
-    transform: translateY(0);
+.btn-login:disabled {
+    opacity: 0.7;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.btn-login .spinner {
+    display: none;
+    width: 16px;
+    height: 16px;
+    border: 2px solid #fff;
+    border-top-color: transparent;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    margin-right: 8px;
+    vertical-align: middle;
+}
+
+.btn-login.loading .spinner {
+    display: inline-block;
+}
+
+.btn-login.loading .btn-text {
+    opacity: 0.7;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
 }
 
 .messages {
@@ -174,7 +200,10 @@
                 <input type="password" id="password" name="password" placeholder="请输入密码" required>
             </div>
 
-            <button type="submit" class="btn-login">登 录</button>
+            <button type="submit" class="btn-login" id="loginBtn">
+                <span class="spinner"></span>
+                <span class="btn-text">登 录</span>
+            </button>
         </form>
 
         <div class="footer-links">
@@ -183,4 +212,18 @@
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.querySelector('form').addEventListener('submit', function(e) {
+    var btn = document.getElementById('loginBtn');
+    if (btn.disabled) {
+        e.preventDefault();
+        return false;
+    }
+    btn.disabled = true;
+    btn.classList.add('loading');
+});
+</script>
 {% endblock %}
