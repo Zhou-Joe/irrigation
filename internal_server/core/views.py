@@ -10,6 +10,59 @@ from django.utils import timezone
 from core.models import Zone
 
 
+def auto_close_boundary_points(boundary_data):
+    """
+    Auto-close incomplete polygons in boundary data.
+
+    If a user defines points but doesn't click "完成当前区域" before saving,
+    this function will automatically close the polygon by adding the first point
+    at the end if it has at least 3 points but isn't explicitly closed.
+
+    Args:
+        boundary_data: List of polygons, each polygon is a list of {lat, lng} points.
+                       Format: [[{lat, lng}, ...], [{lat, lng}, ...]]
+
+    Returns:
+        List of properly closed polygons with at least 3 points each.
+    """
+    if not boundary_data or not isinstance(boundary_data, list):
+        return []
+
+    result = []
+    for polygon in boundary_data:
+        if not polygon or not isinstance(polygon, list):
+            continue
+
+        # Convert to list of dicts if points are in [lat, lng] array format
+        points = []
+        for p in polygon:
+            if isinstance(p, dict) and 'lat' in p and 'lng' in p:
+                points.append({'lat': float(p['lat']), 'lng': float(p['lng'])})
+            elif isinstance(p, (list, tuple)) and len(p) >= 2:
+                points.append({'lat': float(p[0]), 'lng': float(p[1])})
+
+        # Skip if less than 3 points - cannot form a polygon
+        if len(points) < 3:
+            continue
+
+        # Check if polygon is already closed (first point == last point)
+        first_point = points[0]
+        last_point = points[-1]
+
+        is_closed = (
+            abs(first_point['lat'] - last_point['lat']) < 0.000001 and
+            abs(first_point['lng'] - last_point['lng']) < 0.000001
+        )
+
+        if not is_closed:
+            # Auto-close by appending the first point
+            points.append({'lat': first_point['lat'], 'lng': first_point['lng']})
+
+        result.append(points)
+
+    return result
+
+
 def _build_grouped_zones(zones_qs=None):
     """Build Patch→Zone grouped structure for template rendering.
 
@@ -705,7 +758,9 @@ def zone_edit(request, zone_id):
         # Parse boundary points from JSON
         boundary_json = request.POST.get('boundary_points', '[]')
         try:
-            zone.boundary_points = json.loads(boundary_json)
+            boundary_points = json.loads(boundary_json)
+            # Auto-close any incomplete polygons (points defined but not explicitly "completed")
+            zone.boundary_points = auto_close_boundary_points(boundary_points)
         except json.JSONDecodeError:
             messages.error(request, 'Invalid boundary points JSON format')
             return redirect('core:zone_edit', zone_id=zone.id)
@@ -825,7 +880,9 @@ def zone_new(request):
         # Parse boundary points from JSON
         boundary_json = request.POST.get('boundary_points', '[]')
         try:
-            zone.boundary_points = json.loads(boundary_json)
+            boundary_points = json.loads(boundary_json)
+            # Auto-close any incomplete polygons (points defined but not explicitly "completed")
+            zone.boundary_points = auto_close_boundary_points(boundary_points)
         except json.JSONDecodeError:
             messages.error(request, 'Invalid boundary points JSON format')
             return render(request, 'core/zone_form.html', {

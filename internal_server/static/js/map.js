@@ -134,11 +134,11 @@
      * Initialize the map
      */
     function initMap() {
-        // Center point adjusted ~1.07km north-east, bounds (2km radius)
+        // Center point adjusted ~1.07km north-east, bounds (3km radius)
         const centerLat = 31.145794 + 0.010; // offset ~1.1km north
         const centerLng = 121.656804 + 0.012; // offset ~1.1km east
-        const latOffset = 0.018; // ~2km in latitude
-        const lngOffset = 0.021; // ~2km in longitude at lat 31°
+        const latOffset = 0.027; // ~3km in latitude
+        const lngOffset = 0.032; // ~3km in longitude at lat 31°
 
         const southWest = L.latLng(centerLat - latOffset, centerLng - lngOffset);
         const northEast = L.latLng(centerLat + latOffset, centerLng + lngOffset);
