@@ -739,7 +739,7 @@ def get_weather(request):
         weather_record = WeatherData.objects.filter(date=today).first()
 
     if not weather_record:
-        return Response({'current_hour': current_hour, 'count': 0, 'data': []})
+        return Response({'current_hour': current_hour, 'date': str(today), 'count': 0, 'data': []})
 
     # Filter hourly data: 1 hour before to 4 hours after
     hourly_data = weather_record.hourly_data or []
