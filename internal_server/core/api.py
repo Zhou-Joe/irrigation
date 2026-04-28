@@ -724,8 +724,8 @@ def get_weather(request):
     current_hour = now.hour
     today = now.date()
 
+    # Try exact coordinate match first, fallback to any today's data
     queryset = WeatherData.objects.filter(date=today)
-
     if lat and lon:
         queryset = queryset.filter(
             latitude=round(float(lat), 5),
@@ -734,12 +734,22 @@ def get_weather(request):
 
     weather_record = queryset.first()
 
+    # Fallback: if no exact coordinate match, get any record for today
+    if not weather_record:
+        weather_record = WeatherData.objects.filter(date=today).first()
+
     if not weather_record:
         return Response({'current_hour': current_hour, 'count': 0, 'data': []})
 
     # Filter hourly data: 1 hour before to 4 hours after
     hourly_data = weather_record.hourly_data or []
     filtered_data = []
+
+    # For late hours (>= 22), also check tomorrow's data for hours 24-27
+    tomorrow_record = None
+    if current_hour >= 22:
+        tomorrow = today + timedelta(days=1)
+        tomorrow_record = WeatherData.objects.filter(date=tomorrow).first()
 
     for h in hourly_data:
         hour = h.get('hour')
@@ -753,6 +763,25 @@ def get_weather(request):
                 'weather_code': h.get('code'),
                 'weather_description': weather_record.get_weather_description(h.get('code')),
             })
+
+    # Add tomorrow's hours 0-3 as hours 24-27 for late night
+    if tomorrow_record and current_hour >= 22:
+        tomorrow_hourly = tomorrow_record.hourly_data or []
+        for h in tomorrow_hourly:
+            hour = h.get('hour')
+            if hour is not None and hour <= 3:
+                # Represent as hour 24, 25, 26, 27
+                adjusted_hour = 24 + hour
+                if current_hour - 1 <= adjusted_hour <= current_hour + 4:
+                    filtered_data.append({
+                        'hour': adjusted_hour,
+                        'temperature': h.get('temp'),
+                        'humidity': h.get('humidity'),
+                        'precipitation': h.get('precip'),
+                        'wind_speed': h.get('wind'),
+                        'weather_code': h.get('code'),
+                        'weather_description': tomorrow_record.get_weather_description(h.get('code')),
+                    })
 
     return Response({
         'current_hour': current_hour,
