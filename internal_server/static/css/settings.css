@@ -6,27 +6,32 @@
 .settings-container {
     max-width: 1200px;
     margin: 0 auto;
-    padding: var(--space-xl);
+    padding: var(--space-md);
+    height: calc(100vh - 52px);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
 }
 
 .settings-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: var(--space-2xl);
-    padding-bottom: var(--space-lg);
-    border-bottom: 2px solid var(--color-surface-dark);
+    margin-bottom: var(--space-sm);
+    padding-bottom: var(--space-xs);
+    border-bottom: 1px solid var(--color-surface-dark);
+    flex-shrink: 0;
 }
 
 .settings-header .header-content {
     display: flex;
     flex-direction: column;
-    gap: var(--space-xs);
+    gap: 0;
 }
 
 .settings-header h1 {
     font-family: var(--font-display);
-    font-size: 2rem;
+    font-size: 1.25rem;
     font-weight: 600;
     color: var(--color-primary);
     margin: 0;
@@ -34,15 +39,15 @@
 
 .settings-header .subtitle {
     color: var(--color-text-secondary);
-    font-size: 0.95rem;
+    font-size: 0.8rem;
 }
 
 /* Settings Sections */
 .settings-section {
     background: var(--color-surface-alt);
-    border-radius: var(--radius-lg);
-    padding: var(--space-xl);
-    margin-bottom: var(--space-xl);
+    border-radius: var(--radius-md);
+    padding: var(--space-md);
+    margin-bottom: var(--space-md);
     border: 1px solid var(--color-surface-dark);
 }
 
@@ -589,4 +594,164 @@
     content: '暂未选择植物';
     color: var(--color-text-muted);
     font-size: 0.875rem;
+}
+
+/* Horizontal row layout for three sections */
+.settings-row {
+    display: flex;
+    flex-direction: row;
+    gap: var(--space-md);
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+}
+
+.settings-column {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    padding: var(--space-sm);
+    overflow: hidden;
+    min-width: 0;
+}
+
+.settings-column h2 {
+    font-size: 0.9rem;
+    margin-bottom: 0;
+}
+
+.section-header-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: var(--space-xs);
+    flex-shrink: 0;
+}
+
+.search-compact {
+    width: 100%;
+    padding: 4px 8px;
+    border: 1px solid var(--color-surface-dark);
+    border-radius: 4px;
+    font-size: 0.8rem;
+    margin-bottom: 4px;
+    flex-shrink: 0;
+}
+
+.scrollable {
+    flex: 1;
+    overflow-y: auto;
+    min-height: 0;
+}
+
+.compact-table {
+    font-size: 0.75rem;
+}
+
+.compact-table th,
+.compact-table td {
+    padding: 4px 6px;
+}
+
+.compact-table .zone-code-cell {
+    font-size: 0.7rem;
+    padding: 1px 3px;
+}
+
+.compact-table .btn-sm {
+    padding: 1px 4px;
+    font-size: 0.65rem;
+}
+
+.compact-table .actions-cell {
+    gap: 2px;
+    flex-wrap: nowrap;
+}
+
+.patch-header-cell {
+    padding: 4px 6px !important;
+    background: rgba(45,106,79,0.08);
+    cursor: pointer;
+    user-select: none;
+}
+
+.patch-toggle {
+    font-size: 0.5rem;
+    color: var(--color-primary);
+    margin-right: 3px;
+    transition: transform 0.2s;
+}
+
+.patch-name {
+    color: var(--color-primary);
+    font-size: 0.75rem;
+}
+
+.patch-count {
+    font-size: 0.6rem;
+    color: var(--color-text-secondary);
+    background: var(--color-surface);
+    padding: 1px 4px;
+    border-radius: 6px;
+    margin-left: 3px;
+}
+
+.type-badge {
+    padding: 1px 4px;
+    border-radius: 6px;
+    font-size: 0.65rem;
+}
+
+.zone-filter-bar {
+    display: flex;
+    gap: 6px;
+    flex-shrink: 0;
+    margin-bottom: 4px;
+}
+
+.filter-select {
+    flex: 1;
+    padding: 4px 6px;
+    border: 1px solid var(--color-surface-dark);
+    border-radius: 4px;
+    font-size: 0.8rem;
+    background: var(--color-surface);
+    color: var(--color-text-primary);
+    cursor: pointer;
+}
+
+.priority-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-right: 3px;
+    vertical-align: middle;
+}
+
+.priority-high { background: #d63031; }
+.priority-medium { background: #fdcb6e; }
+.priority-low { background: #00b894; }
+
+.compact-empty {
+    padding: var(--space-sm);
+}
+
+/* Responsive */
+@media (max-width: 900px) {
+    .settings-row {
+        flex-wrap: wrap;
+        height: auto;
+    }
+    .settings-column {
+        flex: 1 1 45%;
+        min-height: 300px;
+    }
+}
+
+@media (max-width: 600px) {
+    .settings-column {
+        flex: 1 1 100%;
+        min-height: 200px;
+    }
 }

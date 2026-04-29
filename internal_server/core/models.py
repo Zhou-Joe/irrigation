@@ -105,12 +105,23 @@ class Zone(models.Model):
         (STATUS_DELAYED, '已延期'),
     ]
 
+    PRIORITY_HIGH = 'high'
+    PRIORITY_MEDIUM = 'medium'
+    PRIORITY_LOW = 'low'
+
+    PRIORITY_CHOICES = [
+        (PRIORITY_HIGH, '高'),
+        (PRIORITY_MEDIUM, '中'),
+        (PRIORITY_LOW, '低'),
+    ]
+
     patch = models.ForeignKey(Patch, on_delete=models.SET_NULL, null=True, blank=True, related_name='zones', verbose_name='所属片区')
     name = models.CharField(max_length=255, unique=True)
     code = models.CharField(max_length=50, unique=True)
     description = models.TextField(blank=True)
     boundary_points = models.JSONField(default=list)
     boundary_color = models.CharField(max_length=7, default='#52B788', help_text='边界颜色 (十六进制)')
+    priority = models.CharField(max_length=10, choices=PRIORITY_CHOICES, default=PRIORITY_MEDIUM, verbose_name='优先级')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

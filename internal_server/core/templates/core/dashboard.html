@@ -652,6 +652,38 @@
             <input type="text" id="zoneSidebarSearch" placeholder="搜索区域名称或编号..." style="width: 100%; padding: 10px 14px; border: 2px solid var(--color-surface-dark); border-radius: 8px; font-size: 0.95em; background: var(--color-surface); color: var(--color-text-primary);">
         </div>
 
+        <!-- 优先级筛选 -->
+        <div class="priority-filter-bar">
+            <span class="priority-filter-label">优先级</span>
+            <div class="priority-filter-chips">
+                <button class="priority-chip active" data-priority="high" onclick="togglePriorityChip(this)"><span class="priority-dot priority-high"></span>高</button>
+                <button class="priority-chip active" data-priority="medium" onclick="togglePriorityChip(this)"><span class="priority-dot priority-medium"></span>中</button>
+                <button class="priority-chip active" data-priority="low" onclick="togglePriorityChip(this)"><span class="priority-dot priority-low"></span>低</button>
+            </div>
+        </div>
+
+        <!-- 植物筛选 -->
+        {% if all_plant_names %}
+        <div class="filter-dropdown-wrap" style="padding: 4px 12px 8px;">
+            <button type="button" class="filter-dropdown-toggle" id="plantDropdownBtn" onclick="togglePlantDropdown()">
+                <span>植物筛选</span>
+                <span class="filter-dropdown-count" id="plantFilterCount">全部</span>
+                <span class="filter-dropdown-arrow">▾</span>
+            </button>
+            <div class="filter-dropdown-panel" id="plantDropdownPanel">
+                <label class="filter-dropdown-check">
+                    <input type="checkbox" id="plantSelectAll" checked onchange="toggleAllPlants(this.checked)"> 全选
+                </label>
+                {% for name in all_plant_names %}
+                <label class="filter-dropdown-check">
+                    <input type="checkbox" class="plant-check" data-plant="{{ name }}" checked onchange="onPlantCheckChange()">
+                    <span>{{ name }}</span>
+                </label>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
         <!-- 分级显示：片区 -> 区域 -->
         <div class="zone-list stagger-reveal" id="zoneSidebarList">
             {% for group in grouped_zones %}
@@ -664,7 +696,7 @@
                 </div>
                 <div class="patch-zones">
                     {% for zone in group.zones %}
-                    <div class="zone-item" data-zone-id="{{ zone.id }}" data-zone-code="{{ zone.code }}" data-patch-id="{{ zone.patch_id }}">
+                    <div class="zone-item" data-zone-id="{{ zone.id }}" data-zone-code="{{ zone.code }}" data-patch-id="{{ zone.patch_id }}" data-priority="{{ zone.priority }}" data-plants="{{ zone.plant_names|join:',' }}">
                         <span class="zone-code">{{ zone.code }}</span>
                         <span class="zone-name">{{ zone.name }}</span>
                     </div>
@@ -938,6 +970,8 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 // Zone sidebar search filter
+let currentPriorityFilter = '';
+
 function initZoneSidebarSearch() {
     const searchInput = document.getElementById('zoneSidebarSearch');
     const zoneList = document.getElementById('zoneSidebarList');
@@ -951,49 +985,128 @@ function initZoneSidebarSearch() {
         total += pg.querySelectorAll('.zone-item').length;
     });
 
-    searchInput.addEventListener('input', function() {
-        const query = this.value.toLowerCase().trim();
-        let visibleCount = 0;
+    searchInput.addEventListener('input', applySidebarFilters);
+}
 
-        patchGroups.forEach(patchGroup => {
-            const patchName = patchGroup.querySelector('.patch-name')?.textContent?.toLowerCase() || '';
-            const zoneItems = patchGroup.querySelectorAll('.zone-item');
-            let patchVisible = false;
+function applySidebarFilters() {
+    const searchInput = document.getElementById('zoneSidebarSearch');
+    const zoneList = document.getElementById('zoneSidebarList');
+    const countEl = document.getElementById('zoneCount');
+    if (!searchInput || !zoneList) return;
 
-            // Check if patch name matches
-            if (query === '' || patchName.includes(query)) {
+    const query = searchInput.value.toLowerCase().trim();
+    let visibleCount = 0;
+    const patchGroups = zoneList.querySelectorAll('.patch-group');
+
+    patchGroups.forEach(patchGroup => {
+        const patchName = patchGroup.querySelector('.patch-name')?.textContent?.toLowerCase() || '';
+        const zoneItems = patchGroup.querySelectorAll('.zone-item');
+        let patchVisible = false;
+
+        zoneItems.forEach(item => {
+            const code = (item.dataset.zoneCode || '').toLowerCase();
+            const name = (item.querySelector('.zone-name')?.textContent || '').toLowerCase();
+            const priority = item.dataset.priority || '';
+            const plants = (item.dataset.plants || '').split(',').filter(Boolean);
+
+            const matchText = !query || code.includes(query) || name.includes(query) || patchName.includes(query);
+            const matchPriority = activePriorities.size === 0 || activePriorities.has(priority);
+            const matchPlant = !plantFilterTouched || plants.some(p => activePlants.has(p));
+
+            const visible = matchText && matchPriority && matchPlant;
+            item.style.display = visible ? '' : 'none';
+            if (visible) {
                 patchVisible = true;
-            }
-
-            // Check each zone
-            zoneItems.forEach(item => {
-                const code = (item.dataset.zoneCode || '').toLowerCase();
-                const name = (item.querySelector('.zone-name')?.textContent || '').toLowerCase();
-
-                const matches = query === '' || code.includes(query) || name.includes(query) || patchName.includes(query);
-                item.style.display = matches ? '' : 'none';
-                if (matches) {
-                    patchVisible = true;
-                    visibleCount++;
-                }
-            });
-
-            // Show/hide patch group based on visibility
-            patchGroup.style.display = patchVisible ? '' : 'none';
-
-            // Expand patch group if searching
-            if (query && patchVisible) {
-                patchGroup.classList.remove('collapsed');
+                visibleCount++;
             }
         });
 
-        if (query) {
-            countEl.textContent = `找到 ${visibleCount} 个区域`;
-        } else {
-            countEl.textContent = `${total} 个区域`;
+        patchGroup.style.display = patchVisible ? '' : 'none';
+        const hasFilter = query || activePriorities.size < 3 || plantFilterTouched;
+        if (hasFilter && patchVisible) {
+            patchGroup.classList.remove('collapsed');
         }
     });
+
+    const hasFilter = query || activePriorities.size < 3 || plantFilterTouched;
+    if (hasFilter) {
+        countEl.textContent = `找到 ${visibleCount} 个区域`;
+    } else {
+        countEl.textContent = `${zoneList.querySelectorAll('.zone-item').length} 个区域`;
+    }
 }
+
+// Priority filter - multi-select chips
+let activePriorities = new Set(['high', 'medium', 'low']);
+
+function togglePriorityChip(btn) {
+    btn.classList.toggle('active');
+    const priority = btn.dataset.priority;
+    if (btn.classList.contains('active')) {
+        activePriorities.add(priority);
+    } else {
+        activePriorities.delete(priority);
+    }
+    applySidebarFilters();
+    applyMapFilters();
+}
+
+// Plant filter - dropdown with checkboxes
+let activePlants = new Set();
+let totalPlants = 0;
+let plantFilterTouched = false;
+document.addEventListener('DOMContentLoaded', function() {
+    document.querySelectorAll('.plant-check').forEach(cb => {
+        activePlants.add(cb.dataset.plant);
+        totalPlants++;
+    });
+});
+
+function togglePlantDropdown() {
+    const panel = document.getElementById('plantDropdownPanel');
+    panel.classList.toggle('open');
+}
+
+function toggleAllPlants(checked) {
+    document.querySelectorAll('.plant-check').forEach(cb => {
+        cb.checked = checked;
+        if (checked) activePlants.add(cb.dataset.plant);
+        else activePlants.delete(cb.dataset.plant);
+    });
+    plantFilterTouched = !checked;
+    updatePlantCount();
+    applySidebarFilters();
+    applyMapFilters();
+}
+
+function onPlantCheckChange() {
+    plantFilterTouched = true;
+    activePlants.clear();
+    document.querySelectorAll('.plant-check').forEach(cb => {
+        if (cb.checked) activePlants.add(cb.dataset.plant);
+    });
+    const allChecked = activePlants.size === totalPlants;
+    document.getElementById('plantSelectAll').checked = allChecked;
+    if (allChecked) plantFilterTouched = false;
+    updatePlantCount();
+    applySidebarFilters();
+    applyMapFilters();
+}
+
+function updatePlantCount() {
+    const el = document.getElementById('plantFilterCount');
+    if (!el) return;
+    if (!plantFilterTouched) el.textContent = '全部';
+    else if (activePlants.size === 0) el.textContent = '无';
+    else el.textContent = activePlants.size + '/' + totalPlants;
+}
+
+document.addEventListener('click', function(e) {
+    const wrap = document.getElementById('plantDropdownBtn')?.parentElement;
+    if (wrap && !wrap.contains(e.target)) {
+        document.getElementById('plantDropdownPanel')?.classList.remove('open');
+    }
+});
 
 // Toggle patch group collapse/expand
 function togglePatchGroup(header) {

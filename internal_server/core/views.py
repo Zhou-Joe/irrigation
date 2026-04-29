@@ -63,12 +63,12 @@ def auto_close_boundary_points(boundary_data):
     return result
 
 
-def _build_grouped_zones(zones_qs=None):
-    """Build Patch→Zone grouped structure for template rendering.
+def _build_grouped_zones(zones_qs=None, group_by='patch'):
+    """Build grouped structure for template rendering.
 
-    Groups zones by their Patch FK. Returns a list of
-    dicts: {id, name, code, type, zone_count, zones: [{id, name, code, ...}]}
-    Includes an 'orphan' group for zones without a patch.
+    group_by='patch': Groups zones by their Patch FK.
+    group_by='priority': Groups zones by priority level.
+    Returns a list of dicts: {id, name, code, type, zone_count, zones: [{...}]}
     """
     from core.models import Patch
 
@@ -89,9 +89,31 @@ def _build_grouped_zones(zones_qs=None):
             'patch_type_display': z.patch.get_type_display() if z.patch else None,
             'boundary_points': z.boundary_points,
             'boundary_color': z.boundary_color,
+            'priority': z.priority,
+            'priority_display': z.get_priority_display(),
+            'plant_names': list(z.plants.values_list('name', flat=True)),
         })
 
-    # Group by patch_id (preserving FK order)
+    if group_by == 'priority':
+        priority_order = {'high': 0, 'medium': 1, 'low': 2}
+        groups = {}
+        for z in zones_data:
+            p = z['priority']
+            groups.setdefault(p, []).append(z)
+        grouped = []
+        for pkey in sorted(groups.keys(), key=lambda k: priority_order.get(k, 99)):
+            grouped.append({
+                'type': 'priority',
+                'id': pkey,
+                'name': groups[pkey][0]['priority_display'],
+                'code': pkey,
+                'type_display': '优先级',
+                'zones': groups[pkey],
+                'zone_count': len(groups[pkey]),
+            })
+        return grouped
+
+    # Default: group by patch_id
     groups = {}
     orphans = []
     for z in zones_data:
@@ -398,7 +420,7 @@ def dashboard(request):
     from core.models import (
         MaintenanceRequest, ProjectSupportRequest, WaterRequest,
         ManagerProfile, DepartmentUserProfile, RegistrationRequest, WorkOrder, Worker,
-        Pipeline
+        Pipeline, Plant
     )
 
     user = request.user
@@ -509,6 +531,7 @@ def dashboard(request):
             'status': zone.get_today_status(),
             'statusDisplay': zone.get_status_display(),
             'plant_count': zone.plant_count or 0,
+            'plant_names': list(zone.plants.values_list('name', flat=True)),
             'equipment_count': zone.equipment_count or 0,
             'pending_work_orders': zone.pending_work_orders or 0,
             'recent_fault_count': recent_fault_count,
@@ -520,6 +543,9 @@ def dashboard(request):
             'patch_code': zone.patch.code if zone.patch else None,
             'patch_type': zone.patch.type if zone.patch else None,
             'patch_type_display': zone.patch.get_type_display() if zone.patch else None,
+            # Priority
+            'priority': zone.priority,
+            'priority_display': zone.get_priority_display(),
             # Detailed info for cards
             'maintenance_count': maintenance_count,
             'water_count': water_count,
@@ -640,11 +666,14 @@ def dashboard(request):
             'zone_names': list(pipeline.zones.values_list('name', flat=True)),
         })
 
+    all_plant_names = list(Plant.objects.values_list('name', flat=True).distinct().order_by('name'))
+
     context = {
         'zones': zones,
         'zones_json': json.dumps(zones_list),
         'grouped_zones': grouped_zones,  # For hierarchical sidebar display
         'pipelines_json': json.dumps(pipelines_list),
+        'all_plant_names': all_plant_names,
         'is_admin': is_admin,
         'is_manager': is_manager,
         'is_dept_user': is_dept_user,
@@ -664,7 +693,7 @@ def settings_page(request):
     """
     Settings page to manage zones and system configuration - admin only.
     """
-    from .models import ManagerProfile, Pipeline, Patch
+    from .models import ManagerProfile, Pipeline, Patch, Plant
 
     # Check admin permission
     is_admin = request.user.is_superuser or request.user.is_staff
@@ -686,6 +715,7 @@ def settings_page(request):
 
     # Precompute zone counts per patch (FK + derived from code prefix)
     grouped_zones_data = _build_grouped_zones(zones)
+    priority_zones_data = _build_grouped_zones(zones, group_by='priority')
     patch_zone_counts = {}
     for group in grouped_zones_data:
         pid = group.get('id')
@@ -697,9 +727,14 @@ def settings_page(request):
     for p in site_patches:
         child_counts[p.id] = p.children.count()
 
+    all_plant_names = list(Plant.objects.values_list('name', flat=True).distinct().order_by('name'))
+
     context = {
         'zones': zones,
         'grouped_zones': grouped_zones_data,
+        'priority_zones': priority_zones_data,
+        'priority_choices': Zone.PRIORITY_CHOICES,
+        'all_plant_names': all_plant_names,
         'status_choices': Zone.STATUS_CHOICES,
         'pipelines': pipelines,
         'site_patches': site_patches,
@@ -737,6 +772,7 @@ def zone_edit(request, zone_id):
         zone.code = request.POST.get('code', zone.code)
         zone.description = request.POST.get('description', zone.description)
         zone.boundary_color = request.POST.get('boundary_color', zone.boundary_color)
+        zone.priority = request.POST.get('priority', zone.priority)
 
         # Handle patch selection
         patch_id = request.POST.get('patch')
@@ -777,7 +813,6 @@ def zone_edit(request, zone_id):
                     Plant.objects.create(
                         zone=zone,
                         name=item.get('name', ''),
-                        scientific_name=item.get('scientific_name', ''),
                         quantity=item.get('quantity', 1),
                         planting_date=item.get('planting_date') or None,
                         end_date=item.get('end_date') or None,
@@ -811,7 +846,7 @@ def zone_edit(request, zone_id):
         return redirect('core:settings')
 
     # Get available plants (distinct names from all plants)
-    available_plants = Plant.objects.values_list('name', flat=True).distinct().order_by('name')
+    available_plants = list(Plant.objects.values_list('name', flat=True).distinct().order_by('name'))
 
     # Get zone equipment
     zone_equipments = zone.equipments.select_related('equipment').all()
@@ -860,6 +895,7 @@ def zone_new(request):
             code=request.POST.get('code'),
             description=request.POST.get('description', ''),
             boundary_color=request.POST.get('boundary_color', '#52B788'),
+            priority=request.POST.get('priority', Zone.PRIORITY_MEDIUM),
         )
 
         # Handle patch selection
@@ -901,7 +937,6 @@ def zone_new(request):
                     Plant.objects.create(
                         zone=zone,
                         name=item.get('name', ''),
-                        scientific_name=item.get('scientific_name', ''),
                         quantity=item.get('quantity', 1),
                         planting_date=item.get('planting_date') or None,
                         end_date=item.get('end_date') or None,
@@ -937,7 +972,7 @@ def zone_new(request):
         return redirect('core:settings')
 
     # Get available plants
-    available_plants = Plant.objects.values_list('name', flat=True).distinct().order_by('name')
+    available_plants = list(Plant.objects.values_list('name', flat=True).distinct().order_by('name'))
 
     # Get all patches for selection
     patches = Patch.objects.all()
@@ -1388,27 +1423,34 @@ def equipment_catalog_autocomplete(request):
     equipment_type = request.GET.get('equipment_type', '')
     search = request.GET.get('search', '')
 
-    results = []
-    if search and len(search) >= 2:
-        queryset = EquipmentCatalog.objects.all()
+    queryset = EquipmentCatalog.objects.all()
 
-        if equipment_type:
-            queryset = queryset.filter(equipment_type=equipment_type)
+    if equipment_type:
+        queryset = queryset.filter(equipment_type=equipment_type)
 
+    if search:
         queryset = queryset.filter(
             Q(model_name__icontains=search) |
             Q(manufacturer__icontains=search)
-        )[:10]
+        )
 
-        for item in queryset:
-            label = f"{item.manufacturer} {item.model_name}" if item.manufacturer else item.model_name
-            results.append({
-                'id': item.id,
-                'label': label,
-                'model_name': item.model_name,
-                'manufacturer': item.manufacturer,
-                'equipment_type': item.equipment_type,
-            })
+    queryset = queryset.order_by('manufacturer', 'model_name')[:20]
+
+    seen = set()
+    results = []
+    for item in queryset:
+        key = (item.manufacturer, item.model_name)
+        if key in seen:
+            continue
+        seen.add(key)
+        label = f"{item.manufacturer} {item.model_name}" if item.manufacturer else item.model_name
+        results.append({
+            'id': item.id,
+            'label': label,
+            'model_name': item.model_name,
+            'manufacturer': item.manufacturer,
+            'equipment_type': item.equipment_type,
+        })
 
     return JsonResponse({'results': results})
 
