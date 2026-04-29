@@ -71,6 +71,15 @@
                 <label for="description">描述说明</label>
                 <textarea id="description" name="description" rows="3">{% if zone %}{{ zone.description }}{% endif %}</textarea>
             </div>
+
+            <div class="form-group">
+                <label for="priority">优先级</label>
+                <select id="priority" name="priority">
+                    <option value="high" {% if zone and zone.priority == 'high' %}selected{% endif %}>高</option>
+                    <option value="medium" {% if not zone or zone.priority == 'medium' %}selected{% endif %}>中</option>
+                    <option value="low" {% if zone and zone.priority == 'low' %}selected{% endif %}>低</option>
+                </select>
+            </div>
         </div>
 
         <div class="form-section boundary-section">
@@ -122,20 +131,14 @@
 
         <div class="form-section">
             <h2>植物信息</h2>
-            <p class="help-text">添加该区域种植的植物，可设置数量、学名和种植日期。</p>
+            <p class="help-text">添加该区域种植的植物，可从已有植物中选择或输入新名称。</p>
 
             <div class="form-row">
-                <div class="form-group">
+                <div class="form-group" style="position: relative;">
                     <label for="plant_name_input">植物名称 *</label>
-                    <input type="text" id="plant_name_input" placeholder="输入植物名称" style="width: 100%; padding: 12px; border: 2px solid var(--color-surface-dark); border-radius: 8px;">
+                    <input type="text" id="plant_name_input" placeholder="输入或选择植物..." autocomplete="off" style="width: 100%; padding: 12px; border: 2px solid var(--color-surface-dark); border-radius: 8px;">
+                    <div id="plant_autocomplete_dropdown" style="display:none; position:absolute; top:100%; left:0; right:0; background:white; border:2px solid var(--color-surface-dark); border-top:none; border-radius:0 0 8px 8px; max-height:200px; overflow-y:auto; z-index:100;"></div>
                 </div>
-                <div class="form-group">
-                    <label for="plant_scientific_input">学名</label>
-                    <input type="text" id="plant_scientific_input" placeholder="如: Rosa chinensis" style="width: 100%; padding: 12px; border: 2px solid var(--color-surface-dark); border-radius: 8px;">
-                </div>
-            </div>
-
-            <div class="form-row">
                 <div class="form-group">
                     <label for="plant_quantity_input">数量</label>
                     <input type="number" id="plant_quantity_input" min="1" value="1" style="width: 100%; padding: 12px; border: 2px solid var(--color-surface-dark); border-radius: 8px;">
@@ -166,7 +169,6 @@
                 <div class="existing-plant"
                      data-id="{{ plant.id }}"
                      data-name="{{ plant.name }}"
-                     data-scientific="{{ plant.scientific_name }}"
                      data-quantity="{{ plant.quantity }}"
                      data-planting-date="{{ plant.planting_date|date:'Y-m-d'|default:'' }}"
                      data-end-date="{{ plant.end_date|date:'Y-m-d'|default:'' }}"
@@ -175,6 +177,9 @@
                 {% endfor %}
             </div>
             {% endif %}
+
+            <!-- Plant names for autocomplete -->
+            {{ available_plants|json_script:"plantNamesData" }}
         </div>
 
         <div class="form-section">
@@ -762,12 +767,51 @@
     let selectedPlants = [];
 
     const nameInput = document.getElementById('plant_name_input');
-    const scientificInput = document.getElementById('plant_scientific_input');
     const quantityInput = document.getElementById('plant_quantity_input');
     const startDateInput = document.getElementById('plant_start_date_input');
     const endDateInput = document.getElementById('plant_end_date_input');
     const addBtn = document.getElementById('add_plant_btn');
     const plantsDataInput = document.getElementById('plants_data');
+
+    // Plant autocomplete
+    const plantDropdown = document.getElementById('plant_autocomplete_dropdown');
+    let plantNames = [];
+    const plantNamesEl = document.getElementById('plantNamesData');
+    if (plantNamesEl) {
+        try { plantNames = JSON.parse(plantNamesEl.textContent); } catch(e) { plantNames = []; }
+    }
+
+    nameInput.addEventListener('input', function() {
+        const q = this.value.toLowerCase().trim();
+        if (!q) { plantDropdown.style.display = 'none'; return; }
+        const matches = plantNames.filter(n => n.toLowerCase().includes(q));
+        if (matches.length === 0) { plantDropdown.style.display = 'none'; return; }
+        plantDropdown.innerHTML = matches.slice(0, 10).map(n =>
+            '<div style="padding:8px 12px;cursor:pointer;border-bottom:1px solid var(--color-surface-dark);font-size:0.9em;" onmouseenter="this.style.background=\'var(--color-surface)\'" onmouseleave="this.style.background=\'\'" onclick="selectPlantName(\'' + n.replace(/'/g, "\\'") + '\')">' + n + '</div>'
+        ).join('');
+        plantDropdown.style.display = 'block';
+    });
+
+    nameInput.addEventListener('focus', function() {
+        if (!this.value.trim() && plantNames.length > 0) {
+            plantDropdown.innerHTML = plantNames.slice(0, 10).map(n =>
+                '<div style="padding:8px 12px;cursor:pointer;border-bottom:1px solid var(--color-surface-dark);font-size:0.9em;" onmouseenter="this.style.background=\'var(--color-surface)\'" onmouseleave="this.style.background=\'\'" onclick="selectPlantName(\'' + n.replace(/'/g, "\\'") + '\')">' + n + '</div>'
+            ).join('');
+            plantDropdown.style.display = 'block';
+        }
+    });
+
+    window.selectPlantName = function(name) {
+        nameInput.value = name;
+        plantDropdown.style.display = 'none';
+        quantityInput.focus();
+    };
+
+    document.addEventListener('click', function(e) {
+        if (e.target !== nameInput && !plantDropdown.contains(e.target)) {
+            plantDropdown.style.display = 'none';
+        }
+    });
 
     // Load existing plants on page load
     function loadExistingPlants() {
@@ -776,7 +820,6 @@
             const plantData = {
                 tempId: 'existing-' + el.dataset.id,
                 name: el.dataset.name,
-                scientificName: el.dataset.scientific || '',
                 quantity: parseInt(el.dataset.quantity) || 1,
                 startDate: el.dataset.plantingDate || '',
                 endDate: el.dataset.endDate || '',
@@ -798,7 +841,6 @@
         const plantData = {
             tempId: 'new-' + Date.now(),
             name: name,
-            scientificName: scientificInput.value.trim(),
             quantity: parseInt(quantityInput.value) || 1,
             startDate: startDateInput.value || '',
             endDate: endDateInput.value || '',
@@ -810,10 +852,10 @@
 
         // Reset form
         nameInput.value = '';
-        scientificInput.value = '';
         quantityInput.value = '1';
         startDateInput.value = '';
         endDateInput.value = '';
+        plantDropdown.style.display = 'none';
         nameInput.focus();
     }
 
@@ -831,7 +873,6 @@
     function updatePlantsData() {
         const plantsArray = selectedPlants.map(p => ({
             name: p.name,
-            scientific_name: p.scientificName,
             quantity: p.quantity,
             planting_date: p.startDate,
             end_date: p.endDate,
@@ -856,19 +897,10 @@
             card.className = 'plant-card';
             card.style.cssText = 'background: var(--color-surface); padding: 12px 15px; margin-bottom: 8px; border-radius: 8px; border: 1px solid var(--color-surface-dark);';
 
-            const dateRange = p.startDate && p.endDate
-                ? `${p.startDate} ~ ${p.endDate}`
-                : p.startDate
-                    ? `${p.startDate} ~ 持续`
-                    : '未设置时间段';
-
             card.innerHTML = `
                 <div style="display: flex; justify-content: space-between; align-items: start;">
                     <div style="flex: 1;">
-                        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
-                            <span style="font-size: 1em; font-weight: 500;">${p.name}</span>
-                            ${p.scientificName ? `<span style="font-size: 0.85em; color: var(--color-text-secondary); font-style: italic;">${p.scientificName}</span>` : ''}
-                        </div>
+                        <div style="font-size: 1em; font-weight: 500; margin-bottom: 6px;">${p.name}</div>
                         <div style="display: flex; flex-wrap: wrap; gap: 10px; font-size: 0.85em; color: var(--color-text-secondary);">
                             <span>数量: <input type="number" min="1" value="${p.quantity}" style="width: 50px; padding: 4px; border: 1px solid var(--color-surface-dark); border-radius: 4px; font-size: 0.85em;" data-index="${index}" class="plant-quantity-input"></span>
                             <span>开始: <input type="date" value="${p.startDate}" style="padding: 4px; border: 1px solid var(--color-surface-dark); border-radius: 4px; font-size: 0.85em;" data-index="${index}" class="plant-start-input"></span>
@@ -957,24 +989,17 @@
     // Autocomplete search
     const equipmentSearch = document.getElementById('equipment_search');
     if (equipmentSearch) {
-        equipmentSearch.addEventListener('input', function() {
-            const search = this.value.trim();
+        function fetchEquipmentResults() {
+            const search = equipmentSearch.value.trim();
             const equipmentType = document.getElementById('equipment_type_select').value;
 
-            clearTimeout(equipmentAutocompleteTimeout);
-
-            if (search.length < 2) {
-                document.getElementById('equipment_autocomplete_results').style.display = 'none';
-                return;
-            }
-
             if (!equipmentType) {
-                // Don't alert, just show visual feedback
-                this.style.borderColor = '#dc3545';
-                setTimeout(() => { this.style.borderColor = ''; }, 2000);
+                equipmentSearch.style.borderColor = '#dc3545';
+                setTimeout(() => { equipmentSearch.style.borderColor = ''; }, 2000);
                 return;
             }
 
+            clearTimeout(equipmentAutocompleteTimeout);
             equipmentAutocompleteTimeout = setTimeout(() => {
                 fetch(`/api/equipment-catalog/autocomplete?equipment_type=${equipmentType}&search=${encodeURIComponent(search)}`)
                     .then(resp => resp.json())
@@ -985,6 +1010,14 @@
                         console.error('Autocomplete error:', err);
                     });
             }, 300);
+        }
+
+        equipmentSearch.addEventListener('input', fetchEquipmentResults);
+
+        equipmentSearch.addEventListener('focus', function() {
+            if (!this.value.trim()) {
+                fetchEquipmentResults();
+            }
         });
     }
 

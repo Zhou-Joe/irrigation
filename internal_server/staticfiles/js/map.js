@@ -309,7 +309,9 @@
                     statusDisplay: zone.statusDisplay,
                     plantCount: zone.plantCount,
                     pendingWorkOrders: zone.pendingWorkOrders,
-                    pendingRequests: zone.pending_requests || []
+                    pendingRequests: zone.pending_requests || [],
+                    priority: zone.priority || 'medium',
+                    plantNames: zone.plant_names || []
                 };
 
                 if (isMultiPolygonFormat(zone.boundary_points)) {
@@ -916,4 +918,33 @@
             }
         );
     }
+
+    /**
+     * Apply combined map filters (priority + plant)
+     */
+    window.applyMapFilters = function() {
+        const priorities = window.activePriorities || new Set(['high', 'medium', 'low']);
+        const plants = window.activePlants || new Set();
+        const isPlantTouched = window.plantFilterTouched || false;
+        const showAllPriorities = priorities.size === 3;
+
+        zonesLayerGroup.eachLayer(layer => {
+            if (layer.zoneData) {
+                const matchPriority = showAllPriorities || priorities.has(layer.zoneData.priority);
+                const matchPlant = !isPlantTouched || !layer.zoneData.plantNames || layer.zoneData.plantNames.some(p => plants.has(p));
+                if (matchPriority && matchPlant) {
+                    layer.setStyle({ opacity: 0.8, fillOpacity: 0.25 });
+                } else {
+                    layer.setStyle({ opacity: 0.1, fillOpacity: 0.03 });
+                }
+            }
+        });
+        zoneLabels.forEach(label => {
+            const zone = zonesData.find(z => z.id === label.zoneId);
+            if (!zone) return;
+            const matchPriority = showAllPriorities || priorities.has(zone.priority || 'medium');
+            const matchPlant = !isPlantTouched || !zone.plant_names || zone.plant_names.some(p => plants.has(p));
+            label.element.style.opacity = (matchPriority && matchPlant) ? '1' : '0.1';
+        });
+    };
 })();
