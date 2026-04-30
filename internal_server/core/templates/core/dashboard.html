@@ -460,6 +460,60 @@
     background: rgba(45,106,79,0.2);
 }
 
+/* Region group styling */
+.region-group {
+    margin-bottom: 6px;
+}
+
+.region-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    background: var(--color-primary);
+    color: var(--color-text-inverse);
+    border-radius: 8px;
+    cursor: pointer;
+    user-select: none;
+    transition: background 0.2s;
+}
+
+.region-header:hover {
+    background: var(--color-primary-light);
+}
+
+.region-toggle {
+    font-size: 0.7rem;
+    transition: transform 0.2s;
+}
+
+.region-group.collapsed .region-toggle {
+    transform: rotate(-90deg);
+}
+
+.region-name {
+    font-size: 0.9rem;
+    font-weight: 600;
+}
+
+.region-count {
+    font-size: 0.75rem;
+    color: rgba(245,240,232,0.7);
+    background: rgba(255,255,255,0.15);
+    padding: 2px 8px;
+    border-radius: 10px;
+}
+
+.region-patches {
+    padding-left: 4px;
+    overflow: hidden;
+    transition: max-height 0.3s ease;
+}
+
+.region-group.collapsed .region-patches {
+    max-height: 0 !important;
+}
+
 .patch-toggle {
     font-size: 0.7rem;
     color: var(--color-primary);
@@ -641,12 +695,16 @@
 <!-- Map View Container -->
 <div class="dashboard-container" id="mapContainer">
     <!-- 侧边栏 -->
-    <aside class="sidebar">
+    <aside class="sidebar" id="sidebar">
         <div class="sidebar-header">
-            <h1>灌溉区域</h1>
-            <p class="zone-count" id="zoneCount">{{ total_zones }} 个区域</p>
+            <button class="sidebar-toggle" onclick="toggleSidebar()" id="sidebarToggle" title="收起侧边栏">✕</button>
+            <div class="sidebar-header-content">
+                <h1>灌溉区域</h1>
+                <p class="zone-count" id="zoneCount">{{ total_zones }} 个区域</p>
+            </div>
         </div>
 
+        <div class="sidebar-body">
         <!-- 搜索框 -->
         <div class="zone-search" style="padding: 8px 12px;">
             <input type="text" id="zoneSidebarSearch" placeholder="搜索区域名称或编号..." style="width: 100%; padding: 10px 14px; border: 2px solid var(--color-surface-dark); border-radius: 8px; font-size: 0.95em; background: var(--color-surface); color: var(--color-text-primary);">
@@ -684,25 +742,83 @@
         </div>
         {% endif %}
 
-        <!-- 分级显示：片区 -> 区域 -->
+        <!-- 三级显示：大区 → 片区 → 区域 -->
         <div class="zone-list stagger-reveal" id="zoneSidebarList">
-            {% for group in grouped_zones %}
-            <!-- 片区组 -->
-            <div class="patch-group" data-patch-id="{{ group.id }}" data-type="{{ group.type }}">
+            {% for region in grouped_zones %}
+            {% if region.type == 'region' %}
+            <!-- 大区组 -->
+            <div class="region-group" data-region-id="{{ region.id }}">
+                <div class="region-header" onclick="toggleRegionGroup(this)">
+                    <span class="region-toggle">▼</span>
+                    <span class="region-name">{{ region.name }}</span>
+                    <span class="region-count">{{ region.zone_count }}</span>
+                </div>
+                <div class="region-patches">
+                    {% for patch in region.patches %}
+                    <div class="patch-group" data-patch-id="{{ patch.id }}" data-type="patch">
+                        <div class="patch-header" onclick="togglePatchGroup(this)">
+                            <span class="patch-toggle">▼</span>
+                            <span class="patch-name">{{ patch.name }}</span>
+                            <span class="patch-count">{{ patch.zone_count }}</span>
+                        </div>
+                        <div class="patch-zones">
+                            {% for zone in patch.zones %}
+                            <div class="zone-item" data-zone-id="{{ zone.id }}" data-zone-code="{{ zone.code }}" data-patch-id="{{ zone.patch_id }}" data-priority="{{ zone.priority }}" data-plants="{{ zone.plant_names|join:',' }}">
+                                <span class="zone-code">{{ zone.code }}</span>
+                                <span class="zone-name">{{ zone.name }}</span>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% elif region.type == 'orphan_patches' %}
+            <!-- 未分配大区的片区 -->
+            <div class="region-group">
+                <div class="region-header" style="background: var(--color-text-secondary);" onclick="toggleRegionGroup(this)">
+                    <span class="region-toggle">▼</span>
+                    <span class="region-name">{{ region.name }}</span>
+                    <span class="region-count">{{ region.zone_count }}</span>
+                </div>
+                <div class="region-patches">
+                    {% for patch in region.patches %}
+                    <div class="patch-group" data-patch-id="{{ patch.id }}" data-type="patch">
+                        <div class="patch-header" onclick="togglePatchGroup(this)">
+                            <span class="patch-toggle">▼</span>
+                            <span class="patch-name">{{ patch.name }}</span>
+                            <span class="patch-count">{{ patch.zone_count }}</span>
+                        </div>
+                        <div class="patch-zones">
+                            {% for zone in patch.zones %}
+                            <div class="zone-item" data-zone-id="{{ zone.id }}" data-zone-code="{{ zone.code }}" data-patch-id="{{ zone.patch_id }}" data-priority="{{ zone.priority }}" data-plants="{{ zone.plant_names|join:',' }}">
+                                <span class="zone-code">{{ zone.code }}</span>
+                                <span class="zone-name">{{ zone.name }}</span>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% elif region.type == 'orphan' %}
+            <!-- 未分配片区 -->
+            <div class="patch-group" data-type="orphan">
                 <div class="patch-header" onclick="togglePatchGroup(this)">
                     <span class="patch-toggle">▼</span>
-                    <span class="patch-name">{{ group.name }}</span>
-                    <span class="patch-count">{{ group.zone_count }}</span>
+                    <span class="patch-name">{{ region.name }}</span>
+                    <span class="patch-count">{{ region.zone_count }}</span>
                 </div>
                 <div class="patch-zones">
-                    {% for zone in group.zones %}
-                    <div class="zone-item" data-zone-id="{{ zone.id }}" data-zone-code="{{ zone.code }}" data-patch-id="{{ zone.patch_id }}" data-priority="{{ zone.priority }}" data-plants="{{ zone.plant_names|join:',' }}">
+                    {% for zone in region.zones %}
+                    <div class="zone-item" data-zone-id="{{ zone.id }}" data-zone-code="{{ zone.code }}" data-patch-id="" data-priority="{{ zone.priority }}" data-plants="{{ zone.plant_names|join:',' }}">
                         <span class="zone-code">{{ zone.code }}</span>
                         <span class="zone-name">{{ zone.name }}</span>
                     </div>
                     {% endfor %}
                 </div>
             </div>
+            {% endif %}
             {% empty %}
             <div class="no-zones">暂无区域数据</div>
             {% endfor %}
@@ -711,10 +827,12 @@
         <!-- 设置链接 -->
         <div class="sidebar-footer">
         </div>
+        </div>
     </aside>
 
     <!-- 地图容器 -->
     <main class="map-container">
+        <button class="sidebar-expand-btn" id="sidebarExpandBtn" onclick="toggleSidebar()" title="展开侧边栏">▶</button>
         <div id="map"></div>
     </main>
 </div>
@@ -996,9 +1114,52 @@ function applySidebarFilters() {
 
     const query = searchInput.value.toLowerCase().trim();
     let visibleCount = 0;
-    const patchGroups = zoneList.querySelectorAll('.patch-group');
 
-    patchGroups.forEach(patchGroup => {
+    // Handle region groups
+    zoneList.querySelectorAll('.region-group').forEach(regionGroup => {
+        const regionName = regionGroup.querySelector('.region-name')?.textContent?.toLowerCase() || '';
+        let regionVisible = false;
+
+        regionGroup.querySelectorAll('.patch-group').forEach(patchGroup => {
+            const patchName = patchGroup.querySelector('.patch-name')?.textContent?.toLowerCase() || '';
+            const zoneItems = patchGroup.querySelectorAll('.zone-item');
+            let patchVisible = false;
+
+            zoneItems.forEach(item => {
+                const code = (item.dataset.zoneCode || '').toLowerCase();
+                const name = (item.querySelector('.zone-name')?.textContent || '').toLowerCase();
+                const priority = item.dataset.priority || '';
+                const plants = (item.dataset.plants || '').split(',').filter(Boolean);
+
+                const matchText = !query || code.includes(query) || name.includes(query) || patchName.includes(query) || regionName.includes(query);
+                const matchPriority = activePriorities.size === 0 || activePriorities.has(priority);
+                const matchPlant = !plantFilterTouched || plants.some(p => activePlants.has(p));
+
+                const visible = matchText && matchPriority && matchPlant;
+                item.style.display = visible ? '' : 'none';
+                if (visible) {
+                    patchVisible = true;
+                    visibleCount++;
+                }
+            });
+
+            patchGroup.style.display = patchVisible ? '' : 'none';
+            const hasFilter = query || activePriorities.size < 3 || plantFilterTouched;
+            if (hasFilter && patchVisible) {
+                patchGroup.classList.remove('collapsed');
+            }
+            if (patchVisible) regionVisible = true;
+        });
+
+        regionGroup.style.display = regionVisible ? '' : 'none';
+        const hasFilter = query || activePriorities.size < 3 || plantFilterTouched;
+        if (hasFilter && regionVisible) {
+            regionGroup.classList.remove('collapsed');
+        }
+    });
+
+    // Handle standalone patch groups (orphans outside region)
+    zoneList.querySelectorAll(':scope > .patch-group').forEach(patchGroup => {
         const patchName = patchGroup.querySelector('.patch-name')?.textContent?.toLowerCase() || '';
         const zoneItems = patchGroup.querySelectorAll('.zone-item');
         let patchVisible = false;
@@ -1114,6 +1275,28 @@ function togglePatchGroup(header) {
     if (patchGroup) {
         patchGroup.classList.toggle('collapsed');
     }
+}
+
+// Toggle region group collapse/expand
+function toggleRegionGroup(header) {
+    const regionGroup = header.closest('.region-group');
+    if (regionGroup) {
+        regionGroup.classList.toggle('collapsed');
+    }
+}
+
+// Toggle sidebar collapse
+function toggleSidebar() {
+    const sidebar = document.getElementById('sidebar');
+    const expandBtn = document.getElementById('sidebarExpandBtn');
+    sidebar.classList.toggle('collapsed');
+    if (sidebar.classList.contains('collapsed')) {
+        expandBtn.classList.add('visible');
+    } else {
+        expandBtn.classList.remove('visible');
+    }
+    // Invalidate map size after transition
+    setTimeout(function() { if (map) map.invalidateSize(); }, 300);
 }
 
 // View switching

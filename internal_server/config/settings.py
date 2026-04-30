@@ -4,7 +4,7 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = os.environ.get('SECRET_KEY', '65=850236hyhtzpqp(m$%l_ff1tmf@oxul7_0(-9u2*y%j!so7')
 DEBUG = os.environ.get('DEBUG', 'False') == 'True'
-ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', 'localhost,127.0.0.1,10.136.182.88,172.31.69.1,47.100.237.113,zctestbench.asia,www.zctestbench.asia').split(',')
+ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', 'localhost,127.0.0.1,10.136.182.88,172.31.69.1,47.100.237.113,zctestbench.asia,www.zctestbench.asia,.trycloudflare.com,irrigation.zctestbench.asia').split(',')
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -20,6 +20,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'corsheaders.middleware.CorsMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -99,6 +100,7 @@ CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOWED_ORIGINS = [
     'https://zctestbench.asia',
     'https://www.zctestbench.asia',
+    'https://irrigation.zctestbench.asia',
     'http://localhost:5001',
     'http://localhost:5000',
     'http://127.0.0.1:5001',
@@ -108,6 +110,13 @@ CORS_ALLOWED_ORIGIN_REGEXES = [
     r'^https?://(.*\.)?zctestbench\.asia$',
     r'^https?://localhost:\d+$',
     r'^https?://127\.0\.0\.1:\d+$',
+]
+
+# CSRF trusted origins for Django 4+
+CSRF_TRUSTED_ORIGINS = [
+    'https://zctestbench.asia',
+    'https://www.zctestbench.asia',
+    'https://irrigation.zctestbench.asia',
 ]
 
 # Cloud Relay settings
