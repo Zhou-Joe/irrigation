@@ -543,6 +543,9 @@ def dashboard(request):
             'patch_code': zone.patch.code if zone.patch else None,
             'patch_type': zone.patch.type if zone.patch else None,
             'patch_type_display': zone.patch.get_type_display() if zone.patch else None,
+            # Region info
+            'region_id': zone.patch.region_id if zone.patch and zone.patch.region else None,
+            'region_name': zone.patch.region.name if zone.patch and zone.patch.region else None,
             # Priority
             'priority': zone.priority,
             'priority_display': zone.get_priority_display(),
@@ -580,25 +583,64 @@ def dashboard(request):
             ],
         })
 
-    # Group zones by patch for sidebar display
-    from .models import Patch
-    patches = Patch.objects.all().prefetch_related('zones')
+    # Group zones by region → patch for sidebar display
+    from .models import Patch, Region
+    regions = Region.objects.filter(active=True).order_by('order', 'name')
 
-    # Build grouped structure: patches with their zones, plus orphan zones (no patch)
+    # Build patch groups from zones_list
+    patch_groups = {}
+    for z in zones_list:
+        pid = z['patch_id']
+        if pid is not None:
+            patch_groups.setdefault(pid, []).append(z)
+
+    # Build region-grouped structure
     grouped_zones = []
-    for patch in patches:
-        patch_zones = [z for z in zones_list if z['patch_id'] == patch.id]
-        if patch_zones:
+    for region in regions:
+        region_patches = []
+        region_zone_count = 0
+        for patch in region.patches.filter(type=Patch.TYPE_SITE).order_by('code'):
+            pzones = patch_groups.pop(patch.id, None)
+            if pzones:
+                region_patches.append({
+                    'id': patch.id,
+                    'name': patch.name,
+                    'code': patch.code,
+                    'zones': pzones,
+                    'zone_count': len(pzones),
+                })
+                region_zone_count += len(pzones)
+        if region_patches:
             grouped_zones.append({
-                'type': 'patch',
-                'id': patch.id,
-                'name': patch.name,
-                'code': patch.code,
-                'zones': patch_zones,
-                'zone_count': len(patch_zones),
+                'type': 'region',
+                'id': region.id,
+                'name': region.name,
+                'patches': region_patches,
+                'zone_count': region_zone_count,
             })
 
-    # Add orphan zones (zones without patch)
+    # Patches without region
+    orphan_region_patches = []
+    orphan_region_count = 0
+    for pid, pzones in sorted(patch_groups.items()):
+        if pzones:
+            orphan_region_patches.append({
+                'id': pid,
+                'name': pzones[0]['patch_name'],
+                'code': pzones[0]['patch_code'],
+                'zones': pzones,
+                'zone_count': len(pzones),
+            })
+            orphan_region_count += len(pzones)
+    if orphan_region_patches:
+        grouped_zones.append({
+            'type': 'orphan_patches',
+            'name': '未分配大区',
+            'patches': orphan_region_patches,
+            'zone_count': orphan_region_count,
+        })
+
+    # Zones without any patch
     orphan_zones = [z for z in zones_list if z['patch_id'] is None]
     if orphan_zones:
         grouped_zones.append({
@@ -693,7 +735,7 @@ def settings_page(request):
     """
     Settings page to manage zones and system configuration - admin only.
     """
-    from .models import ManagerProfile, Pipeline, Patch, Plant
+    from .models import ManagerProfile, Pipeline, Patch, Plant, Region
 
     # Check admin permission
     is_admin = request.user.is_superuser or request.user.is_staff
@@ -710,6 +752,7 @@ def settings_page(request):
 
     zones = Zone.objects.all().order_by('code')
     pipelines = Pipeline.objects.all().order_by('code')
+    regions = Region.objects.filter(active=True).order_by('order', 'name')
     # Only show site-type patches as 片区 in the UI
     site_patches = Patch.objects.filter(type=Patch.TYPE_SITE).order_by('code')
 
@@ -727,6 +770,11 @@ def settings_page(request):
     for p in site_patches:
         child_counts[p.id] = p.children.count()
 
+    # Precompute patch counts per region
+    region_patch_counts = {}
+    for r in regions:
+        region_patch_counts[r.id] = r.patches.filter(type=Patch.TYPE_SITE).count()
+
     all_plant_names = list(Plant.objects.values_list('name', flat=True).distinct().order_by('name'))
 
     context = {
@@ -740,9 +788,32 @@ def settings_page(request):
         'site_patches': site_patches,
         'patch_zone_counts': patch_zone_counts,
         'child_counts': child_counts,
+        'regions': regions,
+        'region_patch_counts': region_patch_counts,
     }
 
     return render(request, 'core/settings.html', context)
+
+
+def _get_patches_by_region():
+    """Return patches grouped by region for the settings page."""
+    from .models import Region, Patch
+    result = []
+    for region in Region.objects.filter(active=True).order_by('order', 'name'):
+        patches = Patch.objects.filter(region=region, type=Patch.TYPE_SITE).order_by('code')
+        if patches.exists():
+            result.append({
+                'region': region,
+                'patches': patches,
+            })
+    # Include unassigned patches
+    unassigned = Patch.objects.filter(region__isnull=True, type=Patch.TYPE_SITE).order_by('code')
+    if unassigned.exists():
+        result.append({
+            'region': None,
+            'patches': unassigned,
+        })
+    return result
 
 
 @login_required(login_url='core:login')
@@ -1224,6 +1295,120 @@ def pipeline_delete(request, pipeline_id):
     return redirect('core:settings')
 
 
+# ─── Region CRUD ───
+
+@login_required(login_url='core:login')
+def region_new(request):
+    """Create a new region — admin only."""
+    from .models import ManagerProfile, Region
+
+    is_admin = request.user.is_superuser or request.user.is_staff
+    if not is_admin:
+        try:
+            ManagerProfile.objects.get(user=request.user, active=True)
+            is_admin = True
+        except ManagerProfile.DoesNotExist:
+            pass
+    if not is_admin:
+        messages.error(request, '无权限')
+        return redirect('core:dashboard')
+
+    if request.method == 'POST':
+        region = Region(
+            name=request.POST['name'],
+            description=request.POST.get('description', ''),
+            order=int(request.POST.get('order', 0)),
+            active=request.POST.get('active') is not None,
+        )
+        region.full_clean()
+        region.save()
+        messages.success(request, f'大区 "{region.name}" 创建成功')
+        return redirect('core:settings')
+
+    return render(request, 'core/region_form.html', {'mode': 'new'})
+
+
+@login_required(login_url='core:login')
+def region_edit(request, region_id):
+    """Edit a region — admin only."""
+    from .models import ManagerProfile, Region
+
+    is_admin = request.user.is_superuser or request.user.is_staff
+    if not is_admin:
+        try:
+            ManagerProfile.objects.get(user=request.user, active=True)
+            is_admin = True
+        except ManagerProfile.DoesNotExist:
+            pass
+    if not is_admin:
+        messages.error(request, '无权限')
+        return redirect('core:dashboard')
+
+    region = get_object_or_404(Region, pk=region_id)
+
+    if request.method == 'POST':
+        region.name = request.POST['name']
+        region.description = request.POST.get('description', '')
+        region.order = int(request.POST.get('order', 0))
+        region.active = request.POST.get('active') is not None
+        region.full_clean()
+        region.save()
+        messages.success(request, f'大区 "{region.name}" 更新成功')
+        return redirect('core:settings')
+
+    return render(request, 'core/region_form.html', {'mode': 'edit', 'region': region})
+
+
+@login_required(login_url='core:login')
+@require_POST
+def region_delete(request, region_id):
+    """Delete a region — admin only. Patches are SET_NULL."""
+    from .models import ManagerProfile, Region
+
+    is_admin = request.user.is_superuser or request.user.is_staff
+    if not is_admin:
+        try:
+            ManagerProfile.objects.get(user=request.user, active=True)
+            is_admin = True
+        except ManagerProfile.DoesNotExist:
+            pass
+    if not is_admin:
+        messages.error(request, '无权限')
+        return redirect('core:dashboard')
+
+    region = get_object_or_404(Region, pk=region_id)
+    region_name = region.name
+    region.delete()
+    messages.success(request, f'大区 "{region_name}" 已删除')
+    return redirect('core:settings')
+
+
+@login_required(login_url='core:login')
+@require_POST
+def batch_delete_region(request):
+    """Batch delete regions — admin only."""
+    from .models import ManagerProfile, Region
+    try:
+        body = json.loads(request.body)
+        ids = body.get('ids', [])
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+    is_admin = request.user.is_superuser or request.user.is_staff
+    if not is_admin:
+        try:
+            ManagerProfile.objects.get(user=request.user, active=True)
+            is_admin = True
+        except ManagerProfile.DoesNotExist:
+            pass
+    if not is_admin:
+        return JsonResponse({'error': '无权限'}, status=403)
+
+    count, _ = Region.objects.filter(pk__in=ids).delete()
+    messages.success(request, f'已删除 {count} 个大区')
+    return JsonResponse({'success': True, 'deleted': count})
+
+
 @login_required(login_url='core:login')
 def patch_new(request):
     """Create a new patch — admin only."""
@@ -1246,6 +1431,7 @@ def patch_new(request):
         code = request.POST.get('code', '').strip()
         p_type = request.POST.get('type', Patch.TYPE_SITE)
         description = request.POST.get('description', '').strip()
+        region_id = request.POST.get('region') or None
 
         if not name:
             messages.error(request, '片区名称不能为空')
@@ -1256,12 +1442,18 @@ def patch_new(request):
         elif Patch.objects.filter(code=code).exists():
             messages.error(request, f'片区编号 "{code}" 已存在')
         else:
-            Patch.objects.create(name=name, code=code, type=Patch.TYPE_SITE, description=description)
+            from .models import Region
+            region = None
+            if region_id:
+                region = Region.objects.filter(pk=region_id).first()
+            Patch.objects.create(name=name, code=code, type=Patch.TYPE_SITE, description=description, region=region)
             messages.success(request, f'片区 "{name}" 创建成功')
             return redirect('core:settings')
 
+    from .models import Region
     return render(request, 'core/patch_form.html', {
         'mode': 'new',
+        'regions': Region.objects.order_by('order', 'name'),
     })
 
 
@@ -1295,6 +1487,7 @@ def patch_edit(request, patch_id):
         name = request.POST.get('name', '').strip()
         code = request.POST.get('code', '').strip()
         description = request.POST.get('description', '').strip()
+        region_id = request.POST.get('region') or None
 
         # Validate uniqueness excluding self
         errors = []
@@ -1311,9 +1504,11 @@ def patch_edit(request, patch_id):
             for err in errors:
                 messages.error(request, err)
         else:
+            from .models import Region
             patch.name = name
             patch.code = code
             patch.description = description
+            patch.region_id = region_id
             patch.active = request.POST.get('active') is not None
             patch.time_zone = request.POST.get('time_zone', 'China')
             patch.water_pricing = request.POST.get('water_pricing') or None
@@ -1380,6 +1575,7 @@ def patch_edit(request, patch_id):
                 'is_sync_managed': ptype == Patch.TYPE_STATION,
             })
 
+    from .models import Region
     return render(request, 'core/patch_form.html', {
         'mode': 'edit',
         'patch': patch,
@@ -1387,6 +1583,7 @@ def patch_edit(request, patch_id):
         'selected_zone_ids': selected_zone_ids,
         'linked_patch_ids': linked_patch_ids,
         'linked_groups': linked_groups,
+        'regions': Region.objects.order_by('order', 'name'),
     })
 
 
@@ -1413,6 +1610,84 @@ def patch_delete(request, patch_id):
     patch.delete()
     messages.success(request, f'片区 "{patch_name}" 已删除')
     return redirect('core:settings')
+
+
+@login_required(login_url='core:login')
+@require_POST
+def batch_delete_patch(request):
+    """Batch delete patches — admin only."""
+    from .models import ManagerProfile, Patch
+    try:
+        body = json.loads(request.body)
+        ids = body.get('ids', [])
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+    is_admin = request.user.is_superuser or request.user.is_staff
+    if not is_admin:
+        try:
+            ManagerProfile.objects.get(user=request.user, active=True)
+            is_admin = True
+        except ManagerProfile.DoesNotExist:
+            pass
+    if not is_admin:
+        return JsonResponse({'error': '无权限'}, status=403)
+
+    count, _ = Patch.objects.filter(pk__in=ids).delete()
+    messages.success(request, f'已删除 {count} 个片区')
+    return JsonResponse({'success': True, 'deleted': count})
+
+
+@login_required(login_url='core:login')
+@require_POST
+def batch_delete_zone(request):
+    """Batch delete zones — admin only."""
+    from .models import ManagerProfile, Zone
+    try:
+        body = json.loads(request.body)
+        ids = body.get('ids', [])
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+    is_admin = request.user.is_superuser or request.user.is_staff
+    if not is_admin:
+        try:
+            ManagerProfile.objects.get(user=request.user, active=True)
+            is_admin = True
+        except ManagerProfile.DoesNotExist:
+            pass
+    if not is_admin:
+        return JsonResponse({'error': '无权限'}, status=403)
+
+    count, _ = Zone.objects.filter(pk__in=ids).delete()
+    messages.success(request, f'已删除 {count} 个区域')
+    return JsonResponse({'success': True, 'deleted': count})
+
+
+@login_required(login_url='core:login')
+@require_POST
+def batch_delete_pipeline(request):
+    """Batch delete pipelines — admin only."""
+    from .models import ManagerProfile, Pipeline
+    try:
+        body = json.loads(request.body)
+        ids = body.get('ids', [])
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+    is_admin = request.user.is_superuser or request.user.is_staff
+    if not is_admin:
+        try:
+            ManagerProfile.objects.get(user=request.user, active=True)
+            is_admin = True
+        except ManagerProfile.DoesNotExist:
+            pass
+    if not is_admin:
+        return JsonResponse({'error': '无权限'}, status=403)
+
+    count, _ = Pipeline.objects.filter(pk__in=ids).delete()
+    messages.success(request, f'已删除 {count} 条水管')
+    return JsonResponse({'success': True, 'deleted': count})
 
 
 @login_required(login_url='core:login')

@@ -7,7 +7,7 @@
 {% block nav_settings %}active{% endblock %}
 
 {% block extra_css %}
-<link rel="stylesheet" href="{% static 'css/settings.css' %}">
+<link rel="stylesheet" href="{% static 'css/settings.css' %}?v=20260430">
 {% endblock %}
 
 {% block content %}
@@ -29,77 +29,183 @@
     </div>
     {% endif %}
 
-    <!-- Three sections in one row -->
-    <div class="settings-row">
-        <!-- 片区管理 -->
-        <div class="settings-section settings-column">
-            <div class="section-header-row">
-                <h2>片区管理</h2>
-                <a href="{% url 'core:patch_new' %}" class="btn btn-sm btn-primary">+ 新建</a>
-            </div>
+    <!-- 3-column card grid: Region / Patch / Pipeline -->
+    <div class="settings-grid">
 
-            {% if site_patches %}
-            <div class="zone-table-container scrollable">
-                <input type="text" id="patchSearch" placeholder="搜索片区..." class="search-compact">
-                <table class="zone-table compact-table" id="patchTable">
+        <!-- 大区管理 -->
+        <div class="settings-card">
+            <div class="settings-card-header" onclick="toggleCardBody(this, 'regionBody', 'regionIndicator')">
+                <h2><span class="collapse-indicator" id="regionIndicator">▼</span> 大区管理</h2>
+                <div class="header-actions" onclick="event.stopPropagation()">
+                    <a href="{% url 'core:region_new' %}" class="btn btn-sm btn-primary">+ 新建</a>
+                </div>
+            </div>
+            {% if regions %}
+            <div class="settings-card-body" id="regionBody">
+                <input type="text" id="regionSearch" placeholder="搜索大区..." class="card-search">
+                <table class="card-table" id="regionTable">
                     <thead>
                         <tr>
+                            <th><input type="checkbox" id="regionSelectAll" onclick="toggleRegionCheckboxes(this.checked)"></th>
+                            <th>名称</th>
+                            <th>片区数</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="regionTableBody">
+                        {% for r in regions %}
+                        <tr class="region-row" data-name="{{ r.name }}" data-id="{{ r.id }}">
+                            <td><input type="checkbox" class="region-checkbox" data-id="{{ r.id }}" onclick="event.stopPropagation()"></td>
+                            <td><strong>{{ r.name }}</strong></td>
+                            <td>{{ region_patch_counts|dict_lookup:r.id|default:"0" }}</td>
+                            <td class="actions-cell">
+                                <a href="{% url 'core:region_edit' r.id %}" class="btn btn-sm btn-secondary">编辑</a>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                <div class="batch-actions" id="regionBatchActions" style="display:none;">
+                    <button type="button" class="btn btn-sm btn-danger" onclick="batchDeleteRegions()">批量删除 (<span id="regionSelectedCount">0</span>)</button>
+                </div>
+            </div>
+            {% else %}
+            <div class="card-empty">
+                <p>暂无大区</p>
+                <a href="{% url 'core:region_new' %}" class="btn btn-sm btn-primary">创建</a>
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- 片区管理 -->
+        <div class="settings-card">
+            <div class="settings-card-header" onclick="toggleCardBody(this, 'patchBody', 'patchIndicator')">
+                <h2><span class="collapse-indicator" id="patchIndicator">▼</span> 片区管理</h2>
+                <div class="header-actions" onclick="event.stopPropagation()">
+                    <a href="{% url 'core:patch_new' %}" class="btn btn-sm btn-primary">+ 新建</a>
+                </div>
+            </div>
+            {% if site_patches %}
+            <div class="settings-card-body" id="patchBody">
+                <input type="text" id="patchSearch" placeholder="搜索片区..." class="card-search">
+                <table class="card-table" id="patchTable">
+                    <thead>
+                        <tr>
+                            <th><input type="checkbox" id="patchSelectAll" onclick="togglePatchCheckboxes(this.checked)"></th>
                             <th>编号</th>
                             <th>名称</th>
+                            <th>所属大区</th>
                             <th>区域数</th>
                             <th>操作</th>
                         </tr>
                     </thead>
                     <tbody id="patchTableBody">
                         {% for p in site_patches %}
-                        <tr class="patch-row" data-code="{{ p.code }}" data-name="{{ p.name }}">
+                        <tr class="patch-row" data-code="{{ p.code }}" data-name="{{ p.name }}" data-id="{{ p.id }}">
+                            <td><input type="checkbox" class="patch-checkbox" data-id="{{ p.id }}" onclick="event.stopPropagation()"></td>
                             <td><code class="zone-code-cell">{{ p.code }}</code></td>
                             <td><strong>{{ p.name }}</strong></td>
+                            <td>{{ p.region.name|default:"-" }}</td>
                             <td>{{ patch_zone_counts|dict_lookup:p.id|default:"0" }}</td>
                             <td class="actions-cell">
                                 <a href="{% url 'core:patch_edit' p.id %}" class="btn btn-sm btn-secondary">编辑</a>
-                                <form action="{% url 'core:patch_delete' p.id %}" method="post" class="inline-form" onsubmit="return confirm('确定删除?');">
-                                    {% csrf_token %}
-                                    <button type="submit" class="btn btn-sm btn-danger">删除</button>
-                                </form>
                             </td>
                         </tr>
                         {% endfor %}
                     </tbody>
                 </table>
+                <div class="batch-actions" id="patchBatchActions" style="display:none;">
+                    <button type="button" class="btn btn-sm btn-danger" onclick="batchDeletePatches()">批量删除 (<span id="patchSelectedCount">0</span>)</button>
+                </div>
             </div>
             {% else %}
-            <div class="empty-state compact-empty">
+            <div class="card-empty">
                 <p>暂无片区</p>
                 <a href="{% url 'core:patch_new' %}" class="btn btn-sm btn-primary">创建</a>
             </div>
             {% endif %}
         </div>
 
-        <!-- 灌溉区域 -->
-        <div class="settings-section settings-column">
-            <div class="section-header-row">
-                <h2>灌溉区域</h2>
+        <!-- 水管管理 -->
+        <div class="settings-card">
+            <div class="settings-card-header" onclick="toggleCardBody(this, 'pipelineBody', 'pipelineIndicator')">
+                <h2><span class="collapse-indicator" id="pipelineIndicator">▼</span> 水管管理</h2>
+                <div class="header-actions" onclick="event.stopPropagation()">
+                    <a href="{% url 'core:pipeline_new' %}" class="btn btn-sm btn-primary">+ 新建</a>
+                </div>
+            </div>
+            {% if pipelines %}
+            <div class="settings-card-body" id="pipelineBody">
+                <table class="card-table" id="pipelineTable">
+                    <thead>
+                        <tr>
+                            <th><input type="checkbox" id="pipelineSelectAll" onclick="togglePipelineCheckboxes(this.checked)"></th>
+                            <th>编号</th>
+                            <th>名称</th>
+                            <th>类型</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for pipeline in pipelines %}
+                        <tr class="pipeline-row" data-id="{{ pipeline.id }}">
+                            <td><input type="checkbox" class="pipeline-checkbox" data-id="{{ pipeline.id }}" onclick="event.stopPropagation()"></td>
+                            <td><code class="zone-code-cell">{{ pipeline.code }}</code></td>
+                            <td><strong>{{ pipeline.name }}</strong></td>
+                            <td>
+                                <span class="type-badge" style="background: {{ pipeline.line_color }}20; color: {{ pipeline.line_color }};">
+                                    {{ pipeline.get_pipeline_type_display }}
+                                </span>
+                            </td>
+                            <td class="actions-cell">
+                                <a href="{% url 'core:pipeline_edit' pipeline.id %}" class="btn btn-sm btn-secondary">编辑</a>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                <div class="batch-actions" id="pipelineBatchActions" style="display:none;">
+                    <button type="button" class="btn btn-sm btn-danger" onclick="batchDeletePipelines()">批量删除 (<span id="pipelineSelectedCount">0</span>)</button>
+                </div>
+            </div>
+            {% else %}
+            <div class="card-empty">
+                <p>暂无水管</p>
+                <a href="{% url 'core:pipeline_new' %}" class="btn btn-sm btn-primary">创建</a>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- 灌溉区域 (full width) -->
+    <div class="zone-section">
+        <div class="zone-section-header" onclick="toggleCardBody(this, 'zoneBody', 'zoneIndicator')">
+            <h2><span class="collapse-indicator" id="zoneIndicator">▼</span> 灌溉区域</h2>
+            <div class="header-actions" onclick="event.stopPropagation()">
                 <a href="{% url 'core:zone_new' %}" class="btn btn-sm btn-primary">+ 新建</a>
             </div>
+        </div>
 
-            {% if zones %}
-            <div class="zone-filter-bar">
-                <select id="filterPatch" class="filter-select">
-                    <option value="">全部片区</option>
-                    {% for group in grouped_zones %}
-                    {% if group.type != 'orphan' %}
-                    <option value="{{ group.id }}">{{ group.name }}</option>
-                    {% endif %}
-                    {% endfor %}
-                </select>
-                <select id="filterPriority" class="filter-select">
-                    <option value="">全部优先级</option>
-                    <option value="high">高</option>
-                    <option value="medium">中</option>
-                    <option value="low">低</option>
-                </select>
-            </div>
+        <div id="zoneBody">
+
+        {% if zones %}
+        <!-- Consolidated filter toolbar -->
+        <div class="filter-toolbar">
+            <input type="text" id="zoneSearch" placeholder="搜索区域..." class="card-search">
+            <select id="filterPatch" class="filter-select">
+                <option value="">全部片区</option>
+                {% for group in grouped_zones %}
+                {% if group.type != 'orphan' %}
+                <option value="{{ group.id }}">{{ group.name }}</option>
+                {% endif %}
+                {% endfor %}
+            </select>
+            <select id="filterPriority" class="filter-select">
+                <option value="">全部优先级</option>
+                <option value="high">高</option>
+                <option value="medium">中</option>
+                <option value="low">低</option>
+            </select>
             {% if all_plant_names %}
             <div class="filter-dropdown-wrap">
                 <button type="button" class="filter-dropdown-toggle compact" id="settingsPlantBtn" onclick="toggleSettingsPlantDropdown()">
@@ -120,98 +226,52 @@
                 </div>
             </div>
             {% endif %}
-            <div class="zone-table-container scrollable">
-                <input type="text" id="zoneSearch" placeholder="搜索区域..." class="search-compact">
-                <table class="zone-table compact-table" id="zoneTable">
-                    <thead>
-                        <tr>
-                            <th>编号</th>
-                            <th>名称</th>
-                            <th>优先级</th>
-                            <th>操作</th>
-                        </tr>
-                    </thead>
-                    <tbody id="zoneTableBody">
-                        {% for group in grouped_zones %}
-                        <tr class="patch-row collapsed" data-patch-id="{{ group.id }}" data-patch-name="{{ group.name }}">
-                            <td colspan="4" class="patch-header-cell" onclick="togglePatchRow(this)">
-                                <span class="patch-toggle" style="transform: rotate(-90deg);">▼</span>
-                                <strong class="patch-name">{{ group.name }}</strong>
-                                <span class="patch-count">{{ group.zone_count }}</span>
-                            </td>
-                        </tr>
-                        {% for zone in group.zones %}
-                        <tr class="zone-row" data-patch-id="{{ group.id }}" data-priority="{{ zone.priority }}" data-plants="{{ zone.plant_names|join:',' }}" data-code="{{ zone.code }}" data-name="{{ zone.name }}" style="display:none;">
-                            <td><code class="zone-code-cell">{{ zone.code }}</code></td>
-                            <td><strong>{{ zone.name }}</strong></td>
-                            <td><span class="priority-dot priority-{{ zone.priority }}"></span>{{ zone.priority_display }}</td>
-                            <td class="actions-cell">
-                                <a href="{% url 'core:zone_edit' zone.id %}" class="btn btn-sm btn-secondary">编辑</a>
-                                <form action="{% url 'core:zone_delete' zone.id %}" method="post" class="inline-form" onsubmit="return confirm('确定删除?');">
-                                    {% csrf_token %}
-                                    <button type="submit" class="btn btn-sm btn-danger">删除</button>
-                                </form>
-                            </td>
-                        </tr>
-                        {% endfor %}
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-            {% else %}
-            <div class="empty-state compact-empty">
-                <p>暂无区域</p>
-                <a href="{% url 'core:zone_new' %}" class="btn btn-sm btn-primary">创建</a>
-            </div>
-            {% endif %}
         </div>
 
-        <!-- 水管管理 -->
-        <div class="settings-section settings-column">
-            <div class="section-header-row">
-                <h2>水管管理</h2>
-                <a href="{% url 'core:pipeline_new' %}" class="btn btn-sm btn-primary">+ 新建</a>
-            </div>
-
-            {% if pipelines %}
-            <div class="zone-table-container scrollable">
-                <table class="zone-table compact-table">
-                    <thead>
-                        <tr>
-                            <th>编号</th>
-                            <th>名称</th>
-                            <th>类型</th>
-                            <th>操作</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for pipeline in pipelines %}
-                        <tr>
-                            <td><code class="zone-code-cell">{{ pipeline.code }}</code></td>
-                            <td><strong>{{ pipeline.name }}</strong></td>
-                            <td>
-                                <span class="type-badge" style="background: {{ pipeline.line_color }}20; color: {{ pipeline.line_color }};">
-                                    {{ pipeline.get_pipeline_type_display }}
-                                </span>
-                            </td>
-                            <td class="actions-cell">
-                                <a href="{% url 'core:pipeline_edit' pipeline.id %}" class="btn btn-sm btn-secondary">编辑</a>
-                                <form action="{% url 'core:pipeline_delete' pipeline.id %}" method="post" class="inline-form" onsubmit="return confirm('确定删除?');">
-                                    {% csrf_token %}
-                                    <button type="submit" class="btn btn-sm btn-danger">删除</button>
-                                </form>
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-            {% else %}
-            <div class="empty-state compact-empty">
-                <p>暂无水管</p>
-                <a href="{% url 'core:pipeline_new' %}" class="btn btn-sm btn-primary">创建</a>
-            </div>
-            {% endif %}
+        <div class="zone-table-container">
+            <table class="zone-table" id="zoneTable">
+                <thead>
+                    <tr>
+                        <th><input type="checkbox" id="zoneSelectAll" onclick="toggleZoneCheckboxes(this.checked)"></th>
+                        <th>编号</th>
+                        <th>名称</th>
+                        <th>优先级</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody id="zoneTableBody">
+                    {% for group in grouped_zones %}
+                    <tr class="patch-row collapsed" data-patch-id="{{ group.id }}" data-patch-name="{{ group.name }}">
+                        <td colspan="5" class="patch-header-cell" onclick="togglePatchRow(this)">
+                            <span class="patch-toggle" style="transform: rotate(-90deg);">▼</span>
+                            <strong class="patch-name">{{ group.name }}</strong>
+                            <span class="patch-count">{{ group.zone_count }}</span>
+                        </td>
+                    </tr>
+                    {% for zone in group.zones %}
+                    <tr class="zone-row" data-patch-id="{{ group.id }}" data-priority="{{ zone.priority }}" data-plants="{{ zone.plant_names|join:',' }}" data-code="{{ zone.code }}" data-name="{{ zone.name }}" data-id="{{ zone.id }}" style="display:none;">
+                        <td><input type="checkbox" class="zone-checkbox" data-id="{{ zone.id }}" onclick="event.stopPropagation()"></td>
+                        <td><code class="zone-code-cell">{{ zone.code }}</code></td>
+                        <td><strong>{{ zone.name }}</strong></td>
+                        <td><span class="priority-dot priority-{{ zone.priority }}"></span>{{ zone.priority_display }}</td>
+                        <td class="actions-cell">
+                            <a href="{% url 'core:zone_edit' zone.id %}" class="btn btn-sm btn-secondary">编辑</a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div class="batch-actions" id="zoneBatchActions" style="display:none;">
+            <button type="button" class="btn btn-sm btn-danger" onclick="batchDeleteZones()">批量删除 (<span id="zoneSelectedCount">0</span>)</button>
+        </div>
+        {% else %}
+        <div class="card-empty">
+            <p>暂无区域</p>
+            <a href="{% url 'core:zone_new' %}" class="btn btn-sm btn-primary">创建</a>
+        </div>
+        {% endif %}
         </div>
     </div>
 
@@ -223,6 +283,16 @@
 
 {% block extra_js %}
 <script>
+// Generic card collapse toggle
+window.toggleCardBody = function(header, bodyId, indicatorId) {
+    const body = document.getElementById(bodyId);
+    const indicator = document.getElementById(indicatorId);
+    if (!body) return;
+    const isHidden = body.style.display === 'none';
+    body.style.display = isHidden ? '' : 'none';
+    if (indicator) indicator.style.transform = isHidden ? '' : 'rotate(-90deg)';
+};
+
 // Zone table: simultaneous patch + priority filter
 (function() {
     const searchInput = document.getElementById('zoneSearch');
@@ -235,7 +305,6 @@
         const patchRow = cell.closest('tr');
         const patchId = patchRow.dataset.patchId;
         const isCollapsed = patchRow.classList.toggle('collapsed');
-        // Only toggle rows that are not hidden by filters
         tbody.querySelectorAll('.zone-row[data-patch-id="' + patchId + '"]').forEach(row => {
             if (row.dataset.filtered !== 'false') {
                 row.style.display = isCollapsed ? 'none' : '';
@@ -245,7 +314,7 @@
         if (toggle) toggle.style.transform = isCollapsed ? 'rotate(-90deg)' : '';
     };
 
-    // Plant filter - dropdown with checkboxes
+    // Plant filter
     let settingsActivePlants = new Set();
     let settingsTotalPlants = 0;
     let plantFilterTouched = false;
@@ -302,7 +371,6 @@
         const patchFilter = filterPatch ? filterPatch.value : '';
         const priorityFilter = filterPriority ? filterPriority.value : '';
         const plantFilter = settingsActivePlants;
-        const showAllPlants = plantFilter.size === settingsTotalPlants;
 
         tbody.querySelectorAll('.patch-row').forEach(patchRow => {
             const patchId = patchRow.dataset.patchId;
@@ -344,10 +412,8 @@
 // Patch search filter
 (function() {
     const searchInput = document.getElementById('patchSearch');
-    const table = document.getElementById('patchTable');
-    if (!searchInput || !table) return;
-
     const tbody = document.getElementById('patchTableBody');
+    if (!searchInput || !tbody) return;
     const rows = Array.from(tbody.querySelectorAll('.patch-row'));
 
     searchInput.addEventListener('input', function() {
@@ -359,5 +425,138 @@
         });
     });
 })();
+
+// Region search filter
+(function() {
+    const searchInput = document.getElementById('regionSearch');
+    const tbody = document.getElementById('regionTableBody');
+    if (!searchInput || !tbody) return;
+    const rows = Array.from(tbody.querySelectorAll('.region-row'));
+
+    searchInput.addEventListener('input', function() {
+        const q = this.value.toLowerCase().trim();
+        rows.forEach(row => {
+            const name = (row.dataset.name || '').toLowerCase();
+            row.style.display = (!q || name.includes(q)) ? '' : 'none';
+        });
+    });
+})();
+
+// Region checkboxes & batch delete
+window.toggleRegionCheckboxes = function(checked) {
+    document.querySelectorAll('.region-checkbox').forEach(cb => {
+        if (cb.closest('tr').style.display !== 'none') cb.checked = checked;
+    });
+    updateRegionBatchActions();
+};
+
+document.addEventListener('change', function(e) {
+    if (e.target.classList.contains('region-checkbox')) updateRegionBatchActions();
+});
+
+function updateRegionBatchActions() {
+    const count = document.querySelectorAll('.region-checkbox:checked').length;
+    document.getElementById('regionBatchActions').style.display = count > 0 ? '' : 'none';
+    document.getElementById('regionSelectedCount').textContent = count;
+}
+
+window.batchDeleteRegions = function() {
+    const ids = Array.from(document.querySelectorAll('.region-checkbox:checked')).map(cb => cb.dataset.id);
+    if (!confirm('确定删除选中的 ' + ids.length + ' 个大区?')) return;
+    deleteItems('/settings/batch-delete-region/', ids, 'region');
+};
+
+// Patch checkboxes
+window.togglePatchCheckboxes = function(checked) {
+    document.querySelectorAll('.patch-checkbox').forEach(cb => {
+        if (cb.closest('tr').style.display !== 'none') cb.checked = checked;
+    });
+    updatePatchBatchActions();
+};
+
+document.addEventListener('change', function(e) {
+    if (e.target.classList.contains('patch-checkbox')) updatePatchBatchActions();
+});
+
+function updatePatchBatchActions() {
+    const count = document.querySelectorAll('.patch-checkbox:checked').length;
+    document.getElementById('patchBatchActions').style.display = count > 0 ? '' : 'none';
+    document.getElementById('patchSelectedCount').textContent = count;
+}
+
+window.batchDeletePatches = function() {
+    const ids = Array.from(document.querySelectorAll('.patch-checkbox:checked')).map(cb => cb.dataset.id);
+    if (!confirm('确定删除选中的 ' + ids.length + ' 个片区?')) return;
+    deleteItems('/settings/batch-delete-patch/', ids, 'patch');
+};
+
+// Zone checkboxes
+window.toggleZoneCheckboxes = function(checked) {
+    document.querySelectorAll('.zone-checkbox').forEach(cb => {
+        if (cb.closest('tr').style.display !== 'none') cb.checked = checked;
+    });
+    updateZoneBatchActions();
+};
+
+document.addEventListener('change', function(e) {
+    if (e.target.classList.contains('zone-checkbox')) updateZoneBatchActions();
+});
+
+function updateZoneBatchActions() {
+    const count = document.querySelectorAll('.zone-checkbox:checked').length;
+    document.getElementById('zoneBatchActions').style.display = count > 0 ? '' : 'none';
+    document.getElementById('zoneSelectedCount').textContent = count;
+}
+
+window.batchDeleteZones = function() {
+    const ids = Array.from(document.querySelectorAll('.zone-checkbox:checked')).map(cb => cb.dataset.id);
+    if (!confirm('确定删除选中的 ' + ids.length + ' 个区域?')) return;
+    deleteItems('/settings/batch-delete-zone/', ids, 'zone');
+};
+
+// Pipeline checkboxes
+window.togglePipelineCheckboxes = function(checked) {
+    document.querySelectorAll('.pipeline-checkbox').forEach(cb => cb.checked = checked);
+    updatePipelineBatchActions();
+};
+
+document.addEventListener('change', function(e) {
+    if (e.target.classList.contains('pipeline-checkbox')) updatePipelineBatchActions();
+});
+
+function updatePipelineBatchActions() {
+    const count = document.querySelectorAll('.pipeline-checkbox:checked').length;
+    document.getElementById('pipelineBatchActions').style.display = count > 0 ? '' : 'none';
+    document.getElementById('pipelineSelectedCount').textContent = count;
+}
+
+window.batchDeletePipelines = function() {
+    const ids = Array.from(document.querySelectorAll('.pipeline-checkbox:checked')).map(cb => cb.dataset.id);
+    if (!confirm('确定删除选中的 ' + ids.length + ' 条水管?')) return;
+    deleteItems('/settings/batch-delete-pipeline/', ids, 'pipeline');
+};
+
+// Generic batch delete
+function deleteItems(url, ids, label) {
+    fetch(url, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCsrfToken(),
+        },
+        body: JSON.stringify({ ids: ids }),
+    }).then(r => r.json()).then(data => {
+        if (data.success) {
+            location.reload();
+        } else {
+            alert('删除失败: ' + (data.error || '未知错误'));
+        }
+    }).catch(err => alert('网络错误: ' + err));
+}
+
+function getCsrfToken() {
+    const cookie = document.cookie.match(/csrftoken=([^;]+)/);
+    return cookie ? cookie[1] : '';
+}
 </script>
 {% endblock %}

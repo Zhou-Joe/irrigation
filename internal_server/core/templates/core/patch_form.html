@@ -101,6 +101,16 @@
             <h2>片区信息</h2>
 
             <div class="form-group">
+                <label for="region">所属大区</label>
+                <select id="region" name="region" style="width: 100%; padding: 12px; border: 2px solid var(--color-surface-dark); border-radius: 8px;">
+                    <option value="">-- 不选择大区 --</option>
+                    {% for region in regions %}
+                    <option value="{{ region.id }}" {% if mode == 'edit' and patch.region_id == region.id %}selected{% endif %}>{{ region.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="form-group">
                 <label for="name">片区名称 *</label>
                 <input type="text" id="name" name="name" required
                        value="{% if mode == 'edit' %}{{ patch.name }}{% endif %}"

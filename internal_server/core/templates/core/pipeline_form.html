@@ -303,16 +303,24 @@
         editMap = L.map('editMap', {
             center: [centerLat, centerLng],
             zoom: 15,
-            maxZoom: 19,
+            maxZoom: 22,
             minZoom: 13,
             maxBounds: bounds,
             maxBoundsViscosity: 1.0
         });
 
-        L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-            attribution: '&copy; Esri, Maxar',
-            maxZoom: 19
-        }).addTo(editMap);
+        // Use same tile config as dashboard (satellite + GeoQ fallback for high zoom)
+        var satTile = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+            attribution: '&copy; Esri', maxNativeZoom: 19, maxZoom: 22
+        });
+        var fallbackTile = L.tileLayer('https://map.geoq.cn/ArcGIS/rest/services/ChinaOnlineCommunity/MapServer/tile/{z}/{y}/{x}', {
+            attribution: '&copy; GeoQ', minZoom: 19, maxZoom: 22, opacity: 0.7
+        });
+        var satGroup = L.layerGroup([satTile, fallbackTile]).addTo(editMap);
+        var baseTile = L.tileLayer('https://map.geoq.cn/ArcGIS/rest/services/ChinaOnlineCommunity/MapServer/tile/{z}/{y}/{x}', {
+            attribution: '&copy; GeoQ', maxZoom: 18
+        });
+        L.control.layers({'地图': baseTile}, {'卫星': satGroup}, {position: 'topright'}).addTo(editMap);
 
         // Render reference zones (semi-transparent)
         const refZonesEl = document.getElementById('ref-zones-data');

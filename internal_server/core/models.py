@@ -19,6 +19,25 @@ ROLE_CHOICES = [
 ]
 
 
+class Region(models.Model):
+    """大区 — highest-level geographic grouping above 片区."""
+
+    name = models.CharField('名称', max_length=255, unique=True)
+    description = models.TextField('描述', blank=True)
+    order = models.PositiveIntegerField('排序', default=0)
+    active = models.BooleanField('启用', default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['order', 'name']
+        verbose_name = '大区'
+        verbose_name_plural = '大区'
+
+    def __str__(self):
+        return self.name
+
+
 class Patch(models.Model):
     """Unified location/area hierarchy. 片区, Maxicom站点, Maxicom灌溉站, 位置/CCU, 需求区域 all live here."""
 
@@ -36,6 +55,7 @@ class Patch(models.Model):
         (TYPE_ZONE_TEXT, '需求区域'),
     ]
 
+    region = models.ForeignKey('Region', on_delete=models.SET_NULL, null=True, blank=True, related_name='patches', verbose_name='所属大区')
     parent = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True, related_name='children', verbose_name='上级')
     name = models.CharField(max_length=255, unique=True)
     code = models.CharField(max_length=50, unique=True)
