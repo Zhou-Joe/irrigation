@@ -36,8 +36,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   Map<String, dynamic>? _weatherResponse;
   bool _isLoadingWeather = false;
   String _zoneSearchQuery = '';
-  // Patch grouping
-  Set<int> _expandedPatchIds = {}; // Track which patches are expanded
+  // Region/Patch grouping
+  Set<int> _expandedRegionIds = {};
+  Set<int> _expandedPatchIds = {};
   int?
   _expandedOrphanGroup; // Track if orphan group is expanded (use -1 as sentinel)
 
@@ -1004,51 +1005,63 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 
   Widget _buildZoneDrawer({double topOffset = 0}) {
-    // Group zones by patch
-    final Map<int?, List<Zone>> zonesByPatch = {};
+    // Group zones by region → patch
+    final Map<int?, Map<int?, List<Zone>>> regionsPatches = {}; // regionId → patchId → zones
+    final Map<int?, Map<String, dynamic>> regionInfo = {};
     final Map<int?, Map<String, dynamic>> patchInfo = {};
 
     for (var zone in _zones) {
+      final regionId = zone.regionId;
       final patchId = zone.patchId;
-      if (!zonesByPatch.containsKey(patchId)) {
-        zonesByPatch[patchId] = [];
-        if (patchId != null) {
-          patchInfo[patchId] = {
-            'id': patchId,
-            'name': zone.patchName ?? '未知区域',
-            'code': zone.patchCode ?? '',
-          };
-        }
+      regionsPatches.putIfAbsent(regionId, () => {});
+      regionsPatches[regionId]!.putIfAbsent(patchId, () => []).add(zone);
+      if (regionId != null && !regionInfo.containsKey(regionId)) {
+        regionInfo[regionId] = {
+          'id': regionId,
+          'name': zone.regionName ?? '未知大区',
+        };
       }
-      zonesByPatch[patchId]!.add(zone);
+      if (patchId != null && !patchInfo.containsKey(patchId)) {
+        patchInfo[patchId] = {
+          'id': patchId,
+          'name': zone.patchName ?? '未知区域',
+          'code': zone.patchCode ?? '',
+          'region_id': zone.regionId,
+        };
+      }
     }
 
     // Filter zones by search query
-    final filteredZonesByPatch = <int?, List<Zone>>{};
-    for (var entry in zonesByPatch.entries) {
-      final filtered = entry.value.where((z) {
-        if (_zoneSearchQuery.isEmpty) return true;
-        final query = _zoneSearchQuery.toLowerCase();
-        return z.name.toLowerCase().contains(query) ||
-            z.code.toLowerCase().contains(query) ||
-            (z.patchName?.toLowerCase().contains(query) ?? false) ||
-            (z.patchCode?.toLowerCase().contains(query) ?? false);
-      }).toList();
-      if (filtered.isNotEmpty) {
-        filteredZonesByPatch[entry.key] = filtered;
+    final filteredRegions = <int?, Map<int?, List<Zone>>>{};
+    for (var regionEntry in regionsPatches.entries) {
+      final filteredPatches = <int?, List<Zone>>{};
+      for (var patchEntry in regionEntry.value.entries) {
+        final filtered = patchEntry.value.where((z) {
+          if (_zoneSearchQuery.isEmpty) return true;
+          final query = _zoneSearchQuery.toLowerCase();
+          return z.name.toLowerCase().contains(query) ||
+              z.code.toLowerCase().contains(query) ||
+              (z.patchName?.toLowerCase().contains(query) ?? false) ||
+              (z.patchCode?.toLowerCase().contains(query) ?? false) ||
+              (z.regionName?.toLowerCase().contains(query) ?? false);
+        }).toList();
+        if (filtered.isNotEmpty) {
+          filteredPatches[patchEntry.key] = filtered;
+        }
+      }
+      if (filteredPatches.isNotEmpty) {
+        filteredRegions[regionEntry.key] = filteredPatches;
       }
     }
 
-    // Build ordered list of patch groups (patches first, then orphan)
-    final orderedPatchIds = filteredZonesByPatch.keys.toList();
-    orderedPatchIds.sort((a, b) {
-      // Null (orphan) goes last
+    // Build ordered list of region groups (regions first, then null/orphan)
+    final orderedRegionIds = filteredRegions.keys.toList();
+    orderedRegionIds.sort((a, b) {
       if (a == null) return 1;
       if (b == null) return -1;
-      // Sort by patch code or name
-      final aCode = patchInfo[a]?['code'] ?? '';
-      final bCode = patchInfo[b]?['code'] ?? '';
-      return aCode.compareTo(bCode);
+      final aName = regionInfo[a]?['name'] ?? '';
+      final bName = regionInfo[b]?['name'] ?? '';
+      return aName.compareTo(bName);
     });
 
     return Positioned(
@@ -1187,30 +1200,27 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                             )
                           : ListView.builder(
                               padding: const EdgeInsets.symmetric(vertical: 4),
-                              itemCount: orderedPatchIds.length,
+                              itemCount: orderedRegionIds.length,
                               itemBuilder: (context, index) {
-                                final patchId = orderedPatchIds[index];
-                                final zones = filteredZonesByPatch[patchId]!;
-                                final isOrphan = patchId == null;
+                                final regionId = orderedRegionIds[index];
+                                final patches = filteredRegions[regionId]!;
+                                final isOrphan = regionId == null;
+                                final regionName = isOrphan
+                                    ? '未分配大区'
+                                    : (regionInfo[regionId]?['name'] ?? '未知大区');
+                                final isRegionExpanded = isOrphan || _expandedRegionIds.contains(regionId);
 
-                                final patchName = isOrphan
-                                    ? '未分配'
-                                    : (patchInfo[patchId]?['name'] ?? '未知区域');
-                                final patchCode = isOrphan
-                                    ? ''
-                                    : (patchInfo[patchId]?['code'] ?? '');
+                                // Count total zones in this region
+                                final totalZones = patches.values.expand((z) => z).length;
 
-                                final isExpanded = isOrphan
-                                    ? _expandedOrphanGroup != null
-                                    : _expandedPatchIds.contains(patchId);
-
-                                return _buildPatchGroup(
-                                  patchId: patchId,
-                                  patchName: patchName,
-                                  patchCode: patchCode,
-                                  zones: zones,
-                                  isExpanded: isExpanded,
+                                return _buildRegionGroup(
+                                  regionId: regionId,
+                                  regionName: regionName,
+                                  patches: patches,
+                                  patchInfo: patchInfo,
+                                  isRegionExpanded: isRegionExpanded,
                                   isOrphan: isOrphan,
+                                  totalZones: totalZones,
                                 );
                               },
                             ),
@@ -1222,6 +1232,102 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildRegionGroup({
+    required int? regionId,
+    required String regionName,
+    required Map<int?, List<Zone>> patches,
+    required Map<int?, Map<String, dynamic>> patchInfo,
+    required bool isRegionExpanded,
+    required bool isOrphan,
+    required int totalZones,
+  }) {
+    // Sort patch IDs by code
+    final orderedPatchIds = patches.keys.toList();
+    orderedPatchIds.sort((a, b) {
+      if (a == null) return 1;
+      if (b == null) return -1;
+      final aCode = patchInfo[a]?['code'] ?? '';
+      final bCode = patchInfo[b]?['code'] ?? '';
+      return aCode.compareTo(bCode);
+    });
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // Region header
+        InkWell(
+          onTap: () {
+            setState(() {
+              if (isOrphan) return;
+              if (isRegionExpanded) {
+                _expandedRegionIds.remove(regionId);
+              } else {
+                _expandedRegionIds.add(regionId!);
+              }
+            });
+          },
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+            decoration: BoxDecoration(
+              color: AppTheme.greenDarkest.withOpacity(0.12),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  isRegionExpanded ? Icons.expand_less : Icons.expand_more,
+                  size: 14,
+                  color: AppTheme.greenDarkest,
+                ),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: Text(
+                    regionName,
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: AppTheme.greenDarkest,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                  decoration: BoxDecoration(
+                    color: AppTheme.greenDarkest.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    '$totalZones',
+                    style: TextStyle(fontSize: 9, color: AppTheme.greenDarkest),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        // Patches under this region
+        if (isRegionExpanded)
+          for (final patchId in orderedPatchIds)
+            _buildPatchGroup(
+              patchId: patchId,
+              patchName: patchId == null
+                  ? '未分配片区'
+                  : (patchInfo[patchId]?['name'] ?? '未知区域'),
+              patchCode: patchId == null
+                  ? ''
+                  : (patchInfo[patchId]?['code'] ?? ''),
+              zones: patches[patchId]!,
+              isExpanded: patchId == null
+                  ? _expandedOrphanGroup != null
+                  : _expandedPatchIds.contains(patchId),
+              isOrphan: patchId == null,
+            ),
+      ],
     );
   }
 

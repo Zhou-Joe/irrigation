@@ -17,8 +17,8 @@ class ApiService {
   static const String _defaultBaseUrl = 'http://47.100.237.113/api';
   static String baseUrl = _defaultBaseUrl;
 
-  // DNS-over-HTTPS cache: hostname -> IP
-  static String? _cachedDnsIp;
+  // DNS-over-HTTPS cache: hostname -> IP (per-host, not global)
+  static final Map<String, String> _dnsCache = {};
 
   /// Normalize URL: ensure it has a scheme and no trailing slash
   static String _normalizeUrl(String url) {
@@ -46,7 +46,7 @@ class ApiService {
   static Future<void> setBaseUrl(String url) async {
     url = _normalizeUrl(url);
     baseUrl = url;
-    _cachedDnsIp = null; // reset DNS cache when URL changes
+    _dnsCache.clear(); // reset DNS cache when URL changes
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('server_base_url', url);
   }
@@ -54,6 +54,9 @@ class ApiService {
   /// Resolve hostname via DNS-over-HTTPS when system DNS fails.
   /// Uses top-level http.get to avoid circular dependency with _client.
   static Future<String?> _resolveViaDoh(String hostname) async {
+    if (_dnsCache.containsKey(hostname)) {
+      return _dnsCache[hostname];
+    }
     for (final dohUrl in [
       'https://dns.alidns.com/resolve?name=$hostname&type=A',
       'https://dns.google/resolve?name=$hostname&type=A',
@@ -66,7 +69,8 @@ class ApiService {
         if (data['Answer'] != null) {
           for (final answer in data['Answer']) {
             if (answer['type'] == 1) {
-              return answer['data'] as String;
+              _dnsCache[hostname] = answer['data'] as String;
+              return _dnsCache[hostname];
             }
           }
         }
@@ -90,9 +94,8 @@ class ApiService {
             .timeout(const Duration(seconds: 3));
       } catch (e) {
         // System DNS failed or timed out — try DNS-over-HTTPS
-        final ip = _cachedDnsIp ?? await _resolveViaDoh(uri.host);
+        final ip = await _resolveViaDoh(uri.host);
         if (ip != null) {
-          _cachedDnsIp = ip;
           return await Socket.startConnect(ip, uri.port)
               .timeout(const Duration(seconds: 5));
         }
@@ -125,7 +128,7 @@ class ApiService {
           .get(Uri.parse('$baseUrl/zones/'), headers: _headers)
           .timeout(const Duration(seconds: 15));
       if (response.statusCode == 200 || response.statusCode == 401 || response.statusCode == 403) {
-        return (true, _cachedDnsIp != null ? '连接成功 (DNS-over-HTTPS: $_cachedDnsIp)' : null);
+        return (true, _dnsCache.isNotEmpty ? '连接成功 (DNS-over-HTTPS: ${_dnsCache.values.first})' : null);
       }
       return (false, 'HTTP ${response.statusCode}: ${response.body.substring(0, (response.body.length > 100 ? 100 : response.body.length))}');
     } catch (e) {
@@ -473,6 +476,19 @@ class ApiService {
       return data.map((e) => e as Map<String, dynamic>).toList();
     }
     throw Exception('获取分区列表失败');
+  }
+
+  /// Get regions (大区)
+  Future<List<Map<String, dynamic>>> getRegions() async {
+    final response = await _client.get(
+      Uri.parse('$baseUrl/regions/'),
+      headers: _headers,
+    );
+    if (response.statusCode == 200) {
+      final List<dynamic> data = jsonDecode(response.body);
+      return data.map((e) => e as Map<String, dynamic>).toList();
+    }
+    throw Exception('获取大区列表失败');
   }
 
   /// Get locations (legacy CCU list — use Zone.patchId instead for patch selection)
