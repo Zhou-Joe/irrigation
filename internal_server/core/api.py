@@ -6,7 +6,7 @@ from django.contrib.auth import authenticate, login
 from django.utils import timezone
 from django.db import models
 from datetime import timedelta, date
-from .models import Zone, Plant, Worker, WorkOrder, Event, WorkLog, WeatherData, MaintenanceRequest, ProjectSupportRequest, WaterRequest, ManagerProfile, DepartmentUserProfile, EquipmentCatalog, ZoneEquipment, Pipeline, Patch, WorkCategory, InfoSource, FaultCategory, FaultSubType, WorkReport, WorkReportFault, DemandCategory, DemandDepartment, DemandRecord
+from .models import Zone, Plant, Worker, WorkOrder, Event, WorkLog, WeatherData, MaintenanceRequest, ProjectSupportRequest, WaterRequest, ManagerProfile, DepartmentUserProfile, EquipmentCatalog, ZoneEquipment, Pipeline, Patch, Region, WorkCategory, InfoSource, FaultCategory, FaultSubType, WorkReport, WorkReportFault, DemandCategory, DemandDepartment, DemandRecord
 from .authentication import TokenAuthentication
 from .permissions import IsAdminOrReadOnly, IsOwnerOrAdmin, IsDeptUserWaterOnly, IsFieldWorker
 
@@ -148,6 +148,9 @@ class ZoneSerializer(serializers.ModelSerializer):
     patch_code = serializers.SerializerMethodField()
     patch_type = serializers.SerializerMethodField()
     patch_type_display = serializers.SerializerMethodField()
+    # Region info (via patch)
+    region_id = serializers.SerializerMethodField()
+    region_name = serializers.SerializerMethodField()
 
     class Meta:
         model = Zone
@@ -157,6 +160,7 @@ class ZoneSerializer(serializers.ModelSerializer):
             'pending_requests', 'center',
             'patch_id', 'patch_name', 'patch_code',
             'patch_type', 'patch_type_display',
+            'region_id', 'region_name',
             'created_at', 'updated_at'
         ]
         read_only_fields = ['created_at', 'updated_at']
@@ -175,6 +179,16 @@ class ZoneSerializer(serializers.ModelSerializer):
 
     def get_patch_type_display(self, obj):
         return obj.patch.get_type_display() if obj.patch else None
+
+    def get_region_id(self, obj):
+        if obj.patch and obj.patch.region:
+            return obj.patch.region.id
+        return None
+
+    def get_region_name(self, obj):
+        if obj.patch and obj.patch.region:
+            return obj.patch.region.name
+        return None
 
     def get_status(self, obj):
         """返回当天状态。"""
@@ -943,9 +957,42 @@ class WorkReportSerializer(serializers.ModelSerializer):
         return instance
 
 
+class PatchSerializer(serializers.ModelSerializer):
+    region_id = serializers.SerializerMethodField()
+    region_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Patch
+        fields = ['id', 'name', 'code', 'order', 'active', 'region_id', 'region_name']
+
+    def get_region_id(self, obj):
+        return obj.region.id if obj.region else None
+
+    def get_region_name(self, obj):
+        return obj.region.name if obj.region else None
+
+
 class PatchViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = Patch.objects.filter(type=Patch.TYPE_PATCH, active=True).order_by('order', 'code')
-    serializer_class = LocationSerializer
+    serializer_class = PatchSerializer
+    authentication_classes = [TokenAuthentication, authentication.SessionAuthentication]
+    permission_classes = [IsAuthenticatedByTokenOrSession]
+
+
+class RegionSerializer(serializers.ModelSerializer):
+    patch_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Region
+        fields = ['id', 'name', 'order', 'active', 'patch_count']
+
+    def get_patch_count(self, obj):
+        return obj.patches.filter(type=Patch.TYPE_PATCH, active=True).count()
+
+
+class RegionViewSet(viewsets.ReadOnlyModelViewSet):
+    queryset = Region.objects.filter(active=True).order_by('order', 'name')
+    serializer_class = RegionSerializer
     authentication_classes = [TokenAuthentication, authentication.SessionAuthentication]
     permission_classes = [IsAuthenticatedByTokenOrSession]
 

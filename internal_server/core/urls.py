@@ -8,7 +8,7 @@ from core.api import (
     MaintenanceRequestViewSet, ProjectSupportRequestViewSet, WaterRequestViewSet,
     EquipmentCatalogViewSet, ZoneEquipmentViewSet,
     PipelineViewSet,
-    PatchViewSet, LocationViewSet, WorkCategoryViewSet, InfoSourceViewSet,
+    PatchViewSet, LocationViewSet, RegionViewSet, WorkCategoryViewSet, InfoSourceViewSet,
     FaultCategoryViewSet, FaultSubTypeViewSet, WorkReportViewSet,
     DemandCategoryViewSet, DemandDepartmentViewSet, DemandRecordViewSet,
     worker_login, get_all_requests, get_weather, demand_stats, demand_calendar
@@ -31,6 +31,7 @@ router.register(r'equipment-catalog', EquipmentCatalogViewSet)
 router.register(r'zone-equipment', ZoneEquipmentViewSet)
 router.register(r'pipelines', PipelineViewSet)
 router.register(r'patches', PatchViewSet)
+router.register(r'regions', RegionViewSet)
 router.register(r'locations', LocationViewSet, basename='location')
 router.register(r'work-categories', WorkCategoryViewSet)
 router.register(r'info-sources', InfoSourceViewSet)
