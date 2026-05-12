@@ -146,8 +146,6 @@ class ZoneSerializer(serializers.ModelSerializer):
     patch_id = serializers.SerializerMethodField()
     patch_name = serializers.SerializerMethodField()
     patch_code = serializers.SerializerMethodField()
-    patch_type = serializers.SerializerMethodField()
-    patch_type_display = serializers.SerializerMethodField()
     # Region info (via patch)
     region_id = serializers.SerializerMethodField()
     region_name = serializers.SerializerMethodField()
@@ -158,8 +156,14 @@ class ZoneSerializer(serializers.ModelSerializer):
             'id', 'name', 'code', 'description', 'boundary_points',
             'boundary_color', 'status', 'status_display',
             'pending_requests', 'center',
+            'priority',
+            'current_status', 'sprinkler_type', 'irrigation_intensity',
+            'solenoid_valve_size', 'landscape_coefficient', 'plant_type',
+            'irrigation_foreman', 'greenery_zone', 'greenery_foreman',
+            'pest_control_zone', 'pest_control_foreman',
+            'terrain_feature', 'plant_feature', 'soil_moisture',
+            'equipment_maintenance_notes', 'irrigation_management_notes',
             'patch_id', 'patch_name', 'patch_code',
-            'patch_type', 'patch_type_display',
             'region_id', 'region_name',
             'created_at', 'updated_at'
         ]
@@ -173,12 +177,6 @@ class ZoneSerializer(serializers.ModelSerializer):
 
     def get_patch_code(self, obj):
         return obj.patch.code if obj.patch else None
-
-    def get_patch_type(self, obj):
-        return obj.patch.type if obj.patch else None
-
-    def get_patch_type_display(self, obj):
-        return obj.patch.get_type_display() if obj.patch else None
 
     def get_region_id(self, obj):
         if obj.patch and obj.patch.region:
@@ -435,6 +433,23 @@ class ZoneViewSet(viewsets.ModelViewSet):
             'status': zone.get_today_status(),
             'status_display': zone.get_status_display(),
             'boundary_color': zone.boundary_color,
+            'priority': zone.priority,
+            'current_status': zone.current_status,
+            'sprinkler_type': zone.sprinkler_type,
+            'irrigation_intensity': zone.irrigation_intensity,
+            'solenoid_valve_size': zone.solenoid_valve_size,
+            'landscape_coefficient': zone.landscape_coefficient,
+            'plant_type': zone.plant_type,
+            'irrigation_foreman': zone.irrigation_foreman,
+            'greenery_zone': zone.greenery_zone,
+            'greenery_foreman': zone.greenery_foreman,
+            'pest_control_zone': zone.pest_control_zone,
+            'pest_control_foreman': zone.pest_control_foreman,
+            'terrain_feature': zone.terrain_feature,
+            'plant_feature': zone.plant_feature,
+            'soil_moisture': zone.soil_moisture,
+            'equipment_maintenance_notes': zone.equipment_maintenance_notes,
+            'irrigation_management_notes': zone.irrigation_management_notes,
             'plants': PlantSerializer(plants, many=True).data,
             'equipment': ZoneEquipmentSerializer(equipment, many=True).data,
             'plant_count': plants.count(),
@@ -973,7 +988,7 @@ class PatchSerializer(serializers.ModelSerializer):
 
 
 class PatchViewSet(viewsets.ReadOnlyModelViewSet):
-    queryset = Patch.objects.filter(type=Patch.TYPE_PATCH, active=True).order_by('order', 'code')
+    queryset = Patch.objects.filter(active=True).order_by('order', 'code')
     serializer_class = PatchSerializer
     authentication_classes = [TokenAuthentication, authentication.SessionAuthentication]
     permission_classes = [IsAuthenticatedByTokenOrSession]
@@ -987,7 +1002,7 @@ class RegionSerializer(serializers.ModelSerializer):
         fields = ['id', 'name', 'order', 'active', 'patch_count']
 
     def get_patch_count(self, obj):
-        return obj.patches.filter(type=Patch.TYPE_PATCH, active=True).count()
+        return obj.patches.filter(active=True).count()
 
 
 class RegionViewSet(viewsets.ReadOnlyModelViewSet):
@@ -998,7 +1013,7 @@ class RegionViewSet(viewsets.ReadOnlyModelViewSet):
 
 
 class LocationViewSet(viewsets.ReadOnlyModelViewSet):
-    queryset = Patch.objects.filter(type=Patch.TYPE_LOCATION, active=True).order_by('order', 'code')
+    queryset = Patch.objects.filter(active=True).order_by('order', 'code')
     serializer_class = LocationSerializer
     authentication_classes = [TokenAuthentication, authentication.SessionAuthentication]
     permission_classes = [IsAuthenticatedByTokenOrSession]

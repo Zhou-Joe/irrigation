@@ -1,0 +1,61 @@
+<h2>Zone Label Settings</h2>
+<p class="subtitle">How should per-zone text label controls appear on the zone edit form?</p>
+
+<div class="options">
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Simple Sliders in Boundary Section</h3>
+      <p>3 sliders added below the boundary color picker: X offset, Y offset, and font size. Rotation via a small angle input. Clean but limited precision.</p>
+      <div style="margin-top: 12px; background: #f5f0e8; padding: 12px; border-radius: 8px; font-size: 0.85em;">
+        <div style="font-weight: 600; margin-bottom: 8px; color: #2D6A4F;">Boundary Section</div>
+        <div style="margin-bottom: 6px;">Boundary Color: <span style="background:#52B788; width:20px; height:14px; display:inline-block; border-radius:3px; vertical-align:middle;"></span> #52B788</div>
+        <div style="margin-top: 12px; padding-top: 10px; border-top: 1px solid #ddd;">
+          <div style="font-weight: 600; margin-bottom: 6px; color: #2D6A4F;">Label Settings</div>
+          <div style="margin-bottom: 6px;">X Offset: <input type="range" style="width:120px;vertical-align:middle;" disabled> <span style="color:#888;">0m</span></div>
+          <div style="margin-bottom: 6px;">Y Offset: <input type="range" style="width:120px;vertical-align:middle;" disabled> <span style="color:#888;">0m</span></div>
+          <div style="margin-bottom: 6px;">Font Size: <input type="range" style="width:120px;vertical-align:middle;" disabled> <span style="color:#888;">14px</span></div>
+          <div>Angle: <input type="number" value="0" style="width:50px;text-align:center;" disabled> degrees</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Draggable Label on Map + Number Inputs</h3>
+      <p>Label shown on the edit map that you can drag to reposition. Number inputs for fine-tuning X/Y, size, and angle. WYSIWYG feel.</p>
+      <div style="margin-top: 12px; background: #f5f0e8; padding: 12px; border-radius: 8px; font-size: 0.85em;">
+        <div style="font-weight: 600; margin-bottom: 8px; color: #2D6A4F;">Boundary Section</div>
+        <div style="background: #1a1a2e; height: 100px; border-radius: 6px; position: relative; overflow: hidden; margin-bottom: 8px;">
+          <div style="position: absolute; top: 20px; left: 30px; right: 20px; bottom: 15px; border: 2px solid #52B788; border-radius: 4px; opacity: 0.5;"></div>
+          <div style="position: absolute; top: 38px; left: 42px; color: white; font-size: 13px; background: rgba(0,0,0,0.5); padding: 2px 6px; border-radius: 3px; cursor: move; border: 1px dashed #D4A574;">A1 <span style="font-size:10px; color:#D4A574;">(drag me)</span></div>
+        </div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px;">
+          <div>Label X: <input type="number" value="0.002" style="width:70px;" disabled></div>
+          <div>Label Y: <input type="number" value="-0.001" style="width:70px;" disabled></div>
+          <div>Size: <input type="number" value="14" style="width:50px;" disabled> px</div>
+          <div>Angle: <input type="number" value="-15" style="width:50px;" disabled> deg</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="c" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>Compact Controls Below Map (Minimal)</h3>
+      <p>Just 3 number fields in a row beneath the map. Keep it simple, no drag-to-position. Offset is in meters from centroid.</p>
+      <div style="margin-top: 12px; background: #f5f0e8; padding: 12px; border-radius: 8px; font-size: 0.85em;">
+        <div style="background: #1a1a2e; height: 60px; border-radius: 6px; margin-bottom: 8px;"></div>
+        <div style="display: flex; gap: 10px; align-items: center;">
+          <label>X(m): <input type="number" value="0" style="width:55px;" disabled></label>
+          <label>Y(m): <input type="number" value="0" style="width:55px;" disabled></label>
+          <label>Size: <input type="number" value="14" style="width:45px;" disabled>px</label>
+          <label>Angle: <input type="number" value="0" style="width:45px;" disabled>&deg;</label>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

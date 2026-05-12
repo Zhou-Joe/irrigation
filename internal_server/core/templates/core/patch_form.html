@@ -118,79 +118,12 @@
             </div>
 
             <div class="form-group">
-                <label for="code">片区编号 *</label>
+                <label for="code">CCU编号 *</label>
                 <input type="text" id="code" name="code" required
                        value="{% if mode == 'edit' %}{{ patch.code }}{% endif %}"
-                       placeholder="例如：3">
-                <small>唯一标识，建议简短易记</small>
+                       placeholder="例如：CCU1">
+                <small>唯一标识</small>
             </div>
-
-            <div class="form-group">
-                <label for="description">描述</label>
-                <textarea id="description" name="description" rows="2"
-                          placeholder="片区描述（可选）">{% if mode == 'edit' %}{{ patch.description }}{% endif %}</textarea>
-            </div>
-
-            <div class="shared-fields-grid">
-                <div class="form-group">
-                    <label for="time_zone">时区</label>
-                    <input type="text" id="time_zone" name="time_zone"
-                           value="{% if mode == 'edit' %}{{ patch.time_zone }}{% else %}China{% endif %}">
-                </div>
-                <div class="form-group">
-                    <label for="water_pricing">水价</label>
-                    <input type="number" step="0.01" id="water_pricing" name="water_pricing"
-                           value="{% if mode == 'edit' and patch.water_pricing %}{{ patch.water_pricing }}{% endif %}"
-                           placeholder="水价（选填）">
-                </div>
-                <div class="form-group">
-                    <label for="et_current">当前 ET</label>
-                    <input type="number" step="0.01" id="et_current" name="et_current"
-                           value="{% if mode == 'edit' and patch.et_current %}{{ patch.et_current }}{% endif %}">
-                </div>
-                <div class="form-group">
-                    <label for="et_default">默认 ET</label>
-                    <input type="number" step="0.01" id="et_default" name="et_default"
-                           value="{% if mode == 'edit' and patch.et_default %}{{ patch.et_default }}{% endif %}">
-                </div>
-                <div class="form-group">
-                    <label for="et_minimum">最小 ET</label>
-                    <input type="number" step="0.01" id="et_minimum" name="et_minimum"
-                           value="{% if mode == 'edit' and patch.et_minimum %}{{ patch.et_minimum }}{% endif %}">
-                </div>
-                <div class="form-group">
-                    <label for="et_maximum">最大 ET</label>
-                    <input type="number" step="0.01" id="et_maximum" name="et_maximum"
-                           value="{% if mode == 'edit' and patch.et_maximum %}{{ patch.et_maximum }}{% endif %}">
-                </div>
-                <div class="form-group">
-                    <label for="crop_coefficient">作物系数</label>
-                    <input type="number" step="0.01" id="crop_coefficient" name="crop_coefficient"
-                           value="{% if mode == 'edit' and patch.crop_coefficient %}{{ patch.crop_coefficient }}{% endif %}">
-                </div>
-                <div class="form-group" style="display:flex; align-items:center; gap:8px; padding-top:24px;">
-                    <input type="checkbox" id="rain_shutdown" name="rain_shutdown"
-                           {% if mode == 'edit' and patch.rain_shutdown %}checked{% endif %}>
-                    <label for="rain_shutdown" style="margin:0;">雨天自动停灌</label>
-                </div>
-                <div class="form-group">
-                    <label for="date_open">灌溉季开始</label>
-                    <input type="text" id="date_open" name="date_open"
-                           value="{% if mode == 'edit' %}{{ patch.date_open }}{% endif %}"
-                           placeholder="例如：03/15">
-                </div>
-                <div class="form-group">
-                    <label for="date_close">灌溉季结束</label>
-                    <input type="text" id="date_close" name="date_close"
-                           value="{% if mode == 'edit' %}{{ patch.date_close }}{% endif %}"
-                           placeholder="例如：11/30">
-                </div>
-            </div>
-            {% if mode == 'edit' %}
-            <small style="color: var(--color-text-secondary); display:block; margin-top:8px;">
-                修改以上属性会同步更新到所有关联的子区域数据（站点、位置、需求区域）
-            </small>
-            {% endif %}
         </div>
 
         {% if mode == 'edit' and grouped_zones %}
@@ -242,42 +175,6 @@
                 .zone-chip input:checked ~ .zone-chip-check::after { opacity:1; transform:scale(1); }
                 .zone-chip.checked { background:rgba(27,67,50,0.08); border-color:var(--color-primary); }
             </style>
-        </div>
-        {% endif %}
-
-        {% if mode == 'edit' and linked_groups %}
-        <div class="form-section">
-            <h2>关联区域数据</h2>
-            <p class="help-text">将其他系统的区域数据关联到此片区，修改片区属性会同步更新到所有关联数据</p>
-
-            {% for group in linked_groups %}
-            <div class="linked-patch-group">
-                <div class="linked-patch-group-header">
-                    {{ group.label }} ({{ group.patches|length }})
-                    {% if group.is_sync_managed %}
-                    <span style="font-size:0.75rem; font-weight:normal; color:var(--color-text-secondary); margin-left:8px;">（Maxicom同步自动管理，只读）</span>
-                    {% endif %}
-                </div>
-                <div class="linked-chips">
-                    {% for p in group.patches %}
-                    <label class="linked-chip{% if p.id in linked_patch_ids %} checked{% endif %}{% if group.is_sync_managed %} readonly{% endif %}">
-                        {% if group.is_sync_managed %}
-                        {# Stations: read-only, always submit their value if linked #}
-                        {% if p.id in linked_patch_ids %}
-                        <input type="hidden" name="linked_patches" value="{{ p.id }}">
-                        {% endif %}
-                        {% else %}
-                        <input type="checkbox" name="linked_patches" value="{{ p.id }}"
-                               {% if p.id in linked_patch_ids %}checked{% endif %}>
-                        {% endif %}
-                        <span class="linked-chip-check"></span>
-                        <span>{{ p.name }}</span>
-                        <span class="chip-badge">{{ p.code }}</span>
-                    </label>
-                    {% endfor %}
-                </div>
-            </div>
-            {% endfor %}
         </div>
         {% endif %}
 

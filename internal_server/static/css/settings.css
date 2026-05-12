@@ -572,6 +572,11 @@
     padding: var(--space-xl);
 }
 
+.zone-editor-container {
+    max-width: 1180px;
+    padding-bottom: 120px;
+}
+
 .form-header {
     display: flex;
     justify-content: space-between;
@@ -581,10 +586,29 @@
     border-bottom: 2px solid var(--color-surface-dark);
 }
 
+.zone-editor-header {
+    align-items: flex-start;
+}
+
+.form-eyebrow {
+    display: block;
+    color: var(--color-text-secondary);
+    font-size: 0.78rem;
+    font-weight: 600;
+    margin-bottom: var(--space-xs);
+}
+
 .form-header h1 {
     font-family: var(--font-display);
     font-size: 1.75rem;
     color: var(--color-primary);
+    margin: 0;
+}
+
+.form-header-note {
+    color: var(--color-text-secondary);
+    font-size: 0.9rem;
+    margin: var(--space-xs) 0 0;
 }
 
 .form-section {
@@ -593,6 +617,45 @@
     padding: var(--space-xl);
     margin-bottom: var(--space-lg);
     border: 1px solid var(--color-surface-dark);
+}
+
+.zone-form-section {
+    padding: var(--space-lg);
+}
+
+.form-section-heading {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-md);
+    margin-bottom: var(--space-lg);
+    padding-bottom: var(--space-sm);
+    border-bottom: 1px solid var(--color-surface-dark);
+}
+
+.form-section .form-section-heading h2 {
+    margin: 0;
+    padding: 0;
+    border: none;
+}
+
+.form-section-heading p {
+    margin: 4px 0 0;
+    color: var(--color-text-secondary);
+    font-size: 0.86rem;
+}
+
+.section-step {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: var(--color-primary);
+    color: var(--color-text-inverse);
+    font-size: 0.82rem;
+    font-weight: 700;
+    flex-shrink: 0;
 }
 
 .form-section h2 {
@@ -673,6 +736,27 @@
     border-top: 1px solid var(--color-surface-dark);
 }
 
+.zone-floating-actions {
+    position: fixed;
+    right: max(var(--space-xl), calc((100vw - 1180px) / 2 + var(--space-md)));
+    bottom: var(--space-lg);
+    z-index: 1200;
+    display: flex;
+    gap: var(--space-sm);
+    align-items: center;
+    padding: var(--space-sm);
+    background: rgba(255, 255, 255, 0.94);
+    border: 1px solid var(--color-surface-dark);
+    border-radius: var(--radius-lg);
+    box-shadow: 0 12px 34px rgba(8, 28, 21, 0.18);
+    backdrop-filter: blur(10px);
+}
+
+.zone-floating-actions .btn {
+    min-width: 104px;
+    white-space: nowrap;
+}
+
 /* Boundary Preview */
 .boundary-preview {
     margin-top: var(--space-lg);
@@ -696,6 +780,106 @@
     background: var(--color-surface-alt);
 }
 
+.zone-map-settings {
+    display: grid;
+    grid-template-columns: minmax(190px, 240px) 1fr minmax(150px, 190px);
+    gap: var(--space-md);
+    align-items: stretch;
+    margin-bottom: var(--space-md);
+}
+
+.compact-field {
+    margin-bottom: 0;
+}
+
+.patch-picker {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    gap: var(--space-sm);
+    align-items: center;
+}
+
+.patch-picker select,
+.patch-picker input {
+    width: 100%;
+    padding: var(--space-md);
+    border: 2px solid var(--color-surface-dark);
+    border-radius: var(--radius-md);
+    font: inherit;
+    background: var(--color-surface);
+    color: var(--color-text-primary);
+}
+
+.new-patch-input {
+    min-width: 180px;
+}
+
+.label-settings-panel,
+.area-summary {
+    background: var(--color-surface);
+    border: 1px solid var(--color-surface-dark);
+    border-radius: var(--radius-md);
+    padding: var(--space-sm) var(--space-md);
+}
+
+.label-settings-panel {
+    display: flex;
+    align-items: center;
+    gap: var(--space-lg);
+    flex-wrap: wrap;
+}
+
+.mini-panel-title {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 132px;
+}
+
+.mini-panel-title strong,
+.area-summary strong {
+    color: var(--color-primary);
+    font-size: 0.9rem;
+}
+
+.mini-panel-title span,
+.area-summary small {
+    color: var(--color-text-secondary);
+    font-size: 0.78rem;
+}
+
+.label-settings-panel label {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-xs);
+    margin: 0;
+    font-size: 0.85rem;
+}
+
+.label-settings-panel input[type="range"] {
+    width: 120px;
+    padding: 0;
+}
+
+.label-settings-panel input[type="number"] {
+    width: 66px;
+    padding: 6px 8px;
+    border: 1px solid var(--color-surface-dark);
+    border-radius: var(--radius-sm);
+}
+
+.area-summary {
+    display: grid;
+    align-content: center;
+    gap: 2px;
+}
+
+.area-summary span {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--color-text-primary);
+}
+
 /* Map Toolbar */
 .map-toolbar {
     display: flex;
@@ -705,6 +889,7 @@
     padding: var(--space-sm);
     background: var(--color-surface);
     border-radius: var(--radius-md);
+    flex-wrap: wrap;
 }
 
 .point-count {
@@ -718,7 +903,7 @@
 }
 
 #editMap {
-    height: 400px;
+    height: 520px;
     border-radius: var(--radius-md);
     border: 2px solid var(--color-surface-dark);
     margin-bottom: var(--space-lg);
@@ -907,12 +1092,47 @@
     .form-row {
         grid-template-columns: 1fr;
     }
+    .zone-editor-container {
+        padding: var(--space-md);
+        padding-bottom: 116px;
+    }
+    .zone-floating-actions {
+        left: var(--space-md);
+        right: var(--space-md);
+        bottom: var(--space-md);
+        justify-content: stretch;
+    }
+    .zone-floating-actions .btn {
+        flex: 1;
+        min-width: 0;
+    }
+    .zone-map-settings,
+    .patch-picker {
+        grid-template-columns: 1fr;
+    }
+    .new-patch-input {
+        min-width: 0;
+    }
+    .label-settings-panel {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: var(--space-sm);
+    }
     .coord-list-header,
     .coord-row {
         grid-template-columns: 30px 1fr 1fr 30px;
         font-size: 0.75rem;
     }
     #editMap {
-        height: 300px;
+        height: 360px;
+    }
+}
+
+@media (min-width: 641px) and (max-width: 980px) {
+    .zone-map-settings {
+        grid-template-columns: 1fr 1fr;
+    }
+    .area-summary {
+        grid-column: 1 / -1;
     }
 }

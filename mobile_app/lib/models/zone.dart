@@ -11,12 +11,28 @@ class Zone {
   final int pendingWorkOrders;
   final List<Map<String, dynamic>> pendingRequests;  // 待审批浇水协调需求
   final Map<String, double>? centerFromApi;
+  // Priority & irrigation attributes
+  final String priority;
+  final String currentStatus;
+  final String sprinklerType;
+  final double? irrigationIntensity;
+  final double? solenoidValveSize;
+  final double? landscapeCoefficient;
+  final String plantType;
+  final String irrigationForeman;
+  final String greeneryZone;
+  final String greeneryForeman;
+  final String pestControlZone;
+  final String pestControlForeman;
+  final String terrainFeature;
+  final String plantFeature;
+  final String soilMoisture;
+  final String equipmentMaintenanceNotes;
+  final String irrigationManagementNotes;
   // Patch info for grouping
   final int? patchId;
   final String? patchName;
   final String? patchCode;
-  final String? patchType;
-  final String? patchTypeDisplay;
   // Region info (via patch)
   final int? regionId;
   final String? regionName;
@@ -34,11 +50,26 @@ class Zone {
     this.pendingWorkOrders = 0,
     this.pendingRequests = const [],
     this.centerFromApi,
+    this.priority = 'medium',
+    this.currentStatus = '',
+    this.sprinklerType = '',
+    this.irrigationIntensity,
+    this.solenoidValveSize,
+    this.landscapeCoefficient,
+    this.plantType = '',
+    this.irrigationForeman = '',
+    this.greeneryZone = '',
+    this.greeneryForeman = '',
+    this.pestControlZone = '',
+    this.pestControlForeman = '',
+    this.terrainFeature = '',
+    this.plantFeature = '',
+    this.soilMoisture = '',
+    this.equipmentMaintenanceNotes = '',
+    this.irrigationManagementNotes = '',
     this.patchId,
     this.patchName,
     this.patchCode,
-    this.patchType,
-    this.patchTypeDisplay,
     this.regionId,
     this.regionName,
   });
@@ -57,6 +88,13 @@ class Zone {
       patchId = json['patch_id'] is int ? json['patch_id'] : (json['patch_id'] as num?)?.toInt();
       patchName = json['patch_name']?.toString();
       patchCode = json['patch_code']?.toString();
+    }
+
+    double? _toDouble(dynamic val) {
+      if (val == null) return null;
+      if (val is double) return val;
+      if (val is num) return val.toDouble();
+      return null;
     }
 
     return Zone(
@@ -84,11 +122,26 @@ class Zone {
               return null;
             })()
           : null,
+      priority: json['priority']?.toString() ?? 'medium',
+      currentStatus: json['current_status']?.toString() ?? '',
+      sprinklerType: json['sprinkler_type']?.toString() ?? '',
+      irrigationIntensity: _toDouble(json['irrigation_intensity']),
+      solenoidValveSize: _toDouble(json['solenoid_valve_size']),
+      landscapeCoefficient: _toDouble(json['landscape_coefficient']),
+      plantType: json['plant_type']?.toString() ?? '',
+      irrigationForeman: json['irrigation_foreman']?.toString() ?? '',
+      greeneryZone: json['greenery_zone']?.toString() ?? '',
+      greeneryForeman: json['greenery_foreman']?.toString() ?? '',
+      pestControlZone: json['pest_control_zone']?.toString() ?? '',
+      pestControlForeman: json['pest_control_foreman']?.toString() ?? '',
+      terrainFeature: json['terrain_feature']?.toString() ?? '',
+      plantFeature: json['plant_feature']?.toString() ?? '',
+      soilMoisture: json['soil_moisture']?.toString() ?? '',
+      equipmentMaintenanceNotes: json['equipment_maintenance_notes']?.toString() ?? '',
+      irrigationManagementNotes: json['irrigation_management_notes']?.toString() ?? '',
       patchId: patchId,
       patchName: patchName,
       patchCode: patchCode,
-      patchType: json['patch_type']?.toString(),
-      patchTypeDisplay: json['patch_type_display']?.toString(),
       regionId: json['region_id'] is int ? json['region_id'] : (json['region_id'] as num?)?.toInt(),
       regionName: json['region_name']?.toString(),
     );
@@ -110,5 +163,16 @@ class Zone {
       }
     }
     return {'lat': lat / boundaryPoints.length, 'lng': lng / boundaryPoints.length};
+  }
+
+  String get priorityDisplay {
+    const map = {
+      'critical': '超级重点',
+      'high': '重点',
+      'medium': '一般',
+      'low': '次要',
+      'abolished': '废除',
+    };
+    return map[priority] ?? '一般';
   }
 }

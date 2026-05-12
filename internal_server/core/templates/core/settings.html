@@ -29,160 +29,12 @@
     </div>
     {% endif %}
 
-    <!-- 3-column card grid: Region / Patch / Pipeline -->
-    <div class="settings-grid">
-
-        <!-- 大区管理 -->
-        <div class="settings-card">
-            <div class="settings-card-header" onclick="toggleCardBody(this, 'regionBody', 'regionIndicator')">
-                <h2><span class="collapse-indicator" id="regionIndicator">▼</span> 大区管理</h2>
-                <div class="header-actions" onclick="event.stopPropagation()">
-                    <a href="{% url 'core:region_new' %}" class="btn btn-sm btn-primary">+ 新建</a>
-                </div>
-            </div>
-            {% if regions %}
-            <div class="settings-card-body" id="regionBody">
-                <input type="text" id="regionSearch" placeholder="搜索大区..." class="card-search">
-                <table class="card-table" id="regionTable">
-                    <thead>
-                        <tr>
-                            <th><input type="checkbox" id="regionSelectAll" onclick="toggleRegionCheckboxes(this.checked)"></th>
-                            <th>名称</th>
-                            <th>片区数</th>
-                            <th>操作</th>
-                        </tr>
-                    </thead>
-                    <tbody id="regionTableBody">
-                        {% for r in regions %}
-                        <tr class="region-row" data-name="{{ r.name }}" data-id="{{ r.id }}">
-                            <td><input type="checkbox" class="region-checkbox" data-id="{{ r.id }}" onclick="event.stopPropagation()"></td>
-                            <td><strong>{{ r.name }}</strong></td>
-                            <td>{{ region_patch_counts|dict_lookup:r.id|default:"0" }}</td>
-                            <td class="actions-cell">
-                                <a href="{% url 'core:region_edit' r.id %}" class="btn btn-sm btn-secondary">编辑</a>
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-                <div class="batch-actions" id="regionBatchActions" style="display:none;">
-                    <button type="button" class="btn btn-sm btn-danger" onclick="batchDeleteRegions()">批量删除 (<span id="regionSelectedCount">0</span>)</button>
-                </div>
-            </div>
-            {% else %}
-            <div class="card-empty">
-                <p>暂无大区</p>
-                <a href="{% url 'core:region_new' %}" class="btn btn-sm btn-primary">创建</a>
-            </div>
-            {% endif %}
-        </div>
-
-        <!-- 片区管理 -->
-        <div class="settings-card">
-            <div class="settings-card-header" onclick="toggleCardBody(this, 'patchBody', 'patchIndicator')">
-                <h2><span class="collapse-indicator" id="patchIndicator">▼</span> 片区管理</h2>
-                <div class="header-actions" onclick="event.stopPropagation()">
-                    <a href="{% url 'core:patch_new' %}" class="btn btn-sm btn-primary">+ 新建</a>
-                </div>
-            </div>
-            {% if site_patches %}
-            <div class="settings-card-body" id="patchBody">
-                <input type="text" id="patchSearch" placeholder="搜索片区..." class="card-search">
-                <table class="card-table" id="patchTable">
-                    <thead>
-                        <tr>
-                            <th><input type="checkbox" id="patchSelectAll" onclick="togglePatchCheckboxes(this.checked)"></th>
-                            <th>编号</th>
-                            <th>名称</th>
-                            <th>所属大区</th>
-                            <th>区域数</th>
-                            <th>操作</th>
-                        </tr>
-                    </thead>
-                    <tbody id="patchTableBody">
-                        {% for p in site_patches %}
-                        <tr class="patch-row" data-code="{{ p.code }}" data-name="{{ p.name }}" data-id="{{ p.id }}">
-                            <td><input type="checkbox" class="patch-checkbox" data-id="{{ p.id }}" onclick="event.stopPropagation()"></td>
-                            <td><code class="zone-code-cell">{{ p.code }}</code></td>
-                            <td><strong>{{ p.name }}</strong></td>
-                            <td>{{ p.region.name|default:"-" }}</td>
-                            <td>{{ patch_zone_counts|dict_lookup:p.id|default:"0" }}</td>
-                            <td class="actions-cell">
-                                <a href="{% url 'core:patch_edit' p.id %}" class="btn btn-sm btn-secondary">编辑</a>
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-                <div class="batch-actions" id="patchBatchActions" style="display:none;">
-                    <button type="button" class="btn btn-sm btn-danger" onclick="batchDeletePatches()">批量删除 (<span id="patchSelectedCount">0</span>)</button>
-                </div>
-            </div>
-            {% else %}
-            <div class="card-empty">
-                <p>暂无片区</p>
-                <a href="{% url 'core:patch_new' %}" class="btn btn-sm btn-primary">创建</a>
-            </div>
-            {% endif %}
-        </div>
-
-        <!-- 水管管理 -->
-        <div class="settings-card">
-            <div class="settings-card-header" onclick="toggleCardBody(this, 'pipelineBody', 'pipelineIndicator')">
-                <h2><span class="collapse-indicator" id="pipelineIndicator">▼</span> 水管管理</h2>
-                <div class="header-actions" onclick="event.stopPropagation()">
-                    <a href="{% url 'core:pipeline_new' %}" class="btn btn-sm btn-primary">+ 新建</a>
-                </div>
-            </div>
-            {% if pipelines %}
-            <div class="settings-card-body" id="pipelineBody">
-                <table class="card-table" id="pipelineTable">
-                    <thead>
-                        <tr>
-                            <th><input type="checkbox" id="pipelineSelectAll" onclick="togglePipelineCheckboxes(this.checked)"></th>
-                            <th>编号</th>
-                            <th>名称</th>
-                            <th>类型</th>
-                            <th>操作</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for pipeline in pipelines %}
-                        <tr class="pipeline-row" data-id="{{ pipeline.id }}">
-                            <td><input type="checkbox" class="pipeline-checkbox" data-id="{{ pipeline.id }}" onclick="event.stopPropagation()"></td>
-                            <td><code class="zone-code-cell">{{ pipeline.code }}</code></td>
-                            <td><strong>{{ pipeline.name }}</strong></td>
-                            <td>
-                                <span class="type-badge" style="background: {{ pipeline.line_color }}20; color: {{ pipeline.line_color }};">
-                                    {{ pipeline.get_pipeline_type_display }}
-                                </span>
-                            </td>
-                            <td class="actions-cell">
-                                <a href="{% url 'core:pipeline_edit' pipeline.id %}" class="btn btn-sm btn-secondary">编辑</a>
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-                <div class="batch-actions" id="pipelineBatchActions" style="display:none;">
-                    <button type="button" class="btn btn-sm btn-danger" onclick="batchDeletePipelines()">批量删除 (<span id="pipelineSelectedCount">0</span>)</button>
-                </div>
-            </div>
-            {% else %}
-            <div class="card-empty">
-                <p>暂无水管</p>
-                <a href="{% url 'core:pipeline_new' %}" class="btn btn-sm btn-primary">创建</a>
-            </div>
-            {% endif %}
-        </div>
-    </div>
-
-    <!-- 灌溉区域 (full width) -->
+    <!-- 1. 灌溉区域 (full width, first) -->
     <div class="zone-section">
         <div class="zone-section-header" onclick="toggleCardBody(this, 'zoneBody', 'zoneIndicator')">
             <h2><span class="collapse-indicator" id="zoneIndicator">▼</span> 灌溉区域</h2>
             <div class="header-actions" onclick="event.stopPropagation()">
-                <a href="{% url 'core:zone_new' %}" class="btn btn-sm btn-primary">+ 新建</a>
+                <a href="{% url 'core:zone_new' %}" class="btn btn-sm btn-primary" target="_blank">+ 新建</a>
             </div>
         </div>
 
@@ -196,15 +48,17 @@
                 <option value="">全部片区</option>
                 {% for group in grouped_zones %}
                 {% if group.type != 'orphan' %}
-                <option value="{{ group.id }}">{{ group.name }}</option>
+                <option value="{{ group.id }}">{% if group.code %}{{ group.code }} - {% endif %}{{ group.name }}</option>
                 {% endif %}
                 {% endfor %}
             </select>
             <select id="filterPriority" class="filter-select">
                 <option value="">全部优先级</option>
-                <option value="high">高</option>
-                <option value="medium">中</option>
-                <option value="low">低</option>
+                <option value="critical">超级重点</option>
+                <option value="high">重点</option>
+                <option value="medium">一般</option>
+                <option value="low">次要</option>
+                <option value="abolished">废除</option>
             </select>
             {% if all_plant_names %}
             <div class="filter-dropdown-wrap">
@@ -244,7 +98,7 @@
                     <tr class="patch-row collapsed" data-patch-id="{{ group.id }}" data-patch-name="{{ group.name }}">
                         <td colspan="5" class="patch-header-cell" onclick="togglePatchRow(this)">
                             <span class="patch-toggle" style="transform: rotate(-90deg);">▼</span>
-                            <strong class="patch-name">{{ group.name }}</strong>
+                            <strong class="patch-name">{% if group.code %}{{ group.code }} - {% endif %}{{ group.name }}</strong>
                             <span class="patch-count">{{ group.zone_count }}</span>
                         </td>
                     </tr>
@@ -255,7 +109,7 @@
                         <td><strong>{{ zone.name }}</strong></td>
                         <td><span class="priority-dot priority-{{ zone.priority }}"></span>{{ zone.priority_display }}</td>
                         <td class="actions-cell">
-                            <a href="{% url 'core:zone_edit' zone.id %}" class="btn btn-sm btn-secondary">编辑</a>
+                            <a href="{% url 'core:zone_edit' zone.id %}" class="btn btn-sm btn-secondary" target="_blank">编辑</a>
                         </td>
                     </tr>
                     {% endfor %}
@@ -269,9 +123,157 @@
         {% else %}
         <div class="card-empty">
             <p>暂无区域</p>
-            <a href="{% url 'core:zone_new' %}" class="btn btn-sm btn-primary">创建</a>
+            <a href="{% url 'core:zone_new' %}" class="btn btn-sm btn-primary" target="_blank">创建</a>
         </div>
         {% endif %}
+        </div>
+    </div>
+
+    <!-- 3-column card grid: Patch / Region / Pipeline -->
+    <div class="settings-grid">
+
+        <!-- 片区管理 -->
+        <div class="settings-card">
+            <div class="settings-card-header" onclick="toggleCardBody(this, 'patchBody', 'patchIndicator')">
+                <h2><span class="collapse-indicator" id="patchIndicator">▼</span> 片区管理</h2>
+                <div class="header-actions" onclick="event.stopPropagation()">
+                    <a href="{% url 'core:patch_new' %}" class="btn btn-sm btn-primary" target="_blank">+ 新建</a>
+                </div>
+            </div>
+            {% if site_patches %}
+            <div class="settings-card-body" id="patchBody">
+                <input type="text" id="patchSearch" placeholder="搜索片区..." class="card-search">
+                <table class="card-table" id="patchTable">
+                    <thead>
+                        <tr>
+                            <th><input type="checkbox" id="patchSelectAll" onclick="togglePatchCheckboxes(this.checked)"></th>
+                            <th>编号</th>
+                            <th>名称</th>
+                            <th>所属大区</th>
+                            <th>区域数</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="patchTableBody">
+                        {% for p in site_patches %}
+                        <tr class="patch-row" data-code="{{ p.code }}" data-name="{{ p.name }}" data-id="{{ p.id }}">
+                            <td><input type="checkbox" class="patch-checkbox" data-id="{{ p.id }}" onclick="event.stopPropagation()"></td>
+                            <td><code class="zone-code-cell">{{ p.code }}</code></td>
+                            <td><strong>{{ p.name }}</strong></td>
+                            <td>{{ p.region.name|default:"-" }}</td>
+                            <td>{{ patch_zone_counts|dict_lookup:p.id|default:"0" }}</td>
+                            <td class="actions-cell">
+                                <a href="{% url 'core:patch_edit' p.id %}" class="btn btn-sm btn-secondary" target="_blank">编辑</a>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                <div class="batch-actions" id="patchBatchActions" style="display:none;">
+                    <button type="button" class="btn btn-sm btn-danger" onclick="batchDeletePatches()">批量删除 (<span id="patchSelectedCount">0</span>)</button>
+                </div>
+            </div>
+            {% else %}
+            <div class="card-empty">
+                <p>暂无片区</p>
+                <a href="{% url 'core:patch_new' %}" class="btn btn-sm btn-primary" target="_blank">创建</a>
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- 大区管理 -->
+        <div class="settings-card">
+            <div class="settings-card-header" onclick="toggleCardBody(this, 'regionBody', 'regionIndicator')">
+                <h2><span class="collapse-indicator" id="regionIndicator">▼</span> 大区管理</h2>
+                <div class="header-actions" onclick="event.stopPropagation()">
+                    <a href="{% url 'core:region_new' %}" class="btn btn-sm btn-primary" target="_blank">+ 新建</a>
+                </div>
+            </div>
+            {% if regions %}
+            <div class="settings-card-body" id="regionBody">
+                <input type="text" id="regionSearch" placeholder="搜索大区..." class="card-search">
+                <table class="card-table" id="regionTable">
+                    <thead>
+                        <tr>
+                            <th><input type="checkbox" id="regionSelectAll" onclick="toggleRegionCheckboxes(this.checked)"></th>
+                            <th>名称</th>
+                            <th>片区数</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="regionTableBody">
+                        {% for r in regions %}
+                        <tr class="region-row" data-name="{{ r.name }}" data-id="{{ r.id }}">
+                            <td><input type="checkbox" class="region-checkbox" data-id="{{ r.id }}" onclick="event.stopPropagation()"></td>
+                            <td><strong>{{ r.name }}</strong></td>
+                            <td>{{ region_patch_counts|dict_lookup:r.id|default:"0" }}</td>
+                            <td class="actions-cell">
+                                <a href="{% url 'core:region_edit' r.id %}" class="btn btn-sm btn-secondary" target="_blank">编辑</a>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                <div class="batch-actions" id="regionBatchActions" style="display:none;">
+                    <button type="button" class="btn btn-sm btn-danger" onclick="batchDeleteRegions()">批量删除 (<span id="regionSelectedCount">0</span>)</button>
+                </div>
+            </div>
+            {% else %}
+            <div class="card-empty">
+                <p>暂无大区</p>
+                <a href="{% url 'core:region_new' %}" class="btn btn-sm btn-primary" target="_blank">创建</a>
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- 水管管理 -->
+        <div class="settings-card">
+            <div class="settings-card-header" onclick="toggleCardBody(this, 'pipelineBody', 'pipelineIndicator')">
+                <h2><span class="collapse-indicator" id="pipelineIndicator">▼</span> 水管管理</h2>
+                <div class="header-actions" onclick="event.stopPropagation()">
+                    <a href="{% url 'core:pipeline_new' %}" class="btn btn-sm btn-primary" target="_blank">+ 新建</a>
+                </div>
+            </div>
+            {% if pipelines %}
+            <div class="settings-card-body" id="pipelineBody">
+                <table class="card-table" id="pipelineTable">
+                    <thead>
+                        <tr>
+                            <th><input type="checkbox" id="pipelineSelectAll" onclick="togglePipelineCheckboxes(this.checked)"></th>
+                            <th>编号</th>
+                            <th>名称</th>
+                            <th>类型</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for pipeline in pipelines %}
+                        <tr class="pipeline-row" data-id="{{ pipeline.id }}">
+                            <td><input type="checkbox" class="pipeline-checkbox" data-id="{{ pipeline.id }}" onclick="event.stopPropagation()"></td>
+                            <td><code class="zone-code-cell">{{ pipeline.code }}</code></td>
+                            <td><strong>{{ pipeline.name }}</strong></td>
+                            <td>
+                                <span class="type-badge" style="background: {{ pipeline.line_color }}20; color: {{ pipeline.line_color }};">
+                                    {{ pipeline.get_pipeline_type_display }}
+                                </span>
+                            </td>
+                            <td class="actions-cell">
+                                <a href="{% url 'core:pipeline_edit' pipeline.id %}" class="btn btn-sm btn-secondary" target="_blank">编辑</a>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                <div class="batch-actions" id="pipelineBatchActions" style="display:none;">
+                    <button type="button" class="btn btn-sm btn-danger" onclick="batchDeletePipelines()">批量删除 (<span id="pipelineSelectedCount">0</span>)</button>
+                </div>
+            </div>
+            {% else %}
+            <div class="card-empty">
+                <p>暂无水管</p>
+                <a href="{% url 'core:pipeline_new' %}" class="btn btn-sm btn-primary" target="_blank">创建</a>
+            </div>
+            {% endif %}
         </div>
     </div>
 

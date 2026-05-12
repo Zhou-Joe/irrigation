@@ -6,6 +6,7 @@ from django.contrib.auth.decorators import login_required
 from django.db.models import Count, Q, Avg, Sum
 from django.views.decorators.http import require_POST
 from django.http import JsonResponse
+from django.urls import reverse
 from django.utils import timezone
 from core.models import Zone
 
@@ -63,6 +64,49 @@ def auto_close_boundary_points(boundary_data):
     return result
 
 
+def _wants_json(request):
+    """Return JSON for async form saves while preserving normal HTML fallback."""
+    return (
+        request.headers.get('x-requested-with') == 'XMLHttpRequest'
+        or 'application/json' in request.headers.get('accept', '')
+    )
+
+
+def _parse_float(val):
+    if not val:
+        return None
+    try:
+        return float(val)
+    except (ValueError, TypeError):
+        return None
+
+
+def _get_zone_dropdown_options():
+    """Get distinct values from DB for zone dropdown fields."""
+    from .models import Zone
+    opts = {}
+    for field in ['plant_type', 'sprinkler_type', 'soil_moisture', 'terrain_feature']:
+        vals = Zone.objects.exclude(**{field: ''}).exclude(**{field: None}) \
+                   .values_list(field, flat=True).distinct().order_by(field)
+        opts[field] = list(vals)
+    return opts
+
+
+def _zone_save_response(request, zone, message, created=False):
+    if _wants_json(request):
+        return JsonResponse({
+            'success': True,
+            'message': message,
+            'created': created,
+            'zone_id': zone.id,
+            'zone_name': zone.name,
+            'edit_url': reverse('core:zone_edit', args=[zone.id]),
+        })
+
+    messages.success(request, message)
+    return redirect('core:zone_edit', zone_id=zone.id)
+
+
 def _build_grouped_zones(zones_qs=None, group_by='patch'):
     """Build grouped structure for template rendering.
 
@@ -85,17 +129,31 @@ def _build_grouped_zones(zones_qs=None, group_by='patch'):
             'patch_id': z.patch_id,
             'patch_name': z.patch.name if z.patch else None,
             'patch_code': z.patch.code if z.patch else None,
-            'patch_type': z.patch.type if z.patch else None,
-            'patch_type_display': z.patch.get_type_display() if z.patch else None,
             'boundary_points': z.boundary_points,
             'boundary_color': z.boundary_color,
             'priority': z.priority,
             'priority_display': z.get_priority_display(),
+            'current_status': z.current_status,
+            'sprinkler_type': z.sprinkler_type,
+            'irrigation_intensity': z.irrigation_intensity,
+            'solenoid_valve_size': z.solenoid_valve_size,
+            'landscape_coefficient': z.landscape_coefficient,
+            'plant_type': z.plant_type,
+            'irrigation_foreman': z.irrigation_foreman,
+            'greenery_zone': z.greenery_zone,
+            'greenery_foreman': z.greenery_foreman,
+            'pest_control_zone': z.pest_control_zone,
+            'pest_control_foreman': z.pest_control_foreman,
+            'terrain_feature': z.terrain_feature,
+            'plant_feature': z.plant_feature,
+            'soil_moisture': z.soil_moisture,
+            'equipment_maintenance_notes': z.equipment_maintenance_notes,
+            'irrigation_management_notes': z.irrigation_management_notes,
             'plant_names': list(z.plants.values_list('name', flat=True)),
         })
 
     if group_by == 'priority':
-        priority_order = {'high': 0, 'medium': 1, 'low': 2}
+        priority_order = {'critical': 0, 'high': 1, 'medium': 2, 'low': 3, 'abolished': 4}
         groups = {}
         for z in zones_data:
             p = z['priority']
@@ -125,18 +183,15 @@ def _build_grouped_zones(zones_qs=None, group_by='patch'):
     grouped = []
     for patch_id, zones in sorted(groups.items()):
         grouped.append({
-            'type': zones[0]['patch_type'],
             'id': patch_id,
             'name': zones[0]['patch_name'],
             'code': zones[0]['patch_code'],
-            'type_display': zones[0]['patch_type_display'],
             'zones': zones,
             'zone_count': len(zones),
         })
 
     if orphans:
         grouped.append({
-            'type': 'orphan',
             'name': '未分配片区',
             'zones': orphans,
             'zone_count': len(orphans),
@@ -541,14 +596,36 @@ def dashboard(request):
             'patch_id': zone.patch.id if zone.patch else None,
             'patch_name': zone.patch.name if zone.patch else None,
             'patch_code': zone.patch.code if zone.patch else None,
-            'patch_type': zone.patch.type if zone.patch else None,
-            'patch_type_display': zone.patch.get_type_display() if zone.patch else None,
             # Region info
             'region_id': zone.patch.region_id if zone.patch and zone.patch.region else None,
             'region_name': zone.patch.region.name if zone.patch and zone.patch.region else None,
             # Priority
             'priority': zone.priority,
             'priority_display': zone.get_priority_display(),
+            # Zone attributes from Excel
+            'current_status': zone.current_status,
+            'sprinkler_type': zone.sprinkler_type,
+            'irrigation_intensity': zone.irrigation_intensity,
+            'solenoid_valve_size': zone.solenoid_valve_size,
+            'landscape_coefficient': zone.landscape_coefficient,
+            'plant_type': zone.plant_type,
+            'irrigation_foreman': zone.irrigation_foreman,
+            'greenery_zone': zone.greenery_zone,
+            'greenery_foreman': zone.greenery_foreman,
+            'pest_control_zone': zone.pest_control_zone,
+            'pest_control_foreman': zone.pest_control_foreman,
+            'terrain_feature': zone.terrain_feature,
+            'plant_feature': zone.plant_feature,
+            'soil_moisture': zone.soil_moisture,
+            'equipment_maintenance_notes': zone.equipment_maintenance_notes,
+            'irrigation_management_notes': zone.irrigation_management_notes,
+            # Label settings
+            'label_lat': zone.label_lat,
+            'label_lng': zone.label_lng,
+            'label_scale': zone.label_scale,
+            'label_angle': zone.label_angle,
+            'area_sqm': zone.area_sqm,
+            'area_display': zone.area_display,
             # Detailed info for cards
             'maintenance_count': maintenance_count,
             'water_count': water_count,
@@ -599,7 +676,7 @@ def dashboard(request):
     for region in regions:
         region_patches = []
         region_zone_count = 0
-        for patch in region.patches.filter(type=Patch.TYPE_SITE).order_by('code'):
+        for patch in region.patches.order_by('code'):
             pzones = patch_groups.pop(patch.id, None)
             if pzones:
                 region_patches.append({
@@ -753,8 +830,7 @@ def settings_page(request):
     zones = Zone.objects.all().order_by('code')
     pipelines = Pipeline.objects.all().order_by('code')
     regions = Region.objects.filter(active=True).order_by('order', 'name')
-    # Only show site-type patches as 片区 in the UI
-    site_patches = Patch.objects.filter(type=Patch.TYPE_SITE).order_by('code')
+    site_patches = Patch.objects.order_by('code')
 
     # Precompute zone counts per patch (FK + derived from code prefix)
     grouped_zones_data = _build_grouped_zones(zones)
@@ -773,7 +849,7 @@ def settings_page(request):
     # Precompute patch counts per region
     region_patch_counts = {}
     for r in regions:
-        region_patch_counts[r.id] = r.patches.filter(type=Patch.TYPE_SITE).count()
+        region_patch_counts[r.id] = r.patches.count()
 
     all_plant_names = list(Plant.objects.values_list('name', flat=True).distinct().order_by('name'))
 
@@ -800,14 +876,14 @@ def _get_patches_by_region():
     from .models import Region, Patch
     result = []
     for region in Region.objects.filter(active=True).order_by('order', 'name'):
-        patches = Patch.objects.filter(region=region, type=Patch.TYPE_SITE).order_by('code')
+        patches = Patch.objects.filter(region=region).order_by('code')
         if patches.exists():
             result.append({
                 'region': region,
                 'patches': patches,
             })
     # Include unassigned patches
-    unassigned = Patch.objects.filter(region__isnull=True, type=Patch.TYPE_SITE).order_by('code')
+    unassigned = Patch.objects.filter(region__isnull=True).order_by('code')
     if unassigned.exists():
         result.append({
             'region': None,
@@ -833,6 +909,8 @@ def zone_edit(request, zone_id):
             pass
 
     if not is_admin:
+        if _wants_json(request):
+            return JsonResponse({'success': False, 'message': '无权限修改区域'}, status=403)
         messages.error(request, '无权限修改区域')
         return redirect('core:dashboard')
 
@@ -844,6 +922,32 @@ def zone_edit(request, zone_id):
         zone.description = request.POST.get('description', zone.description)
         zone.boundary_color = request.POST.get('boundary_color', zone.boundary_color)
         zone.priority = request.POST.get('priority', zone.priority)
+
+        # Irrigation attributes
+        zone.current_status = request.POST.get('current_status', '')
+        zone.sprinkler_type = request.POST.get('sprinkler_type', '')
+        zone.irrigation_intensity = _parse_float(request.POST.get('irrigation_intensity'))
+        zone.solenoid_valve_size = _parse_float(request.POST.get('solenoid_valve_size'))
+        zone.landscape_coefficient = _parse_float(request.POST.get('landscape_coefficient'))
+        zone.plant_type = request.POST.get('plant_type', '')
+        zone.soil_moisture = request.POST.get('soil_moisture', '')
+        zone.terrain_feature = request.POST.get('terrain_feature', '')
+        zone.plant_feature = request.POST.get('plant_feature', '')
+        zone.irrigation_foreman = request.POST.get('irrigation_foreman', '')
+        zone.greenery_zone = request.POST.get('greenery_zone', '')
+        zone.greenery_foreman = request.POST.get('greenery_foreman', '')
+        zone.pest_control_zone = request.POST.get('pest_control_zone', '')
+        zone.pest_control_foreman = request.POST.get('pest_control_foreman', '')
+        zone.equipment_maintenance_notes = request.POST.get('equipment_maintenance_notes', '')
+        zone.irrigation_management_notes = request.POST.get('irrigation_management_notes', '')
+
+        # Label settings
+        label_lat = request.POST.get('label_lat', '')
+        label_lng = request.POST.get('label_lng', '')
+        zone.label_lat = float(label_lat) if label_lat else None
+        zone.label_lng = float(label_lng) if label_lng else None
+        zone.label_scale = float(request.POST.get('label_scale', 1.0) or 1.0)
+        zone.label_angle = int(request.POST.get('label_angle', 0) or 0)
 
         # Handle patch selection
         patch_id = request.POST.get('patch')
@@ -869,6 +973,8 @@ def zone_edit(request, zone_id):
             # Auto-close any incomplete polygons (points defined but not explicitly "completed")
             zone.boundary_points = auto_close_boundary_points(boundary_points)
         except json.JSONDecodeError:
+            if _wants_json(request):
+                return JsonResponse({'success': False, 'message': 'Invalid boundary points JSON format'}, status=400)
             messages.error(request, 'Invalid boundary points JSON format')
             return redirect('core:zone_edit', zone_id=zone.id)
 
@@ -913,8 +1019,7 @@ def zone_edit(request, zone_id):
             except json.JSONDecodeError:
                 pass
 
-        messages.success(request, f'Zone "{zone.name}" updated successfully.')
-        return redirect('core:settings')
+        return _zone_save_response(request, zone, f'Zone "{zone.name}" updated successfully.')
 
     # Get available plants (distinct names from all plants)
     available_plants = list(Plant.objects.values_list('name', flat=True).distinct().order_by('name'))
@@ -935,6 +1040,7 @@ def zone_edit(request, zone_id):
         'patches': patches,
         'ref_zones_json': ref_zones_json,
         'ref_pipelines_json': ref_pipelines_json,
+        **_get_zone_dropdown_options(),
     }
 
     return render(request, 'core/zone_form.html', context)
@@ -957,6 +1063,8 @@ def zone_new(request):
             pass
 
     if not is_admin:
+        if _wants_json(request):
+            return JsonResponse({'success': False, 'message': '无权限创建区域'}, status=403)
         messages.error(request, '无权限创建区域')
         return redirect('core:dashboard')
 
@@ -967,7 +1075,31 @@ def zone_new(request):
             description=request.POST.get('description', ''),
             boundary_color=request.POST.get('boundary_color', '#52B788'),
             priority=request.POST.get('priority', Zone.PRIORITY_MEDIUM),
+            current_status=request.POST.get('current_status', ''),
+            sprinkler_type=request.POST.get('sprinkler_type', ''),
+            irrigation_intensity=_parse_float(request.POST.get('irrigation_intensity')),
+            solenoid_valve_size=_parse_float(request.POST.get('solenoid_valve_size')),
+            landscape_coefficient=_parse_float(request.POST.get('landscape_coefficient')),
+            plant_type=request.POST.get('plant_type', ''),
+            soil_moisture=request.POST.get('soil_moisture', ''),
+            terrain_feature=request.POST.get('terrain_feature', ''),
+            plant_feature=request.POST.get('plant_feature', ''),
+            irrigation_foreman=request.POST.get('irrigation_foreman', ''),
+            greenery_zone=request.POST.get('greenery_zone', ''),
+            greenery_foreman=request.POST.get('greenery_foreman', ''),
+            pest_control_zone=request.POST.get('pest_control_zone', ''),
+            pest_control_foreman=request.POST.get('pest_control_foreman', ''),
+            equipment_maintenance_notes=request.POST.get('equipment_maintenance_notes', ''),
+            irrigation_management_notes=request.POST.get('irrigation_management_notes', ''),
         )
+
+        # Label settings
+        label_lat = request.POST.get('label_lat', '')
+        label_lng = request.POST.get('label_lng', '')
+        zone.label_lat = float(label_lat) if label_lat else None
+        zone.label_lng = float(label_lng) if label_lng else None
+        zone.label_scale = float(request.POST.get('label_scale', 1.0) or 1.0)
+        zone.label_angle = int(request.POST.get('label_angle', 0) or 0)
 
         # Handle patch selection
         patch_id = request.POST.get('patch')
@@ -991,6 +1123,8 @@ def zone_new(request):
             # Auto-close any incomplete polygons (points defined but not explicitly "completed")
             zone.boundary_points = auto_close_boundary_points(boundary_points)
         except json.JSONDecodeError:
+            if _wants_json(request):
+                return JsonResponse({'success': False, 'message': 'Invalid boundary points JSON format'}, status=400)
             messages.error(request, 'Invalid boundary points JSON format')
             return render(request, 'core/zone_form.html', {
                 'zone': zone,
@@ -1039,8 +1173,7 @@ def zone_new(request):
             except json.JSONDecodeError:
                 pass
 
-        messages.success(request, f'Zone "{zone.name}" created successfully.')
-        return redirect('core:settings')
+        return _zone_save_response(request, zone, f'Zone "{zone.name}" created successfully.', created=True)
 
     # Get available plants
     available_plants = list(Plant.objects.values_list('name', flat=True).distinct().order_by('name'))
@@ -1057,6 +1190,7 @@ def zone_new(request):
         'patches': patches,
         'ref_zones_json': ref_zones_json,
         'ref_pipelines_json': ref_pipelines_json,
+        **_get_zone_dropdown_options(),
     }
 
     return render(request, 'core/zone_form.html', context)
@@ -1429,7 +1563,6 @@ def patch_new(request):
     if request.method == 'POST':
         name = request.POST.get('name', '').strip()
         code = request.POST.get('code', '').strip()
-        p_type = request.POST.get('type', Patch.TYPE_SITE)
         description = request.POST.get('description', '').strip()
         region_id = request.POST.get('region') or None
 
@@ -1446,7 +1579,7 @@ def patch_new(request):
             region = None
             if region_id:
                 region = Region.objects.filter(pk=region_id).first()
-            Patch.objects.create(name=name, code=code, type=Patch.TYPE_SITE, description=description, region=region)
+            Patch.objects.create(name=name, code=code, description=description, region=region)
             messages.success(request, f'片区 "{name}" 创建成功')
             return redirect('core:settings')
 
@@ -1532,8 +1665,8 @@ def patch_edit(request, patch_id):
             linked_ids = request.POST.getlist('linked_patches')
             # Clear parent for children that were linked but are now unchecked
             Patch.objects.filter(parent=patch).exclude(
-                type=Patch.TYPE_STATION
-            ).exclude(id__in=linked_ids).update(parent=None)
+                id__in=linked_ids
+            ).update(parent=None)
             # Set parent for newly checked patches
             Patch.objects.filter(id__in=linked_ids).update(parent=patch)
 
@@ -1559,21 +1692,13 @@ def patch_edit(request, patch_id):
             if z['patch_id'] == patch.id:
                 selected_zone_ids.add(z['id'])
 
-    # Linked patches (children via parent FK), grouped by type
+    # Linked patches (children via parent FK)
     linked_patch_ids = set(patch.children.values_list('id', flat=True))
-    linkable = Patch.objects.exclude(type__in=[Patch.TYPE_SITE, Patch.TYPE_PATCH]).order_by('type', 'code')
-    linked_groups = []
-    for ptype, plabel in Patch.TYPE_CHOICES:
-        if ptype == Patch.TYPE_SITE:
-            continue
-        items = linkable.filter(type=ptype)
-        if items.exists():
-            linked_groups.append({
-                'type': ptype,
-                'label': plabel,
-                'patches': items,
-                'is_sync_managed': ptype == Patch.TYPE_STATION,
-            })
+    linkable = Patch.objects.exclude(id=patch.id).order_by('code')
+    linked_groups = [{
+        'label': '关联片区',
+        'patches': linkable,
+    }] if linkable.exists() else []
 
     from .models import Region
     return render(request, 'core/patch_form.html', {
@@ -2486,28 +2611,28 @@ def maxicom_dashboard_api(request):
 
     # System overview stats
     stats = {
-        'sites': Patch.objects.filter(type=Patch.TYPE_SITE).count(),
+        'sites': Patch.objects.count(),
         'controllers': MaxicomController.objects.count(),
-        'stations': Patch.objects.filter(type=Patch.TYPE_STATION).count(),
+        'stations': Patch.objects.filter(parent__isnull=False).count(),
         'schedules': MaxicomSchedule.objects.count(),
         'flow_zones': MaxicomFlowZone.objects.count(),
         'weather_stations': MaxicomWeatherStation.objects.count(),
         'weather_logs': MaxicomWeatherLog.objects.count(),
         'events': MaxicomEvent.objects.count(),
-        'locked_stations': Patch.objects.filter(type=Patch.TYPE_STATION, lockout=True).count(),
+        'locked_stations': Patch.objects.filter(parent__isnull=False, lockout=True).count(),
     }
 
     # Site hierarchy: sites with controller/station counts and station details
     sites = []
-    for site in Patch.objects.filter(type=Patch.TYPE_SITE).all():
+    for site in Patch.objects.filter(parent__isnull=True).all():
         ctrl_count = site.controllers.count()
-        stn_count = site.children.filter(type=Patch.TYPE_STATION).count()
+        stn_count = site.children.count()
         sched_count = site.schedules.count()
         fz_count = site.flow_zones.count()
 
         # Station details for hierarchy table
         station_list = []
-        for stn in site.children.filter(type=Patch.TYPE_STATION).all():
+        for stn in site.children.all():
             station_list.append({
                 'id': stn.id,
                 'name': stn.name or f'点位 {stn.controller_channel}',
@@ -2585,9 +2710,9 @@ def maxicom_dashboard_api(request):
 
     # Station status breakdown
     station_status = {
-        'total': Patch.objects.filter(type=Patch.TYPE_STATION).count(),
-        'locked': Patch.objects.filter(type=Patch.TYPE_STATION, lockout=True).count(),
-        'active': Patch.objects.filter(type=Patch.TYPE_STATION, lockout=False).count(),
+        'total': Patch.objects.filter(parent__isnull=False).count(),
+        'locked': Patch.objects.filter(parent__isnull=False, lockout=True).count(),
+        'active': Patch.objects.filter(parent__isnull=False, lockout=False).count(),
     }
 
     # Top sites by station count
@@ -3557,7 +3682,7 @@ def work_reports_list(request):
         qs = qs.filter(is_difficult=True)
 
     reports = qs[:200]
-    locations = Patch.objects.filter(type=Patch.TYPE_LOCATION, active=True).order_by('order')
+    locations = Patch.objects.filter(active=True).order_by('order')
     work_categories = WorkCategory.objects.filter(active=True).order_by('order')
     workers = Worker.objects.all().order_by('full_name') if admin else []
 
@@ -3654,7 +3779,7 @@ def work_report_create(request):
             return redirect('core:work_report_create')
         return redirect('core:work_reports')
 
-    locations = Patch.objects.filter(type=Patch.TYPE_LOCATION, active=True).order_by('order')
+    locations = Patch.objects.filter(active=True).order_by('order')
     work_categories = WorkCategory.objects.filter(active=True).order_by('order')
     info_sources = InfoSource.objects.filter(active=True).order_by('order')
     fault_categories = FaultCategory.objects.filter(active=True).prefetch_related(
@@ -3744,7 +3869,7 @@ def work_report_edit(request, report_id):
         return redirect('core:work_reports')
 
     # GET — pre-populate form
-    locations = Patch.objects.filter(type=Patch.TYPE_LOCATION, active=True).order_by('order')
+    locations = Patch.objects.filter(active=True).order_by('order')
     work_categories = WorkCategory.objects.filter(active=True).order_by('order')
     info_sources = InfoSource.objects.filter(active=True).order_by('order')
     fault_categories = FaultCategory.objects.filter(active=True).prefetch_related(

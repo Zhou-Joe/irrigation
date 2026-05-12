@@ -39,28 +39,13 @@ class Region(models.Model):
 
 
 class Patch(models.Model):
-    """Unified location/area hierarchy. 片区, Maxicom站点, Maxicom灌溉站, 位置/CCU, 需求区域 all live here."""
-
-    TYPE_PATCH = 'patch'
-    TYPE_SITE = 'site'
-    TYPE_STATION = 'station'
-    TYPE_LOCATION = 'location'
-    TYPE_ZONE_TEXT = 'zone_text'
-
-    TYPE_CHOICES = [
-        (TYPE_PATCH, '片区'),
-        (TYPE_SITE, 'Maxicom站点'),
-        (TYPE_STATION, 'Maxicom灌溉站'),
-        (TYPE_LOCATION, '位置/CCU'),
-        (TYPE_ZONE_TEXT, '需求区域'),
-    ]
+    """Unified location/area hierarchy. 片区, 灌溉站, 位置/CCU, 需求区域 all live here."""
 
     region = models.ForeignKey('Region', on_delete=models.SET_NULL, null=True, blank=True, related_name='patches', verbose_name='所属大区')
     parent = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True, related_name='children', verbose_name='上级')
-    name = models.CharField(max_length=255, unique=True)
+    name = models.CharField(max_length=255)
     code = models.CharField(max_length=50, unique=True)
     description = models.TextField('描述', blank=True)
-    type = models.CharField(max_length=20, choices=TYPE_CHOICES, default=TYPE_PATCH)
     order = models.PositiveIntegerField('排序', default=0)
     active = models.BooleanField('启用', default=True)
 
@@ -96,15 +81,14 @@ class Patch(models.Model):
     class Meta:
         verbose_name = '区域'
         verbose_name_plural = '区域'
-        ordering = ['type', 'code']
+        ordering = ['code']
 
     @property
     def zones(self):
         return Zone.objects.filter(patch=self)
 
     def __str__(self):
-        type_label = self.get_type_display()
-        return f"[{type_label}] {self.name} ({self.code})"
+        return f"{self.name} ({self.code})"
 
 
 class Zone(models.Model):
@@ -125,25 +109,106 @@ class Zone(models.Model):
         (STATUS_DELAYED, '已延期'),
     ]
 
+    PRIORITY_CRITICAL = 'critical'
     PRIORITY_HIGH = 'high'
     PRIORITY_MEDIUM = 'medium'
     PRIORITY_LOW = 'low'
+    PRIORITY_ABOLISHED = 'abolished'
 
     PRIORITY_CHOICES = [
-        (PRIORITY_HIGH, '高'),
-        (PRIORITY_MEDIUM, '中'),
-        (PRIORITY_LOW, '低'),
+        (PRIORITY_CRITICAL, '超级重点'),
+        (PRIORITY_HIGH, '重点'),
+        (PRIORITY_MEDIUM, '一般'),
+        (PRIORITY_LOW, '次要'),
+        (PRIORITY_ABOLISHED, '废除'),
     ]
 
     patch = models.ForeignKey(Patch, on_delete=models.SET_NULL, null=True, blank=True, related_name='zones', verbose_name='所属片区')
-    name = models.CharField(max_length=255, unique=True)
+    name = models.CharField(max_length=255)
     code = models.CharField(max_length=50, unique=True)
     description = models.TextField(blank=True)
     boundary_points = models.JSONField(default=list)
     boundary_color = models.CharField(max_length=7, default='#52B788', help_text='边界颜色 (十六进制)')
     priority = models.CharField(max_length=10, choices=PRIORITY_CHOICES, default=PRIORITY_MEDIUM, verbose_name='优先级')
+    current_status = models.CharField(max_length=50, blank=True, default='', verbose_name='当前状态')
+    sprinkler_type = models.CharField(max_length=100, blank=True, default='', verbose_name='灌水器类型')
+    irrigation_intensity = models.FloatField(null=True, blank=True, verbose_name='灌溉强度(mm/h)')
+    solenoid_valve_size = models.FloatField(null=True, blank=True, verbose_name='电磁阀尺寸')
+    landscape_coefficient = models.FloatField(null=True, blank=True, verbose_name='景观系数')
+    plant_type = models.CharField(max_length=100, blank=True, default='', verbose_name='植物类型')
+    irrigation_foreman = models.CharField(max_length=100, blank=True, default='', verbose_name='灌溉领班')
+    greenery_zone = models.CharField(max_length=100, blank=True, default='', verbose_name='绿化分区')
+    greenery_foreman = models.CharField(max_length=100, blank=True, default='', verbose_name='绿化领班')
+    pest_control_zone = models.CharField(max_length=100, blank=True, default='', verbose_name='植保分区')
+    pest_control_foreman = models.CharField(max_length=100, blank=True, default='', verbose_name='植保领班')
+    terrain_feature = models.CharField(max_length=200, blank=True, default='', verbose_name='地形特点')
+    plant_feature = models.CharField(max_length=200, blank=True, default='', verbose_name='植物特点')
+    soil_moisture = models.CharField(max_length=50, blank=True, default='', verbose_name='土壤湿度')
+    equipment_maintenance_notes = models.TextField(blank=True, default='', verbose_name='灌溉设备维护记录')
+    irrigation_management_notes = models.TextField(blank=True, default='', verbose_name='灌溉管理记录')
+    label_lat = models.FloatField(null=True, blank=True, help_text='Custom label latitude override')
+    label_lng = models.FloatField(null=True, blank=True, help_text='Custom label longitude override')
+    label_scale = models.FloatField(default=1.0, help_text='Label font size multiplier')
+    label_angle = models.IntegerField(default=0, help_text='Label rotation in degrees')
+    area_sqm = models.FloatField(null=True, blank=True, help_text='Calculated area in square meters')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    def save(self, *args, **kwargs):
+        self._recalc_area()
+        super().save(*args, **kwargs)
+
+    def _recalc_area(self):
+        import math
+        pts = self.boundary_points
+        if not pts:
+            self.area_sqm = None
+            return
+
+        def to_latlng(p):
+            if isinstance(p, dict):
+                return p.get('lat', p.get('latitude', 0)), p.get('lng', p.get('longitude', 0))
+            if isinstance(p, (list, tuple)) and len(p) >= 2:
+                return p[0], p[1]
+            return 0, 0
+
+        # Normalize to list of point-lists (multi-polygon support)
+        first = pts[0]
+        if isinstance(first, list) and len(first) > 0 and (isinstance(first[0], (list, dict))):
+            rings = pts
+        elif isinstance(first, (dict, list)):
+            rings = [pts]
+        else:
+            self.area_sqm = None
+            return
+
+        total = 0.0
+        for ring in rings:
+            if len(ring) < 3:
+                continue
+            flat, flng = to_latlng(ring[0])
+            m_lat = 111320.0
+            m_lng = 111320.0 * math.cos(math.radians(flat))
+            area = 0.0
+            for i in range(len(ring)):
+                j = (i + 1) % len(ring)
+                pi_lat, pi_lng = to_latlng(ring[i])
+                qj_lat, qj_lng = to_latlng(ring[j])
+                xi = (pi_lng - flng) * m_lng
+                yi = (pi_lat - flat) * m_lat
+                xj = (qj_lng - flng) * m_lng
+                yj = (qj_lat - flat) * m_lat
+                area += xi * yj - xj * yi
+            total += abs(area) / 2.0
+        self.area_sqm = total if total > 0 else None
+
+    @property
+    def area_display(self):
+        if not self.area_sqm:
+            return '—'
+        if self.area_sqm < 10000:
+            return f'{self.area_sqm:,.0f} m²'
+        return f'{self.area_sqm / 10000:.2f} 公顷 ({self.area_sqm:,.0f} m²)'
 
     @property
     def status(self):

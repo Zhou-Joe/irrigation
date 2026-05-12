@@ -9,430 +9,191 @@
 <!-- Leaflet CSS -->
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <style>
-/* View Toggle */
-.view-toggle {
-    position: absolute;
-    top: var(--space-md);
-    left: 50%;
-    transform: translateX(-50%);
-    z-index: 1000;
-    display: flex;
-    background: var(--color-surface);
-    border-radius: var(--radius-lg);
-    box-shadow: var(--shadow-md);
-    overflow: hidden;
-}
-
-.view-toggle button {
-    padding: var(--space-sm) var(--space-lg);
-    border: none;
-    background: transparent;
-    color: var(--color-text-secondary);
-    font-weight: 500;
-    cursor: pointer;
-    transition: all var(--transition-fast);
-}
-
-.view-toggle button:hover {
-    background: var(--color-surface-dark);
-}
-
-.view-toggle button.active {
-    background: var(--color-primary);
-    color: white;
-}
-
-/* Maxicom Section */
-.maxicom-section {
-    display: none;
-    padding: var(--space-xl);
-    max-width: 1400px;
-    margin: 0 auto;
-}
-
-.maxicom-section.show {
-    display: block;
-}
-
-.maxicom-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: var(--space-xl);
-}
-
-.maxicom-header h1 {
-    font-family: var(--font-display);
-    font-size: 1.75rem;
-    color: var(--color-primary);
-}
-
-.maxicom-loading {
-    text-align: center;
-    padding: var(--space-xl);
-    color: var(--color-text-muted);
-}
-
-/* Weather cards */
-.weather-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-    gap: var(--space-md);
-}
-
-.weather-card {
-    background: var(--color-surface);
-    border-radius: var(--radius-lg);
-    padding: var(--space-lg);
-    box-shadow: var(--shadow-sm);
-    border-left: 4px solid var(--color-primary);
-}
-
-.weather-card .station-name {
-    font-weight: 600;
-    color: var(--color-text-primary);
-    margin-bottom: var(--space-sm);
-    font-size: 0.95rem;
-}
-
-.weather-card .weather-time {
-    font-size: 0.75rem;
-    color: var(--color-text-muted);
-    margin-bottom: var(--space-sm);
-}
-
-.weather-card .weather-details {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: var(--space-xs);
-}
-
-.weather-detail {
-    display: flex;
-    justify-content: space-between;
-    font-size: 0.8rem;
-}
-
-.weather-detail .label {
-    color: var(--color-text-secondary);
-}
-
-.weather-detail .value {
-    font-weight: 600;
-    color: var(--color-text-primary);
-}
-
-/* Event log */
-.event-list {
-    max-height: 300px;
-    overflow-y: auto;
-}
-
-.event-item {
-    display: flex;
-    gap: var(--space-md);
-    padding: var(--space-sm) var(--space-md);
-    border-bottom: 1px solid var(--color-surface-dark);
-    font-size: 0.8rem;
-}
-
-.event-item:hover {
-    background: var(--color-surface-dark);
-}
-
-.event-time {
-    color: var(--color-text-muted);
-    white-space: nowrap;
-    min-width: 120px;
-}
-
-.event-text {
-    color: var(--color-text-primary);
-    flex: 1;
-}
-
-.event-flag {
-    padding: 2px 6px;
-    border-radius: var(--radius-sm);
-    font-size: 0.7rem;
-    font-weight: 600;
-}
-
-.event-flag.warning {
-    background: rgba(204, 119, 34, 0.15);
-    color: #CC7722;
-}
-
-.event-flag.info {
-    background: rgba(64, 145, 108, 0.15);
-    color: #40916C;
-}
-
-.event-flag.error {
-    background: rgba(155, 34, 38, 0.15);
-    color: #9B2226;
-}
-
-/* ET Checkbook table */
-.et-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 0.85rem;
-}
-
-.et-table th, .et-table td {
-    padding: var(--space-sm) var(--space-md);
-    text-align: left;
-    border-bottom: 1px solid var(--color-surface-dark);
-}
-
-.et-table th {
-    font-weight: 600;
-    color: var(--color-text-secondary);
-    font-size: 0.75rem;
-    text-transform: uppercase;
-}
-
-.et-table tr:hover {
-    background: var(--color-surface-dark);
-}
-
-/* Dashboard View */
-.dashboard-view {
-    display: none;
-    padding: var(--space-xl);
-    max-width: 1400px;
-    margin: 0 auto;
-}
-
-.dashboard-view.show {
-    display: block;
-}
-
-.dashboard-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: var(--space-xl);
-}
-
-.dashboard-header h1 {
-    font-family: var(--font-display);
-    font-size: 1.75rem;
-    color: var(--color-primary);
-}
-
-/* Stats Grid */
-.stats-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: var(--space-lg);
-    margin-bottom: var(--space-xl);
-}
-
-.stat-card {
-    background: var(--color-surface);
-    border-radius: var(--radius-lg);
-    padding: var(--space-lg);
-    box-shadow: var(--shadow-sm);
-}
-
-.stat-card .stat-icon {
-    font-size: 2rem;
-    margin-bottom: var(--space-sm);
-}
-
-.stat-card .stat-value {
-    font-size: 2rem;
-    font-weight: 700;
-    color: var(--color-primary);
-}
-
-.stat-card .stat-label {
-    color: var(--color-text-muted);
-    font-size: 0.875rem;
-}
-
-/* Charts Section */
-.charts-section {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
-    gap: var(--space-xl);
-    margin-bottom: var(--space-xl);
-}
-
-.chart-card {
-    background: var(--color-surface);
-    border-radius: var(--radius-lg);
-    padding: var(--space-lg);
-    box-shadow: var(--shadow-sm);
-}
-
-.chart-card h3 {
-    font-size: 1rem;
-    color: var(--color-text-primary);
-    margin-bottom: var(--space-lg);
-    padding-bottom: var(--space-sm);
-    border-bottom: 1px solid var(--color-surface-dark);
-}
-
-.chart-container {
-    position: relative;
-    height: 250px;
-}
-
-/* Zone Status Table */
-.zone-table-section {
-    background: var(--color-surface);
-    border-radius: var(--radius-lg);
-    padding: var(--space-lg);
-    box-shadow: var(--shadow-sm);
-    margin-bottom: var(--space-xl);
-}
-
-.zone-table-section h3 {
-    font-size: 1rem;
-    color: var(--color-text-primary);
-    margin-bottom: var(--space-lg);
-    padding-bottom: var(--space-sm);
-    border-bottom: 1px solid var(--color-surface-dark);
-}
-
-.zone-table {
-    width: 100%;
-    border-collapse: collapse;
-}
-
-.zone-table th,
-.zone-table td {
-    padding: var(--space-sm) var(--space-md);
-    text-align: left;
-    border-bottom: 1px solid var(--color-surface-dark);
-}
-
-.zone-table th {
-    font-weight: 600;
-    color: var(--color-text-secondary);
-    font-size: 0.75rem;
-    text-transform: uppercase;
-}
-
-.zone-table td {
-    font-size: 0.875rem;
-    color: var(--color-text-primary);
-}
-
-.zone-table tr:hover {
-    background: var(--color-surface-dark);
-}
-
-/* Activity List */
-.activity-section {
-    background: var(--color-surface);
-    border-radius: var(--radius-lg);
-    padding: var(--space-lg);
-    box-shadow: var(--shadow-sm);
-}
-
-.activity-section h3 {
-    font-size: 1rem;
-    color: var(--color-text-primary);
-    margin-bottom: var(--space-lg);
-    padding-bottom: var(--space-sm);
-    border-bottom: 1px solid var(--color-surface-dark);
-}
-
-.activity-list {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-sm);
-}
-
-.activity-item {
-    display: flex;
-    align-items: center;
-    gap: var(--space-md);
-    padding: var(--space-sm);
-    border-radius: var(--radius-md);
-    transition: background var(--transition-fast);
-}
-
-.activity-item:hover {
-    background: var(--color-surface-dark);
-}
-
-.activity-icon {
-    width: 32px;
-    height: 32px;
-    border-radius: var(--radius-md);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 1rem;
-}
-
-.activity-icon.maintenance {
-    background: rgba(64, 145, 108, 0.15);
-}
-
-.activity-icon.water {
-    background: rgba(45, 106, 79, 0.15);
-}
-
-.activity-content {
-    flex: 1;
-}
-
-.activity-title {
-    font-size: 0.875rem;
-    color: var(--color-text-primary);
-}
-
-.activity-meta {
-    font-size: 0.75rem;
-    color: var(--color-text-muted);
-}
-
-.activity-status {
-    font-size: 0.75rem;
-    padding: 2px 8px;
-    border-radius: var(--radius-full);
-}
-
-/* Hide map container when dashboard view is active */
-.dashboard-container.hide {
-    display: none;
-}
-
-/* Adjust dashboard for top nav bar */
 .dashboard-container {
     height: calc(100vh - 52px) !important;
+    background:
+        radial-gradient(circle at 20% 12%, rgba(212, 165, 116, 0.16), transparent 26%),
+        linear-gradient(135deg, #f7f3eb 0%, #ebe5d8 100%);
 }
 
-.dashboard-view, .maxicom-section {
-    margin-top: 0;
+.sidebar {
+    width: 330px;
+    min-width: 330px;
+    background: rgba(245, 240, 232, 0.94);
+    border-right: 1px solid rgba(27, 67, 50, 0.14);
+    box-shadow: 10px 0 30px rgba(27, 67, 50, 0.12);
+    backdrop-filter: blur(14px);
 }
 
-.view-toggle {
-    top: 60px !important;
+.sidebar-header {
+    min-height: 92px;
+    padding: 18px 18px 16px;
+    background:
+        linear-gradient(135deg, rgba(8, 28, 21, 0.98), rgba(27, 67, 50, 0.96)),
+        var(--color-primary);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.12);
 }
 
-/* Compact zone list */
+.sidebar-header-content {
+    min-width: 0;
+}
+
+.sidebar-header h1 {
+    font-family: 'Noto Sans SC', var(--font-body);
+    font-size: 1.2rem;
+    letter-spacing: 0;
+}
+
+.sidebar-header .zone-count {
+    display: inline-flex;
+    align-items: center;
+    margin-top: 6px;
+    padding: 2px 9px;
+    border-radius: 999px;
+    background: rgba(212, 165, 116, 0.16);
+    color: #f2d3aa;
+    font-size: 0.76rem;
+}
+
+.sidebar-toggle {
+    width: 32px;
+    height: 32px;
+    border-color: rgba(255, 255, 255, 0.22);
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 8px;
+}
+
+.sidebar-body {
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0)),
+        var(--color-surface-alt);
+}
+
+.zone-search {
+    padding: 14px 14px 9px;
+}
+
+.zone-search-input {
+    width: 100%;
+    min-height: 42px;
+    padding: 10px 14px 10px 36px;
+    border: 1px solid rgba(27, 67, 50, 0.16);
+    border-radius: 10px;
+    font-size: 0.9rem;
+    background:
+        linear-gradient(90deg, transparent 0, transparent 30px, rgba(27, 67, 50, 0.08) 30px, rgba(27, 67, 50, 0.08) 31px, transparent 31px),
+        var(--color-surface);
+    color: var(--color-text-primary);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65);
+    transition: border-color var(--transition-fast), box-shadow var(--transition-fast), background var(--transition-fast);
+}
+
+.zone-search-input:focus {
+    outline: none;
+    border-color: rgba(45, 106, 79, 0.62);
+    box-shadow: 0 0 0 3px rgba(45, 106, 79, 0.14), inset 0 1px 0 rgba(255, 255, 255, 0.7);
+}
+
+.zone-search-input::placeholder {
+    color: #829185;
+}
+
+.priority-filter-bar {
+    align-items: center;
+    flex-direction: row;
+    gap: 8px;
+    padding: 9px 12px 10px;
+    border-bottom: 1px solid rgba(27, 67, 50, 0.08);
+}
+
+.priority-filter-label {
+    color: var(--color-text-secondary);
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0;
+}
+
+.priority-filter-chips {
+    min-width: 0;
+    flex: 1;
+    flex-wrap: nowrap;
+    gap: 4px;
+}
+
+.priority-chip {
+    flex: 1 1 0;
+    min-width: 0;
+    min-height: 26px;
+    padding: 4px 4px;
+    border-width: 1px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.58);
+    box-shadow: 0 1px 1px rgba(27, 67, 50, 0.04);
+    font-size: 0.68rem;
+    white-space: nowrap;
+}
+
+.filter-dropdown-wrap {
+    padding: 10px 14px 12px !important;
+    border-bottom: 1px solid rgba(27, 67, 50, 0.08);
+}
+
+.filter-dropdown-toggle {
+    min-height: 38px;
+    border-color: rgba(27, 67, 50, 0.16);
+    background: rgba(255, 255, 255, 0.54);
+    border-radius: 10px;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
+}
+
+.filter-dropdown-panel {
+    left: 14px;
+    right: 14px;
+    border: 1px solid rgba(27, 67, 50, 0.16);
+    border-radius: 10px;
+    margin-top: 5px;
+    overflow: hidden auto;
+    box-shadow: 0 14px 30px rgba(27, 67, 50, 0.14);
+}
+
+.zone-list {
+    padding: 12px 12px 16px;
+}
+
 .zone-item {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 6px 10px !important;
-    border-radius: 6px !important;
+    gap: 9px;
+    min-height: 36px;
+    padding: 7px 10px !important;
+    border: 1px solid rgba(27, 67, 50, 0.1);
+    border-radius: 8px !important;
+    background: rgba(255, 255, 255, 0.52);
+    box-shadow: none;
 }
+
+.zone-item:hover {
+    background: #fffaf1;
+    border-color: rgba(212, 165, 116, 0.72);
+    transform: translateX(2px);
+    box-shadow: 0 8px 16px rgba(27, 67, 50, 0.08);
+}
+
 .zone-item .zone-code {
-    font-size: 0.75rem;
-    padding: 1px 6px;
+    min-width: 46px;
+    text-align: center;
+    font-size: 0.72rem;
+    padding: 2px 7px;
+    border-radius: 999px;
+    background: rgba(27, 67, 50, 0.09);
+    color: var(--color-primary);
     flex-shrink: 0;
 }
+
 .zone-item .zone-name {
-    font-size: 0.85rem;
-    font-weight: 500;
+    font-family: 'Noto Sans SC', var(--font-body);
+    font-size: 0.84rem;
+    font-weight: 600;
     margin-bottom: 0 !important;
     white-space: nowrap;
     overflow: hidden;
@@ -441,45 +202,50 @@
 
 /* Patch group styling */
 .patch-group {
-    margin-bottom: 4px;
+    margin-bottom: 7px;
 }
 
 .patch-header {
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 8px 12px;
-    background: rgba(45,106,79,0.1);
-    border-radius: 8px;
+    min-height: 34px;
+    padding: 8px 10px;
+    background: rgba(45, 106, 79, 0.08);
+    border: 1px solid rgba(45, 106, 79, 0.1);
+    border-radius: 9px;
     cursor: pointer;
     user-select: none;
-    transition: background 0.2s;
+    transition: background 0.2s, border-color 0.2s, transform 0.2s;
 }
 
 .patch-header:hover {
-    background: rgba(45,106,79,0.2);
+    background: rgba(45, 106, 79, 0.14);
+    border-color: rgba(45, 106, 79, 0.24);
 }
 
-/* Region group styling */
 .region-group {
-    margin-bottom: 6px;
+    margin-bottom: 10px;
 }
 
 .region-header {
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 8px 10px;
-    background: var(--color-primary);
+    min-height: 38px;
+    padding: 9px 11px;
+    background: linear-gradient(135deg, var(--color-primary), var(--color-primary-light));
     color: var(--color-text-inverse);
-    border-radius: 8px;
+    border-radius: 10px;
     cursor: pointer;
     user-select: none;
-    transition: background 0.2s;
+    box-shadow: 0 8px 20px rgba(27, 67, 50, 0.16);
+    transition: transform 0.2s, box-shadow 0.2s;
 }
 
 .region-header:hover {
-    background: var(--color-primary-light);
+    transform: translateY(-1px);
+    box-shadow: 0 10px 22px rgba(27, 67, 50, 0.2);
 }
 
 .region-toggle {
@@ -493,19 +259,24 @@
 
 .region-name {
     font-size: 0.9rem;
-    font-weight: 600;
+    font-weight: 700;
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .region-count {
     font-size: 0.75rem;
-    color: rgba(245,240,232,0.7);
-    background: rgba(255,255,255,0.15);
+    color: rgba(245, 240, 232, 0.86);
+    background: rgba(255, 255, 255, 0.16);
     padding: 2px 8px;
-    border-radius: 10px;
+    border-radius: 999px;
 }
 
 .region-patches {
-    padding-left: 4px;
+    padding: 8px 0 0 8px;
     overflow: hidden;
     transition: max-height 0.3s ease;
 }
@@ -526,20 +297,25 @@
 
 .patch-name {
     font-size: 0.85rem;
-    font-weight: 600;
+    font-weight: 700;
     color: var(--color-primary);
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .patch-count {
     font-size: 0.75rem;
     color: var(--color-text-secondary);
-    background: var(--color-surface);
+    background: rgba(255, 255, 255, 0.72);
     padding: 2px 8px;
-    border-radius: 10px;
+    border-radius: 999px;
 }
 
 .patch-zones {
-    padding-left: 8px;
+    padding: 5px 0 0 8px;
     overflow: hidden;
     transition: max-height 0.3s ease;
 }
@@ -549,34 +325,103 @@
 }
 
 .patch-zones .zone-item {
-    margin: 2px 0;
-    padding-left: 16px !important;
+    margin: 3px 0;
 }
 
-/* Zone table patch group toggle */
-.zt-patch-row td { background: rgba(45,106,79,0.08); transition: background 0.15s; }
-.zt-patch-row:hover td { background: rgba(45,106,79,0.15); }
-.zt-arrow { display: inline-block; width: 16px; font-size: 0.75rem; color: var(--color-primary-light); transition: transform 0.2s; }
-.zt-patch-row:not(.collapsed) .zt-arrow { transform: rotate(90deg); }
+.map-container {
+    background:
+        linear-gradient(135deg, rgba(27, 67, 50, 0.08), rgba(212, 165, 116, 0.08)),
+        var(--color-surface);
+}
+
+.leaflet-top.leaflet-right {
+    top: 18px;
+    right: 18px;
+}
+
+.leaflet-top.leaflet-right .leaflet-control {
+    margin: 0;
+}
+
+.map-layer-panel {
+    top: 70px;
+    right: 18px;
+}
+
+.locate-btn,
+.map-layer-toggle-btn {
+    width: 42px;
+    height: 42px;
+    border: 1px solid rgba(27, 67, 50, 0.15);
+    border-radius: 12px;
+    background: rgba(245, 240, 232, 0.92);
+    box-shadow: 0 12px 26px rgba(27, 67, 50, 0.15);
+    backdrop-filter: blur(12px);
+    color: var(--color-primary);
+    font-size: 1.15rem;
+    font-weight: 700;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    transition: transform var(--transition-fast), border-color var(--transition-fast), background var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.locate-btn {
+    margin: 0 !important;
+    line-height: 1;
+}
+
+.locate-btn:hover,
+.map-layer-toggle-btn:hover {
+    transform: translateY(-1px);
+    border-color: rgba(212, 165, 116, 0.72);
+    background: rgba(255, 250, 241, 0.96);
+    box-shadow: 0 16px 30px rgba(27, 67, 50, 0.18);
+}
+
+.locate-btn:disabled {
+    cursor: wait;
+    opacity: 0.72;
+    transform: none;
+}
+
+.map-layer-body {
+    top: 50px;
+    min-width: 172px;
+    border: 1px solid rgba(27, 67, 50, 0.14);
+    border-radius: 12px;
+    background: rgba(245, 240, 232, 0.95);
+    box-shadow: 0 14px 32px rgba(27, 67, 50, 0.16);
+    backdrop-filter: blur(12px);
+}
+
+.sidebar-expand-btn {
+    min-height: 96px;
+    border-radius: 0 12px 12px 0;
+    box-shadow: 5px 0 18px rgba(27, 67, 50, 0.24);
+}
 
 /* Sync Agent Status Indicator */
 .sync-agent-status {
-    position: fixed;
+    position: absolute;
     bottom: 20px;
     right: 20px;
     z-index: 1001;
-    background: var(--color-surface);
-    border-radius: var(--radius-lg);
-    box-shadow: var(--shadow-md);
-    padding: 12px 16px;
+    background: rgba(245, 240, 232, 0.92);
+    border-radius: 12px;
+    box-shadow: 0 14px 32px rgba(27, 67, 50, 0.14);
+    padding: 11px 14px;
     display: flex;
     align-items: center;
     gap: 10px;
     font-size: 0.8rem;
     cursor: pointer;
     transition: all var(--transition-fast);
-    border: 1px solid var(--color-surface-dark);
+    border: 1px solid rgba(27, 67, 50, 0.14);
     max-width: 320px;
+    backdrop-filter: blur(12px);
 }
 
 .sync-agent-status:hover {
@@ -642,17 +487,18 @@
 
 /* Expanded status panel */
 .sync-status-panel {
-    position: fixed;
+    position: absolute;
     bottom: 60px;
     right: 20px;
     z-index: 1001;
-    background: var(--color-surface);
-    border-radius: var(--radius-lg);
-    box-shadow: var(--shadow-lg);
+    background: rgba(245, 240, 232, 0.96);
+    border-radius: 12px;
+    box-shadow: 0 18px 38px rgba(27, 67, 50, 0.18);
     padding: 16px;
     width: 300px;
     display: none;
-    border: 1px solid var(--color-surface-dark);
+    border: 1px solid rgba(27, 67, 50, 0.14);
+    backdrop-filter: blur(12px);
 }
 
 .sync-status-panel.show {
@@ -682,16 +528,17 @@
     color: var(--color-text-primary);
     font-weight: 500;
 }
+
+@media (max-width: 900px) {
+    .sidebar {
+        width: 300px;
+        min-width: 300px;
+    }
+}
 </style>
 {% endblock %}
 
 {% block content %}
-<!-- View Toggle -->
-<div class="view-toggle">
-    <button id="mapViewBtn" class="active" onclick="switchView('map')">🗺️ 地图视图</button>
-    <button id="dashboardViewBtn" onclick="switchView('dashboard')">📊 数据面板</button>
-</div>
-
 <!-- Map View Container -->
 <div class="dashboard-container" id="mapContainer">
     <!-- 侧边栏 -->
@@ -706,23 +553,25 @@
 
         <div class="sidebar-body">
         <!-- 搜索框 -->
-        <div class="zone-search" style="padding: 8px 12px;">
-            <input type="text" id="zoneSidebarSearch" placeholder="搜索区域名称或编号..." style="width: 100%; padding: 10px 14px; border: 2px solid var(--color-surface-dark); border-radius: 8px; font-size: 0.95em; background: var(--color-surface); color: var(--color-text-primary);">
+        <div class="zone-search">
+            <input type="text" class="zone-search-input" id="zoneSidebarSearch" placeholder="搜索区域名称或编号...">
         </div>
 
         <!-- 优先级筛选 -->
         <div class="priority-filter-bar">
             <span class="priority-filter-label">优先级</span>
             <div class="priority-filter-chips">
-                <button class="priority-chip active" data-priority="high" onclick="togglePriorityChip(this)"><span class="priority-dot priority-high"></span>高</button>
-                <button class="priority-chip active" data-priority="medium" onclick="togglePriorityChip(this)"><span class="priority-dot priority-medium"></span>中</button>
-                <button class="priority-chip active" data-priority="low" onclick="togglePriorityChip(this)"><span class="priority-dot priority-low"></span>低</button>
+                <button class="priority-chip active" data-priority="critical" onclick="togglePriorityChip(this)"><span class="priority-dot priority-critical"></span>超级</button>
+                <button class="priority-chip active" data-priority="high" onclick="togglePriorityChip(this)"><span class="priority-dot priority-high"></span>重点</button>
+                <button class="priority-chip active" data-priority="medium" onclick="togglePriorityChip(this)"><span class="priority-dot priority-medium"></span>一般</button>
+                <button class="priority-chip active" data-priority="low" onclick="togglePriorityChip(this)"><span class="priority-dot priority-low"></span>次要</button>
+                <button class="priority-chip active" data-priority="abolished" onclick="togglePriorityChip(this)"><span class="priority-dot priority-abolished"></span>废除</button>
             </div>
         </div>
 
         <!-- 植物筛选 -->
         {% if all_plant_names %}
-        <div class="filter-dropdown-wrap" style="padding: 4px 12px 8px;">
+        <div class="filter-dropdown-wrap">
             <button type="button" class="filter-dropdown-toggle" id="plantDropdownBtn" onclick="togglePlantDropdown()">
                 <span>植物筛选</span>
                 <span class="filter-dropdown-count" id="plantFilterCount">全部</span>
@@ -834,203 +683,29 @@
     <main class="map-container">
         <button class="sidebar-expand-btn" id="sidebarExpandBtn" onclick="toggleSidebar()" title="展开侧边栏">▶</button>
         <div id="map"></div>
+        <!-- 地图图层控制 -->
+        <div class="map-layer-panel" id="mapLayerPanel">
+            <button class="map-layer-toggle-btn" id="mapLayerToggleBtn" onclick="toggleLayerPanel()" title="图层控制">▦</button>
+            <div class="map-layer-body" id="mapLayerBody" style="display:none;">
+                <div class="map-layer-title">图层控制</div>
+                <label class="map-layer-item">
+                    <input type="checkbox" checked onchange="toggleLayer('zones', this.checked)">
+                    <span class="map-layer-checkmark"></span>
+                    <span>区域边界</span>
+                </label>
+                <label class="map-layer-item">
+                    <input type="checkbox" checked onchange="toggleLayer('labels', this.checked)">
+                    <span class="map-layer-checkmark"></span>
+                    <span>区域标签</span>
+                </label>
+                <label class="map-layer-item">
+                    <input type="checkbox" checked onchange="toggleLayer('pipelines', this.checked)">
+                    <span class="map-layer-checkmark"></span>
+                    <span>水管</span>
+                </label>
+            </div>
+        </div>
     </main>
-</div>
-
-<!-- Dashboard View -->
-<div class="dashboard-view" id="dashboardView">
-    <div class="dashboard-header">
-        <h1>📊 数据面板</h1>
-    </div>
-
-    <!-- Stats Grid -->
-    <div class="stats-grid">
-        <div class="stat-card">
-            <div class="stat-icon">🌿</div>
-            <div class="stat-value">{{ total_zones }}</div>
-            <div class="stat-label">灌溉区域</div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-icon">🌱</div>
-            <div class="stat-value">{{ total_plants }}</div>
-            <div class="stat-label">植物种类</div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-icon">✅</div>
-            <div class="stat-value">{{ status_distribution.completed }}</div>
-            <div class="stat-label">今日已完成</div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-icon">⏳</div>
-            <div class="stat-value">{{ status_distribution.in_progress }}</div>
-            <div class="stat-label">处理中</div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-icon">📋</div>
-            <div class="stat-value">{{ status_distribution.unarranged }}</div>
-            <div class="stat-label">未安排</div>
-        </div>
-    </div>
-
-    <!-- Charts Section -->
-    <div class="charts-section">
-        <div class="chart-card">
-            <h3>区域状态分布</h3>
-            <div class="chart-container">
-                <canvas id="statusChart"></canvas>
-            </div>
-        </div>
-        <div class="chart-card">
-            <h3>工单类型统计</h3>
-            <div class="chart-container">
-                <canvas id="requestTypeChart"></canvas>
-            </div>
-        </div>
-    </div>
-
-    <!-- Zone Status Table -->
-    <div class="zone-table-section">
-        <h3>区域状态列表</h3>
-        <table class="zone-table">
-            <thead>
-                <tr>
-                    <th>片区</th>
-                    <th>编号</th>
-                    <th>名称</th>
-                    <th>状态</th>
-                    <th>植物数</th>
-                    <th>维护记录</th>
-                    <th>浇水需求</th>
-                    <th>项目支持</th>
-                </tr>
-            </thead>
-            <tbody id="zoneTableBody">
-                <!-- Populated by JavaScript -->
-            </tbody>
-        </table>
-    </div>
-
-    <!-- Recent Activity -->
-    <div class="activity-section">
-        <h3>近期活动</h3>
-        <div class="activity-list" id="activityList">
-            {% for activity in recent_activity %}
-            <div class="activity-item">
-                <div class="activity-icon {{ activity.type }}">
-                    {% if activity.type == 'maintenance' %}🔧{% elif activity.type == 'water' %}💧{% endif %}
-                </div>
-                <div class="activity-content">
-                    <div class="activity-title">{{ activity.type_display }} - {{ activity.zone }}</div>
-                    <div class="activity-meta">{{ activity.date }}</div>
-                </div>
-                <span class="activity-status status-badge status-{{ activity.status|lower }}">{{ activity.status }}</span>
-            </div>
-            {% empty %}
-            <div style="color: var(--color-text-muted); text-align: center; padding: var(--space-lg);">
-                暂无近期活动
-            </div>
-            {% endfor %}
-        </div>
-    </div>
-
-    <!-- Maxicom Irrigation System Section -->
-    <div class="dashboard-header" style="margin-top: var(--space-xl);">
-        <h1>🌿 Maxicom 灌溉系统</h1>
-    </div>
-
-    <!-- Maxicom Stats -->
-    <div class="stats-grid">
-        <div class="stat-card">
-            <div class="stat-icon">🏢</div>
-            <div class="stat-value" id="mc-sites">-</div>
-            <div class="stat-label">灌溉站点</div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-icon">🎛️</div>
-            <div class="stat-value" id="mc-controllers">-</div>
-            <div class="stat-label">控制器</div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-icon">💧</div>
-            <div class="stat-value" id="mc-stations">-</div>
-            <div class="stat-label">灌溉站点位</div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-icon">📅</div>
-            <div class="stat-value" id="mc-schedules">-</div>
-            <div class="stat-label">灌溉计划</div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-icon">🔒</div>
-            <div class="stat-value" id="mc-locked">-</div>
-            <div class="stat-label">锁定站点</div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-icon">🌡️</div>
-            <div class="stat-value" id="mc-weather">-</div>
-            <div class="stat-label">气象记录</div>
-        </div>
-    </div>
-
-    <!-- Maxicom Charts -->
-    <div class="charts-section">
-        <div class="chart-card">
-            <h3>站点分布 (Top 10)</h3>
-            <div class="chart-container">
-                <canvas id="siteDistChart"></canvas>
-            </div>
-        </div>
-        <div class="chart-card">
-            <h3>ET 趋势 (近30天)</h3>
-            <div class="chart-container">
-                <canvas id="etTrendChart"></canvas>
-            </div>
-        </div>
-    </div>
-
-    <!-- Weather Summary -->
-    <div class="chart-card" style="margin-bottom: var(--space-xl);">
-        <h3>🌤️ 气象站最新数据</h3>
-        <div class="weather-grid" id="weatherGrid">
-            <div class="maxicom-loading">加载中...</div>
-        </div>
-    </div>
-
-    <!-- ET Checkbook -->
-    <div class="chart-card" style="margin-bottom: var(--space-xl);">
-        <h3>📒 ET 水账记录 (最新)</h3>
-        <table class="et-table">
-            <thead>
-                <tr>
-                    <th>站点</th>
-                    <th>时间</th>
-                    <th>土壤湿度</th>
-                    <th>降雨</th>
-                    <th>ET</th>
-                    <th>灌溉量</th>
-                </tr>
-            </thead>
-            <tbody id="etCheckbookBody">
-                <tr><td colspan="6" class="maxicom-loading">加载中...</td></tr>
-            </tbody>
-        </table>
-    </div>
-
-    <!-- Site-Station Hierarchy Table -->
-    <div class="chart-card" style="margin-bottom: var(--space-xl);">
-        <h3>🏗️ 灌溉站点 · 点位层级</h3>
-        <div id="siteHierarchyContainer">
-            <div class="maxicom-loading">加载中...</div>
-        </div>
-    </div>
-
-    <!-- Recent Events -->
-    <div class="chart-card" style="margin-bottom: var(--space-xl);">
-        <h3>📋 系统事件日志</h3>
-        <div class="event-list" id="eventList">
-            <div class="maxicom-loading">加载中...</div>
-        </div>
-    </div>
 </div>
 
 <!-- Sync Agent Status Indicator -->
@@ -1065,8 +740,6 @@
 {% block extra_js %}
 <!-- Leaflet JS -->
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<!-- Chart.js -->
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <!-- Map Config -->
 <script src="{% static 'js/map-config.js' %}?v=20260423"></script>
 <!-- Custom Map JS -->
@@ -1144,7 +817,7 @@ function applySidebarFilters() {
             });
 
             patchGroup.style.display = patchVisible ? '' : 'none';
-            const hasFilter = query || activePriorities.size < 3 || plantFilterTouched;
+            const hasFilter = query || activePriorities.size < 5 || plantFilterTouched;
             if (hasFilter && patchVisible) {
                 patchGroup.classList.remove('collapsed');
             }
@@ -1152,7 +825,7 @@ function applySidebarFilters() {
         });
 
         regionGroup.style.display = regionVisible ? '' : 'none';
-        const hasFilter = query || activePriorities.size < 3 || plantFilterTouched;
+        const hasFilter = query || activePriorities.size < 5 || plantFilterTouched;
         if (hasFilter && regionVisible) {
             regionGroup.classList.remove('collapsed');
         }
@@ -1198,7 +871,7 @@ function applySidebarFilters() {
 }
 
 // Priority filter - multi-select chips
-let activePriorities = new Set(['high', 'medium', 'low']);
+let activePriorities = new Set(['critical', 'high', 'medium', 'low', 'abolished']);
 
 function togglePriorityChip(btn) {
     btn.classList.toggle('active');
@@ -1210,6 +883,18 @@ function togglePriorityChip(btn) {
     }
     applySidebarFilters();
     applyMapFilters();
+}
+
+// Map layer visibility control
+function toggleLayerPanel() {
+    const body = document.getElementById('mapLayerBody');
+    body.style.display = body.style.display === 'none' ? '' : 'none';
+}
+
+function toggleLayer(layer, visible) {
+    if (typeof window.setLayerVisibility === 'function') {
+        window.setLayerVisibility(layer, visible);
+    }
 }
 
 // Plant filter - dropdown with checkboxes
@@ -1297,461 +982,6 @@ function toggleSidebar() {
     }
     // Invalidate map size after transition
     setTimeout(function() { if (map) map.invalidateSize(); }, 300);
-}
-
-// View switching
-function switchView(view) {
-    const mapContainer = document.getElementById('mapContainer');
-    const dashboardView = document.getElementById('dashboardView');
-    const mapBtn = document.getElementById('mapViewBtn');
-    const dashBtn = document.getElementById('dashboardViewBtn');
-
-    if (view === 'map') {
-        mapContainer.classList.remove('hide');
-        dashboardView.classList.remove('show');
-        mapBtn.classList.add('active');
-        dashBtn.classList.remove('active');
-    } else {
-        mapContainer.classList.add('hide');
-        dashboardView.classList.add('show');
-        mapBtn.classList.remove('active');
-        dashBtn.classList.add('active');
-        initDashboardView();
-    }
-}
-
-// Dashboard view initialization
-let statusChartInstance = null;
-let requestTypeChartInstance = null;
-
-function initDashboardView() {
-    initStatusChart();
-    initRequestTypeChart();
-    populateZoneTable();
-    initMaxicomView();
-}
-
-function initStatusChart() {
-    const ctx = document.getElementById('statusChart');
-    if (!ctx) return;
-
-    if (statusChartInstance) {
-        statusChartInstance.destroy();
-    }
-
-    const data = {{ status_distribution|safe }};
-
-    statusChartInstance = new Chart(ctx, {
-        type: 'doughnut',
-        data: {
-            labels: ['已完成', '处理中', '未安排', '已取消', '已延期'],
-            datasets: [{
-                data: [data.completed || 0, data.in_progress || 0, data.unarranged || 0, data.canceled || 0, data.delayed || 0],
-                backgroundColor: [
-                    '#40916C',
-                    '#CC7722',
-                    '#888888',
-                    '#9B2226',
-                    '#7B5544'
-                ],
-                borderWidth: 0
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                legend: {
-                    position: 'bottom'
-                }
-            }
-        }
-    });
-}
-
-function initRequestTypeChart() {
-    const ctx = document.getElementById('requestTypeChart');
-    if (!ctx) return;
-
-    if (requestTypeChartInstance) {
-        requestTypeChartInstance.destroy();
-    }
-
-    // Calculate totals from zonesData
-    let totalMaintenance = 0;
-    let totalWater = 0;
-    let totalProject = 0;
-
-    zonesData.forEach(zone => {
-        totalMaintenance += zone.maintenance_count || 0;
-        totalWater += zone.water_count || 0;
-        totalProject += zone.project_count || 0;
-    });
-
-    requestTypeChartInstance = new Chart(ctx, {
-        type: 'bar',
-        data: {
-            labels: ['维护维修', '浇水协调', '项目支持'],
-            datasets: [{
-                label: '记录数',
-                data: [totalMaintenance, totalWater, totalProject],
-                backgroundColor: [
-                    '#40916C',
-                    '#2D6A4F',
-                    '#52B788'
-                ],
-                borderRadius: 4
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                legend: {
-                    display: false
-                }
-            },
-            scales: {
-                y: {
-                    beginAtZero: true,
-                    ticks: {
-                        stepSize: 1
-                    }
-                }
-            }
-        }
-    });
-}
-
-function populateZoneTable() {
-    const tbody = document.getElementById('zoneTableBody');
-    if (!tbody || !zonesData.length) return;
-
-    // Group zones by patch
-    const groups = {};
-    const orphanZones = [];
-    zonesData.forEach(zone => {
-        const patchName = zone.patch_name || '';
-        if (patchName) {
-            if (!groups[patchName]) groups[patchName] = [];
-            groups[patchName].push(zone);
-        } else {
-            orphanZones.push(zone);
-        }
-    });
-
-    let html = '';
-    const sortedGroups = Object.entries(groups).sort((a, b) => a[0].localeCompare(b[0]));
-    let groupIdx = 0;
-    sortedGroups.forEach(([patchName, zones]) => {
-        const gid = 'pg-' + groupIdx++;
-        // Patch header row — collapsed by default
-        html += `<tr class="zt-patch-row collapsed" data-gid="${gid}" onclick="toggleZoneGroup('${gid}')">
-            <td colspan="8" style="padding: 8px 12px; cursor: pointer; user-select: none;">
-                <span class="zt-arrow">▸</span>
-                <strong style="color: var(--color-primary); font-size: 0.9rem;">${patchName}</strong>
-                <span style="font-size: 0.75rem; color: var(--color-text-secondary); background: var(--color-surface); padding: 2px 8px; border-radius: 10px; margin-left: 8px;">${zones.length}</span>
-            </td>
-        </tr>`;
-        zones.forEach(zone => {
-            html += `<tr class="zt-zone-row" data-gid="${gid}" style="display:none;">
-                <td style="color: var(--color-text-secondary); font-size: 0.85em;">${patchName}</td>
-                <td>${zone.code}</td>
-                <td>${zone.name}</td>
-                <td><span class="status-badge status-${zone.status}">${zone.statusDisplay}</span></td>
-                <td>${zone.plant_count || 0}</td>
-                <td>${zone.maintenance_count || 0}</td>
-                <td>${zone.water_count || 0}</td>
-                <td>${zone.project_count || 0}</td>
-            </tr>`;
-        });
-    });
-
-    if (orphanZones.length) {
-        const gid = 'pg-orphan';
-        html += `<tr class="zt-patch-row collapsed" data-gid="${gid}" onclick="toggleZoneGroup('${gid}')">
-            <td colspan="8" style="padding: 8px 12px; cursor: pointer; user-select: none;">
-                <span class="zt-arrow">▸</span>
-                <strong style="color: var(--color-text-secondary); font-size: 0.9rem;">未分配片区</strong>
-                <span style="font-size: 0.75rem; color: var(--color-text-secondary); background: var(--color-surface); padding: 2px 8px; border-radius: 10px; margin-left: 8px;">${orphanZones.length}</span>
-            </td>
-        </tr>`;
-        orphanZones.forEach(zone => {
-            html += `<tr class="zt-zone-row" data-gid="${gid}" style="display:none;">
-                <td style="color: var(--color-text-secondary); font-size: 0.85em;">—</td>
-                <td>${zone.code}</td>
-                <td>${zone.name}</td>
-                <td><span class="status-badge status-${zone.status}">${zone.statusDisplay}</span></td>
-                <td>${zone.plant_count || 0}</td>
-                <td>${zone.maintenance_count || 0}</td>
-                <td>${zone.water_count || 0}</td>
-                <td>${zone.project_count || 0}</td>
-            </tr>`;
-        });
-    }
-
-    tbody.innerHTML = html;
-}
-
-function toggleZoneGroup(gid) {
-    const header = document.querySelector(`.zt-patch-row[data-gid="${gid}"]`);
-    const rows = document.querySelectorAll(`.zt-zone-row[data-gid="${gid}"]`);
-    const collapsed = header.classList.toggle('collapsed');
-    rows.forEach(r => r.style.display = collapsed ? 'none' : '');
-    header.querySelector('.zt-arrow').textContent = collapsed ? '▸' : '▾';
-}
-
-// ========== Maxicom Dashboard ==========
-let maxicomData = null;
-let siteDistChartInstance = null;
-let etTrendChartInstance = null;
-
-async function initMaxicomView() {
-    if (maxicomData) {
-        renderMaxicom(maxicomData);
-        return;
-    }
-    try {
-        const resp = await fetch('/api/maxicom-dashboard');
-        if (!resp.ok) throw new Error('Failed to load');
-        maxicomData = await resp.json();
-        renderMaxicom(maxicomData);
-    } catch (e) {
-        document.getElementById('weatherGrid').innerHTML = '<div class="maxicom-loading">加载失败，请刷新重试</div>';
-    }
-}
-
-function renderMaxicom(data) {
-    // Stats
-    document.getElementById('mc-sites').textContent = data.stats.sites;
-    document.getElementById('mc-controllers').textContent = data.stats.controllers;
-    document.getElementById('mc-stations').textContent = data.stats.stations;
-    document.getElementById('mc-schedules').textContent = data.stats.schedules;
-    document.getElementById('mc-locked').textContent = data.stats.locked_stations;
-    document.getElementById('mc-weather').textContent = data.stats.weather_logs.toLocaleString();
-
-    // Site distribution chart
-    renderSiteDistChart(data.top_sites);
-
-    // ET trend chart
-    renderETTrendChart(data.et_trend);
-
-    // Weather cards
-    renderWeatherCards(data.weather_summary);
-
-    // ET Checkbook
-    renderETCheckbook(data.et_checkbook);
-
-    // Events
-    renderEvents(data.recent_events);
-
-    // Site-Station Hierarchy
-    renderSiteHierarchy(data.sites);
-}
-
-function renderSiteDistChart(topSites) {
-    const ctx = document.getElementById('siteDistChart');
-    if (!ctx) return;
-    if (siteDistChartInstance) siteDistChartInstance.destroy();
-
-    siteDistChartInstance = new Chart(ctx, {
-        type: 'bar',
-        data: {
-            labels: topSites.map(s => s.name || 'Site ' + s.mdb_index),
-            datasets: [{
-                label: '灌溉站点位',
-                data: topSites.map(s => s.station_count),
-                backgroundColor: '#40916C',
-                borderRadius: 4
-            }, {
-                label: '控制器',
-                data: topSites.map(s => s.controller_count),
-                backgroundColor: '#52B788',
-                borderRadius: 4
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            indexAxis: 'y',
-            plugins: { legend: { position: 'bottom' } },
-            scales: { x: { beginAtZero: true } }
-        }
-    });
-}
-
-function renderETTrendChart(etTrend) {
-    const ctx = document.getElementById('etTrendChart');
-    if (!ctx) return;
-    if (etTrendChartInstance) etTrendChartInstance.destroy();
-
-    etTrendChartInstance = new Chart(ctx, {
-        type: 'line',
-        data: {
-            labels: etTrend.map(e => e.date),
-            datasets: [{
-                label: '日均ET',
-                data: etTrend.map(e => e.avg_et),
-                borderColor: '#2D6A4F',
-                backgroundColor: 'rgba(45, 106, 79, 0.1)',
-                fill: true,
-                tension: 0.3,
-                pointRadius: 2
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: { legend: { display: false } },
-            scales: {
-                y: { beginAtZero: true, title: { display: true, text: 'ET (mm)' } }
-            }
-        }
-    });
-}
-
-function renderWeatherCards(summary) {
-    const grid = document.getElementById('weatherGrid');
-    if (!summary || summary.length === 0) {
-        grid.innerHTML = '<div class="maxicom-loading">暂无气象数据</div>';
-        return;
-    }
-    grid.innerHTML = summary.map(w => `
-        <div class="weather-card">
-            <div class="station-name">📍 ${w.station}</div>
-            <div class="weather-time">${formatTimestamp(w.timestamp)}</div>
-            <div class="weather-details">
-                <div class="weather-detail"><span class="label">温度</span><span class="value">${w.temperature != null ? w.temperature + '°C' : '-'}</span></div>
-                <div class="weather-detail"><span class="label">湿度</span><span class="value">${w.humidity != null ? w.humidity + '%' : '-'}</span></div>
-                <div class="weather-detail"><span class="label">降雨</span><span class="value">${w.rainfall != null ? w.rainfall + 'mm' : '-'}</span></div>
-                <div class="weather-detail"><span class="label">ET</span><span class="value">${w.et != null ? w.et + 'mm' : '-'}</span></div>
-                <div class="weather-detail"><span class="label">太阳辐射</span><span class="value">${w.solar_radiation != null ? w.solar_radiation : '-'}</span></div>
-                <div class="weather-detail"><span class="label">风速</span><span class="value">${w.wind_run != null ? w.wind_run : '-'}</span></div>
-            </div>
-        </div>
-    `).join('');
-}
-
-function renderETCheckbook(entries) {
-    const tbody = document.getElementById('etCheckbookBody');
-    if (!entries || entries.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="6" class="maxicom-loading">暂无ET水账数据</td></tr>';
-        return;
-    }
-    tbody.innerHTML = entries.map(e => `
-        <tr>
-            <td>${e.site}</td>
-            <td>${formatTimestamp(e.timestamp)}</td>
-            <td>${e.soil_moisture != null ? e.soil_moisture.toFixed(1) : '-'}</td>
-            <td>${e.rainfall != null ? e.rainfall.toFixed(1) : '-'}</td>
-            <td>${e.et != null ? e.et.toFixed(2) : '-'}</td>
-            <td>${e.irrigation != null ? e.irrigation.toFixed(1) : '-'}</td>
-        </tr>
-    `).join('');
-}
-
-function renderEvents(events) {
-    const list = document.getElementById('eventList');
-    if (!events || events.length === 0) {
-        list.innerHTML = '<div class="maxicom-loading">暂无事件记录</div>';
-        return;
-    }
-    list.innerHTML = events.map(ev => {
-        const flagClass = ev.flag === 'W' ? 'warning' : ev.flag === 'E' ? 'error' : 'info';
-        return `
-        <div class="event-item">
-            <span class="event-time">${formatTimestamp(ev.timestamp)}</span>
-            <span class="event-flag ${flagClass}">${ev.flag || 'I'}</span>
-            <span class="event-text">${ev.source} ${ev.text}</span>
-        </div>`;
-    }).join('');
-}
-
-function renderSiteHierarchy(sites) {
-    const container = document.getElementById('siteHierarchyContainer');
-    if (!sites || sites.length === 0) {
-        container.innerHTML = '<div class="maxicom-loading">暂无站点数据</div>';
-        return;
-    }
-
-    let html = '<table class="et-table" style="font-size: 0.8rem;">';
-    html += '<thead><tr>';
-    html += '<th style="width: 30px;"></th>';
-    html += '<th>站点 / 点位</th>';
-    html += '<th>控制器</th>';
-    html += '<th>通道</th>';
-    html += '<th>降水率</th>';
-    html += '<th>流量</th>';
-    html += '<th>周期(分)</th>';
-    html += '<th>浸泡(分)</th>';
-    html += '<th>状态</th>';
-    html += '</tr></thead><tbody>';
-
-    sites.forEach((site, idx) => {
-        const stationCount = site.stations ? site.stations.length : 0;
-        const hasStations = stationCount > 0;
-        const lockCount = site.stations ? site.stations.filter(s => s.lockout).length : 0;
-
-        // Site row (clickable to expand)
-        html += `<tr class="hierarchy-site-row" style="cursor: pointer; background: rgba(64,145,108,0.06);" onclick="toggleSiteStations('site-${idx}')">`;
-        html += `<td style="text-align: center;"><span id="arrow-site-${idx}" style="transition: transform 0.2s; display: inline-block;">▶</span></td>`;
-        html += `<td style="font-weight: 600; color: var(--color-primary);">🏢 ${site.name} <span style="font-weight: 400; color: var(--color-text-muted); font-size: 0.75rem;">(${stationCount} 点位${lockCount > 0 ? ', ' + lockCount + ' 锁定' : ''})</span></td>`;
-        html += `<td>${site.controller_count}</td>`;
-        html += `<td>-</td>`;
-        html += `<td>${site.et_current != null ? site.et_current : '-'}</td>`;
-        html += `<td>-</td>`;
-        html += `<td>-</td>`;
-        html += `<td>-</td>`;
-        html += `<td>${site.rain_shutdown ? '<span style="color: #9B2226;">🌧️ 雨停</span>' : '<span style="color: #40916C;">✓ 正常</span>'}</td>`;
-        html += '</tr>';
-
-        // Station rows (hidden by default)
-        if (hasStations) {
-            site.stations.forEach(stn => {
-                html += `<tr class="site-stations site-${idx}" style="display: none; background: rgba(0,0,0,0.02);">`;
-                html += '<td></td>';
-                html += `<td style="padding-left: 24px;">💧 ${stn.name}</td>`;
-                html += `<td>${stn.controller_name}</td>`;
-                html += `<td>${stn.controller_channel}</td>`;
-                html += `<td>${stn.precip_rate != null ? stn.precip_rate : '-'}</td>`;
-                html += `<td>${stn.flow_rate != null ? stn.flow_rate : '-'}</td>`;
-                html += `<td>${stn.cycle_time != null ? stn.cycle_time : '-'}</td>`;
-                html += `<td>${stn.soak_time != null ? stn.soak_time : '-'}</td>`;
-                html += `<td>${stn.lockout ? '<span style="color: #9B2226;">🔒 锁定</span>' : '<span style="color: #40916C;">✓ 活跃</span>'}</td>`;
-                html += '</tr>';
-            });
-        }
-    });
-
-    html += '</tbody></table>';
-    container.innerHTML = html;
-}
-
-function toggleSiteStations(siteId) {
-    const rows = document.querySelectorAll('.' + siteId);
-    const arrow = document.getElementById('arrow-' + siteId);
-    const isExpanded = rows.length > 0 && rows[0].style.display !== 'none';
-
-    rows.forEach(row => {
-        row.style.display = isExpanded ? 'none' : 'table-row';
-    });
-
-    if (arrow) {
-        arrow.style.transform = isExpanded ? 'rotate(0deg)' : 'rotate(90deg)';
-    }
-}
-
-function formatTimestamp(ts) {
-    if (!ts) return '-';
-    // Handle YYYYMMDDHHmmSS format
-    if (ts.length === 14 && /^\d+$/.test(ts)) {
-        return ts.slice(0,4) + '-' + ts.slice(4,6) + '-' + ts.slice(6,8) + ' ' + ts.slice(8,10) + ':' + ts.slice(10,12);
-    }
-    // Handle YYYYMMDD format
-    if (ts.length === 8 && /^\d+$/.test(ts)) {
-        return ts.slice(0,4) + '-' + ts.slice(4,6) + '-' + ts.slice(6,8);
-    }
-    return ts;
 }
 
 // ========== Sync Agent Status ==========

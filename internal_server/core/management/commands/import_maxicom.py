@@ -109,11 +109,11 @@ class Command(BaseCommand):
         MaxicomWeatherLog.objects.all().delete()
         MaxicomRuntime.objects.all().delete()
         MaxicomSchedule.objects.all().delete()
-        Patch.objects.filter(type=Patch.TYPE_STATION).delete()
+        Patch.objects.filter(parent__isnull=False).delete()
         MaxicomController.objects.all().delete()
         MaxicomFlowZone.objects.all().delete()
         MaxicomWeatherStation.objects.all().delete()
-        Patch.objects.filter(type=Patch.TYPE_SITE).delete()
+        Patch.objects.filter(mdb_index__isnull=False).delete()
 
     def _import_sites(self, conn):
         """Import SITE_CF -> Patch (type='site')"""
@@ -126,7 +126,6 @@ class Command(BaseCommand):
             if r.get('DateClose'):
                 continue
             site = Patch.objects.create(
-                type=Patch.TYPE_SITE,
                 mdb_index=idx,
                 name=(r.get('IndexName') or '').strip(),
                 code=f'site-{idx}',
@@ -229,7 +228,6 @@ class Command(BaseCommand):
             if idx in stn_map:
                 continue  # Skip duplicate mdb_index
             stn = Patch.objects.create(
-                type=Patch.TYPE_STATION,
                 parent=site,
                 site_number=site_idx,
                 mdb_index=idx,
