@@ -12,10 +12,13 @@
 {% endblock %}
 
 {% block content %}
-<div class="form-container">
-    <div class="form-header">
-        <h1>{% if zone %}编辑区域: {{ zone.name }}{% else %}新建区域{% endif %}</h1>
-        <a href="{% url 'core:settings' %}" class="btn btn-secondary">← 返回设置</a>
+<div class="form-container zone-editor-container">
+    <div class="form-header zone-editor-header">
+        <div>
+            <span class="form-eyebrow">区域设置</span>
+            <h1>{% if zone %}编辑区域: {{ zone.name }}{% else %}新建区域{% endif %}</h1>
+            <p class="form-header-note">先确认区域名称与归属，再调整边界、植物和设备。</p>
+        </div>
     </div>
 
     {% if messages %}
@@ -31,26 +34,19 @@
     <form method="post" class="zone-form" id="zoneForm">
         {% csrf_token %}
 
-        <div class="form-section">
-            <h2>基本信息</h2>
+        <div class="zone-floating-actions" aria-label="页面操作">
+            <a href="{% url 'core:settings' %}" class="btn btn-secondary">返回设置</a>
+            <button type="submit" class="btn btn-primary">
+                {% if zone %}保存修改{% else %}创建区域{% endif %}
+            </button>
+        </div>
 
-            <div class="form-row">
-                <div class="form-group">
-                    <label for="patch">所属片区</label>
-                    <div style="display: flex; gap: 10px; align-items: flex-end;">
-                        <select id="patch" name="patch" style="flex: 1; padding: 12px; border: 2px solid var(--color-surface-dark); border-radius: 8px;">
-                            <option value="">-- 不选择片区 --</option>
-                            {% for patch in patches %}
-                            <option value="{{ patch.id }}" {% if zone and zone.patch_id == patch.id %}selected{% endif %}>{{ patch.name }} ({{ patch.code }})</option>
-                            {% endfor %}
-                        </select>
-                        <div id="new_patch_input" style="display: none; flex: 1;">
-                            <input type="text" id="new_patch_name" placeholder="片区名称" style="width: 100%; padding: 12px; border: 2px solid var(--color-surface-dark); border-radius: 8px;">
-                        </div>
-                        <button type="button" id="new_patch_btn" class="btn btn-secondary btn-sm">+ 新片区</button>
-                        <button type="button" id="cancel_new_patch_btn" class="btn btn-secondary btn-sm" style="display: none;">取消</button>
-                    </div>
-                    <input type="hidden" id="new_patch_name_hidden" name="new_patch_name" value="">
+        <div class="form-section zone-form-section">
+            <div class="form-section-heading">
+                <span class="section-step">1</span>
+                <div>
+                    <h2>基本信息</h2>
+                    <p>区域的名称、编号、所属片区和优先级。</p>
                 </div>
             </div>
 
@@ -67,32 +63,85 @@
                 </div>
             </div>
 
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="patch">所属片区</label>
+                    <div class="patch-picker">
+                        <select id="patch" name="patch">
+                            <option value="">-- 不选择片区 --</option>
+                            {% for patch in patches %}
+                            <option value="{{ patch.id }}" {% if zone and zone.patch_id == patch.id %}selected{% endif %}>{{ patch.name }} ({{ patch.code }})</option>
+                            {% endfor %}
+                        </select>
+                        <div id="new_patch_input" class="new-patch-input" style="display: none;">
+                            <input type="text" id="new_patch_name" placeholder="片区名称">
+                        </div>
+                        <button type="button" id="new_patch_btn" class="btn btn-secondary btn-sm">+ 新片区</button>
+                        <button type="button" id="cancel_new_patch_btn" class="btn btn-secondary btn-sm" style="display: none;">取消</button>
+                    </div>
+                    <input type="hidden" id="new_patch_name_hidden" name="new_patch_name" value="">
+                </div>
+
+                <div class="form-group">
+                    <label for="priority">优先级</label>
+                    <select id="priority" name="priority">
+                        <option value="critical" {% if zone and zone.priority == 'critical' %}selected{% endif %}>超级重点</option>
+                        <option value="high" {% if zone and zone.priority == 'high' %}selected{% endif %}>重点</option>
+                        <option value="medium" {% if not zone or zone.priority == 'medium' %}selected{% endif %}>一般</option>
+                        <option value="low" {% if zone and zone.priority == 'low' %}selected{% endif %}>次要</option>
+                        <option value="abolished" {% if zone and zone.priority == 'abolished' %}selected{% endif %}>废除</option>
+                    </select>
+                </div>
+            </div>
+
             <div class="form-group full-width">
                 <label for="description">描述说明</label>
                 <textarea id="description" name="description" rows="3">{% if zone %}{{ zone.description }}{% endif %}</textarea>
             </div>
-
-            <div class="form-group">
-                <label for="priority">优先级</label>
-                <select id="priority" name="priority">
-                    <option value="high" {% if zone and zone.priority == 'high' %}selected{% endif %}>高</option>
-                    <option value="medium" {% if not zone or zone.priority == 'medium' %}selected{% endif %}>中</option>
-                    <option value="low" {% if zone and zone.priority == 'low' %}selected{% endif %}>低</option>
-                </select>
-            </div>
         </div>
 
-        <div class="form-section boundary-section">
-            <h2>边界范围</h2>
+        <div class="form-section zone-form-section boundary-section">
+            <div class="form-section-heading">
+                <span class="section-step">2</span>
+                <div>
+                    <h2>边界范围</h2>
+                    <p>绘制区域边界、设置颜色、面积和地图标签。</p>
+                </div>
+            </div>
             <p class="help-text">在地图上绘制区域边界。点击地图添加边界点，拖动已有节点调整位置，右键点击节点可删除。一个区域可以绘制多个独立的闭合区域。</p>
 
-            <div class="form-row">
-                <div class="form-group">
+            <div class="zone-map-settings">
+                <div class="form-group compact-field">
                     <label for="boundary_color">边界颜色</label>
                     <div class="color-picker-wrapper">
                         <input type="color" id="boundary_color" name="boundary_color" value="{% if zone %}{{ zone.boundary_color }}{% else %}#52B788{% endif %}">
                         <input type="text" id="boundary_color_text" value="{% if zone %}{{ zone.boundary_color }}{% else %}#52B788{% endif %}" pattern="^#[0-9A-Fa-f]{6}$" maxlength="7" class="color-text-input">
                     </div>
+                </div>
+
+                <div class="label-settings-panel">
+                    <div class="mini-panel-title">
+                        <strong>标签设置</strong>
+                        <span>拖动地图标签可调整位置</span>
+                    </div>
+                    <label>
+                        <span>字号</span>
+                        <input type="range" id="label_scale" name="label_scale" min="0.3" max="3" step="0.1" value="{% if zone and zone.label_scale %}{{ zone.label_scale }}{% else %}1.0{% endif %}">
+                        <span id="label_scale_display" style="min-width: 32px; font-size: 0.8rem; color: var(--color-text-secondary);">{% if zone and zone.label_scale %}{{ zone.label_scale }}{% else %}1.0{% endif %}x</span>
+                    </label>
+                    <label>
+                        <span>旋转</span>
+                        <input type="number" id="label_angle" name="label_angle" value="{% if zone %}{{ zone.label_angle }}{% else %}0{% endif %}" min="-180" max="180">
+                        <span>°</span>
+                    </label>
+                    <input type="hidden" id="label_lat" name="label_lat" value="{% if zone and zone.label_lat %}{{ zone.label_lat }}{% endif %}">
+                    <input type="hidden" id="label_lng" name="label_lng" value="{% if zone and zone.label_lng %}{{ zone.label_lng }}{% endif %}">
+                </div>
+
+                <div class="area-summary">
+                    <strong>面积</strong>
+                    <span>{% if zone and zone.area_display %}{{ zone.area_display }}{% else %}—{% endif %}</span>
+                    <small>保存后更新</small>
                 </div>
             </div>
 
@@ -129,40 +178,140 @@
             <input type="hidden" id="boundary_points" name="boundary_points" value="">
         </div>
 
-        <div class="form-section">
-            <h2>植物信息</h2>
+        <div class="form-section zone-form-section">
+            <div class="form-section-heading">
+                <span class="section-step">3</span>
+                <div>
+                    <h2>灌溉与绿化属性</h2>
+                    <p>区域的灌溉参数、植物、设备、人员和维护记录。</p>
+                </div>
+            </div>
+
+            <!-- 状态与灌溉参数 -->
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="current_status">当前状态</label>
+                    <select id="current_status" name="current_status">
+                        <option value="" {% if not zone or zone.current_status == '' %}selected{% endif %}>正常</option>
+                        <option value="施工中" {% if zone and zone.current_status == '施工中' %}selected{% endif %}>施工中</option>
+                        <option value="停浇" {% if zone and zone.current_status == '停浇' %}selected{% endif %}>停浇</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>灌水器类型</label>
+                    <select id="sprinkler_type_select" onchange="handleComboSelect(this, 'sprinkler_type_custom', 'sprinkler_type')">
+                        <option value="">-- 选择 --</option>
+                        {% for v in sprinkler_type %}
+                        <option value="{{ v }}" {% if zone and zone.sprinkler_type == v %}selected{% endif %}>{{ v }}</option>
+                        {% endfor %}
+                        <option value="__custom__" {% if zone and zone.sprinkler_type and zone.sprinkler_type not in sprinkler_type %}selected{% endif %}>自定义...</option>
+                    </select>
+                    <input type="text" id="sprinkler_type_custom" placeholder="输入新的灌水器类型"
+                           value="{% if zone and zone.sprinkler_type and zone.sprinkler_type not in sprinkler_type %}{{ zone.sprinkler_type }}{% endif %}"
+                           style="display:none; margin-top:4px;">
+                    <input type="hidden" id="sprinkler_type" name="sprinkler_type" value="{% if zone %}{{ zone.sprinkler_type }}{% endif %}">
+                </div>
+                <div class="form-group">
+                    <label for="irrigation_intensity">灌溉强度 (mm/h)</label>
+                    <input type="number" id="irrigation_intensity" name="irrigation_intensity" step="0.1" min="0"
+                           value="{% if zone and zone.irrigation_intensity %}{{ zone.irrigation_intensity }}{% endif %}">
+                </div>
+                <div class="form-group">
+                    <label for="solenoid_valve_size">电磁阀尺寸 (寸)</label>
+                    <input type="number" id="solenoid_valve_size" name="solenoid_valve_size" step="0.1" min="0"
+                           value="{% if zone and zone.solenoid_valve_size %}{{ zone.solenoid_valve_size }}{% endif %}">
+                </div>
+            </div>
+
+            <!-- 植物与土壤 -->
+            <div class="form-row">
+                <div class="form-group">
+                    <label>植物类型</label>
+                    <select id="plant_type_select" onchange="handleComboSelect(this, 'plant_type_custom', 'plant_type')">
+                        <option value="">-- 选择 --</option>
+                        {% for v in plant_type %}
+                        <option value="{{ v }}" {% if zone and zone.plant_type == v %}selected{% endif %}>{{ v }}</option>
+                        {% endfor %}
+                        <option value="__custom__" {% if zone and zone.plant_type and zone.plant_type not in plant_type %}selected{% endif %}>自定义...</option>
+                    </select>
+                    <input type="text" id="plant_type_custom" placeholder="输入新的植物类型"
+                           value="{% if zone and zone.plant_type and zone.plant_type not in plant_type %}{{ zone.plant_type }}{% endif %}"
+                           style="display:none; margin-top:4px;">
+                    <input type="hidden" id="plant_type" name="plant_type" value="{% if zone %}{{ zone.plant_type }}{% endif %}">
+                </div>
+                <div class="form-group">
+                    <label for="landscape_coefficient">景观系数 (LC)</label>
+                    <input type="number" id="landscape_coefficient" name="landscape_coefficient" step="0.01" min="0" max="2"
+                           value="{% if zone and zone.landscape_coefficient %}{{ zone.landscape_coefficient }}{% endif %}">
+                </div>
+                <div class="form-group">
+                    <label>土壤湿度</label>
+                    <select id="soil_moisture_select" onchange="handleComboSelect(this, 'soil_moisture_custom', 'soil_moisture')">
+                        <option value="">-- 选择 --</option>
+                        {% for v in soil_moisture %}
+                        <option value="{{ v }}" {% if zone and zone.soil_moisture == v %}selected{% endif %}>{{ v }}</option>
+                        {% endfor %}
+                        <option value="__custom__" {% if zone and zone.soil_moisture and zone.soil_moisture not in soil_moisture %}selected{% endif %}>自定义...</option>
+                    </select>
+                    <input type="text" id="soil_moisture_custom" placeholder="输入新的土壤湿度"
+                           value="{% if zone and zone.soil_moisture and zone.soil_moisture not in soil_moisture %}{{ zone.soil_moisture }}{% endif %}"
+                           style="display:none; margin-top:4px;">
+                    <input type="hidden" id="soil_moisture" name="soil_moisture" value="{% if zone %}{{ zone.soil_moisture }}{% endif %}">
+                </div>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label>地形特点</label>
+                    <select id="terrain_feature_select" onchange="handleComboSelect(this, 'terrain_feature_custom', 'terrain_feature')">
+                        <option value="">-- 选择 --</option>
+                        {% for v in terrain_feature %}
+                        <option value="{{ v }}" {% if zone and zone.terrain_feature == v %}selected{% endif %}>{{ v }}</option>
+                        {% endfor %}
+                        <option value="__custom__">自定义...</option>
+                    </select>
+                    <input type="text" id="terrain_feature_custom" placeholder="输入新的地形特点"
+                           value="{% if zone and zone.terrain_feature and zone.terrain_feature not in terrain_feature %}{{ zone.terrain_feature }}{% endif %}"
+                           style="display:none; margin-top:4px;">
+                    <input type="hidden" id="terrain_feature" name="terrain_feature" value="{% if zone %}{{ zone.terrain_feature }}{% endif %}">
+                </div>
+                <div class="form-group">
+                    <label for="plant_feature">植物特点</label>
+                    <input type="text" id="plant_feature" name="plant_feature"
+                           value="{% if zone %}{{ zone.plant_feature }}{% endif %}" placeholder="例如：新栽、成龄">
+                </div>
+            </div>
+
+            <!-- 植物明细 -->
+            <h3 style="margin: 20px 0 10px; font-size: 1em; color: var(--color-text-secondary);">植物明细</h3>
             <p class="help-text">添加该区域种植的植物，可从已有植物中选择或输入新名称。</p>
 
             <div class="form-row">
                 <div class="form-group" style="position: relative;">
                     <label for="plant_name_input">植物名称 *</label>
-                    <input type="text" id="plant_name_input" placeholder="输入或选择植物..." autocomplete="off" style="width: 100%; padding: 12px; border: 2px solid var(--color-surface-dark); border-radius: 8px;">
+                    <input type="text" id="plant_name_input" placeholder="输入或选择植物..." autocomplete="off">
                     <div id="plant_autocomplete_dropdown" style="display:none; position:absolute; top:100%; left:0; right:0; background:white; border:2px solid var(--color-surface-dark); border-top:none; border-radius:0 0 8px 8px; max-height:200px; overflow-y:auto; z-index:100;"></div>
                 </div>
                 <div class="form-group">
                     <label for="plant_quantity_input">数量</label>
-                    <input type="number" id="plant_quantity_input" min="1" value="1" style="width: 100%; padding: 12px; border: 2px solid var(--color-surface-dark); border-radius: 8px;">
+                    <input type="number" id="plant_quantity_input" min="1" value="1">
                 </div>
                 <div class="form-group">
                     <label for="plant_start_date_input">开始日期</label>
-                    <input type="date" id="plant_start_date_input" style="width: 100%; padding: 12px; border: 2px solid var(--color-surface-dark); border-radius: 8px;">
+                    <input type="date" id="plant_start_date_input">
                 </div>
                 <div class="form-group">
                     <label for="plant_end_date_input">结束日期</label>
-                    <input type="date" id="plant_end_date_input" style="width: 100%; padding: 12px; border: 2px solid var(--color-surface-dark); border-radius: 8px;">
+                    <input type="date" id="plant_end_date_input">
                 </div>
                 <div class="form-group" style="flex: 0 0 auto;">
                     <button type="button" id="add_plant_btn" class="btn btn-primary" style="margin-top: 24px;">添加植物</button>
                 </div>
             </div>
 
-            <!-- Selected plants list -->
             <div id="plants_list" style="margin-top: 15px;"></div>
-
-            <!-- Hidden input for form submission -->
             <input type="hidden" id="plants_data" name="plants_data" value="">
 
-            <!-- Existing plants (for edit mode) -->
             {% if zone %}
             <div id="existing_plants" style="display: none;">
                 {% for plant in zone.plants.all %}
@@ -177,63 +326,57 @@
                 {% endfor %}
             </div>
             {% endif %}
-
-            <!-- Plant names for autocomplete -->
             {{ available_plants|json_script:"plantNamesData" }}
-        </div>
 
-        <div class="form-section">
-            <h2>设备信息</h2>
+            <!-- 设备明细 -->
+            <h3 style="margin: 20px 0 10px; font-size: 1em; color: var(--color-text-secondary);">设备明细</h3>
             <p class="help-text">添加该区域内的灌溉设备（灌水器、阀门等）。</p>
 
-            <!-- Equipment type selector -->
-            <div class="form-group">
-                <label for="equipment_type_select">设备类型</label>
-                <select id="equipment_type_select" style="width: 100%; padding: 12px; border: 2px solid var(--color-surface-dark); border-radius: 8px;">
-                    <option value="">-- 选择设备类型 --</option>
-                    <option value="sprinkler">灌水器类型</option>
-                    <option value="solenoid_valve">电磁阀</option>
-                    <option value="isolation_valve">隔离阀</option>
-                    <option value="end_flush_valve">末端冲洗阀</option>
-                    <option value="surface_flush_valve">地面冲洗阀</option>
-                </select>
-            </div>
-
-            <!-- Equipment selection with autocomplete -->
-            <div class="form-group">
-                <label for="equipment_search">选择设备型号</label>
-                <div style="display: flex; gap: 10px; align-items: flex-end;">
-                    <div style="flex: 1; position: relative;">
-                        <input type="text"
-                               id="equipment_search"
-                               placeholder="输入搜索（至少2个字符）"
-                               autocomplete="off"
-                               style="width: 100%; padding: 12px; border: 2px solid var(--color-surface-dark); border-radius: 8px;">
-                        <div id="equipment_autocomplete_results"
-                             style="position: absolute; top: 100%; left: 0; right: 0; background: white; border: 1px solid #ccc; max-height: 200px; overflow-y: auto; display: none; z-index: 1000; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
-                        </div>
-                    </div>
-                    <button type="button" id="add_equipment_btn" class="btn btn-primary btn-sm">添加设备</button>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="equipment_type_select">设备类型</label>
+                    <select id="equipment_type_select">
+                        <option value="">-- 选择设备类型 --</option>
+                        <option value="sprinkler">灌水器类型</option>
+                        <option value="solenoid_valve">电磁阀</option>
+                        <option value="isolation_valve">隔离阀</option>
+                        <option value="end_flush_valve">末端冲洗阀</option>
+                        <option value="surface_flush_valve">地面冲洗阀</option>
+                    </select>
                 </div>
-                <p style="margin-top: 5px; font-size: 0.9em; color: var(--color-text-secondary);">
-                    或 <button type="button" id="create_new_equipment_btn" class="btn-link" style="padding: 0; background: none; border: none; color: var(--color-primary); text-decoration: underline; cursor: pointer;">创建新设备型号</button>
-                </p>
+                <div class="form-group">
+                    <label for="equipment_search">选择设备型号</label>
+                    <div style="display: flex; gap: 10px; align-items: flex-end;">
+                        <div style="flex: 1; position: relative;">
+                            <input type="text"
+                                   id="equipment_search"
+                                   placeholder="输入搜索（至少2个字符）"
+                                   autocomplete="off">
+                            <div id="equipment_autocomplete_results"
+                                 style="position: absolute; top: 100%; left: 0; right: 0; background: white; border: 1px solid #ccc; max-height: 200px; overflow-y: auto; display: none; z-index: 1000; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+                            </div>
+                        </div>
+                        <button type="button" id="add_equipment_btn" class="btn btn-primary btn-sm">添加设备</button>
+                    </div>
+                    <p style="margin-top: 5px; font-size: 0.9em; color: var(--color-text-secondary);">
+                        或 <button type="button" id="create_new_equipment_btn" class="btn-link" style="padding: 0; background: none; border: none; color: var(--color-primary); text-decoration: underline; cursor: pointer;">创建新设备型号</button>
+                    </p>
+                </div>
             </div>
 
-            <!-- New equipment creation form (hidden by default) -->
             <div id="new_equipment_form" style="display: none; background: var(--color-surface); padding: 15px; border-radius: 8px; margin-bottom: 15px; border: 1px solid var(--color-surface-dark);">
                 <h3 style="margin: 0 0 15px 0; font-size: 1.1em;">创建新设备型号</h3>
                 <div class="form-group">
                     <label for="new_equipment_manufacturer">制造商</label>
-                    <input type="text" id="new_equipment_manufacturer" placeholder="例如：Hunter, Rain Bird" style="width: 100%; padding: 12px; border: 2px solid var(--color-surface-dark); border-radius: 8px;">
+                    <input type="text" id="new_equipment_manufacturer" placeholder="例如：Hunter, Rain Bird">
                 </div>
                 <div class="form-group">
                     <label for="new_equipment_model">型号名称 *</label>
-                    <input type="text" id="new_equipment_model" placeholder="例如：PGV-101" style="width: 100%; padding: 12px; border: 2px solid var(--color-surface-dark); border-radius: 8px;">
+                    <input type="text" id="new_equipment_model" placeholder="例如：PGV-101">
                 </div>
                 <div class="form-group">
                     <label for="new_equipment_specs">规格参数 (JSON格式)</label>
-                    <textarea id="new_equipment_specs" rows="3" placeholder='例如：{"flow_rate": "10 GPM", "pressure": "150 PSI"}' style="width: 100%; padding: 12px; border: 2px solid var(--color-surface-dark); border-radius: 8px; font-family: monospace;"></textarea>
+                    <textarea id="new_equipment_specs" rows="3" placeholder='例如：{"flow_rate": "10 GPM", "pressure": "150 PSI"}' style="font-family: monospace;"></textarea>
                 </div>
                 <div style="display: flex; gap: 10px;">
                     <button type="button" id="save_new_equipment_btn" class="btn btn-primary btn-sm">保存到目录</button>
@@ -241,13 +384,9 @@
                 </div>
             </div>
 
-            <!-- Selected equipment list -->
             <div id="equipment_list" style="margin-top: 15px;"></div>
-
-            <!-- Hidden input for form submission -->
             <input type="hidden" id="equipment_data" name="equipment_data" value="">
 
-            <!-- Existing equipment (for edit mode) -->
             {% if zone %}
             <div id="existing_equipments" style="display: none;">
                 {% for eq in zone_equipments %}
@@ -266,19 +405,85 @@
                 {% endfor %}
             </div>
             {% endif %}
+
+            <!-- 人员与分区 -->
+            <h3 style="margin: 20px 0 10px; font-size: 1em; color: var(--color-text-secondary);">人员与分区</h3>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="irrigation_foreman">灌溉领班</label>
+                    <input type="text" id="irrigation_foreman" name="irrigation_foreman"
+                           value="{% if zone %}{{ zone.irrigation_foreman }}{% endif %}">
+                </div>
+                <div class="form-group">
+                    <label for="greenery_zone">绿化分区</label>
+                    <input type="text" id="greenery_zone" name="greenery_zone"
+                           value="{% if zone %}{{ zone.greenery_zone }}{% endif %}">
+                </div>
+                <div class="form-group">
+                    <label for="greenery_foreman">绿化领班</label>
+                    <input type="text" id="greenery_foreman" name="greenery_foreman"
+                           value="{% if zone %}{{ zone.greenery_foreman }}{% endif %}">
+                </div>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="pest_control_zone">植保分区</label>
+                    <input type="text" id="pest_control_zone" name="pest_control_zone"
+                           value="{% if zone %}{{ zone.pest_control_zone }}{% endif %}">
+                </div>
+                <div class="form-group">
+                    <label for="pest_control_foreman">植保领班</label>
+                    <input type="text" id="pest_control_foreman" name="pest_control_foreman"
+                           value="{% if zone %}{{ zone.pest_control_foreman }}{% endif %}">
+                </div>
+            </div>
+
+            <!-- 维护记录 -->
+            <h3 style="margin: 20px 0 10px; font-size: 1em; color: var(--color-text-secondary);">维护记录</h3>
+            <div class="form-group full-width">
+                <label for="equipment_maintenance_notes">灌溉设备维护记录</label>
+                <textarea id="equipment_maintenance_notes" name="equipment_maintenance_notes" rows="2">{% if zone %}{{ zone.equipment_maintenance_notes }}{% endif %}</textarea>
+            </div>
+
+            <div class="form-group full-width">
+                <label for="irrigation_management_notes">灌溉管理记录</label>
+                <textarea id="irrigation_management_notes" name="irrigation_management_notes" rows="2">{% if zone %}{{ zone.irrigation_management_notes }}{% endif %}</textarea>
+            </div>
         </div>
 
-        <div class="form-actions">
-            <button type="submit" class="btn btn-primary">
-                {% if zone %}保存修改{% else %}创建区域{% endif %}
-            </button>
-            <a href="{% url 'core:settings' %}" class="btn btn-secondary">取消</a>
-        </div>
     </form>
 </div>
 {% endblock %}
 
 {% block extra_js %}
+<!-- Combo select handler for dropdown+text fields -->
+<script>
+function handleComboSelect(selectEl, customInputId, hiddenId) {
+    const customInput = document.getElementById(customInputId);
+    const hiddenInput = document.getElementById(hiddenId);
+    if (selectEl.value === '__custom__') {
+        customInput.style.display = 'block';
+        customInput.focus();
+        hiddenInput.value = customInput.value;
+    } else {
+        customInput.style.display = 'none';
+        hiddenInput.value = selectEl.value;
+    }
+}
+
+// Sync custom text input → hidden field
+['sprinkler_type', 'plant_type', 'soil_moisture', 'terrain_feature'].forEach(function(field) {
+    const customInput = document.getElementById(field + '_custom');
+    const hiddenInput = document.getElementById(field);
+    if (customInput && hiddenInput) {
+        customInput.addEventListener('input', function() {
+            hiddenInput.value = this.value;
+        });
+    }
+});
+</script>
+
 <!-- Leaflet JS -->
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script id="boundary-data" type="application/json">{{ boundary_json|safe }}</script>
@@ -296,6 +501,7 @@
     let history = [];
     let userLocationMarker = null;
     let userAccuracyCircle = null;
+    let labelMarker = null;    // draggable zone label marker
 
     function getStyle() {
         const color = (document.getElementById('boundary_color') || {}).value || '#52B788';
@@ -409,6 +615,9 @@
             } catch (e) { console.warn('无法解析边界点:', e); }
         }
 
+        // Zone label marker (draggable)
+        initLabelMarker();
+
         editMap.on('click', function(e) {
             saveHistory();
             createMarker(e.latlng);
@@ -431,6 +640,89 @@
             return [data.map(p => p.lat !== undefined ? {lat: p.lat, lng: p.lng} : {lat: p[0], lng: p[1]})];
         }
         return [];
+    }
+
+    function getZoneCode() {
+        return document.getElementById('code').value || 'ZONE';
+    }
+
+    function getLabelStyle() {
+        const scale = parseFloat(document.getElementById('label_scale').value) || 1.0;
+        const angle = parseInt(document.getElementById('label_angle').value) || 0;
+        return { scale, angle };
+    }
+
+    function computeCentroid() {
+        const allPts = [];
+        shapes.forEach(s => s.points.forEach(p => allPts.push(p)));
+        markers.forEach(m => allPts.push({ lat: m.getLatLng().lat, lng: m.getLatLng().lng }));
+        if (allPts.length === 0) return null;
+        const sum = allPts.reduce((a, p) => ({ lat: a.lat + p.lat, lng: a.lng + p.lng }), { lat: 0, lng: 0 });
+        return { lat: sum.lat / allPts.length, lng: sum.lng / allPts.length };
+    }
+
+    function buildLabelHtml() {
+        const { scale, angle } = getLabelStyle();
+        const fontSize = Math.round(14 * scale);
+        return `<span style="font-size:${fontSize}px;font-weight:600;color:white;background:rgba(0,0,0,0.55);padding:2px 8px;border-radius:4px;display:inline-block;transform:rotate(${angle}deg);white-space:nowrap;pointer-events:none;cursor:move;">${getZoneCode()}</span>`;
+    }
+
+    function createLabelAt(pos) {
+        const latInput = document.getElementById('label_lat');
+        const lngInput = document.getElementById('label_lng');
+        const lat = Array.isArray(pos) ? pos[0] : pos.lat;
+        const lng = Array.isArray(pos) ? pos[1] : pos.lng;
+
+        labelMarker = L.marker([lat, lng], {
+            draggable: true,
+            icon: L.divIcon({
+                className: 'zone-label-editor',
+                html: buildLabelHtml(),
+                iconSize: null,
+                iconAnchor: [0, 0]
+            })
+        }).addTo(editMap);
+
+        latInput.value = lat.toFixed(7);
+        lngInput.value = lng.toFixed(7);
+
+        labelMarker.on('drag', function() {
+            const ll = labelMarker.getLatLng();
+            latInput.value = ll.lat.toFixed(7);
+            lngInput.value = ll.lng.toFixed(7);
+        });
+    }
+
+    function initLabelMarker() {
+        const latInput = document.getElementById('label_lat');
+        const lngInput = document.getElementById('label_lng');
+        let pos = null;
+        if (latInput.value && lngInput.value) {
+            pos = [parseFloat(latInput.value), parseFloat(lngInput.value)];
+        } else {
+            pos = computeCentroid();
+        }
+        if (!pos) return;
+
+        createLabelAt(pos);
+    }
+
+    // Always wire label controls (even if label not created yet)
+    document.getElementById('label_scale').addEventListener('input', function() {
+        document.getElementById('label_scale_display').textContent = parseFloat(this.value).toFixed(1) + 'x';
+        refreshLabelIcon();
+    });
+    document.getElementById('label_angle').addEventListener('input', refreshLabelIcon);
+    document.getElementById('code').addEventListener('input', refreshLabelIcon);
+
+    function refreshLabelIcon() {
+        if (!labelMarker) return;
+        labelMarker.setIcon(L.divIcon({
+            className: 'zone-label-editor',
+            html: buildLabelHtml(),
+            iconSize: null,
+            iconAnchor: [0, 0]
+        }));
     }
 
     function createMarker(latlng) {
@@ -484,6 +776,14 @@
         if (currentPoly) { editMap.removeLayer(currentPoly); currentPoly = null; }
         updateHiddenField();
         updateUI();
+
+        // Create label marker after first shape if not yet created
+        if (!labelMarker) {
+            const pos = computeCentroid();
+            if (pos) {
+                createLabelAt(pos);
+            }
+        }
     }
 
     function deleteShape(index) {
@@ -1326,6 +1626,102 @@
     } else {
         loadExistingEquipment();
     }
+})();
+</script>
+
+<script>
+// Save the zone form without reloading the current page.
+(function() {
+    const form = document.getElementById('zoneForm');
+    if (!form) return;
+
+    const saveButton = form.querySelector('.zone-floating-actions button[type="submit"]');
+    let defaultSaveText = saveButton ? saveButton.textContent.trim() : '';
+
+    function getCookie(name) {
+        let cookieValue = null;
+        if (document.cookie && document.cookie !== '') {
+            document.cookie.split(';').some(cookie => {
+                const trimmed = cookie.trim();
+                if (trimmed.substring(0, name.length + 1) === (name + '=')) {
+                    cookieValue = decodeURIComponent(trimmed.substring(name.length + 1));
+                    return true;
+                }
+                return false;
+            });
+        }
+        return cookieValue;
+    }
+
+    function messageContainer() {
+        let container = document.querySelector('.zone-editor-container > .messages');
+        if (!container) {
+            container = document.createElement('div');
+            container.className = 'messages';
+            const header = document.querySelector('.zone-editor-header');
+            header.insertAdjacentElement('afterend', container);
+        }
+        return container;
+    }
+
+    function showMessage(type, text) {
+        const container = messageContainer();
+        container.innerHTML = '';
+        const item = document.createElement('div');
+        item.className = `message message-${type}`;
+        item.textContent = text;
+        container.appendChild(item);
+    }
+
+    function setSaving(isSaving) {
+        if (!saveButton) return;
+        saveButton.disabled = isSaving;
+        saveButton.textContent = isSaving ? '保存中...' : defaultSaveText;
+    }
+
+    form.addEventListener('submit', async function(e) {
+        if (e.defaultPrevented) return;
+        e.preventDefault();
+
+        setSaving(true);
+
+        try {
+            const response = await fetch(form.action || window.location.href, {
+                method: 'POST',
+                body: new FormData(form),
+                headers: {
+                    'X-CSRFToken': getCookie('csrftoken'),
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'Accept': 'application/json'
+                },
+                credentials: 'same-origin'
+            });
+
+            const data = await response.json();
+            if (!response.ok || !data.success) {
+                throw new Error(data.message || '保存失败，请检查输入后重试');
+            }
+
+            if (data.edit_url) {
+                form.action = data.edit_url;
+                if (data.created) {
+                    window.history.replaceState({}, '', data.edit_url);
+                    const title = document.querySelector('.zone-editor-header h1');
+                    if (title && data.zone_name) title.textContent = `编辑区域: ${data.zone_name}`;
+                    if (saveButton) {
+                        defaultSaveText = '保存修改';
+                        saveButton.textContent = defaultSaveText;
+                    }
+                }
+            }
+
+            showMessage('success', data.message || '保存成功');
+        } catch (error) {
+            showMessage('error', error.message || '保存失败，请稍后重试');
+        } finally {
+            setSaving(false);
+        }
+    });
 })();
 </script>
 {% endblock %}

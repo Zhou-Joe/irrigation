@@ -200,8 +200,8 @@ class MaxicomRuntimeAdmin(admin.ModelAdmin):
 
 @admin.register(Patch)
 class PatchAdmin(admin.ModelAdmin):
-    list_display = ('name', 'code', 'type', 'parent', 'mdb_index', 'order', 'active', 'created_at')
-    list_filter = ('type', 'active', 'parent')
+    list_display = ('name', 'code', 'parent', 'mdb_index', 'order', 'active', 'created_at')
+    list_filter = ('active', 'parent')
     search_fields = ('name', 'code', 'description')
     readonly_fields = ('created_at', 'updated_at')
     list_editable = ('order', 'active')

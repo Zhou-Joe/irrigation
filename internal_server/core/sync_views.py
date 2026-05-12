@@ -70,16 +70,16 @@ def sync_receive(request):
 
 
 def _site_by_mdb(idx):
-    """Lookup a site-type Patch by mdb_index."""
-    return Patch.objects.filter(type=Patch.TYPE_SITE, mdb_index=idx).first()
+    """Lookup a Patch by mdb_index."""
+    return Patch.objects.filter(mdb_index=idx).first()
 
 
 @csrf_exempt
 def sync_status(request):
     """Return current sync status — last record counts per table."""
     counts = {
-        'sites': Patch.objects.filter(type=Patch.TYPE_SITE).count(),
-        'stations': Patch.objects.filter(type=Patch.TYPE_STATION).count(),
+        'sites': Patch.objects.count(),
+        'stations': Patch.objects.filter(parent__isnull=False).count(),
         'controllers': MaxicomController.objects.count(),
         'schedules': MaxicomSchedule.objects.count(),
         'flow_zones': MaxicomFlowZone.objects.count(),
@@ -165,7 +165,6 @@ def _upsert_sites(records):
                 'date_close': r.get('DateClose', '') or '',
             }
             _, created_flag = Patch.objects.update_or_create(
-                type=Patch.TYPE_SITE,
                 mdb_index=idx,
                 defaults=defaults
             )
@@ -218,7 +217,6 @@ def _upsert_stations(records):
             if not site or idx is None:
                 continue
             _, c = Patch.objects.update_or_create(
-                type=Patch.TYPE_STATION,
                 mdb_index=idx,
                 defaults={
                     'name': (r.get('IndexName') or '').strip(),
@@ -416,7 +414,7 @@ def _append_runtime(records):
             if not site:
                 skipped += 1
                 continue
-            stn = Patch.objects.filter(type=Patch.TYPE_STATION, mdb_index=r.get('StationID')).first()
+            stn = Patch.objects.filter(mdb_index=r.get('StationID')).first()
             _, c = MaxicomRuntime.objects.get_or_create(
                 timestamp=r.get('TimeStamps', '') or '',
                 site=site,

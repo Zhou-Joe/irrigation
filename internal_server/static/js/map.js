@@ -220,32 +220,46 @@
     }
 
     /**
-     * Add a zone code label at the centroid of a polygon
+     * Add a zone code label at the centroid of a polygon (or custom position)
      */
-    function addZoneLabel(code, latLngs) {
-        let latSum = 0, lngSum = 0, count = 0;
-        latLngs.forEach(p => {
-            const lat = Array.isArray(p) ? p[0] : p.lat;
-            const lng = Array.isArray(p) ? p[1] : p.lng;
-            if (lat !== undefined && lng !== undefined) {
-                latSum += lat;
-                lngSum += lng;
-                count++;
-            }
-        });
-        if (count === 0) return;
-        const center = [latSum / count, lngSum / count];
+    function addZoneLabel(zone) {
+        const code = zone.code;
+        const latLngs = zone._allLatLngs;
+        const labelLat = zone.label_lat;
+        const labelLng = zone.label_lng;
+        const labelScale = zone.label_scale || 1.0;
+        const labelAngle = zone.label_angle || 0;
 
-        const size = getLabelFontSize(map.getZoom());
+        let center;
+        if (labelLat != null && labelLng != null) {
+            center = [labelLat, labelLng];
+        } else {
+            let latSum = 0, lngSum = 0, count = 0;
+            latLngs.forEach(p => {
+                const lat = Array.isArray(p) ? p[0] : p.lat;
+                const lng = Array.isArray(p) ? p[1] : p.lng;
+                if (lat !== undefined && lng !== undefined) {
+                    latSum += lat;
+                    lngSum += lng;
+                    count++;
+                }
+            });
+            if (count === 0) return;
+            center = [latSum / count, lngSum / count];
+        }
+
+        const size = getLabelFontSize(map.getZoom()) * labelScale;
+        const rotation = labelAngle ? `transform:rotate(${labelAngle}deg);` : '';
         const label = L.marker(center, {
             interactive: false,
             icon: L.divIcon({
                 className: 'zone-label',
-                html: `<span style="font-size:${size}px">${code}</span>`,
+                html: `<span style="font-size:${size}px;${rotation}">${code}</span>`,
                 iconSize: null,
                 iconAnchor: [0, 0]
             })
         });
+        label._zone = zone;
         zonesLayerGroup.addLayer(label);
         zoneLabels.push(label);
         return label;
@@ -262,8 +276,11 @@
      * Update all zone label sizes on zoom change
      */
     function updateLabelSizes() {
-        const size = getLabelFontSize(map.getZoom());
+        const baseSize = getLabelFontSize(map.getZoom());
         zoneLabels.forEach(label => {
+            const zone = label._zone;
+            const scale = zone ? (zone.label_scale || 1.0) : 1.0;
+            const size = baseSize * scale;
             const el = label.getElement();
             if (el) {
                 const span = el.querySelector('span');
@@ -333,7 +350,8 @@
                     });
                     // Only one label per zone, centered on all rings combined
                     if (allLatLngs.length > 0) {
-                        addZoneLabel(zone.code, allLatLngs);
+                        zone._allLatLngs = allLatLngs;
+                        addZoneLabel(zone);
                     }
                 } else {
                     // Legacy single-polygon format
@@ -348,7 +366,8 @@
                     polygon.on('mouseout', handleMouseOut);
                     polygon.on('click', handleClick);
                     zonesLayerGroup.addLayer(polygon);
-                    addZoneLabel(zone.code, latLngs);
+                    zone._allLatLngs = latLngs;
+                    addZoneLabel(zone);
                 }
 
                 // Add pending request markers if any
@@ -736,7 +755,7 @@
         const locateBtn = document.querySelector('.locate-btn');
         if (locateBtn) {
             locateBtn.disabled = true;
-            locateBtn.textContent = '定位中...';
+            locateBtn.textContent = '...';
         }
 
         navigator.geolocation.getCurrentPosition(
@@ -781,7 +800,7 @@
                 // Reset button
                 if (locateBtn) {
                     locateBtn.disabled = false;
-                    locateBtn.textContent = '📍 定位我';
+                    locateBtn.textContent = '⌖';
                 }
 
                 // Open popup with location info
@@ -794,7 +813,7 @@
                 // Reset button
                 if (locateBtn) {
                     locateBtn.disabled = false;
-                    locateBtn.textContent = '📍 定位我';
+                    locateBtn.textContent = '⌖';
                 }
 
                 // Show error
@@ -823,18 +842,9 @@
 
         locateControl.onAdd = function(map) {
             const button = L.DomUtil.create('button', 'locate-btn');
-            button.innerHTML = '📍';
-            button.title = '';
-            // Design system button styling
-            button.style.cssText = 'background: #EDE8DC; border: 2px solid #1B4332; border-radius: 8px; padding: 8px 12px; font-size: 18px; cursor: pointer; margin-bottom: 10px; transition: all 150ms ease;';
-            button.onmouseover = () => {
-                button.style.background = '#D4A574';
-                button.style.borderColor = '#D4A574';
-            };
-            button.onmouseout = () => {
-                button.style.background = '#EDE8DC';
-                button.style.borderColor = '#1B4332';
-            };
+            button.innerHTML = '⌖';
+            button.title = '定位我';
+            button.type = 'button';
 
             L.DomEvent.disableClickPropagation(button);
             L.DomEvent.on(button, 'click', locateUser);
@@ -923,10 +933,10 @@
      * Apply combined map filters (priority + plant)
      */
     window.applyMapFilters = function() {
-        const priorities = window.activePriorities || new Set(['high', 'medium', 'low']);
+        const priorities = window.activePriorities || new Set(['critical', 'high', 'medium', 'low', 'abolished']);
         const plants = window.activePlants || new Set();
         const isPlantTouched = window.plantFilterTouched || false;
-        const showAllPriorities = priorities.size === 3;
+        const showAllPriorities = priorities.size === 5;
 
         zonesLayerGroup.eachLayer(layer => {
             if (layer.zoneData) {
@@ -946,5 +956,31 @@
             const matchPlant = !isPlantTouched || !zone.plant_names || zone.plant_names.some(p => plants.has(p));
             label.element.style.opacity = (matchPriority && matchPlant) ? '1' : '0.1';
         });
+    };
+
+    window.setLayerVisibility = function(layer, visible) {
+        if (layer === 'zones') {
+            if (visible) {
+                if (!map.hasLayer(zonesLayerGroup)) map.addLayer(zonesLayerGroup);
+            } else {
+                if (map.hasLayer(zonesLayerGroup)) map.removeLayer(zonesLayerGroup);
+            }
+        } else if (layer === 'labels') {
+            zoneLabels.forEach(label => {
+                if (visible) {
+                    if (!map.hasLayer(label)) map.addLayer(label);
+                    label.element.style.display = '';
+                } else {
+                    if (map.hasLayer(label)) map.removeLayer(label);
+                    label.element.style.display = 'none';
+                }
+            });
+        } else if (layer === 'pipelines') {
+            if (visible) {
+                if (!map.hasLayer(pipelinesLayerGroup)) map.addLayer(pipelinesLayerGroup);
+            } else {
+                if (map.hasLayer(pipelinesLayerGroup)) map.removeLayer(pipelinesLayerGroup);
+            }
+        }
     };
 })();
