@@ -5,7 +5,7 @@ from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.decorators import login_required
 from django.db.models import Count, Q, Avg, Sum
 from django.views.decorators.http import require_POST
-from django.http import JsonResponse
+from django.http import HttpResponse, JsonResponse
 from django.urls import reverse
 from django.utils import timezone
 from core.models import Zone
@@ -843,6 +843,351 @@ def dashboard(request):
     return render(request, 'core/dashboard.html', context)
 
 
+# ─── Zone Import / Export ───────────────────────────────────────────
+
+# Excel headers matching Zone list V0.xlsx column order
+_ZONE_EXPORT_HEADERS = [
+    '编号', '位置重要程度', '通用名称', '灌溉管理用的位置',
+    '当前状态', '灌水器类型', '灌溉强度 mm/h', '区域面积',
+    '灌溉分区', 'CCU编号', '电磁阀尺寸', '景观系数',
+    '植物类型', '灌溉领班', '绿化分区', '绿化领班',
+    '植保分区', '植保领班', '地形特点', '植物特点',
+    '土壤湿度', '灌溉设备维护记录', '灌溉管理以往记录',
+]
+
+# Priority display text → model value (for import)
+_PRIORITY_IMPORT_MAP = {
+    '超级重点位置': Zone.PRIORITY_CRITICAL,
+    '重点位置': Zone.PRIORITY_HIGH,
+    '一般位置': Zone.PRIORITY_MEDIUM,
+    '次要位置': Zone.PRIORITY_LOW,
+    '废除': Zone.PRIORITY_ABOLISHED,
+}
+
+# Model value → display text (for export)
+_PRIORITY_EXPORT_MAP = {v: k for k, v in _PRIORITY_IMPORT_MAP.items()}
+
+# Fields that map directly to zone model attributes (col index 0-based → field name)
+# Excluding: col 7 (area), col 8 (irrigation zone name), col 9 (CCU number) which are computed
+_ZONE_FIELD_COLUMNS = {
+    0: 'code',
+    2: 'name',
+    3: 'description',
+    4: 'current_status',
+    5: 'sprinkler_type',
+    6: 'irrigation_intensity',
+    10: 'solenoid_valve_size',
+    11: 'landscape_coefficient',
+    12: 'plant_type',
+    13: 'irrigation_foreman',
+    14: 'greenery_zone',
+    15: 'greenery_foreman',
+    16: 'pest_control_zone',
+    17: 'pest_control_foreman',
+    18: 'terrain_feature',
+    19: 'plant_feature',
+    20: 'soil_moisture',
+    21: 'equipment_maintenance_notes',
+    22: 'irrigation_management_notes',
+}
+
+
+def _check_zone_admin(request):
+    """Return True if user has zone admin permission."""
+    if request.user.is_superuser or request.user.is_staff:
+        return True
+    from .models import ManagerProfile
+    try:
+        ManagerProfile.objects.get(user=request.user, active=True)
+        return True
+    except ManagerProfile.DoesNotExist:
+        return False
+
+
+@login_required(login_url='core:login')
+def zone_export_excel(request):
+    """Export all zones to an Excel file matching Zone list V0.xlsx format."""
+    import io
+    try:
+        import openpyxl
+        from openpyxl.styles import Alignment
+    except ImportError:
+        return JsonResponse({'error': 'openpyxl not installed'}, status=500)
+
+    if not _check_zone_admin(request):
+        return JsonResponse({'error': '无权限'}, status=403)
+
+    zones = Zone.objects.select_related('patch').order_by('code')
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = 'Zone info 仅色块'
+
+    # Write headers with same styling as V0
+    center_wrap = Alignment(horizontal='center', vertical='center', wrap_text=True)
+    for col_idx, header in enumerate(_ZONE_EXPORT_HEADERS, 1):
+        cell = ws.cell(row=1, column=col_idx, value=header)
+        cell.alignment = center_wrap
+
+    # Set column widths matching V0
+    col_widths = [16, 13, 13, 18, 13, 16, 13, 14, 13, 12, 8, 9, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13]
+    for i, w in enumerate(col_widths):
+        ws.column_dimensions[openpyxl.utils.get_column_letter(i + 1)].width = w
+
+    # Write data rows
+    for zone in zones:
+        row_num = ws.max_row + 1
+        # CCU number from patch code (e.g. "CCU1" → "1")
+        ccu_num = zone.patch.code.replace('CCU', '') if zone.patch else ''
+
+        values = [
+            zone.code,                                          # A: 编号
+            _PRIORITY_EXPORT_MAP.get(zone.priority, ''),         # B: 位置重要程度
+            zone.name,                                          # C: 通用名称
+            zone.description,                                   # D: 灌溉管理用的位置
+            zone.current_status or None,                        # E: 当前状态
+            zone.sprinkler_type or None,                        # F: 灌水器类型
+            zone.irrigation_intensity,                          # G: 灌溉强度
+            zone.area_display if zone.area_sqm else None,       # H: 区域面积
+            zone.patch.name if zone.patch else None,            # I: 灌溉分区
+            int(ccu_num) if ccu_num.isdigit() else ccu_num,     # J: CCU编号
+            zone.solenoid_valve_size,                           # K: 电磁阀尺寸
+            zone.landscape_coefficient,                         # L: 景观系数
+            zone.plant_type or None,                            # M: 植物类型
+            zone.irrigation_foreman or None,                    # N: 灌溉领班
+            zone.greenery_zone or None,                         # O: 绿化分区
+            zone.greenery_foreman or None,                      # P: 绿化领班
+            zone.pest_control_zone or None,                     # Q: 植保分区
+            zone.pest_control_foreman or None,                  # R: 植保领班
+            zone.terrain_feature or None,                       # S: 地形特点
+            zone.plant_feature or None,                         # T: 植物特点
+            zone.soil_moisture or None,                         # U: 土壤湿度
+            zone.equipment_maintenance_notes or None,           # V: 灌溉设备维护记录
+            zone.irrigation_management_notes or None,           # W: 灌溉管理以往记录
+        ]
+        for col_idx, val in enumerate(values, 1):
+            ws.cell(row=row_num, column=col_idx, value=val)
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+
+    from django.utils import timezone
+    filename = f"zones_{timezone.now().strftime('%Y%m%d_%H%M')}.xlsx"
+    resp = HttpResponse(buf.read(), content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    resp['Content-Disposition'] = f'attachment; filename="{filename}"'
+    return resp
+
+
+def _parse_zone_row(row):
+    """Parse an Excel row (23 columns, values_only) into a dict of zone fields."""
+    code = str(row[0] or '').strip() if row[0] else ''
+    if not code:
+        return None
+
+    priority_raw = str(row[1] or '').strip()
+    priority = _PRIORITY_IMPORT_MAP.get(priority_raw, Zone.PRIORITY_MEDIUM)
+
+    def _float(val):
+        if val is None or val == '':
+            return None
+        try:
+            return float(val)
+        except (ValueError, TypeError):
+            return None
+
+    def _str(val):
+        return str(val or '').strip()
+
+    return {
+        'code': code,
+        'name': _str(row[2]) or code,
+        'description': _str(row[3]),
+        'priority': priority,
+        'current_status': _str(row[4]),
+        'sprinkler_type': _str(row[5]),
+        'irrigation_intensity': _float(row[6]),
+        'solenoid_valve_size': _float(row[10]),
+        'landscape_coefficient': _float(row[11]),
+        'plant_type': _str(row[12]),
+        'irrigation_foreman': _str(row[13]),
+        'greenery_zone': _str(row[14]),
+        'greenery_foreman': _str(row[15]),
+        'pest_control_zone': _str(row[16]),
+        'pest_control_foreman': _str(row[17]),
+        'terrain_feature': _str(row[18]),
+        'plant_feature': _str(row[19]),
+        'soil_moisture': _str(row[20]),
+        'equipment_maintenance_notes': _str(row[21]),
+        'irrigation_management_notes': _str(row[22]),
+    }
+
+
+# Field display names for the preview table
+_FIELD_LABELS = {
+    'code': '编号', 'name': '通用名称', 'description': '灌溉管理用的位置',
+    'priority': '位置重要程度', 'current_status': '当前状态',
+    'sprinkler_type': '灌水器类型', 'irrigation_intensity': '灌溉强度',
+    'solenoid_valve_size': '电磁阀尺寸', 'landscape_coefficient': '景观系数',
+    'plant_type': '植物类型', 'irrigation_foreman': '灌溉领班',
+    'greenery_zone': '绿化分区', 'greenery_foreman': '绿化领班',
+    'pest_control_zone': '植保分区', 'pest_control_foreman': '植保领班',
+    'terrain_feature': '地形特点', 'plant_feature': '植物特点',
+    'soil_moisture': '土壤湿度', 'equipment_maintenance_notes': '设备维护记录',
+    'irrigation_management_notes': '灌溉管理记录',
+}
+
+
+@login_required(login_url='core:login')
+def zone_import_preview(request):
+    """Upload an xlsx file, compare with DB, return change list as JSON."""
+    try:
+        import openpyxl
+    except ImportError:
+        return JsonResponse({'error': 'openpyxl not installed'}, status=500)
+
+    if not _check_zone_admin(request):
+        return JsonResponse({'error': '无权限'}, status=403)
+
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST required'}, status=405)
+
+    uploaded = request.FILES.get('file')
+    if not uploaded:
+        return JsonResponse({'error': '未选择文件'}, status=400)
+
+    try:
+        wb = openpyxl.load_workbook(uploaded, read_only=True, data_only=True)
+        ws = wb.active
+    except Exception as e:
+        return JsonResponse({'error': f'文件解析失败: {e}'}, status=400)
+
+    # Preload all zones by code
+    existing_zones = {z.code: z for z in Zone.objects.select_related('patch').all()}
+
+    # Fields to compare (exclude code — it's the key)
+    compare_fields = [k for k in _FIELD_LABELS if k != 'code']
+
+    changes = []
+    counts = {'new': 0, 'modified': 0, 'unchanged': 0}
+
+    for row_idx, row in enumerate(ws.iter_rows(min_row=2, max_col=23, values_only=True), start=2):
+        parsed = _parse_zone_row(row)
+        if not parsed:
+            continue
+
+        code = parsed['code']
+        zone = existing_zones.get(code)
+
+        if zone is None:
+            changes.append({
+                'row': row_idx, 'code': code, 'action': 'new',
+                'name': parsed['name'],
+                'fields': [{'field': k, 'label': _FIELD_LABELS.get(k, k), 'old': '', 'new': str(v)}
+                           for k, v in parsed.items() if k != 'code' and v],
+            })
+            counts['new'] += 1
+        else:
+            field_changes = []
+            for field in compare_fields:
+                new_val = parsed.get(field)
+                old_val = getattr(zone, field, None)
+                # Normalize for comparison
+                old_norm = str(old_val or '').strip()
+                new_norm = str(new_val or '').strip()
+                if old_norm != new_norm:
+                    field_changes.append({
+                        'field': field,
+                        'label': _FIELD_LABELS.get(field, field),
+                        'old': old_norm or '(空)',
+                        'new': new_norm or '(空)',
+                    })
+            if field_changes:
+                changes.append({
+                    'row': row_idx, 'code': code, 'action': 'modified',
+                    'name': zone.name,
+                    'fields': field_changes,
+                })
+                counts['modified'] += 1
+            else:
+                counts['unchanged'] += 1
+
+    wb.close()
+    return JsonResponse({'success': True, 'summary': counts, 'changes': changes})
+
+
+@login_required(login_url='core:login')
+def zone_import_confirm(request):
+    """Apply confirmed import changes. Expects multipart with file + rows JSON."""
+    try:
+        import openpyxl
+    except ImportError:
+        return JsonResponse({'error': 'openpyxl not installed'}, status=500)
+
+    if not _check_zone_admin(request):
+        return JsonResponse({'error': '无权限'}, status=403)
+
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST required'}, status=405)
+
+    uploaded = request.FILES.get('file')
+    rows_json = request.POST.get('rows', '[]')
+    try:
+        import json as _json
+        confirmed_rows = set(_json.loads(rows_json))
+    except (_json.JSONDecodeError, TypeError):
+        return JsonResponse({'error': '无效的行号数据'}, status=400)
+
+    if not uploaded:
+        return JsonResponse({'error': '未选择文件'}, status=400)
+
+    try:
+        wb = openpyxl.load_workbook(uploaded, read_only=True, data_only=True)
+        ws = wb.active
+    except Exception as e:
+        return JsonResponse({'error': f'文件解析失败: {e}'}, status=400)
+
+    from .models import Patch
+
+    # Preload patches by CCU number
+    patch_map = {}
+    for p in Patch.objects.filter(code__startswith='CCU'):
+        patch_map[p.code.replace('CCU', '')] = p
+
+    created = 0
+    updated = 0
+
+    for row_idx, row in enumerate(ws.iter_rows(min_row=2, max_col=23, values_only=True), start=2):
+        if row_idx not in confirmed_rows:
+            continue
+
+        parsed = _parse_zone_row(row)
+        if not parsed:
+            continue
+
+        code = parsed['code']
+        # Resolve patch from code prefix
+        parts = code.split('-')
+        ccu_prefix = parts[0] if parts else ''
+        patch = patch_map.get(ccu_prefix)
+
+        zone = Zone.objects.filter(code=code).first()
+        if zone:
+            for k, v in parsed.items():
+                if k == 'code':
+                    continue
+                setattr(zone, k, v)
+            if patch:
+                zone.patch = patch
+            zone.save()
+            updated += 1
+        else:
+            Zone.objects.create(code=code, patch=patch, **{k: v for k, v in parsed.items() if k != 'code'})
+            created += 1
+
+    wb.close()
+    return JsonResponse({'success': True, 'created': created, 'updated': updated})
+
+
 @login_required(login_url='core:login')
 def settings_page(request):
     """
@@ -1333,12 +1678,20 @@ def zone_detail_page(request, zone_id):
                              .exclude(pk=zone.pk).order_by('code')[:20])
 
     # Parse maintenance notes
+    def _sort_notes(notes):
+        def _sort_key(n):
+            d = n.get('date', '')
+            if not d or not isinstance(d, str) or d == '日期格式错误':
+                return (1, '')
+            return (0, d)
+        return sorted(notes, key=_sort_key, reverse=True)
+
     try:
-        equip_notes = json.loads(zone.equipment_maintenance_notes) if zone.equipment_maintenance_notes else []
+        equip_notes = _sort_notes(json.loads(zone.equipment_maintenance_notes)) if zone.equipment_maintenance_notes else []
     except (json.JSONDecodeError, TypeError):
         equip_notes = []
     try:
-        irrig_notes = json.loads(zone.irrigation_management_notes) if zone.irrigation_management_notes else []
+        irrig_notes = _sort_notes(json.loads(zone.irrigation_management_notes)) if zone.irrigation_management_notes else []
     except (json.JSONDecodeError, TypeError):
         irrig_notes = []
 
