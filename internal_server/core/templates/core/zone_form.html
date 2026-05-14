@@ -595,7 +595,7 @@
     <!-- Floating actions for new zone (no sidebar) -->
     <div class="zone-floating-actions" aria-label="页面操作">
         <a href="{% url 'core:settings' %}" class="btn btn-secondary">返回设置</a>
-        <button type="submit" class="btn btn-primary">创建区域</button>
+        <button type="button" class="btn btn-primary" id="newZoneSaveBtn">创建区域</button>
     </div>
     {% endif %}
 
@@ -1901,6 +1901,11 @@ function handleComboSelect(selectEl, customInputId, hiddenId) {
     // Sidebar save button sits outside <form>, so wire it to dispatch a submit
     if (sidebarSaveBtn) {
         sidebarSaveBtn.addEventListener('click', function() {
+            form.requestSubmit();
+        });
+    }
+    if (document.getElementById('newZoneSaveBtn')) {
+        document.getElementById('newZoneSaveBtn').addEventListener('click', function() {
             form.requestSubmit();
         });
     }
