@@ -6,7 +6,7 @@
 {% block nav_settings %}active{% endblock %}
 
 {% block extra_css %}
-<link rel="stylesheet" href="{% static 'css/settings.css' %}">
+<link rel="stylesheet" href="{% static 'css/settings.css' %}?v=20260514a">
 <!-- Leaflet CSS -->
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 {% endblock %}
@@ -21,14 +21,18 @@
         </div>
     </div>
 
+    <div id="toastContainer" style="position:fixed;top:20px;right:20px;z-index:9999;display:flex;flex-direction:column;gap:8px;pointer-events:none;"></div>
+    <style>
+    @keyframes toastIn{from{opacity:0;transform:translateX(30px)}to{opacity:1;transform:translateX(0)}}
+    </style>
     {% if messages %}
-    <div class="messages">
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
         {% for message in messages %}
-        <div class="message message-{{ message.tags }}">
-            {{ message }}
-        </div>
+        window.showToast({{ message|escapejs }}, '{{ message.tags }}');
         {% endfor %}
-    </div>
+    });
+    </script>
     {% endif %}
 
     <form method="post" class="zone-form" id="zoneForm">
@@ -51,38 +55,32 @@
             </div>
 
             <div class="form-row">
-                <div class="form-group">
+                <div class="form-group" style="flex:2;">
                     <label for="name">区域名称 *</label>
                     <input type="text" id="name" name="name" value="{% if zone %}{{ zone.name }}{% endif %}" required>
                 </div>
-
-                <div class="form-group">
+                <div class="form-group" style="flex:1;">
                     <label for="code">区域编号 *</label>
                     <input type="text" id="code" name="code" value="{% if zone %}{{ zone.code }}{% endif %}" required pattern="[A-Za-z0-9\-]+">
-                    <small>仅限字母、数字和连字符</small>
                 </div>
-            </div>
-
-            <div class="form-row">
-                <div class="form-group">
+                <div class="form-group" style="flex:2;">
                     <label for="patch">所属片区</label>
-                    <div class="patch-picker">
-                        <select id="patch" name="patch">
+                    <div class="patch-picker" style="display:flex;gap:4px;align-items:center;">
+                        <select id="patch" name="patch" style="flex:1;">
                             <option value="">-- 不选择片区 --</option>
                             {% for patch in patches %}
                             <option value="{{ patch.id }}" {% if zone and zone.patch_id == patch.id %}selected{% endif %}>{{ patch.name }} ({{ patch.code }})</option>
                             {% endfor %}
                         </select>
-                        <div id="new_patch_input" class="new-patch-input" style="display: none;">
-                            <input type="text" id="new_patch_name" placeholder="片区名称">
-                        </div>
-                        <button type="button" id="new_patch_btn" class="btn btn-secondary btn-sm">+ 新片区</button>
-                        <button type="button" id="cancel_new_patch_btn" class="btn btn-secondary btn-sm" style="display: none;">取消</button>
+                        <button type="button" id="new_patch_btn" class="btn btn-secondary btn-sm" style="flex-shrink:0;">+新片区</button>
+                        <button type="button" id="cancel_new_patch_btn" class="btn btn-secondary btn-sm" style="display:none;flex-shrink:0;">取消</button>
+                    </div>
+                    <div id="new_patch_input" class="new-patch-input" style="display:none;margin-top:4px;">
+                        <input type="text" id="new_patch_name" placeholder="片区名称" style="width:100%;">
                     </div>
                     <input type="hidden" id="new_patch_name_hidden" name="new_patch_name" value="">
                 </div>
-
-                <div class="form-group">
+                <div class="form-group" style="flex:1;">
                     <label for="priority">优先级</label>
                     <select id="priority" name="priority">
                         <option value="critical" {% if zone and zone.priority == 'critical' %}selected{% endif %}>超级重点</option>
@@ -287,25 +285,25 @@
             <p class="help-text">添加该区域种植的植物，可从已有植物中选择或输入新名称。</p>
 
             <div class="form-row">
-                <div class="form-group" style="position: relative;">
+                <div class="form-group" style="flex:2;position: relative;">
                     <label for="plant_name_input">植物名称 *</label>
                     <input type="text" id="plant_name_input" placeholder="输入或选择植物..." autocomplete="off">
                     <div id="plant_autocomplete_dropdown" style="display:none; position:absolute; top:100%; left:0; right:0; background:white; border:2px solid var(--color-surface-dark); border-top:none; border-radius:0 0 8px 8px; max-height:200px; overflow-y:auto; z-index:100;"></div>
                 </div>
-                <div class="form-group">
+                <div class="form-group" style="flex:0 0 80px;">
                     <label for="plant_quantity_input">数量</label>
                     <input type="number" id="plant_quantity_input" min="1" value="1">
                 </div>
-                <div class="form-group">
+                <div class="form-group" style="flex:0 0 140px;">
                     <label for="plant_start_date_input">开始日期</label>
                     <input type="date" id="plant_start_date_input">
                 </div>
-                <div class="form-group">
+                <div class="form-group" style="flex:0 0 140px;">
                     <label for="plant_end_date_input">结束日期</label>
                     <input type="date" id="plant_end_date_input">
                 </div>
-                <div class="form-group" style="flex: 0 0 auto;">
-                    <button type="button" id="add_plant_btn" class="btn btn-primary" style="margin-top: 24px;">添加植物</button>
+                <div class="form-group" style="flex:0 0 auto;">
+                    <button type="button" id="add_plant_btn" class="btn btn-primary" style="margin-top:24px;padding:7px 16px;">添加</button>
                 </div>
             </div>
 
@@ -409,46 +407,71 @@
             <!-- 人员与分区 -->
             <h3 style="margin: 20px 0 10px; font-size: 1em; color: var(--color-text-secondary);">人员与分区</h3>
             <div class="form-row">
-                <div class="form-group">
+                <div class="form-group" style="flex:1;">
                     <label for="irrigation_foreman">灌溉领班</label>
-                    <input type="text" id="irrigation_foreman" name="irrigation_foreman"
-                           value="{% if zone %}{{ zone.irrigation_foreman }}{% endif %}">
+                    <select id="irrigation_foreman" name="irrigation_foreman">
+                        <option value="">-- 选择 --</option>
+                        {% for name in foreman_names %}
+                        <option value="{{ name }}" {% if zone and zone.irrigation_foreman == name %}selected{% endif %}>{{ name }}</option>
+                        {% endfor %}
+                    </select>
                 </div>
-                <div class="form-group">
-                    <label for="greenery_zone">绿化分区</label>
-                    <input type="text" id="greenery_zone" name="greenery_zone"
-                           value="{% if zone %}{{ zone.greenery_zone }}{% endif %}">
-                </div>
-                <div class="form-group">
+                <div class="form-group" style="flex:1;">
                     <label for="greenery_foreman">绿化领班</label>
-                    <input type="text" id="greenery_foreman" name="greenery_foreman"
-                           value="{% if zone %}{{ zone.greenery_foreman }}{% endif %}">
+                    <select id="greenery_foreman" name="greenery_foreman">
+                        <option value="">-- 选择 --</option>
+                        {% for name in foreman_names %}
+                        <option value="{{ name }}" {% if zone and zone.greenery_foreman == name %}selected{% endif %}>{{ name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="form-group" style="flex:1;">
+                    <label for="pest_control_foreman">植保领班</label>
+                    <select id="pest_control_foreman" name="pest_control_foreman">
+                        <option value="">-- 选择 --</option>
+                        {% for name in foreman_names %}
+                        <option value="{{ name }}" {% if zone and zone.pest_control_foreman == name %}selected{% endif %}>{{ name }}</option>
+                        {% endfor %}
+                    </select>
                 </div>
             </div>
 
             <div class="form-row">
-                <div class="form-group">
+                <div class="form-group" style="flex:1;">
+                    <label for="greenery_zone">绿化分区</label>
+                    <input type="text" id="greenery_zone" name="greenery_zone"
+                           value="{% if zone %}{{ zone.greenery_zone }}{% endif %}">
+                </div>
+                <div class="form-group" style="flex:1;">
                     <label for="pest_control_zone">植保分区</label>
                     <input type="text" id="pest_control_zone" name="pest_control_zone"
                            value="{% if zone %}{{ zone.pest_control_zone }}{% endif %}">
-                </div>
-                <div class="form-group">
-                    <label for="pest_control_foreman">植保领班</label>
-                    <input type="text" id="pest_control_foreman" name="pest_control_foreman"
-                           value="{% if zone %}{{ zone.pest_control_foreman }}{% endif %}">
                 </div>
             </div>
 
             <!-- 维护记录 -->
             <h3 style="margin: 20px 0 10px; font-size: 1em; color: var(--color-text-secondary);">维护记录</h3>
+
             <div class="form-group full-width">
-                <label for="equipment_maintenance_notes">灌溉设备维护记录</label>
-                <textarea id="equipment_maintenance_notes" name="equipment_maintenance_notes" rows="2">{% if zone %}{{ zone.equipment_maintenance_notes }}{% endif %}</textarea>
+                <label>灌溉设备维护记录</label>
+                <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">
+                    <input type="date" id="equip_note_date" style="flex:0 0 160px;padding:7px 10px;border:1px solid var(--color-surface-dark);border-radius:6px;font-size:0.88em;">
+                    <input type="text" id="equip_note_content" placeholder="维护内容" style="flex:1;padding:7px 10px;border:1px solid var(--color-surface-dark);border-radius:6px;font-size:0.88em;">
+                    <button type="button" id="add_equip_note_btn" class="btn btn-primary btn-sm" style="flex:0 0 auto;padding:7px 16px;">添加</button>
+                </div>
+                <div id="equip_notes_list"></div>
+                <input type="hidden" id="equipment_maintenance_notes" name="equipment_maintenance_notes" value="">
             </div>
 
             <div class="form-group full-width">
-                <label for="irrigation_management_notes">灌溉管理记录</label>
-                <textarea id="irrigation_management_notes" name="irrigation_management_notes" rows="2">{% if zone %}{{ zone.irrigation_management_notes }}{% endif %}</textarea>
+                <label>灌溉管理记录</label>
+                <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">
+                    <input type="date" id="irrig_note_date" style="flex:0 0 160px;padding:7px 10px;border:1px solid var(--color-surface-dark);border-radius:6px;font-size:0.88em;">
+                    <input type="text" id="irrig_note_content" placeholder="管理内容" style="flex:1;padding:7px 10px;border:1px solid var(--color-surface-dark);border-radius:6px;font-size:0.88em;">
+                    <button type="button" id="add_irrig_note_btn" class="btn btn-primary btn-sm" style="flex:0 0 auto;padding:7px 16px;">添加</button>
+                </div>
+                <div id="irrig_notes_list"></div>
+                <input type="hidden" id="irrigation_management_notes" name="irrigation_management_notes" value="">
             </div>
         </div>
 
@@ -1630,6 +1653,121 @@ function handleComboSelect(selectEl, customInputId, hiddenId) {
 </script>
 
 <script>
+// Maintenance notes editor (equipment + irrigation)
+(function() {
+    function initNotesEditor(listId, hiddenId, data) {
+        const listDiv = document.getElementById(listId);
+        const hiddenInput = document.getElementById(hiddenId);
+        let notes = Array.isArray(data) ? data : [];
+
+        function formatDate(dateStr) {
+            if (!dateStr) return '<span style="color:#999;">无日期</span>';
+            if (dateStr === '日期格式错误') return '<span style="color:#e17055;font-weight:500;">日期格式错误</span>';
+            // yyyy-mm-dd → yyyy/mm/dd
+            const parts = dateStr.split('-');
+            if (parts.length === 3) return parts[0] + '/' + parseInt(parts[1]) + '/' + parseInt(parts[2]);
+            return escHtml(dateStr);
+        }
+
+        function render() {
+            listDiv.innerHTML = '';
+            if (notes.length === 0) {
+                listDiv.innerHTML = '<p style="color:var(--color-text-secondary);font-size:0.9em;">暂无记录</p>';
+            } else {
+                notes.forEach(function(note, i) {
+                    const card = document.createElement('div');
+                    card.style.cssText = 'display:flex;gap:8px;align-items:center;padding:6px 10px;margin-bottom:4px;background:var(--color-surface);border:1px solid var(--color-surface-dark);border-radius:6px;font-size:0.88em;';
+                    card.innerHTML =
+                        '<span style="color:var(--color-primary);font-weight:600;flex-shrink:0;min-width:80px;">' + formatDate(note.date) + '</span>' +
+                        '<span style="flex:1;word-break:break-all;" id="' + listId + '_text_' + i + '">' + escHtml(note.content) + '</span>' +
+                        '<button type="button" style="padding:2px 8px;font-size:0.8em;background:var(--color-surface-dark);border:none;border-radius:4px;cursor:pointer;" data-idx="'+i+'" class="edit-note-btn">编辑</button>' +
+                        '<button type="button" style="padding:2px 8px;font-size:0.8em;background:#9B2226;color:white;border:none;border-radius:4px;cursor:pointer;" data-idx="'+i+'" class="del-note-btn">删除</button>';
+                    listDiv.appendChild(card);
+                });
+            }
+            hiddenInput.value = JSON.stringify(notes);
+        }
+
+        function escHtml(s) {
+            const d = document.createElement('div');
+            d.textContent = s;
+            return d.innerHTML;
+        }
+
+        render();  // initial render
+
+        listDiv.addEventListener('click', function(e) {
+            const btn = e.target.closest('.edit-note-btn');
+            const delBtn = e.target.closest('.del-note-btn');
+            if (delBtn) {
+                const idx = parseInt(delBtn.dataset.idx);
+                notes.splice(idx, 1);
+                render();
+            } else if (btn) {
+                const idx = parseInt(btn.dataset.idx);
+                const note = notes[idx];
+                const prefix = listId.replace('_notes_list', '_note');
+                const dateInput = document.getElementById(prefix + '_date');
+                const contentInput = document.getElementById(prefix + '_content');
+                // Only set date picker if it's a valid yyyy-mm-dd date
+                if (note.date && /^\d{4}-\d{2}-\d{2}$/.test(note.date)) {
+                    dateInput.value = note.date;
+                } else {
+                    dateInput.value = '';
+                }
+                contentInput.value = note.content || '';
+                // Remove the entry being edited; re-add on "add" click
+                notes.splice(idx, 1);
+                render();
+                contentInput.focus();
+            }
+        });
+
+        return {
+            addNote: function(date, content) {
+                if (!content.trim()) return;
+                notes.push({date: date || new Date().toISOString().slice(0,10), content: content.trim()});
+                render();
+            },
+            setData: function(d) { notes = Array.isArray(d) ? d : []; render(); }
+        };
+    }
+
+    // Initialize equipment maintenance notes editor
+    let equipNotesRaw = {{ equip_notes_json|safe }};
+    const equipEditor = initNotesEditor('equip_notes_list', 'equipment_maintenance_notes', equipNotesRaw);
+    document.getElementById('add_equip_note_btn').addEventListener('click', function() {
+        const d = document.getElementById('equip_note_date');
+        const c = document.getElementById('equip_note_content');
+        equipEditor.addNote(d.value, c.value);
+        d.value = ''; c.value = ''; d.focus();
+    });
+    document.getElementById('equip_note_content').addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') { e.preventDefault(); document.getElementById('add_equip_note_btn').click(); }
+    });
+
+    // Initialize irrigation management notes editor
+    let irrigNotesRaw = {{ irrig_notes_json|safe }};
+    const irrigEditor = initNotesEditor('irrig_notes_list', 'irrigation_management_notes', irrigNotesRaw);
+    document.getElementById('add_irrig_note_btn').addEventListener('click', function() {
+        const d = document.getElementById('irrig_note_date');
+        const c = document.getElementById('irrig_note_content');
+        irrigEditor.addNote(d.value, c.value);
+        d.value = ''; c.value = ''; d.focus();
+    });
+    document.getElementById('irrig_note_content').addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') { e.preventDefault(); document.getElementById('add_irrig_note_btn').click(); }
+    });
+
+    // Re-initialize after AJAX save (server returns updated notes)
+    window._reloadNotesEditors = function(equipNotes, irrigNotes) {
+        equipEditor.setData(equipNotes || []);
+        irrigEditor.setData(irrigNotes || []);
+    };
+})();
+</script>
+
+<script>
 // Save the zone form without reloading the current page.
 (function() {
     const form = document.getElementById('zoneForm');
@@ -1653,25 +1791,29 @@ function handleComboSelect(selectEl, customInputId, hiddenId) {
         return cookieValue;
     }
 
-    function messageContainer() {
-        let container = document.querySelector('.zone-editor-container > .messages');
-        if (!container) {
-            container = document.createElement('div');
-            container.className = 'messages';
-            const header = document.querySelector('.zone-editor-header');
-            header.insertAdjacentElement('afterend', container);
-        }
-        return container;
+    function showToast(msg, type) {
+        type = type || 'info';
+        const container = document.getElementById('toastContainer');
+        if (!container) return;
+        const colors = {
+            success: {bg:'#ecfdf5',color:'#065f46',border:'#a7f3d0'},
+            error:   {bg:'#fef2f2',color:'#991b1b',border:'#fecaca'},
+            info:    {bg:'#f0f9ff',color:'#0c4a6e',border:'#bae6fd'},
+            warning: {bg:'#fffbeb',color:'#92400e',border:'#fde68a'}
+        };
+        const c = colors[type] || colors.info;
+        const toast = document.createElement('div');
+        toast.style.cssText = `padding:12px 20px;border-radius:10px;font-size:0.9em;font-weight:500;box-shadow:0 6px 20px rgba(0,0,0,0.15);animation:toastIn 0.3s ease;min-width:200px;max-width:400px;background:${c.bg};color:${c.color};border:1px solid ${c.border};pointer-events:auto;`;
+        toast.textContent = msg;
+        container.appendChild(toast);
+        setTimeout(() => {
+            toast.style.transition = 'opacity 0.3s, transform 0.3s';
+            toast.style.opacity = '0';
+            toast.style.transform = 'translateX(30px)';
+            setTimeout(() => toast.remove(), 300);
+        }, 5000);
     }
-
-    function showMessage(type, text) {
-        const container = messageContainer();
-        container.innerHTML = '';
-        const item = document.createElement('div');
-        item.className = `message message-${type}`;
-        item.textContent = text;
-        container.appendChild(item);
-    }
+    window.showToast = showToast;
 
     function setSaving(isSaving) {
         if (!saveButton) return;
@@ -1699,7 +1841,7 @@ function handleComboSelect(selectEl, customInputId, hiddenId) {
 
             const data = await response.json();
             if (!response.ok || !data.success) {
-                throw new Error(data.message || '保存失败，请检查输入后重试');
+                throw new Error(data.message || '保存失败，请检查填写的内容后重试');
             }
 
             if (data.edit_url) {
@@ -1715,9 +1857,14 @@ function handleComboSelect(selectEl, customInputId, hiddenId) {
                 }
             }
 
-            showMessage('success', data.message || '保存成功');
+            showToast(data.message || '保存成功', 'success');
+
+            // Reload notes editors with server-returned data
+            if (window._reloadNotesEditors) {
+                window._reloadNotesEditors(data.equipment_maintenance_notes, data.irrigation_management_notes);
+            }
         } catch (error) {
-            showMessage('error', error.message || '保存失败，请稍后重试');
+            showToast(error.message || '网络异常，保存失败，请稍后再试', 'error');
         } finally {
             setSaving(false);
         }
