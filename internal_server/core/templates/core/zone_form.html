@@ -6,7 +6,7 @@
 {% block nav_settings %}active{% endblock %}
 
 {% block extra_css %}
-<link rel="stylesheet" href="{% static 'css/settings.css' %}?v=20260514a">
+<link rel="stylesheet" href="{% static 'css/settings.css' %}?v=20260514e">
 <!-- Leaflet CSS -->
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 {% endblock %}
@@ -35,15 +35,9 @@
     </script>
     {% endif %}
 
+    <div class="zone-layout">
     <form method="post" class="zone-form" id="zoneForm">
         {% csrf_token %}
-
-        <div class="zone-floating-actions" aria-label="页面操作">
-            <a href="{% url 'core:settings' %}" class="btn btn-secondary">返回设置</a>
-            <button type="submit" class="btn btn-primary">
-                {% if zone %}保存修改{% else %}创建区域{% endif %}
-            </button>
-        </div>
 
         <div class="form-section zone-form-section">
             <div class="form-section-heading">
@@ -476,6 +470,136 @@
         </div>
 
     </form>
+
+    {% if zone %}
+    <!-- Zone Sidebar -->
+    <aside class="zone-sidebar">
+        <!-- Zone Profile Card -->
+        <div class="sidebar-card sidebar-profile">
+            <div class="sidebar-card-header">
+                <h3>区域概览</h3>
+                <span class="priority-dot priority-{{ zone.priority }}" data-sidebar="priority-dot"></span>
+            </div>
+            <div class="sidebar-profile-body">
+                <div class="profile-name-row">
+                    <span class="profile-zone-name" data-sidebar="name">{{ zone.name }}</span>
+                    <span class="profile-zone-code" data-sidebar="code">{{ zone.code }}</span>
+                </div>
+                <div class="profile-field">
+                    <span class="profile-label">所属片区</span>
+                    <span class="profile-value" data-sidebar="patch">{{ zone.patch.name|default:"未分配" }}</span>
+                </div>
+                <div class="profile-field">
+                    <span class="profile-label">优先级</span>
+                    <span class="profile-value" data-sidebar="priority">
+                        {% if zone.priority == 'critical' %}超级重点
+                        {% elif zone.priority == 'high' %}重点
+                        {% elif zone.priority == 'medium' %}一般
+                        {% elif zone.priority == 'low' %}次要
+                        {% elif zone.priority == 'abolished' %}废除
+                        {% endif %}
+                    </span>
+                </div>
+                <div class="profile-field">
+                    <span class="profile-label">当前状态</span>
+                    <span class="profile-value" data-sidebar="current_status">{% if zone.current_status %}{{ zone.current_status }}{% else %}正常{% endif %}</span>
+                </div>
+                <div class="profile-field">
+                    <span class="profile-label">面积</span>
+                    <span class="profile-value" data-sidebar="area">{{ zone.area_display }}</span>
+                </div>
+                <div class="profile-divider"></div>
+                <div class="profile-field">
+                    <span class="profile-label">灌水器类型</span>
+                    <span class="profile-value" data-sidebar="sprinkler_type">{{ zone.sprinkler_type|default:"-" }}</span>
+                </div>
+                <div class="profile-field">
+                    <span class="profile-label">灌溉强度</span>
+                    <span class="profile-value" data-sidebar="irrigation_intensity">{% if zone.irrigation_intensity %}{{ zone.irrigation_intensity }} mm/h{% else %}-{% endif %}</span>
+                </div>
+                <div class="profile-field">
+                    <span class="profile-label">电磁阀尺寸</span>
+                    <span class="profile-value" data-sidebar="solenoid_valve_size">{% if zone.solenoid_valve_size %}{{ zone.solenoid_valve_size }} 寸{% else %}-{% endif %}</span>
+                </div>
+                <div class="profile-field">
+                    <span class="profile-label">景观系数</span>
+                    <span class="profile-value" data-sidebar="landscape_coefficient">{{ zone.landscape_coefficient|default:"-" }}</span>
+                </div>
+                <div class="profile-field">
+                    <span class="profile-label">植物类型</span>
+                    <span class="profile-value" data-sidebar="plant_type">{{ zone.plant_type|default:"-" }}</span>
+                </div>
+                <div class="profile-field">
+                    <span class="profile-label">土壤湿度</span>
+                    <span class="profile-value" data-sidebar="soil_moisture">{{ zone.soil_moisture|default:"-" }}</span>
+                </div>
+                <div class="profile-field">
+                    <span class="profile-label">地形特点</span>
+                    <span class="profile-value" data-sidebar="terrain_feature">{{ zone.terrain_feature|default:"-" }}</span>
+                </div>
+                <div class="profile-field">
+                    <span class="profile-label">植物特点</span>
+                    <span class="profile-value" data-sidebar="plant_feature">{{ zone.plant_feature|default:"-" }}</span>
+                </div>
+                <div class="profile-divider"></div>
+                <div class="profile-field">
+                    <span class="profile-label">边界区域</span>
+                    <span class="profile-value" data-sidebar="boundary_count">{{ boundary_count }} 个</span>
+                </div>
+                <div class="profile-field">
+                    <span class="profile-label">设备维护记录</span>
+                    <span class="profile-value" data-sidebar="equip_notes_count">{{ equip_notes_count }} 条</span>
+                </div>
+                <div class="profile-field">
+                    <span class="profile-label">灌溉管理记录</span>
+                    <span class="profile-value" data-sidebar="irrig_notes_count">{{ irrig_notes_count }} 条</span>
+                </div>
+                <div class="profile-field">
+                    <span class="profile-label">已添加植物</span>
+                    <span class="profile-value" data-sidebar="plant_count">{{ plant_count }} 种</span>
+                </div>
+                <div class="profile-field">
+                    <span class="profile-label">已添加设备</span>
+                    <span class="profile-value" data-sidebar="equipment_count">{{ equipment_count }} 件</span>
+                </div>
+                <div class="profile-divider"></div>
+                <div class="profile-field">
+                    <span class="profile-label">灌溉领班</span>
+                    <span class="profile-value" data-sidebar="irrigation_foreman">{{ zone.irrigation_foreman|default:"-" }}</span>
+                </div>
+                <div class="profile-field">
+                    <span class="profile-label">绿化领班</span>
+                    <span class="profile-value" data-sidebar="greenery_foreman">{{ zone.greenery_foreman|default:"-" }}</span>
+                </div>
+                <div class="profile-field">
+                    <span class="profile-label">植保领班</span>
+                    <span class="profile-value" data-sidebar="pest_control_foreman">{{ zone.pest_control_foreman|default:"-" }}</span>
+                </div>
+                <div class="profile-field">
+                    <span class="profile-label">更新时间</span>
+                    <span class="profile-value" data-sidebar="updated_at">{{ zone.updated_at|date:"Y/m/d H:i" }}</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Sibling Zones Card -->
+        <!-- Sidebar Floating Actions -->
+        <div class="sidebar-floating-actions">
+            <button type="button" class="btn btn-primary btn-block" id="sidebarSaveBtn">
+                保存修改
+            </button>
+            <a href="{% url 'core:zone_detail' zone.id %}" class="btn btn-secondary btn-block" target="_blank">查看详情</a>
+        </div>
+    </aside>
+    {% else %}
+    <!-- Floating actions for new zone (no sidebar) -->
+    <div class="zone-floating-actions" aria-label="页面操作">
+        <a href="{% url 'core:settings' %}" class="btn btn-secondary">返回设置</a>
+        <button type="submit" class="btn btn-primary">创建区域</button>
+    </div>
+    {% endif %}
+
+    </div><!-- .zone-layout -->
 </div>
 {% endblock %}
 
@@ -553,7 +677,7 @@ function handleComboSelect(selectEl, customInputId, hiddenId) {
 
         editMap = L.map('editMap', {
             center: [centerLat, centerLng],
-            zoom: 15, maxZoom: 22, minZoom: 13,
+            zoom: 15, maxZoom: 22, minZoom: 15,
             maxBounds: L.latLngBounds(southWest, northEast),
             maxBoundsViscosity: 1.0
         });
@@ -566,10 +690,6 @@ function handleComboSelect(selectEl, customInputId, hiddenId) {
             attribution: '&copy; GeoQ', minZoom: 19, maxZoom: 22, opacity: 0.7
         });
         var satGroup = L.layerGroup([satTile, fallbackTile]).addTo(editMap);
-        var baseTile = L.tileLayer('https://map.geoq.cn/ArcGIS/rest/services/ChinaOnlineCommunity/MapServer/tile/{z}/{y}/{x}', {
-            attribution: '&copy; GeoQ', maxZoom: 18
-        });
-        L.control.layers({'地图': baseTile}, {'卫星': satGroup}, {position: 'topright'}).addTo(editMap);
 
         // Reference zones
         const refZonesEl = document.getElementById('ref-zones-data');
@@ -1773,8 +1893,17 @@ function handleComboSelect(selectEl, customInputId, hiddenId) {
     const form = document.getElementById('zoneForm');
     if (!form) return;
 
-    const saveButton = form.querySelector('.zone-floating-actions button[type="submit"]');
+    const sidebarSaveBtn = document.getElementById('sidebarSaveBtn');
+    const fallbackSaveBtn = form.querySelector('.zone-floating-actions button[type="submit"]');
+    const saveButton = sidebarSaveBtn || fallbackSaveBtn;
     let defaultSaveText = saveButton ? saveButton.textContent.trim() : '';
+
+    // Sidebar save button sits outside <form>, so wire it to dispatch a submit
+    if (sidebarSaveBtn) {
+        sidebarSaveBtn.addEventListener('click', function() {
+            form.requestSubmit();
+        });
+    }
 
     function getCookie(name) {
         let cookieValue = null;
@@ -1859,6 +1988,14 @@ function handleComboSelect(selectEl, customInputId, hiddenId) {
 
             showToast(data.message || '保存成功', 'success');
 
+            // Refresh sidebar profile from server
+            if (data.zone_id) {
+                fetch('/api/zones/' + data.zone_id + '/')
+                    .then(r => r.json())
+                    .then(z => refreshSidebar(z, data))
+                    .catch(() => {});
+            }
+
             // Reload notes editors with server-returned data
             if (window._reloadNotesEditors) {
                 window._reloadNotesEditors(data.equipment_maintenance_notes, data.irrigation_management_notes);
@@ -1869,6 +2006,59 @@ function handleComboSelect(selectEl, customInputId, hiddenId) {
             setSaving(false);
         }
     });
+
+    function refreshSidebar(z, saveData) {
+        const priorityMap = {critical:'超级重点',high:'重点',medium:'一般',low:'次要',abolished:'废除'};
+        const priorityColors = {critical:'priority-critical',high:'priority-high',medium:'priority-medium',low:'priority-low',abolished:'priority-abolished'};
+
+        function setVal(key, val) {
+            const el = document.querySelector('[data-sidebar="' + key + '"]');
+            if (el) el.textContent = val || '-';
+        }
+
+        setVal('name', z.name);
+        setVal('code', z.code);
+        setVal('patch', z.patch_name || '未分配');
+        setVal('priority', priorityMap[z.priority] || z.priority);
+        setVal('current_status', z.current_status || '正常');
+
+        // Format area from area_sqm
+        let areaText = '—';
+        if (z.area_sqm) {
+            if (z.area_sqm < 10000) areaText = Math.round(z.area_sqm).toLocaleString() + ' m²';
+            else areaText = (z.area_sqm / 10000).toFixed(2) + ' 公顷 (' + Math.round(z.area_sqm).toLocaleString() + ' m²)';
+        }
+        setVal('area', areaText);
+        setVal('sprinkler_type', z.sprinkler_type);
+        setVal('irrigation_intensity', z.irrigation_intensity ? z.irrigation_intensity + ' mm/h' : null);
+        setVal('solenoid_valve_size', z.solenoid_valve_size ? z.solenoid_valve_size + ' 寸' : null);
+        setVal('landscape_coefficient', z.landscape_coefficient);
+        setVal('plant_type', z.plant_type);
+        setVal('soil_moisture', z.soil_moisture);
+        setVal('terrain_feature', z.terrain_feature);
+        setVal('plant_feature', z.plant_feature);
+        setVal('irrigation_foreman', z.irrigation_foreman);
+        setVal('greenery_foreman', z.greenery_foreman);
+        setVal('pest_control_foreman', z.pest_control_foreman);
+
+        // Update counts from save response
+        if (saveData) {
+            setVal('boundary_count', (saveData.boundary_count || 0) + ' 个');
+            setVal('equip_notes_count', (saveData.equipment_maintenance_notes_count || 0) + ' 条');
+            setVal('irrig_notes_count', (saveData.irrigation_management_notes_count || 0) + ' 条');
+            setVal('plant_count', (saveData.plant_count || 0) + ' 种');
+            setVal('equipment_count', (saveData.equipment_count || 0) + ' 件');
+        }
+
+        const now = new Date();
+        setVal('updated_at', now.getFullYear() + '/' + (now.getMonth()+1) + '/' + now.getDate() + ' ' + String(now.getHours()).padStart(2,'0') + ':' + String(now.getMinutes()).padStart(2,'0'));
+
+        // Update priority dot color
+        const dot = document.querySelector('[data-sidebar="priority-dot"]');
+        if (dot) {
+            dot.className = 'priority-dot ' + (priorityColors[z.priority] || '');
+        }
+    }
 })();
 </script>
 {% endblock %}

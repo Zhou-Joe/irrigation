@@ -350,6 +350,7 @@ class ManagerProfile(models.Model):
 
     api_token = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
     active = models.BooleanField(default=True)
+    preferences = models.JSONField(default=dict, blank=True, help_text='User preferences JSON (card fields, etc.)')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

@@ -1,70 +1,102 @@
 {% extends 'core/base.html' %}
-
 {% load static %}
-
 {% block title %}{{ zone.name }} - 区域详情{% endblock %}
 {% block nav_settings %}active{% endblock %}
 
 {% block extra_css %}
-<link rel="stylesheet" href="{% static 'css/settings.css' %}">
+<link rel="stylesheet" href="{% static 'css/settings.css' %}?v=20260514c">
 <style>
 .zone-detail-container {
-    max-width: 1000px;
+    max-width: 960px;
     margin: 0 auto;
     padding: var(--space-xl);
 }
 
-.zone-detail-header {
+/* --- Breadcrumb --- */
+.zone-breadcrumb {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.85em;
+    color: var(--color-text-secondary);
+    margin-bottom: var(--space-md);
+}
+.zone-breadcrumb a { color: var(--color-primary); text-decoration: none; }
+.zone-breadcrumb a:hover { text-decoration: underline; }
+.zone-breadcrumb .sep { opacity: 0.4; }
+
+/* --- Header --- */
+.zone-header {
     display: flex;
     justify-content: space-between;
     align-items: flex-start;
+    gap: var(--space-lg);
     margin-bottom: var(--space-xl);
     padding-bottom: var(--space-lg);
     border-bottom: 2px solid var(--color-surface-dark);
 }
-
-.zone-title-section h1 {
+.zone-header-left h1 {
     font-family: var(--font-display);
-    font-size: 2rem;
+    font-size: 1.8rem;
     color: var(--color-primary);
     margin: 0 0 var(--space-xs) 0;
+    display: flex;
+    align-items: center;
+    gap: 10px;
 }
-
-.zone-code-badge {
-    display: inline-block;
-    background: var(--color-surface-dark);
-    padding: var(--space-xs) var(--space-md);
-    border-radius: var(--radius-md);
+.zone-code-tag {
     font-family: var(--font-mono);
-    font-size: 0.9em;
+    font-size: 0.55em;
+    background: var(--color-surface-dark);
+    padding: 3px 10px;
+    border-radius: var(--radius-md);
+    font-weight: 400;
 }
+.zone-description { color: var(--color-text-secondary); margin-top: 6px; font-size: 0.95em; }
 
-.zone-description {
-    color: var(--color-text-secondary);
-    margin-top: var(--space-sm);
+.zone-badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 10px;
 }
-
-.back-link {
+.badge {
     display: inline-flex;
     align-items: center;
-    gap: var(--space-sm);
-    color: var(--color-primary);
-    text-decoration: none;
-    font-size: 0.9em;
+    gap: 4px;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 0.8em;
+    font-weight: 600;
+}
+.badge-priority-critical { background: rgba(155,34,38,0.12); color: #9B2226; }
+.badge-priority-high     { background: rgba(204,119,34,0.12); color: #CC7722; }
+.badge-priority-medium   { background: rgba(82,183,136,0.12); color: #2D6A4F; }
+.badge-priority-low      { background: rgba(100,116,139,0.12); color: #64748B; }
+.badge-priority-abolished{ background: rgba(148,163,184,0.12); color: #94A3B8; text-decoration: line-through; }
+.badge-status-normal { background: rgba(82,183,136,0.12); color: #2D6A4F; }
+.badge-status-construction { background: rgba(204,119,34,0.12); color: #CC7722; }
+.badge-status-stopped { background: rgba(155,34,38,0.12); color: #9B2226; }
+.badge-area {
+    background: var(--color-surface-dark);
+    color: var(--color-text-secondary);
+    font-weight: 500;
+    font-family: var(--font-mono);
 }
 
-.back-link:hover {
-    text-decoration: underline;
+.zone-header-actions {
+    display: flex;
+    gap: 8px;
+    flex-shrink: 0;
 }
 
-/* Stats Cards */
+/* --- Stats Grid --- */
 .stats-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    grid-template-columns: repeat(4, 1fr);
     gap: var(--space-md);
     margin-bottom: var(--space-xl);
 }
-
 .stat-card {
     background: var(--color-surface-alt);
     border-radius: var(--radius-lg);
@@ -72,292 +104,455 @@
     text-align: center;
     border: 1px solid var(--color-surface-dark);
 }
-
-.stat-icon {
-    font-size: 2rem;
-    margin-bottom: var(--space-sm);
-}
-
 .stat-value {
     font-size: 2rem;
     font-weight: 700;
-    color: var(--color-primary);
-    margin-bottom: var(--space-xs);
+    margin-bottom: 2px;
 }
-
 .stat-label {
     color: var(--color-text-secondary);
-    font-size: 0.9em;
+    font-size: 0.85em;
 }
-
-.stat-card.plants { border-left: 4px solid #52B788; }
+.stat-card.plants    { border-left: 4px solid #52B788; }
 .stat-card.plants .stat-value { color: #52B788; }
 .stat-card.equipment { border-left: 4px solid #40916C; }
 .stat-card.equipment .stat-value { color: #40916C; }
-.stat-card.reports { border-left: 4px solid #2D6A4F; }
+.stat-card.reports   { border-left: 4px solid #2D6A4F; }
 .stat-card.reports .stat-value { color: #2D6A4F; }
-.stat-card.faults { border-left: 4px solid #CC7722; }
+.stat-card.faults    { border-left: 4px solid #CC7722; }
 .stat-card.faults .stat-value { color: #CC7722; }
 
-/* Section Styles */
+/* --- Section Card --- */
 .detail-section {
     background: var(--color-surface-alt);
     border-radius: var(--radius-lg);
     padding: var(--space-xl);
-    margin-bottom: var(--space-xl);
+    margin-bottom: var(--space-lg);
     border: 1px solid var(--color-surface-dark);
 }
-
 .section-title {
     font-family: var(--font-display);
-    font-size: 1.3rem;
+    font-size: 1.15rem;
     color: var(--color-primary);
     margin: 0 0 var(--space-lg) 0;
     display: flex;
     align-items: center;
-    gap: var(--space-sm);
+    gap: 8px;
 }
 
-/* Plant Cards */
-.plant-grid {
+/* --- Property Grid --- */
+.prop-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 12px 24px;
+}
+.prop-item {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+.prop-label {
+    font-size: 0.8em;
+    color: var(--color-text-secondary);
+    font-weight: 500;
+}
+.prop-value {
+    font-size: 0.95em;
+    font-weight: 500;
+    color: var(--color-text-primary);
+    word-break: break-all;
+}
+.prop-value.empty { color: var(--color-text-secondary); font-weight: 400; }
+.prop-divider {
+    grid-column: 1 / -1;
+    border: none;
+    border-top: 1px dashed var(--color-surface-dark);
+    margin: 4px 0;
+}
+
+/* --- Notes Timeline --- */
+.notes-timeline { display: flex; flex-direction: column; gap: 6px; }
+.note-entry {
+    display: flex;
+    gap: 10px;
+    align-items: baseline;
+    padding: 6px 0;
+    font-size: 0.9em;
+}
+.note-date {
+    font-weight: 600;
+    color: var(--color-primary);
+    white-space: nowrap;
+    min-width: 80px;
+    font-family: var(--font-mono);
+    font-size: 0.85em;
+}
+.note-content { flex: 1; word-break: break-all; }
+
+/* --- Plant / Equipment Cards --- */
+.card-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
     gap: var(--space-md);
 }
-
-.plant-card {
+.mini-card {
     background: var(--color-surface);
     border-radius: var(--radius-md);
     padding: var(--space-md);
-    border: 1px solid rgba(82,183,136,0.2);
+    border: 1px solid var(--color-surface-dark);
 }
-
-.plant-name {
+.mini-card-title {
     font-weight: 600;
     color: #52B788;
-    margin-bottom: var(--space-xs);
+    margin-bottom: 6px;
 }
-
-.plant-scientific {
-    font-style: italic;
-    color: var(--color-text-secondary);
-    font-size: 0.85em;
-    margin-bottom: var(--space-sm);
-}
-
-.plant-meta {
+.mini-card-meta {
     display: flex;
-    gap: var(--space-md);
+    flex-wrap: wrap;
+    gap: 8px 16px;
     font-size: 0.85em;
     color: var(--color-text-secondary);
 }
-
-.plant-date-range {
-    display: flex;
-    align-items: center;
-    gap: var(--space-xs);
-}
-
-/* Equipment Cards */
-.equipment-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-    gap: var(--space-md);
-}
-
-.equipment-card {
-    background: var(--color-surface);
-    border-radius: var(--radius-md);
-    padding: var(--space-md);
-    border: 1px solid rgba(64,145,108,0.2);
-}
-
-.equipment-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: var(--space-sm);
-}
-
-.equipment-type {
-    font-size: 0.85em;
-    color: var(--color-text-secondary);
-}
-
-.equipment-model {
-    font-weight: 600;
-    color: #40916C;
-}
-
-.equipment-status {
+.eq-card-title { color: #40916C; }
+.eq-status {
     display: inline-block;
-    padding: var(--space-xs) var(--space-sm);
-    border-radius: var(--radius-sm);
+    padding: 2px 10px;
+    border-radius: 12px;
     font-size: 0.8em;
     font-weight: 600;
 }
+.eq-status.working     { background: rgba(64,145,108,0.15); color: #40916C; }
+.eq-status.needs_repair{ background: rgba(204,119,34,0.15); color: #CC7722; }
 
-.equipment-status.working {
-    background: rgba(64,145,108,0.15);
-    color: #40916C;
+/* --- Report Table --- */
+.report-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.88em;
 }
-
-.equipment-status.needs_repair {
-    background: rgba(204,119,34,0.15);
-    color: #CC7722;
-}
-
-.equipment-status.out_of_service {
-    background: rgba(155,34,38,0.15);
-    color: #9B2226;
-}
-
-.equipment-meta {
-    display: flex;
-    gap: var(--space-md);
-    font-size: 0.85em;
+.report-table th {
+    text-align: left;
+    padding: 8px 10px;
+    border-bottom: 2px solid var(--color-surface-dark);
     color: var(--color-text-secondary);
+    font-weight: 600;
+    font-size: 0.85em;
 }
+.report-table td {
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--color-surface-dark);
+}
+.report-table tr:last-child td { border-bottom: none; }
+.report-table a { color: var(--color-primary); text-decoration: none; }
+.report-table a:hover { text-decoration: underline; }
 
-/* Empty state */
+/* --- Sibling Zones --- */
+.sibling-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+.sibling-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 10px;
+    background: var(--color-surface);
+    border: 1px solid var(--color-surface-dark);
+    border-radius: 16px;
+    font-size: 0.82em;
+    text-decoration: none;
+    color: var(--color-text-primary);
+    transition: border-color 0.15s;
+}
+.sibling-chip:hover { border-color: var(--color-primary); color: var(--color-primary); }
+.sibling-chip .dot {
+    width: 8px; height: 8px; border-radius: 50%; display: inline-block;
+}
+.dot-critical { background: #9B2226; }
+.dot-high     { background: #CC7722; }
+.dot-medium   { background: #52B788; }
+.dot-low      { background: #64748B; }
+.dot-abolished{ background: #94A3B8; }
+
+/* --- Empty State --- */
 .empty-state {
     text-align: center;
-    padding: var(--space-xl);
+    padding: var(--space-lg);
     color: var(--color-text-secondary);
+    font-size: 0.9em;
 }
 
-.empty-state-icon {
-    font-size: 3rem;
-    opacity: 0.3;
-    margin-bottom: var(--space-md);
-}
-
-/* Mobile adjustments */
+/* --- Responsive --- */
 @media (max-width: 768px) {
-    .zone-detail-header {
-        flex-direction: column;
-        gap: var(--space-md);
-    }
-
-    .stats-grid {
-        grid-template-columns: repeat(2, 1fr);
-    }
+    .zone-header { flex-direction: column; }
+    .stats-grid { grid-template-columns: repeat(2, 1fr); }
+    .prop-grid { grid-template-columns: 1fr 1fr; }
 }
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="zone-detail-container">
-    <div class="zone-detail-header">
-        <div class="zone-title-section">
-            <h1>🌱 {{ zone.name }}</h1>
-            <span class="zone-code-badge">{{ zone.code }}</span>
+
+    <!-- Breadcrumb -->
+    <div class="zone-breadcrumb">
+        <a href="{% url 'core:dashboard' %}">地图总览</a>
+        <span class="sep">/</span>
+        {% if zone.patch %}
+        <a href="{% url 'core:settings' %}#patch-{{ zone.patch_id }}">{{ zone.patch.name }}</a>
+        <span class="sep">/</span>
+        {% endif %}
+        <span>{{ zone.name }}</span>
+    </div>
+
+    <!-- Header -->
+    <div class="zone-header">
+        <div class="zone-header-left">
+            <h1>
+                {{ zone.name }}
+                <span class="zone-code-tag">{{ zone.code }}</span>
+            </h1>
             {% if zone.description %}
             <p class="zone-description">{{ zone.description }}</p>
             {% endif %}
+            <div class="zone-badges">
+                <span class="badge badge-priority-{{ zone.priority }}">优先级: {{ priority_display }}</span>
+                {% if status_display == '正常' %}
+                <span class="badge badge-status-normal">状态: {{ status_display }}</span>
+                {% elif status_display == '施工中' %}
+                <span class="badge badge-status-construction">状态: {{ status_display }}</span>
+                {% elif status_display == '停浇' %}
+                <span class="badge badge-status-stopped">状态: {{ status_display }}</span>
+                {% endif %}
+                {% if zone.area_sqm %}
+                <span class="badge badge-area">面积: {{ zone.area_display }}</span>
+                {% endif %}
+            </div>
         </div>
-        <a href="{% url 'core:dashboard' %}" class="back-link">← 返回地图</a>
+        <div class="zone-header-actions">
+            <a href="{% url 'core:zone_edit' zone.id %}" class="btn btn-secondary">编辑</a>
+        </div>
     </div>
 
-    <!-- Stats Overview -->
+    <!-- Stats -->
     <div class="stats-grid">
         <div class="stat-card plants">
-            <div class="stat-icon">🌱</div>
             <div class="stat-value">{{ plant_count }}</div>
             <div class="stat-label">种植物</div>
         </div>
         <div class="stat-card equipment">
-            <div class="stat-icon">🔧</div>
             <div class="stat-value">{{ equipment_count }}</div>
             <div class="stat-label">设备</div>
         </div>
         <div class="stat-card reports">
-            <div class="stat-icon">📋</div>
             <div class="stat-value">{{ work_report_count }}</div>
             <div class="stat-label">工作报告</div>
         </div>
         <div class="stat-card faults">
-            <div class="stat-icon">⚠️</div>
             <div class="stat-value">{{ recent_fault_count }}</div>
             <div class="stat-label">近30天故障</div>
         </div>
     </div>
 
-    <!-- Plants Section -->
+    <!-- Irrigation & Environment Parameters -->
     <div class="detail-section">
-        <h2 class="section-title">🌱 当前植物</h2>
+        <h2 class="section-title">灌溉与环境参数</h2>
+        <div class="prop-grid">
+            <div class="prop-item">
+                <span class="prop-label">灌水器类型</span>
+                <span class="prop-value {% if not zone.sprinkler_type %}empty{% endif %}">{{ zone.sprinkler_type|default:"—" }}</span>
+            </div>
+            <div class="prop-item">
+                <span class="prop-label">灌溉强度</span>
+                <span class="prop-value {% if not zone.irrigation_intensity %}empty{% endif %}">{% if zone.irrigation_intensity %}{{ zone.irrigation_intensity }} mm/h{% else %}—{% endif %}</span>
+            </div>
+            <div class="prop-item">
+                <span class="prop-label">电磁阀尺寸</span>
+                <span class="prop-value {% if not zone.solenoid_valve_size %}empty{% endif %}">{% if zone.solenoid_valve_size %}{{ zone.solenoid_valve_size }} 寸{% else %}—{% endif %}</span>
+            </div>
+            <div class="prop-item">
+                <span class="prop-label">景观系数 (LC)</span>
+                <span class="prop-value {% if not zone.landscape_coefficient %}empty{% endif %}">{{ zone.landscape_coefficient|default:"—" }}</span>
+            </div>
+            <hr class="prop-divider">
+            <div class="prop-item">
+                <span class="prop-label">植物类型</span>
+                <span class="prop-value {% if not zone.plant_type %}empty{% endif %}">{{ zone.plant_type|default:"—" }}</span>
+            </div>
+            <div class="prop-item">
+                <span class="prop-label">植物特点</span>
+                <span class="prop-value {% if not zone.plant_feature %}empty{% endif %}">{{ zone.plant_feature|default:"—" }}</span>
+            </div>
+            <div class="prop-item">
+                <span class="prop-label">土壤湿度</span>
+                <span class="prop-value {% if not zone.soil_moisture %}empty{% endif %}">{{ zone.soil_moisture|default:"—" }}</span>
+            </div>
+            <div class="prop-item">
+                <span class="prop-label">地形特点</span>
+                <span class="prop-value {% if not zone.terrain_feature %}empty{% endif %}">{{ zone.terrain_feature|default:"—" }}</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Personnel & Zones -->
+    <div class="detail-section">
+        <h2 class="section-title">人员与分区</h2>
+        <div class="prop-grid">
+            <div class="prop-item">
+                <span class="prop-label">灌溉领班</span>
+                <span class="prop-value {% if not zone.irrigation_foreman %}empty{% endif %}">{{ zone.irrigation_foreman|default:"—" }}</span>
+            </div>
+            <div class="prop-item">
+                <span class="prop-label">绿化领班</span>
+                <span class="prop-value {% if not zone.greenery_foreman %}empty{% endif %}">{{ zone.greenery_foreman|default:"—" }}</span>
+            </div>
+            <div class="prop-item">
+                <span class="prop-label">植保领班</span>
+                <span class="prop-value {% if not zone.pest_control_foreman %}empty{% endif %}">{{ zone.pest_control_foreman|default:"—" }}</span>
+            </div>
+            <hr class="prop-divider">
+            <div class="prop-item">
+                <span class="prop-label">绿化分区</span>
+                <span class="prop-value {% if not zone.greenery_zone %}empty{% endif %}">{{ zone.greenery_zone|default:"—" }}</span>
+            </div>
+            <div class="prop-item">
+                <span class="prop-label">植保分区</span>
+                <span class="prop-value {% if not zone.pest_control_zone %}empty{% endif %}">{{ zone.pest_control_zone|default:"—" }}</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Plants -->
+    <div class="detail-section">
+        <h2 class="section-title">当前植物</h2>
         {% if plants %}
-        <div class="plant-grid">
+        <div class="card-grid">
             {% for plant in plants %}
-            <div class="plant-card">
-                <div class="plant-name">{{ plant.name }}</div>
+            <div class="mini-card">
+                <div class="mini-card-title">{{ plant.name }}</div>
                 {% if plant.scientific_name %}
-                <div class="plant-scientific">{{ plant.scientific_name }}</div>
+                <div style="font-style:italic;color:var(--color-text-secondary);font-size:0.85em;margin-bottom:4px;">{{ plant.scientific_name }}</div>
                 {% endif %}
-                <div class="plant-meta">
+                <div class="mini-card-meta">
                     <span>数量: {{ plant.quantity }}</span>
                     {% if plant.planting_date %}
-                    <span class="plant-date-range">
-                        📅 {% if plant.end_date %}{{ plant.planting_date }} ~ {{ plant.end_date }}{% else %}{{ plant.planting_date }} ~ 持续{% endif %}
-                    </span>
+                    <span>{{ plant.planting_date|date:"Y/m/d" }}{% if plant.end_date %} ~ {{ plant.end_date|date:"Y/m/d" }}{% else %} ~ 持续{% endif %}</span>
                     {% endif %}
                 </div>
             </div>
             {% endfor %}
         </div>
         {% else %}
-        <div class="empty-state">
-            <div class="empty-state-icon">🌱</div>
-            <p>暂无当前植物记录</p>
-        </div>
+        <div class="empty-state">暂无当前植物记录</div>
         {% endif %}
     </div>
 
-    <!-- Equipment Section -->
+    <!-- Equipment -->
     <div class="detail-section">
-        <h2 class="section-title">🔧 当前设备</h2>
+        <h2 class="section-title">当前设备</h2>
         {% if equipment %}
-        <div class="equipment-grid">
+        <div class="card-grid">
             {% for eq in equipment %}
-            <div class="equipment-card">
-                <div class="equipment-header">
-                    <div>
-                        <div class="equipment-type">{{ eq.equipment_details.equipment_type_display }}</div>
-                        <div class="equipment-model">{{ eq.equipment_details.manufacturer }} {{ eq.equipment_details.model_name }}</div>
-                    </div>
-                    <span class="equipment-status {{ eq.status }}">{{ eq.status_display }}</span>
+            <div class="mini-card">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+                    <div class="mini-card-title eq-card-title">{{ eq.equipment_details.manufacturer }} {{ eq.equipment_details.model_name }}</div>
+                    <span class="eq-status {{ eq.status }}">{{ eq.status_display }}</span>
                 </div>
-                <div class="equipment-meta">
+                <div class="mini-card-meta">
+                    <span>{{ eq.equipment_details.equipment_type_display }}</span>
                     <span>数量: {{ eq.quantity }}</span>
-                    {% if eq.location_in_zone %}
-                    <span>位置: {{ eq.location_in_zone }}</span>
-                    {% endif %}
-                    {% if eq.installation_date %}
-                    <span>📅 安装: {{ eq.installation_date }}</span>
-                    {% endif %}
+                    {% if eq.location_in_zone %}<span>位置: {{ eq.location_in_zone }}</span>{% endif %}
+                    {% if eq.installation_date %}<span>安装: {{ eq.installation_date|date:"Y/m/d" }}</span>{% endif %}
                 </div>
             </div>
             {% endfor %}
         </div>
         {% else %}
-        <div class="empty-state">
-            <div class="empty-state-icon">🔧</div>
-            <p>暂无当前设备记录</p>
-        </div>
+        <div class="empty-state">暂无当前设备记录</div>
         {% endif %}
     </div>
 
-    <!-- Actions -->
+    <!-- Equipment Maintenance Notes -->
     <div class="detail-section">
-        <h2 class="section-title">📝 快捷操作</h2>
-        <div style="display: flex; gap: var(--space-md); flex-wrap: wrap;">
-            <a href="{% url 'core:zone_edit' zone.id %}" class="btn btn-secondary">编辑区域信息</a>
-            <a href="{% url 'core:work_report_create' %}?zone={{ zone.id }}" class="btn btn-primary">提交工作报告</a>
+        <h2 class="section-title">灌溉设备维护记录</h2>
+        {% if equip_notes %}
+        <div class="notes-timeline">
+            {% for note in equip_notes %}
+            <div class="note-entry">
+                <span class="note-date">{{ note.date }}</span>
+                <span class="note-content">{{ note.content }}</span>
+            </div>
+            {% endfor %}
         </div>
+        {% else %}
+        <div class="empty-state">暂无维护记录</div>
+        {% endif %}
     </div>
 
-    <div class="back-link" style="margin-top: var(--space-xl);">
-        <a href="{% url 'core:dashboard' %}">← 返回地图总览</a>
+    <!-- Irrigation Management Notes -->
+    <div class="detail-section">
+        <h2 class="section-title">灌溉管理记录</h2>
+        {% if irrig_notes %}
+        <div class="notes-timeline">
+            {% for note in irrig_notes %}
+            <div class="note-entry">
+                <span class="note-date">{{ note.date }}</span>
+                <span class="note-content">{{ note.content }}</span>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="empty-state">暂无管理记录</div>
+        {% endif %}
+    </div>
+
+    <!-- Recent Work Reports -->
+    {% if recent_reports %}
+    <div class="detail-section">
+        <h2 class="section-title">近期工作报告</h2>
+        <table class="report-table">
+            <thead>
+                <tr>
+                    <th>日期</th>
+                    <th>处理人</th>
+                    <th>分类</th>
+                    <th>内容</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for r in recent_reports %}
+                <tr>
+                    <td>{{ r.date|date:"Y/m/d" }}</td>
+                    <td>{{ r.worker.full_name }}</td>
+                    <td>{{ r.work_category.name }}</td>
+                    <td>{{ r.remark|truncatewords:12 }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+
+    <!-- Sibling Zones -->
+    {% if sibling_zones %}
+    <div class="detail-section">
+        <h2 class="section-title">同片区区域</h2>
+        <div class="sibling-list">
+            {% for sz in sibling_zones %}
+            <a href="{% url 'core:zone_detail' sz.id %}" class="sibling-chip">
+                <span class="dot dot-{{ sz.priority }}"></span>
+                {{ sz.code }} {{ sz.name }}
+            </a>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Meta footer -->
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:var(--space-lg);padding-top:var(--space-md);border-top:1px solid var(--color-surface-dark);font-size:0.82em;color:var(--color-text-secondary);">
+        <span>更新于 {{ zone.updated_at|date:"Y/m/d H:i" }}</span>
+        <a href="{% url 'core:settings' %}" style="color:var(--color-primary);text-decoration:none;">返回设置</a>
     </div>
 </div>
 {% endblock %}
