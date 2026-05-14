@@ -590,6 +590,14 @@
                 let entries = [];
                 try { entries = typeof val === 'string' ? JSON.parse(val) : val; } catch(e) { return; }
                 if (!Array.isArray(entries) || entries.length === 0) return;
+                entries.sort((a, b) => {
+                    const da = a.date || '', db = b.date || '';
+                    const ia = !da || da === '日期格式错误', ib = !db || db === '日期格式错误';
+                    if (ia && ib) return 0;
+                    if (ia) return 1;
+                    if (ib) return -1;
+                    return db.localeCompare(da);
+                });
                 const maxShow = 5;
                 const listId = 'notes_' + f.key + '_' + zone.id;
                 const allHtml = entries.map(e => {

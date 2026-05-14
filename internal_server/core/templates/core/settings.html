@@ -55,6 +55,8 @@
         <div class="zone-section-header" onclick="toggleCardBody(this, 'zoneBody', 'zoneIndicator')">
             <h2><span class="collapse-indicator" id="zoneIndicator">▼</span> 灌溉区域</h2>
             <div class="header-actions" onclick="event.stopPropagation()">
+                <a href="{% url 'core:zone_export_excel' %}" class="btn btn-sm btn-secondary">导出</a>
+                <button type="button" class="btn btn-sm btn-secondary" onclick="showImportModal()">导入</button>
                 <a href="{% url 'core:zone_new' %}" class="btn btn-sm btn-primary" target="_blank">+ 新建</a>
             </div>
         </div>
@@ -300,6 +302,45 @@
 
     <div class="back-link">
         <a href="{% url 'core:dashboard' %}">← 返回总览</a>
+    </div>
+</div>
+
+<!-- Import Modal -->
+<div id="importModal" style="display:none;position:fixed;inset:0;z-index:2000;background:rgba(0,0,0,0.4);align-items:center;justify-content:center;">
+    <div style="background:white;border-radius:14px;box-shadow:0 20px 60px rgba(0,0,0,0.25);max-width:900px;width:95%;max-height:90vh;display:flex;flex-direction:column;overflow:hidden;">
+        <div style="padding:16px 20px;border-bottom:1px solid var(--color-surface-dark);display:flex;justify-content:space-between;align-items:center;">
+            <h3 style="margin:0;font-size:1.05rem;">导入区域数据</h3>
+            <button type="button" onclick="hideImportModal()" style="background:none;border:none;font-size:1.3rem;cursor:pointer;color:#999;padding:4px 8px;">&times;</button>
+        </div>
+        <div id="importStep1" style="padding:20px;">
+            <p style="margin:0 0 12px;color:var(--color-text-secondary);font-size:0.9em;">选择导出的 Excel 文件（.xlsx），系统将对比数据库中的数据并显示变更。</p>
+            <div style="display:flex;gap:12px;align-items:center;">
+                <input type="file" id="importFileInput" accept=".xlsx" style="flex:1;">
+                <button type="button" id="importUploadBtn" class="btn btn-primary" onclick="uploadImportFile()">上传预览</button>
+            </div>
+            <div id="importLoading" style="display:none;margin-top:12px;color:var(--color-text-secondary);font-size:0.9em;">正在解析文件...</div>
+        </div>
+        <div id="importStep2" style="display:none;padding:0 20px 20px;overflow:hidden;flex:1;flex-direction:column;">
+            <div id="importSummary" style="margin-bottom:12px;font-size:0.9em;"></div>
+            <div id="importChangesContainer" style="flex:1;overflow-y:auto;border:1px solid var(--color-surface-dark);border-radius:8px;max-height:50vh;">
+                <table style="width:100%;border-collapse:collapse;font-size:0.84rem;">
+                    <thead>
+                        <tr style="position:sticky;top:0;background:var(--color-surface);z-index:1;">
+                            <th style="padding:8px 10px;text-align:left;border-bottom:1px solid var(--color-surface-dark);width:30px;"><input type="checkbox" id="importSelectAll" checked onchange="toggleImportAll(this.checked)"></th>
+                            <th style="padding:8px 10px;text-align:left;border-bottom:1px solid var(--color-surface-dark);">编号</th>
+                            <th style="padding:8px 10px;text-align:left;border-bottom:1px solid var(--color-surface-dark);">名称</th>
+                            <th style="padding:8px 10px;text-align:left;border-bottom:1px solid var(--color-surface-dark);">操作</th>
+                            <th style="padding:8px 10px;text-align:left;border-bottom:1px solid var(--color-surface-dark);">变更详情</th>
+                        </tr>
+                    </thead>
+                    <tbody id="importChangesBody"></tbody>
+                </table>
+            </div>
+            <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px;">
+                <button type="button" class="btn btn-secondary" onclick="hideImportModal()">取消</button>
+                <button type="button" id="importConfirmBtn" class="btn btn-primary" onclick="confirmImport()">确认导入</button>
+            </div>
+        </div>
     </div>
 </div>
 {% endblock %}
@@ -599,6 +640,139 @@ function deleteItems(url, ids, label) {
 function getCsrfToken() {
     const cookie = document.cookie.match(/csrftoken=([^;]+)/);
     return cookie ? cookie[1] : '';
+}
+
+// ─── Import Modal ───
+let importFile = null;
+let importChanges = [];
+
+function showImportModal() {
+    document.getElementById('importModal').style.display = 'flex';
+    document.getElementById('importStep1').style.display = '';
+    document.getElementById('importStep2').style.display = 'none';
+    document.getElementById('importFileInput').value = '';
+    importFile = null;
+    importChanges = [];
+}
+
+function hideImportModal() {
+    document.getElementById('importModal').style.display = 'none';
+}
+
+function uploadImportFile() {
+    const input = document.getElementById('importFileInput');
+    if (!input.files || !input.files[0]) {
+        showToast('请选择文件', 'error');
+        return;
+    }
+    importFile = input.files[0];
+    document.getElementById('importLoading').style.display = '';
+
+    const formData = new FormData();
+    formData.append('file', importFile);
+
+    fetch('{% url "core:zone_import_preview" %}', {
+        method: 'POST',
+        body: formData,
+        credentials: 'same-origin',
+        headers: {'X-CSRFToken': getCsrfToken()},
+    }).then(r => r.json()).then(data => {
+        document.getElementById('importLoading').style.display = 'none';
+        if (!data.success) {
+            showToast(data.error || '解析失败', 'error');
+            return;
+        }
+        renderImportPreview(data);
+    }).catch(err => {
+        document.getElementById('importLoading').style.display = 'none';
+        showToast('网络错误: ' + err, 'error');
+    });
+}
+
+function renderImportPreview(data) {
+    const s = data.summary;
+    document.getElementById('importSummary').innerHTML =
+        `<strong>解析结果:</strong> 新增 <span style="color:#00b894;font-weight:600;">${s.new}</span> 条，` +
+        `修改 <span style="color:#d63031;font-weight:600;">${s.modified}</span> 条，` +
+        `无变更 ${s.unchanged} 条`;
+
+    importChanges = data.changes;
+    const tbody = document.getElementById('importChangesBody');
+    tbody.innerHTML = '';
+
+    if (importChanges.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5" style="padding:20px;text-align:center;color:var(--color-text-secondary);">没有需要变更的数据</td></tr>';
+    } else {
+        importChanges.forEach((c, i) => {
+            const actionLabel = c.action === 'new'
+                ? '<span style="color:#00b894;font-weight:600;">新增</span>'
+                : '<span style="color:#d63031;font-weight:600;">修改</span>';
+            const fieldsHtml = c.fields.map(f =>
+                `<div style="margin-bottom:3px;"><span style="color:var(--color-text-secondary);">${f.label}:</span> ` +
+                `<span style="text-decoration:line-through;color:#999;">${f.old}</span> → ` +
+                `<span style="font-weight:500;">${f.new}</span></div>`
+            ).join('');
+            const tr = document.createElement('tr');
+            tr.style.borderBottom = '1px solid var(--color-surface-dark)';
+            tr.dataset.index = i;
+            tr.innerHTML =
+                `<td style="padding:8px 10px;"><input type="checkbox" class="import-row-check" checked data-index="${i}"></td>` +
+                `<td style="padding:8px 10px;"><code style="font-size:0.8em;background:var(--color-surface);padding:2px 5px;border-radius:3px;">${c.code}</code></td>` +
+                `<td style="padding:8px 10px;">${c.name}</td>` +
+                `<td style="padding:8px 10px;">${actionLabel}</td>` +
+                `<td style="padding:8px 10px;font-size:0.82em;max-width:400px;">${fieldsHtml}</td>`;
+            tbody.appendChild(tr);
+        });
+    }
+
+    document.getElementById('importStep1').style.display = 'none';
+    document.getElementById('importStep2').style.display = 'flex';
+}
+
+window.toggleImportAll = function(checked) {
+    document.querySelectorAll('.import-row-check').forEach(cb => cb.checked = checked);
+};
+
+function confirmImport() {
+    const checkedRows = [];
+    document.querySelectorAll('.import-row-check:checked').forEach(cb => {
+        checkedRows.push(importChanges[parseInt(cb.dataset.index)].row);
+    });
+
+    if (checkedRows.length === 0) {
+        showToast('请至少选择一条变更', 'error');
+        return;
+    }
+
+    const btn = document.getElementById('importConfirmBtn');
+    btn.disabled = true;
+    btn.textContent = '导入中...';
+
+    // Need to re-read the file since FormData consumes it
+    const input = document.getElementById('importFileInput');
+    const formData = new FormData();
+    formData.append('file', input.files[0]);
+    formData.append('rows', JSON.stringify(checkedRows));
+
+    fetch('{% url "core:zone_import_confirm" %}', {
+        method: 'POST',
+        body: formData,
+        credentials: 'same-origin',
+        headers: {'X-CSRFToken': getCsrfToken()},
+    }).then(r => r.json()).then(data => {
+        if (data.success) {
+            hideImportModal();
+            showToast(`导入完成: 新增 ${data.created} 条，更新 ${data.updated} 条`, 'success');
+            setTimeout(() => location.reload(), 1500);
+        } else {
+            showToast(data.error || '导入失败', 'error');
+        }
+    }).catch(err => {
+        showToast('网络错误: ' + err, 'error');
+    }).finally(() => {
+        btn.disabled = false;
+        btn.textContent = '确认导入';
+    });
 }
 </script>
 {% endblock %}

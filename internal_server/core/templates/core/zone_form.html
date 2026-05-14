@@ -6,7 +6,7 @@
 {% block nav_settings %}active{% endblock %}
 
 {% block extra_css %}
-<link rel="stylesheet" href="{% static 'css/settings.css' %}?v=20260514e">
+<link rel="stylesheet" href="{% static 'css/settings.css' %}?v=20260515a">
 <!-- Leaflet CSS -->
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 {% endblock %}
@@ -1790,6 +1790,14 @@ function handleComboSelect(selectEl, customInputId, hiddenId) {
         }
 
         function render() {
+            notes.sort(function(a, b) {
+                var da = a.date || '', db = b.date || '';
+                var ia = !da || da === '日期格式错误', ib = !db || db === '日期格式错误';
+                if (ia && ib) return 0;
+                if (ia) return 1;
+                if (ib) return -1;
+                return db.localeCompare(da);
+            });
             listDiv.innerHTML = '';
             if (notes.length === 0) {
                 listDiv.innerHTML = '<p style="color:var(--color-text-secondary);font-size:0.9em;">暂无记录</p>';
