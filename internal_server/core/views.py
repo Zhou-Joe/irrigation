@@ -89,19 +89,48 @@ def _get_zone_dropdown_options():
         vals = Zone.objects.exclude(**{field: ''}).exclude(**{field: None}) \
                    .values_list(field, flat=True).distinct().order_by(field)
         opts[field] = list(vals)
+    # Foreman candidates: distinct names already used + manager/dept user names
+    from .models import ManagerProfile, DepartmentUserProfile
+    from django.contrib.auth.models import User
+    foreman_names = set()
+    for field in ['irrigation_foreman', 'greenery_foreman', 'pest_control_foreman']:
+        foreman_names.update(
+            Zone.objects.exclude(**{field: ''}).exclude(**{field: None})
+            .values_list(field, flat=True)
+        )
+    foreman_names.update(
+        ManagerProfile.objects.filter(active=True).values_list('full_name', flat=True)
+    )
+    foreman_names.update(
+        DepartmentUserProfile.objects.filter(active=True).values_list('full_name', flat=True)
+    )
+    # Also add user first_names (non-superuser, non-staff)
+    for u in User.objects.filter(is_superuser=False):
+        name = u.first_name or u.username
+        if name:
+            foreman_names.add(name)
+    opts['foreman_names'] = sorted(foreman_names)
     return opts
 
 
 def _zone_save_response(request, zone, message, created=False):
     if _wants_json(request):
-        return JsonResponse({
+        resp = {
             'success': True,
             'message': message,
             'created': created,
             'zone_id': zone.id,
             'zone_name': zone.name,
             'edit_url': reverse('core:zone_edit', args=[zone.id]),
-        })
+        }
+        # Return parsed notes for editor reload
+        for field in ('equipment_maintenance_notes', 'irrigation_management_notes'):
+            raw = getattr(zone, field, '') or ''
+            try:
+                resp[field] = json.loads(raw) if raw else []
+            except (json.JSONDecodeError, TypeError):
+                resp[field] = []
+        return JsonResponse(resp)
 
     messages.success(request, message)
     return redirect('core:zone_edit', zone_id=zone.id)
@@ -974,8 +1003,8 @@ def zone_edit(request, zone_id):
             zone.boundary_points = auto_close_boundary_points(boundary_points)
         except json.JSONDecodeError:
             if _wants_json(request):
-                return JsonResponse({'success': False, 'message': 'Invalid boundary points JSON format'}, status=400)
-            messages.error(request, 'Invalid boundary points JSON format')
+                return JsonResponse({'success': False, 'message': '边界点数据格式有误，请重新绘制区域边界后重试'}, status=400)
+            messages.error(request, '边界点数据格式有误，请重新绘制区域边界后重试')
             return redirect('core:zone_edit', zone_id=zone.id)
 
         zone.save()
@@ -1019,7 +1048,7 @@ def zone_edit(request, zone_id):
             except json.JSONDecodeError:
                 pass
 
-        return _zone_save_response(request, zone, f'Zone "{zone.name}" updated successfully.')
+        return _zone_save_response(request, zone, f'区域「{zone.name}」已保存成功')
 
     # Get available plants (distinct names from all plants)
     available_plants = list(Plant.objects.values_list('name', flat=True).distinct().order_by('name'))
@@ -1040,6 +1069,8 @@ def zone_edit(request, zone_id):
         'patches': patches,
         'ref_zones_json': ref_zones_json,
         'ref_pipelines_json': ref_pipelines_json,
+        'equip_notes_json': json.dumps(json.loads(zone.equipment_maintenance_notes)) if zone.equipment_maintenance_notes else '[]',
+        'irrig_notes_json': json.dumps(json.loads(zone.irrigation_management_notes)) if zone.irrigation_management_notes else '[]',
         **_get_zone_dropdown_options(),
     }
 
@@ -1124,8 +1155,8 @@ def zone_new(request):
             zone.boundary_points = auto_close_boundary_points(boundary_points)
         except json.JSONDecodeError:
             if _wants_json(request):
-                return JsonResponse({'success': False, 'message': 'Invalid boundary points JSON format'}, status=400)
-            messages.error(request, 'Invalid boundary points JSON format')
+                return JsonResponse({'success': False, 'message': '边界点数据格式有误，请重新绘制区域边界后重试'}, status=400)
+            messages.error(request, '边界点数据格式有误，请重新绘制区域边界后重试')
             return render(request, 'core/zone_form.html', {
                 'zone': zone,
                 'boundary_json': boundary_json,
@@ -1173,7 +1204,7 @@ def zone_new(request):
             except json.JSONDecodeError:
                 pass
 
-        return _zone_save_response(request, zone, f'Zone "{zone.name}" created successfully.', created=True)
+        return _zone_save_response(request, zone, f'区域「{zone.name}」已创建成功', created=True)
 
     # Get available plants
     available_plants = list(Plant.objects.values_list('name', flat=True).distinct().order_by('name'))
@@ -1190,6 +1221,8 @@ def zone_new(request):
         'patches': patches,
         'ref_zones_json': ref_zones_json,
         'ref_pipelines_json': ref_pipelines_json,
+        'equip_notes_json': '[]',
+        'irrig_notes_json': '[]',
         **_get_zone_dropdown_options(),
     }
 

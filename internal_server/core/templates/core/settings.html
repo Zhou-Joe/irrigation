@@ -20,13 +20,34 @@
     </div>
 
     {% if messages %}
-    <div class="messages">
+    <div id="toastContainer" style="position:fixed;top:20px;right:20px;z-index:9999;display:flex;flex-direction:column;gap:8px;">
         {% for message in messages %}
-        <div class="message message-{{ message.tags }}">
-            {{ message }}
-        </div>
+        <div class="toast toast-{{ message.tags }}" style="
+            padding: 12px 20px;
+            border-radius: 10px;
+            font-size: 0.9em;
+            font-weight: 500;
+            box-shadow: 0 6px 20px rgba(0,0,0,0.15);
+            animation: toastIn 0.3s ease;
+            min-width: 200px;
+            max-width: 400px;
+            {% if message.tags == 'success' %}background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0;{% elif message.tags == 'error' %}background:#fef2f2;color:#991b1b;border:1px solid #fecaca;{% else %}background:#f0f9ff;color:#0c4a6e;border:1px solid #bae6fd;{% endif %}
+        ">{{ message }}</div>
         {% endfor %}
     </div>
+    <style>@keyframes toastIn{from{opacity:0;transform:translateX(30px)}to{opacity:1;transform:translateX(0)}}</style>
+    <script>
+    setTimeout(() => {
+        document.querySelectorAll('#toastContainer .toast').forEach((t, i) => {
+            setTimeout(() => {
+                t.style.transition = 'opacity 0.3s, transform 0.3s';
+                t.style.opacity = '0';
+                t.style.transform = 'translateX(30px)';
+                setTimeout(() => t.remove(), 300);
+            }, 3000 + i * 500);
+        });
+    }, 100);
+    </script>
     {% endif %}
 
     <!-- 1. 灌溉区域 (full width, first) -->
@@ -532,6 +553,25 @@ function updatePipelineBatchActions() {
     document.getElementById('pipelineSelectedCount').textContent = count;
 }
 
+function showToast(msg, type) {
+    let c = document.getElementById('toastContainer');
+    if (!c) {
+        c = document.createElement('div');
+        c.id = 'toastContainer';
+        c.style.cssText = 'position:fixed;top:20px;right:20px;z-index:9999;display:flex;flex-direction:column;gap:8px;';
+        document.body.appendChild(c);
+    }
+    const t = document.createElement('div');
+    t.className = 'toast toast-' + (type || 'info');
+    t.textContent = msg;
+    t.style.cssText = 'padding:12px 20px;border-radius:10px;font-size:0.9em;font-weight:500;box-shadow:0 6px 20px rgba(0,0,0,0.15);animation:toastIn 0.3s ease;min-width:200px;max-width:400px;';
+    if (type === 'success') { t.style.background='#ecfdf5'; t.style.color='#065f46'; t.style.border='1px solid #a7f3d0'; }
+    else if (type === 'error') { t.style.background='#fef2f2'; t.style.color='#991b1b'; t.style.border='1px solid #fecaca'; }
+    else { t.style.background='#f0f9ff'; t.style.color='#0c4a6e'; t.style.border='1px solid #bae6fd'; }
+    c.appendChild(t);
+    setTimeout(() => { t.style.transition='opacity 0.3s,transform 0.3s'; t.style.opacity='0'; t.style.transform='translateX(30px)'; setTimeout(() => t.remove(), 300); }, 3000);
+}
+
 window.batchDeletePipelines = function() {
     const ids = Array.from(document.querySelectorAll('.pipeline-checkbox:checked')).map(cb => cb.dataset.id);
     if (!confirm('确定删除选中的 ' + ids.length + ' 条水管?')) return;
@@ -551,9 +591,9 @@ function deleteItems(url, ids, label) {
         if (data.success) {
             location.reload();
         } else {
-            alert('删除失败: ' + (data.error || '未知错误'));
+            showToast('删除失败: ' + (data.error || '未知错误'), 'error');
         }
-    }).catch(err => alert('网络错误: ' + err));
+    }).catch(err => showToast('网络错误: ' + err, 'error'));
 }
 
 function getCsrfToken() {

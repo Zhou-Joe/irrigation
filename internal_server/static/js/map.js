@@ -149,7 +149,7 @@
             center: [centerLat, centerLng],
             zoom: 15,
             maxZoom: 22,
-            minZoom: 13,
+            minZoom: 15,
             maxBounds: bounds,
             maxBoundsViscosity: 1.0,
             layers: [hybridLayer],
@@ -317,18 +317,40 @@
                     zoneStyle = getStyleForStatus(zone.status);
                 }
 
-                const popupContent = createPopupContent(zone);
                 const zoneData = {
                     id: zone.id,
                     code: zone.code,
                     name: zone.name,
                     status: zone.status,
                     statusDisplay: zone.statusDisplay,
-                    plantCount: zone.plantCount,
+                    plantCount: zone.plant_count || zone.plantCount || 0,
+                    equipmentCount: zone.equipment_count || 0,
                     pendingWorkOrders: zone.pendingWorkOrders,
                     pendingRequests: zone.pending_requests || [],
+                    recentFaultCount: zone.recent_fault_count || 0,
                     priority: zone.priority || 'medium',
-                    plantNames: zone.plant_names || []
+                    priorityDisplay: zone.priority_display || '',
+                    plantNames: zone.plant_names || [],
+                    sprinklerType: zone.sprinkler_type || '',
+                    irrigationIntensity: zone.irrigation_intensity,
+                    areaDisplay: zone.area_display || '',
+                    areaSqm: zone.area_sqm,
+                    patchCode: zone.patch_code || '',
+                    patchName: zone.patch_name || '',
+                    solenoidValveSize: zone.solenoid_valve_size,
+                    landscapeCoefficient: zone.landscape_coefficient,
+                    plantType: zone.plant_type || '',
+                    irrigationForeman: zone.irrigation_foreman || '',
+                    greeneryZone: zone.greenery_zone || '',
+                    greeneryForeman: zone.greenery_foreman || '',
+                    pestControlZone: zone.pest_control_zone || '',
+                    pestControlForeman: zone.pest_control_foreman || '',
+                    terrainFeature: zone.terrain_feature || '',
+                    plantFeature: zone.plant_feature || '',
+                    soilMoisture: zone.soil_moisture || '',
+                    currentStatus: zone.current_status || '',
+                    equipmentNotes: zone.equipment_maintenance_notes || '',
+                    irrigationNotes: zone.irrigation_management_notes || '',
                 };
 
                 if (isMultiPolygonFormat(zone.boundary_points)) {
@@ -341,7 +363,6 @@
                         const polygon = L.polygon(latLngs, zoneStyle);
                         polygon.zoneData = zoneData;
                         polygon.originalStyle = zoneStyle;
-                        polygon.bindPopup(popupContent);
                         polygon.on('mouseover', handleMouseOver);
                         polygon.on('mouseout', handleMouseOut);
                         polygon.on('click', handleClick);
@@ -361,7 +382,6 @@
                     const polygon = L.polygon(latLngs, zoneStyle);
                     polygon.zoneData = zoneData;
                     polygon.originalStyle = zoneStyle;
-                    polygon.bindPopup(popupContent);
                     polygon.on('mouseover', handleMouseOver);
                     polygon.on('mouseout', handleMouseOut);
                     polygon.on('click', handleClick);
@@ -443,75 +463,200 @@
         marker.addTo(map);
     }
 
-    /**
-     * Create popup content for a zone
-     * @param {Object} zone - Zone data
-     * @returns {string} HTML content for popup
-     */
-    function createPopupContent(zone) {
-        // Stats summary
-        const plantCount = zone.plant_count || zone.plantCount || 0;
-        const equipmentCount = zone.equipment_count || 0;
-        const faultCount = zone.recent_fault_count || 0;
+    // --- Zone Profile Card Configuration ---
+    const ZONE_CARD_FIELDS = [
+        { key: 'priority', label: '优先级', getValue: z => z.priorityDisplay },
+        { key: 'sprinklerType', label: '灌水器类型', getValue: z => z.sprinklerType },
+        { key: 'irrigationIntensity', label: '灌溉强度', getValue: z => z.irrigationIntensity != null ? z.irrigationIntensity : '' },
+        { key: 'area', label: '面积', getValue: z => z.areaDisplay },
+        { key: 'patchInfo', label: 'CCU-灌溉分区', getValue: z => [z.patchCode, z.patchName].filter(Boolean).join(' - ') },
+        { key: 'solenoidValveSize', label: '电磁阀尺寸', getValue: z => z.solenoidValveSize != null ? z.solenoidValveSize : '' },
+        { key: 'landscapeCoefficient', label: '景观系数', getValue: z => z.landscapeCoefficient != null ? z.landscapeCoefficient : '' },
+        { key: 'plantType', label: '植物类型', getValue: z => z.plantType },
+        { key: 'irrigationForeman', label: '灌溉领班', getValue: z => z.irrigationForeman },
+        { key: 'greeneryZone', label: '绿化分区', getValue: z => z.greeneryZone },
+        { key: 'greeneryForeman', label: '绿化领班', getValue: z => z.greeneryForeman },
+        { key: 'pestControlZone', label: '植保分区', getValue: z => z.pestControlZone },
+        { key: 'pestControlForeman', label: '植保领班', getValue: z => z.pestControlForeman },
+        { key: 'terrainFeature', label: '地形特点', getValue: z => z.terrainFeature },
+        { key: 'plantFeature', label: '植物特点', getValue: z => z.plantFeature },
+        { key: 'soilMoisture', label: '土壤湿度', getValue: z => z.soilMoisture },
+        { key: 'equipmentNotes', label: '设备维护记录', getValue: z => z.equipmentNotes, isList: true },
+        { key: 'irrigationNotes', label: '灌溉管理记录', getValue: z => z.irrigationNotes, isList: true },
+    ];
 
-        // Pending water requests section
-        let pendingWaterHtml = '';
-        const pendingRequests = zone.pending_requests || zone.pendingRequests || [];
-        if (pendingRequests.length > 0) {
-            pendingWaterHtml = `
-                <div class="popup-pending-water" style="margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.2);">
-                    <span style="color: #CC7722; font-weight: 600;">💧 ${pendingRequests.length} 个待审批浇水需求</span>
-                </div>
-            `;
-        }
+    const CARD_SETTINGS_KEY = 'zoneProfileCardFields';
 
-        // Fault warning (only show if there are faults)
+    function getCardFieldSettings() {
+        try {
+            const saved = localStorage.getItem(CARD_SETTINGS_KEY);
+            if (saved) return JSON.parse(saved);
+        } catch (e) {}
+        // Default: all fields hidden
+        const defaults = {};
+        ZONE_CARD_FIELDS.forEach(f => { defaults[f.key] = false; });
+        return defaults;
+    }
+
+    function saveCardFieldSetting(key, visible) {
+        const settings = getCardFieldSettings();
+        settings[key] = visible;
+        localStorage.setItem(CARD_SETTINGS_KEY, JSON.stringify(settings));
+    }
+
+    // Currently displayed zone data (for re-rendering after settings change)
+    let currentPopupZoneData = null;
+    let popupSettingsOpen = false;
+
+    function buildPopupHtml(zone) {
+        if (popupSettingsOpen) return buildSettingsHtml(zone);
+        return buildCardHtml(zone);
+    }
+
+    function buildCardHtml(zone) {
+        const settings = getCardFieldSettings();
+
+        // Status badge — use current_status (from data), not computed status
+        const currentStatus = zone.currentStatus || '';
+        const statusBadgeMap = {
+            '施工中': { label: '施工中', color: '#0984e3' },
+            '停浇': { label: '停浇', color: '#e17055' },
+            '运行中': { label: '运行中', color: '#00b894' },
+            '维修中': { label: '维修中', color: '#CC7722' },
+        };
+        const statusInfo = currentStatus ? (statusBadgeMap[currentStatus] || { label: currentStatus, color: '#636e72' }) : null;
+
+        // Customizable fields
+        let fieldsHtml = '';
+        ZONE_CARD_FIELDS.forEach(f => {
+            if (!settings[f.key]) return;
+            const val = f.getValue(zone);
+            if (!val && val !== 0) return;
+            if (f.isList) {
+                // Render notes list as compact timeline
+                let entries = [];
+                try { entries = typeof val === 'string' ? JSON.parse(val) : val; } catch(e) { return; }
+                if (!Array.isArray(entries) || entries.length === 0) return;
+                const maxShow = 5;
+                const listId = 'notes_' + f.key + '_' + zone.id;
+                const allHtml = entries.map(e => {
+                    const d = e.date || '';
+                    const displayDate = d && d !== '日期格式错误'
+                        ? d.replace(/-0*/g, '/').replace(/^20/, '')
+                        : '';
+                    return `<div style="display:flex;gap:4px;font-size:0.82em;padding:1px 0;"><span style="color:var(--color-primary);flex-shrink:0;min-width:56px;">${displayDate}</span><span style="color:#555;word-break:break-all;">${e.content || ''}</span></div>`;
+                }).join('');
+                const collapsedHtml = entries.slice(0, maxShow).map(e => {
+                    const d = e.date || '';
+                    const displayDate = d && d !== '日期格式错误'
+                        ? d.replace(/-0*/g, '/').replace(/^20/, '')
+                        : '';
+                    return `<div style="display:flex;gap:4px;font-size:0.82em;padding:1px 0;"><span style="color:var(--color-primary);flex-shrink:0;min-width:56px;">${displayDate}</span><span style="color:#555;word-break:break-all;">${e.content || ''}</span></div>`;
+                }).join('');
+                const remaining = entries.length - maxShow;
+                const moreBtn = remaining > 0
+                    ? `<div class="notes-expand-btn" style="font-size:0.78em;color:var(--color-primary);padding-top:1px;cursor:pointer;text-decoration:underline;" onclick="window._toggleNotesExpand('${listId}', this)">还有 ${remaining} 条记录</div>`
+                    : '';
+                fieldsHtml += `<div class="popup-field" style="flex-direction:column;align-items:stretch;gap:2px;"><span class="popup-field-label">${f.label}</span><div id="${listId}_collapsed" style="margin-left:0;">${collapsedHtml}${moreBtn}</div><div id="${listId}_expanded" style="margin-left:0;display:none;">${allHtml}<div class="notes-expand-btn" style="font-size:0.78em;color:var(--color-primary);padding-top:1px;cursor:pointer;text-decoration:underline;" onclick="window._toggleNotesExpand('${listId}', this)">收起</div></div></div>`;
+            } else {
+                fieldsHtml += `<div class="popup-field"><span class="popup-field-label">${f.label}</span><span class="popup-field-value">${val}</span></div>`;
+            }
+        });
+
+        // Fault warning
         let faultHtml = '';
-        if (faultCount > 0) {
-            faultHtml = `
-                <div style="display: inline-block; background: rgba(204,119,34,0.2); color: #CC7722; padding: 4px 10px; border-radius: 8px; font-size: 0.85em; margin-top: 8px;">
-                    ⚠️ 近30天 ${faultCount} 次故障
-                </div>
-            `;
+        if (zone.recentFaultCount > 0) {
+            faultHtml = `<div class="popup-alert">⚠️ 近30天 ${zone.recentFaultCount} 次故障</div>`;
         }
+
+        // Pending requests
+        let pendingHtml = '';
+        const pendingCount = (zone.pendingRequests || []).length;
+        if (pendingCount > 0) {
+            pendingHtml = `<div class="popup-alert popup-alert-warn">💧 ${pendingCount} 个待审批浇水需求</div>`;
+        }
+
+        const hasExtra = fieldsHtml || faultHtml || pendingHtml;
 
         return `
-            <div class="popup-content" style="min-width: 180px;">
-                <h3 style="margin: 0 0 4px 0; font-size: 1.1em; color: #1B4332;">${zone.name}</h3>
-                <div style="font-size: 0.85em; color: #666; margin-bottom: 8px;">编号: ${zone.code}</div>
-
-                <!-- Stats row -->
-                <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-                    <div style="background: rgba(82,183,136,0.15); color: #52B788; padding: 4px 10px; border-radius: 8px; font-size: 0.85em;">
-                        🌱 ${plantCount} 种植物
+            <div class="popup-card">
+                <div class="popup-header">
+                    <div>
+                        <div class="popup-title">${zone.code} - ${zone.name}</div>
+                        ${statusInfo ? `<span class="popup-status-badge" style="background: ${statusInfo.color}18; color: ${statusInfo.color};">${statusInfo.label}</span>` : ''}
                     </div>
-                    <div style="background: rgba(64,145,108,0.15); color: #40916C; padding: 4px 10px; border-radius: 8px; font-size: 0.85em;">
-                        🔧 ${equipmentCount} 设备
-                    </div>
+                    <button class="popup-settings-btn" onclick="togglePopupSettings()" title="自定义显示字段">⚙</button>
                 </div>
-
-                ${faultHtml}
-                ${pendingWaterHtml}
-
-                <!-- View detail button -->
-                <div style="margin-top: 12px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.2);">
-                    <button onclick="window.location.href='/zone/${zone.id}/detail/'" style="
-                        background: #2D6A4F;
-                        color: white;
-                        border: none;
-                        padding: 8px 16px;
-                        border-radius: 8px;
-                        cursor: pointer;
-                        font-size: 0.9em;
-                        width: 100%;
-                        transition: background 0.2s;
-                    " onmouseover="this.style.background='#1B4332'" onmouseout="this.style.background='#2D6A4F'">
-                        查看区域详情
-                    </button>
+                ${hasExtra ? '<div class="popup-fields">' + fieldsHtml + faultHtml + pendingHtml + '</div>' : ''}
+                <div class="popup-footer">
+                    <button class="popup-detail-btn" onclick="window.location.href='/zone/${zone.id}/detail/'">查看区域详情</button>
                 </div>
             </div>
         `;
     }
+
+    function buildSettingsHtml(zone) {
+        const settings = getCardFieldSettings();
+        return `
+            <div class="popup-card">
+                <div class="popup-header">
+                    <div class="popup-title" style="font-size:0.92em;">自定义显示字段</div>
+                    <button class="popup-settings-btn" onclick="togglePopupSettings()" title="返回">✕</button>
+                </div>
+                <div class="popup-settings-list">
+                    ${ZONE_CARD_FIELDS.map(f => `
+                        <label class="popup-settings-item">
+                            <input type="checkbox" ${settings[f.key] ? 'checked' : ''} onchange="handleFieldToggle('${f.key}', this.checked)">
+                            <span>${f.label}</span>
+                        </label>
+                    `).join('')}
+                </div>
+                <div class="popup-footer">
+                    <button class="popup-detail-btn" onclick="togglePopupSettings()">完成</button>
+                </div>
+            </div>
+        `;
+    }
+
+    function showZonePopup(zoneData) {
+        const panel = document.getElementById('zonePopupPanel');
+        if (!panel) return;
+        currentPopupZoneData = zoneData;
+        popupSettingsOpen = false;
+        panel.innerHTML = buildPopupHtml(zoneData);
+        panel.style.display = '';
+    }
+
+    function togglePopupSettings() {
+        popupSettingsOpen = !popupSettingsOpen;
+        if (currentPopupZoneData) {
+            const panel = document.getElementById('zonePopupPanel');
+            if (!panel) return;
+            panel.innerHTML = buildPopupHtml(currentPopupZoneData);
+        }
+    }
+
+    function handleFieldToggle(key, checked) {
+        saveCardFieldSetting(key, checked);
+        // Re-render settings view with updated state
+        if (currentPopupZoneData) {
+            const panel = document.getElementById('zonePopupPanel');
+            if (!panel) return;
+            panel.innerHTML = buildPopupHtml(currentPopupZoneData);
+        }
+    }
+
+    window.showZonePopup = showZonePopup;
+    window.togglePopupSettings = togglePopupSettings;
+    window.handleFieldToggle = handleFieldToggle;
+    window._toggleNotesExpand = function(listId, btn) {
+        const collapsed = document.getElementById(listId + '_collapsed');
+        const expanded = document.getElementById(listId + '_expanded');
+        if (collapsed && expanded) {
+            collapsed.style.display = collapsed.style.display === 'none' ? '' : 'none';
+            expanded.style.display = expanded.style.display === 'none' ? '' : 'none';
+        }
+    };
 
     /**
      * Handle mouse over event on zone
@@ -568,8 +713,8 @@
             // Highlight the corresponding sidebar item
             highlightSidebarItem(zoneId);
 
-            // Open popup
-            layer.openPopup();
+            // Show fixed popup panel
+            showZonePopup(layer.zoneData);
         }
     }
 
@@ -716,8 +861,8 @@
                         layer.setStyle(highlightStyle);
                         layer.bringToFront();
 
-                        // Open popup
-                        layer.openPopup();
+                        // Show fixed popup panel
+                        showZonePopup(layer.zoneData);
 
                         // Fly to the zone with smooth animation
                         const bounds = layer.getBounds();

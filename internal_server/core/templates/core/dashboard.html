@@ -334,6 +334,139 @@
         var(--color-surface);
 }
 
+.zone-popup-panel {
+    position: absolute;
+    bottom: 24px;
+    left: 24px;
+    z-index: 800;
+    min-width: 260px;
+    max-width: 320px;
+    background: rgba(255,255,255,0.95);
+    border-radius: 12px;
+    box-shadow: 0 8px 30px rgba(0,0,0,0.18);
+    backdrop-filter: blur(8px);
+    animation: popupFadeIn 0.2s ease;
+    overflow: visible;
+}
+.popup-card {
+    padding: 14px 16px 12px;
+}
+.popup-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 8px;
+}
+.popup-title {
+    font-size: 1.05em;
+    font-weight: 700;
+    color: #1B4332;
+    margin-bottom: 4px;
+}
+.popup-status-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 6px;
+    font-size: 0.78em;
+    font-weight: 600;
+}
+.popup-settings-btn {
+    flex-shrink: 0;
+    width: 28px;
+    height: 28px;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: #999;
+    font-size: 1.1em;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s, color 0.15s;
+}
+.popup-settings-btn:hover {
+    background: rgba(0,0,0,0.06);
+    color: #555;
+}
+.popup-fields {
+    margin-top: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+.popup-field {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    font-size: 0.85em;
+    padding: 3px 0;
+}
+.popup-field-label {
+    color: #888;
+    flex-shrink: 0;
+    margin-right: 12px;
+}
+.popup-field-value {
+    color: #333;
+    font-weight: 500;
+    text-align: right;
+    word-break: break-all;
+}
+.popup-alert {
+    margin-top: 6px;
+    padding: 4px 10px;
+    border-radius: 8px;
+    font-size: 0.83em;
+    background: rgba(204,119,34,0.15);
+    color: #CC7722;
+}
+.popup-alert-warn {
+    background: rgba(204,119,34,0.12);
+}
+.popup-footer {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid rgba(0,0,0,0.07);
+}
+.popup-detail-btn {
+    width: 100%;
+    background: #2D6A4F;
+    color: white;
+    border: none;
+    padding: 7px 14px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 0.88em;
+    transition: background 0.15s;
+}
+.popup-detail-btn:hover {
+    background: #1B4332;
+}
+.popup-settings-list {
+    margin-top: 8px;
+    max-height: 240px;
+    overflow-y: auto;
+}
+.popup-settings-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.82em;
+    color: #444;
+    padding: 3px 0;
+    cursor: pointer;
+}
+.popup-settings-item input[type="checkbox"] {
+    accent-color: #2D6A4F;
+    cursor: pointer;
+}
+
+@keyframes popupFadeIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
 .leaflet-top.leaflet-right {
     top: 18px;
     right: 18px;
@@ -561,11 +694,11 @@
         <div class="priority-filter-bar">
             <span class="priority-filter-label">优先级</span>
             <div class="priority-filter-chips">
-                <button class="priority-chip active" data-priority="critical" onclick="togglePriorityChip(this)"><span class="priority-dot priority-critical"></span>超级</button>
-                <button class="priority-chip active" data-priority="high" onclick="togglePriorityChip(this)"><span class="priority-dot priority-high"></span>重点</button>
-                <button class="priority-chip active" data-priority="medium" onclick="togglePriorityChip(this)"><span class="priority-dot priority-medium"></span>一般</button>
-                <button class="priority-chip active" data-priority="low" onclick="togglePriorityChip(this)"><span class="priority-dot priority-low"></span>次要</button>
-                <button class="priority-chip active" data-priority="abolished" onclick="togglePriorityChip(this)"><span class="priority-dot priority-abolished"></span>废除</button>
+                <button class="priority-chip active" data-priority="critical" onclick="togglePriorityChip(this)">超级</button>
+                <button class="priority-chip active" data-priority="high" onclick="togglePriorityChip(this)">重点</button>
+                <button class="priority-chip active" data-priority="medium" onclick="togglePriorityChip(this)">一般</button>
+                <button class="priority-chip active" data-priority="low" onclick="togglePriorityChip(this)">次要</button>
+                <button class="priority-chip active" data-priority="abolished" onclick="togglePriorityChip(this)">废除</button>
             </div>
         </div>
 
@@ -705,6 +838,8 @@
                 </label>
             </div>
         </div>
+        <!-- 固定弹窗面板 -->
+        <div class="zone-popup-panel" id="zonePopupPanel" style="display:none;"></div>
     </main>
 </div>
 
@@ -743,7 +878,7 @@
 <!-- Map Config -->
 <script src="{% static 'js/map-config.js' %}?v=20260423"></script>
 <!-- Custom Map JS -->
-<script src="{% static 'js/map.js' %}?v=20260423"></script>
+<script src="{% static 'js/map.js' %}?v=20260514g"></script>
 <!-- Dashboard JS -->
 <script>
 // Zone data from server
