@@ -127,9 +127,16 @@ def _zone_save_response(request, zone, message, created=False):
         for field in ('equipment_maintenance_notes', 'irrigation_management_notes'):
             raw = getattr(zone, field, '') or ''
             try:
-                resp[field] = json.loads(raw) if raw else []
+                parsed = json.loads(raw) if raw else []
+                resp[field] = parsed
+                resp[field + '_count'] = len(parsed)
             except (json.JSONDecodeError, TypeError):
                 resp[field] = []
+                resp[field + '_count'] = 0
+        resp['boundary_count'] = len(zone.boundary_points) if zone.boundary_points else 0
+        resp['area_display'] = zone.area_display
+        resp['plant_count'] = zone.plants.count()
+        resp['equipment_count'] = zone.equipments.count()
         return JsonResponse(resp)
 
     messages.success(request, message)
@@ -1061,6 +1068,16 @@ def zone_edit(request, zone_id):
 
     ref_zones_json, ref_pipelines_json = _get_reference_map_data(exclude_zone_id=zone.id)
 
+    # Sibling zones: other zones in the same patch (for sidebar navigation)
+    sibling_zones = []
+    if zone.patch_id:
+        sibling_zones = list(
+            Zone.objects.filter(patch_id=zone.patch_id)
+            .exclude(pk=zone.pk)
+            .values('id', 'name', 'code', 'priority', 'current_status')
+            .order_by('code')
+        )
+
     context = {
         'zone': zone,
         'boundary_json': json.dumps(zone.boundary_points),
@@ -1069,8 +1086,14 @@ def zone_edit(request, zone_id):
         'patches': patches,
         'ref_zones_json': ref_zones_json,
         'ref_pipelines_json': ref_pipelines_json,
+        'sibling_zones': sibling_zones,
         'equip_notes_json': json.dumps(json.loads(zone.equipment_maintenance_notes)) if zone.equipment_maintenance_notes else '[]',
         'irrig_notes_json': json.dumps(json.loads(zone.irrigation_management_notes)) if zone.irrigation_management_notes else '[]',
+        'boundary_count': len(zone.boundary_points) if zone.boundary_points else 0,
+        'equip_notes_count': len(json.loads(zone.equipment_maintenance_notes)) if zone.equipment_maintenance_notes else 0,
+        'irrig_notes_count': len(json.loads(zone.irrigation_management_notes)) if zone.irrigation_management_notes else 0,
+        'plant_count': zone.plants.count(),
+        'equipment_count': zone.equipments.count(),
         **_get_zone_dropdown_options(),
     }
 
@@ -1259,9 +1282,8 @@ def zone_delete(request, zone_id):
 
 @login_required(login_url='core:login')
 def zone_detail_page(request, zone_id):
-    """
-    Zone detail page showing plants, equipment, and stats.
-    """
+    """Zone detail page showing all zone parameters, plants, equipment, notes, and stats."""
+    import json
     from django.db.models import Sum
     from datetime import date, timedelta
     from .models import Plant, ZoneEquipment, WorkReport, WorkReportFault
@@ -1270,30 +1292,27 @@ def zone_detail_page(request, zone_id):
     today = date.today()
     thirty_days_ago = today - timedelta(days=30)
 
-    # Filter plants: current date is within the date range
+    # Current plants
     plants = Plant.objects.filter(zone=zone).filter(
         Q(planting_date__lte=today) | Q(planting_date__isnull=True)
     ).filter(
         Q(end_date__gte=today) | Q(end_date__isnull=True)
     ).order_by('name')
 
-    # Filter equipment: installed and active
+    # Active equipment
     equipment = ZoneEquipment.objects.filter(zone=zone).select_related('equipment').filter(
         Q(installation_date__lte=today) | Q(installation_date__isnull=True)
     ).filter(status__in=['working', 'needs_repair'])
 
-    # Counts
     plant_count = plants.count()
     equipment_count = equipment.count()
     work_report_count = WorkReport.objects.filter(zone_location=zone).count()
 
-    # Recent fault count (last 30 days)
     recent_fault_count = WorkReportFault.objects.filter(
         work_report__zone_location=zone,
         work_report__date__gte=thirty_days_ago,
     ).aggregate(total=Sum('count'))['total'] or 0
 
-    # Add status_display to equipment
     for eq in equipment:
         eq.status_display = eq.get_status_display()
         eq.equipment_details = {
@@ -1301,6 +1320,31 @@ def zone_detail_page(request, zone_id):
             'manufacturer': eq.equipment.manufacturer,
             'model_name': eq.equipment.model_name,
         }
+
+    # Recent work reports
+    recent_reports = WorkReport.objects.filter(zone_location=zone).select_related(
+        'worker', 'work_category', 'location'
+    ).order_by('-date', '-id')[:10]
+
+    # Sibling zones (same patch)
+    sibling_zones = []
+    if zone.patch_id:
+        sibling_zones = list(Zone.objects.filter(patch_id=zone.patch_id)
+                             .exclude(pk=zone.pk).order_by('code')[:20])
+
+    # Parse maintenance notes
+    try:
+        equip_notes = json.loads(zone.equipment_maintenance_notes) if zone.equipment_maintenance_notes else []
+    except (json.JSONDecodeError, TypeError):
+        equip_notes = []
+    try:
+        irrig_notes = json.loads(zone.irrigation_management_notes) if zone.irrigation_management_notes else []
+    except (json.JSONDecodeError, TypeError):
+        irrig_notes = []
+
+    # Priority display
+    priority_display = dict(Zone.PRIORITY_CHOICES).get(zone.priority, '一般')
+    status_display = zone.current_status if zone.current_status else '正常'
 
     context = {
         'zone': zone,
@@ -1310,6 +1354,12 @@ def zone_detail_page(request, zone_id):
         'equipment_count': equipment_count,
         'work_report_count': work_report_count,
         'recent_fault_count': recent_fault_count,
+        'recent_reports': recent_reports,
+        'sibling_zones': sibling_zones,
+        'equip_notes': equip_notes,
+        'irrig_notes': irrig_notes,
+        'priority_display': priority_display,
+        'status_display': status_display,
     }
 
     return render(request, 'core/zone_detail_page.html', context)
@@ -2630,6 +2680,39 @@ def user_edit(request, profile_type, profile_id):
 
     profile.save()
     return JsonResponse({'success': True, 'message': f'已更新 {profile.full_name}'})
+
+
+@login_required(login_url='core:login')
+def user_preferences_api(request):
+    """GET/PUT user preferences (e.g. zone card field visibility)."""
+    from .models import ManagerProfile
+
+    profile = None
+    if request.user.is_superuser or request.user.is_staff:
+        try:
+            profile = ManagerProfile.objects.get(user=request.user, active=True)
+        except ManagerProfile.DoesNotExist:
+            pass
+    if not profile:
+        try:
+            profile = ManagerProfile.objects.get(user=request.user, active=True)
+        except ManagerProfile.DoesNotExist:
+            return JsonResponse({'preferences': {}})
+
+    if request.method == 'GET':
+        return JsonResponse({'preferences': profile.preferences or {}})
+
+    if request.method in ('PUT', 'POST'):
+        import json as _json
+        try:
+            data = _json.loads(request.body) if request.body else {}
+        except _json.JSONDecodeError:
+            data = {}
+        profile.preferences = data.get('preferences', {})
+        profile.save(update_fields=['preferences', 'updated_at'])
+        return JsonResponse({'success': True, 'preferences': profile.preferences})
+
+    return JsonResponse({'error': 'Method not allowed'}, status=405)
 
 
 @login_required(login_url='core:login')

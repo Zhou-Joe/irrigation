@@ -165,7 +165,7 @@ class ZoneSerializer(serializers.ModelSerializer):
             'equipment_maintenance_notes', 'irrigation_management_notes',
             'patch_id', 'patch_name', 'patch_code',
             'region_id', 'region_name',
-            'created_at', 'updated_at'
+            'area_sqm', 'created_at', 'updated_at'
         ]
         read_only_fields = ['created_at', 'updated_at']
 

@@ -486,23 +486,76 @@
     ];
 
     const CARD_SETTINGS_KEY = 'zoneProfileCardFields';
+    let _serverSettingsLoaded = false;
+
+    // Load settings from server on init (once), then merge with localStorage
+    async function loadSettingsFromServer() {
+        try {
+            const resp = await fetch('/api/user/preferences', {credentials: 'same-origin'});
+            if (!resp.ok) return;
+            const data = await resp.json();
+            const serverPrefs = data.preferences || {};
+            const serverFields = serverPrefs[CARD_SETTINGS_KEY];
+            if (serverFields && typeof serverFields === 'object') {
+                localStorage.setItem(CARD_SETTINGS_KEY, JSON.stringify(serverFields));
+            }
+            _serverSettingsLoaded = true;
+        } catch (e) {}
+    }
 
     function getCardFieldSettings() {
         try {
             const saved = localStorage.getItem(CARD_SETTINGS_KEY);
-            if (saved) return JSON.parse(saved);
+            if (saved) {
+                const parsed = JSON.parse(saved);
+                const defaults = getDefaultCardFieldSettings();
+                return Object.assign(defaults, parsed);
+            }
         } catch (e) {}
-        // Default: all fields hidden
+        return getDefaultCardFieldSettings();
+    }
+
+    function getDefaultCardFieldSettings() {
         const defaults = {};
         ZONE_CARD_FIELDS.forEach(f => { defaults[f.key] = false; });
+        ['priority', 'area', 'patchInfo', 'plantType', 'irrigationForeman'].forEach(k => {
+            defaults[k] = true;
+        });
         return defaults;
     }
 
     function saveCardFieldSetting(key, visible) {
         const settings = getCardFieldSettings();
         settings[key] = visible;
+        // Save to localStorage immediately
         localStorage.setItem(CARD_SETTINGS_KEY, JSON.stringify(settings));
+        // Sync to server (fire-and-forget)
+        _syncSettingsToServer(settings);
     }
+
+    async function _syncSettingsToServer(settings) {
+        try {
+            // Read full preferences, merge, then save
+            let allPrefs = {};
+            try {
+                const resp = await fetch('/api/user/preferences', {credentials: 'same-origin'});
+                if (resp.ok) allPrefs = (await resp.json()).preferences || {};
+            } catch (e) {}
+            allPrefs[CARD_SETTINGS_KEY] = settings;
+            await fetch('/api/user/preferences', {
+                method: 'PUT',
+                credentials: 'same-origin',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': (document.cookie.match(/csrftoken=([^;]+)/) || [])[1] || ''
+                },
+                body: JSON.stringify({preferences: allPrefs})
+            });
+        } catch (e) {}
+    }
+
+    // Load server settings on page load
+    loadSettingsFromServer();
 
     // Currently displayed zone data (for re-rendering after settings change)
     let currentPopupZoneData = null;
@@ -589,7 +642,7 @@
                 </div>
                 ${hasExtra ? '<div class="popup-fields">' + fieldsHtml + faultHtml + pendingHtml + '</div>' : ''}
                 <div class="popup-footer">
-                    <button class="popup-detail-btn" onclick="window.location.href='/zone/${zone.id}/detail/'">查看区域详情</button>
+                    <button class="popup-detail-btn" onclick="window.open('/zone/${zone.id}/detail/', '_blank')">查看区域详情</button>
                 </div>
             </div>
         `;

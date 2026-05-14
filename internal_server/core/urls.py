@@ -90,6 +90,7 @@ urlpatterns = [
     path('custom-report/', views.custom_report, name='custom_report'),
     path('api/equipment-catalog/autocomplete', equipment_catalog_autocomplete, name='equipment_catalog_autocomplete'),
     path('api/', include(router.urls)),
+    path('api/user/preferences', views.user_preferences_api, name='user_preferences_api'),
     path('api/maxicom-dashboard', views.maxicom_dashboard_api, name='maxicom_dashboard_api'),
     path('api/sync/receive', sync_receive, name='sync_receive'),
     path('api/sync/status', sync_status, name='sync_status'),
