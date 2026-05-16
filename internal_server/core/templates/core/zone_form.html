@@ -1072,6 +1072,8 @@ function handleComboSelect(selectEl, customInputId, hiddenId) {
     // Expose deleteShape for inline onclick
     window._deleteShape = deleteShape;
     window._editShape = editShape;
+    window._completeCurrentShape = completeCurrentShape;
+    window._getMarkerCount = function() { return markers.length; };
 
     function locateUser() {
         const btn = document.getElementById('locateMe');
@@ -1966,6 +1968,11 @@ function handleComboSelect(selectEl, customInputId, hiddenId) {
     form.addEventListener('submit', async function(e) {
         if (e.defaultPrevented) return;
         e.preventDefault();
+
+        // Auto-complete any in-progress shape with 3+ markers
+        if (window._getMarkerCount && window._getMarkerCount() >= 3 && window._completeCurrentShape) {
+            window._completeCurrentShape();
+        }
 
         setSaving(true);
 

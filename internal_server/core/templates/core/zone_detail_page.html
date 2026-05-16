@@ -507,6 +507,64 @@
         {% endif %}
     </div>
 
+    <!-- 备注 Section -->
+    <div class="detail-section">
+        <h2 class="section-title">备注</h2>
+        <div id="remark-form" style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
+            <input type="date" id="remark-date" value="{{ today }}" style="padding:4px 8px;border:1px solid #ddd;border-radius:4px;">
+            <input type="text" id="remark-content" placeholder="备注内容..." style="flex:1;min-width:200px;padding:4px 8px;border:1px solid #ddd;border-radius:4px;">
+            <button type="button" id="remark-add-btn" onclick="addRemark()" style="padding:4px 12px;background:#28a745;color:white;border:none;border-radius:4px;cursor:pointer;">添加</button>
+        </div>
+        <div id="remarks-list">
+        {% for remark in remarks %}
+            <div class="note-entry" data-index="{{ forloop.counter0 }}">
+                <span class="note-date">{{ remark.date }}</span>
+                <span class="note-content">{{ remark.content }}</span>
+                <span style="color:#888;font-size:0.85em;">({{ remark.author }})</span>
+                {% if is_manager %}
+                <button type="button" class="remark-confirm-btn" onclick="showConfirmForm(this, {{ forloop.counter0 }})" style="margin-left:8px;padding:2px 8px;background:#007bff;color:white;border:none;border-radius:3px;cursor:pointer;font-size:0.8em;">确认</button>
+                <div class="confirm-form" style="display:none;margin-top:6px;">
+                    <input type="text" class="confirm-reply" placeholder="确认回复..." style="padding:2px 6px;border:1px solid #ddd;border-radius:3px;width:70%;">
+                    <button type="button" onclick="confirmRemark({{ forloop.counter0 }}, this)" style="padding:2px 8px;background:#17a2b8;color:white;border:none;border-radius:3px;cursor:pointer;font-size:0.8em;">提交</button>
+                    <button type="button" onclick="this.parentElement.style.display='none'" style="padding:2px 8px;border:1px solid #ccc;border-radius:3px;cursor:pointer;font-size:0.8em;">取消</button>
+                </div>
+                {% endif %}
+            </div>
+        {% empty %}
+            <div class="empty-state">暂无备注</div>
+        {% endfor %}
+        </div>
+    </div>
+
+    <!-- 备注确认 Section -->
+    <div class="detail-section">
+        <h2 class="section-title">备注确认</h2>
+        <div id="confirmed-list">
+        {% for item in confirmed_remarks %}
+            <div class="note-entry confirmed-entry" data-index="{{ forloop.counter0 }}">
+                <div>
+                    <span class="note-date">{{ item.date }}</span>
+                    <span class="note-content">{{ item.content }}</span>
+                    <span style="color:#888;font-size:0.85em;">({{ item.author }})</span>
+                </div>
+                <div style="margin-top:4px;padding-left:16px;border-left:3px solid #28a745;font-size:0.9em;">
+                    <span style="color:#888;">{{ item.confirm_date }}</span>
+                    <span style="color:#28a745;">{{ item.confirm_reply }}</span>
+                    <span style="color:#888;font-size:0.85em;">({{ item.confirm_author }})</span>
+                </div>
+                {% if is_manager %}
+                <div style="margin-top:6px;">
+                    <button type="button" onclick="moveRemark({{ forloop.counter0 }}, 'irrigation')" style="padding:2px 8px;background:#6f42c1;color:white;border:none;border-radius:3px;cursor:pointer;font-size:0.8em;">转至灌溉管理记录</button>
+                    <button type="button" onclick="moveRemark({{ forloop.counter0 }}, 'equipment')" style="padding:2px 8px;background:#fd7e14;color:white;border:none;border-radius:3px;cursor:pointer;font-size:0.8em;">转至设备维护记录</button>
+                </div>
+                {% endif %}
+            </div>
+        {% empty %}
+            <div class="empty-state">暂无确认备注</div>
+        {% endfor %}
+        </div>
+    </div>
+
     <!-- Recent Work Reports -->
     {% if recent_reports %}
     <div class="detail-section">
@@ -555,4 +613,72 @@
         <a href="{% url 'core:settings' %}" style="color:var(--color-primary);text-decoration:none;">返回设置</a>
     </div>
 </div>
+
+<script>
+(function() {
+    const zoneId = {{ zone.id }};
+    const csrfToken = '{{ csrf_token }}';
+
+    function getCSRF() {
+        const cookie = document.cookie.split('; ').find(c => c.startsWith('csrftoken='));
+        return cookie ? cookie.split('=')[1] : csrfToken;
+    }
+
+    function postAction(url, data) {
+        const fd = new FormData();
+        for (const [k, v] of Object.entries(data)) fd.append(k, v);
+        return fetch(url, {
+            method: 'POST',
+            body: fd,
+            headers: {'X-CSRFToken': getCSRF(), 'X-Requested-With': 'XMLHttpRequest'}
+        }).then(r => r.json());
+    }
+
+    window.addRemark = function() {
+        const date = document.getElementById('remark-date').value;
+        const content = document.getElementById('remark-content').value.trim();
+        if (!content) { alert('请输入备注内容'); return; }
+        postAction('/zone/' + zoneId + '/remark/add/', {date: date, content: content}).then(function(data) {
+            if (data.success) {
+                location.reload();
+            } else {
+                alert(data.error || '添加失败');
+            }
+        });
+    };
+
+    document.getElementById('remark-content').addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') window.addRemark();
+    });
+
+    window.showConfirmForm = function(btn, index) {
+        var form = btn.nextElementSibling;
+        form.style.display = form.style.display === 'none' ? 'block' : 'none';
+    };
+
+    window.confirmRemark = function(index, btn) {
+        var form = btn.parentElement;
+        var reply = form.querySelector('.confirm-reply').value.trim();
+        postAction('/zone/' + zoneId + '/remark/' + index + '/confirm/', {confirm_reply: reply}).then(function(data) {
+            if (data.success) {
+                location.reload();
+            } else {
+                alert(data.error || '确认失败');
+            }
+        });
+    };
+
+    window.moveRemark = function(index, target) {
+        var label = target === 'irrigation' ? '灌溉管理记录' : '设备维护记录';
+        if (!confirm('确认转至' + label + '？')) return;
+        postAction('/zone/' + zoneId + '/remark/' + index + '/move/', {target: target}).then(function(data) {
+            if (data.success) {
+                location.reload();
+            } else {
+                alert(data.error || '转移失败');
+            }
+        });
+    };
+})();
+</script>
 {% endblock %}
