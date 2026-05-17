@@ -200,6 +200,31 @@
     text-overflow: ellipsis;
 }
 
+.remark-badge {
+    flex-shrink: 0;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    font-weight: 700;
+    color: white;
+    margin-left: auto;
+}
+.remark-badge-pending {
+    background: #E8590C;
+    animation: remark-badge-pulse 2s infinite;
+}
+.remark-badge-confirmed {
+    background: #3B82F6;
+}
+@keyframes remark-badge-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
 /* Patch group styling */
 .patch-group {
     margin-bottom: 7px;
@@ -329,6 +354,7 @@
 }
 
 .map-container {
+    position: relative;
     background:
         linear-gradient(135deg, rgba(27, 67, 50, 0.08), rgba(212, 165, 116, 0.08)),
         var(--color-surface);
@@ -536,6 +562,174 @@
     box-shadow: 5px 0 18px rgba(27, 67, 50, 0.24);
 }
 
+/* ── Map Filter Plugin ── */
+.map-filter-widget {
+    position: absolute;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 1000;
+    pointer-events: none;
+}
+.filter-gooey-svg { position: absolute; width: 0; height: 0; }
+
+/* ── Toggle button: always fixed at bottom-center ── */
+.filter-toggle-btn {
+    width: 46px;
+    height: 46px;
+    border-radius: 50%;
+    border: 3px solid rgba(255,255,255,0.95);
+    background: linear-gradient(145deg, #52b788, #2d6a4f);
+    color: white;
+    font-size: 0;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 16px rgba(27,67,50,0.3);
+    transition: all 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+    position: relative;
+    pointer-events: auto;
+}
+.filter-toggle-btn svg {
+    width: 20px; height: 20px;
+    transition: transform 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.filter-toggle-btn:hover { transform: scale(1.1); }
+.filter-toggle-btn.active {
+    background: linear-gradient(145deg, #e74c3c, #b91c1c);
+    box-shadow: 0 4px 16px rgba(185,28,28,0.4);
+}
+.filter-toggle-btn.active svg { transform: rotate(180deg); }
+
+/* ── Quick-clear ── */
+.filter-quick-clear {
+    position: absolute;
+    bottom: 38px; left: calc(50% + 14px);
+    width: 22px; height: 22px; border-radius: 50%;
+    background: rgba(254,226,226,0.9); border: 1.5px solid rgba(252,165,165,0.8);
+    color: #b91c1c; font-size: 11px; cursor: pointer;
+    display: none; align-items: center; justify-content: center;
+    transition: all 0.25s cubic-bezier(0.22, 1, 0.36, 1);
+    z-index: 999; pointer-events: auto; line-height: 1;
+}
+.filter-quick-clear:hover { background: #b91c1c; color: white; border-color: #b91c1c; transform: scale(1.15); }
+.filter-quick-clear.visible { display: flex; }
+
+/* ── Panel: absolute positioned above the button ── */
+.filter-panel {
+    position: absolute;
+    bottom: 56px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 420px;
+    max-width: calc(100vw - 24px);
+    display: none;
+    transform-origin: bottom center;
+    pointer-events: auto;
+    z-index: 2;
+    background: linear-gradient(175deg,
+        rgba(255,255,255,0.96) 0%,
+        rgba(244,250,247,0.94) 100%
+    );
+    backdrop-filter: blur(24px) saturate(1.5);
+    -webkit-backdrop-filter: blur(24px) saturate(1.5);
+    border-radius: 16px;
+    box-shadow:
+        0 16px 48px -8px rgba(27,67,50,0.22),
+        0 0 0 1px rgba(255,255,255,0.5) inset;
+    padding: 14px 16px 12px;
+    max-height: 50vh;
+    overflow-y: auto;
+}
+
+/* ── Animation ── */
+.filter-panel.open {
+    display: block;
+    animation: panelRise 0.4s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+@keyframes panelRise {
+    0%   { opacity: 0; transform: translateX(-50%) scaleY(0) scaleX(0.6); }
+    50%  { opacity: 1; }
+    70%  { transform: translateX(-50%) scaleY(1.04) scaleX(1.01); }
+    100% { opacity: 1; transform: translateX(-50%) scaleY(1) scaleX(1); }
+}
+
+/* ── Header ── */
+.filter-panel-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 0 8px;
+    position: relative; z-index: 1;
+}
+.filter-panel-title {
+    font-size: 0.72rem; font-weight: 800;
+    color: var(--color-primary); letter-spacing: 2px;
+    text-transform: uppercase; opacity: 0.6;
+}
+.filter-panel-actions { display: flex; align-items: center; gap: 6px; }
+.filter-clear-btn {
+    font-size: 0.65rem; padding: 3px 9px;
+    border: 1px solid rgba(185,28,28,0.2); border-radius: 8px;
+    background: rgba(254,226,226,0.5); color: #b91c1c;
+    cursor: pointer; transition: all 0.25s;
+    font-weight: 600; letter-spacing: 0.5px; display: none;
+}
+.filter-clear-btn.visible { display: inline-block; }
+.filter-clear-btn:hover { background: #b91c1c; color: white; border-color: #b91c1c; }
+.filter-close-btn {
+    width: 24px; height: 24px; border: none; border-radius: 50%;
+    background: rgba(0,0,0,0.04); color: #aaa; cursor: pointer;
+    font-size: 0.8rem; display: flex; align-items: center; justify-content: center;
+    transition: all 0.2s;
+}
+.filter-close-btn:hover { background: rgba(0,0,0,0.08); color: #555; }
+
+/* ── Layers: landmarks(bottom/inner) → priority(mid) → patches(top/outer) ── */
+.filter-layer { position: relative; z-index: 1; }
+.filter-layer + .filter-layer::before {
+    content: ''; position: absolute; top: 0; height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(52,120,88,0.1), transparent);
+}
+#patchFilterLayer    { padding: 6px 0 8px; }
+#priorityFilterLayer { padding: 6px 0 8px; }
+#landmarkFilterLayer { padding: 6px 0 10px; }
+
+.filter-layer-label {
+    font-size: 0.56rem; font-weight: 700;
+    color: rgba(52,120,88,0.4); letter-spacing: 2.5px;
+    text-transform: uppercase; margin-bottom: 5px; text-align: left;
+}
+.filter-layer-chips {
+    display: flex; flex-wrap: wrap; gap: 5px; justify-content: flex-start;
+}
+
+/* ── Chips ── */
+.filter-chip {
+    display: inline-flex; align-items: center;
+    padding: 4px 10px; border-radius: 14px;
+    font-size: 0.7rem; cursor: pointer;
+    border: 1.5px solid rgba(0,0,0,0.06);
+    background: rgba(255,255,255,0.5); color: #999;
+    transition: all 0.25s cubic-bezier(0.22, 1, 0.36, 1);
+    white-space: nowrap; user-select: none;
+}
+.filter-chip:hover {
+    border-color: var(--color-primary); background: rgba(52,120,88,0.08);
+    color: var(--color-primary); transform: translateY(-1px);
+}
+.filter-chip.active {
+    border-color: transparent; color: white;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.18);
+    transform: translateY(-1px) scale(1.04);
+}
+.filter-chip.priority-critical.active { background: #9B2226; }
+.filter-chip.priority-high.active    { background: #E8590C; }
+.filter-chip.priority-medium.active  { background: #3A86FF; }
+.filter-chip.priority-low.active     { background: #6C757D; }
+.filter-chip.priority-abolished.active { background: #343A40; }
+.filter-chip.landmark-chip.active    { color: white; }
+.filter-chip.patch-chip.active       { background: var(--color-primary); }
+
 /* Sync Agent Status Indicator */
 .sync-agent-status {
     position: absolute;
@@ -690,18 +884,6 @@
             <input type="text" class="zone-search-input" id="zoneSidebarSearch" placeholder="搜索区域名称或编号...">
         </div>
 
-        <!-- 优先级筛选 -->
-        <div class="priority-filter-bar">
-            <span class="priority-filter-label">优先级</span>
-            <div class="priority-filter-chips">
-                <button class="priority-chip active" data-priority="critical" onclick="togglePriorityChip(this)">超级</button>
-                <button class="priority-chip active" data-priority="high" onclick="togglePriorityChip(this)">重点</button>
-                <button class="priority-chip active" data-priority="medium" onclick="togglePriorityChip(this)">一般</button>
-                <button class="priority-chip active" data-priority="low" onclick="togglePriorityChip(this)">次要</button>
-                <button class="priority-chip active" data-priority="abolished" onclick="togglePriorityChip(this)">废除</button>
-            </div>
-        </div>
-
         <!-- 植物筛选 -->
         {% if all_plant_names %}
         <div class="filter-dropdown-wrap">
@@ -737,7 +919,7 @@
                 </div>
                 <div class="region-patches">
                     {% for patch in region.patches %}
-                    <div class="patch-group" data-patch-id="{{ patch.id }}" data-type="patch">
+                    <div class="patch-group collapsed" data-patch-id="{{ patch.id }}" data-type="patch">
                         <div class="patch-header" onclick="togglePatchGroup(this)">
                             <span class="patch-toggle">▼</span>
                             <span class="patch-name">{{ patch.name }}</span>
@@ -748,6 +930,7 @@
                             <div class="zone-item" data-zone-id="{{ zone.id }}" data-zone-code="{{ zone.code }}" data-patch-id="{{ zone.patch_id }}" data-priority="{{ zone.priority }}" data-plants="{{ zone.plant_names|join:',' }}">
                                 <span class="zone-code">{{ zone.code }}</span>
                                 <span class="zone-name">{{ zone.name }}</span>
+                                {% if zone.has_remarks %}<span class="remark-badge remark-badge-pending" title="有待确认备注">!</span>{% elif zone.has_confirmed_remarks %}<span class="remark-badge remark-badge-confirmed" title="有已确认备注">✓</span>{% endif %}
                             </div>
                             {% endfor %}
                         </div>
@@ -765,7 +948,7 @@
                 </div>
                 <div class="region-patches">
                     {% for patch in region.patches %}
-                    <div class="patch-group" data-patch-id="{{ patch.id }}" data-type="patch">
+                    <div class="patch-group collapsed" data-patch-id="{{ patch.id }}" data-type="patch">
                         <div class="patch-header" onclick="togglePatchGroup(this)">
                             <span class="patch-toggle">▼</span>
                             <span class="patch-name">{{ patch.name }}</span>
@@ -776,6 +959,7 @@
                             <div class="zone-item" data-zone-id="{{ zone.id }}" data-zone-code="{{ zone.code }}" data-patch-id="{{ zone.patch_id }}" data-priority="{{ zone.priority }}" data-plants="{{ zone.plant_names|join:',' }}">
                                 <span class="zone-code">{{ zone.code }}</span>
                                 <span class="zone-name">{{ zone.name }}</span>
+                                {% if zone.has_remarks %}<span class="remark-badge remark-badge-pending" title="有待确认备注">!</span>{% elif zone.has_confirmed_remarks %}<span class="remark-badge remark-badge-confirmed" title="有已确认备注">✓</span>{% endif %}
                             </div>
                             {% endfor %}
                         </div>
@@ -785,7 +969,7 @@
             </div>
             {% elif region.type == 'orphan' %}
             <!-- 未分配片区 -->
-            <div class="patch-group" data-type="orphan">
+            <div class="patch-group collapsed" data-type="orphan">
                 <div class="patch-header" onclick="togglePatchGroup(this)">
                     <span class="patch-toggle">▼</span>
                     <span class="patch-name">{{ region.name }}</span>
@@ -796,6 +980,7 @@
                     <div class="zone-item" data-zone-id="{{ zone.id }}" data-zone-code="{{ zone.code }}" data-patch-id="" data-priority="{{ zone.priority }}" data-plants="{{ zone.plant_names|join:',' }}">
                         <span class="zone-code">{{ zone.code }}</span>
                         <span class="zone-name">{{ zone.name }}</span>
+                        {% if zone.has_remarks %}<span class="remark-badge remark-badge-pending" title="有待确认备注">!</span>{% elif zone.has_confirmed_remarks %}<span class="remark-badge remark-badge-confirmed" title="有已确认备注">✓</span>{% endif %}
                     </div>
                     {% endfor %}
                 </div>
@@ -836,8 +1021,47 @@
                     <span class="map-layer-checkmark"></span>
                     <span>水管</span>
                 </label>
+                <label class="map-layer-item">
+                    <input type="checkbox" onchange="toggleLayer('landmarks', this.checked)">
+                    <span class="map-layer-checkmark"></span>
+                    <span>地标区域</span>
+                </label>
             </div>
         </div>
+
+        <!-- 地图筛选插件 -->
+        <div class="map-filter-widget" id="mapFilterWidget">
+            <button type="button" class="filter-toggle-btn" id="filterToggleBtn" onclick="toggleFilterPanel()" title="筛选">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="4" y1="6" x2="20" y2="6"/><circle cx="9" cy="6" r="2.5" fill="white" stroke="none"/>
+                    <line x1="4" y1="12" x2="20" y2="12"/><circle cx="15" cy="12" r="2.5" fill="white" stroke="none"/>
+                    <line x1="4" y1="18" x2="20" y2="18"/><circle cx="10" cy="18" r="2.5" fill="white" stroke="none"/>
+                </svg>
+            </button>
+            <button type="button" class="filter-quick-clear" id="filterQuickClear" onclick="clearAllFilters()" title="清除筛选">✕</button>
+            <div class="filter-panel" id="filterPanel">
+                <div class="filter-panel-header">
+                    <span class="filter-panel-title">筛选</span>
+                    <div class="filter-panel-actions">
+                        <button type="button" class="filter-clear-btn" id="filterClearBtn" onclick="clearAllFilters()">清除筛选</button>
+                        <button type="button" class="filter-close-btn" onclick="toggleFilterPanel()" title="关闭">✕</button>
+                    </div>
+                </div>
+                <div class="filter-layer" id="landmarkFilterLayer">
+                    <div class="filter-layer-label">地标</div>
+                    <div class="filter-layer-chips" id="landmarkChips"></div>
+                </div>
+                <div class="filter-layer" id="priorityFilterLayer">
+                    <div class="filter-layer-label">优先级</div>
+                    <div class="filter-layer-chips" id="priorityChips"></div>
+                </div>
+                <div class="filter-layer" id="patchFilterLayer">
+                    <div class="filter-layer-label">片区</div>
+                    <div class="filter-layer-chips" id="patchChips"></div>
+                </div>
+            </div>
+        </div>
+
         <!-- 固定弹窗面板 -->
         <div class="zone-popup-panel" id="zonePopupPanel" style="display:none;"></div>
     </main>
@@ -870,6 +1094,16 @@
 <script id="pipelines-data" type="application/json">
     {{ pipelines_json|safe }}
 </script>
+<!-- Landmark data for JavaScript -->
+<script id="landmarks-data" type="application/json">
+    {{ landmarks_json|safe }}
+</script>
+<script id="zone-landmark-map" type="application/json">
+    {{ zone_landmark_map_json|safe }}
+</script>
+<script id="patches-data" type="application/json">
+    {{ patches_json|safe }}
+</script>
 {% endblock %}
 
 {% block extra_js %}
@@ -878,7 +1112,7 @@
 <!-- Map Config -->
 <script src="{% static 'js/map-config.js' %}?v=20260423"></script>
 <!-- Custom Map JS -->
-<script src="{% static 'js/map.js' %}?v=20260515a"></script>
+<script src="{% static 'js/map.js' %}?v=20260517a"></script>
 <!-- Dashboard JS -->
 <script>
 // Zone data from server
@@ -893,10 +1127,8 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Zone sidebar search filter
     initZoneSidebarSearch();
+    getZoneLandmarkMap();
 });
-
-// Zone sidebar search filter
-let currentPriorityFilter = '';
 
 function initZoneSidebarSearch() {
     const searchInput = document.getElementById('zoneSidebarSearch');
@@ -923,6 +1155,17 @@ function applySidebarFilters() {
     const query = searchInput.value.toLowerCase().trim();
     let visibleCount = 0;
 
+    const ap = window.activePriorities || new Set();
+    const apl = window.activePlants || new Set();
+    const pt = window.plantFilterTouched || false;
+    const al = window.activeLandmarks || new Set();
+    const lt = window.landmarkFilterTouched || false;
+    const apa = window.activePatches || new Set();
+    const pat = window.patchFilterTouched || false;
+    const prt = window.priorityFilterTouched || false;
+
+    const hasFilter = query || prt || pt || lt || pat;
+
     // Handle region groups
     zoneList.querySelectorAll('.region-group').forEach(regionGroup => {
         const regionName = regionGroup.querySelector('.region-name')?.textContent?.toLowerCase() || '';
@@ -930,6 +1173,7 @@ function applySidebarFilters() {
 
         regionGroup.querySelectorAll('.patch-group').forEach(patchGroup => {
             const patchName = patchGroup.querySelector('.patch-name')?.textContent?.toLowerCase() || '';
+            const pgPatchId = patchGroup.dataset.patchId || '';
             const zoneItems = patchGroup.querySelectorAll('.zone-item');
             let patchVisible = false;
 
@@ -938,12 +1182,19 @@ function applySidebarFilters() {
                 const name = (item.querySelector('.zone-name')?.textContent || '').toLowerCase();
                 const priority = item.dataset.priority || '';
                 const plants = (item.dataset.plants || '').split(',').filter(Boolean);
+                const patchId = item.dataset.patchId || pgPatchId;
 
                 const matchText = !query || code.includes(query) || name.includes(query) || patchName.includes(query) || regionName.includes(query);
-                const matchPriority = activePriorities.size === 0 || activePriorities.has(priority);
-                const matchPlant = !plantFilterTouched || plants.some(p => activePlants.has(p));
+                const matchPriority = !prt || ap.has(priority);
+                const matchPlant = !pt || plants.some(p => apl.has(p));
+                const matchLandmark = !lt || (function() {
+                    const mapData = getZoneLandmarkMap();
+                    const lmNames = (mapData[item.dataset.zoneId] || []).map(l => l.name);
+                    return lmNames.length === 0 || lmNames.some(n => al.has(n));
+                })();
+                const matchPatch = !pat || apa.has(patchId);
 
-                const visible = matchText && matchPriority && matchPlant;
+                const visible = matchText && matchPriority && matchPlant && matchLandmark && matchPatch;
                 item.style.display = visible ? '' : 'none';
                 if (visible) {
                     patchVisible = true;
@@ -952,7 +1203,6 @@ function applySidebarFilters() {
             });
 
             patchGroup.style.display = patchVisible ? '' : 'none';
-            const hasFilter = query || activePriorities.size < 5 || plantFilterTouched;
             if (hasFilter && patchVisible) {
                 patchGroup.classList.remove('collapsed');
             }
@@ -960,7 +1210,6 @@ function applySidebarFilters() {
         });
 
         regionGroup.style.display = regionVisible ? '' : 'none';
-        const hasFilter = query || activePriorities.size < 5 || plantFilterTouched;
         if (hasFilter && regionVisible) {
             regionGroup.classList.remove('collapsed');
         }
@@ -969,6 +1218,7 @@ function applySidebarFilters() {
     // Handle standalone patch groups (orphans outside region)
     zoneList.querySelectorAll(':scope > .patch-group').forEach(patchGroup => {
         const patchName = patchGroup.querySelector('.patch-name')?.textContent?.toLowerCase() || '';
+        const pgPatchId = patchGroup.dataset.patchId || '';
         const zoneItems = patchGroup.querySelectorAll('.zone-item');
         let patchVisible = false;
 
@@ -977,12 +1227,19 @@ function applySidebarFilters() {
             const name = (item.querySelector('.zone-name')?.textContent || '').toLowerCase();
             const priority = item.dataset.priority || '';
             const plants = (item.dataset.plants || '').split(',').filter(Boolean);
+            const patchId = item.dataset.patchId || pgPatchId;
 
             const matchText = !query || code.includes(query) || name.includes(query) || patchName.includes(query);
-            const matchPriority = activePriorities.size === 0 || activePriorities.has(priority);
-            const matchPlant = !plantFilterTouched || plants.some(p => activePlants.has(p));
+            const matchPriority = priorityAll || ap.has(priority);
+            const matchPlant = !pt || plants.some(p => apl.has(p));
+            const matchLandmark = !lt || (function() {
+                const mapData = getZoneLandmarkMap();
+                const lmNames = (mapData[item.dataset.zoneId] || []).map(l => l.name);
+                return lmNames.length === 0 || lmNames.some(n => al.has(n));
+            })();
+            const matchPatch = !pat || apa.has(patchId);
 
-            const visible = matchText && matchPriority && matchPlant;
+            const visible = matchText && matchPriority && matchPlant && matchLandmark && matchPatch;
             item.style.display = visible ? '' : 'none';
             if (visible) {
                 patchVisible = true;
@@ -991,13 +1248,11 @@ function applySidebarFilters() {
         });
 
         patchGroup.style.display = patchVisible ? '' : 'none';
-        const hasFilter = query || activePriorities.size < 3 || plantFilterTouched;
         if (hasFilter && patchVisible) {
             patchGroup.classList.remove('collapsed');
         }
     });
 
-    const hasFilter = query || activePriorities.size < 3 || plantFilterTouched;
     if (hasFilter) {
         countEl.textContent = `找到 ${visibleCount} 个区域`;
     } else {
@@ -1005,20 +1260,185 @@ function applySidebarFilters() {
     }
 }
 
-// Priority filter - multi-select chips
-let activePriorities = new Set(['critical', 'high', 'medium', 'low', 'abolished']);
+// ── Map Filter Plugin Logic ──
 
-function togglePriorityChip(btn) {
-    btn.classList.toggle('active');
-    const priority = btn.dataset.priority;
-    if (btn.classList.contains('active')) {
-        activePriorities.add(priority);
+const PRIORITY_CHIPS = [
+    { value: 'critical', label: '超级', cls: 'priority-critical' },
+    { value: 'high', label: '重点', cls: 'priority-high' },
+    { value: 'medium', label: '一般', cls: 'priority-medium' },
+    { value: 'low', label: '次要', cls: 'priority-low' },
+    { value: 'abolished', label: '废除', cls: 'priority-abolished' },
+];
+
+let filterPanelOpen = false;
+
+function toggleFilterPanel() {
+    const panel = document.getElementById('filterPanel');
+    const btn = document.getElementById('filterToggleBtn');
+    filterPanelOpen = !filterPanelOpen;
+    if (filterPanelOpen) {
+        renderFilterChips();
+        panel.classList.add('open');
+        btn.classList.add('active');
     } else {
-        activePriorities.delete(priority);
+        panel.classList.remove('open');
+        btn.classList.remove('active');
     }
-    applySidebarFilters();
-    applyMapFilters();
 }
+
+function renderFilterChips() {
+    // Landmarks
+    const lmChips = document.getElementById('landmarkChips');
+    const dataEl = document.getElementById('landmarks-data');
+    lmChips.innerHTML = '';
+    if (dataEl && dataEl.textContent) {
+        try {
+            const landmarks = JSON.parse(dataEl.textContent);
+            landmarks.forEach(lm => {
+                const active = window.activeLandmarks.has(lm.name);
+                const chip = document.createElement('span');
+                chip.className = 'filter-chip landmark-chip' + (active ? ' active' : '');
+                chip.textContent = lm.name;
+                chip.style.setProperty('--chip-color', lm.boundary_color || '#E8590C');
+                if (active) chip.style.background = lm.boundary_color || '#E8590C';
+                chip.onclick = function() { toggleFilterChip('landmark', lm.name, chip, lm.boundary_color); };
+                lmChips.appendChild(chip);
+            });
+        } catch(e) {}
+    }
+
+    // Priority
+    const prChips = document.getElementById('priorityChips');
+    prChips.innerHTML = '';
+    PRIORITY_CHIPS.forEach(pc => {
+        const active = window.activePriorities.has(pc.value);
+        const chip = document.createElement('span');
+        chip.className = 'filter-chip ' + pc.cls + (active ? ' active' : '');
+        chip.textContent = pc.label;
+        chip.onclick = function() { toggleFilterChip('priority', pc.value, chip); };
+        prChips.appendChild(chip);
+    });
+
+    // Patches
+    const paChips = document.getElementById('patchChips');
+    const patchEl = document.getElementById('patches-data');
+    paChips.innerHTML = '';
+    if (patchEl && patchEl.textContent) {
+        try {
+            const patches = JSON.parse(patchEl.textContent);
+            patches.forEach(p => {
+                const pid = String(p.id);
+                const active = window.activePatches.has(pid);
+                const chip = document.createElement('span');
+                chip.className = 'filter-chip patch-chip' + (active ? ' active' : '');
+                chip.textContent = p.name || p.code;
+                chip.onclick = function() { toggleFilterChip('patch', pid, chip); };
+                paChips.appendChild(chip);
+            });
+        } catch(e) {}
+    }
+
+    updateFilterBadge();
+
+    // Staggered chip entrance animation
+    requestAnimationFrame(() => {
+        document.querySelectorAll('#filterPanel .filter-chip').forEach((chip, i) => {
+            chip.style.opacity = '0';
+            chip.style.transform = 'translateY(6px) scale(0.85)';
+            setTimeout(() => {
+                chip.style.transition = 'opacity 0.35s cubic-bezier(0.22,1,0.36,1), transform 0.35s cubic-bezier(0.22,1,0.36,1)';
+                chip.style.opacity = '1';
+                chip.style.transform = '';
+            }, 50 + i * 20);
+        });
+    });
+}
+
+function toggleFilterChip(layer, value, btn, chipColor) {
+    let set, touchedKey;
+    if (layer === 'landmark') {
+        set = window.activeLandmarks;
+        touchedKey = 'landmarkFilterTouched';
+    } else if (layer === 'priority') {
+        set = window.activePriorities;
+        touchedKey = 'priorityFilterTouched';
+    } else if (layer === 'patch') {
+        set = window.activePatches;
+        touchedKey = 'patchFilterTouched';
+    }
+
+    if (set.has(value)) {
+        set.delete(value);
+        btn.classList.remove('active');
+        if (chipColor) btn.style.background = '';
+    } else {
+        set.add(value);
+        btn.classList.add('active');
+        if (chipColor) btn.style.background = chipColor;
+    }
+
+    // Empty set = no filter = show all
+    window[touchedKey] = set.size > 0;
+
+    updateFilterBadge();
+    applyAllFilters();
+}
+
+function applyAllFilters() {
+    applySidebarFilters();
+    if (typeof window.applyMapFilters === 'function') {
+        window.applyMapFilters();
+    }
+}
+
+function clearAllFilters() {
+    window.activePriorities = new Set();
+    window.activeLandmarks = new Set();
+    window.activePatches = new Set();
+    window.priorityFilterTouched = false;
+    window.landmarkFilterTouched = false;
+    window.patchFilterTouched = false;
+
+    renderFilterChips();
+    updateFilterBadge();
+    applyAllFilters();
+}
+
+function updateFilterBadge() {
+    const btn = document.getElementById('filterToggleBtn');
+    const qc = document.getElementById('filterQuickClear');
+    const clearBtn = document.getElementById('filterClearBtn');
+    let count = 0;
+    if (window.landmarkFilterTouched) count++;
+    if (window.priorityFilterTouched) count++;
+    if (window.patchFilterTouched) count++;
+    if (window.plantFilterTouched) count++;
+
+    if (count > 0) {
+        btn.classList.add('active');
+        if (qc) qc.classList.add('visible');
+        if (clearBtn) clearBtn.style.display = '';
+    } else {
+        btn.classList.remove('active');
+        if (qc) qc.classList.remove('visible');
+        if (clearBtn) clearBtn.style.display = 'none';
+    }
+}
+
+// Click outside to close
+document.addEventListener('click', function(e) {
+    const widget = document.getElementById('mapFilterWidget');
+    if (filterPanelOpen && widget && !widget.contains(e.target)) {
+        toggleFilterPanel();
+    }
+});
+
+// Escape to close
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape' && filterPanelOpen) {
+        toggleFilterPanel();
+    }
+});
 
 // Map layer visibility control
 function toggleLayerPanel() {
@@ -1032,13 +1452,13 @@ function toggleLayer(layer, visible) {
     }
 }
 
-// Plant filter - dropdown with checkboxes
-let activePlants = new Set();
+// Plant filter - dropdown with checkboxes (state on window for map.js)
+window.activePlants = new Set();
+window.plantFilterTouched = false;
 let totalPlants = 0;
-let plantFilterTouched = false;
 document.addEventListener('DOMContentLoaded', function() {
     document.querySelectorAll('.plant-check').forEach(cb => {
-        activePlants.add(cb.dataset.plant);
+        window.activePlants.add(cb.dataset.plant);
         totalPlants++;
     });
 });
@@ -1051,24 +1471,24 @@ function togglePlantDropdown() {
 function toggleAllPlants(checked) {
     document.querySelectorAll('.plant-check').forEach(cb => {
         cb.checked = checked;
-        if (checked) activePlants.add(cb.dataset.plant);
-        else activePlants.delete(cb.dataset.plant);
+        if (checked) window.activePlants.add(cb.dataset.plant);
+        else window.activePlants.delete(cb.dataset.plant);
     });
-    plantFilterTouched = !checked;
+    window.plantFilterTouched = !checked;
     updatePlantCount();
     applySidebarFilters();
     applyMapFilters();
 }
 
 function onPlantCheckChange() {
-    plantFilterTouched = true;
-    activePlants.clear();
+    window.plantFilterTouched = true;
+    window.activePlants.clear();
     document.querySelectorAll('.plant-check').forEach(cb => {
-        if (cb.checked) activePlants.add(cb.dataset.plant);
+        if (cb.checked) window.activePlants.add(cb.dataset.plant);
     });
-    const allChecked = activePlants.size === totalPlants;
+    const allChecked = window.activePlants.size === totalPlants;
     document.getElementById('plantSelectAll').checked = allChecked;
-    if (allChecked) plantFilterTouched = false;
+    if (allChecked) window.plantFilterTouched = false;
     updatePlantCount();
     applySidebarFilters();
     applyMapFilters();
@@ -1077,9 +1497,9 @@ function onPlantCheckChange() {
 function updatePlantCount() {
     const el = document.getElementById('plantFilterCount');
     if (!el) return;
-    if (!plantFilterTouched) el.textContent = '全部';
-    else if (activePlants.size === 0) el.textContent = '无';
-    else el.textContent = activePlants.size + '/' + totalPlants;
+    if (!window.plantFilterTouched) el.textContent = '全部';
+    else if (window.activePlants.size === 0) el.textContent = '无';
+    else el.textContent = window.activePlants.size + '/' + totalPlants;
 }
 
 document.addEventListener('click', function(e) {
@@ -1088,6 +1508,25 @@ document.addEventListener('click', function(e) {
         document.getElementById('plantDropdownPanel')?.classList.remove('open');
     }
 });
+
+// ── Filter State (on window so map.js can read) ──
+// Empty set + touched=false → show all. Click chip → add to set + touched=true → show only selected.
+window.activePriorities = new Set();
+window.activeLandmarks = new Set();
+window.activePatches = new Set();
+window.priorityFilterTouched = false;
+window.landmarkFilterTouched = false;
+window.patchFilterTouched = false;
+
+let zoneLandmarkMapCache = null;
+
+function getZoneLandmarkMap() {
+    if (!zoneLandmarkMapCache) {
+        zoneLandmarkMapCache = JSON.parse(document.getElementById('zone-landmark-map').textContent);
+        window._zoneLandmarkMap = zoneLandmarkMapCache;
+    }
+    return zoneLandmarkMapCache;
+}
 
 // Toggle patch group collapse/expand
 function togglePatchGroup(header) {
@@ -1116,7 +1555,7 @@ function toggleSidebar() {
         expandBtn.classList.remove('visible');
     }
     // Invalidate map size after transition
-    setTimeout(function() { if (map) map.invalidateSize(); }, 300);
+    setTimeout(function() { if (window._map) window._map.invalidateSize(); }, 300);
 }
 
 // ========== Sync Agent Status ==========

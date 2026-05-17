@@ -511,6 +511,12 @@ small, .text-small {
     font-weight: 600;
 }
 
+.priority-chip.active[data-priority="critical"] {
+    background: #8b000018;
+    border-color: #8b0000;
+    color: #8b0000;
+}
+
 .priority-chip.active[data-priority="high"] {
     background: #d6303118;
     border-color: #d63031;
@@ -529,6 +535,12 @@ small, .text-small {
     color: #008c74;
 }
 
+.priority-chip.active[data-priority="abolished"] {
+    background: #636e7218;
+    border-color: #636e72;
+    color: #636e72;
+}
+
 /* Priority dots */
 .priority-dot {
     display: inline-block;
@@ -538,9 +550,78 @@ small, .text-small {
     vertical-align: middle;
 }
 
+.priority-critical { background: #8b0000; }
 .priority-high { background: #d63031; }
 .priority-medium { background: #fdcb6e; }
 .priority-low { background: #00b894; }
+.priority-abolished { background: #636e72; }
+
+/* Map layer control panel */
+.map-layer-panel {
+    position: absolute;
+    top: 52px;
+    right: 12px;
+    z-index: 1000;
+}
+
+.map-layer-toggle-btn {
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    border: 1.5px solid var(--color-surface-dark, #ddd);
+    background: var(--color-surface, #fff);
+    color: var(--color-text-primary, #333);
+    font-size: 18px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.12);
+    transition: border-color 0.15s;
+}
+
+.map-layer-toggle-btn:hover {
+    border-color: var(--color-primary, #2D6A4F);
+}
+
+.map-layer-body {
+    position: absolute;
+    top: 42px;
+    right: 0;
+    background: var(--color-surface, #fff);
+    border: 1.5px solid var(--color-surface-dark, #ddd);
+    border-radius: 10px;
+    padding: 10px 14px;
+    min-width: 140px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+}
+
+.map-layer-title {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--color-text-secondary, #666);
+    margin-bottom: 8px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--color-surface-dark, #eee);
+}
+
+.map-layer-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 0;
+    font-size: 0.85rem;
+    color: var(--color-text-primary, #333);
+    cursor: pointer;
+    user-select: none;
+}
+
+.map-layer-item input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    accent-color: var(--color-primary, #2D6A4F);
+    cursor: pointer;
+}
 
 /* Filter dropdown (used for plant multi-select) */
 .filter-dropdown-wrap {

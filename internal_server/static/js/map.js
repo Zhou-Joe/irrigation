@@ -6,6 +6,11 @@
 (function() {
     'use strict';
 
+    // Inject pulse animation for remark indicators
+    const style = document.createElement('style');
+    style.textContent = '@keyframes remark-pulse{0%{box-shadow:0 0 0 0 rgba(232,89,12,0.5)}70%{box-shadow:0 0 0 8px rgba(232,89,12,0)}100%{box-shadow:0 0 0 0 rgba(232,89,12,0)}}';
+    document.head.appendChild(style);
+
     // Map instance
     let map;
     let userMarker = null;
@@ -35,8 +40,17 @@
     // Pipeline layers group
     let pipelinesLayerGroup;
 
+    // Zone label layers group (separate from boundaries for independent toggle)
+    let labelsLayerGroup;
+
+    // Landmark overlay layers group (off by default, toggled via layer control)
+    let landmarksLayerGroup;
+
     // Zone code label markers
     let zoneLabels = [];
+
+    // Landmark label markers
+    let landmarkLabels = [];
 
     // Currently highlighted layer
     let highlightedLayer = null;
@@ -156,11 +170,20 @@
             zoomControl: true
         });
 
+        // Expose map instance for external use (sidebar resize)
+        window._map = map;
+
         // Initialize zones layer group
         zonesLayerGroup = L.layerGroup().addTo(map);
 
         // Initialize pipelines layer group
         pipelinesLayerGroup = L.layerGroup().addTo(map);
+
+        // Initialize labels layer group (separate for independent layer control)
+        labelsLayerGroup = L.layerGroup().addTo(map);
+
+        // Initialize landmarks layer group (not added by default - user toggles via layer control)
+        landmarksLayerGroup = L.layerGroup();
 
         // Load and render zones
         loadZones();
@@ -260,31 +283,53 @@
             })
         });
         label._zone = zone;
-        zonesLayerGroup.addLayer(label);
+        labelsLayerGroup.addLayer(label);
         zoneLabels.push(label);
         return label;
     }
 
     /**
+     * Minimum zoom level to show zone labels
+     */
+    const LABEL_MIN_ZOOM = 17;
+
+    /**
      * Calculate label font size based on zoom level
      */
     function getLabelFontSize(zoom) {
-        return Math.max(5, Math.round(55 * Math.pow(0.7, 19 - zoom)));
+        return Math.max(5, Math.round(25 * Math.pow(0.7, 19 - zoom)));
     }
 
     /**
      * Update all zone label sizes on zoom change
      */
     function updateLabelSizes() {
-        const baseSize = getLabelFontSize(map.getZoom());
+        const zoom = map.getZoom();
+        const showLabels = zoom >= LABEL_MIN_ZOOM;
+        const baseSize = getLabelFontSize(zoom);
         zoneLabels.forEach(label => {
-            const zone = label._zone;
-            const scale = zone ? (zone.label_scale || 1.0) : 1.0;
-            const size = baseSize * scale;
             const el = label.getElement();
             if (el) {
-                const span = el.querySelector('span');
-                if (span) span.style.fontSize = size + 'px';
+                el.style.display = showLabels ? '' : 'none';
+                if (showLabels) {
+                    const zone = label._zone;
+                    const scale = zone ? (zone.label_scale || 1.0) : 1.0;
+                    const size = baseSize * scale;
+                    const span = el.querySelector('span');
+                    if (span) span.style.fontSize = size + 'px';
+                }
+            }
+        });
+        // Landmark labels: same zoom-based scaling, no per-item scale
+        const lmSize = baseSize * 0.85;
+        landmarkLabels.forEach(label => {
+            const el = label.getElement();
+            if (el) {
+                el.style.display = showLabels ? '' : 'none';
+                if (showLabels) {
+                    const span = el.querySelector('span');
+                    if (span) span.style.fontSize = lmSize + 'px';
+                }
             }
         });
     }
@@ -293,13 +338,12 @@
      * Render zones on the map (supports multi-polygon format)
      */
     function renderZones(zones) {
-        console.log('renderZones called with', zones.length, 'zones');
         zonesLayerGroup.clearLayers();
+        labelsLayerGroup.clearLayers();
         zoneLabels = [];
 
         zones.forEach(zone => {
             if (!zone.boundary_points || zone.boundary_points.length === 0) {
-                console.warn('Zone has no boundary points:', zone.name);
                 return;
             }
 
@@ -335,6 +379,7 @@
                     irrigationIntensity: zone.irrigation_intensity,
                     areaDisplay: zone.area_display || '',
                     areaSqm: zone.area_sqm,
+                    patchId: zone.patch_id,
                     patchCode: zone.patch_code || '',
                     patchName: zone.patch_name || '',
                     solenoidValveSize: zone.solenoid_valve_size,
@@ -351,6 +396,8 @@
                     currentStatus: zone.current_status || '',
                     equipmentNotes: zone.equipment_maintenance_notes || '',
                     irrigationNotes: zone.irrigation_management_notes || '',
+                    hasRemarks: zone.has_remarks || false,
+                    hasConfirmedRemarks: zone.has_confirmed_remarks || false,
                 };
 
                 if (isMultiPolygonFormat(zone.boundary_points)) {
@@ -394,12 +441,18 @@
                 if (zone.pending_requests && zone.pending_requests.length > 0 && zone.center) {
                     addPendingRequestMarker(zone);
                 }
+
+                // Add remark indicator markers if any
+                if ((zone.has_remarks || zone.has_confirmed_remarks) && zone.center) {
+                    addRemarkMarker(zone);
+                }
             } catch (err) {
                 console.error('Error creating polygon for zone:', zone.name, err);
             }
         });
 
-        console.log('Finished rendering. Total layers:', zonesLayerGroup.getLayers().length);
+        // Apply initial label visibility based on current zoom
+        updateLabelSizes();
     }
 
     /**
@@ -458,6 +511,59 @@
         // Click to go to requests page
         marker.on('click', function() {
             window.location.href = '/requests/';
+        });
+
+        marker.addTo(map);
+    }
+
+    /**
+     * Add a remark indicator marker on a zone
+     * Shows an orange dot for pending remarks, blue for confirmed-only
+     */
+    function addRemarkMarker(zone) {
+        const hasPending = zone.has_remarks;
+        const color = hasPending ? '#E8590C' : '#3B82F6';
+        const label = hasPending ? '待确认备注' : '已确认备注';
+
+        // Position marker slightly offset from center to avoid overlap with pending request markers
+        const offsetLat = (zone.center.lat || 0) + 0.00015;
+        const offsetLng = (zone.center.lng || 0) + 0.00015;
+
+        const markerHtml = `
+            <div style="
+                background: ${color};
+                color: white;
+                border-radius: 50%;
+                width: 14px;
+                height: 14px;
+                box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+                border: 1.5px solid white;
+                ${hasPending ? 'animation: remark-pulse 2s infinite;' : ''}
+            "></div>
+        `;
+
+        const marker = L.marker([offsetLat, offsetLng], {
+            icon: L.divIcon({
+                className: 'remark-indicator-marker',
+                html: markerHtml,
+                iconSize: [14, 14],
+                iconAnchor: [7, 7]
+            })
+        });
+
+        marker.bindTooltip(`
+            <div style="font-size: 12px;">
+                <strong>${label}</strong><br>
+                <span style="color: #888; font-size: 11px;">点击查看区域详情</span>
+            </div>
+        `, {
+            permanent: false,
+            direction: 'top',
+            offset: [0, -5]
+        });
+
+        marker.on('click', function() {
+            window.location.href = '/zone/' + zone.id + '/detail/';
         });
 
         marker.addTo(map);
@@ -1078,16 +1184,36 @@
      * Apply combined map filters (priority + plant)
      */
     window.applyMapFilters = function() {
-        const priorities = window.activePriorities || new Set(['critical', 'high', 'medium', 'low', 'abolished']);
+        const priorities = window.activePriorities || new Set();
+        const priorityTouched = window.priorityFilterTouched || false;
         const plants = window.activePlants || new Set();
         const isPlantTouched = window.plantFilterTouched || false;
-        const showAllPriorities = priorities.size === 5;
+        const lmFilterTouched = window.landmarkFilterTouched || false;
+        const activeLms = window.activeLandmarks || new Set();
+        const zoneLmMap = window._zoneLandmarkMap || {};
+        const activePatches = window.activePatches || new Set();
+        const patchFilterTouched = window.patchFilterTouched || false;
+
+        function matchLandmark(zoneId) {
+            if (!lmFilterTouched) return true;
+            const lmNames = (zoneLmMap[zoneId] || []).map(l => l.name);
+            return lmNames.length === 0 || lmNames.some(n => activeLms.has(n));
+        }
+
+        function matchPatch(zoneData) {
+            if (!patchFilterTouched) return true;
+            const pid = zoneData.patchId;
+            if (pid == null) return true;
+            return activePatches.has(String(pid));
+        }
 
         zonesLayerGroup.eachLayer(layer => {
             if (layer.zoneData) {
-                const matchPriority = showAllPriorities || priorities.has(layer.zoneData.priority);
+                const matchPriority = !priorityTouched || priorities.has(layer.zoneData.priority);
                 const matchPlant = !isPlantTouched || !layer.zoneData.plantNames || layer.zoneData.plantNames.some(p => plants.has(p));
-                if (matchPriority && matchPlant) {
+                const matchLm = matchLandmark(layer.zoneData.id);
+                const matchPa = matchPatch(layer.zoneData);
+                if (matchPriority && matchPlant && matchLm && matchPa) {
                     layer.setStyle({ opacity: 0.8, fillOpacity: 0.25 });
                 } else {
                     layer.setStyle({ opacity: 0.1, fillOpacity: 0.03 });
@@ -1095,11 +1221,13 @@
             }
         });
         zoneLabels.forEach(label => {
-            const zone = zonesData.find(z => z.id === label.zoneId);
-            if (!zone) return;
-            const matchPriority = showAllPriorities || priorities.has(zone.priority || 'medium');
-            const matchPlant = !isPlantTouched || !zone.plant_names || zone.plant_names.some(p => plants.has(p));
-            label.element.style.opacity = (matchPriority && matchPlant) ? '1' : '0.1';
+            const zoneId = label._zone?.id;
+            const matchPriority = !priorityTouched || priorities.has(label._zone?.priority || 'medium');
+            const matchPlant = !isPlantTouched || !label._zone?.plant_names || label._zone.plant_names.some(p => plants.has(p));
+            const matchLm = matchLandmark(zoneId);
+            const matchPa = matchPatch(label._zone || {});
+            const el = label.getElement();
+            if (el) el.style.opacity = (matchPriority && matchPlant && matchLm && matchPa) ? '1' : '0.1';
         });
     };
 
@@ -1111,21 +1239,78 @@
                 if (map.hasLayer(zonesLayerGroup)) map.removeLayer(zonesLayerGroup);
             }
         } else if (layer === 'labels') {
-            zoneLabels.forEach(label => {
-                if (visible) {
-                    if (!map.hasLayer(label)) map.addLayer(label);
-                    label.element.style.display = '';
-                } else {
-                    if (map.hasLayer(label)) map.removeLayer(label);
-                    label.element.style.display = 'none';
-                }
-            });
+            if (visible) {
+                if (!map.hasLayer(labelsLayerGroup)) map.addLayer(labelsLayerGroup);
+                updateLabelSizes();
+            } else {
+                if (map.hasLayer(labelsLayerGroup)) map.removeLayer(labelsLayerGroup);
+            }
         } else if (layer === 'pipelines') {
             if (visible) {
                 if (!map.hasLayer(pipelinesLayerGroup)) map.addLayer(pipelinesLayerGroup);
             } else {
                 if (map.hasLayer(pipelinesLayerGroup)) map.removeLayer(pipelinesLayerGroup);
             }
+        } else if (layer === 'landmarks') {
+            if (visible) {
+                if (!map.hasLayer(landmarksLayerGroup)) {
+                    loadAndRenderLandmarks();
+                    map.addLayer(landmarksLayerGroup);
+                }
+            } else {
+                if (map.hasLayer(landmarksLayerGroup)) map.removeLayer(landmarksLayerGroup);
+            }
         }
     };
+
+    function loadAndRenderLandmarks() {
+        const dataEl = document.getElementById('landmarks-data');
+        if (!dataEl) return;
+        landmarksLayerGroup.clearLayers();
+        landmarkLabels = [];
+        try {
+            const landmarks = JSON.parse(dataEl.textContent);
+            landmarks.forEach(lm => {
+                if (!lm.boundary_points || lm.boundary_points.length === 0) return;
+                const first = lm.boundary_points[0];
+                let rings;
+                if (Array.isArray(first) && first.length > 0 && (Array.isArray(first[0]) || first[0] && first[0].lat !== undefined)) {
+                    rings = lm.boundary_points;
+                } else {
+                    rings = [lm.boundary_points];
+                }
+                rings.forEach(ring => {
+                    const latLngs = ring.map(p => {
+                        if (Array.isArray(p)) return [p[0], p[1]];
+                        if (p.lat !== undefined) return [p.lat, p.lng];
+                        return null;
+                    }).filter(Boolean);
+                    if (latLngs.length >= 3) {
+                        L.polygon(latLngs, {
+                            color: lm.boundary_color,
+                            weight: 2,
+                            opacity: 0.6,
+                            fillColor: lm.boundary_color,
+                            fillOpacity: 0.08,
+                            dashArray: '8 4',
+                        }).addTo(landmarksLayerGroup);
+                    }
+                });
+                if (lm.center && lm.center.lat != null) {
+                    const marker = L.marker([lm.center.lat, lm.center.lng], {
+                        interactive: false,
+                        icon: L.divIcon({
+                            className: 'landmark-label',
+                            html: '<span style="font-weight:600;color:' + lm.boundary_color + ';text-shadow:0 0 4px white,0 0 4px white;">' + lm.name + '</span>',
+                            iconSize: null,
+                            iconAnchor: [0, 0],
+                        })
+                    }).addTo(landmarksLayerGroup);
+                    landmarkLabels.push(marker);
+                }
+            });
+            // Apply initial zoom-based label sizing
+            if (landmarkLabels.length > 0) updateLabelSizes();
+        } catch (e) {}
+    }
 })();
