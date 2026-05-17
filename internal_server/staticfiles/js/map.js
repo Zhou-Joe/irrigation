@@ -1197,7 +1197,7 @@
         function matchLandmark(zoneId) {
             if (!lmFilterTouched) return true;
             const lmNames = (zoneLmMap[zoneId] || []).map(l => l.name);
-            return lmNames.length === 0 || lmNames.some(n => activeLms.has(n));
+            return lmNames.some(n => activeLms.has(n));
         }
 
         function matchPatch(zoneData) {
@@ -1222,7 +1222,7 @@
         });
         zoneLabels.forEach(label => {
             const zoneId = label._zone?.id;
-            const matchPriority = !priorityTouched || priorities.has(label._zone?.priority || 'medium');
+            const matchPriority = !priorityTouched || priorities.has(label._zone?.priority);
             const matchPlant = !isPlantTouched || !label._zone?.plant_names || label._zone.plant_names.some(p => plants.has(p));
             const matchLm = matchLandmark(zoneId);
             const matchPa = matchPatch(label._zone || {});
