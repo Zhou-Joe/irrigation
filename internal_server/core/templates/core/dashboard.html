@@ -1190,7 +1190,7 @@ function applySidebarFilters() {
                 const matchLandmark = !lt || (function() {
                     const mapData = getZoneLandmarkMap();
                     const lmNames = (mapData[item.dataset.zoneId] || []).map(l => l.name);
-                    return lmNames.length === 0 || lmNames.some(n => al.has(n));
+                    return lmNames.some(n => al.has(n));
                 })();
                 const matchPatch = !pat || apa.has(patchId);
 
@@ -1230,12 +1230,12 @@ function applySidebarFilters() {
             const patchId = item.dataset.patchId || pgPatchId;
 
             const matchText = !query || code.includes(query) || name.includes(query) || patchName.includes(query);
-            const matchPriority = priorityAll || ap.has(priority);
+            const matchPriority = !prt || ap.has(priority);
             const matchPlant = !pt || plants.some(p => apl.has(p));
             const matchLandmark = !lt || (function() {
                 const mapData = getZoneLandmarkMap();
                 const lmNames = (mapData[item.dataset.zoneId] || []).map(l => l.name);
-                return lmNames.length === 0 || lmNames.some(n => al.has(n));
+                return lmNames.some(n => al.has(n));
             })();
             const matchPatch = !pat || apa.has(patchId);
 

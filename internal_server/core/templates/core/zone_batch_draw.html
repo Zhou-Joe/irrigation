@@ -663,6 +663,7 @@ window.showToast = function(msg, type) {
         polys.forEach(pts => {
             if (pts.length < 3) return;
             const poly = L.polygon(pts.map(p => [p.lat, p.lng]), style).addTo(group);
+            poly._zoneCode = z.code;
             poly.bindTooltip(`${z.code} ${z.name || ''}`, {sticky: true});
         });
 
@@ -681,7 +682,7 @@ window.showToast = function(msg, type) {
             lat = center.lat / allPts.length;
             lng = center.lng / allPts.length;
         }
-        L.marker([lat, lng], {
+        const label = L.marker([lat, lng], {
             icon: L.divIcon({
                 className: 'zone-label-editor',
                 html: `<span style="font-size:${fontSize}px;font-weight:600;color:white;background:rgba(0,0,0,0.55);padding:2px 8px;border-radius:4px;display:inline-block;transform:rotate(${angle}deg);white-space:nowrap;pointer-events:none;">${z.code}</span>`,
@@ -689,6 +690,16 @@ window.showToast = function(msg, type) {
             }),
             interactive: false
         }).addTo(group);
+        label._zoneCode = z.code;
+    }
+
+    function removeZoneFromGroup(group, zoneCode) {
+        if (!group) return;
+        const toRemove = [];
+        group.eachLayer(function(layer) {
+            if (layer._zoneCode === zoneCode) toRemove.push(layer);
+        });
+        toRemove.forEach(layer => group.removeLayer(layer));
     }
 
     // Render all drawn zones on page load
@@ -904,17 +915,9 @@ window.showToast = function(msg, type) {
         document.getElementById('selectedZoneText').textContent = `${z.code} - ${z.name || z.code}`;
         document.getElementById('saveBoundaryBtn').disabled = false;
 
-        // Remove this zone's reference polygon from the patch ref layer
-        if (patchRefGroup) {
-            patchRefGroup.eachLayer(function(layer) {
-                if (layer.getTooltip && layer.getTooltip()) {
-                    const tooltipContent = layer.getTooltip().getContent();
-                    if (tooltipContent && tooltipContent.includes(z.code)) {
-                        patchRefGroup.removeLayer(layer);
-                    }
-                }
-            });
-        }
+        // Remove this zone's reference polygon from both ref layer groups
+        removeZoneFromGroup(patchRefGroup, z.code);
+        removeZoneFromGroup(globalRefGroup, z.code);
 
         // Load boundary as completed shapes
         const polys = normalizeBoundaryData(z.boundary_points);
@@ -1044,7 +1047,7 @@ window.showToast = function(msg, type) {
             btn.textContent = '保存边界';
             if (data.success) {
                 showToast(data.message, 'success');
-                // Move zone from undrawn to drawn
+                // Move zone from undrawn to drawn, or update existing drawn zone
                 const idx = undrawnZones.findIndex(z => z.id === selectedZoneId);
                 if (idx > -1) {
                     const z = undrawnZones.splice(idx, 1)[0];
@@ -1057,13 +1060,35 @@ window.showToast = function(msg, type) {
                     z.label_angle = data.label_angle;
                     z.area_display = data.area_display;
                     drawnZones.push(z);
+                } else {
+                    // Zone was already in drawnZones (re-editing) — update its data
+                    const dz = drawnZones.find(z => z.id === selectedZoneId);
+                    if (dz) {
+                        dz.boundary_points = data.boundary_points;
+                        dz.boundary_color = data.boundary_color;
+                        dz.label_lat = data.label_lat;
+                        dz.label_lng = data.label_lng;
+                        dz.label_scale = data.label_scale;
+                        dz.label_angle = data.label_angle;
+                        dz.area_display = data.area_display;
+                    }
                 }
+                const savedZoneId = selectedZoneId;
                 selectedZoneId = null;
                 document.getElementById('selected_zone_id').value = '';
                 document.getElementById('zoneSearchInput').value = '';
                 document.getElementById('selectedZone').style.display = 'none';
                 renderLists();
                 renderPatchRefLayers();
+                // Re-add updated zone to global ref group
+                const updatedZ = drawnZones.find(z => z.id === savedZoneId || z.id === data.zone_id);
+                if (updatedZ && globalRefGroup) {
+                    addZoneToLayerGroup(updatedZ, globalRefGroup, {
+                        color: '#FFFFFF', weight: 1.5, opacity: 0.5,
+                        fillColor: updatedZ.boundary_color || '#52B788', fillOpacity: 0.1,
+                        dashArray: '4, 3', interactive: true
+                    });
+                }
                 clearDrawingOnly();
             } else {
                 showToast(data.message || '保存失败', 'error');
