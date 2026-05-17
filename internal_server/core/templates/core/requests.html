@@ -75,6 +75,16 @@
     color: var(--color-success);
 }
 
+.type-remark {
+    background: rgba(232, 89, 12, 0.15);
+    color: #E8590C;
+}
+
+.type-confirmed_remark {
+    background: rgba(59, 130, 246, 0.15);
+    color: #3B82F6;
+}
+
 .status-badge {
     display: inline-block;
     padding: var(--space-xs) var(--space-sm);
@@ -101,6 +111,16 @@
 .status-info_needed {
     background: rgba(204, 119, 34, 0.15);
     color: var(--color-warning);
+}
+
+.status-pending {
+    background: rgba(232, 89, 12, 0.15);
+    color: #E8590C;
+}
+
+.status-confirmed {
+    background: rgba(59, 130, 246, 0.15);
+    color: #3B82F6;
 }
 
 .empty-state {
@@ -242,7 +262,7 @@
         </thead>
         <tbody>
             {% for req in requests %}
-            <tr onclick="window.location.href='{% url 'core:request_detail' req.type_code req.id %}'" style="cursor: pointer;">
+            <tr onclick="{% if req.type_code == 'remark' or req.type_code == 'confirmed_remark' %}window.location.href='/zone/{{ req.id }}/detail/'{% else %}window.location.href='{% url 'core:request_detail' req.type_code req.id %}'{% endif %}" style="cursor: pointer;">
                 <td>
                     <span class="type-badge type-{{ req.type_code }}">
                         

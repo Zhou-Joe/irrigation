@@ -355,6 +355,67 @@
         </div>
     </div>
 
+    <!-- 备注 & 备注确认 side by side -->
+    <div style="display:flex;gap:16px;">
+        <!-- 备注 Section -->
+        <div class="detail-section" style="flex:1;min-width:0;">
+            <h2 class="section-title">备注</h2>
+            <div id="remark-form" style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
+                <input type="date" id="remark-date" value="{{ today }}" style="padding:4px 8px;border:1px solid #ddd;border-radius:4px;">
+                <input type="text" id="remark-content" placeholder="备注内容..." style="flex:1;min-width:150px;padding:4px 8px;border:1px solid #ddd;border-radius:4px;">
+                <button type="button" id="remark-add-btn" onclick="addRemark()" style="padding:4px 12px;background:#28a745;color:white;border:none;border-radius:4px;cursor:pointer;">添加</button>
+            </div>
+            <div id="remarks-list" style="max-height:300px;overflow-y:auto;">
+            {% for remark in remarks %}
+                <div class="note-entry" data-index="{{ forloop.counter0 }}">
+                    <span class="note-date">{{ remark.date }}</span>
+                    <span class="note-content">{{ remark.content }}</span>
+                    <span style="color:#888;font-size:0.85em;">({{ remark.author }})</span>
+                    {% if is_manager %}
+                    <button type="button" class="remark-confirm-btn" onclick="showConfirmForm(this, {{ forloop.counter0 }})" style="margin-left:8px;padding:2px 8px;background:#007bff;color:white;border:none;border-radius:3px;cursor:pointer;font-size:0.8em;">确认</button>
+                    <div class="confirm-form" style="display:none;margin-top:6px;">
+                        <input type="text" class="confirm-reply" placeholder="确认回复..." style="padding:2px 6px;border:1px solid #ddd;border-radius:3px;width:70%;">
+                        <button type="button" onclick="confirmRemark({{ forloop.counter0 }}, this)" style="padding:2px 8px;background:#17a2b8;color:white;border:none;border-radius:3px;cursor:pointer;font-size:0.8em;">提交</button>
+                        <button type="button" onclick="this.parentElement.style.display='none'" style="padding:2px 8px;border:1px solid #ccc;border-radius:3px;cursor:pointer;font-size:0.8em;">取消</button>
+                    </div>
+                    {% endif %}
+                </div>
+            {% empty %}
+                <div class="empty-state">暂无备注</div>
+            {% endfor %}
+            </div>
+        </div>
+
+        <!-- 备注确认 Section -->
+        <div class="detail-section" style="flex:1;min-width:0;">
+            <h2 class="section-title">备注确认</h2>
+            <div id="confirmed-list" style="max-height:300px;overflow-y:auto;">
+            {% for item in confirmed_remarks %}
+                <div class="note-entry confirmed-entry" data-index="{{ forloop.counter0 }}">
+                    <div>
+                        <span class="note-date">{{ item.date }}</span>
+                        <span class="note-content">{{ item.content }}</span>
+                        <span style="color:#888;font-size:0.85em;">({{ item.author }})</span>
+                    </div>
+                    <div style="margin-top:4px;padding-left:16px;border-left:3px solid #28a745;font-size:0.9em;">
+                        <span style="color:#888;">{{ item.confirm_date }}</span>
+                        <span style="color:#28a745;">{{ item.confirm_reply }}</span>
+                        <span style="color:#888;font-size:0.85em;">({{ item.confirm_author }})</span>
+                    </div>
+                    {% if is_manager %}
+                    <div style="margin-top:6px;">
+                        <button type="button" onclick="moveRemark({{ forloop.counter0 }}, 'irrigation')" style="padding:2px 8px;background:#6f42c1;color:white;border:none;border-radius:3px;cursor:pointer;font-size:0.8em;">转至灌溉管理记录</button>
+                        <button type="button" onclick="moveRemark({{ forloop.counter0 }}, 'equipment')" style="padding:2px 8px;background:#fd7e14;color:white;border:none;border-radius:3px;cursor:pointer;font-size:0.8em;">转至设备维护记录</button>
+                    </div>
+                    {% endif %}
+                </div>
+            {% empty %}
+                <div class="empty-state">暂无确认备注</div>
+            {% endfor %}
+            </div>
+        </div>
+    </div>
+
     <!-- Irrigation & Environment Parameters -->
     <div class="detail-section">
         <h2 class="section-title">灌溉与环境参数</h2>
@@ -423,145 +484,89 @@
         </div>
     </div>
 
-    <!-- Plants -->
-    <div class="detail-section">
-        <h2 class="section-title">当前植物</h2>
-        {% if plants %}
-        <div class="card-grid">
-            {% for plant in plants %}
-            <div class="mini-card">
-                <div class="mini-card-title">{{ plant.name }}</div>
-                {% if plant.scientific_name %}
-                <div style="font-style:italic;color:var(--color-text-secondary);font-size:0.85em;margin-bottom:4px;">{{ plant.scientific_name }}</div>
-                {% endif %}
-                <div class="mini-card-meta">
-                    <span>数量: {{ plant.quantity }}</span>
-                    {% if plant.planting_date %}
-                    <span>{{ plant.planting_date|date:"Y/m/d" }}{% if plant.end_date %} ~ {{ plant.end_date|date:"Y/m/d" }}{% else %} ~ 持续{% endif %}</span>
+    <!-- 当前植物 & 当前设备 side by side -->
+    <div style="display:flex;gap:16px;">
+        <div class="detail-section" style="flex:1;min-width:0;">
+            <h2 class="section-title">当前植物</h2>
+            {% if plants %}
+            <div class="card-grid">
+                {% for plant in plants %}
+                <div class="mini-card">
+                    <div class="mini-card-title">{{ plant.name }}</div>
+                    {% if plant.scientific_name %}
+                    <div style="font-style:italic;color:var(--color-text-secondary);font-size:0.85em;margin-bottom:4px;">{{ plant.scientific_name }}</div>
                     {% endif %}
+                    <div class="mini-card-meta">
+                        <span>数量: {{ plant.quantity }}</span>
+                        {% if plant.planting_date %}
+                        <span>{{ plant.planting_date|date:"Y/m/d" }}{% if plant.end_date %} ~ {{ plant.end_date|date:"Y/m/d" }}{% else %} ~ 持续{% endif %}</span>
+                        {% endif %}
+                    </div>
                 </div>
+                {% endfor %}
             </div>
-            {% endfor %}
+            {% else %}
+            <div class="empty-state">暂无当前植物记录</div>
+            {% endif %}
         </div>
-        {% else %}
-        <div class="empty-state">暂无当前植物记录</div>
-        {% endif %}
-    </div>
 
-    <!-- Equipment -->
-    <div class="detail-section">
-        <h2 class="section-title">当前设备</h2>
-        {% if equipment %}
-        <div class="card-grid">
-            {% for eq in equipment %}
-            <div class="mini-card">
-                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-                    <div class="mini-card-title eq-card-title">{{ eq.equipment_details.manufacturer }} {{ eq.equipment_details.model_name }}</div>
-                    <span class="eq-status {{ eq.status }}">{{ eq.status_display }}</span>
+        <div class="detail-section" style="flex:1;min-width:0;">
+            <h2 class="section-title">当前设备</h2>
+            {% if equipment %}
+            <div class="card-grid">
+                {% for eq in equipment %}
+                <div class="mini-card">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+                        <div class="mini-card-title eq-card-title">{{ eq.equipment_details.manufacturer }} {{ eq.equipment_details.model_name }}</div>
+                        <span class="eq-status {{ eq.status }}">{{ eq.status_display }}</span>
+                    </div>
+                    <div class="mini-card-meta">
+                        <span>{{ eq.equipment_details.equipment_type_display }}</span>
+                        <span>数量: {{ eq.quantity }}</span>
+                        {% if eq.location_in_zone %}<span>位置: {{ eq.location_in_zone }}</span>{% endif %}
+                        {% if eq.installation_date %}<span>安装: {{ eq.installation_date|date:"Y/m/d" }}</span>{% endif %}
+                    </div>
                 </div>
-                <div class="mini-card-meta">
-                    <span>{{ eq.equipment_details.equipment_type_display }}</span>
-                    <span>数量: {{ eq.quantity }}</span>
-                    {% if eq.location_in_zone %}<span>位置: {{ eq.location_in_zone }}</span>{% endif %}
-                    {% if eq.installation_date %}<span>安装: {{ eq.installation_date|date:"Y/m/d" }}</span>{% endif %}
-                </div>
+                {% endfor %}
             </div>
-            {% endfor %}
-        </div>
-        {% else %}
-        <div class="empty-state">暂无当前设备记录</div>
-        {% endif %}
-    </div>
-
-    <!-- Equipment Maintenance Notes -->
-    <div class="detail-section">
-        <h2 class="section-title">灌溉设备维护记录</h2>
-        {% if equip_notes %}
-        <div class="notes-timeline">
-            {% for note in equip_notes %}
-            <div class="note-entry">
-                <span class="note-date">{{ note.date }}</span>
-                <span class="note-content">{{ note.content }}</span>
-            </div>
-            {% endfor %}
-        </div>
-        {% else %}
-        <div class="empty-state">暂无维护记录</div>
-        {% endif %}
-    </div>
-
-    <!-- Irrigation Management Notes -->
-    <div class="detail-section">
-        <h2 class="section-title">灌溉管理记录</h2>
-        {% if irrig_notes %}
-        <div class="notes-timeline">
-            {% for note in irrig_notes %}
-            <div class="note-entry">
-                <span class="note-date">{{ note.date }}</span>
-                <span class="note-content">{{ note.content }}</span>
-            </div>
-            {% endfor %}
-        </div>
-        {% else %}
-        <div class="empty-state">暂无管理记录</div>
-        {% endif %}
-    </div>
-
-    <!-- 备注 Section -->
-    <div class="detail-section">
-        <h2 class="section-title">备注</h2>
-        <div id="remark-form" style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
-            <input type="date" id="remark-date" value="{{ today }}" style="padding:4px 8px;border:1px solid #ddd;border-radius:4px;">
-            <input type="text" id="remark-content" placeholder="备注内容..." style="flex:1;min-width:200px;padding:4px 8px;border:1px solid #ddd;border-radius:4px;">
-            <button type="button" id="remark-add-btn" onclick="addRemark()" style="padding:4px 12px;background:#28a745;color:white;border:none;border-radius:4px;cursor:pointer;">添加</button>
-        </div>
-        <div id="remarks-list">
-        {% for remark in remarks %}
-            <div class="note-entry" data-index="{{ forloop.counter0 }}">
-                <span class="note-date">{{ remark.date }}</span>
-                <span class="note-content">{{ remark.content }}</span>
-                <span style="color:#888;font-size:0.85em;">({{ remark.author }})</span>
-                {% if is_manager %}
-                <button type="button" class="remark-confirm-btn" onclick="showConfirmForm(this, {{ forloop.counter0 }})" style="margin-left:8px;padding:2px 8px;background:#007bff;color:white;border:none;border-radius:3px;cursor:pointer;font-size:0.8em;">确认</button>
-                <div class="confirm-form" style="display:none;margin-top:6px;">
-                    <input type="text" class="confirm-reply" placeholder="确认回复..." style="padding:2px 6px;border:1px solid #ddd;border-radius:3px;width:70%;">
-                    <button type="button" onclick="confirmRemark({{ forloop.counter0 }}, this)" style="padding:2px 8px;background:#17a2b8;color:white;border:none;border-radius:3px;cursor:pointer;font-size:0.8em;">提交</button>
-                    <button type="button" onclick="this.parentElement.style.display='none'" style="padding:2px 8px;border:1px solid #ccc;border-radius:3px;cursor:pointer;font-size:0.8em;">取消</button>
-                </div>
-                {% endif %}
-            </div>
-        {% empty %}
-            <div class="empty-state">暂无备注</div>
-        {% endfor %}
+            {% else %}
+            <div class="empty-state">暂无当前设备记录</div>
+            {% endif %}
         </div>
     </div>
 
-    <!-- 备注确认 Section -->
-    <div class="detail-section">
-        <h2 class="section-title">备注确认</h2>
-        <div id="confirmed-list">
-        {% for item in confirmed_remarks %}
-            <div class="note-entry confirmed-entry" data-index="{{ forloop.counter0 }}">
-                <div>
-                    <span class="note-date">{{ item.date }}</span>
-                    <span class="note-content">{{ item.content }}</span>
-                    <span style="color:#888;font-size:0.85em;">({{ item.author }})</span>
+    <!-- 设备维护记录 & 管理记录 side by side -->
+    <div style="display:flex;gap:16px;">
+        <div class="detail-section" style="flex:1;min-width:0;">
+            <h2 class="section-title">灌溉设备维护记录</h2>
+            {% if equip_notes %}
+            <div class="notes-timeline">
+                {% for note in equip_notes %}
+                <div class="note-entry">
+                    <span class="note-date">{{ note.date }}</span>
+                    <span class="note-content">{{ note.content }}</span>
                 </div>
-                <div style="margin-top:4px;padding-left:16px;border-left:3px solid #28a745;font-size:0.9em;">
-                    <span style="color:#888;">{{ item.confirm_date }}</span>
-                    <span style="color:#28a745;">{{ item.confirm_reply }}</span>
-                    <span style="color:#888;font-size:0.85em;">({{ item.confirm_author }})</span>
-                </div>
-                {% if is_manager %}
-                <div style="margin-top:6px;">
-                    <button type="button" onclick="moveRemark({{ forloop.counter0 }}, 'irrigation')" style="padding:2px 8px;background:#6f42c1;color:white;border:none;border-radius:3px;cursor:pointer;font-size:0.8em;">转至灌溉管理记录</button>
-                    <button type="button" onclick="moveRemark({{ forloop.counter0 }}, 'equipment')" style="padding:2px 8px;background:#fd7e14;color:white;border:none;border-radius:3px;cursor:pointer;font-size:0.8em;">转至设备维护记录</button>
-                </div>
-                {% endif %}
+                {% endfor %}
             </div>
-        {% empty %}
-            <div class="empty-state">暂无确认备注</div>
-        {% endfor %}
+            {% else %}
+            <div class="empty-state">暂无维护记录</div>
+            {% endif %}
+        </div>
+
+        <div class="detail-section" style="flex:1;min-width:0;">
+            <h2 class="section-title">灌溉管理记录</h2>
+            {% if irrig_notes %}
+            <div class="notes-timeline">
+                {% for note in irrig_notes %}
+                <div class="note-entry">
+                    <span class="note-date">{{ note.date }}</span>
+                    <span class="note-content">{{ note.content }}</span>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="empty-state">暂无管理记录</div>
+            {% endif %}
         </div>
     </div>
 

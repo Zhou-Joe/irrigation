@@ -146,6 +146,8 @@ class Zone(models.Model):
     soil_moisture = models.CharField(max_length=50, blank=True, default='', verbose_name='土壤湿度')
     equipment_maintenance_notes = models.TextField(blank=True, default='', verbose_name='灌溉设备维护记录')
     irrigation_management_notes = models.TextField(blank=True, default='', verbose_name='灌溉管理记录')
+    remarks = models.TextField(blank=True, default='', verbose_name='备注')
+    confirmed_remarks = models.TextField(blank=True, default='', verbose_name='备注确认')
     label_lat = models.FloatField(null=True, blank=True, help_text='Custom label latitude override')
     label_lng = models.FloatField(null=True, blank=True, help_text='Custom label longitude override')
     label_scale = models.FloatField(default=1.0, help_text='Label font size multiplier')
@@ -229,6 +231,41 @@ class Zone(models.Model):
 
     def __str__(self):
         return f"{self.name} ({self.code})"
+
+
+class Landmark(models.Model):
+    """地标 — general place name with drawn boundary for zone grouping."""
+
+    name = models.CharField('名称', max_length=255, unique=True)
+    boundary_points = models.JSONField('边界坐标', default=list)
+    boundary_color = models.CharField('边界颜色', max_length=7, default='#E8590C')
+    center = models.JSONField('中心点', null=True, blank=True)
+    area_sqm = models.FloatField('面积(m²)', null=True, blank=True)
+    order = models.PositiveIntegerField('排序', default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['order', 'name']
+        verbose_name = '地标'
+        verbose_name_plural = '地标'
+
+    def __str__(self):
+        return self.name
+
+
+class ZoneLandmarkAssignment(models.Model):
+    """Persisted zone↔landmark relationship (calculated on demand)."""
+
+    zone = models.ForeignKey(Zone, on_delete=models.CASCADE, related_name='landmark_assignments')
+    landmark = models.ForeignKey(Landmark, on_delete=models.CASCADE, related_name='zone_assignments')
+    assigned_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('zone', 'landmark')
+
+    def __str__(self):
+        return f'{self.zone.code} → {self.landmark.name}'
 
 
 class Pipeline(models.Model):

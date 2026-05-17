@@ -58,6 +58,7 @@
                 <a href="{% url 'core:zone_export_excel' %}" class="btn btn-sm btn-secondary">导出</a>
                 <button type="button" class="btn btn-sm btn-secondary" onclick="showImportModal()">导入</button>
                 <a href="{% url 'core:zone_new' %}" class="btn btn-sm btn-primary" target="_blank">+ 新建</a>
+                <a href="{% url 'core:zone_batch_draw' %}" class="btn btn-sm btn-secondary" target="_blank">批量绘制边界</a>
             </div>
         </div>
 
@@ -298,6 +299,56 @@
             </div>
             {% endif %}
         </div>
+    </div>
+
+    <!-- Landmark Management -->
+    <div class="settings-card">
+        <div class="settings-card-header" onclick="toggleCardBody(this, 'landmarkBody', 'landmarkIndicator')">
+            <h2><span class="collapse-indicator" id="landmarkIndicator">▼</span> 地标管理</h2>
+            <div class="header-actions" onclick="event.stopPropagation()">
+                <button type="button" class="btn btn-sm btn-secondary" onclick="recalcLandmarks(this)" title="根据边界重叠重新计算每个地标包含的区域">重新分配</button>
+                <a href="{% url 'core:landmark_new' %}" class="btn btn-sm btn-primary" target="_blank">+ 新建</a>
+            </div>
+        </div>
+        {% if landmarks %}
+        <div class="settings-card-body" id="landmarkBody">
+            <input type="text" id="landmarkSearch" placeholder="搜索地标..." class="card-search">
+            <table class="card-table" id="landmarkTable">
+                <thead>
+                    <tr>
+                        <th><input type="checkbox" id="lmSelectAll" onclick="toggleAllLmCheck(this.checked)"></th>
+                        <th>名称</th>
+                        <th>关联区域数</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody id="landmarkTableBody">
+                    {% for lm in landmarks %}
+                    <tr class="landmark-row" data-name="{{ lm.name }}" data-id="{{ lm.id }}">
+                        <td><input type="checkbox" class="lm-check" data-id="{{ lm.id }}" onclick="event.stopPropagation()"></td>
+                        <td>
+                            <span style="display:inline-block;width:12px;height:12px;border-radius:3px;background:{{ lm.boundary_color }};vertical-align:middle;margin-right:6px;"></span>
+                            <strong>{{ lm.name }}</strong>
+                        </td>
+                        <td>{{ lm.zone_count }}</td>
+                        <td class="actions-cell">
+                            <a href="{% url 'core:landmark_edit' lm.id %}" class="btn btn-sm btn-secondary" target="_blank">编辑</a>
+                            <button type="button" class="btn btn-sm btn-danger" onclick="deleteLandmark({{ lm.id }})">删除</button>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            <div class="batch-actions" id="lmBatchActions" style="display:none;">
+                <button type="button" class="btn btn-sm btn-danger" onclick="batchDeleteLandmarks()">批量删除 (<span id="lmSelectedCount">0</span>)</button>
+            </div>
+        </div>
+        {% else %}
+        <div class="card-empty">
+            <p>暂无地标</p>
+            <a href="{% url 'core:landmark_new' %}" class="btn btn-sm btn-primary" target="_blank">创建</a>
+        </div>
+        {% endif %}
     </div>
 
     <div class="back-link">
@@ -772,6 +823,79 @@ function confirmImport() {
     }).finally(() => {
         btn.disabled = false;
         btn.textContent = '确认导入';
+    });
+}
+
+// Landmark search filter
+(function() {
+    const searchInput = document.getElementById('landmarkSearch');
+    const tbody = document.getElementById('landmarkTableBody');
+    if (!searchInput || !tbody) return;
+    const rows = Array.from(tbody.querySelectorAll('.landmark-row'));
+
+    searchInput.addEventListener('input', function() {
+        const q = this.value.toLowerCase().trim();
+        rows.forEach(row => {
+            const name = (row.dataset.name || '').toLowerCase();
+            row.style.display = (!q || name.includes(q)) ? '' : 'none';
+        });
+    });
+})();
+
+// Landmark checkboxes & batch delete
+window.toggleAllLmCheck = function(checked) {
+    document.querySelectorAll('.lm-check').forEach(cb => {
+        if (cb.closest('tr').style.display !== 'none') cb.checked = checked;
+    });
+    updateLmBatchActions();
+};
+
+document.addEventListener('change', function(e) {
+    if (e.target.classList.contains('lm-check')) updateLmBatchActions();
+});
+
+function updateLmBatchActions() {
+    const el = document.getElementById('lmBatchActions');
+    if (!el) return;
+    const count = document.querySelectorAll('.lm-check:checked').length;
+    el.style.display = count > 0 ? '' : 'none';
+    const span = document.getElementById('lmSelectedCount');
+    if (span) span.textContent = count;
+}
+
+function deleteLandmark(id) {
+    if (!confirm('确定删除此地标？')) return;
+    fetch('/settings/landmark/' + id + '/delete/', {
+        method: 'POST',
+        headers: { 'X-CSRFToken': getCsrfToken() }
+    }).then(r => r.json()).then(data => {
+        if (data.success) location.reload();
+        else showToast('删除失败', 'error');
+    });
+}
+
+function batchDeleteLandmarks() {
+    const ids = [...document.querySelectorAll('.lm-check:checked')].map(cb => cb.dataset.id);
+    if (ids.length === 0) { showToast('请先选择地标', 'warning'); return; }
+    if (!confirm('确定删除选中的 ' + ids.length + ' 个地标？')) return;
+    deleteItems('/settings/batch-delete-landmark/', ids, 'landmark');
+}
+
+function recalcLandmarks(btn) {
+    btn.disabled = true;
+    btn.textContent = '分配中...';
+    fetch('/api/landmarks/recalculate/', {
+        method: 'POST',
+        headers: { 'X-CSRFToken': getCsrfToken() }
+    }).then(r => r.json()).then(data => {
+        if (data.error) { showToast(data.error, 'error'); return; }
+        showToast('重新分配完成：' + data.assignments + ' 个关联关系', 'success');
+        setTimeout(() => location.reload(), 1000);
+    }).catch(() => {
+        showToast('分配失败', 'error');
+    }).finally(() => {
+        btn.disabled = false;
+        btn.textContent = '重新分配';
     });
 }
 </script>

@@ -185,6 +185,8 @@ def _build_grouped_zones(zones_qs=None, group_by='patch'):
             'soil_moisture': z.soil_moisture,
             'equipment_maintenance_notes': z.equipment_maintenance_notes,
             'irrigation_management_notes': z.irrigation_management_notes,
+            'has_remarks': bool(z.remarks and json.loads(z.remarks)) if z.remarks else False,
+            'has_confirmed_remarks': bool(z.confirmed_remarks and json.loads(z.confirmed_remarks)) if z.confirmed_remarks else False,
             'plant_names': list(z.plants.values_list('name', flat=True)),
         })
 
@@ -655,6 +657,8 @@ def dashboard(request):
             'soil_moisture': zone.soil_moisture,
             'equipment_maintenance_notes': zone.equipment_maintenance_notes,
             'irrigation_management_notes': zone.irrigation_management_notes,
+            'has_remarks': bool(zone.remarks and json.loads(zone.remarks)),
+            'has_confirmed_remarks': bool(zone.confirmed_remarks and json.loads(zone.confirmed_remarks)),
             # Label settings
             'label_lat': zone.label_lat,
             'label_lng': zone.label_lng,
@@ -823,12 +827,44 @@ def dashboard(request):
 
     all_plant_names = list(Plant.objects.values_list('name', flat=True).distinct().order_by('name'))
 
+    # Landmark data for dashboard map and filter
+    from .models import Landmark, ZoneLandmarkAssignment
+    landmarks_data = []
+    for lm in Landmark.objects.order_by('order', 'name'):
+        landmarks_data.append({
+            'id': lm.id,
+            'name': lm.name,
+            'boundary_points': lm.boundary_points,
+            'boundary_color': lm.boundary_color,
+            'center': lm.center,
+        })
+
+    zone_landmark_map = {}
+    for assignment in ZoneLandmarkAssignment.objects.select_related('landmark').all():
+        zone_landmark_map.setdefault(assignment.zone_id, []).append({
+            'id': assignment.landmark_id,
+            'name': assignment.landmark.name,
+        })
+
+    # Patch list for map filter plugin
+    patches_list = []
+    for p in Patch.objects.order_by('code'):
+        patches_list.append({
+            'id': p.id,
+            'name': p.name,
+            'code': p.code,
+        })
+
     context = {
         'zones': zones,
         'zones_json': json.dumps(zones_list),
         'grouped_zones': grouped_zones,  # For hierarchical sidebar display
         'pipelines_json': json.dumps(pipelines_list),
         'all_plant_names': all_plant_names,
+        'landmarks_json': json.dumps(landmarks_data),
+        'landmark_names': [lm['name'] for lm in landmarks_data],
+        'zone_landmark_map_json': json.dumps(zone_landmark_map),
+        'patches_json': json.dumps(patches_list),
         'is_admin': is_admin,
         'is_manager': is_manager,
         'is_dept_user': is_dept_user,
@@ -902,6 +938,18 @@ def _check_zone_admin(request):
         return True
     except ManagerProfile.DoesNotExist:
         return False
+
+
+def _get_user_display_name(request):
+    """Get the current user's display name from their profile."""
+    from .models import ManagerProfile, Worker
+    for Model in (ManagerProfile, Worker):
+        try:
+            profile = Model.objects.get(user=request.user, active=True)
+            return profile.full_name or request.user.username
+        except Model.DoesNotExist:
+            continue
+    return request.user.username
 
 
 @login_required(login_url='core:login')
@@ -1234,6 +1282,9 @@ def settings_page(request):
 
     all_plant_names = list(Plant.objects.values_list('name', flat=True).distinct().order_by('name'))
 
+    from .models import Landmark
+    landmarks = Landmark.objects.annotate(zone_count=Count('zone_assignments')).order_by('order', 'name')
+
     context = {
         'zones': zones,
         'grouped_zones': grouped_zones_data,
@@ -1247,6 +1298,7 @@ def settings_page(request):
         'child_counts': child_counts,
         'regions': regions,
         'region_patch_counts': region_patch_counts,
+        'landmarks': landmarks,
     }
 
     return render(request, 'core/settings.html', context)
@@ -1626,6 +1678,153 @@ def zone_delete(request, zone_id):
 
 
 @login_required(login_url='core:login')
+def zone_batch_draw(request):
+    """Batch zone boundary drawing page."""
+    from .models import ManagerProfile, Patch
+
+    is_admin = request.user.is_superuser or request.user.is_staff
+    if not is_admin:
+        try:
+            ManagerProfile.objects.get(user=request.user, active=True)
+            is_admin = True
+        except ManagerProfile.DoesNotExist:
+            pass
+
+    if not is_admin:
+        messages.error(request, '无权限访问此页面')
+        return redirect('core:dashboard')
+
+    if request.method == 'POST':
+        new_zone = request.POST.get('new_zone') == 'true'
+        if new_zone:
+            patch_id = request.POST.get('patch_id')
+            code = request.POST.get('code', '').strip()
+            name = request.POST.get('name', '').strip()
+            if not patch_id:
+                return JsonResponse({'success': False, 'message': '缺少片区ID'}, status=400)
+            if not code:
+                return JsonResponse({'success': False, 'message': '请输入区域编号'}, status=400)
+            if Zone.objects.filter(code=code).exists():
+                return JsonResponse({'success': False, 'message': f'区域编号 {code} 已存在'}, status=400)
+            patch = get_object_or_404(Patch, pk=int(patch_id))
+            zone = Zone.objects.create(
+                patch=patch, code=code, name=name or code,
+                priority='medium', boundary_points=[], boundary_color='#52B788'
+            )
+        else:
+            zone_id = request.POST.get('zone_id')
+            if not zone_id:
+                return JsonResponse({'success': False, 'message': '缺少区域ID'}, status=400)
+            zone = get_object_or_404(Zone, pk=int(zone_id))
+
+        boundary_raw = request.POST.get('boundary_points', '[]')
+        try:
+            boundary_data = json.loads(boundary_raw)
+        except (json.JSONDecodeError, TypeError):
+            boundary_data = []
+
+        boundary_data = auto_close_boundary_points(boundary_data)
+        zone.boundary_points = boundary_data
+
+        label_lat = request.POST.get('label_lat', '')
+        label_lng = request.POST.get('label_lng', '')
+        zone.label_lat = float(label_lat) if label_lat else None
+        zone.label_lng = float(label_lng) if label_lng else None
+        zone.label_scale = float(request.POST.get('label_scale', '1.0') or '1.0')
+        zone.label_angle = int(request.POST.get('label_angle', '0') or '0')
+
+        zone.save()
+
+        return JsonResponse({
+            'success': True,
+            'message': f'区域 {zone.code} 边界已保存',
+            'zone_id': zone.id,
+            'zone_name': zone.name,
+            'zone_code': zone.code,
+            'area_display': zone.area_display,
+            'boundary_count': len(zone.boundary_points),
+            'boundary_points': zone.boundary_points,
+            'boundary_color': zone.boundary_color,
+            'label_lat': zone.label_lat,
+            'label_lng': zone.label_lng,
+            'label_scale': zone.label_scale,
+            'label_angle': zone.label_angle,
+            'patch_id': zone.patch_id,
+            'is_new': new_zone if request.method == 'POST' else False,
+        })
+
+    patches = Patch.objects.all().order_by('code')
+
+    # All zones with boundaries for reference layer on map
+    all_drawn_zones = []
+    for z in Zone.objects.exclude(boundary_points__isnull=True).exclude(boundary_points=[]).select_related('patch').only(
+        'id', 'code', 'name', 'boundary_points', 'boundary_color',
+        'label_lat', 'label_lng', 'label_scale', 'label_angle', 'patch_id'
+    ):
+        all_drawn_zones.append({
+            'id': z.id,
+            'code': z.code,
+            'name': z.name,
+            'boundary_points': z.boundary_points,
+            'boundary_color': z.boundary_color,
+            'label_lat': z.label_lat,
+            'label_lng': z.label_lng,
+            'label_scale': z.label_scale,
+            'label_angle': z.label_angle,
+            'patch_id': z.patch_id,
+        })
+
+    context = {
+        'patches': patches,
+        'all_drawn_zones_json': json.dumps(all_drawn_zones),
+        'nav_settings': True,
+    }
+    return render(request, 'core/zone_batch_draw.html', context)
+
+
+@login_required(login_url='core:login')
+def zone_batch_draw_zones_api(request):
+    """API: return zones for a given patch_id."""
+    from .models import ManagerProfile
+
+    is_admin = request.user.is_superuser or request.user.is_staff
+    if not is_admin:
+        try:
+            ManagerProfile.objects.get(user=request.user, active=True)
+            is_admin = True
+        except ManagerProfile.DoesNotExist:
+            pass
+
+    if not is_admin:
+        return JsonResponse({'error': '无权限'}, status=403)
+
+    patch_id = request.GET.get('patch_id')
+    if not patch_id:
+        return JsonResponse({'error': '缺少patch_id参数'}, status=400)
+
+    zones = Zone.objects.filter(patch_id=patch_id).order_by('code')
+    result = []
+    for z in zones:
+        has_boundary = bool(z.boundary_points)
+        result.append({
+            'id': z.id,
+            'code': z.code,
+            'name': z.name,
+            'has_boundary': has_boundary,
+            'boundary_points': z.boundary_points if has_boundary else [],
+            'boundary_color': z.boundary_color,
+            'label_lat': z.label_lat,
+            'label_lng': z.label_lng,
+            'label_scale': z.label_scale,
+            'label_angle': z.label_angle,
+            'area_display': z.area_display if has_boundary else '',
+        })
+    return JsonResponse({'zones': result})
+
+
+@login_required(login_url='core:login')
+@ensure_csrf_cookie
+@login_required(login_url='core:login')
 def zone_detail_page(request, zone_id):
     """Zone detail page showing all zone parameters, plants, equipment, notes, and stats."""
     import json
@@ -1694,6 +1893,15 @@ def zone_detail_page(request, zone_id):
         irrig_notes = _sort_notes(json.loads(zone.irrigation_management_notes)) if zone.irrigation_management_notes else []
     except (json.JSONDecodeError, TypeError):
         irrig_notes = []
+    try:
+        remarks = _sort_notes(json.loads(zone.remarks)) if zone.remarks else []
+    except (json.JSONDecodeError, TypeError):
+        remarks = []
+    try:
+        confirmed_remarks = _sort_notes(json.loads(zone.confirmed_remarks)) if zone.confirmed_remarks else []
+    except (json.JSONDecodeError, TypeError):
+        confirmed_remarks = []
+    is_manager = _check_zone_admin(request)
 
     # Priority display
     priority_display = dict(Zone.PRIORITY_CHOICES).get(zone.priority, '一般')
@@ -1711,11 +1919,96 @@ def zone_detail_page(request, zone_id):
         'sibling_zones': sibling_zones,
         'equip_notes': equip_notes,
         'irrig_notes': irrig_notes,
+        'remarks': remarks,
+        'confirmed_remarks': confirmed_remarks,
+        'is_manager': is_manager,
+        'today': today.isoformat(),
         'priority_display': priority_display,
         'status_display': status_display,
     }
 
     return render(request, 'core/zone_detail_page.html', context)
+
+
+@login_required(login_url='core:login')
+def zone_remark_add(request, zone_id):
+    import json
+    from datetime import date as date_cls
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST only'}, status=405)
+    zone = get_object_or_404(Zone, pk=zone_id)
+    date = request.POST.get('date', '').strip()
+    content = request.POST.get('content', '').strip()
+    if not content:
+        return JsonResponse({'error': '内容不能为空'}, status=400)
+    if not date:
+        date = date_cls.today().isoformat()
+    author = _get_user_display_name(request)
+    remarks = json.loads(zone.remarks) if zone.remarks else []
+    remarks.insert(0, {'date': date, 'content': content, 'author': author})
+    zone.remarks = json.dumps(remarks, ensure_ascii=False)
+    zone.save(update_fields=['remarks'])
+    return JsonResponse({'success': True, 'remark': {'date': date, 'content': content, 'author': author}})
+
+
+@login_required(login_url='core:login')
+def zone_remark_confirm(request, zone_id, index):
+    import json
+    from datetime import date as date_cls
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST only'}, status=405)
+    if not _check_zone_admin(request):
+        return JsonResponse({'error': '无权限'}, status=403)
+    zone = get_object_or_404(Zone, pk=zone_id)
+    remarks = json.loads(zone.remarks) if zone.remarks else []
+    if index < 0 or index >= len(remarks):
+        return JsonResponse({'error': '索引无效'}, status=400)
+    remark = remarks.pop(index)
+    confirm_reply = request.POST.get('confirm_reply', '').strip()
+    confirm_author = _get_user_display_name(request)
+    confirmed = {
+        **remark,
+        'confirm_date': date_cls.today().isoformat(),
+        'confirm_reply': confirm_reply,
+        'confirm_author': confirm_author,
+    }
+    confirmed_list = json.loads(zone.confirmed_remarks) if zone.confirmed_remarks else []
+    confirmed_list.insert(0, confirmed)
+    zone.remarks = json.dumps(remarks, ensure_ascii=False)
+    zone.confirmed_remarks = json.dumps(confirmed_list, ensure_ascii=False)
+    zone.save(update_fields=['remarks', 'confirmed_remarks'])
+    return JsonResponse({'success': True, 'confirmed': confirmed})
+
+
+@login_required(login_url='core:login')
+def zone_remark_move(request, zone_id, index):
+    import json
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST only'}, status=405)
+    if not _check_zone_admin(request):
+        return JsonResponse({'error': '无权限'}, status=403)
+    zone = get_object_or_404(Zone, pk=zone_id)
+    target = request.POST.get('target', '').strip()
+    if target not in ('irrigation', 'equipment'):
+        return JsonResponse({'error': '目标无效'}, status=400)
+    confirmed_list = json.loads(zone.confirmed_remarks) if zone.confirmed_remarks else []
+    if index < 0 or index >= len(confirmed_list):
+        return JsonResponse({'error': '索引无效'}, status=400)
+    entry = confirmed_list.pop(index)
+    note = {'date': entry.get('date', ''), 'content': entry.get('content', '')}
+    if target == 'irrigation':
+        notes = json.loads(zone.irrigation_management_notes) if zone.irrigation_management_notes else []
+        notes.insert(0, note)
+        zone.irrigation_management_notes = json.dumps(notes, ensure_ascii=False)
+        zone.save(update_fields=['irrigation_management_notes'])
+    else:
+        notes = json.loads(zone.equipment_maintenance_notes) if zone.equipment_maintenance_notes else []
+        notes.insert(0, note)
+        zone.equipment_maintenance_notes = json.dumps(notes, ensure_ascii=False)
+        zone.save(update_fields=['equipment_maintenance_notes'])
+    zone.confirmed_remarks = json.dumps(confirmed_list, ensure_ascii=False)
+    zone.save(update_fields=['confirmed_remarks'])
+    return JsonResponse({'success': True, 'target': target, 'note': note})
 
 
 @login_required(login_url='core:login')
@@ -1976,6 +2269,204 @@ def batch_delete_region(request):
 
     count, _ = Region.objects.filter(pk__in=ids).delete()
     messages.success(request, f'已删除 {count} 个大区')
+    return JsonResponse({'success': True, 'deleted': count})
+
+
+def _boundary_points_to_shapely(boundary_points):
+    """Convert JSON boundary_points to a Shapely geometry."""
+    from shapely.geometry import Polygon, MultiPolygon
+
+    if not boundary_points or len(boundary_points) == 0:
+        return None
+
+    def to_coord(p):
+        if isinstance(p, dict):
+            return (p.get('lng', p.get('longitude', 0)), p.get('lat', p.get('latitude', 0)))
+        if isinstance(p, (list, tuple)) and len(p) >= 2:
+            return (p[1], p[0])
+        return None
+
+    first = boundary_points[0]
+    if isinstance(first, list) and len(first) > 0 and (isinstance(first[0], (list, dict))):
+        rings = boundary_points
+    elif isinstance(first, (dict, list)):
+        rings = [boundary_points]
+    else:
+        return None
+
+    polygons = []
+    for ring in rings:
+        coords = [to_coord(p) for p in ring]
+        coords = [c for c in coords if c is not None]
+        if len(coords) >= 3:
+            if coords[0] != coords[-1]:
+                coords.append(coords[0])
+            polygons.append(Polygon(coords))
+
+    if len(polygons) == 0:
+        return None
+    if len(polygons) == 1:
+        return polygons[0]
+    return MultiPolygon(polygons)
+
+
+def _recalculate_landmark_assignments():
+    """Recalculate all zone↔landmark assignments based on boundary overlap."""
+    try:
+        from shapely.geometry import MultiPolygon as _MP  # noqa: F401 — verify import
+    except ImportError:
+        return -1
+
+    from .models import Landmark, ZoneLandmarkAssignment, Zone
+
+    ZoneLandmarkAssignment.objects.all().delete()
+
+    landmarks = Landmark.objects.exclude(boundary_points=[])
+    zones = Zone.objects.exclude(boundary_points=[])
+    count = 0
+
+    for landmark in landmarks:
+        landmark_geom = _boundary_points_to_shapely(landmark.boundary_points)
+        if landmark_geom is None:
+            continue
+        for zone in zones:
+            zone_geom = _boundary_points_to_shapely(zone.boundary_points)
+            if zone_geom is None:
+                continue
+            if landmark_geom.intersects(zone_geom):
+                ZoneLandmarkAssignment.objects.create(zone=zone, landmark=landmark)
+                count += 1
+
+    return count
+
+
+def _landmark_draw_context(landmark):
+    """Build context for the landmark draw page with reference layers."""
+    from .models import Landmark
+    all_landmarks = []
+    for lm in Landmark.objects.order_by('order', 'name'):
+        all_landmarks.append({
+            'id': lm.id,
+            'name': lm.name,
+            'boundary_points': lm.boundary_points,
+            'boundary_color': lm.boundary_color,
+            'area_sqm': lm.area_sqm,
+        })
+    all_zones = []
+    for z in Zone.objects.exclude(boundary_points__isnull=True).exclude(boundary_points=[]).select_related('patch').only(
+        'id', 'code', 'name', 'boundary_points', 'boundary_color',
+        'label_lat', 'label_lng', 'label_scale', 'label_angle', 'patch_id'
+    ):
+        all_zones.append({
+            'id': z.id,
+            'code': z.code,
+            'name': z.name,
+            'boundary_points': z.boundary_points,
+            'boundary_color': z.boundary_color,
+        })
+    return {
+        'landmark': landmark,
+        'all_landmarks_json': json.dumps(all_landmarks),
+        'all_zones_json': json.dumps(all_zones),
+        'nav_settings': True,
+    }
+
+
+@login_required(login_url='core:login')
+def landmark_new(request):
+    from .models import Landmark
+    if request.method == 'POST':
+        name = request.POST.get('name', '').strip()
+        if not name:
+            return JsonResponse({'error': '名称不能为空'}, status=400)
+        boundary_raw = request.POST.get('boundary_points', '[]')
+        boundary_color = request.POST.get('boundary_color', '#E8590C')
+        try:
+            boundary_data = json.loads(boundary_raw)
+        except json.JSONDecodeError:
+            return JsonResponse({'error': '边界数据格式错误'}, status=400)
+        boundary_data = auto_close_boundary_points(boundary_data)
+        landmark = Landmark(name=name, boundary_points=boundary_data, boundary_color=boundary_color)
+        landmark.center = get_zone_center(boundary_data)
+        landmark.save()
+        return JsonResponse({'success': True, 'id': landmark.id, 'name': landmark.name})
+    return render(request, 'core/landmark_draw.html', _landmark_draw_context(None))
+
+
+@login_required(login_url='core:login')
+def landmark_edit(request, landmark_id):
+    from .models import Landmark
+    landmark = get_object_or_404(Landmark, pk=landmark_id)
+    if request.method == 'POST':
+        name = request.POST.get('name', '').strip()
+        if name:
+            landmark.name = name
+        boundary_raw = request.POST.get('boundary_points', '')
+        if boundary_raw:
+            try:
+                boundary_data = json.loads(boundary_raw)
+                boundary_data = auto_close_boundary_points(boundary_data)
+                landmark.boundary_points = boundary_data
+                landmark.center = get_zone_center(boundary_data)
+            except json.JSONDecodeError:
+                return JsonResponse({'error': '边界数据格式错误'}, status=400)
+        boundary_color = request.POST.get('boundary_color')
+        if boundary_color:
+            landmark.boundary_color = boundary_color
+        landmark.save()
+        return JsonResponse({'success': True, 'id': landmark.id, 'name': landmark.name})
+    return render(request, 'core/landmark_draw.html', _landmark_draw_context(landmark))
+
+
+@login_required(login_url='core:login')
+@require_POST
+def landmark_delete(request, landmark_id):
+    from .models import Landmark
+    landmark = get_object_or_404(Landmark, pk=landmark_id)
+    landmark.delete()
+    return JsonResponse({'success': True})
+
+
+@login_required(login_url='core:login')
+def landmarks_api(request):
+    from .models import Landmark, ZoneLandmarkAssignment
+    landmarks = Landmark.objects.order_by('order', 'name')
+    data = []
+    for lm in landmarks:
+        zone_count = ZoneLandmarkAssignment.objects.filter(landmark=lm).count()
+        data.append({
+            'id': lm.id,
+            'name': lm.name,
+            'boundary_points': lm.boundary_points,
+            'boundary_color': lm.boundary_color,
+            'center': lm.center,
+            'area_sqm': lm.area_sqm,
+            'zone_count': zone_count,
+        })
+    return JsonResponse(data, safe=False)
+
+
+@login_required(login_url='core:login')
+@require_POST
+def landmarks_recalculate(request):
+    from .models import Landmark
+    count = _recalculate_landmark_assignments()
+    if count < 0:
+        return JsonResponse({'error': 'Shapely library not installed. Run: pip install shapely'}, status=500)
+    total_landmarks = Landmark.objects.count()
+    return JsonResponse({'success': True, 'assignments': count, 'landmarks': total_landmarks})
+
+
+@login_required(login_url='core:login')
+@require_POST
+def batch_delete_landmark(request):
+    from .models import Landmark
+    try:
+        body = json.loads(request.body)
+        ids = body.get('ids', [])
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+    count, _ = Landmark.objects.filter(pk__in=ids).delete()
     return JsonResponse({'success': True, 'deleted': count})
 
 
@@ -2392,6 +2883,61 @@ def requests_page(request):
             'created_at': req.created_at,
             'detail': f"{req.get_request_type_display()} - {req.user_type}",
         })
+
+    # Add zone remarks as pseudo-requests
+    from datetime import datetime as dt
+    remark_zones = Zone.objects.exclude(remarks='').exclude(remarks__isnull=True)
+    for zone in remark_zones:
+        try:
+            remarks_list = json.loads(zone.remarks)
+        except (json.JSONDecodeError, TypeError):
+            continue
+        for remark in remarks_list:
+            remark_date = remark.get('date', '')
+            try:
+                created = dt.strptime(remark_date, '%Y-%m-%d')
+            except (ValueError, TypeError):
+                created = dt.now()
+            all_requests.append({
+                'id': zone.id,
+                'type': '备注',
+                'type_code': 'remark',
+                'zone': zone,
+                'submitter': type('obj', (), {'full_name': remark.get('author', '')})(),
+                'date': remark_date,
+                'status': 'pending',
+                'status_display': '待确认',
+                'created_at': created,
+                'detail': remark.get('content', ''),
+            })
+
+    confirmed_zones = Zone.objects.exclude(confirmed_remarks='').exclude(confirmed_remarks__isnull=True)
+    for zone in confirmed_zones:
+        try:
+            confirmed_list = json.loads(zone.confirmed_remarks)
+        except (json.JSONDecodeError, TypeError):
+            continue
+        for item in confirmed_list:
+            remark_date = item.get('confirm_date', item.get('date', ''))
+            try:
+                created = dt.strptime(remark_date, '%Y-%m-%d')
+            except (ValueError, TypeError):
+                created = dt.now()
+            content = item.get('content', '')
+            reply = item.get('confirm_reply', '')
+            detail = f"{content} → {reply}" if reply else content
+            all_requests.append({
+                'id': zone.id,
+                'type': '备注确认',
+                'type_code': 'confirmed_remark',
+                'zone': zone,
+                'submitter': type('obj', (), {'full_name': item.get('confirm_author', '')})(),
+                'date': remark_date,
+                'status': 'confirmed',
+                'status_display': '已确认',
+                'created_at': created,
+                'detail': detail,
+            })
 
     # 按创建时间倒序排列
     all_requests.sort(key=lambda x: x['created_at'], reverse=True)
