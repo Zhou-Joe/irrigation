@@ -1824,6 +1824,130 @@ def zone_batch_draw_zones_api(request):
 
 @login_required(login_url='core:login')
 @ensure_csrf_cookie
+def zone_quick_draw(request):
+    """Quick zone boundary drawing page — draw first, assign zone code after."""
+    from .models import ManagerProfile
+
+    is_admin = request.user.is_superuser or request.user.is_staff
+    if not is_admin:
+        try:
+            ManagerProfile.objects.get(user=request.user, active=True)
+            is_admin = True
+        except ManagerProfile.DoesNotExist:
+            pass
+
+    if not is_admin:
+        messages.error(request, '无权限访问此页面')
+        return redirect('core:dashboard')
+
+    if request.method == 'POST':
+        action = request.POST.get('action', '')
+
+        # Delete boundary action
+        if action == 'delete_boundary':
+            zone_code = request.POST.get('zone_code', '').strip()
+            if not zone_code:
+                return JsonResponse({'success': False, 'message': '缺少区域编号'}, status=400)
+            try:
+                zone = Zone.objects.get(code=zone_code)
+                zone.boundary_points = []
+                zone.label_lat = None
+                zone.label_lng = None
+                zone.save()
+                return JsonResponse({'success': True, 'message': f'区域 {zone.code} 边界已删除'})
+            except Zone.DoesNotExist:
+                return JsonResponse({'success': False, 'message': f'区域 {zone_code} 不存在'}, status=404)
+
+        # Save boundary action
+        zone_code = request.POST.get('zone_code', '').strip()
+        if not zone_code:
+            return JsonResponse({'success': False, 'message': '缺少区域编号'}, status=400)
+
+        try:
+            zone = Zone.objects.get(code=zone_code)
+        except Zone.DoesNotExist:
+            return JsonResponse({'success': False, 'message': f'区域编号 {zone_code} 不存在，请检查输入'}, status=404)
+
+        boundary_raw = request.POST.get('boundary_points', '[]')
+        try:
+            boundary_data = json.loads(boundary_raw)
+        except (json.JSONDecodeError, TypeError):
+            boundary_data = []
+
+        boundary_data = auto_close_boundary_points(boundary_data)
+        zone.boundary_points = boundary_data
+
+        label_lat = request.POST.get('label_lat', '')
+        label_lng = request.POST.get('label_lng', '')
+        zone.label_lat = float(label_lat) if label_lat else None
+        zone.label_lng = float(label_lng) if label_lng else None
+        zone.label_scale = float(request.POST.get('label_scale', '1.0') or '1.0')
+        zone.label_angle = int(request.POST.get('label_angle', '0') or '0')
+
+        zone.save()
+
+        patch_name = zone.patch.name if zone.patch else ''
+        return JsonResponse({
+            'success': True,
+            'message': f'区域 {zone.code} 边界已保存',
+            'zone_id': zone.id,
+            'zone_name': zone.name,
+            'zone_code': zone.code,
+            'area_display': zone.area_display,
+            'boundary_count': len(zone.boundary_points),
+            'boundary_points': zone.boundary_points,
+            'boundary_color': zone.boundary_color,
+            'label_lat': zone.label_lat,
+            'label_lng': zone.label_lng,
+            'label_scale': zone.label_scale,
+            'label_angle': zone.label_angle,
+            'patch_id': zone.patch_id,
+            'patch_name': patch_name,
+        })
+
+    # GET — render page with all zones data
+    all_zones = []
+    for z in Zone.objects.select_related('patch').order_by('code').only(
+        'id', 'code', 'name', 'patch_id', 'patch__name'
+    ):
+        all_zones.append({
+            'id': z.id,
+            'code': z.code,
+            'name': z.name,
+            'patch_name': z.patch.name if z.patch else '',
+        })
+
+    # All zones with boundaries for reference layer on map
+    all_drawn_zones = []
+    for z in Zone.objects.exclude(boundary_points__isnull=True).exclude(boundary_points=[]).select_related('patch').only(
+        'id', 'code', 'name', 'boundary_points', 'boundary_color',
+        'label_lat', 'label_lng', 'label_scale', 'label_angle', 'patch_id', 'patch__name'
+    ):
+        all_drawn_zones.append({
+            'id': z.id,
+            'code': z.code,
+            'name': z.name,
+            'boundary_points': z.boundary_points,
+            'boundary_color': z.boundary_color,
+            'label_lat': z.label_lat,
+            'label_lng': z.label_lng,
+            'label_scale': z.label_scale,
+            'label_angle': z.label_angle,
+            'patch_id': z.patch_id,
+            'patch_name': z.patch.name if z.patch else '',
+            'area_display': z.area_display,
+        })
+
+    context = {
+        'all_zones_json': json.dumps(all_zones),
+        'all_drawn_zones_json': json.dumps(all_drawn_zones),
+        'nav_settings': True,
+    }
+    return render(request, 'core/zone_quick_draw.html', context)
+
+
+@login_required(login_url='core:login')
+@ensure_csrf_cookie
 @login_required(login_url='core:login')
 def zone_detail_page(request, zone_id):
     """Zone detail page showing all zone parameters, plants, equipment, notes, and stats."""

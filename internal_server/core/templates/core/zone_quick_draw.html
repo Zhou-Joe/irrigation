@@ -1,0 +1,1338 @@
+{% extends 'core/base.html' %}
+{% load static %}
+
+{% block title %}快速绘制边界 - 灌溉管理{% endblock %}
+{% block nav_settings %}active{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'css/settings.css' %}?v=20260516a">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<style>
+    .batch-container { padding: 0; height: calc(100vh - 52px); display: flex; flex-direction: column; }
+    .batch-header {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 12px 20px; background: var(--color-surface-alt);
+        border-bottom: 1px solid var(--color-surface-dark); flex-shrink: 0;
+    }
+    .batch-header h1 { font-size: 1.1rem; margin: 0; }
+    .batch-header-left { display: flex; align-items: center; gap: 12px; }
+    .batch-header-left a { font-size: 0.85rem; color: var(--color-primary); text-decoration: none; }
+    .batch-body { display: flex; flex: 1; min-height: 0; }
+    .batch-map-area { flex: 1; display: flex; flex-direction: column; min-width: 0; position: relative; }
+    .batch-map-toolbar {
+        display: flex; align-items: center; gap: 8px; padding: 8px 12px;
+        background: var(--color-surface-alt); border-bottom: 1px solid var(--color-surface-dark);
+        flex-wrap: wrap; flex-shrink: 0;
+    }
+    .batch-map-toolbar .toolbar-group { display: flex; align-items: center; gap: 6px; }
+    .batch-map-toolbar .toolbar-sep { width: 1px; height: 24px; background: var(--color-surface-dark); margin: 0 4px; }
+    .batch-map-settings {
+        display: flex; align-items: center; gap: 12px; padding: 6px 12px;
+        background: var(--color-surface); border-bottom: 1px solid var(--color-surface-dark);
+        font-size: 0.82rem; flex-shrink: 0; flex-wrap: wrap;
+    }
+    .batch-map-settings label { display: flex; align-items: center; gap: 4px; color: var(--color-text-secondary); }
+    .batch-map-settings input[type="range"] { width: 80px; }
+    .batch-map-settings input[type="number"] { width: 60px; padding: 2px 6px; font-size: 0.8rem; }
+    #editMap { flex: 1; min-height: 0; }
+    .batch-coords {
+        max-height: 100px; overflow-y: auto; padding: 6px 12px; font-size: 0.78rem;
+        border-top: 1px solid var(--color-surface-dark); flex-shrink: 0;
+    }
+    .coord-row { display: flex; gap: 6px; align-items: center; padding: 2px 0; }
+    .coord-row span { min-width: 20px; color: var(--color-text-secondary); }
+    .coord-row input { width: 110px; padding: 2px 4px; font-size: 0.78rem; border: 1px solid var(--color-surface-dark); border-radius: 4px; }
+    .coord-row button { background: none; border: none; color: #9B2226; cursor: pointer; font-size: 0.9rem; }
+
+    .point-count { font-size: 0.82rem; color: var(--color-text-secondary); }
+    .point-count strong { color: var(--color-text); }
+
+    /* Sidebar */
+    .batch-sidebar {
+        width: 320px; flex-shrink: 0; display: flex; flex-direction: column;
+        background: var(--color-surface-alt); border-left: 1px solid var(--color-surface-dark);
+        overflow: hidden;
+    }
+    .sidebar-card { padding: 12px; border-bottom: 1px solid var(--color-surface-dark); }
+    .sidebar-card h3 { font-size: 0.85rem; margin: 0 0 8px; color: var(--color-text-secondary); }
+    .sidebar-stats {
+        display: flex; gap: 12px; font-size: 0.85rem; padding: 4px 0;
+    }
+    .sidebar-stats .stat-item { display: flex; align-items: center; gap: 4px; }
+    .sidebar-stats .stat-num { font-weight: 700; color: var(--color-primary); }
+
+    /* Zone code input with dropdown */
+    .zone-input-wrapper { position: relative; }
+    .zone-input {
+        width: 100%; padding: 10px 12px; border: 2px solid var(--color-primary);
+        border-radius: 8px; font-size: 0.95rem; box-sizing: border-box;
+        font-weight: 600; background: white;
+    }
+    .zone-input:focus { outline: none; border-color: var(--color-primary); box-shadow: 0 0 0 3px rgba(45,106,79,0.15); }
+    .zone-dropdown {
+        position: absolute; top: 100%; left: 0; right: 0; background: white;
+        border: 1px solid var(--color-surface-dark); border-top: none;
+        border-radius: 0 0 8px 8px; max-height: 250px; overflow-y: auto;
+        z-index: 500; display: none; box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    }
+    .zone-dropdown .dropdown-item {
+        padding: 8px 12px; cursor: pointer; font-size: 0.85rem;
+        border-bottom: 1px solid var(--color-surface);
+        display: flex; justify-content: space-between; align-items: center;
+    }
+    .zone-dropdown .dropdown-item:hover { background: var(--color-surface); }
+    .zone-dropdown .dropdown-item .di-code { font-weight: 600; font-family: monospace; }
+    .zone-dropdown .dropdown-item .di-name { color: var(--color-text-secondary); margin-left: 8px; flex: 1; }
+    .zone-dropdown .dropdown-item .di-patch { font-size: 0.72rem; color: var(--color-text-secondary); background: var(--color-surface); padding: 1px 6px; border-radius: 4px; }
+    .zone-dropdown .dropdown-item .di-boundary { font-size: 0.7rem; color: var(--color-success); }
+    .zone-dropdown .dropdown-hint {
+        padding: 8px 12px; font-size: 0.78rem; color: var(--color-text-secondary);
+        background: var(--color-surface); font-style: italic;
+    }
+
+    .save-btn {
+        width: 100%; padding: 10px; margin-top: 8px; border: none; border-radius: 8px;
+        background: var(--color-primary); color: white; font-size: 0.95rem;
+        cursor: pointer; font-weight: 600; transition: opacity 0.15s;
+    }
+    .save-btn:hover { opacity: 0.9; }
+    .save-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .cancel-btn {
+        width: 100%; padding: 8px; margin-top: 4px; border: 1px solid var(--color-surface-dark); border-radius: 8px;
+        background: white; color: var(--color-text-secondary); font-size: 0.85rem;
+        cursor: pointer; transition: background 0.15s;
+    }
+    .cancel-btn:hover { background: var(--color-surface); }
+
+    /* Saved zones list */
+    .saved-list { flex: 1; min-height: 0; overflow-y: auto; }
+    .scroll-list { overflow-y: auto; scrollbar-width: thin; }
+    .scroll-list::-webkit-scrollbar { width: 5px; }
+    .scroll-list::-webkit-scrollbar-thumb { background: var(--color-surface-dark); border-radius: 3px; }
+    .zone-list-item {
+        display: flex; align-items: center; gap: 8px; padding: 8px 10px;
+        border-radius: 6px; cursor: pointer; font-size: 0.82rem;
+        transition: background 0.15s; border-bottom: 1px solid var(--color-surface);
+    }
+    .zone-list-item:hover { background: var(--color-surface); }
+    .zone-list-item .zone-code { font-weight: 600; font-family: monospace; min-width: 60px; }
+    .zone-list-item .zone-name { color: var(--color-text-secondary); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .zone-list-item .zone-patch { font-size: 0.7rem; color: var(--color-text-secondary); }
+    .zone-list-item .zone-area { font-size: 0.75rem; color: var(--color-text-secondary); }
+
+    /* Floating save panel on map */
+    .map-save-panel {
+        position: absolute; z-index: 550; background: white; border-radius: 10px;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.2); min-width: 220px; max-width: 280px;
+        display: none; overflow: hidden; animation: slideIn 0.3s ease;
+        border: 2px solid var(--color-primary);
+    }
+    .map-save-panel .panel-header {
+        background: var(--color-primary); color: white; padding: 6px 12px;
+        font-size: 0.82rem; font-weight: 600; display: flex; justify-content: space-between; align-items: center;
+    }
+    .map-save-panel .panel-header button {
+        background: none; border: none; color: white; cursor: pointer; font-size: 1.1rem; padding: 0 2px;
+    }
+    .map-save-panel .panel-body { padding: 8px 12px; }
+    .map-save-panel .zone-input-wrapper { position: relative; }
+    .map-save-panel .zone-input {
+        width: 100%; padding: 6px 8px; border: 2px solid var(--color-primary);
+        border-radius: 6px; font-size: 0.85rem; box-sizing: border-box;
+        font-weight: 600; background: white;
+    }
+    .map-save-panel .zone-dropdown {
+        position: absolute; top: 100%; left: 0; right: 0; background: white;
+        border: 1px solid var(--color-surface-dark); border-top: none;
+        border-radius: 0 0 8px 8px; max-height: 200px; overflow-y: auto;
+        z-index: 560; display: none; box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    }
+    .map-save-panel .zone-dropdown .dropdown-item {
+        padding: 7px 10px; cursor: pointer; font-size: 0.82rem;
+        border-bottom: 1px solid var(--color-surface);
+        display: flex; justify-content: space-between; align-items: center;
+    }
+    .map-save-panel .zone-dropdown .dropdown-item:hover { background: var(--color-surface); }
+    .map-save-panel .zone-dropdown .dropdown-item .di-code { font-weight: 600; font-family: monospace; }
+    .map-save-panel .zone-dropdown .dropdown-item .di-name { color: var(--color-text-secondary); margin-left: 6px; flex: 1; }
+    .map-save-panel .zone-dropdown .dropdown-item .di-patch { font-size: 0.7rem; color: var(--color-text-secondary); background: var(--color-surface); padding: 1px 5px; border-radius: 3px; }
+    .map-save-panel .zone-dropdown .dropdown-item .di-boundary { font-size: 0.68rem; color: var(--color-success); }
+    .map-save-panel .zone-dropdown .dropdown-hint {
+        padding: 7px 10px; font-size: 0.75rem; color: var(--color-text-secondary);
+        background: var(--color-surface); font-style: italic;
+    }
+    .map-save-panel .panel-preview { margin-top: 6px; font-size: 0.78rem; color: var(--color-text-secondary); }
+    .map-save-panel .panel-actions { display: flex; gap: 6px; margin-top: 8px; }
+    .map-save-panel .save-btn {
+        flex: 1; padding: 8px; border: none; border-radius: 8px;
+        background: var(--color-primary); color: white; font-size: 0.88rem;
+        cursor: pointer; font-weight: 600; transition: opacity 0.15s;
+    }
+    .map-save-panel .save-btn:hover { opacity: 0.9; }
+    .map-save-panel .save-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .map-save-panel .cancel-btn {
+        padding: 8px 12px; border: 1px solid var(--color-surface-dark); border-radius: 8px;
+        background: white; color: var(--color-text-secondary); font-size: 0.82rem;
+        cursor: pointer; transition: background 0.15s;
+    }
+    /* connector arrow */
+    .map-save-panel::before {
+        content: ''; position: absolute; bottom: -8px; left: 50%; transform: translateX(-50%);
+        width: 0; height: 0; border-left: 8px solid transparent; border-right: 8px solid transparent;
+        border-top: 8px solid var(--color-primary);
+    }
+
+    /* Context menu on map click */
+    .map-context-menu {
+        position: absolute; z-index: 600; background: white; border-radius: 8px;
+        box-shadow: 0 4px 16px rgba(0,0,0,0.15); min-width: 140px; overflow: hidden;
+        display: none;
+    }
+    .map-context-menu .menu-item {
+        padding: 10px 16px; cursor: pointer; font-size: 0.85rem;
+        border-bottom: 1px solid var(--color-surface); display: flex; align-items: center; gap: 8px;
+    }
+    .map-context-menu .menu-item:last-child { border-bottom: none; }
+    .map-context-menu .menu-item:hover { background: var(--color-surface); }
+    .map-context-menu .menu-item.edit-item { color: var(--color-primary); }
+    .map-context-menu .menu-item.delete-item { color: #9B2226; }
+    .map-context-menu .menu-zone-code { font-weight: 600; font-family: monospace; padding: 8px 16px 4px; font-size: 0.9rem; background: var(--color-surface-alt); }
+
+    @keyframes toastIn{from{opacity:0;transform:translateX(30px)}to{opacity:1;transform:translateX(0)}}
+    @keyframes slideIn{from{opacity:0;transform:translateY(-10px)}to{opacity:1;transform:translateY(0)}}
+    .save-panel { animation: slideIn 0.3s ease; }
+
+    /* Mobile */
+    @media (max-width: 900px) {
+        .batch-body { flex-direction: column; }
+        .batch-sidebar { width: 100%; max-height: 40vh; }
+        .batch-map-area { min-height: 50vh; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="batch-container">
+    <div class="batch-header">
+        <div class="batch-header-left">
+            <a href="{% url 'core:settings' %}">← 返回区域管理</a>
+            <h1>快速绘制边界</h1>
+        </div>
+        <div style="font-size:0.82rem;color:var(--color-text-secondary);">
+            绘制闭合区域 → 输入区域编号 → 保存
+        </div>
+    </div>
+
+    <div id="toastContainer" style="position:fixed;top:20px;right:20px;z-index:9999;display:flex;flex-direction:column;gap:8px;pointer-events:none;"></div>
+
+    <!-- Context menu for clicked zones on map -->
+    <div id="mapContextMenu" class="map-context-menu">
+        <div class="menu-zone-code" id="menuZoneCode"></div>
+        <div class="menu-item edit-item" id="menuEditBtn">✏️ 编辑边界</div>
+        <div class="menu-item delete-item" id="menuDeleteBtn">🗑️ 删除边界</div>
+    </div>
+
+    <div class="batch-body">
+        <!-- Left: Map area -->
+        <div class="batch-map-area">
+            <div class="batch-map-toolbar">
+                <div class="toolbar-group">
+                    <button type="button" id="clearBoundary" class="btn btn-sm btn-danger">清除全部</button>
+                    <button type="button" id="undoAction" class="btn btn-sm btn-secondary" disabled>撤销</button>
+                    <button type="button" id="locateMe" class="btn btn-sm btn-primary">定位我</button>
+                </div>
+                <div class="toolbar-sep"></div>
+                <span class="point-count">当前: <strong id="pointCount">0</strong> 个节点 | 已保存: <strong id="savedCount">0</strong> 个区域</span>
+                <div class="toolbar-sep"></div>
+                <div class="toolbar-group">
+                    <label style="display:flex;align-items:center;gap:4px;font-size:0.82rem;color:var(--color-text-secondary);">
+                        颜色
+                        <input type="color" id="boundary_color" value="#52B788" style="width:28px;height:24px;padding:0;border:none;cursor:pointer;">
+                        <input type="text" id="boundary_color_text" value="#52B788" style="width:70px;font-size:0.8rem;padding:2px 4px;border:1px solid var(--color-surface-dark);border-radius:4px;" pattern="^#[0-9A-Fa-f]{6}$" maxlength="7">
+                    </label>
+                </div>
+            </div>
+
+            <div class="batch-map-settings">
+                <label>
+                    标签字号
+                    <input type="range" id="label_scale" min="0.3" max="3" step="0.1" value="1.0">
+                    <span id="label_scale_display" style="min-width:30px;">1.0x</span>
+                </label>
+                <label>
+                    旋转
+                    <input type="number" id="label_angle" value="0" min="-180" max="180" style="width:55px;padding:2px 6px;font-size:0.8rem;">
+                    °
+                </label>
+                <span id="currentShapeLabel" style="color:var(--color-text-secondary);font-size:0.8rem;">(点击地图开始绘制)</span>
+            </div>
+
+            <div id="editMap"></div>
+            <!-- Floating panel on map -->
+            <div id="mapSavePanel" class="map-save-panel" style="display:none;">
+                <div class="panel-header">
+                    <span id="panelTitle">快速绘制</span>
+                    <button type="button" id="mapPanelClose" title="关闭">&times;</button>
+                </div>
+                <div class="panel-body">
+                    <div class="zone-input-wrapper">
+                        <input type="text" id="zoneCodeInput" class="zone-input" placeholder="输入区域编号..." autocomplete="off">
+                        <div id="zoneDropdown" class="zone-dropdown"></div>
+                    </div>
+                    <div id="zonePreview" class="panel-preview" style="display:none;">
+                        <span id="zonePreviewText"></span>
+                    </div>
+                    <div style="display:flex;gap:4px;align-items:center;margin-top:6px;font-size:0.78rem;color:var(--color-text-secondary);">
+                        节点: <strong id="panelPointCount">0</strong>/3 | 已完成: <strong id="panelShapeCount">0</strong> 个区域
+                    </div>
+                    <div style="display:flex;gap:6px;margin-top:6px;">
+                        <button type="button" id="completeShapeBtn" style="flex:1;padding:7px;border:none;border-radius:6px;background:var(--color-surface-dark);color:var(--color-text);font-size:0.82rem;cursor:pointer;font-weight:500;" disabled>完成当前区域</button>
+                        <button type="button" id="saveBtn" style="flex:1;padding:7px;border:none;border-radius:6px;background:var(--color-primary);color:white;font-size:0.82rem;cursor:pointer;font-weight:600;" disabled>保存</button>
+                    </div>
+                    <button type="button" id="cancelSaveBtn" style="width:100%;padding:5px;border:1px solid var(--color-surface-dark);border-radius:6px;background:white;color:var(--color-text-secondary);font-size:0.78rem;cursor:pointer;margin-top:4px;">取消</button>
+                </div>
+            </div>
+
+
+            <div class="batch-coords" id="coordSection" style="display:none;">
+                <div class="coord-list-header" style="display:flex;gap:6px;font-size:0.75rem;color:var(--color-text-secondary);padding-bottom:4px;">
+                    <span style="min-width:20px;">#</span><span style="min-width:110px;">纬度</span><span style="min-width:110px;">经度</span><span>操作</span>
+                </div>
+                <div id="coordList"></div>
+            </div>
+
+            <input type="hidden" id="boundary_points" name="boundary_points" value="">
+            <input type="hidden" id="label_lat" name="label_lat" value="">
+            <input type="hidden" id="label_lng" name="label_lng" value="">
+        </div>
+
+        <!-- Right: Sidebar -->
+        <div class="batch-sidebar">
+            <!-- Stats -->
+            <div class="sidebar-card">
+                <h3>快速绘制模式</h3>
+                <div class="sidebar-stats">
+                    <div class="stat-item"><span class="stat-num" id="totalZonesCount">0</span> 总区域</div>
+                    <div class="stat-item"><span class="stat-num" id="drawnCount">0</span> 已绘制</div>
+                    <div class="stat-item"><span class="stat-num" id="undrawnCount">0</span> 待绘制</div>
+                </div>
+            </div>
+
+
+            <!-- Saved zones list -->
+            <div class="sidebar-card saved-list" id="savedListCard">
+                <h3>已绘制区域 (<span id="savedListCount">0</span>)</h3>
+                <div class="scroll-list" id="savedList"></div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script id="all-drawn-zones-data" type="application/json">{{ all_drawn_zones_json|safe }}</script>
+<script id="all-zones-data" type="application/json">{{ all_zones_json|safe }}</script>
+<script>
+// CSRF helper
+function getCSRF() {
+    const match = document.cookie.match(/csrftoken=([^;]+)/);
+    return match ? match[1] : '';
+}
+
+// Toast
+window.showToast = function(msg, type) {
+    const container = document.getElementById('toastContainer');
+    const div = document.createElement('div');
+    const colors = { success:'#2D6A4F', error:'#9B2226', info:'#3A86FF', warning:'#E9C46A' };
+    div.style.cssText = `background:${colors[type]||colors.info};color:white;padding:10px 18px;border-radius:8px;font-size:0.88rem;box-shadow:0 4px 12px rgba(0,0,0,0.15);pointer-events:auto;animation:toastIn 0.3s ease;`;
+    div.textContent = msg;
+    container.appendChild(div);
+    setTimeout(() => { div.style.opacity='0'; div.style.transition='opacity 0.4s'; setTimeout(() => div.remove(), 500); }, 4000);
+};
+
+// ============================================================
+// Quick Draw Engine
+// ============================================================
+(function() {
+    'use strict';
+
+    let editMap = null;
+    let markers = [];
+    let currentPoly = null;
+    let shapes = [];
+    let history = [];
+    let userLocationMarker = null;
+    let userAccuracyCircle = null;
+    let labelMarker = null;
+
+    // All zones data for search
+    let allZones = [];
+    let savedZoneMap = {};  // zone_id -> zone data (with boundary)
+    let editingZoneId = null;  // zone currently being edited
+
+    // Context menu state
+    let contextMenuZoneId = null;
+
+    // Reference layer groups
+    let refLayerGroup = null;    // all saved zone polygons on map
+    let refLabels = {};          // zone_id -> label marker
+
+    function getStyle() {
+        const color = (document.getElementById('boundary_color') || {}).value || '#52B788';
+        return { color, weight: 2, fillColor: color, fillOpacity: 0.25 };
+    }
+    function getMarkerColor() {
+        return (document.getElementById('boundary_color') || {}).value || '#1B4332';
+    }
+    function markerIcon(color) {
+        return L.divIcon({
+            className: 'boundary-marker',
+            html: `<div style="width:14px;height:14px;background:${color};border:2px solid white;border-radius:50%;cursor:grab;"></div>`,
+            iconSize: [16, 16], iconAnchor: [8, 8]
+        });
+    }
+
+    function normalizeBoundaryData(data) {
+        if (!data || data.length === 0) return [];
+        if (Array.isArray(data[0]) && (Array.isArray(data[0][0]) || (data[0].length > 0 && data[0][0].lat !== undefined))) {
+            return data;
+        }
+        if (data[0].lat !== undefined || data[0].lng !== undefined || (Array.isArray(data[0]) && data[0].length === 2 && typeof data[0][0] === 'number')) {
+            return [data.map(p => p.lat !== undefined ? {lat: p.lat, lng: p.lng} : {lat: p[0], lng: p[1]})];
+        }
+        return [];
+    }
+
+    function getZoneCode() {
+        const inp = document.getElementById('zoneCodeInput');
+        return inp ? (inp.value || 'ZONE') : 'ZONE';
+    }
+
+    function getLabelStyle() {
+        const scale = parseFloat(document.getElementById('label_scale').value) || 1.0;
+        const angle = parseInt(document.getElementById('label_angle').value) || 0;
+        return { scale, angle };
+    }
+
+    function computeCentroid() {
+        const allPts = [];
+        shapes.forEach(s => s.points.forEach(p => allPts.push(p)));
+        markers.forEach(m => allPts.push({ lat: m.getLatLng().lat, lng: m.getLatLng().lng }));
+        if (allPts.length === 0) return null;
+        const sum = allPts.reduce((a, p) => ({ lat: a.lat + p.lat, lng: a.lng + p.lng }), { lat: 0, lng: 0 });
+        return { lat: sum.lat / allPts.length, lng: sum.lng / allPts.length };
+    }
+
+    function buildLabelHtml(code) {
+        const { scale, angle } = getLabelStyle();
+        const fontSize = Math.round(14 * scale);
+        return `<span style="font-size:${fontSize}px;font-weight:600;color:white;background:rgba(0,0,0,0.55);padding:2px 8px;border-radius:4px;display:inline-block;transform:rotate(${angle}deg);white-space:nowrap;pointer-events:none;cursor:move;">${code || 'ZONE'}</span>`;
+    }
+
+    function createLabelAt(pos, code) {
+        const latInput = document.getElementById('label_lat');
+        const lngInput = document.getElementById('label_lng');
+        const lat = Array.isArray(pos) ? pos[0] : pos.lat;
+        const lng = Array.isArray(pos) ? pos[1] : pos.lng;
+
+        labelMarker = L.marker([lat, lng], {
+            draggable: true,
+            icon: L.divIcon({
+                className: 'zone-label-editor',
+                html: buildLabelHtml(code),
+                iconSize: null,
+                iconAnchor: [0, 0]
+            })
+        }).addTo(editMap);
+
+        latInput.value = lat.toFixed(7);
+        lngInput.value = lng.toFixed(7);
+
+        labelMarker.on('drag', function() {
+            const ll = labelMarker.getLatLng();
+            latInput.value = ll.lat.toFixed(7);
+            lngInput.value = ll.lng.toFixed(7);
+        });
+    }
+
+    function refreshLabelIcon() {
+        if (!labelMarker) return;
+        labelMarker.setIcon(L.divIcon({
+            className: 'zone-label-editor',
+            html: buildLabelHtml(getZoneCode()),
+            iconSize: null,
+            iconAnchor: [0, 0]
+        }));
+    }
+
+    function createMarker(latlng) {
+        const color = getMarkerColor();
+        const marker = L.marker(latlng, { draggable: true, icon: markerIcon(color) }).addTo(editMap);
+        marker.on('dragstart', saveHistory);
+        marker.on('drag', function() { updateCurrentPoly(); updateUI(); });
+        marker.on('contextmenu', function(e) { L.DomEvent.stopPropagation(e); removeMarker(marker); });
+        markers.push(marker);
+    }
+
+    function removeMarker(marker) {
+        saveHistory();
+        const idx = markers.indexOf(marker);
+        if (idx > -1) {
+            editMap.removeLayer(marker);
+            markers.splice(idx, 1);
+            updateCurrentPoly();
+            updateUI();
+        }
+    }
+
+    function updateCurrentPoly() {
+        if (currentPoly) { editMap.removeLayer(currentPoly); currentPoly = null; }
+        if (markers.length >= 3) {
+            currentPoly = L.polygon(markers.map(m => m.getLatLng()), getStyle()).addTo(editMap);
+        }
+        updateHiddenField();
+    }
+
+    function updateMarkerColors() {
+        const color = getMarkerColor();
+        markers.forEach(m => m.setIcon(markerIcon(color)));
+    }
+
+    function completeCurrentShape() {
+        if (markers.length < 3) { showToast('至少需要3个节点才能完成一个区域', 'warning'); return; }
+        saveHistory();
+        const pts = markers.map(m => ({lat: +m.getLatLng().lat.toFixed(6), lng: +m.getLatLng().lng.toFixed(6)}));
+        const poly = L.polygon(markers.map(m => m.getLatLng()), getStyle()).addTo(editMap);
+        shapes.push({ points: pts, polygon: poly });
+
+        markers.forEach(m => editMap.removeLayer(m));
+        markers = [];
+        if (currentPoly) { editMap.removeLayer(currentPoly); currentPoly = null; }
+        updateHiddenField();
+        updateUI();
+
+        if (!labelMarker) {
+            const pos = computeCentroid();
+            if (pos) createLabelAt(pos, getZoneCode());
+        }
+
+        // Show save panel
+        showSavePanel();
+    }
+
+    function deleteShape(index) {
+        saveHistory();
+        const shape = shapes[index];
+        editMap.removeLayer(shape.polygon);
+        shapes.splice(index, 1);
+        updateHiddenField();
+        updateUI();
+    }
+
+    function editShape(index) {
+        if (markers.length > 0) { showToast('请先完成或清除当前正在绘制的区域', 'warning'); return; }
+        saveHistory();
+        const shape = shapes[index];
+        editMap.removeLayer(shape.polygon);
+        const pts = shape.points;
+        shapes.splice(index, 1);
+        pts.forEach(p => createMarker(L.latLng(p.lat, p.lng)));
+        updateCurrentPoly();
+        updateHiddenField();
+        updateUI();
+    }
+
+    function updateHiddenField() {
+        const allPoints = shapes.map(s => s.points);
+        if (markers.length > 0) {
+            allPoints.push(markers.map(m => ({lat: +m.getLatLng().lat.toFixed(6), lng: +m.getLatLng().lng.toFixed(6)})));
+        }
+        document.getElementById('boundary_points').value = JSON.stringify(allPoints);
+    }
+
+    function updateUI() {
+        const savedCount = Object.keys(savedZoneMap).length;
+        document.getElementById('savedCount').textContent = savedCount;
+        document.getElementById('pointCount').textContent = markers.length;
+        updateDrawPanelUI();
+        // Show panel when user starts placing points or has shapes
+        const panel = document.getElementById('mapSavePanel');
+        if (markers.length > 0 || shapes.length > 0) {
+            showDrawPanel();
+        } else if (markers.length === 0 && shapes.length === 0 && panel) {
+            panel.style.display = 'none';
+        }
+
+        const label = document.getElementById('currentShapeLabel');
+        if (shapes.length > 0 && markers.length === 0) {
+            label.textContent = '(区域已完成，请输入编号保存)';
+        } else if (markers.length > 0) {
+            label.textContent = markers.length < 3 ? `(还需 ${3 - markers.length} 个节点)` : '(可点击"完成当前区域")';
+        } else {
+            label.textContent = '(点击地图开始绘制)';
+        }
+
+        // Coordinates list
+        const coordSection = document.getElementById('coordSection');
+        const list = document.getElementById('coordList');
+        if (markers.length > 0) {
+            coordSection.style.display = 'block';
+            list.innerHTML = markers.map((m, i) => {
+                const ll = m.getLatLng();
+                return `<div class="coord-row">
+                    <span>${i+1}</span>
+                    <input type="number" step="any" class="coord-input" value="${ll.lat.toFixed(6)}" data-idx="${i}" data-type="lat">
+                    <input type="number" step="any" class="coord-input" value="${ll.lng.toFixed(6)}" data-idx="${i}" data-type="lng">
+                    <button type="button" class="coord-delete" data-idx="${i}">×</button>
+                </div>`;
+            }).join('');
+            list.querySelectorAll('.coord-input').forEach(inp => {
+                inp.addEventListener('change', function() {
+                    saveHistory();
+                    const m = markers[+this.dataset.idx];
+                    const ll = m.getLatLng();
+                    if (this.dataset.type === 'lat') m.setLatLng([+this.value, ll.lng]);
+                    else m.setLatLng([ll.lat, +this.value]);
+                    updateCurrentPoly();
+                });
+            });
+            list.querySelectorAll('.coord-delete').forEach(btn => {
+                btn.addEventListener('click', function() { removeMarker(markers[+this.dataset.idx]); });
+            });
+        } else {
+            coordSection.style.display = 'none';
+        }
+    }
+
+    function saveHistory() {
+        history.push({
+            shapes: shapes.map(s => s.points.map(p => ({...p}))),
+            current: markers.map(m => ({lat: m.getLatLng().lat, lng: m.getLatLng().lng}))
+        });
+        if (history.length > 30) history.shift();
+        document.getElementById('undoAction').disabled = history.length < 2;
+    }
+
+    function undo() {
+        if (history.length < 2) return;
+        history.pop();
+        const state = history[history.length - 1];
+        shapes.forEach(s => editMap.removeLayer(s.polygon));
+        shapes = [];
+        markers.forEach(m => editMap.removeLayer(m));
+        markers = [];
+        if (currentPoly) { editMap.removeLayer(currentPoly); currentPoly = null; }
+        state.shapes.forEach(pts => {
+            if (pts.length >= 3) {
+                const poly = L.polygon(pts.map(p => [p.lat, p.lng]), getStyle()).addTo(editMap);
+                shapes.push({ points: pts, polygon: poly });
+            }
+        });
+        state.current.forEach(p => createMarker(L.latLng(p.lat, p.lng)));
+        updateCurrentPoly();
+        updateUI();
+        document.getElementById('undoAction').disabled = history.length < 2;
+    }
+
+    function clearAll() {
+        const total = shapes.length + markers.length;
+        if (total === 0) return;
+        if (!confirm('确定清除所有区域和节点吗？')) return;
+        saveHistory();
+        shapes.forEach(s => editMap.removeLayer(s.polygon));
+        shapes = [];
+        markers.forEach(m => editMap.removeLayer(m));
+        markers = [];
+        if (currentPoly) { editMap.removeLayer(currentPoly); currentPoly = null; }
+        if (labelMarker) { editMap.removeLayer(labelMarker); labelMarker = null; }
+        document.getElementById('label_lat').value = '';
+        document.getElementById('label_lng').value = '';
+        updateHiddenField();
+        updateUI();
+        hideSavePanel();
+        editingZoneId = null;
+    }
+
+    function clearDrawingOnly() {
+        shapes.forEach(s => editMap.removeLayer(s.polygon));
+        shapes = [];
+        markers.forEach(m => editMap.removeLayer(m));
+        markers = [];
+        if (currentPoly) { editMap.removeLayer(currentPoly); currentPoly = null; }
+        if (labelMarker) { editMap.removeLayer(labelMarker); labelMarker = null; }
+        document.getElementById('label_lat').value = '';
+        document.getElementById('label_lng').value = '';
+        document.getElementById('boundary_points').value = '[]';
+        history = [];
+        updateUI();
+    }
+
+    function locateUser() {
+        const btn = document.getElementById('locateMe');
+        if (!navigator.geolocation) { showToast('浏览器不支持定位', 'error'); return; }
+        btn.disabled = true; btn.textContent = '定位中...';
+        navigator.geolocation.getCurrentPosition(
+            function(pos) {
+                const lat = pos.coords.latitude, lng = pos.coords.longitude, acc = pos.coords.accuracy;
+                if (userLocationMarker) editMap.removeLayer(userLocationMarker);
+                if (userAccuracyCircle) editMap.removeLayer(userAccuracyCircle);
+                userAccuracyCircle = L.circle([lat, lng], {radius: acc, color: '#1B4332', fillColor: '#2D6A4F', fillOpacity: 0.15, weight: 1}).addTo(editMap);
+                userLocationMarker = L.marker([lat, lng], {icon: L.divIcon({className:'',html:'<div style="background:#D4A574;width:16px;height:16px;border:3px solid white;border-radius:50%;box-shadow:0 0 0 2px #D4A574;"></div>',iconSize:[22,22],iconAnchor:[11,11]})}).addTo(editMap);
+                editMap.flyTo([lat, lng], 17, {animate: true, duration: 1.0});
+                btn.disabled = false; btn.textContent = '定位我';
+            },
+            function(err) { btn.disabled = false; btn.textContent = '定位我'; showToast('无法获取位置', 'error'); },
+            {enableHighAccuracy: true, timeout: 15000, maximumAge: 0}
+        );
+    }
+
+    function autoLocate() {
+        if (!navigator.geolocation) return;
+        navigator.geolocation.getCurrentPosition(
+            function(pos) {
+                const lat = pos.coords.latitude, lng = pos.coords.longitude;
+                if (userLocationMarker) editMap.removeLayer(userLocationMarker);
+                if (userAccuracyCircle) editMap.removeLayer(userAccuracyCircle);
+                userAccuracyCircle = L.circle([lat, lng], {radius: pos.coords.accuracy, color: '#1B4332', fillColor: '#2D6A4F', fillOpacity: 0.15, weight: 1}).addTo(editMap);
+                userLocationMarker = L.marker([lat, lng], {icon: L.divIcon({className:'',html:'<div style="background:#D4A574;width:16px;height:16px;border:3px solid white;border-radius:50%;box-shadow:0 0 0 2px #D4A574;"></div>',iconSize:[22,22],iconAnchor:[11,11]})}).addTo(editMap);
+                if (shapes.length === 0 && markers.length === 0) {
+                    editMap.flyTo([lat, lng], 17, {animate: true, duration: 1.0});
+                }
+            },
+            function() {},
+            {enableHighAccuracy: true, timeout: 15000, maximumAge: 60000}
+        );
+    }
+
+    // ============================================================
+    // Reference layers for saved zones
+    // ============================================================
+    function addZoneToRefLayer(z) {
+        if (!refLayerGroup || !z.boundary_points || z.boundary_points.length === 0) return;
+        const polys = normalizeBoundaryData(z.boundary_points);
+        polys.forEach(pts => {
+            if (pts.length < 3) return;
+            const poly = L.polygon(pts.map(p => [p.lat, p.lng]), {
+                color: '#FFFFFF', weight: 1.5, opacity: 0.6,
+                fillColor: z.boundary_color || '#52B788', fillOpacity: 0.15,
+                interactive: true
+            }).addTo(refLayerGroup);
+            poly._zoneId = z.id;
+            poly._zoneCode = z.code;
+            poly.bindTooltip(`${z.code} ${z.name || ''}`, {sticky: true});
+
+            // Click handler for context menu
+            poly.on('click', function(e) {
+                L.DomEvent.stopPropagation(e);
+                showContextMenu(e.originalEvent, z.id, z.code);
+            });
+        });
+
+        // Add label
+        const scale = z.label_scale || 1.0;
+        const angle = z.label_angle || 0;
+        const fontSize = Math.round(14 * scale);
+        let lat, lng;
+        if (z.label_lat && z.label_lng) {
+            lat = z.label_lat; lng = z.label_lng;
+        } else {
+            const allPts = [];
+            polys.forEach(pts => pts.forEach(p => allPts.push(p)));
+            if (allPts.length === 0) return;
+            const center = allPts.reduce((a, p) => ({lat: a.lat + p.lat, lng: a.lng + p.lng}), {lat: 0, lng: 0});
+            lat = center.lat / allPts.length;
+            lng = center.lng / allPts.length;
+        }
+        const lbl = L.marker([lat, lng], {
+            icon: L.divIcon({
+                className: 'zone-label-editor',
+                html: `<span style="font-size:${fontSize}px;font-weight:600;color:white;background:rgba(0,0,0,0.55);padding:2px 8px;border-radius:4px;display:inline-block;transform:rotate(${angle}deg);white-space:nowrap;pointer-events:none;">${z.code}</span>`,
+                iconSize: null, iconAnchor: [0, 0]
+            }),
+            interactive: false
+        }).addTo(refLayerGroup);
+        refLabels[z.id] = lbl;
+    }
+
+    function removeZoneFromRefLayer(zoneId) {
+        if (!refLayerGroup) return;
+        const toRemove = [];
+        refLayerGroup.eachLayer(function(layer) {
+            if (layer._zoneId === zoneId) toRemove.push(layer);
+        });
+        toRemove.forEach(layer => refLayerGroup.removeLayer(layer));
+        if (refLabels[zoneId]) {
+            refLayerGroup.removeLayer(refLabels[zoneId]);
+            delete refLabels[zoneId];
+        }
+    }
+
+    function rebuildRefLayers() {
+        if (refLayerGroup) { editMap.removeLayer(refLayerGroup); refLayerGroup = null; }
+        refLayerGroup = L.layerGroup().addTo(editMap);
+        Object.values(savedZoneMap).forEach(z => addZoneToRefLayer(z));
+    }
+
+    // ============================================================
+    // Context menu for saved zones
+    // ============================================================
+    function showContextMenu(mouseEvent, zoneId, zoneCode) {
+        const menu = document.getElementById('mapContextMenu');
+        document.getElementById('menuZoneCode').textContent = zoneCode;
+        contextMenuZoneId = zoneId;
+
+        const mapRect = editMap.getContainer().getBoundingClientRect();
+        let x = mouseEvent.clientX - mapRect.left;
+        let y = mouseEvent.clientY - mapRect.top;
+
+        // Keep menu within map bounds
+        if (x + 160 > mapRect.width) x = x - 160;
+        if (y + 120 > mapRect.height) y = y - 120;
+
+        menu.style.left = x + 'px';
+        menu.style.top = y + 'px';
+        menu.style.display = 'block';
+    }
+
+    function hideContextMenu() {
+        document.getElementById('mapContextMenu').style.display = 'none';
+        contextMenuZoneId = null;
+    }
+
+    // ============================================================
+    // Save panel
+    // ============================================================
+    function showSavePanel() {
+        const panel = document.getElementById('mapSavePanel');
+        document.getElementById('panelTitle').textContent = '保存区域边界';
+        updateDrawPanelUI();
+        positionPanel(panel);
+        panel.style.display = 'block';
+        const input = document.getElementById('zoneCodeInput');
+        if (!input.value) input.focus();
+    }
+
+    function showDrawPanel() {
+        const panel = document.getElementById('mapSavePanel');
+        document.getElementById('panelTitle').textContent = '快速绘制';
+        updateDrawPanelUI();
+        positionPanel(panel);
+        panel.style.display = 'block';
+    }
+
+    function updateDrawPanelUI() {
+        const btn = document.getElementById('completeShapeBtn');
+        const count = document.getElementById('panelPointCount');
+        const shapeCount = document.getElementById('panelShapeCount');
+        const saveBtn = document.getElementById('saveBtn');
+        if (btn) btn.disabled = markers.length < 3;
+        if (count) count.textContent = markers.length;
+        if (shapeCount) shapeCount.textContent = shapes.length;
+        // Enable save when there are completed shapes
+        if (saveBtn) saveBtn.disabled = shapes.length === 0;
+    }
+
+    function positionPanel(panel) {
+        const centroid = computeCentroid();
+        if (centroid && editMap) {
+            const point = editMap.latLngToContainerPoint([centroid.lat, centroid.lng]);
+            const mapRect = editMap.getContainer().getBoundingClientRect();
+            const panelW = 260, panelH = 120;
+            let px = point.x - panelW / 2;
+            let py = point.y - panelH - 15;
+            if (py < 10) py = point.y + 15;
+            if (px < 10) px = 10;
+            if (px + panelW > mapRect.width - 10) px = mapRect.width - panelW - 10;
+            if (py + panelH > mapRect.height - 10) py = mapRect.height - panelH - 10;
+            panel.style.left = px + 'px';
+            panel.style.top = py + 'px';
+        } else {
+            panel.style.left = '20px';
+            panel.style.top = '80px';
+        }
+    }
+
+    function hideSavePanel() {
+        const panel = document.getElementById('mapSavePanel');
+        if (panel) panel.style.display = 'none';
+        const inp = document.getElementById('zoneCodeInput');
+        if (inp) inp.value = '';
+        const dd = document.getElementById('zoneDropdown');
+        if (dd) dd.style.display = 'none';
+        const pv = document.getElementById('zonePreview');
+        if (pv) pv.style.display = 'none';
+    }
+
+    // ============================================================
+    // Zone search / autocomplete
+    // ============================================================
+    function setupZoneSearch() {
+        const input = document.getElementById('zoneCodeInput');
+        const dropdown = document.getElementById('zoneDropdown');
+        const preview = document.getElementById('zonePreview');
+        const previewText = document.getElementById('zonePreviewText');
+        const saveBtn = document.getElementById('saveBtn');
+
+        input.addEventListener('input', function() {
+            const query = this.value.trim().toLowerCase();
+            refreshLabelIcon();
+
+            if (!query) {
+                dropdown.style.display = 'none';
+                preview.style.display = 'none';
+                saveBtn.disabled = true;
+                return;
+            }
+
+            // Filter zones
+            const matches = allZones.filter(z =>
+                z.code.toLowerCase().includes(query) || (z.name && z.name.toLowerCase().includes(query))
+            ).slice(0, 15);
+
+            if (matches.length > 0) {
+                let html = '';
+                matches.forEach(z => {
+                    const hasBoundary = !!savedZoneMap[z.id];
+                    html += `<div class="dropdown-item" data-zone-id="${z.id}" data-zone-code="${z.code}">
+                        <span class="di-code">${z.code}</span>
+                        <span class="di-name">${z.name || ''}</span>
+                        ${z.patch_name ? `<span class="di-patch">${z.patch_name}</span>` : ''}
+                        ${hasBoundary ? '<span class="di-boundary">✓ 已有边界</span>' : ''}
+                    </div>`;
+                });
+                dropdown.innerHTML = html;
+                dropdown.style.display = 'block';
+
+                // Attach click handlers
+                dropdown.querySelectorAll('.dropdown-item').forEach(item => {
+                    item.addEventListener('click', function() {
+                        const zId = parseInt(this.dataset.zoneId);
+                        const zCode = this.dataset.zoneCode;
+                        selectZoneForSave(zId, zCode);
+                    });
+                });
+            } else {
+                dropdown.innerHTML = '<div class="dropdown-hint">未找到匹配的区域编号</div>';
+                dropdown.style.display = 'block';
+            }
+
+            // Check if exact match exists
+            const exactMatch = allZones.find(z => z.code.toLowerCase() === query);
+            if (exactMatch) {
+                preview.style.display = 'block';
+                const hasBoundary = !!savedZoneMap[exactMatch.id];
+                previewText.innerHTML = `匹配: <strong>${exactMatch.code}</strong> - ${exactMatch.name || '未命名'}${exactMatch.patch_name ? ` (${exactMatch.patch_name})` : ''}${hasBoundary ? ' <span style="color:var(--color-success);">✓ 将覆盖已有边界</span>' : ''}`;
+                saveBtn.disabled = false;
+            } else {
+                preview.style.display = 'block';
+                previewText.innerHTML = '<span style="color:#9B2226;">未找到匹配的区域，请检查编号</span>';
+                saveBtn.disabled = true;
+            }
+        });
+
+        input.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                const query = this.value.trim().toLowerCase();
+                const match = allZones.find(z => z.code.toLowerCase() === query);
+                if (match) {
+                    selectZoneForSave(match.id, match.code);
+                }
+            } else if (e.key === 'Escape') {
+                dropdown.style.display = 'none';
+            }
+        });
+
+        // Close dropdown on outside click
+        document.addEventListener('click', function(e) {
+            if (!e.target.closest('.zone-input-wrapper')) {
+                dropdown.style.display = 'none';
+            }
+        });
+    }
+
+    function selectZoneForSave(zoneId, zoneCode) {
+        const input = document.getElementById('zoneCodeInput');
+        const dropdown = document.getElementById('zoneDropdown');
+        const preview = document.getElementById('zonePreview');
+        const previewText = document.getElementById('zonePreviewText');
+        const saveBtn = document.getElementById('saveBtn');
+
+        input.value = zoneCode;
+        dropdown.style.display = 'none';
+
+        const z = allZones.find(z => z.id === zoneId);
+        const hasBoundary = !!savedZoneMap[zoneId];
+        preview.style.display = 'block';
+        previewText.innerHTML = `匹配: <strong>${zoneCode}</strong> - ${z ? (z.name || '未命名') : ''}${z && z.patch_name ? ` (${z.patch_name})` : ''}${hasBoundary ? ' <span style="color:var(--color-success);">✓ 将覆盖已有边界</span>' : ''}`;
+        saveBtn.disabled = false;
+        refreshLabelIcon();
+    }
+
+    // ============================================================
+    // Save boundary
+    // ============================================================
+    function saveBoundary() {
+        const code = document.getElementById('zoneCodeInput').value.trim();
+        if (!code) { showToast('请输入区域编号', 'warning'); return; }
+
+        // Auto-complete any in-progress shape
+        if (markers.length >= 3) {
+            completeCurrentShape();
+        }
+
+        if (shapes.length === 0) { showToast('请先绘制至少一个区域边界', 'warning'); return; }
+
+        // Find matching zone
+        const zone = allZones.find(z => z.code === code);
+        if (!zone) {
+            showToast('未找到匹配的区域编号，请检查输入', 'error');
+            return;
+        }
+
+        const btn = document.getElementById('saveBtn');
+        btn.disabled = true;
+        btn.textContent = '保存中...';
+
+        const formData = new FormData();
+        formData.append('zone_code', code);
+        formData.append('boundary_points', document.getElementById('boundary_points').value);
+        formData.append('label_lat', document.getElementById('label_lat').value);
+        formData.append('label_lng', document.getElementById('label_lng').value);
+        formData.append('label_scale', document.getElementById('label_scale').value);
+        formData.append('label_angle', document.getElementById('label_angle').value);
+
+        fetch('/settings/zone/quick-draw/', {
+            method: 'POST',
+            body: formData,
+            headers: {
+                'X-CSRFToken': getCSRF(),
+                'X-Requested-With': 'XMLHttpRequest',
+                'Accept': 'application/json'
+            }
+        })
+        .then(r => r.json())
+        .then(data => {
+            btn.disabled = false;
+            btn.textContent = '保存边界';
+            if (data.success) {
+                showToast(data.message, 'success');
+                // Update saved zones
+                savedZoneMap[data.zone_id] = {
+                    id: data.zone_id,
+                    code: data.zone_code,
+                    name: data.zone_name,
+                    boundary_points: data.boundary_points,
+                    boundary_color: data.boundary_color,
+                    label_lat: data.label_lat,
+                    label_lng: data.label_lng,
+                    label_scale: data.label_scale,
+                    label_angle: data.label_angle,
+                    patch_name: data.patch_name || '',
+                    area_display: data.area_display,
+                    polygon_count: data.boundary_points ? (Array.isArray(data.boundary_points) ? data.boundary_points.length : 0) : 0,
+                };
+                renderSavedList();
+                rebuildRefLayers();
+                clearDrawingOnly();
+                hideSavePanel();
+                editingZoneId = null;
+                updateStats();
+            } else {
+                showToast(data.message || '保存失败', 'error');
+            }
+        })
+        .catch(err => {
+            btn.disabled = false;
+            btn.textContent = '保存边界';
+            showToast('保存失败，请重试', 'error');
+        });
+    }
+
+    // ============================================================
+    // Edit / Delete saved zone boundary
+    // ============================================================
+    function editSavedZone(zoneId) {
+        const z = savedZoneMap[zoneId];
+        if (!z || !z.boundary_points || z.boundary_points.length === 0) return;
+
+        if (shapes.length > 0 || markers.length > 0) {
+            if (!confirm('当前有未保存的绘制内容，确定要编辑此区域吗？')) return;
+        }
+
+        clearDrawingOnly();
+        editingZoneId = zoneId;
+
+        // Remove from ref layer temporarily
+        removeZoneFromRefLayer(zoneId);
+
+        // Load boundary as completed shapes
+        const polys = normalizeBoundaryData(z.boundary_points);
+        polys.forEach(pts => {
+            if (pts.length >= 3) {
+                const poly = L.polygon(pts.map(p => [p.lat, p.lng]), getStyle()).addTo(editMap);
+                shapes.push({ points: pts, polygon: poly });
+            }
+        });
+
+        // Load label settings
+        document.getElementById('label_scale').value = z.label_scale || 1.0;
+        document.getElementById('label_scale_display').textContent = (z.label_scale || 1.0) + 'x';
+        document.getElementById('label_angle').value = z.label_angle || 0;
+
+        if (z.label_lat && z.label_lng) {
+            createLabelAt([z.label_lat, z.label_lng], z.code);
+        } else {
+            const pos = computeCentroid();
+            if (pos) createLabelAt(pos, z.code);
+        }
+
+        // Fly to zone center
+        const allPts = [];
+        polys.forEach(pts => pts.forEach(p => allPts.push(p)));
+        if (allPts.length > 0) {
+            const center = allPts.reduce((a, p) => ({lat: a.lat + p.lat, lng: a.lng + p.lng}), {lat: 0, lng: 0});
+            editMap.flyTo([center.lat / allPts.length, center.lng / allPts.length], 18, {animate: true, duration: 0.8});
+        }
+
+        updateHiddenField();
+        updateUI();
+        showSavePanel();
+        document.getElementById('zoneCodeInput').value = z.code;
+        // Trigger input to show preview
+        document.getElementById('zoneCodeInput').dispatchEvent(new Event('input'));
+
+        showToast(`正在编辑区域 ${z.code}`, 'info');
+    }
+
+    function deleteSavedZone(zoneId) {
+        const z = savedZoneMap[zoneId];
+        if (!z) return;
+        if (!confirm(`确定要删除区域 ${z.code} 的边界吗？`)) return;
+
+        fetch('/settings/zone/quick-draw/', {
+            method: 'POST',
+            body: (() => {
+                const fd = new FormData();
+                fd.append('action', 'delete_boundary');
+                fd.append('zone_code', z.code);
+                return fd;
+            })(),
+            headers: {
+                'X-CSRFToken': getCSRF(),
+                'X-Requested-With': 'XMLHttpRequest',
+                'Accept': 'application/json'
+            }
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                showToast(data.message, 'success');
+                removeZoneFromRefLayer(zoneId);
+                delete savedZoneMap[zoneId];
+                renderSavedList();
+                updateStats();
+                // Update allZones to reflect no boundary
+                const zi = allZones.find(zz => zz.id === zoneId);
+                if (zi) zi.has_boundary = false;
+            } else {
+                showToast(data.message || '删除失败', 'error');
+            }
+        })
+        .catch(() => showToast('删除失败，请重试', 'error'));
+    }
+
+    // ============================================================
+    // Render saved zones list
+    // ============================================================
+    function renderSavedList() {
+        const list = document.getElementById('savedList');
+        const entries = Object.values(savedZoneMap);
+        document.getElementById('savedListCount').textContent = entries.length;
+
+        if (entries.length === 0) {
+            list.innerHTML = '<div style="padding:12px;text-align:center;color:var(--color-text-secondary);font-size:0.82rem;">暂无已绘制区域</div>';
+            return;
+        }
+
+        list.innerHTML = entries.sort((a, b) => (a.code || '').localeCompare(b.code || '')).map(z =>
+            `<div class="zone-list-item" data-zone-id="${z.id}">
+                <span class="zone-code">${z.code}</span>
+                <span class="zone-name">${z.name || ''}</span>
+                ${z.boundary_points ? `<span class="zone-area">${Array.isArray(z.boundary_points) ? z.boundary_points.length : 0}个区域</span>` : ''}
+                <div style="display:flex;gap:4px;margin-left:auto;">
+                    <button type="button" style="font-size:0.72rem;padding:2px 8px;cursor:pointer;background:var(--color-primary);color:white;border:none;border-radius:4px;" onclick="event.stopPropagation();window._editSavedZone(${z.id})">编辑</button>
+                    <button type="button" style="font-size:0.72rem;padding:2px 6px;cursor:pointer;background:#9B2226;color:white;border:none;border-radius:4px;" onclick="event.stopPropagation();window._deleteSavedZone(${z.id})">删除</button>
+                </div>
+            </div>`
+        ).join('');
+    }
+
+    function updateStats() {
+        const savedCount = Object.keys(savedZoneMap).length;
+        const undrawnCount = allZones.filter(z => !savedZoneMap[z.id]).length;
+        document.getElementById('totalZonesCount').textContent = allZones.length;
+        document.getElementById('drawnCount').textContent = savedCount;
+        document.getElementById('undrawnCount').textContent = undrawnCount;
+        document.getElementById('savedCount').textContent = savedCount;
+    }
+
+    // ============================================================
+    // Init
+    // ============================================================
+    document.addEventListener('DOMContentLoaded', function() {
+        // Load zones data
+        try {
+            const zonesEl = document.getElementById('all-zones-data');
+            allZones = zonesEl && zonesEl.textContent ? JSON.parse(zonesEl.textContent) : [];
+        } catch(e) { console.warn('Parse zones error:', e); allZones = []; }
+
+        // Load saved (drawn) zones
+        try {
+            const drawnEl = document.getElementById('all-drawn-zones-data');
+            const drawnZones = drawnEl && drawnEl.textContent ? JSON.parse(drawnEl.textContent) : [];
+            drawnZones.forEach(z => {
+                savedZoneMap[z.id] = {
+                    id: z.id,
+                    code: z.code,
+                    name: z.name,
+                    boundary_points: z.boundary_points,
+                    boundary_color: z.boundary_color,
+                    label_lat: z.label_lat,
+                    label_lng: z.label_lng,
+                    label_scale: z.label_scale,
+                    label_angle: z.label_angle,
+                    patch_name: z.patch_name || '',
+                    area_display: z.area_display || '',
+                    polygon_count: z.boundary_points ? (Array.isArray(z.boundary_points) ? z.boundary_points.length : 0) : 0,
+                };
+                // Mark in allZones
+                const zi = allZones.find(zz => zz.id === z.id);
+                if (zi) zi.has_boundary = true;
+            });
+        } catch(e) { console.warn('Parse drawn zones error:', e); }
+
+        // Map init
+        const centerLat = 31.145794 + 0.010;
+        const centerLng = 121.656804 + 0.012;
+        const latOffset = 0.027;
+        const lngOffset = 0.032;
+        const southWest = L.latLng(centerLat - latOffset, centerLng - lngOffset);
+        const northEast = L.latLng(centerLat + latOffset, centerLng + lngOffset);
+
+        editMap = L.map('editMap', {
+            center: [centerLat, centerLng],
+            zoom: 15, maxZoom: 22, minZoom: 15,
+            maxBounds: L.latLngBounds(southWest, northEast),
+            maxBoundsViscosity: 1.0
+        });
+
+        var satTile = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+            attribution: '&copy; Esri', maxNativeZoom: 19, maxZoom: 22
+        });
+        var fallbackTile = L.tileLayer('https://map.geoq.cn/ArcGIS/rest/services/ChinaOnlineCommunity/MapServer/tile/{z}/{y}/{x}', {
+            attribution: '&copy; GeoQ', minZoom: 19, maxZoom: 22, opacity: 0.7
+        });
+        L.layerGroup([satTile, fallbackTile]).addTo(editMap);
+
+        // Render saved zones on map
+        rebuildRefLayers();
+
+        editMap.on('click', function(e) {
+            hideContextMenu();
+            saveHistory();
+            createMarker(e.latlng);
+            updateCurrentPoly();
+            updateUI();
+        });
+
+        // Wire toolbar buttons
+        document.getElementById('completeShapeBtn').addEventListener('click', completeCurrentShape);
+        document.getElementById('clearBoundary').addEventListener('click', clearAll);
+        document.getElementById('undoAction').addEventListener('click', undo);
+        document.getElementById('locateMe').addEventListener('click', locateUser);
+
+        // Color picker
+        const colorPicker = document.getElementById('boundary_color');
+        const colorText = document.getElementById('boundary_color_text');
+        colorPicker.addEventListener('input', function() {
+            colorText.value = this.value.toUpperCase();
+            updateCurrentPoly(); updateMarkerColors();
+            shapes.forEach(s => s.polygon.setStyle(getStyle()));
+        });
+        colorText.addEventListener('input', function() {
+            const val = this.value.trim();
+            if (/^#[0-9A-Fa-f]{6}$/.test(val)) {
+                colorPicker.value = val;
+                updateCurrentPoly(); updateMarkerColors();
+                shapes.forEach(s => s.polygon.setStyle(getStyle()));
+            }
+        });
+        colorText.addEventListener('blur', function() {
+            if (!/^#[0-9A-Fa-f]{6}$/.test(this.value.trim())) this.value = colorPicker.value.toUpperCase();
+        });
+
+        // Label controls
+        document.getElementById('label_scale').addEventListener('input', function() {
+            document.getElementById('label_scale_display').textContent = parseFloat(this.value).toFixed(1) + 'x';
+            refreshLabelIcon();
+        });
+        document.getElementById('label_angle').addEventListener('input', refreshLabelIcon);
+
+        // Save / Cancel buttons
+        document.getElementById('saveBtn').addEventListener('click', saveBoundary);
+        document.getElementById('mapPanelClose').addEventListener('click', function() {
+            clearDrawingOnly();
+            hideSavePanel();
+            editingZoneId = null;
+            rebuildRefLayers();
+        });
+        document.getElementById('cancelSaveBtn').addEventListener('click', function() {
+            clearDrawingOnly();
+            hideSavePanel();
+            editingZoneId = null;
+            // Re-add to ref layer if was editing
+            rebuildRefLayers();
+        });
+
+        // Context menu actions
+        document.getElementById('menuEditBtn').addEventListener('click', function() {
+            if (contextMenuZoneId) editSavedZone(contextMenuZoneId);
+            hideContextMenu();
+        });
+        document.getElementById('menuDeleteBtn').addEventListener('click', function() {
+            if (contextMenuZoneId) deleteSavedZone(contextMenuZoneId);
+            hideContextMenu();
+        });
+
+        // Close context menu on map click
+        editMap.on('click', hideContextMenu);
+
+        // Setup zone search
+        setupZoneSearch();
+
+        // Initial render
+        renderSavedList();
+        updateStats();
+        updateUI();
+        autoLocate();
+
+        // Reposition panel on map move
+        editMap.on('move', function() {
+            const panel = document.getElementById('mapSavePanel');
+            if (panel && panel.style.display !== 'none') {
+                positionPanel(panel);
+            }
+        });
+
+        // Init history
+        saveHistory();
+    });
+
+    // Expose for inline onclick handlers
+    window._editSavedZone = editSavedZone;
+    window._deleteSavedZone = deleteSavedZone;
+})();
+</script>
+{% endblock %}
