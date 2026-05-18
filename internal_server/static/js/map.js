@@ -277,7 +277,7 @@
             interactive: false,
             icon: L.divIcon({
                 className: 'zone-label',
-                html: `<span style="font-size:${size}px;${rotation}">${code}</span>`,
+                html: `<div style="transform:translate(-50%,-50%);white-space:nowrap;"><span style="font-size:${size}px;${rotation}">${code}</span></div>`,
                 iconSize: null,
                 iconAnchor: [0, 0]
             })
@@ -1301,7 +1301,7 @@
                         interactive: false,
                         icon: L.divIcon({
                             className: 'landmark-label',
-                            html: '<span style="font-weight:600;color:' + lm.boundary_color + ';text-shadow:0 0 4px white,0 0 4px white;">' + lm.name + '</span>',
+                            html: '<div style="transform:translate(-50%,-50%);white-space:nowrap;"><span style="font-weight:600;color:' + lm.boundary_color + ';text-shadow:0 0 4px white,0 0 4px white;">' + lm.name + '</span></div>',
                             iconSize: null,
                             iconAnchor: [0, 0],
                         })

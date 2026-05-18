@@ -379,7 +379,7 @@ window.showToast = function(msg, type) {
     function buildLabelHtml(code) {
         const { scale, angle } = getLabelStyle();
         const fontSize = Math.round(14 * scale);
-        return `<span style="font-size:${fontSize}px;font-weight:600;color:white;background:rgba(0,0,0,0.55);padding:2px 8px;border-radius:4px;display:inline-block;transform:rotate(${angle}deg);white-space:nowrap;pointer-events:none;cursor:move;">${code || 'ZONE'}</span>`;
+        return `<div style="transform:translate(-50%,-50%) rotate(${angle}deg);white-space:nowrap;pointer-events:none;cursor:move;"><span style="font-size:${fontSize}px;font-weight:600;color:white;background:rgba(0,0,0,0.55);padding:2px 8px;border-radius:4px;display:inline-block;">${code || 'ZONE'}</span></div>`;
     }
 
     function createLabelAt(pos, code) {
@@ -817,7 +817,7 @@ window.showToast = function(msg, type) {
         const lbl = L.marker([lat, lng], {
             icon: L.divIcon({
                 className: 'zone-label-editor',
-                html: `<span style="font-size:${fontSize}px;font-weight:600;color:white;background:rgba(0,0,0,0.55);padding:2px 8px;border-radius:4px;display:inline-block;transform:rotate(${angle}deg);white-space:nowrap;pointer-events:none;">${z.code}</span>`,
+                html: `<div style="transform:translate(-50%,-50%) rotate(${angle}deg);white-space:nowrap;pointer-events:none;"><span style="font-size:${fontSize}px;font-weight:600;color:white;background:rgba(0,0,0,0.55);padding:2px 8px;border-radius:4px;display:inline-block;">${z.code}</span></div>`,
                 iconSize: null, iconAnchor: [0, 0]
             }),
             interactive: false
