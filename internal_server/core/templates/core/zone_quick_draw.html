@@ -120,67 +120,7 @@
     .zone-list-item .zone-patch { font-size: 0.7rem; color: var(--color-text-secondary); }
     .zone-list-item .zone-area { font-size: 0.75rem; color: var(--color-text-secondary); }
 
-    /* Floating save panel on map */
-    .map-save-panel {
-        position: absolute; z-index: 550; background: white; border-radius: 10px;
-        box-shadow: 0 4px 20px rgba(0,0,0,0.2); min-width: 220px; max-width: 280px;
-        display: none; overflow: hidden; animation: slideIn 0.3s ease;
-        border: 2px solid var(--color-primary);
-    }
-    .map-save-panel .panel-header {
-        background: var(--color-primary); color: white; padding: 6px 12px;
-        font-size: 0.82rem; font-weight: 600; display: flex; justify-content: space-between; align-items: center;
-    }
-    .map-save-panel .panel-header button {
-        background: none; border: none; color: white; cursor: pointer; font-size: 1.1rem; padding: 0 2px;
-    }
-    .map-save-panel .panel-body { padding: 8px 12px; }
-    .map-save-panel .zone-input-wrapper { position: relative; }
-    .map-save-panel .zone-input {
-        width: 100%; padding: 6px 8px; border: 2px solid var(--color-primary);
-        border-radius: 6px; font-size: 0.85rem; box-sizing: border-box;
-        font-weight: 600; background: white;
-    }
-    .map-save-panel .zone-dropdown {
-        position: absolute; top: 100%; left: 0; right: 0; background: white;
-        border: 1px solid var(--color-surface-dark); border-top: none;
-        border-radius: 0 0 8px 8px; max-height: 200px; overflow-y: auto;
-        z-index: 560; display: none; box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-    }
-    .map-save-panel .zone-dropdown .dropdown-item {
-        padding: 7px 10px; cursor: pointer; font-size: 0.82rem;
-        border-bottom: 1px solid var(--color-surface);
-        display: flex; justify-content: space-between; align-items: center;
-    }
-    .map-save-panel .zone-dropdown .dropdown-item:hover { background: var(--color-surface); }
-    .map-save-panel .zone-dropdown .dropdown-item .di-code { font-weight: 600; font-family: monospace; }
-    .map-save-panel .zone-dropdown .dropdown-item .di-name { color: var(--color-text-secondary); margin-left: 6px; flex: 1; }
-    .map-save-panel .zone-dropdown .dropdown-item .di-patch { font-size: 0.7rem; color: var(--color-text-secondary); background: var(--color-surface); padding: 1px 5px; border-radius: 3px; }
-    .map-save-panel .zone-dropdown .dropdown-item .di-boundary { font-size: 0.68rem; color: var(--color-success); }
-    .map-save-panel .zone-dropdown .dropdown-hint {
-        padding: 7px 10px; font-size: 0.75rem; color: var(--color-text-secondary);
-        background: var(--color-surface); font-style: italic;
-    }
-    .map-save-panel .panel-preview { margin-top: 6px; font-size: 0.78rem; color: var(--color-text-secondary); }
-    .map-save-panel .panel-actions { display: flex; gap: 6px; margin-top: 8px; }
-    .map-save-panel .save-btn {
-        flex: 1; padding: 8px; border: none; border-radius: 8px;
-        background: var(--color-primary); color: white; font-size: 0.88rem;
-        cursor: pointer; font-weight: 600; transition: opacity 0.15s;
-    }
-    .map-save-panel .save-btn:hover { opacity: 0.9; }
-    .map-save-panel .save-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-    .map-save-panel .cancel-btn {
-        padding: 8px 12px; border: 1px solid var(--color-surface-dark); border-radius: 8px;
-        background: white; color: var(--color-text-secondary); font-size: 0.82rem;
-        cursor: pointer; transition: background 0.15s;
-    }
-    /* connector arrow */
-    .map-save-panel::before {
-        content: ''; position: absolute; bottom: -8px; left: 50%; transform: translateX(-50%);
-        width: 0; height: 0; border-left: 8px solid transparent; border-right: 8px solid transparent;
-        border-top: 8px solid var(--color-primary);
-    }
+    /* Draw controls are in sidebar */
 
     /* Context menu on map click */
     .map-context-menu {
@@ -268,30 +208,7 @@
             </div>
 
             <div id="editMap"></div>
-            <!-- Floating panel on map -->
-            <div id="mapSavePanel" class="map-save-panel" style="display:none;">
-                <div class="panel-header">
-                    <span id="panelTitle">快速绘制</span>
-                    <button type="button" id="mapPanelClose" title="关闭">&times;</button>
-                </div>
-                <div class="panel-body">
-                    <div class="zone-input-wrapper">
-                        <input type="text" id="zoneCodeInput" class="zone-input" placeholder="输入区域编号..." autocomplete="off">
-                        <div id="zoneDropdown" class="zone-dropdown"></div>
-                    </div>
-                    <div id="zonePreview" class="panel-preview" style="display:none;">
-                        <span id="zonePreviewText"></span>
-                    </div>
-                    <div style="display:flex;gap:4px;align-items:center;margin-top:6px;font-size:0.78rem;color:var(--color-text-secondary);">
-                        节点: <strong id="panelPointCount">0</strong>/3 | 已完成: <strong id="panelShapeCount">0</strong> 个区域
-                    </div>
-                    <div style="display:flex;gap:6px;margin-top:6px;">
-                        <button type="button" id="completeShapeBtn" style="flex:1;padding:7px;border:none;border-radius:6px;background:var(--color-surface-dark);color:var(--color-text);font-size:0.82rem;cursor:pointer;font-weight:500;" disabled>完成当前区域</button>
-                        <button type="button" id="saveBtn" style="flex:1;padding:7px;border:none;border-radius:6px;background:var(--color-primary);color:white;font-size:0.82rem;cursor:pointer;font-weight:600;" disabled>保存</button>
-                    </div>
-                    <button type="button" id="cancelSaveBtn" style="width:100%;padding:5px;border:1px solid var(--color-surface-dark);border-radius:6px;background:white;color:var(--color-text-secondary);font-size:0.78rem;cursor:pointer;margin-top:4px;">取消</button>
-                </div>
-            </div>
+
 
 
             <div class="batch-coords" id="coordSection" style="display:none;">
@@ -318,6 +235,26 @@
                 </div>
             </div>
 
+
+            <!-- Draw controls card -->
+            <div class="sidebar-card" id="drawControlsCard">
+                <h3>绘制控制</h3>
+                <div class="zone-input-wrapper">
+                    <input type="text" id="zoneCodeInput" class="zone-input" placeholder="输入区域编号..." autocomplete="off">
+                    <div id="zoneDropdown" class="zone-dropdown"></div>
+                </div>
+                <div id="zonePreview" class="panel-preview" style="display:none;margin-top:6px;font-size:0.8rem;color:var(--color-text-secondary);">
+                    <span id="zonePreviewText"></span>
+                </div>
+                <div style="display:flex;gap:4px;align-items:center;margin-top:8px;font-size:0.78rem;color:var(--color-text-secondary);">
+                    节点: <strong id="panelPointCount">0</strong>/3 | 已完成: <strong id="panelShapeCount">0</strong> 个区域
+                </div>
+                <div style="display:flex;gap:6px;margin-top:8px;">
+                    <button type="button" id="completeShapeBtn" style="flex:1;padding:8px;border:none;border-radius:6px;background:var(--color-surface-dark);color:var(--color-text);font-size:0.82rem;cursor:pointer;font-weight:500;" disabled>完成当前区域</button>
+                    <button type="button" id="saveBtn" style="flex:1;padding:8px;border:none;border-radius:6px;background:var(--color-primary);color:white;font-size:0.82rem;cursor:pointer;font-weight:600;" disabled>保存</button>
+                </div>
+                <button type="button" id="cancelSaveBtn" style="width:100%;padding:6px;border:1px solid var(--color-surface-dark);border-radius:6px;background:white;color:var(--color-text-secondary);font-size:0.78rem;cursor:pointer;margin-top:6px;">取消绘制</button>
+            </div>
 
             <!-- Saved zones list -->
             <div class="sidebar-card saved-list" id="savedListCard">
@@ -556,13 +493,6 @@ window.showToast = function(msg, type) {
         document.getElementById('savedCount').textContent = savedCount;
         document.getElementById('pointCount').textContent = markers.length;
         updateDrawPanelUI();
-        // Show panel when user starts placing points or has shapes
-        const panel = document.getElementById('mapSavePanel');
-        if (markers.length > 0 || shapes.length > 0) {
-            showDrawPanel();
-        } else if (markers.length === 0 && shapes.length === 0 && panel) {
-            panel.style.display = 'none';
-        }
 
         const label = document.getElementById('currentShapeLabel');
         if (shapes.length > 0 && markers.length === 0) {
@@ -804,21 +734,13 @@ window.showToast = function(msg, type) {
     // Save panel
     // ============================================================
     function showSavePanel() {
-        const panel = document.getElementById('mapSavePanel');
-        document.getElementById('panelTitle').textContent = '保存区域边界';
         updateDrawPanelUI();
-        positionPanel(panel);
-        panel.style.display = 'block';
         const input = document.getElementById('zoneCodeInput');
         if (!input.value) input.focus();
     }
 
     function showDrawPanel() {
-        const panel = document.getElementById('mapSavePanel');
-        document.getElementById('panelTitle').textContent = '快速绘制';
         updateDrawPanelUI();
-        positionPanel(panel);
-        panel.style.display = 'block';
     }
 
     function updateDrawPanelUI() {
@@ -833,29 +755,9 @@ window.showToast = function(msg, type) {
         if (saveBtn) saveBtn.disabled = shapes.length === 0;
     }
 
-    function positionPanel(panel) {
-        const centroid = computeCentroid();
-        if (centroid && editMap) {
-            const point = editMap.latLngToContainerPoint([centroid.lat, centroid.lng]);
-            const mapRect = editMap.getContainer().getBoundingClientRect();
-            const panelW = 260, panelH = 120;
-            let px = point.x - panelW / 2;
-            let py = point.y - panelH - 15;
-            if (py < 10) py = point.y + 15;
-            if (px < 10) px = 10;
-            if (px + panelW > mapRect.width - 10) px = mapRect.width - panelW - 10;
-            if (py + panelH > mapRect.height - 10) py = mapRect.height - panelH - 10;
-            panel.style.left = px + 'px';
-            panel.style.top = py + 'px';
-        } else {
-            panel.style.left = '20px';
-            panel.style.top = '80px';
-        }
-    }
+
 
     function hideSavePanel() {
-        const panel = document.getElementById('mapSavePanel');
-        if (panel) panel.style.display = 'none';
         const inp = document.getElementById('zoneCodeInput');
         if (inp) inp.value = '';
         const dd = document.getElementById('zoneDropdown');
@@ -1282,12 +1184,6 @@ window.showToast = function(msg, type) {
 
         // Save / Cancel buttons
         document.getElementById('saveBtn').addEventListener('click', saveBoundary);
-        document.getElementById('mapPanelClose').addEventListener('click', function() {
-            clearDrawingOnly();
-            hideSavePanel();
-            editingZoneId = null;
-            rebuildRefLayers();
-        });
         document.getElementById('cancelSaveBtn').addEventListener('click', function() {
             clearDrawingOnly();
             hideSavePanel();
@@ -1320,10 +1216,6 @@ window.showToast = function(msg, type) {
 
         // Reposition panel on map move
         editMap.on('move', function() {
-            const panel = document.getElementById('mapSavePanel');
-            if (panel && panel.style.display !== 'none') {
-                positionPanel(panel);
-            }
         });
 
         // Init history
