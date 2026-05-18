@@ -18,6 +18,7 @@ build/
 *.log
 local_settings.py
 staticfiles/
+db.sqlite3
 
 # IDE
 .idea/

@@ -493,19 +493,23 @@
     to { opacity: 1; transform: translateY(0); }
 }
 
-.leaflet-top.leaflet-right {
-    top: 18px;
-    right: 18px;
-}
+  .leaflet-top.leaflet-right {
+      top: 18px;
+      right: 18px;
+      z-index: 1000;
+  }
 
-.leaflet-top.leaflet-right .leaflet-control {
-    margin: 0;
-}
+  .leaflet-top.leaflet-right .leaflet-control {
+      margin: 0;
+  }
 
-.map-layer-panel {
-    top: 70px;
-    right: 18px;
-}
+  .map-layer-panel {
+      position: absolute !important;
+      top: 18px !important;
+      right: 70px !important;
+      z-index: 2000 !important;
+      display: block !important;
+  }
 
 .locate-btn,
 .map-layer-toggle-btn {
