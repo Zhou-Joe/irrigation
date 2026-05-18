@@ -451,12 +451,55 @@ window.showToast = function(msg, type) {
         markers.forEach(m => m.setIcon(markerIcon(color)));
     }
 
-    function makeShapeEditable(poly, shapeIndex) {
-        poly.on('click', function(e) {
-            L.DomEvent.stopPropagation(e);
-            editShape(shapeIndex);
+    function addVertexMarkers(shape) {
+        // Add small draggable markers at each vertex of the polygon
+        if (shape.vertexMarkers) {
+            shape.vertexMarkers.forEach(m => editMap.removeLayer(m));
+        }
+        shape.vertexMarkers = [];
+        shape.points.forEach((pt, idx) => {
+            const vm = L.marker([pt.lat, pt.lng], {
+                draggable: true,
+                icon: L.divIcon({
+                    className: 'boundary-vertex',
+                    html: '<div style="width:12px;height:12px;background:' + getMarkerColor() + ';border:2px solid white;border-radius:50%;cursor:grab;box-shadow:0 1px 4px rgba(0,0,0,0.3);"></div>',
+                    iconSize: [14, 14], iconAnchor: [7, 7]
+                })
+            }).addTo(editMap);
+            vm.on('dragstart', function() { saveHistory(); });
+            vm.on('drag', function() {
+                const ll = vm.getLatLng();
+                shape.points[idx] = { lat: +ll.lat.toFixed(6), lng: +ll.lng.toFixed(6) };
+                shape.polygon.setLatLngs(shape.points.map(p => [p.lat, p.lng]));
+                updateHiddenField();
+                updateUI();
+            });
+            vm.on('contextmenu', function(e) {
+                L.DomEvent.stopPropagation(e);
+                // Remove this vertex if shape has more than 3 points
+                if (shape.points.length > 3) {
+                    saveHistory();
+                    editMap.removeLayer(vm);
+                    shape.points.splice(idx, 1);
+                    shape.vertexMarkers.splice(idx, 1);
+                    shape.polygon.setLatLngs(shape.points.map(p => [p.lat, p.lng]));
+                    // Re-add markers to fix indices
+                    addVertexMarkers(shape);
+                    updateHiddenField();
+                    updateUI();
+                } else {
+                    showToast('至少需要3个节点', 'warning');
+                }
+            });
+            shape.vertexMarkers.push(vm);
         });
-        poly.setStyle({ weight: 3, dashArray: '6,4' });
+    }
+
+    function removeVertexMarkers(shape) {
+        if (shape.vertexMarkers) {
+            shape.vertexMarkers.forEach(m => editMap.removeLayer(m));
+            shape.vertexMarkers = null;
+        }
     }
 
     function completeCurrentShape() {
@@ -465,7 +508,7 @@ window.showToast = function(msg, type) {
         const pts = markers.map(m => ({lat: +m.getLatLng().lat.toFixed(6), lng: +m.getLatLng().lng.toFixed(6)}));
         const poly = L.polygon(markers.map(m => m.getLatLng()), getStyle()).addTo(editMap);
         shapes.push({ points: pts, polygon: poly });
-        makeShapeEditable(poly, shapes.length - 1);
+        addVertexMarkers(shapes[shapes.length - 1]);
 
         markers.forEach(m => editMap.removeLayer(m));
         markers = [];
@@ -485,13 +528,9 @@ window.showToast = function(msg, type) {
     function deleteShape(index) {
         saveHistory();
         const shape = shapes[index];
+        removeVertexMarkers(shape);
         editMap.removeLayer(shape.polygon);
         shapes.splice(index, 1);
-        // Re-attach click handlers for remaining shapes
-        shapes.forEach((s, i) => {
-            s.polygon.off('click');
-            makeShapeEditable(s.polygon, i);
-        });
         updateHiddenField();
         updateUI();
     }
@@ -500,14 +539,10 @@ window.showToast = function(msg, type) {
         if (markers.length > 0) { showToast('请先完成或清除当前正在绘制的区域', 'warning'); return; }
         saveHistory();
         const shape = shapes[index];
+        removeVertexMarkers(shape);
         editMap.removeLayer(shape.polygon);
         const pts = shape.points;
         shapes.splice(index, 1);
-        // Re-attach click handlers for remaining shapes (indices shifted)
-        shapes.forEach((s, i) => {
-            s.polygon.off('click');
-            makeShapeEditable(s.polygon, i);
-        });
         pts.forEach(p => createMarker(L.latLng(p.lat, p.lng)));
         updateCurrentPoly();
         updateHiddenField();
@@ -568,20 +603,16 @@ window.showToast = function(msg, type) {
             coordSection.style.display = 'none';
         }
 
-        // Render completed shapes list
+        // Render completed shapes list (delete only - vertices are directly draggable)
         const shapesList = document.getElementById('shapesList');
         if (shapesList && shapes.length > 0) {
             shapesList.innerHTML = shapes.map((s, i) => {
                 const ptCount = s.points.length;
                 return '<div class="shape-list-item">' +
-                    '<span class="shape-label">区域 ' + (i+1) + ' (' + ptCount + '点)</span>' +
-                    '<button class="edit-shape-btn" data-idx="' + i + '" title="编辑此区域">✏️</button>' +
+                    '<span class="shape-label">区域 ' + (i+1) + ' (' + ptCount + '点) <span style="color:var(--color-text-secondary);font-size:0.72rem;">可直接拖动顶点</span></span>' +
                     '<button class="delete-shape-btn" data-idx="' + i + '" title="删除此区域">✕</button>' +
                     '</div>';
             }).join('');
-            shapesList.querySelectorAll('.edit-shape-btn').forEach(btn => {
-                btn.addEventListener('click', function() { editShape(+this.dataset.idx); });
-            });
             shapesList.querySelectorAll('.delete-shape-btn').forEach(btn => {
                 btn.addEventListener('click', function() { deleteShape(+this.dataset.idx); });
             });
@@ -603,7 +634,7 @@ window.showToast = function(msg, type) {
         if (history.length < 2) return;
         history.pop();
         const state = history[history.length - 1];
-        shapes.forEach(s => editMap.removeLayer(s.polygon));
+        shapes.forEach(s => { removeVertexMarkers(s); editMap.removeLayer(s.polygon); });
         shapes = [];
         markers.forEach(m => editMap.removeLayer(m));
         markers = [];
@@ -612,6 +643,7 @@ window.showToast = function(msg, type) {
             if (pts.length >= 3) {
                 const poly = L.polygon(pts.map(p => [p.lat, p.lng]), getStyle()).addTo(editMap);
                 shapes.push({ points: pts, polygon: poly });
+                addVertexMarkers(shapes[shapes.length - 1]);
             }
         });
         state.current.forEach(p => createMarker(L.latLng(p.lat, p.lng)));
@@ -625,7 +657,7 @@ window.showToast = function(msg, type) {
         if (total === 0) return;
         if (!confirm('确定清除所有区域和节点吗？')) return;
         saveHistory();
-        shapes.forEach(s => editMap.removeLayer(s.polygon));
+        shapes.forEach(s => { removeVertexMarkers(s); editMap.removeLayer(s.polygon); });
         shapes = [];
         markers.forEach(m => editMap.removeLayer(m));
         markers = [];
@@ -640,7 +672,7 @@ window.showToast = function(msg, type) {
     }
 
     function clearDrawingOnly() {
-        shapes.forEach(s => editMap.removeLayer(s.polygon));
+        shapes.forEach(s => { removeVertexMarkers(s); editMap.removeLayer(s.polygon); });
         shapes = [];
         markers.forEach(m => editMap.removeLayer(m));
         markers = [];
@@ -1024,13 +1056,13 @@ window.showToast = function(msg, type) {
         // Remove from ref layer temporarily
         removeZoneFromRefLayer(zoneId);
 
-        // Load boundary as completed shapes (clickable to edit)
+        // Load boundary as completed shapes with draggable vertices
         const polys = normalizeBoundaryData(z.boundary_points);
         polys.forEach(pts => {
             if (pts.length >= 3) {
                 const poly = L.polygon(pts.map(p => [p.lat, p.lng]), getStyle()).addTo(editMap);
                 shapes.push({ points: pts, polygon: poly });
-                makeShapeEditable(poly, shapes.length - 1);
+                addVertexMarkers(shapes[shapes.length - 1]);
             }
         });
 
