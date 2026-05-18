@@ -285,6 +285,36 @@
         label._zone = zone;
         labelsLayerGroup.addLayer(label);
         zoneLabels.push(label);
+
+        // Add leader lines from label to each polygon centroid (for multi-boundary zones)
+        if (isMultiPolygonFormat(zone.boundary_points) && zone.boundary_points.length > 1) {
+            label._leaderLines = [];
+            zone.boundary_points.forEach(ring => {
+                const ringPts = pointsToLatLngs(ring);
+                if (ringPts.length < 3) return;
+                // Compute ring centroid
+                let latSum = 0, lngSum = 0;
+                ringPts.forEach(p => {
+                    const lat = Array.isArray(p) ? p[0] : p.lat;
+                    const lng = Array.isArray(p) ? p[1] : p.lng;
+                    latSum += lat; lngSum += lng;
+                });
+                const ringCenter = [latSum / ringPts.length, lngSum / ringPts.length];
+                // Don't draw if ring center is very close to label (< 10m)
+                const dist = L.latLng(center).distanceTo(L.latLng(ringCenter));
+                if (dist < 10) return;
+                const line = L.polyline([center, ringCenter], {
+                    color: zone.boundary_color || '#2D6A4F',
+                    weight: 1,
+                    opacity: 0.35,
+                    dashArray: '4,4',
+                    interactive: false
+                });
+                labelsLayerGroup.addLayer(line);
+                label._leaderLines.push(line);
+            });
+        }
+
         return label;
     }
 
@@ -318,6 +348,13 @@
                     const span = el.querySelector('span');
                     if (span) span.style.fontSize = size + 'px';
                 }
+            }
+            // Show/hide leader lines with labels
+            if (label._leaderLines) {
+                label._leaderLines.forEach(line => {
+                    const el = line.getElement();
+                    if (el) el.style.display = showLabels ? '' : 'none';
+                });
             }
         });
         // Landmark labels: same zoom-based scaling, no per-item scale
