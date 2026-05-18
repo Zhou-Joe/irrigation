@@ -120,6 +120,19 @@
     .zone-list-item .zone-patch { font-size: 0.7rem; color: var(--color-text-secondary); }
     .zone-list-item .zone-area { font-size: 0.75rem; color: var(--color-text-secondary); }
 
+    /* Completed shapes list */
+    .shape-list-item {
+        display: flex; align-items: center; gap: 6px; padding: 4px 8px;
+        border-radius: 4px; font-size: 0.78rem; margin-bottom: 3px;
+        background: var(--color-surface); border: 1px solid var(--color-surface-dark);
+    }
+    .shape-list-item .shape-label { flex: 1; color: var(--color-text-secondary); }
+    .shape-list-item button {
+        background: none; border: none; cursor: pointer; font-size: 0.82rem; padding: 2px 4px;
+    }
+    .shape-list-item .edit-shape-btn { color: var(--color-primary); }
+    .shape-list-item .delete-shape-btn { color: #9B2226; }
+
     /* Draw controls are in sidebar */
 
     /* Context menu on map click */
@@ -249,6 +262,7 @@
                 <div style="display:flex;gap:4px;align-items:center;margin-top:8px;font-size:0.78rem;color:var(--color-text-secondary);">
                     节点: <strong id="panelPointCount">0</strong>/3 | 已完成: <strong id="panelShapeCount">0</strong> 个区域
                 </div>
+                <div id="shapesList" style="margin-top:6px;"></div>
                 <div style="display:flex;gap:6px;margin-top:8px;">
                     <button type="button" id="completeShapeBtn" style="flex:1;padding:8px;border:none;border-radius:6px;background:var(--color-surface-dark);color:var(--color-text);font-size:0.82rem;cursor:pointer;font-weight:500;" disabled>完成当前区域</button>
                     <button type="button" id="saveBtn" style="flex:1;padding:8px;border:none;border-radius:6px;background:var(--color-primary);color:white;font-size:0.82rem;cursor:pointer;font-weight:600;" disabled>保存</button>
@@ -436,12 +450,21 @@ window.showToast = function(msg, type) {
         markers.forEach(m => m.setIcon(markerIcon(color)));
     }
 
+    function makeShapeEditable(poly, shapeIndex) {
+        poly.on('click', function(e) {
+            L.DomEvent.stopPropagation(e);
+            editShape(shapeIndex);
+        });
+        poly.setStyle({ weight: 3, dashArray: '6,4' });
+    }
+
     function completeCurrentShape() {
         if (markers.length < 3) { showToast('至少需要3个节点才能完成一个区域', 'warning'); return; }
         saveHistory();
         const pts = markers.map(m => ({lat: +m.getLatLng().lat.toFixed(6), lng: +m.getLatLng().lng.toFixed(6)}));
         const poly = L.polygon(markers.map(m => m.getLatLng()), getStyle()).addTo(editMap);
         shapes.push({ points: pts, polygon: poly });
+        makeShapeEditable(poly, shapes.length - 1);
 
         markers.forEach(m => editMap.removeLayer(m));
         markers = [];
@@ -463,6 +486,11 @@ window.showToast = function(msg, type) {
         const shape = shapes[index];
         editMap.removeLayer(shape.polygon);
         shapes.splice(index, 1);
+        // Re-attach click handlers for remaining shapes
+        shapes.forEach((s, i) => {
+            s.polygon.off('click');
+            makeShapeEditable(s.polygon, i);
+        });
         updateHiddenField();
         updateUI();
     }
@@ -474,6 +502,11 @@ window.showToast = function(msg, type) {
         editMap.removeLayer(shape.polygon);
         const pts = shape.points;
         shapes.splice(index, 1);
+        // Re-attach click handlers for remaining shapes (indices shifted)
+        shapes.forEach((s, i) => {
+            s.polygon.off('click');
+            makeShapeEditable(s.polygon, i);
+        });
         pts.forEach(p => createMarker(L.latLng(p.lat, p.lng)));
         updateCurrentPoly();
         updateHiddenField();
@@ -532,6 +565,27 @@ window.showToast = function(msg, type) {
             });
         } else {
             coordSection.style.display = 'none';
+        }
+
+        // Render completed shapes list
+        const shapesList = document.getElementById('shapesList');
+        if (shapesList && shapes.length > 0) {
+            shapesList.innerHTML = shapes.map((s, i) => {
+                const ptCount = s.points.length;
+                return '<div class="shape-list-item">' +
+                    '<span class="shape-label">区域 ' + (i+1) + ' (' + ptCount + '点)</span>' +
+                    '<button class="edit-shape-btn" data-idx="' + i + '" title="编辑此区域">✏️</button>' +
+                    '<button class="delete-shape-btn" data-idx="' + i + '" title="删除此区域">✕</button>' +
+                    '</div>';
+            }).join('');
+            shapesList.querySelectorAll('.edit-shape-btn').forEach(btn => {
+                btn.addEventListener('click', function() { editShape(+this.dataset.idx); });
+            });
+            shapesList.querySelectorAll('.delete-shape-btn').forEach(btn => {
+                btn.addEventListener('click', function() { deleteShape(+this.dataset.idx); });
+            });
+        } else if (shapesList) {
+            shapesList.innerHTML = '';
         }
     }
 
@@ -969,14 +1023,23 @@ window.showToast = function(msg, type) {
         // Remove from ref layer temporarily
         removeZoneFromRefLayer(zoneId);
 
-        // Load boundary as completed shapes
+        // Load boundary as completed shapes (clickable to edit)
         const polys = normalizeBoundaryData(z.boundary_points);
         polys.forEach(pts => {
             if (pts.length >= 3) {
                 const poly = L.polygon(pts.map(p => [p.lat, p.lng]), getStyle()).addTo(editMap);
                 shapes.push({ points: pts, polygon: poly });
+                makeShapeEditable(poly, shapes.length - 1);
             }
         });
+
+        // Pre-fill zone code input
+        const zoneInput = document.getElementById('zoneCodeInput');
+        zoneInput.value = z.code || '';
+        const zonePreview = document.getElementById('zonePreview');
+        const zonePreviewText = document.getElementById('zonePreviewText');
+        zonePreview.style.display = 'block';
+        zonePreviewText.innerHTML = '编辑: <strong>' + (z.code || '') + '</strong> - ' + (z.name || '未命名');
 
         // Load label settings
         document.getElementById('label_scale').value = z.label_scale || 1.0;
