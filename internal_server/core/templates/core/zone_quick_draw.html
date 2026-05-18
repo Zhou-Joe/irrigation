@@ -457,6 +457,7 @@ window.showToast = function(msg, type) {
             shape.vertexMarkers.forEach(m => editMap.removeLayer(m));
         }
         shape.vertexMarkers = [];
+
         shape.points.forEach((pt, idx) => {
             const vm = L.marker([pt.lat, pt.lng], {
                 draggable: true,
@@ -476,14 +477,12 @@ window.showToast = function(msg, type) {
             });
             vm.on('contextmenu', function(e) {
                 L.DomEvent.stopPropagation(e);
-                // Remove this vertex if shape has more than 3 points
                 if (shape.points.length > 3) {
                     saveHistory();
                     editMap.removeLayer(vm);
                     shape.points.splice(idx, 1);
                     shape.vertexMarkers.splice(idx, 1);
                     shape.polygon.setLatLngs(shape.points.map(p => [p.lat, p.lng]));
-                    // Re-add markers to fix indices
                     addVertexMarkers(shape);
                     updateHiddenField();
                     updateUI();
@@ -492,6 +491,60 @@ window.showToast = function(msg, type) {
                 }
             });
             shape.vertexMarkers.push(vm);
+        });
+
+        // Click on polygon edge to insert a new vertex
+        shape.polygon.off('click');
+        shape.polygon.on('click', function(e) {
+            L.DomEvent.stopPropagation(e);
+            saveHistory();
+
+            const clickLatLng = e.latlng;
+            const pts = shape.points;
+            const n = pts.length;
+
+            // Find the closest edge (segment between two consecutive vertices)
+            let bestIdx = 0;
+            let bestDist = Infinity;
+            let bestPoint = null;
+
+            for (let i = 0; i < n; i++) {
+                const j = (i + 1) % n;
+                const A = L.latLng(pts[i].lat, pts[i].lng);
+                const B = L.latLng(pts[j].lat, pts[j].lng);
+                const P = clickLatLng;
+
+                // Project P onto segment AB
+                const ab = [B.lng - A.lng, B.lat - A.lat];
+                const ap = [P.lng - A.lng, P.lat - A.lat];
+                const abLen2 = ab[0]*ab[0] + ab[1]*ab[1];
+                let t = abLen2 > 0 ? (ap[0]*ab[0] + ap[1]*ab[1]) / abLen2 : 0;
+                t = Math.max(0, Math.min(1, t));
+
+                const projLng = A.lng + t * ab[0];
+                const projLat = A.lat + t * ab[1];
+                const proj = L.latLng(projLat, projLng);
+                const d = P.distanceTo(proj);
+
+                if (d < bestDist) {
+                    bestDist = d;
+                    bestIdx = j; // Insert before this index
+                    bestPoint = { lat: +projLat.toFixed(6), lng: +projLng.toFixed(6) };
+                }
+            }
+
+            // If click is very close to an existing vertex, ignore (don't insert duplicate)
+            for (let i = 0; i < n; i++) {
+                const d = clickLatLng.distanceTo(L.latLng(pts[i].lat, pts[i].lng));
+                if (d < 5) return; // Within 5 meters of existing vertex, skip
+            }
+
+            // Insert new vertex
+            pts.splice(bestIdx, 0, bestPoint);
+            shape.polygon.setLatLngs(pts.map(p => [p.lat, p.lng]));
+            addVertexMarkers(shape); // Rebuild markers with updated indices
+            updateHiddenField();
+            updateUI();
         });
     }
 
