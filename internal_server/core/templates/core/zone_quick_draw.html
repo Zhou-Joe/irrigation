@@ -995,7 +995,7 @@ window.showToast = function(msg, type) {
         polys.forEach(pts => pts.forEach(p => allPts.push(p)));
         if (allPts.length > 0) {
             const center = allPts.reduce((a, p) => ({lat: a.lat + p.lat, lng: a.lng + p.lng}), {lat: 0, lng: 0});
-            editMap.flyTo([center.lat / allPts.length, center.lng / allPts.length], 18, {animate: true, duration: 0.8});
+            editMap.panTo([center.lat / allPts.length, center.lng / allPts.length], {animate: true, duration: 0.8});
         }
 
         updateHiddenField();
