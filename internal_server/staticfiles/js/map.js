@@ -43,6 +43,9 @@
     // Zone label layers group (separate from boundaries for independent toggle)
     let labelsLayerGroup;
 
+    // Leader lines layer group (separate from labels for independent toggle)
+    let leaderLinesLayerGroup;
+
     // Landmark overlay layers group (off by default, toggled via layer control)
     let landmarksLayerGroup;
 
@@ -182,6 +185,9 @@
         // Initialize labels layer group (separate for independent layer control)
         labelsLayerGroup = L.layerGroup().addTo(map);
 
+        // Initialize leader lines layer group (separate for independent layer control)
+        leaderLinesLayerGroup = L.layerGroup().addTo(map);
+
         // Initialize landmarks layer group (not added by default - user toggles via layer control)
         landmarksLayerGroup = L.layerGroup();
 
@@ -307,7 +313,7 @@
                     opacity: 0.55,
                     interactive: false
                 });
-                labelsLayerGroup.addLayer(line);
+                leaderLinesLayerGroup.addLayer(line);
                 label._leaderLines.push(line);
             });
         }
@@ -367,6 +373,7 @@
     function renderZones(zones) {
         zonesLayerGroup.clearLayers();
         labelsLayerGroup.clearLayers();
+        if (leaderLinesLayerGroup) leaderLinesLayerGroup.clearLayers();
         zoneLabels = [];
 
         zones.forEach(zone => {
@@ -1270,6 +1277,12 @@
                 updateLabelSizes();
             } else {
                 if (map.hasLayer(labelsLayerGroup)) map.removeLayer(labelsLayerGroup);
+            }
+        } else if (layer === 'leader_lines') {
+            if (visible) {
+                if (!map.hasLayer(leaderLinesLayerGroup)) map.addLayer(leaderLinesLayerGroup);
+            } else {
+                if (map.hasLayer(leaderLinesLayerGroup)) map.removeLayer(leaderLinesLayerGroup);
             }
         } else if (layer === 'pipelines') {
             if (visible) {
