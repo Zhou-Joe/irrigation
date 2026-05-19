@@ -605,13 +605,18 @@
         }
 
         function saveBoundary() {
-            const code = document.getElementById('zoneCodeInput').value.trim();
+            let code;
+            if (editingZoneId && savedZoneMap[editingZoneId]) {
+                code = savedZoneMap[editingZoneId].code;
+            } else {
+                code = document.getElementById('zoneCodeInput').value.trim();
+            }
             if (!code) { showToast('请输入区域编号', 'warning'); return; }
             if (markers.length >= 3) completeCurrentShape();
             if (shapes.length === 0) { showToast('请先绘制至少一个区域边界', 'warning'); return; }
             const zone = allZones.find(z => z.code === code);
             if (!zone) { showToast('未找到匹配的区域编号', 'error'); return; }
-            const btn = document.getElementById('savePopupConfirm');
+            const btn = editingZoneId ? document.getElementById('saveBtn') : document.getElementById('savePopupConfirm');
             btn.disabled = true; btn.textContent = '保存中...';
             const formData = new FormData();
             formData.append('zone_code', code);
@@ -623,14 +628,14 @@
             fetch('/settings/zone/quick-draw/mobile/', { method:'POST', body:formData, headers:{'X-CSRFToken':getCSRF(),'X-Requested-With':'XMLHttpRequest','Accept':'application/json'} })
             .then(r => r.json())
             .then(data => {
-                btn.disabled = false; btn.textContent = '确认保存';
+                btn.disabled = false; btn.textContent = editingZoneId ? '保存' : '确认保存';
                 if (data.success) {
                     showToast(data.message, 'success');
                     savedZoneMap[data.zone_id] = { id:data.zone_id, code:data.zone_code, name:data.zone_name, boundary_points:data.boundary_points, boundary_color:data.boundary_color, label_lat:data.label_lat, label_lng:data.label_lng, label_scale:data.label_scale, label_angle:data.label_angle, patch_name:data.patch_name||'', area_display:data.area_display, polygon_count:data.boundary_points?data.boundary_points.length:0 };
                     rebuildRefLayers(); clearDrawingOnly(); hideSavePopup(); editingZoneId = null; updateStats();
                 } else { showToast(data.message || '保存失败', 'error'); }
             })
-            .catch(() => { btn.disabled = false; btn.textContent = '确认保存'; showToast('保存失败，请重试', 'error'); });
+            .catch(() => { btn.disabled = false; btn.textContent = editingZoneId ? '保存' : '确认保存'; showToast('保存失败，请重试', 'error'); });
         }
 
         function editSavedZone(zoneId) {
@@ -705,7 +710,7 @@
             document.getElementById('fabClear').addEventListener('click', clearAll);
 
             // Wire action bar
-            document.getElementById('saveBtn').addEventListener('click', function() { if (shapes.length > 0) showSavePopup(); });
+            document.getElementById('saveBtn').addEventListener('click', function() { if (shapes.length > 0) { if (editingZoneId) saveBoundary(); else showSavePopup(); } });
             document.getElementById('cancelSaveBtn').addEventListener('click', function() { clearDrawingOnly(); editingZoneId = null; rebuildRefLayers(); isDrawing = false; document.getElementById('fabDraw').classList.remove('active'); updateUI(); });
 
             // Wire save popup
