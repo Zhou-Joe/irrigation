@@ -62,7 +62,7 @@
         weight: 2,
         opacity: 0.8,
         fillColor: '#2D6A4F',
-        fillOpacity: 0.25
+        fillOpacity: 0.12
     };
 
     // Highlighted/selected zone style
@@ -71,7 +71,7 @@
         weight: 3,
         opacity: 1,
         fillColor: '#D4A574',
-        fillOpacity: 0.4
+        fillOpacity: 0.25
     };
 
     // Status-based polygon styling (from design system)
@@ -79,59 +79,59 @@
         completed: {
             color: '#40916C',
             weight: 2,
-            opacity: 0.8,
+            opacity: 0.7,
             fillColor: '#40916C',
-            fillOpacity: 0.35
+            fillOpacity: 0.15
         },
         in_progress: {
             color: '#CC7722',
             weight: 2,
-            opacity: 0.8,
+            opacity: 0.7,
             fillColor: '#CC7722',
-            fillOpacity: 0.35
+            fillOpacity: 0.15
         },
         unarranged: {
             color: '#888888',
             weight: 2,
-            opacity: 0.8,
+            opacity: 0.7,
             fillColor: '#888888',
-            fillOpacity: 0.25
+            fillOpacity: 0.12
         },
         canceled: {
             color: '#9B2226',
             weight: 2,
-            opacity: 0.8,
+            opacity: 0.7,
             fillColor: '#9B2226',
-            fillOpacity: 0.25
+            fillOpacity: 0.12
         },
         delayed: {
             color: '#7B5544',
             weight: 2,
-            opacity: 0.8,
+            opacity: 0.7,
             fillColor: '#7B5544',
-            fillOpacity: 0.35
+            fillOpacity: 0.15
         },
         // Legacy status names for backwards compatibility
         done: {
             color: '#40916C',
             weight: 2,
-            opacity: 0.8,
+            opacity: 0.7,
             fillColor: '#40916C',
-            fillOpacity: 0.35
+            fillOpacity: 0.15
         },
         working: {
             color: '#CC7722',
             weight: 2,
-            opacity: 0.8,
+            opacity: 0.7,
             fillColor: '#CC7722',
-            fillOpacity: 0.35
+            fillOpacity: 0.15
         },
         scheduled: {
             color: '#52B788',
             weight: 2,
-            opacity: 0.8,
+            opacity: 0.7,
             fillColor: '#52B788',
-            fillOpacity: 0.25
+            fillOpacity: 0.12
         }
     };
 
@@ -285,6 +285,33 @@
         label._zone = zone;
         labelsLayerGroup.addLayer(label);
         zoneLabels.push(label);
+
+        // Add leader lines from label to each polygon centroid (for multi-boundary zones)
+        if (isMultiPolygonFormat(zone.boundary_points) && zone.boundary_points.length > 1) {
+            label._leaderLines = [];
+            zone.boundary_points.forEach(ring => {
+                const ringPts = pointsToLatLngs(ring);
+                if (ringPts.length < 3) return;
+                let latSum = 0, lngSum = 0;
+                ringPts.forEach(p => {
+                    const lat = Array.isArray(p) ? p[0] : p.lat;
+                    const lng = Array.isArray(p) ? p[1] : p.lng;
+                    latSum += lat; lngSum += lng;
+                });
+                const ringCenter = [latSum / ringPts.length, lngSum / ringPts.length];
+                const dist = L.latLng(center).distanceTo(L.latLng(ringCenter));
+                if (dist < 10) return;
+                const line = L.polyline([center, ringCenter], {
+                    color: zone.boundary_color || '#2D6A4F',
+                    weight: 2.5,
+                    opacity: 0.55,
+                    interactive: false
+                });
+                labelsLayerGroup.addLayer(line);
+                label._leaderLines.push(line);
+            });
+        }
+
         return label;
     }
 
@@ -353,9 +380,9 @@
                     zoneStyle = {
                         color: zone.boundary_color,
                         weight: 2,
-                        opacity: 0.8,
+                        opacity: 0.7,
                         fillColor: zone.boundary_color,
-                        fillOpacity: 0.25
+                        fillOpacity: 0.15
                     };
                 } else {
                     zoneStyle = getStyleForStatus(zone.status);
@@ -1213,7 +1240,7 @@
                 const matchLm = matchLandmark(layer.zoneData.id);
                 const matchPa = matchPatch(layer.zoneData);
                 if (matchPriority && matchPlant && matchLm && matchPa) {
-                    layer.setStyle({ opacity: 0.8, fillOpacity: 0.25 });
+                    layer.setStyle({ opacity: 0.7, fillOpacity: 0.15 });
                 } else {
                     layer.setStyle({ opacity: 0.1, fillOpacity: 0.03 });
                 }
