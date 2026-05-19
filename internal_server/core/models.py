@@ -14,7 +14,7 @@ ROLE_DEPT_USER = 'dept_user'
 ROLE_CHOICES = [
     (ROLE_SUPER_ADMIN, '超级管理员'),
     (ROLE_MANAGER, '管理员'),
-    (ROLE_FIELD_WORKER, '现场工作人员'),
+    (ROLE_FIELD_WORKER, '灌溉一线'),
     (ROLE_DEPT_USER, '部门用户'),
 ]
 

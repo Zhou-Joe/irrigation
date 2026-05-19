@@ -387,7 +387,7 @@ def profile_page(request):
             worker = Worker.objects.get(user=user, active=True)
             profile_type = 'worker'
             profile_data = {
-                'type': '现场工作人员',
+                'type': '灌溉一线',
                 'employee_id': worker.employee_id,
                 'full_name': worker.full_name,
                 'phone': worker.phone,
@@ -1829,7 +1829,7 @@ def zone_batch_draw_zones_api(request):
 @ensure_csrf_cookie
 def zone_quick_draw(request):
     """Quick zone boundary drawing page — draw first, assign zone code after."""
-    from .models import ManagerProfile
+    from .models import ManagerProfile, Worker
 
     is_admin = request.user.is_superuser or request.user.is_staff
     if not is_admin:
@@ -1840,8 +1840,11 @@ def zone_quick_draw(request):
             pass
 
     if not is_admin:
-        messages.error(request, '无权限访问此页面')
-        return redirect('core:dashboard')
+        try:
+            Worker.objects.get(user=request.user, active=True)
+        except Worker.DoesNotExist:
+            messages.error(request, '无权限访问此页面')
+            return redirect('core:dashboard')
 
     if request.method == 'POST':
         action = request.POST.get('action', '')
@@ -1953,7 +1956,7 @@ def zone_quick_draw(request):
 
 def zone_quick_draw_mobile(request):
     """Mobile-optimized quick zone boundary drawing page."""
-    from .models import ManagerProfile
+    from .models import ManagerProfile, Worker
 
     is_admin = request.user.is_superuser or request.user.is_staff
     if not is_admin:
@@ -1964,8 +1967,11 @@ def zone_quick_draw_mobile(request):
             pass
 
     if not is_admin:
-        messages.error(request, '无权限访问此页面')
-        return redirect('core:dashboard')
+        try:
+            Worker.objects.get(user=request.user, active=True)
+        except Worker.DoesNotExist:
+            messages.error(request, '无权限访问此页面')
+            return redirect('core:dashboard')
 
     if request.method == 'POST':
         action = request.POST.get('action', '')
@@ -3755,7 +3761,7 @@ def user_management(request):
             'phone': w.phone,
             'department': w.get_department_display_name() if hasattr(w, 'get_department_display_name') else (w.department_other or w.department),
             'role': ROLE_FIELD_WORKER,
-            'role_display': '现场工作人员',
+            'role_display': '灌溉一线',
             'active': w.active,
         })
 

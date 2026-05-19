@@ -207,7 +207,6 @@
             <a href="{% url 'core:dashboard' %}" class="top-nav-brand">灌溉管理系统</a>
             <button type="button" class="mobile-hamburger" id="mobileHamburger" onclick="toggleMobileNav()">☰</button>
             <div class="top-nav-links" id="topNavLinks">
-                {% if is_admin %}
                 <div class="nav-dropdown">
                     <a href="javascript:void(0)" class="nav-dropdown-toggle {% block nav_quickdraw %}{% endblock %}" onclick="toggleQuickDrawMenu(event)">快速绘制 ▾</a>
                     <div class="nav-dropdown-menu" id="quickDrawMenu">
@@ -215,7 +214,6 @@
                         <a href="{% url 'core:zone_quick_draw_mobile' %}">手机版</a>
                     </div>
                 </div>
-                {% endif %}
                 <a href="{% url 'core:dashboard' %}" class="{% block nav_dashboard %}{% endblock %}">地图总览</a>
                 <a href="{% url 'core:work_reports' %}" class="{% block nav_work_reports %}{% endblock %}">维修日志</a>
                 <a href="{% url 'core:demands' %}" class="{% block nav_demands %}{% endblock %}">需求日志</a>
@@ -243,7 +241,6 @@
         <a href="{% url 'core:requests' %}" class="{% block nav_requests_m %}{% endblock %}">工单管理</a>
         <a href="{% url 'core:stats_dashboard' %}" class="{% block nav_stats_m %}{% endblock %}">数据报表</a>
         <a href="{% url 'core:custom_report' %}" class="{% block nav_custom_report_m %}{% endblock %}">自定义报表</a>
-        {% if is_admin %}
         <div class="mobile-sub-menu">
             <a href="javascript:void(0)" class="mobile-sub-toggle" onclick="this.parentElement.classList.toggle('open')">快速绘制 ▾</a>
             <div class="mobile-sub-items">
@@ -251,6 +248,7 @@
                 <a href="{% url 'core:zone_quick_draw_mobile' %}">手机版</a>
             </div>
         </div>
+        {% if is_admin %}
         <a href="{% url 'core:settings' %}" class="{% block nav_settings_m %}{% endblock %}">区域管理</a>
         <a href="{% url 'core:user_management' %}" class="{% block nav_user_mgmt_m %}{% endblock %}">用户管理</a>
         {% endif %}
