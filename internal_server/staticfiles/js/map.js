@@ -55,9 +55,6 @@
     // Landmark label markers
     let landmarkLabels = [];
 
-    // Currently highlighted layer
-    let highlightedLayer = null;
-
     // Design system status-based polygon colors
     // Default zone style (fallback when no status)
     const defaultStyle = {
@@ -802,13 +799,37 @@
      * Handle mouse over event on zone
      * @param {Event} e - Leaflet event
      */
+
+    // Currently highlighted zone ID (for multi-polygon highlighting)
+    let highlightedZoneId = null;
+
+    function highlightZonePolygons(zoneId) {
+        if (highlightedZoneId === zoneId) return;
+        unhighlightZonePolygons();
+        highlightedZoneId = zoneId;
+        zonesLayerGroup.eachLayer(function(layer) {
+            if (layer.zoneData && layer.zoneData.id === zoneId) {
+                layer.setStyle(highlightStyle);
+                layer.bringToFront();
+            }
+        });
+    }
+
+    function unhighlightZonePolygons() {
+        if (highlightedZoneId === null) return;
+        const prevId = highlightedZoneId;
+        highlightedZoneId = null;
+        zonesLayerGroup.eachLayer(function(layer) {
+            if (layer.zoneData && layer.zoneData.id === prevId) {
+                layer.setStyle(layer.originalStyle || defaultStyle);
+            }
+        });
+    }
+
     function handleMouseOver(e) {
         const layer = e.target;
-        if (highlightedLayer !== layer) {
-            highlightedLayer = layer;
-            layer.setStyle(highlightStyle);
-            layer.bringToFront();
-        }
+        const zoneId = layer.zoneData?.id;
+        if (zoneId) highlightZonePolygons(zoneId);
     }
 
     /**
@@ -816,12 +837,7 @@
      * @param {Event} e - Leaflet event
      */
     function handleMouseOut(e) {
-        const layer = e.target;
-        if (highlightedLayer === layer) {
-            highlightedLayer = null;
-            // Restore original status-based style
-            layer.setStyle(layer.originalStyle || defaultStyle);
-        }
+        unhighlightZonePolygons();
     }
 
     /**
@@ -833,22 +849,7 @@
         const zoneId = layer.zoneData?.id;
 
         if (zoneId) {
-            // Reset previously highlighted layer
-            if (highlightedLayer && highlightedLayer !== layer) {
-                highlightedLayer.setStyle(highlightedLayer.originalStyle || defaultStyle);
-            }
-            highlightedLayer = layer;
-            layer.setStyle(highlightStyle);
-            layer.bringToFront();
-
-            // Zoom to the clicked zone with animation (disabled)
-            // if (layer.getBounds()) {
-            //     map.flyToBounds(layer.getBounds(), {
-            //         padding: [50, 50],
-            //         duration: 0.8,
-            //         easeLinearity: 0.25
-            //     });
-            // }
+            highlightZonePolygons(zoneId);
 
             // Highlight the corresponding sidebar item
             highlightSidebarItem(zoneId);
