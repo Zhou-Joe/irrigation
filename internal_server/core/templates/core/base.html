@@ -103,14 +103,119 @@
             background: rgba(255,255,255,0.12);
             color: #fff;
         }
+
+        /* Mobile hamburger */
+        .mobile-hamburger {
+            display: none;
+            background: none; border: none; color: white; font-size: 1.4rem;
+            cursor: pointer; padding: 4px 8px; border-radius: 6px;
+        }
+        .mobile-hamburger:active { background: rgba(255,255,255,0.12); }
+
+        .mobile-nav-overlay {
+            display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.35); z-index: 1998;
+            opacity: 0; pointer-events: none; transition: opacity 0.2s;
+        }
+        .mobile-nav-overlay.visible { opacity: 1; pointer-events: auto; }
+
+        .mobile-nav-dropdown {
+            display: none; position: fixed; top: 52px; left: 8px; right: 8px;
+            background: white; border-radius: 12px; z-index: 1999;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.18); overflow: hidden;
+            transform: translateY(-10px); opacity: 0; pointer-events: none;
+            transition: transform 0.2s, opacity 0.2s;
+        }
+        .mobile-nav-dropdown.visible { transform: translateY(0); opacity: 1; pointer-events: auto; }
+        .mobile-nav-dropdown a {
+            display: block; padding: 14px 18px; color: var(--color-text);
+            text-decoration: none; font-size: 0.92rem; border-bottom: 1px solid var(--color-surface);
+        }
+        .mobile-nav-dropdown a:last-child { border-bottom: none; }
+        .mobile-nav-dropdown a:active { background: var(--color-surface); }
+        .mobile-nav-dropdown a.active { color: var(--color-primary); font-weight: 600; background: rgba(45,106,79,0.06); }
+
+        /* Desktop nav dropdown (快速绘制) */
+        .nav-dropdown { position: relative; display: inline-block; }
+        .nav-dropdown-toggle {
+            color: rgba(245, 240, 232, 0.8) !important; text-decoration: none;
+            padding: 6px 14px; border-radius: 6px; font-size: 0.88rem; font-weight: 500;
+            transition: background 150ms, color 150ms; cursor: pointer;
+        }
+        .nav-dropdown-toggle:hover, .nav-dropdown-toggle.active {
+            background: rgba(255,255,255,0.12); color: #fff !important;
+        }
+        .nav-dropdown-menu {
+            display: none; position: absolute; top: 100%; left: 0; margin-top: 4px;
+            background: white; border-radius: 8px; min-width: 110px; z-index: 2000;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.15); overflow: hidden;
+        }
+        .nav-dropdown-menu.open { display: block; }
+        .nav-dropdown-menu a {
+            display: block; padding: 10px 16px; color: #1C1C1C !important;
+            text-decoration: none; font-size: 0.85rem; white-space: nowrap;
+        }
+        .nav-dropdown-menu a:hover { background: var(--color-surface); }
+
+        /* Mobile sub-menu (快速绘制) */
+        .mobile-sub-menu { border-bottom: 1px solid var(--color-surface); }
+        .mobile-sub-toggle {
+            display: block; padding: 14px 18px; color: var(--color-text);
+            text-decoration: none; font-size: 0.92rem; cursor: pointer;
+        }
+        .mobile-sub-items { display: none; }
+        .mobile-sub-menu.open .mobile-sub-items { display: block; }
+        .mobile-sub-items a {
+            display: block; padding: 12px 18px 12px 36px; color: var(--color-text-secondary);
+            text-decoration: none; font-size: 0.88rem; border-bottom: 1px solid var(--color-surface);
+        }
+        .mobile-sub-items a:last-child { border-bottom: none; }
+        .mobile-sub-items a:active { background: var(--color-surface); }
+
+        @media (max-width: 768px) {
+            .mobile-hamburger { display: block; }
+            .mobile-nav-overlay { display: block; }
+            .mobile-nav-dropdown { display: block; }
+            .top-nav-left { gap: 8px !important; }
+            .top-nav-brand { font-size: 0.95rem !important; }
+        }
+
     </style>
+    <script>
+    function toggleMobileNav() {
+        document.getElementById('mobileNavDropdown').classList.toggle('visible');
+        document.getElementById('mobileNavOverlay').classList.toggle('visible');
+    }
+    function toggleQuickDrawMenu(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        var menu = document.getElementById('quickDrawMenu');
+        menu.classList.toggle('open');
+    }
+    document.addEventListener('click', function(e) {
+        var menu = document.getElementById('quickDrawMenu');
+        if (menu && menu.classList.contains('open') && !e.target.closest('.nav-dropdown')) {
+            menu.classList.remove('open');
+        }
+    });
+    </script>
 </head>
 <body>
     {% if user.is_authenticated %}
     <nav class="top-nav">
         <div class="top-nav-left">
             <a href="{% url 'core:dashboard' %}" class="top-nav-brand">灌溉管理系统</a>
-            <div class="top-nav-links">
+            <button type="button" class="mobile-hamburger" id="mobileHamburger" onclick="toggleMobileNav()">☰</button>
+            <div class="top-nav-links" id="topNavLinks">
+                {% if is_admin %}
+                <div class="nav-dropdown">
+                    <a href="javascript:void(0)" class="nav-dropdown-toggle {% block nav_quickdraw %}{% endblock %}" onclick="toggleQuickDrawMenu(event)">快速绘制 ▾</a>
+                    <div class="nav-dropdown-menu" id="quickDrawMenu">
+                        <a href="{% url 'core:zone_quick_draw' %}">电脑版</a>
+                        <a href="{% url 'core:zone_quick_draw_mobile' %}">手机版</a>
+                    </div>
+                </div>
+                {% endif %}
                 <a href="{% url 'core:dashboard' %}" class="{% block nav_dashboard %}{% endblock %}">地图总览</a>
                 <a href="{% url 'core:work_reports' %}" class="{% block nav_work_reports %}{% endblock %}">维修日志</a>
                 <a href="{% url 'core:demands' %}" class="{% block nav_demands %}{% endblock %}">需求日志</a>
@@ -119,7 +224,6 @@
                 <a href="{% url 'core:custom_report' %}" class="{% block nav_custom_report %}{% endblock %}">自定义报表</a>
                 {% if is_admin %}
                 <a href="{% url 'core:settings' %}" class="{% block nav_settings %}{% endblock %}">区域管理</a>
-                <a href="{% url 'core:zone_quick_draw' %}" class="{% block nav_quickdraw %}{% endblock %}">快速绘制</a>
                 <a href="{% url 'core:user_management' %}" class="{% block nav_user_mgmt %}{% endblock %}">
                     用户管理{% if pending_registrations %}<span style="background:var(--color-warning);color:#fff;padding:1px 6px;border-radius:10px;font-size:0.7rem;margin-left:4px;">{{ pending_registrations }}</span>{% endif %}
                 </a>
@@ -131,6 +235,28 @@
             <a href="{% url 'core:logout' %}" class="top-nav-logout">退出</a>
         </div>
     </nav>
+    <div class="mobile-nav-overlay" id="mobileNavOverlay" onclick="toggleMobileNav()"></div>
+    <div class="mobile-nav-dropdown" id="mobileNavDropdown">
+        <a href="{% url 'core:dashboard' %}" class="{% block nav_dashboard_m %}{% endblock %}">地图总览</a>
+        <a href="{% url 'core:work_reports' %}" class="{% block nav_work_reports_m %}{% endblock %}">维修日志</a>
+        <a href="{% url 'core:demands' %}" class="{% block nav_demands_m %}{% endblock %}">需求日志</a>
+        <a href="{% url 'core:requests' %}" class="{% block nav_requests_m %}{% endblock %}">工单管理</a>
+        <a href="{% url 'core:stats_dashboard' %}" class="{% block nav_stats_m %}{% endblock %}">数据报表</a>
+        <a href="{% url 'core:custom_report' %}" class="{% block nav_custom_report_m %}{% endblock %}">自定义报表</a>
+        {% if is_admin %}
+        <div class="mobile-sub-menu">
+            <a href="javascript:void(0)" class="mobile-sub-toggle" onclick="this.parentElement.classList.toggle('open')">快速绘制 ▾</a>
+            <div class="mobile-sub-items">
+                <a href="{% url 'core:zone_quick_draw' %}">电脑版</a>
+                <a href="{% url 'core:zone_quick_draw_mobile' %}">手机版</a>
+            </div>
+        </div>
+        <a href="{% url 'core:settings' %}" class="{% block nav_settings_m %}{% endblock %}">区域管理</a>
+        <a href="{% url 'core:user_management' %}" class="{% block nav_user_mgmt_m %}{% endblock %}">用户管理</a>
+        {% endif %}
+        <a href="{% url 'core:profile' %}">{{ user.get_full_name|default:user.username }}</a>
+        <a href="{% url 'core:logout' %}">退出</a>
+    </div>
     {% endif %}
 
     {% block content %}{% endblock %}
