@@ -867,6 +867,21 @@ window.showToast = function(msg, type) {
             interactive: false
         }).addTo(refLayerGroup);
         refLabels[z.id] = lbl;
+
+        // Leader lines: label → each boundary centroid (multi-boundary zones only)
+        if (polys.length > 1) {
+            polys.forEach(pts => {
+                if (pts.length < 3) return;
+                const rLat = pts.reduce((s, p) => s + p.lat, 0) / pts.length;
+                const rLng = pts.reduce((s, p) => s + p.lng, 0) / pts.length;
+                const dist = L.latLng(lat, lng).distanceTo(L.latLng(rLat, rLng));
+                if (dist < 10) return;
+                const line = L.polyline([[lat, lng], [rLat, rLng]], {
+                    color: z.boundary_color || '#2D6A4F', weight: 2.5, opacity: 0.55, interactive: false
+                }).addTo(refLayerGroup);
+                line._zoneId = z.id;
+            });
+        }
     }
 
     function removeZoneFromRefLayer(zoneId) {

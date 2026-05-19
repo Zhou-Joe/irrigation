@@ -1411,6 +1411,7 @@ def zone_edit(request, zone_id):
             messages.error(request, '边界点数据格式有误，请重新绘制区域边界后重试')
             return redirect('core:zone_edit', zone_id=zone.id)
 
+        zone.drawn_by = request.user
         zone.save()
 
         # Handle plants - JSON array in hidden field
@@ -1582,6 +1583,7 @@ def zone_new(request):
                 'boundary_json': boundary_json,
             })
 
+        zone.drawn_by = request.user
         zone.save()
 
         # Handle plants - JSON array with full details
@@ -1733,6 +1735,7 @@ def zone_batch_draw(request):
         zone.label_scale = float(request.POST.get('label_scale', '1.0') or '1.0')
         zone.label_angle = int(request.POST.get('label_angle', '0') or '0')
 
+        zone.drawn_by = request.user
         zone.save()
 
         return JsonResponse({
@@ -1853,6 +1856,7 @@ def zone_quick_draw(request):
                 zone.boundary_points = []
                 zone.label_lat = None
                 zone.label_lng = None
+                zone.drawn_by = None
                 zone.save()
                 return JsonResponse({'success': True, 'message': f'区域 {zone.code} 边界已删除'})
             except Zone.DoesNotExist:
@@ -1883,6 +1887,7 @@ def zone_quick_draw(request):
         zone.label_lng = float(label_lng) if label_lng else None
         zone.label_scale = float(request.POST.get('label_scale', '1.0') or '1.0')
         zone.label_angle = int(request.POST.get('label_angle', '0') or '0')
+        zone.drawn_by = request.user
 
         zone.save()
 
@@ -1974,6 +1979,7 @@ def zone_quick_draw_mobile(request):
                 zone.boundary_points = []
                 zone.label_lat = None
                 zone.label_lng = None
+                zone.drawn_by = None
                 zone.save()
                 return JsonResponse({'success': True, 'message': f'区域 {zone.code} 边界已删除'})
             except Zone.DoesNotExist:
@@ -2003,6 +2009,7 @@ def zone_quick_draw_mobile(request):
         zone.label_lng = float(label_lng) if label_lng else None
         zone.label_scale = float(request.POST.get('label_scale', '1.0') or '1.0')
         zone.label_angle = int(request.POST.get('label_angle', '0') or '0')
+        zone.drawn_by = request.user
 
         zone.save()
 
