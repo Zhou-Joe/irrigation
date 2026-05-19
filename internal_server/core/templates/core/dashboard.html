@@ -1171,7 +1171,7 @@
 </div>
 
 <!-- Sync Agent Status Indicator -->
-<div class="sync-agent-status" id="syncAgentStatus" onclick="toggleSyncPanel()" title="点击查看详情">
+<div class="sync-agent-status" id="syncAgentStatus" style="display:none;" onclick="toggleSyncPanel()" title="点击查看详情">
     <span class="status-dot checking" id="syncDot"></span>
     <div class="status-info">
         <span class="status-label" id="syncLabel">同步代理</span>
@@ -1181,7 +1181,7 @@
 </div>
 
 <!-- Expanded Sync Status Panel -->
-<div class="sync-status-panel" id="syncStatusPanel">
+<div class="sync-status-panel" id="syncStatusPanel" style="display:none;">
     <h4>📡 Maxicom 同步代理详情</h4>
     <div id="syncPanelContent">
         <div class="sync-detail-row"><span class="label">加载中...</span></div>
