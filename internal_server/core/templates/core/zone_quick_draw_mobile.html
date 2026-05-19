@@ -505,12 +505,7 @@ function showToast(msg, type) {
         if (!expanded) actionBar.style.bottom = '';
     }
 
-    function snapDrawer(velocity) {
-        const curH = drawer.getBoundingClientRect().height;
-        const mid = (PEEK + maxH()) / 2;
-        if (velocity < -300) expanded = true;
-        else if (velocity > 300) expanded = false;
-        else expanded = curH > mid;
+    function applyDrawerState() {
         drawer.style.transition = '';
         drawer.style.height = '';
         drawer.classList.toggle('expanded', expanded);
@@ -521,13 +516,13 @@ function showToast(msg, type) {
     }
 
     // Touch drag on header (handle + tabs area)
-    let dragY0 = null, dragH0 = null, lastY = null, lastT = null;
+    let dragY0 = null, dragH0 = null, lastY = null;
 
     drawerHeader.addEventListener('touchstart', function(e) {
         if (e.touches.length !== 1) return;
         dragY0 = e.touches[0].clientY;
         dragH0 = drawer.getBoundingClientRect().height;
-        lastY = dragY0; lastT = Date.now();
+        lastY = dragY0;
         drawer.style.transition = 'none';
         actionBar.style.transition = 'none';
     }, { passive: true });
@@ -540,19 +535,21 @@ function showToast(msg, type) {
         const newH = Math.max(PEEK, Math.min(maxH(), dragH0 + dy));
         drawer.style.height = newH + 'px';
         actionBar.style.bottom = (newH + BAR_GAP) + 'px';
-        const now = Date.now();
-        const dt = now - lastT;
-        if (dt > 0) lastY_velocity = (lastY - y) / dt * 1000;
-        lastY = y; lastT = now;
+        lastY = y;
     }, { passive: false });
 
-    let lastY_velocity = 0;
-
-    function onDragEnd() {
+    function onDragEnd(e) {
         if (dragY0 === null) return;
-        const vel = lastY_velocity;
+        const endY = e.changedTouches ? e.changedTouches[0].clientY : lastY;
+        const totalDelta = dragY0 - endY; // positive = user swiped up
         dragY0 = null;
-        snapDrawer(vel);
+        // Simple direction-based: swipe up = expand, swipe down = collapse
+        if (Math.abs(totalDelta) > 10) {
+            expanded = totalDelta > 0;
+        } else {
+            expanded = !expanded; // tap = toggle
+        }
+        applyDrawerState();
     }
     drawerHeader.addEventListener('touchend', onDragEnd);
     drawerHeader.addEventListener('touchcancel', onDragEnd);
@@ -783,7 +780,11 @@ function showToast(msg, type) {
 
         shape.polygon.on('mousedown', onDragStart);
         shape.polygon.on('touchstart', function(e) {
-            if (e.originalEvent.touches.length === 1) onDragStart(e);
+            if (e.originalEvent.touches.length === 1) {
+                e.originalEvent.stopPropagation();
+                e.originalEvent.preventDefault();
+                onDragStart(e);
+            }
         });
         document.addEventListener('mousemove', onDragMove);
         document.addEventListener('touchmove', onDragMove, { passive: false });
