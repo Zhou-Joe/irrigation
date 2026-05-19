@@ -10,138 +10,79 @@
         :root {
             --color-primary: #1B4332;
             --color-primary-light: #2D6A4F;
-            --color-accent: #D4A574;
             --color-surface: #F5F0E8;
-            --color-surface-alt: #FAFAF7;
             --color-surface-dark: #E0DDD6;
             --color-text: #1C1C1C;
             --color-text-secondary: #6B7280;
             --color-success: #2D6A4F;
             --color-danger: #9B2226;
-            --drawer-peek: 200px;
-            --drawer-max: 72vh;
             --fab-size: 48px;
-            --tab-height: 44px;
         }
-
         * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
         html, body { height: 100%; overflow: hidden; font-family: -apple-system, 'SF Pro Text', 'Helvetica Neue', sans-serif; background: #000; }
 
-        /* ====== Top Bar ====== */
+        /* Top Bar */
         .top-bar {
             position: fixed; top: 0; left: 0; right: 0; z-index: 1200;
             height: 56px; display: flex; align-items: center; justify-content: space-between;
             padding: 0 12px; gap: 8px;
-            background: rgba(27,67,50,0.92); backdrop-filter: blur(12px);
-            color: white;
+            background: rgba(27,67,50,0.92); backdrop-filter: blur(12px); color: white;
         }
         .top-bar-left { display: flex; align-items: center; gap: 10px; }
-        .top-bar-left a {
-            display: flex; align-items: center; justify-content: center;
-            width: 36px; height: 36px; color: white; text-decoration: none;
-            font-size: 1.2rem; border-radius: 50%; transition: background 0.15s;
-        }
+        .top-bar-left a { display: flex; align-items: center; justify-content: center; width: 36px; height: 36px; color: white; text-decoration: none; font-size: 1.2rem; border-radius: 50%; transition: background 0.15s; }
         .top-bar-left a:active { background: rgba(255,255,255,0.15); }
         .top-bar-title { font-size: 1rem; font-weight: 600; }
         .top-bar-right { display: flex; align-items: center; gap: 6px; font-size: 0.75rem; opacity: 0.85; }
         .top-bar-right .stat { display: flex; align-items: center; gap: 3px; }
         .top-bar-right .stat b { font-size: 0.85rem; }
 
-        /* ====== Map ====== */
-        #editMap {
-            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-            z-index: 1;
-        }
+        /* Map */
+        #editMap { position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 1; }
 
-        /* ====== FAB Group (floating action buttons) ====== */
-        .fab-group {
-            position: fixed; top: 68px; right: 12px; z-index: 1100;
-            display: flex; flex-direction: column; gap: 10px;
-        }
+        /* FAB Group */
+        .fab-group { position: fixed; top: 68px; right: 12px; z-index: 1100; display: flex; flex-direction: column; gap: 10px; }
         .fab {
             width: var(--fab-size); height: var(--fab-size); border-radius: 50%;
             background: rgba(255,255,255,0.92); backdrop-filter: blur(8px);
             border: 1px solid rgba(0,0,0,0.08); color: var(--color-primary);
             display: flex; align-items: center; justify-content: center;
-            font-size: 20px; cursor: pointer;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
-            transition: transform 0.15s, background 0.15s;
-            -webkit-user-select: none; user-select: none;
+            font-size: 20px; cursor: pointer; box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+            transition: transform 0.15s, background 0.15s; -webkit-user-select: none; user-select: none;
         }
-        .fab:active { transform: scale(0.92); background: rgba(255,255,255,1); }
+        .fab:active { transform: scale(0.92); }
         .fab.danger { color: var(--color-danger); }
         .fab:disabled { opacity: 0.35; }
+        .fab.active { background: var(--color-primary); color: white; border-color: var(--color-primary); }
+        .fab-label { font-size: 0.72rem; font-weight: 600; }
 
-        /* ====== Status Pill ====== */
+        /* Status Pill */
         .status-pill {
             position: fixed; top: 64px; left: 50%; transform: translateX(-50%);
             z-index: 1100; background: rgba(0,0,0,0.65); backdrop-filter: blur(8px);
             color: white; padding: 5px 14px; border-radius: 20px; font-size: 0.78rem;
-            pointer-events: none; transition: opacity 0.3s;
-            white-space: nowrap;
+            pointer-events: none; white-space: nowrap;
         }
 
-        /* ====== Bottom Drawer ====== */
-        .mobile-drawer {
-            position: fixed; bottom: 0; left: 0; right: 0; z-index: 1300;
-            background: white; border-radius: 20px 20px 0 0;
-            box-shadow: 0 -2px 20px rgba(0,0,0,0.12);
-            display: flex; flex-direction: column;
-            height: var(--drawer-peek);
-            transition: height 0.35s cubic-bezier(0.4, 0, 0.2, 1);
-            will-change: height;
+        /* Context Menu */
+        .ctx-menu {
+            position: fixed; display: none; background: white; border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.2); overflow: hidden; z-index: 1500; min-width: 160px;
         }
-        .mobile-drawer.expanded { height: var(--drawer-max); }
+        .ctx-title { padding: 12px 16px; font-weight: 600; font-size: 0.9rem; border-bottom: 1px solid var(--color-surface-dark); }
+        .ctx-item { padding: 12px 16px; font-size: 0.85rem; cursor: pointer; }
+        .ctx-item:active { background: var(--color-surface); }
 
-        .drawer-handle-area {
-            height: 24px; display: flex; align-items: center; justify-content: center;
-            cursor: pointer; flex-shrink: 0; -webkit-user-select: none; user-select: none;
-        }
-        .drawer-handle {
-            width: 36px; height: 4px; border-radius: 2px;
-            background: var(--color-surface-dark);
-        }
-
-        .drawer-tabs {
-            display: flex; height: var(--tab-height); flex-shrink: 0;
-            border-bottom: 1px solid var(--color-surface-dark);
-        }
-        .drawer-tab {
-            flex: 1; display: flex; align-items: center; justify-content: center;
-            background: none; border: none; font-size: 0.88rem;
-            color: var(--color-text-secondary); cursor: pointer;
-            position: relative; transition: color 0.2s;
-            -webkit-user-select: none; user-select: none;
-        }
-        .drawer-tab.active { color: var(--color-primary); font-weight: 600; }
-        .drawer-tab.active::after {
-            content: ''; position: absolute; bottom: 0; left: 20%; right: 20%;
-            height: 3px; background: var(--color-primary); border-radius: 2px 2px 0 0;
-        }
-
-        .drawer-content {
-            flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden;
-            -webkit-overflow-scrolling: touch; padding: 12px 16px 20px;
-        }
-
-        .drawer-panel { display: none; }
-        .drawer-panel.active { display: block; }
-
-        /* ====== Floating Action Bar (save/cancel over map) ====== */
+        /* Floating Action Bar */
         .map-action-bar {
-            position: fixed; left: 12px; right: 12px; z-index: 1150;
-            bottom: calc(var(--drawer-peek) + 10px);
-            display: flex; gap: 8px;
-            pointer-events: none;
+            position: fixed; left: 12px; right: 12px; bottom: 16px; z-index: 1150;
+            display: flex; gap: 8px; pointer-events: none;
         }
-        .map-action-bar.expanded-bar { bottom: calc(var(--drawer-max) + 10px); }
         .map-action-bar > * { pointer-events: auto; }
         .map-action-save {
             flex: 1; height: 48px; border: none; border-radius: 14px;
             background: var(--color-primary); color: white;
             font-size: 0.95rem; font-weight: 700; cursor: pointer;
-            box-shadow: 0 4px 16px rgba(27,67,50,0.35);
-            transition: opacity 0.15s, transform 0.15s;
+            box-shadow: 0 4px 16px rgba(27,67,50,0.35); transition: opacity 0.15s, transform 0.15s;
         }
         .map-action-save:active { transform: scale(0.96); }
         .map-action-save:disabled { opacity: 0.3; }
@@ -149,1320 +90,646 @@
             height: 48px; padding: 0 16px; border: none; border-radius: 14px;
             background: rgba(255,255,255,0.92); backdrop-filter: blur(8px);
             color: var(--color-text-secondary); font-size: 0.88rem; cursor: pointer;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-            transition: opacity 0.15s, transform 0.15s;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1); transition: opacity 0.15s, transform 0.15s;
         }
         .map-action-cancel:active { transform: scale(0.92); }
 
-        /* ====== Draw Panel ====== */
-        .zone-input-wrap { position: relative; margin-bottom: 8px; }
+        /* Save Popup */
+        .save-popup {
+            display: none; position: fixed; inset: 0; z-index: 2000;
+            background: rgba(0,0,0,0.5); align-items: center; justify-content: center;
+            padding: 20px;
+        }
+        .save-popup.open { display: flex; }
+        .save-popup-card {
+            background: white; border-radius: 16px; width: 100%; max-width: 400px;
+            box-shadow: 0 8px 40px rgba(0,0,0,0.25); overflow: hidden;
+            max-height: 90vh; display: flex; flex-direction: column;
+        }
+        .save-popup-header {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 16px 20px; border-bottom: 1px solid var(--color-surface-dark);
+            font-weight: 600; font-size: 1rem;
+        }
+        .save-popup-close { background: none; border: none; font-size: 1.3rem; cursor: pointer; color: var(--color-text-secondary); padding: 4px 8px; }
+        .save-popup-body { padding: 16px 20px 24px; overflow-y: auto; }
+        .zone-input-wrap { position: relative; margin-bottom: 10px; }
         .zone-input {
             width: 100%; height: 48px; padding: 0 14px;
             border: 2px solid var(--color-primary); border-radius: 12px;
-            font-size: 16px; font-weight: 600; background: white;
-            color: var(--color-text);
+            font-size: 16px; font-weight: 600; background: white; color: var(--color-text);
         }
         .zone-input:focus { outline: none; box-shadow: 0 0 0 3px rgba(45,106,79,0.15); }
         .zone-dropdown {
             position: absolute; top: 100%; left: 0; right: 0;
             background: white; border: 1px solid var(--color-surface-dark); border-top: none;
             border-radius: 0 0 12px 12px; max-height: 200px; overflow-y: auto;
-            z-index: 1400; display: none;
-            box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+            z-index: 2100; display: none; box-shadow: 0 8px 24px rgba(0,0,0,0.12);
         }
-        .zone-dropdown .dd-item {
-            padding: 12px 14px; display: flex; align-items: center; gap: 8px;
-            border-bottom: 1px solid var(--color-surface);
-            font-size: 0.88rem;
-        }
+        .zone-dropdown .dd-item { padding: 12px 14px; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid var(--color-surface); font-size: 0.88rem; }
         .zone-dropdown .dd-item:active { background: var(--color-surface); }
         .zone-dropdown .dd-code { font-weight: 600; font-family: monospace; min-width: 50px; }
         .zone-dropdown .dd-name { color: var(--color-text-secondary); flex: 1; }
         .zone-dropdown .dd-patch { font-size: 0.7rem; color: var(--color-text-secondary); background: var(--color-surface); padding: 2px 6px; border-radius: 4px; }
         .zone-dropdown .dd-drawn { font-size: 0.68rem; color: var(--color-success); }
         .zone-dropdown .dd-hint { padding: 12px 14px; font-size: 0.82rem; color: var(--color-text-secondary); font-style: italic; }
+        .zone-preview { font-size: 0.82rem; color: var(--color-text-secondary); margin-bottom: 14px; display: none; }
+        .popup-settings { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; align-items: center; }
+        .popup-settings label { font-size: 0.75rem; color: var(--color-text-secondary); display: flex; align-items: center; gap: 6px; }
+        .popup-settings input[type="color"] { width: 32px; height: 32px; border: none; border-radius: 8px; cursor: pointer; padding: 0; }
+        .popup-settings input[type="range"] { width: 60px; }
+        .popup-settings input[type="number"] { width: 55px; height: 32px; padding: 0 6px; border: 1px solid var(--color-surface-dark); border-radius: 6px; font-size: 0.82rem; }
+        .popup-settings .scale-val { font-size: 0.75rem; color: var(--color-text-secondary); min-width: 28px; }
+        .save-popup-confirm {
+            width: 100%; height: 48px; border: none; border-radius: 12px;
+            background: var(--color-primary); color: white;
+            font-size: 0.95rem; font-weight: 700; cursor: pointer;
+        }
+        .save-popup-confirm:active { opacity: 0.85; }
+        .save-popup-confirm:disabled { opacity: 0.35; }
 
-        .zone-preview {
-            font-size: 0.82rem; color: var(--color-text-secondary);
-            margin-bottom: 10px; display: none;
-        }
-
-        .draw-status {
-            display: flex; gap: 12px; font-size: 0.78rem; color: var(--color-text-secondary);
-            margin-bottom: 10px;
-        }
-        .draw-status strong { color: var(--color-text); }
-
-        .shape-mini-item {
-            display: flex; align-items: center; gap: 6px;
-            padding: 6px 10px; background: var(--color-surface);
-            border-radius: 8px; font-size: 0.78rem; margin-bottom: 4px;
-        }
-        .shape-mini-item span { flex: 1; color: var(--color-text-secondary); }
-        .shape-mini-del {
-            background: none; border: none; color: var(--color-danger);
-            font-size: 1rem; cursor: pointer; padding: 2px 4px;
-        }
-
-        .btn-row { display: flex; gap: 8px; margin-top: 10px; }
-        .btn-draw {
-            flex: 1; height: 48px; border: none; border-radius: 12px;
-            font-size: 0.95rem; font-weight: 600; cursor: pointer;
-            transition: opacity 0.15s;
-        }
-        .btn-draw:active { opacity: 0.8; }
-        .btn-draw:disabled { opacity: 0.35; }
-        .btn-draw.complete { background: var(--color-surface-dark); color: var(--color-text); }
-        .btn-draw.save { background: var(--color-primary); color: white; }
-
-        .btn-cancel {
-            width: 100%; height: 40px; margin-top: 8px;
-            background: white; border: 1px solid var(--color-surface-dark);
-            border-radius: 10px; color: var(--color-text-secondary);
-            font-size: 0.85rem; cursor: pointer;
-        }
-        .btn-cancel:active { background: var(--color-surface); }
-
-        /* ====== List Panel ====== */
-        .list-stats {
-            display: flex; gap: 16px; font-size: 0.85rem;
-            padding-bottom: 12px; border-bottom: 1px solid var(--color-surface-dark);
-            margin-bottom: 8px;
-        }
-        .list-stats .ls-item { display: flex; align-items: center; gap: 4px; }
-        .list-stats .ls-num { font-weight: 700; color: var(--color-primary); }
-
-        .list-empty {
-            text-align: center; padding: 24px; color: var(--color-text-secondary);
-            font-size: 0.85rem;
-        }
-
-        .zone-item {
-            display: flex; align-items: center; gap: 8px;
-            padding: 12px 0; border-bottom: 1px solid var(--color-surface);
-        }
-        .zone-item .zi-code { font-weight: 600; font-family: monospace; min-width: 55px; font-size: 0.88rem; }
-        .zone-item .zi-name { color: var(--color-text-secondary); flex: 1; font-size: 0.82rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        .zone-item .zi-count { font-size: 0.72rem; color: var(--color-text-secondary); }
-        .zone-item .zi-btns { display: flex; gap: 6px; }
-        .zone-item .zi-btn {
-            padding: 4px 10px; border: none; border-radius: 6px;
-            font-size: 0.72rem; cursor: pointer; font-weight: 500;
-        }
-        .zone-item .zi-btn.edit { background: var(--color-primary); color: white; }
-        .zone-item .zi-btn.del { background: var(--color-danger); color: white; }
-        .zone-item .zi-btn:active { opacity: 0.8; }
-
-        /* ====== Settings Panel ====== */
-        .setting-group {
-            margin-bottom: 16px;
-        }
-        .setting-label {
-            font-size: 0.78rem; color: var(--color-text-secondary); margin-bottom: 6px;
-        }
-        .setting-row {
-            display: flex; align-items: center; gap: 10px;
-        }
-        .setting-row input[type="color"] {
-            width: 44px; height: 44px; border: none; border-radius: 10px;
-            cursor: pointer; padding: 0;
-        }
-        .setting-row input[type="text"] {
-            flex: 1; height: 44px; padding: 0 12px;
-            border: 1px solid var(--color-surface-dark); border-radius: 10px;
-            font-size: 16px; font-family: monospace;
-        }
-        .setting-row input[type="range"] {
-            flex: 1; height: 44px;
-        }
-        .setting-row input[type="number"] {
-            width: 70px; height: 44px; padding: 0 10px;
-            border: 1px solid var(--color-surface-dark); border-radius: 10px;
-            font-size: 16px;
-        }
-        .setting-row .scale-val {
-            min-width: 36px; text-align: center; font-size: 0.85rem;
-            color: var(--color-text-secondary);
-        }
-
-        .setting-actions {
-            display: flex; gap: 10px; margin-top: 20px;
-        }
-        .setting-btn {
-            flex: 1; height: 48px; border: none; border-radius: 12px;
-            font-size: 0.9rem; font-weight: 500; cursor: pointer;
-        }
-        .setting-btn:active { opacity: 0.8; }
-        .setting-btn.locate { background: var(--color-primary); color: white; }
-        .setting-btn.undo { background: var(--color-surface-dark); color: var(--color-text); }
-        .setting-btn.clear { background: white; border: 1px solid var(--color-danger); color: var(--color-danger); }
-
-        /* ====== Context Menu (long-press on zone) ====== */
-        .ctx-menu {
-            position: absolute; z-index: 1400; background: white; border-radius: 14px;
-            box-shadow: 0 8px 32px rgba(0,0,0,0.18); min-width: 150px; overflow: hidden;
-            display: none;
-        }
-        .ctx-menu .ctx-title {
-            padding: 10px 16px 6px; font-weight: 600; font-family: monospace;
-            font-size: 0.95rem; background: var(--color-surface-alt);
-        }
-        .ctx-menu .ctx-item {
-            padding: 12px 16px; display: flex; align-items: center; gap: 10px;
-            font-size: 0.88rem; cursor: pointer; border-bottom: 1px solid var(--color-surface);
-        }
-        .ctx-menu .ctx-item:last-child { border-bottom: none; }
-        .ctx-menu .ctx-item:active { background: var(--color-surface); }
-        .ctx-menu .ctx-item.edit { color: var(--color-primary); }
-        .ctx-menu .ctx-item.delete { color: var(--color-danger); }
-
-        /* ====== Toast ====== */
-        @keyframes toastSlideIn { from { opacity: 0; transform: translateY(-20px); } to { opacity: 1; transform: translateY(0); } }
-        .toast-container {
-            position: fixed; top: 64px; left: 16px; right: 16px; z-index: 9999;
-            display: flex; flex-direction: column; gap: 8px; pointer-events: none;
-        }
-        .toast-msg {
-            padding: 12px 16px; border-radius: 12px; color: white; font-size: 0.88rem;
-            box-shadow: 0 4px 16px rgba(0,0,0,0.15); pointer-events: auto;
-            animation: toastSlideIn 0.3s ease; text-align: center;
-        }
-
-        /* ====== Leaflet overrides ====== */
-        .leaflet-control-zoom { display: none !important; }
-        .boundary-marker { pointer-events: auto !important; }
-        .boundary-vertex { pointer-events: auto !important; }
-
-        /* Safe area padding for notch phones */
-        @supports (padding: max(0px)) {
-            .mobile-drawer { padding-bottom: max(8px, env(safe-area-inset-bottom)); }
-            .top-bar { padding-top: max(0px, env(safe-area-inset-top)); height: calc(56px + max(0px, env(safe-area-inset-top))); }
-        }
+        /* Toast */
+        .toast-box { position: fixed; top: 62px; left: 50%; transform: translateX(-50%); z-index: 3000; display: flex; flex-direction: column; gap: 6px; pointer-events: none; }
+        .toast-msg { background: #333; color: white; padding: 8px 18px; border-radius: 10px; font-size: 0.82rem; box-shadow: 0 2px 12px rgba(0,0,0,0.2); transition: opacity 0.4s; white-space: nowrap; }
     </style>
 </head>
 <body>
-
-<!-- Top Bar -->
-<header class="top-bar">
-    <div class="top-bar-left">
-        <a href="{% url 'core:settings' %}" title="返回">←</a>
-        <span class="top-bar-title">快速绘制</span>
-    </div>
-    <div class="top-bar-right">
-        <div class="stat">绘制 <b id="topDrawn">0</b></div>
-        <div class="stat">待绘 <b id="topUndrawn">0</b></div>
-    </div>
-</header>
-
-<!-- Toast container -->
-<div class="toast-container" id="toastBox"></div>
-
-<!-- Status pill -->
-<div class="status-pill" id="statusPill">点击地图开始绘制</div>
-
-<!-- Context menu -->
-<div class="ctx-menu" id="ctxMenu">
-    <div class="ctx-title" id="ctxTitle"></div>
-    <div class="ctx-item edit" id="ctxEdit">✏️ 编辑边界</div>
-    <div class="ctx-item delete" id="ctxDelete">🗑️ 删除边界</div>
-</div>
-
-<!-- Map -->
-<div id="editMap"></div>
-
-<!-- FAB Group -->
-<div class="fab-group">
-    <button type="button" class="fab" id="fabUndo" disabled title="撤销">↩</button>
-    <button type="button" class="fab" id="fabComplete" title="完成区域" style="background:var(--color-primary);color:white;font-size:0.72rem;font-weight:600;">完成</button>
-    <button type="button" class="fab danger" id="fabClear" title="清除">✕</button>
-</div>
-
-<!-- Bottom Drawer -->
-<div class="mobile-drawer" id="drawer">
-    <div id="drawerHeader" style="touch-action:none; flex-shrink:0;">
-    <div class="drawer-handle-area" id="drawerHandleArea">
-        <div class="drawer-handle"></div>
-    </div>
-
-    <div class="drawer-tabs">
-        <button type="button" class="drawer-tab active" data-tab="draw">绘制</button>
-        <button type="button" class="drawer-tab" data-tab="list">列表</button>
-        <button type="button" class="drawer-tab" data-tab="settings">设置</button>
-    </div>
-    </div>
-
-    <div class="drawer-content">
-        <!-- Draw Panel -->
-        <div class="drawer-panel active" id="drawPanel">
-            <div class="zone-input-wrap">
-                <input type="text" id="zoneCodeInput" class="zone-input" placeholder="输入区域编号..." autocomplete="off">
-                <div id="zoneDropdown" class="zone-dropdown"></div>
-            </div>
-            <div class="zone-preview" id="zonePreview"><span id="zonePreviewText"></span></div>
-            <div class="draw-status">
-                节点: <strong id="drawPointCount">0</strong>/3 &nbsp;|&nbsp; 已完成: <strong id="drawShapeCount">0</strong> 个区域
-            </div>
-            <div id="shapesList"></div>
-            <div class="btn-row">
-                <button type="button" class="btn-draw complete" id="completeShapeBtn" disabled>完成区域</button>
-            </div>
+    <!-- Top Bar -->
+    <header class="top-bar">
+        <div class="top-bar-left">
+            <a href="{% url 'core:settings' %}" title="返回">←</a>
+            <span class="top-bar-title">快速绘制</span>
         </div>
-
-        <!-- List Panel -->
-        <div class="drawer-panel" id="listPanel">
-            <div class="list-stats">
-                <div class="ls-item">总区域 <span class="ls-num" id="lsTotal">0</span></div>
-                <div class="ls-item">已绘制 <span class="ls-num" id="lsDrawn">0</span></div>
-                <div class="ls-item">待绘制 <span class="ls-num" id="lsUndrawn">0</span></div>
-            </div>
-            <div id="savedList"></div>
+        <div class="top-bar-right">
+            <div class="stat">绘制 <b id="topDrawn">0</b></div>
+            <div class="stat">待绘 <b id="topUndrawn">0</b></div>
         </div>
+    </header>
 
-        <!-- Settings Panel -->
-        <div class="drawer-panel" id="settingsPanel">
-            <div class="setting-group">
-                <div class="setting-label">边界颜色</div>
-                <div class="setting-row">
-                    <input type="color" id="boundary_color" value="#52B788">
-                    <input type="text" id="boundary_color_text" value="#52B788" pattern="^#[0-9A-Fa-f]{6}$" maxlength="7">
-                </div>
+    <!-- Map -->
+    <div id="editMap"></div>
+
+    <!-- Status Pill -->
+    <div class="status-pill" id="statusPill">点击 ✏ 开始绘制</div>
+
+    <!-- FAB Group -->
+    <div class="fab-group">
+        <button type="button" class="fab" id="fabDraw" title="绘制模式"><span class="fab-label">✏</span></button>
+        <button type="button" class="fab" id="fabUndo" disabled title="撤销">↩</button>
+        <button type="button" class="fab" id="fabComplete" title="完成区域" style="font-size:0.72rem;font-weight:600;">完成</button>
+        <button type="button" class="fab danger" id="fabClear" title="清除">✕</button>
+    </div>
+
+    <!-- Context Menu -->
+    <div class="ctx-menu" id="ctxMenu">
+        <div class="ctx-title" id="ctxTitle"></div>
+        <div class="ctx-item" id="ctxEdit">✏️ 编辑边界</div>
+        <div class="ctx-item" id="ctxDelete">🗑️ 删除边界</div>
+    </div>
+
+    <!-- Floating Action Bar -->
+    <div class="map-action-bar" id="mapActionBar">
+        <button type="button" class="map-action-save" id="saveBtn" disabled>保存</button>
+        <button type="button" class="map-action-cancel" id="cancelSaveBtn">取消</button>
+    </div>
+
+    <!-- Save Popup Modal -->
+    <div class="save-popup" id="savePopup">
+        <div class="save-popup-card">
+            <div class="save-popup-header">
+                <span>保存区域</span>
+                <button type="button" class="save-popup-close" id="savePopupClose">✕</button>
             </div>
-            <div class="setting-group">
-                <div class="setting-label">标签字号</div>
-                <div class="setting-row">
-                    <input type="range" id="label_scale" min="0.3" max="3" step="0.1" value="1.0">
-                    <span class="scale-val" id="label_scale_display">1.0x</span>
+            <div class="save-popup-body">
+                <div class="zone-input-wrap">
+                    <input type="text" id="zoneCodeInput" class="zone-input" placeholder="输入区域编号..." autocomplete="off">
+                    <div id="zoneDropdown" class="zone-dropdown"></div>
                 </div>
-            </div>
-            <div class="setting-group">
-                <div class="setting-label">标签旋转 (°)</div>
-                <div class="setting-row">
-                    <input type="number" id="label_angle" value="0" min="-180" max="180">
+                <div class="zone-preview" id="zonePreview"><span id="zonePreviewText"></span></div>
+                <div class="popup-settings">
+                    <label>颜色 <input type="color" id="boundary_color" value="#52B788"></label>
+                    <label>字号 <input type="range" id="label_scale" min="0.3" max="3" step="0.1" value="1.0"><span class="scale-val" id="label_scale_display">1.0x</span></label>
+                    <label>旋转 <input type="number" id="label_angle" value="0" min="-180" max="180">°</label>
                 </div>
-            </div>
-            <div class="setting-actions">
-                <button type="button" class="setting-btn undo" id="settingsUndo" disabled>撤销</button>
-                <button type="button" class="setting-btn clear" id="settingsClear">清除全部绘制</button>
+                <button type="button" class="save-popup-confirm" id="savePopupConfirm" disabled>确认保存</button>
             </div>
         </div>
     </div>
-</div>
 
-<!-- Floating save/cancel bar over map -->
-<div class="map-action-bar" id="mapActionBar">
-    <button type="button" class="map-action-save" id="saveBtn" disabled>保存</button>
-    <button type="button" class="map-action-cancel" id="cancelSaveBtn">取消</button>
-</div>
+    <!-- Toast container -->
+    <div class="toast-box" id="toastBox"></div>
 
-<!-- Hidden fields -->
-<input type="hidden" id="boundary_points" value="">
-<input type="hidden" id="label_lat" value="">
-<input type="hidden" id="label_lng" value="">
+    <!-- Hidden fields -->
+    <input type="hidden" id="boundary_points" value="">
+    <input type="hidden" id="label_lat" value="">
+    <input type="hidden" id="label_lng" value="">
 
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script id="all-drawn-zones-data" type="application/json">{{ all_drawn_zones_json|safe }}</script>
-<script id="all-zones-data" type="application/json">{{ all_zones_json|safe }}</script>
-<script>
-function getCSRF() {
-    const m = document.cookie.match(/csrftoken=([^;]+)/);
-    return m ? m[1] : '';
-}
-
-function showToast(msg, type) {
-    const box = document.getElementById('toastBox');
-    const d = document.createElement('div');
-    const colors = { success:'#2D6A4F', error:'#9B2226', info:'#3A86FF', warning:'#E9C46A' };
-    d.className = 'toast-msg';
-    d.style.background = colors[type] || colors.info;
-    d.textContent = msg;
-    box.appendChild(d);
-    setTimeout(() => { d.style.opacity = '0'; d.style.transition = 'opacity 0.4s'; setTimeout(() => d.remove(), 500); }, 3000);
-}
-
-// ============================================================
-// Drawer Logic
-// ============================================================
-(function() {
-    const drawer = document.getElementById('drawer');
-    const drawerHeader = document.getElementById('drawerHeader');
-    const actionBar = document.getElementById('mapActionBar');
-    let expanded = false;
-    const PEEK = 200;
-    const BAR_GAP = 10;
-    function maxH() { return Math.round(window.innerHeight * 0.72); }
-
-    function syncActionBar() {
-        const h = drawer.getBoundingClientRect().height;
-        actionBar.style.bottom = (h + BAR_GAP) + 'px';
-        actionBar.classList.remove('expanded-bar');
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script id="all-drawn-zones-data" type="application/json">{{ all_drawn_zones_json|safe }}</script>
+    <script id="all-zones-data" type="application/json">{{ all_zones_json|safe }}</script>
+    <script>
+    function getCSRF() {
+        const m = document.cookie.match(/csrftoken=([^;]+)/);
+        return m ? m[1] : '';
     }
 
-    function toggleDrawer() {
-        expanded = !expanded;
-        drawer.style.height = '';
-        drawer.classList.toggle('expanded', expanded);
-        actionBar.classList.toggle('expanded-bar', expanded);
-        if (!expanded) actionBar.style.bottom = '';
+    function showToast(msg, type) {
+        const box = document.getElementById('toastBox');
+        const d = document.createElement('div');
+        const colors = { success:'#2D6A4F', error:'#9B2226', info:'#3A86FF', warning:'#E9C46A' };
+        d.className = 'toast-msg';
+        d.style.background = colors[type] || colors.info;
+        d.textContent = msg;
+        box.appendChild(d);
+        setTimeout(() => { d.style.opacity = '0'; setTimeout(() => d.remove(), 500); }, 3000);
     }
 
-    function applyDrawerState() {
-        drawer.style.transition = '';
-        drawer.style.height = '';
-        drawer.classList.toggle('expanded', expanded);
-        actionBar.style.transition = 'bottom 0.35s cubic-bezier(0.4, 0, 0.2, 1)';
-        actionBar.classList.toggle('expanded-bar', expanded);
-        if (!expanded) actionBar.style.bottom = '';
-        setTimeout(() => { actionBar.style.transition = ''; }, 360);
-    }
+    // ============================================================
+    // Quick Draw Engine (Mobile)
+    // ============================================================
+    (function() {
+        'use strict';
 
-    // Touch drag on header (handle + tabs area)
-    let dragY0 = null, dragH0 = null, lastY = null;
+        let editMap = null;
+        let markers = [];
+        let currentPoly = null;
+        let shapes = [];
+        let history = [];
+        let labelMarker = null;
+        let isDrawing = false;
 
-    drawerHeader.addEventListener('touchstart', function(e) {
-        if (e.touches.length !== 1) return;
-        dragY0 = e.touches[0].clientY;
-        dragH0 = drawer.getBoundingClientRect().height;
-        lastY = dragY0;
-        drawer.style.transition = 'none';
-        actionBar.style.transition = 'none';
-    }, { passive: true });
+        let allZones = [];
+        let savedZoneMap = {};
+        let editingZoneId = null;
+        let contextMenuZoneId = null;
 
-    drawerHeader.addEventListener('touchmove', function(e) {
-        if (dragY0 === null) return;
-        e.preventDefault();
-        const y = e.touches[0].clientY;
-        const dy = dragY0 - y;
-        const newH = Math.max(PEEK, Math.min(maxH(), dragH0 + dy));
-        drawer.style.height = newH + 'px';
-        actionBar.style.bottom = (newH + BAR_GAP) + 'px';
-        lastY = y;
-    }, { passive: false });
+        let refLayerGroup = null;
 
-    function onDragEnd(e) {
-        if (dragY0 === null) return;
-        const endY = e.changedTouches ? e.changedTouches[0].clientY : lastY;
-        const totalDelta = dragY0 - endY; // positive = user swiped up
-        dragY0 = null;
-        // Simple direction-based: swipe up = expand, swipe down = collapse
-        if (Math.abs(totalDelta) > 10) {
-            expanded = totalDelta > 0;
-        } else {
-            expanded = !expanded; // tap = toggle
+        let longPressTimer = null;
+        let longPressFired = false;
+
+        function getStyle() {
+            const color = (document.getElementById('boundary_color') || {}).value || '#52B788';
+            return { color, weight: 2.5, fillColor: color, fillOpacity: 0.25 };
         }
-        applyDrawerState();
-    }
-    drawerHeader.addEventListener('touchend', onDragEnd);
-    drawerHeader.addEventListener('touchcancel', onDragEnd);
-
-    // Click on handle area also toggles
-    document.getElementById('drawerHandleArea').addEventListener('click', toggleDrawer);
-
-    // Tab switching
-    const tabs = document.querySelectorAll('.drawer-tab');
-    const panels = document.querySelectorAll('.drawer-panel');
-    tabs.forEach(tab => {
-        tab.addEventListener('click', function() {
-            tabs.forEach(t => t.classList.remove('active'));
-            panels.forEach(p => p.classList.remove('active'));
-            this.classList.add('active');
-            document.getElementById(this.dataset.tab + 'Panel').classList.add('active');
-        });
-    });
-
-    // Expose toggle for external use
-    window._toggleDrawer = function(forceState) {
-        if (typeof forceState === 'boolean') expanded = !forceState;
-        toggleDrawer();
-    };
-    window._expandDrawer = function() { if (!expanded) toggleDrawer(); };
-    window._collapseDrawer = function() { if (expanded) toggleDrawer(); };
-})();
-
-// ============================================================
-// Quick Draw Engine (Mobile)
-// ============================================================
-(function() {
-    'use strict';
-
-    let editMap = null;
-    let markers = [];
-    let currentPoly = null;
-    let shapes = [];
-    let history = [];
-    let userLocationMarker = null;
-    let userAccuracyCircle = null;
-    let labelMarker = null;
-
-    let allZones = [];
-    let savedZoneMap = {};
-    let editingZoneId = null;
-    let contextMenuZoneId = null;
-
-    let refLayerGroup = null;
-    let refLabels = {};
-
-    // Long-press detection
-    let longPressTimer = null;
-    let longPressFired = false;
-
-    function getStyle() {
-        const color = (document.getElementById('boundary_color') || {}).value || '#52B788';
-        return { color, weight: 2.5, fillColor: color, fillOpacity: 0.25 };
-    }
-    function getMarkerColor() {
-        return (document.getElementById('boundary_color') || {}).value || '#1B4332';
-    }
-    function markerIcon(color) {
-        return L.divIcon({
-            className: 'boundary-marker',
-            html: '<div style="width:20px;height:20px;background:' + color + ';border:3px solid white;border-radius:50%;cursor:grab;box-shadow:0 2px 6px rgba(0,0,0,0.3);"></div>',
-            iconSize: [24, 24], iconAnchor: [12, 12]
-        });
-    }
-    function vertexIcon(color) {
-        return L.divIcon({
-            className: 'boundary-vertex',
-            html: '<div style="width:18px;height:18px;background:' + color + ';border:3px solid white;border-radius:50%;cursor:grab;box-shadow:0 2px 6px rgba(0,0,0,0.3);"></div>',
-            iconSize: [22, 22], iconAnchor: [11, 11]
-        });
-    }
-
-    function normalizeBoundaryData(data) {
-        if (!data || data.length === 0) return [];
-        if (Array.isArray(data[0]) && (Array.isArray(data[0][0]) || (data[0].length > 0 && data[0][0].lat !== undefined))) return data;
-        if (data[0].lat !== undefined || data[0].lng !== undefined || (Array.isArray(data[0]) && data[0].length === 2 && typeof data[0][0] === 'number'))
-            return [data.map(p => p.lat !== undefined ? {lat:p.lat,lng:p.lng} : {lat:p[0],lng:p[1]})];
-        return [];
-    }
-
-    function getZoneCode() {
-        const inp = document.getElementById('zoneCodeInput');
-        return inp ? (inp.value || 'ZONE') : 'ZONE';
-    }
-
-    function getLabelStyle() {
-        return {
-            scale: parseFloat(document.getElementById('label_scale').value) || 1.0,
-            angle: parseInt(document.getElementById('label_angle').value) || 0
-        };
-    }
-
-    function computeCentroid() {
-        const allPts = [];
-        shapes.forEach(s => s.points.forEach(p => allPts.push(p)));
-        markers.forEach(m => allPts.push({ lat: m.getLatLng().lat, lng: m.getLatLng().lng }));
-        if (allPts.length === 0) return null;
-        const sum = allPts.reduce((a, p) => ({ lat: a.lat + p.lat, lng: a.lng + p.lng }), { lat: 0, lng: 0 });
-        return { lat: sum.lat / allPts.length, lng: sum.lng / allPts.length };
-    }
-
-    function buildLabelHtml(code) {
-        const { scale, angle } = getLabelStyle();
-        const fontSize = Math.round(14 * scale);
-        return '<div style="transform:translate(-50%,-50%) rotate(' + angle + 'deg);white-space:nowrap;cursor:move;"><span style="font-size:' + fontSize + 'px;font-weight:600;color:white;background:rgba(0,0,0,0.55);padding:2px 8px;border-radius:4px;display:inline-block;">' + (code || 'ZONE') + '</span></div>';
-    }
-
-    function createLabelAt(pos, code) {
-        const latInput = document.getElementById('label_lat');
-        const lngInput = document.getElementById('label_lng');
-        const lat = Array.isArray(pos) ? pos[0] : pos.lat;
-        const lng = Array.isArray(pos) ? pos[1] : pos.lng;
-
-        labelMarker = L.marker([lat, lng], {
-            draggable: true,
-            icon: L.divIcon({ className: 'zone-label-editor', html: buildLabelHtml(code), iconSize: null, iconAnchor: [0, 0] })
-        }).addTo(editMap);
-
-        latInput.value = lat.toFixed(7);
-        lngInput.value = lng.toFixed(7);
-        labelMarker.on('drag', function() {
-            const ll = labelMarker.getLatLng();
-            latInput.value = ll.lat.toFixed(7);
-            lngInput.value = ll.lng.toFixed(7);
-        });
-    }
-
-    function refreshLabelIcon() {
-        if (!labelMarker) return;
-        labelMarker.setIcon(L.divIcon({ className: 'zone-label-editor', html: buildLabelHtml(getZoneCode()), iconSize: null, iconAnchor: [0, 0] }));
-    }
-
-    function createMarker(latlng) {
-        const color = getMarkerColor();
-        const marker = L.marker(latlng, { draggable: true, icon: markerIcon(color) }).addTo(editMap);
-        marker.on('dragstart', saveHistory);
-        marker.on('drag', function() { updateCurrentPoly(); updateUI(); });
-        marker.on('contextmenu', function(e) { L.DomEvent.stopPropagation(e); removeMarker(marker); });
-        markers.push(marker);
-    }
-
-    function removeMarker(marker) {
-        saveHistory();
-        const idx = markers.indexOf(marker);
-        if (idx > -1) { editMap.removeLayer(marker); markers.splice(idx, 1); updateCurrentPoly(); updateUI(); }
-    }
-
-    function updateCurrentPoly() {
-        if (currentPoly) { editMap.removeLayer(currentPoly); currentPoly = null; }
-        if (markers.length >= 3) {
-            currentPoly = L.polygon(markers.map(m => m.getLatLng()), getStyle()).addTo(editMap);
+        function getMarkerColor() {
+            return (document.getElementById('boundary_color') || {}).value || '#1B4332';
         }
-        updateHiddenField();
-    }
+        function markerIcon(color) {
+            return L.divIcon({ className:'boundary-marker', html:'<div style="width:20px;height:20px;background:'+color+';border:3px solid white;border-radius:50%;cursor:grab;box-shadow:0 2px 6px rgba(0,0,0,0.3);"></div>', iconSize:[24,24], iconAnchor:[12,12] });
+        }
+        function vertexIcon(color) {
+            return L.divIcon({ className:'boundary-vertex', html:'<div style="width:18px;height:18px;background:'+color+';border:3px solid white;border-radius:50%;cursor:grab;box-shadow:0 2px 6px rgba(0,0,0,0.3);"></div>', iconSize:[22,22], iconAnchor:[11,11] });
+        }
 
-    function updateMarkerColors() {
-        const color = getMarkerColor();
-        markers.forEach(m => m.setIcon(markerIcon(color)));
-        shapes.forEach(s => { if (s.vertexMarkers) s.vertexMarkers.forEach(vm => vm.setIcon(vertexIcon(color))); });
-    }
+        function normalizeBoundaryData(data) {
+            if (!data || data.length === 0) return [];
+            if (Array.isArray(data[0]) && (Array.isArray(data[0][0]) || (data[0].length > 0 && data[0][0].lat !== undefined))) return data;
+            if (data[0].lat !== undefined || data[0].lng !== undefined || (Array.isArray(data[0]) && data[0].length === 2 && typeof data[0][0] === 'number'))
+                return [data.map(p => p.lat !== undefined ? {lat:p.lat,lng:p.lng} : {lat:p[0],lng:p[1]})];
+            return [];
+        }
 
-    function addVertexMarkers(shape) {
-        if (shape.vertexMarkers) shape.vertexMarkers.forEach(m => editMap.removeLayer(m));
-        shape.vertexMarkers = [];
-        const color = getMarkerColor();
+        function getZoneCode() { const inp = document.getElementById('zoneCodeInput'); return inp ? (inp.value || 'ZONE') : 'ZONE'; }
+        function getLabelStyle() {
+            return { scale: parseFloat(document.getElementById('label_scale').value) || 1.0, angle: parseInt(document.getElementById('label_angle').value) || 0 };
+        }
+        function computeCentroid() {
+            const allPts = []; shapes.forEach(s => s.points.forEach(p => allPts.push(p)));
+            markers.forEach(m => allPts.push({ lat: m.getLatLng().lat, lng: m.getLatLng().lng }));
+            if (allPts.length === 0) return null;
+            const sum = allPts.reduce((a, p) => ({ lat: a.lat + p.lat, lng: a.lng + p.lng }), { lat: 0, lng: 0 });
+            return { lat: sum.lat / allPts.length, lng: sum.lng / allPts.length };
+        }
+        function buildLabelHtml(code) {
+            const { scale, angle } = getLabelStyle();
+            const fontSize = Math.round(14 * scale);
+            return '<div style="transform:translate(-50%,-50%) rotate('+angle+'deg);white-space:nowrap;cursor:move;"><span style="font-size:'+fontSize+'px;font-weight:600;color:white;background:rgba(0,0,0,0.55);padding:2px 8px;border-radius:4px;display:inline-block;">'+(code||'ZONE')+'</span></div>';
+        }
 
-        shape.points.forEach((pt, idx) => {
-            const vm = L.marker([pt.lat, pt.lng], { draggable: true, icon: vertexIcon(color) }).addTo(editMap);
-            vm.on('dragstart', function() { saveHistory(); });
-            vm.on('drag', function() {
-                const ll = vm.getLatLng();
-                shape.points[idx] = { lat: +ll.lat.toFixed(6), lng: +ll.lng.toFixed(6) };
-                shape.polygon.setLatLngs(shape.points.map(p => [p.lat, p.lng]));
-                updateHiddenField(); updateUI();
-            });
-            vm.on('contextmenu', function(e) {
-                L.DomEvent.stopPropagation(e);
-                if (shape.points.length > 3) {
-                    saveHistory(); editMap.removeLayer(vm);
-                    shape.points.splice(idx, 1);
-                    shape.vertexMarkers.splice(idx, 1);
-                    shape.polygon.setLatLngs(shape.points.map(p => [p.lat, p.lng]));
-                    addVertexMarkers(shape); updateHiddenField(); updateUI();
-                } else { showToast('至少需要3个节点', 'warning'); }
-            });
-            shape.vertexMarkers.push(vm);
-        });
+        function createLabelAt(pos, code) {
+            const latInput = document.getElementById('label_lat');
+            const lngInput = document.getElementById('label_lng');
+            const lat = Array.isArray(pos) ? pos[0] : pos.lat;
+            const lng = Array.isArray(pos) ? pos[1] : pos.lng;
+            labelMarker = L.marker([lat, lng], { draggable: true, icon: L.divIcon({ className:'zone-label-editor', html:buildLabelHtml(code), iconSize:null, iconAnchor:[0,0] }) }).addTo(editMap);
+            latInput.value = lat.toFixed(7); lngInput.value = lng.toFixed(7);
+            labelMarker.on('drag', function() { const ll = labelMarker.getLatLng(); latInput.value = ll.lat.toFixed(7); lngInput.value = ll.lng.toFixed(7); });
+        }
+        function refreshLabelIcon() {
+            if (!labelMarker) return;
+            labelMarker.setIcon(L.divIcon({ className:'zone-label-editor', html:buildLabelHtml(getZoneCode()), iconSize:null, iconAnchor:[0,0] }));
+        }
 
-        // Whole-polygon drag (mouse + touch via direct DOM)
-        let dragStart = null;
-        let dragSaved = false;
-
-        function onDragMove(e) {
-            if (!dragStart) return;
-            if (!dragSaved) { saveHistory(); dragSaved = true; }
-            let latlng;
-            if (e.latlng) { latlng = e.latlng; }
-            else if (e.touches && e.touches.length > 0) { latlng = editMap.containerPointToLatLng(editMap.mouseEventToContainerPoint(e.touches[0])); }
-            else if (e.clientX !== undefined) { const r = editMap.getContainer().getBoundingClientRect(); latlng = editMap.containerPointToLatLng(L.point(e.clientX - r.left, e.clientY - r.top)); }
-            if (!latlng) return;
-            const dLat = latlng.lat - dragStart.lat;
-            const dLng = latlng.lng - dragStart.lng;
-            dragStart = { lat: latlng.lat, lng: latlng.lng };
-            shape.points = shape.points.map(p => ({ lat: +(p.lat + dLat).toFixed(6), lng: +(p.lng + dLng).toFixed(6) }));
-            shape.polygon.setLatLngs(shape.points.map(p => [p.lat, p.lng]));
-            shape.vertexMarkers.forEach((vm, i) => { if (shape.points[i]) vm.setLatLng([shape.points[i].lat, shape.points[i].lng]); });
+        function createMarker(latlng) {
+            const color = getMarkerColor();
+            const marker = L.marker(latlng, { draggable: true, icon: markerIcon(color) }).addTo(editMap);
+            marker.on('dragstart', saveHistory);
+            marker.on('drag', function() { updateCurrentPoly(); updateUI(); });
+            marker.on('contextmenu', function(e) { L.DomEvent.stopPropagation(e); removeMarker(marker); });
+            markers.push(marker);
+        }
+        function removeMarker(marker) {
+            saveHistory();
+            const idx = markers.indexOf(marker);
+            if (idx > -1) { editMap.removeLayer(marker); markers.splice(idx, 1); updateCurrentPoly(); updateUI(); }
+        }
+        function updateCurrentPoly() {
+            if (currentPoly) { editMap.removeLayer(currentPoly); currentPoly = null; }
+            if (markers.length >= 3) { currentPoly = L.polygon(markers.map(m => m.getLatLng()), getStyle()).addTo(editMap); }
             updateHiddenField();
         }
-        function onDragEnd() {
-            if (dragStart) { dragStart = null; editMap.dragging.enable(); updateUI(); }
+        function updateMarkerColors() {
+            const color = getMarkerColor();
+            markers.forEach(m => m.setIcon(markerIcon(color)));
+            shapes.forEach(s => { if (s.vertexMarkers) s.vertexMarkers.forEach(vm => vm.setIcon(vertexIcon(color))); });
         }
 
-        // Desktop: use Leaflet mousedown on polygon
-        shape.polygon.off('mousedown click');
-        shape.polygon.on('mousedown', function(e) {
-            L.DomEvent.stopPropagation(e);
-            dragStart = { lat: e.latlng.lat, lng: e.latlng.lng };
-            dragSaved = false;
-            editMap.dragging.disable();
-        });
-        document.addEventListener('mousemove', onDragMove);
-        document.addEventListener('mouseup', onDragEnd);
-
-        // Mobile: direct DOM touchstart on SVG path element
-        // Leaflet doesn't dispatch touchstart to individual layers,
-        // so we bypass Leaflet and listen directly on the SVG path.
-        const pathEl = shape.polygon.getElement();
-        if (pathEl) {
-            pathEl.style.touchAction = 'none';
-            const domTouchStart = function(domEvent) {
-                if (domEvent.touches.length !== 1) return;
-                domEvent.stopPropagation();
-                domEvent.preventDefault();
-                const rect = editMap.getContainer().getBoundingClientRect();
-                const pt = L.point(domEvent.touches[0].clientX - rect.left, domEvent.touches[0].clientY - rect.top);
-                const ll = editMap.containerPointToLatLng(pt);
-                dragStart = { lat: ll.lat, lng: ll.lng };
-                dragSaved = false;
-                editMap.dragging.disable();
-            };
-            pathEl.addEventListener('touchstart', domTouchStart, { passive: false });
-            shape._domTouchStart = domTouchStart;
-        }
-        document.addEventListener('touchmove', onDragMove, { passive: false });
-        document.addEventListener('touchend', onDragEnd);
-
-        // Store cleanup refs for removeVertexMarkers
-        shape._dragMove = onDragMove;
-        shape._dragEnd = onDragEnd;
-    }
-
-    function removeVertexMarkers(shape) {
-        if (shape.vertexMarkers) { shape.vertexMarkers.forEach(m => editMap.removeLayer(m)); shape.vertexMarkers = null; }
-        if (shape._dragMove) { document.removeEventListener('mousemove', shape._dragMove); document.removeEventListener('touchmove', shape._dragMove); }
-        if (shape._dragEnd) { document.removeEventListener('mouseup', shape._dragEnd); document.removeEventListener('touchend', shape._dragEnd); }
-        if (shape._domTouchStart && shape.polygon.getElement()) { shape.polygon.getElement().removeEventListener('touchstart', shape._domTouchStart); }
-    }
-
-    function completeCurrentShape() {
-        if (markers.length < 3) { showToast('至少需要3个节点才能完成', 'warning'); return; }
-        saveHistory();
-        const pts = markers.map(m => ({lat: +m.getLatLng().lat.toFixed(6), lng: +m.getLatLng().lng.toFixed(6)}));
-        const poly = L.polygon(markers.map(m => m.getLatLng()), getStyle()).addTo(editMap);
-        shapes.push({ points: pts, polygon: poly });
-        addVertexMarkers(shapes[shapes.length - 1]);
-        markers.forEach(m => editMap.removeLayer(m));
-        markers = [];
-        if (currentPoly) { editMap.removeLayer(currentPoly); currentPoly = null; }
-        updateHiddenField(); updateUI();
-        if (!labelMarker) { const pos = computeCentroid(); if (pos) createLabelAt(pos, getZoneCode()); }
-    }
-
-    function deleteShape(index) {
-        saveHistory();
-        const shape = shapes[index];
-        removeVertexMarkers(shape); editMap.removeLayer(shape.polygon);
-        shapes.splice(index, 1); updateHiddenField(); updateUI();
-    }
-
-    function updateHiddenField() {
-        const allPoints = shapes.map(s => s.points);
-        if (markers.length > 0) allPoints.push(markers.map(m => ({lat: +m.getLatLng().lat.toFixed(6), lng: +m.getLatLng().lng.toFixed(6)})));
-        document.getElementById('boundary_points').value = JSON.stringify(allPoints);
-    }
-
-    function updateUI() {
-        const savedCount = Object.keys(savedZoneMap).length;
-        document.getElementById('topDrawn').textContent = savedCount;
-        document.getElementById('topUndrawn').textContent = allZones.length - savedCount;
-        document.getElementById('drawPointCount').textContent = markers.length;
-        document.getElementById('drawShapeCount').textContent = shapes.length;
-
-        const completeBtn = document.getElementById('completeShapeBtn');
-        const saveBtn = document.getElementById('saveBtn');
-        if (completeBtn) completeBtn.disabled = markers.length < 3;
-        if (saveBtn) saveBtn.disabled = shapes.length === 0;
-
-        // Status pill
-        const pill = document.getElementById('statusPill');
-        if (shapes.length > 0 && markers.length === 0) {
-            pill.textContent = '区域已完成 — 输入编号保存';
-        } else if (markers.length > 0) {
-            pill.textContent = markers.length < 3 ? '还需 ' + (3 - markers.length) + ' 个节点' : '可点击「完成区域」';
-        } else {
-            pill.textContent = '点击地图开始绘制';
-        }
-
-        // Shapes mini list
-        const shapesList = document.getElementById('shapesList');
-        if (shapesList && shapes.length > 0) {
-            shapesList.innerHTML = shapes.map((s, i) =>
-                '<div class="shape-mini-item">' +
-                '<span>区域 ' + (i+1) + ' (' + s.points.length + '点)</span>' +
-                '<button type="button" class="shape-mini-del" data-idx="' + i + '">✕</button>' +
-                '</div>'
-            ).join('');
-            shapesList.querySelectorAll('.shape-mini-del').forEach(btn => {
-                btn.addEventListener('click', function() { deleteShape(+this.dataset.idx); });
-            });
-        } else if (shapesList) { shapesList.innerHTML = ''; }
-    }
-
-    function saveHistory() {
-        history.push({
-            shapes: shapes.map(s => s.points.map(p => ({...p}))),
-            current: markers.map(m => ({lat: m.getLatLng().lat, lng: m.getLatLng().lng}))
-        });
-        if (history.length > 30) history.shift();
-        document.getElementById('fabUndo').disabled = history.length < 2;
-        const su = document.getElementById('settingsUndo');
-        if (su) su.disabled = history.length < 2;
-    }
-
-    function undo() {
-        if (history.length < 2) return;
-        history.pop();
-        const state = history[history.length - 1];
-        shapes.forEach(s => { removeVertexMarkers(s); editMap.removeLayer(s.polygon); }); shapes = [];
-        markers.forEach(m => editMap.removeLayer(m)); markers = [];
-        if (currentPoly) { editMap.removeLayer(currentPoly); currentPoly = null; }
-        state.shapes.forEach(pts => {
-            if (pts.length >= 3) {
-                const poly = L.polygon(pts.map(p => [p.lat, p.lng]), getStyle()).addTo(editMap);
-                shapes.push({ points: pts, polygon: poly });
-                addVertexMarkers(shapes[shapes.length - 1]);
-            }
-        });
-        state.current.forEach(p => createMarker(L.latLng(p.lat, p.lng)));
-        updateCurrentPoly(); updateUI();
-        document.getElementById('fabUndo').disabled = history.length < 2;
-        const su = document.getElementById('settingsUndo');
-        if (su) su.disabled = history.length < 2;
-    }
-
-    function clearAll() {
-        const total = shapes.length + markers.length;
-        if (total === 0) return;
-        if (!confirm('确定清除所有区域和节点吗？')) return;
-        saveHistory();
-        shapes.forEach(s => { removeVertexMarkers(s); editMap.removeLayer(s.polygon); }); shapes = [];
-        markers.forEach(m => editMap.removeLayer(m)); markers = [];
-        if (currentPoly) { editMap.removeLayer(currentPoly); currentPoly = null; }
-        if (labelMarker) { editMap.removeLayer(labelMarker); labelMarker = null; }
-        document.getElementById('label_lat').value = '';
-        document.getElementById('label_lng').value = '';
-        updateHiddenField(); updateUI(); hideSavePanel(); editingZoneId = null;
-    }
-
-    function clearDrawingOnly() {
-        shapes.forEach(s => { removeVertexMarkers(s); editMap.removeLayer(s.polygon); }); shapes = [];
-        markers.forEach(m => editMap.removeLayer(m)); markers = [];
-        if (currentPoly) { editMap.removeLayer(currentPoly); currentPoly = null; }
-        if (labelMarker) { editMap.removeLayer(labelMarker); labelMarker = null; }
-        document.getElementById('label_lat').value = '';
-        document.getElementById('label_lng').value = '';
-        document.getElementById('boundary_points').value = '[]';
-        history = []; updateUI();
-    }
-
-    function locateUser() {
-        if (!navigator.geolocation) { showToast('浏览器不支持定位', 'error'); return; }
-        const fab = document.getElementById('fabLocate');
-        fab.textContent = '...';
-        navigator.geolocation.getCurrentPosition(
-            function(pos) {
-                const lat = pos.coords.latitude, lng = pos.coords.longitude, acc = pos.coords.accuracy;
-                if (userLocationMarker) editMap.removeLayer(userLocationMarker);
-                if (userAccuracyCircle) editMap.removeLayer(userAccuracyCircle);
-                userAccuracyCircle = L.circle([lat, lng], {radius:acc,color:'#1B4332',fillColor:'#2D6A4F',fillOpacity:0.15,weight:1}).addTo(editMap);
-                userLocationMarker = L.marker([lat, lng], {icon: L.divIcon({className:'',html:'<div style="background:#D4A574;width:16px;height:16px;border:3px solid white;border-radius:50%;box-shadow:0 0 0 2px #D4A574;"></div>',iconSize:[22,22],iconAnchor:[11,11]})}).addTo(editMap);
-                editMap.flyTo([lat, lng], 17, {animate:true, duration:1.0});
-                fab.textContent = '◎';
-            },
-            function() { showToast('无法获取位置', 'error'); fab.textContent = '◎'; },
-            {enableHighAccuracy:true, timeout:15000, maximumAge:0}
-        );
-    }
-
-    function autoLocate() {
-        if (!navigator.geolocation) return;
-        navigator.geolocation.getCurrentPosition(
-            function(pos) {
-                const lat = pos.coords.latitude, lng = pos.coords.longitude;
-                if (userLocationMarker) editMap.removeLayer(userLocationMarker);
-                if (userAccuracyCircle) editMap.removeLayer(userAccuracyCircle);
-                userAccuracyCircle = L.circle([lat, lng], {radius:pos.coords.accuracy,color:'#1B4332',fillColor:'#2D6A4F',fillOpacity:0.15,weight:1}).addTo(editMap);
-                userLocationMarker = L.marker([lat, lng], {icon: L.divIcon({className:'',html:'<div style="background:#D4A574;width:16px;height:16px;border:3px solid white;border-radius:50%;box-shadow:0 0 0 2px #D4A574;"></div>',iconSize:[22,22],iconAnchor:[11,11]})}).addTo(editMap);
-                if (shapes.length === 0 && markers.length === 0) editMap.flyTo([lat, lng], 17, {animate:true, duration:1.0});
-            },
-            function() {},
-            {enableHighAccuracy:true, timeout:15000, maximumAge:60000}
-        );
-    }
-
-    // ============================================================
-    // Reference layers
-    // ============================================================
-    function addZoneToRefLayer(z) {
-        if (!refLayerGroup || !z.boundary_points || z.boundary_points.length === 0) return;
-        const polys = normalizeBoundaryData(z.boundary_points);
-        polys.forEach(pts => {
-            if (pts.length < 3) return;
-            const poly = L.polygon(pts.map(p => [p.lat, p.lng]), {
-                color:'#FFFFFF', weight:1.5, opacity:0.6,
-                fillColor: z.boundary_color || '#52B788', fillOpacity:0.15, interactive:true
-            }).addTo(refLayerGroup);
-            poly._zoneId = z.id;
-            poly._zoneCode = z.code;
-            poly.bindTooltip(z.code + ' ' + (z.name || ''), {sticky:true});
-
-            // Long-press for context menu (touch) + click (desktop fallback)
-            let lpTimer = null;
-            poly.on('mousedown', function(e) {
-                longPressFired = false;
-                lpTimer = setTimeout(function() {
-                    longPressFired = true;
+        function addVertexMarkers(shape) {
+            if (shape.vertexMarkers) shape.vertexMarkers.forEach(m => editMap.removeLayer(m));
+            shape.vertexMarkers = [];
+            const color = getMarkerColor();
+            shape.points.forEach((pt, idx) => {
+                const vm = L.marker([pt.lat, pt.lng], { draggable: true, icon: vertexIcon(color) }).addTo(editMap);
+                vm.on('dragstart', function() { saveHistory(); });
+                vm.on('drag', function() {
+                    const ll = vm.getLatLng();
+                    shape.points[idx] = { lat: +ll.lat.toFixed(6), lng: +ll.lng.toFixed(6) };
+                    shape.polygon.setLatLngs(shape.points.map(p => [p.lat, p.lng]));
+                    updateHiddenField(); updateUI();
+                });
+                vm.on('contextmenu', function(e) {
                     L.DomEvent.stopPropagation(e);
-                    showContextMenu(e.originalEvent, z.id, z.code);
-                }, 600);
+                    if (shape.points.length > 3) { saveHistory(); editMap.removeLayer(vm); shape.points.splice(idx, 1); shape.vertexMarkers.splice(idx, 1); shape.polygon.setLatLngs(shape.points.map(p => [p.lat, p.lng])); addVertexMarkers(shape); updateHiddenField(); updateUI(); }
+                    else { showToast('至少需要3个节点', 'warning'); }
+                });
+                shape.vertexMarkers.push(vm);
             });
-            poly.on('mouseup mouseout', function() { if (lpTimer) { clearTimeout(lpTimer); lpTimer = null; } });
 
-            // Direct DOM touch handlers for mobile long-press
-            // (Leaflet may not dispatch touchstart to individual layers on mobile)
-            const refPathEl = poly.getElement();
-            if (refPathEl) {
-                let lpStartY = 0, lpStartX = 0;
-                refPathEl.addEventListener('touchstart', function(domEvent) {
+            let dragStart = null, dragSaved = false;
+            function onDragMove(e) {
+                if (!dragStart) return;
+                if (!dragSaved) { saveHistory(); dragSaved = true; }
+                let latlng;
+                if (e.latlng) { latlng = e.latlng; }
+                else if (e.touches && e.touches.length > 0) { latlng = editMap.containerPointToLatLng(editMap.mouseEventToContainerPoint(e.touches[0])); }
+                else if (e.clientX !== undefined) { const r = editMap.getContainer().getBoundingClientRect(); latlng = editMap.containerPointToLatLng(L.point(e.clientX - r.left, e.clientY - r.top)); }
+                if (!latlng) return;
+                const dLat = latlng.lat - dragStart.lat, dLng = latlng.lng - dragStart.lng;
+                dragStart = { lat: latlng.lat, lng: latlng.lng };
+                shape.points = shape.points.map(p => ({ lat: +(p.lat + dLat).toFixed(6), lng: +(p.lng + dLng).toFixed(6) }));
+                shape.polygon.setLatLngs(shape.points.map(p => [p.lat, p.lng]));
+                shape.vertexMarkers.forEach((vm, i) => { if (shape.points[i]) vm.setLatLng([shape.points[i].lat, shape.points[i].lng]); });
+                updateHiddenField();
+            }
+            function onDragEnd() { if (dragStart) { dragStart = null; editMap.dragging.enable(); updateUI(); } }
+
+            shape.polygon.off('mousedown click');
+            shape.polygon.on('mousedown', function(e) { L.DomEvent.stopPropagation(e); dragStart = { lat: e.latlng.lat, lng: e.latlng.lng }; dragSaved = false; editMap.dragging.disable(); });
+            document.addEventListener('mousemove', onDragMove);
+            document.addEventListener('mouseup', onDragEnd);
+
+            const pathEl = shape.polygon.getElement();
+            if (pathEl) {
+                pathEl.style.touchAction = 'none';
+                const domTouchStart = function(domEvent) {
                     if (domEvent.touches.length !== 1) return;
-                    longPressFired = false;
-                    lpStartX = domEvent.touches[0].clientX;
-                    lpStartY = domEvent.touches[0].clientY;
-                    lpTimer = setTimeout(function() {
-                        longPressFired = true;
-                        showContextMenu(domEvent, z.id, z.code);
-                    }, 600);
-                }, { passive: true });
-                refPathEl.addEventListener('touchmove', function(domEvent) {
-                    if (lpTimer) {
-                        const dx = Math.abs(domEvent.touches[0].clientX - lpStartX);
-                        const dy = Math.abs(domEvent.touches[0].clientY - lpStartY);
-                        if (dx > 10 || dy > 10) { clearTimeout(lpTimer); lpTimer = null; }
-                    }
-                }, { passive: true });
-                refPathEl.addEventListener('touchend', function() {
-                    if (lpTimer) { clearTimeout(lpTimer); lpTimer = null; }
-                });
-                refPathEl.addEventListener('touchcancel', function() {
-                    if (lpTimer) { clearTimeout(lpTimer); lpTimer = null; }
-                });
-            }
-        });
-
-        // Label
-        const scale = z.label_scale || 1.0, angle = z.label_angle || 0;
-        const fontSize = Math.round(14 * scale);
-        let lat, lng;
-        if (z.label_lat && z.label_lng) { lat = z.label_lat; lng = z.label_lng; }
-        else {
-            const allPts = []; polys.forEach(pts2 => pts2.forEach(p => allPts.push(p)));
-            if (allPts.length === 0) return;
-            const center = allPts.reduce((a,p) => ({lat:a.lat+p.lat,lng:a.lng+p.lng}),{lat:0,lng:0});
-            lat = center.lat / allPts.length; lng = center.lng / allPts.length;
-        }
-        L.marker([lat, lng], {
-            icon: L.divIcon({className:'zone-label-editor',html:'<div style="transform:translate(-50%,-50%) rotate('+angle+'deg);white-space:nowrap;pointer-events:none;"><span style="font-size:'+fontSize+'px;font-weight:600;color:white;background:rgba(0,0,0,0.55);padding:2px 8px;border-radius:4px;display:inline-block;">'+z.code+'</span></div>',iconSize:null,iconAnchor:[0,0]}),
-            interactive:false
-        }).addTo(refLayerGroup);
-    }
-
-    function removeZoneFromRefLayer(zoneId) {
-        if (!refLayerGroup) return;
-        const toRemove = [];
-        refLayerGroup.eachLayer(function(layer) { if (layer._zoneId === zoneId) toRemove.push(layer); });
-        toRemove.forEach(layer => refLayerGroup.removeLayer(layer));
-    }
-
-    function rebuildRefLayers() {
-        if (refLayerGroup) { editMap.removeLayer(refLayerGroup); refLayerGroup = null; }
-        refLayerGroup = L.layerGroup().addTo(editMap);
-        Object.values(savedZoneMap).forEach(z => addZoneToRefLayer(z));
-    }
-
-    // ============================================================
-    // Context Menu (long-press)
-    // ============================================================
-    function showContextMenu(mouseEvent, zoneId, zoneCode) {
-        const menu = document.getElementById('ctxMenu');
-        document.getElementById('ctxTitle').textContent = zoneCode;
-        contextMenuZoneId = zoneId;
-
-        const mapRect = editMap.getContainer().getBoundingClientRect();
-        let x, y;
-        if (mouseEvent.touches && mouseEvent.touches.length > 0) {
-            x = mouseEvent.touches[0].clientX - mapRect.left;
-            y = mouseEvent.touches[0].clientY - mapRect.top;
-        } else {
-            x = mouseEvent.clientX - mapRect.left;
-            y = mouseEvent.clientY - mapRect.top;
-        }
-        if (x + 160 > mapRect.width) x = x - 160;
-        if (y + 120 > mapRect.height) y = y - 120;
-
-        menu.style.left = x + 'px';
-        menu.style.top = y + 'px';
-        menu.style.display = 'block';
-    }
-
-    function hideContextMenu() {
-        document.getElementById('ctxMenu').style.display = 'none';
-        contextMenuZoneId = null;
-    }
-
-    // ============================================================
-    // Save panel helpers
-    // ============================================================
-    function hideSavePanel() {
-        const inp = document.getElementById('zoneCodeInput');
-        if (inp) inp.value = '';
-        const dd = document.getElementById('zoneDropdown');
-        if (dd) dd.style.display = 'none';
-        const pv = document.getElementById('zonePreview');
-        if (pv) pv.style.display = 'none';
-    }
-
-    // ============================================================
-    // Zone search / autocomplete
-    // ============================================================
-    function setupZoneSearch() {
-        const input = document.getElementById('zoneCodeInput');
-        const dropdown = document.getElementById('zoneDropdown');
-        const preview = document.getElementById('zonePreview');
-        const previewText = document.getElementById('zonePreviewText');
-        const saveBtn = document.getElementById('saveBtn');
-
-        input.addEventListener('input', function() {
-            const query = this.value.trim().toLowerCase();
-            refreshLabelIcon();
-            if (!query) { dropdown.style.display = 'none'; preview.style.display = 'none'; saveBtn.disabled = shapes.length === 0; return; }
-
-            const matches = allZones.filter(z => z.code.toLowerCase().includes(query) || (z.name && z.name.toLowerCase().includes(query))).slice(0, 12);
-
-            if (matches.length > 0) {
-                dropdown.innerHTML = matches.map(z => {
-                    const hasB = !!savedZoneMap[z.id];
-                    return '<div class="dd-item" data-zone-id="'+z.id+'" data-zone-code="'+z.code+'">' +
-                        '<span class="dd-code">'+z.code+'</span>' +
-                        '<span class="dd-name">'+(z.name||'')+'</span>' +
-                        (z.patch_name ? '<span class="dd-patch">'+z.patch_name+'</span>' : '') +
-                        (hasB ? '<span class="dd-drawn">✓</span>' : '') +
-                        '</div>';
-                }).join('');
-                dropdown.style.display = 'block';
-                dropdown.querySelectorAll('.dd-item').forEach(item => {
-                    item.addEventListener('click', function() {
-                        selectZoneForSave(+this.dataset.zoneId, this.dataset.zoneCode);
-                    });
-                });
-            } else {
-                dropdown.innerHTML = '<div class="dd-hint">未找到匹配的区域编号</div>';
-                dropdown.style.display = 'block';
-            }
-
-            const exact = allZones.find(z => z.code.toLowerCase() === query);
-            if (exact) {
-                preview.style.display = 'block';
-                const hasB = !!savedZoneMap[exact.id];
-                previewText.innerHTML = '匹配: <strong>'+exact.code+'</strong> - '+(exact.name||'未命名')+(exact.patch_name?' ('+exact.patch_name+')':'')+(hasB?' <span style="color:var(--color-success);">✓ 将覆盖</span>':'');
-                saveBtn.disabled = shapes.length === 0;
-            } else {
-                preview.style.display = 'block';
-                previewText.innerHTML = '<span style="color:var(--color-danger);">未找到匹配的区域</span>';
-                saveBtn.disabled = true;
-            }
-        });
-
-        input.addEventListener('keydown', function(e) {
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                const q = this.value.trim().toLowerCase();
-                const m = allZones.find(z => z.code.toLowerCase() === q);
-                if (m) selectZoneForSave(m.id, m.code);
-            } else if (e.key === 'Escape') { dropdown.style.display = 'none'; }
-        });
-
-        document.addEventListener('click', function(e) {
-            if (!e.target.closest('.zone-input-wrap')) dropdown.style.display = 'none';
-        });
-    }
-
-    function selectZoneForSave(zoneId, zoneCode) {
-        const input = document.getElementById('zoneCodeInput');
-        const dropdown = document.getElementById('zoneDropdown');
-        const preview = document.getElementById('zonePreview');
-        const previewText = document.getElementById('zonePreviewText');
-        const saveBtn = document.getElementById('saveBtn');
-
-        input.value = zoneCode;
-        dropdown.style.display = 'none';
-
-        const z = allZones.find(zz => zz.id === zoneId);
-        const hasB = !!savedZoneMap[zoneId];
-        preview.style.display = 'block';
-        previewText.innerHTML = '匹配: <strong>'+zoneCode+'</strong> - '+(z?(z.name||'未命名'):'')+(z&&z.patch_name?' ('+z.patch_name+')':'')+(hasB?' <span style="color:var(--color-success);">✓ 将覆盖</span>':'');
-        saveBtn.disabled = shapes.length === 0;
-        refreshLabelIcon();
-    }
-
-    // ============================================================
-    // Save boundary
-    // ============================================================
-    function saveBoundary() {
-        const code = document.getElementById('zoneCodeInput').value.trim();
-        if (!code) { showToast('请输入区域编号', 'warning'); return; }
-        if (markers.length >= 3) completeCurrentShape();
-        if (shapes.length === 0) { showToast('请先绘制至少一个区域边界', 'warning'); return; }
-
-        const zone = allZones.find(z => z.code === code);
-        if (!zone) { showToast('未找到匹配的区域编号', 'error'); return; }
-
-        const btn = document.getElementById('saveBtn');
-        btn.disabled = true; btn.textContent = '保存中...';
-
-        const formData = new FormData();
-        formData.append('zone_code', code);
-        formData.append('boundary_points', document.getElementById('boundary_points').value);
-        formData.append('label_lat', document.getElementById('label_lat').value);
-        formData.append('label_lng', document.getElementById('label_lng').value);
-        formData.append('label_scale', document.getElementById('label_scale').value);
-        formData.append('label_angle', document.getElementById('label_angle').value);
-
-        fetch('/settings/zone/quick-draw/mobile/', {
-            method: 'POST', body: formData,
-            headers: { 'X-CSRFToken': getCSRF(), 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' }
-        })
-        .then(r => r.json())
-        .then(data => {
-            btn.disabled = false; btn.textContent = '保存';
-            if (data.success) {
-                showToast(data.message, 'success');
-                savedZoneMap[data.zone_id] = {
-                    id:data.zone_id, code:data.zone_code, name:data.zone_name,
-                    boundary_points:data.boundary_points, boundary_color:data.boundary_color,
-                    label_lat:data.label_lat, label_lng:data.label_lng,
-                    label_scale:data.label_scale, label_angle:data.label_angle,
-                    patch_name:data.patch_name||'', area_display:data.area_display,
-                    polygon_count:data.boundary_points?data.boundary_points.length:0,
+                    domEvent.stopPropagation(); domEvent.preventDefault();
+                    const rect = editMap.getContainer().getBoundingClientRect();
+                    const ll = editMap.containerPointToLatLng(L.point(domEvent.touches[0].clientX - rect.left, domEvent.touches[0].clientY - rect.top));
+                    dragStart = { lat: ll.lat, lng: ll.lng }; dragSaved = false; editMap.dragging.disable();
                 };
-                renderSavedList(); rebuildRefLayers(); clearDrawingOnly(); hideSavePanel();
-                editingZoneId = null; updateStats();
-            } else { showToast(data.message || '保存失败', 'error'); }
-        })
-        .catch(() => { btn.disabled = false; btn.textContent = '保存'; showToast('保存失败，请重试', 'error'); });
-    }
-
-    // ============================================================
-    // Edit / Delete saved zone
-    // ============================================================
-    function editSavedZone(zoneId) {
-        const z = savedZoneMap[zoneId];
-        if (!z || !z.boundary_points || z.boundary_points.length === 0) return;
-        if (shapes.length > 0 || markers.length > 0) { if (!confirm('当前有未保存的绘制内容，确定要编辑此区域吗？')) return; }
-
-        clearDrawingOnly(); editingZoneId = zoneId;
-        removeZoneFromRefLayer(zoneId);
-
-        const polys = normalizeBoundaryData(z.boundary_points);
-        polys.forEach(pts => {
-            if (pts.length >= 3) {
-                const poly = L.polygon(pts.map(p => [p.lat, p.lng]), getStyle()).addTo(editMap);
-                shapes.push({ points: pts, polygon: poly });
-                addVertexMarkers(shapes[shapes.length - 1]);
+                pathEl.addEventListener('touchstart', domTouchStart, { passive: false });
+                shape._domTouchStart = domTouchStart;
             }
-        });
-
-        // Switch to draw tab and expand drawer
-        document.querySelectorAll('.drawer-tab').forEach(t => t.classList.remove('active'));
-        document.querySelectorAll('.drawer-panel').forEach(p => p.classList.remove('active'));
-        document.querySelector('.drawer-tab[data-tab="draw"]').classList.add('active');
-        document.getElementById('drawPanel').classList.add('active');
-        window._expandDrawer();
-
-        document.getElementById('zoneCodeInput').value = z.code;
-        document.getElementById('zonePreview').style.display = 'block';
-        document.getElementById('zonePreviewText').innerHTML = '编辑: <strong>'+z.code+'</strong> - '+(z.name||'未命名');
-
-        document.getElementById('label_scale').value = z.label_scale || 1.0;
-        document.getElementById('label_scale_display').textContent = (z.label_scale||1.0) + 'x';
-        document.getElementById('label_angle').value = z.label_angle || 0;
-
-        if (z.label_lat && z.label_lng) createLabelAt([z.label_lat, z.label_lng], z.code);
-        else { const pos = computeCentroid(); if (pos) createLabelAt(pos, z.code); }
-
-        const allPts = []; polys.forEach(pts => pts.forEach(p => allPts.push(p)));
-        if (allPts.length > 0) {
-            const center = allPts.reduce((a,p)=>({lat:a.lat+p.lat,lng:a.lng+p.lng}),{lat:0,lng:0});
-            editMap.panTo([center.lat/allPts.length, center.lng/allPts.length], {animate:true,duration:0.8});
+            document.addEventListener('touchmove', onDragMove, { passive: false });
+            document.addEventListener('touchend', onDragEnd);
+            shape._dragMove = onDragMove; shape._dragEnd = onDragEnd;
         }
 
-        updateHiddenField(); updateUI();
-        document.getElementById('zoneCodeInput').value = z.code;
-        document.getElementById('zoneCodeInput').dispatchEvent(new Event('input'));
-        showToast('正在编辑区域 ' + z.code, 'info');
-    }
+        function removeVertexMarkers(shape) {
+            if (shape.vertexMarkers) { shape.vertexMarkers.forEach(m => editMap.removeLayer(m)); shape.vertexMarkers = null; }
+            if (shape._dragMove) { document.removeEventListener('mousemove', shape._dragMove); document.removeEventListener('touchmove', shape._dragMove); }
+            if (shape._dragEnd) { document.removeEventListener('mouseup', shape._dragEnd); document.removeEventListener('touchend', shape._dragEnd); }
+            if (shape._domTouchStart && shape.polygon.getElement()) { shape.polygon.getElement().removeEventListener('touchstart', shape._domTouchStart); }
+        }
 
-    function deleteSavedZone(zoneId) {
-        const z = savedZoneMap[zoneId];
-        if (!z) return;
-        if (!confirm('确定要删除区域 ' + z.code + ' 的边界吗？')) return;
+        function completeCurrentShape() {
+            if (markers.length < 3) { showToast('至少需要3个节点才能完成', 'warning'); return; }
+            saveHistory();
+            const pts = markers.map(m => ({lat: +m.getLatLng().lat.toFixed(6), lng: +m.getLatLng().lng.toFixed(6)}));
+            const poly = L.polygon(markers.map(m => m.getLatLng()), getStyle()).addTo(editMap);
+            shapes.push({ points: pts, polygon: poly });
+            addVertexMarkers(shapes[shapes.length - 1]);
+            markers.forEach(m => editMap.removeLayer(m)); markers = [];
+            if (currentPoly) { editMap.removeLayer(currentPoly); currentPoly = null; }
+            updateHiddenField(); updateUI();
+            if (!labelMarker) { const pos = computeCentroid(); if (pos) createLabelAt(pos, getZoneCode()); }
+        }
+        function deleteShape(index) { saveHistory(); const s = shapes[index]; removeVertexMarkers(s); editMap.removeLayer(s.polygon); shapes.splice(index, 1); updateHiddenField(); updateUI(); }
+        function updateHiddenField() {
+            const allPoints = shapes.map(s => s.points);
+            if (markers.length > 0) allPoints.push(markers.map(m => ({lat: +m.getLatLng().lat.toFixed(6), lng: +m.getLatLng().lng.toFixed(6)})));
+            document.getElementById('boundary_points').value = JSON.stringify(allPoints);
+        }
 
-        fetch('/settings/zone/quick-draw/mobile/', {
-            method:'POST',
-            body: (() => { const fd = new FormData(); fd.append('action','delete_boundary'); fd.append('zone_code',z.code); return fd; })(),
-            headers: { 'X-CSRFToken':getCSRF(), 'X-Requested-With':'XMLHttpRequest', 'Accept':'application/json' }
-        })
-        .then(r => r.json())
-        .then(data => {
-            if (data.success) {
-                showToast(data.message, 'success');
-                removeZoneFromRefLayer(zoneId); delete savedZoneMap[zoneId];
-                renderSavedList(); updateStats();
-                const zi = allZones.find(zz => zz.id === zoneId);
-                if (zi) zi.has_boundary = false;
-            } else { showToast(data.message||'删除失败','error'); }
-        })
-        .catch(() => showToast('删除失败，请重试','error'));
-    }
+        function updateUI() {
+            const savedCount = Object.keys(savedZoneMap).length;
+            document.getElementById('topDrawn').textContent = savedCount;
+            document.getElementById('topUndrawn').textContent = allZones.length - savedCount;
+            const saveBtn = document.getElementById('saveBtn');
+            if (saveBtn) saveBtn.disabled = shapes.length === 0;
+            const pill = document.getElementById('statusPill');
+            if (!isDrawing) {
+                pill.textContent = '点击 ✏ 开始绘制';
+            } else if (shapes.length > 0 && markers.length === 0) {
+                pill.textContent = '区域已完成 — 保存或继续绘制';
+            } else if (markers.length > 0) {
+                pill.textContent = markers.length < 3 ? '还需 ' + (3 - markers.length) + ' 个节点' : '可点击「完成」';
+            } else {
+                pill.textContent = '点击地图添加节点';
+            }
+        }
 
-    // ============================================================
-    // Render saved list
-    // ============================================================
-    function renderSavedList() {
-        const list = document.getElementById('savedList');
-        const entries = Object.values(savedZoneMap);
-        document.getElementById('lsDrawn').textContent = entries.length;
+        function saveHistory() {
+            history.push({ shapes: shapes.map(s => s.points.map(p => ({...p}))), current: markers.map(m => ({lat: m.getLatLng().lat, lng: m.getLatLng().lng})) });
+            if (history.length > 30) history.shift();
+            document.getElementById('fabUndo').disabled = history.length < 2;
+        }
+        function undo() {
+            if (history.length < 2) return;
+            history.pop(); const state = history[history.length - 1];
+            shapes.forEach(s => { removeVertexMarkers(s); editMap.removeLayer(s.polygon); }); shapes = [];
+            markers.forEach(m => editMap.removeLayer(m)); markers = [];
+            if (currentPoly) { editMap.removeLayer(currentPoly); currentPoly = null; }
+            state.shapes.forEach(pts => { if (pts.length >= 3) { const poly = L.polygon(pts.map(p => [p.lat, p.lng]), getStyle()).addTo(editMap); shapes.push({ points: pts, polygon: poly }); addVertexMarkers(shapes[shapes.length - 1]); } });
+            state.current.forEach(p => createMarker(L.latLng(p.lat, p.lng)));
+            updateCurrentPoly(); updateUI();
+            document.getElementById('fabUndo').disabled = history.length < 2;
+        }
+        function clearAll() {
+            if (shapes.length + markers.length === 0) return;
+            if (!confirm('确定清除所有区域和节点吗？')) return;
+            saveHistory();
+            shapes.forEach(s => { removeVertexMarkers(s); editMap.removeLayer(s.polygon); }); shapes = [];
+            markers.forEach(m => editMap.removeLayer(m)); markers = [];
+            if (currentPoly) { editMap.removeLayer(currentPoly); currentPoly = null; }
+            if (labelMarker) { editMap.removeLayer(labelMarker); labelMarker = null; }
+            document.getElementById('label_lat').value = ''; document.getElementById('label_lng').value = '';
+            updateHiddenField(); updateUI(); editingZoneId = null;
+        }
+        function clearDrawingOnly() {
+            shapes.forEach(s => { removeVertexMarkers(s); editMap.removeLayer(s.polygon); }); shapes = [];
+            markers.forEach(m => editMap.removeLayer(m)); markers = [];
+            if (currentPoly) { editMap.removeLayer(currentPoly); currentPoly = null; }
+            if (labelMarker) { editMap.removeLayer(labelMarker); labelMarker = null; }
+            document.getElementById('label_lat').value = ''; document.getElementById('label_lng').value = '';
+            document.getElementById('boundary_points').value = '[]';
+            history = []; updateUI();
+        }
 
-        if (entries.length === 0) { list.innerHTML = '<div class="list-empty">暂无已绘制区域</div>'; return; }
+        // Draw mode toggle
+        function toggleDrawMode() {
+            isDrawing = !isDrawing;
+            const fab = document.getElementById('fabDraw');
+            fab.classList.toggle('active', isDrawing);
+            if (!isDrawing) {
+                // Clear in-progress markers when turning off
+                markers.forEach(m => editMap.removeLayer(m)); markers = [];
+                if (currentPoly) { editMap.removeLayer(currentPoly); currentPoly = null; }
+                updateHiddenField();
+            }
+            updateUI();
+        }
 
-        list.innerHTML = entries.sort((a,b) => (a.code||'').localeCompare(b.code||'')).map(z =>
-            '<div class="zone-item">' +
-            '<span class="zi-code">'+z.code+'</span>' +
-            '<span class="zi-name">'+(z.name||'')+'</span>' +
-            (z.boundary_points ? '<span class="zi-count">'+(Array.isArray(z.boundary_points)?z.boundary_points.length:0)+'区域</span>' : '') +
-            '<div class="zi-btns">' +
-            '<button type="button" class="zi-btn edit" onclick="window._editSavedZone('+z.id+')">编辑</button>' +
-            '<button type="button" class="zi-btn del" onclick="window._deleteSavedZone('+z.id+')">删除</button>' +
-            '</div></div>'
-        ).join('');
-    }
-
-    function updateStats() {
-        const savedCount = Object.keys(savedZoneMap).length;
-        document.getElementById('lsTotal').textContent = allZones.length;
-        document.getElementById('lsDrawn').textContent = savedCount;
-        document.getElementById('lsUndrawn').textContent = allZones.length - savedCount;
-        document.getElementById('topDrawn').textContent = savedCount;
-        document.getElementById('topUndrawn').textContent = allZones.length - savedCount;
-    }
-
-    // ============================================================
-    // Init
-    // ============================================================
-    document.addEventListener('DOMContentLoaded', function() {
-        // Hide URL bar
-        window.scrollTo(0, 1);
-
-        try {
-            const zonesEl = document.getElementById('all-zones-data');
-            allZones = zonesEl && zonesEl.textContent ? JSON.parse(zonesEl.textContent) : [];
-        } catch(e) { allZones = []; }
-
-        try {
-            const drawnEl = document.getElementById('all-drawn-zones-data');
-            const drawnZones = drawnEl && drawnEl.textContent ? JSON.parse(drawnEl.textContent) : [];
-            drawnZones.forEach(z => {
-                savedZoneMap[z.id] = {
-                    id:z.id, code:z.code, name:z.name,
-                    boundary_points:z.boundary_points, boundary_color:z.boundary_color,
-                    label_lat:z.label_lat, label_lng:z.label_lng,
-                    label_scale:z.label_scale, label_angle:z.label_angle,
-                    patch_name:z.patch_name||'', area_display:z.area_display||'',
-                    polygon_count:z.boundary_points?(Array.isArray(z.boundary_points)?z.boundary_points.length:0):0,
-                };
-                const zi = allZones.find(zz => zz.id === z.id);
-                if (zi) zi.has_boundary = true;
+        // Reference layers
+        function addZoneToRefLayer(z) {
+            if (!refLayerGroup || !z.boundary_points || z.boundary_points.length === 0) return;
+            const polys = normalizeBoundaryData(z.boundary_points);
+            polys.forEach(pts => {
+                if (pts.length < 3) return;
+                const poly = L.polygon(pts.map(p => [p.lat, p.lng]), { color:'#FFFFFF', weight:1.5, opacity:0.6, fillColor: z.boundary_color || '#52B788', fillOpacity:0.15, interactive:true }).addTo(refLayerGroup);
+                poly._zoneId = z.id; poly._zoneCode = z.code;
+                poly.bindTooltip(z.code + ' ' + (z.name || ''), {sticky:true});
+                let lpTimer = null;
+                poly.on('mousedown', function(e) { longPressFired = false; lpTimer = setTimeout(function() { longPressFired = true; showContextMenu(e.originalEvent, z.id, z.code); }, 600); });
+                poly.on('mouseup mouseout', function() { if (lpTimer) { clearTimeout(lpTimer); lpTimer = null; } });
+                const refPathEl = poly.getElement();
+                if (refPathEl) {
+                    let lpStartX = 0, lpStartY = 0;
+                    refPathEl.addEventListener('touchstart', function(de) {
+                        if (de.touches.length !== 1) return;
+                        longPressFired = false; lpStartX = de.touches[0].clientX; lpStartY = de.touches[0].clientY;
+                        lpTimer = setTimeout(function() { longPressFired = true; showContextMenu(de, z.id, z.code); }, 600);
+                    }, { passive: true });
+                    refPathEl.addEventListener('touchmove', function(de) { if (lpTimer) { if (Math.abs(de.touches[0].clientX - lpStartX) > 10 || Math.abs(de.touches[0].clientY - lpStartY) > 10) { clearTimeout(lpTimer); lpTimer = null; } } }, { passive: true });
+                    refPathEl.addEventListener('touchend', function() { if (lpTimer) { clearTimeout(lpTimer); lpTimer = null; } });
+                    refPathEl.addEventListener('touchcancel', function() { if (lpTimer) { clearTimeout(lpTimer); lpTimer = null; } });
+                }
             });
-        } catch(e) {}
+            const scale = z.label_scale || 1.0, angle = z.label_angle || 0;
+            const fontSize = Math.round(14 * scale);
+            let lat, lng;
+            if (z.label_lat && z.label_lng) { lat = z.label_lat; lng = z.label_lng; }
+            else { const allP = []; polys.forEach(pts2 => pts2.forEach(p => allP.push(p))); if (allP.length === 0) return; const c = allP.reduce((a,p)=>({lat:a.lat+p.lat,lng:a.lng+p.lng}),{lat:0,lng:0}); lat = c.lat/allP.length; lng = c.lng/allP.length; }
+            L.marker([lat, lng], { icon: L.divIcon({className:'zone-label-editor',html:'<div style="transform:translate(-50%,-50%) rotate('+angle+'deg);white-space:nowrap;pointer-events:none;"><span style="font-size:'+fontSize+'px;font-weight:600;color:white;background:rgba(0,0,0,0.55);padding:2px 8px;border-radius:4px;display:inline-block;">'+z.code+'</span></div>',iconSize:null,iconAnchor:[0,0]}), interactive:false }).addTo(refLayerGroup);
+        }
+        function removeZoneFromRefLayer(zoneId) { if (!refLayerGroup) return; const r = []; refLayerGroup.eachLayer(function(l) { if (l._zoneId === zoneId) r.push(l); }); r.forEach(l => refLayerGroup.removeLayer(l)); }
+        function rebuildRefLayers() { if (refLayerGroup) { editMap.removeLayer(refLayerGroup); refLayerGroup = null; } refLayerGroup = L.layerGroup().addTo(editMap); Object.values(savedZoneMap).forEach(z => addZoneToRefLayer(z)); }
 
-        // Map init
-        const centerLat = 31.145794 + 0.010, centerLng = 121.656804 + 0.012;
-        const latOff = 0.027, lngOff = 0.032;
-        const sw = L.latLng(centerLat - latOff, centerLng - lngOff);
-        const ne = L.latLng(centerLat + latOff, centerLng + lngOff);
+        // Context menu
+        function showContextMenu(mouseEvent, zoneId, zoneCode) {
+            const menu = document.getElementById('ctxMenu');
+            document.getElementById('ctxTitle').textContent = zoneCode;
+            contextMenuZoneId = zoneId;
+            const mr = editMap.getContainer().getBoundingClientRect();
+            let x, y;
+            if (mouseEvent.touches && mouseEvent.touches.length > 0) { x = mouseEvent.touches[0].clientX - mr.left; y = mouseEvent.touches[0].clientY - mr.top; }
+            else { x = mouseEvent.clientX - mr.left; y = mouseEvent.clientY - mr.top; }
+            if (x + 160 > mr.width) x -= 160; if (y + 120 > mr.height) y -= 120;
+            menu.style.left = x + 'px'; menu.style.top = y + 'px'; menu.style.display = 'block';
+        }
+        function hideContextMenu() { document.getElementById('ctxMenu').style.display = 'none'; contextMenuZoneId = null; }
 
-        editMap = L.map('editMap', {
-            center: [centerLat, centerLng], zoom: 15,
-            maxZoom: 22, minZoom: 15,
-            maxBounds: L.latLngBounds(sw, ne), maxBoundsViscosity: 1.0,
-            zoomControl: false
-        });
+        // Save popup
+        function showSavePopup() { document.getElementById('savePopup').classList.add('open'); document.getElementById('zoneCodeInput').focus(); }
+        function hideSavePopup() {
+            document.getElementById('savePopup').classList.remove('open');
+            document.getElementById('zoneCodeInput').value = '';
+            document.getElementById('zoneDropdown').style.display = 'none';
+            document.getElementById('zonePreview').style.display = 'none';
+        }
 
-        var satTile = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-            attribution:'&copy; Esri', maxNativeZoom:19, maxZoom:22
-        });
-        var fallbackTile = L.tileLayer('https://map.geoq.cn/ArcGIS/rest/services/ChinaOnlineCommunity/MapServer/tile/{z}/{y}/{x}', {
-            attribution:'&copy; GeoQ', minZoom:19, maxZoom:22, opacity:0.7
-        });
-        L.layerGroup([satTile, fallbackTile]).addTo(editMap);
+        // Zone search
+        function setupZoneSearch() {
+            const input = document.getElementById('zoneCodeInput');
+            const dropdown = document.getElementById('zoneDropdown');
+            const preview = document.getElementById('zonePreview');
+            const previewText = document.getElementById('zonePreviewText');
+            const confirmBtn = document.getElementById('savePopupConfirm');
 
-        rebuildRefLayers();
-
-        // Prevent long-press on map from triggering context menu on the map div itself
-        editMap.getContainer().addEventListener('contextmenu', function(e) { e.preventDefault(); });
-
-        // Map click to add marker (skip if click was on a polygon)
-        editMap.on('click', function(e) {
-            if (longPressFired) { longPressFired = false; return; }
-            // Don't add point when clicking on a polygon SVG path
-            if (e.originalEvent && e.originalEvent.target instanceof SVGElement) return;
-            hideContextMenu();
-            saveHistory(); createMarker(e.latlng); updateCurrentPoly(); updateUI();
-        });
-
-        // Wire FABs
-        document.getElementById('fabUndo').addEventListener('click', undo);
-        document.getElementById('fabComplete').addEventListener('click', completeCurrentShape);
-        document.getElementById('fabClear').addEventListener('click', clearAll);
-
-        // Wire draw panel buttons
-        document.getElementById('completeShapeBtn').addEventListener('click', completeCurrentShape);
-        document.getElementById('saveBtn').addEventListener('click', saveBoundary);
-        document.getElementById('cancelSaveBtn').addEventListener('click', function() {
-            clearDrawingOnly(); hideSavePanel(); editingZoneId = null; rebuildRefLayers();
-        });
-
-        // Wire settings panel buttons
-        document.getElementById('settingsUndo').addEventListener('click', undo);
-        document.getElementById('settingsClear').addEventListener('click', clearAll);
-
-        // Color picker
-        const colorPicker = document.getElementById('boundary_color');
-        const colorText = document.getElementById('boundary_color_text');
-        colorPicker.addEventListener('input', function() {
-            colorText.value = this.value.toUpperCase();
-            updateCurrentPoly(); updateMarkerColors();
-            shapes.forEach(s => s.polygon.setStyle(getStyle()));
-        });
-        colorText.addEventListener('input', function() {
-            const val = this.value.trim();
-            if (/^#[0-9A-Fa-f]{6}$/.test(val)) {
-                colorPicker.value = val;
-                updateCurrentPoly(); updateMarkerColors();
-                shapes.forEach(s => s.polygon.setStyle(getStyle()));
-            }
-        });
-        colorText.addEventListener('blur', function() {
-            if (!/^#[0-9A-Fa-f]{6}$/.test(this.value.trim())) this.value = colorPicker.value.toUpperCase();
-        });
-
-        // Label controls
-        document.getElementById('label_scale').addEventListener('input', function() {
-            document.getElementById('label_scale_display').textContent = parseFloat(this.value).toFixed(1) + 'x';
+            input.addEventListener('input', function() {
+                const query = this.value.trim().toLowerCase();
+                refreshLabelIcon();
+                if (!query) { dropdown.style.display = 'none'; preview.style.display = 'none'; confirmBtn.disabled = shapes.length === 0; return; }
+                const matches = allZones.filter(z => z.code.toLowerCase().includes(query) || (z.name && z.name.toLowerCase().includes(query))).slice(0, 12);
+                if (matches.length > 0) {
+                    dropdown.innerHTML = matches.map(z => {
+                        const hasB = !!savedZoneMap[z.id];
+                        return '<div class="dd-item" data-zone-id="'+z.id+'" data-zone-code="'+z.code+'"><span class="dd-code">'+z.code+'</span><span class="dd-name">'+(z.name||'')+'</span>'+(z.patch_name?'<span class="dd-patch">'+z.patch_name+'</span>':'')+(hasB?'<span class="dd-drawn">✓</span>':'')+'</div>';
+                    }).join('');
+                    dropdown.style.display = 'block';
+                    dropdown.querySelectorAll('.dd-item').forEach(item => { item.addEventListener('click', function() { selectZone(+this.dataset.zoneId, this.dataset.zoneCode); }); });
+                } else { dropdown.innerHTML = '<div class="dd-hint">未找到匹配的区域编号</div>'; dropdown.style.display = 'block'; }
+                const exact = allZones.find(z => z.code.toLowerCase() === query);
+                if (exact) {
+                    preview.style.display = 'block'; const hasB = !!savedZoneMap[exact.id];
+                    previewText.innerHTML = '匹配: <strong>'+exact.code+'</strong> - '+(exact.name||'未命名')+(exact.patch_name?' ('+exact.patch_name+')':'')+(hasB?' <span style="color:var(--color-success);">✓ 将覆盖</span>':'');
+                    confirmBtn.disabled = shapes.length === 0;
+                } else { preview.style.display = 'block'; previewText.innerHTML = '<span style="color:var(--color-danger);">未找到匹配的区域</span>'; confirmBtn.disabled = true; }
+            });
+            input.addEventListener('keydown', function(e) {
+                if (e.key === 'Enter') { e.preventDefault(); const q = this.value.trim().toLowerCase(); const m = allZones.find(z => z.code.toLowerCase() === q); if (m) selectZone(m.id, m.code); }
+                else if (e.key === 'Escape') { dropdown.style.display = 'none'; }
+            });
+            document.addEventListener('click', function(e) { if (!e.target.closest('.zone-input-wrap')) dropdown.style.display = 'none'; });
+        }
+        function selectZone(zoneId, zoneCode) {
+            document.getElementById('zoneCodeInput').value = zoneCode;
+            document.getElementById('zoneDropdown').style.display = 'none';
+            const z = allZones.find(zz => zz.id === zoneId); const hasB = !!savedZoneMap[zoneId];
+            document.getElementById('zonePreview').style.display = 'block';
+            document.getElementById('zonePreviewText').innerHTML = '匹配: <strong>'+zoneCode+'</strong> - '+(z?(z.name||'未命名'):'')+(z&&z.patch_name?' ('+z.patch_name+')':'')+(hasB?' <span style="color:var(--color-success);">✓ 将覆盖</span>':'');
+            document.getElementById('savePopupConfirm').disabled = shapes.length === 0;
             refreshLabelIcon();
+        }
+
+        function saveBoundary() {
+            const code = document.getElementById('zoneCodeInput').value.trim();
+            if (!code) { showToast('请输入区域编号', 'warning'); return; }
+            if (markers.length >= 3) completeCurrentShape();
+            if (shapes.length === 0) { showToast('请先绘制至少一个区域边界', 'warning'); return; }
+            const zone = allZones.find(z => z.code === code);
+            if (!zone) { showToast('未找到匹配的区域编号', 'error'); return; }
+            const btn = document.getElementById('savePopupConfirm');
+            btn.disabled = true; btn.textContent = '保存中...';
+            const formData = new FormData();
+            formData.append('zone_code', code);
+            formData.append('boundary_points', document.getElementById('boundary_points').value);
+            formData.append('label_lat', document.getElementById('label_lat').value);
+            formData.append('label_lng', document.getElementById('label_lng').value);
+            formData.append('label_scale', document.getElementById('label_scale').value);
+            formData.append('label_angle', document.getElementById('label_angle').value);
+            fetch('/settings/zone/quick-draw/mobile/', { method:'POST', body:formData, headers:{'X-CSRFToken':getCSRF(),'X-Requested-With':'XMLHttpRequest','Accept':'application/json'} })
+            .then(r => r.json())
+            .then(data => {
+                btn.disabled = false; btn.textContent = '确认保存';
+                if (data.success) {
+                    showToast(data.message, 'success');
+                    savedZoneMap[data.zone_id] = { id:data.zone_id, code:data.zone_code, name:data.zone_name, boundary_points:data.boundary_points, boundary_color:data.boundary_color, label_lat:data.label_lat, label_lng:data.label_lng, label_scale:data.label_scale, label_angle:data.label_angle, patch_name:data.patch_name||'', area_display:data.area_display, polygon_count:data.boundary_points?data.boundary_points.length:0 };
+                    rebuildRefLayers(); clearDrawingOnly(); hideSavePopup(); editingZoneId = null; updateStats();
+                } else { showToast(data.message || '保存失败', 'error'); }
+            })
+            .catch(() => { btn.disabled = false; btn.textContent = '确认保存'; showToast('保存失败，请重试', 'error'); });
+        }
+
+        function editSavedZone(zoneId) {
+            const z = savedZoneMap[zoneId];
+            if (!z || !z.boundary_points || z.boundary_points.length === 0) return;
+            if (shapes.length > 0 || markers.length > 0) { if (!confirm('当前有未保存的绘制内容，确定要编辑此区域吗？')) return; }
+            clearDrawingOnly(); editingZoneId = zoneId; removeZoneFromRefLayer(zoneId);
+            const polys = normalizeBoundaryData(z.boundary_points);
+            polys.forEach(pts => { if (pts.length >= 3) { const poly = L.polygon(pts.map(p => [p.lat, p.lng]), getStyle()).addTo(editMap); shapes.push({ points: pts, polygon: poly }); addVertexMarkers(shapes[shapes.length - 1]); } });
+            // Enable draw mode
+            isDrawing = true; document.getElementById('fabDraw').classList.add('active');
+            document.getElementById('label_scale').value = z.label_scale || 1.0;
+            document.getElementById('label_scale_display').textContent = (z.label_scale||1.0) + 'x';
+            document.getElementById('label_angle').value = z.label_angle || 0;
+            if (z.label_lat && z.label_lng) createLabelAt([z.label_lat, z.label_lng], z.code);
+            else { const pos = computeCentroid(); if (pos) createLabelAt(pos, z.code); }
+            const allPts = []; polys.forEach(pts => pts.forEach(p => allPts.push(p)));
+            if (allPts.length > 0) { const c = allPts.reduce((a,p)=>({lat:a.lat+p.lat,lng:a.lng+p.lng}),{lat:0,lng:0}); editMap.panTo([c.lat/allPts.length, c.lng/allPts.length], {animate:true,duration:0.8}); }
+            updateHiddenField(); updateUI();
+            showToast('正在编辑区域 ' + z.code, 'info');
+        }
+        function deleteSavedZone(zoneId) {
+            const z = savedZoneMap[zoneId]; if (!z) return;
+            if (!confirm('确定要删除区域 ' + z.code + ' 的边界吗？')) return;
+            fetch('/settings/zone/quick-draw/mobile/', { method:'POST', body:(() => { const fd = new FormData(); fd.append('action','delete_boundary'); fd.append('zone_code',z.code); return fd; })(), headers:{'X-CSRFToken':getCSRF(),'X-Requested-With':'XMLHttpRequest','Accept':'application/json'} })
+            .then(r => r.json())
+            .then(data => { if (data.success) { showToast(data.message, 'success'); removeZoneFromRefLayer(zoneId); delete savedZoneMap[zoneId]; updateStats(); } else { showToast(data.message||'删除失败','error'); } })
+            .catch(() => showToast('删除失败，请重试','error'));
+        }
+        function updateStats() {
+            const savedCount = Object.keys(savedZoneMap).length;
+            document.getElementById('topDrawn').textContent = savedCount;
+            document.getElementById('topUndrawn').textContent = allZones.length - savedCount;
+        }
+
+        // ============================================================
+        // Init
+        // ============================================================
+        document.addEventListener('DOMContentLoaded', function() {
+            window.scrollTo(0, 1);
+            try { allZones = JSON.parse(document.getElementById('all-zones-data').textContent) || []; } catch(e) { allZones = []; }
+            try {
+                const drawnZones = JSON.parse(document.getElementById('all-drawn-zones-data').textContent) || [];
+                drawnZones.forEach(z => {
+                    savedZoneMap[z.id] = { id:z.id, code:z.code, name:z.name, boundary_points:z.boundary_points, boundary_color:z.boundary_color, label_lat:z.label_lat, label_lng:z.label_lng, label_scale:z.label_scale, label_angle:z.label_angle, patch_name:z.patch_name||'', area_display:z.area_display||'', polygon_count:z.boundary_points?(Array.isArray(z.boundary_points)?z.boundary_points.length:0):0 };
+                    const zi = allZones.find(zz => zz.id === z.id); if (zi) zi.has_boundary = true;
+                });
+            } catch(e) {}
+
+            const centerLat = 31.145794 + 0.010, centerLng = 121.656804 + 0.012;
+            editMap = L.map('editMap', { center:[centerLat, centerLng], zoom:15, maxZoom:22, minZoom:15, maxBounds: L.latLngBounds(L.latLng(centerLat-0.027,centerLng-0.032), L.latLng(centerLat+0.027,centerLng+0.032)), maxBoundsViscosity:1.0, zoomControl:false });
+            L.layerGroup([
+                L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {attribution:'&copy; Esri', maxNativeZoom:19, maxZoom:22}),
+                L.tileLayer('https://map.geoq.cn/ArcGIS/rest/services/ChinaOnlineCommunity/MapServer/tile/{z}/{y}/{x}', {attribution:'&copy; GeoQ', minZoom:19, maxZoom:22, opacity:0.7})
+            ]).addTo(editMap);
+            rebuildRefLayers();
+            editMap.getContainer().addEventListener('contextmenu', function(e) { e.preventDefault(); });
+
+            // Map click — only adds point when in draw mode
+            editMap.on('click', function(e) {
+                if (longPressFired) { longPressFired = false; return; }
+                if (e.originalEvent && e.originalEvent.target instanceof SVGElement) return;
+                if (!isDrawing) return;
+                hideContextMenu();
+                saveHistory(); createMarker(e.latlng); updateCurrentPoly(); updateUI();
+            });
+
+            // Wire FABs
+            document.getElementById('fabDraw').addEventListener('click', toggleDrawMode);
+            document.getElementById('fabUndo').addEventListener('click', undo);
+            document.getElementById('fabComplete').addEventListener('click', completeCurrentShape);
+            document.getElementById('fabClear').addEventListener('click', clearAll);
+
+            // Wire action bar
+            document.getElementById('saveBtn').addEventListener('click', function() { if (shapes.length > 0) showSavePopup(); });
+            document.getElementById('cancelSaveBtn').addEventListener('click', function() { clearDrawingOnly(); editingZoneId = null; rebuildRefLayers(); isDrawing = false; document.getElementById('fabDraw').classList.remove('active'); updateUI(); });
+
+            // Wire save popup
+            document.getElementById('savePopupClose').addEventListener('click', hideSavePopup);
+            document.getElementById('savePopupConfirm').addEventListener('click', saveBoundary);
+            document.getElementById('savePopup').addEventListener('click', function(e) { if (e.target === this) hideSavePopup(); });
+
+            // Settings in popup
+            document.getElementById('label_scale').addEventListener('input', function() { document.getElementById('label_scale_display').textContent = parseFloat(this.value).toFixed(1) + 'x'; refreshLabelIcon(); });
+            document.getElementById('label_angle').addEventListener('input', refreshLabelIcon);
+            document.getElementById('boundary_color').addEventListener('input', function() { updateCurrentPoly(); updateMarkerColors(); shapes.forEach(s => s.polygon.setStyle(getStyle())); });
+
+            // Context menu
+            document.getElementById('ctxEdit').addEventListener('click', function() { if (contextMenuZoneId) editSavedZone(contextMenuZoneId); hideContextMenu(); });
+            document.getElementById('ctxDelete').addEventListener('click', function() { if (contextMenuZoneId) deleteSavedZone(contextMenuZoneId); hideContextMenu(); });
+            editMap.on('click', hideContextMenu);
+
+            setupZoneSearch();
+            updateStats(); updateUI(); saveHistory();
         });
-        document.getElementById('label_angle').addEventListener('input', refreshLabelIcon);
 
-        // Context menu actions
-        document.getElementById('ctxEdit').addEventListener('click', function() {
-            if (contextMenuZoneId) editSavedZone(contextMenuZoneId); hideContextMenu();
-        });
-        document.getElementById('ctxDelete').addEventListener('click', function() {
-            if (contextMenuZoneId) deleteSavedZone(contextMenuZoneId); hideContextMenu();
-        });
-
-        // Close context menu on map tap
-        editMap.on('click', hideContextMenu);
-
-        setupZoneSearch();
-        renderSavedList();
-        updateStats();
-        updateUI();
-        saveHistory();
-    });
-
-    // Expose for inline onclick handlers
-    window._editSavedZone = editSavedZone;
-    window._deleteSavedZone = deleteSavedZone;
-})();
-</script>
+        window._editSavedZone = editSavedZone;
+        window._deleteSavedZone = deleteSavedZone;
+    })();
+    </script>
 </body>
 </html>
