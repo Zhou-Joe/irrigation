@@ -807,14 +807,14 @@
             layer.setStyle(highlightStyle);
             layer.bringToFront();
 
-            // Zoom to the clicked zone with animation
-            if (layer.getBounds()) {
-                map.flyToBounds(layer.getBounds(), {
-                    padding: [50, 50],
-                    duration: 0.8,
-                    easeLinearity: 0.25
-                });
-            }
+            // Zoom to the clicked zone with animation (disabled)
+            // if (layer.getBounds()) {
+            //     map.flyToBounds(layer.getBounds(), {
+            //         padding: [50, 50],
+            //         duration: 0.8,
+            //         easeLinearity: 0.25
+            //     });
+            // }
 
             // Highlight the corresponding sidebar item
             highlightSidebarItem(zoneId);
@@ -970,16 +970,15 @@
                         // Show fixed popup panel
                         showZonePopup(layer.zoneData);
 
-                        // Fly to the zone with smooth animation
-                        const bounds = layer.getBounds();
-                        console.log('Bounds:', bounds);
-                        if (bounds) {
-                            map.flyToBounds(bounds, {
-                                padding: [50, 50],
-                                duration: 0.8,
-                                easeLinearity: 0.25
-                            });
-                        }
+                        // Fly to the zone with smooth animation (disabled)
+                        // const bounds = layer.getBounds();
+                        // if (bounds) {
+                        //     map.flyToBounds(bounds, {
+                        //         padding: [50, 50],
+                        //         duration: 0.8,
+                        //         easeLinearity: 0.25
+                        //     });
+                        // }
                     }
                 });
 

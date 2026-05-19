@@ -743,18 +743,10 @@ function showToast(msg, type) {
             shape.vertexMarkers.push(vm);
         });
 
-        // Whole-polygon drag (mouse + touch)
+        // Whole-polygon drag (mouse + touch via direct DOM)
         let dragStart = null;
         let dragSaved = false;
 
-        function onDragStart(e) {
-            L.DomEvent.stopPropagation(e);
-            const latlng = e.latlng || (e.touches && editMap.containerPointToLatLng(editMap.mouseEventToContainerPoint(e.touches[0])));
-            if (!latlng) return;
-            dragStart = { lat: latlng.lat, lng: latlng.lng };
-            dragSaved = false;
-            editMap.dragging.disable();
-        }
         function onDragMove(e) {
             if (!dragStart) return;
             if (!dragSaved) { saveHistory(); dragSaved = true; }
@@ -768,7 +760,6 @@ function showToast(msg, type) {
             dragStart = { lat: latlng.lat, lng: latlng.lng };
             shape.points = shape.points.map(p => ({ lat: +(p.lat + dLat).toFixed(6), lng: +(p.lng + dLng).toFixed(6) }));
             shape.polygon.setLatLngs(shape.points.map(p => [p.lat, p.lng]));
-            // Move vertex markers
             shape.vertexMarkers.forEach((vm, i) => { if (shape.points[i]) vm.setLatLng([shape.points[i].lat, shape.points[i].lng]); });
             updateHiddenField();
         }
@@ -776,46 +767,39 @@ function showToast(msg, type) {
             if (dragStart) { dragStart = null; editMap.dragging.enable(); updateUI(); }
         }
 
-        shape.polygon.off('mousedown touchstart mousemove touchmove mouseup touchend click');
-
-        shape.polygon.on('mousedown', onDragStart);
-        shape.polygon.on('touchstart', function(e) {
-            if (e.originalEvent.touches.length === 1) {
-                e.originalEvent.stopPropagation();
-                e.originalEvent.preventDefault();
-                onDragStart(e);
-            }
+        // Desktop: use Leaflet mousedown on polygon
+        shape.polygon.off('mousedown click');
+        shape.polygon.on('mousedown', function(e) {
+            L.DomEvent.stopPropagation(e);
+            dragStart = { lat: e.latlng.lat, lng: e.latlng.lng };
+            dragSaved = false;
+            editMap.dragging.disable();
         });
         document.addEventListener('mousemove', onDragMove);
-        document.addEventListener('touchmove', onDragMove, { passive: false });
         document.addEventListener('mouseup', onDragEnd);
-        document.addEventListener('touchend', onDragEnd);
 
-        // Click on polygon edge to insert vertex
-        shape.polygon.on('click', function(e) {
-            L.DomEvent.stopPropagation(e);
-            if (dragSaved) { dragSaved = false; return; } // was a drag, not a click
-            saveHistory();
-            const clickLL = e.latlng;
-            const pts = shape.points;
-            const n = pts.length;
-            let bestIdx = 0, bestDist = Infinity, bestPoint = null;
-            for (let i = 0; i < n; i++) {
-                const j = (i + 1) % n;
-                const A = L.latLng(pts[i].lat, pts[i].lng), B = L.latLng(pts[j].lat, pts[j].lng), P = clickLL;
-                const ab = [B.lng - A.lng, B.lat - A.lat], ap = [P.lng - A.lng, P.lat - A.lat];
-                const abLen2 = ab[0]*ab[0] + ab[1]*ab[1];
-                let t = abLen2 > 0 ? (ap[0]*ab[0] + ap[1]*ab[1]) / abLen2 : 0;
-                t = Math.max(0, Math.min(1, t));
-                const projLng = A.lng + t * ab[0], projLat = A.lat + t * ab[1];
-                const d = P.distanceTo(L.latLng(projLat, projLng));
-                if (d < bestDist) { bestDist = d; bestIdx = j; bestPoint = { lat: +projLat.toFixed(6), lng: +projLng.toFixed(6) }; }
-            }
-            for (let i = 0; i < n; i++) { if (clickLL.distanceTo(L.latLng(pts[i].lat, pts[i].lng)) < 5) return; }
-            pts.splice(bestIdx, 0, bestPoint);
-            shape.polygon.setLatLngs(pts.map(p => [p.lat, p.lng]));
-            addVertexMarkers(shape); updateHiddenField(); updateUI();
-        });
+        // Mobile: direct DOM touchstart on SVG path element
+        // Leaflet doesn't dispatch touchstart to individual layers,
+        // so we bypass Leaflet and listen directly on the SVG path.
+        const pathEl = shape.polygon.getElement();
+        if (pathEl) {
+            pathEl.style.touchAction = 'none';
+            const domTouchStart = function(domEvent) {
+                if (domEvent.touches.length !== 1) return;
+                domEvent.stopPropagation();
+                domEvent.preventDefault();
+                const rect = editMap.getContainer().getBoundingClientRect();
+                const pt = L.point(domEvent.touches[0].clientX - rect.left, domEvent.touches[0].clientY - rect.top);
+                const ll = editMap.containerPointToLatLng(pt);
+                dragStart = { lat: ll.lat, lng: ll.lng };
+                dragSaved = false;
+                editMap.dragging.disable();
+            };
+            pathEl.addEventListener('touchstart', domTouchStart, { passive: false });
+            shape._domTouchStart = domTouchStart;
+        }
+        document.addEventListener('touchmove', onDragMove, { passive: false });
+        document.addEventListener('touchend', onDragEnd);
 
         // Store cleanup refs for removeVertexMarkers
         shape._dragMove = onDragMove;
@@ -826,6 +810,7 @@ function showToast(msg, type) {
         if (shape.vertexMarkers) { shape.vertexMarkers.forEach(m => editMap.removeLayer(m)); shape.vertexMarkers = null; }
         if (shape._dragMove) { document.removeEventListener('mousemove', shape._dragMove); document.removeEventListener('touchmove', shape._dragMove); }
         if (shape._dragEnd) { document.removeEventListener('mouseup', shape._dragEnd); document.removeEventListener('touchend', shape._dragEnd); }
+        if (shape._domTouchStart && shape.polygon.getElement()) { shape.polygon.getElement().removeEventListener('touchstart', shape._domTouchStart); }
     }
 
     function completeCurrentShape() {
@@ -1011,16 +996,36 @@ function showToast(msg, type) {
                 }, 600);
             });
             poly.on('mouseup mouseout', function() { if (lpTimer) { clearTimeout(lpTimer); lpTimer = null; } });
-            poly.on('touchstart', function(e) {
-                longPressFired = false;
-                if (e.originalEvent.touches.length === 1) {
+
+            // Direct DOM touch handlers for mobile long-press
+            // (Leaflet may not dispatch touchstart to individual layers on mobile)
+            const refPathEl = poly.getElement();
+            if (refPathEl) {
+                let lpStartY = 0, lpStartX = 0;
+                refPathEl.addEventListener('touchstart', function(domEvent) {
+                    if (domEvent.touches.length !== 1) return;
+                    longPressFired = false;
+                    lpStartX = domEvent.touches[0].clientX;
+                    lpStartY = domEvent.touches[0].clientY;
                     lpTimer = setTimeout(function() {
                         longPressFired = true;
-                        showContextMenu(e.originalEvent, z.id, z.code);
+                        showContextMenu(domEvent, z.id, z.code);
                     }, 600);
-                }
-            }, {passive: true});
-            poly.on('touchend touchmove touchcancel', function() { if (lpTimer) { clearTimeout(lpTimer); lpTimer = null; } });
+                }, { passive: true });
+                refPathEl.addEventListener('touchmove', function(domEvent) {
+                    if (lpTimer) {
+                        const dx = Math.abs(domEvent.touches[0].clientX - lpStartX);
+                        const dy = Math.abs(domEvent.touches[0].clientY - lpStartY);
+                        if (dx > 10 || dy > 10) { clearTimeout(lpTimer); lpTimer = null; }
+                    }
+                }, { passive: true });
+                refPathEl.addEventListener('touchend', function() {
+                    if (lpTimer) { clearTimeout(lpTimer); lpTimer = null; }
+                });
+                refPathEl.addEventListener('touchcancel', function() {
+                    if (lpTimer) { clearTimeout(lpTimer); lpTimer = null; }
+                });
+            }
         });
 
         // Label
@@ -1384,9 +1389,11 @@ function showToast(msg, type) {
         // Prevent long-press on map from triggering context menu on the map div itself
         editMap.getContainer().addEventListener('contextmenu', function(e) { e.preventDefault(); });
 
-        // Map click to add marker
+        // Map click to add marker (skip if click was on a polygon)
         editMap.on('click', function(e) {
             if (longPressFired) { longPressFired = false; return; }
+            // Don't add point when clicking on a polygon SVG path
+            if (e.originalEvent && e.originalEvent.target instanceof SVGElement) return;
             hideContextMenu();
             saveHistory(); createMarker(e.latlng); updateCurrentPoly(); updateUI();
         });
