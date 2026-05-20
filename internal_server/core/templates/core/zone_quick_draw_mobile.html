@@ -541,7 +541,6 @@
                     const rLat = pts.reduce((s, p) => s + p.lat, 0) / pts.length;
                     const rLng = pts.reduce((s, p) => s + p.lng, 0) / pts.length;
                     const dist = L.latLng(lat, lng).distanceTo(L.latLng(rLat, rLng));
-                    if (dist < 10) return;
                     const line = L.polyline([[lat, lng], [rLat, rLng]], {
                         color: z.boundary_color || '#2D6A4F', weight: 2.5, opacity: 0.55, interactive: false
                     }).addTo(refLayerGroup);
@@ -658,6 +657,8 @@
             if (!z || !z.boundary_points || z.boundary_points.length === 0) return;
             if (shapes.length > 0 || markers.length > 0) { if (!confirm('当前有未保存的绘制内容，确定要编辑此区域吗？')) return; }
             clearDrawingOnly(); editingZoneId = zoneId; removeZoneFromRefLayer(zoneId);
+            // Set color picker to zone's color
+            if (z.boundary_color) document.getElementById('boundary_color').value = z.boundary_color;
             const polys = normalizeBoundaryData(z.boundary_points);
             polys.forEach(pts => { if (pts.length >= 3) { const poly = L.polygon(pts.map(p => [p.lat, p.lng]), getStyle()).addTo(editMap); shapes.push({ points: pts, polygon: poly }); addVertexMarkers(shapes[shapes.length - 1]); } });
             // Enable draw mode
