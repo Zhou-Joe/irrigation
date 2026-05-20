@@ -828,7 +828,7 @@ window.showToast = function(msg, type) {
         polys.forEach(pts => {
             if (pts.length < 3) return;
             const poly = L.polygon(pts.map(p => [p.lat, p.lng]), {
-                color: '#FFFFFF', weight: 1.5, opacity: 0.6,
+                color: z.boundary_color || '#52B788', weight: 1.5, opacity: 0.7,
                 fillColor: z.boundary_color || '#52B788', fillOpacity: 0.15,
                 interactive: true
             }).addTo(refLayerGroup);
@@ -1100,6 +1100,7 @@ window.showToast = function(msg, type) {
         formData.append('label_lng', document.getElementById('label_lng').value);
         formData.append('label_scale', document.getElementById('label_scale').value);
         formData.append('label_angle', document.getElementById('label_angle').value);
+        formData.append('boundary_color', document.getElementById('boundary_color').value);
 
         fetch('/settings/zone/quick-draw/', {
             method: 'POST',
