@@ -183,6 +183,11 @@
     <div id="mapContextMenu" class="map-context-menu">
         <div class="menu-zone-code" id="menuZoneCode"></div>
         <div class="menu-item edit-item" id="menuEditBtn">✏️ 编辑边界</div>
+        <div class="menu-item" id="menuColorBtn" style="display:flex;align-items:center;gap:8px;">
+            🎨 修改颜色
+            <input type="color" id="menuColorPicker" value="#52B788" style="width:28px;height:24px;padding:0;border:none;cursor:pointer;margin-left:auto;" onclick="event.stopPropagation();">
+        </div>
+        <div class="menu-item" id="menuCopyShapeBtn" style="color:#2D6A4F;">📋 复制形状到当前</div>
         <div class="menu-item delete-item" id="menuDeleteBtn">🗑️ 删除边界</div>
     </div>
 
@@ -325,6 +330,7 @@ window.showToast = function(msg, type) {
 
     // Context menu state
     let contextMenuZoneId = null;
+    let contextMenuPolyIndex = null;
 
     // Reference layer groups
     let refLayerGroup = null;    // all saved zone polygons on map
@@ -825,7 +831,7 @@ window.showToast = function(msg, type) {
     function addZoneToRefLayer(z) {
         if (!refLayerGroup || !z.boundary_points || z.boundary_points.length === 0) return;
         const polys = normalizeBoundaryData(z.boundary_points);
-        polys.forEach(pts => {
+        polys.forEach((pts, polyIndex) => {
             if (pts.length < 3) return;
             const poly = L.polygon(pts.map(p => [p.lat, p.lng]), {
                 color: z.boundary_color || '#52B788', weight: 2, opacity: 0.8,
@@ -834,12 +840,13 @@ window.showToast = function(msg, type) {
             }).addTo(refLayerGroup);
             poly._zoneId = z.id;
             poly._zoneCode = z.code;
+            poly._polyIndex = polyIndex;
             poly.bindTooltip(`${z.code} ${z.name || ''}`, {sticky: true});
 
             // Click handler for context menu
             poly.on('click', function(e) {
                 L.DomEvent.stopPropagation(e);
-                showContextMenu(e.originalEvent, z.id, z.code);
+                showContextMenu(e.originalEvent, z.id, z.code, polyIndex);
             });
         });
 
@@ -903,10 +910,14 @@ window.showToast = function(msg, type) {
     // ============================================================
     // Context menu for saved zones
     // ============================================================
-    function showContextMenu(mouseEvent, zoneId, zoneCode) {
+    function showContextMenu(mouseEvent, zoneId, zoneCode, polyIndex) {
         const menu = document.getElementById('mapContextMenu');
         document.getElementById('menuZoneCode').textContent = zoneCode;
         contextMenuZoneId = zoneId;
+        contextMenuPolyIndex = polyIndex || 0;
+        // Set color picker to current zone color
+        const z = savedZoneMap[zoneId];
+        document.getElementById('menuColorPicker').value = (z && z.boundary_color) ? z.boundary_color : '#52B788';
 
         const mapRect = editMap.getContainer().getBoundingClientRect();
         let x = mouseEvent.clientX - mapRect.left;
@@ -914,7 +925,7 @@ window.showToast = function(msg, type) {
 
         // Keep menu within map bounds
         if (x + 160 > mapRect.width) x = x - 160;
-        if (y + 120 > mapRect.height) y = y - 120;
+        if (y + 180 > mapRect.height) y = y - 180;
 
         menu.style.left = x + 'px';
         menu.style.top = y + 'px';
@@ -924,6 +935,7 @@ window.showToast = function(msg, type) {
     function hideContextMenu() {
         document.getElementById('mapContextMenu').style.display = 'none';
         contextMenuZoneId = null;
+        contextMenuPolyIndex = null;
     }
 
     // ============================================================
@@ -1258,6 +1270,48 @@ window.showToast = function(msg, type) {
         .catch(() => showToast('删除失败，请重试', 'error'));
     }
 
+    function copyShapeFromZone(zoneId, polyIndex) {
+        const z = savedZoneMap[zoneId];
+        if (!z || !z.boundary_points) return;
+        const polys = normalizeBoundaryData(z.boundary_points);
+        const pts = polys[polyIndex] || polys[0];
+        if (!pts || pts.length < 3) { showToast('形状节点不足', 'warning'); return; }
+        saveHistory();
+        const offset = pts.map(p => ({
+            lat: +(p.lat + 0.00015).toFixed(6),
+            lng: +(p.lng + 0.00018).toFixed(6)
+        }));
+        const poly = L.polygon(offset.map(p => [p.lat, p.lng]), getStyle()).addTo(editMap);
+        shapes.push({ points: offset, polygon: poly });
+        addVertexMarkers(shapes[shapes.length - 1]);
+        updateHiddenField();
+        updateUI();
+        if (!labelMarker) { const pos = computeCentroid(); if (pos) createLabelAt(pos, getZoneCode()); }
+        showToast('形状已复制 — 拖动到目标位置', 'success');
+    }
+
+    function copyAllShapesFromZone(zoneId) {
+        const z = savedZoneMap[zoneId];
+        if (!z || !z.boundary_points) { showToast('该区域没有边界数据', 'warning'); return; }
+        const polys = normalizeBoundaryData(z.boundary_points);
+        if (polys.length === 0) { showToast('该区域没有边界数据', 'warning'); return; }
+        saveHistory();
+        polys.forEach(pts => {
+            if (pts.length < 3) return;
+            const offset = pts.map(p => ({
+                lat: +(p.lat + 0.00015).toFixed(6),
+                lng: +(p.lng + 0.00018).toFixed(6)
+            }));
+            const poly = L.polygon(offset.map(p => [p.lat, p.lng]), getStyle()).addTo(editMap);
+            shapes.push({ points: offset, polygon: poly });
+            addVertexMarkers(shapes[shapes.length - 1]);
+        });
+        updateHiddenField();
+        updateUI();
+        if (!labelMarker) { const pos = computeCentroid(); if (pos) createLabelAt(pos, getZoneCode()); }
+        showToast('已复制 ' + polys.length + ' 个形状 — 拖动到目标位置', 'success');
+    }
+
     // ============================================================
     // Render saved zones list
     // ============================================================
@@ -1277,6 +1331,7 @@ window.showToast = function(msg, type) {
                 <span class="zone-name">${z.name || ''}</span>
                 ${z.boundary_points ? `<span class="zone-area">${Array.isArray(z.boundary_points) ? z.boundary_points.length : 0}个区域</span>` : ''}
                 <div style="display:flex;gap:4px;margin-left:auto;">
+                    <button type="button" style="font-size:0.72rem;padding:2px 8px;cursor:pointer;background:#2D6A4F;color:white;border:none;border-radius:4px;" onclick="event.stopPropagation();window._copyAllShapes(${z.id})">复制</button>
                     <button type="button" style="font-size:0.72rem;padding:2px 8px;cursor:pointer;background:var(--color-primary);color:white;border:none;border-radius:4px;" onclick="event.stopPropagation();window._editSavedZone(${z.id})">编辑</button>
                     <button type="button" style="font-size:0.72rem;padding:2px 6px;cursor:pointer;background:#9B2226;color:white;border:none;border-radius:4px;" onclick="event.stopPropagation();window._deleteSavedZone(${z.id})">删除</button>
                 </div>
@@ -1414,6 +1469,29 @@ window.showToast = function(msg, type) {
             if (contextMenuZoneId) deleteSavedZone(contextMenuZoneId);
             hideContextMenu();
         });
+        document.getElementById('menuColorBtn').addEventListener('click', function(e) {
+            if (e.target.id === 'menuColorPicker') return;
+            if (!contextMenuZoneId) return;
+            const z = savedZoneMap[contextMenuZoneId];
+            if (!z) return;
+            const newColor = document.getElementById('menuColorPicker').value;
+            fetch('/settings/zone/quick-draw/', {
+                method: 'POST',
+                body: (() => { const fd = new FormData(); fd.append('action','update_color'); fd.append('zone_code',z.code); fd.append('boundary_color',newColor); return fd; })(),
+                headers: {'X-CSRFToken': getCSRF(), 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json'}
+            }).then(r => r.json()).then(data => {
+                if (data.success) {
+                    showToast(data.message, 'success');
+                    z.boundary_color = newColor;
+                    rebuildRefLayers();
+                } else { showToast(data.message || '更新失败', 'error'); }
+            }).catch(() => showToast('更新失败', 'error'));
+            hideContextMenu();
+        });
+        document.getElementById('menuCopyShapeBtn').addEventListener('click', function() {
+            if (contextMenuZoneId !== null) copyShapeFromZone(contextMenuZoneId, contextMenuPolyIndex);
+            hideContextMenu();
+        });
 
         // Close context menu on map click
         editMap.on('click', hideContextMenu);
@@ -1438,6 +1516,7 @@ window.showToast = function(msg, type) {
     // Expose for inline onclick handlers
     window._editSavedZone = editSavedZone;
     window._deleteSavedZone = deleteSavedZone;
+    window._copyAllShapes = copyAllShapesFromZone;
 })();
 </script>
 {% endblock %}

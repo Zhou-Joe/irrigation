@@ -1865,6 +1865,22 @@ def zone_quick_draw(request):
             except Zone.DoesNotExist:
                 return JsonResponse({'success': False, 'message': f'区域 {zone_code} 不存在'}, status=404)
 
+        if action == 'update_color':
+            zone_code = request.POST.get('zone_code', '').strip()
+            boundary_color = request.POST.get('boundary_color', '').strip()
+            if not zone_code:
+                return JsonResponse({'success': False, 'message': '缺少区域编号'}, status=400)
+            if not boundary_color:
+                return JsonResponse({'success': False, 'message': '缺少颜色值'}, status=400)
+            try:
+                zone = Zone.objects.get(code=zone_code)
+                zone.boundary_color = boundary_color
+                zone.drawn_by = request.user
+                zone.save()
+                return JsonResponse({'success': True, 'message': f'区域 {zone.code} 颜色已更新', 'boundary_color': zone.boundary_color})
+            except Zone.DoesNotExist:
+                return JsonResponse({'success': False, 'message': f'区域 {zone_code} 不存在'}, status=404)
+
         # Save boundary action
         zone_code = request.POST.get('zone_code', '').strip()
         if not zone_code:
@@ -1991,6 +2007,22 @@ def zone_quick_draw_mobile(request):
                 zone.drawn_by = None
                 zone.save()
                 return JsonResponse({'success': True, 'message': f'区域 {zone.code} 边界已删除'})
+            except Zone.DoesNotExist:
+                return JsonResponse({'success': False, 'message': f'区域 {zone_code} 不存在'}, status=404)
+
+        if action == 'update_color':
+            zone_code = request.POST.get('zone_code', '').strip()
+            boundary_color = request.POST.get('boundary_color', '').strip()
+            if not zone_code:
+                return JsonResponse({'success': False, 'message': '缺少区域编号'}, status=400)
+            if not boundary_color:
+                return JsonResponse({'success': False, 'message': '缺少颜色值'}, status=400)
+            try:
+                zone = Zone.objects.get(code=zone_code)
+                zone.boundary_color = boundary_color
+                zone.drawn_by = request.user
+                zone.save()
+                return JsonResponse({'success': True, 'message': f'区域 {zone.code} 颜色已更新', 'boundary_color': zone.boundary_color})
             except Zone.DoesNotExist:
                 return JsonResponse({'success': False, 'message': f'区域 {zone_code} 不存在'}, status=404)
 
