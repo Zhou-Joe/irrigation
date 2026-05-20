@@ -184,6 +184,11 @@
     <div class="ctx-menu" id="ctxMenu">
         <div class="ctx-title" id="ctxTitle"></div>
         <div class="ctx-item" id="ctxEdit">✏️ 编辑边界</div>
+        <div class="ctx-item" id="ctxColor" style="display:flex;align-items:center;gap:8px;">
+            🎨 修改颜色
+            <input type="color" id="ctxColorPicker" value="#52B788" style="width:28px;height:24px;padding:0;border:none;cursor:pointer;margin-left:auto;" onclick="event.stopPropagation();">
+        </div>
+        <div class="ctx-item" id="ctxCopyShape" style="color:#2D6A4F;">📋 复制形状</div>
         <div class="ctx-item" id="ctxDelete">🗑️ 删除边界</div>
     </div>
 
@@ -262,6 +267,7 @@
         let savedZoneMap = {};
         let editingZoneId = null;
         let contextMenuZoneId = null;
+        let contextMenuPolyIndex = null;
 
         let refLayerGroup = null;
 
@@ -506,13 +512,13 @@
         function addZoneToRefLayer(z) {
             if (!refLayerGroup || !z.boundary_points || z.boundary_points.length === 0) return;
             const polys = normalizeBoundaryData(z.boundary_points);
-            polys.forEach(pts => {
+            polys.forEach((pts, polyIndex) => {
                 if (pts.length < 3) return;
                 const poly = L.polygon(pts.map(p => [p.lat, p.lng]), { color: z.boundary_color || '#52B788', weight:2, opacity:0.8, fillColor:'#FFFFFF', fillOpacity:0.3, interactive:true }).addTo(refLayerGroup);
-                poly._zoneId = z.id; poly._zoneCode = z.code;
+                poly._zoneId = z.id; poly._zoneCode = z.code; poly._polyIndex = polyIndex;
                 poly.bindTooltip(z.code + ' ' + (z.name || ''), {sticky:true});
                 let lpTimer = null;
-                poly.on('mousedown', function(e) { longPressFired = false; lpTimer = setTimeout(function() { longPressFired = true; showContextMenu(e.originalEvent, z.id, z.code); }, 600); });
+                poly.on('mousedown', function(e) { longPressFired = false; lpTimer = setTimeout(function() { longPressFired = true; showContextMenu(e.originalEvent, z.id, z.code, polyIndex); }, 600); });
                 poly.on('mouseup mouseout', function() { if (lpTimer) { clearTimeout(lpTimer); lpTimer = null; } });
                 const refPathEl = poly.getElement();
                 if (refPathEl) {
@@ -520,7 +526,7 @@
                     refPathEl.addEventListener('touchstart', function(de) {
                         if (de.touches.length !== 1) return;
                         longPressFired = false; lpStartX = de.touches[0].clientX; lpStartY = de.touches[0].clientY;
-                        lpTimer = setTimeout(function() { longPressFired = true; showContextMenu(de, z.id, z.code); }, 600);
+                        lpTimer = setTimeout(function() { longPressFired = true; showContextMenu(de, z.id, z.code, polyIndex); }, 600);
                     }, { passive: true });
                     refPathEl.addEventListener('touchmove', function(de) { if (lpTimer) { if (Math.abs(de.touches[0].clientX - lpStartX) > 10 || Math.abs(de.touches[0].clientY - lpStartY) > 10) { clearTimeout(lpTimer); lpTimer = null; } } }, { passive: true });
                     refPathEl.addEventListener('touchend', function() { if (lpTimer) { clearTimeout(lpTimer); lpTimer = null; } });
@@ -552,18 +558,21 @@
         function rebuildRefLayers() { if (refLayerGroup) { editMap.removeLayer(refLayerGroup); refLayerGroup = null; } refLayerGroup = L.layerGroup().addTo(editMap); Object.values(savedZoneMap).forEach(z => addZoneToRefLayer(z)); }
 
         // Context menu
-        function showContextMenu(mouseEvent, zoneId, zoneCode) {
+        function showContextMenu(mouseEvent, zoneId, zoneCode, polyIndex) {
             const menu = document.getElementById('ctxMenu');
             document.getElementById('ctxTitle').textContent = zoneCode;
             contextMenuZoneId = zoneId;
+            contextMenuPolyIndex = polyIndex || 0;
+            const z = savedZoneMap[zoneId];
+            document.getElementById('ctxColorPicker').value = (z && z.boundary_color) ? z.boundary_color : '#52B788';
             const mr = editMap.getContainer().getBoundingClientRect();
             let x, y;
             if (mouseEvent.touches && mouseEvent.touches.length > 0) { x = mouseEvent.touches[0].clientX - mr.left; y = mouseEvent.touches[0].clientY - mr.top; }
             else { x = mouseEvent.clientX - mr.left; y = mouseEvent.clientY - mr.top; }
-            if (x + 160 > mr.width) x -= 160; if (y + 120 > mr.height) y -= 120;
+            if (x + 160 > mr.width) x -= 160; if (y + 200 > mr.height) y -= 200;
             menu.style.left = x + 'px'; menu.style.top = y + 'px'; menu.style.display = 'block';
         }
-        function hideContextMenu() { document.getElementById('ctxMenu').style.display = 'none'; contextMenuZoneId = null; }
+        function hideContextMenu() { document.getElementById('ctxMenu').style.display = 'none'; contextMenuZoneId = null; contextMenuPolyIndex = null; }
 
         // Save popup
         function showSavePopup() { document.getElementById('savePopup').classList.add('open'); document.getElementById('zoneCodeInput').focus(); }
@@ -682,6 +691,27 @@
             .then(data => { if (data.success) { showToast(data.message, 'success'); removeZoneFromRefLayer(zoneId); delete savedZoneMap[zoneId]; updateStats(); } else { showToast(data.message||'删除失败','error'); } })
             .catch(() => showToast('删除失败，请重试','error'));
         }
+
+        function copyShapeFromZone(zoneId, polyIndex) {
+            const z = savedZoneMap[zoneId];
+            if (!z || !z.boundary_points) return;
+            const polys = normalizeBoundaryData(z.boundary_points);
+            const pts = polys[polyIndex] || polys[0];
+            if (!pts || pts.length < 3) { showToast('形状节点不足', 'warning'); return; }
+            saveHistory();
+            const offset = pts.map(p => ({
+                lat: +(p.lat + 0.00015).toFixed(6),
+                lng: +(p.lng + 0.00018).toFixed(6)
+            }));
+            const poly = L.polygon(offset.map(p => [p.lat, p.lng]), getStyle()).addTo(editMap);
+            shapes.push({ points: offset, polygon: poly });
+            addVertexMarkers(shapes[shapes.length - 1]);
+            updateHiddenField();
+            updateUI();
+            if (!labelMarker) { const pos = computeCentroid(); if (pos) createLabelAt(pos, getZoneCode()); }
+            showToast('形状已复制 — 拖动到目标位置', 'success');
+        }
+
         function updateStats() {
             const savedCount = Object.keys(savedZoneMap).length;
             document.getElementById('topDrawn').textContent = savedCount;
@@ -743,6 +773,29 @@
             // Context menu
             document.getElementById('ctxEdit').addEventListener('click', function() { if (contextMenuZoneId) editSavedZone(contextMenuZoneId); hideContextMenu(); });
             document.getElementById('ctxDelete').addEventListener('click', function() { if (contextMenuZoneId) deleteSavedZone(contextMenuZoneId); hideContextMenu(); });
+            document.getElementById('ctxColor').addEventListener('click', function(e) {
+                if (e.target.id === 'ctxColorPicker') return;
+                if (!contextMenuZoneId) return;
+                const z = savedZoneMap[contextMenuZoneId];
+                if (!z) return;
+                const newColor = document.getElementById('ctxColorPicker').value;
+                fetch('/settings/zone/quick-draw/mobile/', {
+                    method:'POST',
+                    body: (() => { const fd = new FormData(); fd.append('action','update_color'); fd.append('zone_code',z.code); fd.append('boundary_color',newColor); return fd; })(),
+                    headers:{'X-CSRFToken':getCSRF(),'X-Requested-With':'XMLHttpRequest','Accept':'application/json'}
+                }).then(r => r.json()).then(data => {
+                    if (data.success) {
+                        showToast(data.message, 'success');
+                        z.boundary_color = newColor;
+                        rebuildRefLayers();
+                    } else { showToast(data.message || '更新失败', 'error'); }
+                }).catch(() => showToast('更新失败', 'error'));
+                hideContextMenu();
+            });
+            document.getElementById('ctxCopyShape').addEventListener('click', function() {
+                if (contextMenuZoneId !== null) copyShapeFromZone(contextMenuZoneId, contextMenuPolyIndex);
+                hideContextMenu();
+            });
             editMap.on('click', hideContextMenu);
 
             setupZoneSearch();
