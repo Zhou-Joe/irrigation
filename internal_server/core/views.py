@@ -1890,6 +1890,9 @@ def zone_quick_draw(request):
         zone.label_lng = float(label_lng) if label_lng else None
         zone.label_scale = float(request.POST.get('label_scale', '1.0') or '1.0')
         zone.label_angle = int(request.POST.get('label_angle', '0') or '0')
+        boundary_color = request.POST.get('boundary_color')
+        if boundary_color:
+            zone.boundary_color = boundary_color
         zone.drawn_by = request.user
 
         zone.save()
@@ -2015,6 +2018,9 @@ def zone_quick_draw_mobile(request):
         zone.label_lng = float(label_lng) if label_lng else None
         zone.label_scale = float(request.POST.get('label_scale', '1.0') or '1.0')
         zone.label_angle = int(request.POST.get('label_angle', '0') or '0')
+        boundary_color = request.POST.get('boundary_color')
+        if boundary_color:
+            zone.boundary_color = boundary_color
         zone.drawn_by = request.user
 
         zone.save()
