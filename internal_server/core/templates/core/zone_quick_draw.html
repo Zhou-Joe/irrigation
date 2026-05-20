@@ -868,14 +868,12 @@ window.showToast = function(msg, type) {
         }).addTo(refLayerGroup);
         refLabels[z.id] = lbl;
 
-        // Leader lines: label → each boundary centroid (multi-boundary zones only)
-        if (polys.length > 1) {
-            polys.forEach(pts => {
+        // Leader lines: label → each boundary centroid
+        polys.forEach(pts => {
                 if (pts.length < 3) return;
                 const rLat = pts.reduce((s, p) => s + p.lat, 0) / pts.length;
                 const rLng = pts.reduce((s, p) => s + p.lng, 0) / pts.length;
                 const dist = L.latLng(lat, lng).distanceTo(L.latLng(rLat, rLng));
-                if (dist < 10) return;
                 const line = L.polyline([[lat, lng], [rLat, rLng]], {
                     color: z.boundary_color || '#2D6A4F', weight: 2.5, opacity: 0.55, interactive: false
                 }).addTo(refLayerGroup);
@@ -1167,6 +1165,13 @@ window.showToast = function(msg, type) {
 
         // Remove from ref layer temporarily
         removeZoneFromRefLayer(zoneId);
+
+        // Set color picker to zone's color
+        if (z.boundary_color) {
+            document.getElementById('boundary_color').value = z.boundary_color;
+            const colorText = document.getElementById('boundary_color_text');
+            if (colorText) colorText.value = z.boundary_color;
+        }
 
         // Load boundary as completed shapes with draggable vertices
         const polys = normalizeBoundaryData(z.boundary_points);

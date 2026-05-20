@@ -173,7 +173,10 @@
         // Expose map instance for external use (sidebar resize)
         window._map = map;
 
-        // Initialize zones layer group
+        // Initialize leader lines layer group (rendered below zones so boundaries occlude lines)
+        leaderLinesLayerGroup = L.layerGroup().addTo(map);
+
+        // Initialize zones layer group (rendered on top of leader lines)
         zonesLayerGroup = L.layerGroup().addTo(map);
 
         // Initialize pipelines layer group
@@ -181,9 +184,6 @@
 
         // Initialize labels layer group (separate for independent layer control)
         labelsLayerGroup = L.layerGroup().addTo(map);
-
-        // Initialize leader lines layer group (separate for independent layer control)
-        leaderLinesLayerGroup = L.layerGroup().addTo(map);
 
         // Initialize landmarks layer group (not added by default - user toggles via layer control)
         landmarksLayerGroup = L.layerGroup();
@@ -303,9 +303,6 @@
                     latSum += lat; lngSum += lng;
                 });
                 const ringCenter = [latSum / ringPts.length, lngSum / ringPts.length];
-                // Don't draw if ring center is very close to label (< 10m)
-                const dist = L.latLng(center).distanceTo(L.latLng(ringCenter));
-                if (dist < 10) return;
                 const line = L.polyline([center, ringCenter], {
                     color: zone.boundary_color || '#2D6A4F',
                     weight: 2.5,
