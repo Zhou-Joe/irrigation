@@ -321,12 +321,13 @@
             interactive: false,
             icon: L.divIcon({
                 className: 'zone-label',
-                html: `<div style="transform:translate(-50%,-50%);white-space:nowrap;"><span style="${labelStyle}">${code}</span></div>`,
+                html: `<div style="transform:translate(-50%,-50%);white-space:nowrap;"><span style="${labelStyle}">${getCodeForZoom(code, map.getZoom())}</span></div>`,
                 iconSize: null,
                 iconAnchor: [0, 0]
             })
         });
         label._zone = zone;
+        label._originalCenter = center;
         labelsLayerGroup.addLayer(label);
         zoneLabels.push(label);
 
@@ -362,7 +363,18 @@
     /**
      * Minimum zoom level to show zone labels
      */
-    const LABEL_MIN_ZOOM = 17;
+    const LABEL_MIN_ZOOM = 15;
+
+    /**
+     * Return the code display string based on zoom level.
+     * xx-xx-xx → zoomed out: "xx", mid: "xx-xx", zoomed in: "xx-xx-xx"
+     */
+    function getCodeForZoom(code, zoom) {
+        const parts = code.split('-');
+        if (parts.length <= 1 || zoom >= 18) return code;
+        if (zoom >= 17) return parts.slice(0, 2).join('-');
+        return parts[0];
+    }
 
     /**
      * Calculate label font size based on zoom level
@@ -379,26 +391,82 @@
         const zoom = map.getZoom();
         const showLabels = zoom >= LABEL_MIN_ZOOM;
         const baseSize = getLabelFontSize(zoom);
-        zoneLabels.forEach(label => {
-            const el = label.getElement();
-            if (el) {
-                el.style.display = showLabels ? '' : 'none';
-                if (showLabels) {
-                    const zone = label._zone;
-                    const scale = zone ? (zone.label_scale || 1.0) : 1.0;
-                    const size = baseSize * scale;
-                    const span = el.querySelector('span');
-                    if (span) span.style.fontSize = size + 'px';
-                }
-            }
-            // Show/hide leader lines with labels
-            if (label._leaderLines) {
-                label._leaderLines.forEach(line => {
-                    const el = line.getElement();
-                    if (el) el.style.display = showLabels ? '' : 'none';
+
+        // Group labels by truncated code when zoomed out
+        if (showLabels && zoom < 18) {
+            // Build groups keyed by truncated code
+            const groups = {};
+            zoneLabels.forEach(label => {
+                const zone = label._zone;
+                if (!zone) return;
+                const key = getCodeForZoom(zone.code, zoom);
+                if (!groups[key]) groups[key] = [];
+                groups[key].push(label);
+            });
+            // For each group, show only one label at the group centroid
+            Object.entries(groups).forEach(([key, labels]) => {
+                // Compute group centroid
+                let latSum = 0, lngSum = 0, count = 0;
+                labels.forEach(l => {
+                    const c = l._originalCenter;
+                    if (c) { latSum += c[0]; lngSum += c[1]; count++; }
                 });
-            }
-        });
+                const groupCenter = count > 0 ? [latSum / count, lngSum / count] : labels[0]._originalCenter;
+
+                labels.forEach((label, i) => {
+                    const el = label.getElement();
+                    if (i === 0) {
+                        // Show representative label at group centroid
+                        if (el) el.style.display = '';
+                        label.setLatLng(groupCenter);
+                        const zone = label._zone;
+                        const scale = zone ? (zone.label_scale || 1.0) : 1.0;
+                        const size = baseSize * scale;
+                        const span = el ? el.querySelector('span') : null;
+                        if (span) {
+                            span.style.fontSize = size + 'px';
+                            span.textContent = key;
+                        }
+                    } else {
+                        if (el) el.style.display = 'none';
+                    }
+                    // Hide leader lines for grouped labels
+                    if (label._leaderLines) {
+                        label._leaderLines.forEach(line => {
+                            const le = line.getElement();
+                            if (le) le.style.display = 'none';
+                        });
+                    }
+                });
+            });
+        } else {
+            // Full zoom: show all individual labels at original positions
+            zoneLabels.forEach(label => {
+                const el = label.getElement();
+                if (el) {
+                    el.style.display = showLabels ? '' : 'none';
+                    if (showLabels) {
+                        const zone = label._zone;
+                        const scale = zone ? (zone.label_scale || 1.0) : 1.0;
+                        const size = baseSize * scale;
+                        const span = el.querySelector('span');
+                        if (span) {
+                            span.style.fontSize = size + 'px';
+                            span.textContent = zone ? zone.code : '';
+                        }
+                    }
+                }
+                // Restore original position
+                if (label._originalCenter) label.setLatLng(label._originalCenter);
+                // Show/hide leader lines with labels
+                if (label._leaderLines) {
+                    label._leaderLines.forEach(line => {
+                        const le = line.getElement();
+                        if (le) le.style.display = showLabels ? '' : 'none';
+                    });
+                }
+            });
+        }
         // Landmark labels: same zoom-based scaling, no per-item scale
         const lmSize = baseSize * 0.85;
         landmarkLabels.forEach(label => {
@@ -494,6 +562,7 @@
                         polygon.on('mouseover', handleMouseOver);
                         polygon.on('mouseout', handleMouseOut);
                         polygon.on('click', handleClick);
+                        polygon.bindTooltip(`${zone.code} ${zone.name || ''}`, {sticky: true});
                         zonesLayerGroup.addLayer(polygon);
                         allLatLngs = allLatLngs.concat(latLngs);
                     });
@@ -513,6 +582,7 @@
                     polygon.on('mouseover', handleMouseOver);
                     polygon.on('mouseout', handleMouseOut);
                     polygon.on('click', handleClick);
+                    polygon.bindTooltip(`${zone.code} ${zone.name || ''}`, {sticky: true});
                     zonesLayerGroup.addLayer(polygon);
                     zone._allLatLngs = latLngs;
                     addZoneLabel(zone);

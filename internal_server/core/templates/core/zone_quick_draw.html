@@ -183,6 +183,7 @@
     <div id="mapContextMenu" class="map-context-menu">
         <div class="menu-zone-code" id="menuZoneCode"></div>
         <div class="menu-item edit-item" id="menuEditBtn">✏️ 编辑边界</div>
+        <div class="menu-item" id="menuCopyShapeBtn">⧉ 复制形状</div>
         <div class="menu-item" id="menuColorBtn" style="display:flex;align-items:center;gap:8px;">
             🎨 修改颜色
             <input type="color" id="menuColorPicker" value="#52B788" style="width:28px;height:24px;padding:0;border:none;cursor:pointer;margin-left:auto;" onclick="event.stopPropagation();">
@@ -1320,6 +1321,26 @@ window.showToast = function(msg, type) {
         showToast('形状已复制 — 拖动到目标位置', 'success');
     }
 
+    function copyBoundaryFromZone(zoneId) {
+        const z = savedZoneMap[zoneId];
+        if (!z || !z.boundary_points) { showToast('无边界数据', 'warning'); return; }
+        saveHistory();
+        const polys = normalizeBoundaryData(z.boundary_points);
+        polys.forEach(pts => {
+            if (pts.length < 3) return;
+            const offset = pts.map(p => ({
+                lat: +(p.lat + 0.00015).toFixed(6),
+                lng: +(p.lng + 0.00018).toFixed(6)
+            }));
+            const poly = L.polygon(offset.map(p => [p.lat, p.lng]), getStyle()).addTo(editMap);
+            shapes.push({ points: offset, polygon: poly });
+            addVertexMarkers(shapes[shapes.length - 1]);
+        });
+        updateHiddenField();
+        updateUI();
+        showToast('已复制边界 — 拖动到目标位置后保存', 'success');
+    }
+
     // ============================================================
     // Render saved zones list
     // ============================================================
@@ -1471,6 +1492,11 @@ window.showToast = function(msg, type) {
         document.getElementById('menuEditBtn').addEventListener('click', function() {
             if (contextMenuZoneId) editSavedZone(contextMenuZoneId);
             hideContextMenu();
+        });
+        document.getElementById('menuCopyShapeBtn').addEventListener('click', function() {
+            if (contextMenuZoneId) copyBoundaryFromZone(contextMenuZoneId);
+            hideContextMenu();
+            showSavePanel();
         });
         document.getElementById('menuDeleteBtn').addEventListener('click', function() {
             if (contextMenuZoneId) deleteSavedZone(contextMenuZoneId);
