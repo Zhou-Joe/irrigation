@@ -152,6 +152,7 @@ class Zone(models.Model):
     label_lng = models.FloatField(null=True, blank=True, help_text='Custom label longitude override')
     label_scale = models.FloatField(default=1.0, help_text='Label font size multiplier')
     label_angle = models.IntegerField(default=0, help_text='Label rotation in degrees')
+    smooth_override = models.PositiveSmallIntegerField(null=True, blank=True, help_text='Per-zone boundary smooth override (null=follow global, 0-3=custom)')
     area_sqm = models.FloatField(null=True, blank=True, help_text='Calculated area in square meters')
     drawn_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='drawn_zones', verbose_name='绘制人')
     created_at = models.DateTimeField(auto_now_add=True)

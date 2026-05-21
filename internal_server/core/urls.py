@@ -58,6 +58,7 @@ urlpatterns = [
     path('settings/zone/import/confirm/', views.zone_import_confirm, name='zone_import_confirm'),
     path('settings/zone/<int:zone_id>/', views.zone_edit, name='zone_edit'),
     path('zone/<int:zone_id>/detail/', views.zone_detail_page, name='zone_detail'),
+    path('zone/<int:zone_id>/smooth/', views.zone_smooth_update, name='zone_smooth_update'),
     path('zone/<int:zone_id>/remark/add/', views.zone_remark_add, name='zone_remark_add'),
     path('zone/<int:zone_id>/remark/<int:index>/confirm/', views.zone_remark_confirm, name='zone_remark_confirm'),
     path('zone/<int:zone_id>/remark/<int:index>/move/', views.zone_remark_move, name='zone_remark_move'),

@@ -251,6 +251,7 @@ def _get_reference_map_data(exclude_zone_id=None, exclude_pipeline_id=None):
                 'id': z.id, 'name': z.name, 'code': z.code,
                 'boundary_points': z.boundary_points,
                 'boundary_color': z.boundary_color or '#52B788',
+                'smooth_override': z.smooth_override,
             })
 
     ref_pipelines = []
@@ -664,6 +665,7 @@ def dashboard(request):
             'label_lng': zone.label_lng,
             'label_scale': zone.label_scale,
             'label_angle': zone.label_angle,
+            'smooth_override': zone.smooth_override,
             'area_sqm': zone.area_sqm,
             'area_display': zone.area_display,
             # Detailed info for cards
@@ -1383,6 +1385,10 @@ def zone_edit(request, zone_id):
         zone.label_scale = float(request.POST.get('label_scale', 1.0) or 1.0)
         zone.label_angle = int(request.POST.get('label_angle', 0) or 0)
 
+        # Smooth override
+        smooth_val = request.POST.get('smooth_override', '')
+        zone.smooth_override = int(smooth_val) if smooth_val != '' else None
+
         # Handle patch selection
         patch_id = request.POST.get('patch')
         new_patch_name = request.POST.get('new_patch_name', '').strip()
@@ -1553,6 +1559,10 @@ def zone_new(request):
         zone.label_lng = float(label_lng) if label_lng else None
         zone.label_scale = float(request.POST.get('label_scale', 1.0) or 1.0)
         zone.label_angle = int(request.POST.get('label_angle', 0) or 0)
+
+        # Smooth override
+        smooth_val = request.POST.get('smooth_override', '')
+        zone.smooth_override = int(smooth_val) if smooth_val != '' else None
 
         # Handle patch selection
         patch_id = request.POST.get('patch')
@@ -1735,6 +1745,8 @@ def zone_batch_draw(request):
         zone.label_lng = float(label_lng) if label_lng else None
         zone.label_scale = float(request.POST.get('label_scale', '1.0') or '1.0')
         zone.label_angle = int(request.POST.get('label_angle', '0') or '0')
+        smooth_val = request.POST.get('smooth_override', '')
+        zone.smooth_override = int(smooth_val) if smooth_val != '' else None
 
         zone.drawn_by = request.user
         zone.save()
@@ -1753,6 +1765,7 @@ def zone_batch_draw(request):
             'label_lng': zone.label_lng,
             'label_scale': zone.label_scale,
             'label_angle': zone.label_angle,
+            'smooth_override': zone.smooth_override,
             'patch_id': zone.patch_id,
             'is_new': new_zone if request.method == 'POST' else False,
         })
@@ -1763,7 +1776,7 @@ def zone_batch_draw(request):
     all_drawn_zones = []
     for z in Zone.objects.exclude(boundary_points__isnull=True).exclude(boundary_points=[]).select_related('patch').only(
         'id', 'code', 'name', 'boundary_points', 'boundary_color',
-        'label_lat', 'label_lng', 'label_scale', 'label_angle', 'patch_id'
+        'label_lat', 'label_lng', 'label_scale', 'label_angle', 'smooth_override', 'patch_id'
     ):
         all_drawn_zones.append({
             'id': z.id,
@@ -1775,6 +1788,7 @@ def zone_batch_draw(request):
             'label_lng': z.label_lng,
             'label_scale': z.label_scale,
             'label_angle': z.label_angle,
+            'smooth_override': z.smooth_override,
             'patch_id': z.patch_id,
         })
 
@@ -1821,6 +1835,7 @@ def zone_batch_draw_zones_api(request):
             'label_lng': z.label_lng,
             'label_scale': z.label_scale,
             'label_angle': z.label_angle,
+            'smooth_override': z.smooth_override,
             'area_display': z.area_display if has_boundary else '',
         })
     return JsonResponse({'zones': result})
@@ -1906,6 +1921,8 @@ def zone_quick_draw(request):
         zone.label_lng = float(label_lng) if label_lng else None
         zone.label_scale = float(request.POST.get('label_scale', '1.0') or '1.0')
         zone.label_angle = int(request.POST.get('label_angle', '0') or '0')
+        smooth_val = request.POST.get('smooth_override', '')
+        zone.smooth_override = int(smooth_val) if smooth_val != '' else None
         boundary_color = request.POST.get('boundary_color')
         if boundary_color:
             zone.boundary_color = boundary_color
@@ -1928,6 +1945,7 @@ def zone_quick_draw(request):
             'label_lng': zone.label_lng,
             'label_scale': zone.label_scale,
             'label_angle': zone.label_angle,
+            'smooth_override': zone.smooth_override,
             'patch_id': zone.patch_id,
             'patch_name': patch_name,
         })
@@ -1948,7 +1966,7 @@ def zone_quick_draw(request):
     all_drawn_zones = []
     for z in Zone.objects.exclude(boundary_points__isnull=True).exclude(boundary_points=[]).select_related('patch').only(
         'id', 'code', 'name', 'boundary_points', 'boundary_color',
-        'label_lat', 'label_lng', 'label_scale', 'label_angle', 'patch_id', 'patch__name'
+        'label_lat', 'label_lng', 'label_scale', 'label_angle', 'smooth_override', 'patch_id', 'patch__name'
     ):
         all_drawn_zones.append({
             'id': z.id,
@@ -1960,6 +1978,7 @@ def zone_quick_draw(request):
             'label_lng': z.label_lng,
             'label_scale': z.label_scale,
             'label_angle': z.label_angle,
+            'smooth_override': z.smooth_override,
             'patch_id': z.patch_id,
             'patch_name': z.patch.name if z.patch else '',
             'area_display': z.area_display,
@@ -2051,6 +2070,8 @@ def zone_quick_draw_mobile(request):
         zone.label_lng = float(label_lng) if label_lng else None
         zone.label_scale = float(request.POST.get('label_scale', '1.0') or '1.0')
         zone.label_angle = int(request.POST.get('label_angle', '0') or '0')
+        smooth_val = request.POST.get('smooth_override', '')
+        zone.smooth_override = int(smooth_val) if smooth_val != '' else None
         boundary_color = request.POST.get('boundary_color')
         if boundary_color:
             zone.boundary_color = boundary_color
@@ -2073,6 +2094,7 @@ def zone_quick_draw_mobile(request):
             'label_lng': zone.label_lng,
             'label_scale': zone.label_scale,
             'label_angle': zone.label_angle,
+            'smooth_override': zone.smooth_override,
             'patch_id': zone.patch_id,
             'patch_name': patch_name,
         })
@@ -2091,7 +2113,7 @@ def zone_quick_draw_mobile(request):
     all_drawn_zones = []
     for z in Zone.objects.exclude(boundary_points__isnull=True).exclude(boundary_points=[]).select_related('patch').only(
         'id', 'code', 'name', 'boundary_points', 'boundary_color',
-        'label_lat', 'label_lng', 'label_scale', 'label_angle', 'patch_id', 'patch__name'
+        'label_lat', 'label_lng', 'label_scale', 'label_angle', 'smooth_override', 'patch_id', 'patch__name'
     ):
         all_drawn_zones.append({
             'id': z.id,
@@ -2103,6 +2125,7 @@ def zone_quick_draw_mobile(request):
             'label_lng': z.label_lng,
             'label_scale': z.label_scale,
             'label_angle': z.label_angle,
+            'smooth_override': z.smooth_override,
             'patch_id': z.patch_id,
             'patch_name': z.patch.name if z.patch else '',
             'area_display': z.area_display,
@@ -2149,7 +2172,7 @@ def map_style_editor(request):
     all_drawn_zones = []
     for z in Zone.objects.exclude(boundary_points__isnull=True).exclude(boundary_points=[]).select_related('patch').only(
         'id', 'code', 'name', 'boundary_points', 'boundary_color',
-        'label_lat', 'label_lng', 'label_scale', 'label_angle', 'patch_id', 'patch__name', 'current_status'
+        'label_lat', 'label_lng', 'label_scale', 'label_angle', 'smooth_override', 'patch_id', 'patch__name', 'current_status'
     ):
         center = None
         bp = z.boundary_points
@@ -2176,6 +2199,7 @@ def map_style_editor(request):
             'label_lng': z.label_lng,
             'label_scale': z.label_scale,
             'label_angle': z.label_angle,
+            'smooth_override': z.smooth_override,
             'status': z.current_status,
             'center': center,
         })
@@ -2295,6 +2319,24 @@ def zone_detail_page(request, zone_id):
     }
 
     return render(request, 'core/zone_detail_page.html', context)
+
+
+@login_required(login_url='core:login')
+def zone_smooth_update(request, zone_id):
+    """API: update per-zone smooth override. POST with {smooth_override: null|int}."""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST only'}, status=405)
+    if not _check_zone_admin(request):
+        return JsonResponse({'error': '无权限'}, status=403)
+    zone = get_object_or_404(Zone, pk=zone_id)
+    try:
+        data = json.loads(request.body)
+    except (json.JSONDecodeError, ValueError):
+        return JsonResponse({'error': '无效数据'}, status=400)
+    val = data.get('smooth_override')
+    zone.smooth_override = int(val) if val is not None else None
+    zone.save(update_fields=['smooth_override', 'updated_at'])
+    return JsonResponse({'success': True, 'smooth_override': zone.smooth_override})
 
 
 @login_required(login_url='core:login')

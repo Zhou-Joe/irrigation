@@ -93,6 +93,10 @@
 
     const _smoothIter = _bCfg.smooth || 0;
 
+    function _zoneSmooth(zone) {
+        return zone.smooth_override != null ? zone.smooth_override : _smoothIter;
+    }
+
     // Default zone style (fallback when no status)
     const defaultStyle = {
         color: '#2D6A4F',
@@ -381,6 +385,9 @@
      */
     function getLabelFontSize(zoom) {
         const base = _lCfg.fontSize || 25;
+        // Truncated code modes: use much larger base to stay readable
+        if (zoom <= 16) return base * 5;       // xx mode: 5x base
+        if (zoom === 17) return base * 3;       // xx-xx mode: 3x base
         return Math.max(5, Math.round(base * Math.pow(0.7, 19 - zoom)));
     }
 
@@ -391,9 +398,6 @@
         const zoom = map.getZoom();
         const showLabels = zoom >= LABEL_MIN_ZOOM;
         const baseSize = getLabelFontSize(zoom);
-
-        // Scale multiplier for truncated code labels
-        const truncScale = zoom <= 16 ? 5 : 3;
 
         // Group labels by truncated code when zoomed out
         if (showLabels && zoom < 18) {
@@ -424,7 +428,7 @@
                         label.setLatLng(groupCenter);
                         const zone = label._zone;
                         const scale = zone ? (zone.label_scale || 1.0) : 1.0;
-                        const size = baseSize * scale * truncScale;
+                        const size = baseSize * scale;
                         const span = el ? el.querySelector('span') : null;
                         if (span) {
                             span.style.fontSize = size + 'px';
@@ -559,7 +563,7 @@
                         const latLngs = pointsToLatLngs(ring);
                         if (latLngs.length < 3) return;
 
-                        const polygon = L.polygon(_smoothLL(latLngs, _smoothIter), zoneStyle);
+                        const polygon = L.polygon(_smoothLL(latLngs, _zoneSmooth(zone)), zoneStyle);
                         polygon.zoneData = zoneData;
                         polygon.originalStyle = zoneStyle;
                         polygon.on('mouseover', handleMouseOver);
@@ -579,7 +583,7 @@
                     const latLngs = pointsToLatLngs(zone.boundary_points);
                     if (latLngs.length < 3) return;
 
-                    const polygon = L.polygon(_smoothLL(latLngs, _smoothIter), zoneStyle);
+                    const polygon = L.polygon(_smoothLL(latLngs, _zoneSmooth(zone)), zoneStyle);
                     polygon.zoneData = zoneData;
                     polygon.originalStyle = zoneStyle;
                     polygon.on('mouseover', handleMouseOver);
@@ -860,6 +864,8 @@
 
     function buildSettingsHtml(zone) {
         const settings = getCardFieldSettings();
+        const smoothVal = zone.smooth_override != null ? zone.smooth_override : _smoothIter;
+        const isCustom = zone.smooth_override != null;
         return `
             <div class="popup-card">
                 <div class="popup-header">
@@ -874,8 +880,24 @@
                         </label>
                     `).join('')}
                 </div>
+                <div style="padding:10px 14px;border-top:1px solid #eee;">
+                    <div style="font-size:0.82em;font-weight:600;color:#555;margin-bottom:6px;">
+                        圆滑度特调
+                        <label style="float:right;font-weight:400;font-size:0.78em;cursor:pointer;">
+                            <input type="checkbox" id="smoothCustomToggle" ${isCustom ? 'checked' : ''} onchange="handleSmoothCustomToggle(this.checked)"> 自定义
+                        </label>
+                    </div>
+                    <input type="range" min="0" max="3" step="1" value="${smoothVal}" id="smoothOverrideSlider"
+                        style="width:100%;accent-color:#2D6A4F;" ${isCustom ? '' : 'disabled'}
+                        oninput="document.getElementById('smoothOverrideVal').textContent=this.value">
+                    <div style="display:flex;justify-content:space-between;font-size:0.72em;color:#999;margin-top:2px;">
+                        <span>直角</span>
+                        <span id="smoothOverrideVal">${smoothVal}</span>
+                        <span>圆滑</span>
+                    </div>
+                </div>
                 <div class="popup-footer">
-                    <button class="popup-detail-btn" onclick="togglePopupSettings()">完成</button>
+                    <button class="popup-detail-btn" onclick="saveSmoothOverride()">保存圆滑度</button>
                 </div>
             </div>
         `;
@@ -923,6 +945,86 @@
     window.hideZonePopup = hideZonePopup;
     window.togglePopupSettings = togglePopupSettings;
     window.handleFieldToggle = handleFieldToggle;
+
+    window.handleSmoothCustomToggle = function(checked) {
+        const slider = document.getElementById('smoothOverrideSlider');
+        if (slider) slider.disabled = !checked;
+        if (!checked && slider) slider.value = _smoothIter;
+    };
+
+    window.saveSmoothOverride = function() {
+        if (!currentPopupZoneData) return;
+        const toggle = document.getElementById('smoothCustomToggle');
+        const slider = document.getElementById('smoothOverrideSlider');
+        const isCustom = toggle && toggle.checked;
+        const val = isCustom ? parseInt(slider && slider.value) : null;
+
+        fetch(`/zone/${currentPopupZoneData.id}/smooth/`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json', 'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]')?.value || ''},
+            body: JSON.stringify({smooth_override: val})
+        }).then(r => r.json()).then(data => {
+            if (data.success) {
+                currentPopupZoneData.smooth_override = data.smooth_override;
+                // Re-render this zone's polygons on the map
+                _refreshZonePolygons(currentPopupZoneData);
+                showToast && showToast('圆滑度已保存', 'success');
+            } else {
+                showToast && showToast(data.error || '保存失败', 'error');
+            }
+        }).catch(() => {
+            showToast && showToast('网络错误', 'error');
+        });
+    };
+
+    function _refreshZonePolygons(zoneData) {
+        // Find and remove existing polygons for this zone, then re-add with new smooth
+        zonesLayerGroup.eachLayer(layer => {
+            if (layer.zoneData && layer.zoneData.id === zoneData.id) {
+                zonesLayerGroup.removeLayer(layer);
+            }
+        });
+        // Re-add from zonesData
+        const zone = zonesData.find(z => z.id === zoneData.id);
+        if (!zone || !zone.boundary_points) return;
+        zone.smooth_override = zoneData.smooth_override;
+
+        let zoneStyle;
+        const color = zone.boundary_color || '#2D6A4F';
+        if (zone.status === 'in_progress') {
+            zoneStyle = {...statusStyles.in_progress, color};
+        } else if (zone.status === 'completed') {
+            zoneStyle = {...statusStyles.completed, color};
+        } else {
+            zoneStyle = {...defaultStyle, color};
+        }
+
+        if (isMultiPolygonFormat(zone.boundary_points)) {
+            zone.boundary_points.forEach(ring => {
+                const ll = pointsToLatLngs(ring);
+                if (ll.length < 3) return;
+                const poly = L.polygon(_smoothLL(ll, _zoneSmooth(zone)), zoneStyle);
+                poly.zoneData = {id: zone.id, code: zone.code, name: zone.name};
+                poly.originalStyle = zoneStyle;
+                poly.on('mouseover', handleMouseOver);
+                poly.on('mouseout', handleMouseOut);
+                poly.on('click', handleClick);
+                poly.bindTooltip(`${zone.code} ${zone.name || ''}`, {sticky: true});
+                zonesLayerGroup.addLayer(poly);
+            });
+        } else {
+            const ll = pointsToLatLngs(zone.boundary_points);
+            if (ll.length < 3) return;
+            const poly = L.polygon(_smoothLL(ll, _zoneSmooth(zone)), zoneStyle);
+            poly.zoneData = {id: zone.id, code: zone.code, name: zone.name};
+            poly.originalStyle = zoneStyle;
+            poly.on('mouseover', handleMouseOver);
+            poly.on('mouseout', handleMouseOut);
+            poly.on('click', handleClick);
+            poly.bindTooltip(`${zone.code} ${zone.name || ''}`, {sticky: true});
+            zonesLayerGroup.addLayer(poly);
+        }
+    }
     window._toggleNotesExpand = function(listId, btn) {
         const collapsed = document.getElementById(listId + '_collapsed');
         const expanded = document.getElementById(listId + '_expanded');
@@ -957,11 +1059,16 @@
         if (highlightedZoneId === null) return;
         const prevId = highlightedZoneId;
         highlightedZoneId = null;
-        zonesLayerGroup.eachLayer(function(layer) {
-            if (layer.zoneData && layer.zoneData.id === prevId) {
-                layer.setStyle(layer.originalStyle || defaultStyle);
-            }
-        });
+        // Re-apply current filter state instead of blindly restoring originalStyle
+        if (typeof window.applyMapFilters === 'function') {
+            window.applyMapFilters();
+        } else {
+            zonesLayerGroup.eachLayer(function(layer) {
+                if (layer.zoneData && layer.zoneData.id === prevId) {
+                    layer.setStyle(layer.originalStyle || defaultStyle);
+                }
+            });
+        }
     }
 
     /**
@@ -979,6 +1086,7 @@
      * @param {Event} e - Leaflet event
      */
     function handleMouseOut(e) {
+        e.target.closeTooltip();
         unhighlightZonePolygons();
     }
 
