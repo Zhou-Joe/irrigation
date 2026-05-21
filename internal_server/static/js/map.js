@@ -1019,6 +1019,21 @@
         if (!checked && slider) slider.value = _smoothIter;
     };
 
+    function _getCSRF() {
+        const fromInput = document.querySelector('[name=csrfmiddlewaretoken]');
+        if (fromInput) return fromInput.value;
+        const match = document.cookie.match(/csrftoken=([^;]+)/);
+        return match ? match[1] : '';
+    }
+
+    function _smoothToast(msg) {
+        let t = document.getElementById('_smoothToast');
+        if (!t) { t = document.createElement('div'); t.id = '_smoothToast'; t.style.cssText = 'position:fixed;bottom:60px;left:50%;transform:translateX(-50%);background:#333;color:#fff;padding:8px 20px;border-radius:6px;font-size:14px;z-index:99999;opacity:0;transition:opacity .3s;'; document.body.appendChild(t); }
+        t.textContent = msg; t.style.opacity = '1';
+        clearTimeout(t._timer);
+        t._timer = setTimeout(() => { t.style.opacity = '0'; }, 2000);
+    }
+
     window.saveSmoothOverride = function() {
         if (!currentPopupZoneData) return;
         const toggle = document.getElementById('smoothCustomToggle');
@@ -1028,19 +1043,18 @@
 
         fetch(`/zone/${currentPopupZoneData.id}/smooth/`, {
             method: 'POST',
-            headers: {'Content-Type': 'application/json', 'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]')?.value || ''},
+            headers: {'Content-Type': 'application/json', 'X-CSRFToken': _getCSRF()},
             body: JSON.stringify({smooth_override: val})
         }).then(r => r.json()).then(data => {
             if (data.success) {
                 currentPopupZoneData.smooth_override = data.smooth_override;
-                // Re-render this zone's polygons on the map
                 _refreshZonePolygons(currentPopupZoneData);
-                showToast && showToast('圆滑度已保存', 'success');
+                _smoothToast('圆滑度已保存');
             } else {
-                showToast && showToast(data.error || '保存失败', 'error');
+                _smoothToast(data.error || '保存失败');
             }
         }).catch(() => {
-            showToast && showToast('网络错误', 'error');
+            _smoothToast('网络错误');
         });
     };
 
