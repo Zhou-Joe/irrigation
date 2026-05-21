@@ -509,7 +509,17 @@
 
     function getLabelSize() {
         const zoom = map ? map.getZoom() : 16;
-        return Math.max(5, Math.round(cfg.label.fontSize * Math.pow(0.7, 19 - zoom)));
+        const base = cfg.label.fontSize || 25;
+        if (zoom <= 16) return base * 5;
+        if (zoom === 17) return base * 3;
+        return Math.max(5, Math.round(base * Math.pow(0.7, 19 - zoom)));
+    }
+
+    function getCodeForZoom(code, zoom) {
+        var parts = code.split('-');
+        if (parts.length <= 1 || zoom >= 18) return code;
+        if (zoom >= 17) return parts.slice(0, 2).join('-');
+        return parts[0];
     }
 
     function makeLabelHtml(code, size) {
@@ -590,6 +600,8 @@
                 icon: L.divIcon({ className: 'zone-label', html: html, iconSize: null, iconAnchor: [0, 0] })
             });
             label._zone = zone;
+            label._originalCenter = center;
+            label._leaderLines = [];
             labelsLayer.addLayer(label);
             zoneLabels.push(label);
 
@@ -605,6 +617,7 @@
                     });
                     linesLayer.addLayer(line);
                     zoneLines.push(line);
+                    label._leaderLines.push(line);
                 });
             }
         });
@@ -617,20 +630,75 @@
     }
 
     function refreshLabels() {
+        const zoom = map ? map.getZoom() : 16;
         const size = getLabelSize();
-        zoneLabels.forEach(l => {
-            const z = l._zone;
-            const scale = z ? (z.label_scale || 1.0) : 1.0;
-            const s = size * scale;
-            const angle = z ? (z.label_angle || 0) : 0;
-            const code = z ? z.code : '';
-            l.setIcon(L.divIcon({
-                className: 'zone-label',
-                html: makeLabelHtml(code, s),
-                iconSize: null,
-                iconAnchor: [0, 0]
-            }));
-        });
+
+        if (zoom < 18) {
+            // Group labels by truncated code
+            const groups = {};
+            zoneLabels.forEach(l => {
+                const z = l._zone;
+                if (!z) return;
+                const key = getCodeForZoom(z.code, zoom);
+                if (!groups[key]) groups[key] = [];
+                groups[key].push(l);
+            });
+            Object.entries(groups).forEach(([key, labels]) => {
+                let latSum = 0, lngSum = 0, count = 0;
+                labels.forEach(l => {
+                    const c = l._originalCenter;
+                    if (c) { latSum += c[0]; lngSum += c[1]; count++; }
+                });
+                const groupCenter = count > 0 ? [latSum / count, lngSum / count] : labels[0]._originalCenter;
+
+                labels.forEach((l, i) => {
+                    const z = l._zone;
+                    const scale = z ? (z.label_scale || 1.0) : 1.0;
+                    const s = size * scale;
+                    if (i === 0) {
+                        l.setLatLng(groupCenter);
+                        l.setIcon(L.divIcon({
+                            className: 'zone-label',
+                            html: makeLabelHtml(key, s),
+                            iconSize: null, iconAnchor: [0, 0]
+                        }));
+                        const el = l.getElement();
+                        if (el) el.style.display = '';
+                    } else {
+                        const el = l.getElement();
+                        if (el) el.style.display = 'none';
+                    }
+                    if (l._leaderLines) {
+                        l._leaderLines.forEach(line => {
+                            const le = line.getElement();
+                            if (le) le.style.display = 'none';
+                        });
+                    }
+                });
+            });
+        } else {
+            // Full zoom: show all individual labels
+            zoneLabels.forEach(l => {
+                const z = l._zone;
+                const scale = z ? (z.label_scale || 1.0) : 1.0;
+                const s = size * scale;
+                const code = z ? z.code : '';
+                l.setIcon(L.divIcon({
+                    className: 'zone-label',
+                    html: makeLabelHtml(code, s),
+                    iconSize: null, iconAnchor: [0, 0]
+                }));
+                if (l._originalCenter) l.setLatLng(l._originalCenter);
+                const el = l.getElement();
+                if (el) el.style.display = '';
+                if (l._leaderLines) {
+                    l._leaderLines.forEach(line => {
+                        const le = line.getElement();
+                        if (le) le.style.display = '';
+                    });
+                }
+            });
+        }
     }
 
     function refreshLines() {
