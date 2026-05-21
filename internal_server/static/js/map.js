@@ -62,6 +62,80 @@
     const _lCfg = _mapCfg.label || {};
     const _rCfg = _mapCfg.leaderLine || {};
 
+    // Polylabel — finds the visual center (pole of inaccessibility) of a polygon
+    // Returns [lat, lng] guaranteed to be inside the polygon
+    function _polylabel(ring, precision) {
+        if (precision === undefined) precision = 1.0;
+        if (ring.length < 3) {
+            let latS = 0, lngS = 0;
+            ring.forEach(p => { latS += Array.isArray(p) ? p[0] : p.lat; lngS += Array.isArray(p) ? p[1] : p.lng; });
+            return [latS / ring.length, lngS / ring.length];
+        }
+        const pts = ring.map(p => ({ lat: Array.isArray(p) ? p[0] : p.lat, lng: Array.isArray(p) ? p[1] : p.lng }));
+        let minLat = Infinity, maxLat = -Infinity, minLng = Infinity, maxLng = -Infinity;
+        pts.forEach(p => { if (p.lat < minLat) minLat = p.lat; if (p.lat > maxLat) maxLat = p.lat; if (p.lng < minLng) minLng = p.lng; if (p.lng > maxLng) maxLng = p.lng; });
+        const w = maxLng - minLng, h = maxLat - minLat;
+        const cellSize = Math.min(w, h);
+        if (cellSize === 0) return [(minLat + maxLat) / 2, (minLng + maxLng) / 2];
+        const half = cellSize / 2;
+
+        function _pointToRingDist(lat, lng) {
+            let inside = false, minDist = Infinity;
+            for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+                const a = pts[i], b = pts[j];
+                if ((a.lat > lat) !== (b.lat > lat) && lng < (b.lng - a.lng) * (lat - a.lat) / (b.lat - a.lat) + a.lng) inside = !inside;
+                const dx = a.lng - lng, dy = a.lat - lat, nx = b.lng - a.lng, ny = b.lat - a.lat;
+                const t = Math.max(0, Math.min(1, (dx * nx + dy * ny) / (nx * nx + ny * ny || 1)));
+                const px = a.lng + t * nx - lng, py = a.lat + t * ny - lat;
+                const d = px * px + py * py;
+                if (d < minDist) minDist = d;
+            }
+            minDist = Math.sqrt(Math.max(0, minDist));
+            return inside ? minDist : -minDist;
+        }
+
+        // Probing grid
+        let bestDist = -Infinity, bestPt = [(minLat + maxLat) / 2, (minLng + maxLng) / 2];
+        const cols = Math.ceil(w / cellSize), rows = Math.ceil(h / cellSize);
+        for (let r = 0; r <= rows; r++) {
+            for (let c = 0; c <= cols; c++) {
+                const lat = minLat + r * cellSize, lng = minLng + c * cellSize;
+                const d = _pointToRingDist(lat, lng);
+                if (d > bestDist) { bestDist = d; bestPt = [lat, lng]; }
+            }
+        }
+
+        // Iterative refinement with priority queue
+        const queue = [];
+        for (let r = 0; r <= rows; r++) {
+            for (let c = 0; c <= cols; c++) {
+                const lat = minLat + r * cellSize, lng = minLng + c * cellSize;
+                const d = _pointToRingDist(lat, lng);
+                const cx = minLng + (c + 0.5) * cellSize, cy = minLat + (r + 0.5) * cellSize;
+                const maxPossible = d + Math.sqrt((cx - lng) * (cx - lng) + (cy - lat) * (cy - lat));
+                queue.push({ lat: cy, lng: cx, dist: d, max: maxPossible });
+            }
+        }
+        queue.sort((a, b) => b.max - a.max);
+
+        while (queue.length) {
+            const cell = queue.shift();
+            if (cell.max - bestDist <= precision) break;
+            const nlat = cell.lat, nlng = cell.lng, nhalf = half / 2;
+            for (let si = -1; si <= 1; si += 2) {
+                for (let sj = -1; sj <= 1; sj += 2) {
+                    const lat = nlat + si * nhalf, lng = nlng + sj * nhalf;
+                    const d = _pointToRingDist(lat, lng);
+                    if (d > bestDist) { bestDist = d; bestPt = [lat, lng]; }
+                    const maxP = d + nhalf * Math.SQRT2;
+                    if (maxP > bestDist) queue.push({ lat, lng, dist: d, max: maxP });
+                }
+            }
+            queue.sort((a, b) => b.max - a.max);
+        }
+        return bestPt;
+    }
+
     function _dash(s) {
         if (s === 'dashed') return '8 5';
         if (s === 'dotted') return '2 4';
@@ -341,14 +415,7 @@
             zone.boundary_points.forEach(ring => {
                 const ringPts = pointsToLatLngs(ring);
                 if (ringPts.length < 3) return;
-                // Compute ring centroid
-                let latSum = 0, lngSum = 0;
-                ringPts.forEach(p => {
-                    const lat = Array.isArray(p) ? p[0] : p.lat;
-                    const lng = Array.isArray(p) ? p[1] : p.lng;
-                    latSum += lat; lngSum += lng;
-                });
-                const ringCenter = [latSum / ringPts.length, lngSum / ringPts.length];
+                const ringCenter = _polylabel(ringPts);
                 const line = L.polyline([center, ringCenter], {
                     color: zone.boundary_color || '#2D6A4F',
                     weight: _rCfg.weight || 2.5,
