@@ -215,6 +215,11 @@
 
         // Update zone label sizes on zoom
         map.on('zoomend', updateLabelSizes);
+
+        // Close popup when clicking on empty map space
+        map.on('click', function() {
+            hideZonePopup();
+        });
     }
 
     /**
@@ -765,7 +770,10 @@
                         <div class="popup-title">${zone.code} - ${zone.name}</div>
                         ${statusInfo ? `<span class="popup-status-badge" style="background: ${statusInfo.color}18; color: ${statusInfo.color};">${statusInfo.label}</span>` : ''}
                     </div>
-                    <button class="popup-settings-btn" onclick="togglePopupSettings()" title="自定义显示字段">⚙</button>
+                    <div style="display:flex;gap:6px;align-items:center;">
+                        <button class="popup-settings-btn" onclick="togglePopupSettings()" title="自定义显示字段">⚙</button>
+                        <button class="popup-close-btn" onclick="hideZonePopup()" title="关闭">✕</button>
+                    </div>
                 </div>
                 ${hasExtra ? '<div class="popup-fields">' + fieldsHtml + faultHtml + pendingHtml + '</div>' : ''}
                 <div class="popup-footer">
@@ -805,6 +813,16 @@
         popupSettingsOpen = false;
         panel.innerHTML = buildPopupHtml(zoneData);
         panel.style.display = '';
+    }
+
+    function hideZonePopup() {
+        const panel = document.getElementById('zonePopupPanel');
+        if (!panel) return;
+        panel.style.display = 'none';
+        currentPopupZoneData = null;
+        popupSettingsOpen = false;
+        unhighlightZonePolygons();
+        document.querySelectorAll('.zone-item.active').forEach(el => el.classList.remove('active'));
     }
 
     function togglePopupSettings() {
