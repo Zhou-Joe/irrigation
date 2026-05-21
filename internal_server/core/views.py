@@ -2149,14 +2149,14 @@ def map_style_editor(request):
     all_drawn_zones = []
     for z in Zone.objects.exclude(boundary_points__isnull=True).exclude(boundary_points=[]).select_related('patch').only(
         'id', 'code', 'name', 'boundary_points', 'boundary_color',
-        'label_lat', 'label_lng', 'label_scale', 'label_angle', 'patch_id', 'patch__name', 'status'
+        'label_lat', 'label_lng', 'label_scale', 'label_angle', 'patch_id', 'patch__name', 'current_status'
     ):
         center = None
         bp = z.boundary_points
         if bp:
             try:
                 if isinstance(bp[0], list):
-                    all_pts = [p for ring in bp for p in (ring if isinstance(ring[0], list) else [ring])]
+                    all_pts = [p for ring in bp for p in ring]
                 else:
                     all_pts = bp
                 if all_pts:
@@ -2176,7 +2176,7 @@ def map_style_editor(request):
             'label_lng': z.label_lng,
             'label_scale': z.label_scale,
             'label_angle': z.label_angle,
-            'status': z.status,
+            'status': z.current_status,
             'center': center,
         })
 
