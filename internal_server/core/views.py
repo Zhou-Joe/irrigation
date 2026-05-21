@@ -2120,7 +2120,7 @@ def zone_quick_draw_mobile(request):
 @ensure_csrf_cookie
 def map_style_editor(request):
     """Map style customization page with live preview."""
-    from .models import ManagerProfile, MapStyleSettings
+    from .models import ManagerProfile, MapStyleSettings, Worker
 
     is_admin = request.user.is_superuser or request.user.is_staff
     if not is_admin:
@@ -2131,8 +2131,11 @@ def map_style_editor(request):
             pass
 
     if not is_admin:
-        messages.error(request, '无权限访问此页面')
-        return redirect('core:dashboard')
+        try:
+            Worker.objects.get(user=request.user, active=True)
+        except Worker.DoesNotExist:
+            messages.error(request, '无权限访问此页面')
+            return redirect('core:dashboard')
 
     if request.method == 'POST':
         try:
