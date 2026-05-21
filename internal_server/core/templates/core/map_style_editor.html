@@ -1,0 +1,741 @@
+{% extends 'core/base.html' %}
+{% load static %}
+
+{% block title %}地图样式设置{% endblock %}
+{% block nav_quickdraw %}active{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<style>
+.editor-container {
+    display: flex;
+    height: calc(100vh - 52px);
+    overflow: hidden;
+}
+
+.map-panel {
+    flex: 1;
+    position: relative;
+    min-width: 0;
+}
+
+#map {
+    width: 100%;
+    height: 100%;
+}
+
+.control-panel {
+    width: 340px;
+    min-width: 340px;
+    background: #FAFAF7;
+    border-left: 1px solid rgba(27,67,50,0.12);
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+}
+
+.panel-header {
+    padding: 16px 18px 12px;
+    background: linear-gradient(135deg, rgba(8,28,21,0.97), rgba(27,67,50,0.95));
+    color: #F5F0E8;
+}
+
+.panel-header h2 {
+    margin: 0;
+    font-size: 1.05rem;
+    font-weight: 700;
+    letter-spacing: 0;
+}
+
+.panel-header p {
+    margin: 4px 0 0;
+    font-size: 0.78rem;
+    opacity: 0.7;
+}
+
+.section {
+    border-bottom: 1px solid rgba(27,67,50,0.08);
+}
+
+.section-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 18px;
+    cursor: pointer;
+    user-select: none;
+    background: none;
+    border: none;
+    width: 100%;
+    text-align: left;
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: #1B4332;
+    transition: background 0.15s;
+}
+.section-toggle:hover { background: rgba(27,67,50,0.04); }
+
+.section-toggle .arrow {
+    font-size: 0.7rem;
+    transition: transform 0.2s;
+    color: #888;
+}
+.section.open .section-toggle .arrow { transform: rotate(90deg); }
+
+.section-body {
+    display: none;
+    padding: 4px 18px 14px;
+}
+.section.open .section-body { display: block; }
+
+.ctrl-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 10px;
+    min-height: 32px;
+}
+
+.ctrl-label {
+    font-size: 0.82rem;
+    color: #555;
+    min-width: 70px;
+    flex-shrink: 0;
+}
+
+.ctrl-slider {
+    flex: 1;
+    -webkit-appearance: none;
+    appearance: none;
+    height: 4px;
+    border-radius: 2px;
+    background: #ddd;
+    outline: none;
+}
+.ctrl-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 16px; height: 16px;
+    border-radius: 50%;
+    background: #2D6A4F;
+    cursor: pointer;
+    border: 2px solid white;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.2);
+}
+
+.ctrl-value {
+    font-size: 0.78rem;
+    color: #2D6A4F;
+    font-weight: 600;
+    min-width: 36px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+.ctrl-select {
+    flex: 1;
+    padding: 4px 8px;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    font-size: 0.82rem;
+    background: white;
+    color: #333;
+}
+
+.ctrl-color {
+    width: 32px;
+    height: 28px;
+    border: 2px solid #ddd;
+    border-radius: 6px;
+    cursor: pointer;
+    padding: 0;
+    flex-shrink: 0;
+}
+
+.ctrl-toggle {
+    position: relative;
+    width: 40px;
+    height: 22px;
+    flex-shrink: 0;
+}
+.ctrl-toggle input { display: none; }
+.ctrl-toggle-slider {
+    position: absolute;
+    inset: 0;
+    background: #ccc;
+    border-radius: 22px;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+.ctrl-toggle-slider::after {
+    content: '';
+    position: absolute;
+    left: 2px; top: 2px;
+    width: 18px; height: 18px;
+    border-radius: 50%;
+    background: white;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+    transition: left 0.2s;
+}
+.ctrl-toggle input:checked + .ctrl-toggle-slider {
+    background: #2D6A4F;
+}
+.ctrl-toggle input:checked + .ctrl-toggle-slider::after {
+    left: 20px;
+}
+
+.panel-actions {
+    padding: 14px 18px;
+    display: flex;
+    gap: 10px;
+    border-top: 1px solid rgba(27,67,50,0.08);
+    margin-top: auto;
+    background: #FAFAF7;
+}
+
+.btn-save {
+    flex: 1;
+    padding: 10px;
+    background: #2D6A4F;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-size: 0.88rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s;
+}
+.btn-save:hover { background: #1B4332; }
+.btn-save:disabled { opacity: 0.5; cursor: default; }
+
+.btn-reset {
+    padding: 10px 16px;
+    background: white;
+    color: #888;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: border-color 0.15s, color 0.15s;
+}
+.btn-reset:hover { border-color: #999; color: #555; }
+
+.toast-msg {
+    position: fixed;
+    top: 64px;
+    right: 20px;
+    padding: 10px 20px;
+    border-radius: 8px;
+    font-size: 0.88rem;
+    font-weight: 500;
+    z-index: 9999;
+    opacity: 0;
+    transform: translateY(-8px);
+    transition: opacity 0.25s, transform 0.25s;
+    pointer-events: none;
+}
+.toast-msg.visible { opacity: 1; transform: translateY(0); pointer-events: auto; }
+.toast-msg.success { background: #D8F3DC; color: #1B4332; }
+.toast-msg.error { background: #F8D7DA; color: #721C24; }
+
+/* Mobile responsive */
+@media (max-width: 768px) {
+    .editor-container {
+        flex-direction: column;
+    }
+    .map-panel {
+        height: 45vh;
+        flex: none;
+    }
+    .control-panel {
+        width: 100%;
+        min-width: unset;
+        flex: 1;
+        border-left: none;
+        border-top: 1px solid rgba(27,67,50,0.12);
+    }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<script id="zones-data" type="application/json">{{ zones_json|safe }}</script>
+<script id="style-data" type="application/json">{{ map_style_json|safe }}</script>
+<div class="editor-container">
+    <div class="map-panel">
+        <div id="map"></div>
+    </div>
+    <div class="control-panel">
+        <div class="panel-header">
+            <h2>地图样式设置</h2>
+            <p>拖动控件实时预览，保存后全局生效</p>
+        </div>
+
+        <!-- Boundary Section -->
+        <div class="section open">
+            <button class="section-toggle" onclick="this.parentElement.classList.toggle('open')">
+                边界样式 <span class="arrow">▸</span>
+            </button>
+            <div class="section-body">
+                <div class="ctrl-row">
+                    <span class="ctrl-label">边框粗细</span>
+                    <input type="range" class="ctrl-slider" id="bWeight" min="1" max="6" step="0.5" value="2">
+                    <span class="ctrl-value" id="bWeightVal">2</span>
+                </div>
+                <div class="ctrl-row">
+                    <span class="ctrl-label">边框透明度</span>
+                    <input type="range" class="ctrl-slider" id="bOpacity" min="0.1" max="1" step="0.05" value="0.7">
+                    <span class="ctrl-value" id="bOpacityVal">0.7</span>
+                </div>
+                <div class="ctrl-row">
+                    <span class="ctrl-label">填充透明度</span>
+                    <input type="range" class="ctrl-slider" id="bFillOpacity" min="0" max="0.5" step="0.01" value="0.15">
+                    <span class="ctrl-value" id="bFillOpacityVal">0.15</span>
+                </div>
+                <div class="ctrl-row">
+                    <span class="ctrl-label">虚线样式</span>
+                    <select class="ctrl-select" id="bDashStyle">
+                        <option value="solid">实线</option>
+                        <option value="dashed">虚线</option>
+                        <option value="dotted">点线</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <!-- Label Section -->
+        <div class="section open">
+            <button class="section-toggle" onclick="this.parentElement.classList.toggle('open')">
+                标签样式 <span class="arrow">▸</span>
+            </button>
+            <div class="section-body">
+                <div class="ctrl-row">
+                    <span class="ctrl-label">基准字号</span>
+                    <input type="range" class="ctrl-slider" id="lFontSize" min="10" max="40" step="1" value="25">
+                    <span class="ctrl-value" id="lFontSizeVal">25</span>
+                </div>
+                <div class="ctrl-row">
+                    <span class="ctrl-label">字体</span>
+                    <select class="ctrl-select" id="lFontFamily">
+                        <option value="Noto Sans SC">Noto Sans SC</option>
+                        <option value="Arial">Arial</option>
+                        <option value="monospace">Monospace</option>
+                    </select>
+                </div>
+                <div class="ctrl-row">
+                    <span class="ctrl-label">字体粗细</span>
+                    <input type="range" class="ctrl-slider" id="lFontWeight" min="400" max="700" step="100" value="400">
+                    <span class="ctrl-value" id="lFontWeightVal">400</span>
+                </div>
+                <div class="ctrl-row">
+                    <span class="ctrl-label">字体颜色</span>
+                    <input type="color" class="ctrl-color" id="lFontColor" value="#1C1C1C">
+                    <span class="ctrl-value" id="lFontColorVal">#1C1C1C</span>
+                </div>
+                <div class="ctrl-row">
+                    <span class="ctrl-label">背景颜色</span>
+                    <input type="color" class="ctrl-color" id="lBgColor" value="#000000">
+                    <input type="range" class="ctrl-slider" id="lBgOpacity" min="0" max="1" step="0.05" value="0" style="flex:1;">
+                    <span class="ctrl-value" id="lBgOpacityVal">0</span>
+                </div>
+                <div class="ctrl-row">
+                    <span class="ctrl-label">背景圆角</span>
+                    <input type="range" class="ctrl-slider" id="lBgRadius" min="0" max="12" step="1" value="0">
+                    <span class="ctrl-value" id="lBgRadiusVal">0px</span>
+                </div>
+                <div class="ctrl-row">
+                    <span class="ctrl-label">文字阴影</span>
+                    <label class="ctrl-toggle">
+                        <input type="checkbox" id="lTextShadow">
+                        <span class="ctrl-toggle-slider"></span>
+                    </label>
+                </div>
+            </div>
+        </div>
+
+        <!-- Leader Line Section -->
+        <div class="section open">
+            <button class="section-toggle" onclick="this.parentElement.classList.toggle('open')">
+                引线样式 <span class="arrow">▸</span>
+            </button>
+            <div class="section-body">
+                <div class="ctrl-row">
+                    <span class="ctrl-label">线条粗细</span>
+                    <input type="range" class="ctrl-slider" id="rWeight" min="1" max="5" step="0.5" value="2.5">
+                    <span class="ctrl-value" id="rWeightVal">2.5</span>
+                </div>
+                <div class="ctrl-row">
+                    <span class="ctrl-label">线条透明度</span>
+                    <input type="range" class="ctrl-slider" id="rOpacity" min="0" max="1" step="0.05" value="0.55">
+                    <span class="ctrl-value" id="rOpacityVal">0.55</span>
+                </div>
+                <div class="ctrl-row">
+                    <span class="ctrl-label">虚线样式</span>
+                    <select class="ctrl-select" id="rDashStyle">
+                        <option value="solid">实线</option>
+                        <option value="dashed">虚线</option>
+                        <option value="dotted">点线</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <div class="panel-actions">
+            <button class="btn-save" id="saveBtn" onclick="saveStyle()">保存设置</button>
+            <button class="btn-reset" onclick="resetDefaults()">恢复默认</button>
+        </div>
+    </div>
+</div>
+
+<!-- Toast -->
+<div class="toast-msg" id="toast"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+(function() {
+    'use strict';
+
+    const zonesData = JSON.parse(document.getElementById('zones-data').textContent);
+    const initialStyle = JSON.parse(document.getElementById('style-data').textContent);
+
+    // ── Defaults ──
+    const DEFAULTS = {
+        boundary: { weight: 2, opacity: 0.7, fillOpacity: 0.15, dashStyle: 'solid' },
+        label: { fontSize: 25, fontFamily: 'Noto Sans SC', fontWeight: 400, fontColor: '#1C1C1C', bgColor: '#000000', bgOpacity: 0, bgRadius: 0, textShadow: false },
+        leaderLine: { weight: 2.5, opacity: 0.55, dashStyle: 'solid' }
+    };
+
+    let cfg = mergeDefaults(initialStyle);
+
+    function mergeDefaults(saved) {
+        const r = JSON.parse(JSON.stringify(DEFAULTS));
+        if (saved.boundary) Object.assign(r.boundary, saved.boundary);
+        if (saved.label) Object.assign(r.label, saved.label);
+        if (saved.leaderLine) Object.assign(r.leaderLine, saved.leaderLine);
+        return r;
+    }
+
+    // ── Map ──
+    let map, zonesLayer, labelsLayer, linesLayer;
+    let zonePolys = [], zoneLabels = [], zoneLines = [];
+
+    const satellite = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+        attribution: '<a href="https://www.esri.com" target="_blank" style="font-size:9px;color:#888">Esri</a>',
+        maxNativeZoom: 19, maxZoom: 22
+    });
+
+    function initMap() {
+        map = L.map('map', {
+            center: [31.155794, 121.668804],
+            zoom: 16,
+            maxZoom: 22,
+            layers: [satellite],
+            zoomControl: true
+        });
+
+        linesLayer = L.layerGroup().addTo(map);
+        zonesLayer = L.layerGroup().addTo(map);
+        labelsLayer = L.layerGroup().addTo(map);
+
+        renderZones();
+        map.on('zoomend', refreshLabels);
+    }
+
+    function isMulti(bp) {
+        return bp && bp.length > 0 && Array.isArray(bp[0]) && bp[0].length > 0 &&
+            (Array.isArray(bp[0][0]) || (bp[0][0] && (bp[0][0].lat !== undefined || bp[0][0].lng !== undefined)));
+    }
+
+    function ptsToLL(pts) {
+        return pts.map(p => {
+            if (Array.isArray(p)) return [p[0], p[1]];
+            if (p.lat !== undefined) return [p.lat, p.lng];
+            return null;
+        }).filter(p => p);
+    }
+
+    function hexToRgba(hex, alpha) {
+        const r = parseInt(hex.slice(1,3), 16);
+        const g = parseInt(hex.slice(3,5), 16);
+        const b = parseInt(hex.slice(5,7), 16);
+        return 'rgba(' + r + ',' + g + ',' + b + ',' + alpha + ')';
+    }
+
+    function getDash(style) {
+        if (style === 'dashed') return '8 5';
+        if (style === 'dotted') return '2 4';
+        return null;
+    }
+
+    function getPolyStyle(zone) {
+        const bc = zone.boundary_color;
+        const color = bc || '#2D6A4F';
+        return {
+            color: color,
+            weight: cfg.boundary.weight,
+            opacity: cfg.boundary.opacity,
+            fillColor: color,
+            fillOpacity: cfg.boundary.fillOpacity,
+            dashArray: getDash(cfg.boundary.dashStyle)
+        };
+    }
+
+    function getLabelSize() {
+        const zoom = map ? map.getZoom() : 16;
+        return Math.max(5, Math.round(cfg.label.fontSize * Math.pow(0.7, 19 - zoom)));
+    }
+
+    function makeLabelHtml(code, size) {
+        const l = cfg.label;
+        const bg = l.bgOpacity > 0
+            ? 'background:' + hexToRgba(l.bgColor, l.bgOpacity) + ';'
+                  + 'padding:2px 8px;border-radius:' + l.bgRadius + 'px;'
+                  + 'display:inline-block;'
+            : '';
+        const shadow = l.textShadow ? 'text-shadow:0 1px 3px rgba(0,0,0,0.6),0 0 8px rgba(0,0,0,0.3);' : '';
+        return '<div style="transform:translate(-50%,-50%);white-space:nowrap;">'
+            + '<span style="font-size:' + size + 'px;'
+            + 'font-family:\'' + l.fontFamily + '\',sans-serif;'
+            + 'font-weight:' + l.fontWeight + ';'
+            + 'color:' + l.fontColor + ';'
+            + shadow + bg + '">' + code + '</span></div>';
+    }
+
+    function centroid(pts) {
+        let latS = 0, lngS = 0;
+        pts.forEach(p => { latS += Array.isArray(p) ? p[0] : p.lat; lngS += Array.isArray(p) ? p[1] : p.lng; });
+        return [latS / pts.length, lngS / pts.length];
+    }
+
+    function renderZones() {
+        zonesLayer.clearLayers();
+        labelsLayer.clearLayers();
+        linesLayer.clearLayers();
+        zonePolys = [];
+        zoneLabels = [];
+        zoneLines = [];
+
+        zonesData.forEach(zone => {
+            if (!zone.boundary_points || !zone.boundary_points.length) return;
+
+            const rings = isMulti(zone.boundary_points) ? zone.boundary_points : [zone.boundary_points];
+            let allLL = [];
+            const ringCenters = [];
+
+            rings.forEach(ring => {
+                const ll = ptsToLL(ring);
+                if (ll.length < 3) return;
+                const poly = L.polygon(ll, getPolyStyle(zone)).addTo(zonesLayer);
+                poly._zone = zone;
+                zonePolys.push(poly);
+                allLL = allLL.concat(ll);
+                ringCenters.push(centroid(ll));
+            });
+
+            if (!allLL.length) return;
+
+            // Label
+            let center;
+            if (zone.label_lat != null && zone.label_lng != null) {
+                center = [zone.label_lat, zone.label_lng];
+            } else {
+                center = centroid(allLL);
+            }
+
+            const scale = zone.label_scale || 1.0;
+            const angle = zone.label_angle || 0;
+            const size = getLabelSize() * scale;
+            const rotation = angle ? 'transform:translate(-50%,-50%) rotate(' + angle + 'deg);' : 'transform:translate(-50%,-50%);';
+
+            const html = '<div style="' + rotation + 'white-space:nowrap;">'
+                + '<span style="font-size:' + size + 'px;'
+                + 'font-family:\'' + cfg.label.fontFamily + '\',sans-serif;'
+                + 'font-weight:' + cfg.label.fontWeight + ';'
+                + 'color:' + cfg.label.fontColor + ';'
+                + (cfg.label.bgOpacity > 0 ? 'background:' + hexToRgba(cfg.label.bgColor, cfg.label.bgOpacity) + ';padding:2px 8px;border-radius:' + cfg.label.bgRadius + 'px;display:inline-block;' : '')
+                + (cfg.label.textShadow ? 'text-shadow:0 1px 3px rgba(0,0,0,0.6),0 0 8px rgba(0,0,0,0.3);' : '')
+                + '">' + zone.code + '</span></div>';
+
+            const label = L.marker(center, {
+                interactive: false,
+                icon: L.divIcon({ className: 'zone-label', html: html, iconSize: null, iconAnchor: [0, 0] })
+            });
+            label._zone = zone;
+            labelsLayer.addLayer(label);
+            zoneLabels.push(label);
+
+            // Leader lines (multi-boundary only)
+            if (rings.length > 1) {
+                ringCenters.forEach(rc => {
+                    const line = L.polyline([center, rc], {
+                        color: zone.boundary_color || '#2D6A4F',
+                        weight: cfg.leaderLine.weight,
+                        opacity: cfg.leaderLine.opacity,
+                        dashArray: getDash(cfg.leaderLine.dashStyle),
+                        interactive: false
+                    });
+                    linesLayer.addLayer(line);
+                    zoneLines.push(line);
+                });
+            }
+        });
+    }
+
+    function refreshPolygons() {
+        zonePolys.forEach(p => {
+            p.setStyle(getPolyStyle(p._zone));
+        });
+    }
+
+    function refreshLabels() {
+        const size = getLabelSize();
+        zoneLabels.forEach(l => {
+            const z = l._zone;
+            const scale = z ? (z.label_scale || 1.0) : 1.0;
+            const s = size * scale;
+            const angle = z ? (z.label_angle || 0) : 0;
+            const code = z ? z.code : '';
+            l.setIcon(L.divIcon({
+                className: 'zone-label',
+                html: makeLabelHtml(code, s),
+                iconSize: null,
+                iconAnchor: [0, 0]
+            }));
+        });
+    }
+
+    function refreshLines() {
+        zoneLines.forEach(l => {
+            l.setStyle({
+                weight: cfg.leaderLine.weight,
+                opacity: cfg.leaderLine.opacity,
+                dashArray: getDash(cfg.leaderLine.dashStyle)
+            });
+        });
+    }
+
+    // ── Controls → Config → Refresh ──
+    const controls = {
+        bWeight:       { section: 'boundary', key: 'weight',     refresh: refreshPolygons },
+        bOpacity:      { section: 'boundary', key: 'opacity',    refresh: refreshPolygons },
+        bFillOpacity:  { section: 'boundary', key: 'fillOpacity', refresh: refreshPolygons },
+        bDashStyle:    { section: 'boundary', key: 'dashStyle',  refresh: refreshPolygons },
+        lFontSize:     { section: 'label', key: 'fontSize',     refresh: refreshLabels },
+        lFontFamily:   { section: 'label', key: 'fontFamily',   refresh: refreshLabels },
+        lFontWeight:   { section: 'label', key: 'fontWeight',   refresh: refreshLabels },
+        lFontColor:    { section: 'label', key: 'fontColor',    refresh: refreshLabels },
+        lBgColor:      { section: 'label', key: 'bgColor',      refresh: refreshLabels },
+        lBgOpacity:    { section: 'label', key: 'bgOpacity',    refresh: refreshLabels },
+        lBgRadius:     { section: 'label', key: 'bgRadius',     refresh: refreshLabels },
+        lTextShadow:   { section: 'label', key: 'textShadow',   refresh: refreshLabels },
+        rWeight:       { section: 'leaderLine', key: 'weight',   refresh: refreshLines },
+        rOpacity:      { section: 'leaderLine', key: 'opacity',  refresh: refreshLines },
+        rDashStyle:    { section: 'leaderLine', key: 'dashStyle', refresh: refreshLines },
+    };
+
+    function onControlChange(id) {
+        const el = document.getElementById(id);
+        const c = controls[id];
+        if (!c || !el) return;
+
+        let val;
+        if (el.type === 'checkbox') {
+            val = el.checked;
+        } else if (el.type === 'color') {
+            val = el.value;
+        } else if (el.tagName === 'SELECT') {
+            val = el.value;
+        } else {
+            val = parseFloat(el.value);
+        }
+
+        cfg[c.section][c.key] = val;
+
+        // Update value display
+        const valEl = document.getElementById(id + 'Val');
+        if (valEl) {
+            if (el.type === 'color') valEl.textContent = val;
+            else if (el.type === 'checkbox') valEl.textContent = val ? '开' : '关';
+            else if (c.key === 'bgRadius') valEl.textContent = val + 'px';
+            else valEl.textContent = val;
+        }
+
+        c.refresh();
+    }
+
+    // Wire all controls
+    Object.keys(controls).forEach(id => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        const evt = (el.type === 'checkbox' || el.tagName === 'SELECT' || el.type === 'color') ? 'input' : 'input';
+        el.addEventListener(evt, function() { onControlChange(id); });
+    });
+
+    // Initialize controls from config
+    function loadConfig(c) {
+        cfg = mergeDefaults(c);
+        Object.keys(controls).forEach(id => {
+            const el = document.getElementById(id);
+            const ctrl = controls[id];
+            if (!el || !ctrl) return;
+            const val = cfg[ctrl.section][ctrl.key];
+            if (el.type === 'checkbox') el.checked = val;
+            else el.value = val;
+            // Update value display
+            const valEl = document.getElementById(id + 'Val');
+            if (valEl) {
+                if (el.type === 'color') valEl.textContent = val;
+                else if (el.type === 'checkbox') valEl.textContent = val ? '开' : '关';
+                else if (ctrl.key === 'bgRadius') valEl.textContent = val + 'px';
+                else valEl.textContent = val;
+            }
+        });
+    }
+
+    // ── Save / Reset ──
+    window.saveStyle = function() {
+        const btn = document.getElementById('saveBtn');
+        btn.disabled = true;
+        btn.textContent = '保存中...';
+
+        fetch("{% url 'core:map_style_editor' %}", {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value },
+            body: JSON.stringify(cfg)
+        })
+        .then(r => r.json())
+        .then(data => {
+            btn.disabled = false;
+            btn.textContent = '保存设置';
+            if (data.success) showToast('样式已保存，刷新其他页面即可生效', 'success');
+            else showToast(data.message || '保存失败', 'error');
+        })
+        .catch(() => {
+            btn.disabled = false;
+            btn.textContent = '保存设置';
+            showToast('网络错误', 'error');
+        });
+    };
+
+    window.resetDefaults = function() {
+        loadConfig(DEFAULTS);
+        refreshPolygons();
+        refreshLabels();
+        refreshLines();
+        showToast('已恢复默认样式', 'success');
+    };
+
+    function showToast(msg, type) {
+        const el = document.getElementById('toast');
+        el.textContent = msg;
+        el.className = 'toast-msg ' + type + ' visible';
+        setTimeout(function() { el.classList.remove('visible'); }, 2500);
+    }
+
+    // ── Init ──
+    loadConfig(initialStyle);
+    initMap();
+})();
+</script>
+
+{% csrf_token %}
+{% endblock %}

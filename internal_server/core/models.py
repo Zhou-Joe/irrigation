@@ -1266,3 +1266,30 @@ class DemandRecord(models.Model):
 
     def __str__(self):
         return f"{self.date} | {self.zone_text or '全局'} | {self.content[:30]}"
+
+
+class MapStyleSettings(models.Model):
+    """Single-row table storing global map display style preferences."""
+    style = models.JSONField(default=dict, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    updated_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True
+    )
+
+    class Meta:
+        verbose_name = verbose_name_plural = '地图样式'
+
+    def __str__(self):
+        return '地图样式设置'
+
+    @classmethod
+    def get_style(cls):
+        obj, _ = cls.objects.get_or_create(pk=1, defaults={'style': {}})
+        return obj.style
+
+    @classmethod
+    def save_style(cls, style_data, user=None):
+        obj, _ = cls.objects.get_or_create(pk=1, defaults={'style': {}})
+        obj.style = style_data
+        obj.updated_by = user
+        obj.save()
