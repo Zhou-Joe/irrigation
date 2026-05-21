@@ -68,6 +68,31 @@
         return null;
     }
 
+    // Chaikin corner-cutting smoothing
+    function _chaikin(pts, iterations) {
+        if (iterations <= 0) return pts;
+        var r = pts;
+        for (var it = 0; it < iterations; it++) {
+            var next = [];
+            for (var i = 0; i < r.length; i++) {
+                var p0 = r[i], p1 = r[(i + 1) % r.length];
+                next.push({ lat: 0.75 * p0.lat + 0.25 * p1.lat, lng: 0.75 * p0.lng + 0.25 * p1.lng });
+                next.push({ lat: 0.25 * p0.lat + 0.75 * p1.lat, lng: 0.25 * p0.lng + 0.75 * p1.lng });
+            }
+            r = next;
+        }
+        return r;
+    }
+
+    function _smoothLL(latlngs, iterations) {
+        if (iterations <= 0) return latlngs;
+        var pts = latlngs.map(function(p) { return { lat: Array.isArray(p) ? p[0] : p.lat, lng: Array.isArray(p) ? p[1] : p.lng }; });
+        var s = _chaikin(pts, iterations);
+        return s.map(function(p) { return [p.lat, p.lng]; });
+    }
+
+    const _smoothIter = _bCfg.smooth || 0;
+
     // Default zone style (fallback when no status)
     const defaultStyle = {
         color: '#2D6A4F',
@@ -456,7 +481,7 @@
                         const latLngs = pointsToLatLngs(ring);
                         if (latLngs.length < 3) return;
 
-                        const polygon = L.polygon(latLngs, zoneStyle);
+                        const polygon = L.polygon(_smoothLL(latLngs, _smoothIter), zoneStyle);
                         polygon.zoneData = zoneData;
                         polygon.originalStyle = zoneStyle;
                         polygon.on('mouseover', handleMouseOver);
@@ -475,7 +500,7 @@
                     const latLngs = pointsToLatLngs(zone.boundary_points);
                     if (latLngs.length < 3) return;
 
-                    const polygon = L.polygon(latLngs, zoneStyle);
+                    const polygon = L.polygon(_smoothLL(latLngs, _smoothIter), zoneStyle);
                     polygon.zoneData = zoneData;
                     polygon.originalStyle = zoneStyle;
                     polygon.on('mouseover', handleMouseOver);

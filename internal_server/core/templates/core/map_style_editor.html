@@ -299,6 +299,11 @@
                         <option value="dotted">点线</option>
                     </select>
                 </div>
+                <div class="ctrl-row">
+                    <span class="ctrl-label">曲线圆滑度</span>
+                    <input type="range" class="ctrl-slider" id="bSmooth" min="0" max="3" step="1" value="0">
+                    <span class="ctrl-value" id="bSmoothVal">0</span>
+                </div>
             </div>
         </div>
 
@@ -399,7 +404,7 @@
 
     // ── Defaults ──
     const DEFAULTS = {
-        boundary: { weight: 2, opacity: 0.7, fillOpacity: 0.15, dashStyle: 'solid' },
+        boundary: { weight: 2, opacity: 0.7, fillOpacity: 0.15, dashStyle: 'solid', smooth: 0 },
         label: { fontSize: 25, fontFamily: 'Noto Sans SC', fontWeight: 400, fontColor: '#1C1C1C', bgColor: '#000000', bgOpacity: 0, bgRadius: 0, textShadow: false },
         leaderLine: { weight: 2.5, opacity: 0.55, dashStyle: 'solid' }
     };
@@ -466,6 +471,29 @@
         return null;
     }
 
+    // Chaikin corner-cutting: smooth polygon by inserting offset points
+    function chaikinSmooth(pts, iterations) {
+        if (iterations <= 0) return pts;
+        var r = pts;
+        for (var it = 0; it < iterations; it++) {
+            var next = [];
+            for (var i = 0; i < r.length; i++) {
+                var p0 = r[i], p1 = r[(i + 1) % r.length];
+                next.push({ lat: 0.75 * p0.lat + 0.25 * p1.lat, lng: 0.75 * p0.lng + 0.25 * p1.lng });
+                next.push({ lat: 0.25 * p0.lat + 0.75 * p1.lat, lng: 0.25 * p0.lng + 0.75 * p1.lng });
+            }
+            r = next;
+        }
+        return r;
+    }
+
+    function smoothLatLngs(ll, iterations) {
+        if (iterations <= 0) return ll;
+        var pts = ll.map(function(p) { return { lat: p[0], lng: p[1] }; });
+        var smoothed = chaikinSmooth(pts, iterations);
+        return smoothed.map(function(p) { return [p.lat, p.lng]; });
+    }
+
     function getPolyStyle(zone) {
         const bc = zone.boundary_color;
         const color = bc || '#2D6A4F';
@@ -524,7 +552,8 @@
             rings.forEach(ring => {
                 const ll = ptsToLL(ring);
                 if (ll.length < 3) return;
-                const poly = L.polygon(ll, getPolyStyle(zone)).addTo(zonesLayer);
+                const smoothLL = smoothLatLngs(ll, cfg.boundary.smooth || 0);
+                const poly = L.polygon(smoothLL, getPolyStyle(zone)).addTo(zonesLayer);
                 poly._zone = zone;
                 zonePolys.push(poly);
                 allLL = allLL.concat(ll);
@@ -619,6 +648,7 @@
         bOpacity:      { section: 'boundary', key: 'opacity',    refresh: refreshPolygons },
         bFillOpacity:  { section: 'boundary', key: 'fillOpacity', refresh: refreshPolygons },
         bDashStyle:    { section: 'boundary', key: 'dashStyle',  refresh: refreshPolygons },
+        bSmooth:       { section: 'boundary', key: 'smooth',     refresh: function() { renderZones(); } },
         lFontSize:     { section: 'label', key: 'fontSize',     refresh: refreshLabels },
         lFontFamily:   { section: 'label', key: 'fontFamily',   refresh: refreshLabels },
         lFontWeight:   { section: 'label', key: 'fontWeight',   refresh: refreshLabels },
