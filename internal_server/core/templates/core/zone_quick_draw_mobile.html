@@ -329,6 +329,7 @@
         var _smoothIter = _mb.smooth || 0;
         function _chaikin(pts, iter) { if (iter<=0) return pts; var r=pts; for(var it=0;it<iter;it++){var n=[];for(var i=0;i<r.length;i++){var a=r[i],b=r[(i+1)%r.length];n.push({lat:.75*a.lat+.25*b.lat,lng:.75*a.lng+.25*b.lng});n.push({lat:.25*a.lat+.75*b.lat,lng:.25*a.lng+.75*b.lng});}r=n;}return r; }
         function _smoothPts(pts, iter) { if (iter<=0) return pts.map(function(p){return[p.lat,p.lng];}); var s=_chaikin(pts,iter); return s.map(function(p){return[p.lat,p.lng];}); }
+        function _zoneSmooth(z) { return z.smooth_override != null ? z.smooth_override : _smoothIter; }
 
         let editMap = null;
         let markers = [];
@@ -591,7 +592,7 @@
             const polys = normalizeBoundaryData(z.boundary_points);
             polys.forEach(pts => {
                 if (pts.length < 3) return;
-                var smoothRefPts = _smoothPts(pts, _smoothIter);
+                var smoothRefPts = _smoothPts(pts, _zoneSmooth(z));
                 const poly = L.polygon(smoothRefPts, {
                     color: z.boundary_color || '#52B788',
                     weight: _mb.weight || 2,

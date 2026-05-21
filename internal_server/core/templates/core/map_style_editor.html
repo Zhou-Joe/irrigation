@@ -552,7 +552,8 @@
             rings.forEach(ring => {
                 const ll = ptsToLL(ring);
                 if (ll.length < 3) return;
-                const smoothLL = smoothLatLngs(ll, cfg.boundary.smooth || 0);
+                const effectiveSmooth = zone.smooth_override != null ? zone.smooth_override : (cfg.boundary.smooth || 0);
+                const smoothLL = smoothLatLngs(ll, effectiveSmooth);
                 const poly = L.polygon(smoothLL, getPolyStyle(zone)).addTo(zonesLayer);
                 poly._zone = zone;
                 zonePolys.push(poly);
