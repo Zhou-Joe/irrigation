@@ -341,6 +341,7 @@ window.showToast = function(msg, type) {
 
     // Context menu state
     let contextMenuZoneId = null;
+    let contextMenuPolyPts = null;
 
     // Reference layer groups
     let refLayerGroup = null;    // all saved zone polygons on map
@@ -865,6 +866,7 @@ window.showToast = function(msg, type) {
             // Click handler for context menu
             poly.on('click', function(e) {
                 L.DomEvent.stopPropagation(e);
+                contextMenuPolyPts = pts;
                 showContextMenu(e.originalEvent, z.id, z.code);
             });
         });
@@ -971,6 +973,7 @@ window.showToast = function(msg, type) {
     function hideContextMenu() {
         document.getElementById('mapContextMenu').style.display = 'none';
         contextMenuZoneId = null;
+        contextMenuPolyPts = null;
     }
 
     // ============================================================
@@ -1325,8 +1328,9 @@ window.showToast = function(msg, type) {
         const z = savedZoneMap[zoneId];
         if (!z || !z.boundary_points) { showToast('无边界数据', 'warning'); return; }
         saveHistory();
-        const polys = normalizeBoundaryData(z.boundary_points);
-        polys.forEach(pts => {
+        // If user clicked a specific polygon, copy only that ring
+        const rings = contextMenuPolyPts ? [contextMenuPolyPts] : normalizeBoundaryData(z.boundary_points);
+        rings.forEach(pts => {
             if (pts.length < 3) return;
             const offset = pts.map(p => ({
                 lat: +(p.lat + 0.00015).toFixed(6),

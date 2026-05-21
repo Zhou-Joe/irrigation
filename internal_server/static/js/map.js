@@ -392,6 +392,9 @@
         const showLabels = zoom >= LABEL_MIN_ZOOM;
         const baseSize = getLabelFontSize(zoom);
 
+        // Scale multiplier for truncated code labels
+        const truncScale = zoom <= 16 ? 5 : 3;
+
         // Group labels by truncated code when zoomed out
         if (showLabels && zoom < 18) {
             // Build groups keyed by truncated code
@@ -421,7 +424,7 @@
                         label.setLatLng(groupCenter);
                         const zone = label._zone;
                         const scale = zone ? (zone.label_scale || 1.0) : 1.0;
-                        const size = baseSize * scale;
+                        const size = baseSize * scale * truncScale;
                         const span = el ? el.querySelector('span') : null;
                         if (span) {
                             span.style.fontSize = size + 'px';

@@ -289,6 +289,7 @@
         let savedZoneMap = {};
         let editingZoneId = null;
         let contextMenuZoneId = null;
+        let contextMenuPolyPts = null;
 
         let refLayerGroup = null;
 
@@ -550,7 +551,7 @@
                 poly._zoneId = z.id; poly._zoneCode = z.code;
                 poly.bindTooltip(z.code + ' ' + (z.name || ''), {sticky:true});
                 let lpTimer = null;
-                poly.on('mousedown', function(e) { longPressFired = false; lpTimer = setTimeout(function() { longPressFired = true; showContextMenu(e.originalEvent, z.id, z.code); }, 600); });
+                poly.on('mousedown', function(e) { longPressFired = false; lpTimer = setTimeout(function() { longPressFired = true; contextMenuPolyPts = pts; showContextMenu(e.originalEvent, z.id, z.code); }, 600); });
                 poly.on('mouseup mouseout', function() { if (lpTimer) { clearTimeout(lpTimer); lpTimer = null; } });
                 const refPathEl = poly.getElement();
                 if (refPathEl) {
@@ -558,7 +559,7 @@
                     refPathEl.addEventListener('touchstart', function(de) {
                         if (de.touches.length !== 1) return;
                         longPressFired = false; lpStartX = de.touches[0].clientX; lpStartY = de.touches[0].clientY;
-                        lpTimer = setTimeout(function() { longPressFired = true; showContextMenu(de, z.id, z.code); }, 600);
+                        lpTimer = setTimeout(function() { longPressFired = true; contextMenuPolyPts = pts; showContextMenu(de, z.id, z.code); }, 600);
                     }, { passive: true });
                     refPathEl.addEventListener('touchmove', function(de) { if (lpTimer) { if (Math.abs(de.touches[0].clientX - lpStartX) > 10 || Math.abs(de.touches[0].clientY - lpStartY) > 10) { clearTimeout(lpTimer); lpTimer = null; } } }, { passive: true });
                     refPathEl.addEventListener('touchend', function() { if (lpTimer) { clearTimeout(lpTimer); lpTimer = null; } });
@@ -619,7 +620,7 @@
             if (x + 160 > mr.width) x -= 160; if (y + 160 > mr.height) y -= 160;
             menu.style.left = x + 'px'; menu.style.top = y + 'px'; menu.style.display = 'block';
         }
-        function hideContextMenu() { document.getElementById('ctxMenu').style.display = 'none'; contextMenuZoneId = null; }
+        function hideContextMenu() { document.getElementById('ctxMenu').style.display = 'none'; contextMenuZoneId = null; contextMenuPolyPts = null; }
 
         // Save popup
         function showSavePopup() { document.getElementById('savePopup').classList.add('open'); document.getElementById('zoneCodeInput').focus(); }
@@ -759,8 +760,8 @@
             const z = savedZoneMap[zoneId];
             if (!z || !z.boundary_points) { showToast('无边界数据', 'warning'); return; }
             saveHistory();
-            const polys = normalizeBoundaryData(z.boundary_points);
-            polys.forEach(pts => {
+            const rings = contextMenuPolyPts ? [contextMenuPolyPts] : normalizeBoundaryData(z.boundary_points);
+            rings.forEach(pts => {
                 if (pts.length < 3) return;
                 const offset = pts.map(p => ({
                     lat: +(p.lat + 0.00015).toFixed(6),
