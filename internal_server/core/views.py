@@ -513,7 +513,7 @@ def dashboard(request):
     from core.models import (
         MaintenanceRequest, ProjectSupportRequest, WaterRequest,
         ManagerProfile, DepartmentUserProfile, RegistrationRequest, WorkOrder, Worker,
-        Pipeline, Plant
+        Pipeline, Plant, MapStyleSettings
     )
 
     user = request.user
@@ -874,6 +874,7 @@ def dashboard(request):
         'recent_activity': recent_activity,
         'total_zones': len(zones_list),
         'total_plants': sum(z['plant_count'] for z in zones_list),
+        'map_style_json': json.dumps(MapStyleSettings.get_style()),
     }
 
     return render(request, 'core/dashboard.html', context)
@@ -1829,7 +1830,7 @@ def zone_batch_draw_zones_api(request):
 @ensure_csrf_cookie
 def zone_quick_draw(request):
     """Quick zone boundary drawing page — draw first, assign zone code after."""
-    from .models import ManagerProfile, Worker
+    from .models import ManagerProfile, Worker, MapStyleSettings
 
     is_admin = request.user.is_superuser or request.user.is_staff
     if not is_admin:
@@ -1849,7 +1850,6 @@ def zone_quick_draw(request):
     if request.method == 'POST':
         action = request.POST.get('action', '')
 
-        # Delete boundary action
         if action == 'delete_boundary':
             zone_code = request.POST.get('zone_code', '').strip()
             if not zone_code:
@@ -1968,6 +1968,7 @@ def zone_quick_draw(request):
     context = {
         'all_zones_json': json.dumps(all_zones),
         'all_drawn_zones_json': json.dumps(all_drawn_zones),
+        'map_style_json': json.dumps(MapStyleSettings.get_style()),
         'nav_settings': True,
     }
     return render(request, 'core/zone_quick_draw.html', context)
@@ -1975,7 +1976,7 @@ def zone_quick_draw(request):
 
 def zone_quick_draw_mobile(request):
     """Mobile-optimized quick zone boundary drawing page."""
-    from .models import ManagerProfile, Worker
+    from .models import ManagerProfile, Worker, MapStyleSettings
 
     is_admin = request.user.is_superuser or request.user.is_staff
     if not is_admin:
@@ -2110,13 +2111,84 @@ def zone_quick_draw_mobile(request):
     context = {
         'all_zones_json': json.dumps(all_zones),
         'all_drawn_zones_json': json.dumps(all_drawn_zones),
+        'map_style_json': json.dumps(MapStyleSettings.get_style()),
     }
     return render(request, 'core/zone_quick_draw_mobile.html', context)
 
 
 @login_required(login_url='core:login')
 @ensure_csrf_cookie
+def map_style_editor(request):
+    """Map style customization page with live preview."""
+    from .models import ManagerProfile, MapStyleSettings
+
+    is_admin = request.user.is_superuser or request.user.is_staff
+    if not is_admin:
+        try:
+            ManagerProfile.objects.get(user=request.user, active=True)
+            is_admin = True
+        except ManagerProfile.DoesNotExist:
+            pass
+
+    if not is_admin:
+        messages.error(request, '无权限访问此页面')
+        return redirect('core:dashboard')
+
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body) if request.body else {}
+        except json.JSONDecodeError:
+            return JsonResponse({'success': False, 'message': '无效数据'}, status=400)
+        MapStyleSettings.save_style(data, user=request.user)
+        return JsonResponse({'success': True, 'message': '样式已保存'})
+
+    # Load all drawn zones for map preview
+    all_drawn_zones = []
+    for z in Zone.objects.exclude(boundary_points__isnull=True).exclude(boundary_points=[]).select_related('patch').only(
+        'id', 'code', 'name', 'boundary_points', 'boundary_color',
+        'label_lat', 'label_lng', 'label_scale', 'label_angle', 'patch_id', 'patch__name', 'status'
+    ):
+        center = None
+        bp = z.boundary_points
+        if bp:
+            try:
+                if isinstance(bp[0], list):
+                    all_pts = [p for ring in bp for p in (ring if isinstance(ring[0], list) else [ring])]
+                else:
+                    all_pts = bp
+                if all_pts:
+                    lats = [p[0] if isinstance(p, list) else p.get('lat', 0) for p in all_pts]
+                    lngs = [p[1] if isinstance(p, list) else p.get('lng', 0) for p in all_pts]
+                    center = {'lat': sum(lats) / len(lats), 'lng': sum(lngs) / len(lngs)}
+            except Exception:
+                pass
+
+        all_drawn_zones.append({
+            'id': z.id,
+            'code': z.code,
+            'name': z.name,
+            'boundary_points': z.boundary_points,
+            'boundary_color': z.boundary_color,
+            'label_lat': z.label_lat,
+            'label_lng': z.label_lng,
+            'label_scale': z.label_scale,
+            'label_angle': z.label_angle,
+            'status': z.status,
+            'center': center,
+        })
+
+    current_style = MapStyleSettings.get_style()
+
+    context = {
+        'zones_json': json.dumps(all_drawn_zones),
+        'map_style_json': json.dumps(current_style),
+        'nav_quickdraw': 'active',
+    }
+    return render(request, 'core/map_style_editor.html', context)
+
+
 @login_required(login_url='core:login')
+@ensure_csrf_cookie
 def zone_detail_page(request, zone_id):
     """Zone detail page showing all zone parameters, plants, equipment, notes, and stats."""
     import json

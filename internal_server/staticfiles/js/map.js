@@ -56,13 +56,26 @@
     let landmarkLabels = [];
 
     // Design system status-based polygon colors
+    // Map style config (from MapStyleSettings, injected by view)
+    const _mapCfg = window.MAP_STYLE_CONFIG || {};
+    const _bCfg = _mapCfg.boundary || {};
+    const _lCfg = _mapCfg.label || {};
+    const _rCfg = _mapCfg.leaderLine || {};
+
+    function _dash(s) {
+        if (s === 'dashed') return '8 5';
+        if (s === 'dotted') return '2 4';
+        return null;
+    }
+
     // Default zone style (fallback when no status)
     const defaultStyle = {
         color: '#2D6A4F',
-        weight: 2,
-        opacity: 0.8,
+        weight: _bCfg.weight || 2,
+        opacity: _bCfg.opacity || 0.8,
         fillColor: '#2D6A4F',
-        fillOpacity: 0.12
+        fillOpacity: _bCfg.fillOpacity != null ? _bCfg.fillOpacity : 0.12,
+        dashArray: _dash(_bCfg.dashStyle)
     };
 
     // Highlighted/selected zone style
@@ -75,63 +88,44 @@
     };
 
     // Status-based polygon styling (from design system)
+    const _bW = _bCfg.weight || 2;
+    const _bO = _bCfg.opacity || 0.7;
+    const _bFO = _bCfg.fillOpacity != null ? _bCfg.fillOpacity : 0.15;
+    const _bD = _dash(_bCfg.dashStyle);
+
     const statusStyles = {
         completed: {
-            color: '#40916C',
-            weight: 2,
-            opacity: 0.7,
-            fillColor: '#40916C',
-            fillOpacity: 0.15
+            color: '#40916C', weight: _bW, opacity: _bO,
+            fillColor: '#40916C', fillOpacity: _bFO, dashArray: _bD
         },
         in_progress: {
-            color: '#CC7722',
-            weight: 2,
-            opacity: 0.7,
-            fillColor: '#CC7722',
-            fillOpacity: 0.15
+            color: '#CC7722', weight: _bW, opacity: _bO,
+            fillColor: '#CC7722', fillOpacity: _bFO, dashArray: _bD
         },
         unarranged: {
-            color: '#888888',
-            weight: 2,
-            opacity: 0.7,
-            fillColor: '#888888',
-            fillOpacity: 0.12
+            color: '#888888', weight: _bW, opacity: _bO,
+            fillColor: '#888888', fillOpacity: _bFO, dashArray: _bD
         },
         canceled: {
-            color: '#9B2226',
-            weight: 2,
-            opacity: 0.7,
-            fillColor: '#9B2226',
-            fillOpacity: 0.12
+            color: '#9B2226', weight: _bW, opacity: _bO,
+            fillColor: '#9B2226', fillOpacity: _bFO, dashArray: _bD
         },
         delayed: {
-            color: '#7B5544',
-            weight: 2,
-            opacity: 0.7,
-            fillColor: '#7B5544',
-            fillOpacity: 0.15
+            color: '#7B5544', weight: _bW, opacity: _bO,
+            fillColor: '#7B5544', fillOpacity: _bFO, dashArray: _bD
         },
         // Legacy status names for backwards compatibility
         done: {
-            color: '#40916C',
-            weight: 2,
-            opacity: 0.7,
-            fillColor: '#40916C',
-            fillOpacity: 0.15
+            color: '#40916C', weight: _bW, opacity: _bO,
+            fillColor: '#40916C', fillOpacity: _bFO, dashArray: _bD
         },
         working: {
-            color: '#CC7722',
-            weight: 2,
-            opacity: 0.7,
-            fillColor: '#CC7722',
-            fillOpacity: 0.15
+            color: '#CC7722', weight: _bW, opacity: _bO,
+            fillColor: '#CC7722', fillOpacity: _bFO, dashArray: _bD
         },
         scheduled: {
-            color: '#52B788',
-            weight: 2,
-            opacity: 0.7,
-            fillColor: '#52B788',
-            fillOpacity: 0.12
+            color: '#52B788', weight: _bW, opacity: _bO,
+            fillColor: '#52B788', fillOpacity: _bFO, dashArray: _bD
         }
     };
 
@@ -276,11 +270,26 @@
 
         const size = getLabelFontSize(map.getZoom()) * labelScale;
         const rotation = labelAngle ? `transform:rotate(${labelAngle}deg);` : '';
+        // Build label style from config
+        const _lFont = _lCfg.fontFamily || 'Noto Sans SC';
+        const _lWeight = _lCfg.fontWeight || 400;
+        const _lColor = _lCfg.fontColor || '#1C1C1C';
+        const _lBgColor = _lCfg.bgColor || '#000000';
+        const _lBgOpacity = _lCfg.bgOpacity || 0;
+        const _lBgRadius = _lCfg.bgRadius || 0;
+        const _lShadow = _lCfg.textShadow;
+        let labelStyle = `font-size:${size}px;font-family:'${_lFont}',sans-serif;font-weight:${_lWeight};color:${_lColor};`;
+        if (rotation) labelStyle += rotation;
+        if (_lBgOpacity > 0) {
+            const r = parseInt(_lBgColor.slice(1,3),16), g = parseInt(_lBgColor.slice(3,5),16), b = parseInt(_lBgColor.slice(5,7),16);
+            labelStyle += `background:rgba(${r},${g},${b},${_lBgOpacity});padding:2px 8px;border-radius:${_lBgRadius}px;display:inline-block;`;
+        }
+        if (_lShadow) labelStyle += 'text-shadow:0 1px 3px rgba(0,0,0,0.6),0 0 8px rgba(0,0,0,0.3);';
         const label = L.marker(center, {
             interactive: false,
             icon: L.divIcon({
                 className: 'zone-label',
-                html: `<span style="font-size:${size}px;${rotation}">${code}</span>`,
+                html: `<div style="transform:translate(-50%,-50%);white-space:nowrap;"><span style="${labelStyle}">${code}</span></div>`,
                 iconSize: null,
                 iconAnchor: [0, 0]
             })
@@ -295,6 +304,7 @@
             zone.boundary_points.forEach(ring => {
                 const ringPts = pointsToLatLngs(ring);
                 if (ringPts.length < 3) return;
+                // Compute ring centroid
                 let latSum = 0, lngSum = 0;
                 ringPts.forEach(p => {
                     const lat = Array.isArray(p) ? p[0] : p.lat;
@@ -304,8 +314,9 @@
                 const ringCenter = [latSum / ringPts.length, lngSum / ringPts.length];
                 const line = L.polyline([center, ringCenter], {
                     color: zone.boundary_color || '#2D6A4F',
-                    weight: 2.5,
-                    opacity: 0.55,
+                    weight: _rCfg.weight || 2.5,
+                    opacity: _rCfg.opacity != null ? _rCfg.opacity : 0.55,
+                    dashArray: _dash(_rCfg.dashStyle),
                     interactive: false
                 });
                 leaderLinesLayerGroup.addLayer(line);
@@ -325,7 +336,8 @@
      * Calculate label font size based on zoom level
      */
     function getLabelFontSize(zoom) {
-        return Math.max(5, Math.round(25 * Math.pow(0.7, 19 - zoom)));
+        const base = _lCfg.fontSize || 25;
+        return Math.max(5, Math.round(base * Math.pow(0.7, 19 - zoom)));
     }
 
     /**
@@ -346,6 +358,13 @@
                     const span = el.querySelector('span');
                     if (span) span.style.fontSize = size + 'px';
                 }
+            }
+            // Show/hide leader lines with labels
+            if (label._leaderLines) {
+                label._leaderLines.forEach(line => {
+                    const el = line.getElement();
+                    if (el) el.style.display = showLabels ? '' : 'none';
+                });
             }
         });
         // Landmark labels: same zoom-based scaling, no per-item scale
@@ -381,10 +400,11 @@
                 if (zone.boundary_color) {
                     zoneStyle = {
                         color: zone.boundary_color,
-                        weight: 2,
-                        opacity: 0.7,
+                        weight: _bW,
+                        opacity: _bO,
                         fillColor: zone.boundary_color,
-                        fillOpacity: 0.15
+                        fillOpacity: _bFO,
+                        dashArray: _bD
                     };
                 } else {
                     zoneStyle = getStyleForStatus(zone.status);
@@ -793,14 +813,12 @@
         }
     };
 
-    /**
-     * Handle mouse over event on zone
-     * @param {Event} e - Leaflet event
-     */
-
     // Currently highlighted zone ID (for multi-polygon highlighting)
     let highlightedZoneId = null;
 
+    /**
+     * Highlight all polygons belonging to a zone
+     */
     function highlightZonePolygons(zoneId) {
         if (highlightedZoneId === zoneId) return;
         unhighlightZonePolygons();
@@ -813,6 +831,9 @@
         });
     }
 
+    /**
+     * Remove highlight from all polygons of the currently highlighted zone
+     */
     function unhighlightZonePolygons() {
         if (highlightedZoneId === null) return;
         const prevId = highlightedZoneId;
@@ -824,6 +845,10 @@
         });
     }
 
+    /**
+     * Handle mouse over event on zone
+     * @param {Event} e - Leaflet event
+     */
     function handleMouseOver(e) {
         const layer = e.target;
         const zoneId = layer.zoneData?.id;
@@ -1339,7 +1364,7 @@
                         interactive: false,
                         icon: L.divIcon({
                             className: 'landmark-label',
-                            html: '<span style="font-weight:600;color:' + lm.boundary_color + ';text-shadow:0 0 4px white,0 0 4px white;">' + lm.name + '</span>',
+                            html: '<div style="transform:translate(-50%,-50%);white-space:nowrap;"><span style="font-weight:600;color:' + lm.boundary_color + ';text-shadow:0 0 4px white,0 0 4px white;">' + lm.name + '</span></div>',
                             iconSize: null,
                             iconAnchor: [0, 0],
                         })

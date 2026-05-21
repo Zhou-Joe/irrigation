@@ -66,6 +66,7 @@ urlpatterns = [
     path('settings/zone/batch-draw/', views.zone_batch_draw, name='zone_batch_draw'),
     path('settings/zone/quick-draw/', views.zone_quick_draw, name='zone_quick_draw'),
     path('settings/zone/quick-draw/mobile/', views.zone_quick_draw_mobile, name='zone_quick_draw_mobile'),
+    path('settings/map-style/', views.map_style_editor, name='map_style_editor'),
     path('settings/pipeline/new/', views.pipeline_new, name='pipeline_new'),
     path('settings/pipeline/<int:pipeline_id>/', views.pipeline_edit, name='pipeline_edit'),
     path('settings/pipeline/<int:pipeline_id>/delete/', views.pipeline_delete, name='pipeline_delete'),

@@ -212,6 +212,7 @@
                     <div class="nav-dropdown-menu" id="quickDrawMenu">
                         <a href="{% url 'core:zone_quick_draw' %}">电脑版</a>
                         <a href="{% url 'core:zone_quick_draw_mobile' %}">手机版</a>
+                        <a href="{% url 'core:map_style_editor' %}">样式调节</a>
                     </div>
                 </div>
                 <a href="{% url 'core:dashboard' %}" class="{% block nav_dashboard %}{% endblock %}">地图总览</a>
@@ -246,6 +247,7 @@
             <div class="mobile-sub-items">
                 <a href="{% url 'core:zone_quick_draw' %}">电脑版</a>
                 <a href="{% url 'core:zone_quick_draw_mobile' %}">手机版</a>
+                <a href="{% url 'core:map_style_editor' %}">样式调节</a>
             </div>
         </div>
         {% if is_admin %}
