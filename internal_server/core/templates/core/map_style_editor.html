@@ -544,6 +544,37 @@
         return [latS / pts.length, lngS / pts.length];
     }
 
+    function polylabel(pts, precision) {
+        if (precision === undefined) precision = 1.0;
+        if (pts.length < 3) return centroid(pts);
+        const pp = pts.map(p => ({ lat: Array.isArray(p) ? p[0] : p.lat, lng: Array.isArray(p) ? p[1] : p.lng }));
+        let minLat = Infinity, maxLat = -Infinity, minLng = Infinity, maxLng = -Infinity;
+        pp.forEach(p => { if (p.lat < minLat) minLat = p.lat; if (p.lat > maxLat) maxLat = p.lat; if (p.lng < minLng) minLng = p.lng; if (p.lng > maxLng) maxLng = p.lng; });
+        const w = maxLng - minLng, h = maxLat - minLat, cs = Math.min(w, h);
+        if (cs === 0) return [(minLat + maxLat) / 2, (minLng + maxLng) / 2];
+        const half = cs / 2;
+        function _dist(lat, lng) {
+            let inside = false, md = Infinity;
+            for (let i = 0, j = pp.length - 1; i < pp.length; j = i++) {
+                const a = pp[i], b = pp[j];
+                if ((a.lat > lat) !== (b.lat > lat) && lng < (b.lng - a.lng) * (lat - a.lat) / (b.lat - a.lat) + a.lng) inside = !inside;
+                const dx = a.lng - lng, dy = a.lat - lat, nx = b.lng - a.lng, ny = b.lat - a.lat;
+                const t = Math.max(0, Math.min(1, (dx * nx + dy * ny) / (nx * nx + ny * ny || 1)));
+                const px = a.lng + t * nx - lng, py = a.lat + t * ny - lat;
+                const d = px * px + py * py; if (d < md) md = d;
+            }
+            md = Math.sqrt(Math.max(0, md)); return inside ? md : -md;
+        }
+        let best = -Infinity, bestPt = [(minLat + maxLat) / 2, (minLng + maxLng) / 2];
+        const cols = Math.ceil(w / cs), rows = Math.ceil(h / cs);
+        for (let r = 0; r <= rows; r++) for (let c = 0; c <= cols; c++) { const lat = minLat + r * cs, lng = minLng + c * cs; const d = _dist(lat, lng); if (d > best) { best = d; bestPt = [lat, lng]; } }
+        let q = [];
+        for (let r = 0; r <= rows; r++) for (let c = 0; c <= cols; c++) { const lat = minLat + r * cs, lng = minLng + c * cs; const d = _dist(lat, lng); const cx = minLng + (c + 0.5) * cs, cy = minLat + (r + 0.5) * cs; q.push({ lat: cy, lng: cx, d, m: d + Math.sqrt((cx - lng) ** 2 + (cy - lat) ** 2) }); }
+        q.sort((a, b) => b.m - a.m);
+        while (q.length) { const cell = q.shift(); if (cell.m - best <= precision) break; const nh = half / 2; for (let si = -1; si <= 1; si += 2) for (let sj = -1; sj <= 1; sj += 2) { const lat = cell.lat + si * nh, lng = cell.lng + sj * nh; const d = _dist(lat, lng); if (d > best) { best = d; bestPt = [lat, lng]; } const mp = d + nh * Math.SQRT2; if (mp > best) q.push({ lat, lng, d, m: mp }); } q.sort((a, b) => b.m - a.m); }
+        return bestPt;
+    }
+
     function renderZones() {
         zonesLayer.clearLayers();
         labelsLayer.clearLayers();
@@ -568,7 +599,7 @@
                 poly._zone = zone;
                 zonePolys.push(poly);
                 allLL = allLL.concat(ll);
-                ringCenters.push(centroid(ll));
+                ringCenters.push(polylabel(ll));
             });
 
             if (!allLL.length) return;
