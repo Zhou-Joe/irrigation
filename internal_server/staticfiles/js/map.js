@@ -1510,8 +1510,16 @@
             const matchPlant = !isPlantTouched || !label._zone?.plant_names || label._zone.plant_names.some(p => plants.has(p));
             const matchLm = matchLandmark(zoneId);
             const matchPa = matchPatch(label._zone || {});
+            const match = matchPriority && matchPlant && matchLm && matchPa;
             const el = label.getElement();
-            if (el) el.style.opacity = (matchPriority && matchPlant && matchLm && matchPa) ? '1' : '0.1';
+            if (el) el.style.opacity = match ? '1' : '0.1';
+            // Filter leader lines for this label's zone
+            if (label._leaderLines) {
+                label._leaderLines.forEach(line => {
+                    const le = line.getElement();
+                    if (le) le.style.opacity = match ? '' : '0.05';
+                });
+            }
         });
     };
 
