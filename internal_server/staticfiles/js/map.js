@@ -217,7 +217,9 @@
         map.on('zoomend', updateLabelSizes);
 
         // Close popup when clicking on empty map space
-        map.on('click', function() {
+        map.on('click', function(e) {
+            // Only close if click was directly on the map, not on a polygon
+            if (e.originalEvent.target.closest('.leaflet-overlay-pane')) return;
             hideZonePopup();
         });
     }
@@ -772,7 +774,7 @@
                     </div>
                     <div style="display:flex;gap:6px;align-items:center;">
                         <button class="popup-settings-btn" onclick="togglePopupSettings()" title="自定义显示字段">⚙</button>
-                        <button class="popup-close-btn" onclick="hideZonePopup()" title="关闭">✕</button>
+                        <button class="popup-close-btn" onclick="window.hideZonePopup()" title="关闭">✕</button>
                     </div>
                 </div>
                 ${hasExtra ? '<div class="popup-fields">' + fieldsHtml + faultHtml + pendingHtml + '</div>' : ''}
@@ -845,6 +847,7 @@
     }
 
     window.showZonePopup = showZonePopup;
+    window.hideZonePopup = hideZonePopup;
     window.togglePopupSettings = togglePopupSettings;
     window.handleFieldToggle = handleFieldToggle;
     window._toggleNotesExpand = function(listId, btn) {
