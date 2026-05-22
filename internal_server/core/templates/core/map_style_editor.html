@@ -545,11 +545,11 @@
     }
 
     function ringAnchor(pts, labelLat, labelLng) {
-        if (pts.length < 3) { let s1=0,s2=0; pts.forEach(p=>{s1+=p.lat;s2+=p.lng;}); return [s1/pts.length,s2/pts.length]; }
-        let s1=0,s2=0; pts.forEach(p=>{s1+=p.lat;s2+=p.lng;});
+        if(pts.length<3){let s1=0,s2=0;pts.forEach(p=>{s1+=p.lat;s2+=p.lng;});return[s1/pts.length,s2/pts.length];}
+        let s1=0,s2=0;pts.forEach(p=>{s1+=p.lat;s2+=p.lng;});
         const cLat=s1/pts.length,cLng=s2/pts.length;
         let inside=false;for(let i=0,j=pts.length-1;i<pts.length;j=i++){const a=pts[j],b=pts[i];if((a.lat>cLat)!==(b.lat>cLat)&&cLng<(b.lng-a.lng)*(cLat-a.lat)/(b.lat-a.lat)+a.lng)inside=!inside;}
-        if(inside) return [cLat,cLng];
+        if(inside)return[cLat,cLng];
         let bd=Infinity,bp=null;for(let i=0,j=pts.length-1;i<pts.length;j=i++){const a=pts[j],b=pts[i];const dx=b.lng-a.lng,dy=b.lat-a.lat,l2=dx*dx+dy*dy;let t=l2>0?((labelLng-a.lng)*dx+(labelLat-a.lat)*dy)/l2:0;t=Math.max(0,Math.min(1,t));const pLat=a.lat+t*dy,pLng=a.lng+t*dx;const d=(pLat-labelLat)**2+(pLng-labelLng)**2;if(d<bd){bd=d;bp=[pLat,pLng];}}
         return bp;
     }
