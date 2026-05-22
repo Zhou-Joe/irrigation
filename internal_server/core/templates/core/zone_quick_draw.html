@@ -1026,7 +1026,8 @@ window.showToast = function(msg, type) {
         if (polys.length > 1) {
             polys.forEach(pts => {
                 if (pts.length < 3) return;
-                const rc = _ringAnchor(pts, lat, lng);
+                const smPts = _smoothPts(pts, _zoneSmooth(z)).map(function(p){return{lat:p[0],lng:p[1]};});
+                const rc = _ringAnchor(smPts, lat, lng);
                 const line = L.polyline([[lat, lng], rc], {
                     color: z.boundary_color || '#2D6A4F',
                     weight: _mr.weight || 2.5,

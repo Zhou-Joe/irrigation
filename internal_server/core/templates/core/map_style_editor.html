@@ -567,7 +567,7 @@
 
             const rings = isMulti(zone.boundary_points) ? zone.boundary_points : [zone.boundary_points];
             let allLL = [];
-            const ringLLs = [];
+            const ringSmoothLLs = [];
 
             rings.forEach(ring => {
                 const ll = ptsToLL(ring);
@@ -578,7 +578,8 @@
                 poly._zone = zone;
                 zonePolys.push(poly);
                 allLL = allLL.concat(ll);
-                ringLLs.push(ll);
+                // Save smoothed points as {lat, lng} for ringAnchor
+                ringSmoothLLs.push(smoothLL.map(p => ({ lat: p[0], lng: p[1] })));
             });
 
             if (!allLL.length) return;
@@ -592,7 +593,7 @@
             }
 
             // Ring anchors: centroid if inside polygon, nearest boundary point if not
-            const ringCenters = ringLLs.map(ll => ringAnchor(ll, center[0], center[1]));
+            const ringCenters = ringSmoothLLs.map(ll => ringAnchor(ll, center[0], center[1]));
 
             const scale = zone.label_scale || 1.0;
             const angle = zone.label_angle || 0;
