@@ -62,17 +62,7 @@
     const _lCfg = _mapCfg.label || {};
     const _rCfg = _mapCfg.leaderLine || {};
 
-    // Ring anchor — centroid if inside polygon, nearest boundary point to label if not
-    function _pointInRing(lat, lng, pts) {
-        let inside = false;
-        for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
-            const a = pts[j], b = pts[i];
-            const aLat = Array.isArray(a) ? a[0] : a.lat, aLng = Array.isArray(a) ? a[1] : a.lng;
-            const bLat = Array.isArray(b) ? b[0] : b.lat, bLng = Array.isArray(b) ? b[1] : b.lng;
-            if ((aLat > lat) !== (bLat > lat) && lng < (bLng - aLng) * (lat - aLat) / (bLat - aLat) + aLng) inside = !inside;
-        }
-        return inside;
-    }
+    // Ring anchor — centroid if inside polygon, nearest boundary point if not
     function _nearestBoundaryPoint(pts, tLat, tLng) {
         let best = Infinity, pt = null;
         for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
@@ -87,6 +77,16 @@
             if (d < best) { best = d; pt = [pLat, pLng]; }
         }
         return pt;
+    }
+    function _pointInRing(lat, lng, pts) {
+        let inside = false;
+        for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+            const a = pts[j], b = pts[i];
+            const aLat = Array.isArray(a) ? a[0] : a.lat, aLng = Array.isArray(a) ? a[1] : a.lng;
+            const bLat = Array.isArray(b) ? b[0] : b.lat, bLng = Array.isArray(b) ? b[1] : b.lng;
+            if ((aLat > lat) !== (bLat > lat) && lng < (bLng - aLng) * (lat - aLat) / (bLat - aLat) + aLng) inside = !inside;
+        }
+        return inside;
     }
     function _ringAnchor(ringPts, labelLat, labelLng) {
         if (ringPts.length < 3) {
