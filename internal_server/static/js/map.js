@@ -380,7 +380,8 @@
             zone.boundary_points.forEach(ring => {
                 const ringPts = pointsToLatLngs(ring);
                 if (ringPts.length < 3) return;
-                const ringCenter = _ringAnchor(ringPts, center[0], center[1]);
+                const smoothPts = _smoothLL(ringPts, _zoneSmooth(zone));
+                const ringCenter = _ringAnchor(smoothPts, center[0], center[1]);
                 const line = L.polyline([center, ringCenter], {
                     color: zone.boundary_color || '#2D6A4F',
                     weight: _rCfg.weight || 2.5,
