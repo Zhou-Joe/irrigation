@@ -943,6 +943,8 @@
         popupSettingsOpen = false;
         panel.innerHTML = buildPopupHtml(zoneData);
         panel.style.display = '';
+        const fw = document.getElementById('mapFilterWidget');
+        if (fw) fw.style.display = 'none';
     }
 
     function hideZonePopup() {
@@ -953,6 +955,8 @@
         popupSettingsOpen = false;
         unhighlightZonePolygons();
         document.querySelectorAll('.zone-item.active').forEach(el => el.classList.remove('active'));
+        const fw = document.getElementById('mapFilterWidget');
+        if (fw) fw.style.display = '';
     }
 
     function togglePopupSettings() {
@@ -1545,9 +1549,11 @@
                 const matchLm = matchLandmark(layer.zoneData.id);
                 const matchPa = matchPatch(layer.zoneData);
                 if (matchPriority && matchPlant && matchLm && matchPa) {
-                    layer.setStyle({ opacity: 0.7, fillOpacity: 0.15 });
+                    const base = layer.originalStyle || defaultStyle;
+                    layer.setStyle({ color: base.color, weight: base.weight, opacity: base.opacity, fillColor: base.fillColor, fillOpacity: base.fillOpacity, dashArray: base.dashArray });
                 } else {
-                    layer.setStyle({ opacity: 0.1, fillOpacity: 0.03 });
+                    const base = layer.originalStyle || defaultStyle;
+                    layer.setStyle({ color: base.color, weight: base.weight, opacity: 0.1, fillColor: base.fillColor, fillOpacity: 0.03, dashArray: base.dashArray });
                 }
             }
         });
