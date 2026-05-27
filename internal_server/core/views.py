@@ -252,6 +252,7 @@ def _get_reference_map_data(exclude_zone_id=None, exclude_pipeline_id=None):
                 'boundary_points': z.boundary_points,
                 'boundary_color': z.boundary_color or '#52B788',
                 'smooth_override': z.smooth_override,
+                'ring_display_modes': z.ring_display_modes or {},
             })
 
     ref_pipelines = []
@@ -666,6 +667,7 @@ def dashboard(request):
             'label_scale': zone.label_scale,
             'label_angle': zone.label_angle,
             'smooth_override': zone.smooth_override,
+            'ring_display_modes': zone.ring_display_modes or {},
             'area_sqm': zone.area_sqm,
             'area_display': zone.area_display,
             # Detailed info for cards
@@ -1896,6 +1898,33 @@ def zone_quick_draw(request):
             except Zone.DoesNotExist:
                 return JsonResponse({'success': False, 'message': f'区域 {zone_code} 不存在'}, status=404)
 
+        if action == 'update_ring_display_mode':
+            zone_code = request.POST.get('zone_code', '').strip()
+            ring_index = request.POST.get('ring_index', '')
+            mode = request.POST.get('mode', 'line')
+            if not zone_code:
+                return JsonResponse({'success': False, 'message': '缺少区域编号'}, status=400)
+            if mode not in ('line', 'sublabel'):
+                return JsonResponse({'success': False, 'message': '无效的显示模式'}, status=400)
+            try:
+                zone = Zone.objects.get(code=zone_code)
+                modes = dict(zone.ring_display_modes or {})
+                if mode == 'line':
+                    modes.pop(str(ring_index), None)
+                else:
+                    modes[str(ring_index)] = mode
+                # Prune stale indices beyond ring count
+                bp = zone.boundary_points or []
+                ring_count = len(bp) if bp and isinstance(bp[0], (list,)) else 0
+                if ring_count > 0:
+                    modes = {k: v for k, v in modes.items() if int(k) < ring_count}
+                zone.ring_display_modes = modes
+                zone.save()
+                mode_label = '引导线' if mode == 'line' else '子标签'
+                return JsonResponse({'success': True, 'message': f'已切换为{mode_label}', 'ring_display_modes': modes})
+            except Zone.DoesNotExist:
+                return JsonResponse({'success': False, 'message': f'区域 {zone_code} 不存在'}, status=404)
+
         # Save boundary action
         zone_code = request.POST.get('zone_code', '').strip()
         if not zone_code:
@@ -1946,6 +1975,7 @@ def zone_quick_draw(request):
             'label_scale': zone.label_scale,
             'label_angle': zone.label_angle,
             'smooth_override': zone.smooth_override,
+            'ring_display_modes': zone.ring_display_modes or {},
             'patch_id': zone.patch_id,
             'patch_name': patch_name,
         })
@@ -1966,7 +1996,8 @@ def zone_quick_draw(request):
     all_drawn_zones = []
     for z in Zone.objects.exclude(boundary_points__isnull=True).exclude(boundary_points=[]).select_related('patch').only(
         'id', 'code', 'name', 'boundary_points', 'boundary_color',
-        'label_lat', 'label_lng', 'label_scale', 'label_angle', 'smooth_override', 'patch_id', 'patch__name'
+        'label_lat', 'label_lng', 'label_scale', 'label_angle', 'smooth_override',
+        'ring_display_modes', 'patch_id', 'patch__name'
     ):
         all_drawn_zones.append({
             'id': z.id,
@@ -1979,6 +2010,7 @@ def zone_quick_draw(request):
             'label_scale': z.label_scale,
             'label_angle': z.label_angle,
             'smooth_override': z.smooth_override,
+            'ring_display_modes': z.ring_display_modes or {},
             'patch_id': z.patch_id,
             'patch_name': z.patch.name if z.patch else '',
             'area_display': z.area_display,
@@ -2046,6 +2078,32 @@ def zone_quick_draw_mobile(request):
             except Zone.DoesNotExist:
                 return JsonResponse({'success': False, 'message': f'区域 {zone_code} 不存在'}, status=404)
 
+        if action == 'update_ring_display_mode':
+            zone_code = request.POST.get('zone_code', '').strip()
+            ring_index = request.POST.get('ring_index', '')
+            mode = request.POST.get('mode', 'line')
+            if not zone_code:
+                return JsonResponse({'success': False, 'message': '缺少区域编号'}, status=400)
+            if mode not in ('line', 'sublabel'):
+                return JsonResponse({'success': False, 'message': '无效的显示模式'}, status=400)
+            try:
+                zone = Zone.objects.get(code=zone_code)
+                modes = dict(zone.ring_display_modes or {})
+                if mode == 'line':
+                    modes.pop(str(ring_index), None)
+                else:
+                    modes[str(ring_index)] = mode
+                bp = zone.boundary_points or []
+                ring_count = len(bp) if bp and isinstance(bp[0], (list,)) else 0
+                if ring_count > 0:
+                    modes = {k: v for k, v in modes.items() if int(k) < ring_count}
+                zone.ring_display_modes = modes
+                zone.save()
+                mode_label = '引导线' if mode == 'line' else '子标签'
+                return JsonResponse({'success': True, 'message': f'已切换为{mode_label}', 'ring_display_modes': modes})
+            except Zone.DoesNotExist:
+                return JsonResponse({'success': False, 'message': f'区域 {zone_code} 不存在'}, status=404)
+
         zone_code = request.POST.get('zone_code', '').strip()
         if not zone_code:
             return JsonResponse({'success': False, 'message': '缺少区域编号'}, status=400)
@@ -2095,6 +2153,7 @@ def zone_quick_draw_mobile(request):
             'label_scale': zone.label_scale,
             'label_angle': zone.label_angle,
             'smooth_override': zone.smooth_override,
+            'ring_display_modes': zone.ring_display_modes or {},
             'patch_id': zone.patch_id,
             'patch_name': patch_name,
         })
@@ -2113,7 +2172,8 @@ def zone_quick_draw_mobile(request):
     all_drawn_zones = []
     for z in Zone.objects.exclude(boundary_points__isnull=True).exclude(boundary_points=[]).select_related('patch').only(
         'id', 'code', 'name', 'boundary_points', 'boundary_color',
-        'label_lat', 'label_lng', 'label_scale', 'label_angle', 'smooth_override', 'patch_id', 'patch__name'
+        'label_lat', 'label_lng', 'label_scale', 'label_angle', 'smooth_override',
+        'ring_display_modes', 'patch_id', 'patch__name'
     ):
         all_drawn_zones.append({
             'id': z.id,
@@ -2126,6 +2186,7 @@ def zone_quick_draw_mobile(request):
             'label_scale': z.label_scale,
             'label_angle': z.label_angle,
             'smooth_override': z.smooth_override,
+            'ring_display_modes': z.ring_display_modes or {},
             'patch_id': z.patch_id,
             'patch_name': z.patch.name if z.patch else '',
             'area_display': z.area_display,
