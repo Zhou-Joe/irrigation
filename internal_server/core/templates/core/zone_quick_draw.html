@@ -1202,7 +1202,14 @@ window.showToast = function(msg, type) {
             // Filter zones
             const matches = allZones.filter(z =>
                 z.code.toLowerCase().includes(query) || (z.name && z.name.toLowerCase().includes(query))
-            ).slice(0, 15);
+            ).sort((a, b) => {
+                // Prioritize code prefix match
+                const aPrefix = a.code.toLowerCase().startsWith(query) ? 0 : 1;
+                const bPrefix = b.code.toLowerCase().startsWith(query) ? 0 : 1;
+                if (aPrefix !== bPrefix) return aPrefix - bPrefix;
+                // Natural sort by code
+                return a.code.localeCompare(b.code, undefined, { numeric: true });
+            }).slice(0, 20);
 
             if (matches.length > 0) {
                 let html = '';
