@@ -856,7 +856,7 @@
                 const query = this.value.trim().toLowerCase();
                 refreshLabelIcon();
                 if (!query) { dropdown.style.display = 'none'; preview.style.display = 'none'; confirmBtn.disabled = shapes.length === 0; return; }
-                const matches = allZones.filter(z => z.code.toLowerCase().includes(query) || (z.name && z.name.toLowerCase().includes(query))).slice(0, 12);
+                const matches = allZones.filter(z => z.code.toLowerCase().includes(query) || (z.name && z.name.toLowerCase().includes(query))).sort((a, b) => { const ap = a.code.toLowerCase().startsWith(query) ? 0 : 1; const bp = b.code.toLowerCase().startsWith(query) ? 0 : 1; if (ap !== bp) return ap - bp; return a.code.localeCompare(b.code, undefined, { numeric: true }); }).slice(0, 15);
                 if (matches.length > 0) {
                     dropdown.innerHTML = matches.map(z => {
                         const hasB = !!savedZoneMap[z.id];
