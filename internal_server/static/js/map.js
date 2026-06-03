@@ -836,6 +836,7 @@
     ];
 
     const CARD_SETTINGS_KEY = 'zoneProfileCardFields';
+    let _cardSettingsLoaded = false;
 
     function getCardFieldSettings() {
         try {
@@ -848,10 +849,38 @@
         return defaults;
     }
 
+    // Load preferences from server on first call, merge with localStorage
+    async function getCardFieldSettingsAsync() {
+        if (_cardSettingsLoaded) return getCardFieldSettings();
+        try {
+            const r = await fetch('/api/user/preferences', { credentials: 'same-origin' });
+            const data = await r.json();
+            const serverPrefs = data.preferences || {};
+            const serverCardFields = serverPrefs[CARD_SETTINGS_KEY];
+            if (serverCardFields && typeof serverCardFields === 'object') {
+                localStorage.setItem(CARD_SETTINGS_KEY, JSON.stringify(serverCardFields));
+            }
+        } catch (e) {}
+        _cardSettingsLoaded = true;
+        return getCardFieldSettings();
+    }
+
+    // Trigger async load on page load
+    getCardFieldSettingsAsync();
+
     function saveCardFieldSetting(key, visible) {
         const settings = getCardFieldSettings();
         settings[key] = visible;
         localStorage.setItem(CARD_SETTINGS_KEY, JSON.stringify(settings));
+        // Persist to server (fire-and-forget)
+        try {
+            fetch('/api/user/preferences', {
+                method: 'PUT',
+                credentials: 'same-origin',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': (document.cookie.match(/csrftoken=([^;]+)/) || [])[1] || '' },
+                body: JSON.stringify({ preferences: { [CARD_SETTINGS_KEY]: settings } })
+            });
+        } catch (e) {}
     }
 
     // Currently displayed zone data (for re-rendering after settings change)

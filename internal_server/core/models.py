@@ -996,6 +996,7 @@ class WorkCategory(models.Model):
 
     name = models.CharField('名称', max_length=100)
     code = models.CharField('编号', max_length=50, unique=True)
+    parent = models.ForeignKey('self', null=True, blank=True, on_delete=models.CASCADE, related_name='children', verbose_name='父级分类')
     order = models.PositiveIntegerField('排序', default=0)
     active = models.BooleanField('启用', default=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -1072,18 +1073,37 @@ class FaultSubType(models.Model):
 class WorkReport(models.Model):
     """维修工作日报 - daily maintenance work record."""
 
+    SHIFT_CHOICES = [
+        ('早班', '早班'),
+        ('白班', '白班'),
+        ('夜班', '夜班'),
+    ]
+
     date = models.DateField('日期')
     weather = models.CharField('天气', max_length=50, blank=True)
     worker = models.ForeignKey(Worker, on_delete=models.PROTECT, related_name='work_reports', verbose_name='处理人')
     location = models.ForeignKey(Patch, on_delete=models.PROTECT, related_name='work_reports', verbose_name='位置/CCU')
     work_category = models.ForeignKey(WorkCategory, on_delete=models.PROTECT, related_name='work_reports', verbose_name='工作分类')
     zone_location = models.ForeignKey(Zone, on_delete=models.SET_NULL, null=True, blank=True, related_name='work_reports', verbose_name='故障/事件位置')
-    remark = models.TextField('备注/工作内容')
+    remark = models.TextField('备注/工作内容', blank=True)
     info_source = models.ForeignKey(InfoSource, on_delete=models.SET_NULL, null=True, blank=True, related_name='work_reports', verbose_name='信息来源')
     is_difficult = models.BooleanField('疑难问题', default=False)
     is_difficult_resolved = models.BooleanField('疑难问题已处理', default=False)
     fault_subtypes = models.ManyToManyField(FaultSubType, through='WorkReportFault', blank=True, related_name='work_reports')
     photos = models.JSONField(default=list, blank=True, verbose_name='照片列表', help_text='照片文件路径列表')
+
+    # Mobile workorder fields
+    shift = models.CharField('班次', max_length=10, choices=SHIFT_CHOICES, blank=True)
+    work_start_time = models.TimeField('工作开始时间', null=True, blank=True)
+    work_end_time = models.TimeField('工作完成时间', null=True, blank=True)
+    team_size = models.PositiveIntegerField('灌溉组人数', default=1)
+    third_party_count = models.PositiveIntegerField('第三方人数', default=0)
+    team_hours = models.FloatField('灌溉组工时', default=0, help_text='Auto-calculated, precision 0.5h')
+    third_party_hours = models.FloatField('第三方工时', default=0, help_text='Auto-calculated, precision 0.5h')
+    zones = models.ManyToManyField(Zone, blank=True, related_name='workorder_records', verbose_name='区域')
+    zone_names = models.TextField('通称位置', blank=True, help_text='Auto-filled from zone codes')
+    work_content = models.TextField('工作内容', blank=True)
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

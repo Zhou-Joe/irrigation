@@ -205,6 +205,13 @@
         <div class="top-bar-right">
             <div class="stat">绘制 <b id="topDrawn">0</b></div>
             <div class="stat">待绘 <b id="topUndrawn">0</b></div>
+            <div style="position:relative;display:inline-block;" id="statsDropWrap">
+                <button type="button" id="statsDropBtn" style="background:rgba(255,255,255,0.15);border:none;color:#fff;padding:3px 8px;border-radius:4px;font-size:0.75em;cursor:pointer;">{{ drawn_total }}/{{ zone_total }} &#9662;</button>
+                <div id="statsDropPanel" style="display:none;position:absolute;right:0;top:110%;background:#fff;border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,0.15);min-width:200px;max-height:50vh;overflow-y:auto;z-index:1000;">
+                    <div style="padding:8px 12px;font-size:0.72em;font-weight:600;color:#999;border-bottom:1px solid #f0f0f0;">片区绘制进度</div>
+                    <div id="statsDropList"></div>
+                </div>
+            </div>
         </div>
     </header>
 
@@ -234,6 +241,9 @@
         </div>
         <div class="ctx-item" id="ctxRingDisplayMode" style="display:none;">
             <span id="ctxRingDisplayModeText">🏷️ 切换为子标签</span>
+        </div>
+        <div class="ctx-item" id="ctxAllRingDisplayMode" style="display:none;">
+            <span id="ctxAllRingDisplayModeText">🏷️ 全部切换为子标签</span>
         </div>
         <div class="ctx-item" id="ctxDelete">🗑️ 删除边界</div>
     </div>
@@ -300,6 +310,24 @@
     <script id="all-drawn-zones-data" type="application/json">{{ all_drawn_zones_json|safe }}</script>
     <script id="all-zones-data" type="application/json">{{ all_zones_json|safe }}</script>
     <script>window.MAP_STYLE_CONFIG = {{ map_style_json|safe }} || {};</script>
+    <script>
+    // Stats dropdown
+    (function() {
+        var stats = {{ patch_stats_json|safe }};
+        var list = document.getElementById('statsDropList');
+        stats.forEach(function(s) {
+            var pct = s.total ? Math.round(s.drawn / s.total * 100) : 0;
+            var row = document.createElement('div');
+            row.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:6px 12px;font-size:0.82em;border-bottom:1px solid #f5f5f5;color:#333;';
+            row.innerHTML = '<span style="flex:1;">' + s.name + '</span><span style="font-weight:600;color:' + (pct === 100 ? '#2D6A4F' : '#555') + ';">' + s.drawn + '/' + s.total + '</span>';
+            list.appendChild(row);
+        });
+        var btn = document.getElementById('statsDropBtn');
+        var panel = document.getElementById('statsDropPanel');
+        btn.addEventListener('click', function(e) { e.stopPropagation(); panel.style.display = panel.style.display === 'none' ? 'block' : 'none'; });
+        document.addEventListener('click', function() { panel.style.display = 'none'; });
+    })();
+    </script>
     <script>
     function getCSRF() {
         const m = document.cookie.match(/csrftoken=([^;]+)/);
@@ -820,11 +848,17 @@
             const polys = z ? normalizeBoundaryData(z.boundary_points) : [];
             const isMulti = polys.length > 1;
             const modeEl = document.getElementById('ctxRingDisplayMode');
+            const allModeEl = document.getElementById('ctxAllRingDisplayMode');
             modeEl.style.display = isMulti ? 'flex' : 'none';
+            allModeEl.style.display = isMulti ? 'flex' : 'none';
             if (isMulti) {
                 const currentMode = (z.ring_display_modes || {})[String(contextMenuRingIndex)] || 'line';
                 document.getElementById('ctxRingDisplayModeText').textContent =
                     currentMode === 'sublabel' ? '🔗 切换为引导线' : '🏷️ 切换为子标签';
+                const allCurrent = (z.ring_display_modes || {});
+                const allLine = polys.every((_, i) => (allCurrent[String(i)] || 'line') === 'line');
+                document.getElementById('ctxAllRingDisplayModeText').textContent =
+                    allLine ? '🏷️ 全部切换为子标签' : '🔗 全部切换为引导线';
             }
             const mr = editMap.getContainer().getBoundingClientRect();
             let x, y;
@@ -1114,6 +1148,27 @@
                 fetch('/settings/zone/quick-draw/mobile/', {
                     method: 'POST',
                     body: (() => { const fd = new FormData(); fd.append('action','update_ring_display_mode'); fd.append('zone_code',z.code); fd.append('ring_index',String(contextMenuRingIndex)); fd.append('mode',newMode); return fd; })(),
+                    headers: {'X-CSRFToken': getCSRF(), 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json'}
+                }).then(r => r.json()).then(data => {
+                    if (data.success) {
+                        showToast(data.message, 'success');
+                        z.ring_display_modes = data.ring_display_modes;
+                        rebuildRefLayers();
+                    } else { showToast(data.message || '更新失败', 'error'); }
+                }).catch(() => showToast('更新失败', 'error'));
+                hideContextMenu();
+            });
+            document.getElementById('ctxAllRingDisplayMode').addEventListener('click', function() {
+                if (!contextMenuZoneId) return;
+                const z = savedZoneMap[contextMenuZoneId];
+                if (!z) return;
+                const polys = normalizeBoundaryData(z.boundary_points);
+                const allCurrent = (z.ring_display_modes || {});
+                const allLine = polys.every((_, i) => (allCurrent[String(i)] || 'line') === 'line');
+                const newMode = allLine ? 'sublabel' : 'line';
+                fetch('/settings/zone/quick-draw/mobile/', {
+                    method: 'POST',
+                    body: (() => { const fd = new FormData(); fd.append('action','update_all_ring_display_modes'); fd.append('zone_code',z.code); fd.append('mode',newMode); return fd; })(),
                     headers: {'X-CSRFToken': getCSRF(), 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json'}
                 }).then(r => r.json()).then(data => {
                     if (data.success) {
