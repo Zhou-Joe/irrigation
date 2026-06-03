@@ -1,0 +1,167 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>工作记录历史</title>
+<link rel="stylesheet" href="{% static 'css/design-system.css' %}">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f5; color: #222; min-height: 100vh; padding-bottom: 80px; }
+.top-bar { position: sticky; top: 0; z-index: 100; background: var(--color-primary, #2D6A4F); color: #fff; display: flex; align-items: center; padding: 12px 16px; font-size: 1.1em; font-weight: 600; box-shadow: 0 2px 8px rgba(0,0,0,0.15); }
+.top-bar a { color: #fff; text-decoration: none; font-size: 1.2em; margin-right: 12px; }
+.user-name { margin-left: auto; font-size: 0.85em; opacity: 0.8; }
+.empty { text-align: center; padding: 60px 20px; color: #999; font-size: 0.95em; }
+
+/* Card list */
+.card-list { padding: 12px; }
+.card { background: #fff; border-radius: 10px; margin-bottom: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); overflow: hidden; cursor: pointer; }
+.card:active { background: #fafafa; }
+.card-summary { padding: 14px 16px; }
+.card-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.card-date { font-weight: 600; font-size: 0.95em; }
+.card-id { font-size: 0.78em; color: #999; }
+.card-shift { font-size: 0.78em; background: #e8f5e9; color: var(--color-primary, #2D6A4F); padding: 2px 8px; border-radius: 10px; font-weight: 500; }
+.card-row { display: flex; justify-content: space-between; font-size: 0.85em; padding: 2px 0; color: #555; }
+.card-row span:last-child { font-weight: 500; color: #222; }
+.card-zones { margin-top: 6px; display: flex; flex-wrap: wrap; gap: 4px; }
+.card-zone-tag { background: #f0f0f0; padding: 2px 8px; border-radius: 8px; font-size: 0.75em; font-family: 'Courier New', monospace; }
+.card-hours { margin-top: 6px; padding-top: 6px; border-top: 1px solid #f0f0f0; display: flex; gap: 16px; font-size: 0.82em; color: #888; }
+.card-hours span { color: var(--color-primary, #2D6A4F); font-weight: 600; }
+.card-expand-hint { font-size: 0.75em; color: #bbb; text-align: center; padding: 4px 0 8px; }
+
+/* Detail panel (hidden by default) */
+.card-detail { display: none; border-top: 1px solid #f0f0f0; padding: 12px 16px; background: #fafafa; }
+.card.open .card-detail { display: block; }
+.card.open .card-expand-hint { display: none; }
+.detail-section { margin-bottom: 10px; }
+.detail-label { font-size: 0.78em; color: #999; margin-bottom: 3px; }
+.detail-value { font-size: 0.88em; color: #222; line-height: 1.5; }
+.detail-tags { display: flex; flex-wrap: wrap; gap: 4px; }
+.detail-tag { background: #e8f5e9; color: var(--color-primary, #2D6A4F); padding: 2px 8px; border-radius: 8px; font-size: 0.78em; }
+.detail-photo-grid { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.detail-photo { width: 64px; height: 64px; border-radius: 6px; object-fit: cover; }
+
+/* FAB */
+.fab { position: fixed; bottom: 24px; right: 24px; width: 56px; height: 56px; border-radius: 28px; background: var(--color-primary, #2D6A4F); color: #fff; border: none; font-size: 1.8em; cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,0.2); display: flex; align-items: center; justify-content: center; text-decoration: none; }
+</style>
+</head>
+<body>
+
+<div class="top-bar">
+    <a href="{% url 'core:workorder_mobile' %}">&#8592;</a>
+    工作记录
+    <span class="user-name">{{ worker_name }}</span>
+</div>
+
+{% if reports %}
+<div class="card-list">
+    {% for r in reports %}
+    <div class="card" onclick="this.classList.toggle('open')">
+        <div class="card-summary">
+            <div class="card-top">
+                <span class="card-date">{{ r.date }}</span>
+                {% if r.shift %}<span class="card-shift">{{ r.shift }}</span>{% endif %}
+                <span class="card-id">#{{ r.id }}</span>
+            </div>
+            <div class="card-row">
+                <span>工作类别</span>
+                <span>{% if r.work_category %}{{ r.work_category.name }}{% else %}—{% endif %}</span>
+            </div>
+            {% if r.work_start_time %}
+            <div class="card-row">
+                <span>工作时间</span>
+                <span>{{ r.work_start_time }} - {{ r.work_end_time }}</span>
+            </div>
+            {% endif %}
+            {% if r.zone_names %}
+            <div class="card-zones">{{ r.zone_names }}</div>
+            {% endif %}
+            {% if r.team_hours or r.third_party_hours %}
+            <div class="card-hours">
+                {% if r.team_hours %}灌溉组: <span>{{ r.team_hours }}h</span>{% endif %}
+                {% if r.third_party_hours %}第三方: <span>{{ r.third_party_hours }}h</span>{% endif %}
+                {% if r.is_difficult %}<span style="color:#e65100;">疑难{% if r.is_difficult_resolved %}(已处理){% endif %}</span>{% endif %}
+            </div>
+            {% endif %}
+        </div>
+        <div class="card-expand-hint">点击查看详情 &#9660;</div>
+        <div class="card-detail">
+            <!-- Worker -->
+            {% if r.worker %}
+            <div class="detail-section">
+                <div class="detail-label">填写人</div>
+                <div class="detail-value">{{ r.worker.full_name }}{% if r.worker.employee_id %} ({{ r.worker.employee_id }}){% endif %}</div>
+            </div>
+            {% endif %}
+
+            <!-- Zones -->
+            {% if r.zones.all %}
+            <div class="detail-section">
+                <div class="detail-label">区域</div>
+                <div class="detail-tags">
+                    {% for z in r.zones.all %}
+                    <span class="detail-tag">{{ z.code }}{% if z.name %} {{ z.name }}{% endif %}</span>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- People -->
+            <div class="detail-section">
+                <div class="detail-label">人数</div>
+                <div class="detail-value">灌溉组 {{ r.team_size }}人{% if r.third_party_count %}，第三方 {{ r.third_party_count }}人{% endif %}</div>
+            </div>
+
+            <!-- Faults -->
+            {% if r.fault_entries.all %}
+            <div class="detail-section">
+                <div class="detail-label">故障详情</div>
+                <div class="detail-tags">
+                    {% for fe in r.fault_entries.all %}
+                    <span class="detail-tag">{{ fe.fault_subtype.name_zh }}{% if fe.count > 1 %} x{{ fe.count }}{% endif %}</span>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Work content -->
+            {% if r.work_content %}
+            <div class="detail-section">
+                <div class="detail-label">工作内容</div>
+                <div class="detail-value">{{ r.work_content }}</div>
+            </div>
+            {% endif %}
+
+            <!-- Remark -->
+            {% if r.remark %}
+            <div class="detail-section">
+                <div class="detail-label">备注</div>
+                <div class="detail-value">{{ r.remark }}</div>
+            </div>
+            {% endif %}
+
+            <!-- Photos -->
+            {% if r.photos %}
+            <div class="detail-section">
+                <div class="detail-label">照片</div>
+                <div class="detail-photo-grid">
+                    {% for p in r.photos %}
+                    <img class="detail-photo" src="/media/{{ p }}" alt="照片">
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="empty">暂无工作记录<br><a href="{% url 'core:workorder_mobile' %}" style="color:var(--color-primary,#2D6A4F);">提交第一条记录</a></div>
+{% endif %}
+
+<a href="{% url 'core:workorder_mobile' %}" class="fab">+</a>
+
+</body>
+</html>
