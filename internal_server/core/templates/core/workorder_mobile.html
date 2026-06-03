@@ -648,7 +648,7 @@ function initZoneMap() {
     mapInitialized = true;
     zoneMap = L.map('zoneMap', { zoomControl: false, attributionControl: false }).setView([31.155794, 121.668804], 17);
     L.control.zoom({ position: 'topright' }).addTo(zoneMap);
-    L.tileLayer('https://map.geoq.cn/ArcGIS/rest/services/ChinaOnlineCommunity/MapServer/tile/{z}/{y}/{x}', { maxZoom: 20 }).addTo(zoneMap);
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 20 }).addTo(zoneMap);
 
     fetch('{% url "core:zone_geo_api" %}')
         .then(r => r.json())
