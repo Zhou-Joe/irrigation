@@ -82,8 +82,8 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # Security settings
 if not DEBUG:
-    SESSION_COOKIE_SECURE = True
-    CSRF_COOKIE_SECURE = True
+    SESSION_COOKIE_SECURE = False
+    CSRF_COOKIE_SECURE = False
     SECURE_HSTS_SECONDS = 31536000
     SECURE_HSTS_INCLUDE_SUBDOMAINS = True
     SECURE_HSTS_PRELOAD = True
@@ -117,6 +117,8 @@ CSRF_TRUSTED_ORIGINS = [
     'https://zctestbench.asia',
     'https://www.zctestbench.asia',
     'https://irrigation.zctestbench.asia',
+    'http://47.100.237.113',
+    'https://47.100.237.113',
 ]
 
 # Cloud Relay settings
