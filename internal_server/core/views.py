@@ -342,6 +342,34 @@ def user_logout(request):
     return redirect('core:login')
 
 
+def mobile_home(request):
+    """Mobile landing page: login if unauthenticated, home menu if authenticated."""
+    if not request.user.is_authenticated:
+        if request.method == 'POST':
+            username = request.POST.get('username', '').strip()
+            password = request.POST.get('password', '')
+            user = authenticate(request, username=username, password=password)
+            if user is not None:
+                login(request, user)
+            else:
+                messages.error(request, '用户名或密码错误')
+                return render(request, 'core/mobile_home.html', {'login_error': True})
+        else:
+            return render(request, 'core/mobile_home.html', {'show_login': True})
+
+    # Authenticated: show mobile home menu
+    from core.role_utils import get_worker_for_user, get_user_role, is_admin
+    from core.models import Worker
+    worker = get_worker_for_user(request.user)
+    role = get_user_role(request.user)
+    worker_name = worker.full_name if worker else request.user.get_full_name() or request.user.username
+    return render(request, 'core/mobile_home.html', {
+        'worker_name': worker_name,
+        'role': role,
+        'is_admin': is_admin(request.user),
+    })
+
+
 @login_required(login_url='core:login')
 def profile_page(request):
     """User profile page - view and edit personal information."""
@@ -5727,6 +5755,30 @@ def workorder_mobile(request):
             # Set zones M2M
             if selected_zones:
                 report.zones.set(selected_zones)
+
+            # If marked as difficult, append work content to zone remarks
+            if report.is_difficult:
+                work_content = request.POST.get('work_content', '').strip()
+                fault_names = []
+                for fe in report.fault_entries.select_related('fault_subtype').all():
+                    fault_names.append(fe.fault_subtype.name_zh)
+                remark_parts = []
+                if fault_names:
+                    remark_parts.append('故障: ' + ', '.join(fault_names))
+                if work_content:
+                    remark_parts.append(work_content)
+                remark_content = ' '.join(remark_parts) if remark_parts else '疑难工单'
+                remark_entry = {
+                    'date': report.date if isinstance(report.date, str) else report.date.isoformat(),
+                    'content': remark_content,
+                    'author': worker.full_name if worker else str(request.user),
+                    'workorder_id': report.id,
+                }
+                for z in selected_zones:
+                    remarks = json.loads(z.remarks) if z.remarks else []
+                    remarks.insert(0, remark_entry)
+                    z.remarks = json.dumps(remarks, ensure_ascii=False)
+                    z.save(update_fields=['remarks'])
 
             # Parse fault entries
             fault_json = request.POST.get('fault_entries', '[]')

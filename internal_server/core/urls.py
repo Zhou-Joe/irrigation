@@ -46,6 +46,7 @@ urlpatterns = [
     path('', views.dashboard, name='dashboard'),
     path('stats/', views.stats_dashboard, name='stats_dashboard'),
     path('login/', views.user_login, name='login'),
+    path('mobile/', views.mobile_home, name='mobile_home'),
     path('logout/', views.user_logout, name='logout'),
     path('profile/', views.profile_page, name='profile'),
     path('register/', views.register, name='register'),
