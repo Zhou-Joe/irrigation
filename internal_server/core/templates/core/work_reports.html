@@ -77,11 +77,15 @@
                 <tr style="background:var(--color-primary);color:var(--color-text-inverse);">
                     <th style="padding:8px 12px;text-align:left;">日期</th>
                     <th style="padding:8px 12px;text-align:left;">处理人</th>
+                    <th style="padding:8px 12px;text-align:left;">班次</th>
+                    <th style="padding:8px 12px;text-align:left;">工作时间</th>
                     <th style="padding:8px 12px;text-align:left;">CCU</th>
-                    <th style="padding:8px 12px;text-align:left;">工作分类</th>
-                    <th style="padding:8px 12px;text-align:left;">故障位置</th>
-                    <th style="padding:8px 12px;text-align:left;">备注</th>
-                    <th style="padding:8px 12px;text-align:center;">故障数</th>
+                    <th style="padding:8px 12px;text-align:left;">区域</th>
+                    <th style="padding:8px 12px;text-align:left;">工作类别</th>
+                    <th style="padding:8px 12px;text-align:left;">故障详情</th>
+                    <th style="padding:8px 12px;text-align:left;">工作内容</th>
+                    <th style="padding:8px 12px;text-align:center;">人数</th>
+                    <th style="padding:8px 12px;text-align:center;">工时(h)</th>
                     <th style="padding:8px 12px;text-align:center;">疑难</th>
                     <th style="padding:8px 12px;text-align:center;">照片</th>
                     <th style="padding:8px 12px;text-align:center;">操作</th>
@@ -91,13 +95,30 @@
             {% for report in reports %}
                 <tr style="border-bottom:1px solid var(--color-surface-dark);{% cycle '' 'background:var(--color-surface-alt);' %}">
                     <td style="padding:8px 12px;white-space:nowrap;">{{ report.date }}</td>
-                    <td style="padding:8px 12px;">{{ report.worker.full_name }}</td>
+                    <td style="padding:8px 12px;white-space:nowrap;">{{ report.worker.full_name }}</td>
+                    <td style="padding:8px 12px;">{{ report.shift|default:"-" }}</td>
+                    <td style="padding:8px 12px;white-space:nowrap;">
+                        {% if report.work_start_time %}{{ report.work_start_time }}-{{ report.work_end_time }}{% else %}-{% endif %}
+                    </td>
                     <td style="padding:8px 12px;">{{ report.location.name }}</td>
-                    <td style="padding:8px 12px;">{{ report.work_category.name }}</td>
-                    <td style="padding:8px 12px;">{% if report.zone_location %}{{ report.zone_location.code }}{% else %}-{% endif %}</td>
-                    <td style="padding:8px 12px;max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{{ report.remark }}">{{ report.remark }}</td>
+                    <td style="padding:8px 12px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{{ report.zone_names }}">
+                        {% if report.zone_names %}{{ report.zone_names }}{% elif report.zone_location %}{{ report.zone_location.code }}{% else %}-{% endif %}
+                    </td>
+                    <td style="padding:8px 12px;white-space:nowrap;">{{ report.work_category.name }}</td>
+                    <td style="padding:8px 12px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{% for fe in report.fault_entries.all %}{{ fe.fault_subtype.name_zh }}{% if not forloop.last %}, {% endif %}{% endfor %}">
+                        {% for fe in report.fault_entries.all %}{{ fe.fault_subtype.name_zh }}{% if not forloop.last %}, {% endif %}{% endfor %}
+                    </td>
+                    <td style="padding:8px 12px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{{ report.work_content }}">
+                        {% if report.work_content %}{{ report.work_content }}{% elif report.remark %}{{ report.remark }}{% else %}-{% endif %}
+                    </td>
                     <td style="padding:8px 12px;text-align:center;">
-                        {% widthratio report.fault_entries.count 1 1 %}
+                        {% if report.third_party_count %}{{ report.team_size }}+{{ report.third_party_count }}{% else %}{{ report.team_size }}{% endif %}
+                    </td>
+                    <td style="padding:8px 12px;text-align:center;">
+                        {% if report.team_hours or report.third_party_hours %}
+                        {% if report.team_hours %}<span style="color:var(--color-primary);">{{ report.team_hours }}</span>{% endif %}
+                        {% if report.third_party_hours %}<span style="color:var(--color-accent);">+{{ report.third_party_hours }}</span>{% endif %}
+                        {% else %}-{% endif %}
                     </td>
                     <td style="padding:8px 12px;text-align:center;">
                         {% if report.is_difficult %}
@@ -125,7 +146,7 @@
                 </tr>
             {% empty %}
                 <tr>
-                    <td colspan="10" style="padding:32px;text-align:center;color:var(--color-text-muted);">暂无工作日报记录</td>
+                    <td colspan="14" style="padding:32px;text-align:center;color:var(--color-text-muted);">暂无工作日报记录</td>
                 </tr>
             {% endfor %}
             </tbody>
