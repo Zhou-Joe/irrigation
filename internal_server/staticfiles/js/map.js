@@ -1684,9 +1684,11 @@
                 const matchPa = matchPatch(layer.zoneData);
                 const baseStyle = layer.originalStyle || defaultStyle;
                 if (matchPriority && matchPlant && matchLm && matchPa) {
-                    layer.setStyle({ ...baseStyle, opacity: 0.7, fillOpacity: 0.15 });
+                    const base = layer.originalStyle || defaultStyle;
+                    layer.setStyle({ color: base.color, weight: base.weight, opacity: base.opacity, fillColor: base.fillColor, fillOpacity: base.fillOpacity, dashArray: base.dashArray });
                 } else {
-                    layer.setStyle({ ...baseStyle, opacity: 0.1, fillOpacity: 0.03 });
+                    const base = layer.originalStyle || defaultStyle;
+                    layer.setStyle({ color: base.color, weight: base.weight, opacity: 0.1, fillColor: base.fillColor, fillOpacity: 0.03, dashArray: base.dashArray });
                 }
             }
         });
