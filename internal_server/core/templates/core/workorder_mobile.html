@@ -57,13 +57,10 @@ textarea { font-size: 0.9em; padding: 10px 12px; border: 1px solid #ddd; border-
 .zone-names-auto { margin-top: 6px; font-size: 0.8em; color: #888; }
 
 /* Zone map */
-.zone-map-wrap { margin-top: 10px; border-radius: 10px; overflow: hidden; border: 1px solid #ddd; position: relative; display: none; }
-.zone-map-wrap.visible { display: block; }
+.zone-map-wrap { margin-top: 10px; border-radius: 10px; overflow: hidden; border: 1px solid #ddd; position: relative; }
 #zoneMap { height: 260px; width: 100%; }
 .map-loading { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: #f8f8f8; color: #888; font-size: 0.85em; z-index: 400; }
 .btn-locate { position: absolute; bottom: 12px; right: 12px; z-index: 450; width: 36px; height: 36px; border-radius: 50%; border: none; background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,0.3); cursor: pointer; font-size: 1.1em; display: flex; align-items: center; justify-content: center; }
-.btn-toggle-map { margin-top: 8px; padding: 8px 14px; border: 1px solid #ddd; border-radius: 8px; background: #fff; color: #555; font-size: 0.85em; cursor: pointer; width: 100%; text-align: center; }
-.btn-toggle-map:active { background: #f0f0f0; }
 
 /* Trigger rows */
 .trigger-row { display: flex; align-items: center; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid #f0f0f0; cursor: pointer; }
@@ -141,12 +138,14 @@ textarea { font-size: 0.9em; padding: 10px 12px; border: 1px solid #ddd; border-
     </div>
     <div class="field-row">
         <span class="field-label">班次</span>
-        <select name="shift" style="width:auto;min-width:120px;">
-            <option value="">-- 选择 --</option>
+        <div style="display:flex;gap:8px;">
             {% for s in sorted_shifts %}
-            <option value="{{ s }}">{{ s }}</option>
+            <label style="display:flex;align-items:center;gap:4px;padding:6px 14px;border:1px solid #ddd;border-radius:8px;font-size:0.9em;cursor:pointer;" class="shift-chip">
+                <input type="radio" name="shift" value="{{ s }}" style="display:none;">
+                {{ s }}
+            </label>
             {% endfor %}
-        </select>
+        </div>
     </div>
 </div>
 
@@ -208,9 +207,8 @@ textarea { font-size: 0.9em; padding: 10px 12px; border: 1px solid #ddd; border-
     </div>
     <div class="selected-zones" id="selectedZones"></div>
     <div class="zone-names-auto" id="zoneNamesAuto"></div>
-    <button type="button" class="btn-toggle-map" id="btnToggleMap">&#128506; 显示地图选区</button>
-    <!-- Embedded map (hidden by default) -->
-    <div class="zone-map-wrap" id="zoneMapWrap">
+    <!-- Map always visible -->
+    <div class="zone-map-wrap visible">
         <div id="zoneMap"></div>
         <div class="map-loading" id="mapLoading">加载地图数据...</div>
         <button type="button" class="btn-locate" id="btnLocate" title="定位到当前位置">&#x1F4CD;</button>
@@ -346,6 +344,23 @@ document.getElementById('workEnd').addEventListener('change', updateHours);
 document.querySelector('[name=team_size]').addEventListener('input', updateHours);
 document.querySelector('[name=third_party_count]').addEventListener('input', updateHours);
 updateHours();
+
+// ── Shift chip toggle ──
+document.querySelectorAll('.shift-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+        document.querySelectorAll('.shift-chip').forEach(c => {
+            c.style.background = '#fff';
+            c.style.borderColor = '#ddd';
+            c.style.color = '#555';
+            c.style.fontWeight = '400';
+        });
+        chip.style.background = '#e8f5e9';
+        chip.style.borderColor = '#2D6A4F';
+        chip.style.color = '#2D6A4F';
+        chip.style.fontWeight = '500';
+        chip.querySelector('input').checked = true;
+    });
+});
 
 // ── Difficulty toggle ──
 document.getElementById('isDifficult').addEventListener('change', function() {
@@ -616,17 +631,15 @@ imgPreviewGrid.addEventListener('click', (e) => {
     }
 });
 
-// ── Zone Map (async load, hidden by default) ──
+// ── Zone Map (always visible, init immediately) ──
 let zoneMap = null;
 let zonePolygons = {};
-let mapInitialized = false;
 
-// Pre-fetch zone geo data for distance sorting (run immediately)
+// Pre-fetch zone geo data for distance sorting
 fetch('{% url "core:zone_geo_api" %}')
     .then(r => r.json())
     .then(data => {
         data.forEach(z => { if (z.t) zoneCenterMap[z.c] = z.t; });
-        // Try geolocation for distance sorting
         if (navigator.geolocation) {
             navigator.geolocation.getCurrentPosition(pos => {
                 userLatLng = [pos.coords.latitude, pos.coords.longitude];
@@ -634,21 +647,11 @@ fetch('{% url "core:zone_geo_api" %}')
         }
     });
 
-// Toggle map visibility
-document.getElementById('btnToggleMap').addEventListener('click', function() {
-    const wrap = document.getElementById('zoneMapWrap');
-    const show = !wrap.classList.contains('visible');
-    wrap.classList.toggle('visible', show);
-    this.innerHTML = show ? '&#128506; 隐藏地图' : '&#128506; 显示地图选区';
-    if (show && !mapInitialized) initZoneMap();
-    if (show && zoneMap) setTimeout(() => zoneMap.invalidateSize(), 100);
-});
-
-function initZoneMap() {
-    mapInitialized = true;
-    zoneMap = L.map('zoneMap', { zoomControl: false, attributionControl: false }).setView([31.155794, 121.668804], 17);
+// Init map immediately
+(function initZoneMap() {
+    zoneMap = L.map('zoneMap', { zoomControl: false, attributionControl: false, minZoom: 15, maxZoom: 22 }).setView([31.155794, 121.668804], 17);
     L.control.zoom({ position: 'topright' }).addTo(zoneMap);
-    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 20 }).addTo(zoneMap);
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxNativeZoom: 19, maxZoom: 22 }).addTo(zoneMap);
 
     fetch('{% url "core:zone_geo_api" %}')
         .then(r => r.json())
@@ -671,6 +674,9 @@ function initZoneMap() {
 
                 poly.bindTooltip(z.c, { permanent: true, direction: 'center', className: 'zone-map-label' });
 
+                // Store code for zoom-based label update
+                poly._zoneCode = z.c;
+
                 poly.on('click', () => {
                     if (selectedZoneCodes.has(z.c)) selectedZoneCodes.delete(z.c);
                     else selectedZoneCodes.add(z.c);
@@ -682,7 +688,83 @@ function initZoneMap() {
             });
         })
         .catch(() => { document.getElementById('mapLoading').textContent = '地图加载失败'; });
+})();
+
+// Zoom-based label truncation + grouping (same as dashboard)
+function getCodeForZoom(code, zoom) {
+    const parts = code.split('-');
+    if (parts.length <= 1 || zoom >= 18) return code;
+    if (zoom >= 17) return parts.slice(0, 2).join('-');
+    return parts[0];
 }
+
+// Store original tooltip positions
+const tooltipOriginalLatLng = {};
+
+function updateMapLabels() {
+    const zoom = zoneMap.getZoom();
+    const showLabels = zoom >= 15;
+
+    if (!showLabels) {
+        // Hide all
+        for (const [code, poly] of Object.entries(zonePolygons)) {
+            const tooltip = poly.getTooltip();
+            if (tooltip) { const el = tooltip.getElement(); if (el) el.style.display = 'none'; }
+        }
+        return;
+    }
+
+    const base = 10;
+    let size;
+    if (zoom <= 16) size = base * 2.5;
+    else if (zoom === 17) size = base * 1.8;
+    else size = Math.max(7, Math.round(base * Math.pow(0.85, 19 - zoom)));
+
+    if (zoom < 18) {
+        // Group by truncated code, show only one per group
+        const groups = {};
+        for (const [code, poly] of Object.entries(zonePolygons)) {
+            const key = getCodeForZoom(code, zoom);
+            if (!groups[key]) groups[key] = [];
+            groups[key].push(code);
+        }
+        for (const [key, codes] of Object.entries(groups)) {
+            codes.forEach((code, i) => {
+                const poly = zonePolygons[code];
+                const tooltip = poly.getTooltip();
+                if (!tooltip) return;
+                const el = tooltip.getElement();
+                if (!el) return;
+                if (i === 0) {
+                    // Show representative at first zone's position
+                    el.style.display = '';
+                    el.style.fontSize = size + 'px';
+                    const span = el.querySelector('span');
+                    if (span) span.textContent = key;
+                    else el.textContent = key;
+                } else {
+                    el.style.display = 'none';
+                }
+            });
+        }
+    } else {
+        // Full zoom: show all individual labels
+        for (const [code, poly] of Object.entries(zonePolygons)) {
+            const tooltip = poly.getTooltip();
+            if (!tooltip) continue;
+            const el = tooltip.getElement();
+            if (!el) continue;
+            el.style.display = '';
+            el.style.fontSize = size + 'px';
+            const span = el.querySelector('span');
+            if (span) span.textContent = code;
+            else el.textContent = code;
+        }
+    }
+}
+
+zoneMap.on('zoomend', updateMapLabels);
+setTimeout(updateMapLabels, 500);
 
 function refreshMapStyles() {
     if (!zoneMap) return;

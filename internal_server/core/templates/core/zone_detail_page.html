@@ -371,6 +371,9 @@
                     <span class="note-date">{{ remark.date }}</span>
                     <span class="note-content">{{ remark.content }}</span>
                     <span style="color:#888;font-size:0.85em;">({{ remark.author }})</span>
+                    {% if remark.workorder_id %}
+                    <a href="{% url 'core:work_report_detail' remark.workorder_id %}" style="color:#007bff;font-size:0.85em;margin-left:6px;text-decoration:none;">[工单#{{ remark.workorder_id }}]</a>
+                    {% endif %}
                     {% if is_manager %}
                     <button type="button" class="remark-confirm-btn" onclick="showConfirmForm(this, {{ forloop.counter0 }})" style="margin-left:8px;padding:2px 8px;background:#007bff;color:white;border:none;border-radius:3px;cursor:pointer;font-size:0.8em;">确认</button>
                     <div class="confirm-form" style="display:none;margin-top:6px;">
