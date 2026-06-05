@@ -265,6 +265,21 @@
             if (e.originalEvent.target.closest('.leaflet-overlay-pane')) return;
             hideZonePopup();
         });
+
+        // Un-highlight zones when mouse leaves the map container
+        map.on('mouseout', function() {
+            closeHighlightedTooltips();
+            unhighlightZonePolygons();
+        });
+
+        // Un-highlight zones when mouse enters popup panel overlay
+        const _popupPanel = document.getElementById('zonePopupPanel');
+        if (_popupPanel) {
+            _popupPanel.addEventListener('mouseenter', function() {
+                closeHighlightedTooltips();
+                unhighlightZonePolygons();
+            });
+        }
     }
 
     /**
@@ -757,6 +772,12 @@
             window.location.href = '/requests/';
         });
 
+        // Un-highlight any zone when mouse enters marker area
+        marker.on('mouseover', function() {
+            closeHighlightedTooltips();
+            unhighlightZonePolygons();
+        });
+
         marker.addTo(map);
     }
 
@@ -808,6 +829,12 @@
 
         marker.on('click', function() {
             window.location.href = '/zone/' + zone.id + '/detail/';
+        });
+
+        // Un-highlight any zone when mouse enters marker area
+        marker.on('mouseover', function() {
+            closeHighlightedTooltips();
+            unhighlightZonePolygons();
         });
 
         marker.addTo(map);
@@ -1169,11 +1196,17 @@
 
     // Currently highlighted zone ID (for multi-polygon highlighting)
     let highlightedZoneId = null;
+    let _unhighlightTimer = null;
+
+    function _clearUnhighlightTimer() {
+        if (_unhighlightTimer) { clearTimeout(_unhighlightTimer); _unhighlightTimer = null; }
+    }
 
     /**
      * Highlight all polygons belonging to a zone
      */
     function highlightZonePolygons(zoneId) {
+        _clearUnhighlightTimer();
         if (highlightedZoneId === zoneId) return;
         unhighlightZonePolygons();
         highlightedZoneId = zoneId;
@@ -1186,21 +1219,34 @@
     }
 
     /**
+     * Close tooltips of the currently highlighted zone
+     */
+    function closeHighlightedTooltips() {
+        if (highlightedZoneId === null) return;
+        zonesLayerGroup.eachLayer(function(layer) {
+            if (layer.zoneData && layer.zoneData.id === highlightedZoneId) {
+                layer.closeTooltip();
+            }
+        });
+    }
+
+    /**
      * Remove highlight from all polygons of the currently highlighted zone
      */
     function unhighlightZonePolygons() {
+        _clearUnhighlightTimer();
         if (highlightedZoneId === null) return;
         const prevId = highlightedZoneId;
         highlightedZoneId = null;
-        // Re-apply current filter state instead of blindly restoring originalStyle
+        // Immediately reset the highlighted zone's style
+        zonesLayerGroup.eachLayer(function(layer) {
+            if (layer.zoneData && layer.zoneData.id === prevId) {
+                layer.setStyle(layer.originalStyle || defaultStyle);
+            }
+        });
+        // Re-apply filter state for all zones
         if (typeof window.applyMapFilters === 'function') {
             window.applyMapFilters();
-        } else {
-            zonesLayerGroup.eachLayer(function(layer) {
-                if (layer.zoneData && layer.zoneData.id === prevId) {
-                    layer.setStyle(layer.originalStyle || defaultStyle);
-                }
-            });
         }
     }
 
@@ -1209,6 +1255,7 @@
      * @param {Event} e - Leaflet event
      */
     function handleMouseOver(e) {
+        _clearUnhighlightTimer();
         const layer = e.target;
         const zoneId = layer.zoneData?.id;
         if (zoneId) highlightZonePolygons(zoneId);
@@ -1220,7 +1267,12 @@
      */
     function handleMouseOut(e) {
         e.target.closeTooltip();
-        unhighlightZonePolygons();
+        // Use a short delay so moving between polygons of the same zone doesn't flicker,
+        // and as a safety net if Leaflet misses the out event
+        _unhighlightTimer = setTimeout(function() {
+            closeHighlightedTooltips();
+            unhighlightZonePolygons();
+        }, 80);
     }
 
     /**
