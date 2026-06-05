@@ -1802,5 +1802,15 @@ document.addEventListener('DOMContentLoaded', function() {
         document.getElementById('sidebarExpandBtn').classList.add('visible');
     }
 });
+
+// Mobile FAB: quick link to mobile home
+if ('ontouchstart' in window || window.innerWidth <= 768) {
+    const fab = document.createElement('a');
+    fab.href = '{% url "core:mobile_home" %}';
+    fab.style.cssText = 'position:fixed;bottom:24px;right:24px;width:52px;height:52px;border-radius:50%;background:#2D6A4F;color:#fff;display:flex;align-items:center;justify-content:center;font-size:1.6em;text-decoration:none;box-shadow:0 4px 12px rgba(0,0,0,0.25);z-index:999;';
+    fab.title = '功能菜单';
+    fab.innerHTML = '&#9776;';
+    document.body.appendChild(fab);
+}
 </script>
 {% endblock %}

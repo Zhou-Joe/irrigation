@@ -1,0 +1,3442 @@
+[
+{
+  "model": "core.workcategory",
+  "pk": 10,
+  "fields": {
+    "name": "常规维护",
+    "code": "routine_maint",
+    "parent": null,
+    "order": 1,
+    "active": true,
+    "created_at": "2026-06-03T03:16:20.395Z",
+    "updated_at": "2026-06-03T03:16:20.395Z"
+  }
+},
+{
+  "model": "core.workcategory",
+  "pk": 11,
+  "fields": {
+    "name": "巡检",
+    "code": "routine_maint.inspect",
+    "parent": 10,
+    "order": 1,
+    "active": true,
+    "created_at": "2026-06-03T03:16:20.404Z",
+    "updated_at": "2026-06-03T03:16:20.404Z"
+  }
+},
+{
+  "model": "core.workcategory",
+  "pk": 12,
+  "fields": {
+    "name": "维修",
+    "code": "routine_maint.repair",
+    "parent": 10,
+    "order": 2,
+    "active": true,
+    "created_at": "2026-06-03T03:16:20.411Z",
+    "updated_at": "2026-06-03T03:16:20.411Z"
+  }
+},
+{
+  "model": "core.workcategory",
+  "pk": 13,
+  "fields": {
+    "name": "内场重点区域",
+    "code": "routine_maint.priority_area",
+    "parent": 10,
+    "order": 3,
+    "active": true,
+    "created_at": "2026-06-03T03:16:20.417Z",
+    "updated_at": "2026-06-03T03:16:20.417Z"
+  }
+},
+{
+  "model": "core.workcategory",
+  "pk": 14,
+  "fields": {
+    "name": "待开发...继续叠加计划性维护任务(PM工单)",
+    "code": "routine_maint.pm",
+    "parent": 10,
+    "order": 99,
+    "active": true,
+    "created_at": "2026-06-03T03:16:20.423Z",
+    "updated_at": "2026-06-03T03:16:20.423Z"
+  }
+},
+{
+  "model": "core.workcategory",
+  "pk": 15,
+  "fields": {
+    "name": "项目配合",
+    "code": "project_support",
+    "parent": null,
+    "order": 2,
+    "active": true,
+    "created_at": "2026-06-03T03:16:20.429Z",
+    "updated_at": "2026-06-03T03:16:20.429Z"
+  }
+},
+{
+  "model": "core.workcategory",
+  "pk": 16,
+  "fields": {
+    "name": "FAM项目",
+    "code": "project_support.fam",
+    "parent": 15,
+    "order": 1,
+    "active": true,
+    "created_at": "2026-06-03T03:16:20.435Z",
+    "updated_at": "2026-06-03T03:16:20.435Z"
+  }
+},
+{
+  "model": "core.workcategory",
+  "pk": 17,
+  "fields": {
+    "name": "WDI项目",
+    "code": "project_support.wdi",
+    "parent": 15,
+    "order": 2,
+    "active": true,
+    "created_at": "2026-06-03T03:16:20.442Z",
+    "updated_at": "2026-06-03T03:16:20.442Z"
+  }
+},
+{
+  "model": "core.workcategory",
+  "pk": 18,
+  "fields": {
+    "name": "园艺项目",
+    "code": "project_support.horticulture",
+    "parent": 15,
+    "order": 3,
+    "active": true,
+    "created_at": "2026-06-03T03:16:20.447Z",
+    "updated_at": "2026-06-03T03:16:20.447Z"
+  }
+},
+{
+  "model": "core.workcategory",
+  "pk": 19,
+  "fields": {
+    "name": "其他项目",
+    "code": "project_support.other",
+    "parent": 15,
+    "order": 4,
+    "active": true,
+    "created_at": "2026-06-03T03:16:20.454Z",
+    "updated_at": "2026-06-03T03:16:20.454Z"
+  }
+},
+{
+  "model": "core.workcategory",
+  "pk": 20,
+  "fields": {
+    "name": "项目阶段",
+    "code": "project_support.phase",
+    "parent": 15,
+    "order": 5,
+    "active": true,
+    "created_at": "2026-06-03T03:16:20.459Z",
+    "updated_at": "2026-06-03T03:16:20.459Z"
+  }
+},
+{
+  "model": "core.workcategory",
+  "pk": 21,
+  "fields": {
+    "name": "现场跟进",
+    "code": "project_support.followup",
+    "parent": 15,
+    "order": 6,
+    "active": true,
+    "created_at": "2026-06-03T03:16:20.464Z",
+    "updated_at": "2026-06-03T03:16:20.464Z"
+  }
+},
+{
+  "model": "core.workcategory",
+  "pk": 22,
+  "fields": {
+    "name": "改支管喷头",
+    "code": "project_support.modify_pipe",
+    "parent": 15,
+    "order": 7,
+    "active": true,
+    "created_at": "2026-06-03T03:16:20.470Z",
+    "updated_at": "2026-06-03T03:16:20.470Z"
+  }
+},
+{
+  "model": "core.workcategory",
+  "pk": 23,
+  "fields": {
+    "name": "拆支管喷头",
+    "code": "project_support.remove_pipe",
+    "parent": 15,
+    "order": 8,
+    "active": true,
+    "created_at": "2026-06-03T03:16:20.477Z",
+    "updated_at": "2026-06-03T03:16:20.477Z"
+  }
+},
+{
+  "model": "core.workcategory",
+  "pk": 24,
+  "fields": {
+    "name": "恢复支管喷头",
+    "code": "project_support.restore_pipe",
+    "parent": 15,
+    "order": 9,
+    "active": true,
+    "created_at": "2026-06-03T03:16:20.482Z",
+    "updated_at": "2026-06-03T03:16:20.482Z"
+  }
+},
+{
+  "model": "core.workcategory",
+  "pk": 25,
+  "fields": {
+    "name": "报修应急",
+    "code": "repair_emergency",
+    "parent": null,
+    "order": 3,
+    "active": true,
+    "created_at": "2026-06-03T03:16:20.487Z",
+    "updated_at": "2026-06-03T03:16:20.487Z"
+  }
+},
+{
+  "model": "core.workcategory",
+  "pk": 26,
+  "fields": {
+    "name": "仓库整理",
+    "code": "warehouse",
+    "parent": null,
+    "order": 4,
+    "active": true,
+    "created_at": "2026-06-03T03:16:20.494Z",
+    "updated_at": "2026-06-03T03:16:20.494Z"
+  }
+},
+{
+  "model": "core.workcategory",
+  "pk": 27,
+  "fields": {
+    "name": "盘点库存",
+    "code": "warehouse.inventory",
+    "parent": 26,
+    "order": 1,
+    "active": true,
+    "created_at": "2026-06-03T03:16:20.499Z",
+    "updated_at": "2026-06-03T03:16:20.499Z"
+  }
+},
+{
+  "model": "core.workcategory",
+  "pk": 28,
+  "fields": {
+    "name": "清理回收材料",
+    "code": "warehouse.recycle",
+    "parent": 26,
+    "order": 2,
+    "active": true,
+    "created_at": "2026-06-03T03:16:20.506Z",
+    "updated_at": "2026-06-03T03:16:20.506Z"
+  }
+},
+{
+  "model": "core.workcategory",
+  "pk": 29,
+  "fields": {
+    "name": "材料加工",
+    "code": "warehouse.process",
+    "parent": 26,
+    "order": 3,
+    "active": true,
+    "created_at": "2026-06-03T03:16:20.511Z",
+    "updated_at": "2026-06-03T03:16:20.511Z"
+  }
+},
+{
+  "model": "core.workcategory",
+  "pk": 30,
+  "fields": {
+    "name": "仓库清理",
+    "code": "warehouse.cleanup",
+    "parent": 26,
+    "order": 4,
+    "active": true,
+    "created_at": "2026-06-03T03:16:20.518Z",
+    "updated_at": "2026-06-03T03:16:20.518Z"
+  }
+},
+{
+  "model": "core.workcategory",
+  "pk": 31,
+  "fields": {
+    "name": "绿化排水",
+    "code": "green_drainage",
+    "parent": null,
+    "order": 5,
+    "active": true,
+    "created_at": "2026-06-03T03:16:20.523Z",
+    "updated_at": "2026-06-03T03:16:20.523Z"
+  }
+},
+{
+  "model": "core.workcategory",
+  "pk": 32,
+  "fields": {
+    "name": "绿化种树看地锚位置",
+    "code": "green_drainage.tree_anchor",
+    "parent": 31,
+    "order": 1,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.211Z",
+    "updated_at": "2026-06-03T03:15:24.211Z"
+  }
+},
+{
+  "model": "core.workcategory",
+  "pk": 33,
+  "fields": {
+    "name": "绿化改造标记喷头",
+    "code": "green_drainage.renovate_mark",
+    "parent": 31,
+    "order": 2,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.223Z",
+    "updated_at": "2026-06-03T03:15:24.223Z"
+  }
+},
+{
+  "model": "core.workcategory",
+  "pk": 34,
+  "fields": {
+    "name": "绿化换苗检查喷洒",
+    "code": "green_drainage.seedling_spray",
+    "parent": 31,
+    "order": 3,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.236Z",
+    "updated_at": "2026-06-03T03:15:24.236Z"
+  }
+},
+{
+  "model": "core.workcategory",
+  "pk": 35,
+  "fields": {
+    "name": "绿化换苗临时浇水",
+    "code": "green_drainage.seedling_temp",
+    "parent": 31,
+    "order": 4,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.249Z",
+    "updated_at": "2026-06-03T03:15:24.249Z"
+  }
+},
+{
+  "model": "core.workcategory",
+  "pk": 36,
+  "fields": {
+    "name": "植保打药临时浇水",
+    "code": "green_drainage.pesticide_temp",
+    "parent": 31,
+    "order": 5,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.258Z",
+    "updated_at": "2026-06-03T03:15:24.258Z"
+  }
+},
+{
+  "model": "core.workcategory",
+  "pk": 37,
+  "fields": {
+    "name": "草坪打孔标记喷头",
+    "code": "green_drainage.aeration_mark",
+    "parent": 31,
+    "order": 6,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.264Z",
+    "updated_at": "2026-06-03T03:15:24.264Z"
+  }
+},
+{
+  "model": "core.workcategory",
+  "pk": 38,
+  "fields": {
+    "name": "草坪铺沙临时浇水",
+    "code": "green_drainage.sand_temp",
+    "parent": 31,
+    "order": 7,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.269Z",
+    "updated_at": "2026-06-03T03:15:24.269Z"
+  }
+},
+{
+  "model": "core.workcategory",
+  "pk": 39,
+  "fields": {
+    "name": "草籽交播临时浇水",
+    "code": "green_drainage.overseed_temp",
+    "parent": 31,
+    "order": 8,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.275Z",
+    "updated_at": "2026-06-03T03:15:24.275Z"
+  }
+},
+{
+  "model": "core.workcategory",
+  "pk": 40,
+  "fields": {
+    "name": "学习提升",
+    "code": "learning",
+    "parent": null,
+    "order": 6,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.282Z",
+    "updated_at": "2026-06-03T03:15:24.282Z"
+  }
+},
+{
+  "model": "core.workcategory",
+  "pk": 41,
+  "fields": {
+    "name": "CAD绘图",
+    "code": "learning.cad",
+    "parent": 40,
+    "order": 1,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.288Z",
+    "updated_at": "2026-06-03T03:15:24.288Z"
+  }
+},
+{
+  "model": "core.workcategory",
+  "pk": 42,
+  "fields": {
+    "name": "灌溉设计",
+    "code": "learning.irrigation_design",
+    "parent": 40,
+    "order": 2,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.293Z",
+    "updated_at": "2026-06-03T03:15:24.293Z"
+  }
+},
+{
+  "model": "core.workcategory",
+  "pk": 43,
+  "fields": {
+    "name": "线上培训",
+    "code": "learning.online",
+    "parent": 40,
+    "order": 3,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.300Z",
+    "updated_at": "2026-06-03T03:15:24.300Z"
+  }
+},
+{
+  "model": "core.workcategory",
+  "pk": 44,
+  "fields": {
+    "name": "线下培训",
+    "code": "learning.offline",
+    "parent": 40,
+    "order": 4,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.306Z",
+    "updated_at": "2026-06-03T03:15:24.306Z"
+  }
+},
+{
+  "model": "core.workcategory",
+  "pk": 45,
+  "fields": {
+    "name": "灌溉管理开发",
+    "code": "irrigation_dev",
+    "parent": null,
+    "order": 7,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.313Z",
+    "updated_at": "2026-06-03T03:15:24.313Z"
+  }
+},
+{
+  "model": "core.workcategory",
+  "pk": 46,
+  "fields": {
+    "name": "色块图绑点",
+    "code": "irrigation_dev.color_bind",
+    "parent": 45,
+    "order": 1,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.320Z",
+    "updated_at": "2026-06-03T03:15:24.320Z"
+  }
+},
+{
+  "model": "core.workcategory",
+  "pk": 47,
+  "fields": {
+    "name": "输出板维修",
+    "code": "irrigation_dev.output_board",
+    "parent": 45,
+    "order": 2,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.326Z",
+    "updated_at": "2026-06-03T03:15:24.326Z"
+  }
+},
+{
+  "model": "core.workcategory",
+  "pk": 48,
+  "fields": {
+    "name": "通讯板维修",
+    "code": "irrigation_dev.comm_board",
+    "parent": 45,
+    "order": 3,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.332Z",
+    "updated_at": "2026-06-03T03:15:24.332Z"
+  }
+},
+{
+  "model": "core.workcategory",
+  "pk": 49,
+  "fields": {
+    "name": "主面板维修",
+    "code": "irrigation_dev.main_board",
+    "parent": 45,
+    "order": 4,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.339Z",
+    "updated_at": "2026-06-03T03:15:24.339Z"
+  }
+},
+{
+  "model": "core.workcategory",
+  "pk": 50,
+  "fields": {
+    "name": "CCU维修",
+    "code": "irrigation_dev.ccu",
+    "parent": 45,
+    "order": 5,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.346Z",
+    "updated_at": "2026-06-03T03:15:24.346Z"
+  }
+},
+{
+  "model": "core.workcategory",
+  "pk": 51,
+  "fields": {
+    "name": "团队管理",
+    "code": "team_mgmt",
+    "parent": null,
+    "order": 8,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.353Z",
+    "updated_at": "2026-06-03T03:15:24.353Z"
+  }
+},
+{
+  "model": "core.workcategory",
+  "pk": 52,
+  "fields": {
+    "name": "开会交流",
+    "code": "team_mgmt.meeting",
+    "parent": 51,
+    "order": 1,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.361Z",
+    "updated_at": "2026-06-03T03:15:24.361Z"
+  }
+},
+{
+  "model": "core.workcategory",
+  "pk": 53,
+  "fields": {
+    "name": "常规配合",
+    "code": "routine_support",
+    "parent": null,
+    "order": 9,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.368Z",
+    "updated_at": "2026-06-03T03:15:24.368Z"
+  }
+},
+{
+  "model": "core.workcategory",
+  "pk": 54,
+  "fields": {
+    "name": "绿化种树看地锚位置",
+    "code": "routine_support.tree_anchor",
+    "parent": 53,
+    "order": 1,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.376Z",
+    "updated_at": "2026-06-03T03:15:24.376Z"
+  }
+},
+{
+  "model": "core.workcategory",
+  "pk": 55,
+  "fields": {
+    "name": "绿化改造标记喷头",
+    "code": "routine_support.renovate_mark",
+    "parent": 53,
+    "order": 2,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.383Z",
+    "updated_at": "2026-06-03T03:15:24.383Z"
+  }
+},
+{
+  "model": "core.workcategory",
+  "pk": 56,
+  "fields": {
+    "name": "绿化换苗检查喷洒",
+    "code": "routine_support.seedling_spray",
+    "parent": 53,
+    "order": 3,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.390Z",
+    "updated_at": "2026-06-03T03:15:24.390Z"
+  }
+},
+{
+  "model": "core.workcategory",
+  "pk": 57,
+  "fields": {
+    "name": "绿化换苗临时浇水",
+    "code": "routine_support.seedling_temp",
+    "parent": 53,
+    "order": 4,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.397Z",
+    "updated_at": "2026-06-03T03:15:24.397Z"
+  }
+},
+{
+  "model": "core.workcategory",
+  "pk": 58,
+  "fields": {
+    "name": "植保打药临时浇水",
+    "code": "routine_support.pesticide_temp",
+    "parent": 53,
+    "order": 5,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.405Z",
+    "updated_at": "2026-06-03T03:15:24.405Z"
+  }
+},
+{
+  "model": "core.workcategory",
+  "pk": 59,
+  "fields": {
+    "name": "草坪打孔标记喷头",
+    "code": "routine_support.aeration_mark",
+    "parent": 53,
+    "order": 6,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.412Z",
+    "updated_at": "2026-06-03T03:15:24.412Z"
+  }
+},
+{
+  "model": "core.workcategory",
+  "pk": 60,
+  "fields": {
+    "name": "草坪铺沙临时浇水",
+    "code": "routine_support.sand_temp",
+    "parent": 53,
+    "order": 7,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.419Z",
+    "updated_at": "2026-06-03T03:15:24.419Z"
+  }
+},
+{
+  "model": "core.workcategory",
+  "pk": 61,
+  "fields": {
+    "name": "草籽交播临时浇水",
+    "code": "routine_support.overseed_temp",
+    "parent": 53,
+    "order": 8,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.426Z",
+    "updated_at": "2026-06-03T03:15:24.426Z"
+  }
+},
+{
+  "model": "core.faultcategory",
+  "pk": 34,
+  "fields": {
+    "name_zh": "喷头",
+    "name_en": "",
+    "order": 1,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.434Z",
+    "updated_at": "2026-06-03T03:15:24.434Z"
+  }
+},
+{
+  "model": "core.faultcategory",
+  "pk": 35,
+  "fields": {
+    "name_zh": "铰接",
+    "name_en": "",
+    "order": 2,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.565Z",
+    "updated_at": "2026-06-03T03:15:24.565Z"
+  }
+},
+{
+  "model": "core.faultcategory",
+  "pk": 36,
+  "fields": {
+    "name_zh": "喷头调整",
+    "name_en": "",
+    "order": 3,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.603Z",
+    "updated_at": "2026-06-03T03:15:24.603Z"
+  }
+},
+{
+  "model": "core.faultcategory",
+  "pk": 37,
+  "fields": {
+    "name_zh": "喷头立管",
+    "name_en": "",
+    "order": 4,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.662Z",
+    "updated_at": "2026-06-03T03:15:24.662Z"
+  }
+},
+{
+  "model": "core.faultcategory",
+  "pk": 38,
+  "fields": {
+    "name_zh": "喷头加长杆",
+    "name_en": "",
+    "order": 5,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.681Z",
+    "updated_at": "2026-06-03T03:15:24.681Z"
+  }
+},
+{
+  "model": "core.faultcategory",
+  "pk": 39,
+  "fields": {
+    "name_zh": "主管隔离阀",
+    "name_en": "",
+    "order": 6,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.701Z",
+    "updated_at": "2026-06-03T03:15:24.701Z"
+  }
+},
+{
+  "model": "core.faultcategory",
+  "pk": 40,
+  "fields": {
+    "name_zh": "电磁阀及阀箱",
+    "name_en": "",
+    "order": 7,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.844Z",
+    "updated_at": "2026-06-03T03:15:24.844Z"
+  }
+},
+{
+  "model": "core.faultcategory",
+  "pk": 41,
+  "fields": {
+    "name_zh": "CCU",
+    "name_en": "",
+    "order": 8,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.985Z",
+    "updated_at": "2026-06-03T03:15:24.985Z"
+  }
+},
+{
+  "model": "core.faultcategory",
+  "pk": 42,
+  "fields": {
+    "name_zh": "控制器",
+    "name_en": "",
+    "order": 9,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.059Z",
+    "updated_at": "2026-06-03T03:15:25.059Z"
+  }
+},
+{
+  "model": "core.faultcategory",
+  "pk": 43,
+  "fields": {
+    "name_zh": "中控",
+    "name_en": "",
+    "order": 10,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.112Z",
+    "updated_at": "2026-06-03T03:15:25.112Z"
+  }
+},
+{
+  "model": "core.faultcategory",
+  "pk": 44,
+  "fields": {
+    "name_zh": "遥控器",
+    "name_en": "",
+    "order": 11,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.166Z",
+    "updated_at": "2026-06-03T03:15:25.166Z"
+  }
+},
+{
+  "model": "core.faultcategory",
+  "pk": 45,
+  "fields": {
+    "name_zh": "冲洗阀",
+    "name_en": "",
+    "order": 12,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.191Z",
+    "updated_at": "2026-06-03T03:15:25.191Z"
+  }
+},
+{
+  "model": "core.faultcategory",
+  "pk": 46,
+  "fields": {
+    "name_zh": "取水阀",
+    "name_en": "",
+    "order": 13,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.273Z",
+    "updated_at": "2026-06-03T03:15:25.273Z"
+  }
+},
+{
+  "model": "core.faultcategory",
+  "pk": 47,
+  "fields": {
+    "name_zh": "POC",
+    "name_en": "",
+    "order": 14,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.309Z",
+    "updated_at": "2026-06-03T03:15:25.309Z"
+  }
+},
+{
+  "model": "core.faultcategory",
+  "pk": 48,
+  "fields": {
+    "name_zh": "主管",
+    "name_en": "",
+    "order": 15,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.412Z",
+    "updated_at": "2026-06-03T03:15:25.412Z"
+  }
+},
+{
+  "model": "core.faultcategory",
+  "pk": 49,
+  "fields": {
+    "name_zh": "角阀",
+    "name_en": "",
+    "order": 16,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.494Z",
+    "updated_at": "2026-06-03T03:15:25.494Z"
+  }
+},
+{
+  "model": "core.faultcategory",
+  "pk": 50,
+  "fields": {
+    "name_zh": "支管",
+    "name_en": "",
+    "order": 17,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.506Z",
+    "updated_at": "2026-06-03T03:15:25.506Z"
+  }
+},
+{
+  "model": "core.faultcategory",
+  "pk": 51,
+  "fields": {
+    "name_zh": "雨量桶",
+    "name_en": "",
+    "order": 18,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.531Z",
+    "updated_at": "2026-06-03T03:15:25.531Z"
+  }
+},
+{
+  "model": "core.faultcategory",
+  "pk": 52,
+  "fields": {
+    "name_zh": "流量计",
+    "name_en": "",
+    "order": 19,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.568Z",
+    "updated_at": "2026-06-03T03:15:25.568Z"
+  }
+},
+{
+  "model": "core.faultcategory",
+  "pk": 53,
+  "fields": {
+    "name_zh": "控制线",
+    "name_en": "",
+    "order": 20,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.599Z",
+    "updated_at": "2026-06-03T03:15:25.599Z"
+  }
+},
+{
+  "model": "core.faultcategory",
+  "pk": 54,
+  "fields": {
+    "name_zh": "车撞破坏",
+    "name_en": "",
+    "order": 21,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.612Z",
+    "updated_at": "2026-06-03T03:15:25.612Z"
+  }
+},
+{
+  "model": "core.faultcategory",
+  "pk": 55,
+  "fields": {
+    "name_zh": "施工破坏",
+    "name_en": "",
+    "order": 22,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.624Z",
+    "updated_at": "2026-06-03T03:15:25.624Z"
+  }
+},
+{
+  "model": "core.faultcategory",
+  "pk": 56,
+  "fields": {
+    "name_zh": "现场水分",
+    "name_en": "",
+    "order": 23,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.638Z",
+    "updated_at": "2026-06-03T03:15:25.638Z"
+  }
+},
+{
+  "model": "core.faultcategory",
+  "pk": 57,
+  "fields": {
+    "name_zh": "树根损坏",
+    "name_en": "",
+    "order": 24,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.672Z",
+    "updated_at": "2026-06-03T03:15:25.672Z"
+  }
+},
+{
+  "model": "core.faultcategory",
+  "pk": 58,
+  "fields": {
+    "name_zh": "滴灌损坏",
+    "name_en": "",
+    "order": 25,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.685Z",
+    "updated_at": "2026-06-03T03:15:25.685Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 165,
+  "fields": {
+    "category": 34,
+    "name_zh": "喷头盖掉/松/坏",
+    "name_en": "",
+    "code": "喷头_0",
+    "order": 1,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.441Z",
+    "updated_at": "2026-06-03T03:15:24.441Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 166,
+  "fields": {
+    "category": 34,
+    "name_zh": "喷头脱落",
+    "name_en": "",
+    "code": "喷头_1",
+    "order": 2,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.449Z",
+    "updated_at": "2026-06-03T03:15:24.449Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 167,
+  "fields": {
+    "category": 34,
+    "name_zh": "喷嘴丢/坏",
+    "name_en": "",
+    "code": "喷头_2",
+    "order": 3,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.458Z",
+    "updated_at": "2026-06-03T03:15:24.458Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 168,
+  "fields": {
+    "category": 34,
+    "name_zh": "喷芯掉或坏",
+    "name_en": "",
+    "code": "喷头_3",
+    "order": 4,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.466Z",
+    "updated_at": "2026-06-03T03:15:24.467Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 169,
+  "fields": {
+    "category": 34,
+    "name_zh": "喷嘴无机物堵",
+    "name_en": "",
+    "code": "喷头_4",
+    "order": 5,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.472Z",
+    "updated_at": "2026-06-03T03:15:24.472Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 170,
+  "fields": {
+    "category": 34,
+    "name_zh": "喷嘴螺蛳苗堵",
+    "name_en": "",
+    "code": "喷头_5",
+    "order": 6,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.479Z",
+    "updated_at": "2026-06-03T03:15:24.479Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 171,
+  "fields": {
+    "category": 34,
+    "name_zh": "弹簧丢/伸缩卡",
+    "name_en": "",
+    "code": "喷头_6",
+    "order": 7,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.485Z",
+    "updated_at": "2026-06-03T03:15:24.485Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 172,
+  "fields": {
+    "category": 34,
+    "name_zh": "止溢胶圈变形/缺失漏水",
+    "name_en": "",
+    "code": "喷头_7",
+    "order": 8,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.492Z",
+    "updated_at": "2026-06-03T03:15:24.492Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 173,
+  "fields": {
+    "category": 34,
+    "name_zh": "易坏喷头加套管",
+    "name_en": "",
+    "code": "喷头_8",
+    "order": 9,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.497Z",
+    "updated_at": "2026-06-03T03:15:24.497Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 174,
+  "fields": {
+    "category": 34,
+    "name_zh": "养护作业机械损坏喷头",
+    "name_en": "",
+    "code": "喷头_9",
+    "order": 10,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.505Z",
+    "updated_at": "2026-06-03T03:15:24.505Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 175,
+  "fields": {
+    "category": 34,
+    "name_zh": "喷头断/掉",
+    "name_en": "",
+    "code": "喷头_10",
+    "order": 11,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.512Z",
+    "updated_at": "2026-06-03T03:15:24.512Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 176,
+  "fields": {
+    "category": 34,
+    "name_zh": "壳体裂/掉",
+    "name_en": "",
+    "code": "喷头_11",
+    "order": 12,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.519Z",
+    "updated_at": "2026-06-03T03:15:24.519Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 177,
+  "fields": {
+    "category": 34,
+    "name_zh": "喷头丝口坏",
+    "name_en": "",
+    "code": "喷头_12",
+    "order": 13,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.525Z",
+    "updated_at": "2026-06-03T03:15:24.525Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 178,
+  "fields": {
+    "category": 34,
+    "name_zh": "喷头被埋",
+    "name_en": "",
+    "code": "喷头_13",
+    "order": 14,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.532Z",
+    "updated_at": "2026-06-03T03:15:24.532Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 179,
+  "fields": {
+    "category": 34,
+    "name_zh": "喷头冻坏",
+    "name_en": "",
+    "code": "喷头_14",
+    "order": 15,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.542Z",
+    "updated_at": "2026-06-03T03:15:24.542Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 180,
+  "fields": {
+    "category": 34,
+    "name_zh": "喷嘴不匹配",
+    "name_en": "",
+    "code": "喷头_15",
+    "order": 16,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.550Z",
+    "updated_at": "2026-06-03T03:15:24.550Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 181,
+  "fields": {
+    "category": 34,
+    "name_zh": "喷嘴角度不对",
+    "name_en": "",
+    "code": "喷头_16",
+    "order": 17,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.559Z",
+    "updated_at": "2026-06-03T03:15:24.559Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 182,
+  "fields": {
+    "category": 35,
+    "name_zh": "黑弯头断",
+    "name_en": "",
+    "code": "铰接_0",
+    "order": 1,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.571Z",
+    "updated_at": "2026-06-03T03:15:24.571Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 183,
+  "fields": {
+    "category": 35,
+    "name_zh": "树根挤压破坏",
+    "name_en": "",
+    "code": "铰接_1",
+    "order": 2,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.577Z",
+    "updated_at": "2026-06-03T03:15:24.577Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 184,
+  "fields": {
+    "category": 35,
+    "name_zh": "黑弯头丝坏",
+    "name_en": "",
+    "code": "铰接_2",
+    "order": 3,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.584Z",
+    "updated_at": "2026-06-03T03:15:24.584Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 185,
+  "fields": {
+    "category": 35,
+    "name_zh": "三通坏",
+    "name_en": "",
+    "code": "铰接_3",
+    "order": 4,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.590Z",
+    "updated_at": "2026-06-03T03:15:24.590Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 186,
+  "fields": {
+    "category": 35,
+    "name_zh": "弯头断在三通里",
+    "name_en": "",
+    "code": "铰接_4",
+    "order": 5,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.596Z",
+    "updated_at": "2026-06-03T03:15:24.596Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 187,
+  "fields": {
+    "category": 36,
+    "name_zh": "加高",
+    "name_en": "",
+    "code": "喷头调整_0",
+    "order": 1,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.609Z",
+    "updated_at": "2026-06-03T03:15:24.609Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 188,
+  "fields": {
+    "category": 36,
+    "name_zh": "降低",
+    "name_en": "",
+    "code": "喷头调整_1",
+    "order": 2,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.616Z",
+    "updated_at": "2026-06-03T03:15:24.616Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 189,
+  "fields": {
+    "category": 36,
+    "name_zh": "加装喷头",
+    "name_en": "",
+    "code": "喷头调整_2",
+    "order": 3,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.623Z",
+    "updated_at": "2026-06-03T03:15:24.623Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 190,
+  "fields": {
+    "category": 36,
+    "name_zh": "改喷头",
+    "name_en": "",
+    "code": "喷头调整_3",
+    "order": 4,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.629Z",
+    "updated_at": "2026-06-03T03:15:24.629Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 191,
+  "fields": {
+    "category": 36,
+    "name_zh": "移位/歪斜",
+    "name_en": "",
+    "code": "喷头调整_4",
+    "order": 5,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.636Z",
+    "updated_at": "2026-06-03T03:15:24.636Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 192,
+  "fields": {
+    "category": 36,
+    "name_zh": "主动埋/拆/堵喷头",
+    "name_en": "",
+    "code": "喷头调整_5",
+    "order": 6,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.643Z",
+    "updated_at": "2026-06-03T03:15:24.643Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 193,
+  "fields": {
+    "category": 36,
+    "name_zh": "恢复锁闭的喷嘴",
+    "name_en": "",
+    "code": "喷头调整_6",
+    "order": 7,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.648Z",
+    "updated_at": "2026-06-03T03:15:24.648Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 194,
+  "fields": {
+    "category": 36,
+    "name_zh": "堵/调喷嘴/取消喷头",
+    "name_en": "",
+    "code": "喷头调整_7",
+    "order": 8,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.656Z",
+    "updated_at": "2026-06-03T03:15:24.656Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 195,
+  "fields": {
+    "category": 37,
+    "name_zh": "断",
+    "name_en": "",
+    "code": "喷头立管_0",
+    "order": 1,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.669Z",
+    "updated_at": "2026-06-03T03:15:24.669Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 196,
+  "fields": {
+    "category": 37,
+    "name_zh": "脱落",
+    "name_en": "",
+    "code": "喷头立管_1",
+    "order": 2,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.675Z",
+    "updated_at": "2026-06-03T03:15:24.675Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 197,
+  "fields": {
+    "category": 38,
+    "name_zh": "断",
+    "name_en": "",
+    "code": "喷头加长杆_0",
+    "order": 1,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.688Z",
+    "updated_at": "2026-06-03T03:15:24.688Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 198,
+  "fields": {
+    "category": 38,
+    "name_zh": "脱落",
+    "name_en": "",
+    "code": "喷头加长杆_1",
+    "order": 2,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.694Z",
+    "updated_at": "2026-06-03T03:15:24.694Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 199,
+  "fields": {
+    "category": 39,
+    "name_zh": "卡死",
+    "name_en": "",
+    "code": "主管隔离阀_0",
+    "order": 1,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.707Z",
+    "updated_at": "2026-06-03T03:15:24.707Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 200,
+  "fields": {
+    "category": 39,
+    "name_zh": "关不了",
+    "name_en": "",
+    "code": "主管隔离阀_1",
+    "order": 2,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.713Z",
+    "updated_at": "2026-06-03T03:15:24.713Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 201,
+  "fields": {
+    "category": 39,
+    "name_zh": "调压器未装或坏",
+    "name_en": "",
+    "code": "主管隔离阀_2",
+    "order": 3,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.720Z",
+    "updated_at": "2026-06-03T03:15:24.720Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 202,
+  "fields": {
+    "category": 39,
+    "name_zh": "调压器堵",
+    "name_en": "",
+    "code": "主管隔离阀_3",
+    "order": 4,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.727Z",
+    "updated_at": "2026-06-03T03:15:24.727Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 203,
+  "fields": {
+    "category": 39,
+    "name_zh": "蜂巢",
+    "name_en": "",
+    "code": "主管隔离阀_4",
+    "order": 5,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.733Z",
+    "updated_at": "2026-06-03T03:15:24.733Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 204,
+  "fields": {
+    "category": 39,
+    "name_zh": "不能开/喷头无法弹起",
+    "name_en": "",
+    "code": "主管隔离阀_5",
+    "order": 6,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.739Z",
+    "updated_at": "2026-06-03T03:15:24.739Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 205,
+  "fields": {
+    "category": 39,
+    "name_zh": "电磁头烧",
+    "name_en": "",
+    "code": "主管隔离阀_6",
+    "order": 7,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.745Z",
+    "updated_at": "2026-06-03T03:15:24.745Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 206,
+  "fields": {
+    "category": 39,
+    "name_zh": "电磁阀进垃圾",
+    "name_en": "",
+    "code": "主管隔离阀_7",
+    "order": 8,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.752Z",
+    "updated_at": "2026-06-03T03:15:24.752Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 207,
+  "fields": {
+    "category": 39,
+    "name_zh": "电磁头松动/铁芯生锈",
+    "name_en": "",
+    "code": "主管隔离阀_8",
+    "order": 9,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.757Z",
+    "updated_at": "2026-06-03T03:15:24.757Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 208,
+  "fields": {
+    "category": 39,
+    "name_zh": "电磁阀关不住水",
+    "name_en": "",
+    "code": "主管隔离阀_9",
+    "order": 10,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.764Z",
+    "updated_at": "2026-06-03T03:15:24.764Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 209,
+  "fields": {
+    "category": 39,
+    "name_zh": "流量手柄断",
+    "name_en": "",
+    "code": "主管隔离阀_10",
+    "order": 11,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.769Z",
+    "updated_at": "2026-06-03T03:15:24.769Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 210,
+  "fields": {
+    "category": 39,
+    "name_zh": "电磁阀漏水",
+    "name_en": "",
+    "code": "主管隔离阀_11",
+    "order": 12,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.776Z",
+    "updated_at": "2026-06-03T03:15:24.776Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 211,
+  "fields": {
+    "category": 39,
+    "name_zh": "阀体有裂缝",
+    "name_en": "",
+    "code": "主管隔离阀_12",
+    "order": 13,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.782Z",
+    "updated_at": "2026-06-03T03:15:24.782Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 212,
+  "fields": {
+    "category": 39,
+    "name_zh": "球阀漏水",
+    "name_en": "",
+    "code": "主管隔离阀_13",
+    "order": 14,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.789Z",
+    "updated_at": "2026-06-03T03:15:24.789Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 213,
+  "fields": {
+    "category": 39,
+    "name_zh": "活接弯头漏水",
+    "name_en": "",
+    "code": "主管隔离阀_14",
+    "order": 15,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.796Z",
+    "updated_at": "2026-06-03T03:15:24.796Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 214,
+  "fields": {
+    "category": 39,
+    "name_zh": "主动关球阀",
+    "name_en": "",
+    "code": "主管隔离阀_15",
+    "order": 16,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.801Z",
+    "updated_at": "2026-06-03T03:15:24.801Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 215,
+  "fields": {
+    "category": 39,
+    "name_zh": "球阀被关",
+    "name_en": "",
+    "code": "主管隔离阀_16",
+    "order": 17,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.808Z",
+    "updated_at": "2026-06-03T03:15:24.808Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 216,
+  "fields": {
+    "category": 39,
+    "name_zh": "阀箱被埋/提升",
+    "name_en": "",
+    "code": "主管隔离阀_17",
+    "order": 18,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.813Z",
+    "updated_at": "2026-06-03T03:15:24.813Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 217,
+  "fields": {
+    "category": 39,
+    "name_zh": "降低阀门箱",
+    "name_en": "",
+    "code": "主管隔离阀_18",
+    "order": 19,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.820Z",
+    "updated_at": "2026-06-03T03:15:24.820Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 218,
+  "fields": {
+    "category": 39,
+    "name_zh": "密封/胶垫坏",
+    "name_en": "",
+    "code": "主管隔离阀_19",
+    "order": 20,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.825Z",
+    "updated_at": "2026-06-03T03:15:24.825Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 219,
+  "fields": {
+    "category": 39,
+    "name_zh": "阀箱损坏或丢失",
+    "name_en": "",
+    "code": "主管隔离阀_20",
+    "order": 21,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.832Z",
+    "updated_at": "2026-06-03T03:15:24.832Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 220,
+  "fields": {
+    "category": 39,
+    "name_zh": "控制线不通",
+    "name_en": "",
+    "code": "主管隔离阀_21",
+    "order": 22,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.837Z",
+    "updated_at": "2026-06-03T03:15:24.837Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 221,
+  "fields": {
+    "category": 40,
+    "name_zh": "卡死",
+    "name_en": "",
+    "code": "电磁阀及阀箱_0",
+    "order": 1,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.849Z",
+    "updated_at": "2026-06-03T03:15:24.849Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 222,
+  "fields": {
+    "category": 40,
+    "name_zh": "关不了",
+    "name_en": "",
+    "code": "电磁阀及阀箱_1",
+    "order": 2,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.855Z",
+    "updated_at": "2026-06-03T03:15:24.855Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 223,
+  "fields": {
+    "category": 40,
+    "name_zh": "调压器未装或坏",
+    "name_en": "",
+    "code": "电磁阀及阀箱_2",
+    "order": 3,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.861Z",
+    "updated_at": "2026-06-03T03:15:24.861Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 224,
+  "fields": {
+    "category": 40,
+    "name_zh": "调压器堵",
+    "name_en": "",
+    "code": "电磁阀及阀箱_3",
+    "order": 4,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.869Z",
+    "updated_at": "2026-06-03T03:15:24.869Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 225,
+  "fields": {
+    "category": 40,
+    "name_zh": "蜂巢",
+    "name_en": "",
+    "code": "电磁阀及阀箱_4",
+    "order": 5,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.877Z",
+    "updated_at": "2026-06-03T03:15:24.877Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 226,
+  "fields": {
+    "category": 40,
+    "name_zh": "不能开/喷头无法弹起",
+    "name_en": "",
+    "code": "电磁阀及阀箱_5",
+    "order": 6,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.884Z",
+    "updated_at": "2026-06-03T03:15:24.884Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 227,
+  "fields": {
+    "category": 40,
+    "name_zh": "电磁头烧",
+    "name_en": "",
+    "code": "电磁阀及阀箱_6",
+    "order": 7,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.891Z",
+    "updated_at": "2026-06-03T03:15:24.891Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 228,
+  "fields": {
+    "category": 40,
+    "name_zh": "电磁阀进垃圾",
+    "name_en": "",
+    "code": "电磁阀及阀箱_7",
+    "order": 8,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.898Z",
+    "updated_at": "2026-06-03T03:15:24.898Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 229,
+  "fields": {
+    "category": 40,
+    "name_zh": "电磁头松动/铁芯生锈",
+    "name_en": "",
+    "code": "电磁阀及阀箱_8",
+    "order": 9,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.905Z",
+    "updated_at": "2026-06-03T03:15:24.905Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 230,
+  "fields": {
+    "category": 40,
+    "name_zh": "电磁阀关不住水",
+    "name_en": "",
+    "code": "电磁阀及阀箱_9",
+    "order": 10,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.912Z",
+    "updated_at": "2026-06-03T03:15:24.912Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 231,
+  "fields": {
+    "category": 40,
+    "name_zh": "流量手柄断",
+    "name_en": "",
+    "code": "电磁阀及阀箱_10",
+    "order": 11,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.917Z",
+    "updated_at": "2026-06-03T03:15:24.917Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 232,
+  "fields": {
+    "category": 40,
+    "name_zh": "电磁阀漏水",
+    "name_en": "",
+    "code": "电磁阀及阀箱_11",
+    "order": 12,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.924Z",
+    "updated_at": "2026-06-03T03:15:24.924Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 233,
+  "fields": {
+    "category": 40,
+    "name_zh": "阀体有裂缝",
+    "name_en": "",
+    "code": "电磁阀及阀箱_12",
+    "order": 13,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.929Z",
+    "updated_at": "2026-06-03T03:15:24.929Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 234,
+  "fields": {
+    "category": 40,
+    "name_zh": "球阀漏水",
+    "name_en": "",
+    "code": "电磁阀及阀箱_13",
+    "order": 14,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.935Z",
+    "updated_at": "2026-06-03T03:15:24.935Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 235,
+  "fields": {
+    "category": 40,
+    "name_zh": "活接弯头漏水",
+    "name_en": "",
+    "code": "电磁阀及阀箱_14",
+    "order": 15,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.941Z",
+    "updated_at": "2026-06-03T03:15:24.941Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 236,
+  "fields": {
+    "category": 40,
+    "name_zh": "主动关球阀",
+    "name_en": "",
+    "code": "电磁阀及阀箱_15",
+    "order": 16,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.947Z",
+    "updated_at": "2026-06-03T03:15:24.947Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 237,
+  "fields": {
+    "category": 40,
+    "name_zh": "球阀被关",
+    "name_en": "",
+    "code": "电磁阀及阀箱_16",
+    "order": 17,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.953Z",
+    "updated_at": "2026-06-03T03:15:24.953Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 238,
+  "fields": {
+    "category": 40,
+    "name_zh": "阀箱被埋/提升",
+    "name_en": "",
+    "code": "电磁阀及阀箱_17",
+    "order": 18,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.959Z",
+    "updated_at": "2026-06-03T03:15:24.959Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 239,
+  "fields": {
+    "category": 40,
+    "name_zh": "降低阀门箱",
+    "name_en": "",
+    "code": "电磁阀及阀箱_18",
+    "order": 19,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.964Z",
+    "updated_at": "2026-06-03T03:15:24.964Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 240,
+  "fields": {
+    "category": 40,
+    "name_zh": "密封/胶垫坏",
+    "name_en": "",
+    "code": "电磁阀及阀箱_19",
+    "order": 20,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.970Z",
+    "updated_at": "2026-06-03T03:15:24.970Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 241,
+  "fields": {
+    "category": 40,
+    "name_zh": "阀箱损坏或丢失",
+    "name_en": "",
+    "code": "电磁阀及阀箱_20",
+    "order": 21,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.975Z",
+    "updated_at": "2026-06-03T03:15:24.975Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 242,
+  "fields": {
+    "category": 40,
+    "name_zh": "控制线不通",
+    "name_en": "",
+    "code": "电磁阀及阀箱_21",
+    "order": 22,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.980Z",
+    "updated_at": "2026-06-03T03:15:24.980Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 243,
+  "fields": {
+    "category": 41,
+    "name_zh": "通讯断",
+    "name_en": "",
+    "code": "CCU_0",
+    "order": 1,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.991Z",
+    "updated_at": "2026-06-03T03:15:24.991Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 244,
+  "fields": {
+    "category": 41,
+    "name_zh": "假数据",
+    "name_en": "",
+    "code": "CCU_1",
+    "order": 2,
+    "active": true,
+    "created_at": "2026-06-03T03:15:24.996Z",
+    "updated_at": "2026-06-03T03:15:24.997Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 245,
+  "fields": {
+    "category": 41,
+    "name_zh": "非中控",
+    "name_en": "",
+    "code": "CCU_2",
+    "order": 3,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.002Z",
+    "updated_at": "2026-06-03T03:15:25.002Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 246,
+  "fields": {
+    "category": 41,
+    "name_zh": "撞坏",
+    "name_en": "",
+    "code": "CCU_3",
+    "order": 4,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.009Z",
+    "updated_at": "2026-06-03T03:15:25.009Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 247,
+  "fields": {
+    "category": 41,
+    "name_zh": "电源断",
+    "name_en": "",
+    "code": "CCU_4",
+    "order": 5,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.015Z",
+    "updated_at": "2026-06-03T03:15:25.015Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 248,
+  "fields": {
+    "category": 41,
+    "name_zh": "控制柜进水",
+    "name_en": "",
+    "code": "CCU_5",
+    "order": 6,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.020Z",
+    "updated_at": "2026-06-03T03:15:25.020Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 249,
+  "fields": {
+    "category": 41,
+    "name_zh": "排线故障",
+    "name_en": "",
+    "code": "CCU_6",
+    "order": 7,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.025Z",
+    "updated_at": "2026-06-03T03:15:25.025Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 250,
+  "fields": {
+    "category": 41,
+    "name_zh": "液晶屏故障",
+    "name_en": "",
+    "code": "CCU_7",
+    "order": 8,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.032Z",
+    "updated_at": "2026-06-03T03:15:25.032Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 251,
+  "fields": {
+    "category": 41,
+    "name_zh": "拔线忘了恢复",
+    "name_en": "",
+    "code": "CCU_8",
+    "order": 9,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.040Z",
+    "updated_at": "2026-06-03T03:15:25.040Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 252,
+  "fields": {
+    "category": 41,
+    "name_zh": "线缆被打地锚损坏",
+    "name_en": "",
+    "code": "CCU_9",
+    "order": 10,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.045Z",
+    "updated_at": "2026-06-03T03:15:25.045Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 253,
+  "fields": {
+    "category": 41,
+    "name_zh": "其它故障",
+    "name_en": "",
+    "code": "CCU_10",
+    "order": 11,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.053Z",
+    "updated_at": "2026-06-03T03:15:25.053Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 254,
+  "fields": {
+    "category": 42,
+    "name_zh": "可控硅坏/异常输出",
+    "name_en": "",
+    "code": "控制器_0",
+    "order": 1,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.064Z",
+    "updated_at": "2026-06-03T03:15:25.064Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 255,
+  "fields": {
+    "category": 42,
+    "name_zh": "保险丝烧",
+    "name_en": "",
+    "code": "控制器_1",
+    "order": 2,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.069Z",
+    "updated_at": "2026-06-03T03:15:25.069Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 256,
+  "fields": {
+    "category": 42,
+    "name_zh": "PC反馈故障",
+    "name_en": "",
+    "code": "控制器_2",
+    "order": 3,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.075Z",
+    "updated_at": "2026-06-03T03:15:25.075Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 257,
+  "fields": {
+    "category": 42,
+    "name_zh": "CCU掉线",
+    "name_en": "",
+    "code": "控制器_3",
+    "order": 4,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.081Z",
+    "updated_at": "2026-06-03T03:15:25.081Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 258,
+  "fields": {
+    "category": 42,
+    "name_zh": "PC显示正常现场异常",
+    "name_en": "",
+    "code": "控制器_4",
+    "order": 5,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.087Z",
+    "updated_at": "2026-06-03T03:15:25.087Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 259,
+  "fields": {
+    "category": 42,
+    "name_zh": "故障灯闪",
+    "name_en": "",
+    "code": "控制器_5",
+    "order": 6,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.093Z",
+    "updated_at": "2026-06-03T03:15:25.093Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 260,
+  "fields": {
+    "category": 42,
+    "name_zh": "通讯故障",
+    "name_en": "",
+    "code": "控制器_6",
+    "order": 7,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.100Z",
+    "updated_at": "2026-06-03T03:15:25.100Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 261,
+  "fields": {
+    "category": 42,
+    "name_zh": "现场查中控反馈故障",
+    "name_en": "",
+    "code": "控制器_7",
+    "order": 8,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.105Z",
+    "updated_at": "2026-06-03T03:15:25.105Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 262,
+  "fields": {
+    "category": 43,
+    "name_zh": "该浇没浇",
+    "name_en": "",
+    "code": "中控_0",
+    "order": 1,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.117Z",
+    "updated_at": "2026-06-03T03:15:25.117Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 263,
+  "fields": {
+    "category": 43,
+    "name_zh": "显示没浇实浇",
+    "name_en": "",
+    "code": "中控_1",
+    "order": 2,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.122Z",
+    "updated_at": "2026-06-03T03:15:25.122Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 264,
+  "fields": {
+    "category": 43,
+    "name_zh": "继电器或电源或烧保险",
+    "name_en": "",
+    "code": "中控_2",
+    "order": 3,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.128Z",
+    "updated_at": "2026-06-03T03:15:25.128Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 265,
+  "fields": {
+    "category": 43,
+    "name_zh": "掉线",
+    "name_en": "",
+    "code": "中控_3",
+    "order": 4,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.133Z",
+    "updated_at": "2026-06-03T03:15:25.133Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 266,
+  "fields": {
+    "category": 43,
+    "name_zh": "反常流量",
+    "name_en": "",
+    "code": "中控_4",
+    "order": 5,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.139Z",
+    "updated_at": "2026-06-03T03:15:25.139Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 267,
+  "fields": {
+    "category": 43,
+    "name_zh": "无输出",
+    "name_en": "",
+    "code": "中控_5",
+    "order": 6,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.145Z",
+    "updated_at": "2026-06-03T03:15:25.145Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 268,
+  "fields": {
+    "category": 43,
+    "name_zh": "数据线不通",
+    "name_en": "",
+    "code": "中控_6",
+    "order": 7,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.152Z",
+    "updated_at": "2026-06-03T03:15:25.152Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 269,
+  "fields": {
+    "category": 43,
+    "name_zh": "App失灵",
+    "name_en": "",
+    "code": "中控_7",
+    "order": 8,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.159Z",
+    "updated_at": "2026-06-03T03:15:25.159Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 270,
+  "fields": {
+    "category": 44,
+    "name_zh": "未知开",
+    "name_en": "",
+    "code": "遥控器_0",
+    "order": 1,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.172Z",
+    "updated_at": "2026-06-03T03:15:25.172Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 271,
+  "fields": {
+    "category": 44,
+    "name_zh": "掉线",
+    "name_en": "",
+    "code": "遥控器_1",
+    "order": 2,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.179Z",
+    "updated_at": "2026-06-03T03:15:25.179Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 272,
+  "fields": {
+    "category": 44,
+    "name_zh": "数据异常",
+    "name_en": "",
+    "code": "遥控器_2",
+    "order": 3,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.185Z",
+    "updated_at": "2026-06-03T03:15:25.185Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 273,
+  "fields": {
+    "category": 45,
+    "name_zh": "卡石子/杂物漏水",
+    "name_en": "",
+    "code": "冲洗阀_0",
+    "order": 1,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.196Z",
+    "updated_at": "2026-06-03T03:15:25.197Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 274,
+  "fields": {
+    "category": 45,
+    "name_zh": "漏水查漏",
+    "name_en": "",
+    "code": "冲洗阀_1",
+    "order": 2,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.203Z",
+    "updated_at": "2026-06-03T03:15:25.203Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 275,
+  "fields": {
+    "category": 45,
+    "name_zh": "铜管钥匙破裂",
+    "name_en": "",
+    "code": "冲洗阀_2",
+    "order": 3,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.208Z",
+    "updated_at": "2026-06-03T03:15:25.208Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 276,
+  "fields": {
+    "category": 45,
+    "name_zh": "钥匙弯头坏",
+    "name_en": "",
+    "code": "冲洗阀_3",
+    "order": 4,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.213Z",
+    "updated_at": "2026-06-03T03:15:25.213Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 277,
+  "fields": {
+    "category": 45,
+    "name_zh": "排水堵",
+    "name_en": "",
+    "code": "冲洗阀_4",
+    "order": 5,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.220Z",
+    "updated_at": "2026-06-03T03:15:25.220Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 278,
+  "fields": {
+    "category": 45,
+    "name_zh": "更换设施地插",
+    "name_en": "",
+    "code": "冲洗阀_5",
+    "order": 6,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.226Z",
+    "updated_at": "2026-06-03T03:15:25.226Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 279,
+  "fields": {
+    "category": 45,
+    "name_zh": "地插短管缺补",
+    "name_en": "",
+    "code": "冲洗阀_6",
+    "order": 7,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.232Z",
+    "updated_at": "2026-06-03T03:15:25.232Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 280,
+  "fields": {
+    "category": 45,
+    "name_zh": "地插清堵",
+    "name_en": "",
+    "code": "冲洗阀_7",
+    "order": 8,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.237Z",
+    "updated_at": "2026-06-03T03:15:25.237Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 281,
+  "fields": {
+    "category": 45,
+    "name_zh": "地插车撞",
+    "name_en": "",
+    "code": "冲洗阀_8",
+    "order": 9,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.244Z",
+    "updated_at": "2026-06-03T03:15:25.244Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 282,
+  "fields": {
+    "category": 45,
+    "name_zh": "钥匙开裂/丝断",
+    "name_en": "",
+    "code": "冲洗阀_9",
+    "order": 10,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.249Z",
+    "updated_at": "2026-06-03T03:15:25.249Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 283,
+  "fields": {
+    "category": 45,
+    "name_zh": "铜短管开裂",
+    "name_en": "",
+    "code": "冲洗阀_10",
+    "order": 11,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.255Z",
+    "updated_at": "2026-06-03T03:15:25.255Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 284,
+  "fields": {
+    "category": 45,
+    "name_zh": "活接漏水",
+    "name_en": "",
+    "code": "冲洗阀_11",
+    "order": 12,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.261Z",
+    "updated_at": "2026-06-03T03:15:25.261Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 285,
+  "fields": {
+    "category": 45,
+    "name_zh": "胶圈漏水",
+    "name_en": "",
+    "code": "冲洗阀_12",
+    "order": 13,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.267Z",
+    "updated_at": "2026-06-03T03:15:25.267Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 286,
+  "fields": {
+    "category": 46,
+    "name_zh": "漏水",
+    "name_en": "",
+    "code": "取水阀_0",
+    "order": 1,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.279Z",
+    "updated_at": "2026-06-03T03:15:25.279Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 287,
+  "fields": {
+    "category": 46,
+    "name_zh": "新安装",
+    "name_en": "",
+    "code": "取水阀_1",
+    "order": 2,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.285Z",
+    "updated_at": "2026-06-03T03:15:25.285Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 288,
+  "fields": {
+    "category": 46,
+    "name_zh": "移位",
+    "name_en": "",
+    "code": "取水阀_2",
+    "order": 3,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.292Z",
+    "updated_at": "2026-06-03T03:15:25.292Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 289,
+  "fields": {
+    "category": 46,
+    "name_zh": "阀门箱盖子缺失",
+    "name_en": "",
+    "code": "取水阀_3",
+    "order": 4,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.297Z",
+    "updated_at": "2026-06-03T03:15:25.297Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 290,
+  "fields": {
+    "category": 46,
+    "name_zh": "降低阀箱高度",
+    "name_en": "",
+    "code": "取水阀_4",
+    "order": 5,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.304Z",
+    "updated_at": "2026-06-03T03:15:25.304Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 291,
+  "fields": {
+    "category": 47,
+    "name_zh": "主阀被手动关",
+    "name_en": "",
+    "code": "POC_0",
+    "order": 1,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.316Z",
+    "updated_at": "2026-06-03T03:15:25.316Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 292,
+  "fields": {
+    "category": 47,
+    "name_zh": "主阀不能关",
+    "name_en": "",
+    "code": "POC_1",
+    "order": 2,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.321Z",
+    "updated_at": "2026-06-03T03:15:25.321Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 293,
+  "fields": {
+    "category": 47,
+    "name_zh": "主阀不能开",
+    "name_en": "",
+    "code": "POC_2",
+    "order": 3,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.329Z",
+    "updated_at": "2026-06-03T03:15:25.329Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 294,
+  "fields": {
+    "category": 47,
+    "name_zh": "管道漏水",
+    "name_en": "",
+    "code": "POC_3",
+    "order": 4,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.336Z",
+    "updated_at": "2026-06-03T03:15:25.336Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 295,
+  "fields": {
+    "category": 47,
+    "name_zh": "管件漏水",
+    "name_en": "",
+    "code": "POC_4",
+    "order": 5,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.341Z",
+    "updated_at": "2026-06-03T03:15:25.341Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 296,
+  "fields": {
+    "category": 47,
+    "name_zh": "阀箱加高或降低",
+    "name_en": "",
+    "code": "POC_5",
+    "order": 6,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.348Z",
+    "updated_at": "2026-06-03T03:15:25.348Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 297,
+  "fields": {
+    "category": 47,
+    "name_zh": "主阀滤网堵/丢",
+    "name_en": "",
+    "code": "POC_6",
+    "order": 7,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.354Z",
+    "updated_at": "2026-06-03T03:15:25.354Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 298,
+  "fields": {
+    "category": 47,
+    "name_zh": "防冻排空",
+    "name_en": "",
+    "code": "POC_7",
+    "order": 8,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.360Z",
+    "updated_at": "2026-06-03T03:15:25.360Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 299,
+  "fields": {
+    "category": 47,
+    "name_zh": "排气阀漏水",
+    "name_en": "",
+    "code": "POC_8",
+    "order": 9,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.367Z",
+    "updated_at": "2026-06-03T03:15:25.367Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 300,
+  "fields": {
+    "category": 47,
+    "name_zh": "管件漏水",
+    "name_en": "",
+    "code": "POC_9",
+    "order": 10,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.373Z",
+    "updated_at": "2026-06-03T03:15:25.373Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 301,
+  "fields": {
+    "category": 47,
+    "name_zh": "闸阀故障",
+    "name_en": "",
+    "code": "POC_10",
+    "order": 11,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.380Z",
+    "updated_at": "2026-06-03T03:15:25.380Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 302,
+  "fields": {
+    "category": 47,
+    "name_zh": "压力表故障",
+    "name_en": "",
+    "code": "POC_11",
+    "order": 12,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.387Z",
+    "updated_at": "2026-06-03T03:15:25.387Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 303,
+  "fields": {
+    "category": 47,
+    "name_zh": "针形阀密封漏",
+    "name_en": "",
+    "code": "POC_12",
+    "order": 13,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.393Z",
+    "updated_at": "2026-06-03T03:15:25.393Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 304,
+  "fields": {
+    "category": 47,
+    "name_zh": "小铜管球阀不能开关/漏水",
+    "name_en": "",
+    "code": "POC_13",
+    "order": 14,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.400Z",
+    "updated_at": "2026-06-03T03:15:25.400Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 305,
+  "fields": {
+    "category": 47,
+    "name_zh": "过滤器滤网堵",
+    "name_en": "",
+    "code": "POC_14",
+    "order": 15,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.405Z",
+    "updated_at": "2026-06-03T03:15:25.405Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 306,
+  "fields": {
+    "category": 48,
+    "name_zh": "查漏",
+    "name_en": "",
+    "code": "主管_0",
+    "order": 1,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.417Z",
+    "updated_at": "2026-06-03T03:15:25.417Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 307,
+  "fields": {
+    "category": 48,
+    "name_zh": "角阀坏",
+    "name_en": "",
+    "code": "主管_1",
+    "order": 2,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.424Z",
+    "updated_at": "2026-06-03T03:15:25.424Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 308,
+  "fields": {
+    "category": 48,
+    "name_zh": "改管道",
+    "name_en": "",
+    "code": "主管_2",
+    "order": 3,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.429Z",
+    "updated_at": "2026-06-03T03:15:25.429Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 309,
+  "fields": {
+    "category": 48,
+    "name_zh": "沉降漏水",
+    "name_en": "",
+    "code": "主管_3",
+    "order": 4,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.435Z",
+    "updated_at": "2026-06-03T03:15:25.435Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 310,
+  "fields": {
+    "category": 48,
+    "name_zh": "修管道",
+    "name_en": "",
+    "code": "主管_4",
+    "order": 5,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.443Z",
+    "updated_at": "2026-06-03T03:15:25.443Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 311,
+  "fields": {
+    "category": 48,
+    "name_zh": "修接头",
+    "name_en": "",
+    "code": "主管_5",
+    "order": 6,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.448Z",
+    "updated_at": "2026-06-03T03:15:25.448Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 312,
+  "fields": {
+    "category": 48,
+    "name_zh": "脱胶",
+    "name_en": "",
+    "code": "主管_6",
+    "order": 7,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.456Z",
+    "updated_at": "2026-06-03T03:15:25.456Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 313,
+  "fields": {
+    "category": 48,
+    "name_zh": "有杂物",
+    "name_en": "",
+    "code": "主管_7",
+    "order": 8,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.462Z",
+    "updated_at": "2026-06-03T03:15:25.462Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 314,
+  "fields": {
+    "category": 48,
+    "name_zh": "改管道",
+    "name_en": "",
+    "code": "主管_8",
+    "order": 9,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.469Z",
+    "updated_at": "2026-06-03T03:15:25.469Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 315,
+  "fields": {
+    "category": 48,
+    "name_zh": "查漏",
+    "name_en": "",
+    "code": "主管_9",
+    "order": 10,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.476Z",
+    "updated_at": "2026-06-03T03:15:25.476Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 316,
+  "fields": {
+    "category": 48,
+    "name_zh": "修管道",
+    "name_en": "",
+    "code": "主管_10",
+    "order": 11,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.481Z",
+    "updated_at": "2026-06-03T03:15:25.481Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 317,
+  "fields": {
+    "category": 48,
+    "name_zh": "其它施工破坏",
+    "name_en": "",
+    "code": "主管_11",
+    "order": 12,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.488Z",
+    "updated_at": "2026-06-03T03:15:25.488Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 318,
+  "fields": {
+    "category": 49,
+    "name_zh": "角阀坏",
+    "name_en": "",
+    "code": "角阀_0",
+    "order": 1,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.500Z",
+    "updated_at": "2026-06-03T03:15:25.500Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 319,
+  "fields": {
+    "category": 50,
+    "name_zh": "无信号",
+    "name_en": "",
+    "code": "支管_0",
+    "order": 1,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.512Z",
+    "updated_at": "2026-06-03T03:15:25.512Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 320,
+  "fields": {
+    "category": 50,
+    "name_zh": "电脑异常现场正常",
+    "name_en": "",
+    "code": "支管_1",
+    "order": 2,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.519Z",
+    "updated_at": "2026-06-03T03:15:25.519Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 321,
+  "fields": {
+    "category": 50,
+    "name_zh": "电脑异常现场异常",
+    "name_en": "",
+    "code": "支管_2",
+    "order": 3,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.524Z",
+    "updated_at": "2026-06-03T03:15:25.525Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 322,
+  "fields": {
+    "category": 51,
+    "name_zh": "脉冲发生器故障",
+    "name_en": "",
+    "code": "雨量桶_0",
+    "order": 1,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.537Z",
+    "updated_at": "2026-06-03T03:15:25.537Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 323,
+  "fields": {
+    "category": 51,
+    "name_zh": "流量计故障",
+    "name_en": "",
+    "code": "雨量桶_1",
+    "order": 2,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.544Z",
+    "updated_at": "2026-06-03T03:15:25.544Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 324,
+  "fields": {
+    "category": 51,
+    "name_zh": "流量计更换",
+    "name_en": "",
+    "code": "雨量桶_2",
+    "order": 3,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.549Z",
+    "updated_at": "2026-06-03T03:15:25.549Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 325,
+  "fields": {
+    "category": 51,
+    "name_zh": "解码器故障",
+    "name_en": "",
+    "code": "雨量桶_3",
+    "order": 4,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.556Z",
+    "updated_at": "2026-06-03T03:15:25.556Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 326,
+  "fields": {
+    "category": 51,
+    "name_zh": "数据异常",
+    "name_en": "",
+    "code": "雨量桶_4",
+    "order": 5,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.561Z",
+    "updated_at": "2026-06-03T03:15:25.561Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 327,
+  "fields": {
+    "category": 52,
+    "name_zh": "断路",
+    "name_en": "",
+    "code": "流量计_0",
+    "order": 1,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.574Z",
+    "updated_at": "2026-06-03T03:15:25.574Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 328,
+  "fields": {
+    "category": 52,
+    "name_zh": "接地",
+    "name_en": "",
+    "code": "流量计_1",
+    "order": 2,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.580Z",
+    "updated_at": "2026-06-03T03:15:25.580Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 329,
+  "fields": {
+    "category": 52,
+    "name_zh": "拔控制线停水",
+    "name_en": "",
+    "code": "流量计_2",
+    "order": 3,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.586Z",
+    "updated_at": "2026-06-03T03:15:25.586Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 330,
+  "fields": {
+    "category": 52,
+    "name_zh": "地锚打坏线",
+    "name_en": "",
+    "code": "流量计_3",
+    "order": 4,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.592Z",
+    "updated_at": "2026-06-03T03:15:25.592Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 331,
+  "fields": {
+    "category": 53,
+    "name_zh": "车撞破坏",
+    "name_en": "",
+    "code": "控制线_0",
+    "order": 1,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.605Z",
+    "updated_at": "2026-06-03T03:15:25.605Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 332,
+  "fields": {
+    "category": 54,
+    "name_zh": "车撞破坏",
+    "name_en": "",
+    "code": "车撞破坏_0",
+    "order": 1,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.617Z",
+    "updated_at": "2026-06-03T03:15:25.617Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 333,
+  "fields": {
+    "category": 55,
+    "name_zh": "施工破坏",
+    "name_en": "",
+    "code": "施工破坏_0",
+    "order": 1,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.630Z",
+    "updated_at": "2026-06-03T03:15:25.630Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 334,
+  "fields": {
+    "category": 56,
+    "name_zh": "和绿化一起看现场植物长势",
+    "name_en": "",
+    "code": "现场水分_0",
+    "order": 1,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.645Z",
+    "updated_at": "2026-06-03T03:15:25.645Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 335,
+  "fields": {
+    "category": 56,
+    "name_zh": "灌溉组独立查看现场植物长势",
+    "name_en": "",
+    "code": "现场水分_1",
+    "order": 2,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.650Z",
+    "updated_at": "2026-06-03T03:15:25.650Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 336,
+  "fields": {
+    "category": 56,
+    "name_zh": "积水/排水不够",
+    "name_en": "",
+    "code": "现场水分_2",
+    "order": 3,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.656Z",
+    "updated_at": "2026-06-03T03:15:25.656Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 337,
+  "fields": {
+    "category": 56,
+    "name_zh": "土壤水分偏湿",
+    "name_en": "",
+    "code": "现场水分_3",
+    "order": 4,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.661Z",
+    "updated_at": "2026-06-03T03:15:25.661Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 338,
+  "fields": {
+    "category": 56,
+    "name_zh": "土壤水分偏干",
+    "name_en": "",
+    "code": "现场水分_4",
+    "order": 5,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.667Z",
+    "updated_at": "2026-06-03T03:15:25.667Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 339,
+  "fields": {
+    "category": 57,
+    "name_zh": "树根损坏",
+    "name_en": "",
+    "code": "树根损坏_0",
+    "order": 1,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.677Z",
+    "updated_at": "2026-06-03T03:15:25.677Z"
+  }
+},
+{
+  "model": "core.faultsubtype",
+  "pk": 340,
+  "fields": {
+    "category": 58,
+    "name_zh": "滴灌损坏",
+    "name_en": "",
+    "code": "滴灌损坏_0",
+    "order": 1,
+    "active": true,
+    "created_at": "2026-06-03T03:15:25.692Z",
+    "updated_at": "2026-06-03T03:15:25.692Z"
+  }
+}
+]

@@ -252,6 +252,7 @@ def _get_reference_map_data(exclude_zone_id=None, exclude_pipeline_id=None):
                 'boundary_points': z.boundary_points,
                 'boundary_color': z.boundary_color or '#52B788',
                 'smooth_override': z.smooth_override,
+                'ring_display_modes': z.ring_display_modes or {},
             })
 
     ref_pipelines = []
@@ -339,6 +340,34 @@ def user_logout(request):
     """Logout view."""
     logout(request)
     return redirect('core:login')
+
+
+def mobile_home(request):
+    """Mobile landing page: login if unauthenticated, home menu if authenticated."""
+    if not request.user.is_authenticated:
+        if request.method == 'POST':
+            username = request.POST.get('username', '').strip()
+            password = request.POST.get('password', '')
+            user = authenticate(request, username=username, password=password)
+            if user is not None:
+                login(request, user)
+            else:
+                messages.error(request, '用户名或密码错误')
+                return render(request, 'core/mobile_home.html', {'login_error': True})
+        else:
+            return render(request, 'core/mobile_home.html', {'show_login': True})
+
+    # Authenticated: show mobile home menu
+    from core.role_utils import get_worker_for_user, get_user_role, is_admin
+    from core.models import Worker
+    worker = get_worker_for_user(request.user)
+    role = get_user_role(request.user)
+    worker_name = worker.full_name if worker else request.user.get_full_name() or request.user.username
+    return render(request, 'core/mobile_home.html', {
+        'worker_name': worker_name,
+        'role': role,
+        'is_admin': is_admin(request.user),
+    })
 
 
 @login_required(login_url='core:login')
@@ -666,6 +695,7 @@ def dashboard(request):
             'label_scale': zone.label_scale,
             'label_angle': zone.label_angle,
             'smooth_override': zone.smooth_override,
+            'ring_display_modes': zone.ring_display_modes or {},
             'area_sqm': zone.area_sqm,
             'area_display': zone.area_display,
             # Detailed info for cards
@@ -1896,6 +1926,55 @@ def zone_quick_draw(request):
             except Zone.DoesNotExist:
                 return JsonResponse({'success': False, 'message': f'区域 {zone_code} 不存在'}, status=404)
 
+        if action == 'update_ring_display_mode':
+            zone_code = request.POST.get('zone_code', '').strip()
+            ring_index = request.POST.get('ring_index', '')
+            mode = request.POST.get('mode', 'line')
+            if not zone_code:
+                return JsonResponse({'success': False, 'message': '缺少区域编号'}, status=400)
+            if mode not in ('line', 'sublabel'):
+                return JsonResponse({'success': False, 'message': '无效的显示模式'}, status=400)
+            try:
+                zone = Zone.objects.get(code=zone_code)
+                modes = dict(zone.ring_display_modes or {})
+                if mode == 'line':
+                    modes.pop(str(ring_index), None)
+                else:
+                    modes[str(ring_index)] = mode
+                # Prune stale indices beyond ring count
+                bp = zone.boundary_points or []
+                ring_count = len(bp) if bp and isinstance(bp[0], (list,)) else 0
+                if ring_count > 0:
+                    modes = {k: v for k, v in modes.items() if int(k) < ring_count}
+                zone.ring_display_modes = modes
+                zone.save()
+                mode_label = '引导线' if mode == 'line' else '子标签'
+                return JsonResponse({'success': True, 'message': f'已切换为{mode_label}', 'ring_display_modes': modes})
+            except Zone.DoesNotExist:
+                return JsonResponse({'success': False, 'message': f'区域 {zone_code} 不存在'}, status=404)
+
+        if action == 'update_all_ring_display_modes':
+            zone_code = request.POST.get('zone_code', '').strip()
+            mode = request.POST.get('mode', 'line')
+            if not zone_code:
+                return JsonResponse({'success': False, 'message': '缺少区域编号'}, status=400)
+            if mode not in ('line', 'sublabel'):
+                return JsonResponse({'success': False, 'message': '无效的显示模式'}, status=400)
+            try:
+                zone = Zone.objects.get(code=zone_code)
+                bp = zone.boundary_points or []
+                ring_count = len(bp) if bp and isinstance(bp[0], (list,)) else 0
+                if mode == 'line':
+                    modes = {}
+                else:
+                    modes = {str(i): mode for i in range(ring_count)}
+                zone.ring_display_modes = modes
+                zone.save()
+                mode_label = '引导线' if mode == 'line' else '子标签'
+                return JsonResponse({'success': True, 'message': f'已全部切换为{mode_label}', 'ring_display_modes': modes})
+            except Zone.DoesNotExist:
+                return JsonResponse({'success': False, 'message': f'区域 {zone_code} 不存在'}, status=404)
+
         # Save boundary action
         zone_code = request.POST.get('zone_code', '').strip()
         if not zone_code:
@@ -1946,6 +2025,7 @@ def zone_quick_draw(request):
             'label_scale': zone.label_scale,
             'label_angle': zone.label_angle,
             'smooth_override': zone.smooth_override,
+            'ring_display_modes': zone.ring_display_modes or {},
             'patch_id': zone.patch_id,
             'patch_name': patch_name,
         })
@@ -1966,7 +2046,8 @@ def zone_quick_draw(request):
     all_drawn_zones = []
     for z in Zone.objects.exclude(boundary_points__isnull=True).exclude(boundary_points=[]).select_related('patch').only(
         'id', 'code', 'name', 'boundary_points', 'boundary_color',
-        'label_lat', 'label_lng', 'label_scale', 'label_angle', 'smooth_override', 'patch_id', 'patch__name'
+        'label_lat', 'label_lng', 'label_scale', 'label_angle', 'smooth_override',
+        'ring_display_modes', 'patch_id', 'patch__name'
     ):
         all_drawn_zones.append({
             'id': z.id,
@@ -1979,15 +2060,29 @@ def zone_quick_draw(request):
             'label_scale': z.label_scale,
             'label_angle': z.label_angle,
             'smooth_override': z.smooth_override,
+            'ring_display_modes': z.ring_display_modes or {},
             'patch_id': z.patch_id,
             'patch_name': z.patch.name if z.patch else '',
             'area_display': z.area_display,
         })
 
+    # Drawing stats per patch
+    from .models import Patch
+    patch_stats = []
+    for p in Patch.objects.order_by('name'):
+        total = Zone.objects.filter(patch=p).count()
+        drawn = Zone.objects.filter(patch=p).exclude(boundary_points__isnull=True).exclude(boundary_points=[]).count()
+        patch_stats.append({'name': p.name, 'total': total, 'drawn': drawn})
+    total_all = Zone.objects.count()
+    drawn_all = Zone.objects.exclude(boundary_points__isnull=True).exclude(boundary_points=[]).count()
+
     context = {
         'all_zones_json': json.dumps(all_zones),
         'all_drawn_zones_json': json.dumps(all_drawn_zones),
         'map_style_json': json.dumps(MapStyleSettings.get_style()),
+        'patch_stats_json': json.dumps(patch_stats),
+        'drawn_total': drawn_all,
+        'zone_total': total_all,
         'nav_settings': True,
     }
     return render(request, 'core/zone_quick_draw.html', context)
@@ -2046,6 +2141,54 @@ def zone_quick_draw_mobile(request):
             except Zone.DoesNotExist:
                 return JsonResponse({'success': False, 'message': f'区域 {zone_code} 不存在'}, status=404)
 
+        if action == 'update_ring_display_mode':
+            zone_code = request.POST.get('zone_code', '').strip()
+            ring_index = request.POST.get('ring_index', '')
+            mode = request.POST.get('mode', 'line')
+            if not zone_code:
+                return JsonResponse({'success': False, 'message': '缺少区域编号'}, status=400)
+            if mode not in ('line', 'sublabel'):
+                return JsonResponse({'success': False, 'message': '无效的显示模式'}, status=400)
+            try:
+                zone = Zone.objects.get(code=zone_code)
+                modes = dict(zone.ring_display_modes or {})
+                if mode == 'line':
+                    modes.pop(str(ring_index), None)
+                else:
+                    modes[str(ring_index)] = mode
+                bp = zone.boundary_points or []
+                ring_count = len(bp) if bp and isinstance(bp[0], (list,)) else 0
+                if ring_count > 0:
+                    modes = {k: v for k, v in modes.items() if int(k) < ring_count}
+                zone.ring_display_modes = modes
+                zone.save()
+                mode_label = '引导线' if mode == 'line' else '子标签'
+                return JsonResponse({'success': True, 'message': f'已切换为{mode_label}', 'ring_display_modes': modes})
+            except Zone.DoesNotExist:
+                return JsonResponse({'success': False, 'message': f'区域 {zone_code} 不存在'}, status=404)
+
+        if action == 'update_all_ring_display_modes':
+            zone_code = request.POST.get('zone_code', '').strip()
+            mode = request.POST.get('mode', 'line')
+            if not zone_code:
+                return JsonResponse({'success': False, 'message': '缺少区域编号'}, status=400)
+            if mode not in ('line', 'sublabel'):
+                return JsonResponse({'success': False, 'message': '无效的显示模式'}, status=400)
+            try:
+                zone = Zone.objects.get(code=zone_code)
+                bp = zone.boundary_points or []
+                ring_count = len(bp) if bp and isinstance(bp[0], (list,)) else 0
+                if mode == 'line':
+                    modes = {}
+                else:
+                    modes = {str(i): mode for i in range(ring_count)}
+                zone.ring_display_modes = modes
+                zone.save()
+                mode_label = '引导线' if mode == 'line' else '子标签'
+                return JsonResponse({'success': True, 'message': f'已全部切换为{mode_label}', 'ring_display_modes': modes})
+            except Zone.DoesNotExist:
+                return JsonResponse({'success': False, 'message': f'区域 {zone_code} 不存在'}, status=404)
+
         zone_code = request.POST.get('zone_code', '').strip()
         if not zone_code:
             return JsonResponse({'success': False, 'message': '缺少区域编号'}, status=400)
@@ -2095,6 +2238,7 @@ def zone_quick_draw_mobile(request):
             'label_scale': zone.label_scale,
             'label_angle': zone.label_angle,
             'smooth_override': zone.smooth_override,
+            'ring_display_modes': zone.ring_display_modes or {},
             'patch_id': zone.patch_id,
             'patch_name': patch_name,
         })
@@ -2113,7 +2257,8 @@ def zone_quick_draw_mobile(request):
     all_drawn_zones = []
     for z in Zone.objects.exclude(boundary_points__isnull=True).exclude(boundary_points=[]).select_related('patch').only(
         'id', 'code', 'name', 'boundary_points', 'boundary_color',
-        'label_lat', 'label_lng', 'label_scale', 'label_angle', 'smooth_override', 'patch_id', 'patch__name'
+        'label_lat', 'label_lng', 'label_scale', 'label_angle', 'smooth_override',
+        'ring_display_modes', 'patch_id', 'patch__name'
     ):
         all_drawn_zones.append({
             'id': z.id,
@@ -2126,15 +2271,29 @@ def zone_quick_draw_mobile(request):
             'label_scale': z.label_scale,
             'label_angle': z.label_angle,
             'smooth_override': z.smooth_override,
+            'ring_display_modes': z.ring_display_modes or {},
             'patch_id': z.patch_id,
             'patch_name': z.patch.name if z.patch else '',
             'area_display': z.area_display,
         })
 
+    # Drawing stats per patch
+    from .models import Patch
+    patch_stats = []
+    for p in Patch.objects.order_by('name'):
+        total = Zone.objects.filter(patch=p).count()
+        drawn = Zone.objects.filter(patch=p).exclude(boundary_points__isnull=True).exclude(boundary_points=[]).count()
+        patch_stats.append({'name': p.name, 'total': total, 'drawn': drawn})
+    total_all = Zone.objects.count()
+    drawn_all = Zone.objects.exclude(boundary_points__isnull=True).exclude(boundary_points=[]).count()
+
     context = {
         'all_zones_json': json.dumps(all_zones),
         'all_drawn_zones_json': json.dumps(all_drawn_zones),
         'map_style_json': json.dumps(MapStyleSettings.get_style()),
+        'patch_stats_json': json.dumps(patch_stats),
+        'drawn_total': drawn_all,
+        'zone_total': total_all,
     }
     return render(request, 'core/zone_quick_draw_mobile.html', context)
 
@@ -3872,6 +4031,15 @@ def user_management(request):
     active_tab = request.GET.get('tab', 'users')
     filter_status = request.GET.get('filter', 'pending')
 
+    # Zone draw counts per user
+    draw_counts = {}
+    for row in Zone.objects.exclude(drawn_by__isnull=True).values('drawn_by').annotate(cnt=Count('id')):
+        draw_counts[row['drawn_by']] = row['cnt']
+    drawn_zone_map = {}
+    for z in Zone.objects.exclude(drawn_by__isnull=True).exclude(boundary_points=[]).select_related('patch').order_by('code'):
+        uid = z.drawn_by_id
+        drawn_zone_map.setdefault(uid, []).append({'code': z.code, 'name': z.name or z.code, 'patch': z.patch.name if z.patch else ''})
+
     # Build user list
     users_list = []
 
@@ -3888,6 +4056,7 @@ def user_management(request):
             'role': ROLE_SUPER_ADMIN if mp.is_super_admin else ROLE_MANAGER,
             'role_display': '超级管理员' if mp.is_super_admin else '管理员',
             'active': mp.active,
+            'drawn_zones': draw_counts.get(mp.user.id, 0) if mp.user else 0,
         })
 
     for dup in DepartmentUserProfile.objects.select_related('user').all():
@@ -3903,6 +4072,7 @@ def user_management(request):
             'role': ROLE_DEPT_USER,
             'role_display': '部门用户',
             'active': dup.active,
+            'drawn_zones': draw_counts.get(dup.user.id, 0) if dup.user else 0,
         })
 
     for w in Worker.objects.select_related('user').all():
@@ -3918,6 +4088,7 @@ def user_management(request):
             'role': ROLE_FIELD_WORKER,
             'role_display': '灌溉一线',
             'active': w.active,
+            'drawn_zones': draw_counts.get(w.user.id, 0) if w.user else 0,
         })
 
     users_list.sort(key=lambda x: x['full_name'])
@@ -3944,6 +4115,7 @@ def user_management(request):
         'inactive_users': sum(1 for u in users_list if not u['active']),
         'requests': requests_qs,
         'stats': stats,
+        'drawn_zone_map_json': json.dumps(drawn_zone_map),
     }
 
     return render(request, 'core/user_management.html', context)
@@ -3995,17 +4167,29 @@ def user_preferences_api(request):
     """GET/PUT user preferences (e.g. zone card field visibility)."""
     from .models import ManagerProfile
 
+    if not request.user.is_authenticated:
+        return JsonResponse({'preferences': {}})
+
     profile = None
-    if request.user.is_superuser or request.user.is_staff:
-        try:
-            profile = ManagerProfile.objects.get(user=request.user, active=True)
-        except ManagerProfile.DoesNotExist:
-            pass
-    if not profile:
-        try:
-            profile = ManagerProfile.objects.get(user=request.user, active=True)
-        except ManagerProfile.DoesNotExist:
-            return JsonResponse({'preferences': {}})
+    try:
+        profile = ManagerProfile.objects.get(user=request.user, active=True)
+    except ManagerProfile.DoesNotExist:
+        pass
+
+    # For users without a ManagerProfile, use a simple request.session fallback
+    if profile is None:
+        if request.method == 'GET':
+            return JsonResponse({'preferences': request.session.get('preferences', {})})
+        if request.method in ('PUT', 'POST'):
+            import json as _json
+            try:
+                data = _json.loads(request.body) if request.body else {}
+            except _json.JSONDecodeError:
+                data = {}
+            request.session['preferences'] = data.get('preferences', {})
+            request.session.save()
+            return JsonResponse({'success': True, 'preferences': request.session['preferences']})
+        return JsonResponse({'error': 'Method not allowed'}, status=405)
 
     if request.method == 'GET':
         return JsonResponse({'preferences': profile.preferences or {}})
@@ -5473,3 +5657,279 @@ def demands_page(request):
     }
 
     return render(request, 'core/demands.html', context)
+
+
+# ==========================================================================
+# Mobile Workorder (灌溉组工作记录)
+# ==========================================================================
+
+@login_required(login_url='core:login')
+def workorder_mobile(request):
+    from core.models import (
+        WorkReport, WorkReportFault, WorkCategory, FaultCategory, FaultSubType,
+        Patch, Zone, Worker,
+    )
+    from core.role_utils import get_worker_for_user, is_admin, get_user_role, ROLE_FIELD_WORKER
+    from core.role_utils import ROLE_SUPER_ADMIN, ROLE_MANAGER
+    from datetime import date, datetime, time, timedelta
+    import math
+
+    # Access check: workers + managers only
+    role = get_user_role(request.user)
+    if role not in (ROLE_FIELD_WORKER, ROLE_SUPER_ADMIN, ROLE_MANAGER):
+        messages.error(request, '无权限访问此页面')
+        return redirect('core:login')
+
+    worker = get_worker_for_user(request.user)
+    if not worker and not is_admin(request.user):
+        messages.error(request, '未关联处理人账号')
+        return redirect('core:login')
+
+    if request.method == 'POST':
+        try:
+            if not worker and not is_admin(request.user):
+                return JsonResponse({'success': False, 'message': '未关联处理人账号'}, status=400)
+
+            shift = request.POST.get('shift', '')
+            start_str = request.POST.get('work_start_time', '')
+            end_str = request.POST.get('work_end_time', '')
+
+            work_start = None
+            work_end = None
+            if start_str:
+                h, m = start_str.split(':')
+                work_start = time(int(h), int(m))
+            if end_str:
+                h, m = end_str.split(':')
+                work_end = time(int(h), int(m))
+
+            team_size = int(request.POST.get('team_size', 1) or 1)
+            third_party_count = int(request.POST.get('third_party_count', 0) or 0)
+
+            # Compute hours
+            team_hours = 0.0
+            third_party_hours = 0.0
+            if work_start and work_end:
+                start_dt = datetime.combine(date.today(), work_start)
+                end_dt = datetime.combine(date.today(), work_end)
+                if end_dt <= start_dt:
+                    end_dt += timedelta(days=1)
+                duration_h = (end_dt - start_dt).seconds / 3600
+                team_hours = round(duration_h * team_size * 2) / 2
+                third_party_hours = round(duration_h * third_party_count * 2) / 2
+
+            # Get primary location from first selected zone's patch
+            zone_codes = request.POST.getlist('zones')
+            first_zone = Zone.objects.filter(code__in=zone_codes).select_related('patch').first() if zone_codes else None
+            location = first_zone.patch if first_zone else Patch.objects.first()
+
+            # Work category
+            work_category_id = request.POST.get('work_category')
+            work_category = WorkCategory.objects.filter(id=work_category_id).first() if work_category_id else WorkCategory.objects.first()
+
+            # Zone names auto-fill
+            selected_zones = Zone.objects.filter(code__in=zone_codes)
+            zone_names = ', '.join(z.name or z.code for z in selected_zones) if selected_zones else ''
+
+            report = WorkReport.objects.create(
+                date=request.POST.get('date') or date.today().isoformat(),
+                weather='',
+                worker=worker,
+                location=location,
+                work_category=work_category,
+                zone_location=first_zone,
+                remark=request.POST.get('remark', ''),
+                is_difficult=bool(request.POST.get('is_difficult')),
+                is_difficult_resolved=bool(request.POST.get('is_difficult_resolved')),
+                shift=shift,
+                work_start_time=work_start,
+                work_end_time=work_end,
+                team_size=team_size,
+                third_party_count=third_party_count,
+                team_hours=team_hours,
+                third_party_hours=third_party_hours,
+                zone_names=zone_names,
+                work_content=request.POST.get('work_content', ''),
+            )
+
+            # Set zones M2M
+            if selected_zones:
+                report.zones.set(selected_zones)
+
+            # If marked as difficult, append work content to zone remarks
+            if report.is_difficult:
+                work_content = request.POST.get('work_content', '').strip()
+                fault_names = []
+                for fe in report.fault_entries.select_related('fault_subtype').all():
+                    fault_names.append(fe.fault_subtype.name_zh)
+                remark_parts = []
+                if fault_names:
+                    remark_parts.append('故障: ' + ', '.join(fault_names))
+                if work_content:
+                    remark_parts.append(work_content)
+                remark_content = ' '.join(remark_parts) if remark_parts else '疑难工单'
+                remark_entry = {
+                    'date': report.date if isinstance(report.date, str) else report.date.isoformat(),
+                    'content': remark_content,
+                    'author': worker.full_name if worker else str(request.user),
+                    'workorder_id': report.id,
+                }
+                for z in selected_zones:
+                    remarks = json.loads(z.remarks) if z.remarks else []
+                    remarks.insert(0, remark_entry)
+                    z.remarks = json.dumps(remarks, ensure_ascii=False)
+                    z.save(update_fields=['remarks'])
+
+            # Parse fault entries
+            fault_json = request.POST.get('fault_entries', '[]')
+            try:
+                fault_data = json.loads(fault_json)
+                for entry in fault_data:
+                    if entry.get('count', 0) > 0 and entry.get('fault_subtype'):
+                        WorkReportFault.objects.create(
+                            work_report=report,
+                            fault_subtype_id=entry['fault_subtype'],
+                            count=entry['count'],
+                        )
+            except (json.JSONDecodeError, KeyError):
+                pass
+
+            # Handle photo uploads
+            photo_paths = []
+            from django.core.files.storage import default_storage
+            import os as _os
+            for f in request.FILES.getlist('photos'):
+                ts = datetime.now().strftime('%Y%m%d%H%M%S')
+                fname = f'workreport/{report.id}_{ts}_{f.name}'
+                saved = default_storage.save(fname, f)
+                photo_paths.append(saved)
+            if photo_paths:
+                report.photos = photo_paths
+                report.save(update_fields=['photos'])
+
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return JsonResponse({'success': True, 'message': f'工作记录已提交 (ID: {report.id})'})
+            messages.success(request, f'工作记录已提交 (ID: {report.id})')
+            return redirect('core:workorder_mobile')
+
+        except Exception as e:
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return JsonResponse({'success': False, 'message': str(e)}, status=400)
+            messages.error(request, f'提交失败: {e}')
+            return redirect('core:workorder_mobile')
+
+    # ── GET: render form ──
+    today = date.today()
+    now = datetime.now()
+
+    # Work categories (2-level)
+    top_categories = WorkCategory.objects.filter(parent__isnull=True, active=True).order_by('order')
+    sub_categories = WorkCategory.objects.filter(parent__isnull=False, active=True).select_related('parent').order_by('parent__order', 'order')
+    category_tree = []
+    for tc in top_categories:
+        children = [sc for sc in sub_categories if sc.parent_id == tc.id]
+        category_tree.append({
+            'id': tc.id, 'name': tc.name, 'code': tc.code,
+            'children': [{'id': c.id, 'name': c.name, 'code': c.code} for c in children],
+        })
+
+    # Fault categories + subtypes
+    fault_categories = FaultCategory.objects.filter(active=True).prefetch_related('sub_types').order_by('order')
+    fault_tree = []
+    for fc in fault_categories:
+        subs = fc.sub_types.filter(active=True).order_by('order')
+        fault_tree.append({
+            'id': fc.id, 'name': fc.name_zh,
+            'subtypes': [{'id': s.id, 'name': s.name_zh} for s in subs],
+        })
+
+    # Zones grouped by patch
+    zones_qs = Zone.objects.order_by('code')
+    zone_list = [{'id': z.id, 'code': z.code, 'name': z.name or z.code, 'patch': z.patch.name if z.patch else ''}
+                 for z in zones_qs]
+    # Group by patch
+    patch_groups = {}
+    for z in zone_list:
+        p = z['patch'] or '未分配'
+        patch_groups.setdefault(p, []).append(z)
+
+    # Shift frequency for this worker (for sort order)
+    shift_freq = {'早班': 0, '白班': 0, '夜班': 0}
+    if worker:
+        recent = WorkReport.objects.filter(worker=worker, shift__in=shift_freq.keys()).values_list('shift', flat=True)
+        for s in recent:
+            if s in shift_freq:
+                shift_freq[s] += 1
+    sorted_shifts = sorted(shift_freq.keys(), key=lambda s: -shift_freq[s])
+
+    # Round current time to nearest 15 min for default
+    rounded_min = (now.minute // 15) * 15
+    default_time = now.replace(minute=rounded_min, second=0, microsecond=0).strftime('%H:%M')
+
+    context = {
+        'category_tree_json': json.dumps(category_tree),
+        'fault_tree_json': json.dumps(fault_tree),
+        'patch_groups_json': json.dumps(patch_groups),
+        'sorted_shifts': sorted_shifts,
+        'today': today.isoformat(),
+        'now_time': now.strftime('%H:%M'),
+        'default_time': default_time,
+        'worker_name': worker.full_name if worker else request.user.get_full_name() or request.user.username,
+        'is_new': True,
+    }
+    return render(request, 'core/workorder_mobile.html', context)
+
+
+
+@login_required(login_url='core:login')
+def zone_geo_api(request):
+    from core.models import Zone
+    import json as _json
+    zones = Zone.objects.exclude(boundary_points=[]).only('code', 'name', 'boundary_points')
+    data = []
+    for z in zones:
+        bp = z.boundary_points
+        if not bp:
+            continue
+        all_pts = bp if isinstance(bp[0], dict) else []
+        if isinstance(bp[0], list):
+            all_pts = [p for ring in bp for p in ring]
+        center = None
+        if all_pts:
+            lat = sum(p.get('lat', 0) for p in all_pts) / len(all_pts)
+            lng = sum(p.get('lng', 0) for p in all_pts) / len(all_pts)
+            center = [round(lat, 6), round(lng, 6)]
+        data.append({'c': z.code, 'n': z.name or z.code, 'b': bp, 't': center})
+    return JsonResponse(data, safe=False)
+
+
+@login_required(login_url='core:login')
+def workorder_history(request):
+    from core.models import WorkReport, Worker
+    from core.role_utils import get_worker_for_user, is_admin, get_user_role, ROLE_FIELD_WORKER
+    from core.role_utils import ROLE_SUPER_ADMIN, ROLE_MANAGER
+    from datetime import date
+
+    role = get_user_role(request.user)
+    if role not in (ROLE_FIELD_WORKER, ROLE_SUPER_ADMIN, ROLE_MANAGER):
+        messages.error(request, '无权限访问此页面')
+        return redirect('core:login')
+
+    worker = get_worker_for_user(request.user)
+
+    if worker:
+        reports = WorkReport.objects.filter(worker=worker).select_related(
+            'work_category', 'location'
+        ).prefetch_related('zones', 'fault_entries__fault_subtype').order_by('-date', '-id')[:50]
+    elif is_admin(request.user):
+        reports = WorkReport.objects.select_related(
+            'worker', 'work_category', 'location'
+        ).prefetch_related('zones', 'fault_entries__fault_subtype').order_by('-date', '-id')[:50]
+    else:
+        reports = []
+
+    context = {
+        'reports': reports,
+        'worker_name': worker.full_name if worker else request.user.get_full_name() or request.user.username,
+    }
+    return render(request, 'core/workorder_history.html', context)
