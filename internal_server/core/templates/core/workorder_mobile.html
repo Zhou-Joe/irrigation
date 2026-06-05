@@ -40,9 +40,9 @@ textarea { font-size: 0.9em; padding: 10px 12px; border: 1px solid #ddd; border-
 .toggle-row select { width: auto; min-width: 80px; }
 
 /* Zone selector */
-.zone-selector { position: relative; }
+.zone-selector { position: relative; z-index: 20; }
 .zone-search { width: 100%; padding: 10px 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 0.9em; }
-.zone-dropdown { position: absolute; top: 100%; left: 0; right: 0; background: #fff; border: 1px solid #ddd; border-radius: 8px; max-height: 300px; overflow-y: auto; z-index: 50; display: none; box-shadow: 0 4px 12px rgba(0,0,0,0.12); }
+.zone-dropdown { position: absolute; top: 100%; left: 0; right: 0; background: #fff; border: 1px solid #ddd; border-radius: 8px; max-height: 300px; overflow-y: auto; z-index: 1050; display: none; box-shadow: 0 4px 12px rgba(0,0,0,0.12); }
 .zone-dropdown.open { display: block; }
 .zone-group-header { padding: 8px 12px; background: #f5f5f5; font-size: 0.8em; font-weight: 600; color: #666; position: sticky; top: 0; }
 .zone-item { display: flex; align-items: center; padding: 8px 12px; font-size: 0.85em; border-bottom: 1px solid #f5f5f5; cursor: pointer; }
@@ -57,7 +57,7 @@ textarea { font-size: 0.9em; padding: 10px 12px; border: 1px solid #ddd; border-
 .zone-names-auto { margin-top: 6px; font-size: 0.8em; color: #888; }
 
 /* Zone map */
-.zone-map-wrap { margin-top: 10px; border-radius: 10px; overflow: hidden; border: 1px solid #ddd; position: relative; }
+.zone-map-wrap { margin-top: 10px; border-radius: 10px; overflow: hidden; border: 1px solid #ddd; position: relative; z-index: 1; }
 #zoneMap { height: 260px; width: 100%; }
 .map-loading { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: #f8f8f8; color: #888; font-size: 0.85em; z-index: 400; }
 .btn-locate { position: absolute; bottom: 12px; right: 12px; z-index: 450; width: 36px; height: 36px; border-radius: 50%; border: none; background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,0.3); cursor: pointer; font-size: 1.1em; display: flex; align-items: center; justify-content: center; }
@@ -651,7 +651,10 @@ fetch('{% url "core:zone_geo_api" %}')
 (function initZoneMap() {
     zoneMap = L.map('zoneMap', { zoomControl: false, attributionControl: false, minZoom: 15, maxZoom: 22 }).setView([31.155794, 121.668804], 17);
     L.control.zoom({ position: 'topright' }).addTo(zoneMap);
-    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxNativeZoom: 19, maxZoom: 22 }).addTo(zoneMap);
+    // Same hybrid layer as dashboard: Esri satellite + GeoQ overlay for high zoom
+    const satTile = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxNativeZoom: 19, maxZoom: 22 });
+    const labelTile = L.tileLayer('https://map.geoq.cn/ArcGIS/rest/services/ChinaOnlineCommunity/MapServer/tile/{z}/{y}/{x}', { minZoom: 15, maxZoom: 22, opacity: 0.7 });
+    L.layerGroup([satTile, labelTile]).addTo(zoneMap);
 
     fetch('{% url "core:zone_geo_api" %}')
         .then(r => r.json())
