@@ -1,0 +1,113 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>灌溉管理系统</title>
+<link rel="stylesheet" href="{% static 'css/design-system.css' %}">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f5; color: #222; min-height: 100vh; -webkit-text-size-adjust: 100%; }
+
+/* Login screen */
+.login-screen { min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; background: linear-gradient(135deg, #1B4332, #2D6A4F); padding: 24px; }
+.login-logo { font-size: 2.5em; margin-bottom: 8px; }
+.login-title { color: #fff; font-size: 1.3em; font-weight: 600; margin-bottom: 32px; }
+.login-form { width: 100%; max-width: 320px; }
+.login-input { width: 100%; padding: 14px 16px; border: none; border-radius: 10px; font-size: 1em; margin-bottom: 12px; background: rgba(255,255,255,0.95); }
+.login-btn { width: 100%; padding: 14px; border: none; border-radius: 10px; font-size: 1em; font-weight: 600; cursor: pointer; background: #fff; color: #2D6A4F; margin-top: 4px; }
+.login-btn:active { opacity: 0.85; }
+.login-error { color: #ffcccb; font-size: 0.85em; text-align: center; margin-bottom: 12px; }
+
+/* Home screen */
+.home-screen { min-height: 100vh; padding-bottom: 20px; }
+.home-header { background: var(--color-primary, #2D6A4F); color: #fff; padding: 20px 16px 16px; }
+.home-greeting { font-size: 1.2em; font-weight: 600; }
+.home-role { font-size: 0.82em; opacity: 0.75; margin-top: 4px; }
+.home-actions { margin-top: 16px; }
+.home-logout { background: rgba(255,255,255,0.15); border: none; color: #fff; padding: 6px 14px; border-radius: 6px; font-size: 0.82em; cursor: pointer; float: right; margin-top: -30px; }
+.home-logout:active { background: rgba(255,255,255,0.25); }
+
+/* Menu grid */
+.menu-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 16px; }
+.menu-card { background: #fff; border-radius: 12px; padding: 20px 16px; text-decoration: none; color: #222; box-shadow: 0 1px 4px rgba(0,0,0,0.06); display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.menu-card:active { background: #f8f8f8; transform: scale(0.98); }
+.menu-icon { font-size: 2em; width: 52px; height: 52px; border-radius: 14px; display: flex; align-items: center; justify-content: center; }
+.menu-icon.green { background: #e8f5e9; }
+.menu-icon.blue { background: #e3f2fd; }
+.menu-icon.orange { background: #fff3e0; }
+.menu-icon.purple { background: #f3e5f5; }
+.menu-label { font-size: 0.9em; font-weight: 500; text-align: center; }
+.menu-desc { font-size: 0.75em; color: #999; text-align: center; }
+
+/* Toast */
+.toast { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); padding: 10px 20px; border-radius: 8px; font-size: 0.9em; z-index: 600; opacity: 0; transition: opacity 0.3s; pointer-events: none; }
+.toast.show { opacity: 1; }
+.toast.error { background: #f8d7da; color: #721c24; }
+</style>
+</head>
+<body>
+
+{% if show_login or login_error %}
+<!-- LOGIN SCREEN -->
+<div class="login-screen">
+    <div class="login-logo">&#127807;</div>
+    <div class="login-title">灌溉管理系统</div>
+    <form class="login-form" method="post">
+        {% csrf_token %}
+        {% if messages %}
+            {% for m in messages %}
+            <div class="login-error">{{ m }}</div>
+            {% endfor %}
+        {% endif %}
+        <input class="login-input" type="text" name="username" placeholder="用户名" autocomplete="username" required>
+        <input class="login-input" type="password" name="password" placeholder="密码" autocomplete="current-password" required>
+        <button class="login-btn" type="submit">登 录</button>
+    </form>
+</div>
+
+{% else %}
+<!-- HOME SCREEN (authenticated) -->
+<div class="home-screen">
+    <div class="home-header">
+        <div class="home-greeting">{{ worker_name }}</div>
+        <div class="home-role">
+            {% if role == 'field_worker' %}灌溉一线{% elif role == 'manager' %}管理员{% elif role == 'super_admin' %}超级管理员{% elif role == 'dept_user' %}部门用户{% endif %}
+        </div>
+        <form method="post" action="{% url 'core:logout' %}" style="display:inline;">
+            {% csrf_token %}
+            <button type="submit" class="home-logout">退出</button>
+        </form>
+    </div>
+
+    <div class="menu-grid">
+        <a class="menu-card" href="{% url 'core:workorder_mobile' %}">
+            <div class="menu-icon green">&#128221;</div>
+            <div class="menu-label">工单提交</div>
+            <div class="menu-desc">填写工作记录</div>
+        </a>
+        <a class="menu-card" href="{% url 'core:workorder_history' %}">
+            <div class="menu-icon blue">&#128203;</div>
+            <div class="menu-label">历史记录</div>
+            <div class="menu-desc">查看工作记录</div>
+        </a>
+        <a class="menu-card" href="{% url 'core:dashboard' %}">
+            <div class="menu-icon orange">&#127759;</div>
+            <div class="menu-label">区域总览</div>
+            <div class="menu-desc">地图与区域状态</div>
+        </a>
+        {% if is_admin %}
+        <a class="menu-card" href="{% url 'core:zone_quick_draw_mobile' %}">
+            <div class="menu-icon purple">&#9999;&#65039;</div>
+            <div class="menu-label">快速绘制</div>
+            <div class="menu-desc">绘制区域边界</div>
+        </a>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+
+<div class="toast" id="toast"></div>
+</body>
+</html>
