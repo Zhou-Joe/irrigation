@@ -60,6 +60,17 @@ textarea { font-size: 0.85em; padding: 8px 10px; border: 1px solid #ddd; border-
 .draw-btn.active { background: #e8f5e9; border-color: var(--color-primary, #2D6A4F); color: var(--color-primary, #2D6A4F); font-weight: 600; }
 .draw-hint { font-size: 0.8em; color: #888; text-align: center; padding: 4px 0; }
 
+/* Drawn shape list */
+.shape-list { margin-top: 8px; }
+.shape-item { display: flex; align-items: center; justify-content: space-between; padding: 6px 10px; background: #f0f7f4; border-radius: 6px; margin-bottom: 4px; font-size: 0.82em; }
+.shape-item .shape-info { display: flex; align-items: center; gap: 6px; color: var(--color-primary, #2D6A4F); }
+.shape-item .shape-count { background: #2D6A4F; color: #fff; padding: 1px 7px; border-radius: 10px; font-size: 0.85em; }
+.shape-item .shape-actions { display: flex; gap: 6px; }
+.shape-item .shape-actions button { border: none; background: none; cursor: pointer; font-size: 1em; padding: 2px 6px; border-radius: 4px; }
+.shape-item .shape-actions .btn-edit { color: #555; }
+.shape-item .shape-actions .btn-del { color: #c0392b; }
+.shape-item .shape-actions .btn-del:hover { background: #fde8e8; }
+
 /* Map */
 .map-wrap { border-radius: 10px; overflow: hidden; border: 1px solid #ddd; position: relative; z-index: 1; margin-top: 8px; }
 #mapContainer { height: 280px; width: 100%; }
@@ -79,9 +90,6 @@ textarea { font-size: 0.85em; padding: 8px 10px; border: 1px solid #ddd; border-
 .toast.show { opacity: 1; }
 .toast.success { background: #d4edda; color: #155724; }
 .toast.error { background: #f8d7da; color: #721c24; }
-
-/* Leaflet zone label */
-.zone-map-label { background: rgba(255,255,255,0.85) !important; border: 1px solid #bbb !important; border-radius: 3px !important; color: #333 !important; font-size: 9px !important; font-weight: 600 !important; padding: 1px 3px !important; box-shadow: none !important; }
 
 /* Leaflet draw overrides */
 .leaflet-draw-toolbar a { display: none !important; }
@@ -112,7 +120,7 @@ textarea { font-size: 0.85em; padding: 8px 10px; border: 1px solid #ddd; border-
     </div>
 </div>
 
-<!-- Time Range -->
+<!-- Time Range + Remark -->
 <div class="form-section">
     <div class="field-group">
         <div>
@@ -124,6 +132,7 @@ textarea { font-size: 0.85em; padding: 8px 10px; border: 1px solid #ddd; border-
             <input type="datetime-local" id="endDatetime" name="end_datetime">
         </div>
     </div>
+    <textarea name="remark" placeholder="备注说明（可选）..." style="margin-top:8px;"></textarea>
 </div>
 
 <!-- Zone Selection -->
@@ -155,16 +164,14 @@ textarea { font-size: 0.85em; padding: 8px 10px; border: 1px solid #ddd; border-
         <div class="map-loading" id="mapLoading">加载地图数据...</div>
     </div>
 
+    <!-- Drawn shapes list -->
+    <div class="shape-list" id="shapeList"></div>
+
     <!-- Result summary -->
     <div class="zone-result" id="zoneResult" style="display:none;">
         <span>已选择 <span class="num" id="zoneCount">0</span> 个区域</span>
         <span style="font-size:0.8em;color:#888;cursor:pointer;" id="clearSelection">清除</span>
     </div>
-</div>
-
-<!-- Remark -->
-<div class="form-section">
-    <textarea name="remark" placeholder="备注说明（可选）..."></textarea>
 </div>
 
 <!-- Submit bar -->
@@ -256,11 +263,14 @@ document.getElementById('nameSearch').addEventListener('input', e => renderNameL
 // ── Map ──
 let map = null;
 let zonePolygons = {};
-let drawnLayer = null;
-let drawMode = null; // 'rect', 'circle', 'polygon'
+let drawMode = null;
 let drawPoints = [];
 let tempMarkers = [];
 let tempPolyline = null;
+
+// Multiple drawn shapes: [{id, type, layer, zoneCodes}]
+let drawnShapes = [];
+let shapeIdCounter = 0;
 
 (function initMap() {
     map = L.map('mapContainer', { zoomControl: false, attributionControl: false, minZoom: 15, maxZoom: 22 }).setView([31.155794, 121.668804], 17);
@@ -288,7 +298,6 @@ let tempPolyline = null;
                     color: '#888', weight: 1.5, fillColor: '#ccc', fillOpacity: 0.15,
                 }).addTo(map);
 
-                poly.bindTooltip(z.c, { permanent: true, direction: 'center', className: 'zone-map-label' });
                 poly._zoneCode = z.c;
                 zonePolygons[z.c] = poly;
             });
@@ -326,7 +335,6 @@ function cancelDraw() {
     tempMarkers.forEach(m => map.removeLayer(m));
     tempMarkers = [];
     if (tempPolyline) { map.removeLayer(tempPolyline); tempPolyline = null; }
-    if (drawnLayer) { map.removeLayer(drawnLayer); drawnLayer = null; }
     map.off('click', onPolygonClick);
     map.off('dblclick', onPolygonFinish);
     map.off('mousedown', onRectStart);
@@ -335,22 +343,27 @@ function cancelDraw() {
     map.off('mousemove', onDrawMouseMove);
     map.getContainer().style.cursor = '';
     document.querySelectorAll('.draw-btn').forEach(b => b.classList.remove('active'));
+    document.getElementById('drawHint').textContent = '选择绘制工具后在地图上绘制';
 }
 
 let rectStartLL = null;
 let circleCenter = null;
 let circleStep = 0;
 
-function onRectStart(e) {
-    rectStartLL = e.latlng;
+const shapeColors = ['#e74c3c', '#2980b9', '#8e44ad', '#e67e22', '#16a085', '#c0392b', '#2c3e50'];
+
+function nextShapeColor() {
+    return shapeColors[drawnShapes.length % shapeColors.length];
 }
+
+function onRectStart(e) { rectStartLL = e.latlng; }
 function onRectEnd(e) {
     if (!rectStartLL) return;
     const p1 = rectStartLL, p2 = e.latlng;
     rectStartLL = null;
-    if (drawnLayer) map.removeLayer(drawnLayer);
-    drawnLayer = L.rectangle([p1, p2], { color: '#2D6A4F', weight: 2, fillColor: '#2D6A4F', fillOpacity: 0.2 }).addTo(map);
-    queryZonesInArea('rect', [
+    const color = nextShapeColor();
+    const layer = L.rectangle([p1, p2], { color, weight: 2, fillColor: color, fillOpacity: 0.15 }).addTo(map);
+    queryAndAddShape('rect', layer, [
         { lat: Math.min(p1.lat, p2.lat), lng: Math.min(p1.lng, p2.lng) },
         { lat: Math.max(p1.lat, p2.lat), lng: Math.max(p1.lng, p2.lng) },
     ]);
@@ -362,16 +375,15 @@ function onCircleClick(e) {
         circleCenter = e.latlng;
         circleStep = 1;
         document.getElementById('drawHint').textContent = '点击确定半径';
-        // Show temp center marker
         const marker = L.circleMarker(circleCenter, { radius: 4, color: '#2D6A4F', fillColor: '#2D6A4F', fillOpacity: 1 }).addTo(map);
         tempMarkers.push(marker);
         map.on('mousemove', onDrawMouseMove);
     } else {
         const edge = e.latlng;
         const radius = circleCenter.distanceTo(edge);
-        if (drawnLayer) map.removeLayer(drawnLayer);
-        drawnLayer = L.circle(circleCenter, { radius: radius, color: '#2D6A4F', weight: 2, fillColor: '#2D6A4F', fillOpacity: 0.2 }).addTo(map);
-        queryZonesInArea('circle', [], circleCenter.lat, circleCenter.lng, radius);
+        const color = nextShapeColor();
+        const layer = L.circle(circleCenter, { radius, color, weight: 2, fillColor: color, fillOpacity: 0.15 }).addTo(map);
+        queryAndAddShape('circle', layer, [], circleCenter.lat, circleCenter.lng, radius);
         cancelDraw();
         circleStep = 0;
         circleCenter = null;
@@ -394,10 +406,10 @@ function onPolygonFinish(e) {
         document.getElementById('drawHint').textContent = '至少需要3个点';
         return;
     }
-    if (drawnLayer) map.removeLayer(drawnLayer);
-    drawnLayer = L.polygon(drawPoints, { color: '#2D6A4F', weight: 2, fillColor: '#2D6A4F', fillOpacity: 0.2 }).addTo(map);
+    const color = nextShapeColor();
+    const layer = L.polygon(drawPoints, { color, weight: 2, fillColor: color, fillOpacity: 0.15 }).addTo(map);
     const pts = drawPoints.map(ll => ({ lat: ll.lat, lng: ll.lng }));
-    queryZonesInArea('polygon', pts);
+    queryAndAddShape('polygon', layer, pts);
     cancelDraw();
 }
 
@@ -408,25 +420,107 @@ function onDrawMouseMove(e) {
     }
 }
 
-// ── Query zones in drawn area ──
-function queryZonesInArea(type, points, centerLat, centerLng, radius) {
-    const params = new URLSearchParams({ type: type, points: JSON.stringify(points) });
+// ── Add shape to list & query zones ──
+function queryAndAddShape(type, layer, points, centerLat, centerLng, radius) {
+    const id = ++shapeIdCounter;
+    const params = new URLSearchParams({ type, points: JSON.stringify(points) });
     if (centerLat !== undefined) params.set('center_lat', centerLat);
     if (centerLng !== undefined) params.set('center_lng', centerLng);
     if (radius !== undefined) params.set('radius', radius);
 
+    // Add placeholder immediately
+    const shape = { id, type, layer, zoneCodes: [], color: layer.options.color };
+    drawnShapes.push(shape);
+    renderShapeList();
+
     fetch('{% url "core:zones_in_area_api" %}?' + params.toString())
         .then(r => r.json())
         .then(data => {
-            // Merge with existing selection
+            shape.zoneCodes = data.zone_codes;
             data.zone_codes.forEach(code => selectedZoneCodes.add(code));
             updateResult();
             refreshMapStyles();
+            renderShapeList();
         })
         .catch(() => {
             showToast('查询区域失败', 'error');
         });
 }
+
+// ── Shape list UI ──
+function renderShapeList() {
+    const container = document.getElementById('shapeList');
+    container.innerHTML = '';
+    drawnShapes.forEach((s, idx) => {
+        const typeLabel = { rect: '矩形', circle: '圆形', polygon: '多边形' }[s.type] || s.type;
+        const item = document.createElement('div');
+        item.className = 'shape-item';
+        item.innerHTML =
+            '<div class="shape-info">' +
+                '<span style="width:10px;height:10px;border-radius:50%;background:' + s.color + ';flex-shrink:0;"></span>' +
+                '<span>' + typeLabel + ' #' + (idx + 1) + '</span>' +
+                '<span class="shape-count">' + s.zoneCodes.length + ' 区域</span>' +
+            '</div>' +
+            '<div class="shape-actions">' +
+                '<button class="btn-edit" data-id="' + s.id + '" title="编辑">&#9998;</button>' +
+                '<button class="btn-del" data-id="' + s.id + '" title="删除">&#10005;</button>' +
+            '</div>';
+
+        // Highlight on tap
+        item.addEventListener('click', (e) => {
+            if (e.target.closest('.btn-del') || e.target.closest('.btn-edit')) return;
+            // Toggle highlight: make this shape's zones flash
+            s.zoneCodes.forEach(code => {
+                const poly = zonePolygons[code];
+                if (poly) {
+                    poly.setStyle({ fillColor: s.color, fillOpacity: 0.6 });
+                    setTimeout(() => refreshMapStyles(), 800);
+                }
+            });
+            map.fitBounds(s.layer.getBounds(), { padding: [30, 30] });
+        });
+
+        container.appendChild(item);
+    });
+
+    // Bind delete buttons
+    container.querySelectorAll('.btn-del').forEach(btn => {
+        btn.addEventListener('click', () => removeShape(parseInt(btn.dataset.id)));
+    });
+
+    // Bind edit buttons: delete shape and re-enter draw mode with same tool
+    container.querySelectorAll('.btn-edit').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const s = drawnShapes.find(x => x.id === parseInt(btn.dataset.id));
+            if (!s) return;
+            // Remove shape and its zones from selection
+            removeShape(parseInt(btn.dataset.id));
+            // Activate the same draw tool
+            const toolBtn = document.querySelector('.draw-btn[data-tool="' + s.type + '"]');
+            if (toolBtn) toolBtn.click();
+        });
+    });
+}
+
+function removeShape(id) {
+    const idx = drawnShapes.findIndex(s => s.id === id);
+    if (idx < 0) return;
+    const s = drawnShapes[idx];
+    map.removeLayer(s.layer);
+    s.zoneCodes.forEach(code => selectedZoneCodes.delete(code));
+    drawnShapes.splice(idx, 1);
+    // Recalculate selection from remaining shapes + patch selection
+    if (selectedName) {
+        patchGroups[selectedName].forEach(code => selectedZoneCodes.add(code));
+    }
+    drawnShapes.forEach(s2 => s2.zoneCodes.forEach(code => selectedZoneCodes.add(code)));
+    updateResult();
+    refreshMapStyles();
+    renderShapeList();
+}
+
+// ── Query zones in drawn area ──
+// (handled by queryAndAddShape above)
 
 // ── Result display ──
 function updateResult() {
@@ -440,9 +534,12 @@ document.getElementById('clearSelection').addEventListener('click', () => {
     selectedZoneCodes.clear();
     selectedName = '';
     renderNameList(document.getElementById('nameSearch').value);
+    // Remove all drawn shapes
+    drawnShapes.forEach(s => map.removeLayer(s.layer));
+    drawnShapes = [];
+    renderShapeList();
     updateResult();
     refreshMapStyles();
-    if (drawnLayer) { map.removeLayer(drawnLayer); drawnLayer = null; }
 });
 
 // ── Map style refresh ──
