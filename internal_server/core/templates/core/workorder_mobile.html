@@ -9,34 +9,34 @@
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
-body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f5; color: #222; min-height: 100vh; padding-bottom: 80px; -webkit-text-size-adjust: 100%; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f5; color: #222; min-height: 100vh; padding-bottom: 60px; -webkit-text-size-adjust: 100%; }
 
-.top-bar { position: sticky; top: 0; z-index: 100; background: var(--color-primary, #2D6A4F); color: #fff; display: flex; align-items: center; padding: 12px 16px; font-size: 1.1em; font-weight: 600; box-shadow: 0 2px 8px rgba(0,0,0,0.15); }
+.top-bar { position: sticky; top: 0; z-index: 100; background: var(--color-primary, #2D6A4F); color: #fff; display: flex; align-items: center; padding: 10px 16px; font-size: 1em; font-weight: 600; box-shadow: 0 2px 8px rgba(0,0,0,0.15); }
 .top-bar a { color: #fff; text-decoration: none; font-size: 1.2em; margin-right: 12px; }
 
-.form-section { background: #fff; margin: 12px; border-radius: 10px; padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
-.form-section-title { font-size: 0.85em; font-weight: 600; color: var(--color-primary, #2D6A4F); margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
+.form-section { background: #fff; margin: 8px 12px; border-radius: 10px; padding: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+.form-section-title { font-size: 0.85em; font-weight: 600; color: var(--color-primary, #2D6A4F); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; }
 
-.field-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #f0f0f0; min-height: 48px; }
+.field-row { display: flex; align-items: center; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid #f0f0f0; min-height: 36px; }
 .field-row:last-child { border-bottom: none; }
-.field-label { font-size: 0.9em; color: #555; flex-shrink: 0; min-width: 100px; }
-.field-value { font-size: 0.9em; font-weight: 500; color: #222; text-align: right; }
+.field-label { font-size: 0.85em; color: #555; flex-shrink: 0; }
+.field-value { font-size: 0.85em; font-weight: 500; color: #222; text-align: right; }
 .field-value.readonly { color: #888; font-family: inherit; }
 
 select, input[type="number"], input[type="text"] {
-    font-size: 0.9em; padding: 8px 12px; border: 1px solid #ddd; border-radius: 8px;
-    background: #fff; min-height: 40px; width: 100%; -webkit-appearance: none; appearance: none;
+    font-size: 0.85em; padding: 6px 10px; border: 1px solid #ddd; border-radius: 8px;
+    background: #fff; min-height: 34px; width: 100%; -webkit-appearance: none; appearance: none;
 }
 input[type="number"] { width: 80px; text-align: center; }
 select { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23666' d='M6 8L1 3h10z'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 12px center; padding-right: 32px; }
-textarea { font-size: 0.9em; padding: 10px 12px; border: 1px solid #ddd; border-radius: 8px; width: 100%; min-height: 80px; resize: vertical; font-family: inherit; }
+textarea { font-size: 0.85em; padding: 8px 10px; border: 1px solid #ddd; border-radius: 8px; width: 100%; min-height: 60px; resize: vertical; font-family: inherit; }
 
 .field-group { display: flex; gap: 16px; align-items: center; }
 .field-group > div { flex: 1; }
 .field-group label { display: block; font-size: 0.8em; color: #888; margin-bottom: 4px; }
 .field-group input, .field-group select { width: 100%; }
 
-.toggle-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 0; }
+.toggle-row { display: flex; align-items: center; justify-content: space-between; padding: 4px 0; }
 .toggle-row select { width: auto; min-width: 80px; }
 
 /* Zone selector */
@@ -44,12 +44,15 @@ textarea { font-size: 0.9em; padding: 10px 12px; border: 1px solid #ddd; border-
 .zone-search { width: 100%; padding: 10px 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 0.9em; }
 .zone-dropdown { position: absolute; top: 100%; left: 0; right: 0; background: #fff; border: 1px solid #ddd; border-radius: 8px; max-height: 300px; overflow-y: auto; z-index: 1050; display: none; box-shadow: 0 4px 12px rgba(0,0,0,0.12); }
 .zone-dropdown.open { display: block; }
-.zone-group-header { padding: 8px 12px; background: #f5f5f5; font-size: 0.8em; font-weight: 600; color: #666; position: sticky; top: 0; }
-.zone-item { display: flex; align-items: center; padding: 8px 12px; font-size: 0.85em; border-bottom: 1px solid #f5f5f5; cursor: pointer; }
+.zone-group-header { padding: 6px 10px; background: #f5f5f5; font-size: 0.75em; font-weight: 600; color: #666; position: sticky; top: 0; }
+.zone-grid-row { display: flex; border-bottom: 1px solid #f5f5f5; }
+.zone-grid-row:last-child { border-bottom: none; }
+.zone-item { flex: 1; display: flex; align-items: center; padding: 6px 8px; font-size: 0.78em; cursor: pointer; border-right: 1px solid #f5f5f5; }
+.zone-grid-row .zone-item:last-child { border-right: none; }
 .zone-item:active { background: #e8f5e9; }
-.zone-item input { margin-right: 8px; width: 18px; height: 18px; flex-shrink: 0; }
-.zone-item-code { font-family: 'Courier New', monospace; font-weight: 500; min-width: 60px; }
-.zone-item-name { color: #666; margin-left: 4px; flex: 1; }
+.zone-item input { margin-right: 4px; width: 15px; height: 15px; flex-shrink: 0; }
+.zone-item-code { font-family: 'Courier New', monospace; font-weight: 500; }
+.zone-item-name { color: #666; margin-left: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .zone-item-dist { color: #aaa; font-size: 0.85em; margin-left: 6px; white-space: nowrap; }
 .selected-zones { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .zone-tag { background: var(--color-primary, #2D6A4F); color: #fff; padding: 4px 10px; border-radius: 12px; font-size: 0.78em; display: flex; align-items: center; gap: 4px; }
@@ -58,21 +61,21 @@ textarea { font-size: 0.9em; padding: 10px 12px; border: 1px solid #ddd; border-
 
 /* Zone map */
 .zone-map-wrap { margin-top: 10px; border-radius: 10px; overflow: hidden; border: 1px solid #ddd; position: relative; z-index: 1; }
-#zoneMap { height: 260px; width: 100%; }
+#zoneMap { height: 200px; width: 100%; }
 .map-loading { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: #f8f8f8; color: #888; font-size: 0.85em; z-index: 400; }
 .btn-locate { position: absolute; bottom: 12px; right: 12px; z-index: 450; width: 36px; height: 36px; border-radius: 50%; border: none; background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,0.3); cursor: pointer; font-size: 1.1em; display: flex; align-items: center; justify-content: center; }
 
 /* Trigger rows */
-.trigger-row { display: flex; align-items: center; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid #f0f0f0; cursor: pointer; }
+.trigger-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #f0f0f0; cursor: pointer; }
 .trigger-row:last-child { border-bottom: none; }
 .trigger-row:active { background: #f8f8f8; }
-.trigger-label { font-size: 0.9em; color: #555; }
-.trigger-value { font-size: 0.9em; color: #222; font-weight: 500; max-width: 60%; text-align: right; word-break: break-all; }
+.trigger-label { font-size: 0.85em; color: #555; }
+.trigger-value { font-size: 0.85em; color: #222; font-weight: 500; max-width: 60%; text-align: right; word-break: break-all; }
 .trigger-value.placeholder { color: #bbb; }
 .trigger-arrow { font-size: 0.7em; color: #999; margin-left: 6px; }
 
 /* Image upload inline */
-.img-upload-area { border: 2px dashed #ddd; border-radius: 10px; padding: 16px; text-align: center; cursor: pointer; color: #999; font-size: 0.85em; }
+.img-upload-area { border: 2px dashed #ddd; border-radius: 10px; padding: 10px; text-align: center; cursor: pointer; color: #999; font-size: 0.85em; }
 .img-upload-area:active { border-color: var(--color-primary, #2D6A4F); color: var(--color-primary, #2D6A4F); }
 .img-preview-grid { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
 .img-preview-item { position: relative; width: 72px; height: 72px; border-radius: 8px; overflow: hidden; }
@@ -98,17 +101,17 @@ textarea { font-size: 0.9em; padding: 10px 12px; border: 1px solid #ddd; border-
 .modal-footer { padding: 12px 16px; border-top: 1px solid #f0f0f0; }
 .modal-footer .btn-confirm { width: 100%; padding: 12px; border: none; border-radius: 10px; font-size: 0.95em; font-weight: 600; cursor: pointer; background: var(--color-primary, #2D6A4F); color: #fff; }
 
-.submit-bar { position: fixed; bottom: 0; left: 0; right: 0; background: #fff; padding: 12px 16px; box-shadow: 0 -2px 8px rgba(0,0,0,0.1); z-index: 100; display: flex; gap: 12px; }
-.btn-submit { flex: 1; padding: 14px; border: none; border-radius: 10px; font-size: 1em; font-weight: 600; cursor: pointer; background: var(--color-primary, #2D6A4F); color: #fff; }
+.submit-bar { position: fixed; bottom: 0; left: 0; right: 0; background: #fff; padding: 8px 16px; box-shadow: 0 -2px 8px rgba(0,0,0,0.1); z-index: 100; display: flex; gap: 12px; }
+.btn-submit { flex: 1; padding: 10px; border: none; border-radius: 10px; font-size: 1em; font-weight: 600; cursor: pointer; background: var(--color-primary, #2D6A4F); color: #fff; }
 .btn-submit:active { opacity: 0.85; }
-.btn-history { padding: 14px 20px; border: 1px solid #ddd; border-radius: 10px; font-size: 0.9em; background: #fff; color: #555; text-decoration: none; text-align: center; }
+.btn-history { padding: 10px 20px; border: 1px solid #ddd; border-radius: 10px; font-size: 0.9em; background: #fff; color: #555; text-decoration: none; text-align: center; }
 
 .toast { position: fixed; top: 60px; left: 50%; transform: translateX(-50%); padding: 10px 20px; border-radius: 8px; font-size: 0.9em; z-index: 600; opacity: 0; transition: opacity 0.3s; pointer-events: none; }
 .toast.show { opacity: 1; }
 .toast.success { background: #d4edda; color: #155724; }
 .toast.error { background: #f8d7da; color: #721c24; }
 
-.hours-display { margin-top: 8px; padding: 8px 12px; background: #f8f9fa; border-radius: 8px; font-size: 0.85em; color: #555; }
+.hours-display { margin-top: 4px; padding: 4px 10px; background: #f8f9fa; border-radius: 6px; font-size: 0.8em; color: #555; }
 .hours-display span { font-weight: 600; color: var(--color-primary, #2D6A4F); }
 
 /* Leaflet zone label */
@@ -118,89 +121,58 @@ textarea { font-size: 0.9em; padding: 10px 12px; border: 1px solid #ddd; border-
 <body>
 
 <div class="top-bar">
-    <a href="{% url 'core:workorder_history' %}">&#8592;</a>
+    <a href="{% url 'core:mobile_home' %}">&#8592;</a>
     灌溉工作记录
 </div>
 
 <form id="workorderForm" method="post" enctype="multipart/form-data">
 {% csrf_token %}
 
-<!-- Basic Info -->
+<!-- Basic Info: Date + Person + Shift in one row -->
 <div class="form-section">
-    <div class="field-row">
-        <span class="field-label">日期时间</span>
-        <span class="field-value readonly">{{ today }} {{ now_time }}</span>
-        <input type="hidden" name="date" value="{{ today }}">
-    </div>
-    <div class="field-row">
-        <span class="field-label">填写人</span>
-        <span class="field-value readonly">{{ worker_name }}</span>
-    </div>
-    <div class="field-row">
-        <span class="field-label">班次</span>
-        <div style="display:flex;gap:8px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;">
+        <span style="font-size:0.85em;color:#222;">{{ today }} {{ now_time }}</span>
+        <span style="font-size:0.85em;color:#888;">{{ worker_name }}</span>
+        <div style="display:flex;gap:4px;">
             {% for s in sorted_shifts %}
-            <label style="display:flex;align-items:center;gap:4px;padding:6px 14px;border:1px solid #ddd;border-radius:8px;font-size:0.9em;cursor:pointer;" class="shift-chip">
+            <label style="display:flex;align-items:center;padding:4px 10px;border:1px solid #ddd;border-radius:6px;font-size:0.8em;cursor:pointer;" class="shift-chip">
                 <input type="radio" name="shift" value="{{ s }}" style="display:none;">
                 {{ s }}
             </label>
             {% endfor %}
         </div>
     </div>
+    <input type="hidden" name="date" value="{{ today }}">
 </div>
 
 <!-- Time & Headcount -->
 <div class="form-section">
     <div class="field-group">
         <div>
-            <label>工作开始时间</label>
+            <label>开始时间</label>
             <select name="work_start_time" id="workStart">
-                <option value="">-- 选择 --</option>
+                <option value="">--</option>
             </select>
         </div>
         <div>
-            <label>工作完成时间</label>
+            <label>完成时间</label>
             <select name="work_end_time" id="workEnd">
-                <option value="">-- 选择 --</option>
+                <option value="">--</option>
             </select>
         </div>
-    </div>
-    <div class="field-group" style="margin-top:12px;">
         <div>
-            <label>灌溉组人数</label>
+            <label id="teamLabel">灌溉组</label>
             <input type="number" name="team_size" value="1" min="0" max="99">
         </div>
         <div>
-            <label>第三方人数</label>
+            <label id="thirdLabel">第三方</label>
             <input type="number" name="third_party_count" value="0" min="0" max="99">
         </div>
-    </div>
-    <div class="hours-display" id="hoursDisplay" style="display:none;">
-        灌溉组工时: <span id="teamHours">0</span>h &nbsp;|&nbsp; 第三方工时: <span id="thirdPartyHours">0</span>h
-    </div>
-</div>
-
-<!-- Difficulty -->
-<div class="form-section">
-    <div class="toggle-row">
-        <span class="field-label">疑难问题</span>
-        <select name="is_difficult" id="isDifficult">
-            <option value="">否</option>
-            <option value="1">是</option>
-        </select>
-    </div>
-    <div class="toggle-row" id="resolvedRow" style="display:none;">
-        <span class="field-label">疑难已处理</span>
-        <select name="is_difficult_resolved">
-            <option value="">否</option>
-            <option value="1">是</option>
-        </select>
     </div>
 </div>
 
 <!-- Zone Selection + Map -->
 <div class="form-section">
-    <div class="form-section-title">区域选择</div>
     <div class="zone-selector">
         <input type="text" class="zone-search" id="zoneSearch" placeholder="搜索区域编号或名称..." autocomplete="off">
         <div class="zone-dropdown" id="zoneDropdown"></div>
@@ -215,34 +187,54 @@ textarea { font-size: 0.9em; padding: 10px 12px; border: 1px solid #ddd; border-
     </div>
 </div>
 
-<!-- Trigger rows: Category & Fault -->
-<div class="form-section">
-    <div class="trigger-row" id="triggerCategory">
-        <span class="trigger-label">工作类别</span>
-        <span class="trigger-value placeholder" id="categoryDisplay">点击选择</span>
-        <span class="trigger-arrow">&#9654;</span>
+<!-- Category & Fault & Difficulty -->
+<div class="form-section" style="padding:8px 12px;">
+    <div style="display:flex;gap:0;">
+        <div style="flex:1;display:flex;align-items:center;justify-content:space-between;cursor:pointer;padding:6px 8px;border-right:1px solid #f0f0f0;" id="triggerCategory">
+            <span style="font-size:0.85em;color:#555;">工作类别</span>
+            <span style="font-size:0.8em;color:#222;font-weight:500;max-width:55%;text-align:right;word-break:break-all;" class="placeholder" id="categoryDisplay">选择</span>
+            <span style="font-size:0.7em;color:#999;">&#9654;</span>
+        </div>
+        <div style="flex:1;display:flex;align-items:center;justify-content:space-between;cursor:pointer;padding:6px 8px;" id="triggerFault">
+            <span style="font-size:0.85em;color:#555;">故障详情</span>
+            <span style="font-size:0.8em;color:#222;font-weight:500;max-width:55%;text-align:right;word-break:break-all;" class="placeholder" id="faultDisplay">选择</span>
+            <span style="font-size:0.7em;color:#999;">&#9654;</span>
+        </div>
     </div>
-    <div class="trigger-row" id="triggerFault">
-        <span class="trigger-label">故障详情</span>
-        <span class="trigger-value placeholder" id="faultDisplay">点击选择</span>
-        <span class="trigger-arrow">&#9654;</span>
+    <div style="display:flex;align-items:center;gap:8px;margin-top:4px;padding-top:4px;border-top:1px solid #f0f0f0;">
+        <span style="font-size:0.8em;color:#555;">疑难</span>
+        <div style="display:flex;gap:3px;">
+            <label style="padding:3px 10px;border:1px solid #ddd;border-radius:6px;font-size:0.78em;cursor:pointer;" class="diff-chip" data-val="">
+                <input type="radio" name="is_difficult" value="" style="display:none;" checked>否
+            </label>
+            <label style="padding:3px 10px;border:1px solid #ddd;border-radius:6px;font-size:0.78em;cursor:pointer;" class="diff-chip" data-val="1">
+                <input type="radio" name="is_difficult" value="1" style="display:none;">是
+            </label>
+        </div>
+        <span style="font-size:0.8em;color:#555;">已处理</span>
+        <div style="display:flex;gap:3px;">
+            <label style="padding:3px 10px;border:1px solid #ddd;border-radius:6px;font-size:0.78em;cursor:pointer;" class="resolve-chip" data-val="">
+                <input type="radio" name="is_difficult_resolved" value="" style="display:none;" checked>否
+            </label>
+            <label style="padding:3px 10px;border:1px solid #ddd;border-radius:6px;font-size:0.78em;cursor:pointer;" class="resolve-chip" data-val="1">
+                <input type="radio" name="is_difficult_resolved" value="1" style="display:none;">是
+            </label>
+        </div>
     </div>
     <input type="hidden" name="work_category" id="workCategoryInput">
     <input type="hidden" name="fault_entries" id="faultEntriesInput">
 </div>
 
-<!-- Work Content (inline) -->
+<!-- Work Content + Photos -->
 <div class="form-section">
-    <div class="form-section-title">工作内容</div>
-    <textarea name="work_content" placeholder="描述具体工作内容..."></textarea>
-</div>
-
-<!-- Photos (inline) -->
-<div class="form-section">
-    <div class="form-section-title">上传照片</div>
-    <div class="img-upload-area" id="imgUploadArea">点击或拖拽上传照片（最多6张）</div>
-    <input type="file" id="imgFileInput" accept="image/*" multiple style="display:none;">
-    <div class="img-preview-grid" id="imgPreviewGrid"></div>
+    <div style="display:flex;gap:8px;">
+        <textarea name="work_content" placeholder="工作内容..." style="flex:1;min-height:70px;"></textarea>
+        <div style="display:flex;flex-direction:column;gap:4px;">
+            <div class="img-upload-area" id="imgUploadArea" style="width:70px;height:70px;padding:0;display:flex;align-items:center;justify-content:center;font-size:0.7em;flex-shrink:0;">上传照片</div>
+            <input type="file" id="imgFileInput" accept="image/*" multiple style="display:none;">
+        </div>
+    </div>
+    <div class="img-preview-grid" id="imgPreviewGrid" style="margin-top:6px;"></div>
 </div>
 
 <input type="hidden" name="remark" value="">
@@ -257,10 +249,12 @@ textarea { font-size: 0.9em; padding: 10px 12px; border: 1px solid #ddd; border-
             <button class="modal-close" data-close="modalCategory">&times;</button>
         </div>
         <div class="modal-body">
-            <select id="catPrimary" style="width:100%;margin-bottom:12px;">
-                <option value="">-- 选择主类别 --</option>
-            </select>
+            <div style="font-size:0.75em;color:#999;margin-bottom:6px;">主类别</div>
+            <div class="subcat-grid-modal" id="catPrimaryGrid"></div>
+            <div id="subcatDivider" style="display:none;border-top:1px solid #e0e0e0;margin:12px 0;"></div>
+            <div id="subcatLabel" style="display:none;font-size:0.75em;color:#999;margin-bottom:6px;">子类别</div>
             <div class="subcat-grid-modal" id="subcatGrid"></div>
+            <input type="hidden" id="catPrimary" value="">
         </div>
         <div class="modal-footer">
             <button class="btn-confirm" data-close="modalCategory">确定</button>
@@ -277,11 +271,13 @@ textarea { font-size: 0.9em; padding: 10px 12px; border: 1px solid #ddd; border-
             <button class="modal-close" data-close="modalFault">&times;</button>
         </div>
         <div class="modal-body">
-            <select id="faultPrimary" style="width:100%;margin-bottom:12px;">
-                <option value="">-- 选择故障类别 --</option>
-            </select>
+            <div style="font-size:0.75em;color:#999;margin-bottom:6px;">故障类别</div>
+            <div class="subcat-grid-modal" id="faultPrimaryGrid"></div>
+            <div id="faultSubDivider" style="display:none;border-top:1px solid #e0e0e0;margin:12px 0;"></div>
+            <div id="faultSubLabel" style="display:none;font-size:0.75em;color:#999;margin-bottom:6px;">故障子项</div>
             <div class="subcat-grid-modal" id="faultSubGrid"></div>
-            <div style="margin-top:16px;">
+            <input type="hidden" id="faultPrimary" value="">
+            <div style="margin-top:12px;">
                 <label style="font-size:0.8em;color:#888;display:block;margin-bottom:4px;">自定义备注（如无合适选项）</label>
                 <input type="text" id="faultCustomNote" placeholder="输入自定义故障描述..." style="width:100%;">
             </div>
@@ -320,7 +316,14 @@ function populateTimeSelect(sel, defaultVal) {
     if (defaultVal) sel.value = defaultVal;
 }
 populateTimeSelect(document.getElementById('workStart'), '{{ default_time }}');
-populateTimeSelect(document.getElementById('workEnd'), '{{ default_time }}');
+// End time defaults to start + 15min
+(function() {
+    const [h, m] = '{{ default_time }}'.split(':').map(Number);
+    let nm = m + 15, nh = h;
+    if (nm >= 60) { nm -= 60; nh++; }
+    if (nh >= 24) nh = 0;
+    populateTimeSelect(document.getElementById('workEnd'), String(nh).padStart(2,'0') + ':' + String(nm).padStart(2,'0'));
+})();
 
 // ── Hours auto-calc ──
 function updateHours() {
@@ -328,16 +331,22 @@ function updateHours() {
     const end = document.getElementById('workEnd').value;
     const teamSize = parseInt(document.querySelector('[name=team_size]').value) || 0;
     const thirdParty = parseInt(document.querySelector('[name=third_party_count]').value) || 0;
-    const display = document.getElementById('hoursDisplay');
-    if (!start || !end) { display.style.display = 'none'; return; }
+    const teamLabel = document.getElementById('teamLabel');
+    const thirdLabel = document.getElementById('thirdLabel');
+    if (!start || !end) {
+        teamLabel.textContent = '灌溉组';
+        thirdLabel.textContent = '第三方';
+        return;
+    }
     let [sh, sm] = start.split(':').map(Number);
     let [eh, em] = end.split(':').map(Number);
     let startMin = sh * 60 + sm, endMin = eh * 60 + em;
-    if (endMin <= startMin) endMin += 24 * 60;
+    if (endMin < startMin) endMin += 24 * 60;  // only add 24h if end < start (overnight)
     const durationH = (endMin - startMin) / 60;
-    document.getElementById('teamHours').textContent = Math.round(durationH * teamSize * 2) / 2;
-    document.getElementById('thirdPartyHours').textContent = Math.round(durationH * thirdParty * 2) / 2;
-    display.style.display = 'block';
+    const teamH = Math.round(durationH * teamSize * 10) / 10;
+    const thirdH = Math.round(durationH * thirdParty * 10) / 10;
+    teamLabel.textContent = '灌溉组 (' + teamH + 'h)';
+    thirdLabel.textContent = '第三方 (' + thirdH + 'h)';
 }
 document.getElementById('workStart').addEventListener('change', updateHours);
 document.getElementById('workEnd').addEventListener('change', updateHours);
@@ -346,26 +355,30 @@ document.querySelector('[name=third_party_count]').addEventListener('input', upd
 updateHours();
 
 // ── Shift chip toggle ──
-document.querySelectorAll('.shift-chip').forEach(chip => {
-    chip.addEventListener('click', () => {
-        document.querySelectorAll('.shift-chip').forEach(c => {
-            c.style.background = '#fff';
-            c.style.borderColor = '#ddd';
-            c.style.color = '#555';
-            c.style.fontWeight = '400';
+function setupChipGroup(className) {
+    document.querySelectorAll('.' + className).forEach(chip => {
+        chip.addEventListener('click', () => {
+            document.querySelectorAll('.' + className).forEach(c => {
+                c.style.background = '#fff';
+                c.style.borderColor = '#ddd';
+                c.style.color = '#555';
+            });
+            chip.style.background = '#e8f5e9';
+            chip.style.borderColor = '#2D6A4F';
+            chip.style.color = '#2D6A4F';
+            chip.querySelector('input').checked = true;
         });
-        chip.style.background = '#e8f5e9';
-        chip.style.borderColor = '#2D6A4F';
-        chip.style.color = '#2D6A4F';
-        chip.style.fontWeight = '500';
-        chip.querySelector('input').checked = true;
     });
-});
-
-// ── Difficulty toggle ──
-document.getElementById('isDifficult').addEventListener('change', function() {
-    document.getElementById('resolvedRow').style.display = this.value ? 'flex' : 'none';
-});
+}
+setupChipGroup('shift-chip');
+setupChipGroup('diff-chip');
+setupChipGroup('resolve-chip');
+// Initialize first shift chip as selected
+const firstShift = document.querySelector('.shift-chip');
+if (firstShift) firstShift.click();
+// Initialize "否" as selected for difficulty and resolve
+document.querySelector('.diff-chip[data-val=""]').click();
+document.querySelector('.resolve-chip[data-val=""]').click();
 
 // ── Zone selector ──
 const selectedZoneCodes = new Set();
@@ -391,68 +404,38 @@ function renderZoneDropdown(filter) {
     // Sort by distance (closest first), fallback to code
     allMatching.sort((a, b) => a.ds - b.ds || a.code.localeCompare(b.code));
 
-    if (userLatLng && !q) {
-        // Group by distance bands
-        let count = 0;
-        const closeZones = allMatching.filter(z => z.ds !== Infinity).slice(0, 30);
-        if (closeZones.length) {
-            const header = document.createElement('div');
-            header.className = 'zone-group-header';
-            header.textContent = '附近区域 (' + closeZones.length + ')';
-            zoneDropdown.appendChild(header);
-            for (const z of closeZones) {
-                if (count++ > 200) break;
-                appendZoneItem(z);
-            }
-        }
-        const farZones = allMatching.filter(z => z.ds === Infinity || !closeZones.includes(z));
-        if (farZones.length && count < 200) {
-            const header = document.createElement('div');
-            header.className = 'zone-group-header';
-            header.textContent = '其他区域';
-            zoneDropdown.appendChild(header);
-            for (const z of farZones) {
-                if (count++ > 200) break;
-                appendZoneItem(z);
-            }
-        }
-    } else {
-        // Group by patch
-        let count = 0;
-        const byPatch = {};
-        allMatching.forEach(z => { (byPatch[z.patch] = byPatch[z.patch] || []).push(z); });
-        for (const [patch, zones] of Object.entries(byPatch)) {
-            if (count >= 200) break;
-            const header = document.createElement('div');
-            header.className = 'zone-group-header';
-            header.textContent = patch + ' (' + zones.length + ')';
-            zoneDropdown.appendChild(header);
-            for (const z of zones) {
-                if (count++ > 200) break;
-                appendZoneItem(z);
-            }
-        }
+    // Limit to 10 items
+    const shown = allMatching.slice(0, 10);
+
+    // Render in 2-column grid rows
+    for (let i = 0; i < shown.length; i += 2) {
+        const row = document.createElement('div');
+        row.className = 'zone-grid-row';
+        appendZoneItem(shown[i], row);
+        if (i + 1 < shown.length) appendZoneItem(shown[i + 1], row);
+        zoneDropdown.appendChild(row);
+    }
+
+    if (allMatching.length > 10) {
+        const more = document.createElement('div');
+        more.style.cssText = 'padding:6px;text-align:center;font-size:0.75em;color:#999;';
+        more.textContent = '共 ' + allMatching.length + ' 个，输入关键词缩小范围';
+        zoneDropdown.appendChild(more);
     }
     zoneDropdown.classList.add('open');
 }
 
-function appendZoneItem(z) {
+function appendZoneItem(z, container) {
     const item = document.createElement('div');
     item.className = 'zone-item';
-    let distHtml = '';
-    if (userLatLng && z.ds !== Infinity) {
-        const distM = Math.round(Math.sqrt(z.ds) * 111000); // approx meters (1 deg ~111km)
-        const distStr = distM >= 1000 ? (distM / 1000).toFixed(1) + 'km' : distM + 'm';
-        distHtml = '<span class="zone-item-dist">' + distStr + '</span>';
-    }
-    item.innerHTML = '<input type="checkbox" ' + (selectedZoneCodes.has(z.code) ? 'checked' : '') + '><span class="zone-item-code">' + z.code + '</span><span class="zone-item-name">' + (z.name || '') + '</span>' + distHtml;
+    item.innerHTML = '<input type="checkbox" ' + (selectedZoneCodes.has(z.code) ? 'checked' : '') + '><span class="zone-item-code">' + z.code + '</span><span class="zone-item-name">' + (z.name || '') + '</span>';
     const cb = item.querySelector('input');
     cb.addEventListener('change', () => {
         if (cb.checked) selectedZoneCodes.add(z.code); else selectedZoneCodes.delete(z.code);
         renderSelectedZones();
         refreshMapStyles();
     });
-    zoneDropdown.appendChild(item);
+    container.appendChild(item);
 }
 
 function renderSelectedZones() {
@@ -509,8 +492,8 @@ function updateTriggerDisplays() {
         if (checkedSubs.length > 0) catText += ' / ' + [...checkedSubs].map(cb => cb.parentElement.textContent.trim()).join(', ');
     }
     const catDisplay = document.getElementById('categoryDisplay');
-    if (catText) { catDisplay.textContent = catText; catDisplay.classList.remove('placeholder'); }
-    else { catDisplay.textContent = '点击选择'; catDisplay.classList.add('placeholder'); }
+    if (catText) { catDisplay.textContent = catText; catDisplay.style.color = '#222'; }
+    else { catDisplay.textContent = '选择'; catDisplay.style.color = '#bbb'; }
 
     // Fault display
     const faultDisplay = document.getElementById('faultDisplay');
@@ -523,16 +506,32 @@ function updateTriggerDisplays() {
         if (checkedFaults.length > 0) faultText += ' / ' + [...checkedFaults].map(cb => cb.parentElement.textContent.trim()).join(', ');
     }
     if (customNote) faultText += (faultText ? ' + ' : '') + customNote;
-    if (faultText) { faultDisplay.textContent = faultText; faultDisplay.classList.remove('placeholder'); }
-    else { faultDisplay.textContent = '点击选择'; faultDisplay.classList.add('placeholder'); }
+    if (faultText) { faultDisplay.textContent = faultText; faultDisplay.style.color = '#222'; }
+    else { faultDisplay.textContent = '选择'; faultDisplay.style.color = '#bbb'; }
 }
 
 // ── Work category ──
 const catPrimary = document.getElementById('catPrimary');
+
+// Render primary categories as chip buttons
 categoryTree.forEach(c => {
-    const opt = document.createElement('option');
-    opt.value = c.id; opt.textContent = c.name;
-    catPrimary.appendChild(opt);
+    const chip = document.createElement('label');
+    chip.className = 'subcat-chip-modal';
+    chip.dataset.catId = c.id;
+    chip.innerHTML = c.name;
+    chip.addEventListener('click', () => {
+        // Highlight selected primary
+        document.querySelectorAll('#catPrimaryGrid .subcat-chip-modal').forEach(el => el.classList.remove('active'));
+        chip.classList.add('active');
+        catPrimary.value = c.id;
+        renderSubcategories();
+        // Auto-confirm if no children
+        if (!c.children || !c.children.length) {
+            document.getElementById('workCategoryInput').value = c.id;
+            closeModal('modalCategory');
+        }
+    });
+    document.getElementById('catPrimaryGrid').appendChild(chip);
 });
 
 function renderSubcategories() {
@@ -541,7 +540,14 @@ function renderSubcategories() {
     const catId = catPrimary.value;
     if (!catId) { document.getElementById('workCategoryInput').value = ''; return; }
     const cat = categoryTree.find(c => c.id == catId);
-    if (!cat || !cat.children.length) { document.getElementById('workCategoryInput').value = catId; return; }
+    if (!cat || !cat.children.length) {
+        document.getElementById('workCategoryInput').value = catId;
+        document.getElementById('subcatDivider').style.display = 'none';
+        document.getElementById('subcatLabel').style.display = 'none';
+        return;
+    }
+    document.getElementById('subcatDivider').style.display = '';
+    document.getElementById('subcatLabel').style.display = '';
     cat.children.forEach(child => {
         const chip = document.createElement('label');
         chip.className = 'subcat-chip-modal';
@@ -563,14 +569,23 @@ function updateWorkCategoryInput() {
         document.getElementById('workCategoryInput').value = catId;
     }
 }
-catPrimary.addEventListener('change', renderSubcategories);
 
 // ── Fault picker (same pattern as work category) ──
 const faultPrimaryEl = document.getElementById('faultPrimary');
+
+// Render fault categories as chip buttons
 faultTree.forEach(cat => {
-    const opt = document.createElement('option');
-    opt.value = cat.id; opt.textContent = cat.name;
-    faultPrimaryEl.appendChild(opt);
+    const chip = document.createElement('label');
+    chip.className = 'subcat-chip-modal';
+    chip.dataset.catId = cat.id;
+    chip.innerHTML = cat.name;
+    chip.addEventListener('click', () => {
+        document.querySelectorAll('#faultPrimaryGrid .subcat-chip-modal').forEach(el => el.classList.remove('active'));
+        chip.classList.add('active');
+        faultPrimaryEl.value = cat.id;
+        renderFaultSubtypes();
+    });
+    document.getElementById('faultPrimaryGrid').appendChild(chip);
 });
 
 function renderFaultSubtypes() {
@@ -579,7 +594,13 @@ function renderFaultSubtypes() {
     const catId = faultPrimaryEl.value;
     if (!catId) return;
     const cat = faultTree.find(c => c.id == catId);
-    if (!cat || !cat.subtypes.length) return;
+    if (!cat || !cat.subtypes.length) {
+        document.getElementById('faultSubDivider').style.display = 'none';
+        document.getElementById('faultSubLabel').style.display = 'none';
+        return;
+    }
+    document.getElementById('faultSubDivider').style.display = '';
+    document.getElementById('faultSubLabel').style.display = '';
     cat.subtypes.forEach(sub => {
         const chip = document.createElement('label');
         chip.className = 'subcat-chip-modal';
@@ -589,7 +610,6 @@ function renderFaultSubtypes() {
         grid.appendChild(chip);
     });
 }
-faultPrimaryEl.addEventListener('change', renderFaultSubtypes);
 
 // ── Image upload ──
 const uploadedImages = [];

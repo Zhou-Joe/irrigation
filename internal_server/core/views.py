@@ -4,6 +4,7 @@ from django.contrib import messages
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.decorators import login_required
 from django.db.models import Count, Q, Avg, Sum
+from django.db.models.functions import Coalesce
 from django.views.decorators.http import require_POST
 from django.http import HttpResponse, JsonResponse
 from django.urls import reverse
@@ -578,72 +579,100 @@ def dashboard(request):
         except Worker.DoesNotExist:
             pass
 
-    # Get all zones with annotations
-    zones = Zone.objects.all().annotate(
+    # Get all zones with annotations and related objects in minimal queries
+    from django.db.models import Sum
+
+    thirty_days_ago = today - timedelta(days=30)
+
+    zones = Zone.objects.select_related('patch', 'patch__region').annotate(
         plant_count=Count('plants', distinct=True),
         equipment_count=Count('equipments', distinct=True),
         pending_work_orders=Count(
             'work_orders',
             filter=Q(work_orders__status='pending'),
             distinct=True
-        )
+        ),
+        maintenance_count=Count('maintenancerequest', distinct=True),
+        water_count=Count('waterrequest', distinct=True),
+        project_count=Count('projectsupportrequest', distinct=True),
+        recent_fault_count=Coalesce(Sum(
+            'work_reports__fault_entries__count',
+            filter=Q(work_reports__date__gte=thirty_days_ago),
+        ), 0),
     )
 
-    # Recent fault count (last 30 days)
-    thirty_days_ago = today - timedelta(days=30)
-    from django.db.models import Sum
+    zone_ids = list(zones.values_list('id', flat=True))
 
-    # Prepare zones data for template with center coordinates and detailed info
+    # ── Bulk: pending water requests for today ──
+    pending_water_map = {}  # zone_id -> list of {id, type, type_display}
+    for req in WaterRequest.objects.filter(
+        zone_id__in=zone_ids,
+        status='submitted',
+        start_datetime__date__lte=today,
+        end_datetime__date__gte=today
+    ).values_list('zone_id', 'id'):
+        pending_water_map.setdefault(req[0], []).append({
+            'id': req[1], 'type': 'water', 'type_display': '浇水协调',
+        })
+
+    # ── Bulk: recent maintenance (last 7 days, top 3 per zone) ──
+    from collections import defaultdict
+    recent_maint_map = defaultdict(list)
+    for m in MaintenanceRequest.objects.filter(
+        zone_id__in=zone_ids, date__gte=week_ago
+    ).order_by('zone_id', '-date'):
+        lst = recent_maint_map[m.zone_id]
+        if len(lst) < 3:
+            lst.append({
+                'id': m.id,
+                'date': m.date.strftime('%Y-%m-%d'),
+                'status': m.status,
+                'status_display': m.get_status_display(),
+                'work_content': m.work_content[:50] + '...' if len(m.work_content) > 50 else m.work_content,
+            })
+
+    # ── Bulk: recent water requests (top 3 per zone) ──
+    recent_water_map = defaultdict(list)
+    for w in WaterRequest.objects.filter(
+        zone_id__in=zone_ids
+    ).order_by('zone_id', '-created_at'):
+        lst = recent_water_map[w.zone_id]
+        if len(lst) < 3:
+            lst.append({
+                'id': w.id,
+                'type': w.get_request_type_display(),
+                'status': w.status,
+                'status_display': w.get_status_display(),
+                'start': w.start_datetime.strftime('%m-%d %H:%M'),
+                'end': w.end_datetime.strftime('%m-%d %H:%M'),
+            })
+
+    # ── Bulk: recent project support (top 3 per zone) ──
+    recent_proj_map = defaultdict(list)
+    for p in ProjectSupportRequest.objects.filter(
+        zone_id__in=zone_ids
+    ).order_by('zone_id', '-created_at'):
+        lst = recent_proj_map[p.zone_id]
+        if len(lst) < 3:
+            lst.append({
+                'id': p.id,
+                'date': p.date.strftime('%Y-%m-%d'),
+                'status': p.status,
+                'status_display': p.get_status_display(),
+                'work_content': p.work_content[:50] + '...' if len(p.work_content) > 50 else p.work_content,
+            })
+
+    # ── Bulk: plant names per zone ──
+    plant_names_map = defaultdict(list)
+    for zone_id, name in Plant.objects.filter(
+        zone_id__in=zone_ids
+    ).values_list('zone_id', 'name'):
+        plant_names_map[zone_id].append(name)
+
+    # ── Build zones_list (no per-zone DB queries) ──
     zones_list = []
     for zone in zones:
         center = get_zone_center(zone.boundary_points)
-        zone.center = center  # Add center as attribute for template access
-
-        # Get pending requests for today (only water requests need approval markers)
-        pending_requests = []
-
-        # Water requests (by datetime range) - only these need approval markers
-        for req in WaterRequest.objects.filter(
-            zone=zone,
-            status='submitted',
-            start_datetime__date__lte=today,
-            end_datetime__date__gte=today
-        ):
-            pending_requests.append({
-                'id': req.id,
-                'type': 'water',
-                'type_display': '浇水协调',
-            })
-
-        # Get detailed zone info for cards
-        # Recent maintenance requests (last 7 days)
-        recent_maintenance = MaintenanceRequest.objects.filter(
-            zone=zone,
-            date__gte=week_ago
-        ).order_by('-date')[:3]
-
-        # Recent water requests
-        recent_water = WaterRequest.objects.filter(
-            zone=zone
-        ).order_by('-created_at')[:3]
-
-        # Recent project support
-        recent_project = ProjectSupportRequest.objects.filter(
-            zone=zone
-        ).order_by('-created_at')[:3]
-
-        # Counts for summary
-        maintenance_count = MaintenanceRequest.objects.filter(zone=zone).count()
-        water_count = WaterRequest.objects.filter(zone=zone).count()
-        project_count = ProjectSupportRequest.objects.filter(zone=zone).count()
-
-        # Recent fault count (last 30 days)
-        from core.models import WorkReportFault
-        recent_fault_count = WorkReportFault.objects.filter(
-            work_report__zone_location=zone,
-            work_report__date__gte=thirty_days_ago,
-        ).aggregate(total=Sum('count'))['total'] or 0
-
         zones_list.append({
             'id': zone.id,
             'code': zone.code,
@@ -654,12 +683,12 @@ def dashboard(request):
             'status': zone.get_today_status(),
             'statusDisplay': zone.get_status_display(),
             'plant_count': zone.plant_count or 0,
-            'plant_names': list(zone.plants.values_list('name', flat=True)),
+            'plant_names': plant_names_map.get(zone.id, []),
             'equipment_count': zone.equipment_count or 0,
             'pending_work_orders': zone.pending_work_orders or 0,
-            'recent_fault_count': recent_fault_count,
+            'recent_fault_count': zone.recent_fault_count,
             'center': center,
-            'pending_requests': pending_requests,
+            'pending_requests': pending_water_map.get(zone.id, []),
             # Patch info
             'patch_id': zone.patch.id if zone.patch else None,
             'patch_name': zone.patch.name if zone.patch else None,
@@ -698,38 +727,14 @@ def dashboard(request):
             'ring_display_modes': zone.ring_display_modes or {},
             'area_sqm': zone.area_sqm,
             'area_display': zone.area_display,
-            # Detailed info for cards
-            'maintenance_count': maintenance_count,
-            'water_count': water_count,
-            'project_count': project_count,
-            'recent_maintenance': [
-                {
-                    'id': m.id,
-                    'date': m.date.strftime('%Y-%m-%d'),
-                    'status': m.status,
-                    'status_display': m.get_status_display(),
-                    'work_content': m.work_content[:50] + '...' if len(m.work_content) > 50 else m.work_content,
-                } for m in recent_maintenance
-            ],
-            'recent_water': [
-                {
-                    'id': w.id,
-                    'type': w.get_request_type_display(),
-                    'status': w.status,
-                    'status_display': w.get_status_display(),
-                    'start': w.start_datetime.strftime('%m-%d %H:%M'),
-                    'end': w.end_datetime.strftime('%m-%d %H:%M'),
-                } for w in recent_water
-            ],
-            'recent_project': [
-                {
-                    'id': p.id,
-                    'date': p.date.strftime('%Y-%m-%d'),
-                    'status': p.status,
-                    'status_display': p.get_status_display(),
-                    'work_content': p.work_content[:50] + '...' if len(p.work_content) > 50 else p.work_content,
-                } for p in recent_project
-            ],
+            # Counts (from annotations)
+            'maintenance_count': zone.maintenance_count,
+            'water_count': zone.water_count,
+            'project_count': zone.project_count,
+            # Recent items (from bulk queries)
+            'recent_maintenance': recent_maint_map.get(zone.id, []),
+            'recent_water': recent_water_map.get(zone.id, []),
+            'recent_project': recent_proj_map.get(zone.id, []),
         })
 
     # Group zones by region → patch for sidebar display
@@ -5933,3 +5938,150 @@ def workorder_history(request):
         'worker_name': worker.full_name if worker else request.user.get_full_name() or request.user.username,
     }
     return render(request, 'core/workorder_history.html', context)
+
+
+@login_required(login_url='core:login')
+def water_request_mobile(request):
+    """Mobile page for dept users / managers to submit water coordination requests."""
+    from core.models import WaterRequest, Zone, Patch, Worker, DepartmentUserProfile
+    from core.role_utils import (
+        get_worker_for_user, get_user_role, is_admin,
+        ROLE_DEPT_USER, ROLE_MANAGER, ROLE_SUPER_ADMIN,
+    )
+    from datetime import date, datetime
+
+    role = get_user_role(request.user)
+    if role not in (ROLE_DEPT_USER, ROLE_MANAGER, ROLE_SUPER_ADMIN):
+        messages.error(request, '无权限访问此页面')
+        return redirect('core:login')
+
+    worker = get_worker_for_user(request.user)
+    user_name = worker.full_name if worker else request.user.get_full_name() or request.user.username
+    today = date.today()
+    now_time = datetime.now().strftime('%H:%M')
+
+    # Auto-determine user_type from profile
+    dept_profile = DepartmentUserProfile.objects.filter(user=request.user).first()
+    user_type = dept_profile.department if dept_profile else 'ENT'
+
+    if request.method == 'POST':
+        try:
+            zone_codes = json.loads(request.POST.get('zone_codes', '[]'))
+            if not zone_codes:
+                return JsonResponse({'success': False, 'message': '请选择至少一个区域'}, status=400)
+
+            request_type = request.POST.get('request_type', '停水需求')
+            start_dt = request.POST.get('start_datetime')
+            end_dt = request.POST.get('end_datetime')
+            remark = request.POST.get('remark', '')
+
+            if not start_dt or not end_dt:
+                return JsonResponse({'success': False, 'message': '请填写需求时间段'}, status=400)
+
+            start_datetime = datetime.fromisoformat(start_dt)
+            end_datetime = datetime.fromisoformat(end_dt)
+
+            # Create one WaterRequest per zone
+            zones = Zone.objects.filter(code__in=zone_codes)
+            created_count = 0
+            for z in zones:
+                WaterRequest.objects.create(
+                    zone=z,
+                    submitter=worker,
+                    user_type=user_type,
+                    request_type=request_type,
+                    start_datetime=start_datetime,
+                    end_datetime=end_datetime,
+                    status='submitted',
+                )
+                created_count += 1
+
+            return JsonResponse({
+                'success': True,
+                'message': f'已提交 {created_count} 个区域的浇水协调需求',
+            })
+        except Exception as e:
+            return JsonResponse({'success': False, 'message': str(e)}, status=400)
+
+    # GET: build patch groups (zone selection by area name)
+    patch_groups = {}
+    for z in Zone.objects.select_related('patch').all():
+        pname = z.patch.name if z.patch else '未分配'
+        patch_groups.setdefault(pname, [])
+        patch_groups[pname].append(z.code)
+
+    context = {
+        'user_name': user_name,
+        'today': today.isoformat(),
+        'now_time': now_time,
+        'patch_groups_json': json.dumps(patch_groups),
+        'request_type_choices': WaterRequest.REQUEST_TYPE_CHOICES,
+        'user_type': user_type,
+    }
+    return render(request, 'core/water_request_mobile.html', context)
+
+
+@login_required(login_url='core:login')
+def zones_in_area_api(request):
+    """API: given a drawn polygon/rect/circle, return zone codes whose centroid falls inside."""
+    from core.models import Zone
+
+    shape_type = request.GET.get('type', 'polygon')
+    points_json = request.GET.get('points', '[]')
+    center_lat = request.GET.get('center_lat')
+    center_lng = request.GET.get('center_lng')
+    radius = request.GET.get('radius')  # in meters
+
+    try:
+        points = json.loads(points_json)
+    except (json.JSONDecodeError, TypeError):
+        points = []
+
+    def point_in_polygon(lat, lng, polygon):
+        """Ray casting algorithm."""
+        n = len(polygon)
+        inside = False
+        j = n - 1
+        for i in range(n):
+            yi, xi = polygon[i]['lat'], polygon[i]['lng']
+            yj, xj = polygon[j]['lat'], polygon[j]['lng']
+            if ((yi > lat) != (yj > lat)) and (lng < (xj - xi) * (lat - yi) / (yj - yi) + xi):
+                inside = not inside
+            j = i
+        return inside
+
+    # Get all zones with boundaries
+    zones = Zone.objects.exclude(boundary_points=[])
+    result_codes = []
+
+    for z in zones:
+        bp = z.boundary_points
+        if not bp:
+            continue
+        # Calculate centroid
+        all_pts = bp if isinstance(bp[0], dict) else []
+        if isinstance(bp[0], list):
+            all_pts = [p for ring in bp for p in ring]
+        if not all_pts:
+            continue
+        clat = sum(p.get('lat', 0) for p in all_pts) / len(all_pts)
+        clng = sum(p.get('lng', 0) for p in all_pts) / len(all_pts)
+
+        if shape_type == 'polygon' and len(points) >= 3:
+            if point_in_polygon(clat, clng, points):
+                result_codes.append(z.code)
+        elif shape_type == 'circle' and center_lat and center_lng and radius:
+            from math import radians, cos, sin, asin, sqrt
+            dlat = radians(clat - float(center_lat))
+            dlng = radians(clng - float(center_lng))
+            a = sin(dlat/2)**2 + cos(radians(float(center_lat))) * cos(radians(clat)) * sin(dlng/2)**2
+            d = 2 * 6371000 * asin(sqrt(a))  # distance in meters
+            if d <= float(radius):
+                result_codes.append(z.code)
+        elif shape_type == 'rect' and len(points) >= 2:
+            lats = [p['lat'] for p in points]
+            lngs = [p['lng'] for p in points]
+            if min(lats) <= clat <= max(lats) and min(lngs) <= clng <= max(lngs):
+                result_codes.append(z.code)
+
+    return JsonResponse({'zone_codes': result_codes, 'count': len(result_codes)})
