@@ -613,7 +613,7 @@ class RequestBase(models.Model):
     ]
 
     zone = models.ForeignKey(Zone, on_delete=models.CASCADE, related_name='%(class)s')
-    submitter = models.ForeignKey(Worker, on_delete=models.CASCADE)
+    submitter = models.ForeignKey(Worker, on_delete=models.CASCADE, null=True, blank=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_SUBMITTED)
     status_notes = models.TextField(blank=True, help_text='管理员处理备注')
     approver = models.ForeignKey(
