@@ -1,0 +1,507 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>浇水协调需求</title>
+<link rel="stylesheet" href="{% static 'css/design-system.css' %}">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f5; color: #222; min-height: 100vh; padding-bottom: 70px; -webkit-text-size-adjust: 100%; }
+
+.top-bar { position: sticky; top: 0; z-index: 100; background: var(--color-primary, #2D6A4F); color: #fff; display: flex; align-items: center; padding: 10px 16px; font-size: 1em; font-weight: 600; box-shadow: 0 2px 8px rgba(0,0,0,0.15); }
+.top-bar a { color: #fff; text-decoration: none; font-size: 1.2em; margin-right: 12px; }
+
+.form-section { background: #fff; margin: 8px 12px; border-radius: 10px; padding: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+
+.field-row { display: flex; align-items: center; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid #f0f0f0; min-height: 36px; }
+.field-row:last-child { border-bottom: none; }
+.field-label { font-size: 0.85em; color: #555; flex-shrink: 0; }
+.field-value { font-size: 0.85em; font-weight: 500; color: #222; text-align: right; }
+
+.field-group { display: flex; gap: 10px; align-items: center; }
+.field-group > div { flex: 1; }
+.field-group label { display: block; font-size: 0.8em; color: #888; margin-bottom: 4px; }
+
+input[type="datetime-local"], select, input[type="text"] {
+    font-size: 0.85em; padding: 6px 10px; border: 1px solid #ddd; border-radius: 8px;
+    background: #fff; min-height: 34px; width: 100%; -webkit-appearance: none; appearance: none;
+}
+select { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23666' d='M6 8L1 3h10z'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 12px center; padding-right: 32px; }
+textarea { font-size: 0.85em; padding: 8px 10px; border: 1px solid #ddd; border-radius: 8px; width: 100%; min-height: 50px; resize: vertical; font-family: inherit; }
+
+/* Chip buttons for request/user type */
+.chip-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip-btn { padding: 6px 14px; border: 1px solid #ddd; border-radius: 8px; font-size: 0.82em; cursor: pointer; background: #fff; transition: all 0.15s; }
+.chip-btn.active { background: #e8f5e9; border-color: var(--color-primary, #2D6A4F); color: var(--color-primary, #2D6A4F); font-weight: 600; }
+
+/* Zone selection tabs */
+.tab-bar { display: flex; border-bottom: 1px solid #e0e0e0; margin-bottom: 8px; }
+.tab-btn { flex: 1; padding: 8px; text-align: center; font-size: 0.85em; cursor: pointer; border-bottom: 2px solid transparent; color: #888; }
+.tab-btn.active { color: var(--color-primary, #2D6A4F); border-bottom-color: var(--color-primary, #2D6A4F); font-weight: 600; }
+
+.tab-content { display: none; }
+.tab-content.active { display: block; }
+
+/* Zone name group selector */
+.zone-name-list { max-height: 200px; overflow-y: auto; border: 1px solid #eee; border-radius: 8px; }
+.zone-name-item { padding: 8px 12px; border-bottom: 1px solid #f5f5f5; cursor: pointer; font-size: 0.85em; display: flex; justify-content: space-between; align-items: center; }
+.zone-name-item:last-child { border-bottom: none; }
+.zone-name-item:active { background: #f0f0f0; }
+.zone-name-item.selected { background: #e8f5e9; }
+.zone-name-item .count { font-size: 0.78em; color: #888; background: #f0f0f0; padding: 2px 8px; border-radius: 10px; }
+
+/* Draw tools */
+.draw-toolbar { display: flex; gap: 8px; margin-bottom: 8px; }
+.draw-btn { flex: 1; padding: 8px; border: 1px solid #ddd; border-radius: 8px; font-size: 0.82em; cursor: pointer; background: #fff; text-align: center; transition: all 0.15s; }
+.draw-btn.active { background: #e8f5e9; border-color: var(--color-primary, #2D6A4F); color: var(--color-primary, #2D6A4F); font-weight: 600; }
+.draw-hint { font-size: 0.8em; color: #888; text-align: center; padding: 4px 0; }
+
+/* Map */
+.map-wrap { border-radius: 10px; overflow: hidden; border: 1px solid #ddd; position: relative; z-index: 1; margin-top: 8px; }
+#mapContainer { height: 280px; width: 100%; }
+.map-loading { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: #f8f8f8; color: #888; font-size: 0.85em; z-index: 400; }
+
+/* Result summary */
+.zone-result { margin-top: 8px; padding: 8px 12px; background: #f0f7f4; border-radius: 8px; font-size: 0.85em; color: var(--color-primary, #2D6A4F); display: flex; justify-content: space-between; align-items: center; }
+.zone-result .num { font-size: 1.2em; font-weight: 700; }
+
+/* Submit bar */
+.submit-bar { position: fixed; bottom: 0; left: 0; right: 0; background: #fff; padding: 8px 16px; box-shadow: 0 -2px 8px rgba(0,0,0,0.1); z-index: 100; }
+.btn-submit { width: 100%; padding: 12px; border: none; border-radius: 10px; font-size: 1em; font-weight: 600; cursor: pointer; background: var(--color-primary, #2D6A4F); color: #fff; }
+.btn-submit:active { opacity: 0.85; }
+
+/* Toast */
+.toast { position: fixed; top: 60px; left: 50%; transform: translateX(-50%); padding: 10px 20px; border-radius: 8px; font-size: 0.9em; z-index: 600; opacity: 0; transition: opacity 0.3s; pointer-events: none; }
+.toast.show { opacity: 1; }
+.toast.success { background: #d4edda; color: #155724; }
+.toast.error { background: #f8d7da; color: #721c24; }
+
+/* Leaflet zone label */
+.zone-map-label { background: rgba(255,255,255,0.85) !important; border: 1px solid #bbb !important; border-radius: 3px !important; color: #333 !important; font-size: 9px !important; font-weight: 600 !important; padding: 1px 3px !important; box-shadow: none !important; }
+
+/* Leaflet draw overrides */
+.leaflet-draw-toolbar a { display: none !important; }
+</style>
+</head>
+<body>
+
+<div class="top-bar">
+    <a href="{% url 'core:mobile_home' %}">&#8592;</a>
+    浇水协调需求
+</div>
+
+<!-- Basic Info: Date + Username + UserType -->
+<div class="form-section">
+    <div style="display:flex;align-items:center;justify-content:space-between;">
+        <span style="font-size:0.85em;color:#222;">{{ today }}</span>
+        <span style="font-size:0.85em;color:#888;">{{ user_name }} ({{ user_type }})</span>
+    </div>
+</div>
+
+<!-- Request Type -->
+<div class="form-section">
+    <div style="font-size:0.82em;color:#888;margin-bottom:6px;">需求类型</div>
+    <div class="chip-row" id="requestTypeChips">
+        {% for val, label in request_type_choices %}
+        <span class="chip-btn{% if forloop.first %} active{% endif %}" data-val="{{ val }}">{{ label }}</span>
+        {% endfor %}
+    </div>
+</div>
+
+<!-- Time Range -->
+<div class="form-section">
+    <div class="field-group">
+        <div>
+            <label>开始时间</label>
+            <input type="datetime-local" id="startDatetime" name="start_datetime">
+        </div>
+        <div>
+            <label>结束时间</label>
+            <input type="datetime-local" id="endDatetime" name="end_datetime">
+        </div>
+    </div>
+</div>
+
+<!-- Zone Selection -->
+<div class="form-section">
+    <div class="tab-bar">
+        <div class="tab-btn active" data-tab="tabName">按名称选择</div>
+        <div class="tab-btn" data-tab="tabDraw">绘制区域</div>
+    </div>
+
+    <!-- Tab 1: By patch name (片区) -->
+    <div class="tab-content active" id="tabName">
+        <input type="text" id="nameSearch" placeholder="搜索片区..." style="margin-bottom:8px;">
+        <div class="zone-name-list" id="zoneNameList"></div>
+    </div>
+
+    <!-- Tab 2: Draw on map -->
+    <div class="tab-content" id="tabDraw">
+        <div class="draw-toolbar">
+            <div class="draw-btn" data-tool="rect">矩形</div>
+            <div class="draw-btn" data-tool="circle">圆形</div>
+            <div class="draw-btn" data-tool="polygon">多边形</div>
+        </div>
+        <div class="draw-hint" id="drawHint">选择绘制工具后在地图上绘制</div>
+    </div>
+
+    <!-- Map -->
+    <div class="map-wrap">
+        <div id="mapContainer"></div>
+        <div class="map-loading" id="mapLoading">加载地图数据...</div>
+    </div>
+
+    <!-- Result summary -->
+    <div class="zone-result" id="zoneResult" style="display:none;">
+        <span>已选择 <span class="num" id="zoneCount">0</span> 个区域</span>
+        <span style="font-size:0.8em;color:#888;cursor:pointer;" id="clearSelection">清除</span>
+    </div>
+</div>
+
+<!-- Remark -->
+<div class="form-section">
+    <textarea name="remark" placeholder="备注说明（可选）..."></textarea>
+</div>
+
+<!-- Submit bar -->
+<div class="submit-bar">
+    <button class="btn-submit" id="submitBtn">提交浇水协调需求</button>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+// ── Data ──
+const patchGroups = {{ patch_groups_json|safe }};
+
+let selectedZoneCodes = new Set();
+let requestType = '{{ request_type_choices.0.0 }}';
+
+// ── Set default datetime ──
+(function() {
+    const now = new Date();
+    const pad = n => String(n).padStart(2, '0');
+    const toLocal = d => d.getFullYear() + '-' + pad(d.getMonth()+1) + '-' + pad(d.getDate()) + 'T' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+    document.getElementById('startDatetime').value = toLocal(now);
+    const end = new Date(now.getTime() + 2*3600*1000);
+    document.getElementById('endDatetime').value = toLocal(end);
+})();
+
+// ── Chip selection ──
+function setupChips(containerId, callback) {
+    const container = document.getElementById(containerId);
+    container.querySelectorAll('.chip-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            container.querySelectorAll('.chip-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            callback(btn.dataset.val);
+        });
+    });
+}
+setupChips('requestTypeChips', v => requestType = v);
+
+// ── Tab switching ──
+document.querySelectorAll('.tab-btn').forEach(tab => {
+    tab.addEventListener('click', () => {
+        document.querySelectorAll('.tab-btn').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+        tab.classList.add('active');
+        document.getElementById(tab.dataset.tab).classList.add('active');
+        cancelDraw();
+    });
+});
+
+// ── Zone Name list (Tab 1) ──
+const zoneNameList = document.getElementById('zoneNameList');
+let selectedName = '';
+
+function renderNameList(filter) {
+    zoneNameList.innerHTML = '';
+    const q = (filter || '').toLowerCase();
+    const names = Object.keys(patchGroups).sort();
+    for (const name of names) {
+        const zones = patchGroups[name];
+        if (q && !name.toLowerCase().includes(q)) continue;
+        const item = document.createElement('div');
+        item.className = 'zone-name-item' + (selectedName === name ? ' selected' : '');
+        item.innerHTML = '<span>' + name + '</span><span class="count">' + zones.length + '个区域</span>';
+        item.addEventListener('click', () => {
+            if (selectedName === name) {
+                // Deselect
+                selectedName = '';
+                patchGroups[name].forEach(code => selectedZoneCodes.delete(code));
+            } else {
+                // Remove previous name selection
+                if (selectedName) {
+                    patchGroups[selectedName].forEach(code => selectedZoneCodes.delete(code));
+                }
+                selectedName = name;
+                patchGroups[name].forEach(code => selectedZoneCodes.add(code));
+            }
+            renderNameList(document.getElementById('nameSearch').value);
+            updateResult();
+            refreshMapStyles();
+        });
+        zoneNameList.appendChild(item);
+    }
+}
+renderNameList('');
+document.getElementById('nameSearch').addEventListener('input', e => renderNameList(e.target.value));
+
+// ── Map ──
+let map = null;
+let zonePolygons = {};
+let drawnLayer = null;
+let drawMode = null; // 'rect', 'circle', 'polygon'
+let drawPoints = [];
+let tempMarkers = [];
+let tempPolyline = null;
+
+(function initMap() {
+    map = L.map('mapContainer', { zoomControl: false, attributionControl: false, minZoom: 15, maxZoom: 22 }).setView([31.155794, 121.668804], 17);
+    L.control.zoom({ position: 'topright' }).addTo(map);
+    const satTile = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxNativeZoom: 19, maxZoom: 22 });
+    const labelTile = L.tileLayer('https://map.geoq.cn/ArcGIS/rest/services/ChinaOnlineCommunity/MapServer/tile/{z}/{y}/{x}', { minZoom: 15, maxZoom: 22, opacity: 0.7 });
+    L.layerGroup([satTile, labelTile]).addTo(map);
+
+    fetch('{% url "core:zone_geo_api" %}')
+        .then(r => r.json())
+        .then(data => {
+            document.getElementById('mapLoading').style.display = 'none';
+            data.forEach(z => {
+                const bp = z.b;
+                if (!bp || !bp.length) return;
+                let rings = [];
+                if (Array.isArray(bp[0])) {
+                    bp.forEach(ring => { if (ring.length >= 3) rings.push(ring.map(p => [p.lat, p.lng])); });
+                } else {
+                    if (bp.length >= 3) rings.push(bp.map(p => [p.lat, p.lng]));
+                }
+                if (!rings.length) return;
+
+                const poly = L.polygon(rings, {
+                    color: '#888', weight: 1.5, fillColor: '#ccc', fillOpacity: 0.15,
+                }).addTo(map);
+
+                poly.bindTooltip(z.c, { permanent: true, direction: 'center', className: 'zone-map-label' });
+                poly._zoneCode = z.c;
+                zonePolygons[z.c] = poly;
+            });
+        })
+        .catch(() => { document.getElementById('mapLoading').textContent = '地图加载失败'; });
+})();
+
+// ── Draw tools (Tab 2) ──
+document.querySelectorAll('.draw-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        cancelDraw();
+        drawMode = btn.dataset.tool;
+        document.querySelectorAll('.draw-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+
+        const hints = { rect: '点击并拖拽绘制矩形', circle: '点击中心，再点击边缘确定半径', polygon: '依次点击各顶点，双击完成' };
+        document.getElementById('drawHint').textContent = hints[drawMode];
+        map.getContainer().style.cursor = 'crosshair';
+
+        if (drawMode === 'polygon') {
+            map.on('click', onPolygonClick);
+            map.on('dblclick', onPolygonFinish);
+        } else if (drawMode === 'rect') {
+            map.on('mousedown', onRectStart);
+            map.on('mouseup', onRectEnd);
+        } else if (drawMode === 'circle') {
+            map.on('click', onCircleClick);
+        }
+    });
+});
+
+function cancelDraw() {
+    drawMode = null;
+    drawPoints = [];
+    tempMarkers.forEach(m => map.removeLayer(m));
+    tempMarkers = [];
+    if (tempPolyline) { map.removeLayer(tempPolyline); tempPolyline = null; }
+    if (drawnLayer) { map.removeLayer(drawnLayer); drawnLayer = null; }
+    map.off('click', onPolygonClick);
+    map.off('dblclick', onPolygonFinish);
+    map.off('mousedown', onRectStart);
+    map.off('mouseup', onRectEnd);
+    map.off('click', onCircleClick);
+    map.off('mousemove', onDrawMouseMove);
+    map.getContainer().style.cursor = '';
+    document.querySelectorAll('.draw-btn').forEach(b => b.classList.remove('active'));
+}
+
+let rectStartLL = null;
+let circleCenter = null;
+let circleStep = 0;
+
+function onRectStart(e) {
+    rectStartLL = e.latlng;
+}
+function onRectEnd(e) {
+    if (!rectStartLL) return;
+    const p1 = rectStartLL, p2 = e.latlng;
+    rectStartLL = null;
+    if (drawnLayer) map.removeLayer(drawnLayer);
+    drawnLayer = L.rectangle([p1, p2], { color: '#2D6A4F', weight: 2, fillColor: '#2D6A4F', fillOpacity: 0.2 }).addTo(map);
+    queryZonesInArea('rect', [
+        { lat: Math.min(p1.lat, p2.lat), lng: Math.min(p1.lng, p2.lng) },
+        { lat: Math.max(p1.lat, p2.lat), lng: Math.max(p1.lng, p2.lng) },
+    ]);
+    cancelDraw();
+}
+
+function onCircleClick(e) {
+    if (circleStep === 0) {
+        circleCenter = e.latlng;
+        circleStep = 1;
+        document.getElementById('drawHint').textContent = '点击确定半径';
+        // Show temp center marker
+        const marker = L.circleMarker(circleCenter, { radius: 4, color: '#2D6A4F', fillColor: '#2D6A4F', fillOpacity: 1 }).addTo(map);
+        tempMarkers.push(marker);
+        map.on('mousemove', onDrawMouseMove);
+    } else {
+        const edge = e.latlng;
+        const radius = circleCenter.distanceTo(edge);
+        if (drawnLayer) map.removeLayer(drawnLayer);
+        drawnLayer = L.circle(circleCenter, { radius: radius, color: '#2D6A4F', weight: 2, fillColor: '#2D6A4F', fillOpacity: 0.2 }).addTo(map);
+        queryZonesInArea('circle', [], circleCenter.lat, circleCenter.lng, radius);
+        cancelDraw();
+        circleStep = 0;
+        circleCenter = null;
+    }
+}
+
+function onPolygonClick(e) {
+    drawPoints.push(e.latlng);
+    const marker = L.circleMarker(e.latlng, { radius: 4, color: '#2D6A4F', fillColor: '#2D6A4F', fillOpacity: 1 }).addTo(map);
+    tempMarkers.push(marker);
+    if (drawPoints.length > 1) {
+        if (tempPolyline) map.removeLayer(tempPolyline);
+        tempPolyline = L.polyline(drawPoints, { color: '#2D6A4F', weight: 2, dashArray: '5,5' }).addTo(map);
+    }
+    document.getElementById('drawHint').textContent = '已 ' + drawPoints.length + ' 个点，双击完成';
+}
+
+function onPolygonFinish(e) {
+    if (drawPoints.length < 3) {
+        document.getElementById('drawHint').textContent = '至少需要3个点';
+        return;
+    }
+    if (drawnLayer) map.removeLayer(drawnLayer);
+    drawnLayer = L.polygon(drawPoints, { color: '#2D6A4F', weight: 2, fillColor: '#2D6A4F', fillOpacity: 0.2 }).addTo(map);
+    const pts = drawPoints.map(ll => ({ lat: ll.lat, lng: ll.lng }));
+    queryZonesInArea('polygon', pts);
+    cancelDraw();
+}
+
+function onDrawMouseMove(e) {
+    if (drawMode === 'circle' && circleCenter && circleStep === 1) {
+        if (tempPolyline) map.removeLayer(tempPolyline);
+        tempPolyline = L.polyline([circleCenter, e.latlng], { color: '#2D6A4F', weight: 2, dashArray: '5,5' }).addTo(map);
+    }
+}
+
+// ── Query zones in drawn area ──
+function queryZonesInArea(type, points, centerLat, centerLng, radius) {
+    const params = new URLSearchParams({ type: type, points: JSON.stringify(points) });
+    if (centerLat !== undefined) params.set('center_lat', centerLat);
+    if (centerLng !== undefined) params.set('center_lng', centerLng);
+    if (radius !== undefined) params.set('radius', radius);
+
+    fetch('{% url "core:zones_in_area_api" %}?' + params.toString())
+        .then(r => r.json())
+        .then(data => {
+            // Merge with existing selection
+            data.zone_codes.forEach(code => selectedZoneCodes.add(code));
+            updateResult();
+            refreshMapStyles();
+        })
+        .catch(() => {
+            showToast('查询区域失败', 'error');
+        });
+}
+
+// ── Result display ──
+function updateResult() {
+    const count = selectedZoneCodes.size;
+    const result = document.getElementById('zoneResult');
+    document.getElementById('zoneCount').textContent = count;
+    result.style.display = count > 0 ? 'flex' : 'none';
+}
+
+document.getElementById('clearSelection').addEventListener('click', () => {
+    selectedZoneCodes.clear();
+    selectedName = '';
+    renderNameList(document.getElementById('nameSearch').value);
+    updateResult();
+    refreshMapStyles();
+    if (drawnLayer) { map.removeLayer(drawnLayer); drawnLayer = null; }
+});
+
+// ── Map style refresh ──
+function refreshMapStyles() {
+    if (!map) return;
+    for (const [code, poly] of Object.entries(zonePolygons)) {
+        const sel = selectedZoneCodes.has(code);
+        poly.setStyle({
+            color: sel ? '#2D6A4F' : '#888',
+            weight: sel ? 2.5 : 1.5,
+            fillColor: sel ? '#2D6A4F' : '#ccc',
+            fillOpacity: sel ? 0.4 : 0.15
+        });
+    }
+}
+
+// ── Form submission ──
+document.getElementById('submitBtn').addEventListener('click', function(e) {
+    e.preventDefault();
+    if (selectedZoneCodes.size === 0) {
+        showToast('请选择至少一个区域', 'error');
+        return;
+    }
+    const startDt = document.getElementById('startDatetime').value;
+    const endDt = document.getElementById('endDatetime').value;
+    if (!startDt || !endDt) {
+        showToast('请填写需求时间段', 'error');
+        return;
+    }
+
+    const formData = new FormData();
+    formData.append('zone_codes', JSON.stringify([...selectedZoneCodes]));
+    formData.append('request_type', requestType);
+    formData.append('start_datetime', startDt);
+    formData.append('end_datetime', endDt);
+    formData.append('remark', document.querySelector('[name=remark]').value || '');
+    formData.append('csrfmiddlewaretoken', document.querySelector('[name=csrfmiddlewaretoken]').value);
+
+    fetch(window.location.pathname, {
+        method: 'POST',
+        body: formData,
+        headers: { 'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value, 'X-Requested-With': 'XMLHttpRequest' }
+    }).then(r => r.json()).then(data => {
+        if (data.success) {
+            showToast(data.message, 'success');
+            setTimeout(() => { window.location.href = '{% url "core:mobile_home" %}'; }, 1500);
+        } else {
+            showToast(data.message || '提交失败', 'error');
+        }
+    }).catch(() => { showToast('网络错误', 'error'); });
+});
+
+// ── Toast ──
+function showToast(msg, type) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.className = 'toast ' + type + ' show';
+    setTimeout(() => t.className = 'toast', 2500);
+}
+</script>
+</body>
+</html>
