@@ -211,8 +211,8 @@
      */
     function initMap() {
         // Center point adjusted ~1.07km north-east, bounds (3km radius)
-        const centerLat = 31.145794 + 0.010; // offset ~1.1km north
-        const centerLng = 121.656804 + 0.012; // offset ~1.1km east
+        const centerLat = 31.145663;
+        const centerLng = 121.655407;
         const latOffset = 0.027; // ~3km in latitude
         const lngOffset = 0.032; // ~3km in longitude at lat 31°
 
@@ -1341,7 +1341,7 @@
         const locateBtn = document.querySelector('.locate-btn');
         if (locateBtn) {
             locateBtn.disabled = true;
-            locateBtn.textContent = '...';
+            locateBtn.style.opacity = '0.5';
         }
 
         navigator.geolocation.getCurrentPosition(
@@ -1386,10 +1386,8 @@
                 // Reset button
                 if (locateBtn) {
                     locateBtn.disabled = false;
-                    locateBtn.textContent = '⌖';
+                    locateBtn.style.opacity = '';
                 }
-
-                // Open popup with location info
                 L.popup()
                     .setLatLng([lat, lng])
                     .setContent(`<div><strong>您的位置</strong><br>精度: ~${Math.round(accuracy)}米</div>`)
@@ -1399,7 +1397,7 @@
                 // Reset button
                 if (locateBtn) {
                     locateBtn.disabled = false;
-                    locateBtn.textContent = '⌖';
+                    locateBtn.style.opacity = '';
                 }
 
                 // Show error
@@ -1428,7 +1426,7 @@
 
         locateControl.onAdd = function(map) {
             const button = L.DomUtil.create('button', 'locate-btn');
-            button.innerHTML = '⌖';
+            button.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg>';
             button.title = '定位我';
             button.type = 'button';
 
