@@ -991,6 +991,128 @@
     }
     .sidebar-body { overflow: hidden; }
 }
+
+/* ── V2 Modal Popup ── */
+.v2-modal-backdrop{
+    position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:3000;
+    transition:opacity 0.3s;
+}
+
+.v2-modal-container{
+    position:fixed;bottom:0;left:0;right:0;z-index:3001;
+    background:#fff;border-radius:16px 16px 0 0;
+    max-height:75vh;display:flex;flex-direction:column;
+    transform:translateY(100%);transition:transform 0.3s cubic-bezier(0.22,1,0.36,1);
+    box-shadow:0 -4px 24px rgba(0,0,0,0.15);
+}
+.v2-modal-container.open{transform:translateY(0)}
+
+.v2-modal-header{
+    display:flex;align-items:center;justify-content:space-between;
+    padding:14px 16px;flex-shrink:0;
+    background:linear-gradient(135deg,#1B4332,#2D6A4F);color:#fff;
+    border-radius:16px 16px 0 0;
+}
+.v2-modal-header h2{font-size:1em;font-weight:600;margin:0}
+.v2-modal-close{
+    width:30px;height:30px;border-radius:50%;border:none;
+    background:rgba(255,255,255,0.2);color:#fff;font-size:1em;
+    cursor:pointer;display:flex;align-items:center;justify-content:center;
+}
+.v2-modal-body{
+    flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:16px;
+    min-height:0;
+}
+.v2-modal-footer{
+    display:flex;gap:8px;padding:12px 16px;flex-shrink:0;
+    border-top:1px solid #eee;background:#fafafa;
+}
+
+/* Modal buttons */
+.v2-btn-cancel{
+    flex:1;padding:10px;border:1.5px solid #ddd;border-radius:10px;
+    background:#fff;font-size:0.9em;cursor:pointer;color:#666;
+}
+.v2-btn-map{
+    flex:1;padding:10px;border:none;border-radius:10px;
+    background:linear-gradient(145deg,#52b788,#2d6a4f);color:#fff;
+    font-size:0.9em;font-weight:600;cursor:pointer;
+}
+.v2-btn-submit{
+    flex:1;padding:10px;border:none;border-radius:10px;
+    background:linear-gradient(145deg,#52b788,#2d6a4f);color:#fff;
+    font-size:0.9em;font-weight:600;cursor:pointer;
+    box-shadow:0 2px 8px rgba(27,67,50,0.2);
+}
+.v2-btn-submit:disabled,.v2-btn-map:disabled{opacity:0.5;cursor:not-allowed}
+
+/* Modal form elements */
+.v2-fg{margin-bottom:12px}
+.v2-fl{display:block;font-size:0.82em;font-weight:600;color:#555;margin-bottom:5px}
+.v2-input,.v2-select,.v2-textarea{
+    width:100%;padding:9px 11px;border:1px solid #ddd;border-radius:8px;
+    font-size:16px;background:#fff;
+}
+.v2-textarea{min-height:70px;resize:vertical}
+.v2-input:focus,.v2-select:focus,.v2-textarea:focus{outline:none;border-color:#52b788;box-shadow:0 0 0 2px rgba(82,183,136,0.2)}
+
+.v2-form-row{display:flex;gap:10px;align-items:center}
+.v2-form-row>*{flex:1}
+
+/* Chips */
+.v2-chip-group{display:flex;flex-wrap:wrap;gap:6px}
+.v2-chip{
+    padding:5px 12px;border-radius:16px;border:1.5px solid #ddd;
+    background:#fff;font-size:0.85em;cursor:pointer;
+    transition:all 0.2s;user-select:none;
+}
+.v2-chip.active{border-color:#2D6A4F;background:#e8f5e9;color:#1B4332}
+
+/* Photo upload */
+.v2-photo-area{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}
+.v2-photo-thumb{
+    width:56px;height:56px;border-radius:6px;overflow:hidden;position:relative;
+    border:1px solid #eee;
+}
+.v2-photo-thumb img{width:100%;height:100%;object-fit:cover}
+.v2-photo-rm{
+    position:absolute;top:1px;right:1px;width:16px;height:16px;
+    border-radius:50%;background:rgba(0,0,0,0.6);color:#fff;
+    font-size:10px;border:none;cursor:pointer;
+    display:flex;align-items:center;justify-content:center;
+}
+.v2-photo-add{
+    width:56px;height:56px;border-radius:6px;border:2px dashed #ccc;
+    display:flex;align-items:center;justify-content:center;
+    font-size:1.4em;color:#999;cursor:pointer;background:#fafafa;
+}
+
+/* Map info bar */
+.v2-map-info-bar{
+    position:fixed;top:12px;left:50%;transform:translateX(-50%);z-index:3500;
+    background:rgba(255,255,255,0.92);backdrop-filter:blur(8px);
+    padding:8px 16px;border-radius:20px;box-shadow:0 2px 12px rgba(0,0,0,0.12);
+    font-size:0.85em;display:flex;align-items:center;gap:4px;
+    max-width:90vw;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+
+/* Draw toolbar */
+.v2-draw-toolbar{
+    position:fixed;top:50px;left:50%;transform:translateX(-50%);z-index:3500;
+    background:rgba(255,255,255,0.92);backdrop-filter:blur(8px);
+    padding:8px 14px;border-radius:14px;box-shadow:0 2px 12px rgba(0,0,0,0.12);
+    text-align:center;
+}
+
+/* V2 toast */
+#v2ModalToast{
+    position:fixed;top:20px;left:50%;transform:translateX(-50%);
+    padding:10px 20px;border-radius:8px;font-size:0.9em;z-index:5000;
+    opacity:0;transition:opacity 0.3s;pointer-events:none;
+}
+#v2ModalToast.show{opacity:1}
+#v2ModalToast.error{background:#f8d7da;color:#721c24}
+#v2ModalToast.success{background:#d4edda;color:#155724}
 </style>
 {% endblock %}
 
@@ -1220,6 +1342,58 @@
     </div>
 </div>
 
+<!-- V2 Modal Popups -->
+<div class="v2-modal-backdrop" id="woModalBackdrop" style="display:none;" onclick="closeV2Modal('workorder')"></div>
+<div class="v2-modal-container" id="woModalContainer" style="display:none;">
+    <div class="v2-modal-header">
+        <h2>工作记录</h2>
+        <button class="v2-modal-close" onclick="closeV2Modal('workorder')">&#x2715;</button>
+    </div>
+    <div class="v2-modal-body" id="woModalBody">
+        <div style="text-align:center;padding:30px;color:#888;">加载中...</div>
+    </div>
+    <div class="v2-modal-footer" id="woModalFooter">
+        <button type="button" class="v2-btn-cancel" onclick="closeV2Modal('workorder')">取消</button>
+        <button type="button" class="v2-btn-map" onclick="enterMapMode('workorder')">地图选点</button>
+        <button type="button" class="v2-btn-submit" id="woSubmitBtn" onclick="submitV2Workorder()">提交</button>
+    </div>
+</div>
+
+<div class="v2-modal-backdrop" id="wrModalBackdrop" style="display:none;" onclick="closeV2Modal('water_request')"></div>
+<div class="v2-modal-container" id="wrModalContainer" style="display:none;">
+    <div class="v2-modal-header">
+        <h2>浇水需求</h2>
+        <button class="v2-modal-close" onclick="closeV2Modal('water_request')">&#x2715;</button>
+    </div>
+    <div class="v2-modal-body" id="wrModalBody">
+        <div style="text-align:center;padding:30px;color:#888;">加载中...</div>
+    </div>
+    <div class="v2-modal-footer" id="wrModalFooter">
+        <button type="button" class="v2-btn-cancel" onclick="closeV2Modal('water_request')">取消</button>
+        <button type="button" class="v2-btn-map" onclick="enterMapMode('water_request')">地图选点</button>
+        <button type="button" class="v2-btn-submit" id="wrSubmitBtn" onclick="submitV2WaterRequest()">提交</button>
+    </div>
+</div>
+
+<!-- V2 Map Selection Info Bar -->
+<div class="v2-map-info-bar" id="v2MapInfoBar" style="display:none;">
+    <span id="v2MapInfoText" style="color:#888;">请在地图上选择区域</span>
+    <button type="button" onclick="exitMapMode()" style="margin-left:10px;padding:4px 12px;border:none;border-radius:12px;background:#2D6A4F;color:#fff;font-size:0.82em;cursor:pointer;">返回表单</button>
+</div>
+
+<!-- V2 Drawing Tool Bar (for water request) -->
+<div class="v2-draw-toolbar" id="v2DrawToolBar" style="display:none;">
+    <div class="v2-chip-group" style="gap:6px;">
+        <div class="v2-chip modal-draw-chip" data-tool="rect" onclick="activateModalDrawTool('rect')">矩形</div>
+        <div class="v2-chip modal-draw-chip" data-tool="circle" onclick="activateModalDrawTool('circle')">圆形</div>
+        <div class="v2-chip modal-draw-chip" data-tool="polygon" onclick="activateModalDrawTool('polygon')">多边形</div>
+    </div>
+    <div id="v2DrawHint" style="font-size:0.78em;color:#888;margin-top:4px;">选择绘制工具后在地图上绘制</div>
+</div>
+
+<!-- V2 Toast -->
+<div id="v2ModalToast"></div>
+
 <!-- Zone data for JavaScript -->
 <script id="zones-data" type="application/json">
     {{ zones_json|safe }}
@@ -1248,7 +1422,537 @@
 <script src="{% static 'js/map-config.js' %}?v=20260423"></script>
 <script>window.MAP_STYLE_CONFIG = {{ map_style_json|safe }} || {};</script>
 <!-- Custom Map JS -->
-<script src="{% static 'js/map.js' %}?v=20260525a"></script>
+<script src="{% static 'js/map.js' %}?v=20260609"></script>
+<script>
+/* dashboard-v2-modal.js — V2 workorder & water request as dashboard modal popups */
+(function () {
+    'use strict';
+
+    var _currentModal = null;
+    var _mapMode = false;
+    var _selectedZoneCodes = new Set();
+    var _selectionLayerGroup = null;
+    var _selectionOverlays = {};
+
+    var _drawMode = null;
+    var _drawPoints = [];
+    var _tempMarkers = [];
+    var _tempPolyline = null;
+    var _drawnShapes = [];
+    var _shapeIdCounter = 0;
+    var _rectStartLL = null;
+    var _circleCenter = null;
+    var _circleStep = 0;
+    var _shapeColors = ['#e74c3c', '#2980b9', '#8e44ad', '#e67e22', '#16a085', '#c0392b', '#2c3e50'];
+
+    var _formDataCache = { workorder: null, water_request: null };
+    var _photoFiles = [];
+    var _faultEntries = [];
+
+    function getMap() { return window._map; }
+    function $(id) { return document.getElementById(id); }
+
+    function getCSRFToken() {
+        var cookie = document.cookie.split('; ').find(function (c) { return c.startsWith('csrftoken='); });
+        if (cookie) return cookie.split('=')[1];
+        var existing = document.querySelector('[name=csrfmiddlewaretoken]');
+        if (existing) return existing.value;
+        var meta = document.querySelector('meta[name=csrf-token]');
+        if (meta) return meta.content;
+        return '';
+    }
+
+    function injectCSRF(formEl) {
+        if (!formEl) return;
+        var token = getCSRFToken();
+        if (!token) return;
+        var input = document.createElement('input');
+        input.type = 'hidden'; input.name = 'csrfmiddlewaretoken'; input.value = token;
+        formEl.insertBefore(input, formEl.firstChild);
+    }
+
+    function showToast(msg, type) {
+        var t = $('v2ModalToast');
+        if (!t) return;
+        t.textContent = msg;
+        t.className = 'show ' + (type || '');
+        setTimeout(function () { t.className = ''; }, 3000);
+    }
+
+    window.openV2Modal = function (type) {
+        if (_currentModal) closeV2Modal(_currentModal);
+        _currentModal = type;
+        _selectedZoneCodes.clear();
+        _photoFiles = [];
+        _faultEntries = [];
+
+        var backdrop = $(type === 'workorder' ? 'woModalBackdrop' : 'wrModalBackdrop');
+        var container = $(type === 'workorder' ? 'woModalContainer' : 'wrModalContainer');
+        if (backdrop) backdrop.style.display = '';
+        if (container) { container.style.display = ''; container.classList.add('open'); }
+
+        var dataUrl = type === 'workorder' ? '/api/modal/workorder-data/' : '/api/modal/water-request-data/';
+        if (_formDataCache[type]) {
+            buildForm(type, _formDataCache[type]);
+        } else {
+            var bodyId = type === 'workorder' ? 'woModalBody' : 'wrModalBody';
+            $(bodyId).innerHTML = '<div style="text-align:center;padding:30px;color:#888;">加载中...</div>';
+            fetch(dataUrl, { credentials: 'same-origin' })
+                .then(function (r) { return r.json(); })
+                .then(function (data) { _formDataCache[type] = data; buildForm(type, data); })
+                .catch(function (err) { $(bodyId).innerHTML = '<div style="text-align:center;padding:30px;color:#c0392b;">加载失败: ' + err + '</div>'; });
+        }
+    };
+
+    window.closeV2Modal = function (type) {
+        if (!type) type = _currentModal;
+        if (_mapMode) exitMapMode();
+        var backdrop = $(type === 'workorder' ? 'woModalBackdrop' : 'wrModalBackdrop');
+        var container = $(type === 'workorder' ? 'woModalContainer' : 'wrModalContainer');
+        if (container) container.classList.remove('open');
+        setTimeout(function () {
+            if (backdrop) backdrop.style.display = 'none';
+            if (container) container.style.display = 'none';
+        }, 300);
+        clearSelection();
+        _currentModal = null;
+    };
+
+    window.enterMapMode = function (type) {
+        if (!type) type = _currentModal;
+        _mapMode = true;
+        window._v2ModalMapMode = type;
+        var map = getMap();
+        if (!_selectionLayerGroup) _selectionLayerGroup = L.layerGroup().addTo(map);
+
+        var backdrop = $(type === 'workorder' ? 'woModalBackdrop' : 'wrModalBackdrop');
+        if (backdrop) backdrop.style.display = 'none';
+
+        var body = $(type === 'workorder' ? 'woModalBody' : 'wrModalBody');
+        var footer = $(type === 'workorder' ? 'woModalFooter' : 'wrModalFooter');
+        if (body) body.style.display = 'none';
+        var mapBtn = footer ? footer.querySelector('.v2-btn-map') : null;
+        if (mapBtn) { mapBtn.textContent = '返回表单'; mapBtn.onclick = function () { exitMapMode(); }; }
+
+        var infoBar = $('v2MapInfoBar');
+        if (infoBar) { infoBar.style.display = ''; updateInfoBarText(); }
+
+        if (type === 'workorder') enableTapSelect();
+        else showDrawToolBar();
+    };
+
+    window.exitMapMode = function () {
+        _mapMode = false;
+        window._v2ModalMapMode = null;
+        var type = _currentModal;
+        var backdrop = $(type === 'workorder' ? 'woModalBackdrop' : 'wrModalBackdrop');
+        if (backdrop) backdrop.style.display = '';
+        var body = $(type === 'workorder' ? 'woModalBody' : 'wrModalBody');
+        var footer = $(type === 'workorder' ? 'woModalFooter' : 'wrModalFooter');
+        if (body) body.style.display = '';
+        var mapBtn = footer ? footer.querySelector('.v2-btn-map') : null;
+        if (mapBtn) { mapBtn.textContent = '地图选点'; mapBtn.onclick = function () { enterMapMode(type); }; }
+        var infoBar = $('v2MapInfoBar');
+        if (infoBar) infoBar.style.display = 'none';
+        var drawBar = $('v2DrawToolBar');
+        if (drawBar) drawBar.style.display = 'none';
+        disableMapInteraction();
+    };
+
+    var _tapHandler = null;
+
+    function enableTapSelect() {
+        var zl = window._dashboardZonesLayer;
+        console.log('[v2-modal] enableTapSelect, zonesLayer:', !!zl);
+        if (!zl) return;
+        var count = 0;
+        zl.eachLayer(function (layer) { if (layer.zoneData && layer.zoneData.code) count++; });
+        console.log('[v2-modal] layers with zoneData.code:', count);
+        _tapHandler = function (e) {
+            console.log('[v2-modal] tapHandler fired, zoneData:', e.target.zoneData);
+            L.DomEvent.stopPropagation(e);
+            var code = e.target.zoneData && e.target.zoneData.code;
+            if (!code) return;
+            if (_selectedZoneCodes.has(code)) { _selectedZoneCodes.delete(code); removeSelectionOverlay(code); }
+            else { _selectedZoneCodes.add(code); addSelectionOverlay(e.target); }
+            updateInfoBarText();
+        };
+        zl.eachLayer(function (layer) { if (layer.zoneData && layer.zoneData.code) layer.on('click', _tapHandler); });
+    }
+
+    function addSelectionOverlay(srcPolygon) {
+        var code = srcPolygon.zoneData.code;
+        var zl = window._dashboardZonesLayer;
+        if (!zl) return;
+        var overlays = [];
+        zl.eachLayer(function (layer) {
+            if (layer.zoneData && layer.zoneData.code === code && layer.getLatLngs) {
+                var hl = L.polygon(layer.getLatLngs(), { color: '#2D6A4F', weight: 2.5, fillColor: '#2D6A4F', fillOpacity: 0.35, interactive: false });
+                _selectionLayerGroup.addLayer(hl);
+                overlays.push(hl);
+            }
+        });
+        _selectionOverlays[code] = overlays;
+    }
+
+    function removeSelectionOverlay(code) {
+        var overlays = _selectionOverlays[code];
+        if (!overlays) return;
+        overlays.forEach(function (hl) { _selectionLayerGroup.removeLayer(hl); });
+        delete _selectionOverlays[code];
+    }
+
+    function clearSelection() {
+        _selectedZoneCodes.clear();
+        if (_selectionLayerGroup) _selectionLayerGroup.clearLayers();
+        _selectionOverlays = {};
+        _drawnShapes.forEach(function (s) { if (s.layer) getMap().removeLayer(s.layer); });
+        _drawnShapes = [];
+        var infoBar = $('v2MapInfoBar');
+        if (infoBar) infoBar.style.display = 'none';
+    }
+
+    function disableMapInteraction() {
+        var zl = window._dashboardZonesLayer;
+        if (zl && _tapHandler) { zl.eachLayer(function (l) { l.off('click', _tapHandler); }); _tapHandler = null; }
+        cancelDraw();
+    }
+
+    function updateInfoBarText() {
+        var infoBar = $('v2MapInfoBar');
+        if (!infoBar) return;
+        var codes = Array.from(_selectedZoneCodes);
+        if (codes.length === 0) { infoBar.innerHTML = '<span style="color:#888;">请在地图上选择区域</span>'; return; }
+        var type = _currentModal;
+        if (type === 'water_request') {
+            infoBar.innerHTML = '<span style="font-weight:600;color:#2D6A4F;">' + codes.length + '</span> 个区域已选择' +
+                '<button onclick="window._clearModalSelection()" style="margin-left:8px;background:none;border:none;color:#999;font-size:0.85em;cursor:pointer;">清除</button>';
+        } else {
+            var display = codes.length > 5 ? codes.slice(0, 5).join(', ') + '...' : codes.join(', ');
+            infoBar.innerHTML = '<span style="font-weight:600;color:#2D6A4F;">' + codes.length + '</span> 个区域: ' + display +
+                '<button onclick="window._clearModalSelection()" style="margin-left:8px;background:none;border:none;color:#999;font-size:0.85em;cursor:pointer;">清除</button>';
+        }
+    }
+
+    window._clearModalSelection = function () { clearSelection(); updateInfoBarText(); };
+
+    function showDrawToolBar() { var bar = $('v2DrawToolBar'); if (bar) bar.style.display = ''; }
+
+    window.activateModalDrawTool = function (tool) {
+        cancelDraw();
+        _drawMode = tool;
+        var map = getMap();
+        map.getContainer().style.cursor = 'crosshair';
+        document.querySelectorAll('.modal-draw-chip').forEach(function (c) { c.classList.toggle('active', c.dataset.tool === tool); });
+        var hints = { rect: '点击并拖拽绘制矩形', circle: '点击中心，再点击边缘确定半径', polygon: '依次点击各顶点，双击完成' };
+        var hint = $('v2DrawHint');
+        if (hint) hint.textContent = hints[tool] || '';
+        if (tool === 'polygon') { map.on('click', onDrawPolygonClick); map.on('dblclick', onDrawPolygonFinish); }
+        else if (tool === 'rect') { map.on('mousedown', onDrawRectStart); map.on('mouseup', onDrawRectEnd); }
+        else if (tool === 'circle') { map.on('click', onDrawCircleClick); }
+        map.on('mousemove', onDrawMouseMove);
+    };
+
+    function cancelDraw() {
+        _drawMode = null; _drawPoints = [];
+        _tempMarkers.forEach(function (m) { getMap().removeLayer(m); }); _tempMarkers = [];
+        if (_tempPolyline) { getMap().removeLayer(_tempPolyline); _tempPolyline = null; }
+        var map = getMap();
+        map.off('click', onDrawPolygonClick); map.off('dblclick', onDrawPolygonFinish);
+        map.off('mousedown', onDrawRectStart); map.off('mouseup', onDrawRectEnd);
+        map.off('click', onDrawCircleClick); map.off('mousemove', onDrawMouseMove);
+        if (map) map.getContainer().style.cursor = '';
+    }
+
+    function nextShapeColor() { return _shapeColors[_drawnShapes.length % _shapeColors.length]; }
+
+    function onDrawRectStart(e) { _rectStartLL = e.latlng; }
+    function onDrawRectEnd(e) {
+        if (!_rectStartLL) return;
+        var p1 = _rectStartLL, p2 = e.latlng; _rectStartLL = null;
+        var color = nextShapeColor();
+        var layer = L.rectangle([p1, p2], { color: color, weight: 2, fillColor: color, fillOpacity: 0.15 }).addTo(getMap());
+        queryAndAddShape('rect', layer, [{ lat: Math.min(p1.lat, p2.lat), lng: Math.min(p1.lng, p2.lng) }, { lat: Math.max(p1.lat, p2.lat), lng: Math.max(p1.lng, p2.lng) }]);
+        cancelDraw();
+    }
+    function onDrawCircleClick(e) {
+        if (_circleStep === 0) {
+            _circleCenter = e.latlng; _circleStep = 1;
+            _tempMarkers.push(L.circleMarker(_circleCenter, { radius: 4, color: '#2D6A4F', fillColor: '#2D6A4F', fillOpacity: 1 }).addTo(getMap()));
+        } else {
+            var radius = _circleCenter.distanceTo(e.latlng);
+            var color = nextShapeColor();
+            var layer = L.circle(_circleCenter, { radius: radius, color: color, weight: 2, fillColor: color, fillOpacity: 0.15 }).addTo(getMap());
+            queryAndAddShape('circle', layer, [], _circleCenter.lat, _circleCenter.lng, radius);
+            cancelDraw(); _circleStep = 0; _circleCenter = null;
+        }
+    }
+    function onDrawPolygonClick(e) {
+        _drawPoints.push(e.latlng);
+        _tempMarkers.push(L.circleMarker(e.latlng, { radius: 4, color: '#2D6A4F', fillColor: '#2D6A4F', fillOpacity: 1 }).addTo(getMap()));
+        if (_drawPoints.length > 1) { if (_tempPolyline) getMap().removeLayer(_tempPolyline); _tempPolyline = L.polyline(_drawPoints, { color: '#2D6A4F', weight: 2, dashArray: '5,5' }).addTo(getMap()); }
+    }
+    function onDrawPolygonFinish() {
+        if (_drawPoints.length < 3) return;
+        var color = nextShapeColor();
+        var layer = L.polygon(_drawPoints, { color: color, weight: 2, fillColor: color, fillOpacity: 0.15 }).addTo(getMap());
+        queryAndAddShape('polygon', layer, _drawPoints.map(function (ll) { return { lat: ll.lat, lng: ll.lng }; }));
+        cancelDraw();
+    }
+    function onDrawMouseMove(e) {
+        if (_drawMode === 'circle' && _circleCenter && _circleStep === 1) {
+            if (_tempPolyline) getMap().removeLayer(_tempPolyline);
+            _tempPolyline = L.polyline([_circleCenter, e.latlng], { color: '#2D6A4F', weight: 2, dashArray: '5,5' }).addTo(getMap());
+        }
+    }
+
+    function queryAndAddShape(type, layer, points, centerLat, centerLng, radius) {
+        var id = ++_shapeIdCounter;
+        var params = new URLSearchParams({ type: type, points: JSON.stringify(points) });
+        if (centerLat !== undefined) params.set('center_lat', centerLat);
+        if (centerLng !== undefined) params.set('center_lng', centerLng);
+        if (radius !== undefined) params.set('radius', radius);
+        var shape = { id: id, type: type, layer: layer, zoneCodes: [], color: layer.options.color };
+        _drawnShapes.push(shape);
+        fetch('/api/zones-in-area/?' + params.toString())
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                shape.zoneCodes = data.zone_codes;
+                data.zone_codes.forEach(function (code) {
+                    _selectedZoneCodes.add(code);
+                    if (!_selectionOverlays[code]) {
+                        var zl = window._dashboardZonesLayer;
+                        if (zl) { var overlays = []; zl.eachLayer(function (zlayer) {
+                            if (zlayer.zoneData && zlayer.zoneData.code === code && zlayer.getLatLngs) {
+                                var hl = L.polygon(zlayer.getLatLngs(), { color: '#2D6A4F', weight: 2.5, fillColor: '#2D6A4F', fillOpacity: 0.35, interactive: false });
+                                _selectionLayerGroup.addLayer(hl); overlays.push(hl);
+                            }
+                        }); _selectionOverlays[code] = overlays; }
+                    }
+                });
+                updateInfoBarText(); renderShapeListInModal();
+            });
+        renderShapeListInModal();
+    }
+
+    window.removeModalShape = function (id) {
+        var idx = _drawnShapes.findIndex(function (s) { return s.id === id; });
+        if (idx < 0) return;
+        getMap().removeLayer(_drawnShapes[idx].layer);
+        _drawnShapes.splice(idx, 1);
+        rebuildSelectionFromShapes(); renderShapeListInModal();
+    };
+
+    function rebuildSelectionFromShapes() {
+        _selectedZoneCodes.clear(); if (_selectionLayerGroup) _selectionLayerGroup.clearLayers(); _selectionOverlays = {};
+        _drawnShapes.forEach(function (s) { s.zoneCodes.forEach(function (code) {
+            _selectedZoneCodes.add(code);
+            if (!_selectionOverlays[code]) {
+                var zl = window._dashboardZonesLayer;
+                if (zl) { var overlays = []; zl.eachLayer(function (zlayer) {
+                    if (zlayer.zoneData && zlayer.zoneData.code === code && zlayer.getLatLngs) {
+                        var hl = L.polygon(zlayer.getLatLngs(), { color: '#2D6A4F', weight: 2.5, fillColor: '#2D6A4F', fillOpacity: 0.35, interactive: false });
+                        _selectionLayerGroup.addLayer(hl); overlays.push(hl);
+                    }
+                }); _selectionOverlays[code] = overlays; }
+            }
+        }); });
+        updateInfoBarText();
+    }
+
+    function renderShapeListInModal() {
+        var container = $('wrShapeList'); if (!container) return;
+        container.innerHTML = '';
+        _drawnShapes.forEach(function (s, idx) {
+            var typeLabel = { rect: '矩形', circle: '圆形', polygon: '多边形' }[s.type] || s.type;
+            var item = document.createElement('div');
+            item.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:6px 10px;background:#f0f7f4;border-radius:6px;margin-bottom:4px;font-size:0.82em;';
+            item.innerHTML = '<div style="display:flex;align-items:center;gap:6px;color:#2D6A4F;"><span style="width:10px;height:10px;border-radius:50%;background:' + s.color + ';flex-shrink:0;"></span><span>' + typeLabel + ' #' + (idx + 1) + '</span><span style="background:#2D6A4F;color:#fff;padding:1px 7px;border-radius:10px;font-size:0.85em;">' + s.zoneCodes.length + ' 区域</span></div><button type="button" onclick="removeModalShape(' + s.id + ')" style="border:none;background:none;cursor:pointer;color:#c0392b;font-size:1em;">✕</button>';
+            container.appendChild(item);
+        });
+    }
+
+    function buildForm(type, data) {
+        if (type === 'workorder') buildWorkorderForm(data);
+        else buildWaterRequestForm(data);
+    }
+
+    function buildWorkorderForm(data) {
+        var body = $('woModalBody'); if (!body) return;
+        var shiftChips = data.sorted_shifts.map(function (s, i) {
+            return '<label class="v2-chip' + (i === 0 ? ' active' : '') + '" data-val="' + s + '"><input type="radio" name="shift" value="' + s + '" style="display:none;"' + (i === 0 ? ' checked' : '') + '>' + s + '</label>';
+        }).join('');
+
+        body.innerHTML =
+            '<form id="woModalForm" style="display:contents;"><input type="hidden" name="date" value="' + data.today + '">' +
+            '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;"><span style="font-size:0.82em;color:#888;">' + data.today + ' ' + data.now_time + '</span><span style="font-size:0.82em;color:#888;">' + data.worker_name + '</span></div>' +
+            '<div class="v2-fg"><div class="v2-fl">班次</div><div class="v2-chip-group">' + shiftChips + '</div></div>' +
+            '<div class="v2-fg"><div class="v2-form-row"><div><div class="v2-fl">开始时间</div><select name="work_start_time" id="woStart" class="v2-select"><option value="">--</option></select></div><div><div class="v2-fl">完成时间</div><select name="work_end_time" id="woEnd" class="v2-select"><option value="">--</option></select></div></div></div>' +
+            '<div class="v2-fg"><div class="v2-form-row"><div><div class="v2-fl">灌溉组</div><input type="number" name="team_size" value="1" min="0" max="99" class="v2-input" style="text-align:center;"></div><div><div class="v2-fl">第三方</div><input type="number" name="third_party_count" value="0" min="0" max="99" class="v2-input" style="text-align:center;"></div></div><div id="woHours" style="margin-top:4px;font-size:0.8em;color:#888;"></div></div>' +
+            '<div class="v2-fg"><div class="v2-fl">工作类别</div><div id="woCatTrigger" style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border:1px solid #ddd;border-radius:8px;cursor:pointer;background:#fff;"><span id="woCatDisplay" style="color:#bbb;">选择</span><span style="font-size:0.7em;color:#999;">▶</span></div><input type="hidden" name="work_category" id="woCatInput"></div>' +
+            '<div class="v2-fg"><div class="v2-fl">故障详情</div><div id="woFaultTrigger" style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border:1px solid #ddd;border-radius:8px;cursor:pointer;background:#fff;"><span id="woFaultDisplay" style="color:#bbb;">选择</span><span style="font-size:0.7em;color:#999;">▶</span></div><input type="hidden" name="fault_entries" id="woFaultInput"></div>' +
+            '<div class="v2-fg"><div class="v2-form-row"><div><div class="v2-fl">疑难</div><div class="v2-chip-group"><label class="v2-chip active" data-val=""><input type="radio" name="is_difficult" value="" style="display:none;" checked>否</label><label class="v2-chip" data-val="1"><input type="radio" name="is_difficult" value="1" style="display:none;">是</label></div></div><div><div class="v2-fl">已处理</div><div class="v2-chip-group"><label class="v2-chip active" data-val=""><input type="radio" name="is_difficult_resolved" value="" style="display:none;" checked>否</label><label class="v2-chip" data-val="1"><input type="radio" name="is_difficult_resolved" value="1" style="display:none;">是</label></div></div></div></div>' +
+            '<div class="v2-fg"><div class="v2-fl">工作内容</div><textarea name="work_content" class="v2-textarea" placeholder="请描述工作内容..." rows="3"></textarea></div>' +
+            '<div class="v2-fg"><div class="v2-fl">照片 (最多6张)</div><div class="v2-photo-area" id="woPhotoArea"><div class="v2-photo-add" id="woPhotoAdd">+</div></div><input type="file" id="woPhotoInput" accept="image/*" multiple style="display:none;"></div>' +
+            '<input type="hidden" name="remark" value=""></form>' +
+            '<div id="woCatModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:4000;align-items:flex-end;justify-content:center;"><div style="background:#fff;border-radius:16px 16px 0 0;width:100%;max-width:420px;max-height:70vh;overflow-y:auto;"><div style="width:36px;height:4px;background:#ccc;border-radius:2px;margin:10px auto 0;"></div><div style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px 10px;border-bottom:1px solid #f0f0f0;"><span style="font-weight:600;">选择工作类别</span><button onclick="document.getElementById(\'woCatModal\').style.display=\'none\'" style="width:32px;height:32px;border:none;background:#f0f0f0;border-radius:50%;font-size:1.1em;cursor:pointer;">×</button></div><div style="padding:16px;"><div style="font-size:0.75em;color:#999;margin-bottom:6px;">主类别</div><div class="v2-chip-group" id="woCatPrimary"></div><div id="woSubcatDivider" style="display:none;border-top:1px solid #e0e0e0;margin:12px 0;"></div><div id="woSubcatLabel" style="display:none;font-size:0.75em;color:#999;margin-bottom:6px;">子类别</div><div class="v2-chip-group" id="woSubcat"></div></div><div style="padding:12px 16px;border-top:1px solid #f0f0f0;"><button onclick="document.getElementById(\'woCatModal\').style.display=\'none\'" style="width:100%;padding:12px;border:none;border-radius:10px;font-size:0.95em;font-weight:600;cursor:pointer;background:#2D6A4F;color:#fff;">确定</button></div></div></div>' +
+            '<div id="woFaultModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:4000;align-items:flex-end;justify-content:center;"><div style="background:#fff;border-radius:16px 16px 0 0;width:100%;max-width:420px;max-height:70vh;overflow-y:auto;"><div style="width:36px;height:4px;background:#ccc;border-radius:2px;margin:10px auto 0;"></div><div style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px 10px;border-bottom:1px solid #f0f0f0;"><span style="font-weight:600;">故障详情</span><button onclick="document.getElementById(\'woFaultModal\').style.display=\'none\'" style="width:32px;height:32px;border:none;background:#f0f0f0;border-radius:50%;font-size:1.1em;cursor:pointer;">×</button></div><div style="padding:16px;"><div style="font-size:0.75em;color:#999;margin-bottom:6px;">故障类别</div><div class="v2-chip-group" id="woFaultPrimary"></div><div id="woFaultSubDivider" style="display:none;border-top:1px solid #e0e0e0;margin:12px 0;"></div><div id="woFaultSubLabel" style="display:none;font-size:0.75em;color:#999;margin-bottom:6px;">故障子项</div><div class="v2-chip-group" id="woFaultSub"></div></div><div style="padding:12px 16px;border-top:1px solid #f0f0f0;"><button onclick="document.getElementById(\'woFaultModal\').style.display=\'none\'" style="width:100%;padding:12px;border:none;border-radius:10px;font-size:0.95em;font-weight:600;cursor:pointer;background:#2D6A4F;color:#fff;">确定</button></div></div></div>';
+
+        injectCSRF(body.querySelector('form'));
+        initWorkorderBehaviors(data);
+    }
+
+    function initWorkorderBehaviors(data) {
+        function populateTime(sel, def) {
+            for (var h = 0; h < 24; h++) for (var m = 0; m < 60; m += 15) {
+                var v = String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
+                var o = document.createElement('option'); o.value = v; o.textContent = v; sel.appendChild(o);
+            }
+            if (def) sel.value = def;
+        }
+        var startSel = $('woStart'), endSel = $('woEnd');
+        populateTime(startSel, data.default_time);
+        var parts = data.default_time.split(':').map(Number), nm = parts[1] + 15, nh = parts[0];
+        if (nm >= 60) { nm -= 60; nh++; } if (nh >= 24) nh = 0;
+        populateTime(endSel, String(nh).padStart(2, '0') + ':' + String(nm).padStart(2, '0'));
+
+        function calcHours() {
+            var s = startSel.value, e = endSel.value;
+            var ts = parseInt(document.querySelector('[name="team_size"]') ? document.querySelector('[name="team_size"]').value : 0) || 0;
+            var tp = parseInt(document.querySelector('[name="third_party_count"]') ? document.querySelector('[name="third_party_count"]').value : 0) || 0;
+            if (!s || !e) { $('woHours').textContent = ''; return; }
+            var sh = s.split(':').map(Number), eh = e.split(':').map(Number);
+            var dur = (eh[0] * 60 + eh[1]) - (sh[0] * 60 + sh[1]); if (dur <= 0) dur += 1440;
+            var dh = dur / 60, th = Math.round(dh * ts * 2) / 2, tph = Math.round(dh * tp * 2) / 2;
+            $('woHours').innerHTML = '工时: <span style="color:#2D6A4F;font-weight:600;">' + th + 'h</span>' + (tph > 0 ? ' / 第三方: <span style="color:#2D6A4F;font-weight:600;">' + tph + 'h</span>' : '');
+        }
+        startSel.addEventListener('change', calcHours); endSel.addEventListener('change', calcHours);
+        document.querySelector('[name="team_size"]').addEventListener('input', calcHours);
+        document.querySelector('[name="third_party_count"]').addEventListener('input', calcHours);
+        calcHours();
+
+        document.querySelectorAll('#woModalBody .v2-chip-group:first-of-type .v2-chip').forEach(function (c) {
+            c.addEventListener('click', function () { c.closest('.v2-chip-group').querySelectorAll('.v2-chip').forEach(function (x) { x.classList.remove('active'); }); c.classList.add('active'); c.querySelector('input').checked = true; });
+        });
+        var chipGroups = document.querySelectorAll('#woModalBody .v2-chip-group');
+        for (var i = 3; i < chipGroups.length; i++) { (function (group) {
+            group.querySelectorAll('.v2-chip').forEach(function (c) { c.addEventListener('click', function () { group.querySelectorAll('.v2-chip').forEach(function (x) { x.classList.remove('active'); }); c.classList.add('active'); c.querySelector('input').checked = true; }); });
+        })(chipGroups[i]); }
+
+        var selectedCatId = null, catPrimary = $('woCatPrimary'), subcatGrid = $('woSubcat');
+        data.category_tree.forEach(function (cat) {
+            var chip = document.createElement('div'); chip.className = 'v2-chip'; chip.textContent = cat.name;
+            chip.addEventListener('click', function () {
+                catPrimary.querySelectorAll('.v2-chip').forEach(function (x) { x.classList.remove('active'); }); chip.classList.add('active'); subcatGrid.innerHTML = '';
+                if (cat.children.length > 0) { $('woSubcatDivider').style.display = ''; $('woSubcatLabel').style.display = '';
+                    cat.children.forEach(function (sub) { var sc = document.createElement('div'); sc.className = 'v2-chip'; sc.textContent = sub.name; sc.dataset.id = sub.id;
+                        sc.addEventListener('click', function () { subcatGrid.querySelectorAll('.v2-chip').forEach(function (x) { x.classList.remove('active'); }); sc.classList.add('active'); selectedCatId = sub.id; });
+                        subcatGrid.appendChild(sc); });
+                } else { $('woSubcatDivider').style.display = 'none'; $('woSubcatLabel').style.display = 'none'; selectedCatId = cat.id; }
+            }); catPrimary.appendChild(chip);
+        });
+        $('woCatTrigger').addEventListener('click', function () { $('woCatModal').style.display = 'flex'; });
+        var catModal = $('woCatModal'), catObserver = new MutationObserver(function () {
+            if (catModal.style.display === 'none') { var activeSub = subcatGrid.querySelector('.v2-chip.active');
+                var catId = activeSub ? activeSub.dataset.id : (catPrimary.querySelector('.v2-chip.active') ? selectedCatId : null);
+                if (catId) { $('woCatInput').value = catId; var name = '';
+                    data.category_tree.forEach(function (c) { if (c.id == catId) name = c.name; c.children.forEach(function (s) { if (s.id == catId) name = s.name; }); });
+                    $('woCatDisplay').textContent = name || '已选择'; $('woCatDisplay').style.color = '#222'; } }
+        }); catObserver.observe(catModal, { attributes: true, attributeFilter: ['style'] });
+
+        _faultEntries = []; var faultPrimary = $('woFaultPrimary'), faultSubGrid = $('woFaultSub');
+        data.fault_tree.forEach(function (fc) {
+            var chip = document.createElement('div'); chip.className = 'v2-chip'; chip.textContent = fc.name;
+            chip.addEventListener('click', function () {
+                faultPrimary.querySelectorAll('.v2-chip').forEach(function (x) { x.classList.remove('active'); }); chip.classList.add('active'); faultSubGrid.innerHTML = '';
+                if (fc.subtypes.length > 0) { $('woFaultSubDivider').style.display = ''; $('woFaultSubLabel').style.display = '';
+                    fc.subtypes.forEach(function (sub) { var sc = document.createElement('div'); sc.className = 'v2-chip'; sc.textContent = sub.name; sc.dataset.id = sub.id;
+                        sc.addEventListener('click', function () {
+                            if (sc.classList.contains('active')) { sc.classList.remove('active'); var idx = _faultEntries.findIndex(function (e) { return e.fault_subtype == sub.id; }); if (idx >= 0) _faultEntries.splice(idx, 1); }
+                            else { sc.classList.add('active'); _faultEntries.push({ fault_subtype: sub.id, count: 1 }); }
+                            updateFaultDisplay(data.fault_tree);
+                        }); faultSubGrid.appendChild(sc); }); }
+            }); faultPrimary.appendChild(chip);
+        });
+        $('woFaultTrigger').addEventListener('click', function () { $('woFaultModal').style.display = 'flex'; });
+
+        var photoArea = $('woPhotoArea'), photoInput = $('woPhotoInput');
+        $('woPhotoAdd').addEventListener('click', function () { photoInput.click(); });
+        photoInput.addEventListener('change', function () {
+            Array.from(photoInput.files).forEach(function (f) { if (_photoFiles.length >= 6) return; _photoFiles.push(f);
+                var reader = new FileReader(); reader.onload = function (e) {
+                    var div = document.createElement('div'); div.className = 'v2-photo-thumb';
+                    div.innerHTML = '<img src="' + e.target.result + '"><button type="button" class="v2-photo-rm">×</button>';
+                    div.querySelector('.v2-photo-rm').addEventListener('click', function () { var idx = Array.from(photoArea.querySelectorAll('.v2-photo-thumb')).indexOf(div); _photoFiles.splice(idx, 1); div.remove(); $('woPhotoAdd').style.display = _photoFiles.length < 6 ? '' : 'none'; });
+                    photoArea.insertBefore(div, $('woPhotoAdd')); $('woPhotoAdd').style.display = _photoFiles.length < 6 ? '' : 'none';
+                }; reader.readAsDataURL(f);
+            }); photoInput.value = '';
+        });
+    }
+
+    function updateFaultDisplay(faultTree) {
+        var display = $('woFaultDisplay');
+        if (_faultEntries.length > 0) {
+            display.textContent = _faultEntries.map(function (e) { var n = ''; faultTree.forEach(function (fc) { fc.subtypes.forEach(function (s) { if (s.id == e.fault_subtype) n = s.name; }); }); return n; }).join(', ');
+            display.style.color = '#222';
+        } else { display.textContent = '选择'; display.style.color = '#bbb'; }
+        $('woFaultInput').value = JSON.stringify(_faultEntries);
+    }
+
+    function buildWaterRequestForm(data) {
+        var body = $('wrModalBody'); if (!body) return;
+        var typeChips = data.request_type_choices.map(function (item, i) {
+            return '<div class="v2-chip modal-req-chip' + (i === 0 ? ' active' : '') + '" data-val="' + item[0] + '">' + item[1] + '</div>';
+        }).join('');
+        body.innerHTML = '<form id="wrModalForm" style="display:contents;">' +
+            '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;"><span style="font-size:0.82em;color:#888;">' + data.today + ' ' + data.now_time + '</span><span style="font-size:0.82em;color:#888;">' + data.user_name + '</span></div>' +
+            '<div class="v2-fg"><div class="v2-fl">需求类型</div><div class="v2-chip-group">' + typeChips + '</div><input type="hidden" name="request_type" id="wrTypeInput" value="' + data.request_type_choices[0][0] + '"></div>' +
+            '<div class="v2-fg"><div class="v2-fl">开始时间</div><input type="datetime-local" name="start_datetime" id="wrStart" class="v2-input"></div>' +
+            '<div class="v2-fg"><div class="v2-fl">结束时间</div><input type="datetime-local" name="end_datetime" id="wrEnd" class="v2-input"></div>' +
+            '<div class="v2-fg"><div class="v2-fl">备注</div><textarea name="remark" class="v2-textarea" placeholder="可选备注..." rows="2"></textarea></div>' +
+            '<div class="v2-fg"><div class="v2-fl">已绘制区域</div><div id="wrShapeList"></div></div></form>';
+        injectCSRF(body.querySelector('form'));
+        var now = new Date(), pad = function (n) { return String(n).padStart(2, '0'); };
+        var toLocal = function (d) { return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + 'T' + pad(d.getHours()) + ':' + pad(d.getMinutes()); };
+        $('wrStart').value = toLocal(now); $('wrEnd').value = toLocal(new Date(now.getTime() + 2 * 3600000));
+        document.querySelectorAll('.modal-req-chip').forEach(function (chip) {
+            chip.addEventListener('click', function () { document.querySelectorAll('.modal-req-chip').forEach(function (c) { c.classList.remove('active'); }); chip.classList.add('active'); $('wrTypeInput').value = chip.dataset.val; });
+        });
+    }
+
+    window.submitV2Workorder = function () {
+        var codes = Array.from(_selectedZoneCodes);
+        if (codes.length === 0) { showToast('请在地图上选择至少一个区域', 'error'); return; }
+        var form = $('woModalForm'); if (!form) return;
+        form.querySelectorAll('input[name="zones"]').forEach(function (i) { i.remove(); });
+        codes.forEach(function (code) { var input = document.createElement('input'); input.type = 'hidden'; input.name = 'zones'; input.value = code; form.appendChild(input); });
+        var fd = new FormData(form); _photoFiles.forEach(function (f) { fd.append('photos', f); });
+        var btn = $('woSubmitBtn'); btn.disabled = true; btn.textContent = '提交中...';
+        fetch('/mobile/workorder/v2/', { method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+            .then(function (r) { return r.json(); }).then(function (data) {
+                if (data.success) { showToast(data.message, 'success'); setTimeout(function () { closeV2Modal('workorder'); }, 1500); }
+                else { showToast(data.message, 'error'); btn.disabled = false; btn.textContent = '提交'; }
+            }).catch(function (err) { showToast('提交失败: ' + err, 'error'); btn.disabled = false; btn.textContent = '提交'; });
+    };
+
+    window.submitV2WaterRequest = function () {
+        var codes = Array.from(_selectedZoneCodes);
+        if (codes.length === 0) { showToast('请在地图上绘制选择至少一个区域', 'error'); return; }
+        var startDt = $('wrStart') ? $('wrStart').value : '', endDt = $('wrEnd') ? $('wrEnd').value : '';
+        if (!startDt || !endDt) { showToast('请填写需求时间段', 'error'); return; }
+        var form = $('wrModalForm'), fd = form ? new FormData(form) : new FormData();
+        fd.set('zone_codes', JSON.stringify(codes));
+        var btn = $('wrSubmitBtn'); btn.disabled = true; btn.textContent = '提交中...';
+        fetch('/mobile/water-request/v2/', { method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+            .then(function (r) { return r.json(); }).then(function (data) {
+                if (data.success) { showToast(data.message, 'success'); setTimeout(function () { closeV2Modal('water_request'); }, 1500); }
+                else { showToast(data.message, 'error'); btn.disabled = false; btn.textContent = '提交'; }
+            }).catch(function (err) { showToast('提交失败: ' + err, 'error'); btn.disabled = false; btn.textContent = '提交'; });
+    };
+
+    console.log('[v2-modal] IIFE executed, openV2Modal =', typeof window.openV2Modal);
+})();
+</script>
 <!-- Dashboard JS -->
 <script>
 // Zone data from server
@@ -1824,14 +2528,20 @@ if ('ontouchstart' in window || window.innerWidth <= 768) {
     menuContainer.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:8px;margin-bottom:8px;';
 
     const menuItems = [
-        { icon: '\u{1F4DD}', label: '工单提交', url: '{% url "core:workorder_mobile" %}' },
+        { icon: '\u{1F4DD}', label: '工单提交', action: "openV2Modal('workorder')" },
+        { icon: '\u{1F4A7}', label: '浇水需求', action: "openV2Modal('water_request')" },
         { icon: '\u{1F4CB}', label: '历史记录', url: '{% url "core:workorder_history" %}' },
     ];
 
     const menuEls = [];
     menuItems.forEach(function(item) {
         const a = document.createElement('a');
-        a.href = item.url;
+        if (item.url) {
+            a.href = item.url;
+        } else {
+            a.href = 'javascript:void(0)';
+            a.onclick = function(e) { e.preventDefault(); eval(item.action); };
+        }
         a.innerHTML = '<span style="font-size:1.3em">' + item.icon + '</span><span style="font-size:0.75em;margin-top:2px">' + item.label + '</span>';
         a.style.cssText = 'display:flex;flex-direction:column;align-items:center;justify-content:center;width:60px;height:60px;border-radius:14px;background:#fff;color:#222;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,0.12);opacity:0;transform:translateY(10px);transition:opacity 0.2s,transform 0.2s;pointer-events:none;';
         menuContainer.appendChild(a);
