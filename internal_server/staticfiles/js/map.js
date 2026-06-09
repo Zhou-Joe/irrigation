@@ -261,6 +261,7 @@
 
         // Close popup when clicking on empty map space
         map.on('click', function(e) {
+            if (window._v2ModalMapMode) return;
             // Only close if click was directly on the map, not on a polygon
             if (e.originalEvent.target.closest('.leaflet-overlay-pane')) return;
             hideZonePopup();
@@ -981,6 +982,7 @@
     window.showZonePopup = showZonePopup;
     window.hideZonePopup = hideZonePopup;
     window.togglePopupSettings = togglePopupSettings;
+    window._dashboardZonesLayer = zonesLayerGroup;
     window.handleFieldToggle = handleFieldToggle;
 
     window.handleSmoothCustomToggle = function(checked) {
@@ -1127,6 +1129,7 @@
      * @param {Event} e - Leaflet event
      */
     function handleMouseOver(e) {
+        if (window._v2ModalMapMode) return;
         const layer = e.target;
         const zoneId = layer.zoneData?.id;
         if (zoneId) highlightZonePolygons(zoneId);
@@ -1137,6 +1140,7 @@
      * @param {Event} e - Leaflet event
      */
     function handleMouseOut(e) {
+        if (window._v2ModalMapMode) return;
         e.target.closeTooltip();
         unhighlightZonePolygons();
     }
@@ -1146,6 +1150,7 @@
      * @param {Event} e - Leaflet event
      */
     function handleClick(e) {
+        if (window._v2ModalMapMode) return;
         const layer = e.target;
         const zoneId = layer.zoneData?.id;
 
