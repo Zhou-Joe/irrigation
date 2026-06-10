@@ -1527,9 +1527,10 @@
 
     window.enterMapMode = function (type) {
         if (!type) type = _currentModal;
+        var map = getMap();
+        if (!map) { showToast('地图未加载，请刷新页面', 'error'); return; }
         _mapMode = true;
         window._v2ModalMapMode = type;
-        var map = getMap();
         // Clear any stale close timeout
         if (_closeTimeout) { clearTimeout(_closeTimeout); _closeTimeout = null; }
         if (!_selectionLayerGroup) _selectionLayerGroup = L.layerGroup().addTo(map);
@@ -1607,7 +1608,7 @@
     function addSelectionOverlay(srcPolygon) {
         var code = srcPolygon.zoneData.code;
         var zl = window._dashboardZonesLayer;
-        if (!zl) return;
+        if (!zl || !_selectionLayerGroup) return;
         var overlays = [];
         zl.eachLayer(function (layer) {
             if (layer.zoneData && layer.zoneData.code === code && layer.getLatLngs) {
@@ -1621,7 +1622,7 @@
 
     function removeSelectionOverlay(code) {
         var overlays = _selectionOverlays[code];
-        if (!overlays) return;
+        if (!overlays || !_selectionLayerGroup) return;
         overlays.forEach(function (hl) { _selectionLayerGroup.removeLayer(hl); });
         delete _selectionOverlays[code];
     }
@@ -1750,7 +1751,7 @@
                 shape.zoneCodes = data.zone_codes;
                 data.zone_codes.forEach(function (code) {
                     _selectedZoneCodes.add(code);
-                    if (!_selectionOverlays[code]) {
+                    if (!_selectionOverlays[code] && _selectionLayerGroup) {
                         var zl = window._dashboardZonesLayer;
                         if (zl) { var overlays = []; zl.eachLayer(function (zlayer) {
                             if (zlayer.zoneData && zlayer.zoneData.code === code && zlayer.getLatLngs) {
@@ -1775,6 +1776,7 @@
 
     function rebuildSelectionFromShapes() {
         _selectedZoneCodes.clear(); if (_selectionLayerGroup) _selectionLayerGroup.clearLayers(); _selectionOverlays = {};
+        if (!_selectionLayerGroup) return;
         _drawnShapes.forEach(function (s) { s.zoneCodes.forEach(function (code) {
             _selectedZoneCodes.add(code);
             if (!_selectionOverlays[code]) {
