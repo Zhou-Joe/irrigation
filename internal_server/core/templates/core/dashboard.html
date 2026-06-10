@@ -1422,7 +1422,7 @@
 <script src="{% static 'js/map-config.js' %}?v=20260423"></script>
 <script>window.MAP_STYLE_CONFIG = {{ map_style_json|safe }} || {};</script>
 <!-- Custom Map JS -->
-<script src="{% static 'js/map.js' %}?v=20260609"></script>
+<script src="{% static 'js/map.js' %}?v=20260610"></script>
 <script>
 /* dashboard-v2-modal.js — V2 workorder & water request as dashboard modal popups */
 (function () {
@@ -1570,25 +1570,40 @@
     var _tapHandler = null;
     var _mapTapHandler = null;
 
-    function enableTapSelect() {
-        var zl = window._dashboardZonesLayer;
+    function findZoneLayerGroup() {
+        // Primary: use the exposed global
+        if (window._dashboardZonesLayer) return window._dashboardZonesLayer;
+        // Fallback: search map's layer groups for one with zone polygons
         var map = getMap();
-        if (!zl || !map) { console.warn('[v2-modal] No zones layer or map'); return; }
+        if (!map) return null;
+        var found = null;
+        map.eachLayer(function (layer) {
+            if (found) return;
+            if (layer.eachLayer && !found) {
+                layer.eachLayer(function (sub) {
+                    if (sub.zoneData && sub.zoneData.code) { found = layer; }
+                });
+            }
+        });
+        if (found) window._dashboardZonesLayer = found;
+        return found;
+    }
+
+    function enableTapSelect() {
+        var zl = findZoneLayerGroup();
+        var map = getMap();
+        if (!zl || !map) { showToast('区域图层未加载，请刷新页面', 'error'); return; }
 
         // Mark selectable layers
-        var selectableCount = 0;
         zl.eachLayer(function (layer) {
             if (layer.zoneData && layer.zoneData.code) {
                 layer._v2Selectable = true;
-                selectableCount++;
             }
         });
 
-        // Use map-level click handler — more reliable than per-polygon handlers
-        // because it fires AFTER all polygon handlers (like handleClick in map.js)
+        // Use map-level click handler.
+        // Leaflet propagates polygon clicks to the map — the polygon is in e.layer.
         _mapTapHandler = function (e) {
-            // Leaflet propagates polygon clicks to the map.
-            // The polygon is in e.layer (NOT e.target — that's the map itself).
             var layer = e.layer;
             if (!layer || !layer._v2Selectable || !layer.zoneData || !layer.zoneData.code) return;
             L.DomEvent.stopPropagation(e);
