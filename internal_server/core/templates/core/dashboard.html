@@ -1520,6 +1520,7 @@
 
     window.enterMapMode = function (type) {
         if (!type) type = _currentModal;
+        console.log('[v2-modal] enterMapMode:', type, '_v2ModalMapMode set');
         _mapMode = true;
         window._v2ModalMapMode = type;
         var map = getMap();
@@ -1559,8 +1560,14 @@
 
     function enableTapSelect() {
         var zl = window._dashboardZonesLayer;
-        if (!zl) return;
+        var map = getMap();
+        console.log('[v2-modal] enableTapSelect — zl:', !!zl, 'map:', !!map);
+        if (!zl) { console.warn('[v2-modal] No zones layer!'); return; }
+        var layerCount = 0;
+        zl.eachLayer(function () { layerCount++; });
+        console.log('[v2-modal] Total layers in zonesGroup:', layerCount);
         _tapHandler = function (e) {
+            console.log('[v2-modal] TAP on zone:', e.target.zoneData);
             L.DomEvent.stopPropagation(e);
             var code = e.target.zoneData && e.target.zoneData.code;
             if (!code) return;
@@ -1568,7 +1575,9 @@
             else { _selectedZoneCodes.add(code); addSelectionOverlay(e.target); }
             updateInfoBarText();
         };
-        zl.eachLayer(function (layer) { if (layer.zoneData && layer.zoneData.code) layer.on('click', _tapHandler); });
+        var boundCount = 0;
+        zl.eachLayer(function (layer) { if (layer.zoneData && layer.zoneData.code) { layer.on('click', _tapHandler); boundCount++; } });
+        console.log('[v2-modal] Bound tap handler to', boundCount, 'layers');
     }
 
     function addSelectionOverlay(srcPolygon) {
