@@ -1525,15 +1525,13 @@
         var map = getMap();
         if (!_selectionLayerGroup) _selectionLayerGroup = L.layerGroup().addTo(map);
 
+        // Hide the entire modal container so map is fully clickable
         var backdrop = $(type === 'workorder' ? 'woModalBackdrop' : 'wrModalBackdrop');
+        var container = $(type === 'workorder' ? 'woModalContainer' : 'wrModalContainer');
         if (backdrop) backdrop.style.display = 'none';
+        if (container) container.style.display = 'none';
 
-        var body = $(type === 'workorder' ? 'woModalBody' : 'wrModalBody');
-        var footer = $(type === 'workorder' ? 'woModalFooter' : 'wrModalFooter');
-        if (body) body.style.display = 'none';
-        var mapBtn = footer ? footer.querySelector('.v2-btn-map') : null;
-        if (mapBtn) { mapBtn.textContent = '返回表单'; mapBtn.onclick = function () { exitMapMode(); }; }
-
+        // Show info bar with 返回表单 button
         var infoBar = $('v2MapInfoBar');
         if (infoBar) { infoBar.style.display = ''; updateInfoBarText(); }
 
@@ -1545,13 +1543,11 @@
         _mapMode = false;
         window._v2ModalMapMode = null;
         var type = _currentModal;
+        // Restore modal container
         var backdrop = $(type === 'workorder' ? 'woModalBackdrop' : 'wrModalBackdrop');
+        var container = $(type === 'workorder' ? 'woModalContainer' : 'wrModalContainer');
         if (backdrop) backdrop.style.display = '';
-        var body = $(type === 'workorder' ? 'woModalBody' : 'wrModalBody');
-        var footer = $(type === 'workorder' ? 'woModalFooter' : 'wrModalFooter');
-        if (body) body.style.display = '';
-        var mapBtn = footer ? footer.querySelector('.v2-btn-map') : null;
-        if (mapBtn) { mapBtn.textContent = '地图选点'; mapBtn.onclick = function () { enterMapMode(type); }; }
+        if (container) { container.style.display = ''; }
         var infoBar = $('v2MapInfoBar');
         if (infoBar) infoBar.style.display = 'none';
         var drawBar = $('v2DrawToolBar');
@@ -1563,13 +1559,8 @@
 
     function enableTapSelect() {
         var zl = window._dashboardZonesLayer;
-        console.log('[v2-modal] enableTapSelect, zonesLayer:', !!zl);
         if (!zl) return;
-        var count = 0;
-        zl.eachLayer(function (layer) { if (layer.zoneData && layer.zoneData.code) count++; });
-        console.log('[v2-modal] layers with zoneData.code:', count);
         _tapHandler = function (e) {
-            console.log('[v2-modal] tapHandler fired, zoneData:', e.target.zoneData);
             L.DomEvent.stopPropagation(e);
             var code = e.target.zoneData && e.target.zoneData.code;
             if (!code) return;
@@ -1950,7 +1941,6 @@
             }).catch(function (err) { showToast('提交失败: ' + err, 'error'); btn.disabled = false; btn.textContent = '提交'; });
     };
 
-    console.log('[v2-modal] IIFE executed, openV2Modal =', typeof window.openV2Modal);
 })();
 </script>
 <!-- Dashboard JS -->
