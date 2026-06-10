@@ -1586,8 +1586,9 @@
         // Use map-level click handler — more reliable than per-polygon handlers
         // because it fires AFTER all polygon handlers (like handleClick in map.js)
         _mapTapHandler = function (e) {
-            // e.target is the Leaflet layer that originated the click (the polygon)
-            var layer = e.target;
+            // Leaflet propagates polygon clicks to the map.
+            // The polygon is in e.layer (NOT e.target — that's the map itself).
+            var layer = e.layer;
             if (!layer || !layer._v2Selectable || !layer.zoneData || !layer.zoneData.code) return;
             L.DomEvent.stopPropagation(e);
             var code = layer.zoneData.code;
