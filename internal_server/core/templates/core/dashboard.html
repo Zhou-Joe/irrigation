@@ -1859,8 +1859,20 @@
                 if (fc.subtypes.length > 0) { $('woFaultSubDivider').style.display = ''; $('woFaultSubLabel').style.display = '';
                     fc.subtypes.forEach(function (sub) { var sc = document.createElement('div'); sc.className = 'v2-chip'; sc.textContent = sub.name; sc.dataset.id = sub.id;
                         sc.addEventListener('click', function () {
-                            if (sc.classList.contains('active')) { sc.classList.remove('active'); var idx = _faultEntries.findIndex(function (e) { return e.fault_subtype == sub.id; }); if (idx >= 0) _faultEntries.splice(idx, 1); }
-                            else { sc.classList.add('active'); _faultEntries.push({ fault_subtype: sub.id, count: 1 }); }
+                            if (sc.classList.contains('active')) {
+                                sc.classList.remove('active');
+                                var idx = _faultEntries.findIndex(function (e) { return e.fault_subtype == sub.id; });
+                                if (idx >= 0) _faultEntries.splice(idx, 1);
+                            } else {
+                                var cnt = prompt('请输入「' + sub.name + '」的故障数量:', '1');
+                                if (cnt === null) return; // cancelled
+                                cnt = parseInt(cnt);
+                                if (isNaN(cnt) || cnt < 1) cnt = 1;
+                                sc.classList.add('active');
+                                sc.textContent = sub.name + ' ×' + cnt;
+                                _faultEntries.push({ fault_subtype: sub.id, count: cnt });
+                            }
+                            if (!sc.classList.contains('active')) sc.textContent = sub.name;
                             updateFaultDisplay(data.fault_tree);
                         }); faultSubGrid.appendChild(sc); }); }
             }); faultPrimary.appendChild(chip);
@@ -1884,7 +1896,7 @@
     function updateFaultDisplay(faultTree) {
         var display = $('woFaultDisplay');
         if (_faultEntries.length > 0) {
-            display.textContent = _faultEntries.map(function (e) { var n = ''; faultTree.forEach(function (fc) { fc.subtypes.forEach(function (s) { if (s.id == e.fault_subtype) n = s.name; }); }); return n; }).join(', ');
+            display.textContent = _faultEntries.map(function (e) { var n = ''; faultTree.forEach(function (fc) { fc.subtypes.forEach(function (s) { if (s.id == e.fault_subtype) n = s.name; }); }); return n + '×' + e.count; }).join(', ');
             display.style.color = '#222';
         } else { display.textContent = '选择'; display.style.color = '#bbb'; }
         $('woFaultInput').value = JSON.stringify(_faultEntries);
