@@ -983,6 +983,7 @@
     window.showZonePopup = showZonePopup;
     window.hideZonePopup = hideZonePopup;
     window.togglePopupSettings = togglePopupSettings;
+    window._dashboardZonesLayer = zonesLayerGroup;
     window.handleFieldToggle = handleFieldToggle;
 
     window.handleSmoothCustomToggle = function(checked) {
