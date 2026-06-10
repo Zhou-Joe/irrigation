@@ -1433,6 +1433,7 @@
     var _selectedZoneCodes = new Set();
     var _selectionLayerGroup = null;
     var _selectionOverlays = {};
+    var _closeTimeout = null;
 
     var _drawMode = null;
     var _drawPoints = [];
@@ -1480,7 +1481,11 @@
     }
 
     window.openV2Modal = function (type) {
+        // Cancel any pending hide timeout from a previous close
+        if (_closeTimeout) { clearTimeout(_closeTimeout); _closeTimeout = null; }
         if (_currentModal) closeV2Modal(_currentModal);
+        // closeV2Modal may have set a new timeout — cancel that too
+        if (_closeTimeout) { clearTimeout(_closeTimeout); _closeTimeout = null; }
         _currentModal = type;
         _selectedZoneCodes.clear();
         _photoFiles = [];
@@ -1510,9 +1515,11 @@
         var backdrop = $(type === 'workorder' ? 'woModalBackdrop' : 'wrModalBackdrop');
         var container = $(type === 'workorder' ? 'woModalContainer' : 'wrModalContainer');
         if (container) container.classList.remove('open');
-        setTimeout(function () {
+        if (_closeTimeout) clearTimeout(_closeTimeout);
+        _closeTimeout = setTimeout(function () {
             if (backdrop) backdrop.style.display = 'none';
             if (container) container.style.display = 'none';
+            _closeTimeout = null;
         }, 300);
         clearSelection();
         _currentModal = null;
@@ -1520,10 +1527,11 @@
 
     window.enterMapMode = function (type) {
         if (!type) type = _currentModal;
-        console.log('[v2-modal] enterMapMode:', type, '_v2ModalMapMode set');
         _mapMode = true;
         window._v2ModalMapMode = type;
         var map = getMap();
+        // Clear any stale close timeout
+        if (_closeTimeout) { clearTimeout(_closeTimeout); _closeTimeout = null; }
         if (!_selectionLayerGroup) _selectionLayerGroup = L.layerGroup().addTo(map);
 
         // Hide the entire modal container so map is fully clickable
@@ -1544,11 +1552,13 @@
         _mapMode = false;
         window._v2ModalMapMode = null;
         var type = _currentModal;
+        // Cancel any pending close timeout (safety)
+        if (_closeTimeout) { clearTimeout(_closeTimeout); _closeTimeout = null; }
         // Restore modal container
         var backdrop = $(type === 'workorder' ? 'woModalBackdrop' : 'wrModalBackdrop');
         var container = $(type === 'workorder' ? 'woModalContainer' : 'wrModalContainer');
         if (backdrop) backdrop.style.display = '';
-        if (container) { container.style.display = ''; }
+        if (container) { container.style.display = ''; container.classList.add('open'); }
         var infoBar = $('v2MapInfoBar');
         if (infoBar) infoBar.style.display = 'none';
         var drawBar = $('v2DrawToolBar');
@@ -1557,27 +1567,40 @@
     };
 
     var _tapHandler = null;
+    var _mapTapHandler = null;
 
     function enableTapSelect() {
         var zl = window._dashboardZonesLayer;
         var map = getMap();
-        console.log('[v2-modal] enableTapSelect — zl:', !!zl, 'map:', !!map);
-        if (!zl) { console.warn('[v2-modal] No zones layer!'); return; }
-        var layerCount = 0;
-        zl.eachLayer(function () { layerCount++; });
-        console.log('[v2-modal] Total layers in zonesGroup:', layerCount);
-        _tapHandler = function (e) {
-            console.log('[v2-modal] TAP on zone:', e.target.zoneData);
+        if (!zl || !map) { console.warn('[v2-modal] No zones layer or map'); return; }
+
+        // Mark selectable layers
+        var selectableCount = 0;
+        zl.eachLayer(function (layer) {
+            if (layer.zoneData && layer.zoneData.code) {
+                layer._v2Selectable = true;
+                selectableCount++;
+            }
+        });
+
+        // Use map-level click handler — more reliable than per-polygon handlers
+        // because it fires AFTER all polygon handlers (like handleClick in map.js)
+        _mapTapHandler = function (e) {
+            // e.target is the Leaflet layer that originated the click (the polygon)
+            var layer = e.target;
+            if (!layer || !layer._v2Selectable || !layer.zoneData || !layer.zoneData.code) return;
             L.DomEvent.stopPropagation(e);
-            var code = e.target.zoneData && e.target.zoneData.code;
-            if (!code) return;
-            if (_selectedZoneCodes.has(code)) { _selectedZoneCodes.delete(code); removeSelectionOverlay(code); }
-            else { _selectedZoneCodes.add(code); addSelectionOverlay(e.target); }
+            var code = layer.zoneData.code;
+            if (_selectedZoneCodes.has(code)) {
+                _selectedZoneCodes.delete(code);
+                removeSelectionOverlay(code);
+            } else {
+                _selectedZoneCodes.add(code);
+                addSelectionOverlay(layer);
+            }
             updateInfoBarText();
         };
-        var boundCount = 0;
-        zl.eachLayer(function (layer) { if (layer.zoneData && layer.zoneData.code) { layer.on('click', _tapHandler); boundCount++; } });
-        console.log('[v2-modal] Bound tap handler to', boundCount, 'layers');
+        map.on('click', _mapTapHandler);
     }
 
     function addSelectionOverlay(srcPolygon) {
@@ -1613,8 +1636,14 @@
     }
 
     function disableMapInteraction() {
+        // Remove map-level tap handler
+        var map = getMap();
+        if (map && _mapTapHandler) { map.off('click', _mapTapHandler); _mapTapHandler = null; }
+        // Remove legacy per-layer handler if any
         var zl = window._dashboardZonesLayer;
         if (zl && _tapHandler) { zl.eachLayer(function (l) { l.off('click', _tapHandler); }); _tapHandler = null; }
+        // Clean up selectable flags
+        if (zl) zl.eachLayer(function (l) { delete l._v2Selectable; });
         cancelDraw();
     }
 
@@ -2551,7 +2580,21 @@ if ('ontouchstart' in window || window.innerWidth <= 768) {
             a.href = item.url;
         } else {
             a.href = 'javascript:void(0)';
-            a.onclick = function(e) { e.preventDefault(); eval(item.action); };
+            a.onclick = function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                // Close FAB menu immediately
+                open = false;
+                fab.style.background = 'linear-gradient(145deg,#52b788,#2d6a4f)';
+                fab.style.boxShadow = '0 4px 16px rgba(27,67,50,0.3)';
+                fab.style.transform = '';
+                menuEls.forEach(function(el) {
+                    el.style.opacity = '0';
+                    el.style.transform = 'translateY(10px)';
+                    el.style.pointerEvents = 'none';
+                });
+                eval(item.action);
+            };
         }
         a.innerHTML = '<span style="font-size:1.3em">' + item.icon + '</span><span style="font-size:0.75em;margin-top:2px">' + item.label + '</span>';
         a.style.cssText = 'display:flex;flex-direction:column;align-items:center;justify-content:center;width:60px;height:60px;border-radius:14px;background:#fff;color:#222;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,0.12);opacity:0;transform:translateY(10px);transition:opacity 0.2s,transform 0.2s;pointer-events:none;';
