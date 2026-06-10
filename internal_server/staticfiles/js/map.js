@@ -240,6 +240,7 @@
 
         // Initialize zones layer group (rendered on top of leader lines)
         zonesLayerGroup = L.layerGroup().addTo(map);
+        window._dashboardZonesLayer = zonesLayerGroup;
 
         // Initialize pipelines layer group
         pipelinesLayerGroup = L.layerGroup().addTo(map);
@@ -982,7 +983,6 @@
     window.showZonePopup = showZonePopup;
     window.hideZonePopup = hideZonePopup;
     window.togglePopupSettings = togglePopupSettings;
-    window._dashboardZonesLayer = zonesLayerGroup;
     window.handleFieldToggle = handleFieldToggle;
 
     window.handleSmoothCustomToggle = function(checked) {
