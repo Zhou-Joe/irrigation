@@ -902,36 +902,15 @@
     .top-nav-right .top-nav-user { display: none !important; }
     .top-nav-right a.top-nav-logout { font-size: 0.8rem; padding: 6px 10px; }
 
-    /* Sidebar becomes overlay */
+    /* Sidebar hidden on mobile */
     .sidebar {
-        position: fixed !important;
-        top: 0; left: 0; bottom: 0;
-        width: 85vw !important; min-width: 0 !important;
-        max-width: 360px;
-        height: 100vh !important; height: 100dvh !important;
-        z-index: 2000 !important;
-        transform: translateX(-100%);
-        transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-        border-right: 1px solid rgba(27,67,50,0.2);
-        box-shadow: none;
-    }
-    .sidebar:not(.collapsed) {
-        transform: translateX(0);
-        box-shadow: 6px 0 24px rgba(0,0,0,0.2);
-    }
-    .sidebar.collapsed {
-        width: 85vw !important; min-width: 0 !important;
-        transform: translateX(-100%);
+        display: none !important;
     }
 
-    /* Overlay backdrop */
+    /* Overlay backdrop hidden */
     .mobile-overlay {
-        position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-        background: rgba(0,0,0,0.4); z-index: 1999;
-        opacity: 0; pointer-events: none;
-        transition: opacity 0.3s;
+        display: none !important;
     }
-    .mobile-overlay.visible { opacity: 1; pointer-events: auto; }
 
     /* Map fills screen */
     .map-container {
@@ -939,16 +918,9 @@
         width: 100% !important;
     }
 
-    /* Sidebar expand button on mobile */
+    /* Sidebar expand button hidden on mobile */
     .sidebar-expand-btn {
-        position: fixed !important;
-        top: 64px !important; left: 12px !important;
-        min-height: 44px !important;
-        width: 44px !important;
-        border-radius: 12px !important;
-        font-size: 1.1rem !important;
-        z-index: 1001 !important;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.15) !important;
+        display: none !important;
     }
 
     /* Filter widget mobile */
@@ -1354,7 +1326,7 @@
     </div>
     <div class="v2-modal-footer" id="woModalFooter">
         <button type="button" class="v2-btn-cancel" onclick="closeV2Modal('workorder')">取消</button>
-        <button type="button" class="v2-btn-map" onclick="enterMapMode('workorder')">地图选点</button>
+        <button type="button" class="v2-btn-map" onclick="enterMapMode('workorder')">修改区域</button>
         <button type="button" class="v2-btn-submit" id="woSubmitBtn" onclick="submitV2Workorder()">提交</button>
     </div>
 </div>
@@ -1370,7 +1342,7 @@
     </div>
     <div class="v2-modal-footer" id="wrModalFooter">
         <button type="button" class="v2-btn-cancel" onclick="closeV2Modal('water_request')">取消</button>
-        <button type="button" class="v2-btn-map" onclick="enterMapMode('water_request')">地图选点</button>
+        <button type="button" class="v2-btn-map" onclick="enterMapMode('water_request')">修改区域</button>
         <button type="button" class="v2-btn-submit" id="wrSubmitBtn" onclick="submitV2WaterRequest()">提交</button>
     </div>
 </div>
@@ -1490,22 +1462,49 @@
         _selectedZoneCodes.clear();
         _photoFiles = [];
         _faultEntries = [];
+        _zoneConfirmed = false;
 
-        var backdrop = $(type === 'workorder' ? 'woModalBackdrop' : 'wrModalBackdrop');
-        var container = $(type === 'workorder' ? 'woModalContainer' : 'wrModalContainer');
-        if (backdrop) backdrop.style.display = '';
-        if (container) { container.style.display = ''; container.classList.add('open'); }
-
+        // Fetch form data in background (cached or from API)
         var dataUrl = type === 'workorder' ? '/api/modal/workorder-data/' : '/api/modal/water-request-data/';
-        if (_formDataCache[type]) {
-            buildForm(type, _formDataCache[type]);
-        } else {
-            var bodyId = type === 'workorder' ? 'woModalBody' : 'wrModalBody';
-            $(bodyId).innerHTML = '<div style="text-align:center;padding:30px;color:#888;">加载中...</div>';
+        if (!_formDataCache[type]) {
             fetch(dataUrl, { credentials: 'same-origin' })
                 .then(function (r) { return r.json(); })
-                .then(function (data) { _formDataCache[type] = data; buildForm(type, data); })
-                .catch(function (err) { $(bodyId).innerHTML = '<div style="text-align:center;padding:30px;color:#c0392b;">加载失败: ' + err + '</div>'; });
+                .then(function (data) { _formDataCache[type] = data; })
+                .catch(function () {});
+        }
+
+        // Zone-first flow: go directly to map mode
+        enterMapMode(type);
+    };
+
+    // Quick workorder: skip map mode, pre-select zones, go straight to form
+    window.quickWorkorder = function (zoneCodes) {
+        if (_currentModal) closeV2Modal(_currentModal);
+        _currentModal = 'workorder';
+        _selectedZoneCodes.clear();
+        _photoFiles = [];
+        _faultEntries = [];
+        zoneCodes.forEach(function (c) { _selectedZoneCodes.add(c); });
+        _zoneConfirmed = true;
+
+        // Ensure form data is loaded, then show form
+        var showForm = function () {
+            if (_formDataCache.workorder) {
+                buildForm('workorder', _formDataCache.workorder);
+            }
+            var backdrop = $('woModalBackdrop');
+            var container = $('woModalContainer');
+            if (backdrop) backdrop.style.display = '';
+            if (container) { container.style.display = ''; container.classList.add('open'); }
+        };
+
+        if (_formDataCache.workorder) {
+            showForm();
+        } else {
+            fetch('/api/modal/workorder-data/', { credentials: 'same-origin' })
+                .then(function (r) { return r.json(); })
+                .then(function (data) { _formDataCache.workorder = data; showForm(); })
+                .catch(function () { showToast('加载表单失败', 'error'); });
         }
     };
 
@@ -1522,6 +1521,7 @@
             _closeTimeout = null;
         }, 300);
         clearSelection();
+        _zoneConfirmed = false;
         _currentModal = null;
     };
 
@@ -1555,11 +1555,34 @@
         var type = _currentModal;
         // Cancel any pending close timeout (safety)
         if (_closeTimeout) { clearTimeout(_closeTimeout); _closeTimeout = null; }
+
+        // Zone-first: first exit = confirm zones & show form
+        if (!_zoneConfirmed) {
+            var minLabel = type === 'workorder' ? '选择' : '绘制';
+            if (_selectedZoneCodes.size === 0) {
+                showToast('请先在地图上' + minLabel + '至少一个区域', 'error');
+                _mapMode = true;
+                window._v2ModalMapMode = type;
+                return;
+            }
+            _zoneConfirmed = true;
+        }
+
         // Restore modal container
         var backdrop = $(type === 'workorder' ? 'woModalBackdrop' : 'wrModalBackdrop');
         var container = $(type === 'workorder' ? 'woModalContainer' : 'wrModalContainer');
         if (backdrop) backdrop.style.display = '';
         if (container) { container.style.display = ''; container.classList.add('open'); }
+
+        // Build form if not yet rendered
+        if (_formDataCache[type]) {
+            var bodyId = type === 'workorder' ? 'woModalBody' : 'wrModalBody';
+            var body = $(bodyId);
+            if (body && (!body.querySelector('form') || body.querySelector('.loading'))) {
+                buildForm(type, _formDataCache[type]);
+            }
+        }
+
         var infoBar = $('v2MapInfoBar');
         if (infoBar) infoBar.style.display = 'none';
         var drawBar = $('v2DrawToolBar');
@@ -1568,7 +1591,7 @@
     };
 
     var _tapHandler = null;
-    var _mapTapHandler = null;
+    var _zoneConfirmed = false;
 
     function findZoneLayerGroup() {
         // Primary: use the exposed global
@@ -1594,19 +1617,11 @@
         var map = getMap();
         if (!zl || !map) { showToast('区域图层未加载，请刷新页面', 'error'); return; }
 
-        // Mark selectable layers
-        zl.eachLayer(function (layer) {
-            if (layer.zoneData && layer.zoneData.code) {
-                layer._v2Selectable = true;
-            }
-        });
-
-        // Use map-level click handler.
-        // Leaflet propagates polygon clicks to the map — the polygon is in e.layer.
-        _mapTapHandler = function (e) {
-            var layer = e.layer;
-            if (!layer || !layer._v2Selectable || !layer.zoneData || !layer.zoneData.code) return;
+        // Per-layer click handler — works reliably on both desktop and mobile
+        _tapHandler = function (e) {
             L.DomEvent.stopPropagation(e);
+            var layer = e.target;
+            if (!layer._v2Selectable || !layer.zoneData || !layer.zoneData.code) return;
             var code = layer.zoneData.code;
             if (_selectedZoneCodes.has(code)) {
                 _selectedZoneCodes.delete(code);
@@ -1617,7 +1632,13 @@
             }
             updateInfoBarText();
         };
-        map.on('click', _mapTapHandler);
+
+        zl.eachLayer(function (layer) {
+            if (layer.zoneData && layer.zoneData.code) {
+                layer._v2Selectable = true;
+                layer.on('click', _tapHandler);
+            }
+        });
     }
 
     function addSelectionOverlay(srcPolygon) {
@@ -1653,10 +1674,7 @@
     }
 
     function disableMapInteraction() {
-        // Remove map-level tap handler
-        var map = getMap();
-        if (map && _mapTapHandler) { map.off('click', _mapTapHandler); _mapTapHandler = null; }
-        // Remove legacy per-layer handler if any
+        // Remove per-layer tap handler
         var zl = window._dashboardZonesLayer;
         if (zl && _tapHandler) { zl.eachLayer(function (l) { l.off('click', _tapHandler); }); _tapHandler = null; }
         // Clean up selectable flags
@@ -1664,19 +1682,26 @@
         cancelDraw();
     }
 
+    var _confirmBtn = '<button onclick="exitMapMode()" style="margin-left:10px;padding:4px 12px;border:none;border-radius:12px;background:#2D6A4F;color:#fff;font-size:0.82em;cursor:pointer;">确认区域</button>';
+    var _exitBtn = '<button onclick="exitMapMode()" style="margin-left:10px;padding:4px 12px;border:none;border-radius:12px;background:#2D6A4F;color:#fff;font-size:0.82em;cursor:pointer;">返回表单</button>';
     function updateInfoBarText() {
         var infoBar = $('v2MapInfoBar');
         if (!infoBar) return;
         var codes = Array.from(_selectedZoneCodes);
-        if (codes.length === 0) { infoBar.innerHTML = '<span style="color:#888;">请在地图上选择区域</span>'; return; }
         var type = _currentModal;
+        // Workorder zone-first: show 确认区域 before confirmation, 返回表单 after
+        var actionBtn = !_zoneConfirmed ? _confirmBtn : _exitBtn;
+        var clearBtn = '<button onclick="window._clearModalSelection()" style="margin-left:8px;background:none;border:none;color:#999;font-size:0.85em;cursor:pointer;">清除</button>';
+        var hint = type === 'water_request' ? '请使用绘图工具绘制区域' : '请在地图上选择区域';
+        if (codes.length === 0) {
+            infoBar.innerHTML = '<span style="color:#888;">' + hint + '</span>' + actionBtn;
+            return;
+        }
         if (type === 'water_request') {
-            infoBar.innerHTML = '<span style="font-weight:600;color:#2D6A4F;">' + codes.length + '</span> 个区域已选择' +
-                '<button onclick="window._clearModalSelection()" style="margin-left:8px;background:none;border:none;color:#999;font-size:0.85em;cursor:pointer;">清除</button>';
+            infoBar.innerHTML = '<span style="font-weight:600;color:#2D6A4F;">' + codes.length + '</span> 个区域已选择' + clearBtn + actionBtn;
         } else {
             var display = codes.length > 5 ? codes.slice(0, 5).join(', ') + '...' : codes.join(', ');
-            infoBar.innerHTML = '<span style="font-weight:600;color:#2D6A4F;">' + codes.length + '</span> 个区域: ' + display +
-                '<button onclick="window._clearModalSelection()" style="margin-left:8px;background:none;border:none;color:#999;font-size:0.85em;cursor:pointer;">清除</button>';
+            infoBar.innerHTML = '<span style="font-weight:600;color:#2D6A4F;">' + codes.length + '</span> 个区域: ' + display + clearBtn + actionBtn;
         }
     }
 

@@ -266,6 +266,7 @@
             // Only close if click was directly on the map, not on a polygon
             if (e.originalEvent.target.closest('.leaflet-overlay-pane')) return;
             hideZonePopup();
+            hideZoneContextMenu();
         });
     }
 
@@ -604,6 +605,7 @@
                         polygon.on('mouseover', handleMouseOver);
                         polygon.on('mouseout', handleMouseOut);
                         polygon.on('click', handleClick);
+                        polygon.on('contextmenu', handleContextMenu);
                         polygon.bindTooltip(`${zone.code} ${zone.name || ''}`, {sticky: true});
                         zonesLayerGroup.addLayer(polygon);
                         allLatLngs = allLatLngs.concat(latLngs);
@@ -624,6 +626,7 @@
                     polygon.on('mouseover', handleMouseOver);
                     polygon.on('mouseout', handleMouseOut);
                     polygon.on('click', handleClick);
+                    polygon.on('contextmenu', handleContextMenu);
                     polygon.bindTooltip(`${zone.code} ${zone.name || ''}`, {sticky: true});
                     zonesLayerGroup.addLayer(polygon);
                     zone._allLatLngs = latLngs;
@@ -1164,6 +1167,93 @@
             // Show fixed popup panel
             showZonePopup(layer.zoneData);
         }
+    }
+
+    /**
+     * Handle long-press / right-click on zone polygon — show quick workorder menu
+     * @param {Event} e - Leaflet event
+     */
+    function handleContextMenu(e) {
+        if (window._v2ModalMapMode) return;
+        L.DomEvent.stopPropagation(e);
+        L.DomEvent.preventDefault(e);
+        const layer = e.target;
+        if (!layer.zoneData || !layer.zoneData.code) return;
+
+        const zoneCode = layer.zoneData.code;
+        const zoneName = layer.zoneData.name || zoneCode;
+        const patchId = layer.zoneData.patchId;
+
+        // Collect all zone codes in the same patch
+        let patchZoneCodes = [zoneCode];
+        if (patchId && window._dashboardZonesLayer) {
+            window._dashboardZonesLayer.eachLayer(function (l) {
+                if (l.zoneData && l.zoneData.patchId === patchId && l.zoneData.code) {
+                    if (!patchZoneCodes.includes(l.zoneData.code)) patchZoneCodes.push(l.zoneData.code);
+                }
+            });
+        }
+
+        showZoneContextMenu(e.containerPoint || e.originalEvent, zoneCode, zoneName, patchZoneCodes);
+    }
+
+    /**
+     * Show a context menu for quick workorder creation
+     */
+    function showZoneContextMenu(point, zoneCode, zoneName, patchZoneCodes) {
+        hideZoneContextMenu();
+        const map = window._map;
+        if (!map) return;
+
+        const container = map.getContainer();
+        const menu = document.createElement('div');
+        menu.id = 'zoneContextMenu';
+        menu.style.cssText = 'position:absolute;z-index:4000;background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,0.15);padding:6px 0;min-width:180px;font-size:0.85em;overflow:hidden;';
+
+        const x = point.x !== undefined ? point.x : point.clientX - container.getBoundingClientRect().left;
+        const y = point.y !== undefined ? point.y : point.clientY - container.getBoundingClientRect().top;
+
+        // Clamp to viewport
+        menu.style.left = Math.min(x, container.clientWidth - 200) + 'px';
+        menu.style.top = Math.min(y, container.clientHeight - 120) + 'px';
+
+        const items = [
+            { label: '📝 为 ' + zoneName + ' 创建工单', codes: [zoneCode] },
+            { label: '📋 为片区创建工单 (' + patchZoneCodes.length + ' 个区域)', codes: patchZoneCodes },
+        ];
+
+        items.forEach(function (item) {
+            const btn = document.createElement('div');
+            btn.textContent = item.label;
+            btn.style.cssText = 'padding:10px 16px;cursor:pointer;color:#333;transition:background 0.15s;white-space:nowrap;';
+            btn.onmouseenter = function () { btn.style.background = '#f0f7f4'; };
+            btn.onmouseleave = function () { btn.style.background = ''; };
+            btn.onclick = function () {
+                hideZoneContextMenu();
+                if (typeof window.quickWorkorder === 'function') {
+                    window.quickWorkorder(item.codes);
+                }
+            };
+            menu.appendChild(btn);
+        });
+
+        container.appendChild(menu);
+
+        // Close on click outside
+        setTimeout(function () {
+            document.addEventListener('click', _hideCtxOnOutside);
+        }, 50);
+    }
+
+    function _hideCtxOnOutside(e) {
+        const menu = document.getElementById('zoneContextMenu');
+        if (menu && !menu.contains(e.target)) hideZoneContextMenu();
+    }
+
+    function hideZoneContextMenu() {
+        const menu = document.getElementById('zoneContextMenu');
+        if (menu) menu.remove();
+        document.removeEventListener('click', _hideCtxOnOutside);
     }
 
     /**

@@ -5739,6 +5739,12 @@ def workorder_mobile_v2(request):
             if not worker and not is_admin(request.user):
                 return JsonResponse({'success': False, 'message': '未关联处理人账号'}, status=400)
 
+            # Admin users without a linked worker: use first worker as fallback
+            post_worker = worker or Worker.objects.first()
+            if not post_worker:
+                return JsonResponse({'success': False, 'message': '系统中没有可用的处理人'}, status=400)
+                return JsonResponse({'success': False, 'message': '未关联处理人账号'}, status=400)
+
             shift = request.POST.get('shift', '')
             start_str = request.POST.get('work_start_time', '')
             end_str = request.POST.get('work_end_time', '')
@@ -5779,7 +5785,7 @@ def workorder_mobile_v2(request):
             report = WorkReport.objects.create(
                 date=request.POST.get('date') or date.today().isoformat(),
                 weather='',
-                worker=worker,
+                worker=post_worker,
                 location=location,
                 work_category=work_category,
                 zone_location=first_zone,
