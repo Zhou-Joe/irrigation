@@ -240,6 +240,7 @@
 
         // Initialize zones layer group (rendered on top of leader lines)
         zonesLayerGroup = L.layerGroup().addTo(map);
+        window._dashboardZonesLayer = zonesLayerGroup;
 
         // Initialize pipelines layer group
         pipelinesLayerGroup = L.layerGroup().addTo(map);
@@ -261,25 +262,11 @@
 
         // Close popup when clicking on empty map space
         map.on('click', function(e) {
+            if (window._v2ModalMapMode) return;
             // Only close if click was directly on the map, not on a polygon
             if (e.originalEvent.target.closest('.leaflet-overlay-pane')) return;
             hideZonePopup();
         });
-
-        // Un-highlight zones when mouse leaves the map container
-        map.on('mouseout', function() {
-            closeHighlightedTooltips();
-            unhighlightZonePolygons();
-        });
-
-        // Un-highlight zones when mouse enters popup panel overlay
-        const _popupPanel = document.getElementById('zonePopupPanel');
-        if (_popupPanel) {
-            _popupPanel.addEventListener('mouseenter', function() {
-                closeHighlightedTooltips();
-                unhighlightZonePolygons();
-            });
-        }
     }
 
     /**
@@ -389,52 +376,23 @@
         labelsLayerGroup.addLayer(label);
         zoneLabels.push(label);
 
-        // Add leader lines or sub-labels from label to each polygon centroid (for multi-boundary zones)
+        // Add leader lines from label to each polygon centroid (for multi-boundary zones)
         if (isMultiPolygonFormat(zone.boundary_points) && zone.boundary_points.length > 1) {
             label._leaderLines = [];
-            label._subLabels = [];
-            const ringModes = zone.ring_display_modes || {};
-
-            zone.boundary_points.forEach((ring, ringIdx) => {
+            zone.boundary_points.forEach(ring => {
                 const ringPts = pointsToLatLngs(ring);
                 if (ringPts.length < 3) return;
                 const smoothPts = _smoothLL(ringPts, _zoneSmooth(zone));
                 const ringCenter = _ringAnchor(smoothPts, center[0], center[1]);
-                const mode = ringModes[String(ringIdx)] || 'line';
-
-                if (mode === 'sublabel') {
-                    const subSize = size * 0.6;
-                    const subRotation = labelAngle ? `transform:translate(-50%,-50%) rotate(${labelAngle}deg);` : 'transform:translate(-50%,-50%);';
-                    let subStyle = `font-size:${subSize}px;font-family:'${_lFont}',sans-serif;font-weight:${_lWeight};color:${_lColor};`;
-                    subStyle += subRotation;
-                    if (_lBgOpacity > 0) {
-                        const r2 = parseInt(_lBgColor.slice(1,3),16), g2 = parseInt(_lBgColor.slice(3,5),16), b2 = parseInt(_lBgColor.slice(5,7),16);
-                        subStyle += `background:rgba(${r2},${g2},${b2},${_lBgOpacity});padding:2px 8px;border-radius:${_lBgRadius}px;display:inline-block;`;
-                    }
-                    if (_lShadow) subStyle += 'text-shadow:0 1px 3px rgba(0,0,0,0.6),0 0 8px rgba(0,0,0,0.3);';
-                    const subLabel = L.marker(ringCenter, {
-                        interactive: false,
-                        icon: L.divIcon({
-                            className: 'zone-sublabel',
-                            html: `<div style="white-space:nowrap;pointer-events:none;"><span style="${subStyle}">${getCodeForZoom(code, map.getZoom())}</span></div>`,
-                            iconSize: null,
-                            iconAnchor: [0, 0]
-                        })
-                    });
-                    subLabel._zone = zone;
-                    labelsLayerGroup.addLayer(subLabel);
-                    label._subLabels.push(subLabel);
-                } else {
-                    const line = L.polyline([center, ringCenter], {
-                        color: zone.boundary_color || '#2D6A4F',
-                        weight: _rCfg.weight || 2.5,
-                        opacity: _rCfg.opacity != null ? _rCfg.opacity : 0.55,
-                        dashArray: _dash(_rCfg.dashStyle),
-                        interactive: false
-                    });
-                    leaderLinesLayerGroup.addLayer(line);
-                    label._leaderLines.push(line);
-                }
+                const line = L.polyline([center, ringCenter], {
+                    color: zone.boundary_color || '#2D6A4F',
+                    weight: _rCfg.weight || 2.5,
+                    opacity: _rCfg.opacity != null ? _rCfg.opacity : 0.55,
+                    dashArray: _dash(_rCfg.dashStyle),
+                    interactive: false
+                });
+                leaderLinesLayerGroup.addLayer(line);
+                label._leaderLines.push(line);
             });
         }
 
@@ -521,23 +479,16 @@
                             if (le) le.style.display = 'none';
                         });
                     }
-                    // Hide sub-labels for grouped labels
-                    if (label._subLabels) {
-                        label._subLabels.forEach(sl => {
-                            const se = sl.getElement();
-                            if (se) se.style.display = 'none';
-                        });
-                    }
                 });
             });
         } else {
             // Full zoom: show all individual labels at original positions
             zoneLabels.forEach(label => {
-                const zone = label._zone;
                 const el = label.getElement();
                 if (el) {
                     el.style.display = showLabels ? '' : 'none';
                     if (showLabels) {
+                        const zone = label._zone;
                         const scale = zone ? (zone.label_scale || 1.0) : 1.0;
                         const size = baseSize * scale;
                         const span = el.querySelector('span');
@@ -554,23 +505,6 @@
                     label._leaderLines.forEach(line => {
                         const le = line.getElement();
                         if (le) le.style.display = showLabels ? '' : 'none';
-                    });
-                }
-                // Show/hide and resize sub-labels
-                if (label._subLabels) {
-                    label._subLabels.forEach(sl => {
-                        const se = sl.getElement();
-                        if (se) {
-                            se.style.display = showLabels ? '' : 'none';
-                            if (showLabels) {
-                                const subSize = baseSize * 0.6 * (zone ? (zone.label_scale || 1.0) : 1.0);
-                                const span = se.querySelector('span');
-                                if (span) {
-                                    span.style.fontSize = subSize + 'px';
-                                    span.textContent = zone ? getCodeForZoom(zone.code, zoom) : '';
-                                }
-                            }
-                        }
                     });
                 }
             });
@@ -772,12 +706,6 @@
             window.location.href = '/requests/';
         });
 
-        // Un-highlight any zone when mouse enters marker area
-        marker.on('mouseover', function() {
-            closeHighlightedTooltips();
-            unhighlightZonePolygons();
-        });
-
         marker.addTo(map);
     }
 
@@ -831,12 +759,6 @@
             window.location.href = '/zone/' + zone.id + '/detail/';
         });
 
-        // Un-highlight any zone when mouse enters marker area
-        marker.on('mouseover', function() {
-            closeHighlightedTooltips();
-            unhighlightZonePolygons();
-        });
-
         marker.addTo(map);
     }
 
@@ -863,7 +785,6 @@
     ];
 
     const CARD_SETTINGS_KEY = 'zoneProfileCardFields';
-    let _cardSettingsLoaded = false;
 
     function getCardFieldSettings() {
         try {
@@ -876,38 +797,10 @@
         return defaults;
     }
 
-    // Load preferences from server on first call, merge with localStorage
-    async function getCardFieldSettingsAsync() {
-        if (_cardSettingsLoaded) return getCardFieldSettings();
-        try {
-            const r = await fetch('/api/user/preferences', { credentials: 'same-origin' });
-            const data = await r.json();
-            const serverPrefs = data.preferences || {};
-            const serverCardFields = serverPrefs[CARD_SETTINGS_KEY];
-            if (serverCardFields && typeof serverCardFields === 'object') {
-                localStorage.setItem(CARD_SETTINGS_KEY, JSON.stringify(serverCardFields));
-            }
-        } catch (e) {}
-        _cardSettingsLoaded = true;
-        return getCardFieldSettings();
-    }
-
-    // Trigger async load on page load
-    getCardFieldSettingsAsync();
-
     function saveCardFieldSetting(key, visible) {
         const settings = getCardFieldSettings();
         settings[key] = visible;
         localStorage.setItem(CARD_SETTINGS_KEY, JSON.stringify(settings));
-        // Persist to server (fire-and-forget)
-        try {
-            fetch('/api/user/preferences', {
-                method: 'PUT',
-                credentials: 'same-origin',
-                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': (document.cookie.match(/csrftoken=([^;]+)/) || [])[1] || '' },
-                body: JSON.stringify({ preferences: { [CARD_SETTINGS_KEY]: settings } })
-            });
-        } catch (e) {}
     }
 
     // Currently displayed zone data (for re-rendering after settings change)
@@ -1090,6 +983,7 @@
     window.showZonePopup = showZonePopup;
     window.hideZonePopup = hideZonePopup;
     window.togglePopupSettings = togglePopupSettings;
+    window._dashboardZonesLayer = zonesLayerGroup;
     window.handleFieldToggle = handleFieldToggle;
 
     window.handleSmoothCustomToggle = function(checked) {
@@ -1196,17 +1090,11 @@
 
     // Currently highlighted zone ID (for multi-polygon highlighting)
     let highlightedZoneId = null;
-    let _unhighlightTimer = null;
-
-    function _clearUnhighlightTimer() {
-        if (_unhighlightTimer) { clearTimeout(_unhighlightTimer); _unhighlightTimer = null; }
-    }
 
     /**
      * Highlight all polygons belonging to a zone
      */
     function highlightZonePolygons(zoneId) {
-        _clearUnhighlightTimer();
         if (highlightedZoneId === zoneId) return;
         unhighlightZonePolygons();
         highlightedZoneId = zoneId;
@@ -1219,34 +1107,21 @@
     }
 
     /**
-     * Close tooltips of the currently highlighted zone
-     */
-    function closeHighlightedTooltips() {
-        if (highlightedZoneId === null) return;
-        zonesLayerGroup.eachLayer(function(layer) {
-            if (layer.zoneData && layer.zoneData.id === highlightedZoneId) {
-                layer.closeTooltip();
-            }
-        });
-    }
-
-    /**
      * Remove highlight from all polygons of the currently highlighted zone
      */
     function unhighlightZonePolygons() {
-        _clearUnhighlightTimer();
         if (highlightedZoneId === null) return;
         const prevId = highlightedZoneId;
         highlightedZoneId = null;
-        // Immediately reset the highlighted zone's style
-        zonesLayerGroup.eachLayer(function(layer) {
-            if (layer.zoneData && layer.zoneData.id === prevId) {
-                layer.setStyle(layer.originalStyle || defaultStyle);
-            }
-        });
-        // Re-apply filter state for all zones
+        // Re-apply current filter state instead of blindly restoring originalStyle
         if (typeof window.applyMapFilters === 'function') {
             window.applyMapFilters();
+        } else {
+            zonesLayerGroup.eachLayer(function(layer) {
+                if (layer.zoneData && layer.zoneData.id === prevId) {
+                    layer.setStyle(layer.originalStyle || defaultStyle);
+                }
+            });
         }
     }
 
@@ -1255,7 +1130,7 @@
      * @param {Event} e - Leaflet event
      */
     function handleMouseOver(e) {
-        _clearUnhighlightTimer();
+        if (window._v2ModalMapMode) return;
         const layer = e.target;
         const zoneId = layer.zoneData?.id;
         if (zoneId) highlightZonePolygons(zoneId);
@@ -1266,13 +1141,9 @@
      * @param {Event} e - Leaflet event
      */
     function handleMouseOut(e) {
+        if (window._v2ModalMapMode) return;
         e.target.closeTooltip();
-        // Use a short delay so moving between polygons of the same zone doesn't flicker,
-        // and as a safety net if Leaflet misses the out event
-        _unhighlightTimer = setTimeout(function() {
-            closeHighlightedTooltips();
-            unhighlightZonePolygons();
-        }, 80);
+        unhighlightZonePolygons();
     }
 
     /**
@@ -1280,6 +1151,7 @@
      * @param {Event} e - Leaflet event
      */
     function handleClick(e) {
+        if (window._v2ModalMapMode) return;
         const layer = e.target;
         const zoneId = layer.zoneData?.id;
 
@@ -1680,7 +1552,6 @@
                 const matchPlant = !isPlantTouched || !layer.zoneData.plantNames || layer.zoneData.plantNames.some(p => plants.has(p));
                 const matchLm = matchLandmark(layer.zoneData.id);
                 const matchPa = matchPatch(layer.zoneData);
-                const baseStyle = layer.originalStyle || defaultStyle;
                 if (matchPriority && matchPlant && matchLm && matchPa) {
                     const base = layer.originalStyle || defaultStyle;
                     layer.setStyle({ color: base.color, weight: base.weight, opacity: base.opacity, fillColor: base.fillColor, fillOpacity: base.fillOpacity, dashArray: base.dashArray });
@@ -1704,13 +1575,6 @@
                 label._leaderLines.forEach(line => {
                     const le = line.getElement();
                     if (le) le.style.opacity = match ? '' : '0.05';
-                });
-            }
-            // Filter sub-labels for this label's zone
-            if (label._subLabels) {
-                label._subLabels.forEach(sl => {
-                    const se = sl.getElement();
-                    if (se) se.style.opacity = match ? '1' : '0.1';
                 });
             }
         });
