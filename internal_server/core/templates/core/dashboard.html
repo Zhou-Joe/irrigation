@@ -488,6 +488,41 @@
 .popup-detail-btn:hover {
     background: #1B4332;
 }
+.popup-quick-actions {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 8px;
+}
+.popup-action-btn {
+    flex: 1;
+    border: none;
+    padding: 7px 8px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 0.82em;
+    font-weight: 500;
+    transition: background 0.15s, transform 0.1s;
+    white-space: nowrap;
+    text-align: center;
+}
+.popup-action-btn:active {
+    transform: scale(0.97);
+}
+.popup-action-primary {
+    background: #2D6A4F;
+    color: white;
+}
+.popup-action-primary:hover {
+    background: #1B4332;
+}
+.popup-action-patch {
+    background: #E8F5E9;
+    color: #2D6A4F;
+    border: 1px solid #C8E6C9;
+}
+.popup-action-patch:hover {
+    background: #C8E6C9;
+}
 .popup-settings-list {
     margin-top: 8px;
     max-height: 240px;
@@ -934,11 +969,14 @@
     .filter-toggle-btn { width: 42px; height: 42px; }
     .filter-quick-clear { width: 20px; height: 20px; }
 
-    /* Zone popup full-width */
+    /* Zone popup: left-aligned, compact, above FAB */
     .zone-popup-panel {
-        left: 8px !important; right: 8px !important;
-        width: auto !important; max-width: none !important;
-        max-height: 60vh;
+        left: 8px !important;
+        right: auto !important;
+        width: 280px !important;
+        max-width: 280px !important;
+        max-height: 55vh;
+        bottom: 80px !important;
     }
 
     /* Layer panel mobile */
@@ -1394,7 +1432,7 @@
 <script src="{% static 'js/map-config.js' %}?v=20260423"></script>
 <script>window.MAP_STYLE_CONFIG = {{ map_style_json|safe }} || {};</script>
 <!-- Custom Map JS -->
-<script src="{% static 'js/map.js' %}?v=20260610"></script>
+<script src="{% static 'js/map.js' %}?v=20260611"></script>
 <script>
 /* dashboard-v2-modal.js — V2 workorder & water request as dashboard modal popups */
 (function () {
