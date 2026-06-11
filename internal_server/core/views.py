@@ -2067,6 +2067,8 @@ def zone_quick_draw(request):
     return render(request, 'core/zone_quick_draw.html', context)
 
 
+@login_required(login_url='core:login')
+@ensure_csrf_cookie
 def zone_quick_draw_mobile(request):
     """Mobile-optimized quick zone boundary drawing page."""
     from .models import ManagerProfile, Worker, MapStyleSettings
