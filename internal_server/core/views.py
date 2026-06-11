@@ -343,32 +343,6 @@ def user_logout(request):
     return redirect('core:login')
 
 
-def mobile_home(request):
-    """Mobile landing page: login if unauthenticated, home menu if authenticated."""
-    if not request.user.is_authenticated:
-        if request.method == 'POST':
-            username = request.POST.get('username', '').strip()
-            password = request.POST.get('password', '')
-            user = authenticate(request, username=username, password=password)
-            if user is not None:
-                login(request, user)
-            else:
-                messages.error(request, '用户名或密码错误')
-                return render(request, 'core/mobile_home.html', {'login_error': True})
-        else:
-            return render(request, 'core/mobile_home.html', {'show_login': True})
-
-    # Authenticated: show mobile home menu
-    from core.role_utils import get_worker_for_user, get_user_role, is_admin
-    from core.models import Worker
-    worker = get_worker_for_user(request.user)
-    role = get_user_role(request.user)
-    worker_name = worker.full_name if worker else request.user.get_full_name() or request.user.username
-    return render(request, 'core/mobile_home.html', {
-        'worker_name': worker_name,
-        'role': role,
-        'is_admin': is_admin(request.user),
-    })
 
 
 @login_required(login_url='core:login')
@@ -5664,227 +5638,6 @@ def demands_page(request):
     return render(request, 'core/demands.html', context)
 
 
-# ==========================================================================
-# Mobile Workorder (灌溉组工作记录)
-# ==========================================================================
-
-@login_required(login_url='core:login')
-def workorder_mobile(request):
-    from core.models import (
-        WorkReport, WorkReportFault, WorkCategory, FaultCategory, FaultSubType,
-        Patch, Zone, Worker,
-    )
-    from core.role_utils import get_worker_for_user, is_admin, get_user_role, ROLE_FIELD_WORKER
-    from core.role_utils import ROLE_SUPER_ADMIN, ROLE_MANAGER
-    from datetime import date, datetime, time, timedelta
-    import math
-
-    # Access check: workers + managers only
-    role = get_user_role(request.user)
-    if role not in (ROLE_FIELD_WORKER, ROLE_SUPER_ADMIN, ROLE_MANAGER):
-        messages.error(request, '无权限访问此页面')
-        return redirect('core:login')
-
-    worker = get_worker_for_user(request.user)
-    if not worker and not is_admin(request.user):
-        messages.error(request, '未关联处理人账号')
-        return redirect('core:login')
-
-    if request.method == 'POST':
-        try:
-            if not worker and not is_admin(request.user):
-                return JsonResponse({'success': False, 'message': '未关联处理人账号'}, status=400)
-
-            shift = request.POST.get('shift', '')
-            start_str = request.POST.get('work_start_time', '')
-            end_str = request.POST.get('work_end_time', '')
-
-            work_start = None
-            work_end = None
-            if start_str:
-                h, m = start_str.split(':')
-                work_start = time(int(h), int(m))
-            if end_str:
-                h, m = end_str.split(':')
-                work_end = time(int(h), int(m))
-
-            team_size = int(request.POST.get('team_size', 1) or 1)
-            third_party_count = int(request.POST.get('third_party_count', 0) or 0)
-
-            # Compute hours
-            team_hours = 0.0
-            third_party_hours = 0.0
-            if work_start and work_end:
-                start_dt = datetime.combine(date.today(), work_start)
-                end_dt = datetime.combine(date.today(), work_end)
-                if end_dt <= start_dt:
-                    end_dt += timedelta(days=1)
-                duration_h = (end_dt - start_dt).seconds / 3600
-                team_hours = round(duration_h * team_size * 2) / 2
-                third_party_hours = round(duration_h * third_party_count * 2) / 2
-
-            # Get primary location from first selected zone's patch
-            zone_codes = request.POST.getlist('zones')
-            first_zone = Zone.objects.filter(code__in=zone_codes).select_related('patch').first() if zone_codes else None
-            location = first_zone.patch if first_zone else Patch.objects.first()
-
-            # Work category
-            work_category_id = request.POST.get('work_category')
-            work_category = WorkCategory.objects.filter(id=work_category_id).first() if work_category_id else WorkCategory.objects.first()
-
-            # Zone names auto-fill
-            selected_zones = Zone.objects.filter(code__in=zone_codes)
-            zone_names = ', '.join(z.name or z.code for z in selected_zones) if selected_zones else ''
-
-            report = WorkReport.objects.create(
-                date=request.POST.get('date') or date.today().isoformat(),
-                weather='',
-                worker=worker,
-                location=location,
-                work_category=work_category,
-                zone_location=first_zone,
-                remark=request.POST.get('remark', ''),
-                is_difficult=bool(request.POST.get('is_difficult')),
-                is_difficult_resolved=bool(request.POST.get('is_difficult_resolved')),
-                shift=shift,
-                work_start_time=work_start,
-                work_end_time=work_end,
-                team_size=team_size,
-                third_party_count=third_party_count,
-                team_hours=team_hours,
-                third_party_hours=third_party_hours,
-                zone_names=zone_names,
-                work_content=request.POST.get('work_content', ''),
-            )
-
-            # Set zones M2M
-            if selected_zones:
-                report.zones.set(selected_zones)
-
-            # If marked as difficult, append work content to zone remarks
-            if report.is_difficult:
-                work_content = request.POST.get('work_content', '').strip()
-                fault_names = []
-                for fe in report.fault_entries.select_related('fault_subtype').all():
-                    fault_names.append(fe.fault_subtype.name_zh)
-                remark_parts = []
-                if fault_names:
-                    remark_parts.append('故障: ' + ', '.join(fault_names))
-                if work_content:
-                    remark_parts.append(work_content)
-                remark_content = ' '.join(remark_parts) if remark_parts else '疑难工单'
-                remark_entry = {
-                    'date': report.date if isinstance(report.date, str) else report.date.isoformat(),
-                    'content': remark_content,
-                    'author': worker.full_name if worker else str(request.user),
-                    'workorder_id': report.id,
-                }
-                for z in selected_zones:
-                    remarks = json.loads(z.remarks) if z.remarks else []
-                    remarks.insert(0, remark_entry)
-                    z.remarks = json.dumps(remarks, ensure_ascii=False)
-                    z.save(update_fields=['remarks'])
-
-            # Parse fault entries
-            fault_json = request.POST.get('fault_entries', '[]')
-            try:
-                fault_data = json.loads(fault_json)
-                for entry in fault_data:
-                    if entry.get('count', 0) > 0 and entry.get('fault_subtype'):
-                        WorkReportFault.objects.create(
-                            work_report=report,
-                            fault_subtype_id=entry['fault_subtype'],
-                            count=entry['count'],
-                        )
-            except (json.JSONDecodeError, KeyError):
-                pass
-
-            # Handle photo uploads
-            photo_paths = []
-            from django.core.files.storage import default_storage
-            import os as _os
-            for f in request.FILES.getlist('photos'):
-                ts = datetime.now().strftime('%Y%m%d%H%M%S')
-                fname = f'workreport/{report.id}_{ts}_{f.name}'
-                saved = default_storage.save(fname, f)
-                photo_paths.append(saved)
-            if photo_paths:
-                report.photos = photo_paths
-                report.save(update_fields=['photos'])
-
-            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-                return JsonResponse({'success': True, 'message': f'工作记录已提交 (ID: {report.id})'})
-            messages.success(request, f'工作记录已提交 (ID: {report.id})')
-            return redirect('core:workorder_mobile')
-
-        except Exception as e:
-            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-                return JsonResponse({'success': False, 'message': str(e)}, status=400)
-            messages.error(request, f'提交失败: {e}')
-            return redirect('core:workorder_mobile')
-
-    # ── GET: render form ──
-    today = date.today()
-    now = datetime.now()
-
-    # Work categories (2-level)
-    top_categories = WorkCategory.objects.filter(parent__isnull=True, active=True).order_by('order')
-    sub_categories = WorkCategory.objects.filter(parent__isnull=False, active=True).select_related('parent').order_by('parent__order', 'order')
-    category_tree = []
-    for tc in top_categories:
-        children = [sc for sc in sub_categories if sc.parent_id == tc.id]
-        category_tree.append({
-            'id': tc.id, 'name': tc.name, 'code': tc.code,
-            'children': [{'id': c.id, 'name': c.name, 'code': c.code} for c in children],
-        })
-
-    # Fault categories + subtypes
-    fault_categories = FaultCategory.objects.filter(active=True).prefetch_related('sub_types').order_by('order')
-    fault_tree = []
-    for fc in fault_categories:
-        subs = fc.sub_types.filter(active=True).order_by('order')
-        fault_tree.append({
-            'id': fc.id, 'name': fc.name_zh,
-            'subtypes': [{'id': s.id, 'name': s.name_zh} for s in subs],
-        })
-
-    # Zones grouped by patch
-    zones_qs = Zone.objects.order_by('code')
-    zone_list = [{'id': z.id, 'code': z.code, 'name': z.name or z.code, 'patch': z.patch.name if z.patch else ''}
-                 for z in zones_qs]
-    # Group by patch
-    patch_groups = {}
-    for z in zone_list:
-        p = z['patch'] or '未分配'
-        patch_groups.setdefault(p, []).append(z)
-
-    # Shift frequency for this worker (for sort order)
-    shift_freq = {'早班': 0, '白班': 0, '夜班': 0}
-    if worker:
-        recent = WorkReport.objects.filter(worker=worker, shift__in=shift_freq.keys()).values_list('shift', flat=True)
-        for s in recent:
-            if s in shift_freq:
-                shift_freq[s] += 1
-    sorted_shifts = sorted(shift_freq.keys(), key=lambda s: -shift_freq[s])
-
-    # Round current time to nearest 15 min for default
-    rounded_min = (now.minute // 15) * 15
-    default_time = now.replace(minute=rounded_min, second=0, microsecond=0).strftime('%H:%M')
-
-    context = {
-        'category_tree_json': json.dumps(category_tree),
-        'fault_tree_json': json.dumps(fault_tree),
-        'patch_groups_json': json.dumps(patch_groups),
-        'sorted_shifts': sorted_shifts,
-        'today': today.isoformat(),
-        'now_time': now.strftime('%H:%M'),
-        'default_time': default_time,
-        'worker_name': worker.full_name if worker else request.user.get_full_name() or request.user.username,
-        'is_new': True,
-    }
-    return render(request, 'core/workorder_mobile.html', context)
-
-
 
 @login_required(login_url='core:login')
 def zone_geo_api(request):
@@ -5940,9 +5693,184 @@ def workorder_history(request):
     return render(request, 'core/workorder_history.html', context)
 
 
+def _build_zone_geo_data():
+    from core.models import Zone
+    zones = Zone.objects.exclude(boundary_points=[]).only('code', 'name', 'boundary_points')
+    data = []
+    for z in zones:
+        bp = z.boundary_points
+        if not bp:
+            continue
+        all_pts = bp if isinstance(bp[0], dict) else []
+        if isinstance(bp[0], list):
+            all_pts = [p for ring in bp for p in ring]
+        center = None
+        if all_pts:
+            lat = sum(p.get('lat', 0) for p in all_pts) / len(all_pts)
+            lng = sum(p.get('lng', 0) for p in all_pts) / len(all_pts)
+            center = [round(lat, 6), round(lng, 6)]
+        data.append({'c': z.code, 'n': z.name or z.code, 'b': bp, 't': center})
+    return data
+
+
 @login_required(login_url='core:login')
-def water_request_mobile(request):
-    """Mobile page for dept users / managers to submit water coordination requests."""
+def workorder_mobile_v2(request):
+    from core.models import (
+        WorkReport, WorkReportFault, WorkCategory, FaultCategory, FaultSubType,
+        Patch, Zone, Worker,
+    )
+    from core.role_utils import get_worker_for_user, is_admin, get_user_role, ROLE_FIELD_WORKER
+    from core.role_utils import ROLE_SUPER_ADMIN, ROLE_MANAGER
+    from datetime import date, datetime, time, timedelta
+    import math
+
+    role = get_user_role(request.user)
+    if role not in (ROLE_FIELD_WORKER, ROLE_SUPER_ADMIN, ROLE_MANAGER):
+        messages.error(request, '无权限访问此页面')
+        return redirect('core:login')
+
+    worker = get_worker_for_user(request.user)
+    if not worker and not is_admin(request.user):
+        messages.error(request, '未关联处理人账号')
+        return redirect('core:login')
+
+    if request.method == 'POST':
+        try:
+            if not worker and not is_admin(request.user):
+                return JsonResponse({'success': False, 'message': '未关联处理人账号'}, status=400)
+
+            # Admin users without a linked worker: use first worker as fallback
+            post_worker = worker or Worker.objects.first()
+            if not post_worker:
+                return JsonResponse({'success': False, 'message': '系统中没有可用的处理人'}, status=400)
+                return JsonResponse({'success': False, 'message': '未关联处理人账号'}, status=400)
+
+            shift = request.POST.get('shift', '')
+            start_str = request.POST.get('work_start_time', '')
+            end_str = request.POST.get('work_end_time', '')
+
+            work_start = None
+            work_end = None
+            if start_str:
+                h, m = start_str.split(':')
+                work_start = time(int(h), int(m))
+            if end_str:
+                h, m = end_str.split(':')
+                work_end = time(int(h), int(m))
+
+            team_size = int(request.POST.get('team_size', 1) or 1)
+            third_party_count = int(request.POST.get('third_party_count', 0) or 0)
+
+            team_hours = 0.0
+            third_party_hours = 0.0
+            if work_start and work_end:
+                start_dt = datetime.combine(date.today(), work_start)
+                end_dt = datetime.combine(date.today(), work_end)
+                if end_dt <= start_dt:
+                    end_dt += timedelta(days=1)
+                duration_h = (end_dt - start_dt).seconds / 3600
+                team_hours = round(duration_h * team_size * 2) / 2
+                third_party_hours = round(duration_h * third_party_count * 2) / 2
+
+            zone_codes = request.POST.getlist('zones')
+            first_zone = Zone.objects.filter(code__in=zone_codes).select_related('patch').first() if zone_codes else None
+            location = first_zone.patch if first_zone else Patch.objects.first()
+
+            work_category_id = request.POST.get('work_category')
+            work_category = WorkCategory.objects.filter(id=work_category_id).first() if work_category_id else WorkCategory.objects.first()
+
+            selected_zones = Zone.objects.filter(code__in=zone_codes)
+            zone_names = ', '.join(z.name or z.code for z in selected_zones) if selected_zones else ''
+
+            report = WorkReport.objects.create(
+                date=request.POST.get('date') or date.today().isoformat(),
+                weather='',
+                worker=post_worker,
+                location=location,
+                work_category=work_category,
+                zone_location=first_zone,
+                remark=request.POST.get('remark', ''),
+                is_difficult=bool(request.POST.get('is_difficult')),
+                is_difficult_resolved=bool(request.POST.get('is_difficult_resolved')),
+                shift=shift,
+                work_start_time=work_start,
+                work_end_time=work_end,
+                team_size=team_size,
+                third_party_count=third_party_count,
+                team_hours=team_hours,
+                third_party_hours=third_party_hours,
+                zone_names=zone_names,
+                work_content=request.POST.get('work_content', ''),
+            )
+
+            if selected_zones:
+                report.zones.set(selected_zones)
+
+            if report.is_difficult:
+                work_content = request.POST.get('work_content', '').strip()
+                fault_names = []
+                for fe in report.fault_entries.select_related('fault_subtype').all():
+                    fault_names.append(fe.fault_subtype.name_zh)
+                remark_parts = []
+                if fault_names:
+                    remark_parts.append('故障: ' + ', '.join(fault_names))
+                if work_content:
+                    remark_parts.append(work_content)
+                remark_content = ' '.join(remark_parts) if remark_parts else '疑难工单'
+                remark_entry = {
+                    'date': report.date if isinstance(report.date, str) else report.date.isoformat(),
+                    'content': remark_content,
+                    'author': worker.full_name if worker else str(request.user),
+                    'workorder_id': report.id,
+                }
+                for z in selected_zones:
+                    remarks = json.loads(z.remarks) if z.remarks else []
+                    remarks.insert(0, remark_entry)
+                    z.remarks = json.dumps(remarks, ensure_ascii=False)
+                    z.save(update_fields=['remarks'])
+
+            fault_json = request.POST.get('fault_entries', '[]')
+            try:
+                fault_data = json.loads(fault_json)
+                for entry in fault_data:
+                    if entry.get('count', 0) > 0 and entry.get('fault_subtype'):
+                        WorkReportFault.objects.create(
+                            work_report=report,
+                            fault_subtype_id=entry['fault_subtype'],
+                            count=entry['count'],
+                        )
+            except (json.JSONDecodeError, KeyError):
+                pass
+
+            photo_paths = []
+            from django.core.files.storage import default_storage
+            import os as _os
+            for f in request.FILES.getlist('photos'):
+                ts = datetime.now().strftime('%Y%m%d%H%M%S')
+                fname = f'workreport/{report.id}_{ts}_{f.name}'
+                saved = default_storage.save(fname, f)
+                photo_paths.append(saved)
+            if photo_paths:
+                report.photos = photo_paths
+                report.save(update_fields=['photos'])
+
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return JsonResponse({'success': True, 'message': f'工作记录已提交 (ID: {report.id})'})
+            messages.success(request, f'工作记录已提交 (ID: {report.id})')
+            return redirect('core:dashboard')
+
+        except Exception as e:
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return JsonResponse({'success': False, 'message': str(e)}, status=400)
+            messages.error(request, f'提交失败: {e}')
+            return redirect('core:dashboard')
+
+    # GET: redirect to dashboard (modal handles form)
+    return redirect('core:dashboard')
+
+
+@login_required(login_url='core:login')
+def water_request_mobile_v2(request):
     from core.models import WaterRequest, Zone, Patch, Worker, DepartmentUserProfile
     from core.role_utils import (
         get_worker_for_user, get_user_role, is_admin,
@@ -5960,7 +5888,6 @@ def water_request_mobile(request):
     today = date.today()
     now_time = datetime.now().strftime('%H:%M')
 
-    # Auto-determine user_type from profile
     dept_profile = DepartmentUserProfile.objects.filter(user=request.user).first()
     user_type = dept_profile.department if dept_profile else 'ENT'
 
@@ -5981,7 +5908,6 @@ def water_request_mobile(request):
             start_datetime = datetime.fromisoformat(start_dt)
             end_datetime = datetime.fromisoformat(end_dt)
 
-            # Create one WaterRequest per zone
             zones = Zone.objects.filter(code__in=zone_codes)
             created_count = 0
             for z in zones:
@@ -6003,22 +5929,85 @@ def water_request_mobile(request):
         except Exception as e:
             return JsonResponse({'success': False, 'message': str(e)}, status=400)
 
-    # GET: build patch groups (zone selection by area name)
-    patch_groups = {}
-    for z in Zone.objects.select_related('patch').all():
-        pname = z.patch.name if z.patch else '未分配'
-        patch_groups.setdefault(pname, [])
-        patch_groups[pname].append(z.code)
+    # GET: redirect to dashboard (modal handles form)
+    return redirect('core:dashboard')
 
-    context = {
-        'user_name': user_name,
-        'today': today.isoformat(),
-        'now_time': now_time,
-        'patch_groups_json': json.dumps(patch_groups),
-        'request_type_choices': WaterRequest.REQUEST_TYPE_CHOICES,
-        'user_type': user_type,
-    }
-    return render(request, 'core/water_request_mobile.html', context)
+
+@login_required(login_url='core:login')
+def workorder_modal_data(request):
+    """API: return workorder form metadata as JSON for dashboard modal."""
+    from core.models import WorkCategory, FaultCategory, WorkReport, Worker
+    from core.role_utils import get_worker_for_user, get_user_role, is_admin, ROLE_FIELD_WORKER, ROLE_SUPER_ADMIN, ROLE_MANAGER
+    from datetime import date, datetime
+
+    role = get_user_role(request.user)
+    if role not in (ROLE_FIELD_WORKER, ROLE_SUPER_ADMIN, ROLE_MANAGER):
+        return JsonResponse({'error': '无权限'}, status=403)
+
+    worker = get_worker_for_user(request.user)
+
+    top_categories = WorkCategory.objects.filter(parent__isnull=True, active=True).order_by('order')
+    sub_categories = WorkCategory.objects.filter(parent__isnull=False, active=True).select_related('parent').order_by('parent__order', 'order')
+    category_tree = []
+    for tc in top_categories:
+        children = [sc for sc in sub_categories if sc.parent_id == tc.id]
+        category_tree.append({
+            'id': tc.id, 'name': tc.name, 'code': tc.code,
+            'children': [{'id': c.id, 'name': c.name, 'code': c.code} for c in children],
+        })
+
+    fault_categories = FaultCategory.objects.filter(active=True).prefetch_related('sub_types').order_by('order')
+    fault_tree = []
+    for fc in fault_categories:
+        subs = fc.sub_types.filter(active=True).order_by('order')
+        fault_tree.append({
+            'id': fc.id, 'name': fc.name_zh,
+            'subtypes': [{'id': s.id, 'name': s.name_zh} for s in subs],
+        })
+
+    now = datetime.now()
+    rounded_min = (now.minute // 15) * 15
+    default_time = now.replace(minute=rounded_min, second=0, microsecond=0).strftime('%H:%M')
+
+    shift_freq = {'早班': 0, '白班': 0, '夜班': 0}
+    if worker:
+        recent = WorkReport.objects.filter(worker=worker, shift__in=shift_freq.keys()).values_list('shift', flat=True)
+        for s in recent:
+            if s in shift_freq:
+                shift_freq[s] += 1
+    sorted_shifts = sorted(shift_freq.keys(), key=lambda s: -shift_freq[s])
+
+    return JsonResponse({
+        'category_tree': category_tree,
+        'fault_tree': fault_tree,
+        'sorted_shifts': sorted_shifts,
+        'today': date.today().isoformat(),
+        'now_time': now.strftime('%H:%M'),
+        'default_time': default_time,
+        'worker_name': worker.full_name if worker else request.user.get_full_name() or request.user.username,
+    })
+
+
+@login_required(login_url='core:login')
+def water_request_modal_data(request):
+    """API: return water request form metadata as JSON for dashboard modal."""
+    from core.models import WaterRequest, Worker
+    from core.role_utils import get_worker_for_user, get_user_role, ROLE_DEPT_USER, ROLE_MANAGER, ROLE_SUPER_ADMIN
+    from datetime import date, datetime
+
+    role = get_user_role(request.user)
+    if role not in (ROLE_DEPT_USER, ROLE_MANAGER, ROLE_SUPER_ADMIN):
+        return JsonResponse({'error': '无权限'}, status=403)
+
+    worker = get_worker_for_user(request.user)
+    now = datetime.now()
+
+    return JsonResponse({
+        'request_type_choices': list(WaterRequest.REQUEST_TYPE_CHOICES),
+        'user_name': worker.full_name if worker else request.user.get_full_name() or request.user.username,
+        'today': date.today().isoformat(),
+        'now_time': now.strftime('%H:%M'),
+    })
 
 
 @login_required(login_url='core:login')
