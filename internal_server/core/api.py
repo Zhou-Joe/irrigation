@@ -142,6 +142,7 @@ class ZoneSerializer(serializers.ModelSerializer):
     status_display = serializers.SerializerMethodField()
     pending_requests = serializers.SerializerMethodField()
     center = serializers.SerializerMethodField()
+    active_boundary_points = serializers.SerializerMethodField()
     # Patch info for grouping
     patch_id = serializers.SerializerMethodField()
     patch_name = serializers.SerializerMethodField()
@@ -154,8 +155,9 @@ class ZoneSerializer(serializers.ModelSerializer):
         model = Zone
         fields = [
             'id', 'name', 'code', 'description', 'boundary_points',
+            'dxf_boundary_points', 'dxf_boundary_source', 'boundary_source',
             'boundary_color', 'status', 'status_display',
-            'pending_requests', 'center',
+            'pending_requests', 'center', 'active_boundary_points',
             'priority',
             'current_status', 'sprinkler_type', 'irrigation_intensity',
             'solenoid_valve_size', 'landscape_coefficient', 'plant_type',
@@ -220,7 +222,11 @@ class ZoneSerializer(serializers.ModelSerializer):
     def get_center(self, obj):
         """返回区域中心坐标。"""
         from core.views import get_zone_center
-        return get_zone_center(obj.boundary_points)
+        return get_zone_center(obj.active_boundary_points)
+
+    def get_active_boundary_points(self, obj):
+        """返回当前生效的边界数据。"""
+        return obj.active_boundary_points
 
 
 class PlantSerializer(serializers.ModelSerializer):
