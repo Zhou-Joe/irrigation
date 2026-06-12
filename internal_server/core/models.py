@@ -129,6 +129,14 @@ class Zone(models.Model):
     description = models.TextField(blank=True)
     boundary_points = models.JSONField(default=list)
     boundary_color = models.CharField(max_length=7, default='#52B788', help_text='边界颜色 (十六进制)')
+    dxf_boundary_points = models.JSONField(default=list, blank=True, help_text='DXF导入的边界')
+    dxf_boundary_source = models.CharField(max_length=255, blank=True, default='', help_text='DXF来源文件名')
+    boundary_source = models.CharField(
+        max_length=10,
+        choices=[('manual', '手动绘制'), ('dxf', 'DXF导入')],
+        default='manual',
+        help_text='当前生效的边界来源',
+    )
     priority = models.CharField(max_length=10, choices=PRIORITY_CHOICES, default=PRIORITY_MEDIUM, verbose_name='优先级')
     current_status = models.CharField(max_length=50, blank=True, default='', verbose_name='当前状态')
     sprinkler_type = models.CharField(max_length=100, blank=True, default='', verbose_name='灌水器类型')
@@ -159,13 +167,20 @@ class Zone(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    @property
+    def active_boundary_points(self):
+        """Return the boundary points from whichever source is currently active."""
+        if self.boundary_source == 'dxf' and self.dxf_boundary_points:
+            return self.dxf_boundary_points
+        return self.boundary_points
+
     def save(self, *args, **kwargs):
         self._recalc_area()
         super().save(*args, **kwargs)
 
     def _recalc_area(self):
         import math
-        pts = self.boundary_points
+        pts = self.active_boundary_points
         if not pts:
             self.area_sqm = None
             return

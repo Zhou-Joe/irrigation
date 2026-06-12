@@ -1,0 +1,798 @@
+{% extends 'core/base.html' %}
+{% load static %}
+
+{% block title %}DXF边界导入 - 灌溉管理{% endblock %}
+{% block nav_settings %}active{% endblock %}
+{% block nav_quickdraw %}active{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'css/settings.css' %}?v=20260516a">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<style>
+    /* ── Layout ── */
+    .batch-container { padding: 0; height: calc(100vh - 52px); display: flex; flex-direction: column; }
+    .batch-header {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 12px 20px; background: var(--color-surface-alt);
+        border-bottom: 1px solid var(--color-surface-dark); flex-shrink: 0;
+    }
+    .batch-header h1 { font-size: 1.1rem; margin: 0; }
+    .batch-header-left { display: flex; align-items: center; gap: 12px; }
+    .batch-body { display: flex; flex: 1; min-height: 0; }
+    .batch-map-area { flex: 1; display: flex; flex-direction: column; min-width: 0; position: relative; }
+    #editMap { flex: 1; min-height: 0; }
+
+    /* ── Sidebar ── */
+    .batch-sidebar {
+        width: 340px; flex-shrink: 0; display: flex; flex-direction: column;
+        background: var(--color-surface-alt); border-left: 1px solid var(--color-surface-dark);
+        overflow: hidden;
+    }
+    .sidebar-scroll { flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: thin; }
+    .sidebar-scroll::-webkit-scrollbar { width: 5px; }
+    .sidebar-scroll::-webkit-scrollbar-thumb { background: var(--color-surface-dark); border-radius: 3px; }
+
+    /* ── Panels ── */
+    .panel { padding: 14px; border-bottom: 1px solid var(--color-surface-dark); }
+    .panel-title {
+        font-size: 0.88rem; font-weight: 700; margin-bottom: 10px;
+        display: flex; align-items: center; gap: 6px;
+    }
+    .panel-title .step-badge {
+        display: inline-flex; align-items: center; justify-content: center;
+        width: 22px; height: 22px; border-radius: 50%;
+        background: var(--color-primary); color: white; font-size: 0.72rem; font-weight: 700;
+    }
+    .panel.disabled { opacity: 0.4; pointer-events: none; }
+
+    /* ── Upload ── */
+    .upload-zone {
+        border: 2px dashed var(--color-surface-dark); border-radius: 10px;
+        padding: 24px; text-align: center; cursor: pointer; transition: border-color 0.2s, background 0.2s;
+    }
+    .upload-zone:hover { border-color: var(--color-primary); background: rgba(45,106,79,0.04); }
+    .upload-zone.dragover { border-color: var(--color-primary); background: rgba(45,106,79,0.08); }
+    .upload-zone p { margin: 6px 0 0; font-size: 0.82rem; color: var(--color-text-secondary); }
+    .upload-icon { font-size: 2rem; color: var(--color-primary); }
+    input[type="file"].dxf-input { display: none; }
+
+    /* ── Shape cards ── */
+    .shape-card {
+        background: var(--color-surface); border: 1px solid var(--color-surface-dark);
+        border-radius: 8px; padding: 10px; margin-bottom: 6px; font-size: 0.82rem;
+    }
+    .shape-card-header { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+    .shape-card-header .shape-type { font-weight: 600; }
+    .shape-card-header .shape-layer { color: var(--color-text-secondary); font-size: 0.78rem; flex: 1; }
+    .shape-card-header .shape-verts { font-size: 0.75rem; color: var(--color-text-secondary); }
+    .shape-hole-tag {
+        display: inline-block; font-size: 0.72rem; background: #fef3c7; color: #92400e;
+        padding: 1px 6px; border-radius: 4px; margin-left: 4px;
+    }
+
+    /* ── Anchor table ── */
+    .anchor-table { width: 100%; font-size: 0.8rem; border-collapse: collapse; margin-top: 6px; }
+    .anchor-table th { text-align: left; padding: 4px 6px; color: var(--color-text-secondary); font-weight: 600; border-bottom: 1px solid var(--color-surface-dark); }
+    .anchor-table td { padding: 4px 6px; }
+    .anchor-table input {
+        width: 80px; padding: 3px 6px; font-size: 0.78rem; border: 1px solid var(--color-surface-dark);
+        border-radius: 4px; text-align: center;
+    }
+    .anchor-row-remove { cursor: pointer; color: #9B2226; font-size: 1rem; }
+
+    /* ── Buttons ── */
+    .btn {
+        padding: 8px 14px; border: none; border-radius: 6px; font-size: 0.85rem;
+        cursor: pointer; font-weight: 600; transition: opacity 0.15s;
+    }
+    .btn:hover { opacity: 0.88; }
+    .btn-primary { background: var(--color-primary); color: white; }
+    .btn-secondary { background: var(--color-surface-dark); color: var(--color-text); }
+    .btn-sm { padding: 5px 10px; font-size: 0.78rem; }
+    .btn-block { width: 100%; }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    /* ── Zone input with autocomplete ── */
+    .zone-input-wrapper { position: relative; }
+    .zone-input {
+        width: 100%; padding: 10px 12px; border: 2px solid var(--color-primary);
+        border-radius: 8px; font-size: 0.95rem; box-sizing: border-box;
+        font-weight: 600; background: white;
+    }
+    .zone-input:focus { outline: none; box-shadow: 0 0 0 3px rgba(45,106,79,0.15); }
+    .zone-dropdown {
+        position: absolute; top: 100%; left: 0; right: 0; background: white;
+        border: 1px solid var(--color-surface-dark); border-top: none;
+        border-radius: 0 0 8px 8px; max-height: 250px; overflow-y: auto;
+        z-index: 500; display: none; box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    }
+    .zone-dropdown .dropdown-item {
+        padding: 8px 12px; cursor: pointer; font-size: 0.85rem;
+        border-bottom: 1px solid var(--color-surface);
+        display: flex; justify-content: space-between; align-items: center;
+    }
+    .zone-dropdown .dropdown-item:hover { background: var(--color-surface); }
+    .zone-dropdown .di-code { font-weight: 600; font-family: monospace; }
+    .zone-dropdown .di-name { color: var(--color-text-secondary); margin-left: 8px; flex: 1; }
+
+    /* ── Source toggle ── */
+    .source-toggle {
+        display: flex; align-items: center; gap: 8px; margin-top: 6px; font-size: 0.82rem;
+    }
+    .source-toggle label { display: flex; align-items: center; gap: 4px; cursor: pointer; }
+    .source-toggle input[type="radio"] { accent-color: var(--color-primary); }
+
+    /* ── Assigned list ── */
+    .assigned-item {
+        display: flex; align-items: center; gap: 8px; padding: 8px 10px;
+        border-radius: 6px; font-size: 0.82rem; background: var(--color-surface);
+        border: 1px solid var(--color-surface-dark); margin-bottom: 4px;
+    }
+    .assigned-item .az-code { font-weight: 600; font-family: monospace; min-width: 55px; }
+    .assigned-item .az-name { color: var(--color-text-secondary); flex: 1; }
+    .assigned-item .az-source { font-size: 0.72rem; padding: 2px 6px; border-radius: 4px; }
+
+    /* ── Status messages ── */
+    .status-msg { font-size: 0.82rem; padding: 6px 10px; border-radius: 6px; margin-top: 6px; }
+    .status-msg.success { background: #d1fae5; color: #065f46; }
+    .status-msg.error { background: #fee2e2; color: #991b1b; }
+    .status-msg.info { background: #dbeafe; color: #1e40af; }
+
+    /* ── Map info bar ── */
+    .map-info-bar {
+        position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
+        z-index: 600; background: white; padding: 6px 16px; border-radius: 8px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.12); font-size: 0.82rem; color: var(--color-text-secondary);
+        display: none;
+    }
+    .map-info-bar.visible { display: block; }
+
+    /* ── Coord info box ── */
+    .coord-info-box {
+        background: var(--color-surface); border: 1px solid var(--color-surface-dark);
+        border-radius: 6px; padding: 8px 10px; font-size: 0.78rem;
+        margin-bottom: 8px;
+    }
+    .coord-info-box .label { color: var(--color-text-secondary); margin-bottom: 2px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="batch-container">
+    <div class="batch-header">
+        <div class="batch-header-left">
+            <h1>DXF 边界导入</h1>
+        </div>
+    </div>
+    <div class="batch-body">
+        <!-- Map Area -->
+        <div class="batch-map-area">
+            <div id="editMap"></div>
+            <div class="map-info-bar" id="mapInfoBar">点击地图设置锚点坐标</div>
+        </div>
+
+        <!-- Sidebar -->
+        <div class="batch-sidebar">
+            <div class="sidebar-scroll">
+
+                <!-- Step 1: Upload -->
+                <div class="panel" id="panelUpload">
+                    <div class="panel-title">
+                        <span class="step-badge">1</span> 上传 DXF 文件
+                    </div>
+                    <div class="upload-zone" id="uploadZone" onclick="document.getElementById('dxfFileInput').click()">
+                        <div class="upload-icon">📄</div>
+                        <p>点击或拖拽上传 .dxf 文件</p>
+                    </div>
+                    <input type="file" id="dxfFileInput" class="dxf-input" accept=".dxf">
+                    <div id="uploadStatus"></div>
+                    <div id="shapesList"></div>
+                </div>
+
+                <!-- Step 2: Georeference -->
+                <div class="panel disabled" id="panelGeoRef">
+                    <div class="panel-title">
+                        <span class="step-badge">2</span> 坐标配准
+                    </div>
+                    <div id="coordInfoBox"></div>
+                    <div id="manualGeoRef">
+                        <div id="anchorContainer"></div>
+                        <div style="display:flex;gap:6px;margin-top:8px;">
+                            <button class="btn btn-secondary btn-sm" onclick="addAnchorRow()">+ 添加锚点</button>
+                            <button class="btn btn-secondary btn-sm" onclick="previewTransform()">预览</button>
+                            <button class="btn btn-primary btn-sm" onclick="confirmAnchors()">确认配准</button>
+                        </div>
+                        <div id="geoRefStatus"></div>
+                    </div>
+                    <div id="autoGeoRef" style="display:none;">
+                        <div class="status-msg success">坐标已自动识别，可直接分配图形</div>
+                    </div>
+                </div>
+
+                <!-- Step 3: Assign -->
+                <div class="panel disabled" id="panelAssign">
+                    <div class="panel-title">
+                        <span class="step-badge">3</span> 分配图形
+                    </div>
+                    <div id="groupsList"></div>
+                    <div class="zone-input-wrapper" style="margin-top:10px;">
+                        <input type="text" class="zone-input" id="zoneCodeInput" placeholder="输入区域编号..." autocomplete="off">
+                        <div class="zone-dropdown" id="zoneDropdown"></div>
+                    </div>
+                    <button class="btn btn-primary btn-block" style="margin-top:8px;" id="assignBtn" onclick="assignSelectedShape()">分配到区域</button>
+                    <div id="assignStatus"></div>
+                </div>
+
+                <!-- Step 4: Assigned list -->
+                <div class="panel" id="panelAssigned">
+                    <div class="panel-title">
+                        <span class="step-badge">4</span> 已分配区域
+                    </div>
+                    <div id="assignedList">
+                        <div style="font-size:0.82rem;color:var(--color-text-secondary);padding:8px 0;">暂无分配</div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<!-- Leaflet JS -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="{% static 'js/map-config.js' %}?v=20260423"></script>
+<script>window.MAP_STYLE_CONFIG = {{ map_style_json|safe }} || {};</script>
+
+<!-- Zone data -->
+<script id="all-zones-data" type="application/json">{{ all_zones_json|safe }}</script>
+<script id="all-drawn-zones-data" type="application/json">{{ all_drawn_zones_json|safe }}</script>
+
+<script>
+(function() {
+    'use strict';
+
+    // ── CSRF ──
+    function getCSRF() {
+        const m = document.cookie.match('csrftoken=([^;]+)');
+        return m ? m[1] : '';
+    }
+
+    // ── Data ──
+    const allZones = JSON.parse(document.getElementById('all-zones-data').textContent);
+    const allDrawnZones = JSON.parse(document.getElementById('all-drawn-zones-data').textContent);
+    let dxfShapes = null;
+    let dxfGroups = null;
+    let dxfTransformed = null;
+    let dxfCoordInfo = null;
+    let selectedGroupId = null;
+
+    // ── Map ──
+    const centerLat = 31.145794 + 0.010;
+    const centerLng = 121.656804 + 0.012;
+    const latOffset = 0.027;
+    const lngOffset = 0.032;
+    const southWest = L.latLng(centerLat - latOffset, centerLng - lngOffset);
+    const northEast = L.latLng(centerLat + latOffset, centerLng + lngOffset);
+
+    const map = L.map('editMap', {
+        center: [centerLat, centerLng],
+        zoom: 15, maxZoom: 22, minZoom: 15,
+        maxBounds: L.latLngBounds(southWest, northEast),
+        maxBoundsViscosity: 1.0
+    });
+    const satTile = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+        attribution: '&copy; Esri', maxNativeZoom: 19, maxZoom: 22
+    });
+    const fallbackTile = L.tileLayer('https://map.geoq.cn/ArcGIS/rest/services/ChinaOnlineCommunity/MapServer/tile/{z}/{y}/{x}', {
+        attribution: '&copy; GeoQ', minZoom: 19, maxZoom: 22, opacity: 0.7
+    });
+    L.layerGroup([satTile, fallbackTile]).addTo(map);
+
+    // DXF shape layers (blue dashed for unassigned)
+    const dxfLayerGroup = L.layerGroup().addTo(map);
+    // Reference zone layers
+    const refLayerGroup = L.layerGroup().addTo(map);
+    // Anchor markers
+    const anchorLayerGroup = L.layerGroup().addTo(map);
+
+    // Map click mode: null | 'anchor'
+    let mapClickMode = null;
+
+    // ── Render reference zones ──
+    function renderRefZones() {
+        refLayerGroup.clearLayers();
+        allDrawnZones.forEach(function(zone) {
+            if (!zone.boundary_points || zone.boundary_points.length === 0) return;
+            const color = zone.boundary_color || '#52B788';
+            const style = { color: color, weight: 2, opacity: 0.5, fillOpacity: 0.08, dashArray: '4 3' };
+            if (zone.boundary_points.length > 0 && Array.isArray(zone.boundary_points[0])) {
+                zone.boundary_points.forEach(function(ring) {
+                    const latLngs = ring.map(function(p) { return [p.lat, p.lng]; });
+                    L.polygon(latLngs, style).addTo(refLayerGroup);
+                });
+            } else {
+                const latLngs = zone.boundary_points.map(function(p) { return [p.lat, p.lng]; });
+                L.polygon(latLngs, style).addTo(refLayerGroup);
+            }
+        });
+    }
+    renderRefZones();
+
+    // ── Helper: get all shape IDs from a group ──
+    function getGroupShapeIds(g) {
+        const ids = [];
+        if (g.outer) {
+            // Preview format: outer has .id
+            if (g.outer.id) ids.push(g.outer.id);
+            // Raw format: outer is a number index
+            else if (typeof g.outer === 'number' && dxfShapes) ids.push(dxfShapes[g.outer].id);
+        }
+        if (g.holes && g.holes.length) {
+            g.holes.forEach(function(h) {
+                if (typeof h === 'object' && h.id) ids.push(h.id);
+                else if (typeof h === 'number' && dxfShapes) ids.push(dxfShapes[h].id);
+            });
+        }
+        if (g.shape_ids) ids.push.apply(ids, g.shape_ids);
+        return ids;
+    }
+
+    // ── Render DXF shapes on map ──
+    function renderDxfShapes() {
+        dxfLayerGroup.clearLayers();
+        if (!dxfTransformed) return;
+        const colors = ['#3A86FF', '#FF006E', '#8338EC', '#FB5607', '#FFBE0B', '#06D6A0'];
+        dxfTransformed.forEach(function(ts, idx) {
+            const c = colors[idx % colors.length];
+            const latLngs = ts.vertices_latlng.map(function(p) { return [p.lat, p.lng]; });
+            const assigned = isShapeAssigned(ts.id);
+            const style = assigned
+                ? { color: '#52B788', weight: 3, opacity: 0.9, fillOpacity: 0.15 }
+                : { color: c, weight: 2, opacity: 0.7, fillOpacity: 0.1, dashArray: '6 4' };
+            const poly = L.polygon(latLngs, style).addTo(dxfLayerGroup);
+            poly.on('click', function() {
+                // Find group containing this shape
+                if (dxfGroups) {
+                    for (const g of dxfGroups) {
+                        if (getGroupShapeIds(g).includes(ts.id)) {
+                            selectGroup(g.id);
+                            return;
+                        }
+                    }
+                }
+            });
+        });
+        // Fit map to show all shapes
+        if (dxfTransformed.length > 0) {
+            const allBounds = L.latLngBounds([]);
+            dxfTransformed.forEach(function(ts) {
+                ts.vertices_latlng.forEach(function(p) { allBounds.extend([p.lat, p.lng]); });
+            });
+            map.fitBounds(allBounds, { padding: [50, 50], maxZoom: 18 });
+        }
+    }
+
+    function isShapeAssigned(shapeId) {
+        // Check if any group containing this shape has been assigned
+        return false; // simplified — will be tracked via assignedList
+    }
+
+    // ── Render anchor markers ──
+    function renderAnchors() {
+        anchorLayerGroup.clearLayers();
+        document.querySelectorAll('.anchor-row').forEach(function(row, idx) {
+            const latInput = row.querySelector('.anchor-lat');
+            const lngInput = row.querySelector('.anchor-lng');
+            if (latInput && lngInput && latInput.value && lngInput.value) {
+                const lat = parseFloat(latInput.value);
+                const lng = parseFloat(lngInput.value);
+                if (!isNaN(lat) && !isNaN(lng)) {
+                    const marker = L.marker([lat, lng], { draggable: true }).addTo(anchorLayerGroup);
+                    marker.bindPopup('锚点 ' + (idx + 1));
+                    marker.on('dragend', function() {
+                        const pos = marker.getLatLng();
+                        latInput.value = pos.lat.toFixed(7);
+                        lngInput.value = pos.lng.toFixed(7);
+                    });
+                }
+            }
+        });
+    }
+
+    // ── Upload ──
+    const uploadZone = document.getElementById('uploadZone');
+    const fileInput = document.getElementById('dxfFileInput');
+
+    // Drag-and-drop
+    uploadZone.addEventListener('dragover', function(e) { e.preventDefault(); uploadZone.classList.add('dragover'); });
+    uploadZone.addEventListener('dragleave', function() { uploadZone.classList.remove('dragover'); });
+    uploadZone.addEventListener('drop', function(e) {
+        e.preventDefault();
+        uploadZone.classList.remove('dragover');
+        if (e.dataTransfer.files.length > 0) {
+            fileInput.files = e.dataTransfer.files;
+            uploadDxf();
+        }
+    });
+    fileInput.addEventListener('change', uploadDxf);
+
+    function uploadDxf() {
+        if (!fileInput.files || fileInput.files.length === 0) return;
+        const file = fileInput.files[0];
+        document.getElementById('uploadStatus').innerHTML = '<div class="status-msg info">上传解析中...</div>';
+
+        const fd = new FormData();
+        fd.append('action', 'upload_dxf');
+        fd.append('file', file);
+
+        fetch('', { method: 'POST', body: fd, headers: { 'X-CSRFToken': getCSRF() } })
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                if (data.success) {
+                    document.getElementById('uploadStatus').innerHTML =
+                        '<div class="status-msg success">' + data.message + '</div>';
+
+                    dxfShapes = data.shapes;
+                    dxfGroups = data.groups;
+                    dxfCoordInfo = data.coord_info;
+
+                    // Render shape cards
+                    let html = '';
+                    data.groups.forEach(function(g) {
+                        const outer = g.outer;
+                        html += '<div class="shape-card">';
+                        html += '<div class="shape-card-header">';
+                        html += '<span class="shape-type">' + outer.entity_type + '</span>';
+                        html += '<span class="shape-layer">' + (outer.layer || '0') + '</span>';
+                        html += '<span class="shape-verts">' + outer.vertex_count + '点</span>';
+                        html += '</div>';
+                        if (g.has_holes) {
+                            g.holes.forEach(function(h) {
+                                html += '<div style="padding-left:12px;">';
+                                html += '<span class="shape-hole-tag">孔洞</span> ';
+                                html += h.entity_type + ' · ' + h.vertex_count + '点';
+                                html += '</div>';
+                            });
+                        }
+                        html += '</div>';
+                    });
+                    document.getElementById('shapesList').innerHTML = html;
+
+                    // Enable georef panel
+                    document.getElementById('panelGeoRef').classList.remove('disabled');
+
+                    // Show coord info
+                    const ci = data.coord_info;
+                    let ciHtml = '<div class="coord-info-box">';
+                    ciHtml += '<div class="label">坐标系检测</div>';
+                    ciHtml += '<div>' + ci.info + '</div>';
+                    ciHtml += '</div>';
+                    document.getElementById('coordInfoBox').innerHTML = ciHtml;
+
+                    if (ci.type === 'wgs84' && !ci.need_anchors) {
+                        // Auto georeferenced
+                        document.getElementById('manualGeoRef').style.display = 'none';
+                        document.getElementById('autoGeoRef').style.display = 'block';
+                        dxfTransformed = data.transformed;
+                        document.getElementById('panelAssign').classList.remove('disabled');
+                        renderDxfShapes();
+                    } else {
+                        // Manual mode
+                        document.getElementById('manualGeoRef').style.display = 'block';
+                        document.getElementById('autoGeoRef').style.display = 'none';
+                        // Add initial 2 anchor rows
+                        document.getElementById('anchorContainer').innerHTML = '';
+                        addAnchorRow();
+                        addAnchorRow();
+                    }
+                } else {
+                    document.getElementById('uploadStatus').innerHTML =
+                        '<div class="status-msg error">' + (data.message || '上传失败') + '</div>';
+                }
+            })
+            .catch(function(err) {
+                document.getElementById('uploadStatus').innerHTML =
+                    '<div class="status-msg error">网络错误: ' + err.message + '</div>';
+            });
+    }
+
+    // ── Anchor management ──
+    window.addAnchorRow = function() {
+        const container = document.getElementById('anchorContainer');
+        const idx = container.querySelectorAll('.anchor-row').length;
+        const row = document.createElement('div');
+        row.className = 'anchor-row';
+        row.style.cssText = 'display:flex;gap:4px;align-items:center;margin-bottom:6px;font-size:0.78rem;flex-wrap:wrap;';
+        row.innerHTML =
+            '<div style="display:flex;align-items:center;gap:4px;flex:1 1 100%;margin-bottom:2px;">' +
+            '<span style="min-width:16px;color:var(--color-text-secondary);font-weight:700;">' + (idx + 1) + '</span>' +
+            '<input class="anchor-dxf-x" placeholder="DXF X" style="width:72px;padding:3px 5px;">' +
+            '<input class="anchor-dxf-y" placeholder="DXF Y" style="width:72px;padding:3px 5px;">' +
+            '<span style="color:var(--color-text-secondary);">→</span>' +
+            '<input class="anchor-lat" placeholder="纬度" style="width:90px;padding:3px 5px;background:#f0f7f4;" readonly>' +
+            '<input class="anchor-lng" placeholder="经度" style="width:90px;padding:3px 5px;background:#f0f7f4;" readonly>' +
+            '<button class="btn btn-sm btn-secondary" style="padding:3px 7px;" onclick="startPickLatLng(this)" title="在地图上点击选取坐标">📍</button>' +
+            '<span class="anchor-row-remove" onclick="this.closest(\'.anchor-row\').remove();renderAnchors();" style="cursor:pointer;color:#9B2226;font-size:1rem;">✕</span>' +
+            '</div>';
+        container.appendChild(row);
+    };
+
+    // Highlight the row currently being picked
+    let activePickRow = null;
+
+    window.startPickLatLng = function(btn) {
+        const row = btn.closest('.anchor-row');
+        // If clicking the same button, cancel
+        if (activePickRow === row) {
+            cancelPick();
+            return;
+        }
+        // Clear previous highlight
+        if (activePickRow) activePickRow.style.background = '';
+        activePickRow = row;
+        row.style.background = 'rgba(45,106,79,0.1)';
+        row.style.borderRadius = '6px';
+        row.style.padding = '4px';
+
+        const infoBar = document.getElementById('mapInfoBar');
+        infoBar.classList.add('visible');
+        const rows = Array.from(document.querySelectorAll('.anchor-row'));
+        infoBar.textContent = '📍 点击地图选取锚点 ' + (rows.indexOf(row) + 1) + ' 的经纬度坐标';
+        mapClickMode = 'anchor';
+    };
+
+    function cancelPick() {
+        if (activePickRow) activePickRow.style.background = '';
+        activePickRow = null;
+        mapClickMode = null;
+        document.getElementById('mapInfoBar').classList.remove('visible');
+    }
+
+    // Always-active map click handler for anchor picking
+    map.on('click', function(e) {
+        if (mapClickMode !== 'anchor' || !activePickRow) return;
+        const lat = e.latlng.lat.toFixed(7);
+        const lng = e.latlng.lng.toFixed(7);
+        activePickRow.querySelector('.anchor-lat').value = lat;
+        activePickRow.querySelector('.anchor-lng').value = lng;
+        activePickRow.style.background = '';
+        activePickRow = null;
+        mapClickMode = null;
+        document.getElementById('mapInfoBar').classList.remove('visible');
+        renderAnchors();
+    });
+
+    function getAnchors() {
+        const anchors = [];
+        document.querySelectorAll('.anchor-row').forEach(function(row) {
+            const dx = parseFloat(row.querySelector('.anchor-dxf-x').value);
+            const dy = parseFloat(row.querySelector('.anchor-dxf-y').value);
+            const lat = parseFloat(row.querySelector('.anchor-lat').value);
+            const lng = parseFloat(row.querySelector('.anchor-lng').value);
+            if (!isNaN(dx) && !isNaN(dy) && !isNaN(lat) && !isNaN(lng)) {
+                anchors.push({ dxf_x: dx, dxf_y: dy, lat: lat, lng: lng });
+            }
+        });
+        return anchors;
+    }
+
+    // ── Preview / Confirm anchors ──
+    window.previewTransform = function() {
+        const anchors = getAnchors();
+        if (anchors.length < 2) {
+            document.getElementById('geoRefStatus').innerHTML = '<div class="status-msg error">需要至少2个完整锚点</div>';
+            return;
+        }
+        document.getElementById('geoRefStatus').innerHTML = '<div class="status-msg info">计算中...</div>';
+        const fd = new FormData();
+        fd.append('action', 'preview_transform');
+        fd.append('anchors', JSON.stringify(anchors));
+        fetch('', { method: 'POST', body: fd, headers: { 'X-CSRFToken': getCSRF() } })
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                if (data.success) {
+                    dxfTransformed = data.transformed;
+                    renderDxfShapes();
+                    document.getElementById('geoRefStatus').innerHTML = '<div class="status-msg success">预览已更新</div>';
+                } else {
+                    document.getElementById('geoRefStatus').innerHTML = '<div class="status-msg error">' + data.message + '</div>';
+                }
+            });
+    };
+
+    window.confirmAnchors = function() {
+        const anchors = getAnchors();
+        if (anchors.length < 2) {
+            document.getElementById('geoRefStatus').innerHTML = '<div class="status-msg error">需要至少2个完整锚点</div>';
+            return;
+        }
+        document.getElementById('geoRefStatus').innerHTML = '<div class="status-msg info">确认中...</div>';
+        const fd = new FormData();
+        fd.append('action', 'set_anchors');
+        fd.append('anchors', JSON.stringify(anchors));
+        fetch('', { method: 'POST', body: fd, headers: { 'X-CSRFToken': getCSRF() } })
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                if (data.success) {
+                    dxfTransformed = data.transformed;
+                    renderDxfShapes();
+                    document.getElementById('panelAssign').classList.remove('disabled');
+                    document.getElementById('geoRefStatus').innerHTML = '<div class="status-msg success">配准成功！可以分配图形了</div>';
+                    renderGroupsList();
+                } else {
+                    document.getElementById('geoRefStatus').innerHTML = '<div class="status-msg error">' + data.message + '</div>';
+                }
+            });
+    };
+
+    // ── Groups list ──
+    function renderGroupsList() {
+        if (!dxfGroups) return;
+        let html = '';
+        dxfGroups.forEach(function(g) {
+            const outer = g.outer;
+            const cls = (g.id === selectedGroupId) ? 'shape-card' : 'shape-card';
+            const selected = (g.id === selectedGroupId) ? 'border-color:var(--color-primary);' : '';
+            html += '<div class="' + cls + '" style="cursor:pointer;' + selected + '" onclick="selectGroup(\'' + g.id + '\')">';
+            html += '<div class="shape-card-header">';
+            html += '<span class="shape-type">组 ' + (parseInt(g.id.replace('group_', '')) + 1) + '</span>';
+            html += '<span class="shape-layer">' + outer.entity_type + ' · ' + outer.layer + '</span>';
+            html += '<span class="shape-verts">' + outer.vertex_count + '点</span>';
+            html += '</div>';
+            if (g.has_holes) {
+                html += '<div style="padding-left:12px;font-size:0.78rem;">';
+                g.holes.forEach(function(h) {
+                    html += '<span class="shape-hole-tag">孔洞</span> ' + h.entity_type + ' ' + h.vertex_count + '点 &nbsp;';
+                });
+                html += '</div>';
+            }
+            html += '</div>';
+        });
+        document.getElementById('groupsList').innerHTML = html;
+    }
+
+    window.selectGroup = function(gid) {
+        selectedGroupId = gid;
+        renderGroupsList();
+        // Highlight on map
+        if (dxfTransformed && dxfGroups) {
+            dxfLayerGroup.clearLayers();
+            dxfGroups.forEach(function(g) {
+                const shapeIds = getGroupShapeIds(g);
+                shapeIds.forEach(function(sid) {
+                    const ts = dxfTransformed.find(function(t) { return t.id === sid; });
+                    if (!ts) return;
+                    const isSelected = (g.id === selectedGroupId);
+                    const style = isSelected
+                        ? { color: '#52B788', weight: 3, opacity: 1, fillOpacity: 0.2 }
+                        : { color: '#3A86FF', weight: 1.5, opacity: 0.4, fillOpacity: 0.05, dashArray: '4 3' };
+                    const latLngs = ts.vertices_latlng.map(function(p) { return [p.lat, p.lng]; });
+                    L.polygon(latLngs, style).addTo(dxfLayerGroup);
+                });
+            });
+        }
+    };
+
+    // ── Zone autocomplete ──
+    const zoneInput = document.getElementById('zoneCodeInput');
+    const zoneDropdown = document.getElementById('zoneDropdown');
+
+    zoneInput.addEventListener('input', function() {
+        const q = this.value.trim().toLowerCase();
+        if (!q) { zoneDropdown.style.display = 'none'; return; }
+        const matches = allZones.filter(function(z) {
+            return z.code.toLowerCase().includes(q) || z.name.toLowerCase().includes(q);
+        }).slice(0, 15);
+        if (matches.length === 0) { zoneDropdown.style.display = 'none'; return; }
+        let html = '';
+        matches.forEach(function(z) {
+            html += '<div class="dropdown-item" onclick="pickZone(\'' + z.code + '\')">';
+            html += '<span class="di-code">' + z.code + '</span>';
+            html += '<span class="di-name">' + z.name + '</span>';
+            if (z.has_dxf_boundary) html += ' <span style="font-size:0.7rem;color:var(--color-primary);">DXF</span>';
+            html += '</div>';
+        });
+        zoneDropdown.innerHTML = html;
+        zoneDropdown.style.display = 'block';
+    });
+
+    zoneInput.addEventListener('blur', function() {
+        setTimeout(function() { zoneDropdown.style.display = 'none'; }, 200);
+    });
+
+    window.pickZone = function(code) {
+        zoneInput.value = code;
+        zoneDropdown.style.display = 'none';
+    };
+
+    // ── Assign shape ──
+    window.assignSelectedShape = function() {
+        const zoneCode = zoneInput.value.trim();
+        if (!zoneCode) {
+            document.getElementById('assignStatus').innerHTML = '<div class="status-msg error">请输入区域编号</div>';
+            return;
+        }
+        if (!selectedGroupId) {
+            document.getElementById('assignStatus').innerHTML = '<div class="status-msg error">请先选择一个图形组</div>';
+            return;
+        }
+        document.getElementById('assignStatus').innerHTML = '<div class="status-msg info">分配中...</div>';
+        const fd = new FormData();
+        fd.append('action', 'assign_shape');
+        fd.append('zone_code', zoneCode);
+        fd.append('group_id', selectedGroupId);
+        fetch('', { method: 'POST', body: fd, headers: { 'X-CSRFToken': getCSRF() } })
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                if (data.success) {
+                    document.getElementById('assignStatus').innerHTML = '<div class="status-msg success">' + data.message + '</div>';
+                    addAssignedItem(data);
+                    renderDxfShapes();
+                } else {
+                    document.getElementById('assignStatus').innerHTML = '<div class="status-msg error">' + data.message + '</div>';
+                }
+            });
+    };
+
+    // ── Assigned list ──
+    const assignedItems = [];
+    function addAssignedItem(data) {
+        const existing = assignedItems.find(function(a) { return a.zone_code === data.zone_code; });
+        if (existing) {
+            existing.zone_code = data.zone_code;
+            existing.source = data.boundary_source;
+        } else {
+            assignedItems.push({
+                zone_code: data.zone_code,
+                zone_name: data.zone_name || '',
+                source: data.boundary_source,
+            });
+        }
+        renderAssignedList();
+    }
+
+    function renderAssignedList() {
+        if (assignedItems.length === 0) {
+            document.getElementById('assignedList').innerHTML = '<div style="font-size:0.82rem;color:var(--color-text-secondary);padding:8px 0;">暂无分配</div>';
+            return;
+        }
+        let html = '';
+        assignedItems.forEach(function(item) {
+            const srcLabel = item.source === 'dxf' ? 'DXF' : '手动';
+            const srcClass = item.source === 'dxf' ? 'background:#d1fae5;color:#065f46;' : 'background:#e5e7eb;color:#374151;';
+            html += '<div class="assigned-item">';
+            html += '<span class="az-code">' + item.zone_code + '</span>';
+            html += '<span class="az-name">' + item.zone_name + '</span>';
+            html += '<span class="az-source" style="' + srcClass + '">' + srcLabel + '</span>';
+            html += '<div class="source-toggle" style="margin:0;">';
+            html += '<label onclick="switchSource(\'' + item.zone_code + '\',\'manual\')"><input type="radio" name="src_' + item.zone_code + '" ' + (item.source === 'manual' ? 'checked' : '') + '> 手动</label>';
+            html += '<label onclick="switchSource(\'' + item.zone_code + '\',\'dxf\')"><input type="radio" name="src_' + item.zone_code + '" ' + (item.source === 'dxf' ? 'checked' : '') + '> DXF</label>';
+            html += '</div>';
+            html += '</div>';
+        });
+        document.getElementById('assignedList').innerHTML = html;
+    }
+
+    window.switchSource = function(zoneCode, source) {
+        const fd = new FormData();
+        fd.append('action', 'switch_source');
+        fd.append('zone_code', zoneCode);
+        fd.append('source', source);
+        fetch('', { method: 'POST', body: fd, headers: { 'X-CSRFToken': getCSRF() } })
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                if (data.success) {
+                    const item = assignedItems.find(function(a) { return a.zone_code === zoneCode; });
+                    if (item) {
+                        item.source = source;
+                        renderAssignedList();
+                    }
+                }
+            });
+    };
+
+})();
+</script>
+{% endblock %}

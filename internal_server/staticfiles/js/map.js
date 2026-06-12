@@ -263,8 +263,10 @@
         // Close popup when clicking on empty map space
         map.on('click', function(e) {
             if (window._v2ModalMapMode) return;
+            // If a polygon was just clicked, don't hide the popup
+            if (_polygonJustClicked) return;
             // Only close if click was directly on the map, not on a polygon
-            if (e.originalEvent.target.closest('.leaflet-overlay-pane')) return;
+            if (e.originalEvent && e.originalEvent.target && e.originalEvent.target.closest('.leaflet-overlay-pane')) return;
             hideZonePopup();
         });
     }
@@ -283,7 +285,6 @@
             const zones = JSON.parse(zonesDataElement.textContent);
             console.log('Loaded zones:', zones.length, 'zones');
             renderZones(zones);
-            fitMapToBounds(zones);
         } catch (error) {
             console.error('Error parsing zones data:', error);
         }
@@ -1012,12 +1013,12 @@
         if (!checked && slider) slider.value = _smoothIter;
     };
 
-    function _getCSRF() {
+    window._getCSRFToken = window._getCSRFToken || function() {
         const fromInput = document.querySelector('[name=csrfmiddlewaretoken]');
         if (fromInput) return fromInput.value;
         const match = document.cookie.match(/csrftoken=([^;]+)/);
         return match ? match[1] : '';
-    }
+    };
 
     function _smoothToast(msg) {
         let t = document.getElementById('_smoothToast');
@@ -1036,7 +1037,7 @@
 
         fetch(`/zone/${currentPopupZoneData.id}/smooth/`, {
             method: 'POST',
-            headers: {'Content-Type': 'application/json', 'X-CSRFToken': _getCSRF()},
+            headers: {'Content-Type': 'application/json', 'X-CSRFToken': window._getCSRFToken()},
             body: JSON.stringify({smooth_override: val})
         }).then(r => r.json()).then(data => {
             if (data.success) {
@@ -1110,6 +1111,10 @@
 
     // Currently highlighted zone ID (for multi-polygon highlighting)
     let highlightedZoneId = null;
+    let highlightedLayer = null;
+
+    // Flag to prevent map click handler from hiding popup right after polygon click
+    let _polygonJustClicked = false;
 
     /**
      * Highlight all polygons belonging to a zone
@@ -1176,6 +1181,10 @@
         const zoneId = layer.zoneData?.id;
 
         if (zoneId) {
+            // Prevent map click handler from hiding popup right after this
+            _polygonJustClicked = true;
+            setTimeout(function() { _polygonJustClicked = false; }, 0);
+
             highlightZonePolygons(zoneId);
 
             // Highlight the corresponding sidebar item
@@ -1184,15 +1193,6 @@
             // Show fixed popup panel
             showZonePopup(layer.zoneData);
         }
-    }
-
-    /**
-     * Fit map bounds to show all zones
-     * @param {Array} zones - Array of zone objects
-     */
-    function fitMapToBounds(zones) {
-        // Keep map at predefined center - don't auto-adjust
-        // The map is already centered at the specified location
     }
 
     /**
@@ -1306,47 +1306,18 @@
         document.querySelectorAll('.zone-item').forEach(item => {
             item.addEventListener('click', function() {
                 const zoneId = parseInt(this.dataset.zoneId);
-                console.log('Sidebar click: zoneId =', zoneId);
 
-                // Check how many layers we have
-                const layers = zonesLayerGroup.getLayers();
-                console.log('Total layers in group:', layers.length);
-                console.log('Layer zoneData IDs:', layers.map(l => l.zoneData?.id));
-
+                // Find a matching layer for popup data
                 let found = false;
-                // Find and highlight the corresponding map layer
                 zonesLayerGroup.eachLayer(layer => {
-                    console.log('Checking layer.zoneData.id:', layer.zoneData?.id, 'type:', typeof layer.zoneData?.id, 'vs zoneId:', zoneId, 'type:', typeof zoneId);
-                    if (layer.zoneData?.id === zoneId) {
+                    if (layer.zoneData?.id === zoneId && !found) {
                         found = true;
-                        console.log('Found matching layer for zone:', zoneId);
-
-                        // Reset previously highlighted layer
-                        if (highlightedLayer && highlightedLayer !== layer) {
-                            highlightedLayer.setStyle(highlightedLayer.originalStyle || defaultStyle);
-                        }
                         highlightedLayer = layer;
-                        layer.setStyle(highlightStyle);
-                        layer.bringToFront();
-
-                        // Show fixed popup panel
+                        highlightedZoneId = zoneId;
+                        highlightZonePolygons(zoneId);
                         showZonePopup(layer.zoneData);
-
-                        // Fly to the zone with smooth animation (disabled)
-                        // const bounds = layer.getBounds();
-                        // if (bounds) {
-                        //     map.flyToBounds(bounds, {
-                        //         padding: [50, 50],
-                        //         duration: 0.8,
-                        //         easeLinearity: 0.25
-                        //     });
-                        // }
                     }
                 });
-
-                if (!found) {
-                    console.warn('No matching layer found for zoneId:', zoneId);
-                }
 
                 // Update sidebar selection
                 highlightSidebarItem(zoneId);
@@ -1356,91 +1327,48 @@
 
     /**
      * Locate user and show marker on map
+     * @param {Object} [opts] - Options: { auto: true } for auto-locate mode
      */
-    function locateUser() {
+    function locateUser(opts) {
+        opts = opts || {};
+        var isAuto = opts.auto || false;
         if (!('geolocation' in navigator)) {
-            alert('您的浏览器不支持定位功能');
+            if (!isAuto) alert('您的浏览器不支持定位功能');
             return;
         }
-
-        // Show loading state
-        const locateBtn = document.querySelector('.locate-btn');
-        if (locateBtn) {
-            locateBtn.disabled = true;
-            locateBtn.style.opacity = '0.5';
-        }
+        var locateBtn = isAuto ? null : document.querySelector('.locate-btn');
+        if (locateBtn) { locateBtn.disabled = true; locateBtn.style.opacity = '0.5'; }
+        var markerColor = isAuto ? '#D4A574' : '#1B4332';
+        var markerShadow = isAuto ? 'rgba(212, 165, 74, 0.4)' : 'rgba(27, 67, 50, 0.3)';
 
         navigator.geolocation.getCurrentPosition(
             function(position) {
-                const lat = position.coords.latitude;
-                const lng = position.coords.longitude;
-                const accuracy = position.coords.accuracy;
-
-                // Remove existing marker
-                if (userMarker) {
-                    map.removeLayer(userMarker);
-                }
-                if (userAccuracyCircle) {
-                    map.removeLayer(userAccuracyCircle);
-                }
-
-                // Add accuracy circle
-                userAccuracyCircle = L.circle([lat, lng], {
-                    radius: accuracy,
-                    color: '#1B4332',
-                    fillColor: '#2D6A4F',
-                    fillOpacity: 0.15,
-                    weight: 1
-                }).addTo(map);
-
-                // Add user marker
+                var lat = position.coords.latitude, lng = position.coords.longitude, accuracy = position.coords.accuracy;
+                if (userMarker) map.removeLayer(userMarker);
+                if (userAccuracyCircle) map.removeLayer(userAccuracyCircle);
+                userAccuracyCircle = L.circle([lat, lng], { radius: accuracy, color: '#1B4332', fillColor: '#2D6A4F', fillOpacity: 0.15, weight: 1 }).addTo(map);
                 userMarker = L.marker([lat, lng], {
-                    icon: L.divIcon({
-                        className: 'user-location-marker',
-                        html: '<div style="background: #1B4332; width: 16px; height: 16px; border: 3px solid white; border-radius: 50%; box-shadow: 0 0 0 2px #1B4332, 0 2px 8px rgba(27, 67, 50, 0.3);"></div>',
-                        iconSize: [22, 22],
-                        iconAnchor: [11, 11]
+                    icon: L.divIcon({ className: 'user-location-marker',
+                        html: '<div style="background: ' + markerColor + '; width: 16px; height: 16px; border: 3px solid white; border-radius: 50%; box-shadow: 0 0 0 2px ' + markerColor + ', 0 2px 8px ' + markerShadow + ';"></div>',
+                        iconSize: [22, 22], iconAnchor: [11, 11]
                     })
                 }).addTo(map);
-
-                // Pan map to user location
-                map.flyTo([lat, lng], 16, {
-                    animate: true,
-                    duration: 1.5
-                });
-
-                // Reset button
-                if (locateBtn) {
-                    locateBtn.disabled = false;
-                    locateBtn.style.opacity = '';
+                map.flyTo([lat, lng], 16, { animate: true, duration: isAuto ? 1.0 : 1.5 });
+                if (locateBtn) { locateBtn.disabled = false; locateBtn.style.opacity = ''; }
+                if (!isAuto) {
+                    L.popup().setLatLng([lat, lng]).setContent('<div><strong>您的位置</strong><br>精度: ~' + Math.round(accuracy) + '米</div>').openOn(map);
                 }
-                L.popup()
-                    .setLatLng([lat, lng])
-                    .setContent(`<div><strong>您的位置</strong><br>精度: ~${Math.round(accuracy)}米</div>`)
-                    .openOn(map);
             },
             function(error) {
-                // Reset button
-                if (locateBtn) {
-                    locateBtn.disabled = false;
-                    locateBtn.style.opacity = '';
+                if (locateBtn) { locateBtn.disabled = false; locateBtn.style.opacity = ''; }
+                if (!isAuto) {
+                    var message = '无法获取您的位置';
+                    if (error.code === error.PERMISSION_DENIED) message = '定位权限被拒绝，请在浏览器设置中允许定位。';
+                    else if (error.code === error.TIMEOUT) message = '定位请求超时，请重试。';
+                    alert(message);
                 }
-
-                // Show error
-                let message = '无法获取您的位置';
-                if (error.code === error.PERMISSION_DENIED) {
-                    message = '定位权限被拒绝，请在浏览器设置中允许定位。';
-                } else if (error.code === error.TIMEOUT) {
-                    message = '定位请求超时，请重试。';
-                }
-                alert(message);
-                console.error('Location error:', error);
             },
-            {
-                enableHighAccuracy: true,
-                timeout: 10000,
-                maximumAge: 0
-            }
+            { enableHighAccuracy: true, timeout: isAuto ? 15000 : 10000, maximumAge: isAuto ? 60000 : 0 }
         );
     }
 
@@ -1478,66 +1406,7 @@
         addLocateButton();
     }
 
-    /**
-     * Auto locate user on page load
-     */
-    function autoLocate() {
-        if (!('geolocation' in navigator)) {
-            console.log('Geolocation not supported');
-            return;
-        }
-
-        console.log('Auto-locating...');
-        navigator.geolocation.getCurrentPosition(
-            function(position) {
-                console.log('Auto-locate success:', position.coords.latitude, position.coords.longitude);
-                const lat = position.coords.latitude;
-                const lng = position.coords.longitude;
-                const accuracy = position.coords.accuracy;
-
-                // Remove existing marker if any
-                if (userMarker) {
-                    map.removeLayer(userMarker);
-                }
-                if (userAccuracyCircle) {
-                    map.removeLayer(userAccuracyCircle);
-                }
-
-                // Add accuracy circle
-                userAccuracyCircle = L.circle([lat, lng], {
-                    radius: accuracy,
-                    color: '#1B4332',
-                    fillColor: '#2D6A4F',
-                    fillOpacity: 0.15,
-                    weight: 1
-                }).addTo(map);
-
-                // Add user marker
-                userMarker = L.marker([lat, lng], {
-                    icon: L.divIcon({
-                        className: 'user-location-marker',
-                        html: '<div style="background: #D4A574; width: 16px; height: 16px; border: 3px solid white; border-radius: 50%; box-shadow: 0 0 0 2px #D4A574, 0 2px 8px rgba(212, 165, 74, 0.4);"></div>',
-                        iconSize: [22, 22],
-                        iconAnchor: [11, 11]
-                    })
-                }).addTo(map);
-
-                // Fly to user location
-                map.flyTo([lat, lng], 16, {
-                    animate: true,
-                    duration: 1.0
-                });
-            },
-            function(error) {
-                console.log('Auto-locate failed:', error.code, error.message);
-            },
-            {
-                enableHighAccuracy: true,
-                timeout: 15000,
-                maximumAge: 60000 // Allow cached position for faster response
-            }
-        );
-    }
+    // Auto-locate is triggered from dashboard.js
 
     /**
      * Apply combined map filters (priority + plant)

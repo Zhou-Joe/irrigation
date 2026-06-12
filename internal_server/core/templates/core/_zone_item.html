@@ -1,0 +1,5 @@
+<div class="zone-item" data-zone-id="{{ zone.id }}" data-zone-code="{{ zone.code }}" data-patch-id="{{ zone.patch_id }}" data-priority="{{ zone.priority }}" data-plants="{{ zone.plant_names|join:',' }}">
+    <span class="zone-code">{{ zone.code }}</span>
+    <span class="zone-name">{{ zone.name }}</span>
+    {% if zone.has_remarks %}<span class="remark-badge remark-badge-pending" title="有待确认备注">!</span>{% elif zone.has_confirmed_remarks %}<span class="remark-badge remark-badge-confirmed" title="有已确认备注">✓</span>{% endif %}
+</div>
