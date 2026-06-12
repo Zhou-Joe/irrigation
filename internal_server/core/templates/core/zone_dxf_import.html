@@ -340,8 +340,11 @@
         return [bp];
     }
 
+    const refLabelLayer = L.layerGroup().addTo(map);
+
     function renderRefZones() {
         refLayerGroup.clearLayers();
+        refLabelLayer.clearLayers();
         allDrawnZones.forEach(function(zone) {
             if (!zone.boundary_points || zone.boundary_points.length === 0) return;
             const style = { color: '#fff', weight: 2, opacity: 0.6, fillOpacity: 0.03, dashArray: '6 4' };
@@ -358,7 +361,7 @@
                     labelLatLng = [sLat / ring.length, sLng / ring.length];
                 }
             });
-            // Add label marker
+            // Add label marker to separate layer (controlled by zoom)
             if (labelLatLng) {
                 // Prefer user-set label position
                 var ll = (zone.label_lat && zone.label_lng)
@@ -372,10 +375,23 @@
                         iconAnchor: [0, 6],
                     }),
                     interactive: false,
-                }).addTo(refLayerGroup);
+                }).addTo(refLabelLayer);
             }
         });
+        updateRefLabelVisibility();
     }
+
+    function updateRefLabelVisibility() {
+        var show = map.getZoom() >= 19;
+        if (show) {
+            if (!map.hasLayer(refLabelLayer)) map.addLayer(refLabelLayer);
+        } else {
+            if (map.hasLayer(refLabelLayer)) map.removeLayer(refLabelLayer);
+        }
+    }
+
+    map.on('zoomend', updateRefLabelVisibility);
+
     renderRefZones();
 
     // ── Helper: get all shape IDs from a group ──
