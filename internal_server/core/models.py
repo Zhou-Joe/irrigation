@@ -192,20 +192,17 @@ class Zone(models.Model):
                 return p[0], p[1]
             return 0, 0
 
-        # Normalize to list of point-lists (multi-polygon support)
-        first = pts[0]
-        if isinstance(first, list) and len(first) > 0 and (isinstance(first[0], (list, dict))):
-            rings = pts
-        elif isinstance(first, (dict, list)):
-            rings = [pts]
-        else:
-            self.area_sqm = None
-            return
+        def is_point(p):
+            """Check if p is a single point (dict with lat/lng or [lat, lng])."""
+            if isinstance(p, dict):
+                return 'lat' in p or 'latitude' in p
+            if isinstance(p, (list, tuple)) and len(p) >= 2:
+                return isinstance(p[0], (int, float))
+            return False
 
-        total = 0.0
-        for ring in rings:
+        def calc_ring_area(ring):
             if len(ring) < 3:
-                continue
+                return 0
             flat, flng = to_latlng(ring[0])
             m_lat = 111320.0
             m_lng = 111320.0 * math.cos(math.radians(flat))
@@ -219,7 +216,47 @@ class Zone(models.Model):
                 xj = (qj_lng - flng) * m_lng
                 yj = (qj_lat - flat) * m_lat
                 area += xi * yj - xj * yi
-            total += abs(area) / 2.0
+            return abs(area) / 2.0
+
+        first = pts[0]
+        # Detect nested multi-group format: [[[{lat,lng},...], [{lat,lng},...]], ...]
+        # pts[0] is a group = [ring1, ring2, ...], pts[0][0] is a ring = [{lat,lng}, ...]
+        # pts[0][0][0] is a point => flat multi-ring
+        # pts[0][0] is an array of points => need to check one more level
+        is_multi_group = False
+        if isinstance(first, list) and len(first) > 0:
+            inner = first[0]
+            if isinstance(inner, list) and len(inner) > 0:
+                innermost = inner[0]
+                if isinstance(innermost, (list, dict)) and not is_point(innermost):
+                    # inner[0] is an array of points → this is a nested multi-group
+                    is_multi_group = True
+
+        total = 0.0
+        if is_multi_group:
+            # Multi-group: [[outer1, hole1a, ...], [outer2, hole2a, ...]]
+            for group in pts:
+                for ring_idx, ring in enumerate(group):
+                    ring_area = calc_ring_area(ring)
+                    if ring_idx == 0:
+                        total += ring_area      # outer
+                    else:
+                        total -= ring_area      # hole
+        else:
+            # Flat multi-ring or single-ring: [outer, hole1, hole2, ...]
+            if isinstance(first, list) and len(first) > 0 and isinstance(first[0], (list, dict)):
+                rings = pts
+            elif isinstance(first, (dict, list)):
+                rings = [pts]
+            else:
+                self.area_sqm = None
+                return
+            for ring_idx, ring in enumerate(rings):
+                ring_area = calc_ring_area(ring)
+                if ring_idx == 0:
+                    total += ring_area
+                else:
+                    total -= ring_area
         self.area_sqm = total if total > 0 else None
 
     @property

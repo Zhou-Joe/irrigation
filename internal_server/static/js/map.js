@@ -248,6 +248,9 @@
         // Initialize labels layer group (separate for independent layer control)
         labelsLayerGroup = L.layerGroup().addTo(map);
 
+        // Watermark layer for 通称 at xx-xx zoom level
+        window.__wmLayer = L.layerGroup().addTo(map);
+
         // Initialize landmarks layer group (not added by default - user toggles via layer control)
         landmarksLayerGroup = L.layerGroup();
 
@@ -446,6 +449,29 @@
                 if (!groups[key]) groups[key] = [];
                 groups[key].push(label);
             });
+
+            // At xx-xx level (zoom 17): also collect unique watermarks (通称)
+            let watermarks = null;
+            if (zoom >= 17) {
+                watermarks = {};
+                zoneLabels.forEach(label => {
+                    const zone = label._zone;
+                    if (!zone || !zone.name) return;
+                    // Deduplicate by zone name
+                    if (!watermarks[zone.name]) {
+                        // Collect all label centers for zones with this name
+                        watermarks[zone.name] = [];
+                    }
+                    watermarks[zone.name].push(label._originalCenter);
+                });
+                // Compute centroid for each unique name
+                Object.entries(watermarks).forEach(([name, centers]) => {
+                    let sLat = 0, sLng = 0;
+                    centers.forEach(c => { sLat += c[0]; sLng += c[1]; });
+                    watermarks[name] = [sLat / centers.length, sLng / centers.length];
+                });
+            }
+
             // For each group, show only one label at the group centroid
             Object.entries(groups).forEach(([key, labels]) => {
                 // Compute group centroid
@@ -456,10 +482,16 @@
                 });
                 const groupCenter = count > 0 ? [latSum / count, lngSum / count] : labels[0]._originalCenter;
 
+                // Find the common name (通称) for this group
+                let commonName = '';
+                const firstZone = labels[0]?._zone;
+                if (firstZone && zoom < 17) {
+                    commonName = firstZone.patch_name || firstZone.name || '';
+                }
+
                 labels.forEach((label, i) => {
                     const el = label.getElement();
                     if (i === 0) {
-                        // Show representative label at group centroid
                         if (el) el.style.display = '';
                         label.setLatLng(groupCenter);
                         const zone = label._zone;
@@ -468,7 +500,20 @@
                         const span = el ? el.querySelector('span') : null;
                         if (span) {
                             span.style.fontSize = size + 'px';
-                            span.textContent = key;
+                            if (zoom < 17) {
+                                // xx level: two lines — 通称 (smaller) + xx
+                                if (commonName) {
+                                    span.innerHTML = `<div style="text-align:center;line-height:1.15;">
+                                        <div style="font-size:${Math.round(size * 0.55)}px;">${commonName}</div>
+                                        <div style="font-size:${Math.round(size * 0.4)}px;opacity:0.55;">${key}</div>
+                                    </div>`;
+                                } else {
+                                    span.textContent = key;
+                                }
+                            } else {
+                                // xx-xx level: label is just xx-xx
+                                span.textContent = key;
+                            }
                         }
                     } else {
                         if (el) el.style.display = 'none';
@@ -482,8 +527,65 @@
                     }
                 });
             });
+
+            // At xx-xx level: render watermarks; at xx level: clear them
+            if (window.__wmLayer) {
+                window.__wmLayer.clearLayers();
+            }
+            if (watermarks && window.__wmLayer) {
+                window.__wmLayer.clearLayers();
+                const wmSize = Math.round(baseSize * 1.6);
+                Object.entries(watermarks).forEach(([name, center]) => {
+                    if (!center) return;
+                    const wm = L.marker(center, {
+                        interactive: false,
+                        icon: L.divIcon({
+                            className: 'zone-watermark',
+                            html: `<div style="transform:translate(-50%,-50%);white-space:nowrap;">
+                                <span style="font-size:${wmSize}px;color:rgba(255,255,255,0.55);font-weight:700;text-shadow:0 0 8px rgba(0,0,0,0.3);pointer-events:none;">${name}</span>
+                            </div>`,
+                            iconSize: null,
+                            iconAnchor: [0, 0]
+                        })
+                    });
+                    window.__wmLayer.addLayer(wm);
+                });
+            }
         } else {
             // Full zoom: show all individual labels at original positions
+            // Rebuild watermarks at full zoom level too
+            if (window.__wmLayer) {
+                window.__wmLayer.clearLayers();
+                const wmFullSize = Math.round(baseSize * 1.6);
+                // At full zoom, baseSize is tiny — use zoom 17 watermark size instead
+                const wmZoom17Size = Math.round(getLabelFontSize(17) * 1.6);
+                const wmEffectiveSize = Math.max(wmFullSize, wmZoom17Size);
+                const wmDone = {};
+                zoneLabels.forEach(label => {
+                    const zone = label._zone;
+                    if (!zone || !zone.name || wmDone[zone.name]) return;
+                    wmDone[zone.name] = true;
+                    // Collect all centers for this name
+                    let sLat = 0, sLng = 0, cnt = 0;
+                    zoneLabels.forEach(l => {
+                        if (l._zone && l._zone.name === zone.name && l._originalCenter) {
+                            sLat += l._originalCenter[0]; sLng += l._originalCenter[1]; cnt++;
+                        }
+                    });
+                    if (cnt === 0) return;
+                    const wm = L.marker([sLat / cnt, sLng / cnt], {
+                        interactive: false,
+                        icon: L.divIcon({
+                            className: 'zone-watermark',
+                            html: `<div style="transform:translate(-50%,-50%);white-space:nowrap;">
+                                <span style="font-size:${wmEffectiveSize}px;color:rgba(255,255,255,0.55);font-weight:700;text-shadow:0 0 8px rgba(0,0,0,0.3);pointer-events:none;">${zone.name}</span>
+                            </div>`,
+                            iconSize: null, iconAnchor: [0, 0]
+                        })
+                    });
+                    window.__wmLayer.addLayer(wm);
+                });
+            }
             zoneLabels.forEach(label => {
                 const el = label.getElement();
                 if (el) {
@@ -593,9 +695,22 @@
                 };
 
                 if (isMultiPolygonFormat(zone.boundary_points)) {
-                    // Multi-polygon: each element is a separate polygon ring
+                    // Check if nested multi-group: [[[{lat,lng},...], ...], ...]
+                    const bp = zone.boundary_points;
+                    const isNestedMultiGroup = bp.length > 0 && Array.isArray(bp[0]) && bp[0].length > 0
+                        && Array.isArray(bp[0][0]) && bp[0][0].length > 0 && (bp[0][0][0]?.lat !== undefined || bp[0][0][0]?.lng !== undefined);
+
+                    // Flatten to a list of rings for rendering
+                    let flatRings;
+                    if (isNestedMultiGroup) {
+                        flatRings = [];
+                        bp.forEach(group => { group.forEach(ring => { flatRings.push(ring); }); });
+                    } else {
+                        flatRings = bp;
+                    }
+
                     let allLatLngs = [];
-                    zone.boundary_points.forEach((ring, ringIdx) => {
+                    flatRings.forEach((ring, ringIdx) => {
                         const latLngs = pointsToLatLngs(ring);
                         if (latLngs.length < 3) return;
 
@@ -609,7 +724,6 @@
                         zonesLayerGroup.addLayer(polygon);
                         allLatLngs = allLatLngs.concat(latLngs);
                     });
-                    // Only one label per zone, centered on all rings combined
                     if (allLatLngs.length > 0) {
                         zone._allLatLngs = allLatLngs;
                         addZoneLabel(zone);
@@ -1075,7 +1189,18 @@
         }
 
         if (isMultiPolygonFormat(zone.boundary_points)) {
-            zone.boundary_points.forEach(ring => {
+            // Check nested multi-group and flatten
+            const bp = zone.boundary_points;
+            const isNestedMultiGroup = bp.length > 0 && Array.isArray(bp[0]) && bp[0].length > 0
+                && Array.isArray(bp[0][0]) && bp[0][0].length > 0 && (bp[0][0][0]?.lat !== undefined || bp[0][0][0]?.lng !== undefined);
+            let flatRings;
+            if (isNestedMultiGroup) {
+                flatRings = [];
+                bp.forEach(group => { group.forEach(ring => { flatRings.push(ring); }); });
+            } else {
+                flatRings = bp;
+            }
+            flatRings.forEach(ring => {
                 const ll = pointsToLatLngs(ring);
                 if (ll.length < 3) return;
                 const poly = L.polygon(_smoothLL(ll, _zoneSmooth(zone)), zoneStyle);

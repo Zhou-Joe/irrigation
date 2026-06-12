@@ -6,6 +6,15 @@ and affine transformation from local DXF coords to WGS84 lat/lng.
 import math
 
 
+# ─── Site Calibration ───
+# Two reference points mapping local DXF coordinates to WGS84 (lat, lng).
+# Update these when the surveyor's coordinate system changes.
+SITE_CALIBRATION_POINTS = [
+    {'dxf_x': 18199.4368, 'dxf_y': -10216.4603, 'lat': 31.1431589, 'lng': 121.6579836},
+    {'dxf_x': 18220.5437, 'dxf_y': -10196.3886, 'lat': 31.1433414, 'lng': 121.6582022},
+]
+
+
 def parse_dxf_shapes(uploaded_file):
     """
     Parse a DXF file and extract all closed shapes.
@@ -192,13 +201,51 @@ def detect_coord_system(shapes):
             'axis_map': 'xy_to_latlng',  # x→lat, y→lng
         }
 
-    # Not WGS84 — require manual georeferencing
+    # Not WGS84 — check if site calibration is available for auto-transform
+    has_calibration = bool(SITE_CALIBRATION_POINTS) and len(SITE_CALIBRATION_POINTS) >= 2
+
     return {
         'type': 'local',
-        'info': f'本地坐标系 (X: {min_x:.1f}~{max_x:.1f}, Y: {min_y:.1f}~{max_y:.1f})，需要手动配准',
-        'need_anchors': True,
+        'info': f'本地坐标系 (X: {min_x:.1f}~{max_x:.1f}, Y: {min_y:.1f}~{max_y:.1f})',
+        'need_anchors': not has_calibration,
+        'auto_calibrated': has_calibration,
         'extent': {'min_x': min_x, 'max_x': max_x, 'min_y': min_y, 'max_y': max_y},
     }
+
+
+def auto_calibrate(shapes):
+    """
+    Auto-transform local DXF coordinates to WGS84 using site calibration points.
+    Negates DXF Y axis to correct for the common CAD Y-down vs geographic Y-up mismatch.
+    Returns list of transformed shape dicts with vertices_latlng, or None if no calibration.
+    """
+    if not SITE_CALIBRATION_POINTS or len(SITE_CALIBRATION_POINTS) < 2:
+        return None
+
+    # Build calibration with negated Y (reflect to match geographic handedness)
+    cal = [
+        {'dxf_x': p['dxf_x'], 'dxf_y': -p['dxf_y'], 'lat': p['lat'], 'lng': p['lng']}
+        for p in SITE_CALIBRATION_POINTS
+    ]
+    transform_fn = _similarity_transform(cal)
+    if isinstance(transform_fn, str):
+        return None  # error string
+
+    # Apply transform with negated Y on each vertex
+    result = []
+    for s in shapes:
+        ring = []
+        for (x, y) in s['vertices']:
+            lat, lng = transform_fn(x, -y)
+            ring.append({'lat': lat, 'lng': lng})
+        result.append({
+            'id': s['id'],
+            'entity_type': s['entity_type'],
+            'layer': s['layer'],
+            'vertices_latlng': ring,
+            'vertex_count': len(ring),
+        })
+    return result
 
 
 def shapes_to_latlng_auto(shapes, axis_map):
