@@ -494,7 +494,22 @@ def get_zone_center(boundary_points):
         isinstance(first[0], list) or (isinstance(first[0], dict) and 'lat' in first[0])
     )
 
-    if is_multi:
+    # Detect nested multi-group: [[[{lat,lng},...], ...], ...]
+    is_nested = False
+    if is_multi and isinstance(first, list) and len(first) > 0:
+        inner = first[0]
+        if isinstance(inner, list) and len(inner) > 0:
+            innermost = inner[0]
+            if isinstance(innermost, (list, dict)):
+                is_nested = True
+
+    if is_nested:
+        # Flatten: [[ring1, ring2], [ring3]] → [ring1, ring2, ring3]
+        for group in boundary_points:
+            if isinstance(group, list):
+                for ring in group:
+                    _extract_coords(ring)
+    elif is_multi:
         for ring in boundary_points:
             _extract_coords(ring)
     else:
@@ -1783,7 +1798,7 @@ def zone_batch_draw(request):
 
     # All zones with boundaries for reference layer on map
     all_drawn_zones = []
-    for z in Zone.objects.exclude(boundary_points__isnull=True).exclude(boundary_points=[]).select_related('patch').only(
+    for z in Zone.objects.select_related('patch').only(
         'id', 'code', 'name', 'boundary_points', 'boundary_color',
         'label_lat', 'label_lng', 'label_scale', 'label_angle', 'smooth_override', 'patch_id'
     ):
@@ -2023,7 +2038,7 @@ def zone_quick_draw(request):
 
     # All zones with boundaries for reference layer on map
     all_drawn_zones = []
-    for z in Zone.objects.exclude(boundary_points__isnull=True).exclude(boundary_points=[]).select_related('patch').only(
+    for z in Zone.objects.select_related('patch').only(
         'id', 'code', 'name', 'boundary_points', 'boundary_color',
         'label_lat', 'label_lng', 'label_scale', 'label_angle', 'smooth_override',
         'ring_display_modes', 'patch_id', 'patch__name'
@@ -2050,10 +2065,10 @@ def zone_quick_draw(request):
     patch_stats = []
     for p in Patch.objects.order_by('name'):
         total = Zone.objects.filter(patch=p).count()
-        drawn = Zone.objects.filter(patch=p).exclude(boundary_points__isnull=True).exclude(boundary_points=[]).count()
+        drawn = Zone.objects.filter(patch=p).exclude(boundary_points__isnull=True).exclude(boundary_points=[]).count() + Zone.objects.filter(patch=p, boundary_source='dxf').exclude(dxf_boundary_points__isnull=True).exclude(dxf_boundary_points=[]).count()
         patch_stats.append({'name': p.name, 'total': total, 'drawn': drawn})
     total_all = Zone.objects.count()
-    drawn_all = Zone.objects.exclude(boundary_points__isnull=True).exclude(boundary_points=[]).count()
+    drawn_all = Zone.objects.exclude(boundary_points__isnull=True).exclude(boundary_points=[]).count() + Zone.objects.filter(boundary_source='dxf').exclude(dxf_boundary_points__isnull=True).exclude(dxf_boundary_points=[]).count()
 
     context = {
         'all_zones_json': json.dumps(all_zones),
@@ -2236,7 +2251,7 @@ def zone_quick_draw_mobile(request):
         })
 
     all_drawn_zones = []
-    for z in Zone.objects.exclude(boundary_points__isnull=True).exclude(boundary_points=[]).select_related('patch').only(
+    for z in Zone.objects.select_related('patch').only(
         'id', 'code', 'name', 'boundary_points', 'boundary_color',
         'label_lat', 'label_lng', 'label_scale', 'label_angle', 'smooth_override',
         'ring_display_modes', 'patch_id', 'patch__name'
@@ -2263,10 +2278,10 @@ def zone_quick_draw_mobile(request):
     patch_stats = []
     for p in Patch.objects.order_by('name'):
         total = Zone.objects.filter(patch=p).count()
-        drawn = Zone.objects.filter(patch=p).exclude(boundary_points__isnull=True).exclude(boundary_points=[]).count()
+        drawn = Zone.objects.filter(patch=p).exclude(boundary_points__isnull=True).exclude(boundary_points=[]).count() + Zone.objects.filter(patch=p, boundary_source='dxf').exclude(dxf_boundary_points__isnull=True).exclude(dxf_boundary_points=[]).count()
         patch_stats.append({'name': p.name, 'total': total, 'drawn': drawn})
     total_all = Zone.objects.count()
-    drawn_all = Zone.objects.exclude(boundary_points__isnull=True).exclude(boundary_points=[]).count()
+    drawn_all = Zone.objects.exclude(boundary_points__isnull=True).exclude(boundary_points=[]).count() + Zone.objects.filter(boundary_source='dxf').exclude(dxf_boundary_points__isnull=True).exclude(dxf_boundary_points=[]).count()
 
     context = {
         'all_zones_json': json.dumps(all_zones),
@@ -2310,7 +2325,7 @@ def map_style_editor(request):
 
     # Load all drawn zones for map preview
     all_drawn_zones = []
-    for z in Zone.objects.exclude(boundary_points__isnull=True).exclude(boundary_points=[]).select_related('patch').only(
+    for z in Zone.objects.select_related('patch').only(
         'id', 'code', 'name', 'boundary_points', 'boundary_color',
         'label_lat', 'label_lng', 'label_scale', 'label_angle', 'smooth_override', 'patch_id', 'patch__name', 'current_status'
     ):
@@ -2902,7 +2917,7 @@ def _landmark_draw_context(landmark):
             'area_sqm': lm.area_sqm,
         })
     all_zones = []
-    for z in Zone.objects.exclude(boundary_points__isnull=True).exclude(boundary_points=[]).select_related('patch').only(
+    for z in Zone.objects.select_related('patch').only(
         'id', 'code', 'name', 'boundary_points', 'boundary_color',
         'label_lat', 'label_lng', 'label_scale', 'label_angle', 'patch_id'
     ):
@@ -5645,7 +5660,7 @@ def demands_page(request):
 def zone_geo_api(request):
     from core.models import Zone
     import json as _json
-    zones = Zone.objects.exclude(boundary_points=[]).only('code', 'name', 'boundary_points', 'dxf_boundary_points', 'boundary_source')
+    zones = Zone.objects.filter(Q(boundary_points__isnull=False) | Q(dxf_boundary_points__isnull=False)).exclude(boundary_points=[]).exclude(dxf_boundary_points=[]).only('code', 'name', 'boundary_points', 'dxf_boundary_points', 'boundary_source')
     data = []
     for z in zones:
         bp = z.active_boundary_points
@@ -5697,7 +5712,7 @@ def workorder_history(request):
 
 def _build_zone_geo_data():
     from core.models import Zone
-    zones = Zone.objects.exclude(boundary_points=[]).only('code', 'name', 'boundary_points', 'dxf_boundary_points', 'boundary_source')
+    zones = Zone.objects.filter(Q(boundary_points__isnull=False) | Q(dxf_boundary_points__isnull=False)).exclude(boundary_points=[]).exclude(dxf_boundary_points=[]).only('code', 'name', 'boundary_points', 'dxf_boundary_points', 'boundary_source')
     data = []
     for z in zones:
         bp = z.active_boundary_points
@@ -6042,7 +6057,7 @@ def zones_in_area_api(request):
         return inside
 
     # Get all zones with boundaries
-    zones = Zone.objects.exclude(boundary_points=[])
+    zones = Zone.objects.filter(Q(boundary_points__isnull=False) | Q(dxf_boundary_points__isnull=False)).exclude(boundary_points=[]).exclude(dxf_boundary_points=[])
     result_codes = []
 
     for z in zones:
@@ -6088,7 +6103,7 @@ def zone_dxf_import(request):
         parse_dxf_shapes, detect_nesting, detect_coord_system,
         shapes_to_latlng_auto, compute_affine_transform,
         transform_shape, transform_group_to_boundary,
-        shapes_to_geojson_preview,
+        shapes_to_geojson_preview, auto_calibrate,
     )
 
     is_admin = request.user.is_superuser or request.user.is_staff
@@ -6141,6 +6156,14 @@ def zone_dxf_import(request):
                 transformed = shapes_to_latlng_auto(shapes, axis_map)
                 request.session['dxf_transformed'] = transformed
                 preview['transformed'] = transformed
+            elif coord_info.get('auto_calibrated'):
+                # Local coords with site calibration — auto-transform
+                transformed = auto_calibrate(shapes)
+                if transformed:
+                    request.session['dxf_transformed'] = transformed
+                    preview['transformed'] = transformed
+                    coord_info['need_anchors'] = False
+                    coord_info['info'] += ' — 已自动配准'
 
             return JsonResponse({
                 'success': True,
@@ -6211,8 +6234,21 @@ def zone_dxf_import(request):
         if action == 'assign_shape':
             shapes = request.session.get('dxf_shapes')
             groups = request.session.get('dxf_groups')
-            transformed = request.session.get('dxf_transformed')
             filename = request.session.get('dxf_filename', '')
+
+            # Prefer client-sent transformed coords (includes drag offsets)
+            transformed = None
+            transformed_json = request.POST.get('transformed_json', '')
+            if transformed_json:
+                try:
+                    transformed = json.loads(transformed_json)
+                except (json.JSONDecodeError, TypeError):
+                    pass
+            if not transformed:
+                transformed = request.session.get('dxf_transformed')
+            else:
+                # Sync client offset back to session for future assigns / reloads
+                request.session['dxf_transformed'] = transformed
 
             if not transformed:
                 # Check if auto WGS84
@@ -6223,44 +6259,74 @@ def zone_dxf_import(request):
                     return JsonResponse({'success': False, 'message': '请先完成坐标配准'}, status=400)
 
             zone_code = request.POST.get('zone_code', '').strip()
-            group_id = request.POST.get('group_id', '').strip()
+
+            # Support multi-group: accept group_ids (JSON array) or legacy group_id
+            group_ids_raw = request.POST.get('group_ids', '')
+            group_id_legacy = request.POST.get('group_id', '').strip()
+            if group_ids_raw:
+                try:
+                    group_ids = json.loads(group_ids_raw)
+                except (json.JSONDecodeError, TypeError):
+                    group_ids = []
+            elif group_id_legacy:
+                group_ids = [group_id_legacy]
+            else:
+                group_ids = []
 
             if not zone_code:
                 return JsonResponse({'success': False, 'message': '缺少区域编号'}, status=400)
-            if not group_id:
-                return JsonResponse({'success': False, 'message': '缺少图形组ID'}, status=400)
+            if not group_ids:
+                return JsonResponse({'success': False, 'message': '请先选择图形组'}, status=400)
 
             try:
                 zone = Zone.objects.get(code=zone_code)
             except Zone.DoesNotExist:
                 return JsonResponse({'success': False, 'message': f'区域 {zone_code} 不存在'}, status=404)
 
-            # Find the group
-            target_group = None
-            for g in (groups or []):
-                if g['id'] == group_id:
-                    target_group = g
-                    break
-            if target_group is None:
-                return JsonResponse({'success': False, 'message': f'图形组 {group_id} 不存在'}, status=404)
+            # Build boundary from one or more groups
+            # Multi-group format: [[outer1, hole1a, ...], [outer2, hole2a, ...]]
+            # Single-group (backward compat): [outer, hole1, hole2, ...]
+            target_groups = []
+            for gid in group_ids:
+                for g in (groups or []):
+                    if g['id'] == gid:
+                        target_groups.append(g)
+                        break
 
-            # Build boundary from transformed data
-            boundary_rings = []
-            # Outer ring
-            outer_t = transformed[target_group['outer']]
-            boundary_rings.append(outer_t['vertices_latlng'])
-            # Hole rings
-            for hole_idx in target_group['holes']:
-                hole_t = transformed[hole_idx]
-                boundary_rings.append(hole_t['vertices_latlng'])
+            if not target_groups:
+                return JsonResponse({'success': False, 'message': '图形组不存在'}, status=404)
 
-            zone.dxf_boundary_points = boundary_rings
+            if len(target_groups) == 1:
+                # Single group — flat ring list (backward compatible)
+                tg = target_groups[0]
+                boundary_rings = []
+                outer_t = transformed[tg['outer']]
+                boundary_rings.append(outer_t['vertices_latlng'])
+                for hole_idx in tg['holes']:
+                    hole_t = transformed[hole_idx]
+                    boundary_rings.append(hole_t['vertices_latlng'])
+                zone.dxf_boundary_points = boundary_rings
+            else:
+                # Multi group — nested format: [[group1_rings], [group2_rings], ...]
+                boundary_groups = []
+                for tg in target_groups:
+                    group_rings = []
+                    outer_t = transformed[tg['outer']]
+                    group_rings.append(outer_t['vertices_latlng'])
+                    for hole_idx in tg['holes']:
+                        hole_t = transformed[hole_idx]
+                        group_rings.append(hole_t['vertices_latlng'])
+                    boundary_groups.append(group_rings)
+                zone.dxf_boundary_points = boundary_groups
+
             zone.dxf_boundary_source = filename
+            zone.boundary_source = 'dxf'
             zone.save()
 
+            group_label = f'{len(target_groups)}个图形组' if len(target_groups) > 1 else '图形'
             return JsonResponse({
                 'success': True,
-                'message': f'已将图形分配给区域 {zone.code}',
+                'message': f'已将{group_label}分配给区域 {zone.code}',
                 'zone_id': zone.id,
                 'zone_code': zone.code,
                 'zone_name': zone.name,
@@ -6316,7 +6382,7 @@ def zone_dxf_import(request):
 
     # All drawn zones for reference layer (use active boundary)
     all_drawn_zones = []
-    for z in Zone.objects.exclude(boundary_points__isnull=True).exclude(boundary_points=[]).select_related('patch').only(
+    for z in Zone.objects.select_related('patch').only(
         'id', 'code', 'name', 'boundary_points', 'dxf_boundary_points',
         'boundary_color', 'boundary_source',
         'label_lat', 'label_lng', 'label_scale', 'label_angle',
@@ -6342,9 +6408,21 @@ def zone_dxf_import(request):
             'area_display': z.area_display,
         })
 
+    # Restore session DXF data for page reload
+    session_dxf = None
+    if request.session.get('dxf_transformed'):
+        session_dxf = {
+            'shapes': request.session.get('dxf_shapes', []),
+            'groups': request.session.get('dxf_groups', []),
+            'transformed': request.session.get('dxf_transformed', []),
+            'coord_info': request.session.get('dxf_coord_info', {}),
+            'filename': request.session.get('dxf_filename', ''),
+        }
+
     context = {
         'all_zones_json': json.dumps(all_zones),
         'all_drawn_zones_json': json.dumps(all_drawn_zones),
         'map_style_json': json.dumps(MapStyleSettings.get_style()),
+        'session_dxf_json': json.dumps(session_dxf) if session_dxf else 'null',
     }
     return render(request, 'core/zone_dxf_import.html', context)

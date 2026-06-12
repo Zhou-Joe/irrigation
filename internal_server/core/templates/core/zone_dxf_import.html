@@ -205,7 +205,11 @@
                         <div id="geoRefStatus"></div>
                     </div>
                     <div id="autoGeoRef" style="display:none;">
-                        <div class="status-msg success">坐标已自动识别，可直接分配图形</div>
+                        <div class="status-msg success">坐标已自动配准 — 拖拽图形可微调位置</div>
+                        <div style="margin-top:6px;display:flex;gap:6px;align-items:center;">
+                            <button class="btn btn-secondary btn-sm" onclick="resetDxfOffset()">重置位置</button>
+                            <span id="offsetInfo" style="font-size:0.78rem;color:var(--color-text-secondary);"></span>
+                        </div>
                     </div>
                 </div>
 
@@ -215,6 +219,10 @@
                         <span class="step-badge">3</span> 分配图形
                     </div>
                     <div id="groupsList"></div>
+                    <div id="suggestedZones" style="display:none; margin-top:8px;">
+                        <div style="font-size:0.78rem; color:#888; margin-bottom:4px;">💡 建议匹配区域（按距离排序）</div>
+                        <div id="suggestedZonesList"></div>
+                    </div>
                     <div class="zone-input-wrapper" style="margin-top:10px;">
                         <input type="text" class="zone-input" id="zoneCodeInput" placeholder="输入区域编号..." autocomplete="off">
                         <div class="zone-dropdown" id="zoneDropdown"></div>
@@ -231,6 +239,18 @@
                     <div id="assignedList">
                         <div style="font-size:0.82rem;color:var(--color-text-secondary);padding:8px 0;">暂无分配</div>
                     </div>
+                    <div id="saveRow" style="display:none;margin-top:10px;">
+                        <button class="btn btn-primary btn-block" onclick="confirmSave()">✓ 确认保存并生效</button>
+                    </div>
+                </div>
+
+                <!-- DXF Import History -->
+                <div class="panel">
+                    <div class="panel-title">📋 DXF导入记录</div>
+                    <select id="dxfHistorySelect" style="width:100%;padding:6px 8px;border:1px solid var(--color-surface-dark);border-radius:6px;font-size:0.82rem;background:var(--color-surface);" onchange="showDxfHistory()">
+                        <option value="">-- 选择已导入的区域 --</option>
+                    </select>
+                    <div id="dxfHistoryInfo" style="margin-top:6px;"></div>
                 </div>
 
             </div>
@@ -248,6 +268,7 @@
 <!-- Zone data -->
 <script id="all-zones-data" type="application/json">{{ all_zones_json|safe }}</script>
 <script id="all-drawn-zones-data" type="application/json">{{ all_drawn_zones_json|safe }}</script>
+<script id="session-dxf-data" type="application/json">{{ session_dxf_json|safe }}</script>
 
 <script>
 (function() {
@@ -266,7 +287,7 @@
     let dxfGroups = null;
     let dxfTransformed = null;
     let dxfCoordInfo = null;
-    let selectedGroupId = null;
+    let selectedGroupIds = new Set();   // multi-select support
 
     // ── Map ──
     const centerLat = 31.145794 + 0.010;
@@ -300,21 +321,58 @@
     // Map click mode: null | 'anchor'
     let mapClickMode = null;
 
-    // ── Render reference zones ──
+    // ── Render reference zones (grey dashed + labels) ──
+    function flattenBoundaryRings(bp) {
+        // Returns flat list of rings [{lat,lng}, ...] from any format
+        if (!bp || bp.length === 0) return [];
+        // Nested multi-group: [[[{lat,lng},...], ...], ...]
+        if (Array.isArray(bp[0]) && bp[0].length > 0 && Array.isArray(bp[0][0])
+            && bp[0][0].length > 0 && bp[0][0][0] && (bp[0][0][0].lat !== undefined)) {
+            var flat = [];
+            bp.forEach(function(group) { group.forEach(function(ring) { flat.push(ring); }); });
+            return flat;
+        }
+        // Flat multi-ring: [[{lat,lng},...], [{lat,lng},...]]
+        if (Array.isArray(bp[0]) && bp[0].length > 0 && bp[0][0] && bp[0][0].lat !== undefined) {
+            return bp;
+        }
+        // Single ring: [{lat,lng}, ...]
+        return [bp];
+    }
+
     function renderRefZones() {
         refLayerGroup.clearLayers();
         allDrawnZones.forEach(function(zone) {
             if (!zone.boundary_points || zone.boundary_points.length === 0) return;
-            const color = zone.boundary_color || '#52B788';
-            const style = { color: color, weight: 2, opacity: 0.5, fillOpacity: 0.08, dashArray: '4 3' };
-            if (zone.boundary_points.length > 0 && Array.isArray(zone.boundary_points[0])) {
-                zone.boundary_points.forEach(function(ring) {
-                    const latLngs = ring.map(function(p) { return [p.lat, p.lng]; });
-                    L.polygon(latLngs, style).addTo(refLayerGroup);
-                });
-            } else {
-                const latLngs = zone.boundary_points.map(function(p) { return [p.lat, p.lng]; });
+            const style = { color: '#fff', weight: 2, opacity: 0.6, fillOpacity: 0.03, dashArray: '6 4' };
+            var labelLatLng = null;
+            var rings = flattenBoundaryRings(zone.boundary_points);
+            rings.forEach(function(ring, ri) {
+                if (!ring || ring.length < 3) return;
+                const latLngs = ring.map(function(p) { return [p.lat, p.lng]; });
                 L.polygon(latLngs, style).addTo(refLayerGroup);
+                // Use first ring centroid for label
+                if (ri === 0 && !labelLatLng) {
+                    var sLat = 0, sLng = 0;
+                    ring.forEach(function(p) { sLat += p.lat; sLng += p.lng; });
+                    labelLatLng = [sLat / ring.length, sLng / ring.length];
+                }
+            });
+            // Add label marker
+            if (labelLatLng) {
+                // Prefer user-set label position
+                var ll = (zone.label_lat && zone.label_lng)
+                    ? [zone.label_lat, zone.label_lng]
+                    : labelLatLng;
+                L.marker(ll, {
+                    icon: L.divIcon({
+                        className: 'ref-zone-label',
+                        html: '<span style="font-size:10px;color:#333;background:rgba(255,255,255,0.7);padding:1px 4px;border-radius:3px;white-space:nowrap;">' + zone.code + ' ' + (zone.name || '') + '</span>',
+                        iconSize: [0, 0],
+                        iconAnchor: [0, 6],
+                    }),
+                    interactive: false,
+                }).addTo(refLayerGroup);
             }
         });
     }
@@ -339,9 +397,14 @@
         return ids;
     }
 
-    // ── Render DXF shapes on map ──
+    // ── Render DXF shapes on map (with group drag) ──
+    let dxfPolygons = [];       // rendered polygon references
+    let dxfDragging = false;
+    let dxfOrigLatLngs = null;  // snapshot of polygon positions at drag start
+
     function renderDxfShapes() {
         dxfLayerGroup.clearLayers();
+        dxfPolygons = [];
         if (!dxfTransformed) return;
         const colors = ['#3A86FF', '#FF006E', '#8338EC', '#FB5607', '#FFBE0B', '#06D6A0'];
         dxfTransformed.forEach(function(ts, idx) {
@@ -352,17 +415,70 @@
                 ? { color: '#52B788', weight: 3, opacity: 0.9, fillOpacity: 0.15 }
                 : { color: c, weight: 2, opacity: 0.7, fillOpacity: 0.1, dashArray: '6 4' };
             const poly = L.polygon(latLngs, style).addTo(dxfLayerGroup);
-            poly.on('click', function() {
-                // Find group containing this shape
-                if (dxfGroups) {
-                    for (const g of dxfGroups) {
-                        if (getGroupShapeIds(g).includes(ts.id)) {
-                            selectGroup(g.id);
-                            return;
+            dxfPolygons.push(poly);
+
+            // Combined click + drag via DOM-level mousedown
+            var svgEl = poly.getElement();
+            if (svgEl) {
+                svgEl.style.cursor = 'grab';
+                svgEl.addEventListener('mousedown', function(domE) {
+                    if (domE.button !== 0) return;
+                    domE.stopPropagation();  // prevent map drag
+
+                    var clicked = false;
+                    var startLL = map.mouseEventToLatLng(domE);
+                    dxfOrigLatLngs = dxfPolygons.map(function(p) {
+                        return p.getLatLngs()[0].map(function(pt) { return [pt.lat, pt.lng]; });
+                    });
+
+                    function onDocMove(ev) {
+                        var cur = map.mouseEventToLatLng(ev);
+                        var dlat = cur.lat - startLL.lat;
+                        var dlng = cur.lng - startLL.lng;
+                        if (!clicked && (Math.abs(dlat) > 1e-8 || Math.abs(dlng) > 1e-8)) {
+                            clicked = true; // it's a drag, not a click
+                        }
+                        if (clicked) {
+                            dxfPolygons.forEach(function(p, pi) {
+                                var moved = dxfOrigLatLngs[pi].map(function(pt) { return [pt[0] + dlat, pt[1] + dlng]; });
+                                p.setLatLngs(moved);
+                            });
                         }
                     }
-                }
-            });
+                    function onDocUp() {
+                        document.removeEventListener('mousemove', onDocMove);
+                        document.removeEventListener('mouseup', onDocUp);
+
+                        if (clicked) {
+                            // Was a drag — commit offset
+                            var finalLatLngs = dxfPolygons[0].getLatLngs()[0];
+                            var origV = dxfTransformed[0].vertices_latlng;
+                            var offLat = finalLatLngs[0].lat - origV[0].lat;
+                            var offLng = finalLatLngs[0].lng - origV[0].lng;
+                            dxfTransformed.forEach(function(t) {
+                                t.vertices_latlng = t.vertices_latlng.map(function(p) {
+                                    return { lat: p.lat + offLat, lng: p.lng + offLng };
+                                });
+                            });
+                            updateOffsetInfo(offLat, offLng);
+                            // Refresh zone suggestions with new position
+                            computeSuggestions();
+                        } else {
+                            // Was a click — select/deselect group
+                            if (dxfGroups) {
+                                for (var gi = 0; gi < dxfGroups.length; gi++) {
+                                    if (getGroupShapeIds(dxfGroups[gi]).includes(ts.id)) {
+                                        selectGroup(dxfGroups[gi].id);
+                                        return;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    document.addEventListener('mousemove', onDocMove);
+                    document.addEventListener('mouseup', onDocUp);
+                });
+            }
         });
         // Fit map to show all shapes
         if (dxfTransformed.length > 0) {
@@ -373,6 +489,30 @@
             map.fitBounds(allBounds, { padding: [50, 50], maxZoom: 18 });
         }
     }
+
+    let _cumulOffLat = 0, _cumulOffLng = 0;
+    function updateOffsetInfo(dlat, dlng) {
+        _cumulOffLat += dlat;
+        _cumulOffLng += dlng;
+        var el = document.getElementById('offsetInfo');
+        if (el) {
+            var mLat = (_cumulOffLat * 111320).toFixed(1);
+            var mLng = (_cumulOffLng * 111320 * Math.cos(31.14 * Math.PI / 180)).toFixed(1);
+            el.textContent = '偏移: ' + mLat + 'm N, ' + mLng + 'm E';
+        }
+    }
+    window.resetDxfOffset = function() {
+        if (!dxfTransformed || _cumulOffLat === 0 && _cumulOffLng === 0) return;
+        dxfTransformed.forEach(function(ts) {
+            ts.vertices_latlng = ts.vertices_latlng.map(function(p) {
+                return { lat: p.lat - _cumulOffLat, lng: p.lng - _cumulOffLng };
+            });
+        });
+        _cumulOffLat = 0; _cumulOffLng = 0;
+        var el = document.getElementById('offsetInfo');
+        if (el) el.textContent = '';
+        renderDxfShapes();
+    };
 
     function isShapeAssigned(shapeId) {
         // Check if any group containing this shape has been assigned
@@ -471,8 +611,8 @@
                     ciHtml += '</div>';
                     document.getElementById('coordInfoBox').innerHTML = ciHtml;
 
-                    if (ci.type === 'wgs84' && !ci.need_anchors) {
-                        // Auto georeferenced
+                    if (!ci.need_anchors && data.transformed) {
+                        // Auto georeferenced (WGS84 or site-calibrated local)
                         document.getElementById('manualGeoRef').style.display = 'none';
                         document.getElementById('autoGeoRef').style.display = 'block';
                         dxfTransformed = data.transformed;
@@ -552,6 +692,18 @@
 
     // Always-active map click handler for anchor picking
     map.on('click', function(e) {
+        // Deselect group when clicking empty map
+        if (selectedGroupIds.size > 0 && mapClickMode !== 'anchor') {
+            selectedGroupIds.clear();
+            renderGroupsList();
+            computeSuggestions();
+            dxfPolygons.forEach(function(poly, idx) {
+                var ts = dxfTransformed ? dxfTransformed[idx] : null;
+                if (!ts) return;
+                var colors = ['#3A86FF', '#FF006E', '#8338EC', '#FB5607', '#FFBE0B', '#06D6A0'];
+                poly.setStyle({ color: colors[idx % colors.length], weight: 2, opacity: 0.7, fillOpacity: 0.1, dashArray: '6 4' });
+            });
+        }
         if (mapClickMode !== 'anchor' || !activePickRow) return;
         const lat = e.latlng.lat.toFixed(7);
         const lng = e.latlng.lng.toFixed(7);
@@ -630,21 +782,24 @@
     // ── Groups list ──
     function renderGroupsList() {
         if (!dxfGroups) return;
+        var src = dxfShapes || [];
         let html = '';
         dxfGroups.forEach(function(g) {
-            const outer = g.outer;
-            const cls = (g.id === selectedGroupId) ? 'shape-card' : 'shape-card';
-            const selected = (g.id === selectedGroupId) ? 'border-color:var(--color-primary);' : '';
-            html += '<div class="' + cls + '" style="cursor:pointer;' + selected + '" onclick="selectGroup(\'' + g.id + '\')">';
+            // g.outer is a shape index, not an object — resolve it
+            var outerShape = src[g.outer] || {};
+            var isSelected = selectedGroupIds.has(g.id);
+            var selected = isSelected ? 'border-color:var(--color-primary);background:rgba(82,183,136,0.08);' : '';
+            html += '<div class="shape-card" style="cursor:pointer;' + selected + '" onclick="selectGroup(\'' + g.id + '\')">';
             html += '<div class="shape-card-header">';
-            html += '<span class="shape-type">组 ' + (parseInt(g.id.replace('group_', '')) + 1) + '</span>';
-            html += '<span class="shape-layer">' + outer.entity_type + ' · ' + outer.layer + '</span>';
-            html += '<span class="shape-verts">' + outer.vertex_count + '点</span>';
+            html += (isSelected ? '✅ ' : '⬜ ') + '<span class="shape-type">组 ' + (parseInt(g.id.replace('group_', '')) + 1) + '</span>';
+            html += '<span class="shape-layer">' + (outerShape.entity_type || '?') + ' · ' + (outerShape.layer || '?') + '</span>';
+            html += '<span class="shape-verts">' + (outerShape.vertex_count || '?') + '点</span>';
             html += '</div>';
-            if (g.has_holes) {
+            if (g.holes && g.holes.length > 0) {
                 html += '<div style="padding-left:12px;font-size:0.78rem;">';
-                g.holes.forEach(function(h) {
-                    html += '<span class="shape-hole-tag">孔洞</span> ' + h.entity_type + ' ' + h.vertex_count + '点 &nbsp;';
+                g.holes.forEach(function(hIdx) {
+                    var hShape = src[hIdx] || {};
+                    html += '<span class="shape-hole-tag">孔洞</span> ' + (hShape.entity_type || '?') + ' ' + (hShape.vertex_count || '?') + '点 &nbsp;';
                 });
                 html += '</div>';
             }
@@ -653,26 +808,133 @@
         document.getElementById('groupsList').innerHTML = html;
     }
 
-    window.selectGroup = function(gid) {
-        selectedGroupId = gid;
-        renderGroupsList();
-        // Highlight on map
-        if (dxfTransformed && dxfGroups) {
-            dxfLayerGroup.clearLayers();
-            dxfGroups.forEach(function(g) {
-                const shapeIds = getGroupShapeIds(g);
-                shapeIds.forEach(function(sid) {
-                    const ts = dxfTransformed.find(function(t) { return t.id === sid; });
-                    if (!ts) return;
-                    const isSelected = (g.id === selectedGroupId);
-                    const style = isSelected
-                        ? { color: '#52B788', weight: 3, opacity: 1, fillOpacity: 0.2 }
-                        : { color: '#3A86FF', weight: 1.5, opacity: 0.4, fillOpacity: 0.05, dashArray: '4 3' };
-                    const latLngs = ts.vertices_latlng.map(function(p) { return [p.lat, p.lng]; });
-                    L.polygon(latLngs, style).addTo(dxfLayerGroup);
-                });
+    // ── Suggested zone matches ──
+    // Pre-compute zone centroids (static, done once)
+    var _zoneCentroids = null;
+    function ensureZoneCentroids() {
+        if (_zoneCentroids) return;
+        _zoneCentroids = [];
+        allDrawnZones.forEach(function(z) {
+            var bp = z.boundary_points;
+            if (!bp || bp.length === 0) return;
+            var rings = flattenBoundaryRings(bp);
+            // Use first ring (outer) for centroid
+            var ring = rings[0];
+            if (!ring || ring.length === 0) return;
+            if (ring.length === 0) return;
+            var sumLat = 0, sumLng = 0, n = ring.length;
+            for (var i = 0; i < n; i++) { sumLat += ring[i].lat; sumLng += ring[i].lng; }
+            _zoneCentroids.push({
+                id: z.id, code: z.code, name: z.name,
+                lat: sumLat / n, lng: sumLng / n,
+                patch_name: z.patch_name || '',
             });
+        });
+    }
+
+    function groupCentroid(groupId) {
+        if (!dxfGroups || !dxfTransformed) return null;
+        var g = dxfGroups.find(function(x) { return x.id === groupId; });
+        if (!g) return null;
+        var allPts = [];
+        [g.outer].concat(g.holes || []).forEach(function(idx) {
+            var ts = dxfTransformed[idx];
+            if (ts && ts.vertices_latlng) allPts = allPts.concat(ts.vertices_latlng);
+        });
+        if (allPts.length === 0) return null;
+        var sumLat = 0, sumLng = 0;
+        allPts.forEach(function(p) { sumLat += p.lat; sumLng += p.lng; });
+        return { lat: sumLat / allPts.length, lng: sumLng / allPts.length };
+    }
+
+    function computeSuggestions() {
+        var container = document.getElementById('suggestedZones');
+        var listEl = document.getElementById('suggestedZonesList');
+        if (!container || !listEl) return;
+
+        if (selectedGroupIds.size === 0 || !dxfTransformed) {
+            container.style.display = 'none';
+            return;
         }
+
+        // Compute combined centroid of all selected groups
+        var allPts = [];
+        selectedGroupIds.forEach(function(gid) {
+            var gc = groupCentroid(gid);
+            if (gc) { allPts.push(gc); }
+        });
+        if (allPts.length === 0) { container.style.display = 'none'; return; }
+        var gc = { lat: 0, lng: 0 };
+        allPts.forEach(function(p) { gc.lat += p.lat; gc.lng += p.lng; });
+        gc.lat /= allPts.length;
+        gc.lng /= allPts.length;
+        if (!gc) { container.style.display = 'none'; return; }
+
+        ensureZoneCentroids();
+
+        // Compute distances and sort
+        var dists = _zoneCentroids.map(function(zc) {
+            var dlat = zc.lat - gc.lat;
+            var dlng = zc.lng - gc.lng;
+            // Approximate meters: 1° ≈ 111320m, adjust lng by cos(lat)
+            var mLat = dlat * 111320;
+            var mLng = dlng * 111320 * Math.cos(gc.lat * Math.PI / 180);
+            var dist = Math.sqrt(mLat * mLat + mLng * mLng);
+            return { zone: zc, dist: dist };
+        });
+        dists.sort(function(a, b) { return a.dist - b.dist; });
+
+        var top5 = dists.slice(0, 5);
+        var html = '';
+        top5.forEach(function(d, i) {
+            var z = d.zone;
+            var distStr = d.dist < 1000 ? Math.round(d.dist) + 'm' : (d.dist / 1000).toFixed(1) + 'km';
+            html += '<div class="suggestion-chip" onclick="pickSuggestedZone(\'' + z.code + '\')" ' +
+                'style="display:inline-block; margin:3px 4px 3px 0; padding:4px 10px; border-radius:14px; ' +
+                'font-size:0.8rem; cursor:pointer; border:1px solid ' +
+                (i === 0 ? 'var(--color-primary); background:var(--color-primary-light, #e8f4fd); color:var(--color-primary-dark, #1a5276); font-weight:600;' :
+                '#ddd; background:#f8f8f8; color:#555;') + '">' +
+                '<span style="font-weight:600;">' + z.code + '</span> ' + z.name +
+                ' <span style="font-size:0.7rem; opacity:0.7;">(' + distStr + ')</span></div>';
+        });
+        listEl.innerHTML = html;
+        container.style.display = 'block';
+    }
+
+    window.pickSuggestedZone = function(code) {
+        zoneInput.value = code;
+    };
+
+    // Helper: collect all selected shape IDs across multiple groups
+    function getAllSelectedShapeIds() {
+        var ids = [];
+        if (!dxfGroups) return ids;
+        dxfGroups.forEach(function(g) {
+            if (selectedGroupIds.has(g.id)) {
+                ids = ids.concat(getGroupShapeIds(g));
+            }
+        });
+        return ids;
+    }
+
+    window.selectGroup = function(gid) {
+        if (selectedGroupIds.has(gid)) {
+            selectedGroupIds.delete(gid);
+        } else {
+            selectedGroupIds.add(gid);
+        }
+        renderGroupsList();
+        computeSuggestions();
+        // Update polygon styles in-place
+        var selIds = getAllSelectedShapeIds();
+        dxfPolygons.forEach(function(poly, idx) {
+            var ts = dxfTransformed[idx];
+            if (!ts) return;
+            var isSel = selIds.includes(ts.id);
+            poly.setStyle(isSel
+                ? { color: '#52B788', weight: 3, opacity: 1, fillOpacity: 0.2, dashArray: null }
+                : { color: '#3A86FF', weight: 1.5, opacity: 0.4, fillOpacity: 0.05, dashArray: '4 3' });
+        });
     };
 
     // ── Zone autocomplete ──
@@ -714,15 +976,19 @@
             document.getElementById('assignStatus').innerHTML = '<div class="status-msg error">请输入区域编号</div>';
             return;
         }
-        if (!selectedGroupId) {
-            document.getElementById('assignStatus').innerHTML = '<div class="status-msg error">请先选择一个图形组</div>';
+        if (selectedGroupIds.size === 0) {
+            document.getElementById('assignStatus').innerHTML = '<div class="status-msg error">请先选择至少一个图形组</div>';
             return;
         }
         document.getElementById('assignStatus').innerHTML = '<div class="status-msg info">分配中...</div>';
         const fd = new FormData();
         fd.append('action', 'assign_shape');
         fd.append('zone_code', zoneCode);
-        fd.append('group_id', selectedGroupId);
+        fd.append('group_ids', JSON.stringify(Array.from(selectedGroupIds)));
+        // Send current transformed coords (with drag offset applied)
+        if (dxfTransformed) {
+            fd.append('transformed_json', JSON.stringify(dxfTransformed));
+        }
         fetch('', { method: 'POST', body: fd, headers: { 'X-CSRFToken': getCSRF() } })
             .then(function(r) { return r.json(); })
             .then(function(data) {
@@ -756,6 +1022,7 @@
     function renderAssignedList() {
         if (assignedItems.length === 0) {
             document.getElementById('assignedList').innerHTML = '<div style="font-size:0.82rem;color:var(--color-text-secondary);padding:8px 0;">暂无分配</div>';
+            document.getElementById('saveRow').style.display = 'none';
             return;
         }
         let html = '';
@@ -773,7 +1040,69 @@
             html += '</div>';
         });
         document.getElementById('assignedList').innerHTML = html;
+        document.getElementById('saveRow').style.display = 'block';
     }
+
+    window.confirmSave = function() {
+        var btn = document.getElementById('saveRow').querySelector('button');
+        btn.textContent = '✓ 已生效，刷新地图中...';
+        btn.disabled = true;
+        btn.style.background = '#52B788';
+        btn.style.opacity = '0.8';
+        // Reload to refresh map with updated zone boundaries
+        setTimeout(function() { location.reload(); }, 800);
+    };
+
+    // ── DXF Import History ──
+    function populateDxfHistory() {
+        var sel = document.getElementById('dxfHistorySelect');
+        sel.innerHTML = '<option value="">-- 选择已导入的区域 (' + allZones.filter(function(z) { return z.has_dxf_boundary; }).length + '个) --</option>';
+        allZones.filter(function(z) { return z.has_dxf_boundary; }).forEach(function(z) {
+            var opt = document.createElement('option');
+            opt.value = z.code;
+            opt.textContent = z.code + ' ' + (z.name || '') + (z.patch_name ? ' (' + z.patch_name + ')' : '') + ' [' + (z.boundary_source === 'dxf' ? '使用中' : '未启用') + ']';
+            sel.appendChild(opt);
+        });
+    }
+    populateDxfHistory();
+
+    window.showDxfHistory = function() {
+        var code = document.getElementById('dxfHistorySelect').value;
+        var info = document.getElementById('dxfHistoryInfo');
+        if (!code) { info.innerHTML = ''; return; }
+        var z = allZones.find(function(z) { return z.code === code; });
+        if (!z) { info.innerHTML = ''; return; }
+        var active = z.boundary_source === 'dxf';
+        info.innerHTML =
+            '<div style="font-size:0.82rem;padding:6px 0;">' +
+            '<div><strong>' + z.code + '</strong> ' + (z.name || '') + '</div>' +
+            (z.patch_name ? '<div style="color:var(--color-text-secondary);">片区: ' + z.patch_name + '</div>' : '') +
+            '<div style="margin-top:4px;">状态: <span style="' + (active ? 'color:#065f46;font-weight:600;' : 'color:var(--color-text-secondary);') + '">' + (active ? '✓ DXF边界生效中' : '未启用DXF边界') + '</span></div>' +
+            '<div style="margin-top:4px;display:flex;gap:6px;">' +
+            '<button class="btn btn-sm" style="padding:3px 8px;' + (active ? 'background:#d1fae5;color:#065f46;' : 'background:var(--color-surface);') + '" onclick="switchDxfSource(\'' + z.code + '\',\'' + (active ? 'manual' : 'dxf') + '\')">' + (active ? '切换为手动' : '切换为DXF') + '</button>' +
+            '</div>' +
+            '</div>';
+    };
+
+    window.switchDxfSource = function(code, source) {
+        var fd = new FormData();
+        fd.append('action', 'switch_source');
+        fd.append('zone_code', code);
+        fd.append('source', source);
+        fetch('', { method: 'POST', body: fd, headers: { 'X-CSRFToken': getCSRF() } })
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                if (data.success) {
+                    // Update local data
+                    var z = allZones.find(function(z) { return z.code === code; });
+                    if (z) z.boundary_source = source;
+                    populateDxfHistory();
+                    document.getElementById('dxfHistorySelect').value = code;
+                    showDxfHistory();
+                    renderRefZones();
+                }
+            });
+    };
 
     window.switchSource = function(zoneCode, source) {
         const fd = new FormData();
@@ -792,6 +1121,38 @@
                 }
             });
     };
+
+    // ── Restore session DXF data on page load ──
+    var savedDxf = JSON.parse(document.getElementById('session-dxf-data').textContent);
+    if (savedDxf && savedDxf.transformed && savedDxf.transformed.length > 0) {
+        dxfShapes = savedDxf.shapes;
+        dxfGroups = savedDxf.groups;
+        dxfTransformed = savedDxf.transformed;
+        dxfCoordInfo = savedDxf.coord_info;
+
+        // Show upload success
+        document.getElementById('uploadStatus').innerHTML =
+            '<div class="status-msg success">已恢复上次上传: ' + (savedDxf.filename || '') + ' (' + dxfTransformed.length + '个图形)</div>';
+
+        // Show coord info & auto-georef panel
+        if (dxfCoordInfo) {
+            var ci = dxfCoordInfo;
+            document.getElementById('coordInfoBox').innerHTML =
+                '<div class="coord-info-box"><div class="label">坐标系检测</div><div>' + ci.info + '</div></div>';
+            if (!ci.need_anchors) {
+                document.getElementById('manualGeoRef').style.display = 'none';
+                document.getElementById('autoGeoRef').style.display = 'block';
+            }
+        }
+
+        // Enable panels
+        document.getElementById('panelGeoRef').classList.remove('disabled');
+        document.getElementById('panelAssign').classList.remove('disabled');
+
+        // Render groups list and shapes on map
+        renderGroupsList();
+        renderDxfShapes();
+    }
 
 })();
 </script>
