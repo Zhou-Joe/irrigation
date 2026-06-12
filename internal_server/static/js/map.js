@@ -248,6 +248,9 @@
         // Initialize labels layer group (separate for independent layer control)
         labelsLayerGroup = L.layerGroup().addTo(map);
 
+        // Watermark layer for 通称 at xx-xx zoom level
+        window.__wmLayer = L.layerGroup().addTo(map);
+
         // Initialize landmarks layer group (not added by default - user toggles via layer control)
         landmarksLayerGroup = L.layerGroup();
 
@@ -263,10 +266,11 @@
         // Close popup when clicking on empty map space
         map.on('click', function(e) {
             if (window._v2ModalMapMode) return;
+            // If a polygon was just clicked, don't hide the popup
+            if (_polygonJustClicked) return;
             // Only close if click was directly on the map, not on a polygon
-            if (e.originalEvent.target.closest('.leaflet-overlay-pane')) return;
+            if (e.originalEvent && e.originalEvent.target && e.originalEvent.target.closest('.leaflet-overlay-pane')) return;
             hideZonePopup();
-            hideZoneContextMenu();
         });
     }
 
@@ -284,7 +288,6 @@
             const zones = JSON.parse(zonesDataElement.textContent);
             console.log('Loaded zones:', zones.length, 'zones');
             renderZones(zones);
-            fitMapToBounds(zones);
         } catch (error) {
             console.error('Error parsing zones data:', error);
         }
@@ -446,6 +449,29 @@
                 if (!groups[key]) groups[key] = [];
                 groups[key].push(label);
             });
+
+            // At xx-xx level (zoom 17): also collect unique watermarks (通称)
+            let watermarks = null;
+            if (zoom >= 17) {
+                watermarks = {};
+                zoneLabels.forEach(label => {
+                    const zone = label._zone;
+                    if (!zone || !zone.name) return;
+                    // Deduplicate by zone name
+                    if (!watermarks[zone.name]) {
+                        // Collect all label centers for zones with this name
+                        watermarks[zone.name] = [];
+                    }
+                    watermarks[zone.name].push(label._originalCenter);
+                });
+                // Compute centroid for each unique name
+                Object.entries(watermarks).forEach(([name, centers]) => {
+                    let sLat = 0, sLng = 0;
+                    centers.forEach(c => { sLat += c[0]; sLng += c[1]; });
+                    watermarks[name] = [sLat / centers.length, sLng / centers.length];
+                });
+            }
+
             // For each group, show only one label at the group centroid
             Object.entries(groups).forEach(([key, labels]) => {
                 // Compute group centroid
@@ -456,10 +482,16 @@
                 });
                 const groupCenter = count > 0 ? [latSum / count, lngSum / count] : labels[0]._originalCenter;
 
+                // Find the common name (通称) for this group
+                let commonName = '';
+                const firstZone = labels[0]?._zone;
+                if (firstZone && zoom < 17) {
+                    commonName = firstZone.patch_name || firstZone.name || '';
+                }
+
                 labels.forEach((label, i) => {
                     const el = label.getElement();
                     if (i === 0) {
-                        // Show representative label at group centroid
                         if (el) el.style.display = '';
                         label.setLatLng(groupCenter);
                         const zone = label._zone;
@@ -468,7 +500,20 @@
                         const span = el ? el.querySelector('span') : null;
                         if (span) {
                             span.style.fontSize = size + 'px';
-                            span.textContent = key;
+                            if (zoom < 17) {
+                                // xx level: two lines — 通称 (smaller) + xx
+                                if (commonName) {
+                                    span.innerHTML = `<div style="text-align:center;line-height:1.15;">
+                                        <div style="font-size:${Math.round(size * 0.55)}px;">${commonName}</div>
+                                        <div style="font-size:${Math.round(size * 0.4)}px;opacity:0.55;">${key}</div>
+                                    </div>`;
+                                } else {
+                                    span.textContent = key;
+                                }
+                            } else {
+                                // xx-xx level: label is just xx-xx
+                                span.textContent = key;
+                            }
                         }
                     } else {
                         if (el) el.style.display = 'none';
@@ -482,8 +527,65 @@
                     }
                 });
             });
+
+            // At xx-xx level: render watermarks; at xx level: clear them
+            if (window.__wmLayer) {
+                window.__wmLayer.clearLayers();
+            }
+            if (watermarks && window.__wmLayer) {
+                window.__wmLayer.clearLayers();
+                const wmSize = Math.round(baseSize * 1.6);
+                Object.entries(watermarks).forEach(([name, center]) => {
+                    if (!center) return;
+                    const wm = L.marker(center, {
+                        interactive: false,
+                        icon: L.divIcon({
+                            className: 'zone-watermark',
+                            html: `<div style="transform:translate(-50%,-50%);white-space:nowrap;">
+                                <span style="font-size:${wmSize}px;color:rgba(255,255,255,0.55);font-weight:700;text-shadow:0 0 8px rgba(0,0,0,0.3);pointer-events:none;">${name}</span>
+                            </div>`,
+                            iconSize: null,
+                            iconAnchor: [0, 0]
+                        })
+                    });
+                    window.__wmLayer.addLayer(wm);
+                });
+            }
         } else {
             // Full zoom: show all individual labels at original positions
+            // Rebuild watermarks at full zoom level too
+            if (window.__wmLayer) {
+                window.__wmLayer.clearLayers();
+                const wmFullSize = Math.round(baseSize * 1.6);
+                // At full zoom, baseSize is tiny — use zoom 17 watermark size instead
+                const wmZoom17Size = Math.round(getLabelFontSize(17) * 1.6);
+                const wmEffectiveSize = Math.max(wmFullSize, wmZoom17Size);
+                const wmDone = {};
+                zoneLabels.forEach(label => {
+                    const zone = label._zone;
+                    if (!zone || !zone.name || wmDone[zone.name]) return;
+                    wmDone[zone.name] = true;
+                    // Collect all centers for this name
+                    let sLat = 0, sLng = 0, cnt = 0;
+                    zoneLabels.forEach(l => {
+                        if (l._zone && l._zone.name === zone.name && l._originalCenter) {
+                            sLat += l._originalCenter[0]; sLng += l._originalCenter[1]; cnt++;
+                        }
+                    });
+                    if (cnt === 0) return;
+                    const wm = L.marker([sLat / cnt, sLng / cnt], {
+                        interactive: false,
+                        icon: L.divIcon({
+                            className: 'zone-watermark',
+                            html: `<div style="transform:translate(-50%,-50%);white-space:nowrap;">
+                                <span style="font-size:${wmEffectiveSize}px;color:rgba(255,255,255,0.55);font-weight:700;text-shadow:0 0 8px rgba(0,0,0,0.3);pointer-events:none;">${zone.name}</span>
+                            </div>`,
+                            iconSize: null, iconAnchor: [0, 0]
+                        })
+                    });
+                    window.__wmLayer.addLayer(wm);
+                });
+            }
             zoneLabels.forEach(label => {
                 const el = label.getElement();
                 if (el) {
@@ -593,9 +695,22 @@
                 };
 
                 if (isMultiPolygonFormat(zone.boundary_points)) {
-                    // Multi-polygon: each element is a separate polygon ring
+                    // Check if nested multi-group: [[[{lat,lng},...], ...], ...]
+                    const bp = zone.boundary_points;
+                    const isNestedMultiGroup = bp.length > 0 && Array.isArray(bp[0]) && bp[0].length > 0
+                        && Array.isArray(bp[0][0]) && bp[0][0].length > 0 && (bp[0][0][0]?.lat !== undefined || bp[0][0][0]?.lng !== undefined);
+
+                    // Flatten to a list of rings for rendering
+                    let flatRings;
+                    if (isNestedMultiGroup) {
+                        flatRings = [];
+                        bp.forEach(group => { group.forEach(ring => { flatRings.push(ring); }); });
+                    } else {
+                        flatRings = bp;
+                    }
+
                     let allLatLngs = [];
-                    zone.boundary_points.forEach((ring, ringIdx) => {
+                    flatRings.forEach((ring, ringIdx) => {
                         const latLngs = pointsToLatLngs(ring);
                         if (latLngs.length < 3) return;
 
@@ -605,12 +720,10 @@
                         polygon.on('mouseover', handleMouseOver);
                         polygon.on('mouseout', handleMouseOut);
                         polygon.on('click', handleClick);
-                        polygon.on('contextmenu', handleContextMenu);
                         polygon.bindTooltip(`${zone.code} ${zone.name || ''}`, {sticky: true});
                         zonesLayerGroup.addLayer(polygon);
                         allLatLngs = allLatLngs.concat(latLngs);
                     });
-                    // Only one label per zone, centered on all rings combined
                     if (allLatLngs.length > 0) {
                         zone._allLatLngs = allLatLngs;
                         addZoneLabel(zone);
@@ -626,7 +739,6 @@
                     polygon.on('mouseover', handleMouseOver);
                     polygon.on('mouseout', handleMouseOut);
                     polygon.on('click', handleClick);
-                    polygon.on('contextmenu', handleContextMenu);
                     polygon.bindTooltip(`${zone.code} ${zone.name || ''}`, {sticky: true});
                     zonesLayerGroup.addLayer(polygon);
                     zone._allLatLngs = latLngs;
@@ -894,6 +1006,10 @@
                 </div>
                 ${hasExtra ? '<div class="popup-fields">' + fieldsHtml + faultHtml + pendingHtml + '</div>' : ''}
                 <div class="popup-footer">
+                    <div class="popup-quick-actions">
+                        <button class="popup-action-btn popup-action-primary" onclick="if(typeof window.quickWorkorder==='function')window.quickWorkorder(['${zone.code}'])">📝 创建工单</button>
+                        <button class="popup-action-btn popup-action-patch" data-patch-id="${zone.patchId || ''}" data-zone-code="${zone.code}" onclick="window._quickPatchWorkorder(this)">📋 片区工单</button>
+                    </div>
                     <button class="popup-detail-btn" onclick="window.location.href='/zone/${zone.id}/detail/'">查看区域详情</button>
                 </div>
             </div>
@@ -989,18 +1105,34 @@
     window._dashboardZonesLayer = zonesLayerGroup;
     window.handleFieldToggle = handleFieldToggle;
 
+    // Quick workorder from profile card — collect all zones in same patch
+    window._quickPatchWorkorder = function (btn) {
+        var patchId = btn.getAttribute('data-patch-id');
+        var zoneCode = btn.getAttribute('data-zone-code');
+        if (!patchId || !zoneCode) return;
+        var codes = [zoneCode];
+        if (window._dashboardZonesLayer) {
+            window._dashboardZonesLayer.eachLayer(function (l) {
+                if (l.zoneData && l.zoneData.patchId == patchId && l.zoneData.code && !codes.includes(l.zoneData.code)) {
+                    codes.push(l.zoneData.code);
+                }
+            });
+        }
+        if (typeof window.quickWorkorder === 'function') window.quickWorkorder(codes);
+    };
+
     window.handleSmoothCustomToggle = function(checked) {
         const slider = document.getElementById('smoothOverrideSlider');
         if (slider) slider.disabled = !checked;
         if (!checked && slider) slider.value = _smoothIter;
     };
 
-    function _getCSRF() {
+    window._getCSRFToken = window._getCSRFToken || function() {
         const fromInput = document.querySelector('[name=csrfmiddlewaretoken]');
         if (fromInput) return fromInput.value;
         const match = document.cookie.match(/csrftoken=([^;]+)/);
         return match ? match[1] : '';
-    }
+    };
 
     function _smoothToast(msg) {
         let t = document.getElementById('_smoothToast');
@@ -1019,7 +1151,7 @@
 
         fetch(`/zone/${currentPopupZoneData.id}/smooth/`, {
             method: 'POST',
-            headers: {'Content-Type': 'application/json', 'X-CSRFToken': _getCSRF()},
+            headers: {'Content-Type': 'application/json', 'X-CSRFToken': window._getCSRFToken()},
             body: JSON.stringify({smooth_override: val})
         }).then(r => r.json()).then(data => {
             if (data.success) {
@@ -1057,7 +1189,18 @@
         }
 
         if (isMultiPolygonFormat(zone.boundary_points)) {
-            zone.boundary_points.forEach(ring => {
+            // Check nested multi-group and flatten
+            const bp = zone.boundary_points;
+            const isNestedMultiGroup = bp.length > 0 && Array.isArray(bp[0]) && bp[0].length > 0
+                && Array.isArray(bp[0][0]) && bp[0][0].length > 0 && (bp[0][0][0]?.lat !== undefined || bp[0][0][0]?.lng !== undefined);
+            let flatRings;
+            if (isNestedMultiGroup) {
+                flatRings = [];
+                bp.forEach(group => { group.forEach(ring => { flatRings.push(ring); }); });
+            } else {
+                flatRings = bp;
+            }
+            flatRings.forEach(ring => {
                 const ll = pointsToLatLngs(ring);
                 if (ll.length < 3) return;
                 const poly = L.polygon(_smoothLL(ll, _zoneSmooth(zone)), zoneStyle);
@@ -1093,6 +1236,10 @@
 
     // Currently highlighted zone ID (for multi-polygon highlighting)
     let highlightedZoneId = null;
+    let highlightedLayer = null;
+
+    // Flag to prevent map click handler from hiding popup right after polygon click
+    let _polygonJustClicked = false;
 
     /**
      * Highlight all polygons belonging to a zone
@@ -1159,6 +1306,10 @@
         const zoneId = layer.zoneData?.id;
 
         if (zoneId) {
+            // Prevent map click handler from hiding popup right after this
+            _polygonJustClicked = true;
+            setTimeout(function() { _polygonJustClicked = false; }, 0);
+
             highlightZonePolygons(zoneId);
 
             // Highlight the corresponding sidebar item
@@ -1167,102 +1318,6 @@
             // Show fixed popup panel
             showZonePopup(layer.zoneData);
         }
-    }
-
-    /**
-     * Handle long-press / right-click on zone polygon — show quick workorder menu
-     * @param {Event} e - Leaflet event
-     */
-    function handleContextMenu(e) {
-        if (window._v2ModalMapMode) return;
-        L.DomEvent.stopPropagation(e);
-        L.DomEvent.preventDefault(e);
-        const layer = e.target;
-        if (!layer.zoneData || !layer.zoneData.code) return;
-
-        const zoneCode = layer.zoneData.code;
-        const zoneName = layer.zoneData.name || zoneCode;
-        const patchId = layer.zoneData.patchId;
-
-        // Collect all zone codes in the same patch
-        let patchZoneCodes = [zoneCode];
-        if (patchId && window._dashboardZonesLayer) {
-            window._dashboardZonesLayer.eachLayer(function (l) {
-                if (l.zoneData && l.zoneData.patchId === patchId && l.zoneData.code) {
-                    if (!patchZoneCodes.includes(l.zoneData.code)) patchZoneCodes.push(l.zoneData.code);
-                }
-            });
-        }
-
-        showZoneContextMenu(e.containerPoint || e.originalEvent, zoneCode, zoneName, patchZoneCodes);
-    }
-
-    /**
-     * Show a context menu for quick workorder creation
-     */
-    function showZoneContextMenu(point, zoneCode, zoneName, patchZoneCodes) {
-        hideZoneContextMenu();
-        const map = window._map;
-        if (!map) return;
-
-        const container = map.getContainer();
-        const menu = document.createElement('div');
-        menu.id = 'zoneContextMenu';
-        menu.style.cssText = 'position:absolute;z-index:4000;background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,0.15);padding:6px 0;min-width:180px;font-size:0.85em;overflow:hidden;';
-
-        const x = point.x !== undefined ? point.x : point.clientX - container.getBoundingClientRect().left;
-        const y = point.y !== undefined ? point.y : point.clientY - container.getBoundingClientRect().top;
-
-        // Clamp to viewport
-        menu.style.left = Math.min(x, container.clientWidth - 200) + 'px';
-        menu.style.top = Math.min(y, container.clientHeight - 120) + 'px';
-
-        const items = [
-            { label: '📝 为 ' + zoneName + ' 创建工单', codes: [zoneCode] },
-            { label: '📋 为片区创建工单 (' + patchZoneCodes.length + ' 个区域)', codes: patchZoneCodes },
-        ];
-
-        items.forEach(function (item) {
-            const btn = document.createElement('div');
-            btn.textContent = item.label;
-            btn.style.cssText = 'padding:10px 16px;cursor:pointer;color:#333;transition:background 0.15s;white-space:nowrap;';
-            btn.onmouseenter = function () { btn.style.background = '#f0f7f4'; };
-            btn.onmouseleave = function () { btn.style.background = ''; };
-            btn.onclick = function () {
-                hideZoneContextMenu();
-                if (typeof window.quickWorkorder === 'function') {
-                    window.quickWorkorder(item.codes);
-                }
-            };
-            menu.appendChild(btn);
-        });
-
-        container.appendChild(menu);
-
-        // Close on click outside
-        setTimeout(function () {
-            document.addEventListener('click', _hideCtxOnOutside);
-        }, 50);
-    }
-
-    function _hideCtxOnOutside(e) {
-        const menu = document.getElementById('zoneContextMenu');
-        if (menu && !menu.contains(e.target)) hideZoneContextMenu();
-    }
-
-    function hideZoneContextMenu() {
-        const menu = document.getElementById('zoneContextMenu');
-        if (menu) menu.remove();
-        document.removeEventListener('click', _hideCtxOnOutside);
-    }
-
-    /**
-     * Fit map bounds to show all zones
-     * @param {Array} zones - Array of zone objects
-     */
-    function fitMapToBounds(zones) {
-        // Keep map at predefined center - don't auto-adjust
-        // The map is already centered at the specified location
     }
 
     /**
@@ -1376,47 +1431,18 @@
         document.querySelectorAll('.zone-item').forEach(item => {
             item.addEventListener('click', function() {
                 const zoneId = parseInt(this.dataset.zoneId);
-                console.log('Sidebar click: zoneId =', zoneId);
 
-                // Check how many layers we have
-                const layers = zonesLayerGroup.getLayers();
-                console.log('Total layers in group:', layers.length);
-                console.log('Layer zoneData IDs:', layers.map(l => l.zoneData?.id));
-
+                // Find a matching layer for popup data
                 let found = false;
-                // Find and highlight the corresponding map layer
                 zonesLayerGroup.eachLayer(layer => {
-                    console.log('Checking layer.zoneData.id:', layer.zoneData?.id, 'type:', typeof layer.zoneData?.id, 'vs zoneId:', zoneId, 'type:', typeof zoneId);
-                    if (layer.zoneData?.id === zoneId) {
+                    if (layer.zoneData?.id === zoneId && !found) {
                         found = true;
-                        console.log('Found matching layer for zone:', zoneId);
-
-                        // Reset previously highlighted layer
-                        if (highlightedLayer && highlightedLayer !== layer) {
-                            highlightedLayer.setStyle(highlightedLayer.originalStyle || defaultStyle);
-                        }
                         highlightedLayer = layer;
-                        layer.setStyle(highlightStyle);
-                        layer.bringToFront();
-
-                        // Show fixed popup panel
+                        highlightedZoneId = zoneId;
+                        highlightZonePolygons(zoneId);
                         showZonePopup(layer.zoneData);
-
-                        // Fly to the zone with smooth animation (disabled)
-                        // const bounds = layer.getBounds();
-                        // if (bounds) {
-                        //     map.flyToBounds(bounds, {
-                        //         padding: [50, 50],
-                        //         duration: 0.8,
-                        //         easeLinearity: 0.25
-                        //     });
-                        // }
                     }
                 });
-
-                if (!found) {
-                    console.warn('No matching layer found for zoneId:', zoneId);
-                }
 
                 // Update sidebar selection
                 highlightSidebarItem(zoneId);
@@ -1426,91 +1452,48 @@
 
     /**
      * Locate user and show marker on map
+     * @param {Object} [opts] - Options: { auto: true } for auto-locate mode
      */
-    function locateUser() {
+    function locateUser(opts) {
+        opts = opts || {};
+        var isAuto = opts.auto || false;
         if (!('geolocation' in navigator)) {
-            alert('您的浏览器不支持定位功能');
+            if (!isAuto) alert('您的浏览器不支持定位功能');
             return;
         }
-
-        // Show loading state
-        const locateBtn = document.querySelector('.locate-btn');
-        if (locateBtn) {
-            locateBtn.disabled = true;
-            locateBtn.style.opacity = '0.5';
-        }
+        var locateBtn = isAuto ? null : document.querySelector('.locate-btn');
+        if (locateBtn) { locateBtn.disabled = true; locateBtn.style.opacity = '0.5'; }
+        var markerColor = isAuto ? '#D4A574' : '#1B4332';
+        var markerShadow = isAuto ? 'rgba(212, 165, 74, 0.4)' : 'rgba(27, 67, 50, 0.3)';
 
         navigator.geolocation.getCurrentPosition(
             function(position) {
-                const lat = position.coords.latitude;
-                const lng = position.coords.longitude;
-                const accuracy = position.coords.accuracy;
-
-                // Remove existing marker
-                if (userMarker) {
-                    map.removeLayer(userMarker);
-                }
-                if (userAccuracyCircle) {
-                    map.removeLayer(userAccuracyCircle);
-                }
-
-                // Add accuracy circle
-                userAccuracyCircle = L.circle([lat, lng], {
-                    radius: accuracy,
-                    color: '#1B4332',
-                    fillColor: '#2D6A4F',
-                    fillOpacity: 0.15,
-                    weight: 1
-                }).addTo(map);
-
-                // Add user marker
+                var lat = position.coords.latitude, lng = position.coords.longitude, accuracy = position.coords.accuracy;
+                if (userMarker) map.removeLayer(userMarker);
+                if (userAccuracyCircle) map.removeLayer(userAccuracyCircle);
+                userAccuracyCircle = L.circle([lat, lng], { radius: accuracy, color: '#1B4332', fillColor: '#2D6A4F', fillOpacity: 0.15, weight: 1 }).addTo(map);
                 userMarker = L.marker([lat, lng], {
-                    icon: L.divIcon({
-                        className: 'user-location-marker',
-                        html: '<div style="background: #1B4332; width: 16px; height: 16px; border: 3px solid white; border-radius: 50%; box-shadow: 0 0 0 2px #1B4332, 0 2px 8px rgba(27, 67, 50, 0.3);"></div>',
-                        iconSize: [22, 22],
-                        iconAnchor: [11, 11]
+                    icon: L.divIcon({ className: 'user-location-marker',
+                        html: '<div style="background: ' + markerColor + '; width: 16px; height: 16px; border: 3px solid white; border-radius: 50%; box-shadow: 0 0 0 2px ' + markerColor + ', 0 2px 8px ' + markerShadow + ';"></div>',
+                        iconSize: [22, 22], iconAnchor: [11, 11]
                     })
                 }).addTo(map);
-
-                // Pan map to user location
-                map.flyTo([lat, lng], 16, {
-                    animate: true,
-                    duration: 1.5
-                });
-
-                // Reset button
-                if (locateBtn) {
-                    locateBtn.disabled = false;
-                    locateBtn.style.opacity = '';
+                map.flyTo([lat, lng], 16, { animate: true, duration: isAuto ? 1.0 : 1.5 });
+                if (locateBtn) { locateBtn.disabled = false; locateBtn.style.opacity = ''; }
+                if (!isAuto) {
+                    L.popup().setLatLng([lat, lng]).setContent('<div><strong>您的位置</strong><br>精度: ~' + Math.round(accuracy) + '米</div>').openOn(map);
                 }
-                L.popup()
-                    .setLatLng([lat, lng])
-                    .setContent(`<div><strong>您的位置</strong><br>精度: ~${Math.round(accuracy)}米</div>`)
-                    .openOn(map);
             },
             function(error) {
-                // Reset button
-                if (locateBtn) {
-                    locateBtn.disabled = false;
-                    locateBtn.style.opacity = '';
+                if (locateBtn) { locateBtn.disabled = false; locateBtn.style.opacity = ''; }
+                if (!isAuto) {
+                    var message = '无法获取您的位置';
+                    if (error.code === error.PERMISSION_DENIED) message = '定位权限被拒绝，请在浏览器设置中允许定位。';
+                    else if (error.code === error.TIMEOUT) message = '定位请求超时，请重试。';
+                    alert(message);
                 }
-
-                // Show error
-                let message = '无法获取您的位置';
-                if (error.code === error.PERMISSION_DENIED) {
-                    message = '定位权限被拒绝，请在浏览器设置中允许定位。';
-                } else if (error.code === error.TIMEOUT) {
-                    message = '定位请求超时，请重试。';
-                }
-                alert(message);
-                console.error('Location error:', error);
             },
-            {
-                enableHighAccuracy: true,
-                timeout: 10000,
-                maximumAge: 0
-            }
+            { enableHighAccuracy: true, timeout: isAuto ? 15000 : 10000, maximumAge: isAuto ? 60000 : 0 }
         );
     }
 
@@ -1548,66 +1531,7 @@
         addLocateButton();
     }
 
-    /**
-     * Auto locate user on page load
-     */
-    function autoLocate() {
-        if (!('geolocation' in navigator)) {
-            console.log('Geolocation not supported');
-            return;
-        }
-
-        console.log('Auto-locating...');
-        navigator.geolocation.getCurrentPosition(
-            function(position) {
-                console.log('Auto-locate success:', position.coords.latitude, position.coords.longitude);
-                const lat = position.coords.latitude;
-                const lng = position.coords.longitude;
-                const accuracy = position.coords.accuracy;
-
-                // Remove existing marker if any
-                if (userMarker) {
-                    map.removeLayer(userMarker);
-                }
-                if (userAccuracyCircle) {
-                    map.removeLayer(userAccuracyCircle);
-                }
-
-                // Add accuracy circle
-                userAccuracyCircle = L.circle([lat, lng], {
-                    radius: accuracy,
-                    color: '#1B4332',
-                    fillColor: '#2D6A4F',
-                    fillOpacity: 0.15,
-                    weight: 1
-                }).addTo(map);
-
-                // Add user marker
-                userMarker = L.marker([lat, lng], {
-                    icon: L.divIcon({
-                        className: 'user-location-marker',
-                        html: '<div style="background: #D4A574; width: 16px; height: 16px; border: 3px solid white; border-radius: 50%; box-shadow: 0 0 0 2px #D4A574, 0 2px 8px rgba(212, 165, 74, 0.4);"></div>',
-                        iconSize: [22, 22],
-                        iconAnchor: [11, 11]
-                    })
-                }).addTo(map);
-
-                // Fly to user location
-                map.flyTo([lat, lng], 16, {
-                    animate: true,
-                    duration: 1.0
-                });
-            },
-            function(error) {
-                console.log('Auto-locate failed:', error.code, error.message);
-            },
-            {
-                enableHighAccuracy: true,
-                timeout: 15000,
-                maximumAge: 60000 // Allow cached position for faster response
-            }
-        );
-    }
+    // Auto-locate is triggered from dashboard.js
 
     /**
      * Apply combined map filters (priority + plant)
