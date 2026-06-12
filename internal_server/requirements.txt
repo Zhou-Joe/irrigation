@@ -4,6 +4,7 @@ djangorestframework>=3.14
 django-cors-headers>=4.0
 requests>=2.31
 whitenoise>=6.0
+ezdxf>=1.1,<2.0
 
 # ─── Sync Agent (PyQt5 GUI + MDB Reader) ───
 PyQt5>=5.15
