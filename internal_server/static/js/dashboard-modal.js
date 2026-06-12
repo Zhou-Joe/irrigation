@@ -803,7 +803,7 @@
     function buildWorkorderForm(data) {
         var body = $('woModalBody'); if (!body) return;
         var shiftChips = data.sorted_shifts.map(function (s, i) {
-            return '<label class="v2-chip' + (i === 0 ? ' active' : '') + '" data-val="' + s + '"><input type="radio" name="shift" value="' + s + '" style="display:none;"' + (i === 0 ? ' checked' : '') + '>' + s + '</label>';
+            return '<div class="v2-chip' + (i === 0 ? ' active' : '') + '" data-val="' + s + '"><input type="radio" name="shift" value="' + s + '" style="display:none;"' + (i === 0 ? ' checked' : '') + '>' + s + '</div>';
         }).join('');
 
         body.innerHTML =
@@ -812,7 +812,7 @@
             '<div class="v2-fg"><div class="v2-form-row"><div style="flex:1.2;"><div class="v2-fl">班次</div><div class="v2-chip-group">' + shiftChips + '</div></div><div style="flex:0.8;"><div class="v2-fl">灌溉组</div><input type="number" name="team_size" value="1" min="0" max="99" class="v2-input" style="text-align:center;"></div><div style="flex:0.8;"><div class="v2-fl">第三方</div><input type="number" name="third_party_count" value="0" min="0" max="99" class="v2-input" style="text-align:center;"></div></div><div id="woHours" style="margin-top:2px;font-size:0.85em;color:#888;"></div></div>' +
             '<div class="v2-fg"><div class="v2-form-row"><div><div class="v2-fl">开始时间</div><select name="work_start_time" id="woStart" class="v2-select"><option value="">--</option></select></div><div><div class="v2-fl">完成时间</div><select name="work_end_time" id="woEnd" class="v2-select"><option value="">--</option></select></div></div></div>' +
             '<div class="v2-fg"><div class="v2-form-row"><div style="flex:1;"><div class="v2-fl">工作类别</div><div id="woCatTrigger" style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border:1px solid #ddd;border-radius:8px;cursor:pointer;background:#fff;font-size:16px;"><span id="woCatDisplay" style="color:#bbb;">选择</span><span style="font-size:0.8em;color:#999;">▶</span></div><input type="hidden" name="work_category" id="woCatInput"></div><div style="flex:1;"><div class="v2-fl">故障详情</div><div id="woFaultTrigger" style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border:1px solid #ddd;border-radius:8px;cursor:pointer;background:#fff;font-size:16px;"><span id="woFaultDisplay" style="color:#bbb;">选择</span><span style="font-size:0.8em;color:#999;">▶</span></div><input type="hidden" name="fault_entries" id="woFaultInput"></div></div></div>' +
-            '<div class="v2-fg"><div class="v2-form-row"><div><div class="v2-fl">疑难</div><div class="v2-chip-group"><label class="v2-chip active" data-val=""><input type="radio" name="is_difficult" value="" style="display:none;" checked>否</label><label class="v2-chip" data-val="1"><input type="radio" name="is_difficult" value="1" style="display:none;">是</label></div></div><div><div class="v2-fl">已处理</div><div class="v2-chip-group"><label class="v2-chip active" data-val=""><input type="radio" name="is_difficult_resolved" value="" style="display:none;" checked>否</label><label class="v2-chip" data-val="1"><input type="radio" name="is_difficult_resolved" value="1" style="display:none;">是</label></div></div></div></div>' +
+            '<div class="v2-fg"><div class="v2-form-row"><div><div class="v2-fl">疑难</div><div class="v2-chip-group"><div class="v2-chip active" data-val=""><input type="radio" name="is_difficult" value="" style="display:none;" checked>否</div><div class="v2-chip" data-val="1"><input type="radio" name="is_difficult" value="1" style="display:none;">是</div></div></div><div><div class="v2-fl">已处理</div><div class="v2-chip-group"><div class="v2-chip active" data-val=""><input type="radio" name="is_difficult_resolved" value="" style="display:none;" checked>否</div><div class="v2-chip" data-val="1"><input type="radio" name="is_difficult_resolved" value="1" style="display:none;">是</div></div></div></div></div>' +
             '<div class="v2-fg"><div class="v2-fl">工作内容</div><textarea name="work_content" class="v2-textarea" placeholder="请描述工作内容..." rows="3"></textarea></div>' +
             '<div class="v2-fg"><div class="v2-fl">照片 (最多6张)</div><div class="v2-photo-area" id="woPhotoArea"><div class="v2-photo-add" id="woPhotoAdd">+</div></div><input type="file" id="woPhotoInput" accept="image/*" multiple style="display:none;"></div>' +
             '<input type="hidden" name="remark" value=""></form>' +
@@ -852,13 +852,9 @@
         document.querySelector('[name="third_party_count"]').addEventListener('input', calcHours);
         calcHours();
 
-        document.querySelectorAll('#woModalBody .v2-chip-group:first-of-type .v2-chip').forEach(function (c) {
-            c.addEventListener('click', function () { c.closest('.v2-chip-group').querySelectorAll('.v2-chip').forEach(function (x) { x.classList.remove('active'); }); c.classList.add('active'); c.querySelector('input').checked = true; });
+        document.querySelectorAll('#woModalForm .v2-chip-group .v2-chip').forEach(function (c) {
+            c.addEventListener('click', function () { c.closest('.v2-chip-group').querySelectorAll('.v2-chip').forEach(function (x) { x.classList.remove('active'); }); c.classList.add('active'); var inp = c.querySelector('input'); if (inp) inp.checked = true; });
         });
-        var chipGroups = document.querySelectorAll('#woModalBody .v2-chip-group');
-        for (var i = 1; i < chipGroups.length; i++) { (function (group) {
-            group.querySelectorAll('.v2-chip').forEach(function (c) { c.addEventListener('click', function () { group.querySelectorAll('.v2-chip').forEach(function (x) { x.classList.remove('active'); }); c.classList.add('active'); c.querySelector('input').checked = true; }); });
-        })(chipGroups[i]); }
 
         var selectedCatId = null, catPrimary = $('woCatPrimary'), subcatGrid = $('woSubcat');
         data.category_tree.forEach(function (cat) {

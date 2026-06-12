@@ -1279,8 +1279,14 @@
      * Handle mouse over event on zone
      * @param {Event} e - Leaflet event
      */
+    let _lastTooltipLayer = null;
     function handleMouseOver(e) {
         if (window._v2ModalMapMode) return;
+        // Close previous tooltip to ensure only one visible at a time
+        if (_lastTooltipLayer && _lastTooltipLayer !== e.target) {
+            _lastTooltipLayer.closeTooltip();
+        }
+        _lastTooltipLayer = e.target;
         const layer = e.target;
         const zoneId = layer.zoneData?.id;
         if (zoneId) highlightZonePolygons(zoneId);
