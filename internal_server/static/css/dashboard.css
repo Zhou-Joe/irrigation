@@ -1189,6 +1189,24 @@
 .v2-draw-content.active{display:block;}
 .v2-draw-content .v2-chip-group{justify-content:center;}
 
+/* Workorder zone selection bar — search + name multiselect */
+.wo-zone-search-input{
+    width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid #ddd;border-radius:8px;
+    font-size:0.9em;outline:none;margin-bottom:6px;
+}
+.wo-zone-search-input:focus{border-color:#2D6A4F;}
+.wo-zone-search-results{max-height:32vh;overflow-y:auto;}
+.wo-zone-search-item{
+    display:flex;align-items:center;justify-content:space-between;padding:8px 10px;border-radius:8px;
+    cursor:pointer;font-size:0.85em;transition:background 0.15s;
+}
+.wo-zone-search-item:hover{background:#e8f5e9;}
+.wo-zone-search-item.selected{background:#d4edda;}
+.wo-zone-search-item .wo-zs-code{font-weight:600;color:#2D6A4F;}
+.wo-zone-search-item .wo-zs-name{color:#888;font-size:0.9em;margin-left:4px;}
+.wo-zone-search-item .wo-zs-check{color:#2D6A4F;font-size:1em;}
+.wo-zone-search-empty{padding:12px;text-align:center;color:#aaa;font-size:0.85em;}
+
 /* V2 toast */
 #v2ModalToast{
     position:fixed;top:20px;left:50%;transform:translateX(-50%);

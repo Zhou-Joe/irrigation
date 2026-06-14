@@ -1008,7 +1008,7 @@
                 <div class="popup-footer">
                     <div class="popup-quick-actions">
                         <button class="popup-action-btn popup-action-primary" onclick="if(typeof window.quickWorkorder==='function')window.quickWorkorder(['${zone.code}'])">📝 创建工单</button>
-                        <button class="popup-action-btn popup-action-patch" data-patch-id="${zone.patchId || ''}" data-zone-code="${zone.code}" onclick="window._quickPatchWorkorder(this)">📋 片区工单</button>
+                        <button class="popup-action-btn popup-action-patch" data-zone-name="${zone.name || ''}" data-zone-code="${zone.code}" onclick="window._quickPatchWorkorder(this)">📋 片区工单</button>
                     </div>
                     <button class="popup-detail-btn" onclick="window.location.href='/zone/${zone.id}/detail/'">查看区域详情</button>
                 </div>
@@ -1105,15 +1105,16 @@
     window._dashboardZonesLayer = zonesLayerGroup;
     window.handleFieldToggle = handleFieldToggle;
 
-    // Quick workorder from profile card — collect all zones in same patch
+    // Quick workorder from profile card — collect all zones sharing the same 通用名称 (zone.name)
     window._quickPatchWorkorder = function (btn) {
-        var patchId = btn.getAttribute('data-patch-id');
+        var zoneName = btn.getAttribute('data-zone-name');
         var zoneCode = btn.getAttribute('data-zone-code');
-        if (!patchId || !zoneCode) return;
+        if (!zoneCode) return;
         var codes = [zoneCode];
-        if (window._dashboardZonesLayer) {
+        // Group by common name (zone.name); if name is empty, fall back to just this zone
+        if (zoneName && window._dashboardZonesLayer) {
             window._dashboardZonesLayer.eachLayer(function (l) {
-                if (l.zoneData && l.zoneData.patchId == patchId && l.zoneData.code && !codes.includes(l.zoneData.code)) {
+                if (l.zoneData && l.zoneData.name === zoneName && l.zoneData.code && !codes.includes(l.zoneData.code)) {
                     codes.push(l.zoneData.code);
                 }
             });
