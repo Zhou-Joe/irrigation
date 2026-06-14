@@ -608,7 +608,7 @@
     // ── Mobile FAB Menu ──
 
     function initFabMenu() {
-        if (!('ontouchstart' in window) && window.innerWidth > 768) return;
+        var isDesktop = !('ontouchstart' in window) && window.innerWidth > 768;
 
         // Action map — replaces eval()
         var fabActions = {
@@ -620,15 +620,19 @@
         fabWrap.className = 'fab-mobile-wrap';
         fabWrap.style.cssText = 'position:relative;z-index:999;';
 
-        // Menu items: stacked vertically ABOVE the FAB (since FAB is in top-right cluster)
+        // Menu items: a centered horizontal row on screen (independent of the FAB position)
         var menuContainer = document.createElement('div');
-        menuContainer.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:8px;margin-bottom:8px;order:-1;';
+        menuContainer.style.cssText = 'display:flex;flex-direction:row;align-items:center;justify-content:center;gap:8px;position:fixed;left:50%;top:64px;transform:translateX(-50%);z-index:1199;';
 
         var menuItems = [
             { icon: '📝', label: '工单提交', key: 'workorder' },
             { icon: '💧', label: '浇水需求', key: 'water_request' },
             { icon: '📋', label: '历史记录', url: window.HISTORY_URL || '#' },
         ];
+
+        // Options are visible by default (shown above the FAB on page load).
+        // The FAB toggles between expanded (options visible) and collapsed (options hidden).
+        var open = true;
 
         var menuEls = [];
         menuItems.forEach(function (item) {
@@ -640,30 +644,21 @@
                 a.onclick = function (e) {
                     e.preventDefault();
                     e.stopPropagation();
-                    // Close FAB menu
-                    open = false;
-                    fab.classList.remove('active');
-                    menuEls.forEach(function (el) {
-                        el.style.opacity = '0';
-                        el.style.transform = 'translateY(-10px)';
-                        el.style.pointerEvents = 'none';
-                    });
                     if (fabActions[item.key]) fabActions[item.key]();
                 };
             }
             a.innerHTML = '<span style="font-size:1.3em">' + item.icon + '</span><span style="font-size:0.75em;margin-top:2px">' + item.label + '</span>';
-            a.style.cssText = 'display:flex;flex-direction:column;align-items:center;justify-content:center;width:60px;height:60px;border-radius:14px;background:#fff;color:#222;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,0.12);opacity:0;transform:translateY(10px);transition:opacity 0.2s,transform 0.2s;pointer-events:none;';
+            a.style.cssText = 'display:flex;flex-direction:column;align-items:center;justify-content:center;width:60px;height:60px;border-radius:14px;background:#fff;color:#222;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,0.12);opacity:1;transform:translateY(0);transition:opacity 0.2s,transform 0.2s;pointer-events:auto;';
             menuContainer.appendChild(a);
             menuEls.push(a);
         });
 
         var fab = document.createElement('button');
-        fab.className = 'fab-btn';
+        fab.className = 'fab-btn active';
         fab.style.cssText = 'width:42px;height:42px;border-radius:50%;border:3px solid rgba(255,255,255,0.95);color:#fff;display:flex;align-items:center;justify-content:center;font-size:1.3em;cursor:pointer;transition:all 0.3s cubic-bezier(0.22,1,0.36,1);';
         fab.innerHTML = '&#9776;';
         fab.title = '功能菜单';
 
-        var open = false;
         fab.addEventListener('click', function () {
             open = !open;
             if (open) {
@@ -688,7 +683,16 @@
 
         fabWrap.appendChild(fab);
         fabWrap.appendChild(menuContainer);
-        document.body.appendChild(fabWrap);
+
+        if (isDesktop) {
+            // Desktop: FAB fixed to bottom-right; menu stays fixed centered-top
+            fabWrap.style.cssText = 'position:fixed;right:24px;bottom:24px;z-index:999;';
+            document.body.appendChild(fabWrap);
+            // menuContainer is already position:fixed centered-top, mount it on body too
+            // (it lives inside fabWrap but its own fixed positioning keeps it visible)
+        } else {
+            document.body.appendChild(fabWrap);
+        }
 
         document.addEventListener('click', function (e) {
             if (open && !fabWrap.contains(e.target)) {
@@ -697,25 +701,27 @@
         });
 
         // Rearrange buttons into top-right cluster on mobile
-        var cluster = document.getElementById('mobileBtnCluster');
-        if (cluster) {
-            var layerPanel = document.getElementById('mapLayerPanel');
-            if (layerPanel) cluster.appendChild(layerPanel);
-            var filterWidget = document.getElementById('mapFilterWidget');
-            if (filterWidget) cluster.appendChild(filterWidget);
-            cluster.appendChild(fabWrap);
-            // Move locate button into cluster (after Leaflet creates it)
-            function moveLocateBtn() {
-                var locateBtn = document.querySelector('.locate-btn');
-                var slot = document.getElementById('mobileLocateSlot');
-                if (locateBtn && slot && !slot.contains(locateBtn)) {
-                    slot.appendChild(locateBtn);
-                    locateBtn.style.margin = '0';
+        if (!isDesktop) {
+            var cluster = document.getElementById('mobileBtnCluster');
+            if (cluster) {
+                var layerPanel = document.getElementById('mapLayerPanel');
+                if (layerPanel) cluster.appendChild(layerPanel);
+                var filterWidget = document.getElementById('mapFilterWidget');
+                if (filterWidget) cluster.appendChild(filterWidget);
+                cluster.appendChild(fabWrap);
+                // Move locate button into cluster (after Leaflet creates it)
+                function moveLocateBtn() {
+                    var locateBtn = document.querySelector('.locate-btn');
+                    var slot = document.getElementById('mobileLocateSlot');
+                    if (locateBtn && slot && !slot.contains(locateBtn)) {
+                        slot.appendChild(locateBtn);
+                        locateBtn.style.margin = '0';
+                    }
                 }
+                moveLocateBtn();
+                setTimeout(moveLocateBtn, 500);
+                setTimeout(moveLocateBtn, 1500);
             }
-            moveLocateBtn();
-            setTimeout(moveLocateBtn, 500);
-            setTimeout(moveLocateBtn, 1500);
         }
     }
 

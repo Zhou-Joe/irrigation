@@ -24,6 +24,14 @@
     var _photoFiles = [];
     var _faultEntries = [];
 
+    // Validate a modal-data API response. Rejects error objects (e.g. {error:'无权限'})
+    // so they are never cached and passed to buildForm.
+    function isValidFormData(type, data) {
+        if (!data || data.error) return false;
+        if (type === 'workorder') return Array.isArray(data.sorted_shifts);
+        return true; // water_request: no strict required arrays
+    }
+
     function getMap() { return window._map; }
     function $(id) { return document.getElementById(id); }
 
@@ -87,7 +95,9 @@
         if (!_formDataCache[type]) {
             fetch(dataUrl, { credentials: 'same-origin' })
                 .then(function (r) { return r.json(); })
-                .then(function (data) { _formDataCache[type] = data; })
+                .then(function (data) {
+                    if (isValidFormData(type, data)) _formDataCache[type] = data;
+                })
                 .catch(function () {});
         }
 
@@ -126,7 +136,18 @@
         } else {
             fetch('/api/modal/workorder-data/', { credentials: 'same-origin' })
                 .then(function (r) { return r.json(); })
-                .then(function (data) { _formDataCache.workorder = data; showForm(); })
+                .then(function (data) {
+                    if (!isValidFormData('workorder', data)) {
+                        // Surface API errors (e.g. 无权限) instead of building a broken form
+                        _currentModal = null;
+                        _zoneConfirmed = false;
+                        _selectedZoneCodes.clear();
+                        showToast(data && data.error ? data.error : '加载表单失败', 'error');
+                        return;
+                    }
+                    _formDataCache.workorder = data;
+                    showForm();
+                })
                 .catch(function () { showToast('加载表单失败', 'error'); });
         }
     };
@@ -175,8 +196,12 @@
         var actionBar = $('v2MapActionBar');
         if (actionBar) { actionBar.style.display = ''; updateActionBar(); }
 
-        if (type === 'workorder') enableTapSelect();
-        else showDrawToolBar();
+        if (type === 'workorder') {
+            enableTapSelect();
+            showWoSelectBar();
+        } else {
+            showDrawToolBar();
+        }
     };
 
     // P0-3: exitMapMode returns boolean — false when zone validation blocks exit
@@ -206,7 +231,7 @@
         if (container) { container.style.display = ''; container.classList.add('open'); }
 
         // Build form if not yet rendered
-        if (_formDataCache[type]) {
+        if (_formDataCache[type] && isValidFormData(type, _formDataCache[type])) {
             var bodyId = type === 'workorder' ? 'woModalBody' : 'wrModalBody';
             var body = $(bodyId);
             if (body && (!body.querySelector('form') || body.querySelector('.loading'))) {
@@ -223,6 +248,8 @@
         if (actionBar) actionBar.style.display = 'none';
         var drawBar = $('v2DrawToolBar');
         if (drawBar) drawBar.style.display = 'none';
+        var woSelectBar = $('v2WoSelectBar');
+        if (woSelectBar) woSelectBar.style.display = 'none';
         disableMapInteraction();
         return true;
     };
@@ -432,6 +459,207 @@
         });
         updateInfoBarText();
     }
+
+    // ── Workorder zone selection bar: search / common-name multiselect / map ──
+    var _woSearchBound = false;
+    var _woNameChipsBuilt = false;
+
+    // Source of truth for all zones: prefer the global zonesData list (has every zone),
+    // fall back to the map layer group. Returns array of {code, name}.
+    function getAllWoZones() {
+        var out = [];
+        if (window.zonesData && Array.isArray(window.zonesData)) {
+            window.zonesData.forEach(function (z) {
+                if (z && z.code) out.push({ code: z.code, name: z.name || '' });
+            });
+            return out;
+        }
+        var zl = window._dashboardZonesLayer;
+        if (zl) zl.eachLayer(function (l) {
+            if (l.zoneData && l.zoneData.code) out.push({ code: l.zoneData.code, name: l.zoneData.name || '' });
+        });
+        return out;
+    }
+
+    function showWoSelectBar() {
+        var bar = $('v2WoSelectBar'); if (bar) bar.style.display = '';
+        // Default to the search tab on each entry
+        switchWoSelectTab('search');
+        // Wire the search input once
+        if (!_woSearchBound) {
+            _woSearchBound = true;
+            var input = $('woZoneSearchInput');
+            if (input) input.addEventListener('input', function () { renderWoSearchResults(); });
+        }
+        renderWoSearchResults();
+    }
+
+    window.switchWoSelectTab = function (tab) {
+        document.querySelectorAll('#v2WoSelectBar .v2-draw-tab').forEach(function (t) {
+            t.classList.toggle('active', t.dataset.tab === tab);
+        });
+        $('woTabSearch').classList.toggle('active', tab === 'search');
+        $('woTabName').classList.toggle('active', tab === 'name');
+        $('woTabMap').classList.toggle('active', tab === 'map');
+        if (tab === 'name') buildWoNameChips();
+        if (tab === 'search') renderWoSearchResults();
+    };
+
+    // ── Search tab ──
+    // Natural (numeric-aware) comparison so "1-1-2" < "1-1-10".
+    function naturalCompare(a, b) {
+        var ax = [], bx = [];
+        a.replace(/(\d+)|(\D+)/g, function (_, $1, $2) { ax.push([$1 ? Infinity : -Infinity, $1 ? parseInt($1, 10) : $2.toLowerCase()]); });
+        b.replace(/(\d+)|(\D+)/g, function (_, $1, $2) { bx.push([$1 ? Infinity : -Infinity, $1 ? parseInt($1, 10) : $2.toLowerCase()]); });
+        while (ax.length && bx.length) {
+            var an = ax.shift(), bn = bx.shift();
+            if (an[0] !== bn[0]) return an[0] - bn[0];      // number vs string: numbers sort first
+            if (an[1] !== bn[1]) return an[1] < bn[1] ? -1 : 1;
+        }
+        return ax.length - bx.length;
+    }
+
+    // Match priority: 0 = exact code, 1 = code starts-with, 2 = code contains,
+    //                 3 = name exact, 4 = name starts-with, 5 = name contains.
+    // Lower is better (shows first).
+    function matchRank(z, q) {
+        var code = (z.code || '').toLowerCase();
+        var name = (z.name || '').toLowerCase();
+        if (code === q) return 0;
+        if (code.indexOf(q) === 0) return 1;
+        if (code.indexOf(q) !== -1) return 2;
+        if (name && name === q) return 3;
+        if (name && name.indexOf(q) === 0) return 4;
+        if (name && name.indexOf(q) !== -1) return 5;
+        return -1; // no match
+    }
+
+    function renderWoSearchResults() {
+        var container = $('woZoneSearchResults');
+        if (!container) return;
+        var input = $('woZoneSearchInput');
+        var q = (input && input.value || '').trim().toLowerCase();
+        var all = getAllWoZones();
+        var matches;
+        if (!q) {
+            // No query: list all, natural-sorted by code
+            matches = all.slice().sort(function (a, b) { return naturalCompare(a.code, b.code); });
+        } else {
+            matches = all.map(function (z) {
+                return { z: z, rank: matchRank(z, q) };
+            }).filter(function (m) { return m.rank >= 0; })
+              .sort(function (a, b) {
+                  if (a.rank !== b.rank) return a.rank - b.rank;
+                  return naturalCompare(a.z.code, b.z.code);
+              }).map(function (m) { return m.z; });
+        }
+        if (matches.length === 0) {
+            container.innerHTML = '<div class="wo-zone-search-empty">未找到匹配的区域</div>';
+            return;
+        }
+        container.innerHTML = '';
+        matches.forEach(function (z) {
+            var selected = _selectedZoneCodes.has(z.code);
+            var item = document.createElement('div');
+            item.className = 'wo-zone-search-item' + (selected ? ' selected' : '');
+            item.innerHTML =
+                '<span><span class="wo-zs-code">' + z.code + '</span>' +
+                (z.name ? '<span class="wo-zs-name">' + z.name + '</span>' : '') + '</span>' +
+                '<span class="wo-zs-check">' + (selected ? '✓' : '') + '</span>';
+            item.addEventListener('click', function () {
+                toggleWoZone(z.code, ! _selectedZoneCodes.has(z.code));
+                renderWoSearchResults();
+                // keep name chips in sync if built
+                syncWoNameChipsState();
+            });
+            container.appendChild(item);
+        });
+    }
+
+    // ── Common-name multiselect tab ──
+    function buildWoNameChips() {
+        var container = $('woNameChips');
+        if (!container) return;
+        // Always rebuild to reflect current selection state, but compute the name list once
+        var names = [];
+        var seen = {};
+        getAllWoZones().forEach(function (z) {
+            if (!z.name) return;            // skip zones without a common name
+            if (!seen[z.name]) { seen[z.name] = true; names.push(z.name); }
+        });
+        names.sort();
+        container.innerHTML = '';
+        if (names.length === 0) {
+            container.innerHTML = '<div style="font-size:0.85em;color:#aaa;padding:8px;">无通用名称数据</div>';
+            return;
+        }
+        names.forEach(function (nm) {
+            var chip = document.createElement('div');
+            chip.className = 'v2-chip';
+            chip.style.cssText = 'font-size:0.85em;padding:3px 8px;';
+            chip.textContent = nm;
+            chip.dataset.name = nm;
+            // initial active state
+            if (isWoNameFullySelected(nm)) chip.classList.add('active');
+            chip.addEventListener('click', function () {
+                var select = !isWoNameFullySelected(nm);
+                selectZonesByName(nm, select);
+                chip.classList.toggle('active', select);
+                updateInfoBarText();
+            });
+            container.appendChild(chip);
+        });
+    }
+
+    // Refresh active state of existing name chips after selection changes elsewhere.
+    function syncWoNameChipsState() {
+        document.querySelectorAll('#woNameChips .v2-chip').forEach(function (chip) {
+            chip.classList.toggle('active', isWoNameFullySelected(chip.dataset.name));
+        });
+    }
+
+    function isWoNameFullySelected(name) {
+        var zl = window._dashboardZonesLayer;
+        var allSelected = true;
+        var found = false;
+        if (zl) zl.eachLayer(function (l) {
+            if (l.zoneData && l.zoneData.name === name && l.zoneData.code) {
+                found = true;
+                if (!_selectedZoneCodes.has(l.zoneData.code)) allSelected = false;
+            }
+        });
+        return found && allSelected;
+    }
+
+    function selectZonesByName(name, selected) {
+        var zl = window._dashboardZonesLayer;
+        if (!zl) return;
+        zl.eachLayer(function (l) {
+            if (l.zoneData && l.zoneData.name === name && l.zoneData.code) {
+                var code = l.zoneData.code;
+                if (selected) {
+                    _selectedZoneCodes.add(code);
+                    if (!_selectionOverlays[code] && _selectionLayerGroup) addOverlayForCode(code);
+                } else {
+                    _selectedZoneCodes.delete(code);
+                    removeSelectionOverlay(code);
+                }
+            }
+        });
+    }
+
+    // Toggle a single zone code selection + overlay (shared by search list & map)
+    function toggleWoZone(code, select) {
+        if (select) {
+            _selectedZoneCodes.add(code);
+            if (!_selectionOverlays[code] && _selectionLayerGroup) addOverlayForCode(code);
+        } else {
+            _selectedZoneCodes.delete(code);
+            removeSelectionOverlay(code);
+        }
+        updateInfoBarText();
+    }
+
 
     window.activateModalDrawTool = function (tool) {
         cancelDraw();
@@ -802,6 +1030,14 @@
 
     function buildWorkorderForm(data) {
         var body = $('woModalBody'); if (!body) return;
+        if (!data || !Array.isArray(data.sorted_shifts) || data.sorted_shifts.length === 0) {
+            // Fallback when modal data is malformed/missing (e.g. API returned an error)
+            data = Object.assign({
+                sorted_shifts: ['早班', '白班', '夜班'],
+                today: '', now_time: '', default_time: '', worker_name: '',
+                category_tree: [], fault_tree: []
+            }, data || {});
+        }
         var shiftChips = data.sorted_shifts.map(function (s, i) {
             return '<div class="v2-chip' + (i === 0 ? ' active' : '') + '" data-val="' + s + '"><input type="radio" name="shift" value="' + s + '" style="display:none;"' + (i === 0 ? ' checked' : '') + '>' + s + '</div>';
         }).join('');
