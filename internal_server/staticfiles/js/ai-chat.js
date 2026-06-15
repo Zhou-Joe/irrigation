@@ -64,7 +64,7 @@
                 var item = document.createElement('div');
                 item.className = 'ai-tool-item ai-tool-' + status;
                 item.dataset.tool = name;
-                item.innerHTML = '<span class="ai-tool-icon">' + (status === 'done' ? '✓' : '⟳') + '</span>' +
+                item.innerHTML = '<span class="ai-tool-icon">' + (status === 'done' ? '✓' : '<span class="ai-tool-spinner"></span>') + '</span>' +
                                  '<span class="ai-tool-name">' + name + '</span>';
                 progress.appendChild(item);
                 progress.style.display = 'flex';
@@ -207,7 +207,7 @@
             '</div>' +
             '<div id="aiChatMessages" style="flex:1;overflow-y:auto;padding:12px;background:#f7f9f8;"></div>' +
             '<div style="display:flex;gap:8px;padding:10px 12px;border-top:1px solid #eee;background:#fff;">' +
-              '<textarea id="aiChatInput" placeholder="问：今天有多少工单？最近7天工时趋势？…" rows="1" ' +
+              '<textarea id="aiChatInput" placeholder="问：今天有多少工单？…（Shift+Enter 发送）" rows="1" ' +
                 'style="flex:1;border:1px solid #ddd;border-radius:8px;padding:8px 10px;font-size:0.92em;resize:none;max-height:90px;outline:none;font-family:inherit;"></textarea>' +
               '<button id="aiChatSend" style="background:#2D6A4F;color:#fff;border:none;border-radius:8px;padding:0 16px;cursor:pointer;font-weight:600;">发送</button>' +
             '</div>';
@@ -217,7 +217,8 @@
         el('aiChatSend').onclick = send;
         var input = el('aiChatInput');
         input.addEventListener('keydown', function (e) {
-            if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
+            // Shift+Enter sends; Enter alone inserts a newline.
+            if (e.key === 'Enter' && e.shiftKey) { e.preventDefault(); send(); }
         });
 
         // Welcome message
