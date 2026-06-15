@@ -1367,3 +1367,96 @@ class MapStyleSettings(models.Model):
         obj.style = style_data
         obj.updated_by = user
         obj.save()
+
+
+class AISettings(models.Model):
+    """Single-row table storing AI data-analyst configuration.
+
+    Configured by an admin in /admin/: OpenAI-compatible base_url + api_key +
+    model name. Read at request time by core.ai_agent to build a LangChain agent.
+    """
+
+    enabled = models.BooleanField('启用', default=False)
+    api_base_url = models.CharField(
+        'API 地址', max_length=255, blank=True, default='',
+        help_text='OpenAI 兼容接口地址，如 https://api.deepseek.com/v1',
+    )
+    api_key = models.CharField(
+        'API Key', max_length=255, blank=True, default='',
+        help_text='服务商提供的密钥（明文存储，请确保数据库访问受控）',
+    )
+    model_name = models.CharField(
+        '模型名称', max_length=100, blank=True, default='',
+        help_text='如 deepseek-chat、gpt-4o-mini、qwen-plus 等',
+    )
+    temperature = models.FloatField(
+        '温度', default=0.3,
+        help_text='0=严谨确定，1=发散，数据分析建议 0.2~0.4',
+    )
+    system_prompt = models.TextField(
+        '系统提示词', blank=True, default='',
+        help_text='留空则使用默认提示词',
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+    updated_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='ai_settings_edits',
+    )
+
+    DEFAULT_SYSTEM_PROMPT = (
+        '你是一个灌溉管理系统的数据分析助手。'
+        '用户会询问工单、浇水需求、设备、灌溉数据等相关问题。'
+        '请通过调用提供的工具获取真实数据，然后基于数据进行分析和回答。\n'
+        '重要规则：\n'
+        '1. 必须基于工具返回的真实数据回答，严禁编造任何数据或编号。\n'
+        '2. 如果工具返回空或无数据，如实告知用户，不要臆测。\n'
+        '3. 回答用中文，数据用表格或清单呈现更清晰。\n'
+        '4. 涉及分析时给出简明结论和可执行建议。\n'
+        '\n'
+        '## 可用工具（按场景选用）\n'
+        '\n'
+        '### 查询工具（直接返回结构化数据）\n'
+        '- **get_today_date**：获取服务器当前日期/时间。需要确定"今天/最近N天"的日期范围时先调它。\n'
+        '- **query_irrigation_overview**：灌溉系统总览（片区数/控制器/站点/气象站/事件数）。用户问"系统概况/有多少站点"时用。\n'
+        '- **query_work_reports**(start_date, end_date, limit)：查维修工单明细列表（日期/处理人/位置/班次/类别/工时/内容）。用户问"最近有哪些工单/某天的工单"时用。\n'
+        '- **query_work_report_stats**(start_date, end_date)：工单统计汇总（总数/总工时/按班次·类别·处理人分布）。用户问"工单统计/工时趋势/谁干的最多"时用这个，不要用 query_work_reports 自己算。\n'
+        '- **query_demand_records**(start_date, end_date, status, limit)：查浇水/灌溉需求记录（其他部门提的）。可按状态过滤。\n'
+        '- **query_zones**(zone_code, limit)：查区域信息（编号/通用名称/片区/面积/优先级/灌水器）。支持按编号或名称模糊查找。用户问"某区域的信息/有多少区域"时用。\n'
+        '- **query_weather**(days)：查最近若干天天气数据。\n'
+        '\n'
+        '### 代码执行工具（复杂分析、出文件）\n'
+        '- **run_python_code**(code, description)：运行 Python/pandas 代码。工作目录已预置 CSV：\n'
+        '    - work_reports.csv（最近90天工单：日期/处理人/位置/班次/工作类别/工时/内容）\n'
+        '    - demand_records.csv（最近90天浇水需求）\n'
+        '    - zones.csv（全部区域）\n'
+        '  用 `import pandas as pd; pd.read_csv("work_reports.csv")` 加载。'
+        '生成文件用相对路径（如 df.to_excel("报表.xlsx", index=False) 或 df.to_csv("结果.csv")），'
+        '文件会自动提供给用户下载。仅允许 .xlsx/.csv/.json/.txt。\n'
+        '\n'
+        '### 选工具的原则\n'
+        '- 简单查询（"今天多少工单"）→ 用对应的查询工具，快且准。\n'
+        '- 统计聚合（"按类别统计工时"）→ 优先 query_work_report_stats；它没有的维度再用 run_python_code。\n'
+        '- 用户要求导出文件/Excel/CSV → 必须用 run_python_code 生成文件。\n'
+        '- 跨表关联、自定义计算、查询工具无法表达的分析 → 用 run_python_code + pandas。\n'
+        '- 不确定今天是几号 → 先 get_today_date。\n'
+        '\n'
+        '用 run_python_code 生成文件后，回答中要说明文件已生成并列出关键发现。'
+    )
+
+    class Meta:
+        verbose_name = verbose_name_plural = 'AI 助手设置'
+
+    def __str__(self):
+        return 'AI 助手设置'
+
+    @classmethod
+    def get_settings(cls):
+        """Return the singleton config row, creating it with defaults if absent."""
+        obj, _ = cls.objects.get_or_create(pk=1, defaults={
+            'system_prompt': cls.DEFAULT_SYSTEM_PROMPT,
+        })
+        return obj
+
+    def get_system_prompt(self):
+        """Use the configured prompt, or fall back to the default."""
+        return self.system_prompt.strip() or self.DEFAULT_SYSTEM_PROMPT

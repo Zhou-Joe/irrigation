@@ -8,7 +8,7 @@
 {% block extra_css %}
 <!-- Leaflet CSS -->
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-<link rel="stylesheet" href="{% static 'css/dashboard.css' %}?v=20260612" />
+<link rel="stylesheet" href="{% static 'css/dashboard.css' %}?v=20260617" />
 <!-- Dashboard JS needs Django URL, set before external scripts -->
 {% endblock %}
 
@@ -292,6 +292,25 @@
     </div>
 </div>
 
+<!-- V2 Workorder Zone Selection Bar (3 tabs: search / common-name / map) -->
+<div class="v2-draw-toolbar" id="v2WoSelectBar" style="display:none;">
+    <div class="v2-draw-tabs">
+        <div class="v2-draw-tab active" data-tab="search" onclick="switchWoSelectTab('search')">搜索</div>
+        <div class="v2-draw-tab" data-tab="name" onclick="switchWoSelectTab('name')">通用名称</div>
+        <div class="v2-draw-tab" data-tab="map" onclick="switchWoSelectTab('map')">地图点选</div>
+    </div>
+    <div class="v2-draw-content active" id="woTabSearch">
+        <input id="woZoneSearchInput" class="wo-zone-search-input" type="text" placeholder="输入区域编号或名称..." autocomplete="off">
+        <div id="woZoneSearchResults" class="wo-zone-search-results"></div>
+    </div>
+    <div class="v2-draw-content" id="woTabName">
+        <div id="woNameChips" class="v2-chip-group" style="gap:4px;flex-wrap:wrap;max-height:30vh;overflow-y:auto;"></div>
+    </div>
+    <div class="v2-draw-content" id="woTabMap">
+        <div style="font-size:0.85em;color:#888;padding:6px 2px;">在地图上点击区域进行选择</div>
+    </div>
+</div>
+
 <!-- V2 Toast -->
 <div id="v2ModalToast"></div>
 
@@ -323,9 +342,12 @@
 <script src="{% static 'js/map-config.js' %}?v=20260423"></script>
 <script>window.MAP_STYLE_CONFIG = {{ map_style_json|safe }} || {};</script>
 <!-- Custom Map JS -->
-<script src="{% static 'js/map.js' %}?v=20260612"></script>
-<script src="{% static 'js/dashboard-modal.js' %}?v=20260612"></script>
+<script src="{% static 'js/map.js' %}?v=20260614"></script>
+<script src="{% static 'js/dashboard-modal.js' %}?v=20260616"></script>
 <!-- Dashboard JS — pass Django URL to external script -->
 <script>window.HISTORY_URL = '{% url "core:workorder_history" %}';</script>
-<script src="{% static 'js/dashboard.js' %}?v=20260611"></script>
+<script src="{% static 'js/dashboard.js' %}?v=20260617"></script>
+<!-- AI data-analyst chat widget -->
+<script src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
+<script src="{% static 'js/ai-chat.js' %}?v=20260620"></script>
 {% endblock %}
