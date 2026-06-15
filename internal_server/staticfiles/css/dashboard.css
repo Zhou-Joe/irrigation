@@ -607,6 +607,38 @@
     box-shadow: var(--btn-shadow-danger);
 }
 
+/* AI assistant launcher — matches .locate-btn sizing/style */
+.ai-launcher-btn {
+    position: fixed;
+    right: 24px;
+    bottom: 88px;
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    border: 3px solid rgba(255, 255, 255, 0.95);
+    background: var(--btn-gradient-primary);
+    box-shadow: var(--btn-shadow-primary);
+    color: #fff;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    z-index: 9999;
+    transition: all 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.ai-launcher-btn:hover {
+    transform: scale(1.08);
+}
+.ai-launcher-btn svg {
+    display: block;
+    animation: ai-icon-pulse 3s ease-in-out infinite;
+}
+@keyframes ai-icon-pulse {
+    0%, 100% { opacity: 0.9; }
+    50% { opacity: 1; }
+}
+
 /* FAB button base style */
 .fab-btn {
     background: var(--btn-gradient-primary);
