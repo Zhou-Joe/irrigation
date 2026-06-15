@@ -182,15 +182,18 @@
         // Launcher button
         var btn = document.createElement('button');
         btn.id = 'aiChatLauncher';
+        btn.className = 'ai-launcher-btn';
         btn.title = 'AI 数据助手';
-        btn.innerHTML = '🤖';
-        btn.style.cssText = 'position:fixed;right:24px;bottom:88px;width:52px;height:52px;border-radius:50%;' +
-                            'border:3px solid rgba(255,255,255,0.95);background:#2D6A4F;color:#fff;font-size:1.5em;' +
-                            'cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,0.25);z-index:99999;display:flex;' +
-                            'align-items:center;justify-content:center;transition:transform 0.2s;';
+        // Siri-style abstract AI icon: radiating smooth lines from a center node.
+        btn.innerHTML = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">' +
+            '<path d="M12 4c1.4 1.7 1.4 4.3 0 6"/>' +
+            '<path d="M12 14c-1.4 1.7-1.4 4.3 0 6"/>' +
+            '<path d="M4.5 8.5c2 .6 3.7 2.3 4.3 4.3"/>' +
+            '<path d="M15.2 11.2c.6-2 2.3-3.7 4.3-4.3"/>' +
+            '<path d="M4.5 15.5c2-.6 3.7-2.3 4.3-4.3"/>' +
+            '<path d="M15.2 12.8c.6 2 2.3 3.7 4.3 4.3"/>' +
+            '<circle cx="12" cy="11.8" r="1.3" fill="currentColor" stroke="none"/></svg>';
         btn.onclick = toggle;
-        btn.onmouseenter = function () { btn.style.transform = 'scale(1.08)'; };
-        btn.onmouseleave = function () { btn.style.transform = 'scale(1)'; };
         document.body.appendChild(btn);
         console.log('[AIChat] launcher appended, total body children:', document.body.children.length);
 
