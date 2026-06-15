@@ -14,7 +14,7 @@ from .models import (
     WorkCategory, InfoSource, FaultCategory, FaultSubType,
     WorkReport, WorkReportFault,
     DemandCategory, DemandDepartment, DemandRecord,
-    SyncAgentHeartbeat,
+    SyncAgentHeartbeat, AISettings,
 )
 from .role_utils import get_worker_profile
 
@@ -620,3 +620,31 @@ class DemandRecordAdmin(admin.ModelAdmin):
 class SyncAgentHeartbeatAdmin(admin.ModelAdmin):
     list_display = ('id', 'last_heartbeat', 'agent_version', 'last_sync_counts')
     readonly_fields = ('last_heartbeat', 'last_sync_counts', 'agent_version')
+
+
+# ==========================================================================
+# AI 助手设置 Admin
+# ==========================================================================
+
+
+@admin.register(AISettings)
+class AISettingsAdmin(admin.ModelAdmin):
+    list_display = ('enabled', 'api_base_url', 'model_name', 'temperature', 'updated_at', 'updated_by')
+    readonly_fields = ('updated_at', 'updated_by')
+    fieldsets = (
+        ('开关', {'fields': ('enabled',)}),
+        ('LLM 服务商配置', {
+            'fields': ('api_base_url', 'api_key', 'model_name', 'temperature'),
+            'description': '配置 OpenAI 兼容接口（DeepSeek / 通义千问 / Moonshot / OpenAI / 本地 vLLM 等）。'
+                           'base_url 末尾通常是 /v1。',
+        }),
+        ('系统提示词', {
+            'fields': ('system_prompt',),
+            'description': '留空则使用默认数据分析提示词。可自定义以调整助手行为。',
+        }),
+        ('元信息', {'fields': ('updated_at', 'updated_by')}),
+    )
+
+    def save_model(self, request, obj, form, change):
+        obj.updated_by = request.user
+        super().save_model(request, obj, form, change)
