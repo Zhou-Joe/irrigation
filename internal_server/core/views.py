@@ -2039,9 +2039,9 @@ def zone_quick_draw(request):
     # All zones with boundaries for reference layer on map
     all_drawn_zones = []
     for z in Zone.objects.select_related('patch').only(
-        'id', 'code', 'name', 'boundary_points', 'boundary_color',
+        'id', 'code', 'name', 'boundary_points', 'boundary_source', 'dxf_boundary_points', 'boundary_color',
         'label_lat', 'label_lng', 'label_scale', 'label_angle', 'smooth_override',
-        'ring_display_modes', 'patch_id', 'patch__name'
+        'ring_display_modes', 'patch_id', 'patch__name', 'area_sqm'
     ):
         all_drawn_zones.append({
             'id': z.id,
@@ -2252,9 +2252,9 @@ def zone_quick_draw_mobile(request):
 
     all_drawn_zones = []
     for z in Zone.objects.select_related('patch').only(
-        'id', 'code', 'name', 'boundary_points', 'boundary_color',
+        'id', 'code', 'name', 'boundary_points', 'boundary_source', 'dxf_boundary_points', 'boundary_color',
         'label_lat', 'label_lng', 'label_scale', 'label_angle', 'smooth_override',
-        'ring_display_modes', 'patch_id', 'patch__name'
+        'ring_display_modes', 'patch_id', 'patch__name', 'area_sqm'
     ):
         all_drawn_zones.append({
             'id': z.id,
