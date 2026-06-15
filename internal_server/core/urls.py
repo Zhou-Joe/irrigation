@@ -2,7 +2,7 @@ from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from core import views
 from core.sync_views import sync_receive, sync_status, agent_status
-from core.ai_views import ai_chat
+from core.ai_views import ai_chat, ai_status
 from core.api import (
     ZoneViewSet, PlantViewSet, WorkerViewSet,
     WorkOrderViewSet, EventViewSet, WorkLogViewSet,
@@ -124,4 +124,5 @@ urlpatterns = [
     path('api/sync/status', sync_status, name='sync_status'),
     path('api/sync/agent-status', agent_status, name='agent_status'),
     path('api/ai/chat', ai_chat, name='ai_chat'),
+    path('api/ai/status', ai_status, name='ai_status'),
 ]
