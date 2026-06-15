@@ -164,7 +164,7 @@ def query_work_report_stats(
         start_date: 起始日期 YYYY-MM-DD，留空默认最近30天
         end_date: 结束日期 YYYY-MM-DD，留空默认今天
     """
-    from django.db.models import Sum, Count
+    from django.db.models import Sum, Count, Q
 
     today = date.today()
     end = _parse_date(end_date) or today
@@ -174,7 +174,7 @@ def query_work_report_stats(
     agg = base.aggregate(
         team_hours=Sum('team_hours'),
         third_hours=Sum('third_party_hours'),
-        difficult=Count('id', filter={'is_difficult': True}),
+        difficult=Count('id', filter=Q(is_difficult=True)),
     )
 
     # by shift
