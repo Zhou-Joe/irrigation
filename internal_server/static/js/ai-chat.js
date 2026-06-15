@@ -224,10 +224,26 @@
         addMsg('assistant', '<div class="ai-bubble">你好！我是 AI 数据助手，可以帮你查询和分析工单、浇水需求、区域、灌溉数据。试试问我："最近7天有多少工单？"或"按工作类别统计本月工时"</div>');
     }
 
+    // Only mount the launcher if the backend says the AI assistant is available
+    // for the current user (feature enabled in admin + manager/super_admin role).
+    function mountIfAvailable() {
+        fetch('/api/ai/status', { credentials: 'same-origin' })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                if (data && data.available) {
+                    mount();
+                    console.log('[AIChat] available, launcher mounted');
+                } else {
+                    console.log('[AIChat] not available for this user/disabled');
+                }
+            })
+            .catch(function () { console.log('[AIChat] status check failed'); });
+    }
+
     if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', mount);
+        document.addEventListener('DOMContentLoaded', mountIfAvailable);
     } else {
-        mount();
+        mountIfAvailable();
     }
 
     window.AIChat = { open: open, toggle: toggle };
