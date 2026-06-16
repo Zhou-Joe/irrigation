@@ -95,26 +95,48 @@ def _prune_and_assign_sections(sections):
     return kept
 
 
-def _collapse_irrigation_projects(sections):
-    """Collapse 灌溉项目 → FAM/WDI → 项目1/项目2 duplication into one shared template."""
-    irrigation = next((s for s in sections if s.section == 'irrigation_project'), None)
-    if irrigation is None:
-        return
-    first_proj = None
-    for fam_wdi in irrigation.children:          # FAM项目 / WDI项目
-        for proj in fam_wdi.children:            # 项目1 / 项目2
-            if proj.name.startswith('项目'):
-                first_proj = proj
-                break
-        if first_proj:
-            break
-    irrigation.children = list(first_proj.children) if first_proj else []
+def _find_first_project_node(root):
+    """First descendant whose name starts with 项目 (项目1/项目2/…)."""
+    for c in root.children:
+        if c.name.startswith('项目'):
+            return c
+        r = _find_first_project_node(c)
+        if r:
+            return r
+    return None
+
+
+def _collapse_project_sections(sections):
+    """Collapse each project section to its own template (per 甲方 spec):
+
+    - 灌溉项目: FAM/WDI → 项目1 template (设计/费用评估/材料准备/施工 + irrigation branches).
+    - 排水项目: its own 项目2 template (施工 branches differ from 灌溉 per spec).
+    - 其他项目: spec has no template → share 灌溉's (设计/费用评估/材料准备/施工).
+    All three are marked is_project_scoped.
+    """
+    by_sec = {s.section: s for s in sections}
+    irrigation = by_sec.get('irrigation_project')
+    drainage = by_sec.get('drainage_project')
+    other = by_sec.get('other_project')
+
+    if irrigation:
+        proj = _find_first_project_node(irrigation)
+        if proj:
+            irrigation.children = list(proj.children)
+    if drainage:
+        proj = _find_first_project_node(drainage)
+        if proj:
+            drainage.children = list(proj.children)
+    if other and irrigation is not None and irrigation.children:
+        other.children = [_clone_subtree(c, 'other_project') for c in irrigation.children]
 
     def _mark(n):
         n.is_project_scoped = True
         for c in n.children:
             _mark(c)
-    _mark(irrigation)
+    for s in (irrigation, drainage, other):
+        if s:
+            _mark(s)
 
 
 def _clone_subtree(node, section):
@@ -125,21 +147,6 @@ def _clone_subtree(node, section):
     c.is_project_scoped = True
     c.children = [_clone_subtree(ch, section) for ch in node.children]
     return c
-
-
-def _share_project_template(sections):
-    """Copy 灌溉项目's shared template (设计/费用评估/材料准备/施工/…) onto 排水项目 and 其他项目,
-    and mark all three project sections is_project_scoped. Drops their stale placeholder children."""
-    irrigation = next((s for s in sections if s.section == 'irrigation_project'), None)
-    if irrigation is None or not irrigation.children:
-        return
-    template = irrigation.children
-    for sec_key in ('drainage_project', 'other_project'):
-        root = next((s for s in sections if s.section == sec_key), None)
-        if root is None:
-            continue
-        root.children = [_clone_subtree(c, sec_key) for c in template]
-        root.is_project_scoped = True
 
 
 def _absorb_count_markers(sections):
@@ -221,8 +228,7 @@ def parse_workorder_tree(text):
     root = _build_raw_tree(text)
     sections = _collect_sections(root)
     sections = _prune_and_assign_sections(sections)
-    _collapse_irrigation_projects(sections)
-    _share_project_template(sections)
+    _collapse_project_sections(sections)
     _absorb_count_markers(sections)
     _assign_value_types(sections)
     return _emit(sections)
