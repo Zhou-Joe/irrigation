@@ -3,7 +3,7 @@ from django.utils import timezone
 from django.contrib.auth.models import User
 from .models import (
     Zone, Plant, Worker, WorkOrder, Event, WorkLog, WeatherData,
-    MaintenanceRequest, ProjectSupportRequest, WaterRequest,
+    MaintenanceRequest, ProjectSupportRequest, WaterRequest, Land,
     RegistrationRequest, ManagerProfile, DepartmentUserProfile,
     MaxicomController, MaxicomSchedule,
     MaxicomFlowZone, MaxicomWeatherStation, MaxicomWeatherLog,
@@ -209,6 +209,15 @@ class PatchAdmin(admin.ModelAdmin):
 
     def get_queryset(self, request):
         return super().get_queryset(request).select_related('parent')
+
+
+@admin.register(Land)
+class LandAdmin(admin.ModelAdmin):
+    list_display = ('name', 'order', 'active', 'created_at')
+    list_filter = ('active',)
+    search_fields = ('name',)
+    list_editable = ('order', 'active')
+    readonly_fields = ('created_at', 'updated_at')
 
 
 @admin.register(Zone)

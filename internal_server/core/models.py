@@ -91,6 +91,24 @@ class Patch(models.Model):
         return f"{self.name} ({self.code})"
 
 
+class Land(models.Model):
+    """所属Land — a coarse location grouping that is the parent of a Zone's 通用名称."""
+
+    name = models.CharField('名称', max_length=100, unique=True)
+    order = models.PositiveIntegerField('排序', default=0)
+    active = models.BooleanField('启用', default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['order', 'name']
+        verbose_name = 'Land'
+        verbose_name_plural = 'Lands'
+
+    def __str__(self):
+        return self.name
+
+
 class Zone(models.Model):
     """Represents a work zone with boundary points and status tracking."""
 
@@ -124,6 +142,7 @@ class Zone(models.Model):
     ]
 
     patch = models.ForeignKey(Patch, on_delete=models.SET_NULL, null=True, blank=True, related_name='zones', verbose_name='所属片区')
+    land = models.ForeignKey(Land, on_delete=models.SET_NULL, null=True, blank=True, related_name='zones', verbose_name='所属Land')
     name = models.CharField(max_length=255)
     code = models.CharField(max_length=50, unique=True)
     description = models.TextField(blank=True)
