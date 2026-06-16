@@ -23,8 +23,8 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument(
             '--file',
-            default=str(settings.BASE_DIR.parent / '工单记录格式.md'),
-            help='Path to the markdown spec (default: <repo>/工单记录格式.md)',
+            default=str(settings.BASE_DIR.parent / '现场作业记录.md'),
+            help='Path to the markdown spec (default: <repo>/现场作业记录.md)',
         )
         parser.add_argument(
             '--clear',

@@ -1135,7 +1135,7 @@ class WorkReport(models.Model):
     weather = models.CharField('天气', max_length=50, blank=True)
     worker = models.ForeignKey(Worker, on_delete=models.PROTECT, related_name='work_reports', verbose_name='处理人')
     location = models.ForeignKey(Patch, on_delete=models.PROTECT, related_name='work_reports', verbose_name='位置/CCU')
-    work_category = models.ForeignKey(WorkCategory, on_delete=models.PROTECT, related_name='work_reports', verbose_name='工作分类')
+    work_category = models.ForeignKey(WorkCategory, on_delete=models.PROTECT, null=True, blank=True, related_name='work_reports', verbose_name='工作分类')
     zone_location = models.ForeignKey(Zone, on_delete=models.SET_NULL, null=True, blank=True, related_name='work_reports', verbose_name='故障/事件位置')
     remark = models.TextField('备注/工作内容', blank=True)
     info_source = models.ForeignKey(InfoSource, on_delete=models.SET_NULL, null=True, blank=True, related_name='work_reports', verbose_name='信息来源')
@@ -1223,6 +1223,7 @@ class WorkItem(models.Model):
         ('group', '分组(无值)'),
         ('count', '计数'),
         ('status', '状态选择'),
+        ('toggle', '勾选(无数量)'),
         ('text', '纯文本'),
         ('text_photo', '文本+照片'),
     ]
@@ -1262,27 +1263,37 @@ class Project(models.Model):
     """
 
     CATEGORY_CHOICES = [
+        ('IRRIGATION', '灌溉项目'),
+        ('DRAINAGE', '排水项目'),
+        ('OTHER', '其他项目'),
+    ]
+    SUBCATEGORY_CHOICES = [
         ('FAM', 'FAM项目'),
+        ('FES', 'FES项目'),
         ('WDI', 'WDI项目'),
-        ('OTHER', '其它'),
+        ('GREEN', '绿化项目'),
     ]
 
     name = models.CharField('项目名称', max_length=200)
-    category = models.CharField('项目类别', max_length=20, choices=CATEGORY_CHOICES, default='FAM')
-    code = models.CharField('项目代号', max_length=100, blank=True)
+    category = models.CharField('项目类别', max_length=20, choices=CATEGORY_CHOICES, default='IRRIGATION')
+    subcategory = models.CharField('子类别', max_length=20, choices=SUBCATEGORY_CHOICES, blank=True,
+                                   help_text='仅灌溉项目：FAM/FES/WDI/绿化')
+    symbol = models.CharField('项目代号', max_length=50, blank=True)
+    code = models.CharField('项目Code', max_length=100, blank=True)
     active = models.BooleanField('启用', default=True)
     notes = models.TextField('备注', blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        ordering = ['category', 'name']
+        ordering = ['category', 'subcategory', 'name']
         verbose_name = '灌溉项目'
         verbose_name_plural = '灌溉项目'
-        unique_together = ('category', 'name')
+        unique_together = ('category', 'subcategory', 'name')
 
     def __str__(self):
-        return f"[{self.get_category_display()}] {self.name}"
+        sub = f"/{self.get_subcategory_display()}" if self.subcategory else ""
+        return f"[{self.get_category_display()}{sub}] {self.name}"
 
 
 class WorkReportEntry(models.Model):

@@ -16,6 +16,7 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.files.storage import default_storage
 from django.db import transaction
+from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 
 from core.models import (
@@ -30,7 +31,7 @@ def serialize_workitem_tree():
     """Emit the 12-section WorkItem tree as nested JSON (depth-first)."""
     qs = (WorkItem.objects.filter(active=True)
           .order_by('section', 'order', 'code')
-          .values('id', 'code', 'name_zh', 'parent_id', 'value_type',
+          .values('id', 'code', 'name_zh', 'parent_id', 'section', 'value_type',
                   'unit', 'is_project_scoped', 'status_options'))
     nodes = {n['id']: {**n, 'name': n['name_zh'], 'children': []} for n in qs}
     roots = []
@@ -47,9 +48,224 @@ def serialize_workitem_tree():
 def serialize_projects():
     return [
         {'id': p.id, 'name': p.name, 'category': p.category,
-         'category_display': p.get_category_display()}
-        for p in Project.objects.filter(active=True).order_by('category', 'name')
+         'category_display': p.get_category_display(),
+         'subcategory': p.subcategory, 'subcategory_display': p.get_subcategory_display(),
+         'symbol': p.symbol, 'code': p.code}
+        for p in Project.objects.filter(active=True).order_by('category', 'subcategory', 'name')
     ]
+
+
+def IRRIGATION_SUBCATEGORIES():
+    return [{'code': c, 'label': label} for c, label in Project.SUBCATEGORY_CHOICES]
+
+
+@login_required(login_url='core:login')
+def project_create_api(request):
+    """Create a Project instance (manager / admin only).
+
+    POST {name, category, subcategory, symbol, code} → Project (get_or_create).
+    Used by the mobile workorder form when no existing project matches.
+    """
+    from core.role_utils import get_user_role, ROLE_MANAGER, ROLE_SUPER_ADMIN
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Method not allowed'}, status=405)
+    role = get_user_role(request.user)
+    if role not in (ROLE_MANAGER, ROLE_SUPER_ADMIN):
+        return JsonResponse({'error': '无权限创建项目（仅经理/管理员）'}, status=403)
+    try:
+        data = json.loads(request.body or '{}')
+    except json.JSONDecodeError:
+        data = {}
+    name = (data.get('name') or '').strip()
+    category = (data.get('category') or 'IRRIGATION').strip()
+    if category not in {c for c, _ in Project.CATEGORY_CHOICES}:
+        category = 'IRRIGATION'
+    subcategory = (data.get('subcategory') or '').strip()
+    if subcategory and subcategory not in {c for c, _ in Project.SUBCATEGORY_CHOICES}:
+        subcategory = ''
+    if category != 'IRRIGATION':
+        subcategory = ''  # subcategory only for irrigation
+    if not name:
+        return JsonResponse({'error': '项目名称不能为空'}, status=400)
+    proj, created = Project.objects.get_or_create(
+        category=category, subcategory=subcategory, name=name,
+        defaults={'active': True,
+                  'symbol': (data.get('symbol') or '').strip(),
+                  'code': (data.get('code') or '').strip()})
+    return JsonResponse({
+        'id': proj.id, 'name': proj.name, 'category': proj.category,
+        'category_display': proj.get_category_display(),
+        'subcategory': proj.subcategory, 'subcategory_display': proj.get_subcategory_display(),
+        'symbol': proj.symbol, 'code': proj.code, 'created': created,
+    })
+
+
+# ── 项目管理 page ──────────────────────────────────────────────────────────
+
+_PROJECT_SECTIONS = ('irrigation_project', 'drainage_project', 'other_project')
+
+
+def _phase_map():
+    """Map work_item_id → its phase (the level-1 child of the project section root:
+    设计 / 费用评估 / 材料准备 / 施工) for the three project sections."""
+    items = WorkItem.objects.filter(section__in=_PROJECT_SECTIONS).values('id', 'name_zh', 'parent_id')
+    by_id = {it['id']: it for it in items}
+    phase = {}
+    for it in items:
+        cur = it
+        # walk up until cur's parent is the section root (root has parent_id None)
+        while cur and cur['parent_id'] and by_id.get(cur['parent_id'], {}).get('parent_id'):
+            cur = by_id.get(cur['parent_id'])
+        phase[it['id']] = cur['name_zh'] if cur else ''
+    return phase
+
+
+def _project_summaries(projects):
+    """Per-project work summary: {project_id: {reports, hours, phases:{phase:count}}}."""
+    from django.db.models import Sum
+    pmap = _phase_map()
+    summ = {p.id: {'reports': set(), 'hours': 0, 'phases': {}} for p in projects}
+    entries = (WorkReportEntry.objects.filter(project__in=[p.id for p in projects])
+               .select_related('work_item'))
+    rep_to_projects = {}
+    for e in entries:
+        s = summ[e.project_id]
+        s['reports'].add(e.work_report_id)
+        ph = pmap.get(e.work_item_id, '其他')
+        s['phases'][ph] = s['phases'].get(ph, 0) + (e.count or 0)
+        rep_to_projects.setdefault(e.work_report_id, set()).add(e.project_id)
+    rep_hours = {r['id']: (r['team_hours'] or 0) for r in
+                 WorkReport.objects.filter(id__in=rep_to_projects.keys()).values('id', 'team_hours')}
+    for rid, pids in rep_to_projects.items():
+        h = rep_hours.get(rid, 0)
+        for pid in pids:
+            summ[pid]['hours'] += h
+    return summ
+
+
+@login_required(login_url='core:login')
+def project_management(request):
+    """List/create/edit projects grouped by category, with per-project work summary."""
+    from core.role_utils import get_user_role, ROLE_MANAGER, ROLE_SUPER_ADMIN
+    from collections import OrderedDict
+    role = get_user_role(request.user)
+    if role not in (ROLE_MANAGER, ROLE_SUPER_ADMIN):
+        messages.error(request, '无权限访问项目管理')
+        return redirect('core:dashboard')
+
+    projects = list(Project.objects.all().order_by('category', 'subcategory', 'name'))
+    summ = _project_summaries(projects)
+    groups = OrderedDict((c, {'label': lbl, 'items': []}) for c, lbl in Project.CATEGORY_CHOICES)
+    for p in projects:
+        s = summ[p.id]
+        groups[p.category]['items'].append({
+            'project': p,
+            'report_count': len(s['reports']),
+            'hours': s['hours'],
+            'phases': s['phases'],
+        })
+    edit_id = request.GET.get('edit')
+    edit_obj = Project.objects.filter(pk=edit_id).first() if edit_id else None
+    ctx = {
+        'groups': groups,
+        'subcategories': Project.SUBCATEGORY_CHOICES,
+        'categories': Project.CATEGORY_CHOICES,
+        'edit_obj': edit_obj,
+    }
+    return render(request, 'core/project_management.html', ctx)
+
+
+def _clean_project_fields(post):
+    name = (post.get('name') or '').strip()
+    category = (post.get('category') or 'IRRIGATION').strip()
+    if category not in {c for c, _ in Project.CATEGORY_CHOICES}:
+        category = 'IRRIGATION'
+    subcategory = (post.get('subcategory') or '').strip()
+    if subcategory and subcategory not in {c for c, _ in Project.SUBCATEGORY_CHOICES}:
+        subcategory = ''
+    if category != 'IRRIGATION':
+        subcategory = ''
+    return name, category, subcategory
+
+
+@login_required(login_url='core:login')
+def project_save(request):
+    """Create or update a Project (manager / admin only)."""
+    from core.role_utils import get_user_role, ROLE_MANAGER, ROLE_SUPER_ADMIN
+    role = get_user_role(request.user)
+    if role not in (ROLE_MANAGER, ROLE_SUPER_ADMIN):
+        messages.error(request, '无权限')
+        return redirect('core:dashboard')
+    if request.method != 'POST':
+        return redirect('core:project_management')
+    name, category, subcategory = _clean_project_fields(request.POST)
+    if not name:
+        messages.error(request, '项目名称不能为空')
+        return redirect('core:project_management')
+    pid = request.POST.get('id')
+    symbol = (request.POST.get('symbol') or '').strip()
+    code = (request.POST.get('code') or '').strip()
+    notes = (request.POST.get('notes') or '').strip()
+    active = bool(request.POST.get('active'))
+    if pid:
+        proj = get_object_or_404(Project, pk=pid)
+        proj.name = name; proj.category = category; proj.subcategory = subcategory
+        proj.symbol = symbol; proj.code = code; proj.notes = notes; proj.active = active
+        proj.save()
+        messages.success(request, f'项目已更新：{proj.name}')
+    else:
+        proj, created = Project.objects.get_or_create(
+            category=category, subcategory=subcategory, name=name,
+            defaults={'symbol': symbol, 'code': code, 'notes': notes, 'active': active})
+        messages.success(request, ('项目已创建：' if created else '项目已存在：') + proj.name)
+    return redirect('core:project_management')
+
+
+@login_required(login_url='core:login')
+def project_delete(request, pk):
+    """Delete a Project (manager / admin only). Entries' project FK is SET_NULL."""
+    from core.role_utils import get_user_role, ROLE_MANAGER, ROLE_SUPER_ADMIN
+    role = get_user_role(request.user)
+    if role not in (ROLE_MANAGER, ROLE_SUPER_ADMIN):
+        messages.error(request, '无权限')
+        return redirect('core:dashboard')
+    if request.method == 'POST':
+        proj = get_object_or_404(Project, pk=pk)
+        name = proj.name
+        proj.delete()
+        messages.success(request, f'项目已删除：{name}')
+    return redirect('core:project_management')
+
+
+@login_required(login_url='core:login')
+def planned_maintenance_pending(request):
+    """Past WorkReports (in the given zones, or all) carrying 待修 entries — the PM backlog.
+
+    GET ?zones=CODE,CODE → {reports: [{id, date, worker, items: [path,...]}]}.
+    Used by the 计划性维修 work-content view.
+    """
+    zone_codes = [z for z in (request.GET.get('zones') or '').split(',') if z]
+    qs = WorkReport.objects.filter(
+        entries__work_item__name_zh='待修', entries__status='待修').distinct()
+    if zone_codes:
+        qs = qs.filter(zones__code__in=zone_codes)
+    qs = qs.select_related('worker').order_by('-date', '-id')[:60]
+    out = []
+    for r in qs:
+        items = []
+        for e in r.entries.filter(work_item__name_zh='待修', status='待修').select_related('work_item'):
+            path, cur = [], e.work_item
+            while cur:
+                path.append(cur.name_zh)
+                cur = cur.parent
+            items.append(' › '.join(reversed(path)))
+        out.append({
+            'id': r.id,
+            'date': r.date.isoformat() if r.date else '',
+            'worker': r.worker.full_name if r.worker else '',
+            'items': items,
+        })
+    return JsonResponse({'reports': out})
 
 
 def serialize_existing_entries(report):
@@ -163,7 +379,7 @@ def _handle_save(request, report):
 
     # Required header fields — browser enforces too; this is the safety net.
     missing = [label for label, key in (
-        ('日期', 'date'), ('位置/CCU', 'location'), ('工作分类', 'work_category'))
+        ('日期', 'date'), ('位置/CCU', 'location'))
         if not request.POST.get(key)]
     if missing:
         messages.error(request, '请填写必填项：' + '、'.join(missing))
@@ -239,6 +455,31 @@ def _save_entries(report, entries, entry_photos):
             defaults={'count': count, 'status': status,
                       'text_value': text_value, 'photos': saved_paths},
         )
+
+    # Safety net: any 待修 entry ⇒ 疑难 / 疑难未解决 (mirrors the mobile UI behavior).
+    if report.entries.filter(work_item__name_zh='待修').exists():
+        report.is_difficult = True
+        report.is_difficult_resolved = False
+        report.save(update_fields=['is_difficult', 'is_difficult_resolved'])
+
+
+def _resolve_pending_repairs(pm_report, report_ids):
+    """Mark past 待修 reports as resolved by this 计划性维修 report.
+
+    For each id: set its pending 待修 entries' status to '已处理', and append
+    the 计划性维修 work-order number to its remark. Resolved entries then drop
+    out of the planned-maintenance backlog (pending filter requires status='待修').
+    """
+    note = f'已由计划性维修工单 #{pm_report.id} 处理'
+    for rid in report_ids:
+        past = WorkReport.objects.filter(pk=rid).first()
+        if not past:
+            continue
+        past.entries.filter(work_item__name_zh='待修', status='待修').update(status='已处理')
+        remark = past.remark or ''
+        if note not in remark:
+            past.remark = (remark + '\n' + note).strip() if remark else note
+            past.save(update_fields=['remark'])
 
 
 def _parse_time(value):

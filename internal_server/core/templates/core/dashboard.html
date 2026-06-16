@@ -8,7 +8,7 @@
 {% block extra_css %}
 <!-- Leaflet CSS -->
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-<link rel="stylesheet" href="{% static 'css/dashboard.css' %}?v=20260622" />
+<link rel="stylesheet" href="{% static 'css/dashboard.css' %}?v=20260622b" />
 <!-- Dashboard JS needs Django URL, set before external scripts -->
 {% endblock %}
 
@@ -343,7 +343,7 @@
 <script>window.MAP_STYLE_CONFIG = {{ map_style_json|safe }} || {};</script>
 <!-- Custom Map JS -->
 <script src="{% static 'js/map.js' %}?v=20260614"></script>
-<script src="{% static 'js/dashboard-modal.js' %}?v=20260616"></script>
+<script src="{% static 'js/dashboard-modal.js' %}?v=20260616p"></script>
 <!-- Dashboard JS — pass Django URL to external script -->
 <script>window.HISTORY_URL = '{% url "core:workorder_history" %}';</script>
 <script src="{% static 'js/dashboard.js' %}?v=20260617"></script>
