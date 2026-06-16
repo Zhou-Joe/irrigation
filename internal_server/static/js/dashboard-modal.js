@@ -1149,6 +1149,15 @@
             if (prevCat && prevCat !== _woCatNode) clearWoContent();
             var node = sub || root;
             setContentVisible(!!(node.children && node.children.length));
+            // Auto-fill a lone toggle leaf (e.g., 培训记录上传) — skip free-text placeholders.
+            var kids = node.children || [];
+            if (kids.length === 1 && kids[0].value_type === 'toggle' && kids[0].name.indexOf('填写') < 0) {
+                var only = kids[0];
+                if (!_woEntries[only.id]) {
+                    _woEntries[only.id] = { count: 0, status: only.name, text_value: '', hasPhoto: false, project: null };
+                    updateWoTrigger();
+                }
+            }
             var d = $('woCatDisplay');
             if (d) { d.textContent = sub ? (root.name + ' › ' + sub.name) : root.name; d.style.color = '#222'; }
             closeCatModal();
@@ -1188,7 +1197,16 @@
             }).catch(function () { showToast('创建项目失败', 'error'); });
         }
         if (catPrimary) {
-            _woRoots.forEach(function (r) {
+            // Custom display order for 工作类别 (3 per row): the rest appended after.
+            var CAT_ORDER = ['routine_maint', 'routine_support', 'repair_emergency',
+                'irrigation_project', 'drainage_project', 'other_project',
+                'meeting_training', 'warehouse', 'typhoon_emergency',
+                'greenhouse_nursery', 'safety_incident', 'good_deed'];
+            var orderedCats = _woRoots.slice().sort(function (a, b) {
+                var ia = CAT_ORDER.indexOf(a.section), ib = CAT_ORDER.indexOf(b.section);
+                return (ia < 0 ? 999 : ia) - (ib < 0 ? 999 : ib);
+            });
+            orderedCats.forEach(function (r) {
                 var chip = document.createElement('div'); chip.className = 'v2-chip'; chip.textContent = r.name;
                 chip.addEventListener('click', function () {
                     catPrimary.querySelectorAll('.v2-chip').forEach(function (x) { x.classList.remove('active'); });
@@ -1218,6 +1236,21 @@
             });
         }
         if (catTrigger && catModal) catTrigger.addEventListener('click', function () { catModal.style.display = 'flex'; });
+        // Default 工作类别 to 常规维护 › 维保定期检查 (the most common type).
+        (function defaultCategory() {
+            var rmRoot = null;
+            for (var i = 0; i < _woRoots.length; i++) { if (_woRoots[i].section === 'routine_maint') { rmRoot = _woRoots[i]; break; } }
+            var sub = null;
+            if (rmRoot && rmRoot.children) {
+                for (var j = 0; j < rmRoot.children.length; j++) { if (rmRoot.children[j].name === '维保定期检查') { sub = rmRoot.children[j]; break; } }
+            }
+            if (sub) {
+                _woCatNode = sub.id; _woProject = null;
+                var dd = $('woCatDisplay');
+                if (dd) { dd.textContent = rmRoot.name + ' › ' + sub.name; dd.style.color = '#222'; }
+                setContentVisible(true);
+            }
+        })();
         var contentTrigger = $('woContentTrigger');
         if (contentTrigger) contentTrigger.addEventListener('click', openWoSheet);
         var leafConfirm = $('woLeafConfirmBtn');
@@ -1246,6 +1279,8 @@
     function ensureWoTreeStyle() {
         if (document.getElementById('v2-wo-style')) return;
         var css = '' +
+            '#woCatPrimary{display:flex;flex-wrap:wrap;gap:8px;}' +
+            '#woCatPrimary .v2-chip{flex:1 1 calc(33.333% - 8px);justify-content:center;text-align:center;}' +
             '.v2-wo-bc{display:flex;align-items:center;flex-wrap:wrap;gap:4px;padding:8px 12px;border-bottom:1px solid #f0f0f0;font-size:0.82rem;color:#666;line-height:1.4;}' +
             '.v2-wo-crumb{color:#2D6A4F;cursor:pointer;}' +
             '.v2-wo-sep{color:#ccc;}' +

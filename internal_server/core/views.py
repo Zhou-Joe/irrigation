@@ -6088,8 +6088,8 @@ def zones_in_area_api(request):
             j = i
         return inside
 
-    # Get all zones with boundaries
-    zones = Zone.objects.filter(Q(boundary_points__isnull=False) | Q(dxf_boundary_points__isnull=False)).exclude(boundary_points=[]).exclude(dxf_boundary_points=[])
+    # Get all zones with at least one boundary source (boundary_points OR dxf_boundary_points).
+    zones = Zone.objects.exclude(Q(boundary_points=[]) & Q(dxf_boundary_points=[]))
     result_codes = []
 
     for z in zones:
