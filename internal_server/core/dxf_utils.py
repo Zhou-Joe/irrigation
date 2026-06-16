@@ -150,6 +150,28 @@ def parse_dxf_shapes(uploaded_file):
             })
             idx += 1
 
+        elif etype == 'HATCH':
+            # HATCH boundaries: each polyline loop is a closed polygon (edge loops skipped).
+            for path in (getattr(entity, 'paths', None) or []):
+                if getattr(path, 'PATH_TYPE', None) != 'PolylinePath':
+                    continue
+                verts = []
+                for v in (getattr(path, 'vertices', None) or []):
+                    try:
+                        verts.append((float(v[0]), float(v[1])))
+                    except (TypeError, IndexError, ValueError):
+                        continue
+                if len(verts) >= 3:
+                    shapes.append({
+                        'id': f'shape_{idx}',
+                        'entity_type': 'HATCH',
+                        'layer': layer,
+                        'closed': True,
+                        'vertices': verts,
+                        'vertex_count': len(verts),
+                    })
+                    idx += 1
+
     return shapes
 
 
