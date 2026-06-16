@@ -3,7 +3,7 @@ from django.utils import timezone
 from django.contrib.auth.models import User
 from .models import (
     Zone, Plant, Worker, WorkOrder, Event, WorkLog, WeatherData,
-    MaintenanceRequest, ProjectSupportRequest, WaterRequest,
+    MaintenanceRequest, ProjectSupportRequest, WaterRequest, Land,
     RegistrationRequest, ManagerProfile, DepartmentUserProfile,
     MaxicomController, MaxicomSchedule,
     MaxicomFlowZone, MaxicomWeatherStation, MaxicomWeatherLog,
@@ -13,6 +13,7 @@ from .models import (
     Pipeline, Patch,
     WorkCategory, InfoSource, FaultCategory, FaultSubType,
     WorkReport, WorkReportFault,
+    WorkItem, Project, WorkReportEntry,
     DemandCategory, DemandDepartment, DemandRecord,
     SyncAgentHeartbeat, AISettings,
 )
@@ -208,6 +209,15 @@ class PatchAdmin(admin.ModelAdmin):
 
     def get_queryset(self, request):
         return super().get_queryset(request).select_related('parent')
+
+
+@admin.register(Land)
+class LandAdmin(admin.ModelAdmin):
+    list_display = ('name', 'order', 'active', 'created_at')
+    list_filter = ('active',)
+    search_fields = ('name',)
+    list_editable = ('order', 'active')
+    readonly_fields = ('created_at', 'updated_at')
 
 
 @admin.register(Zone)
@@ -539,8 +549,32 @@ class WorkReportAdmin(admin.ModelAdmin):
     ordering = ('-date', '-id')
 
 
-# ==========================================================================
-# 需求周报系统 Admin
+@admin.register(Project)
+class ProjectAdmin(admin.ModelAdmin):
+    list_display = ('name', 'category', 'code', 'active', 'updated_at')
+    list_filter = ('category', 'active')
+    list_editable = ('active',)
+    search_fields = ('name', 'code')
+    ordering = ('category', 'name')
+
+
+@admin.register(WorkItem)
+class WorkItemAdmin(admin.ModelAdmin):
+    list_display = ('code', 'name_zh', 'section', 'value_type', 'unit', 'level', 'is_project_scoped', 'active')
+    list_filter = ('section', 'value_type', 'is_project_scoped', 'active')
+    list_editable = ('active',)
+    search_fields = ('code', 'name_zh')
+    raw_id_fields = ('parent',)
+    ordering = ('section', 'order', 'code')
+
+
+@admin.register(WorkReportEntry)
+class WorkReportEntryAdmin(admin.ModelAdmin):
+    list_display = ('work_report', 'work_item', 'project', 'count', 'status', 'updated_at')
+    list_filter = ('work_item__section',)
+    search_fields = ('work_item__name_zh', 'work_item__code', 'text_value')
+    raw_id_fields = ('work_report', 'work_item', 'project')
+    autocomplete_fields = ()
 # ==========================================================================
 
 

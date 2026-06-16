@@ -15,6 +15,10 @@ from core.api import (
     worker_login, get_all_requests, get_weather, demand_stats, demand_calendar
 )
 from core.views import equipment_catalog_autocomplete
+from core.workorder_tree_views import (
+    workorder_tree_form, project_create_api, planned_maintenance_pending,
+    project_management, project_save, project_delete,
+)
 
 app_name = 'core'
 
@@ -95,6 +99,13 @@ urlpatterns = [
     path('requests/<str:type_code>/<int:request_id>/update/', views.update_request_status, name='update_request_status'),
     path('work-reports/', views.work_reports_list, name='work_reports'),
     path('work-reports/new/', views.work_report_create, name='work_report_create'),
+    path('work-reports/tree/new/', workorder_tree_form, name='workorder_tree_form'),
+    path('api/irrigation-project/create/', project_create_api, name='irrigation_project_create'),
+    path('api/planned-maintenance/pending/', planned_maintenance_pending, name='planned_maintenance_pending'),
+    path('projects/', project_management, name='project_management'),
+    path('projects/save/', project_save, name='project_save'),
+    path('projects/<int:pk>/delete/', project_delete, name='project_delete'),
+    path('work-reports/tree/<int:report_id>/edit/', workorder_tree_form, name='workorder_tree_form_edit'),
     path('work-reports/<int:report_id>/', views.work_report_detail, name='work_report_detail'),
     path('work-reports/<int:report_id>/edit/', views.work_report_edit, name='work_report_edit'),
     path('work-reports/<int:report_id>/upload-photo/', views.work_report_upload_photo, name='work_report_upload_photo'),

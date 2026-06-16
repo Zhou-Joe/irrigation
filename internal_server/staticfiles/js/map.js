@@ -534,7 +534,7 @@
             }
             if (watermarks && window.__wmLayer) {
                 window.__wmLayer.clearLayers();
-                const wmSize = Math.round(baseSize * 1.6);
+                const wmSize = Math.round(baseSize * 1.2);
                 Object.entries(watermarks).forEach(([name, center]) => {
                     if (!center) return;
                     const wm = L.marker(center, {
@@ -556,9 +556,9 @@
             // Rebuild watermarks at full zoom level too
             if (window.__wmLayer) {
                 window.__wmLayer.clearLayers();
-                const wmFullSize = Math.round(baseSize * 1.6);
+                const wmFullSize = Math.round(baseSize * 1.2);
                 // At full zoom, baseSize is tiny — use zoom 17 watermark size instead
-                const wmZoom17Size = Math.round(getLabelFontSize(17) * 1.6);
+                const wmZoom17Size = Math.round(getLabelFontSize(17) * 1.2);
                 const wmEffectiveSize = Math.max(wmFullSize, wmZoom17Size);
                 const wmDone = {};
                 zoneLabels.forEach(label => {

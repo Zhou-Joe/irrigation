@@ -22,7 +22,20 @@
 
     var _formDataCache = { workorder: null, water_request: null };
     var _photoFiles = [];
-    var _faultEntries = [];
+    // WorkItem drill-down picker state (mobile workorder modal)
+    var _woRoots = [];
+    var _woProjects = [];
+    var _woNodeById = {};
+    var _woParentById = {};
+    var _woPath = [];           // current drill-down location (stack of ids)
+    var _woEntries = {};        // work_item_id -> {count,status,text_value,hasPhoto,project}
+    var _woEntryPhotos = {};    // work_item_id -> [File]
+    var _woProject = null;      // selected project for irrigation section
+    var _woLeafTarget = null;   // node id open in the value popup
+    var _woCatNode = null;      // WorkItem node selected via 工作类别 dropdowns (drill-down start/floor)
+    var _woIrrCats = [];        // irrigation project categories [{code,label}] (FAM/WDI/绿化)
+    var _woCanCreateProject = false;
+    var _woPlanned = { checked: {}, other: '', reports: [] };  // 计划性维修: selected past 待修 reports + 其他
 
     // Validate a modal-data API response. Rejects error objects (e.g. {error:'无权限'})
     // so they are never cached and passed to buildForm.
@@ -87,7 +100,6 @@
         _currentModal = type;
         _selectedZoneCodes.clear();
         _photoFiles = [];
-        _faultEntries = [];
         _zoneConfirmed = false;
 
         // Fetch form data in background (cached or from API)
@@ -115,7 +127,6 @@
         _currentModal = 'workorder';
         _selectedZoneCodes.clear();
         _photoFiles = [];
-        _faultEntries = [];
         zoneCodes.forEach(function (c) { _selectedZoneCodes.add(c); });
         _zoneConfirmed = true;
 
@@ -1035,7 +1046,7 @@
             data = Object.assign({
                 sorted_shifts: ['早班', '白班', '夜班'],
                 today: '', now_time: '', default_time: '', worker_name: '',
-                category_tree: [], fault_tree: []
+                work_tree: [], projects: []
             }, data || {});
         }
         var shiftChips = data.sorted_shifts.map(function (s, i) {
@@ -1047,16 +1058,19 @@
             '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;"><span style="font-size:0.85em;color:#888;">' + data.today + ' ' + data.now_time + '</span><span style="font-size:0.85em;color:#888;">' + data.worker_name + '</span></div>' +
             '<div class="v2-fg"><div class="v2-form-row"><div style="flex:1.2;"><div class="v2-fl">班次</div><div class="v2-chip-group">' + shiftChips + '</div></div><div style="flex:0.8;"><div class="v2-fl">灌溉组</div><input type="number" name="team_size" value="1" min="0" max="99" class="v2-input" style="text-align:center;"></div><div style="flex:0.8;"><div class="v2-fl">第三方</div><input type="number" name="third_party_count" value="0" min="0" max="99" class="v2-input" style="text-align:center;"></div></div><div id="woHours" style="margin-top:2px;font-size:0.85em;color:#888;"></div></div>' +
             '<div class="v2-fg"><div class="v2-form-row"><div><div class="v2-fl">开始时间</div><select name="work_start_time" id="woStart" class="v2-select"><option value="">--</option></select></div><div><div class="v2-fl">完成时间</div><select name="work_end_time" id="woEnd" class="v2-select"><option value="">--</option></select></div></div></div>' +
-            '<div class="v2-fg"><div class="v2-form-row"><div style="flex:1;"><div class="v2-fl">工作类别</div><div id="woCatTrigger" style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border:1px solid #ddd;border-radius:8px;cursor:pointer;background:#fff;font-size:16px;"><span id="woCatDisplay" style="color:#bbb;">选择</span><span style="font-size:0.8em;color:#999;">▶</span></div><input type="hidden" name="work_category" id="woCatInput"></div><div style="flex:1;"><div class="v2-fl">故障详情</div><div id="woFaultTrigger" style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border:1px solid #ddd;border-radius:8px;cursor:pointer;background:#fff;font-size:16px;"><span id="woFaultDisplay" style="color:#bbb;">选择</span><span style="font-size:0.8em;color:#999;">▶</span></div><input type="hidden" name="fault_entries" id="woFaultInput"></div></div></div>' +
+            '<div class="v2-fg"><div class="v2-fl">工作类别</div><div id="woCatTrigger" style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border:1px solid #ddd;border-radius:8px;cursor:pointer;background:#fff;font-size:16px;"><span id="woCatDisplay" style="color:#bbb;">选择</span><span style="font-size:0.8em;color:#999;">▶</span></div></div>' +
+            '<div class="v2-fg"><div class="v2-fl">工作内容</div><div id="woContentTrigger" style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border:1px solid #ddd;border-radius:8px;cursor:pointer;background:#fff;font-size:16px;"><span id="woContentDisplay" style="color:#bbb;">选择</span><span style="font-size:0.8em;color:#999;">▶</span></div></div>' +
             '<div class="v2-fg"><div class="v2-form-row"><div><div class="v2-fl">疑难</div><div class="v2-chip-group"><div class="v2-chip active" data-val=""><input type="radio" name="is_difficult" value="" style="display:none;" checked>否</div><div class="v2-chip" data-val="1"><input type="radio" name="is_difficult" value="1" style="display:none;">是</div></div></div><div><div class="v2-fl">已处理</div><div class="v2-chip-group"><div class="v2-chip active" data-val=""><input type="radio" name="is_difficult_resolved" value="" style="display:none;" checked>否</div><div class="v2-chip" data-val="1"><input type="radio" name="is_difficult_resolved" value="1" style="display:none;">是</div></div></div></div></div>' +
-            '<div class="v2-fg"><div class="v2-fl">工作内容</div><textarea name="work_content" class="v2-textarea" placeholder="请描述工作内容..." rows="3"></textarea></div>' +
+            '<div class="v2-fg"><div class="v2-fl">备注</div><textarea name="remark" class="v2-textarea" placeholder="可选备注..." rows="2"></textarea></div>' +
             '<div class="v2-fg"><div class="v2-fl">照片 (最多6张)</div><div class="v2-photo-area" id="woPhotoArea"><div class="v2-photo-add" id="woPhotoAdd">+</div></div><input type="file" id="woPhotoInput" accept="image/*" multiple style="display:none;"></div>' +
-            '<input type="hidden" name="remark" value=""></form>' +
-            '<div id="woCatModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:4000;align-items:flex-end;justify-content:center;"><div style="background:#fff;border-radius:16px 16px 0 0;width:100%;max-width:420px;max-height:70vh;overflow-y:auto;"><div style="width:36px;height:4px;background:#ccc;border-radius:2px;margin:10px auto 0;"></div><div style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px 10px;border-bottom:1px solid #f0f0f0;"><span style="font-weight:600;">选择工作类别</span><button onclick="document.getElementById(\'woCatModal\').style.display=\'none\'" style="width:32px;height:32px;border:none;background:#f0f0f0;border-radius:50%;font-size:1.1em;cursor:pointer;">×</button></div><div style="padding:16px;"><div style="font-size:0.85em;color:#999;margin-bottom:6px;">主类别</div><div class="v2-chip-group" id="woCatPrimary"></div><div id="woSubcatDivider" style="display:none;border-top:1px solid #e0e0e0;margin:12px 0;"></div><div id="woSubcatLabel" style="display:none;font-size:0.85em;color:#999;margin-bottom:6px;">子类别</div><div class="v2-chip-group" id="woSubcat"></div></div><div style="padding:12px 16px;border-top:1px solid #f0f0f0;"><button onclick="document.getElementById(\'woCatModal\').style.display=\'none\'" style="width:100%;padding:12px;border:none;border-radius:10px;font-size:0.95em;font-weight:600;cursor:pointer;background:#2D6A4F;color:#fff;">确定</button></div></div></div>' +
-            '<div id="woFaultModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:4000;align-items:flex-end;justify-content:center;"><div style="background:#fff;border-radius:16px 16px 0 0;width:100%;max-width:420px;max-height:70vh;overflow-y:auto;"><div style="width:36px;height:4px;background:#ccc;border-radius:2px;margin:10px auto 0;"></div><div style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px 10px;border-bottom:1px solid #f0f0f0;"><span style="font-weight:600;">故障详情</span><button onclick="document.getElementById(\'woFaultModal\').style.display=\'none\'" style="width:32px;height:32px;border:none;background:#f0f0f0;border-radius:50%;font-size:1.1em;cursor:pointer;">×</button></div><div style="padding:16px;"><div style="font-size:0.85em;color:#999;margin-bottom:6px;">故障类别</div><div class="v2-chip-group" id="woFaultPrimary"></div><div id="woFaultSubDivider" style="display:none;border-top:1px solid #e0e0e0;margin:12px 0;"></div><div id="woFaultSubLabel" style="display:none;font-size:0.85em;color:#999;margin-bottom:6px;">故障子项</div><div class="v2-chip-group" id="woFaultSub"></div></div><div style="padding:12px 16px;border-top:1px solid #f0f0f0;"><button onclick="document.getElementById(\'woFaultModal\').style.display=\'none\'" style="width:100%;padding:12px;border:none;border-radius:10px;font-size:0.95em;font-weight:600;cursor:pointer;background:#2D6A4F;color:#fff;">确定</button></div></div></div>';
+            '<input type="hidden" name="entries" id="woEntriesInput" value="[]"><input type="hidden" name="pm_resolved" id="woPmResolved" value=""></form>' +
+            '<div id="woCatModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:4000;align-items:flex-end;justify-content:center;"><div style="background:#fff;border-radius:16px 16px 0 0;width:100%;max-width:420px;max-height:70vh;overflow-y:auto;"><div style="width:36px;height:4px;background:#ccc;border-radius:2px;margin:10px auto 0;"></div><div style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px 10px;border-bottom:1px solid #f0f0f0;"><span style="font-weight:600;">选择工作类别</span><button type="button" onclick="document.getElementById(\'woCatModal\').style.display=\'none\'" style="width:32px;height:32px;border:none;background:#f0f0f0;border-radius:50%;font-size:1.1em;cursor:pointer;">×</button></div><div style="padding:16px;"><div style="font-size:0.85em;color:#999;margin-bottom:6px;">类别</div><div class="v2-chip-group" id="woCatPrimary"></div><div id="woCatSubDivider" style="display:none;border-top:1px solid #e0e0e0;margin:12px 0;"></div><div id="woCatSubLabel" style="display:none;font-size:0.85em;color:#999;margin-bottom:6px;">子类别</div><div class="v2-chip-group" id="woCatSub"></div></div></div></div>' +
+            '<div id="woTreeModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:4000;align-items:flex-end;justify-content:center;"><div style="background:#fff;border-radius:16px 16px 0 0;width:100%;max-width:420px;max-height:85vh;display:flex;flex-direction:column;"><div style="width:36px;height:4px;background:#ccc;border-radius:2px;margin:10px auto 0;"></div><div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid #f0f0f0;"><span style="font-weight:600;">工作内容</span><button type="button" onclick="document.getElementById(\'woTreeModal\').style.display=\'none\'" style="width:32px;height:32px;border:none;background:#f0f0f0;border-radius:50%;font-size:1.1em;cursor:pointer;">×</button></div><div id="woBreadcrumb" class="v2-wo-bc"></div><div id="woSheetBody" style="flex:1;overflow-y:auto;padding:8px 16px;"></div><div style="padding:12px 16px;border-top:1px solid #f0f0f0;"><button type="button" onclick="document.getElementById(\'woTreeModal\').style.display=\'none\'" style="width:100%;padding:12px;border:none;border-radius:10px;font-size:0.95em;font-weight:600;cursor:pointer;background:#2D6A4F;color:#fff;">完成</button></div></div></div>' +
+            '<div id="woLeafModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:4100;align-items:flex-end;justify-content:center;"><div style="background:#fff;border-radius:16px 16px 0 0;width:100%;max-width:420px;max-height:70vh;display:flex;flex-direction:column;"><div style="width:36px;height:4px;background:#ccc;border-radius:2px;margin:10px auto 0;"></div><div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid #f0f0f0;"><span id="woLeafTitle" style="font-weight:600;"></span><button type="button" onclick="document.getElementById(\'woLeafModal\').style.display=\'none\'" style="width:32px;height:32px;border:none;background:#f0f0f0;border-radius:50%;font-size:1.1em;cursor:pointer;">×</button></div><div id="woLeafBody" style="padding:16px;overflow-y:auto;"></div><div style="padding:12px 16px;border-top:1px solid #f0f0f0;display:flex;gap:10px;"><button type="button" onclick="document.getElementById(\'woLeafModal\').style.display=\'none\'" style="flex:1;padding:12px;border:1px solid #2D6A4F;border-radius:10px;font-size:0.95em;font-weight:600;cursor:pointer;background:#fff;color:#2D6A4F;">取消</button><button type="button" id="woLeafConfirmBtn" style="flex:1;padding:12px;border:none;border-radius:10px;font-size:0.95em;font-weight:600;cursor:pointer;background:#2D6A4F;color:#fff;">确定</button></div></div></div>';
 
         injectCSRF(body.querySelector('form'));
         initWorkorderBehaviors(data);
+        var sb = $('woSubmitBtn'); if (sb) { sb.disabled = false; sb.textContent = '提交'; }
     }
 
     function initWorkorderBehaviors(data) {
@@ -1092,54 +1106,155 @@
             c.addEventListener('click', function () { c.closest('.v2-chip-group').querySelectorAll('.v2-chip').forEach(function (x) { x.classList.remove('active'); }); c.classList.add('active'); var inp = c.querySelector('input'); if (inp) inp.checked = true; });
         });
 
-        var selectedCatId = null, catPrimary = $('woCatPrimary'), subcatGrid = $('woSubcat');
-        data.category_tree.forEach(function (cat) {
-            var chip = document.createElement('div'); chip.className = 'v2-chip'; chip.textContent = cat.name;
-            chip.addEventListener('click', function () {
-                catPrimary.querySelectorAll('.v2-chip').forEach(function (x) { x.classList.remove('active'); }); chip.classList.add('active'); subcatGrid.innerHTML = '';
-                if (cat.children.length > 0) { $('woSubcatDivider').style.display = ''; $('woSubcatLabel').style.display = '';
-                    cat.children.forEach(function (sub) { var sc = document.createElement('div'); sc.className = 'v2-chip'; sc.textContent = sub.name; sc.dataset.id = sub.id;
-                        sc.addEventListener('click', function () { subcatGrid.querySelectorAll('.v2-chip').forEach(function (x) { x.classList.remove('active'); }); sc.classList.add('active'); selectedCatId = sub.id; });
-                        subcatGrid.appendChild(sc); });
-                } else { $('woSubcatDivider').style.display = 'none'; $('woSubcatLabel').style.display = 'none'; selectedCatId = cat.id; }
-            }); catPrimary.appendChild(chip);
-        });
-        $('woCatTrigger').addEventListener('click', function () { $('woCatModal').style.display = 'flex'; });
-        var catModal = $('woCatModal'), catObserver = new MutationObserver(function () {
-            if (catModal.style.display === 'none') { var activeSub = subcatGrid.querySelector('.v2-chip.active');
-                var catId = activeSub ? activeSub.dataset.id : (catPrimary.querySelector('.v2-chip.active') ? selectedCatId : null);
-                if (catId) { $('woCatInput').value = catId; var name = '';
-                    data.category_tree.forEach(function (c) { if (c.id == catId) name = c.name; c.children.forEach(function (s) { if (s.id == catId) name = s.name; }); });
-                    $('woCatDisplay').textContent = name || '已选择'; $('woCatDisplay').style.color = '#222'; } }
-        }); catObserver.observe(catModal, { attributes: true, attributeFilter: ['style'] });
-
-        _faultEntries = []; var faultPrimary = $('woFaultPrimary'), faultSubGrid = $('woFaultSub');
-        data.fault_tree.forEach(function (fc) {
-            var chip = document.createElement('div'); chip.className = 'v2-chip'; chip.textContent = fc.name;
-            chip.addEventListener('click', function () {
-                faultPrimary.querySelectorAll('.v2-chip').forEach(function (x) { x.classList.remove('active'); }); chip.classList.add('active'); faultSubGrid.innerHTML = '';
-                if (fc.subtypes.length > 0) { $('woFaultSubDivider').style.display = ''; $('woFaultSubLabel').style.display = '';
-                    fc.subtypes.forEach(function (sub) { var sc = document.createElement('div'); sc.className = 'v2-chip'; sc.textContent = sub.name; sc.dataset.id = sub.id;
-                        sc.addEventListener('click', function () {
-                            if (sc.classList.contains('active')) {
-                                sc.classList.remove('active');
-                                var idx = _faultEntries.findIndex(function (e) { return e.fault_subtype == sub.id; });
-                                if (idx >= 0) _faultEntries.splice(idx, 1);
-                            } else {
-                                var cnt = prompt('请输入「' + sub.name + '」的故障数量:', '1');
-                                if (cnt === null) return; // cancelled
-                                cnt = parseInt(cnt);
-                                if (isNaN(cnt) || cnt < 1) cnt = 1;
-                                sc.classList.add('active');
-                                sc.textContent = sub.name + ' ×' + cnt;
-                                _faultEntries.push({ fault_subtype: sub.id, count: cnt });
-                            }
-                            if (!sc.classList.contains('active')) sc.textContent = sub.name;
-                            updateFaultDisplay(data.fault_tree);
-                        }); faultSubGrid.appendChild(sc); }); }
-            }); faultPrimary.appendChild(chip);
-        });
-        $('woFaultTrigger').addEventListener('click', function () { $('woFaultModal').style.display = 'flex'; });
+        // Work-content drill-down picker (replaces the old fault chips).
+        indexWorkTree(data.work_tree || []);
+        _woProjects = data.projects || [];
+        _woIrrCats = data.irrigation_subcategories || [];
+        _woCanCreateProject = !!data.can_create_project;
+        resetWoState();
+        updateWoTrigger();
+        // 工作类别: cascading sheet — level-1 chips first; selecting one reveals the next level below.
+        // 灌溉项目 is special: 灌溉项目 → FAM/WDI/绿化 → 项目名称 (from DB, or create).
+        var catTrigger = $('woCatTrigger'), catModal = $('woCatModal');
+        var catPrimary = $('woCatPrimary'), catSub = $('woCatSub');
+        function setCatSub(label, items) {
+            $('woCatSubLabel').textContent = label;
+            $('woCatSubLabel').style.display = '';
+            $('woCatSubDivider').style.display = '';
+            catSub.innerHTML = '';
+            items.forEach(function (it) {
+                var c = document.createElement('div'); c.className = 'v2-chip'; c.textContent = it.label;
+                c.addEventListener('click', it.onClick);
+                catSub.appendChild(c);
+            });
+        }
+        function closeCatModal() { if (catModal) catModal.style.display = 'none'; }
+        // Clear 工作内容 selections (counts/toggles/planned) — used when the category or
+        // project changes, since prior selections belong to a different subtree/scope.
+        function clearWoContent() {
+            _woEntries = {}; _woEntryPhotos = {};
+            _woPlanned = { checked: {}, other: '', reports: [] };
+            updateWoTrigger();
+        }
+        // Show/hide the 工作内容 row (hide when the selected category has nothing to drill).
+        function setContentVisible(show) {
+            var trig = $('woContentTrigger');
+            var row = trig ? trig.closest('.v2-fg') : null;
+            if (row) row.style.display = show ? '' : 'none';
+        }
+        function pickWoCategory(root, sub) {
+            var prevCat = _woCatNode;
+            _woProject = null;                       // non-project: no project binding
+            _woCatNode = sub ? sub.id : root.id;
+            if (prevCat && prevCat !== _woCatNode) clearWoContent();
+            var node = sub || root;
+            setContentVisible(!!(node.children && node.children.length));
+            // Auto-fill a lone toggle leaf (e.g., 培训记录上传) — skip free-text placeholders.
+            var kids = node.children || [];
+            if (kids.length === 1 && kids[0].value_type === 'toggle' && kids[0].name.indexOf('填写') < 0) {
+                var only = kids[0];
+                if (!_woEntries[only.id]) {
+                    _woEntries[only.id] = { count: 0, status: only.name, text_value: '', hasPhoto: false, project: null };
+                    updateWoTrigger();
+                }
+            }
+            var d = $('woCatDisplay');
+            if (d) { d.textContent = sub ? (root.name + ' › ' + sub.name) : root.name; d.style.color = '#222'; }
+            closeCatModal();
+        }
+        var PROJECT_TOP = { irrigation_project: 'IRRIGATION', drainage_project: 'DRAINAGE', other_project: 'OTHER' };
+        function pickWoProject(root, subLabel, project) {
+            var prevCat = _woCatNode, prevProj = _woProject;
+            _woCatNode = root.id;
+            _woProject = project.id;
+            if ((prevCat && prevCat !== _woCatNode) || (prevProj && prevProj !== _woProject)) clearWoContent();
+            setContentVisible(true);                 // project sections always have the template
+            var d = $('woCatDisplay');
+            if (d) { d.textContent = root.name + (subLabel ? ' › ' + subLabel : '') + ' › ' + project.name; d.style.color = '#222'; }
+            closeCatModal();
+        }
+        function showProjectsFor(root, top, sub, subLabel) {
+            var items = _woProjects.filter(function (p) {
+                if (p.category !== top) return false;
+                return top === 'IRRIGATION' ? p.subcategory === sub : !p.subcategory;
+            }).map(function (p) {
+                return { label: p.name + (p.symbol ? ' · ' + p.symbol : ''), onClick: function () { pickWoProject(root, subLabel, p); } };
+            });
+            if (_woCanCreateProject) items.push({ label: '＋ 新建项目', onClick: function () { createProject(root, top, sub, subLabel); } });
+            setCatSub(subLabel ? ('项目名称（' + subLabel + '）') : '项目名称', items.length ? items : [{ label: '（暂无项目）', onClick: function () {} }]);
+        }
+        function createProject(root, top, sub, subLabel) {
+            var name = prompt('请输入项目名称：');
+            if (!name || !name.trim()) return;
+            fetch('/api/irrigation-project/create/', {
+                method: 'POST', credentials: 'same-origin',
+                headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest', 'X-CSRFToken': getCSRFToken() },
+                body: JSON.stringify({ name: name.trim(), category: top, subcategory: sub })
+            }).then(function (r) { return r.json(); }).then(function (data) {
+                if (data.error) { showToast(data.error, 'error'); return; }
+                _woProjects.push(data);
+                pickWoProject(root, subLabel, { id: data.id, name: data.name });
+            }).catch(function () { showToast('创建项目失败', 'error'); });
+        }
+        if (catPrimary) {
+            // Custom display order for 工作类别 (3 per row): the rest appended after.
+            var CAT_ORDER = ['routine_maint', 'routine_support', 'repair_emergency',
+                'irrigation_project', 'drainage_project', 'other_project',
+                'meeting_training', 'warehouse', 'typhoon_emergency',
+                'greenhouse_nursery', 'safety_incident', 'good_deed'];
+            var orderedCats = _woRoots.slice().sort(function (a, b) {
+                var ia = CAT_ORDER.indexOf(a.section), ib = CAT_ORDER.indexOf(b.section);
+                return (ia < 0 ? 999 : ia) - (ib < 0 ? 999 : ib);
+            });
+            orderedCats.forEach(function (r) {
+                var chip = document.createElement('div'); chip.className = 'v2-chip'; chip.textContent = r.name;
+                chip.addEventListener('click', function () {
+                    catPrimary.querySelectorAll('.v2-chip').forEach(function (x) { x.classList.remove('active'); });
+                    chip.classList.add('active');
+                    catSub.innerHTML = '';
+                    var topCat = PROJECT_TOP[r.section];
+                    if (topCat) {
+                        if (r.section === 'irrigation_project') {
+                            setCatSub('项目类别', _woIrrCats.map(function (sc) {
+                                return { label: sc.label, onClick: function () { showProjectsFor(r, topCat, sc.code, sc.label); } };
+                            }));
+                        } else {
+                            showProjectsFor(r, topCat, '', '');
+                        }
+                    } else {
+                        var kids = (r.children && r.children.length) ? r.children : null;
+                        if (kids) {
+                            setCatSub('子类别', kids.map(function (c) { return { label: c.name, onClick: function () { pickWoCategory(r, c); } }; }));
+                        } else {
+                            $('woCatSubDivider').style.display = 'none';
+                            $('woCatSubLabel').style.display = 'none';
+                            pickWoCategory(r, null);
+                        }
+                    }
+                });
+                catPrimary.appendChild(chip);
+            });
+        }
+        if (catTrigger && catModal) catTrigger.addEventListener('click', function () { catModal.style.display = 'flex'; });
+        // Default 工作类别 to 常规维护 › 维保定期检查 (the most common type).
+        (function defaultCategory() {
+            var rmRoot = null;
+            for (var i = 0; i < _woRoots.length; i++) { if (_woRoots[i].section === 'routine_maint') { rmRoot = _woRoots[i]; break; } }
+            var sub = null;
+            if (rmRoot && rmRoot.children) {
+                for (var j = 0; j < rmRoot.children.length; j++) { if (rmRoot.children[j].name === '维保定期检查') { sub = rmRoot.children[j]; break; } }
+            }
+            if (sub) {
+                _woCatNode = sub.id; _woProject = null;
+                var dd = $('woCatDisplay');
+                if (dd) { dd.textContent = rmRoot.name + ' › ' + sub.name; dd.style.color = '#222'; }
+                setContentVisible(true);
+            }
+        })();
+        var contentTrigger = $('woContentTrigger');
+        if (contentTrigger) contentTrigger.addEventListener('click', openWoSheet);
+        var leafConfirm = $('woLeafConfirmBtn');
+        if (leafConfirm) leafConfirm.addEventListener('click', confirmWoLeaf);
 
         var photoArea = $('woPhotoArea'), photoInput = $('woPhotoInput');
         $('woPhotoAdd').addEventListener('click', function () { photoInput.click(); });
@@ -1155,13 +1270,306 @@
         });
     }
 
-    function updateFaultDisplay(faultTree) {
-        var display = $('woFaultDisplay');
-        if (_faultEntries.length > 0) {
-            display.textContent = _faultEntries.map(function (e) { var n = ''; faultTree.forEach(function (fc) { fc.subtypes.forEach(function (s) { if (s.id == e.fault_subtype) n = s.name; }); }); return n + '×' + e.count; }).join(', ');
-            display.style.color = '#222';
-        } else { display.textContent = '选择'; display.style.color = '#bbb'; }
-        $('woFaultInput').value = JSON.stringify(_faultEntries);
+    function escHtml(s) {
+        return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
+            return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c];
+        });
+    }
+
+    function ensureWoTreeStyle() {
+        if (document.getElementById('v2-wo-style')) return;
+        var css = '' +
+            '#woCatPrimary{display:flex;flex-wrap:wrap;gap:8px;}' +
+            '#woCatPrimary .v2-chip{flex:1 1 calc(33.333% - 8px);justify-content:center;text-align:center;}' +
+            '.v2-wo-bc{display:flex;align-items:center;flex-wrap:wrap;gap:4px;padding:8px 12px;border-bottom:1px solid #f0f0f0;font-size:0.82rem;color:#666;line-height:1.4;}' +
+            '.v2-wo-crumb{color:#2D6A4F;cursor:pointer;}' +
+            '.v2-wo-sep{color:#ccc;}' +
+            '.v2-wo-row{display:flex;align-items:center;gap:8px;width:100%;background:none;border:none;border-bottom:1px solid #f5f5f5;padding:13px 4px;font-size:0.95rem;color:#333;cursor:pointer;text-align:left;}' +
+            '.v2-wo-row:hover{background:#f6f9f6;}' +
+            '.v2-wo-rowname{flex:1;}' +
+            '.v2-wo-rowval{font-size:0.85rem;color:#2D6A4F;font-weight:600;background:#e9f3ee;padding:2px 9px;border-radius:10px;white-space:nowrap;}' +
+            '.v2-wo-rowval.empty{color:#bbb;font-weight:400;background:#f2f2f2;}' +
+            '.v2-wo-chev{color:#bbb;font-size:0.9rem;}' +
+            '.v2-wo-projwrap{padding:10px 4px;border-bottom:1px solid #f0f0f0;}' +
+            '.v2-wo-projwrap select{width:100%;padding:9px;border:1px solid #d8d8d8;border-radius:8px;font-size:0.92rem;box-sizing:border-box;}' +
+            '.v2-wo-filled{margin-top:10px;}' +
+            '.v2-wo-ftitle{font-size:0.82rem;color:#999;padding:6px 4px;}' +
+            '.v2-wo-fitem{display:flex;align-items:center;gap:8px;padding:8px 4px;border-bottom:1px solid #f5f5f5;font-size:0.86rem;}' +
+            '.v2-wo-fpath{flex:1;color:#444;line-height:1.3;}' +
+            '.v2-wo-fpath small{display:block;color:#aaa;font-size:0.74rem;}' +
+            '.v2-wo-fval{color:#2D6A4F;font-weight:600;font-size:0.85rem;white-space:nowrap;}' +
+            '.v2-wo-frm{font-size:0.9rem;color:#c0392b;border:none;background:none;cursor:pointer;}' +
+            '.v2-wo-pop input[type=number],.v2-wo-pop select,.v2-wo-pop textarea{width:100%;padding:9px;border:1px solid #d8d8d8;border-radius:8px;font-size:0.95rem;box-sizing:border-box;}' +
+            '.v2-wo-pop textarea{resize:vertical;}' +
+            '.v2-wo-pop label{display:block;font-size:0.82rem;color:#888;margin:8px 0 4px;}';
+        var style = document.createElement('style');
+        style.id = 'v2-wo-style';
+        style.textContent = css;
+        document.head.appendChild(style);
+    }
+
+    function indexWorkTree(tree) {
+        _woRoots = tree || [];
+        _woNodeById = {}; _woParentById = {};
+        function walk(node, parent) {
+            _woNodeById[node.id] = node;
+            if (parent) _woParentById[node.id] = parent;
+            (node.children || []).forEach(function (c) { walk(c, node); });
+        }
+        _woRoots.forEach(function (n) { walk(n, null); });
+    }
+
+    function resetWoState() {
+        _woEntries = {}; _woEntryPhotos = {}; _woPath = []; _woProject = null; _woCatNode = null;
+        _woPlanned = { checked: {}, other: '', reports: [] };
+    }
+
+    function currentWoNode() {
+        if (!_woPath.length) return null;
+        return _woNodeById[_woPath[_woPath.length - 1]];
+    }
+
+    function openWoSheet() {
+        ensureWoTreeStyle();
+        _woPath = _woCatNode ? [_woCatNode] : [];
+        var m = $('woTreeModal'); if (m) m.style.display = 'flex';
+        renderWoLevel();
+    }
+
+    function woAncestorNames(id) {
+        var names = [], cur = _woParentById[id];
+        while (cur) { names.unshift(cur.name); cur = _woParentById[cur.id]; }
+        return names;
+    }
+
+    function woValueLabel(node, e) {
+        if (!e) return '';
+        if (node.value_type === 'count') return '×' + (e.count || 0) + (node.unit ? (' ' + node.unit) : '');
+        if (node.value_type === 'status') return e.status || '';
+        var t = (e.text_value || '');
+        if (node.value_type === 'text_photo') return (t ? t.slice(0, 8) : '📷');
+        return t ? t.slice(0, 8) : '✓';
+    }
+
+    function drillInto(id) { _woPath.push(id); renderWoLevel(); }
+    function drillUpTo(idx) {
+        var floor = _woCatNode ? 1 : 0;
+        if (idx < 0) _woPath = _woCatNode ? [_woCatNode] : [];
+        else _woPath = _woPath.slice(0, Math.max(floor, idx + 1));
+        renderWoLevel();
+    }
+
+    // 计划性维修: list past 待修 workorders in the current zone (checkable) + 其他 (free text).
+    function renderPlannedList(node) {
+        var body = $('woSheetBody');
+        if (body) body.innerHTML = '<div class="v2-wo-ftitle" style="text-align:center;padding:24px;">加载待修工单…</div>';
+        var zones = Array.from(_selectedZoneCodes).join(',');
+        fetch('/api/planned-maintenance/pending/?zones=' + encodeURIComponent(zones), { credentials: 'same-origin' })
+            .then(function (r) { return r.json(); })
+            .then(function (data) { renderPlannedListInner(node, (data && data.reports) || []); })
+            .catch(function () { renderPlannedListInner(node, []); });
+    }
+
+    function renderPlannedListInner(node, reports) {
+        var body = $('woSheetBody'); if (!body) return;
+        var html = '<div class="v2-wo-ftitle">待修工单（该区域历史 · 勾选本次已处理）</div>';
+        if (!reports.length) {
+            html += '<div class="v2-wo-ftitle" style="text-align:center;padding:14px;color:#bbb;">暂无待修工单</div>';
+        } else {
+            reports.forEach(function (rp) {
+                var on = !!_woPlanned.checked[rp.id];
+                var items = (rp.items && rp.items.length) ? rp.items.join('；') : '待修';
+                html += '<button type="button" class="v2-wo-row" data-pm="' + rp.id + '"><span class="v2-wo-rowname">' +
+                    escHtml(rp.date || '') + ' 工单#' + rp.id + (rp.worker ? ' · ' + escHtml(rp.worker) : '') +
+                    '<small style="display:block;color:#999;font-size:0.78rem;">' + escHtml(items) + '</small></span>' +
+                    (on ? '<span class="v2-wo-rowval">✓</span>' : '<span class="v2-wo-rowval empty">○</span>') + '</button>';
+            });
+        }
+        html += '<button type="button" class="v2-wo-row" id="woPmOther"><span class="v2-wo-rowname">其他（自行填写）</span>' +
+            '<span class="v2-wo-rowval' + (_woPlanned.other ? '' : ' empty') + '">' +
+            (_woPlanned.other ? escHtml(_woPlanned.other.slice(0, 8)) : '填写') + '</span></button>';
+        body.innerHTML = html;
+        body.querySelectorAll('[data-pm]').forEach(function (b) {
+            b.addEventListener('click', function () {
+                var rid = b.dataset.pm;
+                if (_woPlanned.checked[rid]) delete _woPlanned.checked[rid];
+                else _woPlanned.checked[rid] = true;
+                syncPlannedEntry(node);
+                renderPlannedListInner(node, reports);
+            });
+        });
+        var other = $('woPmOther');
+        if (other) other.addEventListener('click', function () {
+            var v = prompt('其他计划性维修内容：', _woPlanned.other || '');
+            if (v != null) { _woPlanned.other = v.trim(); syncPlannedEntry(node); renderPlannedListInner(node, reports); }
+        });
+    }
+
+    function syncPlannedEntry(node) {
+        var parts = [];
+        var ids = Object.keys(_woPlanned.checked);
+        if (ids.length) parts.push('处理待修工单 #' + ids.join(', #'));
+        if (_woPlanned.other) parts.push('其他: ' + _woPlanned.other);
+        if (parts.length) _woEntries[node.id] = { count: 0, status: '', text_value: parts.join(' | '), hasPhoto: false, project: null };
+        else delete _woEntries[node.id];
+        var pmInput = $('woPmResolved');
+        if (pmInput) pmInput.value = ids.join(',');
+        updateWoTrigger();
+    }
+
+    function renderWoLevel() {
+        ensureWoTreeStyle();
+        var bc = $('woBreadcrumb'), body = $('woSheetBody');
+        if (!body) return;
+        var crumbs = [];
+        if (!_woCatNode) crumbs.push({ up: -1, name: '全部' });
+        _woPath.forEach(function (id, i) { crumbs.push({ up: i, name: ((_woNodeById[id] || {}).name) || '' }); });
+        if (bc) {
+            bc.innerHTML = crumbs.map(function (c, i) {
+                return (i ? '<span class="v2-wo-sep">›</span>' : '') + '<span class="v2-wo-crumb" data-up="' + c.up + '">' + escHtml(c.name) + '</span>';
+            }).join('');
+            bc.querySelectorAll('.v2-wo-crumb').forEach(function (c) { c.addEventListener('click', function () { drillUpTo(parseInt(c.dataset.up, 10)); }); });
+        }
+
+        var cur = currentWoNode();
+        if (cur && cur.name === '计划性维修') { renderPlannedList(cur); return; }
+        var children = cur ? (cur.children || []) : _woRoots;
+        var html = '';
+        // Project selector at the 灌溉项目 section root.
+        if (cur && cur.section === 'irrigation_project' && _woPath.length === 1 && !_woProject) {
+            html += '<div class="v2-wo-projwrap"><select id="woProjectSelect"><option value="">请先选择项目…</option>' +
+                _woProjects.map(function (p) { return '<option value="' + p.id + '"' + (_woProject == p.id ? ' selected' : '') + '>' + escHtml(p.category_display) + ' · ' + escHtml(p.name) + '</option>'; }).join('') +
+                '</select></div>';
+        }
+        children.forEach(function (ch) {
+            if (ch.children && ch.children.length) {
+                html += '<button type="button" class="v2-wo-row" data-drill="' + ch.id + '"><span class="v2-wo-rowname">' + escHtml(ch.name) + '</span><span class="v2-wo-chev">›</span></button>';
+            } else {
+                var e = _woEntries[ch.id];
+                var label = e ? '<span class="v2-wo-rowval">' + escHtml(woValueLabel(ch, e)) + '</span>' : (ch.value_type === 'toggle' ? '<span class="v2-wo-rowval empty">○</span>' : '<span class="v2-wo-rowval empty">填写</span>');
+                html += '<button type="button" class="v2-wo-row" data-leaf="' + ch.id + '"><span class="v2-wo-rowname">' + escHtml(ch.name) + '</span>' + label + '</button>';
+            }
+        });
+        if (!children.length) html += '<div class="v2-wo-ftitle" style="text-align:center;padding:24px;">无子项</div>';
+
+        var filledIds = Object.keys(_woEntries);
+        if (filledIds.length) {
+            html += '<div class="v2-wo-filled"><div class="v2-wo-ftitle">已填 (' + filledIds.length + ')</div>';
+            filledIds.forEach(function (id) {
+                var n = _woNodeById[id]; if (!n) return;
+                html += '<div class="v2-wo-fitem"><div class="v2-wo-fpath">' + escHtml(n.name) + '<small>' + escHtml(woAncestorNames(id).join(' › ')) + '</small></div>' +
+                    '<span class="v2-wo-fval">' + escHtml(woValueLabel(n, _woEntries[id])) + '</span>' +
+                    '<button type="button" class="v2-wo-frm" data-rm="' + id + '">✕</button></div>';
+            });
+            html += '</div>';
+        }
+
+        body.innerHTML = html;
+        body.querySelectorAll('[data-drill]').forEach(function (b) { b.addEventListener('click', function () { drillInto(parseInt(b.dataset.drill, 10)); }); });
+        body.querySelectorAll('[data-leaf]').forEach(function (b) { b.addEventListener('click', function () { var nd = _woNodeById[parseInt(b.dataset.leaf, 10)]; if (nd && nd.value_type === 'toggle') toggleWoSelection(nd); else openWoLeafPopup(nd); }); });
+        body.querySelectorAll('[data-rm]').forEach(function (b) { b.addEventListener('click', function (ev) { ev.stopPropagation(); removeWoEntry(parseInt(b.dataset.rm, 10)); }); });
+        var ps = $('woProjectSelect');
+        if (ps) ps.addEventListener('change', function () { _woProject = ps.value ? parseInt(ps.value, 10) : null; });
+    }
+
+    // Toggle (no-count) leaf: tap to select/deselect. 待修 auto-flags 疑难/未解决.
+    function toggleWoSelection(node) {
+        if (!node) return;
+        if (node.is_project_scoped && !_woProject) { showToast('请先选择项目', 'error'); return; }
+        if (_woEntries[node.id]) {
+            delete _woEntries[node.id];
+            delete _woEntryPhotos[node.id];
+        } else {
+            _woEntries[node.id] = { count: 0, status: node.name, text_value: '', hasPhoto: false, project: node.is_project_scoped ? _woProject : null };
+        }
+        if (node.name === '待修') syncDifficultChips();
+        renderWoLevel();
+        updateWoTrigger();
+    }
+
+    // Reflect "any 待修 selected?" onto the 疑难/已处理 chips.
+    function syncDifficultChips() {
+        var hasDai = Object.keys(_woEntries).some(function (id) {
+            var n = _woNodeById[id];
+            return n && n.name === '待修';
+        });
+        if (!hasDai) return;
+        setRadioChip('is_difficult', '1');           // 疑难 = 是
+        setRadioChip('is_difficult_resolved', '');   // 疑难未解决
+    }
+    function setRadioChip(name, val) {
+        var inputs = document.querySelectorAll('#woModalForm input[name="' + name + '"]');
+        if (!inputs.length) return;
+        Array.prototype.forEach.call(inputs, function (r) {
+            var on = r.value === val;
+            r.checked = on;
+            var chip = r.closest('.v2-chip');
+            if (chip) chip.classList.toggle('active', on);
+        });
+    }
+
+    function openWoLeafPopup(node) {
+        if (!node) return;
+        if (node.is_project_scoped && !_woProject) { showToast('请先选择项目', 'error'); return; }
+        _woLeafTarget = node.id;
+        $('woLeafTitle').textContent = node.name;
+        var e = _woEntries[node.id] || {};
+        var inner = '<div class="v2-wo-pop">';
+        if (node.value_type === 'count') {
+            inner += '<label>数量' + (node.unit ? '（单位：' + escHtml(node.unit) + '）' : '') + '</label>' +
+                '<input type="number" id="woLeafCount" min="0" inputmode="numeric" value="' + (typeof e.count === 'number' ? e.count : 1) + '">';
+        } else if (node.value_type === 'status') {
+            inner += '<label>状态</label><select id="woLeafStatus"><option value="">--</option>' +
+                (node.status_options || []).map(function (o) { return '<option' + (e.status === o ? ' selected' : '') + '>' + escHtml(o) + '</option>'; }).join('') + '</select>';
+        } else {
+            inner += '<label>内容</label><textarea id="woLeafText" rows="3" placeholder="描述…">' + escHtml(e.text_value || '') + '</textarea>';
+            if (node.value_type === 'text_photo') inner += '<label>照片</label><input type="file" id="woLeafFile" accept="image/*" multiple>';
+        }
+        inner += '</div>';
+        $('woLeafBody').innerHTML = inner;
+        $('woLeafModal').style.display = 'flex';
+    }
+
+    function closeWoLeafPopup() { var m = $('woLeafModal'); if (m) m.style.display = 'none'; _woLeafTarget = null; }
+
+    function confirmWoLeaf() {
+        var node = _woNodeById[_woLeafTarget];
+        if (!node) { closeWoLeafPopup(); return; }
+        var count = 0, status = '', text = '', hasData = false, hasPhoto = false;
+        if (node.value_type === 'count') {
+            count = parseInt(($('woLeafCount') || {}).value || 0, 10) || 0; hasData = count > 0;
+        } else if (node.value_type === 'status') {
+            status = ($('woLeafStatus') || {}).value || ''; hasData = !!status;
+        } else {
+            text = (($('woLeafText') || {}).value || '').trim();
+            if (node.value_type === 'text_photo') {
+                var f = $('woLeafFile'); var nf = f ? Array.from(f.files) : [];
+                if (nf.length) { _woEntryPhotos[node.id] = nf; hasPhoto = true; }
+                else if (_woEntryPhotos[node.id] && _woEntryPhotos[node.id].length) hasPhoto = true;
+                hasData = !!(text || hasPhoto);
+            } else { hasData = !!text; }
+        }
+        if (!hasData) { delete _woEntries[node.id]; delete _woEntryPhotos[node.id]; }
+        else _woEntries[node.id] = { count: count, status: status, text_value: text, hasPhoto: hasPhoto, project: node.is_project_scoped ? _woProject : null };
+        closeWoLeafPopup(); renderWoLevel(); updateWoTrigger();
+    }
+
+    function removeWoEntry(id) {
+        delete _woEntries[id]; delete _woEntryPhotos[id];
+        renderWoLevel(); updateWoTrigger();
+    }
+
+    function updateWoTrigger() {
+        var n = Object.keys(_woEntries).length;
+        var d = $('woContentDisplay');
+        if (d) { d.textContent = n ? ('已填 ' + n + ' 项') : '选择'; d.style.color = n ? '#222' : '#bbb'; }
+    }
+
+    function collectWoEntries() {
+        return Object.keys(_woEntries).map(function (id) {
+            var e = _woEntries[id];
+            return { work_item: parseInt(id, 10), project: e.project || null, count: e.count || 0, status: e.status || '', text_value: e.text_value || '' };
+        });
     }
 
     function buildWaterRequestForm(data) {
@@ -1204,11 +1612,17 @@
         var form = $('woModalForm'); if (!form) return;
         form.querySelectorAll('input[name="zones"]').forEach(function (i) { i.remove(); });
         codes.forEach(function (code) { var input = document.createElement('input'); input.type = 'hidden'; input.name = 'zones'; input.value = code; form.appendChild(input); });
-        var fd = new FormData(form); _photoFiles.forEach(function (f) { fd.append('photos', f); });
+        var entriesInput = $('woEntriesInput'); if (entriesInput) entriesInput.value = JSON.stringify(collectWoEntries());
+        var fd = new FormData(form); _photoFiles.forEach(function (f) { fd.append('report_photos', f); });
+        Object.keys(_woEntryPhotos).forEach(function (id) { _woEntryPhotos[id].forEach(function (f) { fd.append('ep_' + id, f); }); });
         var btn = $('woSubmitBtn'); btn.disabled = true; btn.textContent = '提交中...';
         fetch('/mobile/workorder/v2/', { method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest' } })
             .then(function (r) { return r.json(); }).then(function (data) {
-                if (data.success) { showToast(data.message, 'success'); setTimeout(function () { closeV2Modal('workorder'); }, 1500); }
+                if (data.success) {
+                    showToast(data.message, 'success');
+                    btn.disabled = false; btn.textContent = '提交';
+                    setTimeout(function () { closeV2Modal('workorder'); }, 1500);
+                }
                 else { showToast(data.message, 'error'); btn.disabled = false; btn.textContent = '提交'; }
             }).catch(function (err) { showToast('提交失败: ' + err, 'error'); btn.disabled = false; btn.textContent = '提交'; });
     };

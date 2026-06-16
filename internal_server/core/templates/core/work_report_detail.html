@@ -96,7 +96,7 @@
     <div class="form-header">
         <h1>日报详情 #{{ report.id }}</h1>
         <div style="display:flex;gap:8px;">
-            <a href="{% url 'core:work_report_edit' report.id %}" class="btn btn-primary">编辑</a>
+            <a href="{% url 'core:workorder_tree_form_edit' report.id %}" class="btn btn-primary">编辑</a>
             <a href="{% url 'core:work_reports' %}" class="btn btn-secondary">← 返回列表</a>
         </div>
     </div>
@@ -122,6 +122,35 @@
             <p style="margin-top:4px;padding:12px;background:var(--color-surface);border-radius:8px;white-space:pre-wrap;">{{ report.remark }}</p>
         </div>
     </div>
+
+    {% if tree_entry_groups %}
+    <div class="form-section">
+        <h2>工作内容</h2>
+        {% for grp in tree_entry_groups %}
+        <h3 style="margin:14px 0 6px;font-size:0.95rem;color:var(--color-primary);">{{ grp.label }}</h3>
+        <table style="width:100%;border-collapse:collapse;font-size:0.85rem;">
+            <thead>
+                <tr style="background:var(--color-surface-dark);">
+                    <th style="padding:8px 12px;text-align:left;">项目</th>
+                    <th style="padding:8px 12px;text-align:left;">节点</th>
+                    <th style="padding:8px 12px;text-align:center;">数量</th>
+                    <th style="padding:8px 12px;text-align:left;">文本</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for e in grp.items %}
+                <tr style="border-bottom:1px solid var(--color-surface-dark);">
+                    <td style="padding:8px 12px;color:var(--color-text-muted);">{{ e.project|default_if_none:"" }}</td>
+                    <td style="padding:8px 12px;">{{ e.work_item.name_zh }}{% if e.work_item.unit %} <small style="color:#999;">({{ e.work_item.unit }})</small>{% endif %}</td>
+                    <td style="padding:8px 12px;text-align:center;font-weight:600;">{% if e.count %}{{ e.count }}{% endif %}</td>
+                    <td style="padding:8px 12px;">{{ e.text_value|default_if_none:"" }}{% if e.status %}<small style="color:var(--color-primary);">[{{ e.status }}]</small>{% endif %}</td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        {% endfor %}
+    </div>
+    {% endif %}
 
     <div class="form-section">
         <h2>故障计数</h2>
