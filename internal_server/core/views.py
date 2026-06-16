@@ -4354,9 +4354,9 @@ def maxicom_dashboard_api(request):
 @login_required(login_url='core:login')
 def stats_dashboard(request):
     """Data statistics dashboard with weekly work report stats and demand stats."""
-    from core.models import WorkReport, DemandRecord, Patch
+    from core.models import WorkReport, WorkReportEntry, WorkItem, DemandRecord, Patch
     from core.role_utils import is_admin
-    from django.db.models import Count, Q
+    from django.db.models import Count, Q, Sum
     from django.utils import timezone
     from datetime import datetime, timedelta, date
     from collections import defaultdict
@@ -4517,6 +4517,34 @@ def stats_dashboard(request):
     zone_fault_matrix['column_totals'].append(grand_total)
     zone_fault_matrix['grand_total'] = grand_total
 
+    # === 工作内容明细 (新现场作业记录树 WorkReportEntry) — additive alongside 故障 stats ===
+    section_labels = dict(WorkItem.SECTION_CHOICES)
+    entries_qs = WorkReportEntry.objects.filter(
+        work_report__in=week_qs, work_item__active=True
+    )
+    entries_total = entries_qs.count()
+    entries_count_sum = entries_qs.filter(
+        work_item__value_type='count'
+    ).aggregate(s=Sum('count'))['s'] or 0
+    entries_by_section = list(
+        entries_qs.values('work_item__section')
+        .annotate(entries=Count('id'), counts=Sum('count'))
+        .order_by('-entries')
+    )
+    for row in entries_by_section:
+        row['label'] = section_labels.get(row['work_item__section'], row['work_item__section'])
+    top_work_nodes = list(
+        entries_qs.values('work_item__name_zh')
+        .annotate(entries=Count('id'), counts=Sum('count'))
+        .order_by('-entries')[:10]
+    )
+    entries_by_project = list(
+        entries_qs.exclude(project__isnull=True)
+        .values('project__name', 'project__category')
+        .annotate(entries=Count('id'), counts=Sum('count'))
+        .order_by('-entries')[:10]
+    )
+
     worker_stats = []
     if admin:
         worker_stats = list(
@@ -4578,6 +4606,11 @@ def stats_dashboard(request):
         'reports_by_category': reports_by_category,
         'top_faults': top_faults,
         'zone_fault_matrix': zone_fault_matrix,
+        'entries_total': entries_total,
+        'entries_count_sum': entries_count_sum,
+        'entries_by_section': entries_by_section,
+        'top_work_nodes': top_work_nodes,
+        'entries_by_project': entries_by_project,
         'worker_stats': worker_stats,
         # Demand stats
         'demand_stats': demand_stats,
@@ -4662,7 +4695,7 @@ def custom_report_api(request):
 def _build_chart_data(data_source, metric, date_from, date_to,
                       is_admin, is_worker, worker, bar_mode='stacked', stack_by=''):
     """Build chart data dict for a given metric. Returns None if no data."""
-    from core.models import WorkReport, DemandRecord
+    from core.models import WorkReport, WorkReportEntry, WorkItem, DemandRecord
     from django.db.models import Count, Q
     from django.utils import timezone
     from datetime import timedelta, datetime
@@ -4857,6 +4890,39 @@ def _build_chart_data(data_source, metric, date_from, date_to,
                     'data': [e['count'] for e in entries],
                     'backgroundColor': _chart_colors(len(entries)),
                 }]
+            }
+
+        elif metric in ('by_entry_section', 'by_entry_node', 'by_entry_project'):
+            # 工作内容明细 (WorkReportEntry) — additive, reads the new tree-form data
+            eqs = WorkReportEntry.objects.filter(work_item__active=True)
+            eqs = date_filter(eqs, 'work_report__date')
+            if not is_admin:
+                if is_worker:
+                    eqs = eqs.filter(work_report__worker=worker)
+                else:
+                    eqs = eqs.none()
+            if metric == 'by_entry_section':
+                labels_map = dict(WorkItem.SECTION_CHOICES)
+                rows = list(eqs.values('work_item__section')
+                            .annotate(c=Count('id')).order_by('-c')[:15])
+                labels = [labels_map.get(r['work_item__section'], r['work_item__section']) for r in rows]
+            elif metric == 'by_entry_node':
+                rows = list(eqs.values('work_item__name_zh')
+                            .annotate(c=Count('id')).order_by('-c')[:15])
+                labels = [r['work_item__name_zh'] or '未指定' for r in rows]
+            else:  # by_entry_project
+                rows = list(eqs.exclude(project__isnull=True)
+                            .values('project__name').annotate(c=Count('id')).order_by('-c')[:15])
+                labels = [r['project__name'] or '未指定' for r in rows]
+            if not rows:
+                return None
+            return {
+                'labels': labels,
+                'datasets': [{
+                    'label': '填报次数',
+                    'data': [r['c'] for r in rows],
+                    'backgroundColor': _chart_colors(len(rows)),
+                }],
             }
 
         elif metric == 'difficult_rate_by_category':

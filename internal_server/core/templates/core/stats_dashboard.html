@@ -363,6 +363,51 @@
             {% endif %}
         </div>
 
+        <!-- 工作内容 · 按章节 -->
+        <div class="dashboard-card">
+            <h3>工作内容 · 按章节<span style="font-size:0.7rem;color:var(--color-text-muted);font-weight:400;"> (填报 {{ entries_total }} 项{% if entries_count_sum %} · 数量 {{ entries_count_sum }}{% endif %})</span></h3>
+            {% if entries_by_section %}
+            {% for s in entries_by_section %}
+            <div class="stat-row">
+                <span>{{ s.label }}</span>
+                <span style="font-weight:600;color:var(--color-primary);">{{ s.entries }} 次{% if s.counts %}<span style="color:var(--color-text-muted);font-weight:400;"> · {{ s.counts }}</span>{% endif %}</span>
+            </div>
+            {% endfor %}
+            {% else %}
+            <div class="chart-empty">本周暂无工作内容明细</div>
+            {% endif %}
+        </div>
+
+        <!-- 工作内容节点 Top10 -->
+        <div class="dashboard-card">
+            <h3>工作内容节点 Top10</h3>
+            {% if top_work_nodes %}
+            {% for n in top_work_nodes %}
+            <div class="stat-row">
+                <span>{{ n.work_item__name_zh|default:"未指定" }}</span>
+                <span style="font-weight:600;color:var(--color-primary);">{{ n.entries }}</span>
+            </div>
+            {% endfor %}
+            {% else %}
+            <div class="chart-empty">暂无工作内容节点</div>
+            {% endif %}
+        </div>
+
+        <!-- 灌溉项目分布 -->
+        <div class="dashboard-card">
+            <h3>灌溉项目分布</h3>
+            {% if entries_by_project %}
+            {% for p in entries_by_project %}
+            <div class="stat-row">
+                <span>{{ p.project__name }} <span style="color:var(--color-text-muted);">[{{ p.project__category }}]</span></span>
+                <span style="font-weight:600;color:var(--color-primary);">{{ p.entries }}</span>
+            </div>
+            {% endfor %}
+            {% else %}
+            <div class="chart-empty">暂无灌溉项目填报</div>
+            {% endif %}
+        </div>
+
         <!-- Zone × Fault Type Matrix -->
         <div class="dashboard-card" style="grid-column: span 2;">
             <h3>区域 × 故障类型矩阵</h3>

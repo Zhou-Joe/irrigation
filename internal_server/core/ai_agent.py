@@ -22,8 +22,8 @@ from langchain_openai import ChatOpenAI
 from langgraph.checkpoint.memory import InMemorySaver
 
 from core.models import (
-    AISettings, WorkReport, DemandRecord, Zone, Patch,
-    Worker, WorkCategory, FaultSubType, WeatherData,
+    AISettings, WorkReport, WorkReportEntry, WorkItem, Project,
+    DemandRecord, Zone, Patch, WeatherData,
 )
 
 logger = logging.getLogger(__name__)
@@ -80,6 +80,23 @@ def _populate_workspace_data(ws):
                 '是' if r.is_difficult else '否',
                 (r.work_content or '')[:200],
                 (r.remark or '')[:200],
+            ])
+    # WorkReportEntries (structured 现场作业记录 tree content, last 90 days)
+    _section_labels = dict(WorkItem.SECTION_CHOICES)
+    we_qs = WorkReportEntry.objects.filter(
+        work_report__date__gte=since
+    ).select_related('work_report', 'work_item', 'project').order_by('-work_report__date')
+    with open(os.path.join(ws, 'work_entries.csv'), 'w', newline='', encoding='utf-8-sig') as f:
+        w = csv.writer(f)
+        w.writerow(['日期', '章节', '节点编码', '节点名称', '值类型', '项目', '数量', '状态', '文本'])
+        for e in we_qs:
+            wi = e.work_item
+            w.writerow([
+                e.work_report.date.isoformat(),
+                _section_labels.get(wi.section, wi.section),
+                wi.code, wi.name_zh, wi.value_type,
+                str(e.project) if e.project else '',
+                e.count, e.status, (e.text_value or '')[:200],
             ])
     # DemandRecords (last 90 days)
     dr_qs = DemandRecord.objects.filter(date__gte=since).select_related(
@@ -205,6 +222,94 @@ def query_work_report_stats(
         '按班次分布': shift_dist,
         '按工作类别分布': cat_dist,
         '处理人工单Top10': worker_dist,
+    }, ensure_ascii=False)
+
+
+@tool
+def query_work_entries_stats(
+    start_date: str = "",
+    end_date: str = "",
+    section: str = "",
+    project: str = "",
+    top: int = 15,
+) -> str:
+    """统计工单「工作内容」明细(树形结构数据)：按章节/节点/灌溉项目汇总填报次数与数量。
+
+    覆盖新现场作业记录表单的结构化明细，区别于 query_work_report_stats 的工单级汇总。
+    可分析：哪些工作节点填报最频繁、各章节工作量分布、各灌溉项目投入等。
+
+    Args:
+        start_date: 起始日期 YYYY-MM-DD，留空默认最近30天
+        end_date: 结束日期 YYYY-MM-DD，留空默认今天
+        section: 章节过滤(可选)，值见返回中的「章节选项」，如 routine_maint/irrigation_project/repair_emergency
+        project: 灌溉项目名称或代号模糊匹配(可选)
+        top: 节点维度最多返回条数，默认15
+    """
+    from django.db.models import Sum, Count, Q
+
+    today = date.today()
+    end = _parse_date(end_date) or today
+    start = _parse_date(start_date) or (end - timedelta(days=30))
+
+    base = WorkReportEntry.objects.filter(
+        work_report__date__gte=start, work_report__date__lte=end,
+        work_item__active=True,
+    )
+    if section:
+        base = base.filter(work_item__section=section)
+    if project:
+        base = base.filter(
+            Q(project__name__icontains=project) | Q(project__code__icontains=project)
+        )
+
+    section_labels = dict(WorkItem.SECTION_CHOICES)
+    total_entries = base.count()
+    count_sum = base.filter(work_item__value_type='count').aggregate(s=Sum('count'))['s'] or 0
+
+    # by section
+    section_dist = {}
+    for row in base.values('work_item__section').annotate(
+        entries=Count('id'), counts=Sum('count')
+    ).order_by('-entries'):
+        key = row['work_item__section']
+        section_dist[section_labels.get(key, key)] = {
+            '填报次数': row['entries'],
+            '合计数量': row['counts'] or 0,
+        }
+
+    # top nodes actually filled
+    node_dist = []
+    for row in base.values(
+        'work_item__code', 'work_item__name_zh', 'work_item__value_type'
+    ).annotate(entries=Count('id'), counts=Sum('count')).order_by('-entries')[:top]:
+        node_dist.append({
+            '编码': row['work_item__code'],
+            '节点': row['work_item__name_zh'],
+            '值类型': row['work_item__value_type'],
+            '填报次数': row['entries'],
+            '合计数量': row['counts'] or 0,
+        })
+
+    # by irrigation project
+    project_dist = []
+    for row in base.exclude(project__isnull=True).values(
+        'project__name', 'project__category'
+    ).annotate(entries=Count('id'), counts=Sum('count')).order_by('-entries'):
+        project_dist.append({
+            '项目': row['project__name'],
+            '类别': row['project__category'],
+            '填报次数': row['entries'],
+            '合计数量': row['counts'] or 0,
+        })
+
+    return json.dumps({
+        'date_range': [start.isoformat(), end.isoformat()],
+        '明细总数': total_entries,
+        '计数型合计': count_sum,
+        '按章节分布': section_dist,
+        '填报最频节点Top': node_dist,
+        '按灌溉项目分布': project_dist,
+        '章节选项': section_labels,
     }, ensure_ascii=False)
 
 
@@ -375,6 +480,7 @@ def run_python_code(code: str, description: str = "") -> str:
 
     工作目录已预置以下 CSV 数据文件，用 pandas 读取：
     - work_reports.csv（最近90天维修工单：日期/处理人/位置/班次/工作类别/工时/内容）
+    - work_entries.csv（最近90天工单明细：日期/章节/节点编码/节点名称/值类型/项目/数量/状态/文本）
     - demand_records.csv（最近90天浇水需求：日期/区域/类别/部门/状态/内容）
     - zones.csv（全部区域：编号/通用名称/片区/面积/优先级）
 
@@ -444,6 +550,7 @@ def run_python_code(code: str, description: str = "") -> str:
 ALL_TOOLS = [
     query_work_reports,
     query_work_report_stats,
+    query_work_entries_stats,
     query_demand_records,
     query_zones,
     query_weather,
