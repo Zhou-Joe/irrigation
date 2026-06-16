@@ -186,7 +186,6 @@
                     </div>
                     <input type="file" id="dxfFileInput" class="dxf-input" accept=".dxf">
                     <div id="uploadStatus"></div>
-                    <div id="shapesList"></div>
                 </div>
 
                 <!-- Step 2: Georeference -->
@@ -218,7 +217,7 @@
                     <div class="panel-title">
                         <span class="step-badge">3</span> 分配图形
                     </div>
-                    <div id="groupsList"></div>
+                    <div id="groupsList" style="max-height:320px; overflow-y:auto; padding-right:4px;"></div>
                     <div id="suggestedZones" style="display:none; margin-top:8px;">
                         <div style="font-size:0.78rem; color:#888; margin-bottom:4px;">💡 建议匹配区域（按距离排序）</div>
                         <div id="suggestedZonesList"></div>
@@ -268,7 +267,6 @@
 <!-- Zone data -->
 <script id="all-zones-data" type="application/json">{{ all_zones_json|safe }}</script>
 <script id="all-drawn-zones-data" type="application/json">{{ all_drawn_zones_json|safe }}</script>
-<script id="session-dxf-data" type="application/json">{{ session_dxf_json|safe }}</script>
 
 <script>
 (function() {
@@ -288,6 +286,7 @@
     let dxfTransformed = null;
     let dxfCoordInfo = null;
     let selectedGroupIds = new Set();   // multi-select support
+    let assignedGroupIds = new Set();   // groups already assigned to a zone → hidden on map
 
     // ── Map ──
     const centerLat = 31.145794 + 0.010;
@@ -415,22 +414,44 @@
 
     // ── Render DXF shapes on map (with group drag) ──
     let dxfPolygons = [];       // rendered polygon references
+    let _suppressNextMapClick = false;  // set on polygon mousedown → ignore the synthesized map click
     let dxfDragging = false;
     let dxfOrigLatLngs = null;  // snapshot of polygon positions at drag start
 
-    function renderDxfShapes() {
+    function renderDxfShapes(fit) {
         dxfLayerGroup.clearLayers();
         dxfPolygons = [];
         if (!dxfTransformed) return;
         const colors = ['#3A86FF', '#FF006E', '#8338EC', '#FB5607', '#FFBE0B', '#06D6A0'];
-        dxfTransformed.forEach(function(ts, idx) {
+
+        function shapeById(id) { for (var i = 0; i < dxfTransformed.length; i++) { if (dxfTransformed[i].id === id) return dxfTransformed[i]; } return null; }
+        function ringOf(shape) { return shape.vertices_latlng.map(function(p) { return [p.lat, p.lng]; }); }
+
+        // Build one multi-ring polygon per group (outer + holes => donut). Fallback: per-shape.
+        var items = [];
+        if (dxfGroups && dxfGroups.length) {
+            dxfGroups.forEach(function(g) {
+                var outer = shapeById(g.outer && g.outer.id);
+                if (!outer) return;
+                var rings = [ringOf(outer)];
+                (g.holes || []).forEach(function(h) { var hs = shapeById(h.id); if (hs) rings.push(ringOf(hs)); });
+                items.push({ rings: rings, groupId: g.id, outerId: outer.id });
+            });
+        }
+        if (!items.length) {
+            dxfTransformed.forEach(function(ts) { items.push({ rings: [ringOf(ts)], groupId: null, outerId: ts.id }); });
+        }
+
+        items.forEach(function(it, idx) {
+            if (it.groupId && assignedGroupIds.has(it.groupId)) return;  // hide assigned groups
             const c = colors[idx % colors.length];
-            const latLngs = ts.vertices_latlng.map(function(p) { return [p.lat, p.lng]; });
-            const assigned = isShapeAssigned(ts.id);
+            const assigned = isShapeAssigned(it.outerId);
             const style = assigned
                 ? { color: '#52B788', weight: 3, opacity: 0.9, fillOpacity: 0.15 }
                 : { color: c, weight: 2, opacity: 0.7, fillOpacity: 0.1, dashArray: '6 4' };
-            const poly = L.polygon(latLngs, style).addTo(dxfLayerGroup);
+            const poly = L.polygon(it.rings, style).addTo(dxfLayerGroup);
+            poly._groupId = it.groupId;
+            poly._outerId = it.outerId;
             dxfPolygons.push(poly);
 
             // Combined click + drag via DOM-level mousedown
@@ -440,11 +461,15 @@
                 svgEl.addEventListener('mousedown', function(domE) {
                     if (domE.button !== 0) return;
                     domE.stopPropagation();  // prevent map drag
+                    _suppressNextMapClick = true;  // ignore the click that follows (don't deselect)
 
                     var clicked = false;
                     var startLL = map.mouseEventToLatLng(domE);
+                    // Snapshot full ring structure (supports holes / multi-ring).
                     dxfOrigLatLngs = dxfPolygons.map(function(p) {
-                        return p.getLatLngs()[0].map(function(pt) { return [pt.lat, pt.lng]; });
+                        return p.getLatLngs().map(function(ring) {
+                            return ring.map(function(pt) { return [pt.lat, pt.lng]; });
+                        });
                     });
 
                     function onDocMove(ev) {
@@ -456,7 +481,9 @@
                         }
                         if (clicked) {
                             dxfPolygons.forEach(function(p, pi) {
-                                var moved = dxfOrigLatLngs[pi].map(function(pt) { return [pt[0] + dlat, pt[1] + dlng]; });
+                                var moved = dxfOrigLatLngs[pi].map(function(ring) {
+                                    return ring.map(function(pt) { return [pt[0] + dlat, pt[1] + dlng]; });
+                                });
                                 p.setLatLngs(moved);
                             });
                         }
@@ -466,9 +493,11 @@
                         document.removeEventListener('mouseup', onDocUp);
 
                         if (clicked) {
-                            // Was a drag — commit offset
-                            var finalLatLngs = dxfPolygons[0].getLatLngs()[0];
-                            var origV = dxfTransformed[0].vertices_latlng;
+                            // Was a drag — commit offset (reference the first polygon's outer ring)
+                            var firstPoly = dxfPolygons[0];
+                            var outerShape = shapeById(firstPoly._outerId) || dxfTransformed[0];
+                            var finalLatLngs = firstPoly.getLatLngs()[0];
+                            var origV = outerShape.vertices_latlng;
                             var offLat = finalLatLngs[0].lat - origV[0].lat;
                             var offLng = finalLatLngs[0].lng - origV[0].lng;
                             dxfTransformed.forEach(function(t) {
@@ -481,9 +510,11 @@
                             computeSuggestions();
                         } else {
                             // Was a click — select/deselect group
-                            if (dxfGroups) {
+                            if (it.groupId) {
+                                selectGroup(it.groupId);
+                            } else if (dxfGroups) {
                                 for (var gi = 0; gi < dxfGroups.length; gi++) {
-                                    if (getGroupShapeIds(dxfGroups[gi]).includes(ts.id)) {
+                                    if (getGroupShapeIds(dxfGroups[gi]).includes(it.outerId)) {
                                         selectGroup(dxfGroups[gi].id);
                                         return;
                                     }
@@ -496,8 +527,8 @@
                 });
             }
         });
-        // Fit map to show all shapes
-        if (dxfTransformed.length > 0) {
+        // Fit map to show all shapes (only when explicitly requested — not after assign)
+        if (fit !== false && dxfTransformed.length > 0) {
             const allBounds = L.latLngBounds([]);
             dxfTransformed.forEach(function(ts) {
                 ts.vertices_latlng.forEach(function(p) { allBounds.extend([p.lat, p.lng]); });
@@ -594,27 +625,7 @@
                     dxfGroups = data.groups;
                     dxfCoordInfo = data.coord_info;
 
-                    // Render shape cards
-                    let html = '';
-                    data.groups.forEach(function(g) {
-                        const outer = g.outer;
-                        html += '<div class="shape-card">';
-                        html += '<div class="shape-card-header">';
-                        html += '<span class="shape-type">' + outer.entity_type + '</span>';
-                        html += '<span class="shape-layer">' + (outer.layer || '0') + '</span>';
-                        html += '<span class="shape-verts">' + outer.vertex_count + '点</span>';
-                        html += '</div>';
-                        if (g.has_holes) {
-                            g.holes.forEach(function(h) {
-                                html += '<div style="padding-left:12px;">';
-                                html += '<span class="shape-hole-tag">孔洞</span> ';
-                                html += h.entity_type + ' · ' + h.vertex_count + '点';
-                                html += '</div>';
-                            });
-                        }
-                        html += '</div>';
-                    });
-                    document.getElementById('shapesList').innerHTML = html;
+                    // (shape detail cards removed — the selectable 组N list in Step 3 covers this)
 
                     // Enable georef panel
                     document.getElementById('panelGeoRef').classList.remove('disabled');
@@ -708,15 +719,15 @@
 
     // Always-active map click handler for anchor picking
     map.on('click', function(e) {
+        // Ignore clicks that originated on a DXF polygon (selection handled in its mousedown)
+        if (_suppressNextMapClick) { _suppressNextMapClick = false; return; }
         // Deselect group when clicking empty map
         if (selectedGroupIds.size > 0 && mapClickMode !== 'anchor') {
             selectedGroupIds.clear();
             renderGroupsList();
             computeSuggestions();
+            var colors = ['#3A86FF', '#FF006E', '#8338EC', '#FB5607', '#FFBE0B', '#06D6A0'];
             dxfPolygons.forEach(function(poly, idx) {
-                var ts = dxfTransformed ? dxfTransformed[idx] : null;
-                if (!ts) return;
-                var colors = ['#3A86FF', '#FF006E', '#8338EC', '#FB5607', '#FFBE0B', '#06D6A0'];
                 poly.setStyle({ color: colors[idx % colors.length], weight: 2, opacity: 0.7, fillOpacity: 0.1, dashArray: '6 4' });
             });
         }
@@ -798,24 +809,26 @@
     // ── Groups list ──
     function renderGroupsList() {
         if (!dxfGroups) return;
-        var src = dxfShapes || [];
         let html = '';
         dxfGroups.forEach(function(g) {
-            // g.outer is a shape index, not an object — resolve it
-            var outerShape = src[g.outer] || {};
+            // g.outer / g.holes are shape OBJECTS (id/entity_type/...), not indices.
+            var outerShape = g.outer || {};
+            var isAssigned = assignedGroupIds.has(g.id);
             var isSelected = selectedGroupIds.has(g.id);
             var selected = isSelected ? 'border-color:var(--color-primary);background:rgba(82,183,136,0.08);' : '';
-            html += '<div class="shape-card" style="cursor:pointer;' + selected + '" onclick="selectGroup(\'' + g.id + '\')">';
+            var cardStyle = isAssigned ? 'opacity:0.5;' : 'cursor:pointer;';
+            var onclick = isAssigned ? '' : ' onclick="selectGroup(\'' + g.id + '\')"';
+            html += '<div class="shape-card" style="' + cardStyle + selected + '"' + onclick + '>';
             html += '<div class="shape-card-header">';
-            html += (isSelected ? '✅ ' : '⬜ ') + '<span class="shape-type">组 ' + (parseInt(g.id.replace('group_', '')) + 1) + '</span>';
+            var prefix = isAssigned ? '✅ 已分配 ' : (isSelected ? '✅ ' : '⬜ ');
+            html += prefix + '<span class="shape-type">组 ' + (parseInt(g.id.replace('group_', '')) + 1) + '</span>';
             html += '<span class="shape-layer">' + (outerShape.entity_type || '?') + ' · ' + (outerShape.layer || '?') + '</span>';
             html += '<span class="shape-verts">' + (outerShape.vertex_count || '?') + '点</span>';
             html += '</div>';
             if (g.holes && g.holes.length > 0) {
                 html += '<div style="padding-left:12px;font-size:0.78rem;">';
-                g.holes.forEach(function(hIdx) {
-                    var hShape = src[hIdx] || {};
-                    html += '<span class="shape-hole-tag">孔洞</span> ' + (hShape.entity_type || '?') + ' ' + (hShape.vertex_count || '?') + '点 &nbsp;';
+                g.holes.forEach(function(h) {
+                    html += '<span class="shape-hole-tag">孔洞</span> ' + (h.entity_type || '?') + ' ' + (h.vertex_count || '?') + '点 &nbsp;';
                 });
                 html += '</div>';
             }
@@ -853,8 +866,8 @@
         var g = dxfGroups.find(function(x) { return x.id === groupId; });
         if (!g) return null;
         var allPts = [];
-        [g.outer].concat(g.holes || []).forEach(function(idx) {
-            var ts = dxfTransformed[idx];
+        [g.outer].concat(g.holes || []).forEach(function(obj) {
+            var ts = dxfTransformed.find(function(t) { return t.id === obj.id; });
             if (ts && ts.vertices_latlng) allPts = allPts.concat(ts.vertices_latlng);
         });
         if (allPts.length === 0) return null;
@@ -941,12 +954,9 @@
         }
         renderGroupsList();
         computeSuggestions();
-        // Update polygon styles in-place
-        var selIds = getAllSelectedShapeIds();
-        dxfPolygons.forEach(function(poly, idx) {
-            var ts = dxfTransformed[idx];
-            if (!ts) return;
-            var isSel = selIds.includes(ts.id);
+        // Update polygon styles in-place (dxfPolygons are groups now)
+        dxfPolygons.forEach(function(poly) {
+            var isSel = poly._groupId && selectedGroupIds.has(poly._groupId);
             poly.setStyle(isSel
                 ? { color: '#52B788', weight: 3, opacity: 1, fillOpacity: 0.2, dashArray: null }
                 : { color: '#3A86FF', weight: 1.5, opacity: 0.4, fillOpacity: 0.05, dashArray: '4 3' });
@@ -1011,7 +1021,14 @@
                 if (data.success) {
                     document.getElementById('assignStatus').innerHTML = '<div class="status-msg success">' + data.message + '</div>';
                     addAssignedItem(data);
-                    renderDxfShapes();
+                    // Mark the just-assigned groups as done (hidden on map), clear selection,
+                    // and re-render WITHOUT refitting/zooming so the user can keep assigning others.
+                    selectedGroupIds.forEach(function(gid) { assignedGroupIds.add(gid); });
+                    selectedGroupIds.clear();
+                    zoneInput.value = '';
+                    renderDxfShapes(false);
+                    renderGroupsList();
+                    computeSuggestions();
                 } else {
                     document.getElementById('assignStatus').innerHTML = '<div class="status-msg error">' + data.message + '</div>';
                 }
@@ -1061,12 +1078,17 @@
 
     window.confirmSave = function() {
         var btn = document.getElementById('saveRow').querySelector('button');
-        btn.textContent = '✓ 已生效，刷新地图中...';
+        var orig = btn.textContent;
         btn.disabled = true;
+        btn.textContent = '✓ 已保存并生效';
         btn.style.background = '#52B788';
-        btn.style.opacity = '0.8';
-        // Reload to refresh map with updated zone boundaries
-        setTimeout(function() { location.reload(); }, 800);
+        // Boundaries are saved on each assign — this is just confirmation. Re-enable after a
+        // moment so the user can save again after assigning more groups.
+        setTimeout(function() {
+            btn.textContent = orig;
+            btn.style.background = '';
+            btn.disabled = false;
+        }, 1500);
     };
 
     // ── DXF Import History ──
@@ -1138,37 +1160,8 @@
             });
     };
 
-    // ── Restore session DXF data on page load ──
-    var savedDxf = JSON.parse(document.getElementById('session-dxf-data').textContent);
-    if (savedDxf && savedDxf.transformed && savedDxf.transformed.length > 0) {
-        dxfShapes = savedDxf.shapes;
-        dxfGroups = savedDxf.groups;
-        dxfTransformed = savedDxf.transformed;
-        dxfCoordInfo = savedDxf.coord_info;
-
-        // Show upload success
-        document.getElementById('uploadStatus').innerHTML =
-            '<div class="status-msg success">已恢复上次上传: ' + (savedDxf.filename || '') + ' (' + dxfTransformed.length + '个图形)</div>';
-
-        // Show coord info & auto-georef panel
-        if (dxfCoordInfo) {
-            var ci = dxfCoordInfo;
-            document.getElementById('coordInfoBox').innerHTML =
-                '<div class="coord-info-box"><div class="label">坐标系检测</div><div>' + ci.info + '</div></div>';
-            if (!ci.need_anchors) {
-                document.getElementById('manualGeoRef').style.display = 'none';
-                document.getElementById('autoGeoRef').style.display = 'block';
-            }
-        }
-
-        // Enable panels
-        document.getElementById('panelGeoRef').classList.remove('disabled');
-        document.getElementById('panelAssign').classList.remove('disabled');
-
-        // Render groups list and shapes on map
-        renderGroupsList();
-        renderDxfShapes();
-    }
+    // (Session DXF auto-restore on page load removed — it confused users. Each
+    //  visit starts fresh; re-upload the DXF to resume.)
 
 })();
 </script>

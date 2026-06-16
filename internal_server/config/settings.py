@@ -75,6 +75,11 @@ STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 STATICFILES_DIRS = [BASE_DIR / 'static']
 
+# Allow large DXF uploads (default Django limit is 2.5MB → "request entity too large").
+DATA_UPLOAD_MAX_MEMORY_SIZE = 100 * 1024 * 1024       # 100 MB
+FILE_UPLOAD_MAX_MEMORY_SIZE = 100 * 1024 * 1024       # 100 MB
+
+
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 
