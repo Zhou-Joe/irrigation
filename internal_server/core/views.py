@@ -5309,13 +5309,15 @@ def work_reports_list(request):
 
 @login_required(login_url='core:login')
 def work_report_detail(request, report_id):
-    from core.models import WorkReport
+    from core.models import WorkReport, WorkItem
     from core.role_utils import is_admin
+    from collections import OrderedDict
 
     report = get_object_or_404(
         WorkReport.objects.select_related(
             'worker', 'location', 'work_category', 'info_source'
-        ).prefetch_related('fault_entries__fault_subtype__category'),
+        ).prefetch_related('fault_entries__fault_subtype__category',
+                           'entries__work_item', 'entries__project'),
         pk=report_id
     )
 
@@ -5328,9 +5330,18 @@ def work_report_detail(request, report_id):
             messages.error(request, '无权查看此记录')
             return redirect('core:work_reports')
 
+    # Group tree-form entries (WorkReportEntry) by section for display.
+    section_labels = dict(WorkItem.SECTION_CHOICES)
+    grouped = OrderedDict()
+    for e in report.entries.select_related('work_item', 'project'):
+        sec = e.work_item.section
+        grouped.setdefault(sec, {'label': section_labels.get(sec, sec), 'items': []})
+        grouped[sec]['items'].append(e)
+
     return render(request, 'core/work_report_detail.html', {
         'report': report,
         'fault_entries': report.fault_entries.select_related('fault_subtype__category').all(),
+        'tree_entry_groups': list(grouped.values()),
     })
 
 

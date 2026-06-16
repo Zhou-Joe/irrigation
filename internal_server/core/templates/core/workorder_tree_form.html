@@ -1,0 +1,339 @@
+{% extends 'core/base.html' %}
+{% load static %}
+{% block title %}{% if report %}编辑现场作业记录{% else %}新建现场作业记录{% endif %}{% endblock %}
+{% block nav_work_reports %}active{% endblock %}
+
+{% block extra_css %}
+<style>
+.wo-wrap { max-width: 820px; margin: 0 auto; padding: 12px 14px 80px; }
+.wo-card { background: #fff; border-radius: 12px; padding: 14px; margin-bottom: 12px;
+           box-shadow: 0 1px 4px rgba(0,0,0,.06); }
+.wo-card h2 { margin: 0 0 10px; font-size: 1.02rem; color: var(--color-primary, #2e7d32); }
+.wo-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.wo-grid .full { grid-column: 1 / -1; }
+.wo-field label { display: block; font-size: .8rem; color: #555; margin-bottom: 3px; font-weight: 500; }
+.wo-field input, .wo-field select, .wo-field textarea {
+    width: 100%; padding: 8px 9px; border: 1px solid #d8d8d8; border-radius: 8px;
+    font-size: .92rem; background: #fff; box-sizing: border-box; }
+.wo-field input:focus, .wo-field select:focus, .wo-field textarea:focus {
+    outline: none; border-color: var(--color-primary, #2e7d32); }
+.wo-checks { display: flex; gap: 16px; flex-wrap: wrap; }
+.wo-checks label { display: flex; align-items: center; gap: 5px; font-size: .88rem; }
+
+/* search */
+.wo-search { position: sticky; top: 52px; z-index: 50; background: var(--color-bg, #f4f1ec);
+             padding: 8px 14px; margin: 0 -14px 10px; border-bottom: 1px solid #e2ddd3; }
+.wo-search input { width: 100%; padding: 9px 12px; border-radius: 20px; border: 1px solid #ccc;
+                   font-size: .92rem; box-sizing: border-box; }
+.wo-results { background: #fff; border-radius: 8px; box-shadow: 0 4px 14px rgba(0,0,0,.12);
+              max-height: 260px; overflow-y: auto; margin-top: 6px; }
+.wo-result { display: block; width: 100%; text-align: left; padding: 9px 12px; border: none;
+             border-bottom: 1px solid #f0f0f0; background: #fff; cursor: pointer; font-size: .88rem; }
+.wo-result:hover { background: #f6f9f6; }
+.wo-result b { color: var(--color-primary, #2e7d32); }
+.wo-result small { display: block; color: #999; font-size: .74rem; margin-top: 2px; }
+
+/* tree */
+#wo-tree .wo-group-body { padding-left: 12px; border-left: 2px solid #eee; margin-left: 4px; }
+#wo-tree .wo-group-head { display: flex; align-items: center; gap: 6px; width: 100%;
+    background: none; border: none; padding: 8px 4px; font-size: .94rem; font-weight: 600;
+    color: #333; cursor: pointer; text-align: left; }
+#wo-tree .wo-group[data-level="0"] > .wo-group-head { font-size: 1.02rem; color: var(--color-primary, #2e7d32); }
+#wo-tree .chev { font-size: .7rem; width: 10px; color: #888; }
+.wo-gname { flex: 1; }
+.wo-project-sel { font-size: .8rem; padding: 4px 6px; border: 1px solid #ccc; border-radius: 6px;
+                  max-width: 46%; }
+.wo-leaf { display: flex; align-items: center; gap: 8px; padding: 5px 4px; border-bottom: 1px solid #f5f5f5; flex-wrap: wrap; }
+.wo-leaf-name { flex: 1; min-width: 60%; font-size: .9rem; color: #444; }
+.wo-ctrl { display: flex; align-items: center; gap: 4px; }
+.wo-leaf input[type=number] { width: 64px; padding: 5px; border: 1px solid #d8d8d8; border-radius: 6px; text-align: center; font-size: .9rem; }
+.wo-unit { font-size: .76rem; color: #999; min-width: 14px; }
+.wo-leaf select { padding: 5px; border: 1px solid #d8d8d8; border-radius: 6px; font-size: .86rem; }
+.wo-leaf textarea { width: 100%; padding: 5px; border: 1px solid #d8d8d8; border-radius: 6px; font-size: .86rem; resize: vertical; }
+.wo-leaf .wo-text { flex-basis: 100%; }
+.wo-leaf .wo-file { flex-basis: 100%; font-size: .78rem; }
+.wo-flash { animation: woflash 1.4s ease; }
+@keyframes woflash { 0%{background:#fff3cd} 100%{background:transparent} }
+.wo-empty { padding: 24px; text-align: center; color: #999; }
+
+/* actions */
+.wo-actions { position: sticky; bottom: 0; background: var(--color-bg, #f4f1ec);
+              padding: 10px 14px; margin: 12px -14px 0; display: flex; gap: 10px;
+              border-top: 1px solid #e2ddd3; }
+.wo-actions button { flex: 1; padding: 11px; border: none; border-radius: 10px; font-size: .95rem;
+                     font-weight: 600; cursor: pointer; }
+.wo-btn-primary { background: var(--color-primary, #2e7d32); color: #fff; }
+.wo-btn-secondary { background: #fff; color: var(--color-primary, #2e7d32); border: 1px solid var(--color-primary, #2e7d32); }
+@media (min-width: 640px) { .wo-grid { grid-template-columns: 1fr 1fr 1fr; } }
+</style>
+{% endblock %}
+
+{% block content %}
+<form method="post" enctype="multipart/form-data" id="workorder-form" class="wo-wrap">
+  {% csrf_token %}
+
+  <!-- 1.1.1 – 1.1.12 header fields -->
+  <div class="wo-card">
+    <h2>基本信息</h2>
+    <div class="wo-grid">
+      <div class="wo-field"><label>日期 *</label>
+        <input type="date" id="f-date" name="date" value="{{ today }}" required></div>
+      <div class="wo-field"><label>班次</label>
+        <select id="f-shift" name="shift">
+          <option value="">--</option>
+          <option>早班</option><option>白班</option><option>夜班</option>
+        </select></div>
+      <div class="wo-field"><label>天气</label>
+        <input type="text" id="f-weather" name="weather" placeholder="晴/阴/雨…"></div>
+      <div class="wo-field"><label>位置/CCU *</label>
+        <select id="f-location" name="location" required>
+          <option value="">--</option>
+          {% for p in locations %}<option value="{{ p.id }}">{{ p.name }}</option>{% endfor %}
+        </select></div>
+      <div class="wo-field"><label>工作分类 *</label>
+        <select id="f-work_category" name="work_category" required>
+          <option value="">--</option>
+          {% for c in work_categories %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}
+        </select></div>
+      <div class="wo-field"><label>信息来源</label>
+        <select id="f-info_source" name="info_source">
+          <option value="">--</option>
+          {% for s in info_sources %}<option value="{{ s.id }}">{{ s.name }}</option>{% endfor %}
+        </select></div>
+      <div class="wo-field"><label>开始时间</label>
+        <input type="time" id="f-work_start_time" name="work_start_time"></div>
+      <div class="wo-field"><label>完成时间</label>
+        <input type="time" id="f-work_end_time" name="work_end_time"></div>
+      <div class="wo-field"><label>灌溉组人数</label>
+        <input type="number" id="f-team_size" name="team_size" min="1" value="1"></div>
+      <div class="wo-field"><label>第三方人数</label>
+        <input type="number" id="f-third_party_count" name="third_party_count" min="0" value="0"></div>
+      <div class="wo-field full"><label>通称位置</label>
+        <input type="text" id="f-zone_names" name="zone_names" placeholder="如：TL东侧花坛"></div>
+      <div class="wo-field full"><label>区域 (可多选)</label>
+        <select id="f-zones" name="zones" multiple size="4" style="height:auto">
+          {% for g in grouped_zones %}
+            <optgroup label="{{ g.name }}">
+              {% for c in g.zones %}<option value="{{ c.code }}">{{ c.name }}</option>{% endfor %}
+            </optgroup>
+          {% endfor %}
+        </select></div>
+      <div class="wo-field full"><label>备注</label>
+        <textarea id="f-remark" name="remark" rows="2"></textarea></div>
+      <div class="wo-field full">
+        <div class="wo-checks">
+          <label><input type="checkbox" id="f-is_difficult" name="is_difficult"> 疑难问题</label>
+          <label><input type="checkbox" id="f-is_difficult_resolved" name="is_difficult_resolved"> 疑难已处理</label>
+        </div></div>
+      <div class="wo-field full"><label>现场照片 (1.1.12)</label>
+        <input type="file" name="report_photos" accept="image/*" multiple></div>
+    </div>
+  </div>
+
+  <!-- global search -->
+  <div class="wo-search">
+    <input type="search" id="wo-search-input" placeholder="🔍 搜索工作内容（喷头 / 主管 / 维保…）" autocomplete="off">
+    <div class="wo-results" id="wo-search-results" hidden></div>
+  </div>
+
+  <!-- 工作内容 tree -->
+  <div class="wo-card">
+    <h2>工作内容</h2>
+    <div id="wo-tree"></div>
+    <p class="wo-empty" id="wo-empty" hidden>未找到匹配项</p>
+  </div>
+
+  <input type="hidden" name="entries" id="entries-json" value="[]">
+
+  <div class="wo-actions">
+    <button type="submit" class="wo-btn-primary">保存</button>
+    <button type="submit" name="save_and_new" value="1" class="wo-btn-secondary">保存并新建</button>
+  </div>
+</form>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const TREE = {{ tree_json|safe }};
+const PROJECTS = {{ projects_json|safe }};
+const EXISTING = {{ existing_json|safe }};
+const HEADER = {{ header_json|safe }};
+const REPORT_PHOTOS = {{ report_photos_json|safe }};
+
+const nodeEls = {};        // id -> DOM element
+const nodeById = {};       // id -> tree node
+const parentById = {};     // id -> parent node
+const flatIndex = [];      // [{id,name,path}]
+
+function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+function indexTree(){
+  function walk(node, parent, chain){
+    nodeById[node.id] = node;
+    if (parent) parentById[node.id] = parent;
+    const path = chain.concat(node.name);
+    if (!node.children || !node.children.length) flatIndex.push({id:node.id, name:node.name, path});
+    (node.children||[]).forEach(c => walk(c, node, path));
+  }
+  TREE.forEach(n => walk(n, null, []));
+}
+
+function renderTree(){
+  const root = document.getElementById('wo-tree');
+  TREE.forEach(n => renderNode(n, root, true));
+}
+
+function renderNode(node, container, isSectionRoot){
+  const hasKids = node.children && node.children.length;
+  if (hasKids){
+    const g = document.createElement('div');
+    g.className = 'wo-group';
+    g.dataset.wid = node.id;
+    g.dataset.level = node.level || 0;
+    const head = document.createElement('button');
+    head.type = 'button';
+    head.className = 'wo-group-head';
+    head.innerHTML = `<span class="chev">▸</span><span class="wo-gname">${esc(node.name)}</span>`;
+    if (node.section === 'irrigation_project' && isSectionRoot){
+      const sel = document.createElement('select');
+      sel.id = 'irrigation-project-select';
+      sel.className = 'wo-project-sel';
+      sel.innerHTML = '<option value="">选择项目…</option>' +
+        PROJECTS.map(p=>`<option value="${p.id}">${esc(p.category_display)} · ${esc(p.name)}</option>`).join('');
+      sel.addEventListener('click', e=>e.stopPropagation());
+      head.appendChild(sel);
+    }
+    const body = document.createElement('div');
+    body.className = 'wo-group-body';
+    body.hidden = true;
+    head.addEventListener('click', ()=>toggleGroup(g));
+    g.appendChild(head); g.appendChild(body);
+    container.appendChild(g);
+    nodeEls[node.id] = g;
+    node.children.forEach(c => renderNode(c, body, false));
+  } else {
+    const leaf = renderLeaf(node);
+    container.appendChild(leaf);
+    nodeEls[node.id] = leaf;
+  }
+}
+
+function renderLeaf(node){
+  const div = document.createElement('div');
+  div.className = 'wo-leaf';
+  div.dataset.wid = node.id;
+  div.dataset.vt = node.value_type;
+  div.dataset.scoped = node.is_project_scoped ? '1' : '0';
+  let control = '';
+  if (node.value_type === 'count'){
+    control = `<input type="number" inputmode="numeric" min="0" class="wo-count" placeholder="0"><span class="wo-unit">${esc(node.unit||'')}</span>`;
+  } else if (node.value_type === 'status'){
+    const opts = (node.status_options||[]).map(o=>`<option>${esc(o)}</option>`).join('');
+    control = `<select class="wo-status"><option value="">--</option>${opts}</select>`;
+  } else if (node.value_type === 'text_photo'){
+    control = `<textarea class="wo-text" rows="2" placeholder="描述…"></textarea><input type="file" name="ep_${node.id}" accept="image/*" multiple class="wo-file">`;
+  } else {
+    control = `<textarea class="wo-text" rows="1" placeholder="…"></textarea>`;
+  }
+  div.innerHTML = `<span class="wo-leaf-name">${esc(node.name)}</span><span class="wo-ctrl" style="flex-basis:100%">${control}</span>`;
+  return div;
+}
+
+function toggleGroup(g){
+  const open = g.classList.toggle('wo-open');
+  g.querySelector(':scope > .wo-group-body').hidden = !open;
+  g.querySelector(':scope > .wo-group-head .chev').textContent = open ? '▾' : '▸';
+}
+
+function expandPath(id){
+  let cur = nodeById[id];
+  const chain = [];
+  while (cur){ chain.unshift(cur); cur = parentById[cur.id]; }
+  chain.forEach(n => {
+    const el = nodeEls[n.id];
+    if (el && el.classList.contains('wo-group') && !el.classList.contains('wo-open')) toggleGroup(el);
+  });
+  const leafEl = nodeEls[id];
+  if (leafEl){ leafEl.scrollIntoView({behavior:'smooth', block:'center'});
+    leafEl.classList.add('wo-flash'); setTimeout(()=>leafEl.classList.remove('wo-flash'), 1400); }
+}
+
+function onSearch(){
+  const q = document.getElementById('wo-search-input').value.trim().toLowerCase();
+  const box = document.getElementById('wo-search-results');
+  const empty = document.getElementById('wo-empty');
+  empty.hidden = true;
+  if (!q){ box.hidden = true; box.innerHTML = ''; return; }
+  const hits = flatIndex.filter(n => n.name.toLowerCase().includes(q)).slice(0, 60);
+  if (!hits.length){ box.hidden = true; empty.hidden = false; return; }
+  box.hidden = false;
+  box.innerHTML = hits.map(h => {
+    const crumb = h.path.slice(0, -1).join(' › ');
+    const name = h.name;
+    return `<button type="button" class="wo-result" data-jump="${h.id}"><b>${esc(name)}</b>` +
+           (crumb ? `<small>${esc(crumb)}</small>` : '') + `</button>`;
+  }).join('');
+  box.querySelectorAll('.wo-result').forEach(b => {
+    b.addEventListener('click', ()=>{ expandPath(parseInt(b.dataset.jump,10)); box.hidden = true;
+      document.getElementById('wo-search-input').value = ''; });
+  });
+}
+
+function applyExisting(){
+  if (!EXISTING.length) return;
+  const byWid = {}; let irrigationProject = null;
+  EXISTING.forEach(e => { byWid[e.work_item] = e; if (e.project && !irrigationProject) irrigationProject = e.project; });
+  if (irrigationProject){ const sel = document.getElementById('irrigation-project-select'); if (sel) sel.value = irrigationProject; }
+  Object.entries(byWid).forEach(([wid, e]) => {
+    const leaf = nodeEls[wid]; if (!leaf) return;
+    const vt = leaf.dataset.vt;
+    if (vt === 'count') leaf.querySelector('.wo-count').value = e.count || '';
+    else if (vt === 'status') leaf.querySelector('.wo-status').value = e.status || '';
+    else leaf.querySelector('.wo-text').value = e.text_value || '';
+  });
+}
+
+function applyHeader(){
+  if (!HEADER || !HEADER.h_date) return;
+  const set = (id, v) => { const el = document.getElementById(id); if (el && v != null) el.value = v; };
+  set('f-date', HEADER.h_date); set('f-weather', HEADER.h_weather); set('f-shift', HEADER.h_shift);
+  set('f-location', HEADER.h_location); set('f-work_category', HEADER.h_work_category);
+  set('f-info_source', HEADER.h_info_source); set('f-zone_names', HEADER.h_zone_names);
+  set('f-remark', HEADER.h_remark); set('f-team_size', HEADER.h_team_size);
+  set('f-third_party_count', HEADER.h_third_party_count);
+  set('f-work_start_time', HEADER.h_work_start_time); set('f-work_end_time', HEADER.h_work_end_time);
+  if (HEADER.h_is_difficult) document.getElementById('f-is_difficult').checked = true;
+  if (HEADER.h_is_difficult_resolved) document.getElementById('f-is_difficult_resolved').checked = true;
+  (HEADER.h_zones||[]).forEach(code => {
+    const opt = document.querySelector('#f-zones option[value="'+code+'"]'); if (opt) opt.selected = true;
+  });
+}
+
+function collectEntries(){
+  const projectRaw = document.getElementById('irrigation-project-select')?.value;
+  const project = projectRaw ? parseInt(projectRaw, 10) : null;
+  const entries = [];
+  Object.values(nodeEls).forEach(el => {
+    if (!el.classList.contains('wo-leaf')) return;
+    const wid = parseInt(el.dataset.wid, 10);
+    const vt = el.dataset.vt;
+    const scoped = el.dataset.scoped === '1';
+    let count = 0, status = '', text = '', hasData = false;
+    if (vt === 'count'){ count = parseInt(el.querySelector('.wo-count').value||0,10)||0; hasData = count>0; }
+    else if (vt === 'status'){ status = el.querySelector('.wo-status').value||''; hasData = !!status; }
+    else { text = el.querySelector('.wo-text').value||''; const f = el.querySelector('.wo-file'); const files = f ? f.files.length : 0; hasData = !!(text||files); }
+    if (hasData) entries.push({work_item:wid, project: scoped?project:null, count, status, text_value:text});
+  });
+  document.getElementById('entries-json').value = JSON.stringify(entries);
+}
+
+document.addEventListener('DOMContentLoaded', ()=>{
+  indexTree();
+  renderTree();
+  applyExisting();
+  applyHeader();
+  document.getElementById('wo-search-input').addEventListener('input', onSearch);
+  document.getElementById('workorder-form').addEventListener('submit', collectEntries);
+});
+</script>
+{% endblock %}
