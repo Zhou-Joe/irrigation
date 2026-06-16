@@ -607,6 +607,38 @@
     box-shadow: var(--btn-shadow-danger);
 }
 
+/* AI assistant launcher — matches .locate-btn sizing/style */
+.ai-launcher-btn {
+    position: fixed;
+    right: 24px;
+    bottom: 88px;
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    border: 3px solid rgba(255, 255, 255, 0.95);
+    background: var(--btn-gradient-primary);
+    box-shadow: var(--btn-shadow-primary);
+    color: #fff;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    z-index: 2999;
+    transition: all 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.ai-launcher-btn:hover {
+    transform: scale(1.08);
+}
+.ai-launcher-btn svg {
+    display: block;
+    animation: ai-icon-pulse 3s ease-in-out infinite;
+}
+@keyframes ai-icon-pulse {
+    0%, 100% { opacity: 0.9; }
+    50% { opacity: 1; }
+}
+
 /* FAB button base style */
 .fab-btn {
     background: var(--btn-gradient-primary);
@@ -1223,11 +1255,14 @@
 .ai-error{color:#c0392b!important;background:#fdecea!important;border-color:#f5c6cb!important;}
 .ai-tool-progress{display:none;flex-direction:column;gap:3px;margin-top:5px;width:88%;}
 .ai-tool-item{display:flex;align-items:center;gap:6px;font-size:0.78em;color:#888;padding:2px 0;}
-.ai-tool-icon{font-size:0.95em;}
-.ai-tool-running .ai-tool-icon{color:#2D6A4F;}
-.ai-tool-running .ai-tool-name{color:#2D6A4F;font-weight:500;}
+.ai-tool-icon{font-size:0.95em;display:inline-flex;align-items:center;justify-content:center;width:1.1em;height:1.1em;}
+.ai-tool-running .ai-tool-name{color:#2D6A4F;font-weight:500;animation:ai-tool-pulse 1.2s ease-in-out infinite;}
 .ai-tool-done .ai-tool-icon{color:#27ae60;}
 .ai-tool-done .ai-tool-name{color:#888;text-decoration:line-through;}
+/* Spinner shown while a tool is running (replaces the static ⟳) */
+.ai-tool-spinner{display:inline-block;width:0.85em;height:0.85em;border:2px solid #b9d9c8;border-top-color:#2D6A4F;border-radius:50%;animation:ai-tool-spin 0.7s linear infinite;}
+@keyframes ai-tool-spin{to{transform:rotate(360deg);}}
+@keyframes ai-tool-pulse{0%,100%{opacity:1;}50%{opacity:0.45;}}
 .ai-file-card{display:flex;align-items:center;gap:10px;margin-top:6px;padding:8px 10px;border:1px solid #c8e6d0;background:#f0faf2;border-radius:8px;text-decoration:none;color:#2D6A4F;width:88%;box-sizing:border-box;transition:background 0.15s,border-color 0.15s;}
 .ai-file-card:hover{background:#e0f3e6;border-color:#2D6A4F;}
 .ai-file-icon{font-size:1.5em;line-height:1;}

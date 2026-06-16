@@ -11,7 +11,8 @@
 <div class="form-container">
     <div class="form-header">
         <h1>维修日志</h1>
-        <a href="{% url 'core:work_report_create' %}" class="btn btn-primary">+ 新建日志</a>
+        <a href="{% url 'core:workorder_tree_form' %}" class="btn btn-primary">+ 新建现场作业记录</a>
+        <a href="{% url 'core:work_report_create' %}" class="btn btn-secondary">+ 旧版日志</a>
     </div>
 
     {% if messages %}
@@ -141,7 +142,7 @@
                     </td>
                     <td style="padding:8px 12px;text-align:center;white-space:nowrap;">
                         <a href="{% url 'core:work_report_detail' report.id %}" style="color:var(--color-primary);margin-right:8px;">查看</a>
-                        <a href="{% url 'core:work_report_edit' report.id %}" style="color:var(--color-accent);">编辑</a>
+                        <a href="{% url 'core:workorder_tree_form_edit' report.id %}" style="color:var(--color-accent);">编辑</a>
                     </td>
                 </tr>
             {% empty %}

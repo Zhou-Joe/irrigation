@@ -64,7 +64,7 @@
                 var item = document.createElement('div');
                 item.className = 'ai-tool-item ai-tool-' + status;
                 item.dataset.tool = name;
-                item.innerHTML = '<span class="ai-tool-icon">' + (status === 'done' ? '✓' : '⟳') + '</span>' +
+                item.innerHTML = '<span class="ai-tool-icon">' + (status === 'done' ? '✓' : '<span class="ai-tool-spinner"></span>') + '</span>' +
                                  '<span class="ai-tool-name">' + name + '</span>';
                 progress.appendChild(item);
                 progress.style.display = 'flex';
@@ -105,6 +105,17 @@
     function showError(msg) {
         var box = el('aiChatMessages');
         addMsg('assistant', '<div class="ai-bubble ai-error">⚠ ' + msg + '</div>');
+    }
+
+    // Start a fresh conversation: new thread id, clear history, show welcome.
+    function newConversation() {
+        threadId = null;
+        sending = false;
+        setSending(false);
+        var box = el('aiChatMessages');
+        if (box) box.innerHTML = '';
+        addMsg('assistant', '<div class="ai-bubble">已开启新对话，需要什么帮助吗？</div>');
+        var input = el('aiChatInput'); if (input) input.focus();
     }
 
     async function send() {
@@ -182,15 +193,18 @@
         // Launcher button
         var btn = document.createElement('button');
         btn.id = 'aiChatLauncher';
+        btn.className = 'ai-launcher-btn';
         btn.title = 'AI 数据助手';
-        btn.innerHTML = '🤖';
-        btn.style.cssText = 'position:fixed;right:24px;bottom:88px;width:52px;height:52px;border-radius:50%;' +
-                            'border:3px solid rgba(255,255,255,0.95);background:#2D6A4F;color:#fff;font-size:1.5em;' +
-                            'cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,0.25);z-index:99999;display:flex;' +
-                            'align-items:center;justify-content:center;transition:transform 0.2s;';
+        // Siri-style abstract AI icon: radiating smooth lines from a center node.
+        btn.innerHTML = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">' +
+            '<path d="M12 4c1.4 1.7 1.4 4.3 0 6"/>' +
+            '<path d="M12 14c-1.4 1.7-1.4 4.3 0 6"/>' +
+            '<path d="M4.5 8.5c2 .6 3.7 2.3 4.3 4.3"/>' +
+            '<path d="M15.2 11.2c.6-2 2.3-3.7 4.3-4.3"/>' +
+            '<path d="M4.5 15.5c2-.6 3.7-2.3 4.3-4.3"/>' +
+            '<path d="M15.2 12.8c.6 2 2.3 3.7 4.3 4.3"/>' +
+            '<circle cx="12" cy="11.8" r="1.3" fill="currentColor" stroke="none"/></svg>';
         btn.onclick = toggle;
-        btn.onmouseenter = function () { btn.style.transform = 'scale(1.08)'; };
-        btn.onmouseleave = function () { btn.style.transform = 'scale(1)'; };
         document.body.appendChild(btn);
         console.log('[AIChat] launcher appended, total body children:', document.body.children.length);
 
@@ -203,11 +217,14 @@
         panel.innerHTML =
             '<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:#2D6A4F;color:#fff;">' +
               '<div style="font-weight:600;font-size:1em;">🤖 AI 数据助手</div>' +
-              '<button id="aiChatClose" style="background:none;border:none;color:#fff;font-size:1.3em;cursor:pointer;line-height:1;">×</button>' +
+              '<div style="display:flex;align-items:center;gap:4px;">' +
+                '<button id="aiChatNew" title="新建对话" style="background:none;border:none;color:#fff;font-size:0.82em;cursor:pointer;line-height:1;opacity:0.85;padding:4px 8px;border-radius:6px;">✚ 新对话</button>' +
+                '<button id="aiChatClose" title="关闭" style="background:none;border:none;color:#fff;font-size:1.3em;cursor:pointer;line-height:1;">×</button>' +
+              '</div>' +
             '</div>' +
             '<div id="aiChatMessages" style="flex:1;overflow-y:auto;padding:12px;background:#f7f9f8;"></div>' +
             '<div style="display:flex;gap:8px;padding:10px 12px;border-top:1px solid #eee;background:#fff;">' +
-              '<textarea id="aiChatInput" placeholder="问：今天有多少工单？最近7天工时趋势？…" rows="1" ' +
+              '<textarea id="aiChatInput" placeholder="Shift+Enter 发送" rows="1" ' +
                 'style="flex:1;border:1px solid #ddd;border-radius:8px;padding:8px 10px;font-size:0.92em;resize:none;max-height:90px;outline:none;font-family:inherit;"></textarea>' +
               '<button id="aiChatSend" style="background:#2D6A4F;color:#fff;border:none;border-radius:8px;padding:0 16px;cursor:pointer;font-weight:600;">发送</button>' +
             '</div>';
@@ -215,13 +232,15 @@
 
         el('aiChatClose').onclick = toggle;
         el('aiChatSend').onclick = send;
+        el('aiChatNew').onclick = newConversation;
         var input = el('aiChatInput');
         input.addEventListener('keydown', function (e) {
-            if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
+            // Shift+Enter sends; Enter alone inserts a newline.
+            if (e.key === 'Enter' && e.shiftKey) { e.preventDefault(); send(); }
         });
 
         // Welcome message
-        addMsg('assistant', '<div class="ai-bubble">你好！我是 AI 数据助手，可以帮你查询和分析工单、浇水需求、区域、灌溉数据。试试问我："最近7天有多少工单？"或"按工作类别统计本月工时"</div>');
+        addMsg('assistant', '<div class="ai-bubble">你好！我是 AI 数据助手，需要什么帮助吗？</div>');
     }
 
     // Only mount the launcher if the backend says the AI assistant is available

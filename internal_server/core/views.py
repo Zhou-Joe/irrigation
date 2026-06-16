@@ -910,7 +910,7 @@ def dashboard(request):
 
 # Excel headers matching Zone list V0.xlsx column order
 _ZONE_EXPORT_HEADERS = [
-    '编号', '位置重要程度', '通用名称', '灌溉管理用的位置',
+    '编号', '位置重要程度', '所属Land', '通用名称', '灌溉管理用的位置',
     '当前状态', '灌水器类型', '灌溉强度 mm/h', '区域面积',
     '灌溉分区', 'CCU编号', '电磁阀尺寸', '景观系数',
     '植物类型', '灌溉领班', '绿化分区', '绿化领班',
@@ -1004,7 +1004,7 @@ def zone_export_excel(request):
         cell.alignment = center_wrap
 
     # Set column widths matching V0
-    col_widths = [16, 13, 13, 18, 13, 16, 13, 14, 13, 12, 8, 9, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13]
+    col_widths = [16, 13, 14, 13, 18, 13, 16, 13, 14, 13, 12, 8, 9, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13]
     for i, w in enumerate(col_widths):
         ws.column_dimensions[openpyxl.utils.get_column_letter(i + 1)].width = w
 
@@ -1017,27 +1017,28 @@ def zone_export_excel(request):
         values = [
             zone.code,                                          # A: 编号
             _PRIORITY_EXPORT_MAP.get(zone.priority, ''),         # B: 位置重要程度
-            zone.name,                                          # C: 通用名称
-            zone.description,                                   # D: 灌溉管理用的位置
-            zone.current_status or None,                        # E: 当前状态
-            zone.sprinkler_type or None,                        # F: 灌水器类型
-            zone.irrigation_intensity,                          # G: 灌溉强度
-            zone.area_display if zone.area_sqm else None,       # H: 区域面积
-            zone.patch.name if zone.patch else None,            # I: 灌溉分区
-            int(ccu_num) if ccu_num.isdigit() else ccu_num,     # J: CCU编号
-            zone.solenoid_valve_size,                           # K: 电磁阀尺寸
-            zone.landscape_coefficient,                         # L: 景观系数
-            zone.plant_type or None,                            # M: 植物类型
-            zone.irrigation_foreman or None,                    # N: 灌溉领班
-            zone.greenery_zone or None,                         # O: 绿化分区
-            zone.greenery_foreman or None,                      # P: 绿化领班
-            zone.pest_control_zone or None,                     # Q: 植保分区
-            zone.pest_control_foreman or None,                  # R: 植保领班
-            zone.terrain_feature or None,                       # S: 地形特点
-            zone.plant_feature or None,                         # T: 植物特点
-            zone.soil_moisture or None,                         # U: 土壤湿度
-            zone.equipment_maintenance_notes or None,           # V: 灌溉设备维护记录
-            zone.irrigation_management_notes or None,           # W: 灌溉管理以往记录
+            zone.land.name if zone.land else None,              # C: 所属Land
+            zone.name,                                          # D: 通用名称
+            zone.description,                                   # E: 灌溉管理用的位置
+            zone.current_status or None,                        # F: 当前状态
+            zone.sprinkler_type or None,                        # G: 灌水器类型
+            zone.irrigation_intensity,                          # H: 灌溉强度
+            zone.area_display if zone.area_sqm else None,       # I: 区域面积
+            zone.patch.name if zone.patch else None,            # J: 灌溉分区
+            int(ccu_num) if ccu_num.isdigit() else ccu_num,     # K: CCU编号
+            zone.solenoid_valve_size,                           # L: 电磁阀尺寸
+            zone.landscape_coefficient,                         # M: 景观系数
+            zone.plant_type or None,                            # N: 植物类型
+            zone.irrigation_foreman or None,                    # O: 灌溉领班
+            zone.greenery_zone or None,                         # P: 绿化分区
+            zone.greenery_foreman or None,                      # Q: 绿化领班
+            zone.pest_control_zone or None,                     # R: 植保分区
+            zone.pest_control_foreman or None,                  # S: 植保领班
+            zone.terrain_feature or None,                       # T: 地形特点
+            zone.plant_feature or None,                         # U: 植物特点
+            zone.soil_moisture or None,                         # V: 土壤湿度
+            zone.equipment_maintenance_notes or None,           # W: 灌溉设备维护记录
+            zone.irrigation_management_notes or None,           # X: 灌溉管理以往记录
         ]
         for col_idx, val in enumerate(values, 1):
             ws.cell(row=row_num, column=col_idx, value=val)
@@ -1075,31 +1076,33 @@ def _parse_zone_row(row):
 
     return {
         'code': code,
-        'name': _str(row[2]) or code,
-        'description': _str(row[3]),
+        'land': _str(row[2]),                # 所属Land (resolved to Land in confirm)
+        'name': _str(row[3]) or code,
+        'description': _str(row[4]),
         'priority': priority,
-        'current_status': _str(row[4]),
-        'sprinkler_type': _str(row[5]),
-        'irrigation_intensity': _float(row[6]),
-        'solenoid_valve_size': _float(row[10]),
-        'landscape_coefficient': _float(row[11]),
-        'plant_type': _str(row[12]),
-        'irrigation_foreman': _str(row[13]),
-        'greenery_zone': _str(row[14]),
-        'greenery_foreman': _str(row[15]),
-        'pest_control_zone': _str(row[16]),
-        'pest_control_foreman': _str(row[17]),
-        'terrain_feature': _str(row[18]),
-        'plant_feature': _str(row[19]),
-        'soil_moisture': _str(row[20]),
-        'equipment_maintenance_notes': _str(row[21]),
-        'irrigation_management_notes': _str(row[22]),
+        'current_status': _str(row[5]),
+        'sprinkler_type': _str(row[6]),
+        'irrigation_intensity': _float(row[7]),
+        # row[8] = 区域面积 (computed) and row[9]/[10] = 灌溉分区/CCU (from patch) — skipped
+        'solenoid_valve_size': _float(row[11]),
+        'landscape_coefficient': _float(row[12]),
+        'plant_type': _str(row[13]),
+        'irrigation_foreman': _str(row[14]),
+        'greenery_zone': _str(row[15]),
+        'greenery_foreman': _str(row[16]),
+        'pest_control_zone': _str(row[17]),
+        'pest_control_foreman': _str(row[18]),
+        'terrain_feature': _str(row[19]),
+        'plant_feature': _str(row[20]),
+        'soil_moisture': _str(row[21]),
+        'equipment_maintenance_notes': _str(row[22]),
+        # row[23] = 灌溉管理以往记录 (protected) — skipped on import
     }
 
 
 # Field display names for the preview table
 _FIELD_LABELS = {
-    'code': '编号', 'name': '通用名称', 'description': '灌溉管理用的位置',
+    'code': '编号', 'land': '所属Land', 'name': '通用名称', 'description': '灌溉管理用的位置',
     'priority': '位置重要程度', 'current_status': '当前状态',
     'sprinkler_type': '灌水器类型', 'irrigation_intensity': '灌溉强度',
     'solenoid_valve_size': '电磁阀尺寸', 'landscape_coefficient': '景观系数',
@@ -1110,6 +1113,10 @@ _FIELD_LABELS = {
     'soil_moisture': '土壤湿度', 'equipment_maintenance_notes': '设备维护记录',
     'irrigation_management_notes': '灌溉管理记录',
 }
+
+# Fields that are DB-primary / auto-calculated — never overwritten on import
+# (面积 is computed from the boundary; 灌溉管理以往记录 is accumulated history).
+_ZONE_IMPORT_PROTECTED = {'area_sqm', 'irrigation_management_notes'}
 
 
 @login_required(login_url='core:login')
@@ -1139,13 +1146,13 @@ def zone_import_preview(request):
     # Preload all zones by code
     existing_zones = {z.code: z for z in Zone.objects.select_related('patch').all()}
 
-    # Fields to compare (exclude code — it's the key)
-    compare_fields = [k for k in _FIELD_LABELS if k != 'code']
+    # Fields to compare (exclude code + DB-primary/auto-calculated fields)
+    compare_fields = [k for k in _FIELD_LABELS if k != 'code' and k not in _ZONE_IMPORT_PROTECTED]
 
     changes = []
     counts = {'new': 0, 'modified': 0, 'unchanged': 0}
 
-    for row_idx, row in enumerate(ws.iter_rows(min_row=2, max_col=23, values_only=True), start=2):
+    for row_idx, row in enumerate(ws.iter_rows(min_row=2, max_col=24, values_only=True), start=2):
         parsed = _parse_zone_row(row)
         if not parsed:
             continue
@@ -1221,17 +1228,19 @@ def zone_import_confirm(request):
     except Exception as e:
         return JsonResponse({'error': f'文件解析失败: {e}'}, status=400)
 
-    from .models import Patch
+    from .models import Patch, Land
 
     # Preload patches by CCU number
     patch_map = {}
     for p in Patch.objects.filter(code__startswith='CCU'):
         patch_map[p.code.replace('CCU', '')] = p
+    # Preload lands by name
+    land_map = {l.name: l for l in Land.objects.all()}
 
     created = 0
     updated = 0
 
-    for row_idx, row in enumerate(ws.iter_rows(min_row=2, max_col=23, values_only=True), start=2):
+    for row_idx, row in enumerate(ws.iter_rows(min_row=2, max_col=24, values_only=True), start=2):
         if row_idx not in confirmed_rows:
             continue
 
@@ -1244,19 +1253,33 @@ def zone_import_confirm(request):
         parts = code.split('-')
         ccu_prefix = parts[0] if parts else ''
         patch = patch_map.get(ccu_prefix)
+        # Resolve Land (create on demand); protected fields are already excluded by _parse_zone_row
+        land_name = (parsed.get('land') or '').strip()
+        land = None
+        if land_name:
+            land = land_map.get(land_name)
+            if not land:
+                land = Land.objects.create(name=land_name)
+                land_map[land_name] = land
 
         zone = Zone.objects.filter(code=code).first()
         if zone:
             for k, v in parsed.items():
-                if k == 'code':
+                if k in ('code', 'land'):
                     continue
                 setattr(zone, k, v)
+            zone.land = land
             if patch:
                 zone.patch = patch
             zone.save()
             updated += 1
         else:
-            Zone.objects.create(code=code, patch=patch, **{k: v for k, v in parsed.items() if k != 'code'})
+            zone = Zone(code=code, patch=patch, land=land)
+            for k, v in parsed.items():
+                if k in ('code', 'land'):
+                    continue
+                setattr(zone, k, v)
+            zone.save()
             created += 1
 
     wb.close()
@@ -4354,9 +4377,9 @@ def maxicom_dashboard_api(request):
 @login_required(login_url='core:login')
 def stats_dashboard(request):
     """Data statistics dashboard with weekly work report stats and demand stats."""
-    from core.models import WorkReport, DemandRecord, Patch
+    from core.models import WorkReport, WorkReportEntry, WorkItem, DemandRecord, Patch
     from core.role_utils import is_admin
-    from django.db.models import Count, Q
+    from django.db.models import Count, Q, Sum
     from django.utils import timezone
     from datetime import datetime, timedelta, date
     from collections import defaultdict
@@ -4517,6 +4540,34 @@ def stats_dashboard(request):
     zone_fault_matrix['column_totals'].append(grand_total)
     zone_fault_matrix['grand_total'] = grand_total
 
+    # === 工作内容明细 (新现场作业记录树 WorkReportEntry) — additive alongside 故障 stats ===
+    section_labels = dict(WorkItem.SECTION_CHOICES)
+    entries_qs = WorkReportEntry.objects.filter(
+        work_report__in=week_qs, work_item__active=True
+    )
+    entries_total = entries_qs.count()
+    entries_count_sum = entries_qs.filter(
+        work_item__value_type='count'
+    ).aggregate(s=Sum('count'))['s'] or 0
+    entries_by_section = list(
+        entries_qs.values('work_item__section')
+        .annotate(entries=Count('id'), counts=Sum('count'))
+        .order_by('-entries')
+    )
+    for row in entries_by_section:
+        row['label'] = section_labels.get(row['work_item__section'], row['work_item__section'])
+    top_work_nodes = list(
+        entries_qs.values('work_item__name_zh')
+        .annotate(entries=Count('id'), counts=Sum('count'))
+        .order_by('-entries')[:10]
+    )
+    entries_by_project = list(
+        entries_qs.exclude(project__isnull=True)
+        .values('project__name', 'project__category')
+        .annotate(entries=Count('id'), counts=Sum('count'))
+        .order_by('-entries')[:10]
+    )
+
     worker_stats = []
     if admin:
         worker_stats = list(
@@ -4578,6 +4629,11 @@ def stats_dashboard(request):
         'reports_by_category': reports_by_category,
         'top_faults': top_faults,
         'zone_fault_matrix': zone_fault_matrix,
+        'entries_total': entries_total,
+        'entries_count_sum': entries_count_sum,
+        'entries_by_section': entries_by_section,
+        'top_work_nodes': top_work_nodes,
+        'entries_by_project': entries_by_project,
         'worker_stats': worker_stats,
         # Demand stats
         'demand_stats': demand_stats,
@@ -4662,7 +4718,7 @@ def custom_report_api(request):
 def _build_chart_data(data_source, metric, date_from, date_to,
                       is_admin, is_worker, worker, bar_mode='stacked', stack_by=''):
     """Build chart data dict for a given metric. Returns None if no data."""
-    from core.models import WorkReport, DemandRecord
+    from core.models import WorkReport, WorkReportEntry, WorkItem, DemandRecord
     from django.db.models import Count, Q
     from django.utils import timezone
     from datetime import timedelta, datetime
@@ -4857,6 +4913,39 @@ def _build_chart_data(data_source, metric, date_from, date_to,
                     'data': [e['count'] for e in entries],
                     'backgroundColor': _chart_colors(len(entries)),
                 }]
+            }
+
+        elif metric in ('by_entry_section', 'by_entry_node', 'by_entry_project'):
+            # 工作内容明细 (WorkReportEntry) — additive, reads the new tree-form data
+            eqs = WorkReportEntry.objects.filter(work_item__active=True)
+            eqs = date_filter(eqs, 'work_report__date')
+            if not is_admin:
+                if is_worker:
+                    eqs = eqs.filter(work_report__worker=worker)
+                else:
+                    eqs = eqs.none()
+            if metric == 'by_entry_section':
+                labels_map = dict(WorkItem.SECTION_CHOICES)
+                rows = list(eqs.values('work_item__section')
+                            .annotate(c=Count('id')).order_by('-c')[:15])
+                labels = [labels_map.get(r['work_item__section'], r['work_item__section']) for r in rows]
+            elif metric == 'by_entry_node':
+                rows = list(eqs.values('work_item__name_zh')
+                            .annotate(c=Count('id')).order_by('-c')[:15])
+                labels = [r['work_item__name_zh'] or '未指定' for r in rows]
+            else:  # by_entry_project
+                rows = list(eqs.exclude(project__isnull=True)
+                            .values('project__name').annotate(c=Count('id')).order_by('-c')[:15])
+                labels = [r['project__name'] or '未指定' for r in rows]
+            if not rows:
+                return None
+            return {
+                'labels': labels,
+                'datasets': [{
+                    'label': '填报次数',
+                    'data': [r['c'] for r in rows],
+                    'backgroundColor': _chart_colors(len(rows)),
+                }],
             }
 
         elif metric == 'difficult_rate_by_category':
@@ -5309,13 +5398,15 @@ def work_reports_list(request):
 
 @login_required(login_url='core:login')
 def work_report_detail(request, report_id):
-    from core.models import WorkReport
+    from core.models import WorkReport, WorkItem
     from core.role_utils import is_admin
+    from collections import OrderedDict
 
     report = get_object_or_404(
         WorkReport.objects.select_related(
             'worker', 'location', 'work_category', 'info_source'
-        ).prefetch_related('fault_entries__fault_subtype__category'),
+        ).prefetch_related('fault_entries__fault_subtype__category',
+                           'entries__work_item', 'entries__project'),
         pk=report_id
     )
 
@@ -5328,9 +5419,18 @@ def work_report_detail(request, report_id):
             messages.error(request, '无权查看此记录')
             return redirect('core:work_reports')
 
+    # Group tree-form entries (WorkReportEntry) by section for display.
+    section_labels = dict(WorkItem.SECTION_CHOICES)
+    grouped = OrderedDict()
+    for e in report.entries.select_related('work_item', 'project'):
+        sec = e.work_item.section
+        grouped.setdefault(sec, {'label': section_labels.get(sec, sec), 'items': []})
+        grouped[sec]['items'].append(e)
+
     return render(request, 'core/work_report_detail.html', {
         'report': report,
         'fault_entries': report.fault_entries.select_related('fault_subtype__category').all(),
+        'tree_entry_groups': list(grouped.values()),
     })
 
 
@@ -5732,14 +5832,14 @@ def _build_zone_geo_data():
 
 @login_required(login_url='core:login')
 def workorder_mobile_v2(request):
-    from core.models import (
-        WorkReport, WorkReportFault, WorkCategory, FaultCategory, FaultSubType,
-        Patch, Zone, Worker,
-    )
+    from core.models import WorkReport, Patch, Zone, Worker
     from core.role_utils import get_worker_for_user, is_admin, get_user_role, ROLE_FIELD_WORKER
     from core.role_utils import ROLE_SUPER_ADMIN, ROLE_MANAGER
-    from datetime import date, datetime, time, timedelta
-    import math
+    from core.workorder_tree_views import (
+        _calc_hours, _save_entries, _collect_entry_photos, _save_photo,
+        _resolve_pending_repairs,
+    )
+    from datetime import date, datetime, time
 
     role = get_user_role(request.user)
     if role not in (ROLE_FIELD_WORKER, ROLE_SUPER_ADMIN, ROLE_MANAGER):
@@ -5778,23 +5878,12 @@ def workorder_mobile_v2(request):
             team_size = int(request.POST.get('team_size', 1) or 1)
             third_party_count = int(request.POST.get('third_party_count', 0) or 0)
 
-            team_hours = 0.0
-            third_party_hours = 0.0
-            if work_start and work_end:
-                start_dt = datetime.combine(date.today(), work_start)
-                end_dt = datetime.combine(date.today(), work_end)
-                if end_dt <= start_dt:
-                    end_dt += timedelta(days=1)
-                duration_h = (end_dt - start_dt).seconds / 3600
-                team_hours = round(duration_h * team_size * 2) / 2
-                third_party_hours = round(duration_h * third_party_count * 2) / 2
+            team_hours = _calc_hours(work_start, work_end, team_size)
+            third_party_hours = _calc_hours(work_start, work_end, third_party_count)
 
             zone_codes = request.POST.getlist('zones')
             first_zone = Zone.objects.filter(code__in=zone_codes).select_related('patch').first() if zone_codes else None
             location = first_zone.patch if first_zone else Patch.objects.first()
-
-            work_category_id = request.POST.get('work_category')
-            work_category = WorkCategory.objects.filter(id=work_category_id).first() if work_category_id else WorkCategory.objects.first()
 
             selected_zones = Zone.objects.filter(code__in=zone_codes)
             zone_names = ', '.join(z.name or z.code for z in selected_zones) if selected_zones else ''
@@ -5804,7 +5893,6 @@ def workorder_mobile_v2(request):
                 weather='',
                 worker=post_worker,
                 location=location,
-                work_category=work_category,
                 zone_location=first_zone,
                 remark=request.POST.get('remark', ''),
                 is_difficult=bool(request.POST.get('is_difficult')),
@@ -5823,17 +5911,18 @@ def workorder_mobile_v2(request):
             if selected_zones:
                 report.zones.set(selected_zones)
 
+            # Work-content tree entries (replaces the old two-level fault model).
+            entries = json.loads(request.POST.get('entries', '[]') or '[]')
+            _save_entries(report, entries, _collect_entry_photos(request))
+            # 计划性维修: resolve the checked past 待修 workorders.
+            pm_ids = [x for x in (request.POST.get('pm_resolved') or '').split(',') if x.strip().isdigit()]
+            if pm_ids:
+                _resolve_pending_repairs(report, pm_ids)
+            entry_count = report.entries.count()
+
             if report.is_difficult:
-                work_content = request.POST.get('work_content', '').strip()
-                fault_names = []
-                for fe in report.fault_entries.select_related('fault_subtype').all():
-                    fault_names.append(fe.fault_subtype.name_zh)
-                remark_parts = []
-                if fault_names:
-                    remark_parts.append('故障: ' + ', '.join(fault_names))
-                if work_content:
-                    remark_parts.append(work_content)
-                remark_content = ' '.join(remark_parts) if remark_parts else '疑难工单'
+                note = request.POST.get('remark', '').strip()
+                remark_content = note or (f'疑难工单 · {entry_count} 项' if entry_count else '疑难工单')
                 remark_entry = {
                     'date': report.date if isinstance(report.date, str) else report.date.isoformat(),
                     'content': remark_content,
@@ -5846,27 +5935,9 @@ def workorder_mobile_v2(request):
                     z.remarks = json.dumps(remarks, ensure_ascii=False)
                     z.save(update_fields=['remarks'])
 
-            fault_json = request.POST.get('fault_entries', '[]')
-            try:
-                fault_data = json.loads(fault_json)
-                for entry in fault_data:
-                    if entry.get('count', 0) > 0 and entry.get('fault_subtype'):
-                        WorkReportFault.objects.create(
-                            work_report=report,
-                            fault_subtype_id=entry['fault_subtype'],
-                            count=entry['count'],
-                        )
-            except (json.JSONDecodeError, KeyError):
-                pass
-
-            photo_paths = []
-            from django.core.files.storage import default_storage
-            import os as _os
-            for f in request.FILES.getlist('photos'):
-                ts = datetime.now().strftime('%Y%m%d%H%M%S')
-                fname = f'workreport/{report.id}_{ts}_{f.name}'
-                saved = default_storage.save(fname, f)
-                photo_paths.append(saved)
+            # Report-level photos (1.1.12).
+            photo_paths = [_save_photo(report, f)
+                           for f in request.FILES.getlist('report_photos')]
             if photo_paths:
                 report.photos = photo_paths
                 report.save(update_fields=['photos'])
@@ -5953,8 +6024,9 @@ def water_request_mobile_v2(request):
 @login_required(login_url='core:login')
 def workorder_modal_data(request):
     """API: return workorder form metadata as JSON for dashboard modal."""
-    from core.models import WorkCategory, FaultCategory, WorkReport, Worker
+    from core.models import WorkReport, Worker
     from core.role_utils import get_worker_for_user, get_user_role, is_admin, ROLE_FIELD_WORKER, ROLE_SUPER_ADMIN, ROLE_MANAGER
+    from core.workorder_tree_views import serialize_workitem_tree, serialize_projects, IRRIGATION_SUBCATEGORIES
     from datetime import date, datetime
 
     role = get_user_role(request.user)
@@ -5962,25 +6034,6 @@ def workorder_modal_data(request):
         return JsonResponse({'error': '无权限'}, status=403)
 
     worker = get_worker_for_user(request.user)
-
-    top_categories = WorkCategory.objects.filter(parent__isnull=True, active=True).order_by('order')
-    sub_categories = WorkCategory.objects.filter(parent__isnull=False, active=True).select_related('parent').order_by('parent__order', 'order')
-    category_tree = []
-    for tc in top_categories:
-        children = [sc for sc in sub_categories if sc.parent_id == tc.id]
-        category_tree.append({
-            'id': tc.id, 'name': tc.name, 'code': tc.code,
-            'children': [{'id': c.id, 'name': c.name, 'code': c.code} for c in children],
-        })
-
-    fault_categories = FaultCategory.objects.filter(active=True).prefetch_related('sub_types').order_by('order')
-    fault_tree = []
-    for fc in fault_categories:
-        subs = fc.sub_types.filter(active=True).order_by('order')
-        fault_tree.append({
-            'id': fc.id, 'name': fc.name_zh,
-            'subtypes': [{'id': s.id, 'name': s.name_zh} for s in subs],
-        })
 
     now = datetime.now()
     rounded_min = (now.minute // 15) * 15
@@ -5995,8 +6048,10 @@ def workorder_modal_data(request):
     sorted_shifts = sorted(shift_freq.keys(), key=lambda s: -shift_freq[s])
 
     return JsonResponse({
-        'category_tree': category_tree,
-        'fault_tree': fault_tree,
+        'work_tree': serialize_workitem_tree(),
+        'projects': serialize_projects(),
+        'irrigation_subcategories': IRRIGATION_SUBCATEGORIES(),
+        'can_create_project': role in (ROLE_MANAGER, ROLE_SUPER_ADMIN),
         'sorted_shifts': sorted_shifts,
         'today': date.today().isoformat(),
         'now_time': now.strftime('%H:%M'),
@@ -6056,8 +6111,8 @@ def zones_in_area_api(request):
             j = i
         return inside
 
-    # Get all zones with boundaries
-    zones = Zone.objects.filter(Q(boundary_points__isnull=False) | Q(dxf_boundary_points__isnull=False)).exclude(boundary_points=[]).exclude(dxf_boundary_points=[])
+    # Get all zones with at least one boundary source (boundary_points OR dxf_boundary_points).
+    zones = Zone.objects.exclude(Q(boundary_points=[]) & Q(dxf_boundary_points=[]))
     result_codes = []
 
     for z in zones:
