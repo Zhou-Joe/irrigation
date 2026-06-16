@@ -1,0 +1,129 @@
+{% extends 'core/base.html' %}
+{% load static %}
+
+{% block title %}项目管理{% endblock %}
+{% block nav_projects %}active{% endblock %}
+
+{% block extra_css %}
+<style>
+.pm-wrap { max-width: 1000px; margin: 0 auto; padding: 16px; }
+.pm-card { background: #fff; border-radius: 12px; padding: 16px; margin-bottom: 16px; box-shadow: 0 1px 4px rgba(0,0,0,.06); }
+.pm-card h2 { margin: 0 0 12px; font-size: 1.05rem; color: var(--color-primary, #2e7d32); }
+.pm-form { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; align-items: end; }
+.pm-form .full { grid-column: 1 / -1; }
+.pm-form label { display: block; font-size: .8rem; color: #555; margin-bottom: 3px; }
+.pm-form input, .pm-form select, .pm-form textarea {
+    width: 100%; padding: 8px 9px; border: 1px solid #d8d8d8; border-radius: 8px; font-size: .92rem; box-sizing: border-box; }
+.pm-proj { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid #f0f0f0; flex-wrap: wrap; }
+.pm-proj:last-child { border-bottom: none; }
+.pm-proj-name { flex: 1; min-width: 180px; font-weight: 600; }
+.pm-proj-name small { display: block; font-weight: 400; color: #888; font-size: .8rem; }
+.pm-stat { font-size: .82rem; color: #666; background: #f4f7f4; padding: 3px 9px; border-radius: 10px; white-space: nowrap; }
+.pm-stat b { color: var(--color-primary, #2e7d32); }
+.pm-phases { font-size: .78rem; color: #888; flex-basis: 100%; padding-left: 2px; }
+.pm-empty { color: #aaa; padding: 14px 0; font-size: .9rem; }
+.pm-inline { display: flex; gap: 6px; }
+.pm-inline .btn { padding: 5px 10px; font-size: .82rem; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="pm-wrap">
+  <div class="form-header" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+    <h1>项目管理</h1>
+  </div>
+
+  {% if messages %}
+  <div class="messages">
+    {% for message in messages %}
+      <div class="alert alert-{{ message.tags }}">{{ message }}</div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <!-- create / edit form -->
+  <div class="pm-card">
+    <h2>{% if edit_obj %}编辑项目{% else %}+ 新建项目{% endif %}</h2>
+    <form method="post" action="{% url 'core:project_save' %}" class="pm-form">
+      {% csrf_token %}
+      {% if edit_obj %}<input type="hidden" name="id" value="{{ edit_obj.id }}">{% endif %}
+      <div>
+        <label>项目类别 *</label>
+        <select name="category" id="pmCategory" required>
+          {% for c, label in categories %}<option value="{{ c }}" {% if edit_obj.category == c %}selected{% endif %}>{{ label }}</option>{% endfor %}
+        </select>
+      </div>
+      <div id="pmSubWrap" {% if edit_obj.category != 'IRRIGATION' %}style="visibility:hidden"{% endif %}>
+        <label>子类别（灌溉）</label>
+        <select name="subcategory" id="pmSub">
+          <option value="">--</option>
+          {% for s, label in subcategories %}<option value="{{ s }}" {% if edit_obj.subcategory == s %}selected{% endif %}>{{ label }}</option>{% endfor %}
+        </select>
+      </div>
+      <div>
+        <label>项目名称 *</label>
+        <input type="text" name="name" required value="{{ edit_obj.name|default:'' }}">
+      </div>
+      <div>
+        <label>项目代号</label>
+        <input type="text" name="symbol" value="{{ edit_obj.symbol|default:'' }}">
+      </div>
+      <div>
+        <label>项目Code</label>
+        <input type="text" name="code" value="{{ edit_obj.code|default:'' }}">
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;padding-bottom:8px;">
+        <label style="margin:0;"><input type="checkbox" name="active" value="1" {% if not edit_obj or edit_obj.active %}checked{% endif %}> 启用</label>
+      </div>
+      <div class="full">
+        <label>备注</label>
+        <input type="text" name="notes" value="{{ edit_obj.notes|default:'' }}">
+      </div>
+      <div class="full">
+        <button type="submit" class="btn btn-primary">{% if edit_obj %}保存修改{% else %}创建项目{% endif %}</button>
+        {% if edit_obj %}<a href="{% url 'core:project_management' %}" class="btn btn-secondary">取消编辑</a>{% endif %}
+      </div>
+    </form>
+  </div>
+
+  <!-- project groups -->
+  {% for cat, group in groups.items %}
+  <div class="pm-card">
+    <h2>{{ group.label }}（{{ group.items|length }}）</h2>
+    {% if group.items %}
+      {% for it in group.items %}
+      <div class="pm-proj">
+        <div class="pm-proj-name">
+          {{ it.project.name }}
+          {% if it.project.symbol %}<small>代号 {{ it.project.symbol }}{% if it.project.code %} · Code {{ it.project.code }}{% endif %}</small>{% endif %}
+          {% if it.project.subcategory %}<small>子类：{{ it.project.get_subcategory_display }}</small>{% endif %}
+          {% if not it.project.active %}<small style="color:#c0392b;">已停用</small>{% endif %}
+        </div>
+        <span class="pm-stat">工单 <b>{{ it.report_count }}</b></span>
+        <span class="pm-stat">工时 <b>{{ it.hours|floatformat:1 }}h</b></span>
+        <div class="pm-inline">
+          <a href="{% url 'core:project_management' %}?edit={{ it.project.id }}" class="btn btn-secondary">编辑</a>
+          <form method="post" action="{% url 'core:project_delete' it.project.id %}" style="display:inline;" onsubmit="return confirm('删除项目 {{ it.project.name }}？关联工单的项目引用将被清空。');">
+            {% csrf_token %}<button type="submit" class="btn btn-secondary" style="color:#c0392b;">删除</button>
+          </form>
+        </div>
+        {% if it.phases %}<div class="pm-phases">阶段统计：{% for ph, n in it.phases.items %}{{ ph }} {{ n }}{% if not forloop.last %} · {% endif %}{% endfor %}</div>{% endif %}
+      </div>
+      {% endfor %}
+    {% else %}
+      <div class="pm-empty">暂无项目</div>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+
+<script>
+// subcategory only applies to 灌溉项目
+(function () {
+  var cat = document.getElementById('pmCategory'), sub = document.getElementById('pmSubWrap');
+  if (!cat || !sub) return;
+  function sync() { sub.style.visibility = (cat.value === 'IRRIGATION') ? '' : 'hidden'; }
+  cat.addEventListener('change', sync); sync();
+})();
+</script>
+{% endblock %}

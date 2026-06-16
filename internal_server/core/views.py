@@ -5809,14 +5809,14 @@ def _build_zone_geo_data():
 
 @login_required(login_url='core:login')
 def workorder_mobile_v2(request):
-    from core.models import (
-        WorkReport, WorkReportFault, WorkCategory, FaultCategory, FaultSubType,
-        Patch, Zone, Worker,
-    )
+    from core.models import WorkReport, Patch, Zone, Worker
     from core.role_utils import get_worker_for_user, is_admin, get_user_role, ROLE_FIELD_WORKER
     from core.role_utils import ROLE_SUPER_ADMIN, ROLE_MANAGER
-    from datetime import date, datetime, time, timedelta
-    import math
+    from core.workorder_tree_views import (
+        _calc_hours, _save_entries, _collect_entry_photos, _save_photo,
+        _resolve_pending_repairs,
+    )
+    from datetime import date, datetime, time
 
     role = get_user_role(request.user)
     if role not in (ROLE_FIELD_WORKER, ROLE_SUPER_ADMIN, ROLE_MANAGER):
@@ -5855,23 +5855,12 @@ def workorder_mobile_v2(request):
             team_size = int(request.POST.get('team_size', 1) or 1)
             third_party_count = int(request.POST.get('third_party_count', 0) or 0)
 
-            team_hours = 0.0
-            third_party_hours = 0.0
-            if work_start and work_end:
-                start_dt = datetime.combine(date.today(), work_start)
-                end_dt = datetime.combine(date.today(), work_end)
-                if end_dt <= start_dt:
-                    end_dt += timedelta(days=1)
-                duration_h = (end_dt - start_dt).seconds / 3600
-                team_hours = round(duration_h * team_size * 2) / 2
-                third_party_hours = round(duration_h * third_party_count * 2) / 2
+            team_hours = _calc_hours(work_start, work_end, team_size)
+            third_party_hours = _calc_hours(work_start, work_end, third_party_count)
 
             zone_codes = request.POST.getlist('zones')
             first_zone = Zone.objects.filter(code__in=zone_codes).select_related('patch').first() if zone_codes else None
             location = first_zone.patch if first_zone else Patch.objects.first()
-
-            work_category_id = request.POST.get('work_category')
-            work_category = WorkCategory.objects.filter(id=work_category_id).first() if work_category_id else WorkCategory.objects.first()
 
             selected_zones = Zone.objects.filter(code__in=zone_codes)
             zone_names = ', '.join(z.name or z.code for z in selected_zones) if selected_zones else ''
@@ -5881,7 +5870,6 @@ def workorder_mobile_v2(request):
                 weather='',
                 worker=post_worker,
                 location=location,
-                work_category=work_category,
                 zone_location=first_zone,
                 remark=request.POST.get('remark', ''),
                 is_difficult=bool(request.POST.get('is_difficult')),
@@ -5900,17 +5888,18 @@ def workorder_mobile_v2(request):
             if selected_zones:
                 report.zones.set(selected_zones)
 
+            # Work-content tree entries (replaces the old two-level fault model).
+            entries = json.loads(request.POST.get('entries', '[]') or '[]')
+            _save_entries(report, entries, _collect_entry_photos(request))
+            # 计划性维修: resolve the checked past 待修 workorders.
+            pm_ids = [x for x in (request.POST.get('pm_resolved') or '').split(',') if x.strip().isdigit()]
+            if pm_ids:
+                _resolve_pending_repairs(report, pm_ids)
+            entry_count = report.entries.count()
+
             if report.is_difficult:
-                work_content = request.POST.get('work_content', '').strip()
-                fault_names = []
-                for fe in report.fault_entries.select_related('fault_subtype').all():
-                    fault_names.append(fe.fault_subtype.name_zh)
-                remark_parts = []
-                if fault_names:
-                    remark_parts.append('故障: ' + ', '.join(fault_names))
-                if work_content:
-                    remark_parts.append(work_content)
-                remark_content = ' '.join(remark_parts) if remark_parts else '疑难工单'
+                note = request.POST.get('remark', '').strip()
+                remark_content = note or (f'疑难工单 · {entry_count} 项' if entry_count else '疑难工单')
                 remark_entry = {
                     'date': report.date if isinstance(report.date, str) else report.date.isoformat(),
                     'content': remark_content,
@@ -5923,27 +5912,9 @@ def workorder_mobile_v2(request):
                     z.remarks = json.dumps(remarks, ensure_ascii=False)
                     z.save(update_fields=['remarks'])
 
-            fault_json = request.POST.get('fault_entries', '[]')
-            try:
-                fault_data = json.loads(fault_json)
-                for entry in fault_data:
-                    if entry.get('count', 0) > 0 and entry.get('fault_subtype'):
-                        WorkReportFault.objects.create(
-                            work_report=report,
-                            fault_subtype_id=entry['fault_subtype'],
-                            count=entry['count'],
-                        )
-            except (json.JSONDecodeError, KeyError):
-                pass
-
-            photo_paths = []
-            from django.core.files.storage import default_storage
-            import os as _os
-            for f in request.FILES.getlist('photos'):
-                ts = datetime.now().strftime('%Y%m%d%H%M%S')
-                fname = f'workreport/{report.id}_{ts}_{f.name}'
-                saved = default_storage.save(fname, f)
-                photo_paths.append(saved)
+            # Report-level photos (1.1.12).
+            photo_paths = [_save_photo(report, f)
+                           for f in request.FILES.getlist('report_photos')]
             if photo_paths:
                 report.photos = photo_paths
                 report.save(update_fields=['photos'])
@@ -6030,8 +6001,9 @@ def water_request_mobile_v2(request):
 @login_required(login_url='core:login')
 def workorder_modal_data(request):
     """API: return workorder form metadata as JSON for dashboard modal."""
-    from core.models import WorkCategory, FaultCategory, WorkReport, Worker
+    from core.models import WorkReport, Worker
     from core.role_utils import get_worker_for_user, get_user_role, is_admin, ROLE_FIELD_WORKER, ROLE_SUPER_ADMIN, ROLE_MANAGER
+    from core.workorder_tree_views import serialize_workitem_tree, serialize_projects, IRRIGATION_SUBCATEGORIES
     from datetime import date, datetime
 
     role = get_user_role(request.user)
@@ -6039,25 +6011,6 @@ def workorder_modal_data(request):
         return JsonResponse({'error': '无权限'}, status=403)
 
     worker = get_worker_for_user(request.user)
-
-    top_categories = WorkCategory.objects.filter(parent__isnull=True, active=True).order_by('order')
-    sub_categories = WorkCategory.objects.filter(parent__isnull=False, active=True).select_related('parent').order_by('parent__order', 'order')
-    category_tree = []
-    for tc in top_categories:
-        children = [sc for sc in sub_categories if sc.parent_id == tc.id]
-        category_tree.append({
-            'id': tc.id, 'name': tc.name, 'code': tc.code,
-            'children': [{'id': c.id, 'name': c.name, 'code': c.code} for c in children],
-        })
-
-    fault_categories = FaultCategory.objects.filter(active=True).prefetch_related('sub_types').order_by('order')
-    fault_tree = []
-    for fc in fault_categories:
-        subs = fc.sub_types.filter(active=True).order_by('order')
-        fault_tree.append({
-            'id': fc.id, 'name': fc.name_zh,
-            'subtypes': [{'id': s.id, 'name': s.name_zh} for s in subs],
-        })
 
     now = datetime.now()
     rounded_min = (now.minute // 15) * 15
@@ -6072,8 +6025,10 @@ def workorder_modal_data(request):
     sorted_shifts = sorted(shift_freq.keys(), key=lambda s: -shift_freq[s])
 
     return JsonResponse({
-        'category_tree': category_tree,
-        'fault_tree': fault_tree,
+        'work_tree': serialize_workitem_tree(),
+        'projects': serialize_projects(),
+        'irrigation_subcategories': IRRIGATION_SUBCATEGORIES(),
+        'can_create_project': role in (ROLE_MANAGER, ROLE_SUPER_ADMIN),
         'sorted_shifts': sorted_shifts,
         'today': date.today().isoformat(),
         'now_time': now.strftime('%H:%M'),
