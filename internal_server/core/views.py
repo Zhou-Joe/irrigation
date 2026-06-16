@@ -910,7 +910,7 @@ def dashboard(request):
 
 # Excel headers matching Zone list V0.xlsx column order
 _ZONE_EXPORT_HEADERS = [
-    '编号', '位置重要程度', '通用名称', '灌溉管理用的位置',
+    '编号', '位置重要程度', '所属Land', '通用名称', '灌溉管理用的位置',
     '当前状态', '灌水器类型', '灌溉强度 mm/h', '区域面积',
     '灌溉分区', 'CCU编号', '电磁阀尺寸', '景观系数',
     '植物类型', '灌溉领班', '绿化分区', '绿化领班',
@@ -1004,7 +1004,7 @@ def zone_export_excel(request):
         cell.alignment = center_wrap
 
     # Set column widths matching V0
-    col_widths = [16, 13, 13, 18, 13, 16, 13, 14, 13, 12, 8, 9, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13]
+    col_widths = [16, 13, 14, 13, 18, 13, 16, 13, 14, 13, 12, 8, 9, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13]
     for i, w in enumerate(col_widths):
         ws.column_dimensions[openpyxl.utils.get_column_letter(i + 1)].width = w
 
@@ -1017,27 +1017,28 @@ def zone_export_excel(request):
         values = [
             zone.code,                                          # A: 编号
             _PRIORITY_EXPORT_MAP.get(zone.priority, ''),         # B: 位置重要程度
-            zone.name,                                          # C: 通用名称
-            zone.description,                                   # D: 灌溉管理用的位置
-            zone.current_status or None,                        # E: 当前状态
-            zone.sprinkler_type or None,                        # F: 灌水器类型
-            zone.irrigation_intensity,                          # G: 灌溉强度
-            zone.area_display if zone.area_sqm else None,       # H: 区域面积
-            zone.patch.name if zone.patch else None,            # I: 灌溉分区
-            int(ccu_num) if ccu_num.isdigit() else ccu_num,     # J: CCU编号
-            zone.solenoid_valve_size,                           # K: 电磁阀尺寸
-            zone.landscape_coefficient,                         # L: 景观系数
-            zone.plant_type or None,                            # M: 植物类型
-            zone.irrigation_foreman or None,                    # N: 灌溉领班
-            zone.greenery_zone or None,                         # O: 绿化分区
-            zone.greenery_foreman or None,                      # P: 绿化领班
-            zone.pest_control_zone or None,                     # Q: 植保分区
-            zone.pest_control_foreman or None,                  # R: 植保领班
-            zone.terrain_feature or None,                       # S: 地形特点
-            zone.plant_feature or None,                         # T: 植物特点
-            zone.soil_moisture or None,                         # U: 土壤湿度
-            zone.equipment_maintenance_notes or None,           # V: 灌溉设备维护记录
-            zone.irrigation_management_notes or None,           # W: 灌溉管理以往记录
+            zone.land.name if zone.land else None,              # C: 所属Land
+            zone.name,                                          # D: 通用名称
+            zone.description,                                   # E: 灌溉管理用的位置
+            zone.current_status or None,                        # F: 当前状态
+            zone.sprinkler_type or None,                        # G: 灌水器类型
+            zone.irrigation_intensity,                          # H: 灌溉强度
+            zone.area_display if zone.area_sqm else None,       # I: 区域面积
+            zone.patch.name if zone.patch else None,            # J: 灌溉分区
+            int(ccu_num) if ccu_num.isdigit() else ccu_num,     # K: CCU编号
+            zone.solenoid_valve_size,                           # L: 电磁阀尺寸
+            zone.landscape_coefficient,                         # M: 景观系数
+            zone.plant_type or None,                            # N: 植物类型
+            zone.irrigation_foreman or None,                    # O: 灌溉领班
+            zone.greenery_zone or None,                         # P: 绿化分区
+            zone.greenery_foreman or None,                      # Q: 绿化领班
+            zone.pest_control_zone or None,                     # R: 植保分区
+            zone.pest_control_foreman or None,                  # S: 植保领班
+            zone.terrain_feature or None,                       # T: 地形特点
+            zone.plant_feature or None,                         # U: 植物特点
+            zone.soil_moisture or None,                         # V: 土壤湿度
+            zone.equipment_maintenance_notes or None,           # W: 灌溉设备维护记录
+            zone.irrigation_management_notes or None,           # X: 灌溉管理以往记录
         ]
         for col_idx, val in enumerate(values, 1):
             ws.cell(row=row_num, column=col_idx, value=val)
@@ -1075,31 +1076,33 @@ def _parse_zone_row(row):
 
     return {
         'code': code,
-        'name': _str(row[2]) or code,
-        'description': _str(row[3]),
+        'land': _str(row[2]),                # 所属Land (resolved to Land in confirm)
+        'name': _str(row[3]) or code,
+        'description': _str(row[4]),
         'priority': priority,
-        'current_status': _str(row[4]),
-        'sprinkler_type': _str(row[5]),
-        'irrigation_intensity': _float(row[6]),
-        'solenoid_valve_size': _float(row[10]),
-        'landscape_coefficient': _float(row[11]),
-        'plant_type': _str(row[12]),
-        'irrigation_foreman': _str(row[13]),
-        'greenery_zone': _str(row[14]),
-        'greenery_foreman': _str(row[15]),
-        'pest_control_zone': _str(row[16]),
-        'pest_control_foreman': _str(row[17]),
-        'terrain_feature': _str(row[18]),
-        'plant_feature': _str(row[19]),
-        'soil_moisture': _str(row[20]),
-        'equipment_maintenance_notes': _str(row[21]),
-        'irrigation_management_notes': _str(row[22]),
+        'current_status': _str(row[5]),
+        'sprinkler_type': _str(row[6]),
+        'irrigation_intensity': _float(row[7]),
+        # row[8] = 区域面积 (computed) and row[9]/[10] = 灌溉分区/CCU (from patch) — skipped
+        'solenoid_valve_size': _float(row[11]),
+        'landscape_coefficient': _float(row[12]),
+        'plant_type': _str(row[13]),
+        'irrigation_foreman': _str(row[14]),
+        'greenery_zone': _str(row[15]),
+        'greenery_foreman': _str(row[16]),
+        'pest_control_zone': _str(row[17]),
+        'pest_control_foreman': _str(row[18]),
+        'terrain_feature': _str(row[19]),
+        'plant_feature': _str(row[20]),
+        'soil_moisture': _str(row[21]),
+        'equipment_maintenance_notes': _str(row[22]),
+        # row[23] = 灌溉管理以往记录 (protected) — skipped on import
     }
 
 
 # Field display names for the preview table
 _FIELD_LABELS = {
-    'code': '编号', 'name': '通用名称', 'description': '灌溉管理用的位置',
+    'code': '编号', 'land': '所属Land', 'name': '通用名称', 'description': '灌溉管理用的位置',
     'priority': '位置重要程度', 'current_status': '当前状态',
     'sprinkler_type': '灌水器类型', 'irrigation_intensity': '灌溉强度',
     'solenoid_valve_size': '电磁阀尺寸', 'landscape_coefficient': '景观系数',
@@ -1110,6 +1113,10 @@ _FIELD_LABELS = {
     'soil_moisture': '土壤湿度', 'equipment_maintenance_notes': '设备维护记录',
     'irrigation_management_notes': '灌溉管理记录',
 }
+
+# Fields that are DB-primary / auto-calculated — never overwritten on import
+# (面积 is computed from the boundary; 灌溉管理以往记录 is accumulated history).
+_ZONE_IMPORT_PROTECTED = {'area_sqm', 'irrigation_management_notes'}
 
 
 @login_required(login_url='core:login')
@@ -1139,13 +1146,13 @@ def zone_import_preview(request):
     # Preload all zones by code
     existing_zones = {z.code: z for z in Zone.objects.select_related('patch').all()}
 
-    # Fields to compare (exclude code — it's the key)
-    compare_fields = [k for k in _FIELD_LABELS if k != 'code']
+    # Fields to compare (exclude code + DB-primary/auto-calculated fields)
+    compare_fields = [k for k in _FIELD_LABELS if k != 'code' and k not in _ZONE_IMPORT_PROTECTED]
 
     changes = []
     counts = {'new': 0, 'modified': 0, 'unchanged': 0}
 
-    for row_idx, row in enumerate(ws.iter_rows(min_row=2, max_col=23, values_only=True), start=2):
+    for row_idx, row in enumerate(ws.iter_rows(min_row=2, max_col=24, values_only=True), start=2):
         parsed = _parse_zone_row(row)
         if not parsed:
             continue
@@ -1221,17 +1228,19 @@ def zone_import_confirm(request):
     except Exception as e:
         return JsonResponse({'error': f'文件解析失败: {e}'}, status=400)
 
-    from .models import Patch
+    from .models import Patch, Land
 
     # Preload patches by CCU number
     patch_map = {}
     for p in Patch.objects.filter(code__startswith='CCU'):
         patch_map[p.code.replace('CCU', '')] = p
+    # Preload lands by name
+    land_map = {l.name: l for l in Land.objects.all()}
 
     created = 0
     updated = 0
 
-    for row_idx, row in enumerate(ws.iter_rows(min_row=2, max_col=23, values_only=True), start=2):
+    for row_idx, row in enumerate(ws.iter_rows(min_row=2, max_col=24, values_only=True), start=2):
         if row_idx not in confirmed_rows:
             continue
 
@@ -1244,19 +1253,33 @@ def zone_import_confirm(request):
         parts = code.split('-')
         ccu_prefix = parts[0] if parts else ''
         patch = patch_map.get(ccu_prefix)
+        # Resolve Land (create on demand); protected fields are already excluded by _parse_zone_row
+        land_name = (parsed.get('land') or '').strip()
+        land = None
+        if land_name:
+            land = land_map.get(land_name)
+            if not land:
+                land = Land.objects.create(name=land_name)
+                land_map[land_name] = land
 
         zone = Zone.objects.filter(code=code).first()
         if zone:
             for k, v in parsed.items():
-                if k == 'code':
+                if k in ('code', 'land'):
                     continue
                 setattr(zone, k, v)
+            zone.land = land
             if patch:
                 zone.patch = patch
             zone.save()
             updated += 1
         else:
-            Zone.objects.create(code=code, patch=patch, **{k: v for k, v in parsed.items() if k != 'code'})
+            zone = Zone(code=code, patch=patch, land=land)
+            for k, v in parsed.items():
+                if k in ('code', 'land'):
+                    continue
+                setattr(zone, k, v)
+            zone.save()
             created += 1
 
     wb.close()
