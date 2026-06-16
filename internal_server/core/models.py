@@ -1193,6 +1193,128 @@ class WorkReportFault(models.Model):
 
 
 # ==========================================================================
+# 工单工作内容 · 通用树模型 (Work Item Tree - replaces 2-level FaultCategory/SubType)
+# 设计文档: docs/superpowers/specs/2026-06-16-workorder-form-refactor-design.md
+# ==========================================================================
+
+
+class WorkItem(models.Model):
+    """工单「工作内容」模板树节点 - 自引用树，承载完整 现场作业记录 层级。
+
+    首次由 seed_work_items 命令解析 工单记录格式.md 灌入；之后管理员可在后台增删改。
+    叶子节点(value_type != group)才是可填报的；group 仅作容器。
+    """
+
+    SECTION_CHOICES = [
+        ('routine_maint', '常规维护'),
+        ('irrigation_project', '灌溉项目'),
+        ('routine_support', '常规配合'),
+        ('greenhouse_nursery', '温室和苗圃维护'),
+        ('warehouse', '仓库整理'),
+        ('meeting_training', '会议和培训'),
+        ('repair_emergency', '报修应急'),
+        ('other_project', '其他项目'),
+        ('drainage_project', '排水项目'),
+        ('typhoon_emergency', '台风应急'),
+        ('safety_incident', '安全事件记录'),
+        ('good_deed', '优秀事迹记录'),
+    ]
+    VALUE_TYPE_CHOICES = [
+        ('group', '分组(无值)'),
+        ('count', '计数'),
+        ('status', '状态选择'),
+        ('text', '纯文本'),
+        ('text_photo', '文本+照片'),
+    ]
+
+    code = models.CharField('编码', max_length=100, unique=True, help_text='文档点号路径，幂等灌入与外部引用键')
+    parent = models.ForeignKey(
+        'self', null=True, blank=True, on_delete=models.CASCADE,
+        related_name='children', verbose_name='父节点',
+    )
+    name_zh = models.CharField('中文名', max_length=255)
+    name_en = models.CharField('英文名', max_length=255, blank=True)
+    order = models.PositiveIntegerField('同级排序', default=0)
+    level = models.PositiveIntegerField('层级深度', default=0)
+    section = models.CharField('顶层章节', max_length=30, choices=SECTION_CHOICES, db_index=True)
+    value_type = models.CharField('值类型', max_length=20, choices=VALUE_TYPE_CHOICES, default='count')
+    status_options = models.JSONField('状态选项', default=list, blank=True, help_text='仅 status 型：可选状态列表')
+    unit = models.CharField('单位', max_length=20, blank=True, help_text='仅 count 型，如 m / 个')
+    is_project_scoped = models.BooleanField('需绑定项目', default=False, help_text='灌溉项目章节的节点填报时需选 Project')
+    active = models.BooleanField('启用', default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['section', 'order', 'code']
+        verbose_name = '工作内容节点'
+        verbose_name_plural = '工作内容节点'
+
+    def __str__(self):
+        return f"{self.code} {self.name_zh}"
+
+
+class Project(models.Model):
+    """灌溉项目实例 - 管理员预先创建(FAM/WDI/其它)；工单提交时下拉选择。
+
+    对应文档「灌溉项目」下的 项目1/项目2/项目…。项目数量随管理员增减动态变化。
+    设计/出图/报预算等 PM 阶段不在此表，而是 WorkItem 模板子树里的节点。
+    """
+
+    CATEGORY_CHOICES = [
+        ('FAM', 'FAM项目'),
+        ('WDI', 'WDI项目'),
+        ('OTHER', '其它'),
+    ]
+
+    name = models.CharField('项目名称', max_length=200)
+    category = models.CharField('项目类别', max_length=20, choices=CATEGORY_CHOICES, default='FAM')
+    code = models.CharField('项目代号', max_length=100, blank=True)
+    active = models.BooleanField('启用', default=True)
+    notes = models.TextField('备注', blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['category', 'name']
+        verbose_name = '灌溉项目'
+        verbose_name_plural = '灌溉项目'
+        unique_together = ('category', 'name')
+
+    def __str__(self):
+        return f"[{self.get_category_display()}] {self.name}"
+
+
+class WorkReportEntry(models.Model):
+    """工单填报明细 - 只为「填了的叶子」存一行。"""
+
+    work_report = models.ForeignKey(
+        WorkReport, on_delete=models.CASCADE, related_name='entries', verbose_name='工单',
+    )
+    work_item = models.ForeignKey(
+        WorkItem, on_delete=models.PROTECT, related_name='entries', verbose_name='节点',
+    )
+    project = models.ForeignKey(
+        Project, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='entries', verbose_name='项目',
+    )
+    count = models.PositiveIntegerField('数量', default=0)
+    status = models.CharField('状态值', max_length=100, blank=True)
+    text_value = models.TextField('文本', blank=True)
+    photos = models.JSONField('照片', default=list, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ('work_report', 'work_item', 'project')
+        verbose_name = '工单明细'
+        verbose_name_plural = '工单明细'
+
+    def __str__(self):
+        return f"{self.work_report} → {self.work_item.name_zh}"
+
+
+# ==========================================================================
 # 需求周报系统 (Demand Record System - Other departments' requests)
 # ==========================================================================
 
