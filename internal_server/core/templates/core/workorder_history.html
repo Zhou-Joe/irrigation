@@ -12,6 +12,9 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 .top-bar { position: sticky; top: 0; z-index: 100; background: var(--color-primary, #2D6A4F); color: #fff; display: flex; align-items: center; padding: 12px 16px; font-size: 1.1em; font-weight: 600; box-shadow: 0 2px 8px rgba(0,0,0,0.15); }
 .top-bar a { color: #fff; text-decoration: none; font-size: 1.2em; margin-right: 12px; }
 .user-name { margin-left: auto; font-size: 0.85em; opacity: 0.8; }
+.filter-row { display:flex; gap:8px; padding:10px 12px 0; }
+.filter-pill { flex:0 0 auto; padding:6px 14px; border-radius:18px; font-size:0.82rem; font-weight:500; background:#fff; color:#555; border:1px solid #e0e0e0; text-decoration:none; }
+.filter-pill.on { background: var(--color-primary, #2D6A4F); color:#fff; border-color: var(--color-primary, #2D6A4F); }
 .empty { text-align: center; padding: 60px 20px; color: #999; font-size: 0.95em; }
 
 /* Card list */
@@ -19,14 +22,22 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 .card { background: #fff; border-radius: 10px; margin-bottom: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); overflow: hidden; cursor: pointer; }
 .card:active { background: #fafafa; }
 .card-summary { padding: 14px 16px; }
-.card-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.card-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; gap:6px; }
 .card-date { font-weight: 600; font-size: 0.95em; }
-.card-id { font-size: 0.78em; color: #999; }
+.card-id { font-size: 0.78em; color: #999; margin-left:auto; }
 .card-shift { font-size: 0.78em; background: #e8f5e9; color: var(--color-primary, #2D6A4F); padding: 2px 8px; border-radius: 10px; font-weight: 500; }
 .card-row { display: flex; justify-content: space-between; font-size: 0.85em; padding: 2px 0; color: #555; }
 .card-row span:last-child { font-weight: 500; color: #222; }
-.card-zones { margin-top: 6px; display: flex; flex-wrap: wrap; gap: 4px; }
-.card-zone-tag { background: #f0f0f0; padding: 2px 8px; border-radius: 8px; font-size: 0.75em; font-family: 'Courier New', monospace; }
+.card-sections { margin-top: 8px; display:flex; flex-wrap:wrap; gap:4px; align-items:center; }
+.section-chip { font-size:0.74rem; background:#e8f5e9; color: var(--color-primary, #2D6A4F); padding:2px 8px; border-radius:8px; font-weight:500; }
+.section-chip.legacy { background:#eee; color:#999; }
+.section-count { font-size:0.72rem; color:#999; }
+.card-zones { margin-top: 6px; font-size: 0.8em; color:#666; line-height:1.4; }
+.card-flags { margin-top: 8px; display:flex; flex-wrap:wrap; gap:6px; }
+.flag { font-size:0.72rem; padding:2px 8px; border-radius:10px; font-weight:600; }
+.flag-pending { background:#fde8d8; color:#c7521a; }
+.flag-difficult { background:#fbe0e0; color:#9b2226; }
+.flag-resolved { background:#dcf3e6; color:#40916c; }
 .card-hours { margin-top: 6px; padding-top: 6px; border-top: 1px solid #f0f0f0; display: flex; gap: 16px; font-size: 0.82em; color: #888; }
 .card-hours span { color: var(--color-primary, #2D6A4F); font-weight: 600; }
 .card-expand-hint { font-size: 0.75em; color: #bbb; text-align: center; padding: 4px 0 8px; }
@@ -35,11 +46,18 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 .card-detail { display: none; border-top: 1px solid #f0f0f0; padding: 12px 16px; background: #fafafa; }
 .card.open .card-detail { display: block; }
 .card.open .card-expand-hint { display: none; }
-.detail-section { margin-bottom: 10px; }
-.detail-label { font-size: 0.78em; color: #999; margin-bottom: 3px; }
+.detail-section { margin-bottom: 12px; }
+.detail-label { font-size: 0.78em; color: #999; margin-bottom: 4px; }
 .detail-value { font-size: 0.88em; color: #222; line-height: 1.5; }
 .detail-tags { display: flex; flex-wrap: wrap; gap: 4px; }
 .detail-tag { background: #e8f5e9; color: var(--color-primary, #2D6A4F); padding: 2px 8px; border-radius: 8px; font-size: 0.78em; }
+.entry-group-title { font-size:0.8rem; color: var(--color-primary, #2D6A4F); font-weight:600; margin: 8px 0 4px; }
+.entry-row { display:flex; justify-content:space-between; gap:8px; font-size:0.84rem; padding:5px 0; border-bottom:1px solid #efefef; }
+.entry-row:last-child { border-bottom:none; }
+.entry-path { color:#333; line-height:1.35; }
+.entry-path .leaf { font-weight:600; }
+.entry-val { flex:0 0 auto; color: var(--color-primary, #2D6A4F); font-weight:600; white-space:nowrap; }
+.entry-proj { font-size:0.72rem; color:#aaa; margin-top:2px; }
 .detail-photo-grid { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
 .detail-photo { width: 64px; height: 64px; border-radius: 6px; object-fit: cover; }
 
@@ -55,6 +73,11 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
     <span class="user-name">{{ worker_name }}</span>
 </div>
 
+<div class="filter-row">
+    <a class="filter-pill {% if not pending_filter %}on{% endif %}" href="{% url 'core:workorder_history' %}">全部</a>
+    <a class="filter-pill {% if pending_filter %}on{% endif %}" href="{% url 'core:workorder_history' %}?pending=1">仅待修</a>
+</div>
+
 {% if reports %}
 <div class="card-list">
     {% for r in reports %}
@@ -65,30 +88,48 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
                 {% if r.shift %}<span class="card-shift">{{ r.shift }}</span>{% endif %}
                 <span class="card-id">#{{ r.id }}</span>
             </div>
+            {% if r.work_category %}
             <div class="card-row">
                 <span>工作类别</span>
-                <span>{% if r.work_category %}{{ r.work_category.name }}{% else %}—{% endif %}</span>
+                <span>{{ r.work_category.name }}</span>
             </div>
+            {% endif %}
             {% if r.work_start_time %}
             <div class="card-row">
                 <span>工作时间</span>
                 <span>{{ r.work_start_time }} - {{ r.work_end_time }}</span>
             </div>
             {% endif %}
+
+            <div class="card-sections">
+                {% if r.section_labels %}
+                    {% for lbl in r.section_labels %}<span class="section-chip">{{ lbl }}</span>{% endfor %}
+                    {% if r.entry_count %}<span class="section-count">· {{ r.entry_count }}项</span>{% endif %}
+                {% else %}
+                    <span class="section-chip legacy">旧版记录</span>
+                {% endif %}
+            </div>
+
             {% if r.zone_names %}
             <div class="card-zones">{{ r.zone_names }}</div>
             {% endif %}
+
+            {% if r.is_pending_repair or r.is_difficult %}
+            <div class="card-flags">
+                {% if r.is_pending_repair %}<span class="flag flag-pending">待修</span>{% endif %}
+                {% if r.is_difficult %}<span class="flag flag-difficult">疑难{% if r.is_difficult_resolved %} → 已处理{% endif %}</span>{% endif %}
+            </div>
+            {% endif %}
+
             {% if r.team_hours or r.third_party_hours %}
             <div class="card-hours">
                 {% if r.team_hours %}灌溉组: <span>{{ r.team_hours }}h</span>{% endif %}
                 {% if r.third_party_hours %}第三方: <span>{{ r.third_party_hours }}h</span>{% endif %}
-                {% if r.is_difficult %}<span style="color:#e65100;">疑难{% if r.is_difficult_resolved %}(已处理){% endif %}</span>{% endif %}
             </div>
             {% endif %}
         </div>
         <div class="card-expand-hint">点击查看详情 &#9660;</div>
         <div class="card-detail">
-            <!-- Worker -->
             {% if r.worker %}
             <div class="detail-section">
                 <div class="detail-label">填写人</div>
@@ -96,7 +137,6 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
             </div>
             {% endif %}
 
-            <!-- Zones -->
             {% if r.zones.all %}
             <div class="detail-section">
                 <div class="detail-label">区域</div>
@@ -108,41 +148,33 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
             </div>
             {% endif %}
 
-            <!-- People -->
             <div class="detail-section">
                 <div class="detail-label">人数</div>
                 <div class="detail-value">灌溉组 {{ r.team_size }}人{% if r.third_party_count %}，第三方 {{ r.third_party_count }}人{% endif %}</div>
             </div>
 
-            <!-- Faults -->
-            {% if r.fault_entries.all %}
-            <div class="detail-section">
-                <div class="detail-label">故障详情</div>
-                <div class="detail-tags">
-                    {% for fe in r.fault_entries.all %}
-                    <span class="detail-tag">{{ fe.fault_subtype.name_zh }}{% if fe.count > 1 %} x{{ fe.count }}{% endif %}</span>
-                    {% endfor %}
-                </div>
-            </div>
-            {% endif %}
-
-            <!-- Work content -->
-            {% if r.work_content %}
+            {% if r.entry_groups %}
             <div class="detail-section">
                 <div class="detail-label">工作内容</div>
-                <div class="detail-value">{{ r.work_content }}</div>
+                {% for grp in r.entry_groups %}
+                <div class="entry-group-title">{{ grp.section_label }}</div>
+                {% for it in grp.items %}
+                <div class="entry-row">
+                    <div class="entry-path">{{ it.path }}{% if it.project %}<div class="entry-proj">项目: {{ it.project }}</div>{% endif %}</div>
+                    {% if it.value %}<span class="entry-val">{{ it.value }}</span>{% endif %}
+                </div>
+                {% endfor %}
+                {% endfor %}
             </div>
             {% endif %}
 
-            <!-- Remark -->
             {% if r.remark %}
             <div class="detail-section">
                 <div class="detail-label">备注</div>
-                <div class="detail-value">{{ r.remark }}</div>
+                <div class="detail-value" style="white-space:pre-wrap;">{{ r.remark }}</div>
             </div>
             {% endif %}
 
-            <!-- Photos -->
             {% if r.photos %}
             <div class="detail-section">
                 <div class="detail-label">照片</div>

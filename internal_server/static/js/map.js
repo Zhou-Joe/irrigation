@@ -286,7 +286,11 @@
 
         try {
             const zones = JSON.parse(zonesDataElement.textContent);
-            console.log('Loaded zones:', zones.length, 'zones');
+            // Expose for the sidebar click handler (locate by id even when
+            // a zone has no rendered polygon) and to avoid a second parse.
+            window.zonesData = zones;
+            window._zoneById = {};
+            zones.forEach(function (z) { window._zoneById[z.id] = z; });
             renderZones(zones);
         } catch (error) {
             console.error('Error parsing zones data:', error);
@@ -698,6 +702,7 @@
                     irrigationNotes: zone.irrigation_management_notes || '',
                     hasRemarks: zone.has_remarks || false,
                     hasConfirmedRemarks: zone.has_confirmed_remarks || false,
+                    center: zone.center || null,
                 };
 
                 if (isMultiPolygonFormat(zone.boundary_points)) {
@@ -1063,11 +1068,20 @@
         `;
     }
 
-    function flyToZone(zoneData) {
-        if (!zoneData || !zoneData.center || !map) return;
+    function flyToZone(zoneData, layer) {
+        if (!zoneData || !map) return;
+        // Resolve the target center: prefer the zone's stored center, fall back
+        // to the polygon bounds center when the data lacks one.
+        let center = zoneData.center;
+        if ((!center || typeof center.lat !== 'number') && layer && layer.getBounds) {
+            try { center = layer.getBounds().getCenter(); } catch (e) { center = null; }
+        }
+        if (!center) return;
+        const target = (center.lat !== undefined) ? [center.lat, center.lng] : [center.lat || center[0], center.lng || center[1]];
         const cz = map.getZoom();
+        // Zoom up to 19; if already past 19, keep current zoom (just pan).
         const targetZoom = cz > 19 ? cz : 19;
-        map.flyTo(zoneData.center, targetZoom, { animate: true, duration: 0.8 });
+        map.flyTo(target, targetZoom, { animate: true, duration: 0.8 });
     }
 
     function showZonePopup(zoneData) {
@@ -1336,7 +1350,7 @@
             highlightSidebarItem(zoneId);
 
             // Zoom to zone (zoom 19, or keep current if already deeper)
-            flyToZone(layer.zoneData);
+            flyToZone(layer.zoneData, layer);
 
             // Show fixed popup panel
             showZonePopup(layer.zoneData);
@@ -1463,7 +1477,7 @@
                         highlightedLayer = layer;
                         highlightedZoneId = zoneId;
                         highlightZonePolygons(zoneId);
-                        flyToZone(layer.zoneData);
+                        flyToZone(layer.zoneData, layer);
                         showZonePopup(layer.zoneData);
                     }
                 });

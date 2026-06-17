@@ -1060,7 +1060,7 @@
             '<div class="v2-fg"><div class="v2-form-row"><div><div class="v2-fl">开始时间</div><select name="work_start_time" id="woStart" class="v2-select"><option value="">--</option></select></div><div><div class="v2-fl">完成时间</div><select name="work_end_time" id="woEnd" class="v2-select"><option value="">--</option></select></div></div></div>' +
             '<div class="v2-fg"><div class="v2-fl">工作类别</div><div id="woCatTrigger" style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border:1px solid #ddd;border-radius:8px;cursor:pointer;background:#fff;font-size:16px;"><span id="woCatDisplay" style="color:#bbb;">选择</span><span style="font-size:0.8em;color:#999;">▶</span></div></div>' +
             '<div class="v2-fg"><div class="v2-fl">工作内容</div><div id="woContentTrigger" style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border:1px solid #ddd;border-radius:8px;cursor:pointer;background:#fff;font-size:16px;"><span id="woContentDisplay" style="color:#bbb;">选择</span><span style="font-size:0.8em;color:#999;">▶</span></div></div>' +
-            '<div class="v2-fg"><div class="v2-form-row"><div><div class="v2-fl">疑难</div><div class="v2-chip-group"><div class="v2-chip active" data-val=""><input type="radio" name="is_difficult" value="" style="display:none;" checked>否</div><div class="v2-chip" data-val="1"><input type="radio" name="is_difficult" value="1" style="display:none;">是</div></div></div><div><div class="v2-fl">已处理</div><div class="v2-chip-group"><div class="v2-chip active" data-val=""><input type="radio" name="is_difficult_resolved" value="" style="display:none;" checked>否</div><div class="v2-chip" data-val="1"><input type="radio" name="is_difficult_resolved" value="1" style="display:none;">是</div></div></div></div></div>' +
+            '<div class="v2-fg"><div class="v2-form-row"><div style="flex:0.8;"><div class="v2-fl">待修</div><div class="v2-chip-group"><div class="v2-chip active" data-val=""><input type="radio" name="is_pending_repair" value="" style="display:none;" checked>否</div><div class="v2-chip" data-val="1"><input type="radio" name="is_pending_repair" value="1" style="display:none;">是</div></div></div><div style="flex:1.2;"><div class="v2-fl">疑难</div><div class="v2-chip-group"><div class="v2-chip active" data-val=""><input type="radio" name="is_difficult" value="" style="display:none;" checked>否</div><div class="v2-chip" data-val="1"><input type="radio" name="is_difficult" value="1" style="display:none;">是</div></div></div><div><div class="v2-fl">已处理</div><div class="v2-chip-group"><div class="v2-chip active" data-val=""><input type="radio" name="is_difficult_resolved" value="" style="display:none;" checked>否</div><div class="v2-chip" data-val="1"><input type="radio" name="is_difficult_resolved" value="1" style="display:none;">是</div></div></div></div></div>' +
             '<div class="v2-fg"><div class="v2-fl">备注</div><textarea name="remark" class="v2-textarea" placeholder="可选备注..." rows="2"></textarea></div>' +
             '<div class="v2-fg"><div class="v2-fl">照片 (最多6张)</div><div class="v2-photo-area" id="woPhotoArea"><div class="v2-photo-add" id="woPhotoAdd">+</div></div><input type="file" id="woPhotoInput" accept="image/*" multiple style="display:none;"></div>' +
             '<input type="hidden" name="entries" id="woEntriesInput" value="[]"><input type="hidden" name="pm_resolved" id="woPmResolved" value=""></form>' +
@@ -1103,7 +1103,7 @@
         calcHours();
 
         document.querySelectorAll('#woModalForm .v2-chip-group .v2-chip').forEach(function (c) {
-            c.addEventListener('click', function () { c.closest('.v2-chip-group').querySelectorAll('.v2-chip').forEach(function (x) { x.classList.remove('active'); }); c.classList.add('active'); var inp = c.querySelector('input'); if (inp) inp.checked = true; });
+            c.addEventListener('click', function () { c.closest('.v2-chip-group').querySelectorAll('.v2-chip').forEach(function (x) { x.classList.remove('active'); }); c.classList.add('active'); var inp = c.querySelector('input'); if (inp) inp.checked = true; if (inp && inp.name === 'is_pending_repair') syncDifficultChips(); });
         });
 
         // Work-content drill-down picker (replaces the old fault chips).
@@ -1472,7 +1472,7 @@
         if (ps) ps.addEventListener('change', function () { _woProject = ps.value ? parseInt(ps.value, 10) : null; });
     }
 
-    // Toggle (no-count) leaf: tap to select/deselect. 待修 auto-flags 疑难/未解决.
+    // Toggle (no-count) leaf: tap to select/deselect.
     function toggleWoSelection(node) {
         if (!node) return;
         if (node.is_project_scoped && !_woProject) { showToast('请先选择项目', 'error'); return; }
@@ -1482,20 +1482,21 @@
         } else {
             _woEntries[node.id] = { count: 0, status: node.name, text_value: '', hasPhoto: false, project: node.is_project_scoped ? _woProject : null };
         }
-        if (node.name === '待修') syncDifficultChips();
         renderWoLevel();
         updateWoTrigger();
     }
 
-    // Reflect "any 待修 selected?" onto the 疑难/已处理 chips.
+    // 待修 (top-level toggle) ⇒ auto-flag 疑难=是 / 已处理=否. Mirrors server safety net.
     function syncDifficultChips() {
-        var hasDai = Object.keys(_woEntries).some(function (id) {
-            var n = _woNodeById[id];
-            return n && n.name === '待修';
-        });
-        if (!hasDai) return;
-        setRadioChip('is_difficult', '1');           // 疑难 = 是
-        setRadioChip('is_difficult_resolved', '');   // 疑难未解决
+        var on = chipValue('is_pending_repair') === '1';
+        if (on) {
+            setRadioChip('is_difficult', '1');           // 疑难 = 是
+            setRadioChip('is_difficult_resolved', '');   // 疑难未解决
+        }
+    }
+    function chipValue(name) {
+        var checked = document.querySelector('#woModalForm input[name="' + name + '"]:checked');
+        return checked ? checked.value : '';
     }
     function setRadioChip(name, val) {
         var inputs = document.querySelectorAll('#woModalForm input[name="' + name + '"]');

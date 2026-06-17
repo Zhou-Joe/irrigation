@@ -1158,8 +1158,14 @@ class WorkReport(models.Model):
     zone_location = models.ForeignKey(Zone, on_delete=models.SET_NULL, null=True, blank=True, related_name='work_reports', verbose_name='故障/事件位置')
     remark = models.TextField('备注/工作内容', blank=True)
     info_source = models.ForeignKey(InfoSource, on_delete=models.SET_NULL, null=True, blank=True, related_name='work_reports', verbose_name='信息来源')
+    is_pending_repair = models.BooleanField('待修', default=False)
     is_difficult = models.BooleanField('疑难问题', default=False)
     is_difficult_resolved = models.BooleanField('疑难问题已处理', default=False)
+    resolved_by_pm = models.ForeignKey(
+        'self', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='resolved_repairs', verbose_name='处理该待修的计划性维修工单',
+        help_text='计划性维修工单处理本待修后自动回填；用于工单管理页展示闭环关系',
+    )
     fault_subtypes = models.ManyToManyField(FaultSubType, through='WorkReportFault', blank=True, related_name='work_reports')
     photos = models.JSONField(default=list, blank=True, verbose_name='照片列表', help_text='照片文件路径列表')
 
