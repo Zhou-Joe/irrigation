@@ -685,6 +685,9 @@ def dashboard(request):
             # Region info
             'region_id': zone.patch.region_id if zone.patch and zone.patch.region else None,
             'region_name': zone.patch.region.name if zone.patch and zone.patch.region else None,
+            # Land info (top-level grouping for sidebar)
+            'land_id': zone.land.id if zone.land else None,
+            'land_name': zone.land.name if zone.land else None,
             # Priority
             'priority': zone.priority,
             'priority_display': zone.get_priority_display(),
@@ -726,71 +729,63 @@ def dashboard(request):
             'recent_project': recent_proj_map.get(zone.id, []),
         })
 
-    # Group zones by region → patch for sidebar display
-    from .models import Patch, Region
-    regions = Region.objects.filter(active=True).order_by('order', 'name')
+    # Group zones by Land → common-name (zone.name) for sidebar display
+    from .models import Land
+    lands = Land.objects.filter(active=True).order_by('order', 'name')
 
-    # Build patch groups from zones_list
-    patch_groups = {}
+    # Bucket zones by land_id
+    land_buckets = {}
+    orphan_zones = []
     for z in zones_list:
-        pid = z['patch_id']
-        if pid is not None:
-            patch_groups.setdefault(pid, []).append(z)
+        lid = z.get('land_id')
+        if lid is not None:
+            land_buckets.setdefault(lid, []).append(z)
+        else:
+            orphan_zones.append(z)
 
-    # Build region-grouped structure
+    def _build_name_groups(zones):
+        """Group zones by their common name (zone.name), preserving first-seen order."""
+        order = []
+        grouped = {}
+        for z in zones:
+            nm = z.get('name') or '(未命名)'
+            if nm not in grouped:
+                grouped[nm] = []
+                order.append(nm)
+            grouped[nm].append(z)
+        result = []
+        for nm in order:
+            result.append({
+                'name': nm,
+                'zones': grouped[nm],
+                'zone_count': len(grouped[nm]),
+            })
+        return result
+
     grouped_zones = []
-    for region in regions:
-        region_patches = []
-        region_zone_count = 0
-        for patch in region.patches.order_by('code'):
-            pzones = patch_groups.pop(patch.id, None)
-            if pzones:
-                region_patches.append({
-                    'id': patch.id,
-                    'name': patch.name,
-                    'code': patch.code,
-                    'zones': pzones,
-                    'zone_count': len(pzones),
-                })
-                region_zone_count += len(pzones)
-        if region_patches:
+    for land in lands:
+        lz = land_buckets.pop(land.id, None)
+        if lz:
+            name_groups = _build_name_groups(lz)
             grouped_zones.append({
-                'type': 'region',
-                'id': region.id,
-                'name': region.name,
-                'patches': region_patches,
-                'zone_count': region_zone_count,
+                'type': 'land',
+                'id': land.id,
+                'name': land.name,
+                'name_groups': name_groups,
+                'zone_count': len(lz),
             })
 
-    # Patches without region
-    orphan_region_patches = []
-    orphan_region_count = 0
-    for pid, pzones in sorted(patch_groups.items()):
-        if pzones:
-            orphan_region_patches.append({
-                'id': pid,
-                'name': pzones[0]['patch_name'],
-                'code': pzones[0]['patch_code'],
-                'zones': pzones,
-                'zone_count': len(pzones),
-            })
-            orphan_region_count += len(pzones)
-    if orphan_region_patches:
-        grouped_zones.append({
-            'type': 'orphan_patches',
-            'name': '未分配大区',
-            'patches': orphan_region_patches,
-            'zone_count': orphan_region_count,
-        })
-
-    # Zones without any patch
-    orphan_zones = [z for z in zones_list if z['patch_id'] is None]
-    if orphan_zones:
+    # Zones whose Land is inactive / missing (land_id set but no active Land row)
+    extra_orphan_zones = []
+    for lid, lz in land_buckets.items():
+        extra_orphan_zones.extend(lz)
+    all_orphan = extra_orphan_zones + orphan_zones
+    if all_orphan:
         grouped_zones.append({
             'type': 'orphan',
-            'name': '未分配片区',
-            'zones': orphan_zones,
-            'zone_count': len(orphan_zones),
+            'name': '未分配Land',
+            'name_groups': _build_name_groups(all_orphan),
+            'zone_count': len(all_orphan),
         })
 
     # Only admins see pending counts
@@ -873,12 +868,21 @@ def dashboard(request):
         })
 
     # Patch list for map filter plugin
+    from .models import Patch
     patches_list = []
     for p in Patch.objects.order_by('code'):
         patches_list.append({
             'id': p.id,
             'name': p.name,
             'code': p.code,
+        })
+
+    # Land list for map filter plugin
+    lands_list = []
+    for l in Land.objects.filter(active=True).order_by('order', 'name'):
+        lands_list.append({
+            'id': l.id,
+            'name': l.name,
         })
 
     context = {
@@ -891,6 +895,7 @@ def dashboard(request):
         'landmark_names': [lm['name'] for lm in landmarks_data],
         'zone_landmark_map_json': json.dumps(zone_landmark_map),
         'patches_json': json.dumps(patches_list),
+        'lands_json': json.dumps(lands_list),
         'is_admin': is_admin,
         'is_manager': is_manager,
         'is_dept_user': is_dept_user,

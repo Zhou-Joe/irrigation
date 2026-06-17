@@ -54,27 +54,27 @@
         </div>
         {% endif %}
 
-        <!-- 三级显示：大区 → 片区 → 区域 -->
+        <!-- 三级显示：Land → 通称(name) → 区域 -->
         <div class="zone-list stagger-reveal" id="zoneSidebarList">
-            {% for region in grouped_zones %}
-            {% if region.type == 'region' %}
-            <!-- 大区组 -->
-            <div class="region-group" data-region-id="{{ region.id }}">
+            {% for land in grouped_zones %}
+            {% if land.type == 'land' %}
+            <!-- Land 组 -->
+            <div class="region-group collapsed" data-land-id="{{ land.id }}">
                 <div class="region-header" onclick="toggleRegionGroup(this)">
                     <span class="region-toggle">▼</span>
-                    <span class="region-name">{{ region.name }}</span>
-                    <span class="region-count">{{ region.zone_count }}</span>
+                    <span class="region-name">{{ land.name }}</span>
+                    <span class="region-count">{{ land.zone_count }}</span>
                 </div>
                 <div class="region-patches">
-                    {% for patch in region.patches %}
-                    <div class="patch-group collapsed" data-patch-id="{{ patch.id }}" data-type="patch">
+                    {% for ng in land.name_groups %}
+                    <div class="patch-group collapsed" data-common-name="{{ ng.name }}" data-type="patch">
                         <div class="patch-header" onclick="togglePatchGroup(this)">
                             <span class="patch-toggle">▼</span>
-                            <span class="patch-name">{{ patch.name }}</span>
-                            <span class="patch-count">{{ patch.zone_count }}</span>
+                            <span class="patch-name">{{ ng.name }}</span>
+                            <span class="patch-count">{{ ng.zone_count }}</span>
                         </div>
                         <div class="patch-zones">
-                            {% for zone in patch.zones %}
+                            {% for zone in ng.zones %}
                             {% include "core/_zone_item.html" %}
                             {% endfor %}
                         </div>
@@ -82,42 +82,28 @@
                     {% endfor %}
                 </div>
             </div>
-            {% elif region.type == 'orphan_patches' %}
-            <!-- 未分配大区的片区 -->
-            <div class="region-group">
+            {% elif land.type == 'orphan' %}
+            <!-- 未分配Land -->
+            <div class="region-group collapsed">
                 <div class="region-header" style="background: var(--color-text-secondary);" onclick="toggleRegionGroup(this)">
                     <span class="region-toggle">▼</span>
-                    <span class="region-name">{{ region.name }}</span>
-                    <span class="region-count">{{ region.zone_count }}</span>
+                    <span class="region-name">{{ land.name }}</span>
+                    <span class="region-count">{{ land.zone_count }}</span>
                 </div>
                 <div class="region-patches">
-                    {% for patch in region.patches %}
-                    <div class="patch-group collapsed" data-patch-id="{{ patch.id }}" data-type="patch">
+                    {% for ng in land.name_groups %}
+                    <div class="patch-group collapsed" data-common-name="{{ ng.name }}" data-type="patch">
                         <div class="patch-header" onclick="togglePatchGroup(this)">
                             <span class="patch-toggle">▼</span>
-                            <span class="patch-name">{{ patch.name }}</span>
-                            <span class="patch-count">{{ patch.zone_count }}</span>
+                            <span class="patch-name">{{ ng.name }}</span>
+                            <span class="patch-count">{{ ng.zone_count }}</span>
                         </div>
                         <div class="patch-zones">
-                            {% for zone in patch.zones %}
+                            {% for zone in ng.zones %}
                             {% include "core/_zone_item.html" %}
                             {% endfor %}
                         </div>
                     </div>
-                    {% endfor %}
-                </div>
-            </div>
-            {% elif region.type == 'orphan' %}
-            <!-- 未分配片区 -->
-            <div class="patch-group collapsed" data-type="orphan">
-                <div class="patch-header" onclick="togglePatchGroup(this)">
-                    <span class="patch-toggle">▼</span>
-                    <span class="patch-name">{{ region.name }}</span>
-                    <span class="patch-count">{{ region.zone_count }}</span>
-                </div>
-                <div class="patch-zones">
-                    {% for zone in region.zones %}
-                    {% include "core/_zone_item.html" %}
                     {% endfor %}
                 </div>
             </div>
@@ -342,11 +328,11 @@
 <script src="{% static 'js/map-config.js' %}?v=20260423"></script>
 <script>window.MAP_STYLE_CONFIG = {{ map_style_json|safe }} || {};</script>
 <!-- Custom Map JS -->
-<script src="{% static 'js/map.js' %}?v=20260616"></script>
-<script src="{% static 'js/dashboard-modal.js' %}?v=20260616s"></script>
+<script src="{% static 'js/map.js' %}?v=20260617a"></script>
+<script src="{% static 'js/dashboard-modal.js' %}?v=20260617a"></script>
 <!-- Dashboard JS — pass Django URL to external script -->
 <script>window.HISTORY_URL = '{% url "core:workorder_history" %}';</script>
-<script src="{% static 'js/dashboard.js' %}?v=20260617"></script>
+<script src="{% static 'js/dashboard.js' %}?v=20260617a"></script>
 <!-- AI data-analyst chat widget -->
 <script src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
 <script src="{% static 'js/ai-chat.js' %}?v=20260624"></script>
