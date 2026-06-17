@@ -239,26 +239,27 @@ def project_delete(request, pk):
 
 @login_required(login_url='core:login')
 def planned_maintenance_pending(request):
-    """Past WorkReports (in the given zones, or all) carrying 待修 entries — the PM backlog.
+    """Past WorkReports (in the given zones, or all) flagged 待修 — the PM backlog.
 
     GET ?zones=CODE,CODE → {reports: [{id, date, worker, items: [path,...]}]}.
     Used by the 计划性维修 work-content view.
     """
     zone_codes = [z for z in (request.GET.get('zones') or '').split(',') if z]
-    qs = WorkReport.objects.filter(
-        entries__work_item__name_zh='待修', entries__status='待修').distinct()
+    qs = WorkReport.objects.filter(is_pending_repair=True).distinct()
     if zone_codes:
         qs = qs.filter(zones__code__in=zone_codes)
     qs = qs.select_related('worker').order_by('-date', '-id')[:60]
     out = []
     for r in qs:
         items = []
-        for e in r.entries.filter(work_item__name_zh='待修', status='待修').select_related('work_item'):
-            path, cur = [], e.work_item
-            while cur:
-                path.append(cur.name_zh)
-                cur = cur.parent
-            items.append(' › '.join(reversed(path)))
+        content = (r.work_content or '').strip()
+        if content:
+            items.append(content)
+        remark = (r.remark or '').strip()
+        if remark:
+            items.append(remark)
+        if not items:
+            items = ['待修']
         out.append({
             'id': r.id,
             'date': r.date.isoformat() if r.date else '',
@@ -276,6 +277,96 @@ def serialize_existing_entries(report):
          'photos': e.photos or []}
         for e in report.entries.all()
     ]
+
+
+# ── listing helpers: build readable entry paths + grouped summaries ─────────
+# Used by both the desktop 维修日志 table and the mobile 工作记录 card list so
+# they can render the tree-based WorkReportEntry content (full ancestor path
+# per node, grouped by section) instead of the legacy 故障详情 rows.
+
+_section_labels = dict(WorkItem.SECTION_CHOICES)
+_section_order = [code for code, _ in WorkItem.SECTION_CHOICES]
+
+
+def workitem_path_map():
+    """Return ``{work_item_id: '常规维护 › 喷头 › 待修'}`` for every WorkItem.
+
+    Loads the whole tree once and walks parent pointers in memory (memoized on
+    the class, so a single request pays the cost once regardless of how many
+    reports are listed). The path includes the section-root name so it reads
+    naturally when an entry is shown outside a grouped context.
+    """
+    cache = getattr(workitem_path_map, '_cache', None)
+    if cache is not None:
+        return cache
+    rows = WorkItem.objects.values('id', 'name_zh', 'parent_id')
+    by_id = {r['id']: {'name': r['name_zh'], 'parent_id': r['parent_id']} for r in rows}
+    path_of = {}
+
+    def build(wid):
+        if wid in path_of:
+            return path_of[wid]
+        node = by_id.get(wid)
+        if not node or not node['parent_id']:
+            path_of[wid] = node['name'] if node else ''
+            return path_of[wid]
+        up = build(node['parent_id'])
+        path_of[wid] = (up + ' › ' + node['name']) if up else node['name']
+        return path_of[wid]
+
+    for wid in by_id:
+        build(wid)
+    workitem_path_map._cache = path_of
+    return path_of
+
+
+def entry_value_label(entry):
+    """Human-readable value for one WorkReportEntry (mirrors mobile woValueLabel)."""
+    wi = entry.work_item
+    vtype = getattr(wi, 'value_type', 'count')
+    if vtype == 'count':
+        if entry.count:
+            return f"{entry.count}{wi.unit}" if getattr(wi, 'unit', '') else str(entry.count)
+        return ''
+    if vtype == 'status':
+        return entry.status or ''
+    if vtype in ('text', 'text_photo'):
+        return entry.text_value or ''
+    # toggle — no numeric value; presence is the value.
+    return '✓'
+
+
+def enrich_reports(reports, path_map=None):
+    """Attach grouped/summarized entry data to each report in ``reports``.
+
+    Adds, per report:
+      * ``entry_groups`` — [{section, section_label, items:[{path, value, project, photos}]}, …]
+        ordered by SECTION_CHOICES; only sections with entries appear.
+      * ``entry_count`` — int
+      * ``section_labels`` — ordered list of section display labels present
+
+    Expects ``entries__work_item`` and ``entries__project`` to be prefetched on the queryset.
+    """
+    path_map = path_map if path_map is not None else workitem_path_map()
+    order_index = {code: i for i, code in enumerate(_section_order)}
+    for report in reports:
+        groups = {}
+        for e in report.entries.all():
+            wi = e.work_item
+            sec = getattr(wi, 'section', '') or ''
+            g = groups.setdefault(sec, {'section': sec,
+                                        'section_label': _section_labels.get(sec, sec),
+                                        'items': []})
+            g['items'].append({
+                'path': path_map.get(wi.id, wi.name_zh),
+                'value': entry_value_label(e),
+                'project': e.project.name if e.project_id and e.project else '',
+                'photos': e.photos or [],
+            })
+        ordered = sorted(groups.values(), key=lambda g: order_index.get(g['section'], 999))
+        report.entry_groups = ordered
+        report.entry_count = sum(len(g['items']) for g in ordered)
+        report.section_labels = [g['section_label'] for g in ordered]
 
 
 # ── photo + hours helpers ───────────────────────────────────────────────────
@@ -361,6 +452,7 @@ def _report_header_dict(report):
         'h_zone_names': report.zone_names,
         'h_zones': zones,
         'h_remark': report.remark,
+        'h_is_pending_repair': report.is_pending_repair,
         'h_is_difficult': report.is_difficult,
         'h_is_difficult_resolved': report.is_difficult_resolved,
         'h_team_size': report.team_size,
@@ -371,9 +463,11 @@ def _report_header_dict(report):
 
 
 def _handle_save(request, report):
-    try:
-        worker = request.user.worker_profile
-    except Exception:
+    # Resolve the real submitter. Field workers have a linked Worker row;
+    # managers/admins do not, so provision one from their profile (idempotent).
+    from core.role_utils import resolve_or_create_worker
+    worker, _created = resolve_or_create_worker(request.user)
+    if not worker:
         messages.error(request, '当前用户未关联处理人账号')
         return redirect('core:work_reports')
 
@@ -405,6 +499,7 @@ def _handle_save(request, report):
         report.info_source_id = request.POST.get('info_source') or None
         report.zone_names = request.POST.get('zone_names', '')
         report.remark = request.POST.get('remark', '')
+        report.is_pending_repair = bool(request.POST.get('is_pending_repair'))
         report.is_difficult = bool(request.POST.get('is_difficult'))
         report.is_difficult_resolved = bool(request.POST.get('is_difficult_resolved'))
         report.team_size = team_size
@@ -456,8 +551,8 @@ def _save_entries(report, entries, entry_photos):
                       'text_value': text_value, 'photos': saved_paths},
         )
 
-    # Safety net: any 待修 entry ⇒ 疑难 / 疑难未解决 (mirrors the mobile UI behavior).
-    if report.entries.filter(work_item__name_zh='待修').exists():
+    # Safety net: 待修 flag ⇒ 疑难 / 疑难未解决 (mirrors the mobile UI behavior).
+    if report.is_pending_repair:
         report.is_difficult = True
         report.is_difficult_resolved = False
         report.save(update_fields=['is_difficult', 'is_difficult_resolved'])
@@ -466,20 +561,23 @@ def _save_entries(report, entries, entry_photos):
 def _resolve_pending_repairs(pm_report, report_ids):
     """Mark past 待修 reports as resolved by this 计划性维修 report.
 
-    For each id: set its pending 待修 entries' status to '已处理', and append
-    the 计划性维修 work-order number to its remark. Resolved entries then drop
-    out of the planned-maintenance backlog (pending filter requires status='待修').
+    For each id: clear its 待修 flag (so it drops out of the planned-maintenance
+    backlog, which filters on is_pending_repair=True) and append the
+    计划性维修 work-order number to its remark.
     """
     note = f'已由计划性维修工单 #{pm_report.id} 处理'
     for rid in report_ids:
         past = WorkReport.objects.filter(pk=rid).first()
         if not past:
             continue
-        past.entries.filter(work_item__name_zh='待修', status='待修').update(status='已处理')
+        past.is_pending_repair = False
+        past.resolved_by_pm = pm_report  # FK link for the manager inbox
         remark = past.remark or ''
         if note not in remark:
             past.remark = (remark + '\n' + note).strip() if remark else note
-            past.save(update_fields=['remark'])
+            past.save(update_fields=['is_pending_repair', 'resolved_by_pm', 'remark'])
+        else:
+            past.save(update_fields=['is_pending_repair', 'resolved_by_pm'])
 
 
 def _parse_time(value):

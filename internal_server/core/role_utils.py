@@ -77,6 +77,60 @@ def get_worker_for_user(user):
     return None
 
 
+def resolve_or_create_worker(user):
+    """Resolve a Worker for the submitter, creating one for any account type.
+
+    Field workers already have a linked Worker row. Admin/manager/department
+    users do not — they only have a ManagerProfile / DepartmentUserProfile, or
+    (for a plain Django superuser) nothing at all. Historically the workorder
+    save path fell back to ``Worker.objects.first()``, attributing every such
+    submission to the same arbitrary worker.
+
+    To keep ``WorkReport.worker`` (a non-null FK) satisfied while crediting the
+    real submitter, we lazily provision a Worker from whichever profile the user
+    has — and if they have no profile at all (e.g. a raw superuser), from the
+    Django User itself (employee_id derived from the username → idempotent).
+    Returns (Worker, bool created).
+    """
+    from .models import ManagerProfile, DepartmentUserProfile
+
+    worker = get_worker_for_user(user)
+    if worker:
+        return worker, False
+
+    django_user = get_django_user(user)
+    if not django_user:
+        return None, False
+
+    # Prefer an explicit profile (manager / dept) when present.
+    profile = (ManagerProfile.objects.filter(user=django_user, active=True).first()
+               or DepartmentUserProfile.objects.filter(user=django_user, active=True).first())
+    if profile:
+        employee_id = profile.employee_id or django_user.username
+        full_name = profile.full_name or django_user.get_full_name() or django_user.username
+        phone = getattr(profile, 'phone', '') or ''
+    else:
+        # Plain Django user (e.g. a superuser with no profile): derive a stable
+        # Worker from the user's own attributes. employee_id keyed on username.
+        employee_id = django_user.username
+        full_name = django_user.get_full_name() or django_user.username
+        phone = ''
+
+    worker, created = Worker.objects.get_or_create(
+        employee_id=employee_id,
+        defaults={
+            'user': django_user,
+            'full_name': full_name,
+            'phone': phone,
+        },
+    )
+    # Backfill the user link if the row pre-dated it.
+    if not worker.user_id:
+        worker.user = django_user
+        worker.save(update_fields=['user'])
+    return worker, created
+
+
 def get_worker_profile(user):
     """Get the Worker profile for a user, or None."""
     return get_worker_for_user(user)

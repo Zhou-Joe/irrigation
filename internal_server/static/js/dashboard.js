@@ -36,10 +36,15 @@
     // ── Init Functions ──
 
     function initZoneData() {
-        var dataEl = document.getElementById('zones-data');
-        if (dataEl) {
-            zonesData = JSON.parse(dataEl.textContent);
-            window.zonesData = zonesData;
+        // Reuse the zones blob map.js already parsed (avoids a second ~5MB JSON.parse).
+        if (window.zonesData) {
+            zonesData = window.zonesData;
+        } else {
+            var dataEl = document.getElementById('zones-data');
+            if (dataEl) {
+                zonesData = JSON.parse(dataEl.textContent);
+                window.zonesData = zonesData;
+            }
         }
         initZoneSidebarSearch();
         getZoneLandmarkMap();

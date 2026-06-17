@@ -5,156 +5,191 @@
 {% block nav_work_reports %}active{% endblock %}
 
 {% block extra_css %}
+<style>
+  .page-wrap { max-width: 1400px; margin: 0 auto; padding: var(--space-lg); }
+  .page-head { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; margin-bottom: var(--space-md); }
+  .page-head h1 { font-size: 1.4rem; color: var(--color-text-primary); margin:0; }
+  .page-head .actions { display:flex; gap:8px; }
+
+  .msg { padding: 10px 14px; border-radius: var(--radius-md); margin-bottom: var(--space-md); font-size: 0.9rem; }
+  .msg-success { background: rgba(64,145,108,0.12); color: var(--color-success); }
+  .msg-error   { background: rgba(155,34,38,0.12); color: var(--color-error); }
+  .msg-info    { background: rgba(82,183,136,0.12); color: var(--color-info); }
+  .msg-warning { background: rgba(204,119,34,0.12); color: var(--color-warning); }
+
+  .filter-card { background: var(--color-surface); border-radius: var(--radius-md); padding: var(--space-md); margin-bottom: var(--space-md); }
+  .filter-row { display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; }
+  .ff { display:flex; flex-direction:column; gap:3px; }
+  .ff label { font-size: 0.72rem; color: var(--color-text-muted); }
+  .ff input[type=date], .ff select { padding: 6px 8px; border:1px solid var(--color-border, #ddd); border-radius: 6px; font-size: 0.85rem; background:#fff; }
+  .check-inline { display:flex; align-items:center; gap:4px; font-size:0.82rem; color: var(--color-text-secondary); padding-bottom:6px; cursor:pointer; }
+
+  .table-card { background:#fff; border-radius: var(--radius-md); overflow:hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+  .table-scroll { overflow-x:auto; }
+  table.wr { width:100%; border-collapse:collapse; font-size:0.82rem; }
+  table.wr thead th { background: var(--color-primary); color: var(--color-text-inverse); padding:9px 10px; text-align:left; white-space:nowrap; font-weight:600; }
+  table.wr tbody td { padding:8px 10px; border-bottom:1px solid var(--color-surface-dark); vertical-align:middle; }
+  table.wr tbody tr:nth-child(even) { background: var(--color-surface-alt); }
+  table.wr tbody tr:hover { background: rgba(45,106,79,0.06); }
+
+  .chip { display:inline-block; padding:1px 7px; border-radius:10px; font-size:0.7rem; font-weight:500; background: rgba(45,106,79,0.12); color: var(--color-primary-light); margin:1px 2px 1px 0; }
+  .chip-legacy { background: rgba(136,136,136,0.15); color:#888; }
+  .flag { display:inline-block; padding:1px 7px; border-radius:10px; font-size:0.7rem; font-weight:600; }
+  .flag-pending { background: rgba(204,119,34,0.15); color: var(--color-warning); }
+  .flag-difficult { background: rgba(155,34,38,0.12); color: var(--color-error); }
+  .flag-resolved { background: rgba(64,145,108,0.15); color: var(--color-success); }
+  .count-badge { font-size:0.68rem; background: var(--color-primary); color:#fff; padding:0 5px; border-radius:8px; margin-left:3px; }
+
+  .row-actions a { margin-right:6px; }
+  .row-actions .act-view { color: var(--color-primary-light); }
+  .row-actions .act-edit { color: var(--color-accent); }
+  .photo-trigger { cursor:pointer; color: var(--color-primary-light); }
+  .muted { color: var(--color-text-muted); }
+  .ellipsis { max-width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+</style>
 {% endblock %}
 
 {% block content %}
-<div class="form-container">
-    <div class="form-header">
+<div class="page-wrap">
+    <div class="page-head">
         <h1>维修日志</h1>
-        <a href="{% url 'core:workorder_tree_form' %}" class="btn btn-primary">+ 新建现场作业记录</a>
-        <a href="{% url 'core:work_report_create' %}" class="btn btn-secondary">+ 旧版日志</a>
     </div>
 
     {% if messages %}
-    <div class="messages">
         {% for message in messages %}
-        <div class="message message-{{ message.tags }}">{{ message }}</div>
+        <div class="msg msg-{{ message.tags|default:'info' }}">{{ message }}</div>
         {% endfor %}
-    </div>
     {% endif %}
 
-    <!-- Filters (for table) -->
-    <div class="form-section" style="margin-bottom:16px;">
-        <form method="get" style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;">
-            <div class="form-group" style="margin:0;">
-                <label style="font-size:0.8rem;">起始日期</label>
-                <input type="date" name="date_from" value="{{ filters.date_from }}" style="padding:6px 10px;">
+    <div class="filter-card">
+        <form method="get" class="filter-row">
+            <div class="ff">
+                <label>起始日期</label>
+                <input type="date" name="date_from" value="{{ filters.date_from }}">
             </div>
-            <div class="form-group" style="margin:0;">
-                <label style="font-size:0.8rem;">截止日期</label>
-                <input type="date" name="date_to" value="{{ filters.date_to }}" style="padding:6px 10px;">
+            <div class="ff">
+                <label>截止日期</label>
+                <input type="date" name="date_to" value="{{ filters.date_to }}">
             </div>
-            <div class="form-group" style="margin:0;">
-                <label style="font-size:0.8rem;">CCU</label>
-                <select name="location" style="padding:6px 10px;">
+            <div class="ff">
+                <label>CCU</label>
+                <select name="location">
                     <option value="">全部</option>
                     {% for loc in locations %}
-                    <option value="{{ loc.id }}" {% if filters.location == loc.id %}selected{% endif %}">{{ loc.name }}</option>
+                    <option value="{{ loc.id }}" {% if filters.location == loc.id %}selected{% endif %}>{{ loc.name }}</option>
                     {% endfor %}
                 </select>
             </div>
-            <div class="form-group" style="margin:0;">
-                <label style="font-size:0.8rem;">工作分类</label>
-                <select name="work_category" style="padding:6px 10px;">
+            <div class="ff">
+                <label>工作分类</label>
+                <select name="work_category">
                     <option value="">全部</option>
                     {% for cat in work_categories %}
-                    <option value="{{ cat.id }}" {% if filters.work_category == cat.id %}selected{% endif %}">{{ cat.name }}</option>
+                    <option value="{{ cat.id }}" {% if filters.work_category == cat.id %}selected{% endif %}>{{ cat.name }}</option>
                     {% endfor %}
                 </select>
             </div>
             {% if is_admin %}
-            <div class="form-group" style="margin:0;">
-                <label style="font-size:0.8rem;">处理人</label>
-                <select name="worker" style="padding:6px 10px;">
+            <div class="ff">
+                <label>处理人</label>
+                <select name="worker">
                     <option value="">全部</option>
                     {% for w in workers %}
-                    <option value="{{ w.id }}" {% if filters.worker == w.id %}selected{% endif %}">{{ w.full_name }}</option>
+                    <option value="{{ w.id }}" {% if filters.worker == w.id %}selected{% endif %}>{{ w.full_name }}</option>
                     {% endfor %}
                 </select>
             </div>
             {% endif %}
-            <label style="display:flex;align-items:center;gap:4px;font-size:0.85rem;cursor:pointer;padding-bottom:4px;">
-                <input type="checkbox" name="is_difficult" value="1" {% if filters.is_difficult %}checked{% endif %}> 疑难
-            </label>
-            <button type="submit" class="btn btn-sm btn-primary">筛选</button>
-            <a href="{% url 'core:work_reports' %}" class="btn btn-sm btn-secondary">重置</a>
+            <label class="check-inline"><input type="checkbox" name="is_pending_repair" value="1" {% if filters.is_pending_repair %}checked{% endif %}> 待修</label>
+            <label class="check-inline"><input type="checkbox" name="is_difficult" value="1" {% if filters.is_difficult %}checked{% endif %}> 疑难</label>
+            <button type="submit" class="btn btn-primary btn-sm">筛选</button>
+            <a href="{% url 'core:work_reports' %}" class="btn btn-secondary btn-sm">重置</a>
         </form>
     </div>
 
-    <!-- Report List -->
-    <div style="overflow-x:auto;">
-        <table style="width:100%;border-collapse:collapse;font-size:0.85rem;">
+    <div class="table-card">
+        <div class="table-scroll">
+        <table class="wr">
             <thead>
-                <tr style="background:var(--color-primary);color:var(--color-text-inverse);">
-                    <th style="padding:8px 12px;text-align:left;">日期</th>
-                    <th style="padding:8px 12px;text-align:left;">处理人</th>
-                    <th style="padding:8px 12px;text-align:left;">班次</th>
-                    <th style="padding:8px 12px;text-align:left;">工作时间</th>
-                    <th style="padding:8px 12px;text-align:left;">CCU</th>
-                    <th style="padding:8px 12px;text-align:left;">区域</th>
-                    <th style="padding:8px 12px;text-align:left;">工作类别</th>
-                    <th style="padding:8px 12px;text-align:left;">故障详情</th>
-                    <th style="padding:8px 12px;text-align:left;">工作内容</th>
-                    <th style="padding:8px 12px;text-align:center;">人数</th>
-                    <th style="padding:8px 12px;text-align:center;">工时(h)</th>
-                    <th style="padding:8px 12px;text-align:center;">疑难</th>
-                    <th style="padding:8px 12px;text-align:center;">照片</th>
-                    <th style="padding:8px 12px;text-align:center;">操作</th>
+                <tr>
+                    <th>日期</th>
+                    <th>处理人</th>
+                    <th>班次</th>
+                    <th>工作时间</th>
+                    <th>CCU</th>
+                    <th>区域</th>
+                    <th>工作类别</th>
+                    <th>工作内容</th>
+                    <th style="text-align:center;">人数</th>
+                    <th style="text-align:center;">工时(h)</th>
+                    <th style="text-align:center;">待修</th>
+                    <th style="text-align:center;">疑难</th>
+                    <th style="text-align:center;">照片</th>
+                    <th>操作</th>
                 </tr>
             </thead>
             <tbody>
             {% for report in reports %}
-                <tr style="border-bottom:1px solid var(--color-surface-dark);{% cycle '' 'background:var(--color-surface-alt);' %}">
-                    <td style="padding:8px 12px;white-space:nowrap;">{{ report.date }}</td>
-                    <td style="padding:8px 12px;white-space:nowrap;">{{ report.worker.full_name }}</td>
-                    <td style="padding:8px 12px;">{{ report.shift|default:"-" }}</td>
-                    <td style="padding:8px 12px;white-space:nowrap;">
-                        {% if report.work_start_time %}{{ report.work_start_time }}-{{ report.work_end_time }}{% else %}-{% endif %}
+                <tr>
+                    <td style="white-space:nowrap;">{{ report.date }}</td>
+                    <td style="white-space:nowrap;">{{ report.worker.full_name }}</td>
+                    <td>{{ report.shift|default:"–" }}</td>
+                    <td style="white-space:nowrap;">
+                        {% if report.work_start_time %}{{ report.work_start_time }}–{{ report.work_end_time }}{% else %}–{% endif %}
                     </td>
-                    <td style="padding:8px 12px;">{{ report.location.name }}</td>
-                    <td style="padding:8px 12px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{{ report.zone_names }}">
-                        {% if report.zone_names %}{{ report.zone_names }}{% elif report.zone_location %}{{ report.zone_location.code }}{% else %}-{% endif %}
+                    <td>{{ report.location.name }}</td>
+                    <td class="ellipsis" title="{{ report.zone_names }}">
+                        {% if report.zone_names %}{{ report.zone_names }}{% elif report.zone_location %}{{ report.zone_location.code }}{% else %}–{% endif %}
                     </td>
-                    <td style="padding:8px 12px;white-space:nowrap;">{{ report.work_category.name }}</td>
-                    <td style="padding:8px 12px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{% for fe in report.fault_entries.all %}{{ fe.fault_subtype.name_zh }}{% if not forloop.last %}, {% endif %}{% endfor %}">
-                        {% for fe in report.fault_entries.all %}{{ fe.fault_subtype.name_zh }}{% if not forloop.last %}, {% endif %}{% endfor %}
+                    <td style="white-space:nowrap;">{{ report.work_category.name }}</td>
+                    <td>
+                        {% if report.section_labels %}
+                            {% for lbl in report.section_labels %}<span class="chip">{{ lbl }}</span>{% endfor %}
+                            {% if report.entry_count %}<span class="count-badge">{{ report.entry_count }}项</span>{% endif %}
+                        {% else %}
+                            <span class="chip chip-legacy">旧版记录</span>
+                        {% endif %}
                     </td>
-                    <td style="padding:8px 12px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{{ report.work_content }}">
-                        {% if report.work_content %}{{ report.work_content }}{% elif report.remark %}{{ report.remark }}{% else %}-{% endif %}
-                    </td>
-                    <td style="padding:8px 12px;text-align:center;">
+                    <td style="text-align:center;">
                         {% if report.third_party_count %}{{ report.team_size }}+{{ report.third_party_count }}{% else %}{{ report.team_size }}{% endif %}
                     </td>
-                    <td style="padding:8px 12px;text-align:center;">
+                    <td style="text-align:center;">
                         {% if report.team_hours or report.third_party_hours %}
-                        {% if report.team_hours %}<span style="color:var(--color-primary);">{{ report.team_hours }}</span>{% endif %}
-                        {% if report.third_party_hours %}<span style="color:var(--color-accent);">+{{ report.third_party_hours }}</span>{% endif %}
-                        {% else %}-{% endif %}
+                            {% if report.team_hours %}<span style="color:var(--color-primary-light);font-weight:600;">{{ report.team_hours }}</span>{% endif %}
+                            {% if report.third_party_hours %}<span style="color:var(--color-accent);">+{{ report.third_party_hours }}</span>{% endif %}
+                        {% else %}–{% endif %}
                     </td>
-                    <td style="padding:8px 12px;text-align:center;">
+                    <td style="text-align:center;">
+                        {% if report.is_pending_repair %}<span class="flag flag-pending">待修</span>{% else %}–{% endif %}
+                    </td>
+                    <td style="text-align:center;">
                         {% if report.is_difficult %}
-                            <span style="color:var(--color-warning);font-weight:600;">是</span>
-                            {% if report.is_difficult_resolved %}
-                            <span style="color:var(--color-success);font-size:0.75rem;">(已处理)</span>
-                            {% endif %}
-                        {% else %}
-                            -
-                        {% endif %}
+                            <span class="flag flag-difficult">疑难</span>
+                            {% if report.is_difficult_resolved %}<span class="flag flag-resolved" style="margin-left:3px;">已处理</span>{% endif %}
+                        {% else %}–{% endif %}
                     </td>
-                    <td style="padding:8px 12px;text-align:center;">
+                    <td style="text-align:center;">
                         {% if report.photos %}
-                        <span style="cursor:pointer;color:var(--color-primary);" onclick="previewPhotos({{ report.photos|safe }})" title="查看 {{ report.photos|length }} 张照片">
-                            📷 <span style="font-size:0.7rem;background:var(--color-primary);color:#fff;padding:1px 5px;border-radius:8px;">{{ report.photos|length }}</span>
+                        <span class="photo-trigger" onclick="previewPhotos({{ report.photos|safe }})" title="查看 {{ report.photos|length }} 张照片">
+                            📷<span class="count-badge">{{ report.photos|length }}</span>
                         </span>
-                        {% else %}
-                        -
-                        {% endif %}
+                        {% else %}–{% endif %}
                     </td>
-                    <td style="padding:8px 12px;text-align:center;white-space:nowrap;">
-                        <a href="{% url 'core:work_report_detail' report.id %}" style="color:var(--color-primary);margin-right:8px;">查看</a>
-                        <a href="{% url 'core:workorder_tree_form_edit' report.id %}" style="color:var(--color-accent);">编辑</a>
+                    <td class="row-actions" style="white-space:nowrap;">
+                        <a class="act-view" href="{% url 'core:work_report_detail' report.id %}">查看</a>
+                        <a class="act-edit" href="{% url 'core:workorder_tree_form_edit' report.id %}">编辑</a>
                     </td>
                 </tr>
             {% empty %}
                 <tr>
-                    <td colspan="14" style="padding:32px;text-align:center;color:var(--color-text-muted);">暂无工作日报记录</td>
+                    <td colspan="14" style="padding:36px;text-align:center;color:var(--color-text-muted);">暂无工作日报记录</td>
                 </tr>
             {% endfor %}
             </tbody>
         </table>
+        </div>
     </div>
 </div>
-
 
 <!-- Photo Preview Lightbox -->
 <div style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:3000;justify-content:center;align-items:center;" id="photoLightbox" onclick="if(event.target===this)closePhotoLb()">
