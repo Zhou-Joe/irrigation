@@ -450,21 +450,22 @@
                 groups[key].push(label);
             });
 
-            // At xx-xx level (zoom 17): also collect unique watermarks (通称)
+            // At xx-xx level (zoom 17): also collect unique watermarks (by Land)
             let watermarks = null;
             if (zoom >= 17) {
                 watermarks = {};
                 zoneLabels.forEach(label => {
                     const zone = label._zone;
-                    if (!zone || !zone.name) return;
-                    // Deduplicate by zone name
-                    if (!watermarks[zone.name]) {
-                        // Collect all label centers for zones with this name
-                        watermarks[zone.name] = [];
+                    const wmKey = zone ? (zone.land_name || zone.name) : null;
+                    if (!wmKey) return;
+                    // Deduplicate by land (fallback to name)
+                    if (!watermarks[wmKey]) {
+                        // Collect all label centers for zones with this land
+                        watermarks[wmKey] = [];
                     }
-                    watermarks[zone.name].push(label._originalCenter);
+                    watermarks[wmKey].push(label._originalCenter);
                 });
-                // Compute centroid for each unique name
+                // Compute centroid for each unique land
                 Object.entries(watermarks).forEach(([name, centers]) => {
                     let sLat = 0, sLng = 0;
                     centers.forEach(c => { sLat += c[0]; sLng += c[1]; });
@@ -563,22 +564,27 @@
                 const wmDone = {};
                 zoneLabels.forEach(label => {
                     const zone = label._zone;
-                    if (!zone || !zone.name || wmDone[zone.name]) return;
-                    wmDone[zone.name] = true;
-                    // Collect all centers for this name
+                    // At deep zoom (>18) show the common name; at zoom <=18 show the Land
+                    const wmKey = zone ? (zoom > 18 ? (zone.name || zone.land_name) : (zone.land_name || zone.name)) : null;
+                    if (!wmKey || wmDone[wmKey]) return;
+                    wmDone[wmKey] = true;
+                    // Collect all centers for zones sharing this watermark key
                     let sLat = 0, sLng = 0, cnt = 0;
                     zoneLabels.forEach(l => {
-                        if (l._zone && l._zone.name === zone.name && l._originalCenter) {
+                        const lKey = l._zone ? (zoom > 18 ? (l._zone.name || l._zone.land_name) : (l._zone.land_name || l._zone.name)) : null;
+                        if (lKey === wmKey && l._originalCenter) {
                             sLat += l._originalCenter[0]; sLng += l._originalCenter[1]; cnt++;
                         }
                     });
                     if (cnt === 0) return;
+                    // When showing the common name (zoom>18), shrink font by 2 "degrees" (×0.7²)
+                    const wmSize = (zoom > 18) ? Math.round(wmEffectiveSize * 0.49) : wmEffectiveSize;
                     const wm = L.marker([sLat / cnt, sLng / cnt], {
                         interactive: false,
                         icon: L.divIcon({
                             className: 'zone-watermark',
                             html: `<div style="transform:translate(-50%,-50%);white-space:nowrap;">
-                                <span style="font-size:${wmEffectiveSize}px;color:rgba(255,255,255,0.55);font-weight:700;text-shadow:0 0 8px rgba(0,0,0,0.3);pointer-events:none;">${zone.name}</span>
+                                <span style="font-size:${wmSize}px;color:rgba(255,255,255,0.55);font-weight:700;text-shadow:0 0 8px rgba(0,0,0,0.3);pointer-events:none;">${wmKey}</span>
                             </div>`,
                             iconSize: null, iconAnchor: [0, 0]
                         })
@@ -1057,6 +1063,13 @@
         `;
     }
 
+    function flyToZone(zoneData) {
+        if (!zoneData || !zoneData.center || !map) return;
+        const cz = map.getZoom();
+        const targetZoom = cz > 19 ? cz : 19;
+        map.flyTo(zoneData.center, targetZoom, { animate: true, duration: 0.8 });
+    }
+
     function showZonePopup(zoneData) {
         const panel = document.getElementById('zonePopupPanel');
         if (!panel) return;
@@ -1322,6 +1335,9 @@
             // Highlight the corresponding sidebar item
             highlightSidebarItem(zoneId);
 
+            // Zoom to zone (zoom 19, or keep current if already deeper)
+            flyToZone(layer.zoneData);
+
             // Show fixed popup panel
             showZonePopup(layer.zoneData);
         }
@@ -1447,6 +1463,7 @@
                         highlightedLayer = layer;
                         highlightedZoneId = zoneId;
                         highlightZonePolygons(zoneId);
+                        flyToZone(layer.zoneData);
                         showZonePopup(layer.zoneData);
                     }
                 });
