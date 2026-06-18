@@ -1215,6 +1215,8 @@
     border:1px solid #eee;
 }
 .v2-photo-thumb img{width:100%;height:100%;object-fit:cover}
+.v2-photo-thumb video{width:100%;height:100%;object-fit:cover;background:#000}
+.v2-photo-badge{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);color:#fff;font-size:20px;text-shadow:0 1px 3px rgba(0,0,0,0.6);pointer-events:none}
 .v2-photo-rm{
     position:absolute;top:1px;right:1px;width:16px;height:16px;
     border-radius:50%;background:rgba(0,0,0,0.6);color:#fff;

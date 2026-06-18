@@ -1,5 +1,6 @@
 {% extends 'core/base.html' %}
 {% load static %}
+{% load media_tags %}
 
 {% block title %}日报详情 - {{ report.date }}{% endblock %}
 {% block nav_work_reports %}active{% endblock %}
@@ -184,7 +185,11 @@
         <div class="photo-grid">
             {% for photo in report.photos %}
             <div class="photo-thumb" onclick="openLightbox({{ forloop.counter0 }})">
+                {% if photo|is_video %}
+                <video src="/media/{{ photo }}" muted preload="metadata" controls></video>
+                {% else %}
                 <img src="/media/{{ photo }}" alt="照片 {{ forloop.counter }}" loading="lazy">
+                {% endif %}
             </div>
             {% endfor %}
         </div>

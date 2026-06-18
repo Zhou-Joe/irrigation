@@ -1,4 +1,5 @@
 {% load static %}
+{% load media_tags %}
 <!DOCTYPE html>
 <html lang="zh">
 <head>
@@ -199,7 +200,11 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
                 <div class="detail-label">照片</div>
                 <div class="detail-photo-grid">
                     {% for p in r.photos %}
+                    {% if p|is_video %}
+                    <video class="detail-photo" src="/media/{{ p }}" muted preload="metadata" controls></video>
+                    {% else %}
                     <img class="detail-photo" src="/media/{{ p }}" alt="照片">
+                    {% endif %}
                     {% endfor %}
                 </div>
             </div>
