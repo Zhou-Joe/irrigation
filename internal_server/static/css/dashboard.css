@@ -1216,6 +1216,12 @@
     display:flex;align-items:center;justify-content:center;
     font-size:1.4em;color:#999;cursor:pointer;background:#fafafa;
 }
+/* Camera button: same footprint as the gallery (+) add button. Uses input[capture]
+   so on mobile it opens the device camera directly; on desktop it falls back to a
+   normal file picker. Slightly tinted to distinguish it from the gallery button. */
+.v2-photo-add.v2-photo-camera{
+    color:#2D6A4F;border-color:#a5d6a7;background:#e8f5e9;font-size:1.2em;
+}
 
 /* Map info bar — top, read-only selection info */
 .v2-map-info-bar{

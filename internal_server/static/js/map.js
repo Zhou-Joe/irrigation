@@ -145,7 +145,8 @@
         opacity: _bCfg.opacity || 0.8,
         fillColor: '#2D6A4F',
         fillOpacity: _bCfg.fillOpacity != null ? _bCfg.fillOpacity : 0.12,
-        dashArray: _dash(_bCfg.dashStyle)
+        dashArray: _dash(_bCfg.dashStyle),
+        interactive: true   // required under preferCanvas so click/hover fire
     };
 
     // Highlighted/selected zone style (user-clicked) — red
@@ -164,7 +165,8 @@
         opacity: _bCfg.opacity || 0.7,
         fillColor: '#CC7722',
         fillOpacity: _bCfg.fillOpacity != null ? _bCfg.fillOpacity : 0.15,
-        dashArray: _dash(_bCfg.dashStyle)
+        dashArray: _dash(_bCfg.dashStyle),
+        interactive: true
     };
 
     // Status-based polygon styling (from design system)
@@ -232,7 +234,10 @@
         const northEast = L.latLng(centerLat + latOffset, centerLng + lngOffset);
         const bounds = L.latLngBounds(southWest, northEast);
 
-        // Create map centered on location with satellite layer
+        // Create map centered on location with satellite layer.
+        // preferCanvas: render 1100+ zone polygons on a single <canvas> instead of one
+        // SVG element each. This cuts ~1100 DOM nodes on mobile and makes pan/zoom far
+        // smoother (canvas redraw is GPU-friendly; SVG re-layout per element is not).
         map = L.map('map', {
             center: [centerLat, centerLng],
             zoom: 15,
@@ -241,7 +246,8 @@
             maxBounds: bounds,
             maxBoundsViscosity: 1.0,
             layers: [hybridLayer],
-            zoomControl: true
+            zoomControl: true,
+            preferCanvas: true
         });
 
         // Expose map instance for external use (sidebar resize)
@@ -279,8 +285,8 @@
         // Load and render pipelines
         loadPipelines();
 
-        // Update zone label sizes on zoom
-        map.on('zoomend', updateLabelSizes);
+        // Update zone label sizes on zoom (debounced — see updateLabelSizesDebounced)
+        map.on('zoomend', updateLabelSizesDebounced);
 
         // Close popup when clicking on empty map space
         map.on('click', function(e) {
@@ -578,14 +584,13 @@
      * Rules:
      *   - Zone labels hidden (zoomed way out): hide BOTH leader lines and ring sublabels.
      *   - 连线 ON  (window._leaderLinesVisible): show leader lines, hide ring sublabels.
-     *   - 连线 OFF: hide leader lines; show ring sublabels at any level where individual
-     *     zone codes are shown (zoom>=17). Below that, codes are truncated/grouped and the
-     *     per-boundary labels would only clutter.
+     *   - 连线 OFF: hide leader lines; show ring sublabels ONLY at the deepest zoom
+     *     (zoom>=19). Earlier levels keep the map uncluttered.
      * Called after every label re-layout so the 连线 layer toggle stays consistent.
      */
     function syncMultiBoundaryDisplay(showLabels, zoom) {
         const wantLines = showLabels && window._leaderLinesVisible;
-        const wantRing = showLabels && !window._leaderLinesVisible && zoom >= 17;
+        const wantRing = showLabels && !window._leaderLinesVisible && zoom >= 19;
         const lineOpacity = _rCfg.opacity != null ? _rCfg.opacity : 0.55;
         zoneLabels.forEach(label => {
             if (label._leaderLines) {
@@ -599,6 +604,19 @@
             }
         });
     }
+
+    // Debounce a function by `wait` ms (trailing edge). updateLabelSizes rebuilds labels +
+    // watermarks (a full pass over ~2500 zone labels), so firing it on every zoomend —
+    // including rapid pinch-zoom / wheel bursts on mobile — janks the UI. Coalescing to a
+    // single call after zooming settles keeps the interaction smooth.
+    function _debounce(fn, wait) {
+        let t = null;
+        return function () {
+            clearTimeout(t);
+            t = setTimeout(() => { fn.apply(null, arguments); }, wait);
+        };
+    }
+    const updateLabelSizesDebounced = _debounce(updateLabelSizes, 120);
 
     /**
      * Update all zone label sizes on zoom change

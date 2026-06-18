@@ -1219,7 +1219,7 @@
             '<div class="v2-fg"><div class="v2-fl">工作内容</div><div id="woContentTrigger" style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border:1px solid #ddd;border-radius:8px;cursor:pointer;background:#fff;font-size:16px;"><span id="woContentDisplay" style="color:#bbb;">选择</span><span style="font-size:0.8em;color:#999;">▶</span></div></div>' +
             '<div class="v2-fg"><div class="v2-form-row"><div style="flex:0.8;"><div class="v2-fl">待修</div><div class="v2-chip-group"><div class="v2-chip active" data-val=""><input type="radio" name="is_pending_repair" value="" style="display:none;" checked>否</div><div class="v2-chip" data-val="1"><input type="radio" name="is_pending_repair" value="1" style="display:none;">是</div></div></div><div style="flex:1.2;"><div class="v2-fl">疑难</div><div class="v2-chip-group"><div class="v2-chip active" data-val=""><input type="radio" name="is_difficult" value="" style="display:none;" checked>否</div><div class="v2-chip" data-val="1"><input type="radio" name="is_difficult" value="1" style="display:none;">是</div></div></div><div><div class="v2-fl">已处理</div><div class="v2-chip-group"><div class="v2-chip active" data-val=""><input type="radio" name="is_difficult_resolved" value="" style="display:none;" checked>否</div><div class="v2-chip" data-val="1"><input type="radio" name="is_difficult_resolved" value="1" style="display:none;">是</div></div></div></div></div>' +
             '<div class="v2-fg"><div class="v2-fl">备注</div><textarea name="remark" class="v2-textarea" placeholder="可选备注..." rows="2"></textarea></div>' +
-            '<div class="v2-fg"><div class="v2-fl">照片 (最多6张)</div><div class="v2-photo-area" id="woPhotoArea"><div class="v2-photo-add" id="woPhotoAdd">+</div></div><input type="file" id="woPhotoInput" accept="image/*" multiple style="display:none;"></div>' +
+            '<div class="v2-fg"><div class="v2-fl">照片 (最多6张)</div><div class="v2-photo-area" id="woPhotoArea"><div class="v2-photo-add v2-photo-camera" id="woPhotoCamera" title="拍照">📷</div><div class="v2-photo-add" id="woPhotoAdd" title="从相册选择">+</div></div><input type="file" id="woPhotoInput" accept="image/*" multiple style="display:none;"><input type="file" id="woPhotoCameraInput" accept="image/*" capture="environment" style="display:none;"></div>' +
             '<input type="hidden" name="entries" id="woEntriesInput" value="[]"><input type="hidden" name="pm_resolved" id="woPmResolved" value=""></form>' +
             '<div id="woCatModal" class="v2-sheet-overlay"><div class="v2-sheet"><div style="width:36px;height:4px;background:#ccc;border-radius:2px;margin:10px auto 0;"></div><div style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px 10px;border-bottom:1px solid #f0f0f0;flex-shrink:0;"><span style="font-weight:600;">选择工作类别</span><button type="button" onclick="document.getElementById(\'woCatModal\').style.display=\'none\'" style="width:32px;height:32px;border:none;background:#f0f0f0;border-radius:50%;font-size:1.1em;cursor:pointer;">×</button></div><div style="padding:16px;overflow-y:auto;-webkit-overflow-scrolling:touch;"><div style="font-size:0.85em;color:#999;margin-bottom:6px;">类别</div><div class="v2-chip-group" id="woCatPrimary"></div><div id="woCatSubDivider" style="display:none;border-top:1px solid #e0e0e0;margin:12px 0;"></div><div id="woCatSubLabel" style="display:none;font-size:0.85em;color:#999;margin-bottom:6px;">子类别</div><div class="v2-chip-group" id="woCatSub"></div></div></div></div>' +
             '<div id="woTreeModal" class="v2-sheet-overlay"><div class="v2-sheet"><div style="width:36px;height:4px;background:#ccc;border-radius:2px;margin:10px auto 0;"></div><div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid #f0f0f0;flex-shrink:0;"><span style="font-weight:600;">工作内容</span><button type="button" onclick="document.getElementById(\'woTreeModal\').style.display=\'none\'" style="width:32px;height:32px;border:none;background:#f0f0f0;border-radius:50%;font-size:1.1em;cursor:pointer;">×</button></div><div id="woBreadcrumb" class="v2-wo-bc"></div><div id="woSheetBody" style="flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:8px 16px;min-height:0;"></div><div style="padding:12px 16px;border-top:1px solid #f0f0f0;flex-shrink:0;"><button type="button" onclick="document.getElementById(\'woTreeModal\').style.display=\'none\'" style="width:100%;padding:12px;border:none;border-radius:10px;font-size:0.95em;font-weight:600;cursor:pointer;background:#2D6A4F;color:#fff;">完成</button></div></div></div>' +
@@ -1413,18 +1413,39 @@
         var leafConfirm = $('woLeafConfirmBtn');
         if (leafConfirm) leafConfirm.addEventListener('click', confirmWoLeaf);
 
+        // Photo upload: a 📷 button (input[capture] → opens device camera on mobile) and
+        // a + button (gallery / file picker). Both feed the same _photoFiles list and
+        // thumbnails via a shared helper, so logic can't drift between the two paths.
         var photoArea = $('woPhotoArea'), photoInput = $('woPhotoInput');
-        $('woPhotoAdd').addEventListener('click', function () { photoInput.click(); });
-        photoInput.addEventListener('change', function () {
-            Array.from(photoInput.files).forEach(function (f) { if (_photoFiles.length >= 6) return; _photoFiles.push(f);
+        var cameraInput = $('woPhotoCameraInput');
+        function refreshPhotoAddBtns() {
+            var show = _photoFiles.length < 6;
+            var add = $('woPhotoAdd'), cam = $('woPhotoCamera');
+            if (add) add.style.display = show ? '' : 'none';
+            if (cam) cam.style.display = show ? '' : 'none';
+        }
+        function addWoPhotoFiles(files) {
+            Array.from(files).forEach(function (f) {
+                if (_photoFiles.length >= 6) return;
+                _photoFiles.push(f);
                 var reader = new FileReader(); reader.onload = function (e) {
                     var div = document.createElement('div'); div.className = 'v2-photo-thumb';
                     div.innerHTML = '<img src="' + e.target.result + '"><button type="button" class="v2-photo-rm">×</button>';
-                    div.querySelector('.v2-photo-rm').addEventListener('click', function () { var idx = Array.from(photoArea.querySelectorAll('.v2-photo-thumb')).indexOf(div); _photoFiles.splice(idx, 1); div.remove(); $('woPhotoAdd').style.display = _photoFiles.length < 6 ? '' : 'none'; });
-                    photoArea.insertBefore(div, $('woPhotoAdd')); $('woPhotoAdd').style.display = _photoFiles.length < 6 ? '' : 'none';
+                    div.querySelector('.v2-photo-rm').addEventListener('click', function () {
+                        var idx = Array.from(photoArea.querySelectorAll('.v2-photo-thumb')).indexOf(div);
+                        _photoFiles.splice(idx, 1); div.remove(); refreshPhotoAddBtns();
+                    });
+                    // Insert before the camera button (first add button) so both add
+                    // buttons always sit at the end of the row.
+                    photoArea.insertBefore(div, $('woPhotoCamera'));
+                    refreshPhotoAddBtns();
                 }; reader.readAsDataURL(f);
-            }); photoInput.value = '';
-        });
+            });
+        }
+        if ($('woPhotoAdd')) $('woPhotoAdd').addEventListener('click', function () { photoInput.click(); });
+        if (photoInput) photoInput.addEventListener('change', function () { addWoPhotoFiles(photoInput.files); photoInput.value = ''; });
+        if ($('woPhotoCamera')) $('woPhotoCamera').addEventListener('click', function () { if (cameraInput) cameraInput.click(); });
+        if (cameraInput) cameraInput.addEventListener('change', function () { addWoPhotoFiles(cameraInput.files); cameraInput.value = ''; });
     }
 
     function escHtml(s) {
