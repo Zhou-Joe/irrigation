@@ -476,14 +476,26 @@
     var _woNameChipsBuilt = false;
 
     // Source of truth for all zones: prefer the global zonesData list (has every zone),
-    // fall back to the map layer group. Returns array of {code, name}.
+    // fall back to parsing #zones-data directly, then the map layer group.
+    var _parsedZonesCache = null;
     function getAllWoZones() {
         var out = [];
-        if (window.zonesData && Array.isArray(window.zonesData)) {
-            window.zonesData.forEach(function (z) {
+        var src = (window.zonesData && Array.isArray(window.zonesData) && window.zonesData.length)
+            ? window.zonesData : null;
+        if (!src) {
+            if (!_parsedZonesCache) {
+                var el = document.getElementById('zones-data');
+                if (el && el.textContent) {
+                    try { _parsedZonesCache = JSON.parse(el.textContent); } catch (e) { _parsedZonesCache = []; }
+                }
+            }
+            src = _parsedZonesCache;
+        }
+        if (src) {
+            src.forEach(function (z) {
                 if (z && z.code) out.push({ code: z.code, name: z.name || '' });
             });
-            return out;
+            if (out.length) return out;
         }
         var zl = window._dashboardZonesLayer;
         if (zl) zl.eachLayer(function (l) {
