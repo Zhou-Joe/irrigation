@@ -22,6 +22,11 @@ MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',
     'corsheaders.middleware.CorsMiddleware',
+    # GZip must come before any middleware that reads/writes the response body. The
+    # dashboard ships ~6MB of inline JSON; without compression every byte crosses the
+    # cloud tunnel uncompressed (the root cause of the 50s+ load time). This alone takes
+    # the page from ~6MB to ~1MB on the wire.
+    'django.middleware.gzip.GZipMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',

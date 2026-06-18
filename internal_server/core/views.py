@@ -577,53 +577,24 @@ def _cached(key, ttl, builder):
     return val
 
 
-@login_required(login_url='core:login')
-def dashboard(request):
+def _build_zones_payload(today, week_ago):
+    """Build the per-zone JSON payload used by the dashboard map + zone-detail cards.
+
+    Extracted from `dashboard` so the same payload can be served:
+      - inline in the dashboard HTML (legacy), and
+      - as its own cacheable/gzip-friendly JSON endpoint (api/zones-payload/), so the
+        ~5MB of zone data is no longer inlined in the page HTML and can be cached by
+        the browser across navigations. All heavy group-by queries live here so the
+        two paths can never drift apart.
     """
-    Main dashboard view with interactive map showing irrigation zones.
-    """
-    from datetime import date, timedelta
-    from django.db.models.functions import TruncDate
+    from datetime import timedelta
+    from collections import defaultdict
+    from django.db.models import Count, Sum
+    from django.db.models.functions import Coalesce
     from core.models import (
-        MaintenanceRequest, ProjectSupportRequest, WaterRequest,
-        ManagerProfile, DepartmentUserProfile, RegistrationRequest, WorkOrder, Worker,
-        Pipeline, Plant, MapStyleSettings, ZoneEquipment, WorkReport,
+        Zone, Plant, ZoneEquipment, WorkOrder, WorkReport,
+        MaintenanceRequest, WaterRequest, ProjectSupportRequest,
     )
-
-    user = request.user
-    today = date.today()
-    week_ago = today - timedelta(days=7)
-
-    # Determine user role
-    is_admin = user.is_superuser or user.is_staff
-    is_manager = False
-    is_dept_user = False
-    is_field_worker = False
-
-    if not is_admin:
-        try:
-            ManagerProfile.objects.get(user=user, active=True)
-            is_manager = True
-            is_admin = True
-        except ManagerProfile.DoesNotExist:
-            pass
-
-    if not is_admin:
-        try:
-            DepartmentUserProfile.objects.get(user=user, active=True)
-            is_dept_user = True
-        except DepartmentUserProfile.DoesNotExist:
-            pass
-
-    if not is_admin and not is_dept_user:
-        try:
-            Worker.objects.get(user=user, active=True)
-            is_field_worker = True
-        except Worker.DoesNotExist:
-            pass
-
-    # Get all zones with annotations and related objects in minimal queries
-    from django.db.models import Sum
 
     thirty_days_ago = today - timedelta(days=30)
 
@@ -633,7 +604,7 @@ def dashboard(request):
     # a single mega-annotated query produced on 2500+ zones.
     zones = (Zone.objects.select_related('patch', 'patch__region', 'land')
              .only('id', 'code', 'name', 'description', 'boundary_points',
-                   'dxf_boundary_points', 'boundary_source', 'boundary_color',
+                   'dxf_boundary_points', 'boundary_source',
                    'current_status', 'priority', 'remarks', 'confirmed_remarks',
                    'sprinkler_type', 'irrigation_intensity', 'solenoid_valve_size',
                    'landscape_coefficient', 'plant_type', 'irrigation_foreman',
@@ -650,24 +621,32 @@ def dashboard(request):
     zone_ids = list(zones.values_list('id', flat=True))
 
     # Group-by counts (one query each, no distinct=True cross-product).
-    def _count_map(model, label, **filters):
+    def _count_map(model, **filters):
         out = {}
         qs = model.objects.filter(zone_id__in=zone_ids, **filters).values('zone_id')
         for row in qs.annotate(c=Count('id')):
             out[row['zone_id']] = row['c']
         return out
 
-    plant_count_map = _count_map(Plant, 'plants')
-    equipment_count_map = _count_map(ZoneEquipment, 'equipments')
-    pending_work_map = _count_map(WorkOrder, 'work_orders', status='pending')
-    maintenance_count_map = _count_map(MaintenanceRequest, 'maintenancerequest')
-    water_count_map = _count_map(WaterRequest, 'waterrequest')
-    project_count_map = _count_map(ProjectSupportRequest, 'projectsupportrequest')
+    plant_count_map = _count_map(Plant)
+    equipment_count_map = _count_map(ZoneEquipment)
+    pending_work_map = _count_map(WorkOrder, status='pending')
+    maintenance_count_map = _count_map(MaintenanceRequest)
+    water_count_map = _count_map(WaterRequest)
+    project_count_map = _count_map(ProjectSupportRequest)
     # recent_fault_count: sum of fault-entry counts over the last 30 days, per zone.
     fault_count_map = {}
     for row in (WorkReport.objects.filter(date__gte=thirty_days_ago, zones__in=zone_ids)
                 .values('zones').annotate(s=Coalesce(Sum('fault_entries__count'), 0))):
         fault_count_map[row['zones']] = row['s']
+
+    # ── Bulk: zones with an UNRESOLVED 待修 work report (is_pending_repair AND not yet
+    # closed by a 计划性维修). Drives the orange "needs attention" boundary color on the
+    # map. One group-by query instead of per-zone lookups.
+    pending_repair_zone_ids = set(
+        WorkReport.objects.filter(is_pending_repair=True, resolved_by_pm__isnull=True, zones__in=zone_ids)
+        .values_list('zones', flat=True).distinct()
+    )
 
     # ── Bulk: pending water requests for today ──
     pending_water_map = {}  # zone_id -> list of {id, type, type_display}
@@ -682,7 +661,6 @@ def dashboard(request):
         })
 
     # ── Bulk: recent maintenance (last 7 days, top 3 per zone) ──
-    from collections import defaultdict
     recent_maint_map = defaultdict(list)
     for m in MaintenanceRequest.objects.filter(
         zone_id__in=zone_ids, date__gte=week_ago
@@ -742,13 +720,16 @@ def dashboard(request):
         # Parse remarks TextFields once each (was 4× per zone: bool(json.loads) + _safe_remark_items).
         zone_remarks = _safe_remark_items(zone.remarks)
         zone_confirmed = _safe_remark_items(zone.confirmed_remarks)
+        # "Needs attention" = has unconfirmed remarks OR an unresolved 待修 report.
+        # Drives the orange boundary color on the map (default is green; selected is red).
+        needs_attention = bool(zone_remarks) or (zone.id in pending_repair_zone_ids)
         zones_list.append({
             'id': zone.id,
             'code': zone.code,
             'name': zone.name,
             'description': zone.description,
             'boundary_points': zone.active_boundary_points,
-            'boundary_color': zone.boundary_color,
+            'needs_attention': needs_attention,
             'status': zone.get_today_status(),
             'statusDisplay': zone.get_status_display(),
             'plant_count': plant_count_map.get(zone.id, 0),
@@ -810,6 +791,78 @@ def dashboard(request):
             'recent_water': recent_water_map.get(zone.id, []),
             'recent_project': recent_proj_map.get(zone.id, []),
         })
+    return zones_list
+
+
+@login_required(login_url='core:login')
+def zones_payload_api(request):
+    """Serve the dashboard zone payload as a standalone, cacheable JSON document.
+
+    Same data as the inline `zones_json` in the dashboard HTML, but separated so:
+      - the HTML page renders instantly without blocking on ~5MB of inline JSON, and
+      - the browser caches this response (1 min) so re-navigating to the dashboard
+        reuses it instead of re-downloading/re-parsing. GZipMiddleware compresses it
+        to ~0.3MB on the wire.
+    """
+    from datetime import date, timedelta
+    today = date.today()
+    week_ago = today - timedelta(days=7)
+    payload = _build_zones_payload(today, week_ago)
+    resp = JsonResponse(payload, safe=False, json_dumps_params={'ensure_ascii': False})
+    # Zones' status/counts are day-scoped; cache briefly on the browser to make
+    # back-to-back dashboard loads near-instant, but not so long that stale status lingers.
+    resp['Cache-Control'] = 'private, max-age=60'
+    resp['Vary'] = 'Accept-Encoding'
+    return resp
+
+
+@login_required(login_url='core:login')
+def dashboard(request):
+    """
+    Main dashboard view with interactive map showing irrigation zones.
+    """
+    from datetime import date, timedelta
+    from django.db.models.functions import TruncDate
+    from core.models import (
+        MaintenanceRequest, ProjectSupportRequest, WaterRequest,
+        ManagerProfile, DepartmentUserProfile, RegistrationRequest, WorkOrder, Worker,
+        Pipeline, Plant, MapStyleSettings, ZoneEquipment, WorkReport,
+    )
+
+    user = request.user
+    today = date.today()
+    week_ago = today - timedelta(days=7)
+
+    # Determine user role
+    is_admin = user.is_superuser or user.is_staff
+    is_manager = False
+    is_dept_user = False
+    is_field_worker = False
+
+    if not is_admin:
+        try:
+            ManagerProfile.objects.get(user=user, active=True)
+            is_manager = True
+            is_admin = True
+        except ManagerProfile.DoesNotExist:
+            pass
+
+    if not is_admin:
+        try:
+            DepartmentUserProfile.objects.get(user=user, active=True)
+            is_dept_user = True
+        except DepartmentUserProfile.DoesNotExist:
+            pass
+
+    if not is_admin and not is_dept_user:
+        try:
+            Worker.objects.get(user=user, active=True)
+            is_field_worker = True
+        except Worker.DoesNotExist:
+            pass
+
+    # Zone payload (queries + serialization) is shared with the cacheable JSON endpoint.
+    zones_list = _build_zones_payload(today, week_ago)
 
     # Group zones by Land → common-name (zone.name) for sidebar display
     from .models import Land
@@ -967,7 +1020,7 @@ def dashboard(request):
         })
 
     context = {
-        'zones_json': json.dumps(zones_list),
+        # zones_json no longer inlined — fetched async from /api/zones-payload/
         'grouped_zones': grouped_zones,  # For hierarchical sidebar display
         'pipelines_json': json.dumps(pipelines_list),
         'all_plant_names': all_plant_names,
@@ -5844,9 +5897,36 @@ def workorder_history(request):
         reports = reports.filter(is_pending_repair=True)
 
     reports = list(reports.select_related('worker', 'work_category', 'location')
-                   .prefetch_related('zones', 'entries__work_item', 'entries__project')
+                   .prefetch_related('zones__land', 'entries__work_item', 'entries__project')
                    .order_by('-date', '-id')[:50])
     enrich_reports(reports, workitem_path_map())
+
+    # Build a Land → 通用名称 → [zone codes] hierarchy per report, plus a deduplicated
+    # summary string. Replaces the old flat `zone_names` ("BOH, BOH, BOH, …") which had
+    # tons of repeats, and lets the template render a clean grouped view.
+    for r in reports:
+        lands = {}  # land_name -> { name -> set(codes) }
+        order = []  # preserve first-seen land order
+        for z in r.zones.all():
+            ln = (z.land.name if z.land_id and z.land else '其它') or '其它'
+            nm = z.name or z.code
+            if ln not in lands:
+                lands[ln] = {}
+                order.append(ln)
+            lands[ln].setdefault(nm, []).append(z.code)
+        r.zone_hierarchy = [
+            {'land': ln, 'names': [
+                {'name': nm, 'codes': sorted(set(codes)), 'count': len(set(codes))}
+                for nm, codes in sorted(lands[ln].items())
+            ], 'zone_count': sum(len(v) for v in lands[ln].values())}
+            for ln in order
+        ]
+        # Deduplicated flat summary for the card view: "Land1·nameA/nameB、Land2·nameC".
+        parts = []
+        for ln in order:
+            nms = sorted(lands[ln].keys())
+            parts.append(ln + '·' + '/'.join(nms))
+        r.zone_summary = '、'.join(parts) if parts else ''
 
     context = {
         'reports': reports,
