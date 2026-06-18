@@ -45,6 +45,8 @@
 
     // Leader lines layer group (separate from labels for independent toggle)
     let leaderLinesLayerGroup;
+    // Per-ring sublabel markers for multi-boundary zones (shown when 连线 is OFF)
+    let ringLabelsLayerGroup;
 
     // Landmark overlay layers group (off by default, toggled via layer control)
     let landmarksLayerGroup;
@@ -146,13 +148,23 @@
         dashArray: _dash(_bCfg.dashStyle)
     };
 
-    // Highlighted/selected zone style
+    // Highlighted/selected zone style (user-clicked) — red
     const highlightStyle = {
-        color: '#D4A574',
+        color: '#C0392B',
         weight: 3,
         opacity: 1,
-        fillColor: '#D4A574',
-        fillOpacity: 0.25
+        fillColor: '#C0392B',
+        fillOpacity: 0.3
+    };
+    // "Needs attention" style — orange. Used when a zone has unconfirmed remarks or an
+    // unresolved 待修 work report (needs_attention flag from the payload).
+    const attentionStyle = {
+        color: '#CC7722',
+        weight: _bCfg.weight || 2,
+        opacity: _bCfg.opacity || 0.7,
+        fillColor: '#CC7722',
+        fillOpacity: _bCfg.fillOpacity != null ? _bCfg.fillOpacity : 0.15,
+        dashArray: _dash(_bCfg.dashStyle)
     };
 
     // Status-based polygon styling (from design system)
@@ -238,6 +250,13 @@
         // Initialize leader lines layer group (rendered below zones so boundaries occlude lines)
         leaderLinesLayerGroup = L.layerGroup().addTo(map);
 
+        // Ring sublabels: small per-boundary labels shown when 连线 is OFF (instead of
+        // a single label at the zone centroid with leader lines). Rendered above zones.
+        ringLabelsLayerGroup = L.layerGroup().addTo(map);
+        // Global toggle: when true show leader lines (default); when false show the
+        // per-ring sublabels. Set by the 连线 layer toggle.
+        window._leaderLinesVisible = true;
+
         // Initialize zones layer group (rendered on top of leader lines)
         zonesLayerGroup = L.layerGroup().addTo(map);
         window._dashboardZonesLayer = zonesLayerGroup;
@@ -275,26 +294,46 @@
     }
 
     /**
-     * Load zones from the embedded JSON data
+     * Load zones from the API endpoint (preferred) or the embedded JSON fallback.
+     *
+     * The zone payload is ~5MB, so it is no longer inlined in the dashboard HTML.
+     * Instead it is fetched async from /api/zones-payload/ where it can be gzipped
+     * (~0.3MB on the wire) and cached by the browser (1 min). A loading overlay is
+     * shown over the map until the zones render.
      */
+    function applyZones(zones) {
+        window.zonesData = zones;
+        window._zoneById = {};
+        zones.forEach(function (z) { window._zoneById[z.id] = z; });
+        renderZones(zones);
+        var ov = document.getElementById('zone-loading-overlay');
+        if (ov) ov.style.display = 'none';
+    }
+
     function loadZones() {
-        const zonesDataElement = document.getElementById('zones-data');
-        if (!zonesDataElement) {
-            console.error('Zones data element not found');
+        var overlay = document.getElementById('zone-loading-overlay');
+        if (overlay) overlay.style.display = '';
+
+        // Legacy fallback: if the page still inlines the zones JSON, use it directly.
+        var zonesDataElement = document.getElementById('zones-data');
+        if (zonesDataElement && zonesDataElement.textContent.trim()) {
+            try {
+                applyZones(JSON.parse(zonesDataElement.textContent));
+            } catch (error) {
+                console.error('Error parsing zones data:', error);
+                if (overlay) overlay.style.display = 'none';
+            }
             return;
         }
 
-        try {
-            const zones = JSON.parse(zonesDataElement.textContent);
-            // Expose for the sidebar click handler (locate by id even when
-            // a zone has no rendered polygon) and to avoid a second parse.
-            window.zonesData = zones;
-            window._zoneById = {};
-            zones.forEach(function (z) { window._zoneById[z.id] = z; });
-            renderZones(zones);
-        } catch (error) {
-            console.error('Error parsing zones data:', error);
-        }
+        // Async fetch from the cacheable endpoint.
+        fetch('/api/zones-payload/', { credentials: 'same-origin' })
+            .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+            .then(function (zones) { applyZones(zones); })
+            .catch(function (err) {
+                console.error('Failed to load zones:', err);
+                if (overlay) overlay.style.display = 'none';
+            });
     }
 
     /**
@@ -384,23 +423,45 @@
         labelsLayerGroup.addLayer(label);
         zoneLabels.push(label);
 
-        // Add leader lines from label to each polygon centroid (for multi-boundary zones)
+        // Multi-boundary zones: build BOTH the leader lines (shown when 连线 is ON) and
+        // small per-ring sublabels (shown when 连线 is OFF). Initial visibility follows
+        // the global toggle so the 连线 layer switch is instant (no re-render needed).
         if (isMultiPolygonFormat(zone.boundary_points) && zone.boundary_points.length > 1) {
             label._leaderLines = [];
+            label._ringLabels = [];
+            const showLines = window._leaderLinesVisible;
+            const ringLabelSize = Math.round((_lCfg.fontSize || 25) * 0.7);
             zone.boundary_points.forEach(ring => {
                 const ringPts = pointsToLatLngs(ring);
                 if (ringPts.length < 3) return;
                 const smoothPts = _smoothLL(ringPts, _zoneSmooth(zone));
                 const ringCenter = _ringAnchor(smoothPts, center[0], center[1]);
+                // Leader line from the zone centroid to this ring's anchor
                 const line = L.polyline([center, ringCenter], {
-                    color: zone.boundary_color || '#2D6A4F',
+                    color: zone.needs_attention ? '#CC7722' : '#2D6A4F',
                     weight: _rCfg.weight || 2.5,
                     opacity: _rCfg.opacity != null ? _rCfg.opacity : 0.55,
                     dashArray: _dash(_rCfg.dashStyle),
                     interactive: false
                 });
+                if (!showLines) line.setStyle({ opacity: 0 });
                 leaderLinesLayerGroup.addLayer(line);
                 label._leaderLines.push(line);
+                // Small sublabel centered on the ring (shown only when 连线 is OFF).
+                // Visibility is controlled solely by syncMultiBoundaryDisplay() via
+                // display:none/'' — never embed opacity here, or it would fight that logic.
+                const sub = L.marker(ringCenter, {
+                    interactive: false,
+                    icon: L.divIcon({
+                        className: 'zone-ring-label',
+                        html: `<div style="transform:translate(-50%,-50%);white-space:nowrap;">
+                            <span style="font-size:${ringLabelSize}px;color:#1B4332;font-weight:600;background:rgba(255,255,255,0.7);padding:0 3px;border-radius:3px;">${zone.code}</span>
+                        </div>`,
+                        iconSize: null, iconAnchor: [0, 0]
+                    })
+                });
+                ringLabelsLayerGroup.addLayer(sub);
+                label._ringLabels.push(sub);
             });
         }
 
@@ -435,6 +496,111 @@
     }
 
     /**
+     * Compute watermark groupings from the current zone labels.
+     *
+     * Returns { landWm, nameWm, landNameSet }:
+     *   landWm   — landName -> centroid [lat,lng] (every land that has named zones)
+     *   nameWm   — name -> { center:[lat,lng], land:landName } (dedup rules applied)
+     *   landNameSet — not needed externally (kept inline below)
+     *
+     * Name watermark dedup rules (per requirements):
+     *   - Skip a name watermark if the land it belongs to has ONLY that one distinct name.
+     *   - Skip a name watermark if the name equals the land name.
+     * Both rules mean "no point expanding a name level when it adds no information".
+     */
+    function computeWatermarks() {
+        // landName -> { centerSum:[lat,lng], count, names:Set }
+        const landAgg = {};
+        // name -> { centerSum:[lat,lng], count, land:landName }
+        const nameAgg = {};
+        zoneLabels.forEach(label => {
+            const zone = label._zone;
+            if (!zone) return;
+            const c = label._originalCenter;
+            if (!c) return;
+            const landName = zone.land_name || null;
+            const name = zone.name || null;
+            if (landName) {
+                if (!landAgg[landName]) landAgg[landName] = { sLat: 0, sLng: 0, count: 0, names: new Set() };
+                landAgg[landName].sLat += c[0]; landAgg[landName].sLng += c[1]; landAgg[landName].count++;
+                if (name) landAgg[landName].names.add(name);
+            }
+            if (name) {
+                if (!nameAgg[name]) nameAgg[name] = { sLat: 0, sLng: 0, count: 0, land: landName };
+                nameAgg[name].sLat += c[0]; nameAgg[name].sLng += c[1]; nameAgg[name].count++;
+            }
+        });
+        // Resolve land centroids
+        const landWm = {};
+        Object.entries(landAgg).forEach(([landName, a]) => {
+            landWm[landName] = [a.sLat / a.count, a.sLng / a.count];
+        });
+        // Resolve name centroids with dedup rules
+        const nameWm = {};
+        Object.entries(nameAgg).forEach(([name, a]) => {
+            const landName = a.land;
+            const landInfo = landName ? landAgg[landName] : null;
+            // Skip if land has only one distinct name (nothing to disambiguate),
+            // or if the name is identical to the land name (redundant).
+            if (landInfo && landInfo.names.size <= 1) return;
+            if (landName && name === landName) return;
+            nameWm[name] = { center: [a.sLat / a.count, a.sLng / a.count], land: landName };
+        });
+        return { landWm: landWm, nameWm: nameWm };
+    }
+
+    /**
+     * Render a set of watermark markers into window.__wmLayer.
+     * entries: array of { text, center, size }
+     */
+    function renderWatermarks(entries) {
+        if (!window.__wmLayer) return;
+        window.__wmLayer.clearLayers();
+        entries.forEach(e => {
+            if (!e.center) return;
+            const wm = L.marker(e.center, {
+                interactive: false,
+                icon: L.divIcon({
+                    className: 'zone-watermark',
+                    html: `<div style="transform:translate(-50%,-50%);white-space:nowrap;">
+                        <span style="font-size:${e.size}px;color:rgba(255,255,255,0.55);font-weight:700;text-shadow:0 0 8px rgba(0,0,0,0.3);pointer-events:none;">${e.text}</span>
+                    </div>`,
+                    iconSize: null, iconAnchor: [0, 0]
+                })
+            });
+            window.__wmLayer.addLayer(wm);
+        });
+    }
+
+    /**
+     * Synchronize leader-line vs per-ring-sublabel visibility for multi-boundary zones.
+     *
+     * Rules:
+     *   - Zone labels hidden (zoomed way out): hide BOTH leader lines and ring sublabels.
+     *   - 连线 ON  (window._leaderLinesVisible): show leader lines, hide ring sublabels.
+     *   - 连线 OFF: hide leader lines; show ring sublabels at any level where individual
+     *     zone codes are shown (zoom>=17). Below that, codes are truncated/grouped and the
+     *     per-boundary labels would only clutter.
+     * Called after every label re-layout so the 连线 layer toggle stays consistent.
+     */
+    function syncMultiBoundaryDisplay(showLabels, zoom) {
+        const wantLines = showLabels && window._leaderLinesVisible;
+        const wantRing = showLabels && !window._leaderLinesVisible && zoom >= 17;
+        const lineOpacity = _rCfg.opacity != null ? _rCfg.opacity : 0.55;
+        zoneLabels.forEach(label => {
+            if (label._leaderLines) {
+                label._leaderLines.forEach(line => { line.setStyle({ opacity: wantLines ? lineOpacity : 0 }); });
+            }
+            if (label._ringLabels) {
+                label._ringLabels.forEach(sub => {
+                    const el = sub.getElement();
+                    if (el) el.style.display = wantRing ? '' : 'none';
+                });
+            }
+        });
+    }
+
+    /**
      * Update all zone label sizes on zoom change
      */
     function updateLabelSizes() {
@@ -444,157 +610,95 @@
 
         // Group labels by truncated code when zoomed out
         if (showLabels && zoom < 18) {
-            // Build groups keyed by truncated code
-            const groups = {};
-            zoneLabels.forEach(label => {
-                const zone = label._zone;
-                if (!zone) return;
-                const key = getCodeForZoom(zone.code, zoom);
-                if (!groups[key]) groups[key] = [];
-                groups[key].push(label);
-            });
-
-            // At xx-xx level (zoom 17): also collect unique watermarks (by Land)
-            let watermarks = null;
-            if (zoom >= 17) {
-                watermarks = {};
+            if (zoom < 17) {
+                // Farthest level: show ONLY the Land watermark (smaller font). Zone code
+                // labels are hidden to reduce clutter — the watermark carries the location
+                // meaning at this scale.
+                zoneLabels.forEach(label => {
+                    const el = label.getElement();
+                    if (el) el.style.display = 'none';
+                });
+                const wm = computeWatermarks();
+                const wmSize = Math.round(baseSize * 0.7);  // smaller than the xx-xx watermark
+                const landEntries = Object.entries(wm.landWm).map(([name, center]) => ({
+                    text: name, center: center, size: wmSize
+                }));
+                renderWatermarks(landEntries);
+            } else {
+                // xx-xx level (zoom 17): group labels by truncated code, show one per group,
+                // plus a Land watermark at each land's centroid.
+                const groups = {};
                 zoneLabels.forEach(label => {
                     const zone = label._zone;
-                    const wmKey = zone ? (zone.land_name || zone.name) : null;
-                    if (!wmKey) return;
-                    // Deduplicate by land (fallback to name)
-                    if (!watermarks[wmKey]) {
-                        // Collect all label centers for zones with this land
-                        watermarks[wmKey] = [];
-                    }
-                    watermarks[wmKey].push(label._originalCenter);
+                    if (!zone) return;
+                    const key = getCodeForZoom(zone.code, zoom);
+                    if (!groups[key]) groups[key] = [];
+                    groups[key].push(label);
                 });
-                // Compute centroid for each unique land
-                Object.entries(watermarks).forEach(([name, centers]) => {
-                    let sLat = 0, sLng = 0;
-                    centers.forEach(c => { sLat += c[0]; sLng += c[1]; });
-                    watermarks[name] = [sLat / centers.length, sLng / centers.length];
-                });
-            }
 
-            // For each group, show only one label at the group centroid
-            Object.entries(groups).forEach(([key, labels]) => {
-                // Compute group centroid
-                let latSum = 0, lngSum = 0, count = 0;
-                labels.forEach(l => {
-                    const c = l._originalCenter;
-                    if (c) { latSum += c[0]; lngSum += c[1]; count++; }
-                });
-                const groupCenter = count > 0 ? [latSum / count, lngSum / count] : labels[0]._originalCenter;
-
-                // Find the common name (通称) for this group
-                let commonName = '';
-                const firstZone = labels[0]?._zone;
-                if (firstZone && zoom < 17) {
-                    commonName = firstZone.patch_name || firstZone.name || '';
-                }
-
-                labels.forEach((label, i) => {
-                    const el = label.getElement();
-                    if (i === 0) {
-                        if (el) el.style.display = '';
-                        label.setLatLng(groupCenter);
-                        const zone = label._zone;
-                        const scale = zone ? (zone.label_scale || 1.0) : 1.0;
-                        const size = baseSize * scale;
-                        const span = el ? el.querySelector('span') : null;
-                        if (span) {
-                            span.style.fontSize = size + 'px';
-                            if (zoom < 17) {
-                                // xx level: two lines — 通称 (smaller) + xx
-                                if (commonName) {
-                                    span.innerHTML = `<div style="text-align:center;line-height:1.15;">
-                                        <div style="font-size:${Math.round(size * 0.55)}px;">${commonName}</div>
-                                        <div style="font-size:${Math.round(size * 0.4)}px;opacity:0.55;">${key}</div>
-                                    </div>`;
-                                } else {
-                                    span.textContent = key;
-                                }
-                            } else {
-                                // xx-xx level: label is just xx-xx
-                                span.textContent = key;
-                            }
-                        }
-                    } else {
-                        if (el) el.style.display = 'none';
-                    }
-                    // Hide leader lines for grouped labels
-                    if (label._leaderLines) {
-                        label._leaderLines.forEach(line => {
-                            const le = line.getElement();
-                            if (le) le.style.display = 'none';
-                        });
-                    }
-                });
-            });
-
-            // At xx-xx level: render watermarks; at xx level: clear them
-            if (window.__wmLayer) {
-                window.__wmLayer.clearLayers();
-            }
-            if (watermarks && window.__wmLayer) {
-                window.__wmLayer.clearLayers();
+                const wm = computeWatermarks();
                 const wmSize = Math.round(baseSize * 1.2);
-                Object.entries(watermarks).forEach(([name, center]) => {
-                    if (!center) return;
-                    const wm = L.marker(center, {
-                        interactive: false,
-                        icon: L.divIcon({
-                            className: 'zone-watermark',
-                            html: `<div style="transform:translate(-50%,-50%);white-space:nowrap;">
-                                <span style="font-size:${wmSize}px;color:rgba(255,255,255,0.55);font-weight:700;text-shadow:0 0 8px rgba(0,0,0,0.3);pointer-events:none;">${name}</span>
-                            </div>`,
-                            iconSize: null,
-                            iconAnchor: [0, 0]
-                        })
+                const landEntries = Object.entries(wm.landWm).map(([name, center]) => ({
+                    text: name, center: center, size: wmSize
+                }));
+                renderWatermarks(landEntries);
+
+                // For each group, show only one label at the group centroid
+                Object.entries(groups).forEach(([key, labels]) => {
+                    let latSum = 0, lngSum = 0, count = 0;
+                    labels.forEach(l => {
+                        const c = l._originalCenter;
+                        if (c) { latSum += c[0]; lngSum += c[1]; count++; }
                     });
-                    window.__wmLayer.addLayer(wm);
+                    const groupCenter = count > 0 ? [latSum / count, lngSum / count] : labels[0]._originalCenter;
+
+                    labels.forEach((label, i) => {
+                        const el = label.getElement();
+                        if (i === 0) {
+                            if (el) el.style.display = '';
+                            label.setLatLng(groupCenter);
+                            const zone = label._zone;
+                            const scale = zone ? (zone.label_scale || 1.0) : 1.0;
+                            const size = baseSize * scale;
+                            const span = el ? el.querySelector('span') : null;
+                            if (span) {
+                                span.style.fontSize = size + 'px';
+                                span.textContent = key;  // xx-xx level: label is just xx-xx
+                            }
+                        } else {
+                            if (el) el.style.display = 'none';
+                        }
+                    });
                 });
             }
         } else {
-            // Full zoom: show all individual labels at original positions
-            // Rebuild watermarks at full zoom level too
-            if (window.__wmLayer) {
-                window.__wmLayer.clearLayers();
+            // Full zoom (or labels hidden): show all individual labels at original positions.
+            // Watermarks here always show the Land (big), plus — at deep zoom — a smaller
+            // 通用名称 watermark under each land, EXCEPT when the name adds no information
+            // (land has only one name, or name === land name). Name dedup lives in
+            // computeWatermarks() so this branch just renders what it returns.
+            if (showLabels) {
+                const wmFull = computeWatermarks();
                 const wmFullSize = Math.round(baseSize * 1.2);
-                // At full zoom, baseSize is tiny — use zoom 17 watermark size instead
                 const wmZoom17Size = Math.round(getLabelFontSize(17) * 1.2);
-                const wmEffectiveSize = Math.max(wmFullSize, wmZoom17Size);
-                const wmDone = {};
-                zoneLabels.forEach(label => {
-                    const zone = label._zone;
-                    // At deep zoom (>18) show the common name; at zoom <=18 show the Land
-                    const wmKey = zone ? (zoom > 18 ? (zone.name || zone.land_name) : (zone.land_name || zone.name)) : null;
-                    if (!wmKey || wmDone[wmKey]) return;
-                    wmDone[wmKey] = true;
-                    // Collect all centers for zones sharing this watermark key
-                    let sLat = 0, sLng = 0, cnt = 0;
-                    zoneLabels.forEach(l => {
-                        const lKey = l._zone ? (zoom > 18 ? (l._zone.name || l._zone.land_name) : (l._zone.land_name || l._zone.name)) : null;
-                        if (lKey === wmKey && l._originalCenter) {
-                            sLat += l._originalCenter[0]; sLng += l._originalCenter[1]; cnt++;
-                        }
-                    });
-                    if (cnt === 0) return;
-                    // When showing the common name (zoom>18), shrink font by 2 "degrees" (×0.7²)
-                    const wmSize = (zoom > 18) ? Math.round(wmEffectiveSize * 0.49) : wmEffectiveSize;
-                    const wm = L.marker([sLat / cnt, sLng / cnt], {
-                        interactive: false,
-                        icon: L.divIcon({
-                            className: 'zone-watermark',
-                            html: `<div style="transform:translate(-50%,-50%);white-space:nowrap;">
-                                <span style="font-size:${wmSize}px;color:rgba(255,255,255,0.55);font-weight:700;text-shadow:0 0 8px rgba(0,0,0,0.3);pointer-events:none;">${wmKey}</span>
-                            </div>`,
-                            iconSize: null, iconAnchor: [0, 0]
-                        })
-                    });
-                    window.__wmLayer.addLayer(wm);
+                const landWmSize = Math.max(wmFullSize, wmZoom17Size);  // baseSize is tiny at full zoom
+                // Name watermark: two "degrees" smaller (×0.7²), only at deep zoom (zoom>18).
+                const nameWmSize = Math.round(landWmSize * 0.49);
+                const entries = [];
+                // Land watermarks (always shown at full zoom)
+                Object.entries(wmFull.landWm).forEach(([name, center]) => {
+                    entries.push({ text: name, center: center, size: landWmSize });
                 });
+                // Name watermarks (deep zoom only, dedup rules already applied)
+                if (zoom > 18) {
+                    Object.entries(wmFull.nameWm).forEach(([name, info]) => {
+                        entries.push({ text: name, center: info.center, size: nameWmSize });
+                    });
+                }
+                renderWatermarks(entries);
+            } else if (window.__wmLayer) {
+                // Labels off (zoom < LABEL_MIN_ZOOM): clear any stale watermarks.
+                window.__wmLayer.clearLayers();
             }
             zoneLabels.forEach(label => {
                 const el = label.getElement();
@@ -613,15 +717,10 @@
                 }
                 // Restore original position
                 if (label._originalCenter) label.setLatLng(label._originalCenter);
-                // Show/hide leader lines with labels
-                if (label._leaderLines) {
-                    label._leaderLines.forEach(line => {
-                        const le = line.getElement();
-                        if (le) le.style.display = showLabels ? '' : 'none';
-                    });
-                }
             });
         }
+        // Leader lines / ring sublabels follow the current 连线 toggle + zoom visibility.
+        syncMultiBoundaryDisplay(showLabels, zoom);
         // Landmark labels: same zoom-based scaling, no per-item scale
         const lmSize = baseSize * 0.85;
         landmarkLabels.forEach(label => {
@@ -643,6 +742,7 @@
         zonesLayerGroup.clearLayers();
         labelsLayerGroup.clearLayers();
         if (leaderLinesLayerGroup) leaderLinesLayerGroup.clearLayers();
+        if (ringLabelsLayerGroup) ringLabelsLayerGroup.clearLayers();
         zoneLabels = [];
 
         zones.forEach(zone => {
@@ -651,19 +751,10 @@
             }
 
             try {
-                let zoneStyle;
-                if (zone.boundary_color) {
-                    zoneStyle = {
-                        color: zone.boundary_color,
-                        weight: _bW,
-                        opacity: _bO,
-                        fillColor: zone.boundary_color,
-                        fillOpacity: _bFO,
-                        dashArray: _bD
-                    };
-                } else {
-                    zoneStyle = getStyleForStatus(zone.status);
-                }
+                // Color rule: green default; orange if needs_attention (unconfirmed
+                // remarks OR unresolved 待修); red only when user-selected (highlight).
+                // The per-zone imported boundary_color is intentionally ignored.
+                let zoneStyle = zone.needs_attention ? attentionStyle : defaultStyle;
 
                 const zoneData = {
                     id: zone.id,
@@ -1206,15 +1297,8 @@
         if (!zone || !zone.boundary_points) return;
         zone.smooth_override = zoneData.smooth_override;
 
-        let zoneStyle;
-        const color = zone.boundary_color || '#2D6A4F';
-        if (zone.status === 'in_progress') {
-            zoneStyle = {...statusStyles.in_progress, color};
-        } else if (zone.status === 'completed') {
-            zoneStyle = {...statusStyles.completed, color};
-        } else {
-            zoneStyle = {...defaultStyle, color};
-        }
+        // Color rule mirrors initial render: green default, orange if needs_attention.
+        let zoneStyle = zone.needs_attention ? {...attentionStyle} : {...defaultStyle};
 
         if (isMultiPolygonFormat(zone.boundary_points)) {
             // Check nested multi-group and flatten
@@ -1647,11 +1731,11 @@
                 if (map.hasLayer(labelsLayerGroup)) map.removeLayer(labelsLayerGroup);
             }
         } else if (layer === 'leader_lines') {
-            if (visible) {
-                if (!map.hasLayer(leaderLinesLayerGroup)) map.addLayer(leaderLinesLayerGroup);
-            } else {
-                if (map.hasLayer(leaderLinesLayerGroup)) map.removeLayer(leaderLinesLayerGroup);
-            }
+            // 连线 toggle: ON  → leader lines visible, ring sublabels hidden
+            //              OFF → leader lines hidden, each boundary gets its own small label
+            window._leaderLinesVisible = visible;
+            const z = map.getZoom();
+            syncMultiBoundaryDisplay(z >= LABEL_MIN_ZOOM, z);
         } else if (layer === 'pipelines') {
             if (visible) {
                 if (!map.hasLayer(pipelinesLayerGroup)) map.addLayer(pipelinesLayerGroup);

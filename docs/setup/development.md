@@ -34,6 +34,28 @@ python manage.py createsuperuser
 python manage.py runserver
 ```
 
+## Static Files
+
+There are **two** static directories by design (this is standard Django, not a bug):
+
+- **`internal_server/static/`** — the *source* of truth for project CSS/JS/images. **Edit files here.** This is what gets committed to git.
+- **`internal_server/staticfiles/`** — the *collected* output (`STATIC_ROOT`) that WhiteNoise serves in production. It is gitignored and **regenerated** by `collectstatic`. Never edit or commit files here.
+
+**Local dev (`DEBUG=True`):** `runserver` serves directly from `static/`, so you don't need `collectstatic`.
+
+**Production:** WhiteNoise serves from `staticfiles/`. Because that directory is no longer committed, **every deploy must run `collectstatic`** or the server will serve stale/missing CSS/JS. Use the deploy helper:
+
+```bash
+cd internal_server
+./deploy.sh            # git pull + collectstatic + migrate, then restart your app process
+```
+
+Restart the app process the way you normally do afterward (e.g. `sudo systemctl restart <service>`). If you deploy manually instead, the essential step is:
+
+```bash
+python manage.py collectstatic --noinput --clear
+```
+
 ## Cloud Relay Setup
 
 ```bash
