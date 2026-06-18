@@ -101,6 +101,7 @@
         _selectedZoneCodes.clear();
         _photoFiles = [];
         _zoneConfirmed = false;
+        resetWoZoneRecords();
 
         // Fetch form data in background (cached or from API)
         var dataUrl = type === 'workorder' ? '/api/modal/workorder-data/' : '/api/modal/water-request-data/';
@@ -127,6 +128,7 @@
         _currentModal = 'workorder';
         _selectedZoneCodes.clear();
         _photoFiles = [];
+        resetWoZoneRecords();
         zoneCodes.forEach(function (c) { _selectedZoneCodes.add(c); });
         _zoneConfirmed = true;
 
@@ -374,41 +376,16 @@
         confirmBtn.textContent = !_zoneConfirmed ? '确认区域' : '返回表单';
     }
 
-    function getZoneNameMap() {
-        var map = {};
-        var zl = window._dashboardZonesLayer;
-        if (zl) zl.eachLayer(function (l) {
-            if (l.zoneData && l.zoneData.code && l.zoneData.name) map[l.zoneData.code] = l.zoneData.name;
-        });
-        // Fallback: try sidebar items
-        if (Object.keys(map).length === 0) {
-            document.querySelectorAll('.zone-item[data-zone-code]').forEach(function (el) {
-                var code = el.getAttribute('data-zone-code');
-                var nameEl = el.querySelector('.zone-name');
-                if (code && nameEl) map[code] = nameEl.textContent.trim();
-            });
-        }
-        return map;
-    }
-
     function renderZoneSummary() {
         var type = _currentModal || 'workorder';
         var el = $(type === 'workorder' ? 'woZoneSummary' : 'wrZoneSummary');
         if (!el) return;
         var codes = Array.from(_selectedZoneCodes);
         if (codes.length === 0) { el.innerHTML = '<h2>' + (type === 'workorder' ? '工作记录' : '浇水需求') + '</h2>'; return; }
-        // Deduplicate zone names
-        var nameMap = getZoneNameMap();
-        var seenNames = {};
-        var uniqueNames = [];
-        codes.forEach(function (c) {
-            var name = nameMap[c] || c;
-            if (!seenNames[name]) { seenNames[name] = true; uniqueNames.push(name); }
-        });
-        var tags = uniqueNames.map(function (n) {
-            return '<span style="background:#e8f5e9;color:#2D6A4F;padding:2px 7px;border-radius:10px;font-size:0.85em;font-weight:500;white-space:nowrap;">' + n + '</span>';
-        }).join('');
-        el.innerHTML = '<div style="font-size:0.85em;color:#888;margin-bottom:4px;">已选 <span style="font-weight:600;color:#2D6A4F;">' + codes.length + '</span> 个区域</div><div style="display:flex;flex-wrap:wrap;gap:3px;max-height:2.4em;overflow:hidden;line-height:1.2;">' + tags + '</div>';
+        // Only show the count — listing every selected zone name overflowed the header
+        // when many zones were picked. The full selection is still visible on the map.
+        el.innerHTML = '<h2>' + (type === 'workorder' ? '工作记录' : '浇水需求') +
+            ' <span style="font-size:0.7em;font-weight:500;color:#2D6A4F;">已选 ' + codes.length + ' 个区域</span></h2>';
     }
 
     window._clearModalSelection = function () { clearSelection(); updateInfoBarText(); };
@@ -475,34 +452,32 @@
     var _woSearchBound = false;
     var _woNameChipsBuilt = false;
 
-    // Source of truth for all zones: prefer the global zonesData list (has every zone),
-    // fall back to parsing #zones-data directly, then the map layer group.
-    var _parsedZonesCache = null;
-    function getAllWoZones() {
+    // Source of truth for all zones: prefer the global zonesData list (has every zone,
+    // including boundary-less ones), fall back to the map layer group. Returns array of
+    // {code, name, land_id, land_name}. Built once per modal session and cached — the zone
+    // set is static for a page load, so rescanning 2510 zones on every helper call would be
+    // wasteful (buildWoNameChips alone used to do ~120k iterations via per-chip rescans).
+    var _woZoneRecords = null;
+    function getWoZoneRecords() {
+        if (_woZoneRecords) return _woZoneRecords;
         var out = [];
-        var src = (window.zonesData && Array.isArray(window.zonesData) && window.zonesData.length)
-            ? window.zonesData : null;
-        if (!src) {
-            if (!_parsedZonesCache) {
-                var el = document.getElementById('zones-data');
-                if (el && el.textContent) {
-                    try { _parsedZonesCache = JSON.parse(el.textContent); } catch (e) { _parsedZonesCache = []; }
-                }
-            }
-            src = _parsedZonesCache;
-        }
-        if (src) {
-            src.forEach(function (z) {
-                if (z && z.code) out.push({ code: z.code, name: z.name || '' });
+        if (window.zonesData && Array.isArray(window.zonesData)) {
+            window.zonesData.forEach(function (z) {
+                if (z && z.code) out.push({ code: z.code, name: z.name || '', land_id: z.land_id || null, land_name: z.land_name || '' });
             });
-            if (out.length) return out;
+        } else {
+            var zl = window._dashboardZonesLayer;
+            if (zl) zl.eachLayer(function (l) {
+                if (l.zoneData && l.zoneData.code) out.push({ code: l.zoneData.code, name: l.zoneData.name || '', land_id: null, land_name: '' });
+            });
         }
-        var zl = window._dashboardZonesLayer;
-        if (zl) zl.eachLayer(function (l) {
-            if (l.zoneData && l.zoneData.code) out.push({ code: l.zoneData.code, name: l.zoneData.name || '' });
-        });
+        _woZoneRecords = out;
         return out;
     }
+
+    // Invalidate the cache when a new modal session starts (zonesData could in principle
+    // differ across sessions if the page reloads partial data).
+    function resetWoZoneRecords() { _woZoneRecords = null; }
 
     function showWoSelectBar() {
         var bar = $('v2WoSelectBar'); if (bar) bar.style.display = '';
@@ -562,7 +537,7 @@
         if (!container) return;
         var input = $('woZoneSearchInput');
         var q = (input && input.value || '').trim().toLowerCase();
-        var all = getAllWoZones();
+        var all = getWoZoneRecords();
         var matches;
         if (!q) {
             // No query: list all, natural-sorted by code
@@ -599,76 +574,246 @@
         });
     }
 
-    // ── Common-name multiselect tab ──
+    // ── Common-name multiselect tab (2-level: Land → 通用名称 within that Land) ──
+    // Level 1 lists every Land (所属Land). Tapping one opens a bottom-sheet popup
+    // (level 2) showing the distinct zone 通用名称 inside that Land, each selectable.
+    // After the popup closes the user is back on the tab and can pick another Land, or
+    // switch to the search / map tabs — selections accumulate in _selectedZoneCodes.
+    function getWoLands() {
+        // Build {id,name,zoneCount,nameCount} for lands that contain named zones.
+        // nameCount = number of DISTINCT 通用名称 in the land — used to decide whether
+        // tapping the land needs a level-2 popup (nameCount > 1) or can toggle directly.
+        var landMap = {};
+        var order = [];
+        getWoZoneRecords().forEach(function (z) {
+            if (z.land_id == null || !z.land_name) return;
+            if (!landMap[z.land_id]) {
+                landMap[z.land_id] = { id: z.land_id, name: z.land_name, zoneCount: 0, names: {} };
+                order.push(z.land_id);
+            }
+            var L = landMap[z.land_id];
+            L.zoneCount++;
+            if (z.name && !L.names[z.name]) L.names[z.name] = true;
+        });
+        var lands = order.map(function (id) {
+            var L = landMap[id];
+            return { id: L.id, name: L.name, zoneCount: L.zoneCount, nameCount: Object.keys(L.names).length };
+        });
+        lands.sort(function (a, b) { return a.name.localeCompare(b.name, 'zh'); });
+        return lands;
+    }
+
+    function getWoNamesForLand(landId) {
+        var seen = {}, names = [];
+        getWoZoneRecords().forEach(function (z) {
+            if (z.land_id !== landId) return;
+            if (!z.name) return;
+            if (!seen[z.name]) { seen[z.name] = true; names.push(z.name); }
+        });
+        names.sort(function (a, b) { return a.localeCompare(b, 'zh'); });
+        return names;
+    }
+
     function buildWoNameChips() {
         var container = $('woNameChips');
         if (!container) return;
-        // Always rebuild to reflect current selection state, but compute the name list once
-        var names = [];
-        var seen = {};
-        getAllWoZones().forEach(function (z) {
-            if (!z.name) return;            // skip zones without a common name
-            if (!seen[z.name]) { seen[z.name] = true; names.push(z.name); }
-        });
-        names.sort();
+        var lands = getWoLands();
         container.innerHTML = '';
-        if (names.length === 0) {
-            container.innerHTML = '<div style="font-size:0.85em;color:#aaa;padding:8px;">无通用名称数据</div>';
+        if (lands.length === 0) {
+            container.innerHTML = '<div style="font-size:0.85em;color:#aaa;padding:8px;">无所属Land数据</div>';
             return;
         }
-        names.forEach(function (nm) {
+        var hint = document.createElement('div');
+        hint.style.cssText = 'font-size:0.78em;color:#999;width:100%;margin-bottom:4px;';
+        hint.textContent = '点击Land选择其中的通用名称';
+        container.appendChild(hint);
+        lands.forEach(function (land) {
             var chip = document.createElement('div');
             chip.className = 'v2-chip';
-            chip.style.cssText = 'font-size:0.85em;padding:3px 8px;';
-            chip.textContent = nm;
-            chip.dataset.name = nm;
-            // initial active state
-            if (isWoNameFullySelected(nm)) chip.classList.add('active');
+            chip.style.cssText = 'font-size:0.85em;padding:5px 10px;';
+            setWoLandChipState(chip, land.id);
+            var label = document.createElement('span');
+            label.textContent = land.name;
+            chip.appendChild(label);
+            // Badge: only meaningful when there is more than one name to disambiguate.
+            if (land.nameCount > 1) {
+                var badge = document.createElement('span');
+                badge.style.cssText = 'margin-left:5px;font-size:0.8em;color:#aaa;';
+                badge.textContent = '(' + land.nameCount + ')';
+                chip.appendChild(badge);
+            }
+            chip.dataset.landId = land.id;
             chip.addEventListener('click', function () {
-                var select = !isWoNameFullySelected(nm);
-                selectZonesByName(nm, select);
-                chip.classList.toggle('active', select);
-                updateInfoBarText();
+                // Single-name land: no level-2 popup needed — toggle that one name directly,
+                // behaving like a flat chip (same as the level-1 interaction).
+                if (land.nameCount <= 1) {
+                    // If anything in this land is selected, clear all of it; otherwise select all.
+                    var select = !isWoLandPartiallySelected(land.id);
+                    selectZonesByLand(land.id, select);
+                    setWoLandChipState(chip, land.id);
+                    updateInfoBarText();
+                } else {
+                    openWoLandNamePopup(land);
+                }
             });
             container.appendChild(chip);
         });
     }
 
-    // Refresh active state of existing name chips after selection changes elsewhere.
+    function ensureWoLandNamePopup() {
+        // Lazily create the shared bottom-sheet popup for picking names within a land.
+        if ($('woLandNamePopup')) return $('woLandNamePopup');
+        var overlay = document.createElement('div');
+        overlay.id = 'woLandNamePopup';
+        overlay.className = 'v2-sheet-overlay';
+        overlay.style.zIndex = 4150;
+        overlay.innerHTML =
+            '<div class="v2-sheet">' +
+              '<div style="width:36px;height:4px;background:#ccc;border-radius:2px;margin:10px auto 0;"></div>' +
+              '<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid #f0f0f0;flex-shrink:0;">' +
+                '<span id="woLandNameTitle" style="font-weight:600;"></span>' +
+                '<button type="button" id="woLandNameClose" style="width:32px;height:32px;border:none;background:#f0f0f0;border-radius:50%;font-size:1.1em;cursor:pointer;">×</button>' +
+              '</div>' +
+              // Use the same flowing chip-group layout as the level-1 tab (flex-wrap) so the
+              // 通用名称 chips arrange themselves across rows instead of one-per-line.
+              '<div id="woLandNameBody" class="v2-chip-group" style="gap:6px;flex-wrap:wrap;padding:12px 16px;overflow-y:auto;-webkit-overflow-scrolling:touch;flex:1;min-height:0;align-content:flex-start;"></div>' +
+              '<div style="padding:12px 16px;border-top:1px solid #f0f0f0;display:flex;gap:10px;flex-shrink:0;">' +
+                '<button type="button" id="woLandNameAll" style="flex:1;padding:12px;border:1px solid #2D6A4F;border-radius:10px;font-size:0.92em;font-weight:600;cursor:pointer;background:#fff;color:#2D6A4F;">全选</button>' +
+                '<button type="button" id="woLandNameDone" style="flex:1;padding:12px;border:none;border-radius:10px;font-size:0.92em;font-weight:600;cursor:pointer;background:#2D6A4F;color:#fff;">完成</button>' +
+              '</div>' +
+            '</div>';
+        document.body.appendChild(overlay);
+        overlay.querySelector('#woLandNameClose').addEventListener('click', function () { closeWoLandNamePopup(); });
+        overlay.querySelector('#woLandNameDone').addEventListener('click', function () { closeWoLandNamePopup(); });
+        return overlay;
+    }
+
+    function openWoLandNamePopup(land) {
+        var overlay = ensureWoLandNamePopup();
+        $('woLandNameTitle').textContent = land.name + ' · 通用名称';
+        var body = $('woLandNameBody');
+        var names = getWoNamesForLand(land.id);
+        body.innerHTML = '';
+        if (names.length === 0) {
+            body.innerHTML = '<div style="font-size:0.85em;color:#aaa;padding:8px;">该Land下无通用名称</div>';
+        }
+        names.forEach(function (nm) {
+            var chip = document.createElement('div');
+            chip.className = 'v2-chip' + (isWoNameSelectedInLand(nm, land.id) ? ' active' : '');
+            chip.style.cssText = 'font-size:0.85em;padding:5px 10px;';
+            chip.textContent = nm;
+            chip.dataset.name = nm;
+            chip.addEventListener('click', function () {
+                // Land-scoped: only toggle this name's zones WITHIN this land.
+                var select = !isWoNameSelectedInLand(nm, land.id);
+                selectZonesByNameInLand(nm, land.id, select);
+                chip.classList.toggle('active', select);
+                // The "全选" state depends on every name in this land being selected.
+                allBtn.textContent = isWoLandFullySelected(land.id) ? '清除' : '全选';
+                updateInfoBarText();
+            });
+            body.appendChild(chip);
+        });
+        // "全选" toggles every zone belonging to this land (across all its names).
+        var allBtn = $('woLandNameAll');
+        allBtn.onclick = function () {
+            var selectAll = !isWoLandFullySelected(land.id);
+            selectZonesByLand(land.id, selectAll);
+            allBtn.textContent = selectAll ? '清除' : '全选';
+            // Refresh per-name chip states inside the popup (land-scoped).
+            body.querySelectorAll('.v2-chip[data-name]').forEach(function (c) {
+                c.classList.toggle('active', isWoNameSelectedInLand(c.dataset.name, land.id));
+            });
+            updateInfoBarText();
+        };
+        allBtn.textContent = isWoLandFullySelected(land.id) ? '清除' : '全选';
+        overlay.style.display = 'flex';
+    }
+
+    function closeWoLandNamePopup() {
+        var overlay = $('woLandNamePopup');
+        if (overlay) overlay.style.display = 'none';
+        // Keep the underlying tab's land chips in sync with the new selection.
+        syncWoNameChipsState();
+    }
+
+    // Refresh active state of the level-1 land chips after selection changes elsewhere
+    // (e.g. picks made in the search tab or a land's name popup). Three visual states:
+    //   none selected  → no class
+    //   some selected  → .partial  (light green)
+    //   all selected   → .active   (solid green)
+    function setWoLandChipState(chip, landId) {
+        // One pass over this land's zones (countWoZones) instead of two separate
+        // fully/partially scans, since both only need matching vs. selected counts.
+        var c = countWoZones(function (z) { return z.land_id === landId; });
+        var full = c.matching > 0 && c.selected === c.matching;
+        var any = c.selected > 0 && c.selected < c.matching;
+        chip.classList.toggle('active', full);
+        chip.classList.toggle('partial', any);
+    }
+
     function syncWoNameChipsState() {
-        document.querySelectorAll('#woNameChips .v2-chip').forEach(function (chip) {
-            chip.classList.toggle('active', isWoNameFullySelected(chip.dataset.name));
+        document.querySelectorAll('#woNameChips .v2-chip[data-land-id]').forEach(function (chip) {
+            setWoLandChipState(chip, parseInt(chip.dataset.landId, 10));
         });
     }
 
-    function isWoNameFullySelected(name) {
-        var zl = window._dashboardZonesLayer;
-        var allSelected = true;
-        var found = false;
-        if (zl) zl.eachLayer(function (l) {
-            if (l.zoneData && l.zoneData.name === name && l.zoneData.code) {
-                found = true;
-                if (!_selectedZoneCodes.has(l.zoneData.code)) allSelected = false;
-            }
+    // ── Selection query/update helpers ──
+    // All operate over the cached zone records and the live _selectedZoneCodes set.
+    // A single pass over the records answers "how many matching zones are selected",
+    // which is enough to derive fully/partially/none for any group (name-in-land, whole land).
+
+    // Count {matching, selected} for zones satisfying `pred`. matching = total zones in the
+    // group, selected = how many of those are currently in _selectedZoneCodes.
+    function countWoZones(pred) {
+        var matching = 0, selected = 0;
+        getWoZoneRecords().forEach(function (z) {
+            if (!pred(z)) return;
+            matching++;
+            if (_selectedZoneCodes.has(z.code)) selected++;
         });
-        return found && allSelected;
+        return { matching: matching, selected: selected };
     }
 
-    function selectZonesByName(name, selected) {
-        var zl = window._dashboardZonesLayer;
-        if (!zl) return;
-        zl.eachLayer(function (l) {
-            if (l.zoneData && l.zoneData.name === name && l.zoneData.code) {
-                var code = l.zoneData.code;
-                if (selected) {
-                    _selectedZoneCodes.add(code);
-                    if (!_selectionOverlays[code] && _selectionLayerGroup) addOverlayForCode(code);
-                } else {
-                    _selectedZoneCodes.delete(code);
-                    removeSelectionOverlay(code);
-                }
+    // Select/deselect every zone whose record matches `pred` (e.g. by name or land).
+    // Works for boundary-less zones too: the overlay is added only if the polygon exists.
+    function selectZonesWhere(pred, selected) {
+        getWoZoneRecords().forEach(function (z) {
+            if (!pred(z)) return;
+            var code = z.code;
+            if (selected) {
+                _selectedZoneCodes.add(code);
+                if (!_selectionOverlays[code] && _selectionLayerGroup) addOverlayForCode(code);
+            } else {
+                _selectedZoneCodes.delete(code);
+                removeSelectionOverlay(code);
             }
         });
+    }
+
+    // Land-scoped name selection. A 通用名称 can appear under several Lands; the level-2
+    // popup is about ONE Land, so its per-name chips and "全选" must consider only that
+    // Land's zones (else "全选" disagrees with per-name chips, see git history).
+    function isWoNameSelectedInLand(name, landId) {
+        var c = countWoZones(function (z) { return z.land_id === landId && z.name === name; });
+        return c.matching > 0 && c.selected === c.matching;
+    }
+    function selectZonesByNameInLand(name, landId, selected) {
+        selectZonesWhere(function (z) { return z.land_id === landId && z.name === name; }, selected);
+    }
+
+    function selectZonesByLand(landId, selected) {
+        selectZonesWhere(function (z) { return z.land_id != null && z.land_id === landId; }, selected);
+    }
+
+    // Whole-land selection state, derived from one counting pass each.
+    function isWoLandFullySelected(landId) {
+        var c = countWoZones(function (z) { return z.land_id === landId; });
+        return c.matching > 0 && c.selected === c.matching;
+    }
+    function isWoLandPartiallySelected(landId) {
+        var c = countWoZones(function (z) { return z.land_id === landId; });
+        return c.selected > 0 && c.selected < c.matching;
     }
 
     // Toggle a single zone code selection + overlay (shared by search list & map)
@@ -1076,9 +1221,9 @@
             '<div class="v2-fg"><div class="v2-fl">备注</div><textarea name="remark" class="v2-textarea" placeholder="可选备注..." rows="2"></textarea></div>' +
             '<div class="v2-fg"><div class="v2-fl">照片 (最多6张)</div><div class="v2-photo-area" id="woPhotoArea"><div class="v2-photo-add" id="woPhotoAdd">+</div></div><input type="file" id="woPhotoInput" accept="image/*" multiple style="display:none;"></div>' +
             '<input type="hidden" name="entries" id="woEntriesInput" value="[]"><input type="hidden" name="pm_resolved" id="woPmResolved" value=""></form>' +
-            '<div id="woCatModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:4000;align-items:flex-end;justify-content:center;"><div style="background:#fff;border-radius:16px 16px 0 0;width:100%;max-width:420px;max-height:70vh;overflow-y:auto;"><div style="width:36px;height:4px;background:#ccc;border-radius:2px;margin:10px auto 0;"></div><div style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px 10px;border-bottom:1px solid #f0f0f0;"><span style="font-weight:600;">选择工作类别</span><button type="button" onclick="document.getElementById(\'woCatModal\').style.display=\'none\'" style="width:32px;height:32px;border:none;background:#f0f0f0;border-radius:50%;font-size:1.1em;cursor:pointer;">×</button></div><div style="padding:16px;"><div style="font-size:0.85em;color:#999;margin-bottom:6px;">类别</div><div class="v2-chip-group" id="woCatPrimary"></div><div id="woCatSubDivider" style="display:none;border-top:1px solid #e0e0e0;margin:12px 0;"></div><div id="woCatSubLabel" style="display:none;font-size:0.85em;color:#999;margin-bottom:6px;">子类别</div><div class="v2-chip-group" id="woCatSub"></div></div></div></div>' +
-            '<div id="woTreeModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:4000;align-items:flex-end;justify-content:center;"><div style="background:#fff;border-radius:16px 16px 0 0;width:100%;max-width:420px;max-height:85vh;display:flex;flex-direction:column;"><div style="width:36px;height:4px;background:#ccc;border-radius:2px;margin:10px auto 0;"></div><div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid #f0f0f0;"><span style="font-weight:600;">工作内容</span><button type="button" onclick="document.getElementById(\'woTreeModal\').style.display=\'none\'" style="width:32px;height:32px;border:none;background:#f0f0f0;border-radius:50%;font-size:1.1em;cursor:pointer;">×</button></div><div id="woBreadcrumb" class="v2-wo-bc"></div><div id="woSheetBody" style="flex:1;overflow-y:auto;padding:8px 16px;"></div><div style="padding:12px 16px;border-top:1px solid #f0f0f0;"><button type="button" onclick="document.getElementById(\'woTreeModal\').style.display=\'none\'" style="width:100%;padding:12px;border:none;border-radius:10px;font-size:0.95em;font-weight:600;cursor:pointer;background:#2D6A4F;color:#fff;">完成</button></div></div></div>' +
-            '<div id="woLeafModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:4100;align-items:flex-end;justify-content:center;"><div style="background:#fff;border-radius:16px 16px 0 0;width:100%;max-width:420px;max-height:70vh;display:flex;flex-direction:column;"><div style="width:36px;height:4px;background:#ccc;border-radius:2px;margin:10px auto 0;"></div><div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid #f0f0f0;"><span id="woLeafTitle" style="font-weight:600;"></span><button type="button" onclick="document.getElementById(\'woLeafModal\').style.display=\'none\'" style="width:32px;height:32px;border:none;background:#f0f0f0;border-radius:50%;font-size:1.1em;cursor:pointer;">×</button></div><div id="woLeafBody" style="padding:16px;overflow-y:auto;"></div><div style="padding:12px 16px;border-top:1px solid #f0f0f0;display:flex;gap:10px;"><button type="button" onclick="document.getElementById(\'woLeafModal\').style.display=\'none\'" style="flex:1;padding:12px;border:1px solid #2D6A4F;border-radius:10px;font-size:0.95em;font-weight:600;cursor:pointer;background:#fff;color:#2D6A4F;">取消</button><button type="button" id="woLeafConfirmBtn" style="flex:1;padding:12px;border:none;border-radius:10px;font-size:0.95em;font-weight:600;cursor:pointer;background:#2D6A4F;color:#fff;">确定</button></div></div></div>';
+            '<div id="woCatModal" class="v2-sheet-overlay"><div class="v2-sheet"><div style="width:36px;height:4px;background:#ccc;border-radius:2px;margin:10px auto 0;"></div><div style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px 10px;border-bottom:1px solid #f0f0f0;flex-shrink:0;"><span style="font-weight:600;">选择工作类别</span><button type="button" onclick="document.getElementById(\'woCatModal\').style.display=\'none\'" style="width:32px;height:32px;border:none;background:#f0f0f0;border-radius:50%;font-size:1.1em;cursor:pointer;">×</button></div><div style="padding:16px;overflow-y:auto;-webkit-overflow-scrolling:touch;"><div style="font-size:0.85em;color:#999;margin-bottom:6px;">类别</div><div class="v2-chip-group" id="woCatPrimary"></div><div id="woCatSubDivider" style="display:none;border-top:1px solid #e0e0e0;margin:12px 0;"></div><div id="woCatSubLabel" style="display:none;font-size:0.85em;color:#999;margin-bottom:6px;">子类别</div><div class="v2-chip-group" id="woCatSub"></div></div></div></div>' +
+            '<div id="woTreeModal" class="v2-sheet-overlay"><div class="v2-sheet"><div style="width:36px;height:4px;background:#ccc;border-radius:2px;margin:10px auto 0;"></div><div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid #f0f0f0;flex-shrink:0;"><span style="font-weight:600;">工作内容</span><button type="button" onclick="document.getElementById(\'woTreeModal\').style.display=\'none\'" style="width:32px;height:32px;border:none;background:#f0f0f0;border-radius:50%;font-size:1.1em;cursor:pointer;">×</button></div><div id="woBreadcrumb" class="v2-wo-bc"></div><div id="woSheetBody" style="flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:8px 16px;min-height:0;"></div><div style="padding:12px 16px;border-top:1px solid #f0f0f0;flex-shrink:0;"><button type="button" onclick="document.getElementById(\'woTreeModal\').style.display=\'none\'" style="width:100%;padding:12px;border:none;border-radius:10px;font-size:0.95em;font-weight:600;cursor:pointer;background:#2D6A4F;color:#fff;">完成</button></div></div></div>' +
+            '<div id="woLeafModal" class="v2-sheet-overlay" style="z-index:4100;"><div class="v2-sheet"><div style="width:36px;height:4px;background:#ccc;border-radius:2px;margin:10px auto 0;"></div><div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid #f0f0f0;flex-shrink:0;"><span id="woLeafTitle" style="font-weight:600;"></span><button type="button" onclick="document.getElementById(\'woLeafModal\').style.display=\'none\'" style="width:32px;height:32px;border:none;background:#f0f0f0;border-radius:50%;font-size:1.1em;cursor:pointer;">×</button></div><div id="woLeafBody" style="padding:16px;overflow-y:auto;-webkit-overflow-scrolling:touch;flex:1;min-height:0;"></div><div style="padding:12px 16px;border-top:1px solid #f0f0f0;display:flex;gap:10px;flex-shrink:0;"><button type="button" onclick="document.getElementById(\'woLeafModal\').style.display=\'none\'" style="flex:1;padding:12px;border:1px solid #2D6A4F;border-radius:10px;font-size:0.95em;font-weight:600;cursor:pointer;background:#fff;color:#2D6A4F;">取消</button><button type="button" id="woLeafConfirmBtn" style="flex:1;padding:12px;border:none;border-radius:10px;font-size:0.95em;font-weight:600;cursor:pointer;background:#2D6A4F;color:#fff;">确定</button></div></div></div>';
 
         injectCSRF(body.querySelector('form'));
         initWorkorderBehaviors(data);

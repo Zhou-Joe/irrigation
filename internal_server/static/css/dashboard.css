@@ -1091,11 +1091,26 @@
 .v2-modal-container{
     position:fixed;bottom:0;left:0;right:0;z-index:3001;
     background:#fff;border-radius:16px 16px 0 0;
-    max-height:75vh;display:flex;flex-direction:column;
+    /* Use dvh (dynamic viewport height) where available: on iOS Safari, vh is the
+       large viewport and ignores the collapsing URL bar, so a 75vh sheet renders too
+       tall / gets clipped behind the toolbar. dvh tracks the visible area. The vh
+       fallback is kept for older browsers. */
+    max-height:75vh;max-height:75dvh;
+    display:flex;flex-direction:column;
     transform:translateY(100%);transition:transform 0.3s cubic-bezier(0.22,1,0.36,1);
     box-shadow:0 -4px 24px rgba(0,0,0,0.15);
+    padding-bottom:env(safe-area-inset-bottom,0);
 }
 .v2-modal-container.open{transform:translateY(0)}
+/* Desktop (>=768px): keep the bottom-sheet style but cap the width and center it, so the
+   form isn't stretched edge-to-edge on wide screens. Mobile (<768px) stays full-width. */
+@media (min-width:768px){
+    .v2-modal-container{
+        left:50%;right:auto;width:560px;transform:translate(-50%,100%);
+        border-radius:16px;
+    }
+    .v2-modal-container.open{transform:translate(-50%,0)}
+}
 
 .v2-modal-header{
     display:flex;align-items:center;justify-content:space-between;
@@ -1111,11 +1126,15 @@
 }
 .v2-modal-body{
     flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:16px;
+    /* Room so the last fields are not hidden behind the fixed footer buttons on
+       mobile (especially iOS Safari, where the footer overlaps scroll content). */
+    padding-bottom:calc(16px + env(safe-area-inset-bottom,0));
     min-height:0;
 }
 .v2-modal-footer{
     display:flex;gap:8px;padding:12px 16px;flex-shrink:0;
     border-top:1px solid #eee;background:#fafafa;
+    padding-bottom:calc(12px + env(safe-area-inset-bottom,0));
 }
 
 /* Modal buttons */
@@ -1135,6 +1154,23 @@
     box-shadow:0 2px 8px rgba(27,67,50,0.2);
 }
 .v2-btn-submit:disabled,.v2-btn-map:disabled{opacity:0.5;cursor:not-allowed}
+
+/* Bottom-sheet popups spawned from inside the workorder form (category picker,
+   work-content tree, leaf value editor, and the land→name picker). On iOS Safari
+   these previously used inline max-height:70vh/85vh, which is measured against the
+   large viewport and gets clipped behind the URL bar / home indicator. The shared
+   class below uses dvh (visible area) with a vh fallback, a proper flex-column so
+   the header stays pinned while only the body scrolls, and safe-area padding so the
+   action buttons are never hidden behind the home indicator. */
+.v2-sheet-overlay{
+    position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:4000;
+    display:none;align-items:flex-end;justify-content:center;
+}
+.v2-sheet{
+    background:#fff;border-radius:16px 16px 0 0;width:100%;max-width:420px;
+    max-height:85vh;max-height:85dvh;display:flex;flex-direction:column;
+    padding-bottom:env(safe-area-inset-bottom,0);
+}
 
 /* Modal form elements */
 .v2-fg{margin-bottom:12px}
@@ -1157,6 +1193,10 @@
     transition:all 0.2s;user-select:none;
 }
 .v2-chip.active{border-color:#2D6A4F;background:#e8f5e9;color:#1B4332}
+/* Partial selection: some (not all) of a group's zones are selected. Lighter than
+   .active so users can tell "fully selected" from "partially selected" at a glance.
+   Used by the 通用名称 tab's level-1 Land chips. */
+.v2-chip.partial{border-color:#a5d6a7;background:#f1f8f4;color:#2e6b4f}
 
 /* Photo upload */
 .v2-photo-area{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}
