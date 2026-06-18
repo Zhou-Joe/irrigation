@@ -286,7 +286,11 @@
 
         try {
             const zones = JSON.parse(zonesDataElement.textContent);
-            console.log('Loaded zones:', zones.length, 'zones');
+            // Expose for the sidebar click handler (locate by id even when
+            // a zone has no rendered polygon) and to avoid a second parse.
+            window.zonesData = zones;
+            window._zoneById = {};
+            zones.forEach(function (z) { window._zoneById[z.id] = z; });
             renderZones(zones);
         } catch (error) {
             console.error('Error parsing zones data:', error);
