@@ -8,7 +8,7 @@
 {% block extra_css %}
 <!-- Leaflet CSS -->
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-<link rel="stylesheet" href="{% static 'css/dashboard.css' %}?v=20260622b" />
+<link rel="stylesheet" href="{% static 'css/dashboard.css' %}?v=20260618c" />
 <!-- Dashboard JS needs Django URL, set before external scripts -->
 {% endblock %}
 
@@ -127,6 +127,15 @@
             <div id="mobileLocateSlot"></div>
         </div>
         <div id="map"></div>
+        <!-- Loading overlay shown while the zone payload (~5MB) is fetched/parsed.
+             Removed once renderZones() completes (see map.js applyZones). -->
+        <div id="zone-loading-overlay" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,0.6);z-index:500;pointer-events:none;">
+            <div style="display:flex;flex-direction:column;align-items:center;gap:8px;color:#2D6A4F;">
+                <div style="width:26px;height:26px;border:3px solid #b7d9c8;border-top-color:#2D6A4F;border-radius:50%;animation:zspin .8s linear infinite;"></div>
+                <span style="font-size:0.82em;">加载区域数据…</span>
+            </div>
+        </div>
+        <style>@keyframes zspin{to{transform:rotate(360deg)}}</style>
         <!-- 地图图层控制 -->
         <div class="map-layer-panel" id="mapLayerPanel">
             <button class="map-layer-toggle-btn" id="mapLayerToggleBtn" onclick="toggleLayerPanel()" title="图层控制"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg></button>
@@ -290,7 +299,7 @@
         <div id="woZoneSearchResults" class="wo-zone-search-results"></div>
     </div>
     <div class="v2-draw-content" id="woTabName">
-        <div id="woNameChips" class="v2-chip-group" style="gap:4px;flex-wrap:wrap;max-height:30vh;overflow-y:auto;"></div>
+        <div id="woNameChips" class="v2-chip-group" style="gap:4px;flex-wrap:wrap;max-height:30vh;max-height:30dvh;overflow-y:auto;-webkit-overflow-scrolling:touch;"></div>
     </div>
     <div class="v2-draw-content" id="woTabMap">
         <div style="font-size:0.85em;color:#888;padding:6px 2px;">在地图上点击区域进行选择</div>
@@ -300,10 +309,10 @@
 <!-- V2 Toast -->
 <div id="v2ModalToast"></div>
 
-<!-- Zone data for JavaScript -->
-<script id="zones-data" type="application/json">
-    {{ zones_json|safe }}
-</script>
+<!-- Zone data is now loaded async from /api/zones-payload/ (gzip + browser cache)
+     instead of inlined here. The empty element is kept so map.js's legacy fallback
+     path can detect "no inline data" and trigger the fetch. -->
+<script id="zones-data" type="application/json"></script>
 
 <!-- Pipeline data for JavaScript -->
 <script id="pipelines-data" type="application/json">
@@ -328,8 +337,8 @@
 <script src="{% static 'js/map-config.js' %}?v=20260423"></script>
 <script>window.MAP_STYLE_CONFIG = {{ map_style_json|safe }} || {};</script>
 <!-- Custom Map JS -->
-<script src="{% static 'js/map.js' %}?v=20260620"></script>
-<script src="{% static 'js/dashboard-modal.js' %}?v=20260619"></script>
+<script src="{% static 'js/map.js' %}?v=20260619g"></script>
+<script src="{% static 'js/dashboard-modal.js' %}?v=20260618g"></script>
 <!-- Dashboard JS — pass Django URL to external script -->
 <script>window.HISTORY_URL = '{% url "core:workorder_history" %}';</script>
 <script src="{% static 'js/dashboard.js' %}?v=20260618"></script>

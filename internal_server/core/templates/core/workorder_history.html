@@ -51,6 +51,15 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 .detail-value { font-size: 0.88em; color: #222; line-height: 1.5; }
 .detail-tags { display: flex; flex-wrap: wrap; gap: 4px; }
 .detail-tag { background: #e8f5e9; color: var(--color-primary, #2D6A4F); padding: 2px 8px; border-radius: 8px; font-size: 0.78em; }
+/* Zone hierarchy: Land → 通用名称 → zone codes */
+.zone-hierarchy { font-size: 0.84em; }
+.zone-hier-land { margin-bottom: 6px; }
+.zone-hier-land-name { font-weight: 600; color: var(--color-primary, #2D6A4F); font-size: 0.92em; }
+.zone-hier-land-count { color: #aaa; font-size: 0.82em; font-weight: 400; margin-left: 4px; }
+.zone-hier-names { margin-top: 3px; display: flex; flex-direction: column; gap: 3px; }
+.zone-hier-name-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px; }
+.zone-hier-name { background: #e8f5e9; color: var(--color-primary, #2D6A4F); padding: 2px 8px; border-radius: 8px; font-size: 0.82em; font-weight: 500; }
+.zone-hier-codes { color: #999; font-size: 0.78em; }
 .entry-group-title { font-size:0.8rem; color: var(--color-primary, #2D6A4F); font-weight:600; margin: 8px 0 4px; }
 .entry-row { display:flex; justify-content:space-between; gap:8px; font-size:0.84rem; padding:5px 0; border-bottom:1px solid #efefef; }
 .entry-row:last-child { border-bottom:none; }
@@ -110,8 +119,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
                 {% endif %}
             </div>
 
-            {% if r.zone_names %}
-            <div class="card-zones">{{ r.zone_names }}</div>
+            {% if r.zone_summary %}
+            <div class="card-zones">{{ r.zone_summary }}</div>
             {% endif %}
 
             {% if r.is_pending_repair or r.is_difficult %}
@@ -137,12 +146,22 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
             </div>
             {% endif %}
 
-            {% if r.zones.all %}
+            {% if r.zone_hierarchy %}
             <div class="detail-section">
                 <div class="detail-label">区域</div>
-                <div class="detail-tags">
-                    {% for z in r.zones.all %}
-                    <span class="detail-tag">{{ z.code }}{% if z.name %} {{ z.name }}{% endif %}</span>
+                <div class="zone-hierarchy">
+                    {% for grp in r.zone_hierarchy %}
+                    <div class="zone-hier-land">
+                        <span class="zone-hier-land-name">{{ grp.land }}</span><span class="zone-hier-land-count">{{ grp.zone_count }} 个区域</span>
+                        <div class="zone-hier-names">
+                            {% for nm in grp.names %}
+                            <div class="zone-hier-name-row">
+                                <span class="zone-hier-name">{{ nm.name }}</span>
+                                <span class="zone-hier-codes">{% if nm.count > 1 %}{{ nm.count }} 个 · {% endif %}{{ nm.codes|join:", " }}</span>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
                     {% endfor %}
                 </div>
             </div>
