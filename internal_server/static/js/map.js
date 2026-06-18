@@ -287,6 +287,8 @@
 
         // Update zone label sizes on zoom (debounced — see updateLabelSizesDebounced)
         map.on('zoomend', updateLabelSizesDebounced);
+        // Re-cull labels to the viewport after panning so only on-screen labels render.
+        map.on('moveend', _cullLabelsToViewportDebounced);
 
         // Close popup when clicking on empty map space
         map.on('click', function(e) {
@@ -619,6 +621,30 @@
     const updateLabelSizesDebounced = _debounce(updateLabelSizes, 120);
 
     /**
+     * Hide zone labels whose center is outside the current viewport (plus a small margin).
+     *
+     * ~1100 label markers always live in the DOM; at full zoom most are off-screen, but
+     * Leaflet still transforms every one of them on pan/zoom — the main source of mobile
+     * jank. Culling to the visible viewport keeps only the few hundred on-screen labels
+     * laid out, so panning stays smooth. Only meaningful at zoom>=18 (individual labels);
+     * at lower zoom levels labels are already grouped/hidden.
+     */
+    function _cullLabelsToViewport() {
+        const z = map.getZoom();
+        if (z < 18) return;
+        const pad = 0.002;  // ~200m margin so labels at the edge stay visible while panning
+        const b = map.getBounds().pad(pad);
+        zoneLabels.forEach(label => {
+            const el = label.getElement();
+            if (!el) return;
+            const c = label._originalCenter;
+            const inView = c && b.contains(L.latLng(c[0], c[1]));
+            el.style.display = inView ? '' : 'none';
+        });
+    }
+    const _cullLabelsToViewportDebounced = _debounce(_cullLabelsToViewport, 80);
+
+    /**
      * Update all zone label sizes on zoom change
      */
     function updateLabelSizes() {
@@ -690,24 +716,20 @@
                 });
             }
         } else {
-            // Full zoom (or labels hidden): show all individual labels at original positions.
-            // Watermarks here always show the Land (big), plus — at deep zoom — a smaller
-            // 通用名称 watermark under each land, EXCEPT when the name adds no information
-            // (land has only one name, or name === land name). Name dedup lives in
-            // computeWatermarks() so this branch just renders what it returns.
+            // Full zoom (zoom>=18): show individual labels at original positions.
+            // Watermarks show the Land (big), plus — at deep zoom — a smaller 通用名称
+            // watermark under each land, EXCEPT when the name adds no information (land has
+            // only one name, or name === land name). Name dedup lives in computeWatermarks().
             if (showLabels) {
                 const wmFull = computeWatermarks();
                 const wmFullSize = Math.round(baseSize * 1.2);
                 const wmZoom17Size = Math.round(getLabelFontSize(17) * 1.2);
                 const landWmSize = Math.max(wmFullSize, wmZoom17Size);  // baseSize is tiny at full zoom
-                // Name watermark: two "degrees" smaller (×0.7²), only at deep zoom (zoom>18).
                 const nameWmSize = Math.round(landWmSize * 0.49);
                 const entries = [];
-                // Land watermarks (always shown at full zoom)
                 Object.entries(wmFull.landWm).forEach(([name, center]) => {
                     entries.push({ text: name, center: center, size: landWmSize });
                 });
-                // Name watermarks (deep zoom only, dedup rules already applied)
                 if (zoom > 18) {
                     Object.entries(wmFull.nameWm).forEach(([name, info]) => {
                         entries.push({ text: name, center: info.center, size: nameWmSize });
@@ -721,7 +743,9 @@
             zoneLabels.forEach(label => {
                 const el = label.getElement();
                 if (el) {
-                    el.style.display = showLabels ? '' : 'none';
+                    // Style/position every label, but visibility is decided by viewport
+                    // culling below (off-screen labels hidden to keep pan smooth).
+                    el.style.display = 'none';
                     if (showLabels) {
                         const zone = label._zone;
                         const scale = zone ? (zone.label_scale || 1.0) : 1.0;
@@ -736,6 +760,8 @@
                 // Restore original position
                 if (label._originalCenter) label.setLatLng(label._originalCenter);
             });
+            // At full zoom, only show labels inside the viewport (off-screen ones stay hidden).
+            if (showLabels) _cullLabelsToViewport();
         }
         // Leader lines / ring sublabels follow the current 连线 toggle + zoom visibility.
         syncMultiBoundaryDisplay(showLabels, zoom);
@@ -1744,9 +1770,14 @@
         } else if (layer === 'labels') {
             if (visible) {
                 if (!map.hasLayer(labelsLayerGroup)) map.addLayer(labelsLayerGroup);
+                // Ring sublabels (per-boundary labels shown when 连线 is OFF) are part of
+                // the labels layer conceptually; restore them too if they were present.
+                if (ringLabelsLayerGroup && !map.hasLayer(ringLabelsLayerGroup)) map.addLayer(ringLabelsLayerGroup);
                 updateLabelSizes();
             } else {
                 if (map.hasLayer(labelsLayerGroup)) map.removeLayer(labelsLayerGroup);
+                // Hide ring sublabels together with the main labels.
+                if (ringLabelsLayerGroup && map.hasLayer(ringLabelsLayerGroup)) map.removeLayer(ringLabelsLayerGroup);
             }
         } else if (layer === 'leader_lines') {
             // 连线 toggle: ON  → leader lines visible, ring sublabels hidden
