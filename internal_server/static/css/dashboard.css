@@ -1167,11 +1167,19 @@
 .v2-sheet-overlay{
     position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:4000;
     display:none;align-items:flex-end;justify-content:center;
+    /* Allow vertical touch scrolling to pass through to the sheet body. Without this,
+       iOS Safari treats the fixed overlay as a scroll-capture surface and the inner
+       overflow-y:auto body can't be scrolled by touch. */
+    touch-action:manipulation;
 }
 .v2-sheet{
     background:#fff;border-radius:16px 16px 0 0;width:100%;max-width:420px;
     max-height:85vh;max-height:85dvh;display:flex;flex-direction:column;
     padding-bottom:env(safe-area-inset-bottom,0);
+    /* A definite height cap makes the inner flex body's overflow-y actually scroll on
+       iOS (an unconstrained flex child won't scroll there). min-height:0 on the body
+       + this max-height gives the body a bounded height to scroll within. */
+    overflow:hidden;
 }
 
 /* Modal form elements */
