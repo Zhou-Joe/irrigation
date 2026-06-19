@@ -1,57 +1,83 @@
 {% extends 'core/base.html' %}
 {% load static %}
+{% load media_tags %}
 
 {% block title %}维修日志{% endblock %}
 {% block nav_work_reports %}active{% endblock %}
 
 {% block extra_css %}
 <style>
-  .page-wrap { max-width: 1400px; margin: 0 auto; padding: var(--space-lg); }
-  .page-head { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; margin-bottom: var(--space-md); }
-  .page-head h1 { font-size: 1.4rem; color: var(--color-text-primary); margin:0; }
-  .page-head .actions { display:flex; gap:8px; }
+  /* Mobile-first list. Cards on phones, table-style rows on wider screens. */
+  .wr-list-wrap { max-width: 1100px; margin: 0 auto; padding: 12px; }
+  .wr-list-head { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; margin-bottom: 12px; }
+  .wr-list-head h1 { font-size: 1.25rem; margin: 0; }
 
-  .msg { padding: 10px 14px; border-radius: var(--radius-md); margin-bottom: var(--space-md); font-size: 0.9rem; }
+  .msg { padding: 10px 14px; border-radius: 8px; margin-bottom: 12px; font-size: 0.9rem; }
   .msg-success { background: rgba(64,145,108,0.12); color: var(--color-success); }
   .msg-error   { background: rgba(155,34,38,0.12); color: var(--color-error); }
   .msg-info    { background: rgba(82,183,136,0.12); color: var(--color-info); }
   .msg-warning { background: rgba(204,119,34,0.12); color: var(--color-warning); }
 
-  .filter-card { background: var(--color-surface); border-radius: var(--radius-md); padding: var(--space-md); margin-bottom: var(--space-md); }
-  .filter-row { display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; }
+  .filter-card { background: var(--color-surface, #fff); border-radius: 10px; padding: 12px; margin-bottom: 12px; }
+  .filter-row { display:flex; gap:8px; flex-wrap:wrap; align-items:flex-end; }
   .ff { display:flex; flex-direction:column; gap:3px; }
-  .ff label { font-size: 0.72rem; color: var(--color-text-muted); }
+  .ff label { font-size: 0.7rem; color: var(--color-text-muted, #999); }
   .ff input[type=date], .ff select { padding: 6px 8px; border:1px solid var(--color-border, #ddd); border-radius: 6px; font-size: 0.85rem; background:#fff; }
-  .check-inline { display:flex; align-items:center; gap:4px; font-size:0.82rem; color: var(--color-text-secondary); padding-bottom:6px; cursor:pointer; }
+  .check-inline { display:flex; align-items:center; gap:4px; font-size:0.8rem; color: var(--color-text-secondary, #555); padding-bottom:6px; cursor:pointer; }
 
-  .table-card { background:#fff; border-radius: var(--radius-md); overflow:hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
-  .table-scroll { overflow-x:auto; }
-  table.wr { width:100%; border-collapse:collapse; font-size:0.82rem; }
-  table.wr thead th { background: var(--color-primary); color: var(--color-text-inverse); padding:9px 10px; text-align:left; white-space:nowrap; font-weight:600; }
-  table.wr tbody td { padding:8px 10px; border-bottom:1px solid var(--color-surface-dark); vertical-align:middle; }
-  table.wr tbody tr:nth-child(even) { background: var(--color-surface-alt); }
-  table.wr tbody tr:hover { background: rgba(45,106,79,0.06); }
+  /* Report cards */
+  .wr-card {
+    background: var(--color-surface, #fff); border-radius: 10px; padding: 12px;
+    margin-bottom: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+  }
+  .wr-card-top { display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; margin-bottom: 6px; }
+  .wr-card-id { font-size: 0.95rem; font-weight: 600; color: var(--color-primary, #2D6A4F); }
+  .wr-card-date { font-size: 0.78rem; color: var(--color-text-muted, #999); }
+  .wr-card-flags { display:flex; gap:4px; }
+  .wr-meta { display:grid; grid-template-columns: 1fr; gap: 5px; font-size: 0.82rem; }
+  .wr-meta-row { display:flex; gap:6px; }
+  .wr-meta-label { color: var(--color-text-muted, #999); flex-shrink:0; width: 4em; }
+  .wr-meta-val { color: var(--color-text, #333); word-break: break-word; }
+  .wr-chip { display:inline-block; padding:1px 7px; border-radius:8px; font-size:0.72rem; font-weight:500; background: #e8f5e9; color: #2D6A4F; margin:1px 2px 1px 0; }
+  .wr-chip.count { background: var(--color-primary, #2D6A4F); color:#fff; }
+  .wr-chip.legacy { background: #eee; color:#888; }
+  .wr-flag { display:inline-block; padding:1px 7px; border-radius:8px; font-size:0.7rem; font-weight:600; }
+  .wr-flag.pending { background: rgba(204,119,34,0.15); color: var(--color-warning, #CC7722); }
+  .wr-flag.difficult { background: rgba(155,34,38,0.12); color: var(--color-error, #9B2226); }
+  .wr-flag.resolved { background: rgba(64,145,108,0.15); color: var(--color-success, #40916C); }
+  .wr-zone-summary { font-size: 0.8rem; color: var(--color-text-secondary, #555); }
+  .wr-entries { font-size: 0.8rem; color: var(--color-text-secondary, #555); }
+  .wr-card-actions { display:flex; gap:6px; margin-top: 8px; }
+  .wr-act { font-size: 0.82rem; padding: 4px 12px; border-radius: 6px; text-decoration: none; font-weight: 500; }
+  .wr-act.view { background: #e8f5e9; color: #2D6A4F; }
+  .wr-act.edit { background: var(--color-surface-dark, #f0f0f0); color: var(--color-text, #333); }
 
-  .chip { display:inline-block; padding:1px 7px; border-radius:10px; font-size:0.7rem; font-weight:500; background: rgba(45,106,79,0.12); color: var(--color-primary-light); margin:1px 2px 1px 0; }
-  .chip-legacy { background: rgba(136,136,136,0.15); color:#888; }
-  .flag { display:inline-block; padding:1px 7px; border-radius:10px; font-size:0.7rem; font-weight:600; }
-  .flag-pending { background: rgba(204,119,34,0.15); color: var(--color-warning); }
-  .flag-difficult { background: rgba(155,34,38,0.12); color: var(--color-error); }
-  .flag-resolved { background: rgba(64,145,108,0.15); color: var(--color-success); }
-  .count-badge { font-size:0.68rem; background: var(--color-primary); color:#fff; padding:0 5px; border-radius:8px; margin-left:3px; }
+  /* Photo thumbs inline */
+  .wr-photo-row { display:flex; gap:4px; flex-wrap:wrap; margin-top: 4px; }
+  .wr-photo-thumb { width: 40px; height: 40px; border-radius: 5px; overflow:hidden; position:relative; }
+  .wr-photo-thumb img, .wr-photo-thumb video { width:100%; height:100%; object-fit:cover; }
+  .wr-photo-play { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); background:rgba(0,0,0,0.5); color:#fff; border-radius:50%; width:16px; height:16px; display:flex; align-items:center; justify-content:center; font-size:0.6em; }
 
-  .row-actions a { margin-right:6px; }
-  .row-actions .act-view { color: var(--color-primary-light); }
-  .row-actions .act-edit { color: var(--color-accent); }
-  .photo-trigger { cursor:pointer; color: var(--color-primary-light); }
-  .muted { color: var(--color-text-muted); }
-  .ellipsis { max-width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .wr-empty { padding: 36px; text-align:center; color: var(--color-text-muted, #999); }
+  @media (min-width: 600px) {
+    .wr-meta { grid-template-columns: 1fr 1fr; }
+  }
+
+  /* Lightbox */
+  .lb-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.9); z-index:3000; justify-content:center; align-items:center; }
+  .lb-overlay.show { display:flex; }
+  .lb-img, .lb-video { max-width:92vw; max-height:86vh; border-radius:8px; object-fit:contain; }
+  .lb-close { position:absolute; top:12px; right:20px; color:#fff; font-size:2rem; cursor:pointer; background:none; border:none; line-height:1; }
+  .lb-nav { position:absolute; top:50%; transform:translateY(-50%); color:#fff; font-size:2.2rem; cursor:pointer; background:rgba(0,0,0,0.4); border:none; border-radius:50%; width:44px; height:44px; display:flex; align-items:center; justify-content:center; }
+  .lb-prev { left:12px; }
+  .lb-next { right:12px; }
+  .lb-counter { position:absolute; bottom:16px; left:50%; transform:translateX(-50%); color:rgba(255,255,255,0.7); font-size:0.85rem; }
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="page-wrap">
-    <div class="page-head">
+<div class="wr-list-wrap">
+    <div class="wr-list-head">
         <h1>维修日志</h1>
     </div>
 
@@ -63,40 +89,25 @@
 
     <div class="filter-card">
         <form method="get" class="filter-row">
-            <div class="ff">
-                <label>起始日期</label>
-                <input type="date" name="date_from" value="{{ filters.date_from }}">
-            </div>
-            <div class="ff">
-                <label>截止日期</label>
-                <input type="date" name="date_to" value="{{ filters.date_to }}">
-            </div>
-            <div class="ff">
-                <label>CCU</label>
+            <div class="ff"><label>起始日期</label><input type="date" name="date_from" value="{{ filters.date_from }}"></div>
+            <div class="ff"><label>截止日期</label><input type="date" name="date_to" value="{{ filters.date_to }}"></div>
+            <div class="ff"><label>CCU</label>
                 <select name="location">
                     <option value="">全部</option>
-                    {% for loc in locations %}
-                    <option value="{{ loc.id }}" {% if filters.location == loc.id %}selected{% endif %}>{{ loc.name }}</option>
-                    {% endfor %}
+                    {% for loc in locations %}<option value="{{ loc.id }}" {% if filters.location == loc.id %}selected{% endif %}>{{ loc.name }}</option>{% endfor %}
                 </select>
             </div>
-            <div class="ff">
-                <label>工作分类</label>
+            <div class="ff"><label>工作类别</label>
                 <select name="work_category">
                     <option value="">全部</option>
-                    {% for cat in work_categories %}
-                    <option value="{{ cat.id }}" {% if filters.work_category == cat.id %}selected{% endif %}>{{ cat.name }}</option>
-                    {% endfor %}
+                    {% for cat in work_categories %}<option value="{{ cat.id }}" {% if filters.work_category == cat.id %}selected{% endif %}>{{ cat.name }}</option>{% endfor %}
                 </select>
             </div>
             {% if is_admin %}
-            <div class="ff">
-                <label>处理人</label>
+            <div class="ff"><label>处理人</label>
                 <select name="worker">
                     <option value="">全部</option>
-                    {% for w in workers %}
-                    <option value="{{ w.id }}" {% if filters.worker == w.id %}selected{% endif %}>{{ w.full_name }}</option>
-                    {% endfor %}
+                    {% for w in workers %}<option value="{{ w.id }}" {% if filters.worker == w.id %}selected{% endif %}>{{ w.full_name }}</option>{% endfor %}
                 </select>
             </div>
             {% endif %}
@@ -107,130 +118,125 @@
         </form>
     </div>
 
-    <div class="table-card">
-        <div class="table-scroll">
-        <table class="wr">
-            <thead>
-                <tr>
-                    <th>日期</th>
-                    <th>处理人</th>
-                    <th>班次</th>
-                    <th>工作时间</th>
-                    <th>CCU</th>
-                    <th>区域</th>
-                    <th>工作类别</th>
-                    <th>工作内容</th>
-                    <th style="text-align:center;">人数</th>
-                    <th style="text-align:center;">工时(h)</th>
-                    <th style="text-align:center;">待修</th>
-                    <th style="text-align:center;">疑难</th>
-                    <th style="text-align:center;">照片</th>
-                    <th>操作</th>
-                </tr>
-            </thead>
-            <tbody>
-            {% for report in reports %}
-                <tr>
-                    <td style="white-space:nowrap;">{{ report.date }}</td>
-                    <td style="white-space:nowrap;">{{ report.worker.full_name }}</td>
-                    <td>{{ report.shift|default:"–" }}</td>
-                    <td style="white-space:nowrap;">
-                        {% if report.work_start_time %}{{ report.work_start_time }}–{{ report.work_end_time }}{% else %}–{% endif %}
-                    </td>
-                    <td>{{ report.location.name }}</td>
-                    <td class="ellipsis" title="{{ report.zone_names }}">
-                        {% if report.zone_names %}{{ report.zone_names }}{% elif report.zone_location %}{{ report.zone_location.code }}{% else %}–{% endif %}
-                    </td>
-                    <td style="white-space:nowrap;">{{ report.work_category.name }}</td>
-                    <td>
-                        {% if report.section_labels %}
-                            {% for lbl in report.section_labels %}<span class="chip">{{ lbl }}</span>{% endfor %}
-                            {% if report.entry_count %}<span class="count-badge">{{ report.entry_count }}项</span>{% endif %}
-                        {% else %}
-                            <span class="chip chip-legacy">旧版记录</span>
-                        {% endif %}
-                    </td>
-                    <td style="text-align:center;">
-                        {% if report.third_party_count %}{{ report.team_size }}+{{ report.third_party_count }}{% else %}{{ report.team_size }}{% endif %}
-                    </td>
-                    <td style="text-align:center;">
-                        {% if report.team_hours or report.third_party_hours %}
-                            {% if report.team_hours %}<span style="color:var(--color-primary-light);font-weight:600;">{{ report.team_hours }}</span>{% endif %}
-                            {% if report.third_party_hours %}<span style="color:var(--color-accent);">+{{ report.third_party_hours }}</span>{% endif %}
-                        {% else %}–{% endif %}
-                    </td>
-                    <td style="text-align:center;">
-                        {% if report.is_pending_repair %}<span class="flag flag-pending">待修</span>{% else %}–{% endif %}
-                    </td>
-                    <td style="text-align:center;">
-                        {% if report.is_difficult %}
-                            <span class="flag flag-difficult">疑难</span>
-                            {% if report.is_difficult_resolved %}<span class="flag flag-resolved" style="margin-left:3px;">已处理</span>{% endif %}
-                        {% else %}–{% endif %}
-                    </td>
-                    <td style="text-align:center;">
-                        {% if report.photos %}
-                        <span class="photo-trigger" onclick="previewPhotos({{ report.photos|safe }})" title="查看 {{ report.photos|length }} 张照片">
-                            📷<span class="count-badge">{{ report.photos|length }}</span>
-                        </span>
-                        {% else %}–{% endif %}
-                    </td>
-                    <td class="row-actions" style="white-space:nowrap;">
-                        <a class="act-view" href="{% url 'core:work_report_detail' report.id %}">查看</a>
-                        <a class="act-edit" href="{% url 'core:workorder_tree_form_edit' report.id %}">编辑</a>
-                    </td>
-                </tr>
-            {% empty %}
-                <tr>
-                    <td colspan="14" style="padding:36px;text-align:center;color:var(--color-text-muted);">暂无工作日报记录</td>
-                </tr>
+    {% for report in reports %}
+    <div class="wr-card">
+        <div class="wr-card-top">
+            <div>
+                <span class="wr-card-id">#{{ report.id }}</span>
+                <span class="wr-card-date">{{ report.date }}{% if report.shift %} · {{ report.shift }}{% endif %}</span>
+            </div>
+            <div class="wr-card-flags">
+                {% if report.is_pending_repair %}<span class="wr-flag pending">待修</span>{% endif %}
+                {% if report.is_difficult %}<span class="wr-flag difficult">疑难</span>
+                    {% if report.is_difficult_resolved %}<span class="wr-flag resolved">已处理</span>{% endif %}
+                {% endif %}
+            </div>
+        </div>
+        <div class="wr-meta">
+            <div class="wr-meta-row"><span class="wr-meta-label">处理人</span><span class="wr-meta-val">{{ report.worker.full_name|default:"–" }}</span></div>
+            {% if report.work_category %}<div class="wr-meta-row"><span class="wr-meta-label">类别</span><span class="wr-meta-val">{{ report.work_category.name }}</span></div>{% endif %}
+            {% if report.work_start_time %}<div class="wr-meta-row"><span class="wr-meta-label">工时</span><span class="wr-meta-val">{{ report.work_start_time }}–{{ report.work_end_time }}{% if report.team_hours %} · {{ report.team_hours }}h{% endif %}{% if report.third_party_hours %} +{{ report.third_party_hours }}h{% endif %}</span></div>{% endif %}
+            <div class="wr-meta-row"><span class="wr-meta-label">人数</span><span class="wr-meta-val">{{ report.team_size }}{% if report.third_party_count %}+{{ report.third_party_count }}{% endif %}</span></div>
+        </div>
+        {# Deduplicated zone summary #}
+        {% if report.zone_summary %}
+        <div class="wr-zone-summary" style="margin-top:4px;">📍 {{ report.zone_summary }}</div>
+        {% endif %}
+        {# Work-content sections #}
+        {% if report.section_labels %}
+        <div class="wr-entries" style="margin-top:4px;">
+            {% for lbl in report.section_labels %}<span class="wr-chip">{{ lbl }}</span>{% endfor %}
+            {% if report.entry_count %}<span class="wr-chip count">{{ report.entry_count }}项</span>{% endif %}
+        </div>
+        {% elif report.work_category %}
+        <div class="wr-entries" style="margin-top:4px;"><span class="wr-chip">{{ report.work_category.name }}</span></div>
+        {% else %}
+        <div class="wr-entries" style="margin-top:4px;"><span class="wr-chip legacy">旧版记录</span></div>
+        {% endif %}
+        {# Photo thumbs (thumbnails only) #}
+        {% if report.photos %}
+        <div class="wr-photo-row">
+            {% for p in report.photos %}
+            {% if forloop.counter <= 6 %}
+            <div class="wr-photo-thumb" onclick="openLb({{ report.id }}, {{ forloop.counter0 }})">
+                {% if p|is_video %}
+                <video src="/media/{{ p|thumb }}" muted preload="metadata"></video>
+                <span class="wr-photo-play">▶</span>
+                {% else %}
+                <img src="/media/{{ p|thumb }}" loading="lazy" alt="照片">
+                {% endif %}
+            </div>
+            {% endif %}
             {% endfor %}
-            </tbody>
-        </table>
+            {% if report.photos|length > 6 %}<span style="font-size:0.75rem;color:var(--color-text-muted,#999);align-self:center;">+{{ report.photos|length|add:"-6" }}</span>{% endif %}
+        </div>
+        {% endif %}
+        <div class="wr-card-actions">
+            <a class="wr-act view" href="{% url 'core:work_report_detail' report.id %}">查看</a>
+            <a class="wr-act edit" href="{% url 'core:workorder_tree_form_edit' report.id %}">编辑</a>
         </div>
     </div>
+    {% empty %}
+    <div class="wr-empty">暂无工作日报记录</div>
+    {% endfor %}
 </div>
 
-<!-- Photo Preview Lightbox -->
-<div style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:3000;justify-content:center;align-items:center;" id="photoLightbox" onclick="if(event.target===this)closePhotoLb()">
-    <button style="position:absolute;top:16px;right:24px;color:#fff;font-size:2rem;cursor:pointer;background:none;border:none;" onclick="closePhotoLb()">&times;</button>
-    <button style="position:absolute;top:50%;left:16px;transform:translateY(-50%);color:#fff;font-size:2rem;cursor:pointer;background:rgba(0,0,0,0.4);border:none;border-radius:50%;width:44px;height:44px;" onclick="event.stopPropagation();navPhotoLb(-1)">&#8249;</button>
-    <img id="photoLbImg" style="max-width:90vw;max-height:85vh;border-radius:8px;object-fit:contain;" src="" alt="">
-    <button style="position:absolute;top:50%;right:16px;transform:translateY(-50%);color:#fff;font-size:2rem;cursor:pointer;background:rgba(0,0,0,0.4);border:none;border-radius:50%;width:44px;height:44px;" onclick="event.stopPropagation();navPhotoLb(1)">&#8250;</button>
-    <div id="photoLbCounter" style="position:absolute;bottom:20px;left:50%;transform:translateX(-50%);color:rgba(255,255,255,0.7);font-size:0.85rem;"></div>
+<!-- Lightbox -->
+<div class="lb-overlay" id="lightbox" onclick="if(event.target===this)closeLb()">
+    <button class="lb-close" onclick="closeLb()">&times;</button>
+    <button class="lb-nav lb-prev" onclick="event.stopPropagation();navLb(-1)">&#8249;</button>
+    <img class="lb-img" id="lbImg" src="" alt="" style="display:none;">
+    <video class="lb-video" id="lbVideo" src="" controls style="display:none;"></video>
+    <button class="lb-nav lb-next" onclick="event.stopPropagation();navLb(1)">&#8250;</button>
+    <div class="lb-counter" id="lbCounter"></div>
 </div>
 
+{# Photo path registry for the lightbox, keyed by report id #}
+<script id="wr-photo-data" type="application/json">{% for report in reports %}{% if report.photos %}"{{ report.id }}":{{ report.photos|safe }},{% endif %}{% endfor %}</script>
 <script>
-var lbPhotos = [];
-var lbIdx = 0;
+var photoData = {};
+(function () {
+    // Parse the registry built above: "id":[paths],... (trailing comma tolerated).
+    var raw = (document.getElementById('wr-photo-data').textContent || '').trim().replace(/,$/, '');
+    if (raw) { try { photoData = JSON.parse('{' + raw + '}'); } catch (e) {} }
+})();
 
-function previewPhotos(photos) {
-    lbPhotos = photos;
-    lbIdx = 0;
-    showPhotoLb();
-    document.getElementById('photoLightbox').style.display = 'flex';
-    document.addEventListener('keydown', photoLbKey);
+var lbPhotos = [], lbIdx = 0;
+function isVideoPath(p) { return /\.(mp4|mov|m4v|webm|ogg|ogv|avi|mkv)$/i.test(p); }
+
+function openLb(reportId, idx) {
+    lbPhotos = photoData[reportId] || [];
+    lbIdx = idx || 0;
+    if (!lbPhotos.length) return;
+    showLb();
+    document.getElementById('lightbox').classList.add('show');
+    document.addEventListener('keydown', lbKey);
 }
-
-function closePhotoLb() {
-    document.getElementById('photoLightbox').style.display = 'none';
-    document.removeEventListener('keydown', photoLbKey);
+function closeLb() {
+    document.getElementById('lightbox').classList.remove('show');
+    var v = document.getElementById('lbVideo'); v.pause(); v.src = '';
+    document.removeEventListener('keydown', lbKey);
 }
-
-function navPhotoLb(dir) {
+function navLb(dir) {
     lbIdx = (lbIdx + dir + lbPhotos.length) % lbPhotos.length;
-    showPhotoLb();
+    showLb();
 }
-
-function showPhotoLb() {
-    document.getElementById('photoLbImg').src = '/media/' + lbPhotos[lbIdx];
-    document.getElementById('photoLbCounter').textContent = (lbIdx + 1) + ' / ' + lbPhotos.length;
+function showLb() {
+    var img = document.getElementById('lbImg'), vid = document.getElementById('lbVideo');
+    var p = lbPhotos[lbIdx];
+    document.getElementById('lbCounter').textContent = (lbIdx + 1) + ' / ' + lbPhotos.length;
+    if (isVideoPath(p)) {
+        img.style.display = 'none'; img.src = '';
+        vid.style.display = ''; vid.src = '/media/' + p;
+    } else {
+        vid.style.display = ''; vid.pause(); vid.src = ''; vid.style.display = 'none';
+        img.style.display = ''; img.src = '/media/' + p;
+    }
 }
-
-function photoLbKey(e) {
-    if (e.key === 'Escape') closePhotoLb();
-    else if (e.key === 'ArrowLeft') navPhotoLb(-1);
-    else if (e.key === 'ArrowRight') navPhotoLb(1);
+function lbKey(e) {
+    if (e.key === 'Escape') closeLb();
+    else if (e.key === 'ArrowLeft') navLb(-1);
+    else if (e.key === 'ArrowRight') navLb(1);
 }
 </script>
 {% endblock %}
