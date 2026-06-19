@@ -7,71 +7,108 @@
 
 {% block extra_css %}
 <style>
-  /* Mobile-first list. Cards on phones, table-style rows on wider screens. */
-  .wr-list-wrap { max-width: 1100px; margin: 0 auto; padding: 12px; }
-  .wr-list-head { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; margin-bottom: 12px; }
-  .wr-list-head h1 { font-size: 1.25rem; margin: 0; }
+  :root {
+    --wr-card-bg: #ffffff;
+    --wr-card-border: #eef0f3;
+    --wr-accent: #2D6A4F;
+    --wr-accent-soft: #e8f5e9;
+    --wr-text: #1f2937;
+    --wr-muted: #6b7280;
+    --wr-warn: #CC7722;
+    --wr-danger: #9B2226;
+  }
 
-  .msg { padding: 10px 14px; border-radius: 8px; margin-bottom: 12px; font-size: 0.9rem; }
+  .wr-list-wrap { max-width: 1100px; margin: 0 auto; padding: 16px; }
+  .wr-list-head { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; margin-bottom: 16px; }
+  .wr-list-head h1 { font-size: 1.4rem; margin: 0; font-weight: 700; color: var(--wr-text); }
+
+  .msg { padding: 10px 14px; border-radius: 10px; margin-bottom: 12px; font-size: 0.9rem; }
   .msg-success { background: rgba(64,145,108,0.12); color: var(--color-success); }
   .msg-error   { background: rgba(155,34,38,0.12); color: var(--color-error); }
   .msg-info    { background: rgba(82,183,136,0.12); color: var(--color-info); }
   .msg-warning { background: rgba(204,119,34,0.12); color: var(--color-warning); }
 
-  .filter-card { background: var(--color-surface, #fff); border-radius: 10px; padding: 12px; margin-bottom: 12px; }
-  .filter-row { display:flex; gap:8px; flex-wrap:wrap; align-items:flex-end; }
+  /* Filter bar — compact pill style */
+  .filter-card { background: var(--wr-card-bg); border:1px solid var(--wr-card-border); border-radius: 14px; padding: 14px 16px; margin-bottom: 16px; }
+  .filter-row { display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; }
   .ff { display:flex; flex-direction:column; gap:3px; }
-  .ff label { font-size: 0.7rem; color: var(--color-text-muted, #999); }
-  .ff input[type=date], .ff select { padding: 6px 8px; border:1px solid var(--color-border, #ddd); border-radius: 6px; font-size: 0.85rem; background:#fff; }
-  .check-inline { display:flex; align-items:center; gap:4px; font-size:0.8rem; color: var(--color-text-secondary, #555); padding-bottom:6px; cursor:pointer; }
+  .ff label { font-size: 0.68rem; color: var(--wr-muted); text-transform: uppercase; letter-spacing: 0.03em; }
+  .ff input[type=date], .ff select { padding: 7px 10px; border:1px solid #e5e7eb; border-radius: 8px; font-size: 0.85rem; background:#fff; color: var(--wr-text); transition: border-color .15s; }
+  .ff input:focus, .ff select:focus { outline:none; border-color: var(--wr-accent); }
+  .check-inline { display:flex; align-items:center; gap:5px; font-size:0.8rem; color: var(--wr-text); padding-bottom:7px; cursor:pointer; user-select:none; }
+  .btn-sm { padding: 7px 14px; border-radius: 8px; font-size: 0.82rem; font-weight: 600; border:none; cursor:pointer; text-decoration:none; display:inline-flex; align-items:center; }
+  .btn-primary { background: var(--wr-accent); color:#fff; }
+  .btn-secondary { background: #f3f4f6; color: var(--wr-text); }
 
-  /* Report cards */
+  /* ── Report card: modern row with info on the left, actions pinned right ── */
   .wr-card {
-    background: var(--color-surface, #fff); border-radius: 10px; padding: 12px;
-    margin-bottom: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    background: var(--wr-card-bg);
+    border: 1px solid var(--wr-card-border);
+    border-radius: 14px;
+    padding: 14px 16px;
+    margin-bottom: 10px;
+    display: flex;
+    align-items: stretch;
+    gap: 14px;
+    transition: box-shadow .15s, border-color .15s;
   }
-  .wr-card-top { display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; margin-bottom: 6px; }
-  .wr-card-id { font-size: 0.95rem; font-weight: 600; color: var(--color-primary, #2D6A4F); }
-  .wr-card-date { font-size: 0.78rem; color: var(--color-text-muted, #999); }
-  .wr-card-flags { display:flex; gap:4px; }
-  .wr-meta { display:grid; grid-template-columns: 1fr; gap: 5px; font-size: 0.82rem; }
-  .wr-meta-row { display:flex; gap:6px; }
-  .wr-meta-label { color: var(--color-text-muted, #999); flex-shrink:0; width: 4em; }
-  .wr-meta-val { color: var(--color-text, #333); word-break: break-word; }
-  .wr-chip { display:inline-block; padding:1px 7px; border-radius:8px; font-size:0.72rem; font-weight:500; background: #e8f5e9; color: #2D6A4F; margin:1px 2px 1px 0; }
-  .wr-chip.count { background: var(--color-primary, #2D6A4F); color:#fff; }
-  .wr-chip.legacy { background: #eee; color:#888; }
-  .wr-flag { display:inline-block; padding:1px 7px; border-radius:8px; font-size:0.7rem; font-weight:600; }
-  .wr-flag.pending { background: rgba(204,119,34,0.15); color: var(--color-warning, #CC7722); }
-  .wr-flag.difficult { background: rgba(155,34,38,0.12); color: var(--color-error, #9B2226); }
-  .wr-flag.resolved { background: rgba(64,145,108,0.15); color: var(--color-success, #40916C); }
-  .wr-zone-summary { font-size: 0.8rem; color: var(--color-text-secondary, #555); }
-  .wr-entries { font-size: 0.8rem; color: var(--color-text-secondary, #555); }
-  .wr-card-actions { display:flex; gap:6px; margin-top: 8px; }
-  .wr-act { font-size: 0.82rem; padding: 4px 12px; border-radius: 6px; text-decoration: none; font-weight: 500; }
-  .wr-act.view { background: #e8f5e9; color: #2D6A4F; }
-  .wr-act.edit { background: var(--color-surface-dark, #f0f0f0); color: var(--color-text, #333); }
+  .wr-card:hover { box-shadow: 0 4px 14px rgba(0,0,0,0.07); border-color: #d8dde3; }
+
+  .wr-card-main { flex: 1; min-width: 0; }
+  .wr-card-side { display: flex; flex-direction: column; align-items: flex-end; justify-content: center; gap: 6px; flex-shrink: 0; padding-left: 4px; border-left: 1px solid var(--wr-card-border); padding-left: 14px; }
+
+  .wr-card-top { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom: 6px; }
+  .wr-card-id { font-size: 0.95rem; font-weight: 700; color: var(--wr-accent); }
+  .wr-card-date { font-size: 0.78rem; color: var(--wr-muted); }
+  .wr-card-flags { display:flex; gap:4px; margin-left: auto; }
+  .wr-flag { display:inline-flex; align-items:center; padding:2px 8px; border-radius: 20px; font-size:0.68rem; font-weight:600; }
+  .wr-flag.pending { background: rgba(204,119,34,0.12); color: var(--wr-warn); }
+  .wr-flag.difficult { background: rgba(155,34,38,0.10); color: var(--wr-danger); }
+  .wr-flag.resolved { background: rgba(64,145,108,0.12); color: #40916C; }
+
+  .wr-meta { display:flex; flex-wrap:wrap; gap: 4px 14px; font-size: 0.8rem; color: var(--wr-muted); margin-bottom: 6px; }
+  .wr-meta b { color: var(--wr-text); font-weight: 600; }
+
+  .wr-zone-summary { font-size: 0.8rem; color: var(--wr-text); display:flex; align-items:center; gap:4px; margin: 2px 0; }
+  .wr-zone-summary .pin { color: var(--wr-accent); }
+
+  .wr-chip { display:inline-block; padding:2px 9px; border-radius: 20px; font-size:0.72rem; font-weight:600; background: var(--wr-accent-soft); color: var(--wr-accent); margin:2px 3px 0 0; }
+  .wr-chip.count { background: var(--wr-accent); color:#fff; }
+  .wr-chip.legacy { background: #f3f4f6; color:#9ca3af; }
 
   /* Photo thumbs inline */
-  .wr-photo-row { display:flex; gap:4px; flex-wrap:wrap; margin-top: 4px; }
-  .wr-photo-thumb { width: 40px; height: 40px; border-radius: 5px; overflow:hidden; position:relative; }
-  .wr-photo-thumb img, .wr-photo-thumb video { width:100%; height:100%; object-fit:cover; }
-  .wr-photo-play { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); background:rgba(0,0,0,0.5); color:#fff; border-radius:50%; width:16px; height:16px; display:flex; align-items:center; justify-content:center; font-size:0.6em; }
+  .wr-photo-row { display:flex; gap:4px; flex-wrap:wrap; margin-top: 6px; }
+  .wr-photo-thumb { width: 38px; height: 38px; border-radius: 6px; overflow:hidden; position:relative; cursor:pointer; border:1px solid #eef0f3; }
+  .wr-photo-thumb img, .wr-photo-thumb video { width:100%; height:100%; object-fit:cover; display:block; }
+  .wr-photo-play { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); background:rgba(0,0,0,0.5); color:#fff; border-radius:50%; width:16px; height:16px; display:flex; align-items:center; justify-content:center; font-size:0.55em; }
 
-  .wr-empty { padding: 36px; text-align:center; color: var(--color-text-muted, #999); }
-  @media (min-width: 600px) {
-    .wr-meta { grid-template-columns: 1fr 1fr; }
+  /* Action buttons (right side) */
+  .wr-act { font-size: 0.8rem; padding: 8px 16px; border-radius: 8px; text-decoration: none; font-weight: 600; display:inline-flex; align-items:center; gap:5px; transition: transform .1s, background .15s; border:none; cursor:pointer; white-space:nowrap; }
+  .wr-act:active { transform: scale(0.96); }
+  .wr-act.view { background: var(--wr-accent); color: #fff; }
+  .wr-act.view:hover { background: #245540; }
+  .wr-act.edit { background: #f3f4f6; color: var(--wr-text); }
+  .wr-act.edit:hover { background: #e5e7eb; }
+  .wr-side-id { font-size: 0.68rem; color: var(--wr-muted); margin-top: 2px; }
+
+  .wr-empty { padding: 48px; text-align:center; color: var(--wr-muted); font-size: 0.95rem; background: var(--wr-card-bg); border-radius: 14px; border: 1px solid var(--wr-card-border); }
+
+  /* On narrow screens, stack the actions below */
+  @media (max-width: 560px) {
+    .wr-card { flex-direction: column; gap: 10px; }
+    .wr-card-side { flex-direction: row; align-items: center; justify-content: flex-end; border-left: none; border-top: 1px solid var(--wr-card-border); padding-left: 0; padding-top: 10px; }
+    .wr-side-id { display:none; }
   }
 
   /* Lightbox */
-  .lb-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.9); z-index:3000; justify-content:center; align-items:center; }
+  .lb-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.92); z-index:3000; justify-content:center; align-items:center; }
   .lb-overlay.show { display:flex; }
-  .lb-img, .lb-video { max-width:92vw; max-height:86vh; border-radius:8px; object-fit:contain; }
-  .lb-close { position:absolute; top:12px; right:20px; color:#fff; font-size:2rem; cursor:pointer; background:none; border:none; line-height:1; }
-  .lb-nav { position:absolute; top:50%; transform:translateY(-50%); color:#fff; font-size:2.2rem; cursor:pointer; background:rgba(0,0,0,0.4); border:none; border-radius:50%; width:44px; height:44px; display:flex; align-items:center; justify-content:center; }
+  .lb-img, .lb-video { max-width:92vw; max-height:86vh; border-radius:10px; object-fit:contain; }
+  .lb-close { position:absolute; top:14px; right:22px; color:#fff; font-size:2.2rem; cursor:pointer; background:none; border:none; line-height:1; }
+  .lb-nav { position:absolute; top:50%; transform:translateY(-50%); color:#fff; font-size:2.2rem; cursor:pointer; background:rgba(0,0,0,0.4); border:none; border-radius:50%; width:46px; height:46px; display:flex; align-items:center; justify-content:center; }
   .lb-prev { left:12px; }
   .lb-next { right:12px; }
-  .lb-counter { position:absolute; bottom:16px; left:50%; transform:translateX(-50%); color:rgba(255,255,255,0.7); font-size:0.85rem; }
+  .lb-counter { position:absolute; bottom:18px; left:50%; transform:translateX(-50%); color:rgba(255,255,255,0.75); font-size:0.85rem; }
 </style>
 {% endblock %}
 
@@ -97,12 +134,6 @@
                     {% for loc in locations %}<option value="{{ loc.id }}" {% if filters.location == loc.id %}selected{% endif %}>{{ loc.name }}</option>{% endfor %}
                 </select>
             </div>
-            <div class="ff"><label>工作类别</label>
-                <select name="work_category">
-                    <option value="">全部</option>
-                    {% for cat in work_categories %}<option value="{{ cat.id }}" {% if filters.work_category == cat.id %}selected{% endif %}>{{ cat.name }}</option>{% endfor %}
-                </select>
-            </div>
             {% if is_admin %}
             <div class="ff"><label>处理人</label>
                 <select name="worker">
@@ -113,67 +144,63 @@
             {% endif %}
             <label class="check-inline"><input type="checkbox" name="is_pending_repair" value="1" {% if filters.is_pending_repair %}checked{% endif %}> 待修</label>
             <label class="check-inline"><input type="checkbox" name="is_difficult" value="1" {% if filters.is_difficult %}checked{% endif %}> 疑难</label>
-            <button type="submit" class="btn btn-primary btn-sm">筛选</button>
-            <a href="{% url 'core:work_reports' %}" class="btn btn-secondary btn-sm">重置</a>
+            <button type="submit" class="btn-sm btn-primary">筛选</button>
+            <a href="{% url 'core:work_reports' %}" class="btn-sm btn-secondary">重置</a>
         </form>
     </div>
 
     {% for report in reports %}
     <div class="wr-card">
-        <div class="wr-card-top">
+        <div class="wr-card-main">
+            <div class="wr-card-top">
+                <span class="wr-card-id">{{ report.date }}</span>
+                {% if report.shift %}<span class="wr-card-date">{{ report.get_shift_display|default:report.shift }}</span>{% endif %}
+                <div class="wr-card-flags">
+                    {% if report.is_pending_repair %}<span class="wr-flag pending">待修</span>{% endif %}
+                    {% if report.is_difficult %}<span class="wr-flag difficult">疑难</span>{% endif %}
+                    {% if report.is_difficult and report.is_difficult_resolved %}<span class="wr-flag resolved">已处理</span>{% endif %}
+                </div>
+            </div>
+            <div class="wr-meta">
+                <span><b>{{ report.worker.full_name|default:"–" }}</b></span>
+                {% if report.work_start_time %}<span>{{ report.work_start_time }}–{{ report.work_end_time }}{% if report.team_hours %} · {{ report.team_hours }}h{% endif %}{% if report.third_party_hours %} +{{ report.third_party_hours }}h{% endif %}</span>{% endif %}
+                {% if report.team_size %}<span>{{ report.team_size }}人{% if report.third_party_count %} +{{ report.third_party_count }}三方{% endif %}</span>{% endif %}
+            </div>
+            {% if report.zone_summary %}
+            <div class="wr-zone-summary"><span class="pin">📍</span> {{ report.zone_summary }}</div>
+            {% endif %}
+            {# Work-content sections #}
+            {% if report.section_labels %}
             <div>
-                <span class="wr-card-id">#{{ report.id }}</span>
-                <span class="wr-card-date">{{ report.date }}{% if report.shift %} · {{ report.shift }}{% endif %}</span>
+                {% for lbl in report.section_labels %}<span class="wr-chip">{{ lbl }}</span>{% endfor %}
+                {% if report.entry_count %}<span class="wr-chip count">{{ report.entry_count }}项</span>{% endif %}
             </div>
-            <div class="wr-card-flags">
-                {% if report.is_pending_repair %}<span class="wr-flag pending">待修</span>{% endif %}
-                {% if report.is_difficult %}<span class="wr-flag difficult">疑难</span>
-                    {% if report.is_difficult_resolved %}<span class="wr-flag resolved">已处理</span>{% endif %}
+            {% else %}
+            <div><span class="wr-chip legacy">旧版记录</span></div>
+            {% endif %}
+            {# Photo thumbs #}
+            {% if report.photos %}
+            <div class="wr-photo-row">
+                {% for p in report.photos %}
+                {% if forloop.counter <= 6 %}
+                <div class="wr-photo-thumb" onclick="openLb({{ report.id }}, {{ forloop.counter0 }})">
+                    {% if p|is_video %}
+                    <video src="/media/{{ p|thumb }}" muted preload="metadata"></video>
+                    <span class="wr-photo-play">▶</span>
+                    {% else %}
+                    <img src="/media/{{ p|thumb }}" loading="lazy" alt="照片">
+                    {% endif %}
+                </div>
                 {% endif %}
-            </div>
-        </div>
-        <div class="wr-meta">
-            <div class="wr-meta-row"><span class="wr-meta-label">处理人</span><span class="wr-meta-val">{{ report.worker.full_name|default:"–" }}</span></div>
-            {% if report.work_category %}<div class="wr-meta-row"><span class="wr-meta-label">类别</span><span class="wr-meta-val">{{ report.work_category.name }}</span></div>{% endif %}
-            {% if report.work_start_time %}<div class="wr-meta-row"><span class="wr-meta-label">工时</span><span class="wr-meta-val">{{ report.work_start_time }}–{{ report.work_end_time }}{% if report.team_hours %} · {{ report.team_hours }}h{% endif %}{% if report.third_party_hours %} +{{ report.third_party_hours }}h{% endif %}</span></div>{% endif %}
-            <div class="wr-meta-row"><span class="wr-meta-label">人数</span><span class="wr-meta-val">{{ report.team_size }}{% if report.third_party_count %}+{{ report.third_party_count }}{% endif %}</span></div>
-        </div>
-        {# Deduplicated zone summary #}
-        {% if report.zone_summary %}
-        <div class="wr-zone-summary" style="margin-top:4px;">📍 {{ report.zone_summary }}</div>
-        {% endif %}
-        {# Work-content sections #}
-        {% if report.section_labels %}
-        <div class="wr-entries" style="margin-top:4px;">
-            {% for lbl in report.section_labels %}<span class="wr-chip">{{ lbl }}</span>{% endfor %}
-            {% if report.entry_count %}<span class="wr-chip count">{{ report.entry_count }}项</span>{% endif %}
-        </div>
-        {% elif report.work_category %}
-        <div class="wr-entries" style="margin-top:4px;"><span class="wr-chip">{{ report.work_category.name }}</span></div>
-        {% else %}
-        <div class="wr-entries" style="margin-top:4px;"><span class="wr-chip legacy">旧版记录</span></div>
-        {% endif %}
-        {# Photo thumbs (thumbnails only) #}
-        {% if report.photos %}
-        <div class="wr-photo-row">
-            {% for p in report.photos %}
-            {% if forloop.counter <= 6 %}
-            <div class="wr-photo-thumb" onclick="openLb({{ report.id }}, {{ forloop.counter0 }})">
-                {% if p|is_video %}
-                <video src="/media/{{ p|thumb }}" muted preload="metadata"></video>
-                <span class="wr-photo-play">▶</span>
-                {% else %}
-                <img src="/media/{{ p|thumb }}" loading="lazy" alt="照片">
-                {% endif %}
+                {% endfor %}
+                {% if report.photos|length > 6 %}<span style="font-size:0.75rem;color:var(--wr-muted,#6b7280);align-self:center;">+{{ report.photos|length|add:"-6" }}</span>{% endif %}
             </div>
             {% endif %}
-            {% endfor %}
-            {% if report.photos|length > 6 %}<span style="font-size:0.75rem;color:var(--color-text-muted,#999);align-self:center;">+{{ report.photos|length|add:"-6" }}</span>{% endif %}
         </div>
-        {% endif %}
-        <div class="wr-card-actions">
+        <div class="wr-card-side">
             <a class="wr-act view" href="{% url 'core:work_report_detail' report.id %}">查看</a>
             <a class="wr-act edit" href="{% url 'core:workorder_tree_form_edit' report.id %}">编辑</a>
+            <span class="wr-side-id">#{{ report.id }}</span>
         </div>
     </div>
     {% empty %}
