@@ -54,6 +54,9 @@
 .wo-leaf .wo-file { flex-basis: 100%; font-size: .78rem; }
 .wo-flash { animation: woflash 1.4s ease; }
 @keyframes woflash { 0%{background:#fff3cd} 100%{background:transparent} }
+/* A leaf/group that had saved data in edit mode — tinted so the user sees at a glance
+   which content was previously submitted (the form reflects the existing workorder). */
+.wo-filled { background: rgba(64,145,108,0.10); border-left: 3px solid #40916C; }
 .wo-empty { padding: 24px; text-align: center; color: #999; }
 
 /* actions */
@@ -275,13 +278,24 @@ function applyExisting(){
   const byWid = {}; let irrigationProject = null;
   EXISTING.forEach(e => { byWid[e.work_item] = e; if (e.project && !irrigationProject) irrigationProject = e.project; });
   if (irrigationProject){ const sel = document.getElementById('irrigation-project-select'); if (sel) sel.value = irrigationProject; }
-  Object.entries(byWid).forEach(([wid, e]) => {
-    const leaf = nodeEls[wid]; if (!leaf) return;
-    const vt = leaf.dataset.vt;
-    if (vt === 'count') leaf.querySelector('.wo-count').value = e.count || '';
-    else if (vt === 'status') leaf.querySelector('.wo-status').value = e.status || '';
-    else leaf.querySelector('.wo-text').value = e.text_value || '';
+  // Restore each previously-saved entry's value AND expand the tree path to it so the
+  // edit form visually reflects everything that was submitted (the chosen category node
+  // and its filled leaves), instead of showing a collapsed/empty tree.
+  const wids = Object.keys(byWid).map(Number);
+  wids.forEach(wid => {
+    const el = nodeEls[wid]; if (!el) return;
+    const vt = el.dataset.vt;
+    if (vt === 'count') el.querySelector('.wo-count').value = byWid[wid].count || '';
+    else if (vt === 'status') el.querySelector('.wo-status').value = byWid[wid].status || '';
+    else el.querySelector('.wo-text').value = byWid[wid].text_value || '';
+    // Expand every ancestor group up to this node so it's visible.
+    let cur = parentById[wid];
+    while (cur){ const g = nodeEls[cur]; if (g && g.classList.contains('wo-group') && !g.classList.contains('wo-open')) toggleGroup(g); cur = parentById[cur]; }
+    // Mark the node so it's visually highlighted as "has data".
+    el.classList.add('wo-filled');
   });
+  // Scroll to the first entered node so the user immediately sees the prior content.
+  if (wids.length){ const first = nodeEls[wids[0]]; if (first) first.scrollIntoView({behavior:'smooth', block:'center'}); }
 }
 
 function applyHeader(){
