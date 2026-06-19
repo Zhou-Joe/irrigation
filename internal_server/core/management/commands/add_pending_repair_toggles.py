@@ -10,7 +10,7 @@ from django.core.management.base import BaseCommand
 from core.models import WorkItem
 
 
-REPAIR_STATUS_NAMES = {'已修复'}
+REPAIR_STATUS_NAMES = {'已修复', '已疏通'}
 
 
 class Command(BaseCommand):
