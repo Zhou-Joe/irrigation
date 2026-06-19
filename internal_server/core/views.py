@@ -5958,7 +5958,7 @@ def _build_zone_geo_data():
 
 @login_required(login_url='core:login')
 def workorder_mobile_v2(request):
-    from core.models import WorkReport, Patch, Zone, Worker
+    from core.models import WorkReport, Patch, Zone, Worker, WorkItem
     from core.role_utils import get_worker_for_user, is_admin, get_user_role, ROLE_FIELD_WORKER
     from core.role_utils import ROLE_SUPER_ADMIN, ROLE_MANAGER, resolve_or_create_worker
     from core.workorder_tree_views import (
@@ -6016,6 +6016,16 @@ def workorder_mobile_v2(request):
             selected_zones = Zone.objects.filter(code__in=zone_codes)
             zone_names = ', '.join(z.name or z.code for z in selected_zones) if selected_zones else ''
 
+            # Persist the selected work category (WorkItem id from the frontend drill-down).
+            # Previously work_category was never set → every v2 report had NULL category.
+            work_category_id = (request.POST.get('work_category_id') or '').strip()
+            work_category = None
+            if work_category_id:
+                try:
+                    work_category = WorkItem.objects.get(pk=int(work_category_id))
+                except (ValueError, WorkItem.DoesNotExist):
+                    work_category = None
+
             report = WorkReport.objects.create(
                 date=request.POST.get('date') or date.today().isoformat(),
                 weather='',
@@ -6035,6 +6045,7 @@ def workorder_mobile_v2(request):
                 third_party_hours=third_party_hours,
                 zone_names=zone_names,
                 work_content=request.POST.get('work_content', ''),
+                work_category=work_category,
             )
 
             if selected_zones:
