@@ -1850,11 +1850,17 @@
         var form = $('woModalForm'); if (!form) return;
         form.querySelectorAll('input[name="zones"]').forEach(function (i) { i.remove(); });
         codes.forEach(function (code) { var input = document.createElement('input'); input.type = 'hidden'; input.name = 'zones'; input.value = code; form.appendChild(input); });
-        var entriesInput = $('woEntriesInput'); if (entriesInput) entriesInput.value = JSON.stringify(collectWoEntries());
+        // Collect entries. If the user picked a 工作类别 (root WorkItem) but didn't drill
+        // into specific content, still record the category as an entry so the report shows
+        // that category instead of falling back to "旧版记录". Group nodes have no value,
+        // so this is a zero-count marker the server ignores as a real count but keeps for
+        // the section/category grouping.
+        var entries = collectWoEntries();
+        if (_woCatNode && !entries.some(function (e) { return e.work_item === _woCatNode; })) {
+            entries.push({ work_item: _woCatNode, project: null, count: 0, status: '', text_value: '' });
+        }
+        var entriesInput = $('woEntriesInput'); if (entriesInput) entriesInput.value = JSON.stringify(entries);
         var fd = new FormData(form); _photoFiles.forEach(function (f) { fd.append('report_photos', f); });
-        // Send the selected work category (WorkItem id) so the server can persist it.
-        // Without this, every v2 submission had work_category=NULL → empty category column.
-        if (_woCatNode) fd.append('work_category_id', String(_woCatNode));
         Object.keys(_woEntryPhotos).forEach(function (id) { _woEntryPhotos[id].forEach(function (f) { fd.append('ep_' + id, f); }); });
         var btn = $('woSubmitBtn'); btn.disabled = true; btn.textContent = '提交中...';
         fetch('/mobile/workorder/v2/', { method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest' } })

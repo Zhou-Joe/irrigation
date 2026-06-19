@@ -369,6 +369,35 @@ def enrich_reports(reports, path_map=None):
         report.section_labels = [g['section_label'] for g in ordered]
 
 
+def attach_zone_hierarchy(reports):
+    """Attach a deduplicated Land → 通用名称 → [codes] hierarchy to each report.
+
+    A report often references many zones that share a land/name; this collapses them
+    so list/detail pages don't list the same name dozens of times. Expects
+    ``zones__land`` to be prefetched on each report. Sets ``report.zone_hierarchy``
+    and ``report.zone_summary`` (a flat "Land·name/name" string for compact display).
+    """
+    for report in reports:
+        lands = {}      # land_name -> { name -> [codes] }
+        order = []
+        for z in report.zones.all():
+            ln = (z.land.name if z.land_id and z.land else '其它') or '其它'
+            nm = z.name or z.code
+            if ln not in lands:
+                lands[ln] = {}
+                order.append(ln)
+            lands[ln].setdefault(nm, []).append(z.code)
+        report.zone_hierarchy = [
+            {'land': ln,
+             'names': [{'name': nm, 'codes': codes, 'count': len(codes)}
+                        for nm, codes in sorted(lands[ln].items())],
+             'zone_count': sum(len(v) for v in lands[ln].values())}
+            for ln in order
+        ]
+        parts = [ln + '·' + '/'.join(sorted(lands[ln].keys())) for ln in order]
+        report.zone_summary = '、'.join(parts) if parts else ''
+
+
 # ── photo + hours helpers ───────────────────────────────────────────────────
 
 def _save_photo(report, uploaded):
@@ -609,8 +638,22 @@ def _handle_save(request, report):
 
 
 def _save_entries(report, entries, entry_photos):
-    """Replace all entries; create one row per node with a real value."""
+    """Replace all entries; create one row per node with a real value.
+
+    A row is kept when it carries a value (count/status/text/photos). A row that is
+    empty *but* references a group/category node (value_type='group') is also kept —
+    it represents "this category was worked under" and prevents the report from being
+    mislabeled as 旧版记录 when the user picked a category without drilling into
+    specific leaf content.
+    """
     report.entries.all().delete()
+    # Pre-fetch the WorkItems referenced, to tell group/category nodes from leaves.
+    wids = [e.get('work_item') for e in entries if e.get('work_item')]
+    group_wids = set()
+    if wids:
+        group_wids = set(
+            WorkItem.objects.filter(id__in=wids, value_type='group').values_list('id', flat=True)
+        )
     for e in entries:
         wid = e.get('work_item')
         if not wid:
@@ -620,7 +663,9 @@ def _save_entries(report, entries, entry_photos):
         text_value = (e.get('text_value') or '').strip()
         project_id = e.get('project') or None
         photos = entry_photos.get(int(wid), [])
-        if not (count or status or text_value or photos):
+        has_value = bool(count or status or text_value or photos)
+        is_category_marker = wid in group_wids
+        if not has_value and not is_category_marker:
             continue
         saved_paths = [_save_photo(report, f) for f in photos]
         WorkReportEntry.objects.update_or_create(

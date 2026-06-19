@@ -5423,7 +5423,7 @@ def custom_report(request):
 def work_reports_list(request):
     from core.models import WorkReport, Patch, WorkCategory, Worker
     from core.role_utils import is_admin, get_worker_for_user
-    from core.workorder_tree_views import workitem_path_map, enrich_reports
+    from core.workorder_tree_views import workitem_path_map, enrich_reports, attach_zone_hierarchy
 
     user = request.user
     admin = is_admin(user)
@@ -5431,7 +5431,7 @@ def work_reports_list(request):
     qs = WorkReport.objects.select_related(
         'worker', 'location', 'work_category', 'info_source'
     ).prefetch_related(
-        'entries__work_item', 'entries__project'
+        'entries__work_item', 'entries__project', 'zones__land'
     ).order_by('-date', '-id')
 
     # Scope by submitter for non-admins. Managers have no direct worker link,
@@ -5466,6 +5466,7 @@ def work_reports_list(request):
 
     reports = list(qs[:200])
     enrich_reports(reports, workitem_path_map())
+    attach_zone_hierarchy(reports)
     locations = Patch.objects.filter(active=True).order_by('order')
     work_categories = WorkCategory.objects.filter(active=True).order_by('order')
     workers = Worker.objects.all().order_by('full_name') if admin else []
@@ -5519,30 +5520,14 @@ def work_report_detail(request, report_id):
         grouped.setdefault(sec, {'label': section_labels.get(sec, sec), 'items': []})
         grouped[sec]['items'].append(e)
 
-    # Build a deduplicated Land → 通用名称 → [zone codes] hierarchy from the selected
-    # zones (same as the history list). A report often references many zones that share
-    # a land/name; collapse them so the detail page doesn't list the same name dozens of times.
-    lands = {}     # land_name -> { name -> [codes] }
-    order = []     # preserve first-seen land order
-    for z in report.zones.select_related('land').all():
-        ln = (z.land.name if z.land_id and z.land else '其它') or '其它'
-        nm = z.name or z.code
-        if ln not in lands:
-            lands[ln] = {}
-            order.append(ln)
-        lands[ln].setdefault(nm, []).append(z.code)
-    zone_hierarchy = [
-        {'land': ln,
-         'names': [{'name': nm, 'codes': codes, 'count': len(codes)}
-                   for nm, codes in sorted(lands[ln].items())],
-         'zone_count': sum(len(v) for v in lands[ln].values())}
-        for ln in order
-    ]
+    # Deduplicated Land → name hierarchy (shared helper).
+    from core.workorder_tree_views import attach_zone_hierarchy
+    attach_zone_hierarchy([report])
 
     return render(request, 'core/work_report_detail.html', {
         'report': report,
         'tree_entry_groups': list(grouped.values()),
-        'zone_hierarchy': zone_hierarchy,
+        'zone_hierarchy': report.zone_hierarchy,
     })
 
 
@@ -5895,7 +5880,7 @@ def workorder_history(request):
     from core.models import WorkReport, Worker
     from core.role_utils import get_worker_for_user, is_admin, get_user_role, ROLE_FIELD_WORKER
     from core.role_utils import ROLE_SUPER_ADMIN, ROLE_MANAGER
-    from core.workorder_tree_views import workitem_path_map, enrich_reports
+    from core.workorder_tree_views import workitem_path_map, enrich_reports, attach_zone_hierarchy
     from datetime import date
 
     role = get_user_role(request.user)
@@ -5920,33 +5905,7 @@ def workorder_history(request):
                    .prefetch_related('zones__land', 'entries__work_item', 'entries__project')
                    .order_by('-date', '-id')[:50])
     enrich_reports(reports, workitem_path_map())
-
-    # Build a Land → 通用名称 → [zone codes] hierarchy per report, plus a deduplicated
-    # summary string. Replaces the old flat `zone_names` ("BOH, BOH, BOH, …") which had
-    # tons of repeats, and lets the template render a clean grouped view.
-    for r in reports:
-        lands = {}  # land_name -> { name -> set(codes) }
-        order = []  # preserve first-seen land order
-        for z in r.zones.all():
-            ln = (z.land.name if z.land_id and z.land else '其它') or '其它'
-            nm = z.name or z.code
-            if ln not in lands:
-                lands[ln] = {}
-                order.append(ln)
-            lands[ln].setdefault(nm, []).append(z.code)
-        r.zone_hierarchy = [
-            {'land': ln, 'names': [
-                {'name': nm, 'codes': sorted(set(codes)), 'count': len(set(codes))}
-                for nm, codes in sorted(lands[ln].items())
-            ], 'zone_count': sum(len(v) for v in lands[ln].values())}
-            for ln in order
-        ]
-        # Deduplicated flat summary for the card view: "Land1·nameA/nameB、Land2·nameC".
-        parts = []
-        for ln in order:
-            nms = sorted(lands[ln].keys())
-            parts.append(ln + '·' + '/'.join(nms))
-        r.zone_summary = '、'.join(parts) if parts else ''
+    attach_zone_hierarchy(reports)
 
     context = {
         'reports': reports,
@@ -5978,7 +5937,7 @@ def _build_zone_geo_data():
 
 @login_required(login_url='core:login')
 def workorder_mobile_v2(request):
-    from core.models import WorkReport, Patch, Zone, Worker, WorkItem
+    from core.models import WorkReport, Patch, Zone, Worker
     from core.role_utils import get_worker_for_user, is_admin, get_user_role, ROLE_FIELD_WORKER
     from core.role_utils import ROLE_SUPER_ADMIN, ROLE_MANAGER, resolve_or_create_worker
     from core.workorder_tree_views import (
@@ -6036,16 +5995,6 @@ def workorder_mobile_v2(request):
             selected_zones = Zone.objects.filter(code__in=zone_codes)
             zone_names = ', '.join(z.name or z.code for z in selected_zones) if selected_zones else ''
 
-            # Persist the selected work category (WorkItem id from the frontend drill-down).
-            # Previously work_category was never set → every v2 report had NULL category.
-            work_category_id = (request.POST.get('work_category_id') or '').strip()
-            work_category = None
-            if work_category_id:
-                try:
-                    work_category = WorkItem.objects.get(pk=int(work_category_id))
-                except (ValueError, WorkItem.DoesNotExist):
-                    work_category = None
-
             report = WorkReport.objects.create(
                 date=request.POST.get('date') or date.today().isoformat(),
                 weather='',
@@ -6065,7 +6014,6 @@ def workorder_mobile_v2(request):
                 third_party_hours=third_party_hours,
                 zone_names=zone_names,
                 work_content=request.POST.get('work_content', ''),
-                work_category=work_category,
             )
 
             if selected_zones:
