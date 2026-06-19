@@ -2,8 +2,8 @@ from django.contrib import admin
 from django.utils import timezone
 from django.contrib.auth.models import User
 from .models import (
-    Zone, Plant, Worker, WorkOrder, Event, WorkLog, WeatherData,
-    MaintenanceRequest, ProjectSupportRequest, WaterRequest, Land,
+    Zone, Plant, Worker, WeatherData,
+    WaterRequest, Land,
     RegistrationRequest, ManagerProfile, DepartmentUserProfile,
     MaxicomController, MaxicomSchedule,
     MaxicomFlowZone, MaxicomWeatherStation, MaxicomWeatherLog,
@@ -11,10 +11,8 @@ from .models import (
     MaxicomETCheckbook, MaxicomRuntime,
     EquipmentCatalog, ZoneEquipment,
     Pipeline, Patch,
-    WorkCategory, InfoSource, FaultCategory, FaultSubType,
-    WorkReport, WorkReportFault,
+    WorkReport,
     WorkItem, Project, WorkReportEntry,
-    DemandCategory, DemandDepartment, DemandRecord,
     SyncAgentHeartbeat, AISettings,
 )
 from .role_utils import get_worker_profile
@@ -293,46 +291,6 @@ class WorkerAdmin(admin.ModelAdmin):
     department_display.short_description = '部门'
 
 
-@admin.register(WorkOrder)
-class WorkOrderAdmin(admin.ModelAdmin):
-    list_display = ('title', 'zone', 'assigned_to', 'status', 'priority', 'scheduled_date', 'due_date', 'created_at', 'updated_at')
-    list_filter = ('status', 'priority', 'scheduled_date', 'due_date')
-    search_fields = ('title', 'description')
-    readonly_fields = ('created_at', 'updated_at')
-
-
-@admin.register(Event)
-class EventAdmin(admin.ModelAdmin):
-    list_display = ('name', 'description', 'start_date', 'end_date', 'created_at')
-    list_filter = ('start_date', 'end_date')
-    search_fields = ('name', 'description')
-    readonly_fields = ('created_at',)
-    filter_horizontal = ('affects_zones',)
-
-
-@admin.register(WorkLog)
-class WorkLogAdmin(admin.ModelAdmin):
-    list_display = ('work_type', 'worker', 'zone', 'work_order', 'notes', 'latitude', 'longitude', 'work_timestamp', 'relay_id', 'uploaded_at')
-    list_filter = ('work_type', 'work_timestamp', 'uploaded_at')
-    search_fields = ('notes', 'relay_id')
-    readonly_fields = ('uploaded_at',)
-
-
-@admin.register(MaintenanceRequest)
-class MaintenanceRequestAdmin(admin.ModelAdmin):
-    list_display = ('zone', 'submitter', 'date', 'status', 'start_time', 'end_time', 'participants', 'work_content', 'materials', 'feedback', 'approver', 'processed_at', 'status_notes', 'created_at', 'updated_at')
-    list_filter = ('status', 'date', 'created_at')
-    search_fields = ('zone__name', 'submitter__full_name', 'work_content')
-    readonly_fields = ('created_at', 'updated_at')
-
-
-@admin.register(ProjectSupportRequest)
-class ProjectSupportRequestAdmin(admin.ModelAdmin):
-    list_display = ('zone', 'submitter', 'date', 'status', 'start_time', 'end_time', 'participants', 'work_content', 'materials', 'feedback', 'approver', 'processed_at', 'status_notes', 'created_at', 'updated_at')
-    list_filter = ('status', 'date', 'created_at')
-    search_fields = ('zone__name', 'submitter__full_name', 'work_content')
-    readonly_fields = ('created_at', 'updated_at')
-
 
 @admin.register(WaterRequest)
 class WaterRequestAdmin(admin.ModelAdmin):
@@ -488,63 +446,13 @@ class PipelineAdmin(admin.ModelAdmin):
 # ==========================================================================
 
 
-class FaultSubTypeInline(admin.TabularInline):
-    model = FaultSubType
-    extra = 0
-
-
-@admin.register(WorkCategory)
-class WorkCategoryAdmin(admin.ModelAdmin):
-    list_display = ('code', 'name', 'order', 'active', 'created_at', 'updated_at')
-    list_editable = ('order', 'active')
-    search_fields = ('name', 'code')
-    ordering = ('order', 'code')
-
-
-@admin.register(InfoSource)
-class InfoSourceAdmin(admin.ModelAdmin):
-    list_display = ('code', 'name', 'order', 'active', 'created_at', 'updated_at')
-    list_editable = ('order', 'active')
-    search_fields = ('name', 'code')
-    ordering = ('order', 'code')
-
-
-@admin.register(FaultCategory)
-class FaultCategoryAdmin(admin.ModelAdmin):
-    list_display = ('name_zh', 'name_en', 'order', 'active', 'sub_type_count', 'created_at', 'updated_at')
-    list_editable = ('order', 'active')
-    search_fields = ('name_zh', 'name_en')
-    ordering = ('order', 'id')
-    inlines = [FaultSubTypeInline]
-
-    def sub_type_count(self, obj):
-        return obj.sub_types.count()
-    sub_type_count.short_description = '子类型数'
-
-
-@admin.register(FaultSubType)
-class FaultSubTypeAdmin(admin.ModelAdmin):
-    list_display = ('code', 'name_zh', 'name_en', 'category', 'order', 'active', 'created_at', 'updated_at')
-    list_filter = ('category', 'active')
-    list_editable = ('order', 'active')
-    search_fields = ('name_zh', 'name_en', 'code')
-    ordering = ('category__order', 'order', 'id')
-
-
-class WorkReportFaultInline(admin.TabularInline):
-    model = WorkReportFault
-    extra = 0
-    autocomplete_fields = ('fault_subtype',)
-    readonly_fields = ()
-
 
 @admin.register(WorkReport)
 class WorkReportAdmin(admin.ModelAdmin):
-    list_display = ('date', 'weather', 'worker', 'location', 'work_category', 'zone_location', 'remark', 'info_source', 'is_difficult', 'is_difficult_resolved', 'created_at', 'updated_at')
-    list_filter = ('date', 'work_category', 'location', 'is_difficult', 'weather')
+    list_display = ('date', 'weather', 'worker', 'location', 'zone_location', 'remark', 'is_difficult', 'is_difficult_resolved', 'created_at', 'updated_at')
+    list_filter = ('date', 'location', 'is_difficult', 'weather')
     search_fields = ('remark', 'zone_location', 'worker__full_name')
     date_hierarchy = 'date'
-    inlines = [WorkReportFaultInline]
     raw_id_fields = ('worker',)
     ordering = ('-date', '-id')
 
@@ -576,73 +484,6 @@ class WorkReportEntryAdmin(admin.ModelAdmin):
     raw_id_fields = ('work_report', 'work_item', 'project')
     autocomplete_fields = ()
 # ==========================================================================
-
-
-@admin.register(DemandCategory)
-class DemandCategoryAdmin(admin.ModelAdmin):
-    list_display = ('code', 'name', 'category_type', 'order', 'active', 'created_at', 'updated_at')
-    list_filter = ('category_type', 'active')
-    list_editable = ('order', 'active')
-    search_fields = ('name', 'code')
-    ordering = ('order', 'code')
-
-
-@admin.register(DemandDepartment)
-class DemandDepartmentAdmin(admin.ModelAdmin):
-    list_display = ('code', 'name', 'order', 'active', 'created_at')
-    list_editable = ('order', 'active')
-    search_fields = ('name', 'code')
-    ordering = ('order', 'code')
-
-
-@admin.register(DemandRecord)
-class DemandRecordAdmin(admin.ModelAdmin):
-    list_display = ('date', 'zone_text', 'category_text', 'content_preview', 'time_display', 'status', 'is_global_event')
-    list_filter = ('date', 'category', 'status', 'is_global_event', 'time_parsed', 'zone')
-    search_fields = ('content', 'original_text', 'zone_text', 'category_text', 'demand_contact')
-    date_hierarchy = 'date'
-    readonly_fields = ('created_at', 'updated_at', 'time_parsed', 'crosses_midnight')
-    raw_id_fields = ('zone', 'submitter', 'approver', 'work_order')
-    filter_horizontal = ('affected_zones',)
-    ordering = ('-date', '-id')
-
-    fieldsets = (
-        ('基本信息', {
-            'fields': ('date', 'content', 'original_text', 'status')
-        }),
-        ('区域信息', {
-            'fields': ('zone', 'zone_text', 'is_global_event', 'affected_zones')
-        }),
-        ('类别信息', {
-            'fields': ('category', 'category_text')
-        }),
-        ('时间段', {
-            'fields': ('start_time', 'end_time', 'time_parsed', 'crosses_midnight')
-        }),
-        ('需求方信息', {
-            'fields': ('demand_department', 'demand_department_text', 'demand_contact')
-        }),
-        ('审批流程', {
-            'fields': ('submitter', 'approver', 'processed_at', 'status_notes')
-        }),
-        ('关联工单', {
-            'fields': ('work_order',)
-        }),
-        ('时间记录', {
-            'fields': ('created_at', 'updated_at'),
-            'classes': ('collapse',)
-        }),
-    )
-
-    def content_preview(self, obj):
-        return obj.content[:50] + '...' if len(obj.content) > 50 else obj.content
-    content_preview.short_description = '内容'
-
-    def time_display(self, obj):
-        if obj.start_time and obj.end_time:
-            return f"{obj.start_time.strftime('%H:%M')} - {obj.end_time.strftime('%H:%M')}"
-        return '-'
-    time_display.short_description = '时间段'
 
 
 # ==========================================================================
