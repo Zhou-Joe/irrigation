@@ -30,6 +30,18 @@ def drop_legacy_tables_forward(apps, schema_editor):
             except Exception:
                 pass
         # 3. Now drop the WorkReport FK columns (the tables they pointed to are gone).
+        #    IMPORTANT: SQLite refuses DROP COLUMN if an index references the column,
+        #    so drop those indexes first. Index names follow Django's <table>_<col>_<hash>.
+        for idx_sql in [
+            "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='core_workreport' "
+            "AND (name LIKE 'core_workreport_work_category_%' OR name LIKE 'core_workreport_info_source_%')"
+        ]:
+            cursor.execute(idx_sql)
+            for (idx_name,) in cursor.fetchall():
+                try:
+                    cursor.execute(f'DROP INDEX IF EXISTS "{idx_name}"')
+                except Exception:
+                    pass
         for col in ['work_category_id', 'info_source_id']:
             try:
                 cursor.execute(f'ALTER TABLE core_workreport DROP COLUMN {col}')
