@@ -587,7 +587,7 @@
                 <tr>
                     <td>{{ r.date|date:"Y/m/d" }}</td>
                     <td>{{ r.worker.full_name }}</td>
-                    <td>{{ r.work_category.name }}</td>
+                    <td>{{ r.section_labels|join:" / " }}</td>
                     <td>{{ r.remark|truncatewords:12 }}</td>
                 </tr>
                 {% endfor %}
