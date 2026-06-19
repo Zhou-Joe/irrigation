@@ -5139,64 +5139,12 @@ def work_report_create(request):
 
 @login_required(login_url='core:login')
 def work_report_edit(request, report_id):
-    from core.models import WorkReport, Patch, Zone, ZoneEquipment
-    from core.role_utils import is_admin
-
-    report = get_object_or_404(WorkReport, pk=report_id)
-
-    if not is_admin(request.user):
-        try:
-            if report.worker != request.user.worker_profile:
-                messages.error(request, '无权编辑此记录')
-                return redirect('core:work_reports')
-        except Exception:
-            messages.error(request, '无权编辑此记录')
-            return redirect('core:work_reports')
-
-    if request.method == 'POST':
-        report.date = request.POST.get('date')
-        report.weather = request.POST.get('weather', '')
-        report.location_id = request.POST.get('location')
-        report.work_category_id = request.POST.get('work_category')
-        zone_code = request.POST.get('zone_location', '').strip()
-        report.zone_location = Zone.objects.filter(code=zone_code).first() if zone_code else None
-        report.remark = request.POST.get('remark', '')
-        report.info_source_id = request.POST.get('info_source') or None
-        report.is_difficult = bool(request.POST.get('is_difficult'))
-        report.is_difficult_resolved = bool(request.POST.get('is_difficult_resolved'))
-        report.save()
-
-        messages.success(request, f'工作日报已更新 (ID: {report.id})')
-        return redirect('core:work_reports')
-
-    # GET — pre-populate form
-    locations = Patch.objects.filter(active=True).order_by('order')
-    zones = Zone.objects.order_by('code')
-
-    # Build zone equipment map for frontend lookup
-    zone_equipment_map = {}
-    for ze in ZoneEquipment.objects.select_related('zone', 'equipment').all():
-        zone_code = ze.zone.code
-        if zone_code not in zone_equipment_map:
-            zone_equipment_map[zone_code] = []
-        zone_equipment_map[zone_code].append({
-            'id': ze.id,
-            'equipment_details': {
-                'equipment_type': ze.equipment.equipment_type,
-                'equipment_type_display': ze.equipment.get_equipment_type_display(),
-                'model_name': ze.equipment.model_name,
-            },
-            'location_in_zone': ze.location_in_zone or '',
-        })
-
-    return render(request, 'core/work_report_form.html', {
-        'report': report,
-        'locations': locations,
-        'zones': zones,
-        'grouped_zones': _build_grouped_zones(zones),
-        'zone_equipment_json': json.dumps(zone_equipment_map),
-        'today': report.date.isoformat(),
-    })
+    # The legacy column-based edit form referenced deleted models (WorkCategory,
+    # InfoSource). Redirect to the v2 tree-form editor, which is the single source
+    # of truth for editing a WorkReport.
+    from core.models import WorkReport
+    get_object_or_404(WorkReport, pk=report_id)
+    return redirect('core:workorder_tree_form_edit', report_id=report_id)
 
 
 @require_POST
