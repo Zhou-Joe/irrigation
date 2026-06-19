@@ -1,7 +1,6 @@
 """Seed WorkCategory, FaultCategory, and FaultSubType from workorder.xlsx spec."""
 
 from django.core.management.base import BaseCommand
-from core.models import WorkCategory, FaultCategory, FaultSubType
 
 
 # ── Work Categories (2-level hierarchy from xlsx) ──────────────────────────
@@ -191,15 +190,14 @@ FAULT_DATA = [
 
 
 class Command(BaseCommand):
-    help = 'Seed WorkCategory (2-level), FaultCategory, and FaultSubType from workorder spec'
+    help = '(Deprecated) Seed WorkCategory/FaultCategory/FaultSubType — models removed.'
 
     def handle(self, *args, **options):
-        # ── Work Categories ──
-        wc_count = 0
-        parent_cache = {}
-
-        for code, name, parent_code, order in WORK_CATEGORIES:
-            parent = None
+        self.stdout.write(self.style.WARNING(
+            'seed_workorder_data is deprecated: WorkCategory/FaultCategory/FaultSubType '
+            'have been removed. Use seed_work_items for the current work-content tree. '
+            'No action taken.'
+        ))
             if parent_code:
                 parent = parent_cache.get(parent_code)
                 if parent is None:

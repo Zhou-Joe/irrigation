@@ -20,7 +20,7 @@ from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 
 from core.models import (
-    InfoSource, Patch, Project, WorkCategory, Worker, WorkItem,
+    Patch, Project, Worker, WorkItem,
     WorkReport, WorkReportEntry, Zone,
 )
 
@@ -531,8 +531,6 @@ def _handle_render(request, report):
         'tree_json': json.dumps(tree, ensure_ascii=False),
         'projects_json': json.dumps(serialize_projects(), ensure_ascii=False),
         'locations': Patch.objects.filter(active=True).order_by('order'),
-        'work_categories': WorkCategory.objects.filter(active=True).order_by('order'),
-        'info_sources': InfoSource.objects.filter(active=True).order_by('order'),
         'zones': Zone.objects.order_by('code'),
         'grouped_zones': _build_grouped_zones(Zone.objects.order_by('code')),
         'today': date.today().isoformat(),
@@ -554,8 +552,6 @@ def _report_header_dict(report):
         'h_weather': report.weather,
         'h_shift': report.shift,
         'h_location': report.location_id,
-        'h_work_category': report.work_category_id,
-        'h_info_source': report.info_source_id,
         'h_zone_names': report.zone_names,
         'h_zones': zones,
         'h_remark': report.remark,
@@ -602,8 +598,6 @@ def _handle_save(request, report):
         report.weather = request.POST.get('weather', '')
         report.shift = request.POST.get('shift', '')
         report.location_id = request.POST.get('location') or None
-        report.work_category_id = request.POST.get('work_category') or None
-        report.info_source_id = request.POST.get('info_source') or None
         report.zone_names = request.POST.get('zone_names', '')
         report.remark = request.POST.get('remark', '')
         report.is_pending_repair = bool(request.POST.get('is_pending_repair'))
