@@ -23,7 +23,7 @@ from langgraph.checkpoint.memory import InMemorySaver
 
 from core.models import (
     AISettings, WorkReport, WorkReportEntry, WorkItem, Project,
-    DemandRecord, Zone, Patch, WeatherData,
+    Zone, Patch, WeatherData,
 )
 
 logger = logging.getLogger(__name__)
@@ -97,23 +97,6 @@ def _populate_workspace_data(ws):
                 wi.code, wi.name_zh, wi.value_type,
                 str(e.project) if e.project else '',
                 e.count, e.status, (e.text_value or '')[:200],
-            ])
-    # DemandRecords (last 90 days)
-    dr_qs = DemandRecord.objects.filter(date__gte=since).select_related(
-        'zone', 'category', 'demand_department'
-    ).order_by('-date')
-    with open(os.path.join(ws, 'demand_records.csv'), 'w', newline='', encoding='utf-8-sig') as f:
-        w = csv.writer(f)
-        w.writerow(['日期', '区域编号', '区域名称', '类别', '提出部门', '状态', '内容'])
-        for d in dr_qs:
-            w.writerow([
-                d.date.isoformat(),
-                getattr(d.zone, 'code', '') if d.zone else (d.zone_text or ''),
-                str(d.zone) if d.zone else '',
-                str(d.category) if d.category else (d.category_text or ''),
-                str(d.demand_department) if d.demand_department else (d.demand_department_text or ''),
-                d.get_status_display(),
-                (d.content or '')[:200],
             ])
     # Zones (all)
     with open(os.path.join(ws, 'zones.csv'), 'w', newline='', encoding='utf-8-sig') as f:
@@ -313,44 +296,6 @@ def query_work_entries_stats(
     }, ensure_ascii=False)
 
 
-@tool
-def query_demand_records(
-    start_date: str = "",
-    end_date: str = "",
-    status: str = "",
-    limit: int = 20,
-) -> str:
-    """查询浇水/灌溉需求记录（其他部门提出的灌溉需求）。可按日期、状态过滤。
-
-    Args:
-        start_date: 起始日期 YYYY-MM-DD，留空默认最近7天
-        end_date: 结束日期 YYYY-MM-DD，留空默认今天
-        status: 状态过滤，可选：submitted/approved/rejected/in_progress/completed/info_needed，留空返回全部
-        limit: 最多返回条数
-    """
-    today = date.today()
-    end = _parse_date(end_date) or today
-    start = _parse_date(start_date) or (end - timedelta(days=7))
-    qs = DemandRecord.objects.filter(date__gte=start, date__lte=end)
-    if status:
-        qs = qs.filter(status=status)
-    qs = qs.select_related('zone', 'category', 'demand_department').order_by('-date', '-id')[:limit]
-    rows = []
-    for d in qs:
-        rows.append({
-            '日期': d.date.isoformat(),
-            '区域': str(d.zone) if d.zone else (d.zone_text or ''),
-            '类别': str(d.category) if d.category else (d.category_text or ''),
-            '部门': str(d.demand_department) if d.demand_department else (d.demand_department_text or ''),
-            '状态': d.get_status_display(),
-            '内容': (d.content or '')[:120],
-        })
-    return json.dumps({
-        'returned': len(rows),
-        'date_range': [start.isoformat(), end.isoformat()],
-        'records': rows,
-    }, ensure_ascii=False)
-
 
 @tool
 def query_zones(zone_code: str = "", limit: int = 50) -> str:
@@ -416,7 +361,7 @@ def query_irrigation_overview() -> str:
     from core.models import (
         MaxicomController, MaxicomSchedule, MaxicomFlowZone,
         MaxicomWeatherStation, MaxicomWeatherLog, MaxicomEvent,
-    )
+)
     return json.dumps({
         '片区数': Patch.objects.count(),
         '控制器数': MaxicomController.objects.count(),
@@ -551,7 +496,6 @@ ALL_TOOLS = [
     query_work_reports,
     query_work_report_stats,
     query_work_entries_stats,
-    query_demand_records,
     query_zones,
     query_weather,
     query_irrigation_overview,

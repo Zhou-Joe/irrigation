@@ -1,5 +1,5 @@
 from django.test import TestCase
-from core.models import Zone, Worker, WorkLog
+from core.models import Zone, Worker
 
 
 class ZoneModelTest(TestCase):

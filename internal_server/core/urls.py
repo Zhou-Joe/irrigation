@@ -5,14 +5,12 @@ from core.sync_views import sync_receive, sync_status, agent_status
 from core.ai_views import ai_chat, ai_status
 from core.api import (
     ZoneViewSet, PlantViewSet, WorkerViewSet,
-    WorkOrderViewSet, EventViewSet, WorkLogViewSet,
-    MaintenanceRequestViewSet, ProjectSupportRequestViewSet, WaterRequestViewSet,
+    WaterRequestViewSet,
     EquipmentCatalogViewSet, ZoneEquipmentViewSet,
     PipelineViewSet,
-    PatchViewSet, LocationViewSet, RegionViewSet, WorkCategoryViewSet, InfoSourceViewSet,
-    FaultCategoryViewSet, FaultSubTypeViewSet, WorkReportViewSet,
-    DemandCategoryViewSet, DemandDepartmentViewSet, DemandRecordViewSet,
-    worker_login, get_all_requests, get_weather, demand_stats, demand_calendar
+    PatchViewSet, LocationViewSet, RegionViewSet,
+    WorkReportViewSet,
+    worker_login, get_weather,
 )
 from core.views import equipment_catalog_autocomplete
 from core.workorder_tree_views import (
@@ -26,11 +24,6 @@ router = DefaultRouter()
 router.register(r'zones', ZoneViewSet)
 router.register(r'plants', PlantViewSet)
 router.register(r'workers', WorkerViewSet)
-router.register(r'work-orders', WorkOrderViewSet)
-router.register(r'events', EventViewSet)
-router.register(r'work-logs', WorkLogViewSet)
-router.register(r'maintenance-requests', MaintenanceRequestViewSet)
-router.register(r'project-support-requests', ProjectSupportRequestViewSet)
 router.register(r'water-requests', WaterRequestViewSet)
 router.register(r'equipment-catalog', EquipmentCatalogViewSet)
 router.register(r'zone-equipment', ZoneEquipmentViewSet)
@@ -38,14 +31,7 @@ router.register(r'pipelines', PipelineViewSet)
 router.register(r'patches', PatchViewSet)
 router.register(r'regions', RegionViewSet)
 router.register(r'locations', LocationViewSet, basename='location')
-router.register(r'work-categories', WorkCategoryViewSet)
-router.register(r'info-sources', InfoSourceViewSet)
-router.register(r'fault-categories', FaultCategoryViewSet)
-router.register(r'fault-subtypes', FaultSubTypeViewSet)
 router.register(r'work-reports', WorkReportViewSet, basename='workreport')
-router.register(r'demand-categories', DemandCategoryViewSet)
-router.register(r'demand-departments', DemandDepartmentViewSet)
-router.register(r'demand-records', DemandRecordViewSet, basename='demandrecord')
 
 urlpatterns = [
     path('', views.dashboard, name='dashboard'),
@@ -94,9 +80,6 @@ urlpatterns = [
     path('settings/batch-delete-landmark/', views.batch_delete_landmark, name='batch_delete_landmark'),
     path('api/landmarks/', views.landmarks_api, name='landmarks_api'),
     path('api/landmarks/recalculate/', views.landmarks_recalculate, name='landmarks_recalculate'),
-    path('requests/', views.requests_page, name='requests'),
-    path('requests/<str:type_code>/<int:request_id>/', views.request_detail, name='request_detail'),
-    path('requests/<str:type_code>/<int:request_id>/update/', views.update_request_status, name='update_request_status'),
     path('work-reports/', views.work_reports_list, name='work_reports'),
     path('work-reports/new/', views.work_report_create, name='work_report_create'),
     path('work-reports/tree/new/', workorder_tree_form, name='workorder_tree_form'),
@@ -111,7 +94,6 @@ urlpatterns = [
     path('work-reports/<int:report_id>/upload-photo/', views.work_report_upload_photo, name='work_report_upload_photo'),
     path('work-reports/<int:report_id>/remove-photo/', views.work_report_remove_photo, name='work_report_remove_photo'),
     path('work-reports/<int:report_id>/delete/', views.work_report_delete, name='work_report_delete'),
-    path('demands/', views.demands_page, name='demands'),
     path('mobile/workorder/v2/', views.workorder_mobile_v2, name='workorder_mobile_v2'),
     path('mobile/workorder/history/', views.workorder_history, name='workorder_history'),
     path('mobile/water-request/v2/', views.water_request_mobile_v2, name='water_request_mobile_v2'),
@@ -121,10 +103,7 @@ urlpatterns = [
     path('api/modal/workorder-data/', views.workorder_modal_data, name='workorder_modal_data'),
     path('api/modal/water-request-data/', views.water_request_modal_data, name='water_request_modal_data'),
     path('api/auth/login', worker_login, name='worker_login'),
-    path('api/requests', get_all_requests, name='get_all_requests'),
     path('api/weather', get_weather, name='get_weather'),
-    path('api/demand-stats', demand_stats, name='demand_stats'),
-    path('api/demand-calendar', demand_calendar, name='demand_calendar'),
     path('api/custom-report', views.custom_report_api, name='custom_report_api'),
     path('custom-report/', views.custom_report, name='custom_report'),
     path('api/equipment-catalog/autocomplete', equipment_catalog_autocomplete, name='equipment_catalog_autocomplete'),

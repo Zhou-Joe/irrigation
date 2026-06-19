@@ -8,202 +8,170 @@
 {% block extra_css %}
 <link rel="stylesheet" href="{% static 'css/settings.css' %}">
 <style>
-.photo-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-    gap: 12px;
+/* Mobile-first: single column on phones, wider cards on desktop. */
+.wr-detail { max-width: 720px; margin: 0 auto; padding: 12px; }
+.wr-card {
+    background: var(--color-surface, #fff);
+    border-radius: 12px;
+    padding: 14px;
+    margin-bottom: 12px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
 }
-.photo-thumb {
-    aspect-ratio: 1;
-    border-radius: 8px;
-    overflow: hidden;
-    cursor: pointer;
-    border: 2px solid var(--color-surface-dark);
-    transition: border-color 0.2s, transform 0.2s;
+.wr-card h2 {
+    font-size: 0.95rem; margin: 0 0 10px; color: var(--color-primary, #2D6A4F);
+    display: flex; align-items: center; justify-content: space-between;
 }
-.photo-thumb:hover {
-    border-color: var(--color-primary);
-    transform: scale(1.03);
+.wr-meta { display: grid; grid-template-columns: 1fr; gap: 6px; font-size: 0.85rem; }
+.wr-meta-row { display: flex; gap: 8px; }
+.wr-meta-label { color: var(--color-text-muted, #999); flex-shrink: 0; width: 4.5em; }
+.wr-meta-val { color: var(--color-text, #333); word-break: break-word; }
+.wr-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.wr-chip { background: #e8f5e9; color: #2D6A4F; padding: 2px 8px; border-radius: 8px; font-size: 0.78em; font-weight: 500; }
+.wr-flag { font-size: 0.72em; padding: 1px 6px; border-radius: 6px; margin-left: 4px; }
+.wr-flag.warn { background: #fff3cd; color: #856404; }
+.wr-flag.ok { background: #d4edda; color: #155724; }
+
+/* Work-content entries: stack rows on mobile */
+.wr-entry { display: flex; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--color-surface-dark, #f0f0f0); font-size: 0.85rem; }
+.wr-entry:last-child { border-bottom: none; }
+.wr-entry-proj { color: var(--color-text-muted, #999); font-size: 0.78em; flex-shrink: 0; width: 5em; }
+.wr-entry-name { flex: 1; }
+.wr-entry-count { font-weight: 600; flex-shrink: 0; }
+.wr-entry-text { color: var(--color-text-muted, #666); font-size: 0.8em; margin-top: 2px; }
+
+/* Zone hierarchy: Land → name → codes */
+.wr-zone-land { margin-bottom: 8px; }
+.wr-zone-land-name { font-weight: 600; font-size: 0.85rem; color: var(--color-primary, #2D6A4F); }
+.wr-zone-land-count { color: var(--color-text-muted, #999); font-size: 0.75em; font-weight: 400; margin-left: 4px; }
+.wr-zone-names { margin-top: 3px; }
+.wr-zone-name-row { display: flex; flex-wrap: wrap; gap: 4px; align-items: baseline; padding: 2px 0; font-size: 0.8rem; }
+.wr-zone-name { background: #e8f5e9; color: #2D6A4F; padding: 1px 7px; border-radius: 7px; font-size: 0.8em; font-weight: 500; }
+.wr-zone-codes { color: var(--color-text-muted, #999); font-size: 0.74em; }
+
+/* Photos */
+.wr-photo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)); gap: 8px; }
+.wr-photo-thumb { aspect-ratio: 1; border-radius: 8px; overflow: hidden; cursor: pointer; position: relative; background: var(--color-surface-dark, #f5f5f5); }
+.wr-photo-thumb img, .wr-photo-thumb video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.wr-photo-play { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); background: rgba(0,0,0,0.55); color: #fff; border-radius: 50%; width: 26px; height: 26px; display: flex; align-items: center; justify-content: center; font-size: 0.8em; pointer-events: none; }
+.no-photos { color: var(--color-text-muted, #999); font-size: 0.85rem; padding: 8px 0; }
+@media (min-width: 600px) {
+    .wr-meta { grid-template-columns: 1fr 1fr; }
 }
-.photo-thumb img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-}
-.no-photos {
-    color: var(--color-text-muted);
-    font-size: 0.85rem;
-    padding: 16px 0;
-}
+
 /* Lightbox */
-.lb-overlay {
-    display: none;
-    position: fixed;
-    inset: 0;
-    background: rgba(0,0,0,0.85);
-    z-index: 3000;
-    justify-content: center;
-    align-items: center;
-}
+.lb-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.9); z-index: 3000; justify-content: center; align-items: center; }
 .lb-overlay.show { display: flex; }
-.lb-img {
-    max-width: 90vw;
-    max-height: 85vh;
-    border-radius: 8px;
-    object-fit: contain;
-}
-.lb-close {
-    position: absolute;
-    top: 16px;
-    right: 24px;
-    color: #fff;
-    font-size: 2rem;
-    cursor: pointer;
-    background: none;
-    border: none;
-    line-height: 1;
-}
-.lb-nav {
-    position: absolute;
-    top: 50%;
-    transform: translateY(-50%);
-    color: #fff;
-    font-size: 2.5rem;
-    cursor: pointer;
-    background: rgba(0,0,0,0.4);
-    border: none;
-    border-radius: 50%;
-    width: 48px;
-    height: 48px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-.lb-prev { left: 16px; }
-.lb-next { right: 16px; }
-.lb-counter {
-    position: absolute;
-    bottom: 20px;
-    left: 50%;
-    transform: translateX(-50%);
-    color: rgba(255,255,255,0.7);
-    font-size: 0.85rem;
-}
+.lb-img, .lb-video { max-width: 92vw; max-height: 86vh; border-radius: 8px; object-fit: contain; }
+.lb-close { position: absolute; top: 12px; right: 20px; color: #fff; font-size: 2rem; cursor: pointer; background: none; border: none; line-height: 1; }
+.lb-nav { position: absolute; top: 50%; transform: translateY(-50%); color: #fff; font-size: 2.2rem; cursor: pointer; background: rgba(0,0,0,0.4); border: none; border-radius: 50%; width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; }
+.lb-prev { left: 12px; }
+.lb-next { right: 12px; }
+.lb-counter { position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%); color: rgba(255,255,255,0.7); font-size: 0.85rem; }
+.wr-btn-row { display: flex; gap: 8px; margin-bottom: 12px; }
+.wr-btn { flex: 1; text-align: center; padding: 10px; border-radius: 8px; font-size: 0.9rem; font-weight: 500; text-decoration: none; }
+.wr-btn-primary { background: var(--color-primary, #2D6A4F); color: #fff; }
+.wr-btn-secondary { background: var(--color-surface-dark, #f0f0f0); color: var(--color-text, #333); }
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="form-container">
-    <div class="form-header">
-        <h1>日报详情 #{{ report.id }}</h1>
-        <div style="display:flex;gap:8px;">
-            <a href="{% url 'core:workorder_tree_form_edit' report.id %}" class="btn btn-primary">编辑</a>
-            <a href="{% url 'core:work_reports' %}" class="btn btn-secondary">← 返回列表</a>
+<div class="wr-detail">
+    <div class="wr-btn-row">
+        <a href="{% url 'core:workorder_tree_form_edit' report.id %}" class="wr-btn wr-btn-primary">编辑</a>
+        <a href="{% url 'core:work_reports' %}" class="wr-btn wr-btn-secondary">← 返回列表</a>
+    </div>
+
+    {# ── 基本信息 (only fields from the v2 submit form) ── #}
+    <div class="wr-card">
+        <h2>基本信息 <span style="font-size:0.72em;color:var(--color-text-muted,#999);">#{{ report.id }}</span></h2>
+        <div class="wr-meta">
+            <div class="wr-meta-row"><span class="wr-meta-label">日期</span><span class="wr-meta-val">{{ report.date }}</span></div>
+            {% if report.shift %}<div class="wr-meta-row"><span class="wr-meta-label">班次</span><span class="wr-meta-val">{{ report.get_shift_display|default:report.shift }}</span></div>{% endif %}
+            <div class="wr-meta-row"><span class="wr-meta-label">处理人</span><span class="wr-meta-val">{{ report.worker.full_name|default:"-" }}</span></div>
+            {% if report.work_category %}<div class="wr-meta-row"><span class="wr-meta-label">工作类别</span><span class="wr-meta-val">{{ report.work_category.name }}</span></div>{% endif %}
+            {% if report.work_start_time %}<div class="wr-meta-row"><span class="wr-meta-label">工作时间</span><span class="wr-meta-val">{{ report.work_start_time }} - {{ report.work_end_time }}</span></div>{% endif %}
+            <div class="wr-meta-row"><span class="wr-meta-label">人数</span><span class="wr-meta-val">{{ report.team_size }} 人{% if report.third_party_count %}（含三方 {{ report.third_party_count }}）{% endif %}</span></div>
+            <div class="wr-meta-row"><span class="wr-meta-label">工时</span><span class="wr-meta-val">{% if report.team_hours %}{{ report.team_hours }}h{% endif %}{% if report.third_party_hours %} / 三方 {{ report.third_party_hours }}h{% endif %}</span></div>
+            {% if report.is_pending_repair %}<div class="wr-meta-row"><span class="wr-meta-label">状态</span><span class="wr-meta-val"><span class="wr-flag warn">待修</span></span></div>{% endif %}
+            {% if report.is_difficult %}<div class="wr-meta-row"><span class="wr-meta-label">疑难</span><span class="wr-meta-val"><span class="wr-flag {{ report.is_difficult_resolved|yesno:'ok,warn' }}">{{ report.is_difficult_resolved|yesno:'已处理,未处理' }}</span></span></div>{% endif %}
         </div>
     </div>
 
-    <div class="form-section">
-        <h2>基本信息</h2>
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;font-size:0.9rem;">
-            <div><strong>日期:</strong> {{ report.date }}</div>
-            <div><strong>天气:</strong> {{ report.weather|default:"-" }}</div>
-            <div><strong>处理人:</strong> {{ report.worker.full_name }}</div>
-            <div><strong>位置:</strong> {{ report.location.name }}</div>
-            <div><strong>工作分类:</strong> {{ report.work_category.name }}</div>
-            <div><strong>故障/事件位置:</strong> {% if report.zone_location %}{{ report.zone_location.code }}{% else %}-{% endif %}</div>
-            <div><strong>信息来源:</strong> {{ report.info_source.name|default:"-" }}</div>
-            <div><strong>疑难问题:</strong>
-                {% if report.is_difficult %}
-                    是 {% if report.is_difficult_resolved %}<span style="color:var(--color-success);">(已处理)</span>{% else %}<span style="color:var(--color-warning);">(未处理)</span>{% endif %}
-                {% else %} 否 {% endif %}
+    {# ── 区域 (deduplicated Land → name hierarchy) ── #}
+    {% if zone_hierarchy %}
+    <div class="wr-card">
+        <h2>区域</h2>
+        {% for grp in zone_hierarchy %}
+        <div class="wr-zone-land">
+            <span class="wr-zone-land-name">{{ grp.land }}</span><span class="wr-zone-land-count">{{ grp.zone_count }} 个区域</span>
+            <div class="wr-zone-names">
+                {% for nm in grp.names %}
+                <div class="wr-zone-name-row">
+                    <span class="wr-zone-name">{{ nm.name }}</span>
+                    <span class="wr-zone-codes">{% if nm.count > 1 %}{{ nm.count }} 个 · {% endif %}{{ nm.codes|join:", " }}</span>
+                </div>
+                {% endfor %}
             </div>
         </div>
-        <div style="margin-top:12px;">
-            <strong>备注/工作内容:</strong>
-            <p style="margin-top:4px;padding:12px;background:var(--color-surface);border-radius:8px;white-space:pre-wrap;">{{ report.remark }}</p>
-        </div>
-    </div>
-
-    {% if tree_entry_groups %}
-    <div class="form-section">
-        <h2>工作内容</h2>
-        {% for grp in tree_entry_groups %}
-        <h3 style="margin:14px 0 6px;font-size:0.95rem;color:var(--color-primary);">{{ grp.label }}</h3>
-        <table style="width:100%;border-collapse:collapse;font-size:0.85rem;">
-            <thead>
-                <tr style="background:var(--color-surface-dark);">
-                    <th style="padding:8px 12px;text-align:left;">项目</th>
-                    <th style="padding:8px 12px;text-align:left;">节点</th>
-                    <th style="padding:8px 12px;text-align:center;">数量</th>
-                    <th style="padding:8px 12px;text-align:left;">文本</th>
-                </tr>
-            </thead>
-            <tbody>
-            {% for e in grp.items %}
-                <tr style="border-bottom:1px solid var(--color-surface-dark);">
-                    <td style="padding:8px 12px;color:var(--color-text-muted);">{{ e.project|default_if_none:"" }}</td>
-                    <td style="padding:8px 12px;">{{ e.work_item.name_zh }}{% if e.work_item.unit %} <small style="color:#999;">({{ e.work_item.unit }})</small>{% endif %}</td>
-                    <td style="padding:8px 12px;text-align:center;font-weight:600;">{% if e.count %}{{ e.count }}{% endif %}</td>
-                    <td style="padding:8px 12px;">{{ e.text_value|default_if_none:"" }}{% if e.status %}<small style="color:var(--color-primary);">[{{ e.status }}]</small>{% endif %}</td>
-                </tr>
-            {% endfor %}
-            </tbody>
-        </table>
         {% endfor %}
     </div>
     {% endif %}
 
-    <div class="form-section">
-        <h2>故障计数</h2>
-        {% if fault_entries %}
-        <table style="width:100%;border-collapse:collapse;font-size:0.85rem;">
-            <thead>
-                <tr style="background:var(--color-surface-dark);">
-                    <th style="padding:8px 12px;text-align:left;">故障大类</th>
-                    <th style="padding:8px 12px;text-align:left;">故障子类型</th>
-                    <th style="padding:8px 12px;text-align:center;">数量</th>
-                </tr>
-            </thead>
-            <tbody>
-            {% for entry in fault_entries %}
-                <tr style="border-bottom:1px solid var(--color-surface-dark);">
-                    <td style="padding:8px 12px;">{{ entry.fault_subtype.category.name_zh }}</td>
-                    <td style="padding:8px 12px;">{{ entry.fault_subtype.name_zh }}</td>
-                    <td style="padding:8px 12px;text-align:center;font-weight:600;">{{ entry.count }}</td>
-                </tr>
-            {% endfor %}
-            </tbody>
-        </table>
-        {% else %}
-        <p style="color:var(--color-text-muted);">无故障记录</p>
-        {% endif %}
+    {# ── 工作内容 (tree-form entries) ── #}
+    {% if tree_entry_groups %}
+    <div class="wr-card">
+        <h2>工作内容</h2>
+        {% for grp in tree_entry_groups %}
+        <div style="font-size:0.82rem;color:var(--color-text-muted,#999);margin:8px 0 2px;">{{ grp.label }}</div>
+        {% for e in grp.items %}
+        <div class="wr-entry">
+            <div class="wr-entry-proj">{{ e.project|default_if_none:"" }}</div>
+            <div class="wr-entry-name">
+                {{ e.work_item.name_zh }}{% if e.work_item.unit %} <small style="color:#999;">({{ e.work_item.unit }})</small>{% endif %}
+                {% if e.text_value %}<div class="wr-entry-text">{{ e.text_value }}</div>{% endif %}
+                {% if e.status %}<div class="wr-entry-text" style="color:var(--color-primary,#2D6A4F);">[{{ e.status }}]</div>{% endif %}
+            </div>
+            {% if e.count %}<div class="wr-entry-count">{{ e.count }}</div>{% endif %}
+        </div>
+        {% endfor %}
+        {% endfor %}
     </div>
+    {% endif %}
 
-    <div class="form-section">
-        <h2>现场照片</h2>
-        {% if report.photos %}
-        <div class="photo-grid">
+    {# ── 备注 ── #}
+    {% if report.remark %}
+    <div class="wr-card">
+        <h2>备注</h2>
+        <p style="margin:0;font-size:0.85rem;white-space:pre-wrap;line-height:1.5;">{{ report.remark }}</p>
+    </div>
+    {% endif %}
+
+    {# ── 现场照片/视频 (thumbnails; tap for full-size lightbox) ── #}
+    {% if report.photos %}
+    <div class="wr-card">
+        <h2>现场照片 <span style="font-size:0.72em;color:var(--color-text-muted,#999);">{{ report.photos|length }} 个</span></h2>
+        <div class="wr-photo-grid">
             {% for photo in report.photos %}
-            <div class="photo-thumb" onclick="openLightbox({{ forloop.counter0 }})">
+            <div class="wr-photo-thumb" onclick="openLightbox({{ forloop.counter0 }})">
                 {% if photo|is_video %}
-                <video src="/media/{{ photo }}" muted preload="metadata" controls></video>
+                <video src="/media/{{ photo|thumb }}" muted preload="metadata"></video>
+                <span class="wr-photo-play">▶</span>
                 {% else %}
-                <img src="/media/{{ photo }}" alt="照片 {{ forloop.counter }}" loading="lazy">
+                <img src="/media/{{ photo|thumb }}" alt="照片 {{ forloop.counter }}" loading="lazy">
                 {% endif %}
             </div>
             {% endfor %}
         </div>
-        {% else %}
-        <p class="no-photos">暂无照片</p>
-        {% endif %}
     </div>
+    {% endif %}
 </div>
 
 <!-- Lightbox -->
 <div class="lb-overlay" id="lightbox" onclick="if(event.target===this)closeLightbox()">
     <button class="lb-close" onclick="closeLightbox()">&times;</button>
     <button class="lb-nav lb-prev" onclick="event.stopPropagation();navLightbox(-1)">&#8249;</button>
-    <img class="lb-img" id="lbImg" src="" alt="">
+    <img class="lb-img" id="lbImg" src="" alt="" style="display:none;">
+    <video class="lb-video" id="lbVideo" src="" controls style="display:none;"></video>
     <button class="lb-nav lb-next" onclick="event.stopPropagation();navLightbox(1)">&#8250;</button>
     <div class="lb-counter" id="lbCounter"></div>
 </div>
@@ -218,22 +186,33 @@ function openLightbox(idx) {
     document.getElementById('lightbox').classList.add('show');
     document.addEventListener('keydown', lbKeyHandler);
 }
-
 function closeLightbox() {
     document.getElementById('lightbox').classList.remove('show');
+    // Stop video playback when closing
+    var v = document.getElementById('lbVideo'); v.pause(); v.src = '';
     document.removeEventListener('keydown', lbKeyHandler);
 }
-
 function navLightbox(dir) {
     currentIdx = (currentIdx + dir + photos.length) % photos.length;
     showPhoto();
 }
-
-function showPhoto() {
-    document.getElementById('lbImg').src = '/media/' + photos[currentIdx];
-    document.getElementById('lbCounter').textContent = (currentIdx + 1) + ' / ' + photos.length;
+function isVideoPath(p) {
+    return /\.(mp4|mov|m4v|webm|ogg|ogv|avi|mkv)$/i.test(p);
 }
-
+function showPhoto() {
+    var img = document.getElementById('lbImg');
+    var vid = document.getElementById('lbVideo');
+    var p = photos[currentIdx];
+    document.getElementById('lbCounter').textContent = (currentIdx + 1) + ' / ' + photos.length;
+    if (isVideoPath(p)) {
+        img.style.display = 'none'; img.src = '';
+        vid.style.display = ''; vid.src = '/media/' + p;
+    } else {
+        vid.style.display = ''; vid.pause(); vid.src = '';
+        vid.style.display = 'none';
+        img.style.display = ''; img.src = '/media/' + p;
+    }
+}
 function lbKeyHandler(e) {
     if (e.key === 'Escape') closeLightbox();
     else if (e.key === 'ArrowLeft') navLightbox(-1);

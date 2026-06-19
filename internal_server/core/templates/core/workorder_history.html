@@ -70,6 +70,9 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 .entry-proj { font-size:0.72rem; color:#aaa; margin-top:2px; }
 .detail-photo-grid { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
 .detail-photo { width: 64px; height: 64px; border-radius: 6px; object-fit: cover; }
+.detail-photo-wrap { position: relative; width: 64px; height: 64px; cursor: pointer; }
+.detail-photo-wrap .detail-photo { display: block; }
+.detail-photo-play { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); background: rgba(0,0,0,0.55); color: #fff; border-radius: 50%; width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; font-size: 0.7em; pointer-events: none; }
 
 /* FAB */
 .fab { position: fixed; bottom: 24px; right: 24px; width: 56px; height: 56px; border-radius: 28px; background: var(--color-primary, #2D6A4F); color: #fff; border: none; font-size: 1.8em; cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,0.2); display: flex; align-items: center; justify-content: center; text-decoration: none; }
@@ -115,6 +118,9 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
                 {% if r.section_labels %}
                     {% for lbl in r.section_labels %}<span class="section-chip">{{ lbl }}</span>{% endfor %}
                     {% if r.entry_count %}<span class="section-count">· {{ r.entry_count }}项</span>{% endif %}
+                {% elif r.work_category %}
+                    {# Has a category but no detailed content entries — still a v2 report, not legacy #}
+                    <span class="section-chip">{{ r.work_category.name }}</span>
                 {% else %}
                     <span class="section-chip legacy">旧版记录</span>
                 {% endif %}
@@ -199,11 +205,19 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
             <div class="detail-section">
                 <div class="detail-label">照片</div>
                 <div class="detail-photo-grid">
+                    {# Thumbnails (a few KB) load instantly on the list. The full-size
+                       media only loads when the user clicks to view it. #}
                     {% for p in r.photos %}
                     {% if p|is_video %}
-                    <video class="detail-photo" src="/media/{{ p }}" muted preload="metadata" controls></video>
+                    <div class="detail-photo-wrap" onclick="this.querySelector('video').style.display='block';this.querySelector('img').style.display='none';this.querySelector('video').play()">
+                        <img class="detail-photo" src="/media/{{ p|thumb }}" alt="视频缩略图" loading="lazy">
+                        <video class="detail-photo" style="display:none;" src="/media/{{ p }}" muted preload="none" controls></video>
+                        <span class="detail-photo-play">▶</span>
+                    </div>
                     {% else %}
-                    <img class="detail-photo" src="/media/{{ p }}" alt="照片">
+                    <a href="/media/{{ p }}" target="_blank">
+                        <img class="detail-photo" src="/media/{{ p|thumb }}" alt="照片" loading="lazy">
+                    </a>
                     {% endif %}
                     {% endfor %}
                 </div>

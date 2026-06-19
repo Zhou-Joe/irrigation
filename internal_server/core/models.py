@@ -572,68 +572,7 @@ class RegistrationRequest(models.Model):
         return f"注册申请 - {self.full_name} ({self.get_requested_role_display()})"
 
 
-class WorkOrder(models.Model):
-    """Represents a work order assigned to a zone."""
-
-    STATUS_PENDING = 'pending'
-    STATUS_IN_PROGRESS = 'in_progress'
-    STATUS_COMPLETED = 'completed'
-    STATUS_CANCELED = 'canceled'
-
-    STATUS_CHOICES = [
-        (STATUS_PENDING, '待处理'),
-        (STATUS_IN_PROGRESS, '进行中'),
-        (STATUS_COMPLETED, '已完成'),
-        (STATUS_CANCELED, '已取消'),
-    ]
-
-    zone = models.ForeignKey(Zone, on_delete=models.CASCADE, related_name='work_orders')
-    assigned_to = models.ForeignKey(Worker, on_delete=models.SET_NULL, null=True, blank=True, related_name='work_orders')
-    title = models.CharField(max_length=255)
-    description = models.TextField()
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_PENDING)
-    priority = models.IntegerField(default=0)
-    scheduled_date = models.DateField(null=True, blank=True)
-    due_date = models.DateField(null=True, blank=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    def __str__(self):
-        return f"{self.title} ({self.zone.name})"
-
-
-class Event(models.Model):
-    """Represents an event that may affect zones."""
-
-    name = models.CharField(max_length=255)
-    description = models.TextField(blank=True)
-    start_date = models.DateField()
-    end_date = models.DateField()
-    affects_zones = models.ManyToManyField(Zone, related_name='events')
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    def __str__(self):
-        return f"{self.name} ({self.start_date} to {self.end_date})"
-
-
-class WorkLog(models.Model):
-    """Represents a work log entry from a worker."""
-
-    zone = models.ForeignKey(Zone, on_delete=models.CASCADE, related_name='work_logs')
-    worker = models.ForeignKey(Worker, on_delete=models.CASCADE, related_name='work_logs')
-    work_order = models.ForeignKey(WorkOrder, on_delete=models.SET_NULL, null=True, blank=True, related_name='work_logs')
-    work_type = models.CharField(max_length=100)
-    notes = models.TextField(blank=True)
-    latitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
-    longitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
-    work_timestamp = models.DateTimeField()
-    uploaded_at = models.DateTimeField(auto_now_add=True)
-    relay_id = models.CharField(max_length=255, unique=True)
-
-    def __str__(self):
-        return f"{self.work_type} by {self.worker.full_name} at {self.zone.name} ({self.work_timestamp})"
-
-
+# (removed: WorkOrder)
 class WeatherData(models.Model):
     """Stores daily weather data with hourly forecasts in JSON format."""
 
@@ -699,52 +638,7 @@ class RequestBase(models.Model):
         abstract = True
 
 
-class MaintenanceRequest(RequestBase):
-    """维护与维修 request."""
-
-    submitter = models.ForeignKey(
-        Worker, on_delete=models.CASCADE, related_name='maintenance_requests'
-    )
-
-    date = models.DateField()
-    start_time = models.TimeField()
-    end_time = models.TimeField()
-    participants = models.CharField(max_length=255, help_text='参与人员，逗号分隔')
-    work_content = models.TextField(help_text='工作内容')
-    materials = models.TextField(blank=True, help_text='材料损耗')
-    feedback = models.TextField(blank=True, help_text='问题反馈')
-    photos = models.JSONField(default=list, help_text='照片URL列表')
-
-    class Meta:
-        db_table = 'maintenance_requests'
-
-    def __str__(self):
-        return f"维护维修 - {self.zone.name} ({self.date})"
-
-
-class ProjectSupportRequest(RequestBase):
-    """项目支持 request."""
-
-    submitter = models.ForeignKey(
-        Worker, on_delete=models.CASCADE, related_name='project_support_requests'
-    )
-
-    date = models.DateField()
-    start_time = models.TimeField()
-    end_time = models.TimeField()
-    participants = models.CharField(max_length=255, help_text='参与人员，逗号分隔')
-    work_content = models.TextField(help_text='工作内容')
-    materials = models.TextField(blank=True, help_text='材料损耗')
-    feedback = models.TextField(blank=True, help_text='问题反馈')
-    photos = models.JSONField(default=list, help_text='照片URL列表')
-
-    class Meta:
-        db_table = 'project_support_requests'
-
-    def __str__(self):
-        return f"项目支持 - {self.zone.name} ({self.date})"
-
-
+# (removed: MaintenanceRequest)
 class WaterRequest(RequestBase):
     """浇水协调需求 request."""
 
@@ -1062,85 +956,7 @@ class ZoneEquipment(models.Model):
 
 
 
-class WorkCategory(models.Model):
-    """工作分类 - type of work performed."""
-
-    name = models.CharField('名称', max_length=100)
-    code = models.CharField('编号', max_length=50, unique=True)
-    parent = models.ForeignKey('self', null=True, blank=True, on_delete=models.CASCADE, related_name='children', verbose_name='父级分类')
-    order = models.PositiveIntegerField('排序', default=0)
-    active = models.BooleanField('启用', default=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    class Meta:
-        ordering = ['order', 'code']
-        verbose_name = '工作分类'
-        verbose_name_plural = '工作分类'
-
-    def __str__(self):
-        return self.name
-
-
-class InfoSource(models.Model):
-    """信息来源 - how the issue was reported."""
-
-    name = models.CharField('名称', max_length=100)
-    code = models.CharField('编号', max_length=50, unique=True)
-    order = models.PositiveIntegerField('排序', default=0)
-    active = models.BooleanField('启用', default=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    class Meta:
-        ordering = ['order', 'code']
-        verbose_name = '信息来源'
-        verbose_name_plural = '信息来源'
-
-    def __str__(self):
-        return self.name
-
-
-class FaultCategory(models.Model):
-    """故障大类 - top-level fault classification."""
-
-    name_zh = models.CharField('中文名称', max_length=200)
-    name_en = models.CharField('英文名称', max_length=200, blank=True)
-    order = models.PositiveIntegerField('排序', default=0)
-    active = models.BooleanField('启用', default=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    class Meta:
-        ordering = ['order', 'id']
-        verbose_name = '故障大类'
-        verbose_name_plural = '故障大类'
-
-    def __str__(self):
-        return self.name_zh
-
-
-class FaultSubType(models.Model):
-    """故障子类型 - specific fault type under a category."""
-
-    category = models.ForeignKey(FaultCategory, on_delete=models.CASCADE, related_name='sub_types', verbose_name='所属大类')
-    name_zh = models.CharField('中文名称', max_length=200)
-    name_en = models.CharField('英文名称', max_length=200, blank=True)
-    code = models.CharField('编号', max_length=50, unique=True)
-    order = models.PositiveIntegerField('排序', default=0)
-    active = models.BooleanField('启用', default=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    class Meta:
-        ordering = ['category__order', 'category__id', 'order', 'id']
-        verbose_name = '故障子类型'
-        verbose_name_plural = '故障子类型'
-
-    def __str__(self):
-        return f"{self.category.name_zh} → {self.name_zh}"
-
-
+# (removed: WorkCategory)
 class WorkReport(models.Model):
     """维修工作日报 - daily maintenance work record."""
 
@@ -1154,10 +970,8 @@ class WorkReport(models.Model):
     weather = models.CharField('天气', max_length=50, blank=True)
     worker = models.ForeignKey(Worker, on_delete=models.PROTECT, related_name='work_reports', verbose_name='处理人')
     location = models.ForeignKey(Patch, on_delete=models.PROTECT, related_name='work_reports', verbose_name='位置/CCU')
-    work_category = models.ForeignKey(WorkCategory, on_delete=models.PROTECT, null=True, blank=True, related_name='work_reports', verbose_name='工作分类')
     zone_location = models.ForeignKey(Zone, on_delete=models.SET_NULL, null=True, blank=True, related_name='work_reports', verbose_name='故障/事件位置')
     remark = models.TextField('备注/工作内容', blank=True)
-    info_source = models.ForeignKey(InfoSource, on_delete=models.SET_NULL, null=True, blank=True, related_name='work_reports', verbose_name='信息来源')
     is_pending_repair = models.BooleanField('待修', default=False)
     is_difficult = models.BooleanField('疑难问题', default=False)
     is_difficult_resolved = models.BooleanField('疑难问题已处理', default=False)
@@ -1166,7 +980,6 @@ class WorkReport(models.Model):
         related_name='resolved_repairs', verbose_name='处理该待修的计划性维修工单',
         help_text='计划性维修工单处理本待修后自动回填；用于工单管理页展示闭环关系',
     )
-    fault_subtypes = models.ManyToManyField(FaultSubType, through='WorkReportFault', blank=True, related_name='work_reports')
     photos = models.JSONField(default=list, blank=True, verbose_name='照片列表', help_text='照片文件路径列表')
 
     # Mobile workorder fields
@@ -1193,36 +1006,7 @@ class WorkReport(models.Model):
         return f"{self.date} | {self.worker} | {self.location}"
 
 
-class WorkReportFault(models.Model):
-    """故障计数 - how many of each fault subtype in a work report."""
-
-    work_report = models.ForeignKey(WorkReport, on_delete=models.CASCADE, related_name='fault_entries')
-    fault_subtype = models.ForeignKey(FaultSubType, on_delete=models.PROTECT, related_name='report_entries')
-    count = models.PositiveIntegerField('数量', default=0)
-    equipment = models.ForeignKey(
-        ZoneEquipment,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name='fault_entries',
-        verbose_name='故障设备'
-    )
-
-    class Meta:
-        unique_together = ('work_report', 'fault_subtype')
-        verbose_name = '故障计数'
-        verbose_name_plural = '故障计数'
-
-    def __str__(self):
-        return f"{self.work_report} → {self.fault_subtype.name_zh}: {self.count}"
-
-
-# ==========================================================================
-# 工单工作内容 · 通用树模型 (Work Item Tree - replaces 2-level FaultCategory/SubType)
-# 设计文档: docs/superpowers/specs/2026-06-16-workorder-form-refactor-design.md
-# ==========================================================================
-
-
+# (removed: WorkReportFault)
 class WorkItem(models.Model):
     """工单「工作内容」模板树节点 - 自引用树，承载完整 现场作业记录 层级。
 
@@ -1355,151 +1139,7 @@ class WorkReportEntry(models.Model):
 # ==========================================================================
 
 
-class DemandCategory(models.Model):
-    """需求类别 - 区别于工单的WorkCategory"""
-
-    CATEGORY_TYPE_CHOICES = [
-        ('global_event', '全局事件'),
-        ('zone_demand', '区域需求'),
-        ('work_category', '工作类别'),
-    ]
-
-    name = models.CharField('名称', max_length=100)
-    code = models.CharField('编号', max_length=50, unique=True)
-    category_type = models.CharField('类别类型', max_length=20, choices=CATEGORY_TYPE_CHOICES)
-    order = models.PositiveIntegerField('排序', default=0)
-    active = models.BooleanField('启用', default=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    class Meta:
-        ordering = ['order', 'code']
-        verbose_name = '需求类别'
-        verbose_name_plural = '需求类别'
-
-    def __str__(self):
-        return f"{self.name} ({self.category_type})"
-
-
-class DemandDepartment(models.Model):
-    """提出需求的部门"""
-
-    name = models.CharField('部门名称', max_length=50)
-    code = models.CharField('部门编号', max_length=20, unique=True)
-    order = models.PositiveIntegerField('排序', default=0)
-    active = models.BooleanField('启用', default=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        ordering = ['order', 'code']
-        verbose_name = '需求部门'
-        verbose_name_plural = '需求部门'
-
-    def __str__(self):
-        return self.name
-
-
-class DemandRecord(models.Model):
-    """需求记录 - 其他部门提出的灌溉相关需求"""
-
-    STATUS_SUBMITTED = 'submitted'
-    STATUS_APPROVED = 'approved'
-    STATUS_REJECTED = 'rejected'
-    STATUS_IN_PROGRESS = 'in_progress'
-    STATUS_COMPLETED = 'completed'
-    STATUS_INFO_NEEDED = 'info_needed'
-
-    STATUS_CHOICES = [
-        (STATUS_SUBMITTED, '已提交'),
-        (STATUS_APPROVED, '已批准'),
-        (STATUS_REJECTED, '已拒绝'),
-        (STATUS_IN_PROGRESS, '进行中'),
-        (STATUS_COMPLETED, '已完成'),
-        (STATUS_INFO_NEEDED, '需补充信息'),
-    ]
-
-    # 基本信息
-    date = models.DateField('需求日期', db_index=True)
-    content = models.TextField('需求内容/备注')
-    original_text = models.TextField('原始文本', blank=True, help_text='Excel原始单元格内容')
-
-    # 需求方信息
-    demand_department = models.ForeignKey(
-        DemandDepartment, on_delete=models.SET_NULL,
-        null=True, blank=True, related_name='demand_records',
-        verbose_name='提出部门'
-    )
-    demand_department_text = models.CharField('提出部门(文本)', max_length=50, blank=True)
-    demand_contact = models.CharField('联系人', max_length=100, blank=True)
-
-    # 区域信息
-    zone = models.ForeignKey(
-        Zone, on_delete=models.SET_NULL,
-        null=True, blank=True, related_name='demand_records',
-        verbose_name='关联区域'
-    )
-    zone_text = models.CharField('区域(文本)', max_length=100, blank=True, null=True, help_text='Excel行标签')
-
-    # 全局事件标记
-    is_global_event = models.BooleanField('全局事件', default=False)
-    affected_zones = models.ManyToManyField(
-        Zone, blank=True, related_name='affected_by_demands',
-        verbose_name='影响区域'
-    )
-
-    # 类别信息
-    category = models.ForeignKey(
-        DemandCategory, on_delete=models.SET_NULL,
-        null=True, blank=True, related_name='demand_records',
-        verbose_name='需求类别'
-    )
-    category_text = models.CharField('类别(文本)', max_length=100, blank=True, null=True)
-
-    # 时间段（解析后的结构化数据）
-    start_time = models.TimeField('开始时间', null=True, blank=True)
-    end_time = models.TimeField('结束时间', null=True, blank=True)
-    crosses_midnight = models.BooleanField('跨天', default=False, help_text='结束时间是否跨过午夜')
-    time_parsed = models.BooleanField('时间已解析', default=False)
-
-    # 审批流程
-    status = models.CharField('状态', max_length=20, choices=STATUS_CHOICES, default=STATUS_APPROVED)
-    submitter = models.ForeignKey(
-        Worker, on_delete=models.SET_NULL,
-        null=True, blank=True, related_name='submitted_demands',
-        verbose_name='提交人'
-    )
-    approver = models.ForeignKey(
-        Worker, on_delete=models.SET_NULL,
-        null=True, blank=True, related_name='approved_demands',
-        verbose_name='审批人'
-    )
-    processed_at = models.DateTimeField('处理时间', null=True, blank=True)
-    status_notes = models.TextField('审批备注', blank=True)
-
-    # 关联工单
-    work_order = models.ForeignKey(
-        WorkOrder, on_delete=models.SET_NULL,
-        null=True, blank=True, related_name='linked_demand',
-        verbose_name='关联工单'
-    )
-
-    # 时间戳
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    class Meta:
-        ordering = ['-date', '-id']
-        indexes = [
-            models.Index(fields=['date', 'zone']),
-            models.Index(fields=['date', 'category']),
-        ]
-        verbose_name = '需求记录'
-        verbose_name_plural = '需求记录'
-
-    def __str__(self):
-        return f"{self.date} | {self.zone_text or '全局'} | {self.content[:30]}"
-
-
+# (removed: DemandCategory)
 class MapStyleSettings(models.Model):
     """Single-row table storing global map display style preferences."""
     style = models.JSONField(default=dict, blank=True)

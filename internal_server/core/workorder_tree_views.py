@@ -20,7 +20,7 @@ from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 
 from core.models import (
-    InfoSource, Patch, Project, WorkCategory, Worker, WorkItem,
+    Patch, Project, Worker, WorkItem,
     WorkReport, WorkReportEntry, Zone,
 )
 
@@ -369,13 +369,120 @@ def enrich_reports(reports, path_map=None):
         report.section_labels = [g['section_label'] for g in ordered]
 
 
+def attach_zone_hierarchy(reports):
+    """Attach a deduplicated Land → 通用名称 → [codes] hierarchy to each report.
+
+    A report often references many zones that share a land/name; this collapses them
+    so list/detail pages don't list the same name dozens of times. Expects
+    ``zones__land`` to be prefetched on each report. Sets ``report.zone_hierarchy``
+    and ``report.zone_summary`` (a flat "Land·name/name" string for compact display).
+    """
+    for report in reports:
+        lands = {}      # land_name -> { name -> [codes] }
+        order = []
+        for z in report.zones.all():
+            ln = (z.land.name if z.land_id and z.land else '其它') or '其它'
+            nm = z.name or z.code
+            if ln not in lands:
+                lands[ln] = {}
+                order.append(ln)
+            lands[ln].setdefault(nm, []).append(z.code)
+        report.zone_hierarchy = [
+            {'land': ln,
+             'names': [{'name': nm, 'codes': codes, 'count': len(codes)}
+                        for nm, codes in sorted(lands[ln].items())],
+             'zone_count': sum(len(v) for v in lands[ln].values())}
+            for ln in order
+        ]
+        parts = [ln + '·' + '/'.join(sorted(lands[ln].keys())) for ln in order]
+        report.zone_summary = '、'.join(parts) if parts else ''
+
+
 # ── photo + hours helpers ───────────────────────────────────────────────────
 
 def _save_photo(report, uploaded):
-    """Persist one uploaded file under media/workorder_photos/<report_id>/."""
+    """Persist one uploaded file under media/workorder_photos/<report_id>/ and
+    generate a small thumbnail alongside it.
+
+    Returns the original's relative path (unchanged contract). The thumbnail is
+    saved at the same path with a ``_thumb`` suffix + ``.jpg`` extension, and can
+    be derived via :func:`thumb_path`. The list page loads thumbnails (a few KB)
+    instead of multi-MB originals so it doesn't choke on a cloud tunnel.
+    """
     subdir = f'workorder_photos/{report.id}'
     name = default_storage.get_available_name(os.path.join(subdir, uploaded.name))
-    return default_storage.save(name, uploaded)
+    saved = default_storage.save(name, uploaded)
+
+    # Best-effort thumbnail — never let a thumbnail failure break the upload.
+    try:
+        _make_thumbnail(saved, uploaded)
+    except Exception:
+        pass
+    return saved
+
+
+def thumb_path(original_path):
+    """Derive the thumbnail path for an original media path.
+
+    ``workorder_photos/12/IMG_1234.jpg`` → ``workorder_photos/12/IMG_1234_thumb.jpg``
+    Works for both photos and videos (video poster is a jpg).
+    """
+    base, ext = os.path.splitext(original_path)
+    return base + '_thumb.jpg'
+
+
+def _make_thumbnail(original_path, uploaded):
+    """Create a ~300px-wide JPEG thumbnail.
+
+    Photos are resized with Pillow. Videos get their first frame extracted via
+    ffmpeg (if available) into a poster image. The thumbnail is written next to
+    the original in default_storage.
+    """
+    thumb = thumb_path(original_path)
+    # Determine if it's a video by extension (uploaded.content_type may be absent).
+    ext = os.path.splitext(original_path)[1].lower()
+    video_exts = {'.mp4', '.mov', '.avi', '.m4v', '.webm', '.mkv'}
+
+    if ext in video_exts:
+        _make_video_thumbnail(original_path, thumb)
+        return
+
+    # Photo: resize with Pillow.
+    from PIL import Image
+    from io import BytesIO
+    uploaded.seek(0)
+    with Image.open(uploaded) as img:
+        img = img.convert('RGB')
+        # 300px wide, preserve aspect, cap height.
+        max_w, max_h = 300, 300
+        img.thumbnail((max_w, max_h), Image.LANCZOS)
+        buf = BytesIO()
+        img.save(buf, format='JPEG', quality=80)
+        buf.seek(0)
+        if default_storage.exists(thumb):
+            default_storage.delete(thumb)
+        default_storage.save(thumb, buf)
+
+
+def _make_video_thumbnail(original_path, thumb):
+    """Extract the first frame of a video as a thumbnail via ffmpeg."""
+    import subprocess
+    import tempfile
+    abs_in = os.path.join(settings.MEDIA_ROOT, original_path)
+    if not os.path.exists(abs_in):
+        return
+    abs_thumb = os.path.join(settings.MEDIA_ROOT, thumb)
+    os.makedirs(os.path.dirname(abs_thumb), exist_ok=True)
+    # Seek ~1s in (or 10% of duration) to skip a black lead-in, grab one frame.
+    try:
+        subprocess.run(
+            ['ffmpeg', '-y', '-ss', '1', '-i', abs_in,
+             '-frames:v', '1', '-vf', 'scale=300:-1', '-q:v', '4', abs_thumb],
+            capture_output=True, timeout=20, check=False,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        # ffmpeg not installed or hung — skip thumbnail (poster-less <video> still works).
+        pass
 
 
 def _collect_entry_photos(request):
@@ -424,8 +531,6 @@ def _handle_render(request, report):
         'tree_json': json.dumps(tree, ensure_ascii=False),
         'projects_json': json.dumps(serialize_projects(), ensure_ascii=False),
         'locations': Patch.objects.filter(active=True).order_by('order'),
-        'work_categories': WorkCategory.objects.filter(active=True).order_by('order'),
-        'info_sources': InfoSource.objects.filter(active=True).order_by('order'),
         'zones': Zone.objects.order_by('code'),
         'grouped_zones': _build_grouped_zones(Zone.objects.order_by('code')),
         'today': date.today().isoformat(),
@@ -447,8 +552,6 @@ def _report_header_dict(report):
         'h_weather': report.weather,
         'h_shift': report.shift,
         'h_location': report.location_id,
-        'h_work_category': report.work_category_id,
-        'h_info_source': report.info_source_id,
         'h_zone_names': report.zone_names,
         'h_zones': zones,
         'h_remark': report.remark,
@@ -495,8 +598,6 @@ def _handle_save(request, report):
         report.weather = request.POST.get('weather', '')
         report.shift = request.POST.get('shift', '')
         report.location_id = request.POST.get('location') or None
-        report.work_category_id = request.POST.get('work_category') or None
-        report.info_source_id = request.POST.get('info_source') or None
         report.zone_names = request.POST.get('zone_names', '')
         report.remark = request.POST.get('remark', '')
         report.is_pending_repair = bool(request.POST.get('is_pending_repair'))
@@ -531,8 +632,22 @@ def _handle_save(request, report):
 
 
 def _save_entries(report, entries, entry_photos):
-    """Replace all entries; create one row per node with a real value."""
+    """Replace all entries; create one row per node with a real value.
+
+    A row is kept when it carries a value (count/status/text/photos). A row that is
+    empty *but* references a group/category node (value_type='group') is also kept —
+    it represents "this category was worked under" and prevents the report from being
+    mislabeled as 旧版记录 when the user picked a category without drilling into
+    specific leaf content.
+    """
     report.entries.all().delete()
+    # Pre-fetch the WorkItems referenced, to tell group/category nodes from leaves.
+    wids = [e.get('work_item') for e in entries if e.get('work_item')]
+    group_wids = set()
+    if wids:
+        group_wids = set(
+            WorkItem.objects.filter(id__in=wids, value_type='group').values_list('id', flat=True)
+        )
     for e in entries:
         wid = e.get('work_item')
         if not wid:
@@ -542,7 +657,9 @@ def _save_entries(report, entries, entry_photos):
         text_value = (e.get('text_value') or '').strip()
         project_id = e.get('project') or None
         photos = entry_photos.get(int(wid), [])
-        if not (count or status or text_value or photos):
+        has_value = bool(count or status or text_value or photos)
+        is_category_marker = wid in group_wids
+        if not has_value and not is_category_marker:
             continue
         saved_paths = [_save_photo(report, f) for f in photos]
         WorkReportEntry.objects.update_or_create(
