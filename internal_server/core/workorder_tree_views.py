@@ -372,10 +372,88 @@ def enrich_reports(reports, path_map=None):
 # ── photo + hours helpers ───────────────────────────────────────────────────
 
 def _save_photo(report, uploaded):
-    """Persist one uploaded file under media/workorder_photos/<report_id>/."""
+    """Persist one uploaded file under media/workorder_photos/<report_id>/ and
+    generate a small thumbnail alongside it.
+
+    Returns the original's relative path (unchanged contract). The thumbnail is
+    saved at the same path with a ``_thumb`` suffix + ``.jpg`` extension, and can
+    be derived via :func:`thumb_path`. The list page loads thumbnails (a few KB)
+    instead of multi-MB originals so it doesn't choke on a cloud tunnel.
+    """
     subdir = f'workorder_photos/{report.id}'
     name = default_storage.get_available_name(os.path.join(subdir, uploaded.name))
-    return default_storage.save(name, uploaded)
+    saved = default_storage.save(name, uploaded)
+
+    # Best-effort thumbnail — never let a thumbnail failure break the upload.
+    try:
+        _make_thumbnail(saved, uploaded)
+    except Exception:
+        pass
+    return saved
+
+
+def thumb_path(original_path):
+    """Derive the thumbnail path for an original media path.
+
+    ``workorder_photos/12/IMG_1234.jpg`` → ``workorder_photos/12/IMG_1234_thumb.jpg``
+    Works for both photos and videos (video poster is a jpg).
+    """
+    base, ext = os.path.splitext(original_path)
+    return base + '_thumb.jpg'
+
+
+def _make_thumbnail(original_path, uploaded):
+    """Create a ~300px-wide JPEG thumbnail.
+
+    Photos are resized with Pillow. Videos get their first frame extracted via
+    ffmpeg (if available) into a poster image. The thumbnail is written next to
+    the original in default_storage.
+    """
+    thumb = thumb_path(original_path)
+    # Determine if it's a video by extension (uploaded.content_type may be absent).
+    ext = os.path.splitext(original_path)[1].lower()
+    video_exts = {'.mp4', '.mov', '.avi', '.m4v', '.webm', '.mkv'}
+
+    if ext in video_exts:
+        _make_video_thumbnail(original_path, thumb)
+        return
+
+    # Photo: resize with Pillow.
+    from PIL import Image
+    from io import BytesIO
+    uploaded.seek(0)
+    with Image.open(uploaded) as img:
+        img = img.convert('RGB')
+        # 300px wide, preserve aspect, cap height.
+        max_w, max_h = 300, 300
+        img.thumbnail((max_w, max_h), Image.LANCZOS)
+        buf = BytesIO()
+        img.save(buf, format='JPEG', quality=80)
+        buf.seek(0)
+        if default_storage.exists(thumb):
+            default_storage.delete(thumb)
+        default_storage.save(thumb, buf)
+
+
+def _make_video_thumbnail(original_path, thumb):
+    """Extract the first frame of a video as a thumbnail via ffmpeg."""
+    import subprocess
+    import tempfile
+    abs_in = os.path.join(settings.MEDIA_ROOT, original_path)
+    if not os.path.exists(abs_in):
+        return
+    abs_thumb = os.path.join(settings.MEDIA_ROOT, thumb)
+    os.makedirs(os.path.dirname(abs_thumb), exist_ok=True)
+    # Seek ~1s in (or 10% of duration) to skip a black lead-in, grab one frame.
+    try:
+        subprocess.run(
+            ['ffmpeg', '-y', '-ss', '1', '-i', abs_in,
+             '-frames:v', '1', '-vf', 'scale=300:-1', '-q:v', '4', abs_thumb],
+            capture_output=True, timeout=20, check=False,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        # ffmpeg not installed or hung — skip thumbnail (poster-less <video> still works).
+        pass
 
 
 def _collect_entry_photos(request):
