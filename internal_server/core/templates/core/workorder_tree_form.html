@@ -90,16 +90,6 @@
           <option value="">--</option>
           {% for p in locations %}<option value="{{ p.id }}">{{ p.name }}</option>{% endfor %}
         </select></div>
-      <div class="wo-field"><label>工作分类 *</label>
-        <select id="f-work_category" name="work_category" required>
-          <option value="">--</option>
-          {% for c in work_categories %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}
-        </select></div>
-      <div class="wo-field"><label>信息来源</label>
-        <select id="f-info_source" name="info_source">
-          <option value="">--</option>
-          {% for s in info_sources %}<option value="{{ s.id }}">{{ s.name }}</option>{% endfor %}
-        </select></div>
       <div class="wo-field"><label>开始时间</label>
         <input type="time" id="f-work_start_time" name="work_start_time"></div>
       <div class="wo-field"><label>完成时间</label>
@@ -298,8 +288,7 @@ function applyHeader(){
   if (!HEADER || !HEADER.h_date) return;
   const set = (id, v) => { const el = document.getElementById(id); if (el && v != null) el.value = v; };
   set('f-date', HEADER.h_date); set('f-weather', HEADER.h_weather); set('f-shift', HEADER.h_shift);
-  set('f-location', HEADER.h_location); set('f-work_category', HEADER.h_work_category);
-  set('f-info_source', HEADER.h_info_source); set('f-zone_names', HEADER.h_zone_names);
+  set('f-location', HEADER.h_location); set('f-zone_names', HEADER.h_zone_names);
   set('f-remark', HEADER.h_remark); set('f-team_size', HEADER.h_team_size);
   set('f-third_party_count', HEADER.h_third_party_count);
   set('f-work_start_time', HEADER.h_work_start_time); set('f-work_end_time', HEADER.h_work_end_time);
