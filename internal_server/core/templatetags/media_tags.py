@@ -1,3 +1,4 @@
+import os
 from django import template
 
 register = template.Library()
@@ -12,3 +13,17 @@ def is_video(path):
         return False
     p = str(path).lower()
     return any(p.endswith(ext) for ext in VIDEO_EXTS)
+
+
+@register.filter
+def thumb(path):
+    """Derive the thumbnail path for an original media path.
+
+    ``workorder_photos/12/IMG_1234.jpg`` → ``workorder_photos/12/IMG_1234_thumb.jpg``
+    Mirrors core.workorder_tree_views.thumb_path so the list page can load the
+    tiny thumbnail instead of the multi-MB original.
+    """
+    if not path:
+        return path
+    base, _ext = os.path.splitext(str(path))
+    return base + '_thumb.jpg'

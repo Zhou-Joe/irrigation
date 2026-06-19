@@ -592,8 +592,7 @@ def _build_zones_payload(today, week_ago):
     from django.db.models import Count, Sum
     from django.db.models.functions import Coalesce
     from core.models import (
-        Zone, Plant, ZoneEquipment, WorkOrder, WorkReport,
-        MaintenanceRequest, WaterRequest, ProjectSupportRequest,
+        Zone, Plant, ZoneEquipment, WorkReport, WaterRequest,
     )
 
     thirty_days_ago = today - timedelta(days=30)
@@ -630,15 +629,7 @@ def _build_zones_payload(today, week_ago):
 
     plant_count_map = _count_map(Plant)
     equipment_count_map = _count_map(ZoneEquipment)
-    pending_work_map = _count_map(WorkOrder, status='pending')
-    maintenance_count_map = _count_map(MaintenanceRequest)
     water_count_map = _count_map(WaterRequest)
-    project_count_map = _count_map(ProjectSupportRequest)
-    # recent_fault_count: sum of fault-entry counts over the last 30 days, per zone.
-    fault_count_map = {}
-    for row in (WorkReport.objects.filter(date__gte=thirty_days_ago, zones__in=zone_ids)
-                .values('zones').annotate(s=Coalesce(Sum('fault_entries__count'), 0))):
-        fault_count_map[row['zones']] = row['s']
 
     # ── Bulk: zones with an UNRESOLVED 待修 work report (is_pending_repair AND not yet
     # closed by a 计划性维修). Drives the orange "needs attention" boundary color on the
@@ -660,21 +651,6 @@ def _build_zones_payload(today, week_ago):
             'id': req[1], 'type': 'water', 'type_display': '浇水协调',
         })
 
-    # ── Bulk: recent maintenance (last 7 days, top 3 per zone) ──
-    recent_maint_map = defaultdict(list)
-    for m in MaintenanceRequest.objects.filter(
-        zone_id__in=zone_ids, date__gte=week_ago
-    ).order_by('zone_id', '-date'):
-        lst = recent_maint_map[m.zone_id]
-        if len(lst) < 3:
-            lst.append({
-                'id': m.id,
-                'date': m.date.strftime('%Y-%m-%d'),
-                'status': m.status,
-                'status_display': m.get_status_display(),
-                'work_content': m.work_content[:50] + '...' if len(m.work_content) > 50 else m.work_content,
-            })
-
     # ── Bulk: recent water requests (top 3 per zone) ──
     recent_water_map = defaultdict(list)
     for w in WaterRequest.objects.filter(
@@ -689,21 +665,6 @@ def _build_zones_payload(today, week_ago):
                 'status_display': w.get_status_display(),
                 'start': w.start_datetime.strftime('%m-%d %H:%M'),
                 'end': w.end_datetime.strftime('%m-%d %H:%M'),
-            })
-
-    # ── Bulk: recent project support (top 3 per zone) ──
-    recent_proj_map = defaultdict(list)
-    for p in ProjectSupportRequest.objects.filter(
-        zone_id__in=zone_ids
-    ).order_by('zone_id', '-created_at'):
-        lst = recent_proj_map[p.zone_id]
-        if len(lst) < 3:
-            lst.append({
-                'id': p.id,
-                'date': p.date.strftime('%Y-%m-%d'),
-                'status': p.status,
-                'status_display': p.get_status_display(),
-                'work_content': p.work_content[:50] + '...' if len(p.work_content) > 50 else p.work_content,
             })
 
     # ── Bulk: plant names per zone ──
@@ -735,8 +696,6 @@ def _build_zones_payload(today, week_ago):
             'plant_count': plant_count_map.get(zone.id, 0),
             'plant_names': plant_names_map.get(zone.id, []),
             'equipment_count': equipment_count_map.get(zone.id, 0),
-            'pending_work_orders': pending_work_map.get(zone.id, 0),
-            'recent_fault_count': fault_count_map.get(zone.id, 0),
             'center': center,
             'pending_requests': pending_water_map.get(zone.id, []),
             # Patch info
@@ -783,13 +742,9 @@ def _build_zones_payload(today, week_ago):
             'area_sqm': zone.area_sqm,
             'area_display': zone.area_display,
             # Counts (from group-by maps, not annotations)
-            'maintenance_count': maintenance_count_map.get(zone.id, 0),
             'water_count': water_count_map.get(zone.id, 0),
-            'project_count': project_count_map.get(zone.id, 0),
             # Recent items (from bulk queries)
-            'recent_maintenance': recent_maint_map.get(zone.id, []),
             'recent_water': recent_water_map.get(zone.id, []),
-            'recent_project': recent_proj_map.get(zone.id, []),
         })
     return zones_list
 
@@ -824,8 +779,8 @@ def dashboard(request):
     from datetime import date, timedelta
     from django.db.models.functions import TruncDate
     from core.models import (
-        MaintenanceRequest, ProjectSupportRequest, WaterRequest,
-        ManagerProfile, DepartmentUserProfile, RegistrationRequest, WorkOrder, Worker,
+        WaterRequest,
+        ManagerProfile, DepartmentUserProfile, RegistrationRequest, Worker,
         Pipeline, Plant, MapStyleSettings, ZoneEquipment, WorkReport,
     )
 
@@ -928,9 +883,6 @@ def dashboard(request):
     if is_admin:
         pending_counts = {
             'registrations': RegistrationRequest.objects.filter(status='pending').count(),
-            'work_orders': WorkOrder.objects.filter(status='pending').count(),
-            'maintenance': MaintenanceRequest.objects.filter(status='submitted').count(),
-            'project_support': ProjectSupportRequest.objects.filter(status='submitted').count(),
             'water': WaterRequest.objects.filter(status='submitted').count(),
         }
 
@@ -945,14 +897,6 @@ def dashboard(request):
 
     # Recent activity (last 7 days)
     recent_activity = []
-    for req in MaintenanceRequest.objects.select_related('zone').filter(created_at__date__gte=week_ago).order_by('-created_at')[:5]:
-        recent_activity.append({
-            'type': 'maintenance',
-            'type_display': '维护维修',
-            'zone': req.zone.name,
-            'date': req.created_at.strftime('%m-%d %H:%M'),
-            'status': req.get_status_display(),
-        })
     for req in WaterRequest.objects.select_related('zone').filter(created_at__date__gte=week_ago).order_by('-created_at')[:5]:
         recent_activity.append({
             'type': 'water',
@@ -2537,7 +2481,7 @@ def zone_detail_page(request, zone_id):
     import json
     from django.db.models import Sum
     from datetime import date, timedelta
-    from .models import Plant, ZoneEquipment, WorkReport, WorkReportFault
+    from .models import Plant, ZoneEquipment, WorkReport
 
     zone = get_object_or_404(Zone, pk=zone_id)
     today = date.today()
@@ -2558,11 +2502,6 @@ def zone_detail_page(request, zone_id):
     plant_count = plants.count()
     equipment_count = equipment.count()
     work_report_count = WorkReport.objects.filter(zone_location=zone).count()
-
-    recent_fault_count = WorkReportFault.objects.filter(
-        work_report__zone_location=zone,
-        work_report__date__gte=thirty_days_ago,
-    ).aggregate(total=Sum('count'))['total'] or 0
 
     for eq in equipment:
         eq.status_display = eq.get_status_display()
@@ -2621,7 +2560,6 @@ def zone_detail_page(request, zone_id):
         'plant_count': plant_count,
         'equipment_count': equipment_count,
         'work_report_count': work_report_count,
-        'recent_fault_count': recent_fault_count,
         'recent_reports': recent_reports,
         'sibling_zones': sibling_zones,
         'equip_notes': equip_notes,
@@ -3507,294 +3445,7 @@ def equipment_catalog_autocomplete(request):
     return JsonResponse({'results': results})
 
 
-@login_required(login_url='core:login')
-def requests_page(request):
-    """工单管理 — manager inbox.
-
-    A focused view for admins/managers showing four categories of items that
-    need attention:
-      1. 待修 workorders (with linked 计划性维修工单 when resolved)
-      2. open 疑难 workorders
-      3. zones with unconfirmed 备注 (inline confirm)
-      4. pending-approval 工单/需求 (inline approve/reject)
-
-    Non-admins are redirected. Replaces the old merged record list.
-    """
-    import json
-    from core.models import (
-        WorkReport, Zone, MaintenanceRequest, ProjectSupportRequest,
-        WaterRequest, WorkOrder, ManagerProfile,
-    )
-    from django.contrib.auth.decorators import login_required
-    from datetime import date
-
-    user = request.user
-    is_admin = user.is_superuser or user.is_staff
-    if not is_admin:
-        is_admin = ManagerProfile.objects.filter(user=user, active=True).exists()
-    if not is_admin:
-        messages.error(request, '无权限访问工单管理')
-        return redirect('core:dashboard')
-
-    show_resolved = bool(request.GET.get('show_resolved'))
-
-    # ── 1. 待修 workorders ────────────────────────────────────────────────
-    # Unresolved first; optionally include recently-resolved (with their PM link).
-    pm_qs = WorkReport.objects.filter(is_pending_repair=True).select_related(
-        'worker', 'location', 'resolved_by_pm').prefetch_related('zones').order_by('-date', '-id')
-    pending_repairs = list(pm_qs)
-    resolved_repairs = []
-    if show_resolved:
-        r_qs = WorkReport.objects.filter(
-            is_pending_repair=False, resolved_by_pm__isnull=False
-        ).select_related('worker', 'location', 'resolved_by_pm').prefetch_related(
-            'zones').order_by('-resolved_by_pm__date', '-id')[:40]
-        resolved_repairs = list(r_qs)
-
-    # ── 2. open 疑难 workorders ───────────────────────────────────────────
-    difficult_qs = WorkReport.objects.filter(
-        is_difficult=True, is_difficult_resolved=False
-    ).select_related('worker', 'location').prefetch_related('zones').order_by('-date', '-id')
-    difficult_reports = list(difficult_qs)
-
-    # ── 3. zones with unconfirmed 备注 ────────────────────────────────────
-    remark_zones = []
-    for z in Zone.objects.exclude(remarks='').exclude(remarks__isnull=True).order_by('code'):
-        try:
-            items = json.loads(z.remarks)
-        except (ValueError, TypeError):
-            continue
-        if not items:
-            continue
-        parsed = []
-        for idx, it in enumerate(items):
-            if not isinstance(it, dict):
-                continue
-            parsed.append({
-                'index': idx,
-                'date': it.get('date', ''),
-                'content': it.get('content', ''),
-                'author': it.get('author', ''),
-            })
-        if parsed:
-            remark_zones.append({
-                'id': z.id, 'code': z.code, 'name': z.name or z.code,
-                'remarks': parsed, 'count': len(parsed),
-            })
-
-    # ── 4. pending-approval 工单/需求 ────────────────────────────────────
-    def _req_row(req, type_code, type_label):
-        return {
-            'id': req.id, 'type_code': type_code, 'type_label': type_label,
-            'zone': req.zone.name if req.zone_id else '—',
-            'zone_code': req.zone.code if req.zone_id else '',
-            'submitter': req.submitter.full_name if getattr(req, 'submitter_id', None) and req.submitter else '—',
-            'created_at': req.created_at,
-            'detail': getattr(req, 'work_content', '') or getattr(req, 'request_type', '') or '',
-            'status': req.status, 'status_display': req.get_status_display(),
-        }
-
-    pending_requests = []
-    for r in MaintenanceRequest.objects.filter(status='submitted').select_related('zone', 'submitter').order_by('-created_at'):
-        pending_requests.append(_req_row(r, 'maintenance', '维护维修'))
-    for r in ProjectSupportRequest.objects.filter(status='submitted').select_related('zone', 'submitter').order_by('-created_at'):
-        pending_requests.append(_req_row(r, 'project_support', '项目支持'))
-    for r in WaterRequest.objects.filter(status='submitted').select_related('zone', 'submitter').order_by('-created_at'):
-        pending_requests.append(_req_row(r, 'water', '浇水协调'))
-    pending_requests.sort(key=lambda x: x['created_at'], reverse=True)
-
-    # WorkOrder pending (no approve endpoint — read-only count + list)
-    pending_workorders = list(WorkOrder.objects.filter(status='pending').select_related('zone', 'assigned_to').order_by('-created_at')[:50])
-
-    context = {
-        'pending_repairs': pending_repairs,
-        'resolved_repairs': resolved_repairs,
-        'show_resolved': show_resolved,
-        'difficult_reports': difficult_reports,
-        'remark_zones': remark_zones,
-        'pending_requests': pending_requests,
-        'pending_workorders': pending_workorders,
-        'counts': {
-            'repairs': len(pending_repairs),
-            'difficult': len(difficult_reports),
-            'remarks': sum(z['count'] for z in remark_zones),
-            'approvals': len(pending_requests) + len(pending_workorders),
-        },
-        'is_admin': True,
-    }
-    return render(request, 'core/requests.html', context)
-
-
-def request_detail(request, type_code, request_id):
-    """
-    工单详情页面
-    """
-    from core.models import (
-        MaintenanceRequest, ProjectSupportRequest, WaterRequest,
-        ManagerProfile, DepartmentUserProfile, Worker
-    )
-    from django.utils import timezone
-
-    # Determine role
-    is_admin = request.user.is_superuser or request.user.is_staff
-    current_worker = None
-    current_dept_user = None
-
-    if not is_admin:
-        try:
-            ManagerProfile.objects.get(user=request.user, active=True)
-            is_admin = True
-        except ManagerProfile.DoesNotExist:
-            pass
-
-    if not is_admin:
-        try:
-            current_worker = Worker.objects.get(user=request.user, active=True)
-        except Worker.DoesNotExist:
-            pass
-
-    if not is_admin and not current_worker:
-        try:
-            current_dept_user = DepartmentUserProfile.objects.get(user=request.user, active=True)
-        except DepartmentUserProfile.DoesNotExist:
-            pass
-
-    # For maintenance and project_support, dept users cannot access
-    if type_code in ['maintenance', 'project_support'] and current_dept_user:
-        messages.error(request, '无权限查看此工单')
-        return redirect('core:requests')
-
-    # 获取对应的请求
-    try:
-        if type_code == 'maintenance':
-            req = MaintenanceRequest.objects.select_related('zone', 'submitter', 'approver').get(pk=request_id)
-            type_name = '维护与维修'
-            extra_info = {
-                'date': req.date,
-                'start_time': req.start_time,
-                'end_time': req.end_time,
-                'participants': req.participants,
-                'work_content': req.work_content,
-                'materials': req.materials,
-                'feedback': req.feedback,
-                'photos': req.photos or [],
-            }
-        elif type_code == 'project_support':
-            req = ProjectSupportRequest.objects.select_related('zone', 'submitter', 'approver').get(pk=request_id)
-            type_name = '项目支持'
-            extra_info = {
-                'date': req.date,
-                'start_time': req.start_time,
-                'end_time': req.end_time,
-                'participants': req.participants,
-                'work_content': req.work_content,
-                'materials': req.materials,
-                'feedback': req.feedback,
-                'photos': req.photos or [],
-            }
-        elif type_code == 'water':
-            req = WaterRequest.objects.select_related('zone', 'submitter', 'approver').get(pk=request_id)
-            type_name = '浇水协调需求'
-            extra_info = {
-                'user_type': req.get_user_type_display(),
-                'user_type_other': req.user_type_other,
-                'request_type': req.get_request_type_display(),
-                'request_type_other': req.request_type_other,
-                'start_datetime': req.start_datetime,
-                'end_datetime': req.end_datetime,
-                'photos': req.photos or [],
-            }
-        else:
-            raise ValueError('Invalid type')
-    except Exception as e:
-        messages.error(request, f'请求不存在: {e}')
-        return redirect('core:requests')
-
-    # Check permissions - field workers can only see their own requests
-    if not is_admin:
-        if current_worker and hasattr(req, 'submitter') and req.submitter != current_worker:
-            messages.error(request, '无权限查看此工单')
-            return redirect('core:requests')
-
-    context = {
-        'req': req,
-        'type_code': type_code,
-        'type_name': type_name,
-        'extra_info': extra_info,
-        'is_admin': is_admin,
-        'current_worker': current_worker,
-        'current_dept_user': current_dept_user,
-    }
-
-    return render(request, 'core/request_detail.html', context)
-
-
-@require_POST
-@login_required(login_url='core:login')
-def update_request_status(request, type_code, request_id):
-    """更新工单状态 - 仅限管理员操作"""
-    from core.models import (
-        MaintenanceRequest, ProjectSupportRequest, WaterRequest,
-        ManagerProfile, Worker
-    )
-    from django.utils import timezone
-
-    # Check admin permission
-    is_admin = request.user.is_superuser or request.user.is_staff
-
-    if not is_admin:
-        try:
-            ManagerProfile.objects.get(user=request.user, active=True)
-            is_admin = True
-        except ManagerProfile.DoesNotExist:
-            pass
-
-    if not is_admin:
-        messages.error(request, '无权限操作')
-        return redirect('core:request_detail', type_code=type_code, request_id=request_id)
-
-    # 获取 approver（Worker 或 None）
-    try:
-        approver = Worker.objects.get(user=request.user, active=True)
-    except Worker.DoesNotExist:
-        approver = None
-
-    new_status = request.POST.get('status')
-    status_notes = request.POST.get('status_notes', '')
-
-    if new_status not in ['approved', 'rejected', 'info_needed']:
-        messages.error(request, '无效的状态')
-        return redirect('core:request_detail', type_code=type_code, request_id=request_id)
-
-    # 获取对应的请求
-    try:
-        if type_code == 'maintenance':
-            req = MaintenanceRequest.objects.get(pk=request_id)
-        elif type_code == 'project_support':
-            req = ProjectSupportRequest.objects.get(pk=request_id)
-        elif type_code == 'water':
-            req = WaterRequest.objects.get(pk=request_id)
-        else:
-            raise ValueError('Invalid type')
-    except Exception as e:
-        messages.error(request, f'请求不存在: {e}')
-        return redirect('core:requests')
-
-    req.status = new_status
-    req.status_notes = status_notes
-    req.approver = approver
-    req.processed_at = timezone.now()
-    req.save()
-
-    status_names = {
-        'approved': '已批准',
-        'rejected': '已拒绝',
-        'info_needed': '需补充信息',
-    }
-    messages.success(request, f'工单状态已更新为: {status_names[new_status]}')
-    return redirect('core:request_detail', type_code=type_code, request_id=request_id)
-
-
+# (removed: requests_page, request_detail, update_request_status — legacy request-approval views)
 def register(request):
     """
     User registration page - submit request for admin approval.
@@ -3890,7 +3541,7 @@ def registration_approval(request):
     from core.models import (
         RegistrationRequest, ManagerProfile, DepartmentUserProfile, Worker,
         ROLE_MANAGER, ROLE_FIELD_WORKER, ROLE_DEPT_USER
-    )
+)
     from core.role_utils import is_admin
 
     # Check admin permission
@@ -4036,7 +3687,7 @@ def user_management(request):
         RegistrationRequest, ManagerProfile, DepartmentUserProfile, Worker,
         ROLE_MANAGER, ROLE_FIELD_WORKER, ROLE_DEPT_USER,
         ROLE_SUPER_ADMIN
-    )
+)
     from core.role_utils import is_admin
 
     if not is_admin(request.user):
@@ -4318,7 +3969,7 @@ def maxicom_dashboard_api(request):
         MaxicomFlowZone, MaxicomWeatherStation, MaxicomWeatherLog,
         MaxicomEvent, MaxicomETCheckbook, MaxicomRuntime,
         Patch,
-    )
+)
 
     # System overview stats
     stats = {
@@ -4461,7 +4112,7 @@ def maxicom_dashboard_api(request):
 @login_required(login_url='core:login')
 def stats_dashboard(request):
     """Data statistics dashboard with weekly work report stats and demand stats."""
-    from core.models import WorkReport, WorkReportEntry, WorkItem, DemandRecord, Patch
+    from core.models import WorkReport, WorkReportEntry, WorkItem, Patch
     from core.role_utils import is_admin
     from django.db.models import Count, Q, Sum
     from django.utils import timezone
@@ -4518,7 +4169,7 @@ def stats_dashboard(request):
             year_weeks[year] = weeks
 
     # Base queryset for this week
-    week_qs = WorkReport.objects.select_related('worker', 'location', 'work_category')
+    week_qs = WorkReport.objects.select_related('worker', 'location')
     if not admin:
         try:
             worker = user.worker_profile
@@ -4553,76 +4204,10 @@ def stats_dashboard(request):
         .order_by('-count')[:10]
     )
 
-    reports_by_category = list(
-        week_qs.values('work_category__name', 'work_category__code')
-        .annotate(count=Count('id'))
-        .order_by('-count')[:10]
-    )
-
-    top_faults = list(
-        week_qs.filter(fault_entries__isnull=False)
-        .values('fault_entries__fault_subtype__name_zh', 'fault_entries__fault_subtype__category__name_zh')
-        .annotate(count=Count('fault_entries__fault_subtype'))
-        .order_by('-count')[:10]
-    )
-
-    # Zone-Fault Type Matrix
-    fault_entries_data = list(
-        week_qs.filter(fault_entries__isnull=False)
-        .values('zone_location__code', 'zone_location__name', 'fault_entries__fault_subtype__name_zh')
-        .annotate(count=Count('fault_entries__fault_subtype'))
-    )
-
-    fault_types_set = set()
-    zones_dict = defaultdict(lambda: defaultdict(int))
-
-    for entry in fault_entries_data:
-        zone_code = entry.get('zone_location__code') or '未指定'
-        zone_name = entry.get('zone_location__name') or zone_code
-        fault_type = entry.get('fault_entries__fault_subtype__name_zh') or '未分类'
-        count = entry['count']
-
-        fault_types_set.add(fault_type)
-        zones_dict[zone_code][fault_type] += count
-        zones_dict[zone_code]['_zone_name'] = zone_name
-
-    fault_type_totals = defaultdict(int)
-    for zone_data in zones_dict.values():
-        for fault_type, count in zone_data.items():
-            if fault_type != '_zone_name':
-                fault_type_totals[fault_type] += count
-
-    sorted_fault_types = sorted(fault_types_set, key=lambda x: fault_type_totals[x], reverse=True)[:8]
-
-    zone_fault_matrix = {
-        'fault_types': [{'name': ft} for ft in sorted_fault_types],
-        'rows': [],
-        'column_totals': [fault_type_totals[ft] for ft in sorted_fault_types],
-        'grand_total': 0
-    }
-
-    grand_total = 0
-    for zone_code, zone_data in sorted(zones_dict.items()):
-        if zone_code == '_zone_name':
-            continue
-        row = {
-            'zone_name': zone_data.get('_zone_name', zone_code),
-            'zone_code': zone_code,
-            'counts': [],
-            'total': 0
-        }
-        for fault_type in sorted_fault_types:
-            count = zone_data.get(fault_type, 0)
-            row['counts'].append(count)
-            row['total'] += count
-        grand_total += row['total']
-        if row['total'] > 0:
-            zone_fault_matrix['rows'].append(row)
-
-    zone_fault_matrix['rows'].sort(key=lambda x: x['total'], reverse=True)
-    zone_fault_matrix['rows'] = zone_fault_matrix['rows'][:10]
-    zone_fault_matrix['column_totals'].append(grand_total)
-    zone_fault_matrix['grand_total'] = grand_total
+    # Legacy fault/category stats removed (WorkCategory/FaultSubType/WorkReportFault models deleted).
+    reports_by_category = []
+    top_faults = []
+    zone_fault_matrix = {'fault_types': [], 'rows': [], 'column_totals': [], 'grand_total': 0}
 
     # === 工作内容明细 (新现场作业记录树 WorkReportEntry) — additive alongside 故障 stats ===
     section_labels = dict(WorkItem.SECTION_CHOICES)
@@ -4663,40 +4248,6 @@ def stats_dashboard(request):
             .order_by('-total')[:10]
         )
 
-    # === Demand Stats ===
-    demand_qs = DemandRecord.objects.all()
-    today = timezone.now().date()
-    month_start = today.replace(day=1)
-
-    demand_stats = {
-        'total': demand_qs.count(),
-        'pending': demand_qs.filter(status='submitted').count(),
-        'approved': demand_qs.filter(status='approved').count(),
-        'in_progress': demand_qs.filter(status='in_progress').count(),
-        'completed': demand_qs.filter(status='completed').count(),
-        'completed_this_month': demand_qs.filter(status='completed', date__gte=month_start).count(),
-    }
-
-    demand_by_category = list(
-        demand_qs.values('category__name')
-        .annotate(count=Count('id'))
-        .exclude(category__isnull=True)
-        .order_by('-count')[:10]
-    )
-
-    demand_by_department = list(
-        demand_qs.values('demand_department__name')
-        .annotate(count=Count('id'))
-        .exclude(demand_department__isnull=True)
-        .order_by('-count')[:10]
-    )
-
-    demand_by_status = list(
-        demand_qs.values('status')
-        .annotate(count=Count('id'))
-        .order_by('-count')
-    )
-
     context = {
         'is_admin': admin,
         # Work report weekly stats
@@ -4719,11 +4270,6 @@ def stats_dashboard(request):
         'top_work_nodes': top_work_nodes,
         'entries_by_project': entries_by_project,
         'worker_stats': worker_stats,
-        # Demand stats
-        'demand_stats': demand_stats,
-        'demand_by_category': demand_by_category,
-        'demand_by_department': demand_by_department,
-        'demand_by_status': demand_by_status,
     }
 
     return render(request, 'core/stats_dashboard.html', context)
@@ -4742,7 +4288,7 @@ import json
 @login_required(login_url='core:login')
 def custom_report_api(request):
     """Return aggregated data for custom chart configurations."""
-    from core.models import WorkReport, DemandRecord
+    from core.models import WorkReport
     from django.db.models import Count, Q
     from django.utils import timezone
     from collections import defaultdict
@@ -4802,7 +4348,7 @@ def custom_report_api(request):
 def _build_chart_data(data_source, metric, date_from, date_to,
                       is_admin, is_worker, worker, bar_mode='stacked', stack_by=''):
     """Build chart data dict for a given metric. Returns None if no data."""
-    from core.models import WorkReport, WorkReportEntry, WorkItem, DemandRecord
+    from core.models import WorkReport, WorkReportEntry, WorkItem
     from django.db.models import Count, Q
     from django.utils import timezone
     from datetime import timedelta, datetime
@@ -4817,7 +4363,7 @@ def _build_chart_data(data_source, metric, date_from, date_to,
 
     # === WORK REPORTS ===
     if data_source == 'work_reports':
-        qs = WorkReport.objects.select_related('worker', 'location', 'work_category', 'info_source')
+        qs = WorkReport.objects.select_related('worker', 'location')
         if not is_admin:
             if is_worker:
                 qs = qs.filter(worker=worker)
@@ -5114,10 +4660,9 @@ def _build_chart_data(data_source, metric, date_from, date_to,
                 ]
             }
 
-    # === DEMAND RECORDS ===
+    # === DEMAND RECORDS (removed — model deleted) ===
     elif data_source == 'demand_records':
-        qs = DemandRecord.objects.select_related('zone', 'category', 'submitter', 'approver')
-        qs = date_filter(qs)
+        return None
 
         # Stacked bar chart: two-level group-by
         if stack_by:
@@ -5421,17 +4966,17 @@ def custom_report(request):
 
 @login_required(login_url='core:login')
 def work_reports_list(request):
-    from core.models import WorkReport, Patch, WorkCategory, Worker
+    from core.models import WorkReport, Patch, Worker
     from core.role_utils import is_admin, get_worker_for_user
-    from core.workorder_tree_views import workitem_path_map, enrich_reports
+    from core.workorder_tree_views import workitem_path_map, enrich_reports, attach_zone_hierarchy
 
     user = request.user
     admin = is_admin(user)
 
     qs = WorkReport.objects.select_related(
-        'worker', 'location', 'work_category', 'info_source'
+        'worker', 'location'
     ).prefetch_related(
-        'entries__work_item', 'entries__project'
+        'entries__work_item', 'entries__project', 'zones__land'
     ).order_by('-date', '-id')
 
     # Scope by submitter for non-admins. Managers have no direct worker link,
@@ -5466,14 +5011,13 @@ def work_reports_list(request):
 
     reports = list(qs[:200])
     enrich_reports(reports, workitem_path_map())
+    attach_zone_hierarchy(reports)
     locations = Patch.objects.filter(active=True).order_by('order')
-    work_categories = WorkCategory.objects.filter(active=True).order_by('order')
     workers = Worker.objects.all().order_by('full_name') if admin else []
 
     return render(request, 'core/work_reports.html', {
         'reports': reports,
         'locations': locations,
-        'work_categories': work_categories,
         'workers': workers,
         'is_admin': admin,
         'filters': {
@@ -5496,9 +5040,8 @@ def work_report_detail(request, report_id):
 
     report = get_object_or_404(
         WorkReport.objects.select_related(
-            'worker', 'location', 'work_category', 'info_source'
-        ).prefetch_related('fault_entries__fault_subtype__category',
-                           'entries__work_item', 'entries__project'),
+            'worker', 'location'
+        ).prefetch_related('entries__work_item', 'entries__project', 'zones__land'),
         pk=report_id
     )
 
@@ -5519,16 +5062,20 @@ def work_report_detail(request, report_id):
         grouped.setdefault(sec, {'label': section_labels.get(sec, sec), 'items': []})
         grouped[sec]['items'].append(e)
 
+    # Deduplicated Land → name hierarchy (shared helper).
+    from core.workorder_tree_views import attach_zone_hierarchy
+    attach_zone_hierarchy([report])
+
     return render(request, 'core/work_report_detail.html', {
         'report': report,
-        'fault_entries': report.fault_entries.select_related('fault_subtype__category').all(),
         'tree_entry_groups': list(grouped.values()),
+        'zone_hierarchy': report.zone_hierarchy,
     })
 
 
 @login_required(login_url='core:login')
 def work_report_create(request):
-    from core.models import WorkReport, WorkReportFault, Patch, WorkCategory, InfoSource, FaultCategory, Worker, Zone, ZoneEquipment
+    from core.models import WorkReport, Patch, Worker, Zone, ZoneEquipment
     from core.role_utils import is_admin
 
     if request.method == 'POST':
@@ -5555,20 +5102,6 @@ def work_report_create(request):
         )
 
         # Parse fault entries
-        fault_json = request.POST.get('fault_entries', '[]')
-        try:
-            fault_data = json.loads(fault_json)
-            for entry in fault_data:
-                if entry.get('count', 0) > 0 and entry.get('fault_subtype'):
-                    WorkReportFault.objects.create(
-                        work_report=report,
-                        fault_subtype_id=entry['fault_subtype'],
-                        count=entry['count'],
-                        equipment_id=entry.get('equipment') or None,
-                    )
-        except (json.JSONDecodeError, KeyError):
-            pass
-
         messages.success(request, f'工作日报已创建 (ID: {report.id})')
 
         if request.POST.get('save_and_new'):
@@ -5576,11 +5109,6 @@ def work_report_create(request):
         return redirect('core:work_reports')
 
     locations = Patch.objects.filter(active=True).order_by('order')
-    work_categories = WorkCategory.objects.filter(active=True).order_by('order')
-    info_sources = InfoSource.objects.filter(active=True).order_by('order')
-    fault_categories = FaultCategory.objects.filter(active=True).prefetch_related(
-        'sub_types'
-    ).order_by('order', 'id')
     zones = Zone.objects.order_by('code')
 
     # Build zone equipment map for frontend lookup
@@ -5602,115 +5130,21 @@ def work_report_create(request):
     from datetime import date
     return render(request, 'core/work_report_form.html', {
         'locations': locations,
-        'work_categories': work_categories,
-        'info_sources': info_sources,
-        'fault_categories': fault_categories,
         'zones': zones,
         'grouped_zones': _build_grouped_zones(zones),
         'zone_equipment_json': json.dumps(zone_equipment_map),
-        'fault_categories_json': json.dumps([
-            {'id': c.id, 'name_zh': c.name_zh, 'name_en': c.name_en,
-             'sub_types': [{'id': s.id, 'name_zh': s.name_zh, 'name_en': s.name_en} for s in c.sub_types.all()]}
-            for c in fault_categories
-        ]),
         'today': date.today().isoformat(),
     })
 
 
 @login_required(login_url='core:login')
 def work_report_edit(request, report_id):
-    from core.models import WorkReport, WorkReportFault, Patch, WorkCategory, InfoSource, FaultCategory, Zone, ZoneEquipment
-    from core.role_utils import is_admin
-
-    report = get_object_or_404(WorkReport, pk=report_id)
-
-    if not is_admin(request.user):
-        try:
-            if report.worker != request.user.worker_profile:
-                messages.error(request, '无权编辑此记录')
-                return redirect('core:work_reports')
-        except Exception:
-            messages.error(request, '无权编辑此记录')
-            return redirect('core:work_reports')
-
-    if request.method == 'POST':
-        report.date = request.POST.get('date')
-        report.weather = request.POST.get('weather', '')
-        report.location_id = request.POST.get('location')
-        report.work_category_id = request.POST.get('work_category')
-        zone_code = request.POST.get('zone_location', '').strip()
-        report.zone_location = Zone.objects.filter(code=zone_code).first() if zone_code else None
-        report.remark = request.POST.get('remark', '')
-        report.info_source_id = request.POST.get('info_source') or None
-        report.is_difficult = bool(request.POST.get('is_difficult'))
-        report.is_difficult_resolved = bool(request.POST.get('is_difficult_resolved'))
-        report.save()
-
-        # Replace fault entries
-        report.fault_entries.all().delete()
-        fault_json = request.POST.get('fault_entries', '[]')
-        try:
-            fault_data = json.loads(fault_json)
-            for entry in fault_data:
-                if entry.get('count', 0) > 0 and entry.get('fault_subtype'):
-                    WorkReportFault.objects.create(
-                        work_report=report,
-                        fault_subtype_id=entry['fault_subtype'],
-                        count=entry['count'],
-                    )
-        except (json.JSONDecodeError, KeyError):
-            pass
-
-        messages.success(request, f'工作日报已更新 (ID: {report.id})')
-        return redirect('core:work_reports')
-
-    # GET — pre-populate form
-    locations = Patch.objects.filter(active=True).order_by('order')
-    work_categories = WorkCategory.objects.filter(active=True).order_by('order')
-    info_sources = InfoSource.objects.filter(active=True).order_by('order')
-    fault_categories = FaultCategory.objects.filter(active=True).prefetch_related(
-        'sub_types'
-    ).order_by('order', 'id')
-    zones = Zone.objects.order_by('code')
-
-    # Build zone equipment map for frontend lookup
-    zone_equipment_map = {}
-    for ze in ZoneEquipment.objects.select_related('zone', 'equipment').all():
-        zone_code = ze.zone.code
-        if zone_code not in zone_equipment_map:
-            zone_equipment_map[zone_code] = []
-        zone_equipment_map[zone_code].append({
-            'id': ze.id,
-            'equipment_details': {
-                'equipment_type': ze.equipment.equipment_type,
-                'equipment_type_display': ze.equipment.get_equipment_type_display(),
-                'model_name': ze.equipment.model_name,
-            },
-            'location_in_zone': ze.location_in_zone or '',
-        })
-
-    existing_faults = {
-        str(e.fault_subtype_id): {'count': e.count, 'equipment': e.equipment_id}
-        for e in report.fault_entries.all()
-    }
-
-    return render(request, 'core/work_report_form.html', {
-        'report': report,
-        'existing_faults_json': json.dumps(existing_faults),
-        'locations': locations,
-        'work_categories': work_categories,
-        'info_sources': info_sources,
-        'fault_categories': fault_categories,
-        'zones': zones,
-        'grouped_zones': _build_grouped_zones(zones),
-        'zone_equipment_json': json.dumps(zone_equipment_map),
-        'fault_categories_json': json.dumps([
-            {'id': c.id, 'name_zh': c.name_zh, 'name_en': c.name_en,
-             'sub_types': [{'id': s.id, 'name_zh': s.name_zh, 'name_en': s.name_en} for s in c.sub_types.all()]}
-            for c in fault_categories
-        ]),
-        'today': report.date.isoformat(),
-    })
+    # The legacy column-based edit form referenced deleted models (WorkCategory,
+    # InfoSource). Redirect to the v2 tree-form editor, which is the single source
+    # of truth for editing a WorkReport.
+    from core.models import WorkReport
+    get_object_or_404(WorkReport, pk=report_id)
+    return redirect('core:workorder_tree_form_edit', report_id=report_id)
 
 
 @require_POST
@@ -5794,61 +5228,6 @@ def work_report_delete(request, report_id):
 
 
 @login_required(login_url='core:login')
-def demands_page(request):
-    """
-    需求周报列表页面 - 显示所有需求记录
-    """
-    from core.models import DemandRecord, DemandCategory, DemandDepartment
-    from core.role_utils import is_admin
-
-    user = request.user
-    admin = is_admin(user)
-
-    qs = DemandRecord.objects.select_related(
-        'zone', 'category', 'demand_department', 'submitter', 'approver'
-    ).order_by('-date', '-id')
-
-    if not admin:
-        qs = qs.filter(status__in=['approved', 'in_progress', 'completed'])
-
-    date_from = request.GET.get('date_from')
-    date_to = request.GET.get('date_to')
-    status_filter = request.GET.get('status')
-    category_filter = request.GET.get('category')
-    department_filter = request.GET.get('department')
-
-    if date_from:
-        qs = qs.filter(date__gte=date_from)
-    if date_to:
-        qs = qs.filter(date__lte=date_to)
-    if status_filter:
-        qs = qs.filter(status=status_filter)
-    if category_filter:
-        qs = qs.filter(category_id=category_filter)
-    if department_filter:
-        qs = qs.filter(demand_department_id=department_filter)
-
-    demands = qs[:200]
-    categories = DemandCategory.objects.filter(active=True).order_by('order')
-    departments = DemandDepartment.objects.filter(active=True).order_by('order')
-
-    context = {
-        'demands': demands,
-        'categories': categories,
-        'departments': departments,
-        'is_admin': admin,
-        'date_from': date_from or '',
-        'date_to': date_to or '',
-        'status_filter': status_filter or '',
-        'category_filter': int(category_filter) if category_filter else '',
-        'department_filter': int(department_filter) if department_filter else '',
-    }
-
-    return render(request, 'core/demands.html', context)
-
-
-
-@login_required(login_url='core:login')
 def zone_geo_api(request):
     from core.models import Zone
     import json as _json
@@ -5875,7 +5254,7 @@ def workorder_history(request):
     from core.models import WorkReport, Worker
     from core.role_utils import get_worker_for_user, is_admin, get_user_role, ROLE_FIELD_WORKER
     from core.role_utils import ROLE_SUPER_ADMIN, ROLE_MANAGER
-    from core.workorder_tree_views import workitem_path_map, enrich_reports
+    from core.workorder_tree_views import workitem_path_map, enrich_reports, attach_zone_hierarchy
     from datetime import date
 
     role = get_user_role(request.user)
@@ -5896,37 +5275,11 @@ def workorder_history(request):
     if pending:
         reports = reports.filter(is_pending_repair=True)
 
-    reports = list(reports.select_related('worker', 'work_category', 'location')
+    reports = list(reports.select_related('worker', 'location')
                    .prefetch_related('zones__land', 'entries__work_item', 'entries__project')
                    .order_by('-date', '-id')[:50])
     enrich_reports(reports, workitem_path_map())
-
-    # Build a Land → 通用名称 → [zone codes] hierarchy per report, plus a deduplicated
-    # summary string. Replaces the old flat `zone_names` ("BOH, BOH, BOH, …") which had
-    # tons of repeats, and lets the template render a clean grouped view.
-    for r in reports:
-        lands = {}  # land_name -> { name -> set(codes) }
-        order = []  # preserve first-seen land order
-        for z in r.zones.all():
-            ln = (z.land.name if z.land_id and z.land else '其它') or '其它'
-            nm = z.name or z.code
-            if ln not in lands:
-                lands[ln] = {}
-                order.append(ln)
-            lands[ln].setdefault(nm, []).append(z.code)
-        r.zone_hierarchy = [
-            {'land': ln, 'names': [
-                {'name': nm, 'codes': sorted(set(codes)), 'count': len(set(codes))}
-                for nm, codes in sorted(lands[ln].items())
-            ], 'zone_count': sum(len(v) for v in lands[ln].values())}
-            for ln in order
-        ]
-        # Deduplicated flat summary for the card view: "Land1·nameA/nameB、Land2·nameC".
-        parts = []
-        for ln in order:
-            nms = sorted(lands[ln].keys())
-            parts.append(ln + '·' + '/'.join(nms))
-        r.zone_summary = '、'.join(parts) if parts else ''
+    attach_zone_hierarchy(reports)
 
     context = {
         'reports': reports,
@@ -5964,7 +5317,7 @@ def workorder_mobile_v2(request):
     from core.workorder_tree_views import (
         _calc_hours, _save_entries, _collect_entry_photos, _save_photo,
         _resolve_pending_repairs,
-    )
+)
     from datetime import date, datetime, time
 
     role = get_user_role(request.user)
@@ -6092,7 +5445,7 @@ def water_request_mobile_v2(request):
     from core.role_utils import (
         get_worker_for_user, get_user_role, is_admin,
         ROLE_DEPT_USER, ROLE_MANAGER, ROLE_SUPER_ADMIN,
-    )
+)
     from datetime import date, datetime
 
     role = get_user_role(request.user)
@@ -6288,7 +5641,7 @@ def zone_dxf_import(request):
         shapes_to_latlng_auto, compute_affine_transform,
         transform_shape, transform_group_to_boundary,
         shapes_to_geojson_preview, auto_calibrate,
-    )
+)
 
     is_admin = request.user.is_superuser or request.user.is_staff
     if not is_admin:

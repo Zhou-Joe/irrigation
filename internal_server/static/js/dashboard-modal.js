@@ -1196,6 +1196,38 @@
         else buildWaterRequestForm(data);
     }
 
+    // Compress a photo File via <canvas>: resize so the longest side ≤ maxSize, re-encode
+    // as JPEG at `quality`. Returns a Promise<File> (or null if it can't/shouldn't compress,
+    // e.g. tiny files where compression would only lose quality). This runs entirely
+    // client-side so the uploaded payload is much smaller — submissions are far faster on
+    // a slow/cloud-tunnel link.
+    function compressPhoto(file, maxSize, quality) {
+        if (!file.type || !file.type.startsWith('image/')) return Promise.resolve(null);
+        return new Promise(function (resolve) {
+            var img = new Image();
+            var url = URL.createObjectURL(file);
+            img.onload = function () {
+                URL.revokeObjectURL(url);
+                var w = img.naturalWidth, h = img.naturalHeight;
+                // Skip if already small enough.
+                if (w <= maxSize && h <= maxSize && file.size < 500000) { resolve(null); return; }
+                var scale = Math.min(1, maxSize / Math.max(w, h));
+                var cw = Math.round(w * scale), ch = Math.round(h * scale);
+                var canvas = document.createElement('canvas');
+                canvas.width = cw; canvas.height = ch;
+                var ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0, cw, ch);
+                canvas.toBlob(function (blob) {
+                    if (!blob) { resolve(null); return; }
+                    var name = (file.name || 'photo').replace(/\.[^.]+$/, '') + '.jpg';
+                    resolve(new File([blob], name, { type: 'image/jpeg', lastModified: Date.now() }));
+                }, 'image/jpeg', quality);
+            };
+            img.onerror = function () { URL.revokeObjectURL(url); resolve(null); };
+            img.src = url;
+        });
+    }
+
     function buildWorkorderForm(data) {
         var body = $('woModalBody'); if (!body) return;
         if (!data || !Array.isArray(data.sorted_shifts) || data.sorted_shifts.length === 0) {
@@ -1436,25 +1468,38 @@
         function addWoPhotoFiles(files) {
             Array.from(files).forEach(function (f) {
                 if (_photoFiles.length >= 6) return;
-                _photoFiles.push(f);
                 var isVid = f.type && f.type.startsWith('video/');
-                // Use an object URL (cheap, works for large video files) instead of a
-                // base64 data URL which would balloon memory for multi-MB videos.
-                var url = URL.createObjectURL(f);
-                var div = document.createElement('div'); div.className = 'v2-photo-thumb';
-                var mediaHtml = isVid
-                    ? '<video src="' + url + '" muted></video><span class="v2-photo-badge">▶</span>'
-                    : '<img src="' + url + '">';
-                div.innerHTML = mediaHtml + '<button type="button" class="v2-photo-rm">×</button>';
-                div.querySelector('.v2-photo-rm').addEventListener('click', function () {
-                    var idx = Array.from(photoArea.querySelectorAll('.v2-photo-thumb')).indexOf(div);
-                    _photoFiles.splice(idx, 1); div.remove(); URL.revokeObjectURL(url); refreshPhotoAddBtns();
-                });
-                // Insert before the camera button (first add button) so both add
-                // buttons always sit at the end of the row.
-                photoArea.insertBefore(div, $('woPhotoCamera'));
-                refreshPhotoAddBtns();
+                // Compress photos (resize to max 1600px, JPEG q0.8) before adding to the
+                // upload queue. Cuts upload size ~70%+ so submission is fast on a slow link.
+                // Videos can't be compressed in-browser; uploaded as-is.
+                if (isVid) {
+                    addOnePhotoFile(f, isVid);
+                } else {
+                    compressPhoto(f, 1600, 0.8).then(function (comp) {
+                        addOnePhotoFile(comp || f, false);
+                    }).catch(function () { addOnePhotoFile(f, false); });
+                }
             });
+        }
+        function addOnePhotoFile(f, isVid) {
+            if (_photoFiles.length >= 6) return;
+            _photoFiles.push(f);
+            // Use an object URL (cheap, works for large video files) instead of a
+            // base64 data URL which would balloon memory for multi-MB videos.
+            var url = URL.createObjectURL(f);
+            var div = document.createElement('div'); div.className = 'v2-photo-thumb';
+            var mediaHtml = isVid
+                ? '<video src="' + url + '" muted></video><span class="v2-photo-badge">▶</span>'
+                : '<img src="' + url + '">';
+            div.innerHTML = mediaHtml + '<button type="button" class="v2-photo-rm">×</button>';
+            div.querySelector('.v2-photo-rm').addEventListener('click', function () {
+                var idx = Array.from(photoArea.querySelectorAll('.v2-photo-thumb')).indexOf(div);
+                _photoFiles.splice(idx, 1); div.remove(); URL.revokeObjectURL(url); refreshPhotoAddBtns();
+            });
+            // Insert before the camera button (first add button) so both add
+            // buttons always sit at the end of the row.
+            photoArea.insertBefore(div, $('woPhotoCamera'));
+            refreshPhotoAddBtns();
         }
         if ($('woPhotoAdd')) $('woPhotoAdd').addEventListener('click', function () { photoInput.click(); });
         if (photoInput) photoInput.addEventListener('change', function () { addWoPhotoFiles(photoInput.files); photoInput.value = ''; });
@@ -1805,7 +1850,16 @@
         var form = $('woModalForm'); if (!form) return;
         form.querySelectorAll('input[name="zones"]').forEach(function (i) { i.remove(); });
         codes.forEach(function (code) { var input = document.createElement('input'); input.type = 'hidden'; input.name = 'zones'; input.value = code; form.appendChild(input); });
-        var entriesInput = $('woEntriesInput'); if (entriesInput) entriesInput.value = JSON.stringify(collectWoEntries());
+        // Collect entries. If the user picked a 工作类别 (root WorkItem) but didn't drill
+        // into specific content, still record the category as an entry so the report shows
+        // that category instead of falling back to "旧版记录". Group nodes have no value,
+        // so this is a zero-count marker the server ignores as a real count but keeps for
+        // the section/category grouping.
+        var entries = collectWoEntries();
+        if (_woCatNode && !entries.some(function (e) { return e.work_item === _woCatNode; })) {
+            entries.push({ work_item: _woCatNode, project: null, count: 0, status: '', text_value: '' });
+        }
+        var entriesInput = $('woEntriesInput'); if (entriesInput) entriesInput.value = JSON.stringify(entries);
         var fd = new FormData(form); _photoFiles.forEach(function (f) { fd.append('report_photos', f); });
         Object.keys(_woEntryPhotos).forEach(function (id) { _woEntryPhotos[id].forEach(function (f) { fd.append('ep_' + id, f); }); });
         var btn = $('woSubmitBtn'); btn.disabled = true; btn.textContent = '提交中...';
