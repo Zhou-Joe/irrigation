@@ -269,10 +269,29 @@ function renderLeaf(node){
     control = `<select class="wo-status"><option value="">--</option>${opts}</select>`;
   } else if (node.value_type === 'text_photo'){
     control = `<textarea class="wo-text" rows="2" placeholder="描述…"></textarea><input type="file" name="ep_${node.id}" accept="image/*" multiple class="wo-file">`;
+  } else if (node.name === '待修'){
+    // 待修 toggle: a checkbox linked to the report-level 待修 flag. Checking any
+    // 待修 leaf auto-checks the header 待修 box (联动), so pending-repair status is
+    // captured in one place and the orange "needs attention" logic picks it up.
+    div.dataset.linked = 'pending_repair';
+    control = `<label style="display:flex;align-items:center;gap:6px;font-size:.86rem;cursor:pointer;"><input type="checkbox" class="wo-toggle-cb" data-wid="${node.id}"> 标记待修</label>`;
   } else {
     control = `<textarea class="wo-text" rows="1" placeholder="…"></textarea>`;
   }
   div.innerHTML = `<span class="wo-leaf-name">${esc(node.name)}</span><span class="wo-ctrl" style="flex-basis:100%">${control}</span>`;
+  // Wire 待修 checkbox ↔ report-level flag (both directions).
+  if (node.name === '待修'){
+    const cb = div.querySelector('.wo-toggle-cb');
+    const headerCb = document.getElementById('f-is_pending_repair');
+    cb.addEventListener('change', () => {
+      if (cb.checked && headerCb) headerCb.checked = true;  // 待修 leaf → header flag on
+    });
+    if (headerCb){
+      headerCb.addEventListener('change', () => {
+        if (!headerCb.checked) cb.checked = false;  // header off → uncheck all 待修 leaves
+      });
+    }
+  }
   return div;
 }
 
@@ -369,7 +388,13 @@ function applyExisting(){
     const vt = el.dataset.vt;
     if (vt === 'count') el.querySelector('.wo-count').value = e.count || '';
     else if (vt === 'status') el.querySelector('.wo-status').value = e.status || '';
-    else el.querySelector('.wo-text').value = e.text_value || '';
+    else if (el.dataset.linked === 'pending_repair'){
+      // 待修 leaf: check the box + the report-level flag (联动).
+      const cb = el.querySelector('.wo-toggle-cb'); if (cb) cb.checked = true;
+      const h = document.getElementById('f-is_pending_repair'); if (h) h.checked = true;
+    } else {
+      el.querySelector('.wo-text').value = e.text_value || '';
+    }
     el.classList.add('wo-filled');
   });
 }
@@ -402,6 +427,10 @@ function collectEntries(){
     let count = 0, status = '', text = '', hasData = false;
     if (vt === 'count'){ count = parseInt(el.querySelector('.wo-count').value||0,10)||0; hasData = count>0; }
     else if (vt === 'status'){ status = el.querySelector('.wo-status').value||''; hasData = !!status; }
+    else if (el.dataset.linked === 'pending_repair'){
+      // 待修 leaf: a checked checkbox counts as selected.
+      const cb = el.querySelector('.wo-toggle-cb'); hasData = !!(cb && cb.checked);
+    }
     else { text = el.querySelector('.wo-text').value||''; const f = el.querySelector('.wo-file'); const files = f ? f.files.length : 0; hasData = !!(text||files); }
     if (hasData) entries.push({work_item:wid, project: scoped?project:null, count, status, text_value:text});
   });
