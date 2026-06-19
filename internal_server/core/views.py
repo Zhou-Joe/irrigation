@@ -2513,7 +2513,7 @@ def zone_detail_page(request, zone_id):
 
     # Recent work reports
     recent_reports = WorkReport.objects.filter(zone_location=zone).select_related(
-        'worker', 'work_category', 'location'
+        'worker', 'location'
     ).order_by('-date', '-id')[:10]
 
     # Sibling zones (same patch)
@@ -4459,78 +4459,12 @@ def _build_chart_data(data_source, metric, date_from, date_to,
                 }]
             }
 
-        elif metric == 'by_category':
-            entries = list(qs.values('work_category__name').annotate(count=Count('id')).order_by('-count')[:15])
-            if not entries:
-                return None
-            return {
-                'labels': [e['work_category__name'] or '未指定' for e in entries],
-                'datasets': [{
-                    'label': '日志数',
-                    'data': [e['count'] for e in entries],
-                    'backgroundColor': _chart_colors(len(entries)),
-                }]
-            }
+        # Removed metrics (fields/relations deleted): by_category, by_fault_type,
+        # by_fault_category, by_info_source, by_equipment (via fault_entries).
+        elif metric in ('by_category', 'by_fault_type', 'by_fault_category',
+                        'by_info_source', 'by_equipment'):
+            return None
 
-        elif metric == 'by_fault_type':
-            entries = list(qs.filter(fault_entries__isnull=False).values('fault_entries__fault_subtype__name_zh').annotate(count=Count('fault_entries__fault_subtype')).order_by('-count')[:15])
-            if not entries:
-                return None
-            return {
-                'labels': [e['fault_entries__fault_subtype__name_zh'] or '未分类' for e in entries],
-                'datasets': [{
-                    'label': '故障数',
-                    'data': [e['count'] for e in entries],
-                    'backgroundColor': _chart_colors(len(entries)),
-                }]
-            }
-
-        elif metric == 'by_info_source':
-            entries = list(qs.values('info_source__name').annotate(count=Count('id'))
-                           .exclude(info_source__isnull=True).order_by('-count')[:15])
-            if not entries:
-                return None
-            return {
-                'labels': [e['info_source__name'] or '未指定' for e in entries],
-                'datasets': [{
-                    'label': '日志数',
-                    'data': [e['count'] for e in entries],
-                    'backgroundColor': _chart_colors(len(entries)),
-                }]
-            }
-
-        elif metric == 'by_fault_category':
-            entries = list(qs.filter(fault_entries__isnull=False)
-                           .values('fault_entries__fault_subtype__category__name_zh')
-                           .annotate(count=Count('fault_entries__fault_subtype'))
-                           .order_by('-count')[:15])
-            if not entries:
-                return None
-            return {
-                'labels': [e['fault_entries__fault_subtype__category__name_zh'] or '未分类' for e in entries],
-                'datasets': [{
-                    'label': '故障数',
-                    'data': [e['count'] for e in entries],
-                    'backgroundColor': _chart_colors(len(entries)),
-                }]
-            }
-
-        elif metric == 'by_equipment':
-            entries = list(qs.filter(fault_entries__isnull=False)
-                           .filter(fault_entries__equipment__isnull=False)
-                           .values('fault_entries__equipment__equipment__model_name')
-                           .annotate(count=Count('fault_entries__equipment'))
-                           .order_by('-count')[:15])
-            if not entries:
-                return None
-            return {
-                'labels': [e['fault_entries__equipment__equipment__model_name'] or '未指定' for e in entries],
-                'datasets': [{
-                    'label': '故障数',
-                    'data': [e['count'] for e in entries],
-                    'backgroundColor': _chart_colors(len(entries)),
-                }]
-            }
 
         elif metric == 'by_worker_department':
             entries = list(qs.values('worker__department').annotate(count=Count('id')).order_by('-count'))
@@ -4579,29 +4513,7 @@ def _build_chart_data(data_source, metric, date_from, date_to,
             }
 
         elif metric == 'difficult_rate_by_category':
-            entries = list(qs.values('work_category__name').annotate(
-                total=Count('id'),
-                difficult=Count('id', filter=Q(is_difficult=True))
-            ).order_by('-total')[:15])
-            if not entries:
-                return None
-            return {
-                'labels': [e['work_category__name'] or '未指定' for e in entries],
-                'datasets': [
-                    {
-                        'label': '总数',
-                        'data': [e['total'] for e in entries],
-                        'backgroundColor': 'rgba(27, 67, 50, 0.7)',
-                        'borderColor': 'rgba(27, 67, 50, 1)',
-                    },
-                    {
-                        'label': '疑难',
-                        'data': [e['difficult'] for e in entries],
-                        'backgroundColor': 'rgba(204, 119, 34, 0.7)',
-                        'borderColor': 'rgba(204, 119, 34, 1)',
-                    }
-                ]
-            }
+            return None  # work_category field removed
 
         elif metric == 'by_worker' and is_admin:
             entries = list(qs.values('worker__full_name').annotate(
@@ -4726,17 +4638,7 @@ def _build_chart_data(data_source, metric, date_from, date_to,
             }
 
         elif metric == 'by_category':
-            entries = list(qs.values('category__name').annotate(count=Count('id')).exclude(category__isnull=True).order_by('-count')[:15])
-            if not entries:
-                return None
-            return {
-                'labels': [e['category__name'] or '未指定' for e in entries],
-                'datasets': [{
-                    'label': '需求数',
-                    'data': [e['count'] for e in entries],
-                    'backgroundColor': _chart_colors(len(entries)),
-                }]
-            }
+            return None  # demand_records data source removed
 
         elif metric == 'by_department':
             entries = list(qs.values('demand_department__name').annotate(count=Count('id')).exclude(demand_department__isnull=True).order_by('-count')[:15])
@@ -4851,20 +4753,10 @@ def _get_metric_groupings(data_source, metric, stack_by):
         'work_reports': {
             'worker': ('worker__full_name', 'worker__full_name'),
             'location': ('location__name', 'location__name'),
-            'work_category': ('work_category__name', 'work_category__name'),
             'zone': ('zone_location__name', 'zone_location__name'),
-            'info_source': ('info_source__name', 'info_source__name'),
-            'fault_subtype': ('fault_entries__fault_subtype__name_zh', 'fault_entries__fault_subtype__name_zh'),
             'date': ('date', 'date'),
         },
-        'demand_records': {
-            'category': ('category__name', 'category__name'),
-            'department': ('demand_department__name', 'demand_department__name'),
-            'zone': ('zone__name', 'zone__name'),
-            'status': ('status', 'status'),
-            'contact': ('demand_contact', 'demand_contact'),
-            'date': ('date', 'date'),
-        },
+        'demand_records': {},
     }
 
     table = mapping.get(data_source, {})
@@ -4878,27 +4770,11 @@ def _get_metric_groupings(data_source, metric, stack_by):
             'daily_trend': 'date',
             'by_location': ('location__name', 'location__name'),
             'by_zone': ('zone_location__name', 'zone_location__name'),
-            'by_category': ('work_category__name', 'work_category__name'),
-            'by_fault_type': ('fault_entries__fault_subtype__name_zh', 'fault_entries__fault_subtype__name_zh'),
-            'by_info_source': ('info_source__name', 'info_source__name'),
-            'by_fault_category': ('fault_entries__fault_subtype__category__name_zh', 'fault_entries__fault_subtype__category__name_zh'),
-            'by_equipment': ('fault_entries__equipment__equipment__model_name', 'fault_entries__equipment__equipment__model_name'),
             'by_worker_department': ('worker__department', 'worker__department'),
-            'difficult_rate_by_category': ('work_category__name', 'work_category__name'),
             'by_worker': ('worker__full_name', 'worker__full_name'),
             'difficult_rate_by_worker': ('worker__full_name', 'worker__full_name'),
         },
-        'demand_records': {
-            'daily_trend': 'date',
-            'by_category': ('category__name', 'category__name'),
-            'by_department': ('demand_department__name', 'demand_department__name'),
-            'by_status': ('status', 'status'),
-            'global_events': ('category__name', 'category__name'),
-            'by_zone': ('zone__name', 'zone__name'),
-            'by_contact': ('demand_contact', 'demand_contact'),
-            'by_submitter': ('submitter__full_name', 'submitter__full_name'),
-            'global_event_volume': 'date',
-        },
+        'demand_records': {},
     }
 
     primary_entry = primary_map.get(data_source, {}).get(metric)
@@ -4989,7 +4865,6 @@ def work_reports_list(request):
     date_from = request.GET.get('date_from')
     date_to = request.GET.get('date_to')
     location_id = request.GET.get('location')
-    work_category_id = request.GET.get('work_category')
     worker_id = request.GET.get('worker')
     difficult = request.GET.get('is_difficult')
     pending = request.GET.get('is_pending_repair')
@@ -5000,8 +4875,6 @@ def work_reports_list(request):
         qs = qs.filter(date__lte=date_to)
     if location_id:
         qs = qs.filter(location_id=location_id)
-    if work_category_id:
-        qs = qs.filter(work_category_id=work_category_id)
     if worker_id:
         qs = qs.filter(worker_id=worker_id)
     if difficult:
@@ -5024,7 +4897,6 @@ def work_reports_list(request):
             'date_from': date_from or '',
             'date_to': date_to or '',
             'location': int(location_id) if location_id else '',
-            'work_category': int(work_category_id) if work_category_id else '',
             'worker': int(worker_id) if worker_id else '',
             'is_difficult': bool(difficult),
             'is_pending_repair': bool(pending),
@@ -5093,10 +4965,8 @@ def work_report_create(request):
             weather=request.POST.get('weather', ''),
             worker=worker,
             location_id=request.POST.get('location'),
-            work_category_id=request.POST.get('work_category'),
             zone_location=zone,
             remark=request.POST.get('remark', ''),
-            info_source_id=request.POST.get('info_source') or None,
             is_difficult=bool(request.POST.get('is_difficult')),
             is_difficult_resolved=bool(request.POST.get('is_difficult_resolved')),
         )
