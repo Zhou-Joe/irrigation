@@ -5519,10 +5519,30 @@ def work_report_detail(request, report_id):
         grouped.setdefault(sec, {'label': section_labels.get(sec, sec), 'items': []})
         grouped[sec]['items'].append(e)
 
+    # Build a deduplicated Land → 通用名称 → [zone codes] hierarchy from the selected
+    # zones (same as the history list). A report often references many zones that share
+    # a land/name; collapse them so the detail page doesn't list the same name dozens of times.
+    lands = {}     # land_name -> { name -> [codes] }
+    order = []     # preserve first-seen land order
+    for z in report.zones.select_related('land').all():
+        ln = (z.land.name if z.land_id and z.land else '其它') or '其它'
+        nm = z.name or z.code
+        if ln not in lands:
+            lands[ln] = {}
+            order.append(ln)
+        lands[ln].setdefault(nm, []).append(z.code)
+    zone_hierarchy = [
+        {'land': ln,
+         'names': [{'name': nm, 'codes': codes, 'count': len(codes)}
+                   for nm, codes in sorted(lands[ln].items())],
+         'zone_count': sum(len(v) for v in lands[ln].values())}
+        for ln in order
+    ]
+
     return render(request, 'core/work_report_detail.html', {
         'report': report,
-        'fault_entries': report.fault_entries.select_related('fault_subtype__category').all(),
         'tree_entry_groups': list(grouped.values()),
+        'zone_hierarchy': zone_hierarchy,
     })
 
 
