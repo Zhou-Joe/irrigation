@@ -17,9 +17,11 @@ class Command(BaseCommand):
     help = 'Add 待修 toggle leaves under parents that have 已修复 children.'
 
     def handle(self, *args, **opts):
-        # Parents that have a 已修复 child toggle → they are 'repair-status' groups.
+        # Parents that have a 已修复/已疏通 child (toggle OR group) → repair-status groups.
+        # Some 已修复 are themselves groups (e.g. 冲洗阀 → 漏水(group) → 已修复(group)),
+        # so match both value_types.
         parent_ids = set(
-            WorkItem.objects.filter(active=True, value_type='toggle',
+            WorkItem.objects.filter(active=True,
                                     name_zh__in=REPAIR_STATUS_NAMES)
             .exclude(parent=None)
             .values_list('parent_id', flat=True)
