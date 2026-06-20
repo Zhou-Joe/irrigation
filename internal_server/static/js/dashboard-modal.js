@@ -1301,7 +1301,7 @@
         calcHours();
 
         document.querySelectorAll('#woModalForm .v2-chip-group .v2-chip').forEach(function (c) {
-            c.addEventListener('click', function () { c.closest('.v2-chip-group').querySelectorAll('.v2-chip').forEach(function (x) { x.classList.remove('active'); }); c.classList.add('active'); var inp = c.querySelector('input'); if (inp) inp.checked = true; if (inp && inp.name === 'is_pending_repair') syncDifficultChips(); });
+            c.addEventListener('click', function () { c.closest('.v2-chip-group').querySelectorAll('.v2-chip').forEach(function (x) { x.classList.remove('active'); }); c.classList.add('active'); var inp = c.querySelector('input'); if (inp) inp.checked = true; if (inp && inp.name === 'is_pending_repair') { syncDifficultChips(); clearPendingRepairLeaves(); } });
         });
 
         // Work-content drill-down picker (replaces the old fault chips).
@@ -1719,6 +1719,9 @@
         } else {
             _woEntries[node.id] = { count: 0, status: node.name, text_value: '', hasPhoto: false, project: node.is_project_scoped ? _woProject : null };
         }
+        // 联动: tapping a 待修 leaf also flips the header 待修 chip to "是" so the
+        // pending-repair flag is captured in one place. (Mirrors the desktop tree form.)
+        if (node.name === '待修' && _woEntries[node.id]) setRadioChip('is_pending_repair', '1');
         renderWoLevel();
         updateWoTrigger();
     }
@@ -1730,6 +1733,17 @@
             setRadioChip('is_difficult', '1');           // 疑难 = 是
             setRadioChip('is_difficult_resolved', '');   // 疑难未解决
         }
+    }
+    // Reverse linkage: when the header 待修 chip is turned OFF, drop any selected
+    // 待修 leaves in the work-content tree so the two stay consistent.
+    function clearPendingRepairLeaves() {
+        if (chipValue('is_pending_repair') === '1') return;  // only on "否"
+        var changed = false;
+        Object.keys(_woEntries).forEach(function (id) {
+            var nd = _woNodeById[id];
+            if (nd && nd.name === '待修') { delete _woEntries[id]; delete _woEntryPhotos[id]; changed = true; }
+        });
+        if (changed) { renderWoLevel(); updateWoTrigger(); }
     }
     function chipValue(name) {
         var checked = document.querySelector('#woModalForm input[name="' + name + '"]:checked');
