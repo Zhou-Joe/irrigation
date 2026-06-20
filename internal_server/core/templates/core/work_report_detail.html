@@ -88,7 +88,7 @@
             <div class="wr-meta-row"><span class="wr-meta-label">日期</span><span class="wr-meta-val">{{ report.date }}</span></div>
             {% if report.shift %}<div class="wr-meta-row"><span class="wr-meta-label">班次</span><span class="wr-meta-val">{{ report.get_shift_display|default:report.shift }}</span></div>{% endif %}
             <div class="wr-meta-row"><span class="wr-meta-label">处理人</span><span class="wr-meta-val">{{ report.worker.full_name|default:"-" }}</span></div>
-            {% if report.work_category %}<div class="wr-meta-row"><span class="wr-meta-label">工作类别</span><span class="wr-meta-val">{{ report.work_category.name }}</span></div>{% endif %}
+            {% if report.weather %}<div class="wr-meta-row"><span class="wr-meta-label">天气</span><span class="wr-meta-val">{{ report.weather }}</span></div>{% endif %}
             {% if report.work_start_time %}<div class="wr-meta-row"><span class="wr-meta-label">工作时间</span><span class="wr-meta-val">{{ report.work_start_time }} - {{ report.work_end_time }}</span></div>{% endif %}
             <div class="wr-meta-row"><span class="wr-meta-label">人数</span><span class="wr-meta-val">{{ report.team_size }} 人{% if report.third_party_count %}（含三方 {{ report.third_party_count }}）{% endif %}</span></div>
             <div class="wr-meta-row"><span class="wr-meta-label">工时</span><span class="wr-meta-val">{% if report.team_hours %}{{ report.team_hours }}h{% endif %}{% if report.third_party_hours %} / 三方 {{ report.third_party_hours }}h{% endif %}</span></div>
