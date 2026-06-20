@@ -99,6 +99,7 @@ urlpatterns = [
     path('mobile/water-request/v2/', views.water_request_mobile_v2, name='water_request_mobile_v2'),
     path('api/zone-geo/', views.zone_geo_api, name='zone_geo_api'),
     path('api/zones-payload/', views.zones_payload_api, name='zones_payload_api'),
+    path('api/today-weather/', views.today_weather_api, name='today_weather_api'),
     path('api/zones-in-area/', views.zones_in_area_api, name='zones_in_area_api'),
     path('api/modal/workorder-data/', views.workorder_modal_data, name='workorder_modal_data'),
     path('api/modal/water-request-data/', views.water_request_modal_data, name='water_request_modal_data'),

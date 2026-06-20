@@ -772,6 +772,38 @@ def zones_payload_api(request):
 
 
 @login_required(login_url='core:login')
+def today_weather_api(request):
+    """Return a short weather string for the CURRENT hour (for workorder auto-fill).
+
+    The workorder form pre-fills 天气 with this single-hour snapshot taken at the
+    moment of submission, e.g. "阴天, 22.5°C". Falls back to the latest record.
+    """
+    from datetime import date
+    from django.utils import timezone
+    from core.models import WeatherData
+    now = timezone.localtime()
+    today = now.date()
+    wd = WeatherData.objects.filter(date=today).first()
+    if not wd:
+        wd = WeatherData.objects.order_by('-date').first()
+    if not wd or not wd.hourly_data:
+        return JsonResponse({'summary': '', 'has_data': False})
+    # Current hour; if the record is from another day, use hour 0.
+    cur_hour = now.hour if wd.date == today else 0
+    # Closest available hour record (exact match, else the nearest).
+    hours = wd.hourly_data
+    exact = next((h for h in hours if h.get('hour') == cur_hour), None)
+    if exact is None:
+        exact = min(hours, key=lambda h: abs((h.get('hour') or 0) - cur_hour))
+    desc = wd.get_weather_description(exact.get('code'))
+    temp = exact.get('temp')
+    summary = desc
+    if temp is not None:
+        summary = f"{desc}, {temp:g}°C" if desc else f"{temp:g}°C"
+    return JsonResponse({'summary': summary, 'has_data': True})
+
+
+@login_required(login_url='core:login')
 def dashboard(request):
     """
     Main dashboard view with interactive map showing irrigation zones.
