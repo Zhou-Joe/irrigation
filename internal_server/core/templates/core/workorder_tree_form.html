@@ -445,6 +445,15 @@ document.addEventListener('DOMContentLoaded', ()=>{
   applyHeader();
   document.getElementById('wo-search-input').addEventListener('input', onSearch);
   document.getElementById('workorder-form').addEventListener('submit', collectEntries);
+  // Auto-fill 天气 with the current-hour snapshot (only when empty, i.e. new report
+  // or an old one with no weather set — never overwrite an existing value).
+  const wEl = document.getElementById('f-weather');
+  if (wEl && !wEl.value.trim()) {
+    fetch('/api/today-weather/', { credentials: 'same-origin' })
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d && d.summary) wEl.value = d.summary; })
+      .catch(() => {});
+  }
 });
 </script>
 {% endblock %}
