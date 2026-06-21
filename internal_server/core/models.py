@@ -622,7 +622,8 @@ class RequestBase(models.Model):
         (STATUS_INFO_NEEDED, '需补充信息'),
     ]
 
-    zone = models.ForeignKey(Zone, on_delete=models.CASCADE, related_name='%(class)s')
+    zone = models.ForeignKey(Zone, on_delete=models.CASCADE, related_name='%(class)s',
+                             null=True, blank=True, help_text='(Legacy) 主区域，新记录使用 zones M2M')
     submitter = models.ForeignKey(Worker, on_delete=models.CASCADE, null=True, blank=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_SUBMITTED)
     status_notes = models.TextField(blank=True, help_text='管理员处理备注')
@@ -668,12 +669,25 @@ class WaterRequest(RequestBase):
     start_datetime = models.DateTimeField(help_text='需求起始时间')
     end_datetime = models.DateTimeField(help_text='需求结束时间')
     photos = models.JSONField(default=list, help_text='照片URL列表')
+    # Multi-zone support: one request can cover several zones (approved once for all).
+    # `zone` (inherited FK) is kept for legacy single-zone data; new requests use `zones`.
+    zones = models.ManyToManyField('Zone', related_name='water_requests', blank=True,
+                                   verbose_name='区域', help_text='该需求涉及的多个区域')
 
     class Meta:
         db_table = 'water_requests'
 
+    @property
+    def all_zones(self):
+        """All zones on this request (M2M first, fallback to the legacy FK)."""
+        zs = list(self.zones.all())
+        if not zs and self.zone_id:
+            zs = [self.zone]
+        return zs
+
     def __str__(self):
-        return f"浇水协调 - {self.zone.name} ({self.request_type})"
+        names = ', '.join(z.name for z in self.all_zones) or '未指定区域'
+        return f"浇水协调 - {names} ({self.request_type})"
 
 
 # ============================================

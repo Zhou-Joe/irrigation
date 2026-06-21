@@ -128,7 +128,7 @@
     <div class="wq-card-main">
       <div class="wq-card-top">
         <span class="wq-req-type">{{ wr.request_type }}{% if wr.request_type == '其他需求' and wr.request_type_other %} ({{ wr.request_type_other }}){% endif %}</span>
-        <span class="wq-zone">📍 {{ wr.zone.name }}</span>
+        <span class="wq-zone">📍 {% for z in wr.all_zones %}{{ z.name }}{% if not forloop.last %}, {% endif %}{% endfor %}</span>
         <span class="wq-badge {{ wr.status }}">{{ wr.get_status_display }}</span>
       </div>
       <div class="wq-meta">
@@ -193,7 +193,7 @@ function lbKey(e){ if(e.key==='Escape') closeLb(); else if(e.key==='ArrowLeft') 
 function updateReq(id, status){
   var notes = (document.getElementById('notes-'+id)||{}).value || '';
   var fd = new FormData(); fd.append('status', status); fd.append('status_notes', notes);
-  fetch('/water-requests/'+id+'/update/', { method:'POST', body: fd, credentials:'same-origin',
+  fetch('/requests/'+id+'/update/', { method:'POST', body: fd, credentials:'same-origin',
     headers:{'X-Requested-With':'XMLHttpRequest','X-CSRFToken':(document.cookie.match(/csrftoken=([^;]+)/)||[])[1]||''} })
     .then(function(r){ return r.json(); })
     .then(function(d){
