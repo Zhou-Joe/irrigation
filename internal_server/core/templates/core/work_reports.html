@@ -74,7 +74,6 @@
 
   .wr-chip { display:inline-block; padding:2px 9px; border-radius: 20px; font-size:0.72rem; font-weight:600; background: var(--wr-accent-soft); color: var(--wr-accent); margin:2px 3px 0 0; }
   .wr-chip.count { background: var(--wr-accent); color:#fff; }
-  .wr-chip.legacy { background: #f3f4f6; color:#9ca3af; }
 
   /* Photo thumbs inline */
   .wr-photo-row { display:flex; gap:4px; flex-wrap:wrap; margin-top: 6px; }
@@ -169,14 +168,11 @@
             {% if report.zone_summary %}
             <div class="wr-zone-summary"><span class="pin">📍</span> {{ report.zone_summary }}</div>
             {% endif %}
-            {# Work-content sections #}
             {% if report.section_labels %}
             <div>
                 {% for lbl in report.section_labels %}<span class="wr-chip">{{ lbl }}</span>{% endfor %}
                 {% if report.entry_count %}<span class="wr-chip count">{{ report.entry_count }}项</span>{% endif %}
             </div>
-            {% else %}
-            <div><span class="wr-chip legacy">旧版记录</span></div>
             {% endif %}
             {# Photo thumbs #}
             {% if report.photos %}

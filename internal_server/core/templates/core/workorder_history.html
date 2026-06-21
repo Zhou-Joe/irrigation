@@ -118,11 +118,6 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
                 {% if r.section_labels %}
                     {% for lbl in r.section_labels %}<span class="section-chip">{{ lbl }}</span>{% endfor %}
                     {% if r.entry_count %}<span class="section-count">· {{ r.entry_count }}项</span>{% endif %}
-                {% elif r.work_category %}
-                    {# Has a category but no detailed content entries — still a v2 report, not legacy #}
-                    <span class="section-chip">{{ r.work_category.name }}</span>
-                {% else %}
-                    <span class="section-chip legacy">旧版记录</span>
                 {% endif %}
             </div>
 
