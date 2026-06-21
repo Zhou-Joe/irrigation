@@ -83,6 +83,7 @@ urlpatterns = [
     path('work-reports/', views.work_reports_list, name='work_reports'),
     path('requests/', views.water_requests_list, name='water_requests'),
     path('requests/<int:pk>/update/', views.water_request_update, name='water_request_update'),
+    path('remarks/', views.remarks_list, name='remarks'),
     path('work-reports/new/', views.work_report_create, name='work_report_create'),
     path('work-reports/tree/new/', workorder_tree_form, name='workorder_tree_form'),
     path('api/irrigation-project/create/', project_create_api, name='irrigation_project_create'),
