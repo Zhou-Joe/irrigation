@@ -945,15 +945,11 @@
             })
         });
 
-        // Build tooltip content (only water requests now)
-        let tooltipLines = zone.pending_requests.map(req => {
-            return `💧 ${req.type_display}`;
-        }).join('<br>');
-
+        // Concise tooltip: just the count (the list of identical 💧浇水协调 lines was
+        // visual clutter when many zones shared a request).
         marker.bindTooltip(`
             <div style="font-size: 12px;">
-                <strong>待审批浇水需求 (${pendingCount})</strong><br>
-                ${tooltipLines}<br>
+                <strong>💧 待审批浇水需求 ${pendingCount} 个</strong><br>
                 <span style="color: #888; font-size: 11px;">点击查看详情</span>
             </div>
         `, {

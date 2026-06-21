@@ -294,10 +294,15 @@ class WorkerAdmin(admin.ModelAdmin):
 
 @admin.register(WaterRequest)
 class WaterRequestAdmin(admin.ModelAdmin):
-    list_display = ('zone', 'submitter', 'user_type', 'user_type_other', 'request_type', 'request_type_other', 'status', 'start_datetime', 'end_datetime', 'approver', 'processed_at', 'status_notes', 'created_at', 'updated_at')
+    list_display = ('zones_display', 'submitter', 'user_type', 'request_type', 'status', 'start_datetime', 'end_datetime', 'approver', 'processed_at', 'created_at')
     list_filter = ('status', 'user_type', 'request_type', 'created_at')
-    search_fields = ('zone__name', 'submitter__full_name')
+    search_fields = ('zones__name', 'zone__name', 'submitter__full_name')
     readonly_fields = ('created_at', 'updated_at')
+    filter_horizontal = ('zones',)
+
+    def zones_display(self, obj):
+        return ', '.join(z.name for z in obj.all_zones)
+    zones_display.short_description = '区域'
 
 
 @admin.register(WeatherData)

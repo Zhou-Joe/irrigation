@@ -629,7 +629,12 @@ def _build_zones_payload(today, week_ago):
 
     plant_count_map = _count_map(Plant)
     equipment_count_map = _count_map(ZoneEquipment)
-    water_count_map = _count_map(WaterRequest)
+    # WaterRequest uses a multi-zone M2M; count per zone across all its zones.
+    water_count_map = {}
+    for row in (WaterRequest.objects.filter(zones__in=zone_ids)
+                .values('zones').annotate(c=Count('id'))):
+        zid = int(row['zones'])
+        water_count_map[zid] = water_count_map.get(zid, 0) + int(row['c'])
 
     # ── Bulk: zones with an UNRESOLVED 待修 work report (is_pending_repair AND not yet
     # closed by a 计划性维修). Drives the orange "needs attention" boundary color on the
@@ -640,32 +645,35 @@ def _build_zones_payload(today, week_ago):
     )
 
     # ── Bulk: pending water requests for today ──
+    # A request spans multiple zones (M2M), so attribute it to every zone it covers.
     pending_water_map = {}  # zone_id -> list of {id, type, type_display}
-    for req in WaterRequest.objects.filter(
-        zone_id__in=zone_ids,
+    for wr in WaterRequest.objects.filter(
         status='submitted',
         start_datetime__date__lte=today,
         end_datetime__date__gte=today
-    ).values_list('zone_id', 'id'):
-        pending_water_map.setdefault(req[0], []).append({
-            'id': req[1], 'type': 'water', 'type_display': '浇水协调',
-        })
+    ).prefetch_related('zones'):
+        for z in wr.zones.all():
+            if z.id in zone_ids:
+                pending_water_map.setdefault(z.id, []).append({
+                    'id': wr.id, 'type': 'water', 'type_display': '浇水协调',
+                })
 
-    # ── Bulk: recent water requests (top 3 per zone) ──
+    # ── Bulk: recent water requests (top 3 per zone) — a request spans multiple zones ──
     recent_water_map = defaultdict(list)
-    for w in WaterRequest.objects.filter(
-        zone_id__in=zone_ids
-    ).order_by('zone_id', '-created_at'):
-        lst = recent_water_map[w.zone_id]
-        if len(lst) < 3:
-            lst.append({
-                'id': w.id,
-                'type': w.get_request_type_display(),
-                'status': w.status,
-                'status_display': w.get_status_display(),
-                'start': w.start_datetime.strftime('%m-%d %H:%M'),
-                'end': w.end_datetime.strftime('%m-%d %H:%M'),
-            })
+    for w in WaterRequest.objects.prefetch_related('zones').order_by('-created_at'):
+        item = {
+            'id': w.id,
+            'type': w.get_request_type_display(),
+            'status': w.status,
+            'status_display': w.get_status_display(),
+            'start': w.start_datetime.strftime('%m-%d %H:%M'),
+            'end': w.end_datetime.strftime('%m-%d %H:%M'),
+        }
+        for z in w.zones.all():
+            if z.id in zone_ids:
+                lst = recent_water_map[z.id]
+                if len(lst) < 3:
+                    lst.append(item)
 
     # ── Bulk: plant names per zone ──
     plant_names_map = defaultdict(list)
@@ -929,11 +937,11 @@ def dashboard(request):
 
     # Recent activity (last 7 days)
     recent_activity = []
-    for req in WaterRequest.objects.select_related('zone').filter(created_at__date__gte=week_ago).order_by('-created_at')[:5]:
+    for req in WaterRequest.objects.prefetch_related('zones').filter(created_at__date__gte=week_ago).order_by('-created_at')[:5]:
         recent_activity.append({
             'type': 'water',
             'type_display': '浇水协调',
-            'zone': req.zone.name,
+            'zone': ', '.join(z.name for z in req.all_zones),
             'date': req.created_at.strftime('%m-%d %H:%M'),
             'status': req.get_status_display(),
         })
@@ -4948,7 +4956,7 @@ def water_requests_list(request):
 
     user = request.user
     admin = is_admin(user)
-    qs = WaterRequest.objects.select_related('zone', 'submitter', 'approver').order_by('-created_at', '-id')
+    qs = WaterRequest.objects.select_related('zone', 'submitter', 'approver').prefetch_related('zones').order_by('-created_at', '-id')
     if not admin:
         worker = get_worker_for_user(user)
         qs = qs.filter(submitter=worker) if worker else qs.none()
@@ -4962,7 +4970,7 @@ def water_requests_list(request):
     if status_filter:
         qs = qs.filter(status=status_filter)
     if zone_id:
-        qs = qs.filter(zone_id=zone_id)
+        qs = qs.filter(zones__id=zone_id).distinct()
     if request_type:
         qs = qs.filter(request_type=request_type)
     if date_from:
@@ -5464,23 +5472,27 @@ def water_request_mobile_v2(request):
             start_datetime = datetime.fromisoformat(start_dt)
             end_datetime = datetime.fromisoformat(end_dt)
 
-            zones = Zone.objects.filter(code__in=zone_codes)
-            created_count = 0
-            for z in zones:
-                WaterRequest.objects.create(
-                    zone=z,
-                    submitter=worker,
-                    user_type=user_type,
-                    request_type=request_type,
-                    start_datetime=start_datetime,
-                    end_datetime=end_datetime,
-                    status='submitted',
-                )
-                created_count += 1
+            zones = list(Zone.objects.filter(code__in=zone_codes))
+            if not zones:
+                return JsonResponse({'success': False, 'message': '未找到选择的区域'}, status=400)
+
+            # ONE request covering all selected zones (multi-zone M2M), so it needs only
+            # one approval. Previously each zone got its own request → N rows + N labels.
+            wr = WaterRequest.objects.create(
+                zone=zones[0],  # legacy single-zone FK kept for backward-compat
+                submitter=worker,
+                user_type=user_type,
+                request_type=request_type,
+                start_datetime=start_datetime,
+                end_datetime=end_datetime,
+                status='submitted',
+                status_notes=remark,
+            )
+            wr.zones.set(zones)
 
             return JsonResponse({
                 'success': True,
-                'message': f'已提交 {created_count} 个区域的浇水协调需求',
+                'message': f'已提交浇水协调需求（{len(zones)} 个区域，1 个审批）',
             })
         except Exception as e:
             return JsonResponse({'success': False, 'message': str(e)}, status=400)

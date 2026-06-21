@@ -204,7 +204,7 @@ class ZoneSerializer(serializers.ModelSerializer):
         today = date.today()
         pending = []
         for req in WaterRequest.objects.filter(
-            zone=obj,
+            zones=obj,
             status='submitted',
             start_datetime__date__lte=today,
             end_datetime__date__gte=today
@@ -276,17 +276,20 @@ class WorkerSerializer(serializers.ModelSerializer):
 class WaterRequestSerializer(serializers.ModelSerializer):
     """Serializer for WaterRequest model."""
 
-    zone_name = serializers.CharField(source='zone.name', read_only=True)
+    zone_names = serializers.SerializerMethodField()
     submitter_name = serializers.CharField(source='submitter.full_name', read_only=True)
     status_display = serializers.CharField(source='get_status_display', read_only=True)
     user_type_display = serializers.CharField(source='get_user_type_display', read_only=True)
     request_type_display = serializers.CharField(source='get_request_type_display', read_only=True)
     approver_name = serializers.CharField(source='approver.full_name', read_only=True)
 
+    def get_zone_names(self, obj):
+        return ', '.join(z.name for z in obj.all_zones)
+
     class Meta:
         model = WaterRequest
         fields = [
-            'id', 'zone', 'zone_name', 'submitter', 'submitter_name',
+            'id', 'zones', 'zone_names', 'submitter', 'submitter_name',
             'status', 'status_display', 'status_notes',
             'approver', 'approver_name', 'processed_at',
             'user_type', 'user_type_display', 'user_type_other',
@@ -538,7 +541,7 @@ def get_all_requests(request):
             'id': req.id,
             'type': '浇水协调需求',
             'type_code': 'water',
-            'zone': req.zone.name,
+            'zone': ', '.join(z.name for z in req.all_zones),
             'status': req.status,
             'status_display': req.get_status_display(),
             'date': str(req.start_datetime.date()),
