@@ -4937,6 +4937,90 @@ def work_reports_list(request):
 
 
 @login_required(login_url='core:login')
+def water_requests_list(request):
+    """需求列表 — 浇水协调 (WaterRequest) records.
+
+    Managers/admins see all requests and can approve/reject inline; other users see
+    only their own submissions. Mirrors the work_reports_list filter+card structure.
+    """
+    from core.models import WaterRequest, Zone
+    from core.role_utils import is_admin, get_worker_for_user
+
+    user = request.user
+    admin = is_admin(user)
+    qs = WaterRequest.objects.select_related('zone', 'submitter', 'approver').order_by('-created_at', '-id')
+    if not admin:
+        worker = get_worker_for_user(user)
+        qs = qs.filter(submitter=worker) if worker else qs.none()
+
+    status_filter = request.GET.get('status', '')
+    zone_id = request.GET.get('zone', '')
+    request_type = request.GET.get('request_type', '')
+    date_from = request.GET.get('date_from', '')
+    date_to = request.GET.get('date_to', '')
+
+    if status_filter:
+        qs = qs.filter(status=status_filter)
+    if zone_id:
+        qs = qs.filter(zone_id=zone_id)
+    if request_type:
+        qs = qs.filter(request_type=request_type)
+    if date_from:
+        qs = qs.filter(start_datetime__date__gte=date_from)
+    if date_to:
+        qs = qs.filter(end_datetime__date__lte=date_to)
+
+    requests = list(qs[:200])
+    zones = Zone.objects.all().order_by('code')
+    status_choices = WaterRequest.STATUS_CHOICES
+    request_type_choices = WaterRequest.REQUEST_TYPE_CHOICES
+
+    context = {
+        'requests': requests,
+        'zones': zones,
+        'is_admin': admin,
+        'status_choices': status_choices,
+        'request_type_choices': request_type_choices,
+        'filters': {
+            'status': status_filter,
+            'zone': int(zone_id) if zone_id else '',
+            'request_type': request_type,
+            'date_from': date_from,
+            'date_to': date_to,
+        },
+    }
+    return render(request, 'core/water_requests.html', context)
+
+
+@require_POST
+@login_required(login_url='core:login')
+def water_request_update(request, pk):
+    """Approve / reject / request-info on a WaterRequest (admin only, AJAX)."""
+    from core.models import WaterRequest
+    from core.role_utils import is_admin, get_worker_for_user
+    if not is_admin(request.user):
+        return JsonResponse({'success': False, 'message': '无权限'}, status=403)
+    wr = get_object_or_404(WaterRequest, pk=pk)
+    new_status = request.POST.get('status', '')
+    valid = {c for c, _ in WaterRequest.STATUS_CHOICES}
+    if new_status not in valid:
+        return JsonResponse({'success': False, 'message': '无效状态'}, status=400)
+    wr.status = new_status
+    wr.status_notes = request.POST.get('status_notes', '').strip()
+    wr.approver = get_worker_for_user(request.user)
+    wr.processed_at = timezone.now()
+    wr.save()
+    return JsonResponse({
+        'success': True,
+        'message': '已更新',
+        'status': wr.status,
+        'status_display': wr.get_status_display(),
+        'status_notes': wr.status_notes,
+        'approver': wr.approver.full_name if wr.approver else '',
+    })
+
+
+@login_required(login_url='core:login')
 def work_report_detail(request, report_id):
     from core.models import WorkReport, WorkItem
     from core.role_utils import is_admin

@@ -1,0 +1,212 @@
+{% extends 'core/base.html' %}
+{% load static %}
+{% load media_tags %}
+
+{% block title %}需求{% endblock %}
+{% block nav_water_requests %}active{% endblock %}
+
+{% block extra_css %}
+<style>
+  :root {
+    --wq-card-bg: #ffffff;
+    --wq-card-border: #eef0f3;
+    --wq-accent: #2D6A4F;
+    --wq-accent-soft: #e8f5e9;
+    --wq-text: #1f2937;
+    --wq-muted: #6b7280;
+    --wq-warn: #CC7722;
+    --wq-danger: #9B2226;
+    --wq-info: #2563eb;
+  }
+  .wq-wrap { max-width: 1100px; margin: 0 auto; padding: 16px; }
+  .wq-list-head { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; margin-bottom: 16px; }
+  .wq-list-head h1 { font-size: 1.4rem; margin: 0; font-weight: 700; color: var(--wq-text); }
+
+  .msg { padding: 10px 14px; border-radius: 10px; margin-bottom: 12px; font-size: 0.9rem; }
+  .msg-success { background: rgba(64,145,108,0.12); color: #40916C; }
+  .msg-error   { background: rgba(155,34,38,0.12); color: var(--wq-danger); }
+  .msg-info    { background: rgba(37,99,235,0.10); color: var(--wq-info); }
+  .msg-warning { background: rgba(204,119,34,0.12); color: var(--wq-warn); }
+
+  .filter-card { background: var(--wq-card-bg); border:1px solid var(--wq-card-border); border-radius: 14px; padding: 14px 16px; margin-bottom: 16px; }
+  .filter-row { display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; }
+  .ff { display:flex; flex-direction:column; gap:3px; }
+  .ff label { font-size: 0.68rem; color: var(--wq-muted); text-transform: uppercase; letter-spacing: 0.03em; }
+  .ff input[type=date], .ff select { padding: 7px 10px; border:1px solid #e5e7eb; border-radius: 8px; font-size: 0.85rem; background:#fff; color: var(--wq-text); }
+  .ff input:focus, .ff select:focus { outline:none; border-color: var(--wq-accent); }
+  .btn-sm { padding: 7px 14px; border-radius: 8px; font-size: 0.82rem; font-weight: 600; border:none; cursor:pointer; text-decoration:none; display:inline-flex; align-items:center; }
+  .btn-primary { background: var(--wq-accent); color:#fff; }
+  .btn-secondary { background: #f3f4f6; color: var(--wq-text); }
+
+  /* card: info left, actions right */
+  .wq-card { background: var(--wq-card-bg); border:1px solid var(--wq-card-border); border-radius:14px; padding:14px 16px; margin-bottom:10px;
+             display:flex; align-items:stretch; gap:14px; transition: box-shadow .15s, border-color .15s; }
+  .wq-card:hover { box-shadow: 0 4px 14px rgba(0,0,0,0.07); border-color: #d8dde3; }
+  .wq-card-main { flex:1; min-width:0; }
+  .wq-card-side { display:flex; flex-direction:column; align-items:flex-end; justify-content:center; gap:6px; flex-shrink:0; padding-left:14px; border-left:1px solid var(--wq-card-border); }
+
+  .wq-card-top { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:6px; }
+  .wq-req-type { font-size: 0.95rem; font-weight: 700; color: var(--wq-accent); }
+  .wq-zone { font-size: 0.82rem; color: var(--wq-text); }
+  .wq-badge { display:inline-flex; align-items:center; padding:2px 9px; border-radius:20px; font-size:0.7rem; font-weight:600; margin-left:auto; }
+  .wq-badge.submitted { background: rgba(204,119,34,0.12); color: var(--wq-warn); }
+  .wq-badge.approved  { background: rgba(64,145,108,0.14); color: #40916C; }
+  .wq-badge.rejected  { background: rgba(155,34,38,0.10); color: var(--wq-danger); }
+  .wq-badge.info_needed { background: rgba(37,99,235,0.10); color: var(--wq-info); }
+
+  .wq-meta { display:flex; flex-wrap:wrap; gap:4px 14px; font-size:0.8rem; color: var(--wq-muted); margin: 2px 0; }
+  .wq-meta b { color: var(--wq-text); font-weight:600; }
+  .wq-notes { font-size: 0.8rem; color: var(--wq-muted); background:#f9fafb; border-radius:8px; padding:6px 10px; margin-top:6px; }
+  .wq-photo-row { display:flex; gap:4px; flex-wrap:wrap; margin-top:6px; }
+  .wq-photo-thumb { width:40px; height:40px; border-radius:6px; overflow:hidden; position:relative; cursor:pointer; border:1px solid #eef0f3; }
+  .wq-photo-thumb img, .wq-photo-thumb video { width:100%; height:100%; object-fit:cover; display:block; }
+  .wq-photo-play { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); background:rgba(0,0,0,0.5); color:#fff; border-radius:50%; width:16px; height:16px; display:flex; align-items:center; justify-content:center; font-size:0.55em; }
+
+  /* action buttons */
+  .wq-act { font-size: 0.8rem; padding: 8px 14px; border-radius: 8px; text-decoration:none; font-weight:600; display:inline-flex; align-items:center; gap:5px; transition: transform .1s, background .15s; border:none; cursor:pointer; white-space:nowrap; }
+  .wq-act:active { transform: scale(0.96); }
+  .wq-act.approve { background: var(--wq-accent); color:#fff; }
+  .wq-act.approve:hover { background:#245540; }
+  .wq-act.reject { background: rgba(155,34,38,0.12); color: var(--wq-danger); }
+  .wq-act.reject:hover { background: rgba(155,34,38,0.2); }
+  .wq-act.info { background: rgba(37,99,235,0.10); color: var(--wq-info); }
+  .wq-act.info:hover { background: rgba(37,99,235,0.18); }
+  .wq-notes-input { width:100%; padding:6px 9px; border:1px solid #e5e7eb; border-radius:8px; font-size:0.78rem; margin-top:6px; box-sizing:border-box; }
+  .wq-side-id { font-size:0.68rem; color:var(--wq-muted); margin-top:2px; }
+
+  .wq-empty { padding:48px; text-align:center; color:var(--wq-muted); font-size:0.95rem; background:var(--wq-card-bg); border-radius:14px; border:1px solid var(--wq-card-border); }
+
+  @media (max-width: 560px) {
+    .wq-card { flex-direction:column; gap:10px; }
+    .wq-card-side { flex-direction:column; align-items:stretch; border-left:none; border-top:1px solid var(--wq-card-border); padding-left:0; padding-top:10px; }
+    .wq-side-id { text-align:right; }
+  }
+
+  /* lightbox */
+  .lb-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.92); z-index:3000; justify-content:center; align-items:center; }
+  .lb-overlay.show { display:flex; }
+  .lb-img, .lb-video { max-width:92vw; max-height:86vh; border-radius:10px; object-fit:contain; }
+  .lb-close { position:absolute; top:14px; right:22px; color:#fff; font-size:2.2rem; cursor:pointer; background:none; border:none; line-height:1; }
+  .lb-nav { position:absolute; top:50%; transform:translateY(-50%); color:#fff; font-size:2.2rem; cursor:pointer; background:rgba(0,0,0,0.4); border:none; border-radius:50%; width:46px; height:46px; display:flex; align-items:center; justify-content:center; }
+  .lb-prev { left:12px; } .lb-next { right:12px; }
+  .lb-counter { position:absolute; bottom:18px; left:50%; transform:translateX(-50%); color:rgba(255,255,255,0.75); font-size:0.85rem; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="wq-wrap">
+  <div class="wq-list-head"><h1>需求</h1></div>
+
+  {% if messages %}{% for message in messages %}<div class="msg msg-{{ message.tags|default:'info' }}">{{ message }}</div>{% endfor %}{% endif %}
+
+  <div class="filter-card">
+    <form method="get" class="filter-row">
+      <div class="ff"><label>状态</label>
+        <select name="status">
+          <option value="">全部</option>
+          {% for c, label in status_choices %}<option value="{{ c }}" {% if filters.status == c %}selected{% endif %}>{{ label }}</option>{% endfor %}
+        </select></div>
+      <div class="ff"><label>区域</label>
+        <select name="zone">
+          <option value="">全部</option>
+          {% for z in zones %}<option value="{{ z.id }}" {% if filters.zone == z.id %}selected{% endif %}>{{ z.code }} {{ z.name }}</option>{% endfor %}
+        </select></div>
+      <div class="ff"><label>需求类型</label>
+        <select name="request_type">
+          <option value="">全部</option>
+          {% for c, label in request_type_choices %}<option value="{{ c }}" {% if filters.request_type == c %}selected{% endif %}>{{ label }}</option>{% endfor %}
+        </select></div>
+      <div class="ff"><label>起始日期</label><input type="date" name="date_from" value="{{ filters.date_from }}"></div>
+      <div class="ff"><label>截止日期</label><input type="date" name="date_to" value="{{ filters.date_to }}"></div>
+      <button type="submit" class="btn-sm btn-primary">筛选</button>
+      <a href="{% url 'core:water_requests' %}" class="btn-sm btn-secondary">重置</a>
+    </form>
+  </div>
+
+  {% for wr in requests %}
+  <div class="wq-card" data-pk="{{ wr.id }}">
+    <div class="wq-card-main">
+      <div class="wq-card-top">
+        <span class="wq-req-type">{{ wr.request_type }}{% if wr.request_type == '其他需求' and wr.request_type_other %} ({{ wr.request_type_other }}){% endif %}</span>
+        <span class="wq-zone">📍 {{ wr.zone.name }}</span>
+        <span class="wq-badge {{ wr.status }}">{{ wr.get_status_display }}</span>
+      </div>
+      <div class="wq-meta">
+        <span><b>{{ wr.submitter.full_name|default:"–" }}</b>{% if wr.user_type %} · {{ wr.user_type }}{% endif %}</span>
+        <span>{{ wr.start_datetime|date:"m-d H:i" }} – {{ wr.end_datetime|date:"m-d H:i" }}</span>
+        <span>提交 {{ wr.created_at|date:"m-d H:i" }}</span>
+        {% if wr.approver %}<span>审批 {{ wr.approver.full_name }}{% if wr.processed_at %} · {{ wr.processed_at|date:"m-d H:i" }}{% endif %}</span>{% endif %}
+      </div>
+      {% if wr.status_notes %}<div class="wq-notes">📝 {{ wr.status_notes }}</div>{% endif %}
+      {% if wr.photos %}
+      <div class="wq-photo-row">
+        {% for p in wr.photos %}
+        {% if forloop.counter <= 6 %}
+        <div class="wq-photo-thumb" onclick="openLb({{ wr.id }}, {{ forloop.counter0 }})">
+          {% if p|is_video %}<video src="/media/{{ p|thumb }}" muted preload="metadata"></video><span class="wq-photo-play">▶</span>
+          {% else %}<img src="/media/{{ p|thumb }}" loading="lazy" alt="照片">{% endif %}
+        </div>
+        {% endif %}
+        {% endfor %}
+        {% if wr.photos|length > 6 %}<span style="font-size:0.75rem;color:var(--wq-muted,#6b7280);align-self:center;">+{{ wr.photos|length|add:"-6" }}</span>{% endif %}
+      </div>
+      {% endif %}
+    </div>
+    <div class="wq-card-side">
+      {% if is_admin %}
+        <button class="wq-act approve" onclick="updateReq({{ wr.id }}, 'approved')">批准</button>
+        <button class="wq-act reject" onclick="updateReq({{ wr.id }}, 'rejected')">拒绝</button>
+        <button class="wq-act info" onclick="updateReq({{ wr.id }}, 'info_needed')">需补充</button>
+        <input type="text" class="wq-notes-input" id="notes-{{ wr.id }}" placeholder="处理备注…" value="{{ wr.status_notes }}">
+      {% endif %}
+      <span class="wq-side-id">#{{ wr.id }}</span>
+    </div>
+  </div>
+  {% empty %}
+  <div class="wq-empty">暂无需求记录</div>
+  {% endfor %}
+</div>
+
+<!-- Lightbox -->
+<div class="lb-overlay" id="lightbox" onclick="if(event.target===this)closeLb()">
+  <button class="lb-close" onclick="closeLb()">&times;</button>
+  <button class="lb-nav lb-prev" onclick="event.stopPropagation();navLb(-1)">&#8249;</button>
+  <img class="lb-img" id="lbImg" src="" alt="" style="display:none;">
+  <video class="lb-video" id="lbVideo" src="" controls style="display:none;"></video>
+  <button class="lb-nav lb-next" onclick="event.stopPropagation();navLb(1)">&#8250;</button>
+  <div class="lb-counter" id="lbCounter"></div>
+</div>
+
+<script id="wq-photo-data" type="application/json">{% for wr in requests %}{% if wr.photos %}"{{ wr.id }}":{{ wr.photos|safe }},{% endif %}{% endfor %}</script>
+<script>
+var photoData = {};
+(function(){ var raw=(document.getElementById('wq-photo-data').textContent||'').trim().replace(/,$/,''); if(raw){try{photoData=JSON.parse('{'+raw+'}');}catch(e){}} })();
+var lbPhotos=[], lbIdx=0;
+function isVideoPath(p){ return /\.(mp4|mov|m4v|webm|ogg|ogv|avi|mkv)$/i.test(p); }
+function openLb(id, idx){ lbPhotos=photoData[id]||[]; lbIdx=idx||0; if(!lbPhotos.length) return; showLb(); document.getElementById('lightbox').classList.add('show'); document.addEventListener('keydown', lbKey); }
+function closeLb(){ document.getElementById('lightbox').classList.remove('show'); var v=document.getElementById('lbVideo'); v.pause(); v.src=''; document.removeEventListener('keydown', lbKey); }
+function navLb(dir){ lbIdx=(lbIdx+dir+lbPhotos.length)%lbPhotos.length; showLb(); }
+function showLb(){ var img=document.getElementById('lbImg'), vid=document.getElementById('lbVideo'), p=lbPhotos[lbIdx]; document.getElementById('lbCounter').textContent=(lbIdx+1)+' / '+lbPhotos.length; if(isVideoPath(p)){ img.style.display='none'; img.src=''; vid.style.display=''; vid.src='/media/'+p; } else { vid.style.display=''; vid.pause(); vid.src=''; vid.style.display='none'; img.style.display=''; img.src='/media/'+p; } }
+function lbKey(e){ if(e.key==='Escape') closeLb(); else if(e.key==='ArrowLeft') navLb(-1); else if(e.key==='ArrowRight') navLb(1); }
+
+// AJAX approve/reject
+function updateReq(id, status){
+  var notes = (document.getElementById('notes-'+id)||{}).value || '';
+  var fd = new FormData(); fd.append('status', status); fd.append('status_notes', notes);
+  fetch('/water-requests/'+id+'/update/', { method:'POST', body: fd, credentials:'same-origin',
+    headers:{'X-Requested-With':'XMLHttpRequest','X-CSRFToken':(document.cookie.match(/csrftoken=([^;]+)/)||[])[1]||''} })
+    .then(function(r){ return r.json(); })
+    .then(function(d){
+      if(d.success){
+        var card = document.querySelector('.wq-card[data-pk="'+id+'"]');
+        if(card){
+          var badge = card.querySelector('.wq-badge');
+          badge.className = 'wq-badge '+status; badge.textContent = d.status_display;
+          if(d.status_notes){ var n=card.querySelector('.wq-notes'); if(!n){ n=document.createElement('div'); n.className='wq-notes'; card.querySelector('.wq-card-main').appendChild(n);} n.textContent='📝 '+d.status_notes; }
+        }
+      } else { alert(d.message||'操作失败'); }
+    })
+    .catch(function(){ alert('网络错误'); });
+}
+</script>
+{% endblock %}
