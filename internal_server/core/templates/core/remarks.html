@@ -23,6 +23,9 @@
   .rm-card { background: var(--rm-card-bg); border:1px solid var(--rm-border); border-radius:14px; padding:14px 16px; margin-bottom:12px; }
   .rm-meta { display:flex; gap:10px; font-size:0.74rem; color: var(--rm-muted); margin-bottom:6px; flex-wrap:wrap; align-items:center; }
   .rm-zone { font-size: 0.78rem; background: var(--rm-accent-soft); color: var(--rm-accent); padding: 2px 9px; border-radius: 20px; font-weight: 600; }
+  .rm-land { font-size: 0.78rem; color: var(--rm-accent); font-weight: 700; }
+  .rm-name-chip { font-size: 0.74rem; background: var(--rm-accent-soft); color: var(--rm-accent); padding: 1px 7px; border-radius: 14px; }
+  .rm-name-count { font-size: 0.68rem; color: var(--rm-muted); }
   .rm-wo-badge { font-size: 0.7rem; background: var(--rm-warn-soft); color: var(--rm-warn); padding: 2px 9px; border-radius: 20px; font-weight: 600; }
   .rm-content { font-size:0.92rem; color: var(--rm-text); line-height:1.5; white-space:pre-wrap; margin: 6px 0; }
   .rm-confirm-row { display:flex; gap:6px; margin-top:10px; flex-wrap:wrap; }
@@ -55,17 +58,20 @@
         {% if g.is_grouped %}<span class="rm-wo-badge">工单 #{{ g.remark.workorder_id }}</span>{% endif %}
       </div>
       <div class="rm-meta" style="margin-bottom:2px;">
-        {% for z, idx in g.zones %}
-        <span class="rm-zone">{{ z.name }}</span>
+        {% for land in g.hierarchy %}
+        <span class="rm-land">{{ land.land }}:</span>
+        {% for nm in land.names %}
+        <span class="rm-name-chip">{{ nm.name }}{% if nm.count > 1 %}<span class="rm-name-count">({{ nm.count }})</span>{% endif %}</span>
+        {% endfor %}{% if not forloop.last %}<span style="color:var(--rm-muted);">·</span>{% endif %}
         {% endfor %}
-        {% if g.zones|length > 1 %}<span style="font-size:0.72rem;color:var(--rm-muted);">{{ g.zones|length }} 个区域 · 一次确认</span>{% endif %}
+        {% if g.zones|length > 1 %}<span style="font-size:0.72rem;color:var(--rm-muted);">· {{ g.zones|length }} 个区域 · 一次确认</span>{% endif %}
       </div>
       <div class="rm-content">{{ g.remark.content }}</div>
       {% if is_admin %}
       <div class="rm-confirm-row">
         <input type="text" class="rm-confirm-input" id="reply-{{ forloop.counter0 }}" placeholder="确认回复（可选）…">
         <button class="rm-btn rm-btn-confirm" id="btn-{{ forloop.counter0 }}"
-          data-pairs="{% for z, idx in g.zones %}{{ z.id }},{{ idx }}{% if not forloop.last %};{% endif %}{% endfor %}"
+          data-pairs="{% for land in g.hierarchy %}{% for nm in land.names %}{% for z, idx in nm.pairs %}{{ z.id }},{{ idx }}{% if not forloop.last %};{% endif %}{% endfor %}{% endfor %}{% endfor %}"
           onclick="confirmGroup({{ forloop.counter0 }})">确认</button>
       </div>
       {% endif %}
