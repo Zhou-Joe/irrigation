@@ -5063,11 +5063,17 @@ def remarks_list(request):
     zone_remark_confirm endpoint (manager-only).
     """
     import json as _json
+    from collections import OrderedDict
     from core.models import Zone
     from core.role_utils import is_admin
 
     admin = is_admin(request.user)
-    zones_with_remarks = []
+
+    # Remarks that came from a single workorder (is_difficult) are duplicated across
+    # every zone of that workorder. Group them by workorder_id so the page shows ONE
+    # entry (with all its zones) and the manager confirms once → propagates to all.
+    # Hand-added remarks (no workorder_id) stay per-zone.
+    grouped = OrderedDict()   # key -> {'remark', 'zones':[(zone, index),...], 'key'}
     for z in (Zone.objects.select_related('land', 'patch')
               .exclude(remarks='').exclude(remarks__isnull=True)
               .order_by('code')):
@@ -5075,21 +5081,27 @@ def remarks_list(request):
             items = _json.loads(z.remarks)
         except (ValueError, TypeError):
             continue
-        if not items:
-            continue
-        # Tag each remark with its index (the confirm endpoint is keyed by index).
         for idx, it in enumerate(items):
-            it['index'] = idx
-        zones_with_remarks.append({
-            'zone': z,
-            'remarks': items,
-            'count': len(items),
-        })
+            woid = it.get('workorder_id')
+            if woid:
+                key = 'wo:' + str(woid)
+            else:
+                # Hand-added: unique per (zone, index).
+                key = 'z:%d:%d' % (z.id, idx)
+            entry = grouped.setdefault(key, {
+                'remark': it, 'zones': [], 'key': key, 'is_grouped': bool(woid),
+            })
+            entry['zones'].append((z, idx))
+
+    # Build a flat list sorted so grouped (workorder) remarks come first.
+    groups = list(grouped.values())
+    groups.sort(key=lambda g: (0 if g['is_grouped'] else 1,
+                               g['remark'].get('date', '')), reverse=True)
 
     context = {
-        'zones_with_remarks': zones_with_remarks,
+        'groups': groups,
         'is_admin': admin,
-        'total': sum(zr['count'] for zr in zones_with_remarks),
+        'total': len(groups),
     }
     return render(request, 'core/remarks.html', context)
 
