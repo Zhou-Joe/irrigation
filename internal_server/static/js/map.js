@@ -800,6 +800,39 @@
         fillColor: '#E8590C', fillOpacity: 0.10, dashArray: null
     };
 
+    /**
+     * Resolve a safe [lat,lng] for a GROUP marker (remarks / water request).
+     *
+     * The server averages the centroids of every included zone; when those zones are
+     * far apart the average lands in empty space (no zone under it). This falls back:
+     * if the center isn't inside any included zone's bounds, snap to the bounding-box
+     * center of the NEAREST included zone — guaranteeing the marker always sits on a
+     * real zone rather than floating in the map void.
+     */
+    function _placeGroupMarker(center, zoneIds) {
+        if (!center) return null;
+        var target = L.latLng(center.lat, center.lng);
+        var included = new Set(zoneIds || []);
+        // Collect the rendered layers for the included zones.
+        var layers = [];
+        zonesLayerGroup.eachLayer(function (l) {
+            if (l.zoneData && included.has(l.zoneData.id) && l.getBounds) layers.push(l);
+        });
+        if (!layers.length) return [center.lat, center.lng];
+        // 1. Is the computed center inside any included zone's bounds?
+        for (var i = 0; i < layers.length; i++) {
+            if (layers[i].getBounds().contains(target)) return [center.lat, center.lng];
+        }
+        // 2. Fallback: nearest included zone's bounding-box center.
+        var best = null, bestDist = Infinity;
+        layers.forEach(function (l) {
+            var c = l.getBounds().getCenter();
+            var d = c.distanceTo(target);
+            if (d < bestDist) { bestDist = d; best = c; }
+        });
+        return best ? [best.lat, best.lng] : [center.lat, center.lng];
+    }
+
     // ── Pending remarks: one marker for all zones with unconfirmed remarks ──
     var _pendingRemarksData = null;
     var _pendingRemarkZoneIds = new Set();
@@ -817,27 +850,17 @@
         if (_pendingRemarksLayer) { map.removeLayer(_pendingRemarksLayer); _pendingRemarksLayer = null; }
         if (!_pendingRemarksData || !_pendingRemarksData.center) return;
         var d = _pendingRemarksData;
-        var marker = L.marker([d.center.lat, d.center.lng], {
+        var pos = _placeGroupMarker(d.center, d.zone_ids);
+        var marker = L.marker(pos, {
             icon: L.divIcon({
                 className: 'pending-remarks-marker',
                 html: '<div style="background:#E8590C;color:#fff;border-radius:50%;width:30px;height:30px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;box-shadow:0 2px 6px rgba(0,0,0,0.3);border:2px solid #fff;cursor:pointer;animation:remark-pulse 2s infinite;">!</div>',
                 iconSize: [30, 30], iconAnchor: [15, 15]
             })
         });
-        marker.bindTooltip('<div style="font-size:12px;"><strong>📝 待确认备注 · ' + d.count + ' 个区域</strong><br><span style="color:#888;font-size:11px;">点击聚焦这些区域</span></div>', { direction: 'top', offset: [0, -10] });
+        marker.bindTooltip('<div style="font-size:12px;"><strong>📝 待确认备注 · ' + d.count + ' 个区域</strong><br><span style="color:#888;font-size:11px;">点击查看详情</span></div>', { direction: 'top', offset: [0, -10] });
         marker.on('click', function () {
-            // Zoom to fit all remark-pending zones so the highlighted outlines are visible.
-            var latlngs = [];
-            zonesLayerGroup.eachLayer(function (l) {
-                if (l.zoneData && _pendingRemarkZoneIds.has(l.zoneData.id)) {
-                    var b = l.getBounds();
-                    latlngs.push([b.getSouthWest(), b.getNorthEast()]);
-                }
-            });
-            if (latlngs.length) {
-                var sb = L.latLngBounds([].concat.apply([], latlngs));
-                map.flyToBounds(sb, { padding: [40, 40], maxZoom: 19, duration: 0.8 });
-            }
+            window.location.href = '/remarks/';
         });
         _pendingRemarksLayer = L.layerGroup([marker]).addTo(map);
     }
@@ -848,14 +871,21 @@
         _pendingWaterLayer = L.layerGroup();
         _pendingWaterRequests.forEach(function (r) {
             if (!r.center) return;
-            var marker = L.marker([r.center.lat, r.center.lng], {
+            var pos = _placeGroupMarker(r.center, r.zone_ids);
+            var marker = L.marker(pos, {
                 icon: L.divIcon({
                     className: 'pending-water-request-marker',
                     html: '<div style="background:#E8590C;color:#fff;border-radius:50%;width:30px;height:30px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;box-shadow:0 2px 6px rgba(0,0,0,0.3);border:2px solid #fff;cursor:pointer;">' + r.count + '</div>',
                     iconSize: [30, 30], iconAnchor: [15, 15]
                 })
             });
-            marker.bindTooltip('<div style="font-size:12px;"><strong>💧 ' + (r.type_display || '浇水协调') + ' · ' + r.count + ' 个区域</strong><br><span style="color:#888;font-size:11px;">点击查看详情</span></div>', { direction: 'top', offset: [0, -10] });
+            marker.bindTooltip('<div style="font-size:12px;">' +
+                '<strong>💧 ' + (r.request_type || r.type_display || '浇水协调') + '</strong>' +
+                ' · <span style="color:#888;">' + (r.user_type || '') + '</span>' +
+                ' · ' + r.count + ' 个区域<br>' +
+                '<span style="color:#555;">' + (r.start || '') + ' → ' + (r.end || '') + '</span><br>' +
+                '<span style="color:#888;font-size:11px;">点击查看详情</span></div>',
+                { direction: 'top', offset: [0, -10] });
             marker.on('click', function () { window.location.href = '/requests/'; });
             _pendingWaterLayer.addLayer(marker);
         });

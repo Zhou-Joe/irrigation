@@ -1002,9 +1002,20 @@ def dashboard(request):
         if centers:
             clat = round(sum(c['lat'] for c in centers) / len(centers), 6)
             clng = round(sum(c['lng'] for c in centers) / len(centers), 6)
+            # Hover details: department (user_type) + request_type + duration.
+            dept = wr.get_user_type_display()
+            if wr.user_type == '其他' and wr.user_type_other:
+                dept = wr.user_type_other
+            rtype = wr.get_request_type_display()
+            if wr.request_type == '其他需求' and wr.request_type_other:
+                rtype = wr.request_type_other
             pending_water_requests.append({
                 'id': wr.id, 'count': len(zids), 'zone_ids': zids,
                 'center': {'lat': clat, 'lng': clng}, 'type_display': '浇水协调',
+                'request_type': rtype,
+                'user_type': dept,
+                'start': wr.start_datetime.strftime('%m-%d %H:%M'),
+                'end': wr.end_datetime.strftime('%m-%d %H:%M'),
             })
 
     # Pending remarks: collapse all zones with unconfirmed remarks into one group
@@ -5041,6 +5052,46 @@ def water_requests_list(request):
         },
     }
     return render(request, 'core/water_requests.html', context)
+
+
+@login_required(login_url='core:login')
+def remarks_list(request):
+    """待确认备注 — zones with unconfirmed remarks, with inline confirm for managers.
+
+    Reads the raw Zone.remarks JSON (not the lossy dashboard payload) so each remark's
+    date/content/author is shown. Confirming a remark POSTs to the existing
+    zone_remark_confirm endpoint (manager-only).
+    """
+    import json as _json
+    from core.models import Zone
+    from core.role_utils import is_admin
+
+    admin = is_admin(request.user)
+    zones_with_remarks = []
+    for z in (Zone.objects.select_related('land', 'patch')
+              .exclude(remarks='').exclude(remarks__isnull=True)
+              .order_by('code')):
+        try:
+            items = _json.loads(z.remarks)
+        except (ValueError, TypeError):
+            continue
+        if not items:
+            continue
+        # Tag each remark with its index (the confirm endpoint is keyed by index).
+        for idx, it in enumerate(items):
+            it['index'] = idx
+        zones_with_remarks.append({
+            'zone': z,
+            'remarks': items,
+            'count': len(items),
+        })
+
+    context = {
+        'zones_with_remarks': zones_with_remarks,
+        'is_admin': admin,
+        'total': sum(zr['count'] for zr in zones_with_remarks),
+    }
+    return render(request, 'core/remarks.html', context)
 
 
 @require_POST
