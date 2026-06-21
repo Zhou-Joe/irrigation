@@ -5093,6 +5093,22 @@ def remarks_list(request):
             })
             entry['zones'].append((z, idx))
 
+    # Collapse the flat zone list of each group into a Land → name hierarchy so the
+    # page reads like "探险岛: BOH (3), 主入口 (2)" instead of 5 identical "BOH" chips.
+    for g in grouped.values():
+        lands = OrderedDict()
+        for z, idx in g['zones']:
+            ln = (z.land.name if z.land_id and z.land else '其它') or '其它'
+            nm = z.name or z.code
+            lands.setdefault(ln, {}).setdefault(nm, []).append((z, idx))
+        g['hierarchy'] = [
+            {'land': ln, 'names': [
+                {'name': nm, 'count': len(pairs), 'pairs': pairs}
+                for nm, pairs in sorted(names.items())
+            ], 'zone_count': sum(len(p) for p in names.values())}
+            for ln, names in lands.items()
+        ]
+
     # Build a flat list sorted so grouped (workorder) remarks come first.
     groups = list(grouped.values())
     groups.sort(key=lambda g: (0 if g['is_grouped'] else 1,
