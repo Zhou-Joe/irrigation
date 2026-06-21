@@ -779,6 +779,89 @@
         });
     }
 
+    // ── Pending water requests: one marker per request, with zone boundaries highlighted ──
+    // Populated from the inline #pending-water-requests JSON (one entry per request).
+    var _pendingWaterRequests = [];
+    var _pendingWaterZoneIds = new Set();
+    var _pendingWaterLayer = null;
+    (function loadPendingWaterRequests() {
+        var el = document.getElementById('pending-water-requests');
+        if (!el || !el.textContent.trim()) return;
+        try {
+            _pendingWaterRequests = JSON.parse(el.textContent) || [];
+            _pendingWaterRequests.forEach(function (r) {
+                (r.zone_ids || []).forEach(function (zid) { _pendingWaterZoneIds.add(zid); });
+            });
+        } catch (e) { _pendingWaterRequests = []; }
+    })();
+    // Orange outline used for zones covered by a pending water request.
+    var pendingWaterStyle = {
+        color: '#E8590C', weight: 3, opacity: 0.95,
+        fillColor: '#E8590C', fillOpacity: 0.10, dashArray: null
+    };
+
+    // ── Pending remarks: one marker for all zones with unconfirmed remarks ──
+    var _pendingRemarksData = null;
+    var _pendingRemarkZoneIds = new Set();
+    var _pendingRemarksLayer = null;
+    (function loadPendingRemarks() {
+        var el = document.getElementById('pending-remarks');
+        if (!el || !el.textContent.trim() || el.textContent.trim() === 'null') return;
+        try {
+            _pendingRemarksData = JSON.parse(el.textContent);
+            (_pendingRemarksData.zone_ids || []).forEach(function (zid) { _pendingRemarkZoneIds.add(zid); });
+        } catch (e) { _pendingRemarksData = null; }
+    })();
+
+    function renderPendingRemarksMarker() {
+        if (_pendingRemarksLayer) { map.removeLayer(_pendingRemarksLayer); _pendingRemarksLayer = null; }
+        if (!_pendingRemarksData || !_pendingRemarksData.center) return;
+        var d = _pendingRemarksData;
+        var marker = L.marker([d.center.lat, d.center.lng], {
+            icon: L.divIcon({
+                className: 'pending-remarks-marker',
+                html: '<div style="background:#E8590C;color:#fff;border-radius:50%;width:30px;height:30px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;box-shadow:0 2px 6px rgba(0,0,0,0.3);border:2px solid #fff;cursor:pointer;animation:remark-pulse 2s infinite;">!</div>',
+                iconSize: [30, 30], iconAnchor: [15, 15]
+            })
+        });
+        marker.bindTooltip('<div style="font-size:12px;"><strong>📝 待确认备注 · ' + d.count + ' 个区域</strong><br><span style="color:#888;font-size:11px;">点击聚焦这些区域</span></div>', { direction: 'top', offset: [0, -10] });
+        marker.on('click', function () {
+            // Zoom to fit all remark-pending zones so the highlighted outlines are visible.
+            var latlngs = [];
+            zonesLayerGroup.eachLayer(function (l) {
+                if (l.zoneData && _pendingRemarkZoneIds.has(l.zoneData.id)) {
+                    var b = l.getBounds();
+                    latlngs.push([b.getSouthWest(), b.getNorthEast()]);
+                }
+            });
+            if (latlngs.length) {
+                var sb = L.latLngBounds([].concat.apply([], latlngs));
+                map.flyToBounds(sb, { padding: [40, 40], maxZoom: 19, duration: 0.8 });
+            }
+        });
+        _pendingRemarksLayer = L.layerGroup([marker]).addTo(map);
+    }
+
+    function renderPendingWaterRequestMarkers() {
+        if (_pendingWaterLayer) { map.removeLayer(_pendingWaterLayer); _pendingWaterLayer = null; }
+        if (!_pendingWaterRequests.length) return;
+        _pendingWaterLayer = L.layerGroup();
+        _pendingWaterRequests.forEach(function (r) {
+            if (!r.center) return;
+            var marker = L.marker([r.center.lat, r.center.lng], {
+                icon: L.divIcon({
+                    className: 'pending-water-request-marker',
+                    html: '<div style="background:#E8590C;color:#fff;border-radius:50%;width:30px;height:30px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;box-shadow:0 2px 6px rgba(0,0,0,0.3);border:2px solid #fff;cursor:pointer;">' + r.count + '</div>',
+                    iconSize: [30, 30], iconAnchor: [15, 15]
+                })
+            });
+            marker.bindTooltip('<div style="font-size:12px;"><strong>💧 ' + (r.type_display || '浇水协调') + ' · ' + r.count + ' 个区域</strong><br><span style="color:#888;font-size:11px;">点击查看详情</span></div>', { direction: 'top', offset: [0, -10] });
+            marker.on('click', function () { window.location.href = '/requests/'; });
+            _pendingWaterLayer.addLayer(marker);
+        });
+        _pendingWaterLayer.addTo(map);
+    }
+
     /**
      * Render zones on the map (supports multi-polygon format)
      */
@@ -797,8 +880,11 @@
             try {
                 // Color rule: green default; orange if needs_attention (unconfirmed
                 // remarks OR unresolved 待修); red only when user-selected (highlight).
-                // The per-zone imported boundary_color is intentionally ignored.
+                // A pending water request overrides to an orange outline (the marker
+                // for the request group sits at the zone centroid).
                 let zoneStyle = zone.needs_attention ? attentionStyle : defaultStyle;
+                if (_pendingWaterZoneIds.has(zone.id)) zoneStyle = pendingWaterStyle;
+                if (_pendingRemarkZoneIds.has(zone.id)) zoneStyle = pendingWaterStyle;
 
                 const zoneData = {
                     id: zone.id,
@@ -891,15 +977,12 @@
                     addZoneLabel(zone);
                 }
 
-                // Add pending request markers if any
-                if (zone.pending_requests && zone.pending_requests.length > 0 && zone.center) {
-                    addPendingRequestMarker(zone);
-                }
+                // Pending water requests are shown as a single marker per request
+                // (see renderPendingWaterRequestMarkers) instead of one per zone.
+                // Pending remarks are collapsed into one marker too (see
+                // renderPendingRemarksMarker); confirmed-only remarks stay markerless.
 
-                // Add remark indicator markers if any
-                if ((zone.has_remarks || zone.has_confirmed_remarks) && zone.center) {
-                    addRemarkMarker(zone);
-                }
+
             } catch (err) {
                 console.error('Error creating polygon for zone:', zone.name, err);
             }
@@ -907,6 +990,11 @@
 
         // Apply initial label visibility based on current zoom
         updateLabelSizes();
+        // One marker per pending water request (with zone boundaries already
+        // highlighted via pendingWaterStyle above).
+        renderPendingWaterRequestMarkers();
+        // One marker for all pending-remark zones (boundaries highlighted too).
+        renderPendingRemarksMarker();
     }
 
     /**

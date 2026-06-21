@@ -48,6 +48,11 @@
   .wq-card-top { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:6px; }
   .wq-req-type { font-size: 0.95rem; font-weight: 700; color: var(--wq-accent); }
   .wq-zone { font-size: 0.82rem; color: var(--wq-text); }
+  .wq-zone-rows { margin: 2px 0 6px; display:flex; flex-direction:column; gap:3px; }
+  .wq-zone-row { font-size: 0.8rem; display:flex; flex-wrap:wrap; align-items:baseline; gap:5px; }
+  .wq-land { font-weight:700; color: var(--wq-accent); }
+  .wq-name { background: rgba(64,145,108,0.12); color: #40916C; padding:1px 7px; border-radius:7px; font-size:0.78rem; font-weight:600; }
+  .wq-codes { color: #888; font-size:0.74rem; }
   .wq-badge { display:inline-flex; align-items:center; padding:2px 9px; border-radius:20px; font-size:0.7rem; font-weight:600; margin-left:auto; }
   .wq-badge.submitted { background: rgba(204,119,34,0.12); color: var(--wq-warn); }
   .wq-badge.approved  { background: rgba(64,145,108,0.14); color: #40916C; }
@@ -128,9 +133,22 @@
     <div class="wq-card-main">
       <div class="wq-card-top">
         <span class="wq-req-type">{{ wr.request_type }}{% if wr.request_type == '其他需求' and wr.request_type_other %} ({{ wr.request_type_other }}){% endif %}</span>
-        <span class="wq-zone">📍 {% for z in wr.all_zones %}{{ z.name }}{% if not forloop.last %}, {% endif %}{% endfor %}</span>
+        <span class="wq-zone">📍 {{ wr.zone_summary|default:"未指定区域" }}</span>
         <span class="wq-badge {{ wr.status }}">{{ wr.get_status_display }}</span>
       </div>
+      {% if wr.zone_hierarchy %}
+      <div class="wq-zone-rows">
+        {% for grp in wr.zone_hierarchy %}
+        <div class="wq-zone-row">
+          <span class="wq-land">{{ grp.land }}</span>
+          {% for nm in grp.names %}
+          <span class="wq-name">{{ nm.name }}</span>
+          <span class="wq-codes">{% if nm.count > 1 %}{{ nm.count }} 个 · {% endif %}{{ nm.codes|join:", " }}</span>
+          {% endfor %}
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
       <div class="wq-meta">
         <span><b>{{ wr.submitter.full_name|default:"–" }}</b>{% if wr.user_type %} · {{ wr.user_type }}{% endif %}</span>
         <span>{{ wr.start_datetime|date:"m-d H:i" }} – {{ wr.end_datetime|date:"m-d H:i" }}</span>

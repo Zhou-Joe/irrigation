@@ -336,8 +336,10 @@
 <!-- Map Config -->
 <script src="{% static 'js/map-config.js' %}?v=20260423"></script>
 <script>window.MAP_STYLE_CONFIG = {{ map_style_json|safe }} || {};</script>
+<script id="pending-water-requests" type="application/json">{{ pending_water_requests_json|safe }}</script>
+<script id="pending-remarks" type="application/json">{{ pending_remarks_json|safe }}</script>
 <!-- Custom Map JS -->
-<script src="{% static 'js/map.js' %}?v=20260623"></script>
+<script src="{% static 'js/map.js' %}?v=20260627"></script>
 <script src="{% static 'js/dashboard-modal.js' %}?v=20260625"></script>
 <!-- Dashboard JS — pass Django URL to external script -->
 <script>window.HISTORY_URL = '{% url "core:workorder_history" %}';</script>

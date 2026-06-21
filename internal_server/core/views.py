@@ -985,6 +985,43 @@ def dashboard(request):
     landmarks_data = _lm['landmarks']
     zone_landmark_map = _lm['zone_landmark_map']
 
+    # One marker per pending water request (centroid of its zones + zone ids),
+    # for the single-marker-per-request map display.
+    from datetime import date as _date
+    from .models import WaterRequest as _WR
+    _center_by_id = {z['id']: z.get('center') for z in zones_list}
+    _zone_id_set = set(_center_by_id.keys())
+    pending_water_requests = []
+    for wr in _WR.objects.filter(
+        status='submitted',
+        start_datetime__date__lte=today,
+        end_datetime__date__gte=today,
+    ).prefetch_related('zones'):
+        zids = [z.id for z in wr.zones.all() if z.id in _zone_id_set]
+        centers = [c for zid in zids if (c := _center_by_id.get(zid))]
+        if centers:
+            clat = round(sum(c['lat'] for c in centers) / len(centers), 6)
+            clng = round(sum(c['lng'] for c in centers) / len(centers), 6)
+            pending_water_requests.append({
+                'id': wr.id, 'count': len(zids), 'zone_ids': zids,
+                'center': {'lat': clat, 'lng': clng}, 'type_display': '浇水协调',
+            })
+
+    # Pending remarks: collapse all zones with unconfirmed remarks into one group
+    # (one marker at the centroid with the count + orange outline on each zone).
+    _remark_zones = [z for z in zones_list if z.get('has_remarks')]
+    _rm_centers = [z['center'] for z in _remark_zones if z.get('center')]
+    pending_remarks_data = None
+    if _remark_zones and _rm_centers:
+        pending_remarks_data = {
+            'count': len(_remark_zones),
+            'zone_ids': [z['id'] for z in _remark_zones],
+            'center': {
+                'lat': round(sum(c['lat'] for c in _rm_centers) / len(_rm_centers), 6),
+                'lng': round(sum(c['lng'] for c in _rm_centers) / len(_rm_centers), 6),
+            },
+        }
+
     # Patch list for map filter plugin
     from .models import Patch
     patches_list = []
@@ -1006,6 +1043,8 @@ def dashboard(request):
     context = {
         # zones_json no longer inlined — fetched async from /api/zones-payload/
         'grouped_zones': grouped_zones,  # For hierarchical sidebar display
+        'pending_water_requests_json': json.dumps(pending_water_requests, ensure_ascii=False),
+        'pending_remarks_json': json.dumps(pending_remarks_data),
         'pipelines_json': json.dumps(pipelines_list),
         'all_plant_names': all_plant_names,
         'landmarks_json': json.dumps(landmarks_data),
@@ -4979,6 +5018,10 @@ def water_requests_list(request):
         qs = qs.filter(end_datetime__date__lte=date_to)
 
     requests = list(qs[:200])
+    # Attach a Land → 通用名称 → [codes] hierarchy to each request so the list
+    # collapses repetitive zones instead of printing every zone name.
+    from core.workorder_tree_views import attach_zone_hierarchy
+    attach_zone_hierarchy(requests)
     zones = Zone.objects.all().order_by('code')
     status_choices = WaterRequest.STATUS_CHOICES
     request_type_choices = WaterRequest.REQUEST_TYPE_CHOICES
