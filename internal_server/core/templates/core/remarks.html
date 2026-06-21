@@ -20,23 +20,20 @@
   .rm-head h1 { font-size: 1.4rem; margin: 0; font-weight: 700; color: var(--rm-text); }
   .rm-total { font-size: 0.85rem; color: var(--rm-muted); }
 
-  .rm-zone-card { background: var(--rm-card-bg); border:1px solid var(--rm-border); border-radius:14px; padding:14px 16px; margin-bottom:12px; }
-  .rm-zone-head { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
-  .rm-zone-name { font-size: 1rem; font-weight: 700; color: var(--rm-accent); }
-  .rm-zone-code { font-size: 0.78rem; color: var(--rm-muted); }
-  .rm-zone-count { font-size: 0.72rem; background: var(--rm-warn-soft); color: var(--rm-warn); padding: 2px 9px; border-radius: 20px; font-weight: 600; margin-left:auto; }
-
-  .rm-remark { background:#fafbfc; border:1px solid #eef0f3; border-radius:10px; padding:10px 12px; margin-bottom:8px; }
-  .rm-remark-meta { display:flex; gap:10px; font-size:0.74rem; color: var(--rm-muted); margin-bottom:4px; flex-wrap:wrap; }
-  .rm-remark-content { font-size:0.9rem; color: var(--rm-text); line-height:1.4; white-space:pre-wrap; }
-  .rm-confirm-row { display:flex; gap:6px; margin-top:8px; flex-wrap:wrap; }
+  .rm-card { background: var(--rm-card-bg); border:1px solid var(--rm-border); border-radius:14px; padding:14px 16px; margin-bottom:12px; }
+  .rm-meta { display:flex; gap:10px; font-size:0.74rem; color: var(--rm-muted); margin-bottom:6px; flex-wrap:wrap; align-items:center; }
+  .rm-zone { font-size: 0.78rem; background: var(--rm-accent-soft); color: var(--rm-accent); padding: 2px 9px; border-radius: 20px; font-weight: 600; }
+  .rm-wo-badge { font-size: 0.7rem; background: var(--rm-warn-soft); color: var(--rm-warn); padding: 2px 9px; border-radius: 20px; font-weight: 600; }
+  .rm-content { font-size:0.92rem; color: var(--rm-text); line-height:1.5; white-space:pre-wrap; margin: 6px 0; }
+  .rm-confirm-row { display:flex; gap:6px; margin-top:10px; flex-wrap:wrap; }
   .rm-confirm-input { flex:1; min-width:160px; padding:7px 10px; border:1px solid #e5e7eb; border-radius:8px; font-size:0.82rem; }
   .rm-confirm-input:focus { outline:none; border-color: var(--rm-accent); }
   .rm-btn { font-size:0.8rem; padding:7px 16px; border-radius:8px; font-weight:600; border:none; cursor:pointer; transition: transform .1s; }
   .rm-btn:active { transform: scale(0.96); }
   .rm-btn-confirm { background: var(--rm-accent); color:#fff; }
   .rm-btn-confirm:hover { background:#245540; }
-  .rm-confirmed { color: var(--rm-accent); font-size:0.82rem; font-weight:600; }
+  .rm-btn-confirm:disabled { opacity:0.5; cursor:default; }
+  .rm-confirmed { color: var(--rm-accent); font-size:0.84rem; font-weight:600; }
 
   .rm-empty { padding:48px; text-align:center; color:var(--rm-muted); font-size:0.95rem; background:var(--rm-card-bg); border-radius:14px; border:1px solid var(--rm-border); }
 </style>
@@ -49,29 +46,29 @@
     <span class="rm-total">共 {{ total }} 条待确认</span>
   </div>
 
-  {% if zones_with_remarks %}
-    {% for zr in zones_with_remarks %}
-    <div class="rm-zone-card" data-zone="{{ zr.zone.id }}">
-      <div class="rm-zone-head">
-        <span class="rm-zone-name">{{ zr.zone.name }}</span>
-        <span class="rm-zone-code">{{ zr.zone.code }}{% if zr.zone.land %} · {{ zr.zone.land.name }}{% endif %}</span>
-        <span class="rm-zone-count">{{ zr.count }} 条</span>
+  {% if groups %}
+    {% for g in groups %}
+    <div class="rm-card" id="remark-{{ g.key }}">
+      <div class="rm-meta">
+        <span>📅 {{ g.remark.date|default:"无日期" }}</span>
+        <span>👤 {{ g.remark.author|default:"未知" }}</span>
+        {% if g.is_grouped %}<span class="rm-wo-badge">工单 #{{ g.remark.workorder_id }}</span>{% endif %}
       </div>
-      {% for r in zr.remarks %}
-      <div class="rm-remark" id="remark-{{ zr.zone.id }}-{{ r.index }}">
-        <div class="rm-remark-meta">
-          <span>📅 {{ r.date|default:"无日期" }}</span>
-          <span>👤 {{ r.author|default:"未知" }}</span>
-        </div>
-        <div class="rm-remark-content">{{ r.content }}</div>
-        {% if is_admin %}
-        <div class="rm-confirm-row">
-          <input type="text" class="rm-confirm-input" id="reply-{{ zr.zone.id }}-{{ r.index }}" placeholder="确认回复（可选）…">
-          <button class="rm-btn rm-btn-confirm" onclick="confirmRemark({{ zr.zone.id }}, {{ r.index }})">确认</button>
-        </div>
-        {% endif %}
+      <div class="rm-meta" style="margin-bottom:2px;">
+        {% for z, idx in g.zones %}
+        <span class="rm-zone">{{ z.name }}</span>
+        {% endfor %}
+        {% if g.zones|length > 1 %}<span style="font-size:0.72rem;color:var(--rm-muted);">{{ g.zones|length }} 个区域 · 一次确认</span>{% endif %}
       </div>
-      {% endfor %}
+      <div class="rm-content">{{ g.remark.content }}</div>
+      {% if is_admin %}
+      <div class="rm-confirm-row">
+        <input type="text" class="rm-confirm-input" id="reply-{{ forloop.counter0 }}" placeholder="确认回复（可选）…">
+        <button class="rm-btn rm-btn-confirm" id="btn-{{ forloop.counter0 }}"
+          data-pairs="{% for z, idx in g.zones %}{{ z.id }},{{ idx }}{% if not forloop.last %};{% endif %}{% endfor %}"
+          onclick="confirmGroup({{ forloop.counter0 }})">确认</button>
+      </div>
+      {% endif %}
     </div>
     {% endfor %}
   {% else %}
@@ -80,23 +77,23 @@
 </div>
 
 <script>
-function confirmRemark(zoneId, index){
-  var reply = (document.getElementById('reply-'+zoneId+'-'+index)||{}).value || '';
-  var fd = new FormData(); fd.append('confirm_reply', reply);
-  fetch('/zone/'+zoneId+'/remark/'+index+'/confirm/', {
-    method:'POST', body:fd, credentials:'same-origin',
-    headers:{'X-Requested-With':'XMLHttpRequest','X-CSRFToken':(document.cookie.match(/csrftoken=([^;]+)/)||[])[1]||''}
-  })
-    .then(function(r){ return r.text().then(function(t){ try{return JSON.parse(t);}catch(e){return {raw:t};} }); })
-    .then(function(d){
-      if(d && (d.success || d.message === undefined)){
-        var el = document.getElementById('remark-'+zoneId+'-'+index);
-        if(el){
-          el.innerHTML = '<div class="rm-confirmed">✓ 已确认'+(reply?'：'+reply:'')+'</div>';
-        }
-      } else { alert((d && d.message) ? d.message : '操作失败'); }
-    })
-    .catch(function(){ alert('网络错误'); });
+// Confirm one remark group: POSTs to every (zone, index) pair it covers so a single
+// workorder's remark is confirmed across all its zones in one click.
+function confirmGroup(n){
+  var btn = document.getElementById('btn-'+n);
+  var reply = (document.getElementById('reply-'+n)||{}).value || '';
+  var pairs = (btn.dataset.pairs || '').split(';').filter(Boolean).map(function(p){ return p.split(','); });
+  btn.disabled = true; btn.textContent = '确认中…';
+  var token = (document.cookie.match(/csrftoken=([^;]+)/)||[])[1] || '';
+  Promise.all(pairs.map(function(pair){
+    var zid = pair[0], idx = pair[1];
+    var fd = new FormData(); fd.append('confirm_reply', reply);
+    return fetch('/zone/'+zid+'/remark/'+idx+'/confirm/', {
+      method:'POST', body:fd, credentials:'same-origin',
+      headers:{'X-Requested-With':'XMLHttpRequest','X-CSRFToken':token}
+    });
+  })).then(function(){ window.location.reload(); })
+    .catch(function(){ alert('部分确认失败，请重试'); btn.disabled=false; btn.textContent='确认'; });
 }
 </script>
 {% endblock %}
