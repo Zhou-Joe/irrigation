@@ -5381,10 +5381,13 @@ def workorder_history(request):
     worker = get_worker_for_user(request.user)
     pending = request.GET.get('pending')
 
-    if worker:
-        reports = WorkReport.objects.filter(worker=worker)
-    elif is_admin(request.user):
+    # Managers / super-admins see ALL reports. Note: managers get an auto-created
+    # Worker row when they submit (resolve_or_create_worker), so checking `worker`
+    # before the admin check would wrongly scope them to only their own submissions.
+    if is_admin(request.user):
         reports = WorkReport.objects.all()
+    elif worker:
+        reports = WorkReport.objects.filter(worker=worker)
     else:
         reports = WorkReport.objects.none()
 

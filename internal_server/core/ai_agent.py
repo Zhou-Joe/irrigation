@@ -3,9 +3,12 @@
 The agent is built on demand from AISettings (configured in admin). Each tool
 queries the ORM directly — same process, no HTTP hop — so the LLM gets real data
 to ground its analysis on.
+
+Tool-calling follows the LangChain v1 pattern: runtime context (the per-session
+workspace thread id) is declared via ``context_schema`` and read inside tools
+through ``ToolRuntime`` rather than a module-level ContextVar.
 """
 import csv
-import contextvars
 import json
 import logging
 import os
@@ -13,11 +16,12 @@ import subprocess
 import sys
 from datetime import date, timedelta
 from functools import lru_cache
+from typing import TypedDict
 
 from django.conf import settings
 from django.utils import timezone
 from langchain.agents import create_agent
-from langchain.tools import tool
+from langchain.tools import tool, ToolRuntime
 from langchain_openai import ChatOpenAI
 from langgraph.checkpoint.memory import InMemorySaver
 
@@ -28,15 +32,11 @@ from core.models import (
 
 logger = logging.getLogger(__name__)
 
-# Holds the active conversation thread id while the agent runs. Tools read this
-# to resolve per-session code-execution workspaces (a @tool cannot receive the
-# thread_id directly from LangChain's runtime).
-_CURRENT_THREAD = contextvars.ContextVar('ai_current_thread', default=None)
-
-
-def set_current_thread(thread_id):
-    """Set by the SSE view before invoking the agent, so tools can resolve a workspace."""
-    _CURRENT_THREAD.set(thread_id)
+# Per-run context passed to agent.stream(context=...). Tools access it through
+# ToolRuntime instead of a global ContextVar — the LangChain v1 recommendation
+# (replaces the older InjectedState / get_runtime / ContextVar patterns).
+class WorkorderContext(TypedDict):
+    thread_id: str
 
 
 # ── Code-execution workspace management ───────────────────────────────────
@@ -57,32 +57,57 @@ def ensure_workspace(thread_id):
     return ws
 
 
+# Section labels are reused across the CSV export and the report tools.
+_SECTION_LABELS = dict(WorkItem.SECTION_CHOICES)
+
+
+def _report_section_summary(report):
+    """Comma-joined section-label summary for a report, derived from its tree entries.
+
+    The legacy WorkReport.work_category FK was removed; the new architecture stores
+    work content as WorkReportEntry rows under the WorkItem template tree. This
+    collapses a report's entries to the distinct top-level sections (章节) they
+    fall under, e.g. "常规维护, 报修应急".
+    """
+    sections = []
+    seen = set()
+    for e in report.entries.all():
+        sec = getattr(e.work_item, 'section', '') if e.work_item_id else ''
+        if sec and sec not in seen:
+            seen.add(sec)
+            sections.append(_SECTION_LABELS.get(sec, sec))
+    return ', '.join(sections)
+
+
 def _populate_workspace_data(ws):
     """Export recent business data to CSVs the generated code can pd.read_csv."""
     today = date.today()
     since = today - timedelta(days=90)
-    # WorkReports (last 90 days)
-    wr_qs = WorkReport.objects.filter(date__gte=since).select_related(
-        'worker', 'location', 'work_category'
-    ).order_by('-date')
+    # WorkReports (last 90 days). The old 工作类别 column is gone (work_category
+    # was removed); we export the tree-derived 章节 summary instead, plus the
+    # free-text 工作内容 column already on the model.
+    wr_qs = (WorkReport.objects.filter(date__gte=since)
+             .select_related('worker', 'location')
+             .prefetch_related('entries__work_item')
+             .order_by('-date'))
     with open(os.path.join(ws, 'work_reports.csv'), 'w', newline='', encoding='utf-8-sig') as f:
         w = csv.writer(f)
-        w.writerow(['日期', '处理人', '位置编号', '位置名称', '班次', '工作类别',
-                    '灌溉组工时', '第三方工时', '疑难', '工作内容', '备注'])
+        w.writerow(['日期', '处理人', '位置编号', '位置名称', '班次', '章节',
+                    '灌溉组工时', '第三方工时', '疑难', '待修', '工作内容', '备注'])
         for r in wr_qs:
             w.writerow([
                 r.date.isoformat(), str(r.worker) if r.worker else '',
                 getattr(r.location, 'code', '') if r.location else '',
                 str(r.location) if r.location else '',
                 r.shift or '',
-                str(r.work_category) if r.work_category else '',
+                _report_section_summary(r),
                 r.team_hours or 0, r.third_party_hours or 0,
                 '是' if r.is_difficult else '否',
+                '是' if r.is_pending_repair else '否',
                 (r.work_content or '')[:200],
                 (r.remark or '')[:200],
             ])
     # WorkReportEntries (structured 现场作业记录 tree content, last 90 days)
-    _section_labels = dict(WorkItem.SECTION_CHOICES)
     we_qs = WorkReportEntry.objects.filter(
         work_report__date__gte=since
     ).select_related('work_report', 'work_item', 'project').order_by('-work_report__date')
@@ -93,7 +118,7 @@ def _populate_workspace_data(ws):
             wi = e.work_item
             w.writerow([
                 e.work_report.date.isoformat(),
-                _section_labels.get(wi.section, wi.section),
+                _SECTION_LABELS.get(wi.section, wi.section),
                 wi.code, wi.name_zh, wi.value_type,
                 str(e.project) if e.project else '',
                 e.count, e.status, (e.text_value or '')[:200],
@@ -119,7 +144,7 @@ def query_work_reports(
     end_date: str = "",
     limit: int = 20,
 ) -> str:
-    """查询维修工作日报。可按日期范围过滤。返回工单列表（日期、处理人、位置、班次、工作类别、工时、内容摘要）。
+    """查询维修工作日报。可按日期范围过滤。返回工单列表（日期、处理人、位置、班次、章节、工时、内容摘要）。
 
     Args:
         start_date: 起始日期 YYYY-MM-DD，留空默认最近7天
@@ -129,20 +154,22 @@ def query_work_reports(
     today = date.today()
     end = _parse_date(end_date) or today
     start = _parse_date(start_date) or (end - timedelta(days=7))
-    qs = WorkReport.objects.filter(date__gte=start, date__lte=end).select_related(
-        'worker', 'location', 'work_category'
-    ).order_by('-date', '-id')[:limit]
+    qs = (WorkReport.objects.filter(date__gte=start, date__lte=end)
+          .select_related('worker', 'location')
+          .prefetch_related('entries__work_item')
+          .order_by('-date', '-id')[:limit])
     rows = []
     for r in qs:
         rows.append({
             '日期': r.date.isoformat(),
-            '处理人': str(r.worker),
-            '位置': str(r.location),
+            '处理人': str(r.worker) if r.worker else '',
+            '位置': str(r.location) if r.location else '',
             '班次': r.shift or '',
-            '工作类别': str(r.work_category) if r.work_category else '',
+            '章节': _report_section_summary(r),
             '灌溉组工时': r.team_hours,
             '第三方工时': r.third_party_hours,
             '疑难': r.is_difficult,
+            '待修': r.is_pending_repair,
             '工作内容': (r.work_content or r.remark or '')[:120],
         })
     return json.dumps({
@@ -158,7 +185,7 @@ def query_work_report_stats(
     start_date: str = "",
     end_date: str = "",
 ) -> str:
-    """统计维修工作日报的汇总数据：总工单数、总工时、按班次/工作类别/处理人的分布。用于趋势分析和报告制作。
+    """统计维修工作日报的汇总数据：总工单数、总工时、按班次/章节/处理人的分布。用于趋势分析和报告制作。
 
     Args:
         start_date: 起始日期 YYYY-MM-DD，留空默认最近30天
@@ -175,17 +202,26 @@ def query_work_report_stats(
         team_hours=Sum('team_hours'),
         third_hours=Sum('third_party_hours'),
         difficult=Count('id', filter=Q(is_difficult=True)),
+        pending=Count('id', filter=Q(is_pending_repair=True)),
     )
 
     # by shift
     shift_dist = {}
     for row in base.values('shift').annotate(c=Count('id')):
         shift_dist[row['shift'] or '未指定'] = row['c']
-    # by work category
-    cat_dist = {}
-    for row in base.values('work_category__name').annotate(c=Count('id')).order_by('-c'):
-        name = row['work_category__name'] or '未指定'
-        cat_dist[name] = row['c']
+    # by top-level section (章节). The legacy 工作类别 FK was removed; a workorder's
+    # section(s) now come from its WorkReportEntry rows under the WorkItem tree, so
+    # the count here is "report × section" (a report touching two sections counts once
+    # in each), which matches how the work-content is actually recorded.
+    section_dist = {}
+    entry_qs = (WorkReportEntry.objects
+                .filter(work_report__in=base)
+                .values('work_item__section')
+                .annotate(c=Count('work_report', distinct=True))
+                .order_by('-c'))
+    for row in entry_qs:
+        sec = row['work_item__section'] or '未指定'
+        section_dist[_SECTION_LABELS.get(sec, sec)] = row['c']
     # by worker (top 10)
     worker_dist = []
     for row in base.values('worker__full_name').annotate(
@@ -202,8 +238,9 @@ def query_work_report_stats(
         '总灌溉组工时': agg['team_hours'] or 0,
         '总第三方工时': agg['third_hours'] or 0,
         '疑难工单数': agg['difficult'] or 0,
+        '待修工单数': agg['pending'] or 0,
         '按班次分布': shift_dist,
-        '按工作类别分布': cat_dist,
+        '按章节分布': section_dist,
         '处理人工单Top10': worker_dist,
     }, ensure_ascii=False)
 
@@ -337,7 +374,7 @@ def query_zones(zone_code: str = "", limit: int = 50) -> str:
 
 @tool
 def query_weather(days: int = 7) -> str:
-    """查询最近若干天的天气数据记录。
+    """查询最近若干天的天气数据记录（逐时数据汇总：最高/最低温度、降水总量、主要天气描述）。
 
     Args:
         days: 查询最近多少天，默认7
@@ -347,10 +384,23 @@ def query_weather(days: int = 7) -> str:
     qs = WeatherData.objects.filter(date__gte=start).order_by('-date')[:days]
     rows = []
     for w in qs:
+        # hourly_data is a list of {hour, temp, humidity, precip, wind, code}.
+        hourly = w.hourly_data or []
+        temps = [h.get('temp') for h in hourly if h.get('temp') is not None]
+        precip = sum((h.get('precip') or 0) for h in hourly)
+        # Dominant weather code = the one covering the most daytime hours (6-20).
+        from collections import Counter
+        day_codes = [h.get('code') for h in hourly
+                     if h.get('code') is not None and 6 <= (h.get('hour') or 0) <= 20]
+        code_counts = Counter(day_codes)
+        dom_code = code_counts.most_common(1)[0][0] if code_counts else None
         rows.append({
             '日期': w.date.isoformat() if w.date else '',
-            '天气': getattr(w, 'weather', '') or getattr(w, 'description', '') or '',
-            '温度': getattr(w, 'temperature', None),
+            '最高温度℃': round(max(temps), 1) if temps else None,
+            '最低温度℃': round(min(temps), 1) if temps else None,
+            '降水总量mm': round(precip, 1),
+            '主要天气': w.get_weather_description(dom_code) if dom_code is not None else '',
+            '逐时记录数': len(hourly),
         })
     return json.dumps({'returned': len(rows), 'weather': rows}, ensure_ascii=False)
 
@@ -420,14 +470,13 @@ _MAX_FILE_BYTES = 20 * 1024 * 1024  # 20 MB
 
 
 @tool
-def run_python_code(code: str, description: str = "") -> str:
+def run_python_code(code: str, description: str = "", runtime: ToolRuntime = None) -> str:
     """运行 Python 代码进行数据分析、计算、并生成报表文件。
 
     工作目录已预置以下 CSV 数据文件，用 pandas 读取：
-    - work_reports.csv（最近90天维修工单：日期/处理人/位置/班次/工作类别/工时/内容）
+    - work_reports.csv（最近90天维修工单：日期/处理人/位置/班次/章节/工时/待修/内容）
     - work_entries.csv（最近90天工单明细：日期/章节/节点编码/节点名称/值类型/项目/数量/状态/文本）
-    - demand_records.csv（最近90天浇水需求：日期/区域/类别/部门/状态/内容）
-    - zones.csv（全部区域：编号/通用名称/片区/面积/优先级）
+    - zones.csv（全部区域：编号/通用名称/片区/面积/优先级/灌水器类型）
 
     用法规则：
     - 用 `import pandas as pd` 然后 `pd.read_csv('work_reports.csv')` 加载数据
@@ -440,8 +489,12 @@ def run_python_code(code: str, description: str = "") -> str:
     Args:
         code: 完整的 Python 代码（可多行）
         description: 对这段代码目的的简短描述
+        runtime: LangChain 运行时（保留参数名，自动注入；提供会话 context.thread_id）
     """
-    thread_id = _CURRENT_THREAD.get()
+    # `runtime` is a reserved param (auto-injected, hidden from the LLM). The
+    # default None keeps the function callable for direct unit tests.
+    ctx = (runtime.context if runtime is not None else None) or {}
+    thread_id = ctx.get('thread_id')
     if not thread_id:
         return json.dumps({'error': '无法确定会话工作区'}, ensure_ascii=False)
     ws = ensure_workspace(thread_id)
@@ -535,6 +588,9 @@ def build_agent():
         tools=ALL_TOOLS,
         system_prompt=cfg.get_system_prompt(),
         checkpointer=_checkpoint_saver(),
+        # Per-run context (the workspace thread id) declared as a schema so tools
+        # read it via ToolRuntime.context instead of a global — LangChain v1 pattern.
+        context_schema=WorkorderContext,
     )
     return agent
 

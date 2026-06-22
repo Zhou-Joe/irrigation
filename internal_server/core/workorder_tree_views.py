@@ -431,6 +431,22 @@ def thumb_path(original_path):
     return base + '_thumb.jpg'
 
 
+def _delete_media(relative_path):
+    """Best-effort delete of a media file and its thumbnail from default_storage.
+
+    Used when a user removes an existing report/entry photo on edit. Errors are
+    swallowed — a stale DB row should never block a save.
+    """
+    try:
+        if relative_path and default_storage.exists(relative_path):
+            default_storage.delete(relative_path)
+        thumb = thumb_path(relative_path)
+        if thumb and default_storage.exists(thumb):
+            default_storage.delete(thumb)
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def _make_thumbnail(original_path, uploaded):
     """Create a ~300px-wide JPEG thumbnail.
 
@@ -613,11 +629,28 @@ def _handle_save(request, report):
         report.save()
         report.zones.set(zones)
 
-        # Report-level photos (1.1.12). Replace on each save for v1.
-        report_photos = [_save_photo(report, f)
-                         for f in request.FILES.getlist('report_photos')]
-        if report_photos:
-            report.photos = report_photos
+        # Report-level photos (1.1.12). Merge instead of replace: drop any photos
+        # the user marked for removal (deleting their files + thumbnails), then
+        # append newly uploaded ones. Untouched photos are preserved — previously
+        # any upload silently wiped the whole list on edit.
+        existing = list(report.photos or [])
+        # Removals arrive as a comma-joined list of relative media paths.
+        remove_set = {p for p in (request.POST.get('report_photos_remove') or '').split(',') if p}
+        if remove_set:
+            kept = []
+            for p in existing:
+                if p in remove_set:
+                    _delete_media(p)            # best-effort; ignore missing
+                else:
+                    kept.append(p)
+            existing = kept
+        # New uploads append to the surviving list.
+        new_photos = [_save_photo(report, f)
+                      for f in request.FILES.getlist('report_photos')]
+        if new_photos:
+            existing.extend(new_photos)
+        if remove_set or new_photos:
+            report.photos = existing
             report.save(update_fields=['photos'])
 
         # Work-content entries.

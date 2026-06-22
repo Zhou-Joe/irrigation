@@ -1,5 +1,5 @@
 {% extends 'core/base.html' %}
-{% load static %}
+{% load static media_tags %}
 {% block title %}{% if report %}编辑现场作业记录{% else %}新建现场作业记录{% endif %}{% endblock %}
 {% block nav_work_reports %}active{% endblock %}
 
@@ -96,6 +96,25 @@
 .wo-actions button:active { transform: scale(.98); }
 .wo-btn-primary { background: var(--wo-accent); color: #fff; }
 .wo-btn-secondary { background: #fff; color: var(--wo-accent); border: 1px solid var(--wo-accent); }
+
+/* Photo management widget (existing + upload preview grids) */
+.wo-photo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(78px, 1fr)); gap: 8px; margin-top: 8px; }
+.wo-photo-tile { position: relative; aspect-ratio: 1; border-radius: 9px; overflow: hidden; background: #f0f0f0;
+                 border: 1px solid var(--wo-border); }
+.wo-photo-tile img, .wo-photo-tile video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.wo-photo-tile .wo-photo-del { position: absolute; top: 3px; right: 3px; width: 22px; height: 22px;
+    border: none; border-radius: 50%; background: rgba(0,0,0,0.55); color: #fff; font-size: 0.85rem;
+    cursor: pointer; display: flex; align-items: center; justify-content: center; line-height: 1; }
+.wo-photo-tile .wo-photo-del:hover { background: #c0392b; }
+.wo-photo-tile .wo-photo-play { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+    background: rgba(0,0,0,0.5); color: #fff; border-radius: 50%; width: 24px; height: 24px;
+    display: flex; align-items: center; justify-content: center; font-size: 0.75em; pointer-events: none; }
+.wo-photo-empty { font-size: .82rem; color: var(--wo-muted); padding: 6px 0; }
+.wo-photo-upload { margin-top: 10px; }
+.wo-photo-upload input[type=file] { font-size: .85rem; }
+.wo-photo-sec { font-size: .76rem; color: var(--wo-muted); margin: 10px 0 0; font-weight: 600;
+                text-transform: uppercase; letter-spacing: .03em; }
+
 @media (min-width: 640px) { .wo-grid { grid-template-columns: 1fr 1fr 1fr; } }
 </style>
 {% endblock %}
@@ -148,8 +167,21 @@
           <label><input type="checkbox" id="f-is_difficult" name="is_difficult"> 疑难问题</label>
           <label><input type="checkbox" id="f-is_difficult_resolved" name="is_difficult_resolved"> 疑难已处理</label>
         </div></div>
-      <div class="wo-field full"><label>现场照片</label>
-        <input type="file" name="report_photos" accept="image/*" multiple></div>
+      <div class="wo-field full"><label>现场照片 / 视频</label>
+        <!-- Existing photos (edit mode). Populated from REPORT_PHOTOS in JS; tapping ×
+             soft-deletes (path appended to report_photos_remove) — actual file removal
+             happens on save. -->
+        <div class="wo-photo-sec">已有 (<span id="wo-photo-count">0</span>)</div>
+        <div class="wo-photo-grid" id="wo-photo-existing"></div>
+        <div class="wo-photo-empty" id="wo-photo-empty">暂无照片</div>
+        <!-- New uploads. Live preview via FileReader so the user sees picks before save. -->
+        <div class="wo-photo-upload">
+          <div class="wo-photo-sec">上传新照片 / 视频</div>
+          <input type="file" id="wo-photo-input" name="report_photos" accept="image/*,video/*" multiple>
+          <div class="wo-photo-grid" id="wo-photo-new"></div>
+        </div>
+        <input type="hidden" name="report_photos_remove" id="report-photos-remove" value="">
+      </div>
     </div>
   </div>
 
@@ -437,6 +469,76 @@ function collectEntries(){
   document.getElementById('entries-json').value = JSON.stringify(entries);
 }
 
+// ── Photo management (edit page) ───────────────────────────────────────────
+// Existing report photos live in REPORT_PHOTOS (relative media paths). Soft
+// removals are collected in _photoRemove and posted as report_photos_remove;
+// the server deletes those files + thumbnails. New picks preview live and are
+// uploaded via the unchanged report_photos file input.
+const _photoRemove = new Set();
+
+// Derive the thumbnail path client-side, mirroring the `thumb` template filter
+// (insert _thumb before the extension, force .jpg). Kept in sync with
+// core.workorder_tree_views.thumb_path.
+function photoThumb(path){
+  if (!path) return path;
+  const i = path.lastIndexOf('.');
+  const base = i > 0 ? path.slice(0, i) : path;
+  return base + '_thumb.jpg';
+}
+function isVideoPath(path){
+  return /\.(mp4|mov|m4v|webm|ogg|ogv|avi|mkv)$/i.test(path || '');
+}
+
+function renderExistingPhotos(){
+  const grid = document.getElementById('wo-photo-existing');
+  const empty = document.getElementById('wo-photo-empty');
+  const count = document.getElementById('wo-photo-count');
+  if (!grid) return;
+  const surviving = (REPORT_PHOTOS || []).filter(p => !_photoRemove.has(p));
+  count.textContent = surviving.length;
+  empty.style.display = surviving.length ? 'none' : '';
+  grid.innerHTML = '';
+  surviving.forEach(p => {
+    const tile = document.createElement('div');
+    tile.className = 'wo-photo-tile';
+    const t = photoThumb(p);
+    if (isVideoPath(p)) {
+      tile.innerHTML = `<video src="/media/${esc(t)}" muted preload="metadata"></video>` +
+        `<span class="wo-photo-play">▶</span>` +
+        `<button type="button" class="wo-photo-del" title="删除">×</button>`;
+    } else {
+      tile.innerHTML = `<img src="/media/${esc(t)}" alt="照片" loading="lazy">` +
+        `<button type="button" class="wo-photo-del" title="删除">×</button>`;
+    }
+    tile.querySelector('.wo-photo-del').addEventListener('click', () => {
+      _photoRemove.add(p);
+      document.getElementById('report-photos-remove').value = Array.from(_photoRemove).join(',');
+      renderExistingPhotos();
+    });
+    grid.appendChild(tile);
+  });
+}
+
+function setupPhotoUpload(){
+  const input = document.getElementById('wo-photo-input');
+  const grid = document.getElementById('wo-photo-new');
+  if (!input || !grid) return;
+  input.addEventListener('change', () => {
+    grid.innerHTML = '';
+    Array.from(input.files).forEach(f => {
+      const tile = document.createElement('div');
+      tile.className = 'wo-photo-tile';
+      const url = URL.createObjectURL(f);
+      if (f.type.startsWith('video/')) {
+        tile.innerHTML = `<video src="${url}" muted preload="metadata"></video><span class="wo-photo-play">▶</span>`;
+      } else {
+        tile.innerHTML = `<img src="${url}" alt="预览">`;
+      }
+      grid.appendChild(tile);
+    });
+  });
+}
+
 document.addEventListener('DOMContentLoaded', ()=>{
   indexTree();
   renderTree();
@@ -445,6 +547,9 @@ document.addEventListener('DOMContentLoaded', ()=>{
   applyHeader();
   document.getElementById('wo-search-input').addEventListener('input', onSearch);
   document.getElementById('workorder-form').addEventListener('submit', collectEntries);
+  // Photo management (edit page): render existing + live upload preview.
+  renderExistingPhotos();
+  setupPhotoUpload();
   // Auto-fill 天气 with the current-hour snapshot (only when empty, i.e. new report
   // or an old one with no weather set — never overwrite an existing value).
   const wEl = document.getElementById('f-weather');
