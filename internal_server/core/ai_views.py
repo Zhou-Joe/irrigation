@@ -101,17 +101,19 @@ def _stream_via_queue(message: str, thread_id: str):
     _SENTINEL = object()
 
     def worker():
-        from core.ai_agent import build_agent, set_current_thread
+        from core.ai_agent import build_agent
         from langchain_core.messages import HumanMessage
         try:
-            set_current_thread(thread_id)
             agent = build_agent()
             config = {'configurable': {'thread_id': thread_id}}
+            # Per-run context (workspace thread id) for tools reading ToolRuntime.
+            # Distinct from `config` (which drives the checkpointer's conversation memory).
+            context = {'thread_id': thread_id}
             input_msg = {'messages': [HumanMessage(content=message)]}
             seen_tool_calls = {}
             # Sync stream — runs tools in this thread, where Django ORM is safe.
             for chunk, metadata in agent.stream(
-                input_msg, config=config, stream_mode='messages'
+                input_msg, config=config, context=context, stream_mode='messages'
             ):
                 for evt in _events_from_chunk(chunk, seen_tool_calls):
                     q.put(evt)
