@@ -517,15 +517,17 @@
         return ax.length - bx.length;
     }
 
-    // Match priority: 0 = exact code, 1 = code starts-with, 2 = code contains,
+    // Match priority: 0 = exact code, 1 = code segment-prefix,
     //                 3 = name exact, 4 = name starts-with, 5 = name contains.
-    // Lower is better (shows first).
+    // Lower is better (shows first). Codes are hierarchical (1-2 → 1-2-1 …), so
+    // code matching is SEGMENT-AWARE prefix: "1-2" matches "1-2" and "1-2-3" but
+    // NOT "2-1-2" (substring) or "1-23" (textual prefix). This keeps "全选" scoped
+    // to a real subtree instead of unrelated scattered zones.
     function matchRank(z, q) {
         var code = (z.code || '').toLowerCase();
         var name = (z.name || '').toLowerCase();
         if (code === q) return 0;
-        if (code.indexOf(q) === 0) return 1;
-        if (code.indexOf(q) !== -1) return 2;
+        if (code.indexOf(q + '-') === 0) return 1;   // segment boundary, not mid-segment
         if (name && name === q) return 3;
         if (name && name.indexOf(q) === 0) return 4;
         if (name && name.indexOf(q) !== -1) return 5;
@@ -556,6 +558,30 @@
             return;
         }
         container.innerHTML = '';
+
+        // Toolbar: select / clear all filtered results in one tap. Useful after a
+        // filter narrows the list (e.g. "1-1") — saves tapping each row. The button
+        // reflects current state: if every filtered match is selected it clears,
+        // otherwise it selects the rest.
+        var selectedCount = matches.reduce(function (n, z) { return n + (_selectedZoneCodes.has(z.code) ? 1 : 0); }, 0);
+        var allSelected = selectedCount === matches.length;
+        var bar = document.createElement('div');
+        bar.className = 'wo-zone-search-bar';
+        bar.innerHTML = '<span class="wo-zsb-count">筛选 ' + matches.length + ' 项' +
+            (selectedCount ? (' · 已选 ' + selectedCount) : '') + '</span>';
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'wo-zsb-btn' + (allSelected ? ' clear' : '');
+        btn.textContent = allSelected ? '清除全部' : '全选';
+        btn.addEventListener('click', function () {
+            matches.forEach(function (z) { toggleWoZone(z.code, !allSelected); });
+            renderWoSearchResults();
+            syncWoNameChipsState();
+            updateInfoBarText();
+        });
+        bar.appendChild(btn);
+        container.appendChild(bar);
+
         matches.forEach(function (z) {
             var selected = _selectedZoneCodes.has(z.code);
             var item = document.createElement('div');
@@ -1596,8 +1622,14 @@
         renderWoLevel();
     }
 
-    // 计划性维修: list past 待修 workorders in the current zone (checkable) + 其他 (free text).
-    function renderPlannedList(node) {
+    // 计划性维修: two PM-only conveniences shown alongside the full 19-category tree.
+    //   (1) "关联已有待修工单" — lists past 待修 workorders in the current zone,
+    //       checkable; checked ids are sent as pm_resolved so the server clears them.
+    //   (2) "其他（自行填写）" — free-text note folded into the PM entry's text_value.
+    // These do NOT replace the category tree anymore — the tree (喷头/铰接/.../流量计
+    // with count leaves, status groups and 待修 toggles) renders normally above them.
+    // Tapping the PM rows drills into this dedicated resolution sub-view.
+    function openWoPlannedSubView(node) {
         var body = $('woSheetBody');
         if (body) body.innerHTML = '<div class="v2-wo-ftitle" style="text-align:center;padding:24px;">加载待修工单…</div>';
         var zones = Array.from(_selectedZoneCodes).join(',');
@@ -1609,7 +1641,11 @@
 
     function renderPlannedListInner(node, reports) {
         var body = $('woSheetBody'); if (!body) return;
-        var html = '<div class="v2-wo-ftitle">待修工单（该区域历史 · 勾选本次已处理）</div>';
+        // Back to the 计划性维修 category tree (breadcrumb also works; this is the
+        // obvious on-screen affordance on mobile).
+        var html = '<button type="button" class="v2-wo-row" id="woPmBack" style="color:#2D6A4F;font-weight:600;">' +
+            '<span class="v2-wo-rowname">‹ 返回计划性维修分类</span></button>';
+        html += '<div class="v2-wo-ftitle">待修工单（该区域历史 · 勾选本次已处理）</div>';
         if (!reports.length) {
             html += '<div class="v2-wo-ftitle" style="text-align:center;padding:14px;color:#bbb;">暂无待修工单</div>';
         } else {
@@ -1626,6 +1662,8 @@
             '<span class="v2-wo-rowval' + (_woPlanned.other ? '' : ' empty') + '">' +
             (_woPlanned.other ? escHtml(_woPlanned.other.slice(0, 8)) : '填写') + '</span></button>';
         body.innerHTML = html;
+        var back = $('woPmBack');
+        if (back) back.addEventListener('click', function () { renderWoLevel(); });
         body.querySelectorAll('[data-pm]').forEach(function (b) {
             b.addEventListener('click', function () {
                 var rid = b.dataset.pm;
@@ -1669,7 +1707,7 @@
         }
 
         var cur = currentWoNode();
-        if (cur && cur.name === '计划性维修') { renderPlannedList(cur); return; }
+        var isPlannedRoot = !!(cur && cur.name === '计划性维修');
         var children = cur ? (cur.children || []) : _woRoots;
         var html = '';
         // Project selector at the 灌溉项目 section root.
@@ -1689,6 +1727,22 @@
         });
         if (!children.length) html += '<div class="v2-wo-ftitle" style="text-align:center;padding:24px;">无子项</div>';
 
+        // 计划性维修 root: append two PM-only conveniences below the category tree.
+        // These don't replace the 19 categories — they sit underneath them, and tapping
+        // either drills into a dedicated resolution sub-view (openWoPlannedSubView) or
+        // opens a free-text prompt. State lives in _woPlanned (shared with the sub-view).
+        if (isPlannedRoot) {
+            var pmChecked = Object.keys(_woPlanned.checked).length;
+            html += '<div class="v2-wo-ftitle" style="margin-top:14px;">计划性维修专属</div>';
+            html += '<button type="button" class="v2-wo-row" id="woPmLinkRow"><span class="v2-wo-rowname">关联已有待修工单' +
+                '<small style="display:block;color:#999;font-size:0.78rem;">勾选本次已处理的历史待修</small></span>' +
+                '<span class="v2-wo-rowval' + (pmChecked ? '' : ' empty') + '">' +
+                (pmChecked ? ('已关联 ' + pmChecked) : '查看') + '</span></button>';
+            html += '<button type="button" class="v2-wo-row" id="woPmOtherRow"><span class="v2-wo-rowname">其他（自行填写）</span>' +
+                '<span class="v2-wo-rowval' + (_woPlanned.other ? '' : ' empty') + '">' +
+                (_woPlanned.other ? escHtml(_woPlanned.other.slice(0, 8)) : '填写') + '</span></button>';
+        }
+
         var filledIds = Object.keys(_woEntries);
         if (filledIds.length) {
             html += '<div class="v2-wo-filled"><div class="v2-wo-ftitle">已填 (' + filledIds.length + ')</div>';
@@ -1707,6 +1761,17 @@
         body.querySelectorAll('[data-rm]').forEach(function (b) { b.addEventListener('click', function (ev) { ev.stopPropagation(); removeWoEntry(parseInt(b.dataset.rm, 10)); }); });
         var ps = $('woProjectSelect');
         if (ps) ps.addEventListener('change', function () { _woProject = ps.value ? parseInt(ps.value, 10) : null; });
+        // 计划性维修 root: wire the two PM-only rows. "关联已有待修工单" drills into the
+        // resolution sub-view; "其他" opens a free-text prompt. Both sync the PM entry
+        // (a synthesized text marker on the 计划性维修 node) so it shows as filled.
+        var pmNode = isPlannedRoot ? cur : null;
+        var pmLink = $('woPmLinkRow');
+        if (pmLink) pmLink.addEventListener('click', function () { openWoPlannedSubView(pmNode); });
+        var pmOther = $('woPmOtherRow');
+        if (pmOther) pmOther.addEventListener('click', function () {
+            var v = prompt('其他计划性维修内容：', _woPlanned.other || '');
+            if (v != null) { _woPlanned.other = v.trim(); syncPlannedEntry(pmNode); renderWoLevel(); }
+        });
     }
 
     // Toggle (no-count) leaf: tap to select/deselect.
