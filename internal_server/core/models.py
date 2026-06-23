@@ -983,7 +983,8 @@ class WorkReport(models.Model):
     date = models.DateField('日期')
     weather = models.CharField('天气', max_length=50, blank=True)
     worker = models.ForeignKey(Worker, on_delete=models.PROTECT, related_name='work_reports', verbose_name='处理人')
-    location = models.ForeignKey(Patch, on_delete=models.PROTECT, related_name='work_reports', verbose_name='位置/CCU')
+    location = models.ForeignKey(Patch, on_delete=models.PROTECT, null=True, blank=True, related_name='work_reports', verbose_name='位置/CCU',
+                                 help_text='可选；留空时按所选区域的所属位置自动填充')
     zone_location = models.ForeignKey(Zone, on_delete=models.SET_NULL, null=True, blank=True, related_name='work_reports', verbose_name='故障/事件位置')
     remark = models.TextField('备注/工作内容', blank=True)
     is_pending_repair = models.BooleanField('待修', default=False)
@@ -1017,7 +1018,7 @@ class WorkReport(models.Model):
         verbose_name_plural = '维修工作日报'
 
     def __str__(self):
-        return f"{self.date} | {self.worker} | {self.location}"
+        return f"{self.date} | {self.worker} | {self.location or '(无位置)'}"
 
 
 # (removed: WorkReportFault)

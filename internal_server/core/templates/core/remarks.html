@@ -71,7 +71,7 @@
       <div class="rm-confirm-row">
         <input type="text" class="rm-confirm-input" id="reply-{{ forloop.counter0 }}" placeholder="确认回复（可选）…">
         <button class="rm-btn rm-btn-confirm" id="btn-{{ forloop.counter0 }}"
-          data-pairs="{% for land in g.hierarchy %}{% for nm in land.names %}{% for z, idx in nm.pairs %}{{ z.id }},{{ idx }}{% if not forloop.last %};{% endif %}{% endfor %}{% endfor %}{% endfor %}"
+          data-pairs="{% for land in g.hierarchy %}{% for nm in land.names %}{% for z, idx in nm.pairs %}{{ z.id }},{{ idx }};{% endfor %}{% endfor %}{% endfor %}"
           onclick="confirmGroup({{ forloop.counter0 }})">确认</button>
       </div>
       {% endif %}
