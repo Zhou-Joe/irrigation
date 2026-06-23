@@ -136,9 +136,9 @@
         </select></div>
       <div class="wo-field"><label>天气</label>
         <input type="text" id="f-weather" name="weather" placeholder="晴/阴/雨…"></div>
-      <div class="wo-field"><label>位置/CCU *</label>
-        <select id="f-location" name="location" required>
-          <option value="">--</option>
+      <div class="wo-field"><label>位置/CCU</label>
+        <select id="f-location" name="location">
+          <option value="">-- (按所选区域自动) --</option>
           {% for p in locations %}<option value="{{ p.id }}">{{ p.name }}</option>{% endfor %}
         </select></div>
       <div class="wo-field"><label>开始时间</label>
@@ -519,24 +519,61 @@ function renderExistingPhotos(){
   });
 }
 
+// Accumulated new uploads across picker sessions. The native file input replaces
+// its .files each time the picker closes, so picking "A" then "B" would drop A
+// unless we cache and re-sync via DataTransfer on submit.
+const _photoNew = [];
+
 function setupPhotoUpload(){
   const input = document.getElementById('wo-photo-input');
   const grid = document.getElementById('wo-photo-new');
   if (!input || !grid) return;
   input.addEventListener('change', () => {
-    grid.innerHTML = '';
-    Array.from(input.files).forEach(f => {
-      const tile = document.createElement('div');
-      tile.className = 'wo-photo-tile';
-      const url = URL.createObjectURL(f);
-      if (f.type.startsWith('video/')) {
-        tile.innerHTML = `<video src="${url}" muted preload="metadata"></video><span class="wo-photo-play">▶</span>`;
-      } else {
-        tile.innerHTML = `<img src="${url}" alt="预览">`;
-      }
-      grid.appendChild(tile);
-    });
+    Array.from(input.files).forEach(f => _photoNew.push(f));
+    input.value = '';                  // allow re-picking the same file
+    renderNewPhotos();
+    syncNewPhotosToInput();
   });
+}
+
+function renderNewPhotos(){
+  const grid = document.getElementById('wo-photo-new');
+  if (!grid) return;
+  grid.innerHTML = '';
+  _photoNew.forEach((f, idx) => {
+    const tile = document.createElement('div');
+    tile.className = 'wo-photo-tile';
+    const url = URL.createObjectURL(f);
+    if (f.type.startsWith('video/')) {
+      tile.innerHTML = `<video src="${url}" muted preload="metadata"></video><span class="wo-photo-play">▶</span>`;
+    } else {
+      tile.innerHTML = `<img src="${url}" alt="预览">`;
+    }
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'wo-photo-del';
+    del.title = '删除';
+    del.textContent = '×';
+    del.addEventListener('click', () => {
+      _photoNew.splice(idx, 1);
+      renderNewPhotos();
+      syncNewPhotosToInput();
+    });
+    tile.appendChild(del);
+    grid.appendChild(tile);
+  });
+}
+
+// Push the accumulated set back onto the input so it posts with the form. Some
+// browsers cap DataTransfer items; if so we fall back to a hidden file input.
+function syncNewPhotosToInput(){
+  const input = document.getElementById('wo-photo-input');
+  if (!input) return;
+  try {
+    const dt = new DataTransfer();
+    _photoNew.forEach(f => dt.items.add(f));
+    input.files = dt.files;
+  } catch(e) { /* older Safari: form will still send original selection */ }
 }
 
 document.addEventListener('DOMContentLoaded', ()=>{

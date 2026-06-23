@@ -548,7 +548,7 @@ def _handle_render(request, report):
         'projects_json': json.dumps(serialize_projects(), ensure_ascii=False),
         'locations': Patch.objects.filter(active=True).order_by('order'),
         'zones': Zone.objects.order_by('code'),
-        'grouped_zones': _build_grouped_zones(Zone.objects.order_by('code')),
+        'grouped_zones': _build_grouped_zones(Zone.objects.select_related('land', 'patch').order_by('code')),
         'today': date.today().isoformat(),
         'report': report,
         'existing_json': json.dumps(serialize_existing_entries(report), default=str)
@@ -591,8 +591,11 @@ def _handle_save(request, report):
         return redirect('core:work_reports')
 
     # Required header fields — browser enforces too; this is the safety net.
+    # 位置/CCU is NOT required here: it auto-derives from the selected zones'
+    # 所属位置 (patch) below, so reports created under a zone group (e.g. 酒店3)
+    # whose Patch isn't directly selectable still save.
     missing = [label for label, key in (
-        ('日期', 'date'), ('位置/CCU', 'location'))
+        ('日期', 'date'),)
         if not request.POST.get(key)]
     if missing:
         messages.error(request, '请填写必填项：' + '、'.join(missing))
@@ -613,7 +616,13 @@ def _handle_save(request, report):
         report.date = request.POST.get('date') or date.today()
         report.weather = request.POST.get('weather', '')
         report.shift = request.POST.get('shift', '')
-        report.location_id = request.POST.get('location') or None
+        # 位置/CCU: explicit selection wins; otherwise auto-derive from the first
+        # selected zone's 所属位置 (patch). Leaves None when neither is available,
+        # which is now valid (the column is nullable).
+        loc_id = request.POST.get('location') or None
+        if not loc_id and zones:
+            loc_id = next((z.patch_id for z in zones if z.patch_id), None)
+        report.location_id = loc_id
         report.zone_names = request.POST.get('zone_names', '')
         report.remark = request.POST.get('remark', '')
         report.is_pending_repair = bool(request.POST.get('is_pending_repair'))
@@ -740,14 +749,24 @@ def _parse_time(value):
 
 
 def _build_grouped_zones(zones):
-    """Lightweight zone grouping by Patch for the <select optgroup> layout."""
+    """Group zones for the <select optgroup> layout by 所属Land (the
+    land-name-zone hierarchy). Falls back to the Patch name — then '其它' — when a
+    zone has no Land, matching build_zone_hierarchy's grouping on the list page.
+    """
     groups = {}
     order = []
     for z in zones:
-        key = z.patch_id
+        if z.land_id:
+            key = ('land', z.land_id)
+            label = z.land.name
+        elif z.patch_id:
+            key = ('patch', z.patch_id)
+            label = z.patch.name
+        else:
+            key = ('none', 0)
+            label = '其它'
         if key not in groups:
-            groups[key] = {'name': z.patch.name if z.patch else '其它',
-                           'code': z.patch.code if z.patch else '', 'zones': []}
+            groups[key] = {'name': label, 'zones': []}
             order.append(key)
         groups[key]['zones'].append({'name': z.name, 'code': z.code})
     return [groups[k] for k in order]
