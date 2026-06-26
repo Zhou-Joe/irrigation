@@ -799,8 +799,9 @@ class WorkReportViewSet(viewsets.ModelViewSet):
             'worker', 'location', 'work_category', 'info_source'
         ).prefetch_related('fault_entries__fault_subtype__category').order_by('-date', '-id')
 
-        from .role_utils import is_admin, get_worker_for_user
-        if not is_admin(self.request.user):
+        from .role_utils import is_admin, get_worker_for_user, is_field_worker
+        # Both 灌溉一线 (field workers) and managers/admins see ALL workorders.
+        if not is_admin(self.request.user) and not is_field_worker(self.request.user):
             worker = get_worker_for_user(self.request.user)
             if worker:
                 qs = qs.filter(worker=worker)

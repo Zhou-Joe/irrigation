@@ -66,6 +66,8 @@ class Patch(models.Model):
     date_close = models.CharField(max_length=20, blank=True)
 
     # MaxicomStation fields
+    controller_number = models.IntegerField('所属控制器编号', null=True, blank=True,
+        help_text='StationControllerNumber from MDB — IndexNumber of the satellite controller this valve belongs to')
     controller_channel = models.IntegerField('控制器通道', null=True, blank=True)
     precip_rate = models.FloatField(null=True, blank=True, help_text='Precipitation rate')
     flow_rate = models.FloatField(null=True, blank=True, help_text='Flow rate')
@@ -277,6 +279,40 @@ class Zone(models.Model):
                 else:
                     total -= ring_area
         self.area_sqm = total if total > 0 else None
+
+    # ── Maxicom linkage ─────────────────────────────────────────────
+    # Zone code "A-B-C" maps onto the Maxicom hardware tree:
+    #   A (site/CCU number) -> Patch (mdb_index)            [via self.patch]
+    #   B (satellite)       -> MaxicomController.link_channel
+    #   C (work zone)       -> no Maxicom equivalent (a landscape area, not a valve)
+    # So a zone resolves to one CCU Patch + one satellite controller under it.
+
+    @property
+    def maxicom_satellite_number(self):
+        """The satellite number parsed from the zone code's 2nd segment (B in A-B-C)."""
+        try:
+            return int(self.code.split('-')[1])
+        except (IndexError, ValueError):
+            return None
+
+    @property
+    def maxicom_controller(self):
+        """The Maxicom satellite controller this zone belongs to, or None.
+
+        Matched by parsing the code's 2nd segment (the satellite number) and
+        finding the MaxicomController under this zone's CCU Patch whose
+        link_channel equals it. Returns None when the patch is unset, the code
+        has no 2nd segment, or no controller matches.
+        """
+        sat = self.maxicom_satellite_number
+        if sat is None or self.patch_id is None:
+            return None
+        return (
+            MaxicomController.objects
+            .filter(site_id=self.patch_id, link_channel=sat)
+            .exclude(name__icontains='CCU')   # skip the "Site CCU" hub row (link_channel=0)
+            .first()
+        )
 
     @property
     def area_display(self):
@@ -1019,6 +1055,91 @@ class WorkReport(models.Model):
 
     def __str__(self):
         return f"{self.date} | {self.worker} | {self.location or '(无位置)'}"
+
+
+class WorkReportComment(models.Model):
+    """工单评论 - a comment left by any user on a posted WorkReport.
+
+    Both 灌溉一线 (field workers) and manager/admin accounts can read and post
+    comments on any workorder (mirroring the "everyone sees all workorders"
+    visibility rule). The author is the Worker resolved from the commenter's
+    account via role_utils.resolve_or_create_worker, so every comment is
+    attributable to a real person regardless of account type.
+    """
+
+    work_report = models.ForeignKey(
+        WorkReport, on_delete=models.CASCADE, related_name='comments',
+        verbose_name='工单',
+    )
+    author = models.ForeignKey(
+        Worker, on_delete=models.SET_NULL, null=True, related_name='workreport_comments',
+        verbose_name='评论人',
+    )
+    body = models.TextField('评论内容')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['created_at']
+        verbose_name = '工单评论'
+        verbose_name_plural = '工单评论'
+
+    def __str__(self):
+        name = self.author.full_name if self.author else '(未知)'
+        return f"{name} @ {self.created_at:%Y-%m-%d %H:%M}"
+
+
+class Announcement(models.Model):
+    """通知公告 - a global announcement published by a manager/admin.
+
+    Active announcements that a user has not yet acknowledged pop up on the
+    dashboard; the user must acknowledge each before it stops reappearing on
+    login / dashboard navigation.
+    """
+
+    title = models.CharField('标题', max_length=200)
+    body = models.TextField('内容')
+    active = models.BooleanField('启用', default=True,
+                                 help_text='取消勾选则不再向任何人弹出（已确认记录保留）')
+    created_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='announcements', verbose_name='发布人',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = '通知公告'
+        verbose_name_plural = '通知公告'
+
+    def __str__(self):
+        return f"{self.title} ({self.created_at:%Y-%m-%d %H:%M})"
+
+
+class AnnouncementAcknowledgment(models.Model):
+    """通知确认记录 - tracks that a user has acknowledged an Announcement.
+
+    One row per (announcement, user). Its absence is what makes an announcement
+    show up in the dashboard popup for that user.
+    """
+
+    announcement = models.ForeignKey(
+        Announcement, on_delete=models.CASCADE, related_name='acknowledgments',
+        verbose_name='通知',
+    )
+    user = models.ForeignKey(
+        User, on_delete=models.CASCADE, related_name='announcement_acks',
+        verbose_name='用户',
+    )
+    acknowledged_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('announcement', 'user')
+        verbose_name = '通知确认'
+        verbose_name_plural = '通知确认'
+
+    def __str__(self):
+        return f"{self.user} ✓ {self.announcement}"
 
 
 # (removed: WorkReportFault)

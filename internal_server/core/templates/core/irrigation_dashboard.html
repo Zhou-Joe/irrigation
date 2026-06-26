@@ -1,0 +1,374 @@
+{% extends 'core/base.html' %}
+{% load static %}
+
+{% block title %}灌溉数据{% endblock %}
+{% block nav_irrigation %}active{% endblock %}
+{% block nav_irrigation_m %}active{% endblock %}
+
+{% block extra_css %}
+<style>
+.page-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+.page-header h1 {
+    margin: 0;
+    color: var(--color-primary);
+}
+.filter-bar {
+    background: white;
+    border-radius: 8px;
+    padding: 16px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    display: flex;
+    gap: 16px;
+    align-items: flex-end;
+    flex-wrap: wrap;
+    margin-bottom: 20px;
+}
+.filter-bar .field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+.filter-bar label {
+    font-size: 0.8rem;
+    color: var(--color-text-muted);
+    font-weight: 600;
+}
+.filter-bar select,
+.filter-bar input[type="text"] {
+    padding: 6px 10px;
+    border: 1px solid var(--color-surface-dark);
+    border-radius: 6px;
+    font-size: 0.9rem;
+    min-width: 160px;
+}
+.filter-bar button {
+    padding: 7px 18px;
+    background: var(--color-primary);
+    color: var(--color-text-inverse);
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    font-weight: 600;
+}
+.filter-bar button:hover { background: var(--color-primary-light); }
+.filter-bar .hint { font-size: 0.75rem; color: var(--color-text-muted); }
+
+.summary-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 16px;
+    margin-bottom: 20px;
+}
+.summary-cards .dashboard-card {
+    background: white;
+    border-radius: 8px;
+    padding: 16px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+.summary-cards .stat-number {
+    font-size: 2rem;
+    font-weight: 700;
+    color: var(--color-primary);
+    line-height: 1;
+}
+.summary-cards .stat-label {
+    font-size: 0.8rem;
+    color: var(--color-text-muted);
+    margin-top: 4px;
+}
+
+.section-title {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--color-primary);
+    margin: 8px 0 12px 0;
+    padding-bottom: 8px;
+    border-bottom: 2px solid var(--color-primary);
+}
+.pivot-wrap {
+    background: white;
+    border-radius: 8px;
+    padding: 16px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    overflow-x: auto;
+}
+.matrix-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.8rem;
+}
+.matrix-table th, .matrix-table td {
+    padding: 6px 8px;
+    text-align: center;
+    border: 1px solid var(--color-surface-dark);
+    white-space: nowrap;
+}
+.matrix-table th {
+    background: var(--color-primary);
+    color: var(--color-text-inverse);
+    font-weight: 600;
+}
+.matrix-table th.sticky-col,
+.matrix-table td.sticky-col {
+    position: sticky;
+    left: 0;
+    background: var(--color-surface);
+    z-index: 1;
+    text-align: left;
+    font-weight: 500;
+}
+.matrix-table th.sticky-col { background: var(--color-primary); color: var(--color-text-inverse); }
+.matrix-table td.sticky-col-sub { background: var(--color-surface-alt); color: var(--color-text-muted); text-align:left; }
+.matrix-table td.cell { font-weight: 600; }
+.matrix-table td.cell-zero { color: var(--color-text-muted); font-weight: 400; }
+.matrix-table td.row-total { background: var(--color-surface-alt); font-weight: 700; }
+.matrix-table tfoot td { background: var(--color-surface-alt); font-weight: 700; border-top: 2px solid var(--color-primary); }
+.matrix-table tbody tr:hover td { background: rgba(45,106,79,0.06); }
+.matrix-table tbody tr:hover td.sticky-col,
+.matrix-table tbody tr:hover td.sticky-col-sub { background: rgba(45,106,79,0.12); }
+.legend {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 12px;
+    font-size: 0.75rem;
+    color: var(--color-text-muted);
+}
+.legend .scale {
+    width: 160px;
+    height: 12px;
+    border-radius: 4px;
+    background: linear-gradient(to right, #EDF7F1, #52B788, #1B4332);
+}
+.chart-empty {
+    text-align: center;
+    padding: 40px;
+    color: var(--color-text-muted);
+    font-size: 0.9rem;
+}
+.loading-overlay {
+    text-align: center;
+    padding: 40px;
+    color: var(--color-text-muted);
+}
+.export-dropdown { position: relative; display: inline-block; }
+.export-menu {
+    display: none;
+    position: absolute;
+    right: 0;
+    top: 100%;
+    background: white;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    border-radius: 6px;
+    overflow: hidden;
+    z-index: 100;
+    min-width: 220px;
+}
+.export-menu.open { display: block; }
+.export-menu a {
+    display: block;
+    padding: 10px 16px;
+    color: var(--color-text-primary);
+    text-decoration: none;
+    font-size: 0.88rem;
+    border-bottom: 1px solid var(--color-surface-alt);
+}
+.export-menu a:last-child { border-bottom: none; }
+.export-menu a:hover { background: var(--color-surface-alt); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div style="padding: 20px; max-width: 1400px; margin: 0 auto;">
+    <div class="page-header">
+        <h1>灌溉运行数据</h1>
+        <div class="export-dropdown" id="exportDropdown">
+            <button onclick="toggleExportMenu(event)" style="background:var(--color-accent);color:#fff;border:none;border-radius:6px;padding:8px 16px;cursor:pointer;font-weight:600;font-size:0.9rem;">⬇ 一键导出报告 ▾</button>
+            <div class="export-menu" id="exportMenu">
+                <a href="javascript:void(0)" onclick="exportPDF()">📄 PDF 报告（每CCU一页）</a>
+                <a href="javascript:void(0)" onclick="exportExcel()">📊 Excel 表格（每CCU一表）</a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Filters -->
+    <div class="filter-bar">
+        <div class="field">
+            <label>CCU 片区</label>
+            <select id="ccuSelect">
+                <option value="">全部 CCU</option>
+                {% for ccu in ccus %}
+                <option value="{{ ccu.id }}" {% if selected_ccu and selected_ccu.id == ccu.id %}selected{% endif %}>
+                    {{ ccu.code }} ({{ ccu.name }})
+                </option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="field">
+            <label>开始日期</label>
+            <input type="text" id="dateFrom" value="{{ date_from }}" placeholder="YYYYMMDD">
+        </div>
+        <div class="field">
+            <label>结束日期</label>
+            <input type="text" id="dateTo" value="{{ date_to }}" placeholder="YYYYMMDD">
+        </div>
+        <button onclick="applyFilters()">查询</button>
+        <button onclick="resetFilters()" style="background:var(--color-surface-dark);">重置</button>
+        <span class="hint">数据范围: {{ data_span.0 }} ~ {{ data_span.1 }}</span>
+    </div>
+
+    <!-- Summary -->
+    <div class="summary-cards">
+        <div class="dashboard-card">
+            <div class="stat-number" id="sumStations">{{ total_stations }}</div>
+            <div class="stat-label">运行站点数</div>
+        </div>
+        <div class="dashboard-card">
+            <div class="stat-number" id="sumControllers">{{ controllers|length }}</div>
+            <div class="stat-label">控制器数</div>
+        </div>
+        <div class="dashboard-card">
+            <div class="stat-number" id="sumRuntime">{{ grand_total }}</div>
+            <div class="stat-label">总运行分钟</div>
+        </div>
+    </div>
+
+    <!-- Pivot matrix -->
+    <div class="section-title">站点 × 卫星控制器 运行时间矩阵（分钟）</div>
+    <div class="pivot-wrap">
+        <div id="pivotContent">
+            {% include 'core/_irrigation_pivot.html' %}
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function toggleExportMenu(event) {
+    event.stopPropagation();
+    document.getElementById('exportMenu').classList.toggle('open');
+}
+document.addEventListener('click', () => {
+    document.getElementById('exportMenu').classList.remove('open');
+});
+
+function _exportParams() {
+    const from = document.getElementById('dateFrom').value;
+    const to = document.getElementById('dateTo').value;
+    const params = new URLSearchParams();
+    if (from) params.set('from', from);
+    if (to) params.set('to', to);
+    return params.toString();
+}
+function exportPDF() {
+    document.getElementById('exportMenu').classList.remove('open');
+    window.location.href = '{% url "core:irrigation_report_pdf" %}?' + _exportParams();
+}
+function exportExcel() {
+    document.getElementById('exportMenu').classList.remove('open');
+    window.location.href = '{% url "core:irrigation_report_excel" %}?' + _exportParams();
+}
+
+function applyFilters() {
+    const ccu = document.getElementById('ccuSelect').value;
+    const from = document.getElementById('dateFrom').value;
+    const to = document.getElementById('dateTo').value;
+    const params = new URLSearchParams();
+    if (ccu) params.set('ccu', ccu);
+    if (from) params.set('from', from);
+    if (to) params.set('to', to);
+
+    document.getElementById('pivotContent').innerHTML = '<div class="loading-overlay">加载中…</div>';
+
+    fetch('{% url "core:irrigation_dashboard" %}?' + params.toString(), {
+        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+    })
+    .then(r => r.json())
+    .then(d => renderPivot(d))
+    .catch(err => {
+        document.getElementById('pivotContent').innerHTML = '<div class="chart-empty">加载失败</div>';
+        console.error(err);
+    });
+}
+
+function resetFilters() {
+    document.getElementById('ccuSelect').value = '';
+    document.getElementById('dateFrom').value = '{{ data_span.0 }}';
+    document.getElementById('dateTo').value = '{{ data_span.1 }}';
+    applyFilters();
+}
+
+function heatColor(v, max) {
+    if (!v || !max) return null;
+    const t = Math.min(v / max, 1);
+    // light-green (#EDF7F1) -> green (#52B788) -> dark (#1B4332)
+    if (t < 0.5) {
+        const k = t / 0.5;
+        const r = Math.round(237 + (82 - 237) * k);
+        const g = Math.round(247 + (183 - 247) * k);
+        const b = Math.round(241 + (136 - 241) * k);
+        return `rgb(${r},${g},${b})`;
+    } else {
+        const k = (t - 0.5) / 0.5;
+        const r = Math.round(82 + (27 - 82) * k);
+        const g = Math.round(183 + (67 - 183) * k);
+        const b = Math.round(136 + (50 - 136) * k);
+        return `rgb(${r},${g},${b})`;
+    }
+}
+
+function renderPivot(d) {
+    // update summary
+    document.getElementById('sumStations').textContent = d.total_stations;
+    document.getElementById('sumControllers').textContent = d.controllers.length;
+    document.getElementById('sumRuntime').textContent = d.grand_total;
+
+    if (!d.rows.length) {
+        document.getElementById('pivotContent').innerHTML = '<div class="chart-empty">所选范围内无运行数据</div>';
+        return;
+    }
+
+    const max = d.max_cell || 1;
+    let html = '<div style="overflow-x:auto;"><table class="matrix-table"><thead><tr>'
+        + '<th class="sticky-col">站点 #</th>';
+    if (d.show_ccu_col) html += '<th>CCU</th>';
+    d.controllers.forEach(c => { html += `<th>${c}</th>`; });
+    html += '<th>合计</th></tr></thead><tbody>';
+
+    d.rows.forEach(r => {
+        const fg = r.total > max * 0.6 ? '#fff' : 'var(--color-primary)';
+        html += `<tr><td class="sticky-col">${r.station}</td>`;
+        if (d.show_ccu_col) html += `<td class="sticky-col-sub">${r.site}</td>`;
+        r.values.forEach(v => {
+            if (v > 0) {
+                const bg = heatColor(v, max);
+                const color = v > max * 0.6 ? '#fff' : 'var(--color-primary)';
+                html += `<td class="cell" style="background:${bg};color:${color}">${v}</td>`;
+            } else {
+                html += '<td class="cell-zero">·</td>';
+            }
+        });
+        html += `<td class="row-total" style="color:${fg}">${r.total}</td></tr>`;
+    });
+
+    html += '</tbody><tfoot><tr><td class="sticky-col" style="text-align:left;">合计</td>';
+    if (d.show_ccu_col) html += '<td></td>';
+    d.col_totals.forEach(v => { html += `<td>${v}</td>`; });
+    html += `<td>${d.grand_total}</td></tr></tfoot></table></div>`;
+
+    html += '<div class="legend"><span>少</span><div class="scale"></div><span>多</span>'
+        + '<span style="margin-left:12px;">列 = 卫星控制器（如 AI 7-1），每站24通道；单元格 = 运行分钟数</span></div>';
+
+    document.getElementById('pivotContent').innerHTML = html;
+}
+</script>
+{% endblock %}

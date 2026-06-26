@@ -1,0 +1,47 @@
+{# Server-rendered runtime pivot matrix. Re-rendered client-side via JS on filter change. #}
+{% if rows %}
+<div style="overflow-x:auto;">
+    <table class="matrix-table">
+        <thead>
+            <tr>
+                <th class="sticky-col">站点 #</th>
+                {% if show_ccu_col %}<th>CCU</th>{% endif %}
+                {% for c in controllers %}
+                <th>{{ c }}</th>
+                {% endfor %}
+                <th>合计</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in rows %}
+            <tr>
+                <td class="sticky-col">{{ row.station }}</td>
+                {% if show_ccu_col %}<td class="sticky-col-sub">{{ row.site }}</td>{% endif %}
+                {% for v in row.values %}
+                    {% if v > 0 %}
+                    <td class="cell" style="background:{% if max_cell %}rgba(82,183,136,{% widthratio v max_cell 100 %}/100){% endif %}">{{ v }}</td>
+                    {% else %}
+                    <td class="cell-zero">·</td>
+                    {% endif %}
+                {% endfor %}
+                <td class="row-total">{{ row.total }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+        <tfoot>
+            <tr>
+                <td class="sticky-col" style="text-align:left;">合计</td>
+                {% if show_ccu_col %}<td></td>{% endif %}
+                {% for ct in col_totals %}
+                <td>{{ ct }}</td>
+                {% endfor %}
+                <td>{{ grand_total }}</td>
+            </tr>
+        </tfoot>
+    </table>
+</div>
+<div class="legend"><span>少</span><div class="scale"></div><span>多</span>
+    <span style="margin-left:12px;">列 = 卫星控制器（如 AI 7-1），每站24通道；单元格 = 运行分钟数</span></div>
+{% else %}
+<div class="chart-empty">所选范围内无运行数据</div>
+{% endif %}
