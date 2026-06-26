@@ -221,9 +221,11 @@
                 <a href="{% url 'core:water_requests' %}" class="{% block nav_water_requests %}{% endblock %}">需求</a>
                 <a href="{% url 'core:stats_dashboard' %}" class="{% block nav_stats %}{% endblock %}">数据报表</a>
                 <a href="{% url 'core:custom_report' %}" class="{% block nav_custom_report %}{% endblock %}">自定义报表</a>
+                <a href="{% url 'core:irrigation_dashboard' %}" class="{% block nav_irrigation %}{% endblock %}">灌溉数据</a>
                 {% if is_admin %}
                 <a href="{% url 'core:settings' %}" class="{% block nav_settings %}{% endblock %}">区域管理</a>
                 <a href="{% url 'core:project_management' %}" class="{% block nav_projects %}{% endblock %}">项目管理</a>
+                <a href="{% url 'core:announcement_management' %}" class="{% block nav_announcements %}{% endblock %}">通知管理</a>
                 <a href="{% url 'core:user_management' %}" class="{% block nav_user_mgmt %}{% endblock %}">
                     用户管理{% if pending_registrations %}<span style="background:var(--color-warning);color:#fff;padding:1px 6px;border-radius:10px;font-size:0.7rem;margin-left:4px;">{{ pending_registrations }}</span>{% endif %}
                 </a>
@@ -242,6 +244,7 @@
         <a href="{% url 'core:water_requests' %}" class="{% block nav_water_requests_m %}{% endblock %}">需求</a>
         <a href="{% url 'core:stats_dashboard' %}" class="{% block nav_stats_m %}{% endblock %}">数据报表</a>
         <a href="{% url 'core:custom_report' %}" class="{% block nav_custom_report_m %}{% endblock %}">自定义报表</a>
+        <a href="{% url 'core:irrigation_dashboard' %}" class="{% block nav_irrigation_m %}{% endblock %}">灌溉数据</a>
         <div class="mobile-sub-menu">
             <a href="javascript:void(0)" class="mobile-sub-toggle" onclick="this.parentElement.classList.toggle('open')">快速绘制 ▾</a>
             <div class="mobile-sub-items">
@@ -254,6 +257,7 @@
         {% if is_admin %}
         <a href="{% url 'core:settings' %}" class="{% block nav_settings_m %}{% endblock %}">区域管理</a>
         <a href="{% url 'core:project_management' %}" class="{% block nav_projects_m %}{% endblock %}">项目管理</a>
+        <a href="{% url 'core:announcement_management' %}" class="{% block nav_announcements_m %}{% endblock %}">通知管理</a>
         <a href="{% url 'core:user_management' %}" class="{% block nav_user_mgmt_m %}{% endblock %}">用户管理</a>
         {% endif %}
         <a href="{% url 'core:profile' %}">{{ user.get_full_name|default:user.username }}</a>

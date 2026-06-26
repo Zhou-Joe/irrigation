@@ -48,6 +48,7 @@
     padding: 14px 16px;
     margin-bottom: 10px;
     display: flex;
+    flex-wrap: wrap;
     align-items: stretch;
     gap: 14px;
     transition: box-shadow .15s, border-color .15s;
@@ -91,6 +92,24 @@
   .wr-side-id { font-size: 0.68rem; color: var(--wr-muted); margin-top: 2px; }
 
   .wr-empty { padding: 48px; text-align:center; color: var(--wr-muted); font-size: 0.95rem; background: var(--wr-card-bg); border-radius: 14px; border: 1px solid var(--wr-card-border); }
+
+  /* Inline comments panel (desktop list) — toggled by the 💬 chip. */
+  .wr-cmt-toggle-row { margin-top: 6px; }
+  .wr-cmt-toggle.zero { background: #f0f0f0 !important; color: #999 !important; font-weight: 500; }
+  .wr-cmt-panel { display: none; flex-basis: 100%; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--wr-card-border); }
+  .wr-cmt-panel.open { display: block; }
+  .wr-cmt-list { display: flex; flex-direction: column; gap: 8px; max-height: 280px; overflow-y: auto; padding-right: 2px; }
+  .wr-cmt-item { background: #f7f9fc; border-radius: 8px; padding: 8px 11px; border: 1px solid #eef0f3; }
+  .wr-cmt-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 3px; }
+  .wr-cmt-author { font-weight: 600; font-size: 0.8rem; color: #1565c0; }
+  .wr-cmt-time { font-size: 0.7rem; color: var(--wr-muted); }
+  .wr-cmt-body { font-size: 0.84rem; color: var(--wr-text); line-height: 1.45; white-space: pre-wrap; word-break: break-word; }
+  .wr-cmt-empty { color: var(--wr-muted); font-size: 0.82rem; padding: 4px 0; }
+  .wr-cmt-add { display: flex; gap: 8px; margin-top: 10px; }
+  .wr-cmt-input { flex: 1; border: 1px solid #e0e3e7; border-radius: 8px; padding: 8px 11px; font-size: 0.84rem; resize: none; min-height: 40px; max-height: 120px; font-family: inherit; }
+  .wr-cmt-send { flex: 0 0 auto; background: var(--wr-accent); color: #fff; border: none; border-radius: 8px; padding: 0 16px; font-size: 0.84rem; font-weight: 600; cursor: pointer; }
+  .wr-cmt-send:disabled { opacity: 0.6; cursor: default; }
+  .wr-cmt-loading { color: var(--wr-muted); font-size: 0.82rem; padding: 4px 0; }
 
   /* On narrow screens, stack the actions below */
   @media (max-width: 560px) {
@@ -174,6 +193,9 @@
                 {% if report.entry_count %}<span class="wr-chip count">{{ report.entry_count }}项</span>{% endif %}
             </div>
             {% endif %}
+            <div class="wr-cmt-toggle-row">
+                <button type="button" class="wr-chip wr-cmt-toggle {% if not report.comment_count %}zero{% endif %}" style="background:#e3f2fd;color:#1565c0;border:none;cursor:pointer;" onclick="toggleCmt(this, {{ report.id }})" data-loaded="0">💬 <span class="wr-cmt-n">{{ report.comment_count|default:0 }}</span></button>
+            </div>
             {# Photo thumbs #}
             {% if report.photos %}
             <div class="wr-photo-row">
@@ -198,6 +220,8 @@
             <a class="wr-act edit" href="{% url 'core:workorder_tree_form_edit' report.id %}">编辑</a>
             <span class="wr-side-id">#{{ report.id }}</span>
         </div>
+        {# Inline comments panel (toggled by the 💬 chip, no page redirect) #}
+        <div class="wr-cmt-panel" id="wrCmtPanel-{{ report.id }}"></div>
     </div>
     {% empty %}
     <div class="wr-empty">暂无工作日报记录</div>
@@ -260,6 +284,78 @@ function lbKey(e) {
     if (e.key === 'Escape') closeLb();
     else if (e.key === 'ArrowLeft') navLb(-1);
     else if (e.key === 'ArrowRight') navLb(1);
+}
+
+// ── Inline workorder comments (desktop list) ──
+function cmtCSRF() {
+    var c = document.cookie.split('; ').find(function (x) { return x.indexOf('csrftoken=') === 0; });
+    return c ? c.split('=')[1] : '';
+}
+function cmtEsc(s) {
+    var d = document.createElement('div'); d.textContent = s == null ? '' : s; return d.innerHTML;
+}
+function renderCmt(rid, comments) {
+    var box = document.querySelector('#wrCmtPanel-' + rid + ' .wr-cmt-list');
+    if (!box) return;
+    if (!comments.length) { box.innerHTML = '<div class="wr-cmt-empty">暂无评论，留下第一条吧。</div>'; return; }
+    box.innerHTML = comments.map(function (c) {
+        return '<div class="wr-cmt-item"><div class="wr-cmt-head"><span class="wr-cmt-author">' +
+            cmtEsc(c.author) + '</span><span class="wr-cmt-time">' + cmtEsc(c.time) + '</span></div>' +
+            '<div class="wr-cmt-body">' + cmtEsc(c.body) + '</div></div>';
+    }).join('');
+}
+function buildPanel(rid) {
+    var panel = document.getElementById('wrCmtPanel-' + rid);
+    panel.innerHTML =
+        '<div class="wr-cmt-list"><div class="wr-cmt-loading">加载中…</div></div>' +
+        '<div class="wr-cmt-add"><textarea class="wr-cmt-input" rows="1" placeholder="写评论… (Ctrl+Enter 发送)" ' +
+        'onkeydown="if((event.metaKey||event.ctrlKey)&&event.key===\'Enter\'){event.preventDefault();postCmt(' + rid + ');}"></textarea>' +
+        '<button type="button" class="wr-cmt-send" onclick="postCmt(' + rid + ')">发送</button></div>';
+}
+function loadCmt(rid) {
+    fetch('/work-reports/' + rid + '/comments/', { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+        .then(function (r) { return r.json(); })
+        .then(function (d) { if (d.success) renderCmt(rid, d.comments); })
+        .catch(function () {
+            var box = document.querySelector('#wrCmtPanel-' + rid + ' .wr-cmt-list');
+            if (box) box.innerHTML = '<div class="wr-cmt-empty">加载失败，请重试。</div>';
+        });
+}
+function toggleCmt(btn, rid) {
+    var panel = document.getElementById('wrCmtPanel-' + rid);
+    if (!panel) return;
+    var open = panel.classList.toggle('open');
+    if (open && btn.getAttribute('data-loaded') === '0') {
+        btn.setAttribute('data-loaded', '1');
+        buildPanel(rid);
+        loadCmt(rid);
+    }
+}
+function bumpCmtChip(rid) {
+    var chip = document.querySelector('.wr-card .wr-cmt-toggle[onclick*="' + rid + '"]');
+    if (chip) {
+        var span = chip.querySelector('.wr-cmt-n');
+        var n = (parseInt((span && span.textContent) || '0', 10) || 0) + 1;
+        if (span) span.textContent = n;
+        chip.classList.remove('zero');
+    }
+}
+function postCmt(rid) {
+    var inp = document.querySelector('#wrCmtPanel-' + rid + ' .wr-cmt-input');
+    if (!inp) return;
+    var body = (inp.value || '').trim();
+    if (!body) { alert('请输入评论内容'); return; }
+    var btn = document.querySelector('#wrCmtPanel-' + rid + ' .wr-cmt-send');
+    if (btn) btn.disabled = true;
+    fetch('/work-reports/' + rid + '/comments/', {
+        method: 'POST',
+        headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRFToken': cmtCSRF() },
+        body: new URLSearchParams({ body: body })
+    }).then(function (r) { return r.json(); }).then(function (d) {
+        if (btn) btn.disabled = false;
+        if (d.success) { inp.value = ''; loadCmt(rid); bumpCmtChip(rid); }
+        else { alert(d.message || '发布失败'); }
+    }).catch(function () { if (btn) btn.disabled = false; alert('网络错误'); });
 }
 </script>
 {% endblock %}

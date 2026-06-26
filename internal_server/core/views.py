@@ -3,14 +3,13 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib import messages
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.decorators import login_required
-from django.db.models import Count, Q, Avg, Sum
+from django.db.models import Count, Q, Avg, Sum, F
 from django.db.models.functions import Coalesce
 from django.views.decorators.http import require_POST
 from django.http import HttpResponse, JsonResponse
 from django.urls import reverse
 from django.utils import timezone
-from core.models import Zone
-
+from core.models import Zone, Patch
 
 def auto_close_boundary_points(boundary_data):
     """
@@ -1073,12 +1072,200 @@ def dashboard(request):
         'total_zones': len(zones_list),
         'total_plants': sum(z['plant_count'] for z in zones_list),
         'map_style_json': json.dumps(_cached('dashboard:map_style', 300, lambda: MapStyleSettings.get_style())),
+        'announcements_json': json.dumps(_unacked_announcements_for(request.user), ensure_ascii=False),
     }
 
     return render(request, 'core/dashboard.html', context)
 
 
-# ─── Zone Import / Export ───────────────────────────────────────────
+# ─── Announcements (通知公告) ────────────────────────────────────────
+
+def _announcement_eligible(user):
+    """Whether a user is in the announcement audience: 灌溉一线 or 管理员/经理.
+
+    Department users and other account types are excluded — announcements are
+    only surfaced to field workers and managers.
+    """
+    from core.models import ROLE_FIELD_WORKER, ROLE_MANAGER, ROLE_SUPER_ADMIN
+    from core.role_utils import get_user_role
+    if not user or not getattr(user, 'is_authenticated', False):
+        return False
+    return get_user_role(user) in (ROLE_FIELD_WORKER, ROLE_MANAGER, ROLE_SUPER_ADMIN)
+
+
+def _unacked_announcements_for(user):
+    """Active announcements the user hasn't acknowledged, newest-first.
+
+    Returns a list of plain dicts (JSON-serializable) for the dashboard popup.
+    Only 灌溉一线 / 管理员 users receive announcements; others get an empty list.
+    """
+    from core.models import Announcement, AnnouncementAcknowledgment
+    if not _announcement_eligible(user):
+        return []
+    acked_ids = AnnouncementAcknowledgment.objects.filter(user=user).values_list('announcement_id', flat=True)
+    qs = (Announcement.objects.filter(active=True).exclude(id__in=acked_ids)
+          .order_by('-created_at'))
+    return [
+        {
+            'id': a.id,
+            'title': a.title,
+            'body': a.body,
+            'time': a.created_at.strftime('%Y-%m-%d %H:%M'),
+        }
+        for a in qs
+    ]
+
+
+def _unacked_count_for(user):
+    from core.models import Announcement, AnnouncementAcknowledgment
+    if not _announcement_eligible(user):
+        return 0
+    acked_ids = AnnouncementAcknowledgment.objects.filter(user=user).values_list('announcement_id', flat=True)
+    return Announcement.objects.filter(active=True).exclude(id__in=acked_ids).count()
+
+
+@require_POST
+@login_required(login_url='core:login')
+def announcement_acknowledge(request, pk):
+    """Acknowledge one announcement for the current user (idempotent).
+
+    Only 灌溉一线 / 管理员 can acknowledge — the announcement audience.
+    """
+    if not _announcement_eligible(request.user):
+        return JsonResponse({'success': False, 'message': '无权限'}, status=403)
+    from core.models import Announcement, AnnouncementAcknowledgment
+    ann = get_object_or_404(Announcement, pk=pk, active=True)
+    AnnouncementAcknowledgment.objects.get_or_create(announcement=ann, user=request.user)
+    return JsonResponse({'success': True, 'remaining': _unacked_count_for(request.user)})
+
+
+@login_required(login_url='core:login')
+def announcement_management(request):
+    """List/create/edit announcements (manager / super-admin only)."""
+    from core.models import Announcement
+    from core.role_utils import get_user_role, ROLE_MANAGER, ROLE_SUPER_ADMIN
+    role = get_user_role(request.user)
+    if role not in (ROLE_MANAGER, ROLE_SUPER_ADMIN):
+        messages.error(request, '无权限访问通知管理')
+        return redirect('core:dashboard')
+
+    edit_obj = None
+    edit_id = request.GET.get('edit')
+    if edit_id:
+        edit_obj = get_object_or_404(Announcement, pk=edit_id)
+
+    announcements = (Announcement.objects.all()
+                     .annotate(ack_count=Count('acknowledgments'))
+                     .order_by('-created_at'))
+    return render(request, 'core/announcement_management.html', {
+        'announcements': announcements,
+        'edit_obj': edit_obj,
+    })
+
+
+@require_POST
+@login_required(login_url='core:login')
+def announcement_save(request):
+    """Create or update an Announcement (manager / super-admin only)."""
+    from core.models import Announcement
+    from core.role_utils import get_user_role, ROLE_MANAGER, ROLE_SUPER_ADMIN
+    role = get_user_role(request.user)
+    if role not in (ROLE_MANAGER, ROLE_SUPER_ADMIN):
+        messages.error(request, '无权限')
+        return redirect('core:dashboard')
+
+    pid = request.POST.get('id', '').strip()
+    title = (request.POST.get('title') or '').strip()
+    body = (request.POST.get('body') or '').strip()
+    active = request.POST.get('active') in ('1', 'on', 'true', 'True')
+    if not title:
+        messages.error(request, '标题不能为空')
+        return redirect('core:announcement_management')
+
+    if pid:
+        ann = get_object_or_404(Announcement, pk=pid)
+        ann.title = title
+        ann.body = body
+        ann.active = active
+        ann.save()
+        messages.success(request, f'通知已更新：{ann.title}')
+    else:
+        ann = Announcement.objects.create(
+            title=title, body=body, active=active, created_by=request.user,
+        )
+        messages.success(request, f'通知已发布：{ann.title}')
+    return redirect('core:announcement_management')
+
+
+@require_POST
+@login_required(login_url='core:login')
+def announcement_delete(request, pk):
+    """Delete an Announcement (manager / super-admin only)."""
+    from core.models import Announcement
+    from core.role_utils import get_user_role, ROLE_MANAGER, ROLE_SUPER_ADMIN
+    role = get_user_role(request.user)
+    if role not in (ROLE_MANAGER, ROLE_SUPER_ADMIN):
+        messages.error(request, '无权限')
+        return redirect('core:dashboard')
+
+    ann = get_object_or_404(Announcement, pk=pk)
+    title = ann.title
+    ann.delete()
+    messages.success(request, f'通知已删除：{title}')
+    return redirect('core:announcement_management')
+
+
+@login_required(login_url='core:login')
+def announcement_unacked_api(request, pk):
+    """List users who have NOT acknowledged an announcement (manager / admin only).
+
+    Returns the display name + role of every active user lacking an
+    AnnouncementAcknowledgment row for this announcement. Used by the expandable
+    "未确认" panel on the management page (lazy-loaded on expand).
+    """
+    from core.models import (
+        Announcement, ROLE_SUPER_ADMIN, ROLE_MANAGER, ROLE_FIELD_WORKER, ROLE_DEPT_USER,
+    )
+    from core.role_utils import get_user_role
+    role = get_user_role(request.user)
+    if role not in (ROLE_MANAGER, ROLE_SUPER_ADMIN):
+        return JsonResponse({'error': '无权限'}, status=403)
+
+    ann = get_object_or_404(Announcement, pk=pk)
+    acked_user_ids = set(ann.acknowledgments.values_list('user_id', flat=True))
+    # The announcement audience is 灌溉一线 + 管理员/经理 only; department users and
+    # other accounts are never tracked here. Resolve each to a display name + role.
+    label_map = {
+        ROLE_SUPER_ADMIN: '超管', ROLE_MANAGER: '管理员',
+        ROLE_FIELD_WORKER: '灌溉一线', ROLE_DEPT_USER: '部门用户',
+    }
+    users = []
+    from django.contrib.auth import get_user_model
+    for u in get_user_model().objects.filter(is_active=True).order_by('username'):
+        if not _announcement_eligible(u):
+            continue  # dept users / others are not part of the audience
+        if u.id in acked_user_ids:
+            continue
+        users.append({
+            'name': _user_display_name(u),
+            'role': label_map.get(get_user_role(u), '—'),
+        })
+    return JsonResponse({'success': True, 'count': len(users), 'users': users})
+
+
+def _user_display_name(user):
+    """Friendly name for any user, preferring the linked profile's full_name."""
+    name = (user.get_full_name() or '').strip()
+    if name:
+        return name
+    for attr in ('worker_profile', 'manager_profile', 'dept_profile'):
+        profile = getattr(user, attr, None)
+        if profile and getattr(profile, 'full_name', None):
+            return profile.full_name
+    return user.username
+
+
+
 
 # Excel headers matching Zone list V0.xlsx column order
 _ZONE_EXPORT_HEADERS = [
@@ -4366,6 +4553,539 @@ def stats_dashboard(request):
 
 
 # ==========================================================================
+# Irrigation Dashboard — Maxicom runtime pivot (station × controller)
+# ==========================================================================
+
+def _sat_sort_key(name):
+    """Sort satellite controller names (e.g. 'AI 7-1') by (site num, sat num)."""
+    import re as _re
+    m = _re.search(r'(\d+)-(\d+)', name)
+    site_num = int(m.group(1)) if m else 0
+    sat_num = int(m.group(2)) if m else 0
+    return (site_num, sat_num, name)
+
+
+def _ccu_sort_key(patch):
+    """Natural numeric sort for CCU patches by the number in the code (CCU1 < CCU2 < ... < CCU10)."""
+    import re as _re
+    m = _re.search(r'(\d+)', patch.code or '')
+    return (int(m.group(1)) if m else 0, patch.code or '')
+
+
+def _ccu_queryset():
+    """CCU patches in natural numeric order (CCU1, CCU2, ... CCU9, CCU10, CCU11)."""
+    ccus = list(Patch.objects.filter(parent__isnull=True, code__iregex=r'^CCU\d+$'))
+    ccus.sort(key=_ccu_sort_key)
+    return ccus
+
+
+def _build_ccu_matrix(ccu, rt_qs, ctrl_map):
+    """Build the 24 x N-satellite runtime matrix for one CCU.
+
+    Returns dict: {controllers, rows, col_totals, grand_total, max_cell}
+      - controllers: sorted list of satellite names (columns)
+      - rows: 24 entries, station '01'..'24', each with values[] + total
+      - col_totals: list aligned to controllers
+    Used by both the dashboard view and the PDF export.
+    """
+    from core.models import Patch
+    from collections import defaultdict
+
+    ccu_sats = sorted(
+        {c.name for c in ctrl_map.values() if c.site_id == ccu.id},
+        key=_sat_sort_key,
+    )
+    all_controllers = ccu_sats
+    ctrl_index = {c: i for i, c in enumerate(all_controllers)}
+
+    # All valves under this CCU, ensure every (satellite, channel) exists.
+    sat_chan_minutes = defaultdict(dict)   # satellite_name -> {channel: minutes}
+    for st in Patch.objects.filter(parent=ccu, controller_channel__isnull=False):
+        ctrl = ctrl_map.get(st.controller_number)
+        sat_name = ctrl.name if ctrl else f'SAT {st.controller_number}'
+        sat_chan_minutes[sat_name][st.controller_channel] = 0
+
+    # Fill in actual runtime minutes within the date range.
+    for rt in rt_qs:
+        st = rt.station
+        if st is None:
+            continue
+        ctrl = ctrl_map.get(st.controller_number)
+        sat_name = ctrl.name if ctrl else f'SAT {st.controller_number}'
+        if sat_name in ctrl_index:
+            sat_chan_minutes[sat_name][st.controller_channel] = \
+                sat_chan_minutes[sat_name].get(st.controller_channel, 0) + (rt.run_time or 0)
+
+    rows = []
+    col_totals = defaultdict(int)
+    for ch in range(1, 25):
+        vals = [0] * len(all_controllers)
+        for sat_name, idx in ctrl_index.items():
+            v = sat_chan_minutes.get(sat_name, {}).get(ch, 0)
+            if v:
+                vals[idx] = v
+                col_totals[sat_name] += v
+        rows.append({
+            'station': f"{ch:02d}",
+            'channel': ch,
+            'site': ccu.code,
+            'values': vals,
+            'total': sum(vals),
+        })
+    grand_total = sum(col_totals.values())
+    max_cell = max((max(r['values'], default=0) for r in rows), default=0)
+    return {
+        'controllers': all_controllers,
+        'rows': rows,
+        'col_totals': [col_totals[c] for c in all_controllers],
+        'grand_total': grand_total,
+        'max_cell': max_cell,
+    }
+
+
+@login_required(login_url='core:login')
+def irrigation_dashboard(request):
+    """Maxicom irrigation runtime dashboard.
+
+    Pivot: rows = station, columns = controller (satellite), cell = sum of
+    runtime minutes within the selected CCU and date range. A runtime row
+    carries run_time=1 per active minute, so SUM(run_time) = minutes run.
+    """
+    from core.models import Patch, MaxicomController, MaxicomRuntime
+    from django.db.models import Sum
+    from collections import defaultdict
+    import json as _json
+
+    # --- filter inputs ---
+    ccus = _ccu_queryset()   # natural numeric order: CCU1, CCU2, ... CCU10
+
+    # CCU scope (default: all)
+    ccu_param = request.GET.get('ccu', '')
+    ccu_obj = None
+    if ccu_param:
+        ccu_obj = next((c for c in ccus if str(c.id) == ccu_param), None)
+
+    # date range — default to the full span of available runtime data
+    span = MaxicomRuntime.objects.order_by('timestamp')
+    first_ts = span.first().timestamp if span.exists() else ''
+    last_ts = span.last().timestamp if span.exists() else ''
+    default_from = first_ts[:8] if len(first_ts) >= 8 else ''
+    default_to = last_ts[:8] if len(last_ts) >= 8 else ''
+    date_from = request.GET.get('from', default_from).strip()
+    date_to = request.GET.get('to', default_to).strip()
+
+    # pad to YYYYMMDD for LIKE-prefix matching (timestamp is YYYYMMDDHHmmSS)
+    ts_from = date_from.ljust(8, '0')[:8] if date_from else ''
+    ts_to = date_to.ljust(8, '9')[:8] + '999999' if date_to else ''
+
+    # --- build the pivot ---
+    rt_qs = MaxicomRuntime.objects.select_related('station', 'station__parent', 'site')
+    if ccu_obj is not None:
+        rt_qs = rt_qs.filter(site=ccu_obj)
+    if ts_from:
+        rt_qs = rt_qs.filter(timestamp__gte=ts_from)
+    if ts_to:
+        rt_qs = rt_qs.filter(timestamp__lte=ts_to)
+
+    # satellite lookup: MaxicomController.mdb_index -> controller.
+    ctrl_map = {c.mdb_index: c for c in MaxicomController.objects.exclude(name__icontains='CCU')}
+
+    # For a specific CCU, build a true 24 x N-satellites matrix: rows are the
+    # Maxicom station numbers 01-24 (always shown, even with no runtime), columns
+    # are the CCU's satellites, and each cell is the runtime of the valve at that
+    # (channel, satellite). For "all CCUs" the valves span many satellites so we
+    # keep the per-valve-row layout (one row per valve that ran).
+    if ccu_obj is not None:
+        m = _build_ccu_matrix(ccu_obj, rt_qs, ctrl_map)
+        all_controllers = m['controllers']
+        rows = m['rows']
+        col_totals = defaultdict(int, dict(zip(all_controllers, m['col_totals'])))
+        grand_total = m['grand_total']
+        max_cell = m['max_cell']
+        total_stations_with_runtime = sum(1 for r in rows if r['total'] > 0)
+
+    else:
+        # "All CCUs" — one row per valve that actually ran (across many satellites)
+        station_minutes = defaultdict(int)   # station_id -> total minutes
+        station_site = {}                    # station_id -> site code
+        for rt in rt_qs:
+            st = rt.station
+            if st is None:
+                continue
+            station_minutes[st.id] += (rt.run_time or 0)
+            station_site[st.id] = rt.site.code if rt.site else ''
+
+        station_rows = []
+        sat_names_seen = set()
+        for st in Patch.objects.filter(id__in=station_minutes.keys()):
+            ctrl = ctrl_map.get(st.controller_number)
+            sat_name = ctrl.name if ctrl else f'SAT {st.controller_number}'
+            sat_names_seen.add(sat_name)
+            station_rows.append({
+                'station': f"{st.controller_channel:02d}",
+                'channel': st.controller_channel,
+                'site': station_site.get(st.id, ''),
+                'satellite': sat_name,
+                'total': station_minutes[st.id],
+            })
+
+        all_controllers = sorted(sat_names_seen, key=_sat_sort_key)
+        ctrl_index = {c: i for i, c in enumerate(all_controllers)}
+        rows = []
+        col_totals = defaultdict(int)
+        station_rows.sort(key=lambda r: (r['site'], _sat_sort_key(r['satellite']), r['channel'] or 0))
+        for meta in station_rows:
+            vals = [0] * len(all_controllers)
+            vals[ctrl_index[meta['satellite']]] = meta['total']
+            meta['values'] = vals
+            rows.append(meta)
+            col_totals[meta['satellite']] += meta['total']
+        grand_total = sum(col_totals.values())
+        max_cell = max((max(r['values'], default=0) for r in rows), default=0)
+        total_stations_with_runtime = len(rows)
+
+
+    # color scale max for heatmap shading
+    max_cell = max((max(r['values'], default=0) for r in rows), default=0)
+
+    # user role (mirrors other dashboard views)
+    is_admin = request.user.is_superuser or request.user.is_staff
+    if not is_admin:
+        try:
+            from core.models import ManagerProfile
+            ManagerProfile.objects.get(user=request.user, active=True)
+            is_admin = True
+        except Exception:
+            pass
+
+    # The CCU column is only useful when multiple CCUs are in view (no CCU picked)
+    show_ccu_col = ccu_obj is None
+
+    context = {
+        'is_admin': is_admin,
+        'ccus': ccus,
+        'selected_ccu': ccu_obj,
+        'date_from': date_from,
+        'date_to': date_to,
+        'data_span': (default_from, default_to),
+        'controllers': all_controllers,
+        'rows': rows,
+        'col_totals': [col_totals[c] for c in all_controllers],
+        'grand_total': grand_total,
+        'max_cell': max_cell,
+        'total_stations': total_stations_with_runtime,
+        'show_ccu_col': show_ccu_col,
+    }
+
+    # JSON response for AJAX refresh (filters changed without full reload).
+    # Triggered by either the AJAX header (sent by the page's fetch) or an
+    # explicit ?format=json for testing.
+    if request.GET.get('format') == 'json' or \
+            request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        return JsonResponse({
+            'controllers': all_controllers,
+            'rows': rows,
+            'col_totals': [col_totals[c] for c in all_controllers],
+            'grand_total': grand_total,
+            'max_cell': max_cell,
+            'total_stations': total_stations_with_runtime,
+            'date_from': date_from,
+            'date_to': date_to,
+            'show_ccu_col': show_ccu_col,
+        })
+
+    return render(request, 'core/irrigation_dashboard.html', context)
+
+
+@login_required(login_url='core:login')
+def irrigation_report_pdf(request):
+    """One-click PDF export: one page per CCU (sorted by CCU code), each page a
+    24 x N-satellite runtime matrix fitting the page. Same format as the
+    dashboard. Honors the date-range filter from the query string.
+    """
+    from core.models import Patch, MaxicomController, MaxicomRuntime
+    from collections import defaultdict
+    from io import BytesIO
+    from reportlab.lib.pagesizes import A4, landscape
+    from reportlab.lib import colors
+    from reportlab.lib.units import mm
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.cidfonts import UnicodeCIDFont
+
+    # Register a CJK font so Chinese renders (STSong-Light ships with reportlab).
+    CJK = 'STSong-Light'
+    try:
+        pdfmetrics.registerFont(UnicodeCIDFont(CJK))
+    except Exception:
+        CJK = 'Helvetica'  # fallback (Chinese will be missing)
+
+    # --- date range (same logic as the dashboard, defaulting to full span) ---
+    span = MaxicomRuntime.objects.order_by('timestamp')
+    first_ts = span.first().timestamp if span.exists() else ''
+    last_ts = span.last().timestamp if span.exists() else ''
+    default_from = first_ts[:8] if len(first_ts) >= 8 else ''
+    default_to = last_ts[:8] if len(last_ts) >= 8 else ''
+    date_from = request.GET.get('from', default_from).strip()
+    date_to = request.GET.get('to', default_to).strip()
+    ts_from = date_from.ljust(8, '0')[:8] if date_from else ''
+    ts_to = date_to.ljust(8, '9')[:8] + '999999' if date_to else ''
+
+    # --- precompute satellite lookup and runtime queryset once ---
+    ctrl_map = {c.mdb_index: c for c in MaxicomController.objects.exclude(name__icontains='CCU')}
+    rt_qs = MaxicomRuntime.objects.select_related('station', 'station__parent', 'site')
+    if ts_from:
+        rt_qs = rt_qs.filter(timestamp__gte=ts_from)
+    if ts_to:
+        rt_qs = rt_qs.filter(timestamp__lte=ts_to)
+    rt_by_site = defaultdict(list)
+    for rt in rt_qs:
+        rt_by_site[rt.site_id].append(rt)
+
+    # --- PDF setup (landscape A4) ---
+    buf = BytesIO()
+    page_size = landscape(A4)
+    # The title (Paragraph, leading 14) + subtitle (leading 9) + spacer (2mm)
+    # consume real vertical space reportlab won't compress; budget 28mm for it.
+    frame_h = page_size[1] - 16 * mm              # page minus top/bottom margins
+    title_block_h = 28 * mm
+    avail_for_table = frame_h - title_block_h
+    ROW_H = avail_for_table / 26.5                # 1.4 + 24 + 1.1 = 26.5 row-units
+    FS = 6.0                                       # cell font size
+
+    doc = SimpleDocTemplate(
+        buf, pagesize=page_size,
+        leftMargin=10 * mm, rightMargin=10 * mm,
+        topMargin=8 * mm, bottomMargin=8 * mm,
+        title='灌溉运行报告',
+    )
+    title_style = ParagraphStyle('T', fontName=CJK, fontSize=12,
+                                 textColor=colors.HexColor('#1B4332'), spaceAfter=1, leading=14)
+    sub_style = ParagraphStyle('S', fontName=CJK, fontSize=7.5, leading=9,
+                               textColor=colors.HexColor('#6B7B6E'))
+
+    avail_w = page_size[0] - 20 * mm
+
+    ccus = _ccu_queryset()   # natural numeric order
+    elements = []
+
+    for idx, ccu in enumerate(ccus):
+        m = _build_ccu_matrix(ccu, rt_by_site.get(ccu.id, []), ctrl_map)
+        controllers = m['controllers']
+        rows = m['rows']
+        col_totals = m['col_totals']
+        grand_total = m['grand_total']
+        max_cell = m['max_cell'] or 1
+        ran = sum(1 for r in rows if r['total'] > 0)
+
+        elements.append(Paragraph(
+            f'{ccu.code} ({ccu.name}) — 站点 × 卫星控制器 运行时间（分钟）', title_style))
+        elements.append(Paragraph(
+            f'卫星控制器 {len(controllers)} 个，运行站点 {ran} 个，总运行 {grand_total} 分钟', sub_style))
+        elements.append(Spacer(1, 2 * mm))
+
+        # table data
+        header = ['站#'] + list(controllers) + ['合计']
+        data = [header]
+        for r in rows:
+            data.append([r['station']] + [str(v) if v else '·' for v in r['values']]
+                        + [str(r['total']) if r['total'] else '·'])
+        data.append(['合计'] + [str(t) if t else '·' for t in col_totals] + [str(grand_total)])
+
+        # column widths
+        n_sat = len(controllers)
+        side_w = 11 * mm
+        sat_col_w = max(7 * mm, (avail_w - 2 * side_w) / n_sat) if n_sat else (avail_w - 2 * side_w)
+        col_widths = [side_w] + [sat_col_w] * n_sat + [side_w]
+        # row heights: header slightly taller
+        row_heights = [ROW_H * 1.4] + [ROW_H] * 24 + [ROW_H * 1.1]
+
+        tbl = Table(data, colWidths=col_widths, rowHeights=row_heights, repeatRows=1)
+        ts = [
+            ('FONTNAME', (0, 0), (-1, -1), CJK),
+            ('FONTSIZE', (0, 0), (-1, 0), FS),
+            ('FONTSIZE', (0, 1), (-1, -1), FS),
+            ('TOPPADDING', (0, 0), (-1, -1), 0),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
+            ('LEFTPADDING', (0, 0), (-1, -1), 1),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 1),
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1B4332')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('GRID', (0, 0), (-1, -1), 0.25, colors.HexColor('#D9D0C0')),
+            ('BACKGROUND', (0, 1), (0, -2), colors.HexColor('#F5F0E8')),
+            ('BACKGROUND', (-1, 1), (-1, -2), colors.HexColor('#EDE8DC')),
+            ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#EDE8DC')),
+            ('LINEABOVE', (0, -1), (-1, -1), 1, colors.HexColor('#1B4332')),
+        ]
+        # heatmap shading on non-zero cells (interpolate light->dark green)
+        gl = (0.929, 0.969, 0.847)   # #EDF7F1
+        gd = (0.106, 0.263, 0.196)   # #1B4332
+        for ri, r in enumerate(rows, start=1):
+            for ci, v in enumerate(r['values'], start=1):
+                if v > 0:
+                    t = min(v / max_cell, 1.0)
+                    c = colors.Color(gl[0] + (gd[0] - gl[0]) * t,
+                                     gl[1] + (gd[1] - gl[1]) * t,
+                                     gl[2] + (gd[2] - gl[2]) * t)
+                    ts.append(('BACKGROUND', (ci, ri), (ci, ri), c))
+                    if t > 0.6:
+                        ts.append(('TEXTCOLOR', (ci, ri), (ci, ri), colors.white))
+        tbl.setStyle(TableStyle(ts))
+        elements.append(tbl)
+
+        if idx < len(ccus) - 1:
+            elements.append(PageBreak())
+
+    doc.build(elements)
+    buf.seek(0)
+    fname = f'irrigation_report_{date_from}_{date_to}.pdf'
+    resp = HttpResponse(buf, content_type='application/pdf')
+    resp['Content-Disposition'] = f'attachment; filename="{fname}"'
+    return resp
+
+
+@login_required(login_url='core:login')
+def irrigation_report_excel(request):
+    """One-click Excel export: one sheet per CCU (sorted naturally), each sheet
+    a 24 x N-satellite runtime matrix. Same data as the dashboard / PDF.
+    Honors the date-range filter from the query string.
+    """
+    from core.models import MaxicomController, MaxicomRuntime
+    from collections import defaultdict
+    from io import BytesIO
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.utils import get_column_letter
+
+    # --- date range (same logic as the dashboard) ---
+    span = MaxicomRuntime.objects.order_by('timestamp')
+    first_ts = span.first().timestamp if span.exists() else ''
+    last_ts = span.last().timestamp if span.exists() else ''
+    default_from = first_ts[:8] if len(first_ts) >= 8 else ''
+    default_to = last_ts[:8] if len(last_ts) >= 8 else ''
+    date_from = request.GET.get('from', default_from).strip()
+    date_to = request.GET.get('to', default_to).strip()
+    ts_from = date_from.ljust(8, '0')[:8] if date_from else ''
+    ts_to = date_to.ljust(8, '9')[:8] + '999999' if date_to else ''
+
+    ctrl_map = {c.mdb_index: c for c in MaxicomController.objects.exclude(name__icontains='CCU')}
+    rt_qs = MaxicomRuntime.objects.select_related('station', 'station__parent', 'site')
+    if ts_from:
+        rt_qs = rt_qs.filter(timestamp__gte=ts_from)
+    if ts_to:
+        rt_qs = rt_qs.filter(timestamp__lte=ts_to)
+    rt_by_site = defaultdict(list)
+    for rt in rt_qs:
+        rt_by_site[rt.site_id].append(rt)
+
+    # --- styles ---
+    header_fill = PatternFill('solid', fgColor='1B4332')
+    header_font = Font(color='FFFFFF', bold=True, size=10)
+    side_fill = PatternFill('solid', fgColor='F5F0E8')
+    total_fill = PatternFill('solid', fgColor='EDE8DC')
+    total_font = Font(bold=True)
+    center = Alignment(horizontal='center', vertical='center')
+    thin = Side(style='thin', color='D9D0C0')
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+
+    wb = Workbook()
+    # remove the default sheet (we add per-CCU sheets)
+    default_ws = wb.active
+
+    ccus = _ccu_queryset()
+
+    for idx, ccu in enumerate(ccus):
+        m = _build_ccu_matrix(ccu, rt_by_site.get(ccu.id, []), ctrl_map)
+        controllers = m['controllers']
+        rows = m['rows']
+        col_totals = m['col_totals']
+        grand_total = m['grand_total']
+        ran = sum(1 for r in rows if r['total'] > 0)
+
+        # Excel sheet names: max 31 chars, no special chars
+        sheet_name = f"{ccu.code}_{ccu.name}"[:31]
+        ws = wb.create_sheet(title=sheet_name)
+
+        # title row
+        ws.cell(row=1, column=1,
+                value=f"{ccu.code} ({ccu.name}) — 站点 × 卫星控制器 运行时间（分钟）  {date_from}~{date_to}")
+        ws.cell(row=1, column=1).font = Font(bold=True, size=12, color='1B4332')
+        ws.cell(row=2, column=1,
+                value=f"卫星控制器 {len(controllers)} 个，运行站点 {ran} 个，总运行 {grand_total} 分钟")
+        ws.cell(row=2, column=1).font = Font(size=9, color='6B7B6E')
+
+        # matrix starts at row 4
+        header_row = 4
+        n_sat = len(controllers)
+        # header
+        ws.cell(row=header_row, column=1, value='站#')
+        for ci, cname in enumerate(controllers):
+            ws.cell(row=header_row, column=2 + ci, value=cname)
+        ws.cell(row=header_row, column=2 + n_sat, value='合计')
+        for col in range(1, 2 + n_sat + 1):
+            c = ws.cell(row=header_row, column=col)
+            c.fill = header_fill
+            c.font = header_font
+            c.alignment = center
+            c.border = border
+
+        # 24 station rows
+        for ri, r in enumerate(rows):
+            rownum = header_row + 1 + ri
+            sc = ws.cell(row=rownum, column=1, value=r['station'])
+            sc.fill = side_fill
+            sc.alignment = center
+            sc.border = border
+            for ci, v in enumerate(r['values']):
+                vc = ws.cell(row=rownum, column=2 + ci, value=v if v else None)
+                vc.alignment = center
+                vc.border = border
+                if v:
+                    vc.font = Font(bold=True)
+            tc = ws.cell(row=rownum, column=2 + n_sat, value=r['total'] if r['total'] else None)
+            tc.fill = total_fill
+            tc.font = total_font
+            tc.alignment = center
+            tc.border = border
+
+        # totals row
+        trow = header_row + 1 + len(rows)
+        ws.cell(row=trow, column=1, value='合计')
+        for ci, t in enumerate(col_totals):
+            ws.cell(row=trow, column=2 + ci, value=t if t else None)
+        ws.cell(row=trow, column=2 + n_sat, value=grand_total)
+        for col in range(1, 2 + n_sat + 1):
+            c = ws.cell(row=trow, column=col)
+            c.fill = total_fill
+            c.font = total_font
+            c.alignment = center
+            c.border = border
+
+        # column widths + freeze
+        ws.column_dimensions['A'].width = 6
+        for ci in range(n_sat):
+            ws.column_dimensions[get_column_letter(2 + ci)].width = 11
+        ws.column_dimensions[get_column_letter(2 + n_sat)].width = 8
+        ws.freeze_panes = 'B5'
+
+    # remove default empty sheet
+    if default_ws is not None and default_ws.title in wb.sheetnames and len(wb.sheetnames) > 1:
+        wb.remove(default_ws)
+
+    buf = BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    fname = f'irrigation_report_{date_from}_{date_to}.xlsx'
+    resp = HttpResponse(
+        buf, content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    resp['Content-Disposition'] = f'attachment; filename="{fname}"'
+    return resp
+
+
+# ==========================================================================
 # Custom Report API
 # ==========================================================================
 
@@ -4933,7 +5653,7 @@ def custom_report(request):
 @login_required(login_url='core:login')
 def work_reports_list(request):
     from core.models import WorkReport, Patch, Worker
-    from core.role_utils import is_admin, get_worker_for_user
+    from core.role_utils import is_admin, get_worker_for_user, is_field_worker
     from core.workorder_tree_views import workitem_path_map, enrich_reports, attach_zone_hierarchy
 
     user = request.user
@@ -4945,9 +5665,11 @@ def work_reports_list(request):
         'entries__work_item', 'entries__project', 'zones__land'
     ).order_by('-date', '-id')
 
-    # Scope by submitter for non-admins. Managers have no direct worker link,
-    # so resolve via profile (they get the same Worker row the submit path uses).
-    if not admin:
+    # Both 灌溉一线 (field workers) and managers/admins see ALL workorders — the
+    # visibility is now shared so the team can review and comment on each other's
+    # records. Only dept users / unauthenticated accounts (no field-worker and no
+    # admin role) are scoped to their own submissions, if any.
+    if not admin and not is_field_worker(user):
         worker = get_worker_for_user(user)
         qs = qs.filter(worker=worker) if worker else qs.none()
 
@@ -4972,7 +5694,7 @@ def work_reports_list(request):
     if pending:
         qs = qs.filter(is_pending_repair=True)
 
-    reports = list(qs[:200])
+    reports = list(qs.annotate(comment_count=Count('comments'))[:200])
     enrich_reports(reports, workitem_path_map())
     attach_zone_hierarchy(reports)
     locations = Patch.objects.filter(active=True).order_by('order')
@@ -5153,7 +5875,7 @@ def water_request_update(request, pk):
 @login_required(login_url='core:login')
 def work_report_detail(request, report_id):
     from core.models import WorkReport, WorkItem
-    from core.role_utils import is_admin
+    from core.role_utils import is_admin, is_field_worker
     from collections import OrderedDict
 
     report = get_object_or_404(
@@ -5163,14 +5885,11 @@ def work_report_detail(request, report_id):
         pk=report_id
     )
 
-    if not is_admin(request.user):
-        try:
-            if report.worker != request.user.worker_profile:
-                messages.error(request, '无权查看此记录')
-                return redirect('core:work_reports')
-        except Exception:
-            messages.error(request, '无权查看此记录')
-            return redirect('core:work_reports')
+    # Both 灌溉一线 (field workers) and managers/admins can view any workorder
+    # (so they can read/post comments on it). Other account types are denied.
+    if not is_admin(request.user) and not is_field_worker(request.user):
+        messages.error(request, '无权查看此记录')
+        return redirect('core:work_reports')
 
     # Group tree-form entries (WorkReportEntry) by section for display.
     section_labels = dict(WorkItem.SECTION_CHOICES)
@@ -5189,6 +5908,55 @@ def work_report_detail(request, report_id):
         'tree_entry_groups': list(grouped.values()),
         'zone_hierarchy': report.zone_hierarchy,
     })
+
+
+@login_required(login_url='core:login')
+def work_report_comments(request, report_id):
+    """List (GET) and add (POST) comments on a posted workorder.
+
+    Mirrors the "everyone sees all workorders" rule: any logged-in user —
+    灌溉一线 (field worker) or manager/admin — can read the thread and post a
+    comment. Author is resolved via role_utils.resolve_or_create_worker so the
+    comment is attributable to a real person regardless of account type.
+    """
+    from core.models import WorkReport, WorkReportComment
+    from core.role_utils import resolve_or_create_worker, is_admin
+
+    report = get_object_or_404(WorkReport.objects.only('id'), pk=report_id)
+
+    if request.method == 'POST':
+        body = (request.POST.get('body') or '').strip()
+        if not body:
+            return JsonResponse({'success': False, 'message': '评论内容不能为空'}, status=400)
+        author, _created = resolve_or_create_worker(request.user)
+        comment = WorkReportComment.objects.create(
+            work_report=report, author=author, body=body[:2000],
+        )
+        return JsonResponse({
+            'success': True,
+            'message': '评论已发布',
+            'comment': {
+                'id': comment.id,
+                'author': author.full_name if author else '(未知)',
+                'body': comment.body,
+                'time': comment.created_at.strftime('%Y-%m-%d %H:%M'),
+            },
+        })
+
+    # GET: list the thread, newest-first for display.
+    comments = (report.comments.select_related('author')
+                .order_by('-created_at').values('id', 'body', 'created_at',
+                                                author_name=F('author__full_name')))
+    data = [
+        {
+            'id': c['id'],
+            'author': c['author_name'] or '(未知)',
+            'body': c['body'],
+            'time': c['created_at'].strftime('%Y-%m-%d %H:%M') if c['created_at'] else '',
+        }
+        for c in comments
+    ]
+    return JsonResponse({'success': True, 'comments': data, 'count': len(data)})
 
 
 @login_required(login_url='core:login')
@@ -5381,21 +6149,17 @@ def workorder_history(request):
     worker = get_worker_for_user(request.user)
     pending = request.GET.get('pending')
 
-    # Managers / super-admins see ALL reports. Note: managers get an auto-created
-    # Worker row when they submit (resolve_or_create_worker), so checking `worker`
-    # before the admin check would wrongly scope them to only their own submissions.
-    if is_admin(request.user):
-        reports = WorkReport.objects.all()
-    elif worker:
-        reports = WorkReport.objects.filter(worker=worker)
-    else:
-        reports = WorkReport.objects.none()
+    # Both 灌溉一线 (field workers) and managers/admins see ALL reports. The role
+    # gate above already restricted entry to these three roles, so every visitor
+    # to this page gets the full list (no per-worker scoping).
+    reports = WorkReport.objects.all()
 
     if pending:
         reports = reports.filter(is_pending_repair=True)
 
     reports = list(reports.select_related('worker', 'location')
                    .prefetch_related('zones__land', 'entries__work_item', 'entries__project')
+                   .annotate(comment_count=Count('comments'))
                    .order_by('-date', '-id')[:50])
     enrich_reports(reports, workitem_path_map())
     attach_zone_hierarchy(reports)
@@ -5482,11 +6246,23 @@ def workorder_mobile_v2(request):
             third_party_hours = _calc_hours(work_start, work_end, third_party_count)
 
             zone_codes = request.POST.getlist('zones')
-            first_zone = Zone.objects.filter(code__in=zone_codes).select_related('patch').first() if zone_codes else None
-            location = first_zone.patch if first_zone else Patch.objects.first()
-
-            selected_zones = Zone.objects.filter(code__in=zone_codes)
+            selected_zones = Zone.objects.filter(code__in=zone_codes).select_related('patch')
             zone_names = ', '.join(z.name or z.code for z in selected_zones) if selected_zones else ''
+
+            # Resolve the report's location (CCU/Patch). Prefer the patch of the
+            # first selected zone; some zones belong to a Land but have no Patch
+            # and no boundary (e.g. 酒店3/酒店4), so scan the whole selection for a
+            # non-null patch before giving up. Only null (now DB-legal) if none of
+            # the selected zones carry a patch and there are no patches at all.
+            first_zone = selected_zones.first()
+            location = None
+            if first_zone and first_zone.patch_id:
+                location = first_zone.patch
+            elif selected_zones.exists():
+                z_with_patch = next((z for z in selected_zones if z.patch_id), None)
+                location = z_with_patch.patch if z_with_patch else Patch.objects.first()
+            else:
+                location = Patch.objects.first()
 
             report = WorkReport.objects.create(
                 date=request.POST.get('date') or date.today().isoformat(),

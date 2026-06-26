@@ -1254,6 +1254,27 @@
         });
     }
 
+    // Build <option> elements for a date dropdown covering today + the previous
+    // (days-1) days. Workers sometimes need to file a report for an earlier shift,
+    // so the workorder/需求 forms expose the date instead of always using today.
+    // Returns an HTML string of <option value="YYYY-MM-DD">weekday MM-DD</option>;
+    // the option matching `defValue` (or today when omitted) is preselected.
+    function dateOptionsHTML(days, defValue) {
+        days = days || 7;
+        var pad = function (n) { return String(n).padStart(2, '0'); };
+        var wk = ['日', '一', '二', '三', '四', '五', '六'];
+        var out = [];
+        var base = new Date(); base.setHours(0, 0, 0, 0);
+        var def = defValue || (base.getFullYear() + '-' + pad(base.getMonth() + 1) + '-' + pad(base.getDate()));
+        for (var i = 0; i < days; i++) {
+            var d = new Date(base); d.setDate(d.getDate() - i);
+            var v = d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+            var label = '周' + wk[d.getDay()] + ' ' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+            out.push('<option value="' + v + '"' + (v === def ? ' selected' : '') + '>' + label + '</option>');
+        }
+        return out.join('');
+    }
+
     function buildWorkorderForm(data) {
         var body = $('woModalBody'); if (!body) return;
         if (!data || !Array.isArray(data.sorted_shifts) || data.sorted_shifts.length === 0) {
@@ -1269,9 +1290,10 @@
         }).join('');
 
         body.innerHTML =
-            '<form id="woModalForm" style="display:contents;"><input type="hidden" name="date" value="' + data.today + '">' +
-            '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;"><span style="font-size:0.85em;color:#888;">' + data.today + ' ' + data.now_time + '</span><span style="font-size:0.85em;color:#888;">' + data.worker_name + '</span></div>' +
-            '<div class="v2-fg"><div class="v2-form-row"><div style="flex:1.2;"><div class="v2-fl">班次</div><div class="v2-chip-group">' + shiftChips + '</div></div><div style="flex:0.8;"><div class="v2-fl">灌溉组</div><input type="number" name="team_size" value="1" min="0" max="99" class="v2-input" style="text-align:center;"></div><div style="flex:0.8;"><div class="v2-fl">第三方</div><input type="number" name="third_party_count" value="0" min="0" max="99" class="v2-input" style="text-align:center;"></div></div><div id="woHours" style="margin-top:2px;font-size:0.85em;color:#888;"></div></div>' +
+            '<form id="woModalForm" style="display:contents;"><input type="hidden" name="date" id="woDateHidden" value="' + data.today + '">' +
+            '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;"><span style="font-size:0.85em;color:#888;" id="woHeaderDate">' + data.today + ' ' + data.now_time + '</span><span style="font-size:0.85em;color:#888;">' + data.worker_name + '</span></div>' +
+            '<div class="v2-fg"><div class="v2-form-row"><div><div class="v2-fl">日期</div><select name="wo_date" id="woDate" class="v2-select">' + dateOptionsHTML(7, data.today) + '</select></div><div style="flex:1.2;"><div class="v2-fl">班次</div><div class="v2-chip-group">' + shiftChips + '</div></div></div></div>' +
+            '<div class="v2-fg"><div class="v2-form-row"><div style="flex:1.2;"><div class="v2-fl">灌溉组人数</div><input type="number" name="team_size" value="1" min="0" max="99" class="v2-input" style="text-align:center;"></div><div style="flex:1.2;"><div class="v2-fl">第三方人数</div><input type="number" name="third_party_count" value="0" min="0" max="99" class="v2-input" style="text-align:center;"></div></div><div id="woHours" style="margin-top:2px;font-size:0.85em;color:#888;"></div></div>' +
             '<div class="v2-fg"><div class="v2-form-row"><div><div class="v2-fl">开始时间</div><select name="work_start_time" id="woStart" class="v2-select"><option value="">--</option></select></div><div><div class="v2-fl">完成时间</div><select name="work_end_time" id="woEnd" class="v2-select"><option value="">--</option></select></div></div></div>' +
             '<div class="v2-fg"><div class="v2-fl">工作类别</div><div id="woCatTrigger" style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border:1px solid #ddd;border-radius:8px;cursor:pointer;background:#fff;font-size:16px;"><span id="woCatDisplay" style="color:#bbb;">选择</span><span style="font-size:0.8em;color:#999;">▶</span></div></div>' +
             '<div class="v2-fg"><div class="v2-fl">工作内容</div><div id="woContentTrigger" style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border:1px solid #ddd;border-radius:8px;cursor:pointer;background:#fff;font-size:16px;"><span id="woContentDisplay" style="color:#bbb;">选择</span><span style="font-size:0.8em;color:#999;">▶</span></div></div>' +
@@ -1310,6 +1332,18 @@
         var parts = data.default_time.split(':').map(Number), nm = parts[1] + 15, nh = parts[0];
         if (nm >= 60) { nm -= 60; nh++; } if (nh >= 24) nh = 0;
         populateTime(endSel, String(nh).padStart(2, '0') + ':' + String(nm).padStart(2, '0'));
+
+        // Back-date support: the visible date <select> drives the hidden `date`
+        // input (what the server actually reads) and the header stamp so the
+        // form shows the selected record date, not just "today now".
+        var dateSel = $('woDate'), dateHidden = $('woDateHidden'), headerDate = $('woHeaderDate');
+        function syncWoDate() {
+            if (!dateSel) return;
+            var v = dateSel.value;
+            if (dateHidden) dateHidden.value = v;
+            if (headerDate) headerDate.textContent = v + ' ' + (data.now_time || '');
+        }
+        if (dateSel) dateSel.addEventListener('change', syncWoDate);
 
         function calcHours() {
             var s = startSel.value, e = endSel.value;
@@ -1894,9 +1928,10 @@
         var typeChips = data.request_type_choices.map(function (item, i) {
             return '<div class="v2-chip modal-req-chip' + (i === 0 ? ' active' : '') + '" data-val="' + item[0] + '">' + item[1] + '</div>';
         }).join('');
-        body.innerHTML = '<form id="wrModalForm" style="display:contents;"><input type="hidden" name="date" value="' + data.today + '">' +
+        body.innerHTML = '<form id="wrModalForm" style="display:contents;">' +
             '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;"><span style="font-size:0.85em;color:#888;">' + data.today + ' ' + data.now_time + '</span><span style="font-size:0.85em;color:#888;">' + data.user_name + '</span></div>' +
             '<div class="v2-fg"><div class="v2-fl">需求类型</div><div class="v2-chip-group">' + typeChips + '</div><input type="hidden" name="request_type" id="wrTypeInput" value="' + data.request_type_choices[0][0] + '"></div>' +
+            '<div class="v2-fg"><div class="v2-form-row"><div><div class="v2-fl">开始日期</div><select name="start_date" id="wrStartDate" class="v2-select">' + dateOptionsHTML(7, data.today) + '</select></div><div><div class="v2-fl">结束日期</div><select name="end_date" id="wrEndDate" class="v2-select">' + dateOptionsHTML(7, data.today) + '</select></div></div></div>' +
             '<div class="v2-fg"><div class="v2-form-row"><div><div class="v2-fl">开始时间</div><select name="start_time" id="wrStart" class="v2-select"><option value="">--</option></select></div><div><div class="v2-fl">结束时间</div><select name="end_time" id="wrEnd" class="v2-select"><option value="">--</option></select></div></div></div>' +
             '<div class="v2-fg"><div class="v2-fl">备注</div><textarea name="remark" class="v2-textarea" placeholder="可选备注..." rows="2"></textarea></div>' +
             '<div class="v2-fg"><div class="v2-fl">已绘制区域</div><div id="wrShapeList"></div></div></form>';
@@ -1960,11 +1995,15 @@
         if (!startTime || !endTime) { showToast('请填写需求时间段', 'error'); return; }
         var form = $('wrModalForm'), fd = form ? new FormData(form) : new FormData();
         fd.set('zone_codes', JSON.stringify(codes));
-        // Combine date + time into datetime for server
-        var dateVal = fd.get('date') || new Date().toISOString().split('T')[0];
-        fd.set('start_datetime', dateVal + 'T' + startTime);
-        fd.set('end_datetime', dateVal + 'T' + endTime);
-        fd.delete('date'); fd.delete('start_time'); fd.delete('end_time');
+        // Combine the separate start/end date selects with their times into full
+        // datetimes for the server. Back-dating lets a user file a 需求 for a
+        // span that already started; spans may cross midnight (start_date < end_date).
+        var todayStr = new Date().toISOString().split('T')[0];
+        var startDate = fd.get('start_date') || todayStr;
+        var endDate = fd.get('end_date') || startDate;
+        fd.set('start_datetime', startDate + 'T' + startTime);
+        fd.set('end_datetime', endDate + 'T' + endTime);
+        fd.delete('start_date'); fd.delete('end_date'); fd.delete('start_time'); fd.delete('end_time');
         var btn = $('wrSubmitBtn'); btn.disabled = true; btn.textContent = '提交中...';
         fetch('/mobile/water-request/v2/', { method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest' } })
             .then(function (r) { return r.json(); }).then(function (data) {

@@ -71,6 +71,19 @@
 .wr-btn { flex: 1; text-align: center; padding: 10px; border-radius: 8px; font-size: 0.9rem; font-weight: 500; text-decoration: none; }
 .wr-btn-primary { background: var(--color-primary, #2D6A4F); color: #fff; }
 .wr-btn-secondary { background: var(--color-surface-dark, #f0f0f0); color: var(--color-text, #333); }
+
+/* Comments */
+.wr-cmt-list { display: flex; flex-direction: column; gap: 10px; }
+.wr-cmt-item { background: var(--color-surface-dark, #f7f7f7); border-radius: 8px; padding: 10px 12px; }
+.wr-cmt-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 4px; }
+.wr-cmt-author { font-weight: 600; font-size: 0.85rem; color: #1565c0; }
+.wr-cmt-time { font-size: 0.74rem; color: var(--color-text-muted, #999); }
+.wr-cmt-body { font-size: 0.88rem; color: var(--color-text, #222); line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
+.wr-cmt-empty { color: var(--color-text-muted, #999); font-size: 0.85rem; padding: 6px 0; }
+.wr-cmt-add { display: flex; gap: 8px; margin-top: 12px; }
+.wr-cmt-input { flex: 1; border: 1px solid var(--color-surface-dark, #ddd); border-radius: 8px; padding: 9px 12px; font-size: 0.88rem; resize: vertical; min-height: 42px; max-height: 140px; font-family: inherit; }
+.wr-cmt-send { flex: 0 0 auto; background: var(--color-primary, #2D6A4F); color: #fff; border: none; border-radius: 8px; padding: 0 18px; font-size: 0.88rem; font-weight: 600; cursor: pointer; }
+.wr-cmt-send:disabled { opacity: 0.6; cursor: default; }
 </style>
 {% endblock %}
 
@@ -164,6 +177,18 @@
         </div>
     </div>
     {% endif %}
+
+    {# ── 评论 (everyone can read & post) ── #}
+    <div class="wr-card" id="comments">
+        <h2>评论 <span style="font-size:0.72em;color:var(--color-text-muted,#999);" id="wrCmtCount"></span></h2>
+        <div class="wr-cmt-list" id="wrCmtList">
+            <div class="wr-cmt-empty">加载中…</div>
+        </div>
+        <div class="wr-cmt-add">
+            <textarea class="wr-cmt-input" id="wrCmtInput" rows="2" placeholder="写评论… (Ctrl+Enter 发送)" onkeydown="if((event.metaKey||event.ctrlKey)&&event.key==='Enter'){event.preventDefault();wrPostComment();}"></textarea>
+            <button type="button" class="wr-cmt-send" onclick="wrPostComment()">发送</button>
+        </div>
+    </div>
 </div>
 
 <!-- Lightbox -->
@@ -179,6 +204,49 @@
 <script>
 var photos = {{ report.photos|safe }};
 var currentIdx = 0;
+var WR_ID = {{ report.id }};
+
+// ── Comments ──
+function wrCmtCSRF() {
+    var c = document.cookie.split('; ').find(function (x) { return x.indexOf('csrftoken=') === 0; });
+    return c ? c.split('=')[1] : '';
+}
+function wrEsc(s) {
+    var d = document.createElement('div'); d.textContent = s == null ? '' : s; return d.innerHTML;
+}
+function wrRenderComments(comments) {
+    var box = document.getElementById('wrCmtList');
+    document.getElementById('wrCmtCount').textContent = comments.length ? comments.length + ' 条' : '';
+    if (!comments.length) { box.innerHTML = '<div class="wr-cmt-empty">暂无评论，留下第一条吧。</div>'; return; }
+    box.innerHTML = comments.map(function (c) {
+        return '<div class="wr-cmt-item"><div class="wr-cmt-head"><span class="wr-cmt-author">' +
+            wrEsc(c.author) + '</span><span class="wr-cmt-time">' + wrEsc(c.time) + '</span></div>' +
+            '<div class="wr-cmt-body">' + wrEsc(c.body) + '</div></div>';
+    }).join('');
+}
+function wrLoadComments() {
+    fetch('/work-reports/' + WR_ID + '/comments/', { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+        .then(function (r) { return r.json(); })
+        .then(function (d) { if (d.success) wrRenderComments(d.comments); })
+        .catch(function () { document.getElementById('wrCmtList').innerHTML = '<div class="wr-cmt-empty">加载失败，请刷新重试。</div>'; });
+}
+function wrPostComment() {
+    var inp = document.getElementById('wrCmtInput');
+    var body = (inp.value || '').trim();
+    if (!body) { return; }
+    var btn = document.querySelector('.wr-cmt-send');
+    if (btn) btn.disabled = true;
+    fetch('/work-reports/' + WR_ID + '/comments/', {
+        method: 'POST',
+        headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRFToken': wrCmtCSRF() },
+        body: new URLSearchParams({ body: body })
+    }).then(function (r) { return r.json(); }).then(function (d) {
+        if (btn) btn.disabled = false;
+        if (d.success) { inp.value = ''; wrLoadComments(); }
+        else { alert(d.message || '发布失败'); }
+    }).catch(function () { if (btn) btn.disabled = false; alert('网络错误'); });
+}
+wrLoadComments();  // eager load on page open
 
 function openLightbox(idx) {
     currentIdx = idx;

@@ -10,9 +10,42 @@
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <link rel="stylesheet" href="{% static 'css/dashboard.css' %}?v=20260623" />
 <!-- Dashboard JS needs Django URL, set before external scripts -->
+<style>
+/* Announcement popup */
+.ann-popup { position: fixed; inset: 0; background: rgba(0,0,0,0.55); z-index: 4000; display: flex; align-items: center; justify-content: center; padding: 16px; }
+.ann-card { background: #fff; border-radius: 14px; max-width: 460px; width: 100%; max-height: 86vh; overflow-y: auto; padding: 22px 24px; box-shadow: 0 12px 40px rgba(0,0,0,0.25); }
+.ann-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.ann-badge { font-size: 0.82rem; font-weight: 600; color: #1565c0; background: #e3f2fd; padding: 3px 10px; border-radius: 12px; }
+.ann-counter { font-size: 0.78rem; color: #999; }
+.ann-title { font-size: 1.12rem; font-weight: 700; color: #222; margin: 0 0 4px; }
+.ann-time { font-size: 0.76rem; color: #aaa; margin: 0 0 12px; }
+.ann-body { font-size: 0.92rem; color: #333; line-height: 1.6; white-space: pre-wrap; word-break: break-word; margin-bottom: 18px; }
+.ann-actions { display: flex; justify-content: flex-end; }
+.ann-btn { background: var(--color-primary, #2D6A4F); color: #fff; border: none; border-radius: 8px; padding: 9px 26px; font-size: 0.9rem; font-weight: 600; cursor: pointer; }
+.ann-btn:active { transform: scale(0.97); }
+.ann-btn:disabled { opacity: 0.6; cursor: default; }
+</style>
 {% endblock %}
 
 {% block content %}
+<!-- Announcement popup (unacknowledged global notifications). Shown only when
+     there are active announcements the current user has not yet acknowledged.
+     Not dismissable without acknowledging — no backdrop-click / Esc close. -->
+<div id="annPopup" class="ann-popup" style="display:none;">
+    <div class="ann-card">
+        <div class="ann-header">
+            <span class="ann-badge">📢 通知</span>
+            <span class="ann-counter" id="annCounter"></span>
+        </div>
+        <h3 class="ann-title" id="annTitle"></h3>
+        <p class="ann-time" id="annTime"></p>
+        <div class="ann-body" id="annBody"></div>
+        <div class="ann-actions">
+            <button type="button" class="ann-btn" id="annAckBtn" onclick="ackAnnouncement()">我已知晓</button>
+        </div>
+    </div>
+</div>
+
 <!-- Map View Container -->
 <div class="mobile-overlay" id="mobileOverlay" onclick="toggleSidebar()"></div>
 <div class="dashboard-container" id="mapContainer">
@@ -328,6 +361,9 @@
 <script id="patches-data" type="application/json">
     {{ patches_json|safe }}
 </script>
+<script id="announcements-data" type="application/json">
+    {{ announcements_json|safe }}
+</script>
 {% endblock %}
 
 {% block extra_js %}
@@ -347,4 +383,46 @@
 <!-- AI data-analyst chat widget (deferred: non-blocking load, auto-mounts on DOMContentLoaded) -->
 <script defer src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
 <script defer src="{% static 'js/ai-chat.js' %}?v=20260624"></script>
+<!-- Announcement popup driver -->
+<script>
+(function () {
+    var queue = [];
+    window.__annQueue = queue;
+    function load() {
+        var el = document.getElementById('announcements-data');
+        if (!el) return;
+        try { queue = window.__annQueue = JSON.parse(el.textContent || '[]'); } catch (e) { queue = []; }
+        showCurrent();
+    }
+    function showCurrent() {
+        if (!queue.length) { document.getElementById('annPopup').style.display = 'none'; return; }
+        var a = queue[0];
+        document.getElementById('annTitle').textContent = a.title;
+        document.getElementById('annTime').textContent = a.time || '';
+        document.getElementById('annBody').textContent = a.body;
+        document.getElementById('annCounter').textContent = queue.length > 1 ? (queue.length + ' 条待确认') : '';
+        document.getElementById('annAckBtn').disabled = false;
+        document.getElementById('annPopup').style.display = 'flex';
+    }
+    window.ackAnnouncement = function () {
+        if (!queue.length) return;
+        var a = queue[0];
+        var btn = document.getElementById('annAckBtn');
+        btn.disabled = true;
+        var csrf = (document.cookie.split('; ').find(function (c) { return c.indexOf('csrftoken=') === 0; }) || '').split('=')[1] || '';
+        fetch('/api/announcements/' + a.id + '/acknowledge/', {
+            method: 'POST',
+            headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRFToken': csrf },
+        }).then(function (r) { return r.json(); }).then(function (d) {
+            queue.shift();            // remove the acknowledged one locally
+            window.__annQueue = queue;
+            showCurrent();           // show next or hide
+        }).catch(function () {
+            btn.disabled = false;
+            alert('网络错误，请重试');
+        });
+    };
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', load); else load();
+})();
+</script>
 {% endblock %}
