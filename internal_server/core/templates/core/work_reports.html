@@ -149,6 +149,48 @@
   .wr-loadmore:disabled { opacity: 0.6; cursor: default; }
   .wr-loadmore-err { color: var(--wr-danger); font-size: 0.82rem; margin-top: 8px; }
 
+  /* Tab bar (维修日志 / 待确认备注) */
+  .wr-tab-bar { display:flex; gap:6px; margin-bottom:14px; border-bottom:2px solid var(--wr-card-border); }
+  .wr-tab { padding:10px 18px; font-size:0.92rem; font-weight:600; color:var(--wr-muted); background:none; border:none; border-bottom:2px solid transparent; margin-bottom:-2px; cursor:pointer; display:inline-flex; align-items:center; gap:6px; }
+  .wr-tab.active { color:var(--wr-accent); border-bottom-color:var(--wr-accent); }
+  .wr-tab-badge { background:#9B2226; color:#fff; font-size:0.68rem; font-weight:700; padding:1px 7px; border-radius:10px; }
+
+  /* Remarks panel */
+  .wr-remarks-panel { display:none; }
+  .wr-remarks-panel.active { display:block; }
+  .wr-rm-subhead { font-size:0.95rem; font-weight:700; color:var(--wr-text); margin:14px 0 8px; }
+  .wr-rm-card { background:var(--wr-card-bg); border:1px solid var(--wr-card-border); border-radius:12px; padding:12px 14px; margin-bottom:10px; }
+  .wr-rm-top { display:flex; flex-wrap:wrap; gap:8px; align-items:baseline; }
+  .wr-rm-date { font-weight:600; color:var(--wr-text); font-size:0.85rem; }
+  .wr-rm-content { flex:1; min-width:200px; color:var(--wr-text); font-size:0.88rem; }
+  .wr-rm-author { color:var(--wr-muted); font-size:0.78rem; }
+  .wr-rm-wo { font-size:0.74rem; background:var(--wr-accent-soft); color:var(--wr-accent); padding:2px 8px; border-radius:10px; text-decoration:none; font-weight:600; }
+  .wr-rm-zones { font-size:0.78rem; color:var(--wr-muted); margin-top:6px; line-height:1.5; }
+  .wr-rm-zones b { color:var(--wr-text); }
+  .wr-rm-confirm-meta { font-size:0.76rem; color:var(--wr-muted); margin-top:6px; padding-top:6px; border-top:1px dashed var(--wr-card-border); }
+  .wr-rm-actions { display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; align-items:center; }
+  .wr-rm-input { flex:1; min-width:160px; border:1px solid #ddd; border-radius:8px; padding:6px 10px; font-size:0.82rem; }
+  .wr-rm-btn { padding:6px 14px; border-radius:8px; font-size:0.8rem; font-weight:600; border:none; cursor:pointer; }
+  .wr-rm-btn.primary { background:var(--wr-accent); color:#fff; }
+  .wr-rm-btn.irr { background:#e8f5e9; color:#2D6A4F; border:1px solid #2D6A4F; }
+  .wr-rm-btn.eq { background:#e3f2fd; color:#1565c0; border:1px solid #1565c0; }
+  .wr-rm-btn:disabled { opacity:0.6; cursor:default; }
+  .wr-rm-empty { padding:32px; text-align:center; color:var(--wr-muted); font-size:0.9rem; background:var(--wr-card-bg); border-radius:12px; border:1px solid var(--wr-card-border); }
+
+  /* Transfer selector modal */
+  .rm-move-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.45); z-index:3200; justify-content:center; align-items:center; padding:16px; }
+  .rm-move-overlay.show { display:flex; }
+  .rm-move-card { background:#fff; border-radius:14px; width:100%; max-width:440px; max-height:80vh; display:flex; flex-direction:column; box-shadow:0 8px 32px rgba(0,0,0,0.2); }
+  .rm-move-head { display:flex; justify-content:space-between; align-items:center; padding:14px 16px; border-bottom:1px solid var(--wr-card-border); }
+  .rm-move-head span { font-weight:700; color:var(--wr-text); font-size:1rem; }
+  .rm-move-head button { width:30px; height:30px; border:none; background:#f0f0f0; border-radius:50%; font-size:1.1rem; cursor:pointer; }
+  .rm-move-body { padding:8px 16px; overflow-y:auto; flex:1; }
+  .rm-move-foot { display:flex; gap:8px; padding:12px 16px; border-top:1px solid var(--wr-card-border); }
+  .rm-move-foot button { flex:1; padding:10px; border-radius:10px; font-size:0.9rem; font-weight:600; border:none; cursor:pointer; }
+  .rm-move-foot .cancel { background:#f3f4f6; color:var(--wr-text); }
+  .rm-move-foot .ok { background:var(--wr-accent); color:#fff; }
+  .rm-toggle-all { font-size:0.78rem; color:var(--wr-accent); background:none; border:none; cursor:pointer; padding:4px 0; text-decoration:underline; }
+
   /* Lightbox */
   .lb-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.92); z-index:3000; justify-content:center; align-items:center; }
   .lb-overlay.show { display:flex; }
@@ -198,6 +240,19 @@
         <div class="msg msg-{{ message.tags|default:'info' }}">{{ message }}</div>
         {% endfor %}
     {% endif %}
+
+    {% if is_manager %}
+    <div class="wr-tab-bar">
+        <button type="button" class="wr-tab {% if active_tab != 'remarks' %}active{% endif %}" onclick="switchTab('workorders')">维修日志</button>
+        <button type="button" class="wr-tab {% if active_tab == 'remarks' %}active{% endif %}" onclick="switchTab('remarks')">
+            待确认备注
+            {% if pending_remark_groups %}<span class="wr-tab-badge">{{ pending_remark_groups|length }}</span>{% endif %}
+        </button>
+    </div>
+    {% endif %}
+
+    {# ── Tab 1: workorders list (the existing filter + card list) ────────── #}
+    <div id="tabWorkorders" class="wr-remarks-panel {% if active_tab != 'remarks' %}active{% endif %}">
 
     <div class="filter-card">
         {# Date-range presets. The selected one sets date_from accordingly; near-7-days is the default. #}
@@ -249,10 +304,82 @@
         <button type="button" class="wr-loadmore" id="loadMoreBtn" onclick="loadMore()">加载更多</button>
         <div class="wr-loadmore-err" id="loadMoreErr" style="display:none;"></div>
     </div>
+
+    </div>{# /#tabWorkorders #}
+
+    {# ── Tab 2: 待确认备注 (managers only) ──────────────────────────────── #}
+    {% if is_manager %}
+    <div id="tabRemarks" class="wr-remarks-panel {% if active_tab == 'remarks' %}active{% endif %}">
+        <div class="wr-rm-subhead">待确认 ({{ pending_remark_groups|length }})</div>
+        {% if pending_remark_groups %}
+            {% for g in pending_remark_groups %}
+            <div class="wr-rm-card">
+                <div class="wr-rm-top">
+                    <span class="wr-rm-date">{{ g.remark.date|default:'—' }}</span>
+                    <span class="wr-rm-content">{{ g.remark.content }}</span>
+                    <span class="wr-rm-author">{{ g.remark.author }}</span>
+                    {% if g.remark.workorder_id %}<a class="wr-rm-wo" href="{% url 'core:work_report_detail' g.remark.workorder_id %}">工单#{{ g.remark.workorder_id }}</a>{% endif %}
+                </div>
+                <div class="wr-rm-zones">{% for h in g.hierarchy %}<b>{{ h.land }}</b>: {% for nm in h.names %}{{ nm.name }}{% if nm.count > 1 %} ({{ nm.count }}){% endif %}{% if not forloop.last %}, {% endif %}{% endfor %}{% if not forloop.last %} · {% endif %}{% endfor %}</div>
+                <div class="wr-rm-actions">
+                    <input type="text" class="wr-rm-input" placeholder="确认回复 (可选)…" data-reply="{{ g.key }}">
+                    <button type="button" class="wr-rm-btn primary" data-key="{{ g.key }}" onclick="confirmRemarkGroup(this)">确认</button>
+                </div>
+            </div>
+            {% endfor %}
+        {% else %}
+            <div class="wr-rm-empty">暂无待确认备注 🎉</div>
+        {% endif %}
+
+        <div class="wr-rm-subhead">已确认 ({{ confirmed_remark_groups|length }})</div>
+        {% if confirmed_remark_groups %}
+            {% for g in confirmed_remark_groups %}
+            <div class="wr-rm-card">
+                <div class="wr-rm-top">
+                    <span class="wr-rm-date">{{ g.remark.date|default:'—' }}</span>
+                    <span class="wr-rm-content">{{ g.remark.content }}</span>
+                    <span class="wr-rm-author">{{ g.remark.author }}</span>
+                    {% if g.remark.workorder_id %}<a class="wr-rm-wo" href="{% url 'core:work_report_detail' g.remark.workorder_id %}">工单#{{ g.remark.workorder_id }}</a>{% endif %}
+                </div>
+                <div class="wr-rm-confirm-meta">已确认 {{ g.remark.confirm_date|default:'' }} · {{ g.remark.confirm_author|default:'' }}{% if g.remark.confirm_reply %} · {{ g.remark.confirm_reply }}{% endif %}</div>
+                <div class="wr-rm-zones">{% for h in g.hierarchy %}<b>{{ h.land }}</b>: {% for nm in h.names %}{{ nm.name }}{% if nm.count > 1 %} ({{ nm.count }}){% endif %}{% if not forloop.last %}, {% endif %}{% endfor %}{% if not forloop.last %} · {% endif %}{% endfor %}</div>
+                <div class="wr-rm-actions">
+                    <button type="button" class="wr-rm-btn irr" data-key="{{ g.key }}" onclick="moveRemarkGroup(this,'irrigation')">转至灌溉管理记录</button>
+                    <button type="button" class="wr-rm-btn eq" data-key="{{ g.key }}" onclick="moveRemarkGroup(this,'equipment')">转至设备维护记录</button>
+                </div>
+            </div>
+            {% endfor %}
+        {% else %}
+            <div class="wr-rm-empty">暂无已确认备注</div>
+        {% endif %}
+    </div>
+    {% endif %}
 </div>
+
+<!-- Transfer selector modal (待确认备注 → 转至灌溉/设备记录) -->
+{% if is_manager %}
+<div class="rm-move-overlay" id="rmMoveModal" onclick="if(event.target===this)closeMoveModal()">
+    <div class="rm-move-card">
+        <div class="rm-move-head">
+            <span id="rmMoveTitle">选择区域</span>
+            <button type="button" onclick="closeMoveModal()">&times;</button>
+        </div>
+        <div class="rm-move-body" id="rmMoveBody"></div>
+        <div style="padding:4px 16px 0;">
+            <button type="button" class="rm-toggle-all" onclick="toggleAllMoveModal(true)">全选</button>
+            <button type="button" class="rm-toggle-all" onclick="toggleAllMoveModal(false)" style="margin-left:10px;">全不选</button>
+        </div>
+        <div class="rm-move-foot">
+            <button type="button" class="cancel" onclick="closeMoveModal()">取消</button>
+            <button type="button" class="ok" onclick="confirmMoveModal()">确认转移</button>
+        </div>
+    </div>
+</div>
+{% endif %}
 
 <!-- Lightbox -->
 <div class="lb-overlay" id="lightbox" onclick="if(event.target===this)closeLb()">
+
     <button class="lb-close" onclick="closeLb()">&times;</button>
     <button class="lb-nav lb-prev" onclick="event.stopPropagation();navLb(-1)">&#8249;</button>
     <img class="lb-img" id="lbImg" src="" alt="" style="display:none;">
@@ -267,6 +394,11 @@
 {{ filter_json|json_script:"wr-filter-json" }}
 {# Photo path registry for the lightbox, keyed by report id (initial server-rendered batch). #}
 <script id="wr-photo-data" type="application/json">{% for report in reports %}{% if report.photos %}"{{ report.id }}":{{ report.photos|safe }},{% endif %}{% endfor %}</script>
+{% comment %}Remark groups: maps group key → [[zone_id, index], ...] so the confirm/move
+JS can fan the action out to every zone a group touches. Built in the view (covers
+both pending and confirmed groups — keys are unique across them) and serialized via
+json_script so the JSON is always valid.{% endcomment %}
+{% if is_manager %}{{ remark_groups_map|json_script:"wr-remark-groups" }}{% endif %}
 <script>
 var cfg = JSON.parse(document.getElementById('wr-filter-json').textContent);
 var currentFilter = cfg.filters;            // {date_from, date_to, location, worker, is_pending_repair, is_difficult}
@@ -282,6 +414,133 @@ var photoData = {};
     var raw = (document.getElementById('wr-photo-data').textContent || '').trim().replace(/,$/, '');
     if (raw) { try { photoData = JSON.parse('{' + raw + '}'); } catch (e) {} }
 })();
+
+// Remark groups: key -> [[zone_id, index], ...]. Built for managers only.
+var remarkGroups = {};
+(function () {
+    var el = document.getElementById('wr-remark-groups');
+    if (el && el.textContent.trim()) { try { remarkGroups = JSON.parse(el.textContent); } catch (e) {} }
+})();
+
+// ── Tab switching (维修日志 / 待确认备注) ─────────────────────────────────
+function switchTab(tab) {
+    var wo = document.getElementById('tabWorkorders');
+    var rm = document.getElementById('tabRemarks');
+    if (wo) wo.classList.toggle('active', tab === 'workorders');
+    if (rm) rm.classList.toggle('active', tab === 'remarks');
+    document.querySelectorAll('.wr-tab').forEach(function (t, i) {
+        t.classList.toggle('active', (i === 0) === (tab === 'workorders'));
+    });
+}
+
+// Confirm (Step 1): fans out to ALL the group's zones (a pending remark lives in
+// every zone it touches; confirming propagates to all). Transfer (Step 2) instead
+// opens a selector so the user picks WHICH names/zones to write the record to,
+// avoiding duplicate records across zones.
+function _postRemark(zoneId, idx, action, extra) {
+    var url = '/zone/' + zoneId + '/remark/' + idx + '/' + action + '/';
+    var body = new URLSearchParams(extra || {});
+    return fetch(url, {
+        method: 'POST', body: body,
+        headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRFToken': cmtCSRF() }
+    }).then(function (r) { return r.json(); });
+}
+function confirmRemarkGroup(btn) {
+    var key = btn.getAttribute('data-key');
+    var grp = remarkGroups[key] || {};
+    var pairs = grp.pairs || [];
+    if (!pairs.length) { wrToast('无对应区域', true); return; }
+    var reply = (document.querySelector('.wr-rm-input[data-reply="' + key + '"]') || {}).value || '';
+    btn.disabled = true; btn.textContent = '确认中…';
+    Promise.all(pairs.map(function (p) { return _postRemark(p[0], p[1], 'confirm', { confirm_reply: reply }); }))
+        .then(function () { wrToast('已确认'); setTimeout(function () { location.href = '?tab=remarks'; }, 700); })
+        .catch(function () { wrToast('部分确认失败，请刷新重试', true); btn.disabled = false; btn.textContent = '确认'; });
+}
+
+// ── Transfer selector ─────────────────────────────────────────────────────
+// Tracks the pending transfer action so the modal's 确认 button knows what to do.
+var _pendingTransfer = null;  // {key, target, btn}
+
+function moveRemarkGroup(btn, target) {
+    var key = btn.getAttribute('data-key');
+    var grp = remarkGroups[key] || {};
+    var tree = grp.tree || [];
+    if (!tree.length) { wrToast('无对应区域', true); return; }
+    _pendingTransfer = { key: key, target: target, btn: btn };
+
+    var label = target === 'irrigation' ? '灌溉管理记录' : '设备维护记录';
+    var m = document.getElementById('rmMoveModal');
+    document.getElementById('rmMoveTitle').textContent = '转至' + label + ' · 选择区域';
+    // Build a three-level Land → 通用名称 → 区域代码 checkbox tree so every level
+    // is visible. Land and 通用名称 are non-selectable headers; each 区域代码 is its
+    // own checkbox (so the manager picks exactly which zones get the record).
+    var body = document.getElementById('rmMoveBody');
+    body.innerHTML = '';
+    tree.forEach(function (land, li) {
+        // Land header (bold).
+        var ldiv = document.createElement('div');
+        ldiv.style.cssText = 'font-weight:700;color:var(--wr-accent);margin:' + (li === 0 ? '4px' : '12px') + ' 0 2px;font-size:0.92rem;';
+        ldiv.textContent = land.land;
+        body.appendChild(ldiv);
+        land.names.forEach(function (nm) {
+            // 通用名称 sub-header (selectable "all zones under this name" + label).
+            var nrow = document.createElement('div');
+            nrow.style.cssText = 'display:flex;align-items:center;gap:6px;padding:4px 0 2px 12px;font-weight:600;font-size:0.86rem;color:var(--wr-text);';
+            var ncb = document.createElement('input');
+            ncb.type = 'checkbox'; ncb.checked = true;
+            nrow.appendChild(ncb);
+            nrow.appendChild(document.createTextNode(nm.name + ' (' + nm.zones.length + ')'));
+            body.appendChild(nrow);
+            // Each zone code as its own checkbox, indented under the name. Toggling
+            // the name's checkbox (above) selects/deselects all its zones.
+            var zoneBoxes = [];
+            nm.zones.forEach(function (z) {
+                var zc = _zoneCheck(z.code, z.zid, z.idx, true, 28);
+                zoneBoxes.push(zc.querySelector('input'));
+                body.appendChild(zc);
+            });
+            ncb.addEventListener('change', function () {
+                zoneBoxes.forEach(function (b) { b.checked = ncb.checked; });
+            });
+        });
+    });
+
+    m.classList.add('show');
+}
+
+function _zoneCheck(label, zid, idx, checked, indent) {
+    var row = document.createElement('label');
+    row.style.cssText = 'display:flex;align-items:center;gap:6px;padding:3px 0 3px ' + (indent || 12) + 'px;font-size:0.85rem;cursor:pointer;';
+    var cb = document.createElement('input');
+    cb.type = 'checkbox'; cb.checked = checked !== false;
+    cb.dataset.zid = zid; cb.dataset.idx = idx;
+    row.appendChild(cb);
+    row.appendChild(document.createTextNode(label));
+    return row;
+}
+
+function confirmMoveModal() {
+    if (!_pendingTransfer) return;
+    var sel = document.querySelectorAll('#rmMoveBody input[data-zid]:checked');
+    var pairs = [];
+    sel.forEach(function (cb) { pairs.push([parseInt(cb.dataset.zid, 10), parseInt(cb.dataset.idx, 10)]); });
+    if (!pairs.length) { wrToast('请至少选择一个区域', true); return; }
+    var label = _pendingTransfer.target === 'irrigation' ? '灌溉管理记录' : '设备维护记录';
+    var btn = _pendingTransfer.btn;
+    btn.disabled = true; btn.textContent = '转移中…';
+    document.getElementById('rmMoveModal').classList.remove('show');
+    Promise.all(pairs.map(function (p) { return _postRemark(p[0], p[1], 'move', { target: _pendingTransfer.target }); }))
+        .then(function () { wrToast('已转至' + label); setTimeout(function () { location.href = '?tab=remarks'; }, 700); })
+        .catch(function () { wrToast('部分转移失败，请刷新重试', true); btn.disabled = false; btn.textContent = '转至' + label; });
+    _pendingTransfer = null;
+}
+function closeMoveModal() {
+    document.getElementById('rmMoveModal').classList.remove('show');
+    _pendingTransfer = null;
+}
+function toggleAllMoveModal(on) {
+    document.querySelectorAll('#rmMoveBody input[data-zid]').forEach(function (cb) { cb.checked = on; });
+}
 
 // ── Date-range presets ────────────────────────────────────────────────────
 (function () {

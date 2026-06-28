@@ -6120,6 +6120,30 @@ def work_reports_list(request):
     locations = Patch.objects.filter(active=True).order_by('order')
     workers = Worker.objects.all().order_by('full_name') if admin else []
 
+    # Remarks tab (managers only): pending remarks (Step 1: confirm) + confirmed
+    # remarks (Step 2: transfer to 灌溉/设备 records). Grouped by workorder across
+    # the zones each touches. Non-managers get empty lists (tab hidden).
+    is_manager = admin
+    pending_remark_groups = _group_zone_remarks('remarks') if is_manager else []
+    confirmed_remark_groups = _group_zone_remarks('confirmed_remarks') if is_manager else []
+    # Per-group data for the JS: a flat [[zone_id, index]] list (for confirm, which
+    # still fans out to all zones) AND a Land → 通用名称 → zone tree (for transfer,
+    # where the user picks which names/zones to write the record to — avoids duplicate
+    # records across zones). Keys are unique across both lists.
+    remark_groups_map = {}
+    for g in list(pending_remark_groups) + list(confirmed_remark_groups):
+        tree = []
+        for h in g['hierarchy']:
+            names = []
+            for nm in h['names']:
+                zones = [{'code': z.code, 'zid': z.id, 'idx': i} for z, i in nm['pairs']]
+                names.append({'name': nm['name'], 'zones': zones})
+            tree.append({'land': h['land'], 'names': names})
+        remark_groups_map[g['key']] = {
+            'pairs': [[z.id, i] for z, i in g['zones']],
+            'tree': tree,
+        }
+
     filter_json = {
         'filters': {
             'date_from': date_from,
@@ -6146,6 +6170,11 @@ def work_reports_list(request):
         'default_days': WORK_REPORTS_DEFAULT_DAYS,
         'filter_json': filter_json,
         'filters': filter_json['filters'],
+        'is_manager': is_manager,
+        'pending_remark_groups': pending_remark_groups,
+        'confirmed_remark_groups': confirmed_remark_groups,
+        'remark_groups_map': remark_groups_map,
+        'active_tab': request.GET.get('tab', 'workorders'),
     })
 
 
@@ -6209,47 +6238,42 @@ def water_requests_list(request):
     return render(request, 'core/water_requests.html', context)
 
 
-@login_required(login_url='core:login')
-def remarks_list(request):
-    """待确认备注 — zones with unconfirmed remarks, with inline confirm for managers.
+def _group_zone_remarks(notes_field):
+    """Group a Zone notes JSON-list field into remark groups.
 
-    Reads the raw Zone.remarks JSON (not the lossy dashboard payload) so each remark's
-    date/content/author is shown. Confirming a remark POSTs to the existing
-    zone_remark_confirm endpoint (manager-only).
+    Works for any of the four Zone note fields (remarks / confirmed_remarks /
+    irrigation_management_notes / equipment_maintenance_notes). Remarks sourced
+    from one workorder are duplicated across every zone it touches; group those
+    by ``workorder_id`` (one card, all its zones). Hand-added remarks (no
+    workorder_id) stay per-zone.
+
+    Returns a list of dicts, each: ``{remark, key, is_grouped, zones:[(zone,idx)],
+    hierarchy:[{land, names:[{name,count,pairs}], zone_count}]}``, sorted grouped-first
+    then by date desc. ``zone`` items carry ``.id``/``.name``/``.land`` so callers
+    can build transfer endpoints. Shared by the /remarks/ page and the work-reports
+    待确认备注 tab.
     """
     import json as _json
     from collections import OrderedDict
     from core.models import Zone
-    from core.role_utils import is_admin
 
-    admin = is_admin(request.user)
-
-    # Remarks that came from a single workorder (is_difficult) are duplicated across
-    # every zone of that workorder. Group them by workorder_id so the page shows ONE
-    # entry (with all its zones) and the manager confirms once → propagates to all.
-    # Hand-added remarks (no workorder_id) stay per-zone.
-    grouped = OrderedDict()   # key -> {'remark', 'zones':[(zone, index),...], 'key'}
+    grouped = OrderedDict()
     for z in (Zone.objects.select_related('land', 'patch')
-              .exclude(remarks='').exclude(remarks__isnull=True)
+              .exclude(**{notes_field: ''}).exclude(**{notes_field + '__isnull': True})
               .order_by('code')):
+        raw = getattr(z, notes_field)
         try:
-            items = _json.loads(z.remarks)
+            items = _json.loads(raw)
         except (ValueError, TypeError):
             continue
         for idx, it in enumerate(items):
             woid = it.get('workorder_id')
-            if woid:
-                key = 'wo:' + str(woid)
-            else:
-                # Hand-added: unique per (zone, index).
-                key = 'z:%d:%d' % (z.id, idx)
+            key = 'wo:' + str(woid) if woid else 'z:%d:%d' % (z.id, idx)
             entry = grouped.setdefault(key, {
                 'remark': it, 'zones': [], 'key': key, 'is_grouped': bool(woid),
             })
             entry['zones'].append((z, idx))
 
-    # Collapse the flat zone list of each group into a Land → name hierarchy so the
-    # page reads like "探险岛: BOH (3), 主入口 (2)" instead of 5 identical "BOH" chips.
     for g in grouped.values():
         lands = OrderedDict()
         for z, idx in g['zones']:
@@ -6264,10 +6288,23 @@ def remarks_list(request):
             for ln, names in lands.items()
         ]
 
-    # Build a flat list sorted so grouped (workorder) remarks come first.
     groups = list(grouped.values())
     groups.sort(key=lambda g: (0 if g['is_grouped'] else 1,
                                g['remark'].get('date', '')), reverse=True)
+    return groups
+
+
+def remarks_list(request):
+    """待确认备注 — zones with unconfirmed remarks, with inline confirm for managers.
+
+    Reads the raw Zone.remarks JSON (not the lossy dashboard payload) so each remark's
+    date/content/author is shown. Confirming a remark POSTs to the existing
+    zone_remark_confirm endpoint (manager-only).
+    """
+    from core.role_utils import is_admin
+
+    admin = is_admin(request.user)
+    groups = _group_zone_remarks('remarks')
 
     context = {
         'groups': groups,
