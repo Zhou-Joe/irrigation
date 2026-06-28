@@ -36,6 +36,11 @@
     var _woIrrCats = [];        // irrigation project categories [{code,label}] (FAM/WDI/绿化)
     var _woCanCreateProject = false;
     var _woPlanned = { checked: {}, other: '', reports: [] };  // 计划性维修: selected past 待修 reports + 其他
+    // Edit mode state. When set, submitV2Workorder sends report_id + report_photos_remove
+    // so the server updates the existing report instead of creating a new one.
+    var _editingReportId = null;
+    var _existingPhotos = [];      // [{path}] persisted report photos shown with × remove
+    var _photoRemove = new Set();  // paths the user removed (sent as report_photos_remove)
 
     // Validate a modal-data API response. Rejects error objects (e.g. {error:'无权限'})
     // so they are never cached and passed to buildForm.
@@ -102,6 +107,7 @@
         _photoFiles = [];
         _zoneConfirmed = false;
         resetWoZoneRecords();
+        _editingReportId = null; _existingPhotos = []; _photoRemove.clear();   // create mode
 
         // Fetch form data in background (cached or from API)
         var dataUrl = type === 'workorder' ? '/api/modal/workorder-data/' : '/api/modal/water-request-data/';
@@ -131,6 +137,7 @@
         resetWoZoneRecords();
         zoneCodes.forEach(function (c) { _selectedZoneCodes.add(c); });
         _zoneConfirmed = true;
+        _editingReportId = null; _existingPhotos = []; _photoRemove.clear();   // create mode
 
         // Ensure form data is loaded, then show form
         var showForm = function () {
@@ -164,6 +171,139 @@
                 .catch(function () { showToast('加载表单失败', 'error'); });
         }
     };
+
+    // Edit an existing workorder: open the same mobile modal as create, but
+    // pre-fill it with the report's zones/header/entries/photos. The work-reports
+    // list / detail 编辑 buttons link to the dashboard with ?edit_workorder=<id>,
+    // which triggers this on dashboard load.
+    window.openV2ModalForEdit = function (reportId) {
+        if (!reportId) return;
+        if (_closeTimeout) { clearTimeout(_closeTimeout); _closeTimeout = null; }
+        if (_currentModal) closeV2Modal(_currentModal);
+        if (_closeTimeout) { clearTimeout(_closeTimeout); _closeTimeout = null; }
+        _currentModal = 'workorder';
+        _selectedZoneCodes.clear();
+        _photoFiles = [];
+        _existingPhotos = []; _photoRemove.clear();
+        _editingReportId = null;  // set only after data loads + pre-fill succeeds
+        resetWoZoneRecords();
+
+        // Show the modal container immediately with a loading state, so the user
+        // always sees the form pop out — even before the data fetch resolves.
+        var backdrop = $('woModalBackdrop');
+        var container = $('woModalContainer');
+        if (backdrop) backdrop.style.display = '';
+        if (container) { container.style.display = ''; container.classList.add('open'); }
+        var body = $('woModalBody');
+        if (body) body.innerHTML = '<div style="text-align:center;padding:40px;color:#888;">加载工单中...</div>';
+        var sb = $('woSubmitBtn'); if (sb) { sb.disabled = true; sb.textContent = '保存'; }
+
+        fetch('/api/modal/workorder-data/?report_id=' + encodeURIComponent(reportId), { credentials: 'same-origin' })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                if (!isValidFormData('workorder', data) || !data.header) {
+                    closeV2Modal('workorder');
+                    showToast(data && data.error ? data.error : '加载工单失败', 'error');
+                    return;
+                }
+                _formDataCache.workorder = data;
+                // Seed selected zones from the report (skip map mode).
+                (data.header.h_zones || []).forEach(function (c) { _selectedZoneCodes.add(c); });
+                _zoneConfirmed = true;
+
+                // Build the form, then apply the edit pre-fill. The pre-fill is
+                // wrapped so a DOM hiccup on any single field never prevents the
+                // form from showing.
+                buildForm('workorder', data);
+                try { applyWoEditPrefill(data); } catch (e) { /* keep form visible */ }
+                _editingReportId = reportId;
+                renderZoneSummary();
+                if (sb) sb.disabled = false;
+            })
+            .catch(function () { showToast('加载工单失败', 'error'); if (sb) { sb.disabled = false; sb.textContent = '保存'; } });
+    };
+
+    // Write the existing report's values into the modal form built by
+    // buildWorkorderForm. Mirrors applyHeader()/applyExisting() from the desktop
+    // tree-form template (workorder_tree_form.html), adapted to this modal's IDs.
+    function applyWoEditPrefill(data) {
+        var h = data.header || {};
+        // Date: set the visible <select> if the option exists, else the hidden input.
+        var dateSel = $('woDate'), dateHidden = $('woDateHidden'), headerDate = $('woHeaderDate');
+        if (h.h_date) {
+            if (dateSel) {
+                var opt = dateSel.querySelector('option[value="' + h.h_date + '"]');
+                if (opt) dateSel.value = h.h_date;
+            }
+            if (dateHidden) dateHidden.value = h.h_date;
+            if (headerDate) headerDate.textContent = h.h_date;
+        }
+        // Shift / 待修 / 疑难 / 已处理 chips: activate the matching chip in each group.
+        function activateChip(name, val) {
+            var grp = document.querySelector('#woModalForm .v2-chip-group input[name="' + name + '"][value="' + val + '"]');
+            if (!grp) return;
+            var chip = grp.closest('.v2-chip');
+            chip.closest('.v2-chip-group').querySelectorAll('.v2-chip').forEach(function (x) { x.classList.remove('active'); });
+            chip.classList.add('active'); grp.checked = true;
+        }
+        if (h.h_shift) activateChip('shift', h.h_shift);
+        activateChip('is_pending_repair', h.h_is_pending_repair ? '1' : '');
+        activateChip('is_difficult', h.h_is_difficult ? '1' : '');
+        activateChip('is_difficult_resolved', h.h_is_difficult_resolved ? '1' : '');
+        // Counts, times, remark.
+        setVal('[name="team_size"]', h.h_team_size != null ? h.h_team_size : 1);
+        setVal('[name="third_party_count"]', h.h_third_party_count != null ? h.h_third_party_count : 0);
+        if ($('woStart') && h.h_work_start_time) $('woStart').value = h.h_work_start_time;
+        if ($('woEnd') && h.h_work_end_time) $('woEnd').value = h.h_work_end_time;
+        if (h.h_remark != null) setVal('[name="remark"]', h.h_remark);
+        // Recompute the hours line.
+        if ($('woStart')) { var ev = document.createEvent('Event'); ev.initEvent('change', true, true); $('woStart').dispatchEvent(ev); $('woEnd').dispatchEvent(ev); }
+
+        // Tree entries: restore count/status/text_value into _woEntries, keyed by
+        // work_item id. (Per-entry photos are not re-shown in the leaf popup — they
+        // are preserved server-side and re-submitted only if re-uploaded.)
+        _woEntries = {}; _woEntryPhotos = {};
+        (data.existing || []).forEach(function (e) {
+            if (e.work_item == null) return;
+            _woEntries[e.work_item] = {
+                count: e.count || 0, status: e.status || '',
+                text_value: e.text_value || '', hasPhoto: !!(e.photos && e.photos.length),
+                project: e.project || null
+            };
+        });
+        updateWoTrigger();
+
+        // Persisted report photos: render thumbnails with × remove (added to
+        // report_photos_remove on submit). New uploads append via the normal path.
+        _existingPhotos = Array.isArray(data.report_photos) ? data.report_photos.slice() : [];
+        renderWoExistingPhotos();
+
+        var sb = $('woSubmitBtn'); if (sb) { sb.textContent = '保存'; }
+    }
+
+    function renderWoExistingPhotos() {
+        var photoArea = $('woPhotoArea');
+        if (!photoArea) return;
+        // Clear any previously rendered existing-photo thumbs (keep add buttons + new uploads).
+        photoArea.querySelectorAll('.v2-photo-thumb.existing').forEach(function (n) { n.remove(); });
+        var surviving = _existingPhotos.filter(function (p) { return !_photoRemove.has(p); });
+        var camBtn = $('woPhotoCamera');
+        surviving.forEach(function (p) {
+            var div = document.createElement('div');
+            div.className = 'v2-photo-thumb existing';
+            var isVid = /\.(mp4|mov|m4v|webm|ogg|avi|mkv)$/i.test(p);
+            var thumb = p.replace(/\.[^.]+$/, '_thumb.jpg');
+            var mediaHtml = isVid
+                ? '<video src="/media/' + escHtml(thumb) + '" muted></video><span class="v2-photo-badge">▶</span>'
+                : '<img src="/media/' + escHtml(thumb) + '" loading="lazy">';
+            div.innerHTML = mediaHtml + '<button type="button" class="v2-photo-rm">×</button>';
+            div.querySelector('.v2-photo-rm').addEventListener('click', function () {
+                _photoRemove.add(p);
+                renderWoExistingPhotos();
+            });
+            photoArea.insertBefore(div, camBtn);
+        });
+    }
 
     window.closeV2Modal = function (type) {
         if (!type) type = _currentModal;
@@ -673,8 +813,11 @@
                 // Single-name land: no level-2 popup needed — toggle that one name directly,
                 // behaving like a flat chip (same as the level-1 interaction).
                 if (land.nameCount <= 1) {
-                    // If anything in this land is selected, clear all of it; otherwise select all.
-                    var select = !isWoLandPartiallySelected(land.id);
+                    // If ANYTHING in this land is selected (partial OR full), clear all of it;
+                    // otherwise select all. Using "any selected" (not just "partial") is what
+                    // makes the chip toggle off when you tap it again after a full select.
+                    var c = countWoZones(function (z) { return z.land_id === land.id; });
+                    var select = !(c.selected > 0);
                     selectZonesByLand(land.id, select);
                     setWoLandChipState(chip, land.id);
                     updateInfoBarText();
@@ -1573,6 +1716,12 @@
         });
     }
 
+    // Set a form field's value by CSS selector (no-op if the element is missing).
+    function setVal(sel, v) {
+        var el = document.querySelector(sel);
+        if (el) el.value = (v == null ? '' : v);
+    }
+
     function ensureWoTreeStyle() {
         if (document.getElementById('v2-wo-style')) return;
         var css = '' +
@@ -1976,7 +2125,13 @@
         var entriesInput = $('woEntriesInput'); if (entriesInput) entriesInput.value = JSON.stringify(entries);
         var fd = new FormData(form); _photoFiles.forEach(function (f) { fd.append('report_photos', f); });
         Object.keys(_woEntryPhotos).forEach(function (id) { _woEntryPhotos[id].forEach(function (f) { fd.append('ep_' + id, f); }); });
-        var btn = $('woSubmitBtn'); btn.disabled = true; btn.textContent = '提交中...';
+        // Edit mode: tell the server which report to update and which existing
+        // photos the user removed.
+        if (_editingReportId) {
+            fd.append('report_id', _editingReportId);
+            if (_photoRemove.size) fd.append('report_photos_remove', Array.from(_photoRemove).join(','));
+        }
+        var btn = $('woSubmitBtn'); btn.disabled = true; btn.textContent = (_editingReportId ? '保存' : '提交') + '中...';
         fetch('/mobile/workorder/v2/', { method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest' } })
             .then(function (r) { return r.json(); }).then(function (data) {
                 if (data.success) {
@@ -2011,5 +2166,24 @@
                 else { showToast(data.message, 'error'); btn.disabled = false; btn.textContent = '提交'; }
             }).catch(function (err) { showToast('提交失败: ' + err, 'error'); btn.disabled = false; btn.textContent = '提交'; });
     };
+
+    // Auto-open the workorder modal in edit mode when the dashboard is reached
+    // via the ?edit_workorder=<id> link (from the work-reports list / detail 编辑
+    // buttons). Handles both "DOM still loading" and "DOM already ready" cases.
+    function runEditTrigger() {
+        try {
+            var id = new URLSearchParams(window.location.search).get('edit_workorder');
+            if (id && /^\d+$/.test(id)) {
+                // Small delay lets the map finish initializing so the zone summary
+                // highlights correctly.
+                setTimeout(function () { window.openV2ModalForEdit(id); }, 600);
+            }
+        } catch (e) { /* URLSearchParams unsupported — no-op */ }
+    }
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', runEditTrigger);
+    } else {
+        runEditTrigger();
+    }
 
 })();

@@ -1,4 +1,5 @@
 import json
+from datetime import timedelta
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib import messages
 from django.contrib.auth import authenticate, login, logout
@@ -462,6 +463,34 @@ def profile_page(request):
 
             messages.success(request, '个人信息已更新')
             return redirect('core:profile')
+        elif action == 'change_password':
+            from django.contrib.auth import update_session_auth_hash
+            from django.contrib.auth import password_validation
+            from django.core.exceptions import ValidationError
+
+            old_password = request.POST.get('old_password', '')
+            new_password = request.POST.get('new_password', '')
+            new_password2 = request.POST.get('new_password2', '')
+
+            if not user.check_password(old_password):
+                messages.error(request, '当前密码不正确')
+            elif new_password != new_password2:
+                messages.error(request, '两次输入的新密码不一致')
+            elif not new_password:
+                messages.error(request, '新密码不能为空')
+            else:
+                # Validate against the configured AUTH_PASSWORD_VALIDATORS (min
+                # length, common/numeric/attribute-similarity rules).
+                try:
+                    password_validation.validate_password(new_password, user=user)
+                    user.set_password(new_password)
+                    user.save()
+                    # Keep the user logged in after the password hash changes.
+                    update_session_auth_hash(request, user)
+                    messages.success(request, '密码已修改')
+                    return redirect('core:profile')
+                except ValidationError as e:
+                    messages.error(request, '；'.join(e.messages))
 
     return render(request, 'core/profile.html', {
         'profile_data': profile_data,
@@ -4388,8 +4417,14 @@ def maxicom_dashboard_api(request):
 
 @login_required(login_url='core:login')
 def stats_dashboard(request):
-    """Data statistics dashboard with weekly work report stats and demand stats."""
-    from core.models import WorkReport, WorkReportEntry, WorkItem, Patch
+    """维修日志 数据报表 — hours, counts, distribution across section / project /
+    land→name→zone, reflecting the new workorder tree (WorkItem + WorkReportEntry
+    + Project) and the multi-zone WorkReport.zones M2M.
+
+    Scope: a custom date range (?from= / ?to=) OR a calendar week (?week=). The
+    default is the current week. Admins see all reports; other users see their own.
+    """
+    from core.models import WorkReport, WorkReportEntry, WorkItem, Patch, Zone, Project
     from core.role_utils import is_admin
     from django.db.models import Count, Q, Sum
     from django.utils import timezone
@@ -4399,156 +4434,384 @@ def stats_dashboard(request):
     user = request.user
     admin = is_admin(user)
 
-    # === Work Report Weekly Stats ===
+    # === Resolve the date window: custom range takes precedence, else a week. ===
+    today = timezone.now().date()
+    from_param = request.GET.get('from')
+    to_param = request.GET.get('to')
     week_param = request.GET.get('week')
-    if week_param:
+    is_custom_range = bool(from_param or to_param)
+
+    def _parse(s):
         try:
-            week_start = datetime.strptime(week_param, '%Y-%m-%d').date()
-            week_start = week_start - timedelta(days=week_start.weekday())
+            return datetime.strptime(s, '%Y-%m-%d').date()
         except Exception:
-            week_start = timezone.now().date() - timedelta(days=timezone.now().date().weekday())
+            return None
+
+    if is_custom_range:
+        start = _parse(from_param) or (today - timedelta(days=6))
+        end = _parse(to_param) or today
+        if end < start:
+            start, end = end, start
+    elif week_param:
+        parsed = _parse(week_param)
+        if parsed:
+            start = parsed - timedelta(days=parsed.weekday())  # snap to Monday
+        else:
+            start = today - timedelta(days=today.weekday())
+        end = start + timedelta(days=6)
     else:
-        today = timezone.now().date()
-        week_start = today - timedelta(days=today.weekday())
+        start = today - timedelta(days=today.weekday())  # current week, Monday
+        end = start + timedelta(days=6)
 
-    week_end = week_start + timedelta(days=6)
-    week_number = week_start.isocalendar()[1]
+    week_number = start.isocalendar()[1]
 
-    # Generate week options
+    # Week options for the <select> nav (3-year window).
     years = []
     year_weeks = {}
-    current_year = timezone.now().date().year
-
+    current_year = today.year
     for year in [current_year - 1, current_year, current_year + 1]:
         weeks = []
-        jan_1 = date(year, 1, 1)
-        first_monday = jan_1
+        first_monday = date(year, 1, 1)
         while first_monday.weekday() != 0:
             first_monday = first_monday + timedelta(days=1)
-
-        week_start_iter = first_monday
-        week_num = 1
-
-        while week_start_iter.year == year or (week_start_iter.year == year + 1 and week_start_iter.month == 1 and week_num <= 53):
-            week_end_iter = week_start_iter + timedelta(days=6)
-            weeks.append({
-                'week': week_num,
-                'start': week_start_iter,
-                'end': week_end_iter
-            })
-            week_start_iter = week_start_iter + timedelta(days=7)
-            week_num += 1
-            if week_num > 53:
+        ws = first_monday
+        wn = 1
+        while ws.year == year or (ws.year == year + 1 and ws.month == 1 and wn <= 53):
+            weeks.append({'week': wn, 'start': ws, 'end': ws + timedelta(days=6)})
+            ws = ws + timedelta(days=7)
+            wn += 1
+            if wn > 53:
                 break
-
         if weeks:
             years.append(year)
             year_weeks[year] = weeks
 
-    # Base queryset for this week
-    week_qs = WorkReport.objects.select_related('worker', 'location')
+    # === Base queryset (role-scoped + windowed) ===
+    base_qs = WorkReport.objects.select_related('worker', 'location')
     if not admin:
         try:
-            worker = user.worker_profile
-            week_qs = week_qs.filter(worker=worker)
+            base_qs = base_qs.filter(worker=user.worker_profile)
         except Exception:
-            week_qs = week_qs.none()
+            base_qs = base_qs.none()
+    base_qs = base_qs.filter(date__gte=start, date__lte=end)
 
-    week_qs = week_qs.filter(date__gte=week_start, date__lte=week_end)
+    # Materialize once — most aggregations below reuse this list.
+    reports = list(base_qs.prefetch_related('zones__land', 'entries__work_item', 'entries__project'))
+    report_ids = [r.id for r in reports]
 
-    total_this_week = week_qs.count()
-
-    reports_by_day = []
-    for i in range(7):
-        day = week_start + timedelta(days=i)
-        count = week_qs.filter(date=day).count()
-        reports_by_day.append({
-            'date': day.strftime('%m-%d'),
-            'weekday': ['周一', '周二', '周三', '周四', '周五', '周六', '周日'][i],
-            'count': count
-        })
-
-    reports_by_location = list(
-        week_qs.values('location__name', 'location__code')
-        .annotate(count=Count('id'))
-        .order_by('-count')[:10]
-    )
-
-    reports_by_zone = list(
-        week_qs.values('zone_location__name', 'zone_location__code')
-        .annotate(count=Count('id'))
-        .exclude(zone_location__isnull=True)
-        .order_by('-count')[:10]
-    )
-
-    # Legacy fault/category stats removed (WorkCategory/FaultSubType/WorkReportFault models deleted).
-    reports_by_category = []
-    top_faults = []
-    zone_fault_matrix = {'fault_types': [], 'rows': [], 'column_totals': [], 'grand_total': 0}
-
-    # === 工作内容明细 (新现场作业记录树 WorkReportEntry) — additive alongside 故障 stats ===
     section_labels = dict(WorkItem.SECTION_CHOICES)
+
+    # ── Optional 通用名称 (zone.name) filter for the 工作内容·按章节 tree ────
+    # ?zone_name=<name> scopes the tree to reports touching any zone whose 通用名称
+    # matches. Empty = no filter (all reports).
+    zone_filter = (request.GET.get('zone_name') or '').strip()
+    zone_filter_label = '全部'
+    # Distinct 通用名称 touched by the windowed reports, for the dropdown.
+    _names = set()
+    for r in reports:
+        for z in r.zones.all():
+            if z.name:
+                _names.add(z.name)
+    zone_filter_names = sorted(_names)
+
+    if zone_filter:
+        zone_filter_label = zone_filter
+        def _name_match(report):
+            return any(z.name == zone_filter for z in report.zones.all())
+        tree_report_ids = {r.id for r in reports if _name_match(r)}
+    else:
+        tree_report_ids = set(report_ids)
+
+    # ── 1. Overview tiles ───────────────────────────────────────────────────
+    total_reports = len(reports)
+    team_hours = sum(r.team_hours or 0 for r in reports)
+    third_hours = sum(r.third_party_hours or 0 for r in reports)
+    difficult_count = sum(1 for r in reports if r.is_difficult)
+    pending_count = sum(1 for r in reports if r.is_pending_repair)
+
+    # ── 2. Shift × hours breakdown ──────────────────────────────────────────
+    shift_agg = defaultdict(lambda: {'count': 0, 'team_hours': 0.0, 'third_hours': 0.0})
+    for r in reports:
+        key = r.shift or '未指定'
+        shift_agg[key]['count'] += 1
+        shift_agg[key]['team_hours'] += r.team_hours or 0
+        shift_agg[key]['third_hours'] += r.third_party_hours or 0
+    shift_order = ['早班', '白班', '夜班', '未指定']
+    shift_stats = [dict(name=k, **shift_agg[k]) for k in shift_order if k in shift_agg]
+
+    # ── 3. By section → full WorkItem tree (every level shows its totals) ───
+    # Build the section's WorkItem subtree from the entries' leaf nodes up their
+    # parent chain, aggregating entries/counts/reports/hours at EVERY node so each
+    # hierarchy level (section → group → subgroup → … → leaf) has its own totals.
+    # Hours live on the WorkReport header; a report's hours credit a node once
+    # (per distinct report) so a multi-node report isn't double-counted at one node.
+    # Scoped to tree_report_ids when a Land/Zone filter is active.
     entries_qs = WorkReportEntry.objects.filter(
-        work_report__in=week_qs, work_item__active=True
-    )
+        work_report_id__in=tree_report_ids, work_item__active=True
+    ).select_related('work_item', 'project')
+
     entries_total = entries_qs.count()
     entries_count_sum = entries_qs.filter(
         work_item__value_type='count'
     ).aggregate(s=Sum('count'))['s'] or 0
-    entries_by_section = list(
-        entries_qs.values('work_item__section')
-        .annotate(entries=Count('id'), counts=Sum('count'))
-        .order_by('-entries')
-    )
-    for row in entries_by_section:
-        row['label'] = section_labels.get(row['work_item__section'], row['work_item__section'])
-    top_work_nodes = list(
-        entries_qs.values('work_item__name_zh')
-        .annotate(entries=Count('id'), counts=Sum('count'))
-        .order_by('-entries')[:10]
-    )
-    entries_by_project = list(
-        entries_qs.exclude(project__isnull=True)
-        .values('project__name', 'project__category')
-        .annotate(entries=Count('id'), counts=Sum('count'))
-        .order_by('-entries')[:10]
-    )
 
+    # report_id → team_hours lookup (avoids re-fetching per entry).
+    rep_hours = {r.id: (r.team_hours or 0) for r in reports}
+
+    # Load the WorkItem tree skeleton (id → {name, parent_id, section, order,
+    # value_type, unit}) once, so ancestor walks don't hit the DB per entry.
+    wi_rows = WorkItem.objects.filter(active=True).values(
+        'id', 'name_zh', 'parent_id', 'section', 'order', 'value_type', 'unit')
+    wi_by_id = {r['id']: r for r in wi_rows}
+
+    def _blank_node():
+        return {'entries': 0, 'counts': 0, 'report_ids': set(), 'hours': 0.0, 'children': {}}
+
+    # tree: section_code -> {node_agg, children:{work_item_id -> {node_agg, children:{...}}}}
+    tree = {}
+
+    def _ensure_chain(section, leaf_id):
+        """Create/return the node-dicts along leaf_id's ancestor chain within
+        this section, top (section root) → leaf, creating missing levels."""
+        root = tree.setdefault(section, _blank_node())
+        # Build the ancestor chain (root → ... → leaf), top-first.
+        chain = []
+        cur = leaf_id
+        seen = set()
+        while cur and cur in wi_by_id and cur not in seen:
+            seen.add(cur)
+            chain.append(cur)
+            cur = wi_by_id[cur]['parent_id']
+        chain.reverse()  # now top → leaf
+        node = root
+        for wid in chain:
+            node = node['children'].setdefault(wid, _blank_node())
+        return node
+
+    for e in entries_qs:
+        wi = wi_by_id.get(e.work_item_id)
+        if not wi:
+            continue
+        section = wi['section'] or 'other'
+        # Credit the leaf, then walk UP crediting every ancestor (so each level
+        # shows its subtree total). Hours credited once per distinct report/node.
+        credit_ids = [e.work_item_id]
+        cur = wi['parent_id']
+        seen = set()
+        while cur and cur in wi_by_id and cur not in seen:
+            seen.add(cur)
+            credit_ids.append(cur)
+            cur = wi_by_id[cur]['parent_id']
+        # Credit the section root aggregate first (it carries the section total).
+        root = tree.setdefault(section, _blank_node())
+        root['entries'] += 1
+        root['counts'] += e.count or 0
+        if e.work_report_id not in root['report_ids']:
+            root['report_ids'].add(e.work_report_id)
+            root['hours'] += rep_hours.get(e.work_report_id, 0)
+        for wid in credit_ids:
+            node = _ensure_chain(section, wid)
+            node['entries'] += 1
+            node['counts'] += e.count or 0
+            if e.work_report_id not in node['report_ids']:
+                node['report_ids'].add(e.work_report_id)
+                node['hours'] += rep_hours.get(e.work_report_id, 0)
+
+    def _flatten(children_map):
+        """Recursively turn the nested children dict into a sorted list of
+        {name, entries, counts, reports, hours, children}. Empty subtrees pruned."""
+        out = []
+        for wid, node in children_map.items():
+            wi = wi_by_id.get(wid, {})
+            kids = _flatten(node['children'])
+            # Only include a node if it (or any descendant) had entries.
+            if node['entries'] == 0 and not kids:
+                continue
+            out.append({
+                'id': wid,
+                'name': wi.get('name_zh', str(wid)),
+                'value_type': wi.get('value_type', ''),
+                'unit': wi.get('unit', ''),
+                'entries': node['entries'], 'counts': node['counts'],
+                'reports': len(node['report_ids']), 'hours': round(node['hours'], 1),
+                'children': kids,
+            })
+        # Sort: branches first (have children) by hours, then leaves by entries.
+        out.sort(key=lambda x: (len(x['children']) == 0, -x['hours'], -x['entries']))
+        return out
+
+    section_rows = []
+    for section, root in tree.items():
+        kids = _flatten(root['children'])
+        # A section is included if any descendant had entries.
+        if root['entries'] == 0 and not kids:
+            continue
+        section_rows.append({
+            'label': section_labels.get(section, section),
+            'entries': root['entries'], 'counts': root['counts'],
+            'reports': len(root['report_ids']), 'hours': round(root['hours'], 1),
+            'children': kids,
+        })
+    section_rows.sort(key=lambda x: x['hours'], reverse=True)
+
+    # Flat list for CSV export: every node (section + each descendant) on its own
+    # row, with the full breadcrumb path and per-node totals. Mirrors what the
+    # on-screen tree shows at every level.
+    section_export = []
+
+    def _export_walk(section_label, children, breadcrumb):
+        for node in children:
+            path = (breadcrumb + [node['name']]) if breadcrumb else [section_label, node['name']]
+            section_export.append({
+                'section': section_label,
+                'path': ' › '.join(path),
+                'level': len(path),
+                'reports': node['reports'], 'hours': node['hours'],
+                'entries': node['entries'], 'counts': node['counts'],
+                'value_type': node.get('value_type', ''), 'unit': node.get('unit', ''),
+            })
+            _export_walk(section_label, node['children'], path)
+
+    for sec in section_rows:
+        # Section-root row first (the section total), then its subtree.
+        section_export.append({
+            'section': sec['label'], 'path': sec['label'], 'level': 1,
+            'reports': sec['reports'], 'hours': sec['hours'],
+            'entries': sec['entries'], 'counts': sec['counts'],
+            'value_type': '', 'unit': '',
+        })
+        _export_walk(sec['label'], sec['children'], [])
+
+    # ── 4. By project (hours credited per distinct report touching it) ──────
+    project_rows = []
+    proj_agg = defaultdict(lambda: {'entries': 0, 'counts': 0, 'report_ids': set(),
+                                     'category': '', 'subcategory': '', 'name': ''})
+    for e in entries_qs:
+        if not e.project_id:
+            continue
+        p = e.project
+        g = proj_agg[e.project_id]
+        g['name'] = p.name
+        g['category'] = p.get_category_display() if p.category else ''
+        g['subcategory'] = p.get_subcategory_display() if p.subcategory else ''
+        g['entries'] += 1
+        g['counts'] += e.count or 0
+        g['report_ids'].add(e.work_report_id)
+    for pid, g in proj_agg.items():
+        # Credit each project the sum of team_hours over the distinct reports that
+        # touched it (a report may span multiple projects; each gets its full hours).
+        hours = sum((r.team_hours or 0) for r in reports if r.id in g['report_ids'])
+        project_rows.append({
+            'name': g['name'], 'category': g['category'], 'subcategory': g['subcategory'],
+            'entries': g['entries'], 'counts': g['counts'],
+            'reports': len(g['report_ids']), 'hours': round(hours, 1),
+        })
+    project_rows.sort(key=lambda x: x['hours'], reverse=True)
+
+    # ── 5. Land → 通用名称(Zone.name) → zone code (multi-zone tree) ─────────
+    # Aggregate from WorkReport.zones (a report now carries many zones). Count a
+    # report once per zone it touches, and credit that report's team_hours to each
+    # of its zones (mirrors the project crediting rule).
+    land_agg = defaultdict(lambda: {  # land_id -> {...}
+        'name': '', 'report_ids': set(), 'hours': 0.0,
+        'names': defaultdict(lambda: {  # 通用名称 -> {...}
+            'report_ids': set(), 'hours': 0.0,
+            'codes': defaultdict(lambda: {'report_ids': set(), 'hours': 0.0, 'name': ''}),
+        }),
+    })
+    for r in reports:
+        for z in r.zones.all():
+            land_id = z.land_id
+            land_name = z.land.name if (z.land_id and z.land) else '未分类'
+            zname = z.name or z.code
+            zcode = z.code
+            # land level
+            L = land_agg[land_id if land_id else '__none__']
+            L['name'] = land_name
+            L['report_ids'].add(r.id)
+            L['hours'] += r.team_hours or 0
+            # name level
+            N = L['names'][zname]
+            N['report_ids'].add(r.id)
+            N['hours'] += r.team_hours or 0
+            # code level
+            C = N['codes'][zcode]
+            C['name'] = zname
+            C['report_ids'].add(r.id)
+            C['hours'] += r.team_hours or 0
+    # Flatten to sorted lists.
+    land_rows = []
+    for _lid, L in land_agg.items():
+        land_rows.append({
+            'name': L['name'],
+            'reports': len(L['report_ids']),
+            'hours': round(L['hours'], 1),
+            'names': [{
+                'name': nname,
+                'reports': len(N['report_ids']),
+                'hours': round(N['hours'], 1),
+                'codes': [{
+                    'code': ccode, 'reports': len(C['report_ids']),
+                    'hours': round(C['hours'], 1),
+                } for ccode, C in sorted(N['codes'].items(), key=lambda kv: -len(kv[1]['report_ids']))],
+            } for nname, N in sorted(L['names'].items(), key=lambda kv: -len(kv[1]['report_ids']))],
+        })
+    land_rows.sort(key=lambda x: x['reports'], reverse=True)
+
+    # ── 6. Worker hours (admin only) ────────────────────────────────────────
     worker_stats = []
     if admin:
-        worker_stats = list(
-            week_qs.values('worker__full_name', 'worker__employee_id')
-            .annotate(
-                total=Count('id'),
-                difficult=Count('id', filter=Q(is_difficult=True))
-            )
-            .order_by('-total')[:10]
-        )
+        wmap = defaultdict(lambda: {'total': 0, 'team_hours': 0.0, 'third_hours': 0.0,
+                                    'difficult': 0, 'name': '', 'employee_id': ''})
+        for r in reports:
+            if not r.worker_id:
+                continue
+            w = wmap[r.worker_id]
+            w['name'] = r.worker.full_name if r.worker else ''
+            w['employee_id'] = r.worker.employee_id if r.worker else ''
+            w['total'] += 1
+            w['team_hours'] += r.team_hours or 0
+            w['third_hours'] += r.third_party_hours or 0
+            if r.is_difficult:
+                w['difficult'] += 1
+        worker_stats = [{
+            'name': w['name'], 'employee_id': w['employee_id'],
+            'total': w['total'], 'team_hours': round(w['team_hours'], 1),
+            'third_hours': round(w['third_hours'], 1), 'difficult': w['difficult'],
+        } for w in sorted(wmap.values(), key=lambda x: x['team_hours'], reverse=True)]
 
     context = {
         'is_admin': admin,
-        # Work report weekly stats
-        'week_start': week_start,
-        'week_end': week_end,
+        'start': start, 'end': end,
+        'is_custom_range': is_custom_range,
+        'from_param': from_param or start.isoformat(),
+        'to_param': to_param or end.isoformat(),
         'week_number': week_number,
-        'week_iso': week_start.isoformat(),
-        'years': years,
-        'year_weeks': year_weeks,
-        'total_this_week': total_this_week,
-        'reports_by_day': reports_by_day,
-        'reports_by_location': reports_by_location,
-        'reports_by_zone': reports_by_zone,
-        'reports_by_category': reports_by_category,
-        'top_faults': top_faults,
-        'zone_fault_matrix': zone_fault_matrix,
+        'week_iso': start.isoformat(),
+        'years': years, 'year_weeks': year_weeks,
+        # 1. overview
+        'total_reports': total_reports,
+        'team_hours': round(team_hours, 1),
+        'third_hours': round(third_hours, 1),
+        'difficult_count': difficult_count,
+        'pending_count': pending_count,
+        # 2. shift
+        'shift_stats': shift_stats,
+        # 3. section + node drilldown (optionally scoped to a 通用名称 filter)
         'entries_total': entries_total,
         'entries_count_sum': entries_count_sum,
-        'entries_by_section': entries_by_section,
-        'top_work_nodes': top_work_nodes,
-        'entries_by_project': entries_by_project,
+        'section_rows': section_rows,
+        'section_export': section_export,
+        'zone_filter': zone_filter,
+        'zone_filter_label': zone_filter_label,
+        'zone_filter_names': zone_filter_names,
+        # 4. project
+        'project_rows': project_rows,
+        # 5. land → name → zone
+        'land_rows': land_rows,
+        # 6. worker hours
         'worker_stats': worker_stats,
     }
-
     return render(request, 'core/stats_dashboard.html', context)
 
 
@@ -4761,6 +5024,16 @@ def irrigation_dashboard(request):
     # The CCU column is only useful when multiple CCUs are in view (no CCU picked)
     show_ccu_col = ccu_obj is None
 
+    # ISO (YYYY-MM-DD) forms for the native <input type="date"> picker, which the
+    # template binds directly. The compact YYYYMMDD form is kept for export URLs.
+    def _iso8(yyyymmdd):
+        s = (yyyymmdd or '').strip()
+        return s[:4] + '-' + s[4:6] + '-' + s[6:8] if len(s) == 8 else s
+    date_from_iso = _iso8(date_from)
+    date_to_iso = _iso8(date_to)
+    today_iso = timezone.localdate().isoformat()
+    data_span_iso = (_iso8(default_from), _iso8(default_to))
+
     context = {
         'is_admin': is_admin,
         'ccus': ccus,
@@ -4768,6 +5041,10 @@ def irrigation_dashboard(request):
         'date_from': date_from,
         'date_to': date_to,
         'data_span': (default_from, default_to),
+        'date_from_iso': date_from_iso,
+        'date_to_iso': date_to_iso,
+        'today_iso': today_iso,
+        'data_span_iso': data_span_iso,
         'controllers': all_controllers,
         'rows': rows,
         'col_totals': [col_totals[c] for c in all_controllers],
@@ -5650,14 +5927,48 @@ def custom_report(request):
     return render(request, 'core/custom_report.html', {'is_admin': admin})
 
 
-@login_required(login_url='core:login')
-def work_reports_list(request):
-    from core.models import WorkReport, Patch, Worker
-    from core.role_utils import is_admin, get_worker_for_user, is_field_worker
-    from core.workorder_tree_views import workitem_path_map, enrich_reports, attach_zone_hierarchy
+WORK_REPORTS_PAGE_SIZE = 30
+# Default window shown on first visit / when no explicit date range is chosen.
+WORK_REPORTS_DEFAULT_DAYS = 7
 
-    user = request.user
-    admin = is_admin(user)
+
+def _work_report_filters(request):
+    """Collect + normalize the work-report list query filters.
+
+    Shared by the server-rendered list and the AJAX "load more" endpoint so both
+    apply exactly the same scoping. Returns ``(date_from, date_to, location_id,
+    worker_id, difficult, pending, before_id)`` where ``date_from``/``date_to``
+    are strings (or '') ready to echo back into the filter form, and the rest are
+    already-coerced values. ``before_id`` is the cursor for "load more".
+    """
+    date_from = (request.GET.get('date_from') or '').strip()
+    date_to = (request.GET.get('date_to') or '').strip()
+    location_id = request.GET.get('location') or ''
+    worker_id = request.GET.get('worker') or ''
+    difficult = request.GET.get('is_difficult')
+    pending = request.GET.get('is_pending_repair')
+    before_id = request.GET.get('before_id')
+
+    # Default to the most recent N days only when the user hasn't picked any
+    # explicit start (neither a preset nor a manual date). This keeps the first
+    # page light; older records come in on demand via "加载更多".
+    if not date_from:
+        today = timezone.localdate()
+        date_from = (today - timedelta(days=WORK_REPORTS_DEFAULT_DAYS)).isoformat()
+
+    return date_from, date_to, location_id, worker_id, difficult, pending, before_id
+
+
+def _scoped_work_reports_qs(user, admin):
+    """Base queryset with role-based visibility applied (no filters yet).
+
+    Both 灌溉一线 (field workers) and managers/admins see ALL workorders — the
+    visibility is shared so the team can review and comment on each other's
+    records. Only dept users (no field-worker and no admin role) are scoped to
+    their own submissions, if any.
+    """
+    from core.models import WorkReport
+    from core.role_utils import get_worker_for_user, is_field_worker
 
     qs = WorkReport.objects.select_related(
         'worker', 'location'
@@ -5665,24 +5976,111 @@ def work_reports_list(request):
         'entries__work_item', 'entries__project', 'zones__land'
     ).order_by('-date', '-id')
 
-    # Both 灌溉一线 (field workers) and managers/admins see ALL workorders — the
-    # visibility is now shared so the team can review and comment on each other's
-    # records. Only dept users / unauthenticated accounts (no field-worker and no
-    # admin role) are scoped to their own submissions, if any.
     if not admin and not is_field_worker(user):
         worker = get_worker_for_user(user)
         qs = qs.filter(worker=worker) if worker else qs.none()
+    return qs
 
-    # Filters
-    date_from = request.GET.get('date_from')
-    date_to = request.GET.get('date_to')
-    location_id = request.GET.get('location')
-    worker_id = request.GET.get('worker')
-    difficult = request.GET.get('is_difficult')
-    pending = request.GET.get('is_pending_repair')
 
-    if date_from:
-        qs = qs.filter(date__gte=date_from)
+def _serialize_work_reports(reports):
+    """Turn enriched WorkReport instances into JSON-serializable dicts.
+
+    Mirrors what the template renders per card. Expects ``enrich_reports`` and
+    ``attach_zone_hierarchy`` to have already attached ``entry_groups``,
+    ``section_labels``, ``entry_count``, ``zone_hierarchy`` and ``zone_summary``.
+    """
+    from django.urls import reverse
+
+    out = []
+    for r in reports:
+        out.append({
+            'id': r.id,
+            'date': r.date.isoformat() if r.date else '',
+            'shift': r.shift or '',
+            'shift_display': r.get_shift_display() if r.shift else '',
+            'worker_name': r.worker.full_name if r.worker_id and r.worker else '',
+            'worker_employee_id': r.worker.employee_id if r.worker_id and r.worker else '',
+            'work_start_time': r.work_start_time.strftime('%H:%M') if r.work_start_time else '',
+            'work_end_time': r.work_end_time.strftime('%H:%M') if r.work_end_time else '',
+            'team_hours': float(r.team_hours) if r.team_hours else 0,
+            'third_party_hours': float(r.third_party_hours) if r.third_party_hours else 0,
+            'team_size': r.team_size or 0,
+            'third_party_count': r.third_party_count or 0,
+            'zone_summary': r.zone_summary or '',
+            'zone_hierarchy': getattr(r, 'zone_hierarchy', []),
+            'section_labels': getattr(r, 'section_labels', []),
+            'entry_count': getattr(r, 'entry_count', 0),
+            'entry_groups': getattr(r, 'entry_groups', []),
+            'comment_count': getattr(r, 'comment_count', 0),
+            'photos': r.photos or [],
+            'remark': r.remark or '',
+            'is_pending_repair': bool(r.is_pending_repair),
+            'is_difficult': bool(r.is_difficult),
+            'is_difficult_resolved': bool(r.is_difficult_resolved),
+            'detail_url': reverse('core:work_report_detail', args=[r.id]),
+            'edit_url': reverse('core:dashboard') + '?edit_workorder=' + str(r.id),
+        })
+    return out
+
+
+@login_required(login_url='core:login')
+def work_report_reassign(request, report_id):
+    """Admin-only: re-assign a work order's creator (worker).
+
+    Used to fix reports that were attributed to the wrong worker (e.g. after a
+    DB mishap). POST {worker_id}. Returns JSON.
+    """
+    from core.models import WorkReport, Worker
+    from core.role_utils import is_admin
+
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'message': '仅支持 POST'}, status=405)
+    if not is_admin(request.user):
+        return JsonResponse({'success': False, 'message': '无权限'}, status=403)
+
+    report = get_object_or_404(WorkReport, pk=report_id)
+    worker_id = request.POST.get('worker_id')
+    if not worker_id:
+        return JsonResponse({'success': False, 'message': '缺少 worker_id'}, status=400)
+    worker = Worker.objects.filter(pk=worker_id).first()
+    if not worker:
+        return JsonResponse({'success': False, 'message': '处理人不存在'}, status=400)
+
+    report.worker = worker
+    report.save(update_fields=['worker'])
+    return JsonResponse({
+        'success': True,
+        'message': f'已改为 {worker.full_name}',
+        'worker_name': worker.full_name,
+        'worker_employee_id': worker.employee_id or '',
+    })
+
+
+@login_required(login_url='core:login')
+def work_reports_list(request):
+    """Unified, responsive work-order list (维修日志).
+
+    Server-renders the initial page (latest 7 days by default) and also serves
+    cursor-paginated "load more" batches as JSON when requested via AJAX.
+
+    Filters (GET): ``date_from`` / ``date_to`` (YYYY-MM-DD), ``location`` (Patch
+    id), ``worker`` (Worker id, admin only), ``is_pending_repair`` / ``is_difficult``
+    (any truthy value), and ``before_id`` (report id cursor for load-more).
+    """
+    from core.models import Patch, Worker
+    from core.role_utils import is_admin
+    from core.workorder_tree_views import workitem_path_map, enrich_reports, attach_zone_hierarchy
+
+    user = request.user
+    admin = is_admin(user)
+
+    date_from, date_to, location_id, worker_id, difficult, pending, before_id = _work_report_filters(request)
+
+    qs = _scoped_work_reports_qs(user, admin)
+    qs = qs.annotate(comment_count=Count('comments'))
+
+    # Apply filters (shared with the load-more endpoint).
+    qs = qs.filter(date__gte=date_from)
     if date_to:
         qs = qs.filter(date__lte=date_to)
     if location_id:
@@ -5693,26 +6091,61 @@ def work_reports_list(request):
         qs = qs.filter(is_difficult=True)
     if pending:
         qs = qs.filter(is_pending_repair=True)
+    # Cursor pagination — older records have smaller ids under (-date, -id).
+    if before_id:
+        try:
+            qs = qs.filter(id__lt=int(before_id))
+        except (TypeError, ValueError):
+            pass
 
-    reports = list(qs.annotate(comment_count=Count('comments'))[:200])
+    page = list(qs[:WORK_REPORTS_PAGE_SIZE + 1])  # +1 to detect a next page.
+    has_more = len(page) > WORK_REPORTS_PAGE_SIZE
+    reports = page[:WORK_REPORTS_PAGE_SIZE]
     enrich_reports(reports, workitem_path_map())
     attach_zone_hierarchy(reports)
+
+    # AJAX "load more": hand the next batch to the client as JSON.
+    if request.headers.get('X-Requested-With') == 'XMLHttpRequest' or request.GET.get('ajax'):
+        return JsonResponse({
+            'reports': _serialize_work_reports(reports),
+            'has_more': has_more,
+            'last_id': reports[-1].id if reports else None,
+            'is_admin': admin,
+            # Worker list so the admin-only reassign control can render on
+            # AJAX-loaded cards (mirrors the server-rendered workers context).
+            'workers': [{'id': w.id, 'name': w.full_name, 'employee_id': w.employee_id or ''}
+                        for w in Worker.objects.all().order_by('full_name')] if admin else [],
+        })
+
     locations = Patch.objects.filter(active=True).order_by('order')
     workers = Worker.objects.all().order_by('full_name') if admin else []
+
+    filter_json = {
+        'filters': {
+            'date_from': date_from,
+            'date_to': date_to,
+            'location': int(location_id) if location_id else '',
+            'worker': int(worker_id) if worker_id else '',
+            'is_difficult': bool(difficult),
+            'is_pending_repair': bool(pending),
+        },
+        'last_id': reports[-1].id if reports else None,
+        'is_admin': admin,
+        # Worker list for the admin-only reassign control on AJAX-loaded cards.
+        'workers': [{'id': w.id, 'name': w.full_name, 'employee_id': w.employee_id or ''}
+                    for w in workers] if admin else [],
+    }
 
     return render(request, 'core/work_reports.html', {
         'reports': reports,
         'locations': locations,
         'workers': workers,
         'is_admin': admin,
-        'filters': {
-            'date_from': date_from or '',
-            'date_to': date_to or '',
-            'location': int(location_id) if location_id else '',
-            'worker': int(worker_id) if worker_id else '',
-            'is_difficult': bool(difficult),
-            'is_pending_repair': bool(pending),
-        },
+        'has_more': has_more,
+        'last_id': reports[-1].id if reports else '',
+        'default_days': WORK_REPORTS_DEFAULT_DAYS,
+        'filter_json': filter_json,
+        'filters': filter_json['filters'],
     })
 
 
@@ -6133,45 +6566,6 @@ def zone_geo_api(request):
     return JsonResponse(data, safe=False)
 
 
-@login_required(login_url='core:login')
-def workorder_history(request):
-    from core.models import WorkReport, Worker
-    from core.role_utils import get_worker_for_user, is_admin, get_user_role, ROLE_FIELD_WORKER
-    from core.role_utils import ROLE_SUPER_ADMIN, ROLE_MANAGER
-    from core.workorder_tree_views import workitem_path_map, enrich_reports, attach_zone_hierarchy
-    from datetime import date
-
-    role = get_user_role(request.user)
-    if role not in (ROLE_FIELD_WORKER, ROLE_SUPER_ADMIN, ROLE_MANAGER):
-        messages.error(request, '无权限访问此页面')
-        return redirect('core:login')
-
-    worker = get_worker_for_user(request.user)
-    pending = request.GET.get('pending')
-
-    # Both 灌溉一线 (field workers) and managers/admins see ALL reports. The role
-    # gate above already restricted entry to these three roles, so every visitor
-    # to this page gets the full list (no per-worker scoping).
-    reports = WorkReport.objects.all()
-
-    if pending:
-        reports = reports.filter(is_pending_repair=True)
-
-    reports = list(reports.select_related('worker', 'location')
-                   .prefetch_related('zones__land', 'entries__work_item', 'entries__project')
-                   .annotate(comment_count=Count('comments'))
-                   .order_by('-date', '-id')[:50])
-    enrich_reports(reports, workitem_path_map())
-    attach_zone_hierarchy(reports)
-
-    context = {
-        'reports': reports,
-        'worker_name': worker.full_name if worker else request.user.get_full_name() or request.user.username,
-        'pending_filter': bool(pending),
-    }
-    return render(request, 'core/workorder_history.html', context)
-
-
 def _build_zone_geo_data():
     from core.models import Zone
     zones = Zone.objects.filter(Q(boundary_points__isnull=False) | Q(dxf_boundary_points__isnull=False)).exclude(boundary_points=[]).exclude(dxf_boundary_points=[]).only('code', 'name', 'boundary_points', 'dxf_boundary_points', 'boundary_source')
@@ -6264,40 +6658,68 @@ def workorder_mobile_v2(request):
             else:
                 location = Patch.objects.first()
 
-            report = WorkReport.objects.create(
-                date=request.POST.get('date') or date.today().isoformat(),
-                weather='',
-                worker=post_worker,
-                location=location,
-                zone_location=first_zone,
-                remark=request.POST.get('remark', ''),
-                is_pending_repair=bool(request.POST.get('is_pending_repair')),
-                is_difficult=bool(request.POST.get('is_difficult')),
-                is_difficult_resolved=bool(request.POST.get('is_difficult_resolved')),
-                shift=shift,
-                work_start_time=work_start,
-                work_end_time=work_end,
-                team_size=team_size,
-                third_party_count=third_party_count,
-                team_hours=team_hours,
-                third_party_hours=third_party_hours,
-                zone_names=zone_names,
-                work_content=request.POST.get('work_content', ''),
-            )
+            # Edit vs create: a posted report_id means we update an existing
+            # report in place; otherwise we create a new one.
+            report_id = request.POST.get('report_id')
+            is_edit = report_id and report_id.isdigit()
+            if is_edit:
+                report = get_object_or_404(WorkReport, pk=report_id)
+                report.date = request.POST.get('date') or report.date
+                report.worker = post_worker
+                report.location = location
+                report.zone_location = first_zone
+                report.remark = request.POST.get('remark', '')
+                report.is_pending_repair = bool(request.POST.get('is_pending_repair'))
+                report.is_difficult = bool(request.POST.get('is_difficult'))
+                report.is_difficult_resolved = bool(request.POST.get('is_difficult_resolved'))
+                report.shift = shift
+                report.work_start_time = work_start
+                report.work_end_time = work_end
+                report.team_size = team_size
+                report.third_party_count = third_party_count
+                report.team_hours = team_hours
+                report.third_party_hours = third_party_hours
+                report.zone_names = zone_names
+                report.work_content = request.POST.get('work_content', '')
+                report.save()
+            else:
+                report = WorkReport.objects.create(
+                    date=request.POST.get('date') or date.today().isoformat(),
+                    weather='',
+                    worker=post_worker,
+                    location=location,
+                    zone_location=first_zone,
+                    remark=request.POST.get('remark', ''),
+                    is_pending_repair=bool(request.POST.get('is_pending_repair')),
+                    is_difficult=bool(request.POST.get('is_difficult')),
+                    is_difficult_resolved=bool(request.POST.get('is_difficult_resolved')),
+                    shift=shift,
+                    work_start_time=work_start,
+                    work_end_time=work_end,
+                    team_size=team_size,
+                    third_party_count=third_party_count,
+                    team_hours=team_hours,
+                    third_party_hours=third_party_hours,
+                    zone_names=zone_names,
+                    work_content=request.POST.get('work_content', ''),
+                )
 
             if selected_zones:
                 report.zones.set(selected_zones)
 
             # Work-content tree entries (replaces the old two-level fault model).
+            # _save_entries deletes-then-recreates, so it's idempotent on edit.
             entries = json.loads(request.POST.get('entries', '[]') or '[]')
             _save_entries(report, entries, _collect_entry_photos(request))
-            # 计划性维修: resolve the checked past 待修 workorders.
-            pm_ids = [x for x in (request.POST.get('pm_resolved') or '').split(',') if x.strip().isdigit()]
-            if pm_ids:
-                _resolve_pending_repairs(report, pm_ids)
+            # 计划性维修: resolve the checked past 待修 workorders (create only —
+            # re-resolving on edit would double-link).
+            if not is_edit:
+                pm_ids = [x for x in (request.POST.get('pm_resolved') or '').split(',') if x.strip().isdigit()]
+                if pm_ids:
+                    _resolve_pending_repairs(report, pm_ids)
             entry_count = report.entries.count()
 
-            if report.is_difficult:
+            if report.is_difficult and not is_edit:
                 note = request.POST.get('remark', '').strip()
                 remark_content = note or (f'疑难工单 · {entry_count} 项' if entry_count else '疑难工单')
                 remark_entry = {
@@ -6312,16 +6734,30 @@ def workorder_mobile_v2(request):
                     z.remarks = json.dumps(remarks, ensure_ascii=False)
                     z.save(update_fields=['remarks'])
 
-            # Report-level photos (1.1.12).
-            photo_paths = [_save_photo(report, f)
-                           for f in request.FILES.getlist('report_photos')]
-            if photo_paths:
-                report.photos = photo_paths
+            # Report-level photos. On edit, MERGE: keep existing photos except
+            # those the user explicitly removed, then append any new uploads.
+            # (On create, just use the new uploads.)
+            if is_edit:
+                removed = set(x for x in (request.POST.get('report_photos_remove') or '').split(',') if x.strip())
+                kept = [p for p in (report.photos or []) if p not in removed]
+                # Physically delete the removed media + thumbnails.
+                from core.workorder_tree_views import _delete_media
+                for p in removed:
+                    _delete_media(p)
+                new_paths = [_save_photo(report, f) for f in request.FILES.getlist('report_photos')]
+                report.photos = kept + new_paths
                 report.save(update_fields=['photos'])
+            else:
+                photo_paths = [_save_photo(report, f)
+                               for f in request.FILES.getlist('report_photos')]
+                if photo_paths:
+                    report.photos = photo_paths
+                    report.save(update_fields=['photos'])
 
+            success_msg = f'工作记录已更新 (ID: {report.id})' if is_edit else f'工作记录已提交 (ID: {report.id})'
             if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-                return JsonResponse({'success': True, 'message': f'工作记录已提交 (ID: {report.id})'})
-            messages.success(request, f'工作记录已提交 (ID: {report.id})')
+                return JsonResponse({'success': True, 'message': success_msg})
+            messages.success(request, success_msg)
             return redirect('core:dashboard')
 
         except Exception as e:
@@ -6407,8 +6843,12 @@ def workorder_modal_data(request):
     """API: return workorder form metadata as JSON for dashboard modal."""
     from core.models import WorkReport, Worker
     from core.role_utils import get_worker_for_user, get_user_role, is_admin, ROLE_FIELD_WORKER, ROLE_SUPER_ADMIN, ROLE_MANAGER
-    from core.workorder_tree_views import serialize_workitem_tree, serialize_projects, IRRIGATION_SUBCATEGORIES
+    from core.workorder_tree_views import (
+        serialize_workitem_tree, serialize_projects, IRRIGATION_SUBCATEGORIES,
+        serialize_existing_entries, _report_header_dict,
+    )
     from datetime import date, datetime
+    from django.shortcuts import get_object_or_404
 
     role = get_user_role(request.user)
     if role not in (ROLE_FIELD_WORKER, ROLE_SUPER_ADMIN, ROLE_MANAGER):
@@ -6428,7 +6868,14 @@ def workorder_modal_data(request):
                 shift_freq[s] += 1
     sorted_shifts = sorted(shift_freq.keys(), key=lambda s: -shift_freq[s])
 
-    return JsonResponse({
+    # Edit mode: when a report_id is supplied, also return the existing report's
+    # header fields, filled tree entries, and photos so the modal can pre-fill.
+    report = None
+    report_id = request.GET.get('report_id')
+    if report_id:
+        report = get_object_or_404(WorkReport, pk=report_id)
+
+    payload = {
         'work_tree': serialize_workitem_tree(),
         'projects': serialize_projects(),
         'irrigation_subcategories': IRRIGATION_SUBCATEGORIES(),
@@ -6438,7 +6885,13 @@ def workorder_modal_data(request):
         'now_time': now.strftime('%H:%M'),
         'default_time': default_time,
         'worker_name': worker.full_name if worker else request.user.get_full_name() or request.user.username,
-    })
+    }
+    if report:
+        payload['report_id'] = report.id
+        payload['header'] = _report_header_dict(report)
+        payload['existing'] = serialize_existing_entries(report)
+        payload['report_photos'] = report.photos or []
+    return JsonResponse(payload)
 
 
 @login_required(login_url='core:login')

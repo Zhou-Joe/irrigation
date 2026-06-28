@@ -198,6 +198,35 @@
         </form>
     </div>
 
+    <!-- 修改密码 -->
+    <div class="profile-section">
+        <h2 class="section-title">修改密码</h2>
+        <form method="post">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="change_password">
+
+            <div class="form-group">
+                <label for="old_password">当前密码</label>
+                <input type="password" id="old_password" name="old_password" autocomplete="current-password" placeholder="请输入当前密码">
+            </div>
+
+            <div class="form-group">
+                <label for="new_password">新密码</label>
+                <input type="password" id="new_password" name="new_password" autocomplete="new-password" placeholder="请输入新密码">
+                <small style="color: var(--color-text-muted); font-size: 0.75rem;">至少8个字符，不能过于简单或与个人信息相似</small>
+            </div>
+
+            <div class="form-group">
+                <label for="new_password2">确认新密码</label>
+                <input type="password" id="new_password2" name="new_password2" autocomplete="new-password" placeholder="请再次输入新密码">
+            </div>
+
+            <div class="btn-group">
+                <button type="submit" class="btn btn-primary">修改密码</button>
+            </div>
+        </form>
+    </div>
+
     {% if profile_data.api_token %}
     <!-- API令牌 -->
     <div class="profile-section">

@@ -54,8 +54,12 @@ class Command(BaseCommand):
                 created += 1
                 continue
             try:
-                _make_thumbnail(path, thumb)
-                # _make_thumbnail writes directly to MEDIA_ROOT for videos; verify it landed.
+                # _make_thumbnail expects a seekable file object (it opens it with
+                # Pillow); open the existing original from storage and pass that.
+                # The video branch ignores the file object and reads the path via
+                # ffmpeg, so this works for both photos and videos.
+                with default_storage.open(path, 'rb') as f:
+                    _make_thumbnail(path, f)
                 if default_storage.exists(thumb):
                     created += 1
                 else:

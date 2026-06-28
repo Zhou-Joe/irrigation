@@ -1,0 +1,9 @@
+{% comment %}Recursive partial: renders one WorkItem tree node with its totals, then its children indented. A node with children is an expandable drill-head; a leaf is a plain row. Recurses by re-including itself for each child.{% endcomment %}
+<div class="drill-head" onclick="toggleDrill(this)">
+    <span><span class="dh-arrow">▶</span> <span class="dh-label">{{ node.name }}</span><span class="dh-meta">{{ node.reports }} 单 · {{ node.hours|floatformat:1 }}h · {{ node.entries }} 项{% if node.counts %} · {{ node.counts }}{% if node.unit %}{{ node.unit }}{% endif %}{% endif %}</span></span>
+</div>
+<div class="drill-body">
+    {% for child in node.children %}
+        {% include 'core/_stats_tree_node.html' with node=child %}
+    {% endfor %}
+</div>

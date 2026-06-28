@@ -18,9 +18,10 @@
     --wr-danger: #9B2226;
   }
 
-  .wr-list-wrap { max-width: 1100px; margin: 0 auto; padding: 16px; }
-  .wr-list-head { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; margin-bottom: 16px; }
+  .wr-list-wrap { max-width: 920px; margin: 0 auto; padding: 16px; }
+  .wr-list-head { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; margin-bottom: 12px; }
   .wr-list-head h1 { font-size: 1.4rem; margin: 0; font-weight: 700; color: var(--wr-text); }
+  .wr-subtitle { font-size: 0.82rem; color: var(--wr-muted); }
 
   .msg { padding: 10px 14px; border-radius: 10px; margin-bottom: 12px; font-size: 0.9rem; }
   .msg-success { background: rgba(64,145,108,0.12); color: var(--color-success); }
@@ -28,8 +29,14 @@
   .msg-info    { background: rgba(82,183,136,0.12); color: var(--color-info); }
   .msg-warning { background: rgba(204,119,34,0.12); color: var(--color-warning); }
 
-  /* Filter bar — compact pill style */
-  .filter-card { background: var(--wr-card-bg); border:1px solid var(--wr-card-border); border-radius: 14px; padding: 14px 16px; margin-bottom: 16px; }
+  /* Filter card */
+  .filter-card { background: var(--wr-card-bg); border:1px solid var(--wr-card-border); border-radius: 14px; padding: 12px 14px; margin-bottom: 14px; }
+  /* Preset pills: 近7天 / 近30天 / 近90天 / 全部. Active = filled accent. */
+  .preset-row { display:flex; gap:8px; flex-wrap:wrap; margin-bottom: 10px; }
+  .preset-pill { padding:6px 14px; border-radius:18px; font-size:0.82rem; font-weight:600; background:#fff; color:#555; border:1px solid #e0e0e0; text-decoration:none; cursor:pointer; transition: background .12s, color .12s, border-color .12s; }
+  .preset-pill:hover { border-color: var(--wr-accent); color: var(--wr-accent); }
+  .preset-pill.on { background: var(--wr-accent); color:#fff; border-color: var(--wr-accent); }
+
   .filter-row { display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; }
   .ff { display:flex; flex-direction:column; gap:3px; }
   .ff label { font-size: 0.68rem; color: var(--wr-muted); text-transform: uppercase; letter-spacing: 0.03em; }
@@ -40,83 +47,107 @@
   .btn-primary { background: var(--wr-accent); color:#fff; }
   .btn-secondary { background: #f3f4f6; color: var(--wr-text); }
 
-  /* ── Report card: modern row with info on the left, actions pinned right ── */
+  /* ── Report card: expandable (collapsed summary → click → full detail) ── */
   .wr-card {
     background: var(--wr-card-bg);
     border: 1px solid var(--wr-card-border);
     border-radius: 14px;
-    padding: 14px 16px;
     margin-bottom: 10px;
-    display: flex;
-    flex-wrap: wrap;
-    align-items: stretch;
-    gap: 14px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    overflow: hidden;
     transition: box-shadow .15s, border-color .15s;
   }
-  .wr-card:hover { box-shadow: 0 4px 14px rgba(0,0,0,0.07); border-color: #d8dde3; }
+  .wr-card:hover { box-shadow: 0 3px 12px rgba(0,0,0,0.06); border-color: #d8dde3; }
 
-  .wr-card-main { flex: 1; min-width: 0; }
-  .wr-card-side { display: flex; flex-direction: column; align-items: flex-end; justify-content: center; gap: 6px; flex-shrink: 0; padding-left: 4px; border-left: 1px solid var(--wr-card-border); padding-left: 14px; }
-
+  /* Collapsed summary — always visible */
+  .wr-summary { padding: 14px 16px; cursor: pointer; }
   .wr-card-top { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom: 6px; }
-  .wr-card-id { font-size: 0.95rem; font-weight: 700; color: var(--wr-accent); }
-  .wr-card-date { font-size: 0.78rem; color: var(--wr-muted); }
-  .wr-card-flags { display:flex; gap:4px; margin-left: auto; }
+  .wr-card-date { font-size: 0.95rem; font-weight: 700; color: var(--wr-text); }
+  .wr-card-shift { font-size: 0.72rem; background: var(--wr-accent-soft); color: var(--wr-accent); padding: 2px 8px; border-radius: 10px; font-weight: 600; }
+  .wr-card-id { font-size: 0.74rem; color: #aaa; margin-left: auto; }
+  .wr-card-flags { display:flex; gap:4px; }
   .wr-flag { display:inline-flex; align-items:center; padding:2px 8px; border-radius: 20px; font-size:0.68rem; font-weight:600; }
   .wr-flag.pending { background: rgba(204,119,34,0.12); color: var(--wr-warn); }
   .wr-flag.difficult { background: rgba(155,34,38,0.10); color: var(--wr-danger); }
   .wr-flag.resolved { background: rgba(64,145,108,0.12); color: #40916C; }
 
-  .wr-meta { display:flex; flex-wrap:wrap; gap: 4px 14px; font-size: 0.8rem; color: var(--wr-muted); margin-bottom: 6px; }
+  .wr-meta { display:flex; flex-wrap:wrap; gap: 4px 14px; font-size: 0.82rem; color: var(--wr-muted); margin-bottom: 4px; }
   .wr-meta b { color: var(--wr-text); font-weight: 600; }
 
   .wr-zone-summary { font-size: 0.8rem; color: var(--wr-text); display:flex; align-items:center; gap:4px; margin: 2px 0; }
   .wr-zone-summary .pin { color: var(--wr-accent); }
 
-  .wr-chip { display:inline-block; padding:2px 9px; border-radius: 20px; font-size:0.72rem; font-weight:600; background: var(--wr-accent-soft); color: var(--wr-accent); margin:2px 3px 0 0; }
+  .wr-chips { display:flex; flex-wrap:wrap; gap:4px; align-items:center; margin-top: 6px; }
+  .wr-chip { display:inline-block; padding:2px 9px; border-radius: 20px; font-size:0.72rem; font-weight:600; background: var(--wr-accent-soft); color: var(--wr-accent); }
   .wr-chip.count { background: var(--wr-accent); color:#fff; }
+  .wr-cmt-chip { display:inline-flex; align-items:center; gap:3px; font-size:0.74rem; background:#e3f2fd; color:#1565c0; padding:2px 9px; border-radius:20px; font-weight:600; border:none; cursor:pointer; }
+  .wr-cmt-chip.zero { background:#f0f0f0; color:#aaa; font-weight:500; }
 
-  /* Photo thumbs inline */
-  .wr-photo-row { display:flex; gap:4px; flex-wrap:wrap; margin-top: 6px; }
-  .wr-photo-thumb { width: 38px; height: 38px; border-radius: 6px; overflow:hidden; position:relative; cursor:pointer; border:1px solid #eef0f3; }
-  .wr-photo-thumb img, .wr-photo-thumb video { width:100%; height:100%; object-fit:cover; display:block; }
-  .wr-photo-play { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); background:rgba(0,0,0,0.5); color:#fff; border-radius:50%; width:16px; height:16px; display:flex; align-items:center; justify-content:center; font-size:0.55em; }
+  .wr-expand-hint { font-size: 0.74rem; color: #bbb; text-align:center; padding: 0 0 8px; }
 
-  /* Action buttons (right side) */
-  .wr-act { font-size: 0.8rem; padding: 8px 16px; border-radius: 8px; text-decoration: none; font-weight: 600; display:inline-flex; align-items:center; gap:5px; transition: transform .1s, background .15s; border:none; cursor:pointer; white-space:nowrap; }
-  .wr-act:active { transform: scale(0.96); }
-  .wr-act.view { background: var(--wr-accent); color: #fff; }
-  .wr-act.view:hover { background: #245540; }
-  .wr-act.edit { background: #f3f4f6; color: var(--wr-text); }
-  .wr-act.edit:hover { background: #e5e7eb; }
-  .wr-side-id { font-size: 0.68rem; color: var(--wr-muted); margin-top: 2px; }
+  /* Expanded detail panel — hidden until the card is opened */
+  .wr-detail { display:none; border-top:1px solid var(--wr-card-border); padding: 12px 16px; background:#fafafa; }
+  .wr-card.open .wr-detail { display:block; }
+  .wr-card.open .wr-expand-hint { display:none; }
+  .wr-dsec { margin-bottom: 12px; }
+  .wr-dlabel { font-size: 0.74rem; color: #999; margin-bottom: 4px; }
+  .wr-dvalue { font-size: 0.86rem; color: var(--wr-text); line-height: 1.5; }
+
+  /* Zone hierarchy: Land → 通用名称 → zone codes */
+  .wr-zone-hier { font-size: 0.84em; }
+  .wr-zh-land { margin-bottom: 6px; }
+  .wr-zh-land-name { font-weight: 600; color: var(--wr-accent); font-size: 0.9em; }
+  .wr-zh-land-count { color: #aaa; font-size: 0.8em; font-weight: 400; margin-left: 4px; }
+  .wr-zh-names { margin-top: 3px; display:flex; flex-direction:column; gap: 3px; }
+  .wr-zh-name-row { display:flex; flex-wrap:wrap; align-items:baseline; gap: 4px; }
+  .wr-zh-name { background: var(--wr-accent-soft); color: var(--wr-accent); padding: 2px 8px; border-radius: 8px; font-size: 0.82em; font-weight: 500; }
+  .wr-zh-codes { color:#999; font-size: 0.78em; }
+
+  .wr-grp-title { font-size:0.8rem; color: var(--wr-accent); font-weight:600; margin: 8px 0 4px; }
+  .wr-entry-row { display:flex; justify-content:space-between; gap:8px; font-size:0.84rem; padding:5px 0; border-bottom:1px solid #efefef; }
+  .wr-entry-row:last-child { border-bottom:none; }
+  .wr-entry-path { color:#333; line-height:1.35; }
+  .wr-entry-val { flex:0 0 auto; color: var(--wr-accent); font-weight:600; white-space:nowrap; }
+  .wr-entry-proj { font-size:0.72rem; color:#aaa; margin-top:2px; }
+
+  .wr-photo-grid { display:flex; flex-wrap:wrap; gap:6px; margin-top:4px; }
+  .wr-photo { width: 64px; height: 64px; border-radius:6px; object-fit:cover; }
+  .wr-photo-wrap { position:relative; width:64px; height:64px; cursor:pointer; }
+  .wr-photo-wrap .wr-photo { display:block; }
+  .wr-photo-play { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); background:rgba(0,0,0,0.55); color:#fff; border-radius:50%; width:22px; height:22px; display:flex; align-items:center; justify-content:center; font-size:0.7em; pointer-events:none; }
+
+  /* Thumbnail strip in the collapsed card summary — lets users peek at photos
+     without expanding. Capped at 4 thumbs; a +N badge on the 4th marks overflow. */
+  .wr-thumb-strip { display:flex; gap:5px; margin-top:8px; }
+  .wr-thumb-wrap { position:relative; width:52px; height:52px; border-radius:6px; overflow:hidden; cursor:pointer; flex:0 0 auto; }
+  .wr-thumb { width:52px; height:52px; object-fit:cover; display:block; background:#f0f0f0; }
+  .wr-thumb-more { position:absolute; inset:0; background:rgba(0,0,0,0.55); color:#fff; display:flex; align-items:center; justify-content:center; font-size:0.85rem; font-weight:600; }
+
+  /* Inline comments (inside expanded detail) */
+  .wr-cmt-list { display:flex; flex-direction:column; gap:8px; margin-bottom:8px; }
+  .wr-cmt-item { background:#fff; border-radius:8px; padding:8px 10px; border:1px solid #eee; }
+  .wr-cmt-head { display:flex; justify-content:space-between; align-items:baseline; margin-bottom:3px; }
+  .wr-cmt-author { font-weight:600; font-size:0.82em; color:#1565c0; }
+  .wr-cmt-time { font-size:0.7em; color:#aaa; }
+  .wr-cmt-body { font-size:0.86em; color:var(--wr-text); line-height:1.45; white-space:pre-wrap; word-break:break-word; }
+  .wr-cmt-empty { font-size:0.8em; color:#aaa; padding:4px 0; }
+  .wr-cmt-add { display:flex; gap:6px; margin-top:6px; }
+  .wr-cmt-input { flex:1; border:1px solid #ddd; border-radius:8px; padding:7px 10px; font-size:0.86em; resize:none; min-height:38px; max-height:100px; font-family:inherit; }
+  .wr-cmt-send { flex:0 0 auto; background: var(--wr-accent); color:#fff; border:none; border-radius:8px; padding:0 14px; font-size:0.86em; font-weight:600; cursor:pointer; }
+
+  .wr-side-actions { display:flex; gap:8px; justify-content:flex-end; padding: 0 16px 12px; }
+  .wr-act { font-size:0.8rem; padding:7px 14px; border-radius:8px; text-decoration:none; font-weight:600; display:inline-flex; align-items:center; border:none; cursor:pointer; }
+  .wr-act.view { background: var(--wr-accent); color:#fff; }
+  .wr-act.edit { background:#f3f4f6; color: var(--wr-text); }
 
   .wr-empty { padding: 48px; text-align:center; color: var(--wr-muted); font-size: 0.95rem; background: var(--wr-card-bg); border-radius: 14px; border: 1px solid var(--wr-card-border); }
 
-  /* Inline comments panel (desktop list) — toggled by the 💬 chip. */
-  .wr-cmt-toggle-row { margin-top: 6px; }
-  .wr-cmt-toggle.zero { background: #f0f0f0 !important; color: #999 !important; font-weight: 500; }
-  .wr-cmt-panel { display: none; flex-basis: 100%; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--wr-card-border); }
-  .wr-cmt-panel.open { display: block; }
-  .wr-cmt-list { display: flex; flex-direction: column; gap: 8px; max-height: 280px; overflow-y: auto; padding-right: 2px; }
-  .wr-cmt-item { background: #f7f9fc; border-radius: 8px; padding: 8px 11px; border: 1px solid #eef0f3; }
-  .wr-cmt-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 3px; }
-  .wr-cmt-author { font-weight: 600; font-size: 0.8rem; color: #1565c0; }
-  .wr-cmt-time { font-size: 0.7rem; color: var(--wr-muted); }
-  .wr-cmt-body { font-size: 0.84rem; color: var(--wr-text); line-height: 1.45; white-space: pre-wrap; word-break: break-word; }
-  .wr-cmt-empty { color: var(--wr-muted); font-size: 0.82rem; padding: 4px 0; }
-  .wr-cmt-add { display: flex; gap: 8px; margin-top: 10px; }
-  .wr-cmt-input { flex: 1; border: 1px solid #e0e3e7; border-radius: 8px; padding: 8px 11px; font-size: 0.84rem; resize: none; min-height: 40px; max-height: 120px; font-family: inherit; }
-  .wr-cmt-send { flex: 0 0 auto; background: var(--wr-accent); color: #fff; border: none; border-radius: 8px; padding: 0 16px; font-size: 0.84rem; font-weight: 600; cursor: pointer; }
-  .wr-cmt-send:disabled { opacity: 0.6; cursor: default; }
-  .wr-cmt-loading { color: var(--wr-muted); font-size: 0.82rem; padding: 4px 0; }
-
-  /* On narrow screens, stack the actions below */
-  @media (max-width: 560px) {
-    .wr-card { flex-direction: column; gap: 10px; }
-    .wr-card-side { flex-direction: row; align-items: center; justify-content: flex-end; border-left: none; border-top: 1px solid var(--wr-card-border); padding-left: 0; padding-top: 10px; }
-    .wr-side-id { display:none; }
-  }
+  /* Load more */
+  .wr-loadmore-wrap { text-align:center; padding: 8px 0 20px; }
+  .wr-loadmore { padding: 10px 28px; border-radius: 24px; font-size: 0.88rem; font-weight:600; background:#fff; color: var(--wr-accent); border:1px solid var(--wr-accent); cursor:pointer; transition: background .15s, color .15s; }
+  .wr-loadmore:hover:not(:disabled) { background: var(--wr-accent); color:#fff; }
+  .wr-loadmore:disabled { opacity: 0.6; cursor: default; }
+  .wr-loadmore-err { color: var(--wr-danger); font-size: 0.82rem; margin-top: 8px; }
 
   /* Lightbox */
   .lb-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.92); z-index:3000; justify-content:center; align-items:center; }
@@ -127,13 +158,39 @@
   .lb-prev { left:12px; }
   .lb-next { right:12px; }
   .lb-counter { position:absolute; bottom:18px; left:50%; transform:translateX(-50%); color:rgba(255,255,255,0.75); font-size:0.85rem; }
+
+  /* Toast (used for comment feedback on mobile where no dashboard-modal.js runs) */
+  .wr-toast { position:fixed; bottom:24px; left:50%; transform:translateX(-50%); background:#333; color:#fff; padding:8px 18px; border-radius:20px; font-size:0.86em; z-index:9999; opacity:0; transition:opacity .2s; pointer-events:none; }
+  .wr-toast.show { opacity:1; }
+  .wr-toast.error { background:#b3261e; }
+
+  /* Mobile "more filters" toggle — hidden on desktop, shown on narrow screens.
+     The preset pills (date ranges) stay always visible; the detailed form
+     (date pickers, CCU, worker, checkboxes) collapses behind this toggle so the
+     top of the page stays short on phones. */
+  .wr-more-filters { display:none; align-items:center; gap:6px; margin-top:2px; background:none; border:none; color: var(--wr-accent); font-size:0.82rem; font-weight:600; cursor:pointer; padding:4px 0; }
+  .wr-more-filters .arrow { font-size:0.7rem; }
+  .wr-more-filters .badge { display:inline-flex; align-items:center; justify-content:center; min-width:17px; height:17px; padding:0 5px; border-radius:9px; background: var(--wr-accent); color:#fff; font-size:0.68rem; }
+
+  /* Narrow screens: cards go full width, preset pills stay, detailed form collapses. */
+  @media (max-width: 560px) {
+    .wr-list-wrap { padding: 10px; }
+    .wr-list-head h1 { font-size: 1.2rem; }
+    .wr-summary { padding: 12px 14px; }
+    .wr-more-filters { display:inline-flex; }   /* show the toggle on phones */
+    #filterForm { display:none; }                /* detailed form hidden by default */
+    #filterForm.open { display:flex; }           /* revealed when toggled */
+  }
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="wr-list-wrap">
     <div class="wr-list-head">
-        <h1>维修日志</h1>
+        <div>
+            <h1>维修日志</h1>
+            <div class="wr-subtitle">默认显示最近 {{ default_days }} 天 · 点击卡片展开详情</div>
+        </div>
     </div>
 
     {% if messages %}
@@ -143,9 +200,20 @@
     {% endif %}
 
     <div class="filter-card">
-        <form method="get" class="filter-row">
-            <div class="ff"><label>起始日期</label><input type="date" name="date_from" value="{{ filters.date_from }}"></div>
-            <div class="ff"><label>截止日期</label><input type="date" name="date_to" value="{{ filters.date_to }}"></div>
+        {# Date-range presets. The selected one sets date_from accordingly; near-7-days is the default. #}
+        <div class="preset-row" id="presetRow">
+            <button type="button" class="preset-pill" data-days="7">近7天</button>
+            <button type="button" class="preset-pill" data-days="30">近30天</button>
+            <button type="button" class="preset-pill" data-days="90">近90天</button>
+            <button type="button" class="preset-pill" data-days="all">全部</button>
+        </div>
+        {% comment %}Detailed-filter toggle (mobile only). Shows a count badge when any detailed filter is active so it stays discoverable. Form auto-opens on load in that case.{% endcomment %}
+        <button type="button" class="wr-more-filters" id="moreFiltersBtn" onclick="toggleMoreFilters()" aria-expanded="false">
+            <span id="moreFiltersLabel">更多筛选</span><span class="badge" id="moreFiltersBadge" style="display:none;">0</span><span class="arrow" id="moreFiltersArrow">▾</span>
+        </button>
+        <form method="get" class="filter-row" id="filterForm">
+            <div class="ff"><label>起始日期</label><input type="date" name="date_from" value="{{ filters.date_from }}" id="dateFrom"></div>
+            <div class="ff"><label>截止日期</label><input type="date" name="date_to" value="{{ filters.date_to }}" id="dateTo"></div>
             <div class="ff"><label>CCU</label>
                 <select name="location">
                     <option value="">全部</option>
@@ -167,65 +235,20 @@
         </form>
     </div>
 
+    {# Cards — server-rendered initial batch. Appended to by "加载更多" (loadCards appends markup). #}
+    <div id="cardList">
     {% for report in reports %}
-    <div class="wr-card">
-        <div class="wr-card-main">
-            <div class="wr-card-top">
-                <span class="wr-card-id">{{ report.date }}</span>
-                {% if report.shift %}<span class="wr-card-date">{{ report.get_shift_display|default:report.shift }}</span>{% endif %}
-                <div class="wr-card-flags">
-                    {% if report.is_pending_repair %}<span class="wr-flag pending">待修</span>{% endif %}
-                    {% if report.is_difficult %}<span class="wr-flag difficult">疑难</span>{% endif %}
-                    {% if report.is_difficult and report.is_difficult_resolved %}<span class="wr-flag resolved">已处理</span>{% endif %}
-                </div>
-            </div>
-            <div class="wr-meta">
-                <span><b>{{ report.worker.full_name|default:"–" }}</b></span>
-                {% if report.work_start_time %}<span>{{ report.work_start_time }}–{{ report.work_end_time }}{% if report.team_hours %} · {{ report.team_hours }}h{% endif %}{% if report.third_party_hours %} +{{ report.third_party_hours }}h{% endif %}</span>{% endif %}
-                {% if report.team_size %}<span>{{ report.team_size }}人{% if report.third_party_count %} +{{ report.third_party_count }}三方{% endif %}</span>{% endif %}
-            </div>
-            {% if report.zone_summary %}
-            <div class="wr-zone-summary"><span class="pin">📍</span> {{ report.zone_summary }}</div>
-            {% endif %}
-            {% if report.section_labels %}
-            <div>
-                {% for lbl in report.section_labels %}<span class="wr-chip">{{ lbl }}</span>{% endfor %}
-                {% if report.entry_count %}<span class="wr-chip count">{{ report.entry_count }}项</span>{% endif %}
-            </div>
-            {% endif %}
-            <div class="wr-cmt-toggle-row">
-                <button type="button" class="wr-chip wr-cmt-toggle {% if not report.comment_count %}zero{% endif %}" style="background:#e3f2fd;color:#1565c0;border:none;cursor:pointer;" onclick="toggleCmt(this, {{ report.id }})" data-loaded="0">💬 <span class="wr-cmt-n">{{ report.comment_count|default:0 }}</span></button>
-            </div>
-            {# Photo thumbs #}
-            {% if report.photos %}
-            <div class="wr-photo-row">
-                {% for p in report.photos %}
-                {% if forloop.counter <= 6 %}
-                <div class="wr-photo-thumb" onclick="openLb({{ report.id }}, {{ forloop.counter0 }})">
-                    {% if p|is_video %}
-                    <video src="/media/{{ p|thumb }}" muted preload="metadata"></video>
-                    <span class="wr-photo-play">▶</span>
-                    {% else %}
-                    <img src="/media/{{ p|thumb }}" loading="lazy" alt="照片">
-                    {% endif %}
-                </div>
-                {% endif %}
-                {% endfor %}
-                {% if report.photos|length > 6 %}<span style="font-size:0.75rem;color:var(--wr-muted,#6b7280);align-self:center;">+{{ report.photos|length|add:"-6" }}</span>{% endif %}
-            </div>
-            {% endif %}
-        </div>
-        <div class="wr-card-side">
-            <a class="wr-act view" href="{% url 'core:work_report_detail' report.id %}">查看</a>
-            <a class="wr-act edit" href="{% url 'core:workorder_tree_form_edit' report.id %}">编辑</a>
-            <span class="wr-side-id">#{{ report.id }}</span>
-        </div>
-        {# Inline comments panel (toggled by the 💬 chip, no page redirect) #}
-        <div class="wr-cmt-panel" id="wrCmtPanel-{{ report.id }}"></div>
-    </div>
+        {% include 'core/_work_report_card.html' %}
     {% empty %}
     <div class="wr-empty">暂无工作日报记录</div>
     {% endfor %}
+    </div>
+
+    {# Load more — fetches the next older batch via cursor pagination. #}
+    <div class="wr-loadmore-wrap" id="loadMoreWrap" {% if not has_more %}style="display:none;"{% endif %}>
+        <button type="button" class="wr-loadmore" id="loadMoreBtn" onclick="loadMore()">加载更多</button>
+        <div class="wr-loadmore-err" id="loadMoreErr" style="display:none;"></div>
+    </div>
 </div>
 
 <!-- Lightbox -->
@@ -238,9 +261,21 @@
     <div class="lb-counter" id="lbCounter"></div>
 </div>
 
-{# Photo path registry for the lightbox, keyed by report id #}
+<div class="wr-toast" id="wrToast"></div>
+
+{# Filter state for load-more, serialized safely to JS via json_script. #}
+{{ filter_json|json_script:"wr-filter-json" }}
+{# Photo path registry for the lightbox, keyed by report id (initial server-rendered batch). #}
 <script id="wr-photo-data" type="application/json">{% for report in reports %}{% if report.photos %}"{{ report.id }}":{{ report.photos|safe }},{% endif %}{% endfor %}</script>
 <script>
+var cfg = JSON.parse(document.getElementById('wr-filter-json').textContent);
+var currentFilter = cfg.filters;            // {date_from, date_to, location, worker, is_pending_repair, is_difficult}
+var lastLoadedId = cfg.last_id;             // report id cursor (null when none loaded)
+var isAdmin = cfg.is_admin || false;        // show admin-only reassign control
+var allWorkers = cfg.workers || [];         // [{id,name,employee_id}] for reassign dropdown
+var isLoadingMore = false;
+var cmtLoaded = {};   // reportId -> true once its comment thread has been fetched
+
 var photoData = {};
 (function () {
     // Parse the registry built above: "id":[paths],... (trailing comma tolerated).
@@ -248,26 +283,367 @@ var photoData = {};
     if (raw) { try { photoData = JSON.parse('{' + raw + '}'); } catch (e) {} }
 })();
 
-var lbPhotos = [], lbIdx = 0;
-function isVideoPath(p) { return /\.(mp4|mov|m4v|webm|ogg|ogv|avi|mkv)$/i.test(p); }
+// ── Date-range presets ────────────────────────────────────────────────────
+(function () {
+    // Highlight whichever preset matches the active date_from (or "全部" when none).
+    var pills = document.querySelectorAll('#presetRow .preset-pill');
+    function refreshPillHighlight() {
+        var df = document.getElementById('dateFrom').value;
+        pills.forEach(function (p) {
+            p.classList.remove('on');
+            var days = p.getAttribute('data-days');
+            if (days === 'all') {
+                if (!df) p.classList.add('on');
+            } else if (df) {
+                var expect = new Date();
+                expect.setDate(expect.getDate() - parseInt(days, 10));
+                var iso = expect.toISOString().slice(0, 10);
+                if (df === iso) p.classList.add('on');
+            }
+        });
+    }
+    pills.forEach(function (p) {
+        p.addEventListener('click', function () {
+            var days = p.getAttribute('data-days');
+            var df = document.getElementById('dateFrom');
+            var dt = document.getElementById('dateTo');
+            if (days === 'all') {
+                df.value = '';
+                dt.value = '';
+            } else {
+                var start = new Date();
+                start.setDate(start.getDate() - parseInt(days, 10));
+                df.value = start.toISOString().slice(0, 10);
+                dt.value = '';   // preset = open-ended up to today
+            }
+            // Resubmit the filter form so the initial batch + load-more cursor reset.
+            document.getElementById('filterForm').submit();
+        });
+    });
+    refreshPillHighlight();
+})();
 
-function openLb(reportId, idx) {
-    lbPhotos = photoData[reportId] || [];
-    lbIdx = idx || 0;
+// ── Mobile "more filters" toggle ──────────────────────────────────────────
+// On phones the detailed filter form is collapsed behind the toggle (the preset
+// pills handle the common date-range case). Show a count badge of active detailed
+// filters so it stays discoverable, and auto-open the form if any are set.
+function countActiveDetailedFilters() {
+    var f = currentFilter;
+    var n = 0;
+    if (f.date_to) n++;                 // date_to is detailed (date_from is the preset)
+    if (f.location) n++;
+    if (f.worker) n++;
+    if (f.is_pending_repair) n++;
+    if (f.is_difficult) n++;
+    return n;
+}
+function toggleMoreFilters() {
+    var form = document.getElementById('filterForm');
+    var btn = document.getElementById('moreFiltersBtn');
+    var opened = form.classList.toggle('open');
+    btn.setAttribute('aria-expanded', opened ? 'true' : 'false');
+    document.getElementById('moreFiltersArrow').textContent = opened ? '▴' : '▾';
+    document.getElementById('moreFiltersLabel').textContent = opened ? '收起筛选' : '更多筛选';
+}
+(function () {
+    var n = countActiveDetailedFilters();
+    var badge = document.getElementById('moreFiltersBadge');
+    if (n) { badge.style.display = ''; badge.textContent = n; }
+    // On mobile, if detailed filters are active, reveal the form by default.
+    if (n && window.matchMedia('(max-width: 560px)').matches) toggleMoreFilters();
+})();
+
+// ── Load more (cursor pagination) ─────────────────────────────────────────
+function loadMore() {
+    if (isLoadingMore || lastLoadedId == null) return;
+    var btn = document.getElementById('loadMoreBtn');
+    var err = document.getElementById('loadMoreErr');
+    err.style.display = 'none';
+    btn.disabled = true;
+    btn.textContent = '加载中…';
+    isLoadingMore = true;
+
+    var params = new URLSearchParams();
+    params.set('before_id', lastLoadedId);
+    if (currentFilter.date_from) params.set('date_from', currentFilter.date_from);
+    if (currentFilter.date_to) params.set('date_to', currentFilter.date_to);
+    if (currentFilter.location) params.set('location', currentFilter.location);
+    if (currentFilter.worker) params.set('worker', currentFilter.worker);
+    if (currentFilter.is_pending_repair) params.set('is_pending_repair', '1');
+    if (currentFilter.is_difficult) params.set('is_difficult', '1');
+
+    fetch('{% url "core:work_reports" %}?' + params.toString(), {
+        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+    }).then(function (r) { return r.json(); }).then(function (d) {
+        var list = document.getElementById('cardList');
+        (d.reports || []).forEach(function (rep) {
+            var div = document.createElement('div');
+            div.innerHTML = renderCard(rep).trim();
+            if (div.firstChild) list.appendChild(div.firstChild);
+        });
+        lastLoadedId = d.last_id;
+        document.getElementById('loadMoreWrap').style.display = d.has_more ? '' : 'none';
+        btn.disabled = false;
+        btn.textContent = '加载更多';
+    }).catch(function () {
+        err.style.display = '';
+        err.textContent = '加载失败，请重试';
+        btn.disabled = false;
+        btn.textContent = '加载更多';
+    }).finally(function () { isLoadingMore = false; });
+}
+
+// ── Card markup builder (used for AJAX-appended cards) ────────────────────
+function esc(s) { var d = document.createElement('div'); d.textContent = s == null ? '' : s; return d.innerHTML; }
+function isVideoPath(p) { return /\.(mp4|mov|m4v|webm|ogg|ogv|avi|mkv)$/i.test(p); }
+function thumbPath(p) { return p.replace(/\.[^.]+$/, '_thumb.jpg'); }
+function renderCard(r) {
+    var html = '<div class="wr-card" data-rid="' + r.id + '">';
+    html += '<div class="wr-summary" onclick="toggleCard(this)">';
+    // top row
+    html += '<div class="wr-card-top"><span class="wr-card-date">' + esc(r.date) + '</span>';
+    if (r.shift_display) html += '<span class="wr-card-shift">' + esc(r.shift_display) + '</span>';
+    html += '<span class="wr-card-id">#' + r.id + '</span>';
+    html += '<div class="wr-card-flags">';
+    if (r.is_pending_repair) html += '<span class="wr-flag pending">待修</span>';
+    if (r.is_difficult) html += '<span class="wr-flag difficult">疑难</span>';
+    if (r.is_difficult && r.is_difficult_resolved) html += '<span class="wr-flag resolved">已处理</span>';
+    html += '</div></div>';
+    // meta
+    var meta = '';
+    if (r.worker_name) meta += '<span><b>' + esc(r.worker_name) + '</b></span>';
+    if (r.work_start_time) {
+        meta += '<span>' + esc(r.work_start_time) + '–' + esc(r.work_end_time);
+        if (r.team_hours) meta += ' · ' + r.team_hours + 'h';
+        if (r.third_party_hours) meta += ' +' + r.third_party_hours + 'h';
+        meta += '</span>';
+    }
+    if (r.team_size) {
+        meta += '<span>' + r.team_size + '人';
+        if (r.third_party_count) meta += ' +' + r.third_party_count + '三方';
+        meta += '</span>';
+    }
+    if (meta) html += '<div class="wr-meta">' + meta + '</div>';
+    // zone summary
+    if (r.zone_summary) html += '<div class="wr-zone-summary"><span class="pin">📍</span> ' + esc(r.zone_summary) + '</div>';
+    // chips
+    var chips = '';
+    (r.section_labels || []).forEach(function (l) { chips += '<span class="wr-chip">' + esc(l) + '</span>'; });
+    if (r.entry_count) chips += '<span class="wr-chip count">' + r.entry_count + '项</span>';
+    chips += '<button type="button" class="wr-cmt-chip ' + (r.comment_count ? '' : 'zero') + '" onclick="event.stopPropagation();toggleCmt(' + r.id + ', this)">💬 ' + (r.comment_count || 0) + '</button>';
+    if (chips) html += '<div class="wr-chips">' + chips + '</div>';
+    // Thumbnail strip in the collapsed summary (no expand needed). Capped at 4 + overflow.
+    if (r.photos && r.photos.length) {
+        // Register this card's full photo set so the lightbox can page through it.
+        photoData[r.id] = r.photos;
+        html += '<div class="wr-thumb-strip" onclick="event.stopPropagation()">';
+        r.photos.forEach(function (p, i) {
+            if (i < 4) {
+                var clean = p.replace(/'/g, "\\'");
+                html += '<div class="wr-thumb-wrap" onclick="openLb(photoData[' + r.id + '] || [\'' + clean + '\'], ' + i + ')">';
+                html += '<img class="wr-thumb" src="/media/' + thumbPath(p) + '" loading="lazy" alt="照片">';
+                if (i === 3 && r.photos.length > 4) html += '<span class="wr-thumb-more">+' + (r.photos.length - 4) + '</span>';
+                html += '</div>';
+            }
+        });
+        html += '</div>';
+    }
+    html += '</div>';
+    html += '<div class="wr-expand-hint">点击查看详情 ▾</div>';
+    // detail panel
+    html += '<div class="wr-detail" onclick="event.stopPropagation()">';
+    if (r.worker_name) {
+        html += '<div class="wr-dsec"><div class="wr-dlabel">填写人</div><div class="wr-dvalue" id="wrWorker-' + r.id + '">' + esc(r.worker_name);
+        if (r.worker_employee_id) html += ' (' + esc(r.worker_employee_id) + ')';
+        html += '</div></div>';
+    }
+    // Admin-only reassign control (mirrors the server-rendered partial).
+    if (isAdmin && allWorkers.length) {
+        var opts = allWorkers.map(function (w) {
+            return '<option value="' + w.id + '">' + esc(w.name) + (w.employee_id ? ' (' + esc(w.employee_id) + ')' : '') + '</option>';
+        }).join('');
+        html += '<div class="wr-dsec wr-reassign" data-rid="' + r.id + '">'
+            + '<div class="wr-dlabel">改派填写人 <span style="color:#aaa;font-weight:400;">(管理员)</span></div>'
+            + '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">'
+            + '<select class="wr-reassign-select" style="flex:1;min-width:140px;padding:7px 10px;border:1px solid #e5e7eb;border-radius:8px;font-size:0.85rem;background:#fff;">' + opts + '</select>'
+            + '<button type="button" class="wr-reassign-btn" onclick="reassignWorker(' + r.id + ')" style="padding:7px 14px;border:none;border-radius:8px;font-size:0.82rem;font-weight:600;background:#2D6A4F;color:#fff;cursor:pointer;">改派</button>'
+            + '</div></div>';
+    }
+    // zone hierarchy
+    if (r.zone_hierarchy && r.zone_hierarchy.length) {
+        html += '<div class="wr-dsec"><div class="wr-dlabel">区域</div><div class="wr-zone-hier">';
+        r.zone_hierarchy.forEach(function (g) {
+            html += '<div class="wr-zh-land"><span class="wr-zh-land-name">' + esc(g.land) + '</span><span class="wr-zh-land-count">' + g.zone_count + ' 个区域</span>';
+            html += '<div class="wr-zh-names">';
+            g.names.forEach(function (nm) {
+                html += '<div class="wr-zh-name-row"><span class="wr-zh-name">' + esc(nm.name) + '</span><span class="wr-zh-codes">' + (nm.count > 1 ? nm.count + ' 个 · ' : '') + esc((nm.codes || []).join(', ')) + '</span></div>';
+            });
+            html += '</div></div>';
+        });
+        html += '</div></div>';
+    }
+    // headcount
+    html += '<div class="wr-dsec"><div class="wr-dlabel">人数</div><div class="wr-dvalue">灌溉组 ' + r.team_size + '人';
+    if (r.third_party_count) html += '，第三方 ' + r.third_party_count + '人';
+    html += '</div></div>';
+    // work content
+    if (r.entry_groups && r.entry_groups.length) {
+        html += '<div class="wr-dsec"><div class="wr-dlabel">工作内容</div>';
+        r.entry_groups.forEach(function (g) {
+            html += '<div class="wr-grp-title">' + esc(g.section_label) + '</div>';
+            g.items.forEach(function (it) {
+                html += '<div class="wr-entry-row"><div class="wr-entry-path">' + esc(it.path);
+                if (it.project) html += '<div class="wr-entry-proj">项目: ' + esc(it.project) + '</div>';
+                html += '</div>' + (it.value ? '<span class="wr-entry-val">' + esc(it.value) + '</span>' : '') + '</div>';
+            });
+        });
+        html += '</div>';
+    }
+    // remark
+    if (r.remark) html += '<div class="wr-dsec"><div class="wr-dlabel">备注</div><div class="wr-dvalue" style="white-space:pre-wrap;">' + esc(r.remark) + '</div></div>';
+    // photos
+    if (r.photos && r.photos.length) {
+        html += '<div class="wr-dsec"><div class="wr-dlabel">照片</div><div class="wr-photo-grid">';
+        r.photos.forEach(function (p) {
+            if (isVideoPath(p)) {
+                html += '<div class="wr-photo-wrap" onclick="playInlineVid(this,\'' + p.replace(/'/g, "\\'") + '\')"><img class="wr-photo" src="/media/' + thumbPath(p) + '" loading="lazy"><span class="wr-photo-play">▶</span></div>';
+            } else {
+                html += '<div class="wr-photo-wrap" onclick="openLbPath(\'' + p.replace(/'/g, "\\'") + '\')"><img class="wr-photo" src="/media/' + thumbPath(p) + '" loading="lazy"></div>';
+            }
+        });
+        html += '</div></div>';
+    }
+    // comments holder
+    html += '<div class="wr-dsec"><div class="wr-dlabel">评论</div><div class="wr-cmt-loading" id="cmtLoading-' + r.id + '" style="display:none;">加载中…</div><div class="wr-cmt-list" id="cmtList-' + r.id + '"></div><div class="wr-cmt-add"><textarea class="wr-cmt-input" id="cmtInput-' + r.id + '" rows="1" placeholder="写评论… (Ctrl+Enter 发送)" onkeydown="if((event.metaKey||event.ctrlKey)&&event.key===\'Enter\'){event.preventDefault();postComment(' + r.id + ');}"></textarea><button type="button" class="wr-cmt-send" onclick="postComment(' + r.id + ')">发送</button></div></div>';
+    html += '</div>';
+    // side actions
+    html += '<div class="wr-side-actions"><a class="wr-act view" href="' + r.detail_url + '">查看</a><a class="wr-act edit" href="' + r.edit_url + '">编辑</a></div>';
+    html += '</div>';
+    return html;
+}
+
+function toggleCard(summaryEl) {
+    summaryEl.closest('.wr-card').classList.toggle('open');
+}
+
+// ── Inline comments (self-contained: this page doesn't load dashboard-modal.js) ──
+function wrToast(msg, isErr) {
+    var t = document.getElementById('wrToast');
+    t.textContent = msg;
+    t.className = 'wr-toast show' + (isErr ? ' error' : '');
+    clearTimeout(window._wrToastT);
+    window._wrToastT = setTimeout(function () { t.className = 'wr-toast'; }, 2500);
+}
+function cmtCSRF() {
+    var c = document.cookie.split('; ').find(function (x) { return x.indexOf('csrftoken=') === 0; });
+    return c ? c.split('=')[1] : '';
+}
+function renderComments(rid, comments) {
+    var box = document.getElementById('cmtList-' + rid);
+    if (!box) return;
+    if (!comments.length) { box.innerHTML = '<div class="wr-cmt-empty">暂无评论，留下第一条吧。</div>'; return; }
+    box.innerHTML = comments.map(function (c) {
+        return '<div class="wr-cmt-item"><div class="wr-cmt-head"><span class="wr-cmt-author">' +
+            esc(c.author) + '</span><span class="wr-cmt-time">' + esc(c.time) + '</span></div>' +
+            '<div class="wr-cmt-body">' + esc(c.body) + '</div></div>';
+    }).join('');
+}
+function loadComments(rid) {
+    if (cmtLoaded[rid]) return;
+    var ld = document.getElementById('cmtLoading-' + rid);
+    if (ld) ld.style.display = 'block';
+    fetch('/work-reports/' + rid + '/comments/', { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+        .then(function (r) { return r.json(); })
+        .then(function (d) { if (ld) ld.style.display = 'none'; if (d.success) { cmtLoaded[rid] = true; renderComments(rid, d.comments); } })
+        .catch(function () { if (ld) ld.style.display = 'none'; });
+}
+function toggleCmt(rid, chip) {
+    // First interaction loads the thread; the chip also scrolls it into view inside the open card.
+    var card = chip.closest('.wr-card');
+    if (card) card.classList.add('open');
+    loadComments(rid);
+}
+function bumpCommentChip(rid) {
+    var chip = document.querySelector('.wr-card[data-rid="' + rid + '"] .wr-cmt-chip');
+    if (chip) { var n = (parseInt((chip.textContent || '').replace(/\D/g, ''), 10) || 0) + 1; chip.textContent = '💬 ' + n; chip.classList.remove('zero'); }
+}
+
+// ── Admin: re-assign this report's creator (worker) ───────────────────────
+function reassignWorker(rid) {
+    var card = document.querySelector('.wr-card[data-rid="' + rid + '"]');
+    if (!card) return;
+    var sel = card.querySelector('.wr-reassign-select');
+    if (!sel) return;
+    var workerId = sel.value;
+    if (!workerId) { wrToast('请选择处理人', true); return; }
+    var btn = card.querySelector('.wr-reassign-btn');
+    var oldText = btn ? btn.textContent : '';
+    if (btn) { btn.disabled = true; btn.textContent = '改派中…'; }
+    fetch('/work-reports/' + rid + '/reassign/', {
+        method: 'POST',
+        headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRFToken': cmtCSRF() },
+        body: new URLSearchParams({ worker_id: workerId })
+    }).then(function (r) { return r.json(); }).then(function (d) {
+        if (d.success) {
+            // Update the card's 填写人 line + the collapsed-summary worker chip.
+            var wEl = document.getElementById('wrWorker-' + rid);
+            if (wEl) wEl.textContent = d.worker_name + (d.worker_employee_id ? ' (' + d.worker_employee_id + ')' : '');
+            var metaB = card.querySelector('.wr-meta b');
+            if (metaB) metaB.textContent = d.worker_name;
+            wrToast(d.message || '已改派');
+        } else {
+            wrToast(d.message || '改派失败', true);
+        }
+    }).catch(function () { wrToast('网络错误', true); })
+      .finally(function () { if (btn) { btn.disabled = false; btn.textContent = oldText; } });
+}
+function postComment(rid) {
+    var inp = document.getElementById('cmtInput-' + rid);
+    if (!inp) return;
+    var body = inp.value.trim();
+    if (!body) { wrToast('请输入评论内容', true); return; }
+    inp.value = '';
+    fetch('/work-reports/' + rid + '/comments/', {
+        method: 'POST',
+        headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRFToken': cmtCSRF() },
+        body: new URLSearchParams({ body: body })
+    }).then(function (r) { return r.json(); }).then(function (d) {
+        if (d.success) { cmtLoaded[rid] = false; loadComments(rid); wrToast('评论已发布'); bumpCommentChip(rid); }
+        else { wrToast(d.message || '发布失败', true); }
+    }).catch(function () { wrToast('网络错误', true); });
+}
+
+// ── Lightbox + inline video ───────────────────────────────────────────────
+var lbPhotos = [], lbIdx = 0;
+function openLb(photos, idx) {
+    lbPhotos = photos || []; lbIdx = idx || 0;
     if (!lbPhotos.length) return;
     showLb();
     document.getElementById('lightbox').classList.add('show');
     document.addEventListener('keydown', lbKey);
+}
+function openLbPath(path) {
+    // Single-photo open from an AJAX-rendered card (full set may not be known).
+    openLb([path], 0);
+}
+function playInlineVid(wrap, path) {
+    var img = wrap.querySelector('img');
+    if (img) img.style.display = 'none';
+    if (!wrap.querySelector('video')) {
+        var v = document.createElement('video');
+        v.className = 'wr-photo'; v.style.display = 'block'; v.controls = true; v.muted = true;
+        v.src = '/media/' + path;
+        wrap.appendChild(v);
+    }
+    wrap.querySelector('video').style.display = 'block';
+    wrap.querySelector('video').play();
 }
 function closeLb() {
     document.getElementById('lightbox').classList.remove('show');
     var v = document.getElementById('lbVideo'); v.pause(); v.src = '';
     document.removeEventListener('keydown', lbKey);
 }
-function navLb(dir) {
-    lbIdx = (lbIdx + dir + lbPhotos.length) % lbPhotos.length;
-    showLb();
-}
+function navLb(dir) { lbIdx = (lbIdx + dir + lbPhotos.length) % lbPhotos.length; showLb(); }
 function showLb() {
     var img = document.getElementById('lbImg'), vid = document.getElementById('lbVideo');
     var p = lbPhotos[lbIdx];
@@ -284,78 +660,6 @@ function lbKey(e) {
     if (e.key === 'Escape') closeLb();
     else if (e.key === 'ArrowLeft') navLb(-1);
     else if (e.key === 'ArrowRight') navLb(1);
-}
-
-// ── Inline workorder comments (desktop list) ──
-function cmtCSRF() {
-    var c = document.cookie.split('; ').find(function (x) { return x.indexOf('csrftoken=') === 0; });
-    return c ? c.split('=')[1] : '';
-}
-function cmtEsc(s) {
-    var d = document.createElement('div'); d.textContent = s == null ? '' : s; return d.innerHTML;
-}
-function renderCmt(rid, comments) {
-    var box = document.querySelector('#wrCmtPanel-' + rid + ' .wr-cmt-list');
-    if (!box) return;
-    if (!comments.length) { box.innerHTML = '<div class="wr-cmt-empty">暂无评论，留下第一条吧。</div>'; return; }
-    box.innerHTML = comments.map(function (c) {
-        return '<div class="wr-cmt-item"><div class="wr-cmt-head"><span class="wr-cmt-author">' +
-            cmtEsc(c.author) + '</span><span class="wr-cmt-time">' + cmtEsc(c.time) + '</span></div>' +
-            '<div class="wr-cmt-body">' + cmtEsc(c.body) + '</div></div>';
-    }).join('');
-}
-function buildPanel(rid) {
-    var panel = document.getElementById('wrCmtPanel-' + rid);
-    panel.innerHTML =
-        '<div class="wr-cmt-list"><div class="wr-cmt-loading">加载中…</div></div>' +
-        '<div class="wr-cmt-add"><textarea class="wr-cmt-input" rows="1" placeholder="写评论… (Ctrl+Enter 发送)" ' +
-        'onkeydown="if((event.metaKey||event.ctrlKey)&&event.key===\'Enter\'){event.preventDefault();postCmt(' + rid + ');}"></textarea>' +
-        '<button type="button" class="wr-cmt-send" onclick="postCmt(' + rid + ')">发送</button></div>';
-}
-function loadCmt(rid) {
-    fetch('/work-reports/' + rid + '/comments/', { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
-        .then(function (r) { return r.json(); })
-        .then(function (d) { if (d.success) renderCmt(rid, d.comments); })
-        .catch(function () {
-            var box = document.querySelector('#wrCmtPanel-' + rid + ' .wr-cmt-list');
-            if (box) box.innerHTML = '<div class="wr-cmt-empty">加载失败，请重试。</div>';
-        });
-}
-function toggleCmt(btn, rid) {
-    var panel = document.getElementById('wrCmtPanel-' + rid);
-    if (!panel) return;
-    var open = panel.classList.toggle('open');
-    if (open && btn.getAttribute('data-loaded') === '0') {
-        btn.setAttribute('data-loaded', '1');
-        buildPanel(rid);
-        loadCmt(rid);
-    }
-}
-function bumpCmtChip(rid) {
-    var chip = document.querySelector('.wr-card .wr-cmt-toggle[onclick*="' + rid + '"]');
-    if (chip) {
-        var span = chip.querySelector('.wr-cmt-n');
-        var n = (parseInt((span && span.textContent) || '0', 10) || 0) + 1;
-        if (span) span.textContent = n;
-        chip.classList.remove('zero');
-    }
-}
-function postCmt(rid) {
-    var inp = document.querySelector('#wrCmtPanel-' + rid + ' .wr-cmt-input');
-    if (!inp) return;
-    var body = (inp.value || '').trim();
-    if (!body) { alert('请输入评论内容'); return; }
-    var btn = document.querySelector('#wrCmtPanel-' + rid + ' .wr-cmt-send');
-    if (btn) btn.disabled = true;
-    fetch('/work-reports/' + rid + '/comments/', {
-        method: 'POST',
-        headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRFToken': cmtCSRF() },
-        body: new URLSearchParams({ body: body })
-    }).then(function (r) { return r.json(); }).then(function (d) {
-        if (btn) btn.disabled = false;
-        if (d.success) { inp.value = ''; loadCmt(rid); bumpCmtChip(rid); }
-        else { alert(d.message || '发布失败'); }
-    }).catch(function () { if (btn) btn.disabled = false; alert('网络错误'); });
 }
 </script>
 {% endblock %}
