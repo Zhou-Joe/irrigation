@@ -6255,7 +6255,7 @@ def _group_zone_remarks(notes_field):
     """
     import json as _json
     from collections import OrderedDict
-    from core.models import Zone
+    from core.models import Zone, WorkReportEntry, WorkItem
 
     grouped = OrderedDict()
     for z in (Zone.objects.select_related('land', 'patch')
@@ -6273,6 +6273,23 @@ def _group_zone_remarks(notes_field):
                 'remark': it, 'zones': [], 'key': key, 'is_grouped': bool(woid),
             })
             entry['zones'].append((z, idx))
+
+    # Enrich workorder-sourced groups with the source workorder's section labels
+    # (工单类别, e.g. 常规维护/灌溉项目) so the UI can show the category alongside
+    # the (often-generic) remark content. One batched query, not per-group.
+    section_labels = dict(WorkItem.SECTION_CHOICES)
+    woids = [g['remark'].get('workorder_id') for g in grouped.values()
+             if g['remark'].get('workorder_id')]
+    wo_sections = {}
+    if woids:
+        for row in (WorkReportEntry.objects
+                    .filter(work_report_id__in=woids, work_item__active=True)
+                    .values_list('work_report_id', 'work_item__section')):
+            wo_sections.setdefault(row[0], set()).add(row[1])
+    for g in grouped.values():
+        woid = g['remark'].get('workorder_id')
+        secs = sorted(wo_sections.get(woid, [])) if woid else []
+        g['section_labels'] = [section_labels.get(s, s) for s in secs]
 
     for g in grouped.values():
         lands = OrderedDict()
