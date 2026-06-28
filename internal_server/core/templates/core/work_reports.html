@@ -176,6 +176,8 @@
   .wr-rm-btn.eq { background:#e3f2fd; color:#1565c0; border:1px solid #1565c0; }
   .wr-rm-btn:disabled { opacity:0.6; cursor:default; }
   .wr-rm-empty { padding:32px; text-align:center; color:var(--wr-muted); font-size:0.9rem; background:var(--wr-card-bg); border-radius:12px; border:1px solid var(--wr-card-border); }
+  .wr-rm-cats { display:flex; flex-wrap:wrap; gap:4px; margin-top:6px; }
+  .wr-rm-cat { display:inline-block; padding:2px 9px; border-radius:12px; font-size:0.72rem; font-weight:600; background:var(--wr-accent-soft); color:var(--wr-accent); }
 
   /* Transfer selector modal */
   .rm-move-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.45); z-index:3200; justify-content:center; align-items:center; padding:16px; }
@@ -320,6 +322,7 @@
                     <span class="wr-rm-author">{{ g.remark.author }}</span>
                     {% if g.remark.workorder_id %}<a class="wr-rm-wo" href="{% url 'core:work_report_detail' g.remark.workorder_id %}">工单#{{ g.remark.workorder_id }}</a>{% endif %}
                 </div>
+                {% if g.section_labels %}<div class="wr-rm-cats">{% for lbl in g.section_labels %}<span class="wr-rm-cat">{{ lbl }}</span>{% endfor %}</div>{% endif %}
                 <div class="wr-rm-zones">{% for h in g.hierarchy %}<b>{{ h.land }}</b>: {% for nm in h.names %}{{ nm.name }}{% if nm.count > 1 %} ({{ nm.count }}){% endif %}{% if not forloop.last %}, {% endif %}{% endfor %}{% if not forloop.last %} · {% endif %}{% endfor %}</div>
                 <div class="wr-rm-actions">
                     <input type="text" class="wr-rm-input" placeholder="确认回复 (可选)…" data-reply="{{ g.key }}">
@@ -341,6 +344,7 @@
                     <span class="wr-rm-author">{{ g.remark.author }}</span>
                     {% if g.remark.workorder_id %}<a class="wr-rm-wo" href="{% url 'core:work_report_detail' g.remark.workorder_id %}">工单#{{ g.remark.workorder_id }}</a>{% endif %}
                 </div>
+                {% if g.section_labels %}<div class="wr-rm-cats">{% for lbl in g.section_labels %}<span class="wr-rm-cat">{{ lbl }}</span>{% endfor %}</div>{% endif %}
                 <div class="wr-rm-confirm-meta">已确认 {{ g.remark.confirm_date|default:'' }} · {{ g.remark.confirm_author|default:'' }}{% if g.remark.confirm_reply %} · {{ g.remark.confirm_reply }}{% endif %}</div>
                 <div class="wr-rm-zones">{% for h in g.hierarchy %}<b>{{ h.land }}</b>: {% for nm in h.names %}{{ nm.name }}{% if nm.count > 1 %} ({{ nm.count }}){% endif %}{% if not forloop.last %}, {% endif %}{% endfor %}{% if not forloop.last %} · {% endif %}{% endfor %}</div>
                 <div class="wr-rm-actions">
@@ -471,37 +475,61 @@ function moveRemarkGroup(btn, target) {
     var label = target === 'irrigation' ? '灌溉管理记录' : '设备维护记录';
     var m = document.getElementById('rmMoveModal');
     document.getElementById('rmMoveTitle').textContent = '转至' + label + ' · 选择区域';
-    // Build a three-level Land → 通用名称 → 区域代码 checkbox tree so every level
-    // is visible. Land and 通用名称 are non-selectable headers; each 区域代码 is its
-    // own checkbox (so the manager picks exactly which zones get the record).
+    // Build a Land → 通用名称 → 区域代码 tree. By default only the 通用名称 rows
+    // show (collapsed); click a name to expand its zones. A single-zone name has
+    // nothing to expand — its checkbox IS the zone (labeled with the name). The
+    // name checkbox selects/deselects all zones under it.
     var body = document.getElementById('rmMoveBody');
     body.innerHTML = '';
     tree.forEach(function (land, li) {
-        // Land header (bold).
         var ldiv = document.createElement('div');
         ldiv.style.cssText = 'font-weight:700;color:var(--wr-accent);margin:' + (li === 0 ? '4px' : '12px') + ' 0 2px;font-size:0.92rem;';
         ldiv.textContent = land.land;
         body.appendChild(ldiv);
         land.names.forEach(function (nm) {
-            // 通用名称 sub-header (selectable "all zones under this name" + label).
+            var multi = nm.zones.length > 1;
+            // Name row: checkbox + label + (zone count) + expand arrow (multi only).
             var nrow = document.createElement('div');
-            nrow.style.cssText = 'display:flex;align-items:center;gap:6px;padding:4px 0 2px 12px;font-weight:600;font-size:0.86rem;color:var(--wr-text);';
+            nrow.style.cssText = 'display:flex;align-items:center;gap:6px;padding:5px 0 3px 12px;font-weight:600;font-size:0.86rem;color:var(--wr-text);' + (multi ? 'cursor:pointer;' : '');
             var ncb = document.createElement('input');
             ncb.type = 'checkbox'; ncb.checked = true;
             nrow.appendChild(ncb);
-            nrow.appendChild(document.createTextNode(nm.name + ' (' + nm.zones.length + ')'));
+            nrow.appendChild(document.createTextNode(nm.name + (multi ? ' (' + nm.zones.length + ')' : '')));
+            var arrow = null;
+            if (multi) {
+                arrow = document.createElement('span');
+                arrow.style.cssText = 'margin-left:auto;color:#aaa;font-size:0.75rem;';
+                arrow.textContent = '▶';
+                nrow.appendChild(arrow);
+            }
             body.appendChild(nrow);
-            // Each zone code as its own checkbox, indented under the name. Toggling
-            // the name's checkbox (above) selects/deselects all its zones.
+
+            // Zones under this name — wrapped in a collapsible container (hidden by
+            // default when there's more than one zone).
+            var zoneWrap = document.createElement('div');
+            zoneWrap.style.cssText = 'display:' + (multi ? 'none' : 'block') + ';';
             var zoneBoxes = [];
             nm.zones.forEach(function (z) {
                 var zc = _zoneCheck(z.code, z.zid, z.idx, true, 28);
                 zoneBoxes.push(zc.querySelector('input'));
-                body.appendChild(zc);
+                zoneWrap.appendChild(zc);
             });
+            body.appendChild(zoneWrap);
+
+            // checkbox toggles all zones
             ncb.addEventListener('change', function () {
                 zoneBoxes.forEach(function (b) { b.checked = ncb.checked; });
             });
+            // clicking the name row (multi) expands/collapses its zones — but not
+            // when the click landed on the checkbox itself.
+            if (multi) {
+                nrow.addEventListener('click', function (e) {
+                    if (e.target === ncb) return;
+                    var open = zoneWrap.style.display !== 'none';
+                    zoneWrap.style.display = open ? 'none' : 'block';
+                    if (arrow) arrow.textContent = open ? '▶' : '▼';
+                });
+            }
         });
     });
 
