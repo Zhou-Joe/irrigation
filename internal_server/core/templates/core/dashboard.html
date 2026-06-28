@@ -376,9 +376,9 @@
 <script id="pending-remarks" type="application/json">{{ pending_remarks_json|safe }}</script>
 <!-- Custom Map JS -->
 <script src="{% static 'js/map.js' %}?v=20260628"></script>
-<script src="{% static 'js/dashboard-modal.js' %}?v=20260623"></script>
+<script src="{% static 'js/dashboard-modal.js' %}?v=20260628"></script>
 <!-- Dashboard JS — pass Django URL to external script -->
-<script>window.HISTORY_URL = '{% url "core:workorder_history" %}';</script>
+<script>window.HISTORY_URL = '{% url "core:work_reports" %}';</script>
 <script src="{% static 'js/dashboard.js' %}?v=20260618"></script>
 <!-- AI data-analyst chat widget (deferred: non-blocking load, auto-mounts on DOMContentLoaded) -->
 <script defer src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>

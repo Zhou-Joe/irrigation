@@ -90,7 +90,7 @@
 {% block content %}
 <div class="wr-detail">
     <div class="wr-btn-row">
-        <a href="{% url 'core:workorder_tree_form_edit' report.id %}" class="wr-btn wr-btn-primary">编辑</a>
+        <a href="{% url 'core:dashboard' %}?edit_workorder={{ report.id }}" class="wr-btn wr-btn-primary">编辑</a>
         <a href="{% url 'core:work_reports' %}" class="wr-btn wr-btn-secondary">← 返回列表</a>
     </div>
 
