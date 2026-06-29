@@ -263,9 +263,9 @@
         // Ring sublabels: small per-boundary labels shown when 连线 is OFF (instead of
         // a single label at the zone centroid with leader lines). Rendered above zones.
         ringLabelsLayerGroup = L.layerGroup().addTo(map);
-        // Global toggle: when true show leader lines (default); when false show the
-        // per-ring sublabels. Set by the 连线 layer toggle.
-        window._leaderLinesVisible = true;
+        // Global toggle: when true show leader lines; when false show the
+        // per-ring sublabels. Default OFF (sublabels) — 连线 must be opted in.
+        window._leaderLinesVisible = false;
 
         // Initialize zones layer group (rendered on top of leader lines)
         zonesLayerGroup = L.layerGroup().addTo(map);
