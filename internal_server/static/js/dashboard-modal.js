@@ -548,41 +548,41 @@
     function buildWrNameChips() {
         var container = $('wrNameChips');
         if (!container) return;
-        // Distinct names, Chinese-locale sorted, non-empty.
-        var names = {};
-        getWoZoneRecords().forEach(function (z) {
-            if (z.name) names[z.name] = (names[z.name] || 0) + 1;
-        });
-        var distinct = Object.keys(names).sort(function (a, b) { return a.localeCompare(b, 'zh'); });
+        // Land-level list: one chip per Land. Clicking selects ALL zones in that
+        // Land (incl. boundary-less ones). Single level only — no Land→名称 popup
+        // (unlike the workorder's buildWoNameChips which has a level-2 sheet).
+        var lands = getWoLands();
         container.innerHTML = '';
-        if (distinct.length === 0) {
-            container.innerHTML = '<div style="font-size:0.85em;color:#aaa;padding:8px;">无通用名称数据</div>';
+        if (lands.length === 0) {
+            container.innerHTML = '<div style="font-size:0.85em;color:#aaa;padding:8px;">无所属Land数据</div>';
             return;
         }
         var hint = document.createElement('div');
         hint.style.cssText = 'font-size:0.78em;color:#999;width:100%;margin-bottom:4px;';
-        hint.textContent = '点击名称选中其下全部区域（可多选）';
+        hint.textContent = '点击Land选中其下全部区域（可多选）';
         container.appendChild(hint);
-        distinct.forEach(function (nm) {
+        lands.forEach(function (land) {
             var chip = document.createElement('div');
             chip.className = 'v2-chip';
             chip.style.cssText = 'font-size:0.85em;padding:5px 10px;';
-            chip.dataset.name = nm;
-            chip.addEventListener('click', function () {
-                // Toggle: if any of this name's zones are selected, clear all; else select all.
-                var c = countWoZones(function (z) { return z.name === nm; });
-                var select = !(c.selected > 0);
-                selectZonesWhere(function (z) { return z.name === nm; }, select);
-                chip.classList.toggle('active', select);
-                updateInfoBarText();
-            });
+            chip.dataset.landId = land.id;
+            setWoLandChipState(chip, land.id);
             var label = document.createElement('span');
-            label.textContent = nm;
+            label.textContent = land.name;
             chip.appendChild(label);
             var badge = document.createElement('span');
             badge.style.cssText = 'margin-left:5px;font-size:0.8em;color:#aaa;';
-            badge.textContent = '(' + names[nm] + ')';
+            badge.textContent = '(' + land.zoneCount + ')';
             chip.appendChild(badge);
+            chip.addEventListener('click', function () {
+                // Toggle: if ANY zone in this land is selected, clear all of it;
+                // otherwise select all.
+                var c = countWoZones(function (z) { return z.land_id === land.id; });
+                var select = !(c.selected > 0);
+                selectZonesByLand(land.id, select);
+                setWoLandChipState(chip, land.id);
+                updateInfoBarText();
+            });
             container.appendChild(chip);
         });
     }
