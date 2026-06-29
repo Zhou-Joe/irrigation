@@ -2981,6 +2981,33 @@ def zone_remark_move(request, zone_id, index):
 
 
 @login_required(login_url='core:login')
+def zone_remark_archive(request, zone_id, index):
+    """归档一条已确认备注 - 不写入灌溉/设备记录，仅就地打 archived 标记。
+
+    保留在 confirmed_remarks 里（不从列表删除），工单详情页可据此反查展示；
+    _group_zone_remarks 过滤掉 archived 条目，使其不再出现在「已确认」列表。
+    """
+    import json
+    from datetime import date as date_cls
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST only'}, status=405)
+    if not _check_zone_admin(request):
+        return JsonResponse({'error': '无权限'}, status=403)
+    zone = get_object_or_404(Zone, pk=zone_id)
+    confirmed_list = json.loads(zone.confirmed_remarks) if zone.confirmed_remarks else []
+    if index < 0 or index >= len(confirmed_list):
+        return JsonResponse({'error': '索引无效'}, status=400)
+    # 就地打标记，不删除：保留在 confirmed_remarks 里供工单详情页反查。
+    entry = confirmed_list[index]
+    entry['archived'] = True
+    entry['archived_date'] = date_cls.today().isoformat()
+    entry['archived_author'] = _get_user_display_name(request)
+    zone.confirmed_remarks = json.dumps(confirmed_list, ensure_ascii=False)
+    zone.save(update_fields=['confirmed_remarks'])
+    return JsonResponse({'success': True})
+
+
+@login_required(login_url='core:login')
 def pipeline_new(request):
     from .models import ManagerProfile, Pipeline
 
@@ -6275,6 +6302,8 @@ def _group_zone_remarks(notes_field):
         except (ValueError, TypeError):
             continue
         for idx, it in enumerate(items):
+            if it.get('archived'):          # 归档备注不进列表（仍保留在 confirmed_remarks 供工单详情反查）
+                continue
             woid = it.get('workorder_id')
             key = 'wo:' + str(woid) if woid else 'z:%d:%d' % (z.id, idx)
             entry = grouped.setdefault(key, {
@@ -6398,10 +6427,32 @@ def work_report_detail(request, report_id):
     from core.workorder_tree_views import attach_zone_hierarchy
     attach_zone_hierarchy([report])
 
+    # 备注：与该工单关联的 remark（含已确认 / 已归档），去重后展示。一条工单
+    # 的 remark 在其触及的每个 zone 的 confirmed_remarks 里重复，按 (content+date)
+    # 去重取一份。注意：以 workorder_id 为权威链接，扫描全部 zone，不限于
+    # report.zones m2m（后者可能因编辑/补录而与备注实际所在 zone 不一致）。
+    import json as _json
+    from core.models import Zone as _Zone
+    seen_keys, related_remarks = set(), []
+    for z in _Zone.objects.exclude(confirmed_remarks='').exclude(confirmed_remarks__isnull=True):
+        try:
+            clist = _json.loads(z.confirmed_remarks)
+        except (ValueError, TypeError):
+            continue
+        for it in clist:
+            if not isinstance(it, dict) or it.get('workorder_id') != report.id:
+                continue
+            dedup = (it.get('content', ''), it.get('date', ''), it.get('archived'))
+            if dedup in seen_keys:
+                continue
+            seen_keys.add(dedup)
+            related_remarks.append(it)
+
     return render(request, 'core/work_report_detail.html', {
         'report': report,
         'tree_entry_groups': list(grouped.values()),
         'zone_hierarchy': report.zone_hierarchy,
+        'related_remarks': related_remarks,
     })
 
 

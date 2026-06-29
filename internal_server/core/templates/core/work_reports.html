@@ -183,6 +183,7 @@
   .wr-rm-btn.primary { background:var(--wr-accent); color:#fff; }
   .wr-rm-btn.irr { background:#e8f5e9; color:#2D6A4F; border:1px solid #2D6A4F; }
   .wr-rm-btn.eq { background:#e3f2fd; color:#1565c0; border:1px solid #1565c0; }
+  .wr-rm-btn.archive { background:#f3f4f6; color:#6b7280; border:1px solid #d1d5db; }
   .wr-rm-btn:disabled { opacity:0.6; cursor:default; }
   .wr-rm-empty { padding:32px; text-align:center; color:var(--wr-muted); font-size:0.9rem; background:var(--wr-card-bg); border-radius:12px; border:1px solid var(--wr-card-border); }
   .wr-rm-cats { display:flex; flex-wrap:wrap; gap:4px; margin-top:6px; }
@@ -359,6 +360,7 @@
                 <div class="wr-rm-actions">
                     <button type="button" class="wr-rm-btn irr" data-key="{{ g.key }}" onclick="moveRemarkGroup(this,'irrigation')">转至灌溉管理记录</button>
                     <button type="button" class="wr-rm-btn eq" data-key="{{ g.key }}" onclick="moveRemarkGroup(this,'equipment')">转至设备维护记录</button>
+                    <button type="button" class="wr-rm-btn archive" data-key="{{ g.key }}" onclick="archiveRemarkGroup(this)">归档</button>
                 </div>
             </div>
             {% endfor %}
@@ -468,6 +470,20 @@ function confirmRemarkGroup(btn) {
     Promise.all(pairs.map(function (p) { return _postRemark(p[0], p[1], 'confirm', { confirm_reply: reply }); }))
         .then(function () { wrToast('已确认'); setTimeout(function () { location.href = '?tab=remarks'; }, 700); })
         .catch(function () { wrToast('部分确认失败，请刷新重试', true); btn.disabled = false; btn.textContent = '确认'; });
+}
+
+// Archive (已确认阶段的第三个选项): 一次性备注直接结束，不写入灌溉/设备记录，
+// 仅就地打 archived 标记。Fan-out 到该 group 触及的所有 zone。
+function archiveRemarkGroup(btn) {
+    var key = btn.getAttribute('data-key');
+    var grp = remarkGroups[key] || {};
+    var pairs = grp.pairs || [];
+    if (!pairs.length) { wrToast('无对应区域', true); return; }
+    if (!confirm('确定归档此备注？归档后不再写入区域记录，仅工单详情可查。')) return;
+    btn.disabled = true; btn.textContent = '归档中…';
+    Promise.all(pairs.map(function (p) { return _postRemark(p[0], p[1], 'archive', {}); }))
+        .then(function () { wrToast('已归档'); setTimeout(function () { location.href = '?tab=remarks'; }, 700); })
+        .catch(function () { wrToast('部分归档失败，请刷新重试', true); btn.disabled = false; btn.textContent = '归档'; });
 }
 
 // ── Transfer selector ─────────────────────────────────────────────────────

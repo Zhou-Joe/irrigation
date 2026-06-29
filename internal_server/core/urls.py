@@ -57,6 +57,7 @@ urlpatterns = [
     path('zone/<int:zone_id>/remark/add/', views.zone_remark_add, name='zone_remark_add'),
     path('zone/<int:zone_id>/remark/<int:index>/confirm/', views.zone_remark_confirm, name='zone_remark_confirm'),
     path('zone/<int:zone_id>/remark/<int:index>/move/', views.zone_remark_move, name='zone_remark_move'),
+    path('zone/<int:zone_id>/remark/<int:index>/archive/', views.zone_remark_archive, name='zone_remark_archive'),
     path('settings/zone/<int:zone_id>/delete/', views.zone_delete, name='zone_delete'),
     path('settings/zone/new/', views.zone_new, name='zone_new'),
     path('settings/zone/batch-draw/', views.zone_batch_draw, name='zone_batch_draw'),

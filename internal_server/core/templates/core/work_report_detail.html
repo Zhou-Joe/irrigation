@@ -129,6 +129,26 @@
     {% endif %}
     {% endwith %}
 
+    {# ── 备注历史 (remarks linked to this workorder: confirmed + archived) ── #}
+    {% if related_remarks %}
+    <div class="wr-card">
+        <h2>备注历史 <span style="font-size:0.72em;color:var(--color-text-muted,#999);">{{ related_remarks|length }} 条</span></h2>
+        <div class="wr-cmt-list">
+            {% for rm in related_remarks %}
+            <div class="wr-cmt-item">
+                <div class="wr-cmt-head">
+                    <span class="wr-cmt-author">{{ rm.author|default:"(未知)" }}</span>
+                    <span class="wr-cmt-time">{{ rm.confirm_date|default:rm.date|default:"" }}</span>
+                    {% if rm.archived %}<span class="wr-flag warn">已归档</span>{% endif %}
+                </div>
+                <div class="wr-cmt-body">{{ rm.content }}</div>
+                {% if rm.confirm_reply %}<div class="wr-cmt-body" style="color:var(--color-text-muted,#999);">确认回复：{{ rm.confirm_reply }}</div>{% endif %}
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
     {# ── 区域 (deduplicated Land → name hierarchy) ── #}
     {% if zone_hierarchy %}
     <div class="wr-card">
