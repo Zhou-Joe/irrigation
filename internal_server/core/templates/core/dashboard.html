@@ -326,10 +326,14 @@
 <div class="v2-draw-toolbar" id="v2DrawToolBar" style="display:none;">
     <div class="v2-draw-tabs">
         <div class="v2-draw-tab active" data-tab="patch" onclick="switchDrawTab('patch')">区域选择</div>
+        <div class="v2-draw-tab" data-tab="name" onclick="switchDrawTab('name')">通用名称</div>
         <div class="v2-draw-tab" data-tab="draw" onclick="switchDrawTab('draw')">绘图框选</div>
     </div>
     <div class="v2-draw-content active" id="v2TabPatch">
         <div id="v2PatchChips" class="v2-chip-group" style="gap:4px;flex-wrap:wrap;max-height:30vh;overflow-y:auto;"></div>
+    </div>
+    <div class="v2-draw-content" id="v2TabName">
+        <div id="wrNameChips" class="v2-chip-group" style="gap:4px;flex-wrap:wrap;max-height:30vh;max-height:30dvh;overflow-y:auto;-webkit-overflow-scrolling:touch;"></div>
     </div>
     <div class="v2-draw-content" id="v2TabDraw">
         <div class="v2-chip-group" style="gap:5px;justify-content:center;">
@@ -397,7 +401,7 @@
 <script id="pending-remarks" type="application/json">{{ pending_remarks_json|safe }}</script>
 <!-- Custom Map JS -->
 <script src="{% static 'js/map.js' %}?v=20260628"></script>
-<script src="{% static 'js/dashboard-modal.js' %}?v=20260628"></script>
+<script src="{% static 'js/dashboard-modal.js' %}?v=20260629"></script>
 <!-- Dashboard JS — pass Django URL to external script -->
 <script>window.HISTORY_URL = '{% url "core:work_reports" %}';</script>
 <script src="{% static 'js/dashboard.js' %}?v=20260618"></script>

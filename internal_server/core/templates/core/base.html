@@ -189,21 +189,27 @@
         /* ── Anti-leak watermark ───────────────────────────────────────────────
            A full-screen, repeating, diagonal overlay showing the viewer's name +
            employee_id so any screenshot leaks are traceable to the account.
-           Sits above content (so it's captured in screenshots) but below the
-           nav/modals, with pointer-events:none so it never blocks clicks. The
-           SVG tile is data-URI-encoded inline; {{ watermark_text|urlencode }} is
-           injected into the <text> so it shows the right person per login. */
+           Sits ABOVE everything (incl. modals/toasts) so it's captured in every
+           screenshot; pointer-events:none so it never blocks clicks. The SVG tile
+           is data-URI-encoded inline; {{ watermark_text|urlencode }} is injected
+           into the <text>. Uses a huge z-index so dynamic modals (z-index up to
+           5000) never paint over it. */
         .anti-leak-watermark {
             position: fixed;
             inset: 0;
-            z-index: 9999;
+            z-index: 2147483000;          /* near int32 max — always on top */
             pointer-events: none;
             opacity: 0.10;
-            background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='320' height='240'><text x='-40' y='210' fill='%23888' font-size='20' font-family='sans-serif' transform='rotate(-28)' text-anchor='start'>{{ watermark_text|urlencode }}</text><text x='120' y='110' fill='%23888' font-size='20' font-family='sans-serif' transform='rotate(-28)' text-anchor='start'>{{ watermark_text|urlencode }}</text></svg>");
+            /* Steeper diagonal (-40°) + denser tile. Desktop: single-column repeat. */
+            background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='300' height='300'><text x='-60' y='270' fill='%23888' font-size='22' font-family='sans-serif' transform='rotate(-40)' text-anchor='start'>{{ watermark_text|urlencode }}</text><text x='90' y='150' fill='%23888' font-size='22' font-family='sans-serif' transform='rotate(-40)' text-anchor='start'>{{ watermark_text|urlencode }}</text></svg>");
             background-repeat: repeat;
         }
+        /* Phones: two-column watermark so coverage is denser on tall screens. */
         @media (max-width: 768px) {
-            .anti-leak-watermark { opacity: 0.12; }
+            .anti-leak-watermark {
+                opacity: 0.12;
+                background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='220'><text x='-50' y='200' fill='%23888' font-size='20' font-family='sans-serif' transform='rotate(-40)' text-anchor='start'>{{ watermark_text|urlencode }}</text><text x='-50' y='100' fill='%23888' font-size='20' font-family='sans-serif' transform='rotate(-40)' text-anchor='start'>{{ watermark_text|urlencode }}</text><text x='80' y='150' fill='%23888' font-size='20' font-family='sans-serif' transform='rotate(-40)' text-anchor='start'>{{ watermark_text|urlencode }}</text></svg>");
+            }
         }
 
     </style>
