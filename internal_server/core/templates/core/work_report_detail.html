@@ -110,6 +110,25 @@
         </div>
     </div>
 
+    {# ── 编辑历史 (only shown when the report has been edited) ── #}
+    {% with logs=report.edit_logs.all %}
+    {% if logs %}
+    <div class="wr-card">
+        <h2>编辑历史 <span style="font-size:0.72em;color:var(--color-text-muted,#999);">{{ logs|length }} 次</span></h2>
+        <div class="wr-cmt-list">
+            {% for log in logs %}
+            <div class="wr-cmt-item">
+                <div class="wr-cmt-head">
+                    <span class="wr-cmt-author">{{ log.editor.full_name|default:"(未知)" }}</span>
+                    <span class="wr-cmt-time">{{ log.created_at|date:"Y-m-d H:i" }}</span>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+    {% endwith %}
+
     {# ── 区域 (deduplicated Land → name hierarchy) ── #}
     {% if zone_hierarchy %}
     <div class="wr-card">
