@@ -195,24 +195,20 @@
         btn.id = 'aiChatLauncher';
         btn.className = 'ai-launcher-btn';
         btn.title = 'AI 数据助手';
-        // Siri-style abstract AI icon: radiating smooth lines from a center node.
-        btn.innerHTML = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">' +
-            '<path d="M12 4c1.4 1.7 1.4 4.3 0 6"/>' +
-            '<path d="M12 14c-1.4 1.7-1.4 4.3 0 6"/>' +
-            '<path d="M4.5 8.5c2 .6 3.7 2.3 4.3 4.3"/>' +
-            '<path d="M15.2 11.2c.6-2 2.3-3.7 4.3-4.3"/>' +
-            '<path d="M4.5 15.5c2-.6 3.7-2.3 4.3-4.3"/>' +
-            '<path d="M15.2 12.8c.6 2 2.3 3.7 4.3 4.3"/>' +
-            '<circle cx="12" cy="11.8" r="1.3" fill="currentColor" stroke="none"/></svg>';
+        // Chat-bubble icon (clear, friendly, universally understood).
+        btn.innerHTML = '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+            '<path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>' +
+            '</svg>';
         btn.onclick = toggle;
         document.body.appendChild(btn);
         console.log('[AIChat] launcher appended, total body children:', document.body.children.length);
 
-        // Chat panel
+        // Chat panel — positioning/size controlled by .ai-chat-panel CSS so media
+        // queries can adapt it (desktop: floating card; mobile: near-fullscreen).
         var panel = document.createElement('div');
         panel.id = 'aiChatPanel';
-        panel.style.cssText = 'position:fixed;right:24px;bottom:148px;width:min(420px,92vw);height:min(560px,70vh);' +
-                              'background:#fff;border-radius:16px;box-shadow:0 8px 32px rgba(0,0,0,0.2);' +
+        panel.className = 'ai-chat-panel';
+        panel.style.cssText = 'background:#fff;border-radius:16px;box-shadow:0 8px 32px rgba(0,0,0,0.2);' +
                               'flex-direction:column;overflow:hidden;z-index:2001;display:none;';
         panel.innerHTML =
             '<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:#2D6A4F;color:#fff;">' +

@@ -610,14 +610,14 @@
 /* AI assistant launcher — matches .locate-btn sizing/style */
 .ai-launcher-btn {
     position: fixed;
-    right: 24px;
-    bottom: 88px;
-    width: 42px;
-    height: 42px;
+    right: 20px;
+    bottom: calc(84px + env(safe-area-inset-bottom, 0px));
+    width: 48px;
+    height: 48px;
     border-radius: 50%;
-    border: 3px solid rgba(255, 255, 255, 0.95);
+    border: none;
     background: var(--btn-gradient-primary);
-    box-shadow: var(--btn-shadow-primary);
+    box-shadow: 0 4px 14px rgba(0,0,0,0.22);
     color: #fff;
     cursor: pointer;
     display: flex;
@@ -625,18 +625,45 @@
     justify-content: center;
     padding: 0;
     z-index: 2999;
-    transition: all 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+    transition: all 0.25s cubic-bezier(0.22, 1, 0.36, 1);
 }
 .ai-launcher-btn:hover {
     transform: scale(1.08);
 }
 .ai-launcher-btn svg {
     display: block;
-    animation: ai-icon-pulse 3s ease-in-out infinite;
 }
-@keyframes ai-icon-pulse {
-    0%, 100% { opacity: 0.9; }
-    50% { opacity: 1; }
+
+/* Chat panel: desktop = floating card above the launcher. */
+.ai-chat-panel {
+    position: fixed;
+    right: 20px;
+    bottom: calc(140px + env(safe-area-inset-bottom, 0px));
+    width: min(400px, 92vw);
+    height: min(560px, 70vh);
+}
+
+/* ── AI chat: mobile sizing ────────────────────────────────────────────────
+   On phones the panel opens near-fullscreen (respecting safe areas + the 52px
+   nav bar + the on-screen keyboard) instead of a tall floating card, and the
+   launcher sits a touch smaller so it doesn't dominate. */
+@media (max-width: 768px) {
+    .ai-launcher-btn {
+        width: 44px;
+        height: 44px;
+        right: 14px;
+        bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+    }
+    .ai-launcher-btn svg { width: 20px; height: 20px; }
+    .ai-chat-panel {
+        right: 8px;
+        left: 8px;
+        bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+        width: auto;
+        height: 50vh;                    /* ~half the screen */
+        max-height: 440px;               /* cap on very tall phones */
+        border-radius: 14px;
+    }
 }
 
 /* FAB button base style */
