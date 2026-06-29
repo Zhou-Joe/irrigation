@@ -77,6 +77,15 @@
   .wr-zone-summary { font-size: 0.8rem; color: var(--wr-text); display:flex; align-items:center; gap:4px; margin: 2px 0; }
   .wr-zone-summary .pin { color: var(--wr-accent); }
 
+  /* Collapsed: single "last modified" hint line */
+  .wr-edit-latest { font-size: 0.75rem; color: var(--wr-muted); margin: 2px 0 0; display:flex; align-items:center; gap:4px; }
+  .wr-edit-latest .wr-edit-icon { font-size: 0.72rem; }
+  .wr-edit-latest b { color: var(--wr-text); font-weight: 600; }
+  /* Expanded: full history list */
+  .wr-edit-list { display:flex; flex-direction:column; gap:3px; }
+  .wr-edit-item { font-size: 0.82rem; color: var(--wr-text); line-height: 1.4; }
+  .wr-edit-item .wr-edit-num { color: var(--wr-muted); font-size: 0.76rem; }
+
   .wr-chips { display:flex; flex-wrap:wrap; gap:4px; align-items:center; margin-top: 6px; }
   .wr-chip { display:inline-block; padding:2px 9px; border-radius: 20px; font-size:0.72rem; font-weight:600; background: var(--wr-accent-soft); color: var(--wr-accent); }
   .wr-chip.count { background: var(--wr-accent); color:#fff; }
@@ -711,6 +720,13 @@ function renderCard(r) {
         meta += '</span>';
     }
     if (meta) html += '<div class="wr-meta">' + meta + '</div>';
+    // Collapsed: show only the LATEST edit ("最后修改 by X on Y"); full
+    // history appears in the expanded detail panel below.
+    if (r.edit_logs && r.edit_logs.length) {
+        var last = r.edit_logs[r.edit_logs.length - 1];
+        var more = r.edit_logs.length > 1 ? ' (共 ' + r.edit_logs.length + ' 次)' : '';
+        html += '<div class="wr-edit-latest"><span class="wr-edit-icon">✏️</span> 最后修改：<b>' + esc(last.editor) + '</b> 于 ' + esc(last.time) + more + '</div>';
+    }
     // zone summary
     if (r.zone_summary) html += '<div class="wr-zone-summary"><span class="pin">📍</span> ' + esc(r.zone_summary) + '</div>';
     // chips
@@ -742,6 +758,14 @@ function renderCard(r) {
     if (r.worker_name) {
         html += '<div class="wr-dsec"><div class="wr-dlabel">填写人</div><div class="wr-dvalue" id="wrWorker-' + r.id + '">' + esc(r.worker_name);
         if (r.worker_employee_id) html += ' (' + esc(r.worker_employee_id) + ')';
+        html += '</div></div>';
+    }
+    // Expanded: full edit history (all records, oldest→newest).
+    if (r.edit_logs && r.edit_logs.length) {
+        html += '<div class="wr-dsec"><div class="wr-dlabel">编辑历史 <span style="color:#aaa;font-weight:400;">' + r.edit_logs.length + ' 次</span></div><div class="wr-edit-list">';
+        r.edit_logs.forEach(function (log, i) {
+            html += '<div class="wr-edit-item"><span class="wr-edit-num">#' + (i + 1) + '</span> <b>' + esc(log.editor) + '</b> 于 ' + esc(log.time) + '</div>';
+        });
         html += '</div></div>';
     }
     // Admin-only reassign control (mirrors the server-rendered partial).
