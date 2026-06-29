@@ -247,7 +247,11 @@
             maxBoundsViscosity: 1.0,
             layers: [hybridLayer],
             zoomControl: true,
-            preferCanvas: true
+            preferCanvas: true,
+            // Touch: the map must own pan + pinch-zoom (mobile users pinch the map
+            // to zoom, never the page — page zoom is locked via the viewport meta).
+            dragging: true,
+            touchZoom: true,
         });
 
         // Expose map instance for external use (sidebar resize)

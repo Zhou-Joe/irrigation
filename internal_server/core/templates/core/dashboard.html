@@ -5,6 +5,11 @@
 {% block title %}灌溉区域总览{% endblock %}
 {% block nav_dashboard %}active{% endblock %}
 
+{# Mobile: lock page zoom so a stray pinch on the nav/sidebar never zooms the
+   whole page — the pinch lands in Leaflet's touch handler and zooms ONLY the
+   map. Desktop (max-width:768px is false) is unaffected. #}
+{% block viewport %}width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no, viewport-fit=cover{% endblock %}
+
 {% block extra_css %}
 <!-- Leaflet CSS -->
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
@@ -24,6 +29,22 @@
 .ann-btn { background: var(--color-primary, #2D6A4F); color: #fff; border: none; border-radius: 8px; padding: 9px 26px; font-size: 0.9rem; font-weight: 600; cursor: pointer; }
 .ann-btn:active { transform: scale(0.97); }
 .ann-btn:disabled { opacity: 0.6; cursor: default; }
+
+/* ── Mobile gesture lockdown ────────────────────────────────────────────────
+   On phones: the nav bar stays fixed on top and the sidebar fixed below; only
+   the map may be dragged / pinch-zoomed. We (1) lock page zoom via the viewport
+   meta above, and (2) set touch-action so a pinch starting on the nav/sidebar is
+   NOT interpreted as a page zoom — it's ignored. The map keeps pan-zoom via its
+   own touch handler. Pinch-zoom still works normally on every OTHER page. */
+@media (max-width: 768px) {
+    .top-nav, .sidebar, .sidebar-header, .sidebar-body, .zone-search,
+    .map-layer-panel, .map-filter-widget, .v2-map-info-bar, .v2-map-action-bar,
+    .v2-wo-select-overlay {
+        touch-action: pan-y;     /* allow vertical scroll inside lists, block pinch-zoom */
+    }
+    /* Map: full pan + pinch-zoom handed to Leaflet. */
+    .map-container, #map, .leaflet-container { touch-action: none; }
+}
 </style>
 {% endblock %}
 
