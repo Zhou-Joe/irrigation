@@ -2981,6 +2981,33 @@ def zone_remark_move(request, zone_id, index):
 
 
 @login_required(login_url='core:login')
+def zone_remark_archive(request, zone_id, index):
+    """归档一条已确认备注 - 不写入灌溉/设备记录，仅就地打 archived 标记。
+
+    保留在 confirmed_remarks 里（不从列表删除），工单详情页可据此反查展示；
+    _group_zone_remarks 过滤掉 archived 条目，使其不再出现在「已确认」列表。
+    """
+    import json
+    from datetime import date as date_cls
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST only'}, status=405)
+    if not _check_zone_admin(request):
+        return JsonResponse({'error': '无权限'}, status=403)
+    zone = get_object_or_404(Zone, pk=zone_id)
+    confirmed_list = json.loads(zone.confirmed_remarks) if zone.confirmed_remarks else []
+    if index < 0 or index >= len(confirmed_list):
+        return JsonResponse({'error': '索引无效'}, status=400)
+    # 就地打标记，不删除：保留在 confirmed_remarks 里供工单详情页反查。
+    entry = confirmed_list[index]
+    entry['archived'] = True
+    entry['archived_date'] = date_cls.today().isoformat()
+    entry['archived_author'] = _get_user_display_name(request)
+    zone.confirmed_remarks = json.dumps(confirmed_list, ensure_ascii=False)
+    zone.save(update_fields=['confirmed_remarks'])
+    return JsonResponse({'success': True})
+
+
+@login_required(login_url='core:login')
 def pipeline_new(request):
     from .models import ManagerProfile, Pipeline
 
@@ -5973,7 +6000,7 @@ def _scoped_work_reports_qs(user, admin):
     qs = WorkReport.objects.select_related(
         'worker', 'location'
     ).prefetch_related(
-        'entries__work_item', 'entries__project', 'zones__land'
+        'entries__work_item', 'entries__project', 'zones__land', 'edit_logs__editor'
     ).order_by('-date', '-id')
 
     if not admin and not is_field_worker(user):
@@ -6019,6 +6046,14 @@ def _serialize_work_reports(reports):
             'is_difficult_resolved': bool(r.is_difficult_resolved),
             'detail_url': reverse('core:work_report_detail', args=[r.id]),
             'edit_url': reverse('core:dashboard') + '?edit_workorder=' + str(r.id),
+            # Edit history (oldest→newest). Empty when never edited.
+            'edit_logs': [
+                {
+                    'editor': log.editor.full_name if log.editor_id and log.editor else '(未知)',
+                    'time': log.created_at.strftime('%Y-%m-%d %H:%M') if log.created_at else '',
+                }
+                for log in r.edit_logs.all()
+            ],
         })
     return out
 
@@ -6120,6 +6155,30 @@ def work_reports_list(request):
     locations = Patch.objects.filter(active=True).order_by('order')
     workers = Worker.objects.all().order_by('full_name') if admin else []
 
+    # Remarks tab (managers only): pending remarks (Step 1: confirm) + confirmed
+    # remarks (Step 2: transfer to 灌溉/设备 records). Grouped by workorder across
+    # the zones each touches. Non-managers get empty lists (tab hidden).
+    is_manager = admin
+    pending_remark_groups = _group_zone_remarks('remarks') if is_manager else []
+    confirmed_remark_groups = _group_zone_remarks('confirmed_remarks') if is_manager else []
+    # Per-group data for the JS: a flat [[zone_id, index]] list (for confirm, which
+    # still fans out to all zones) AND a Land → 通用名称 → zone tree (for transfer,
+    # where the user picks which names/zones to write the record to — avoids duplicate
+    # records across zones). Keys are unique across both lists.
+    remark_groups_map = {}
+    for g in list(pending_remark_groups) + list(confirmed_remark_groups):
+        tree = []
+        for h in g['hierarchy']:
+            names = []
+            for nm in h['names']:
+                zones = [{'code': z.code, 'zid': z.id, 'idx': i} for z, i in nm['pairs']]
+                names.append({'name': nm['name'], 'zones': zones})
+            tree.append({'land': h['land'], 'names': names})
+        remark_groups_map[g['key']] = {
+            'pairs': [[z.id, i] for z, i in g['zones']],
+            'tree': tree,
+        }
+
     filter_json = {
         'filters': {
             'date_from': date_from,
@@ -6146,6 +6205,11 @@ def work_reports_list(request):
         'default_days': WORK_REPORTS_DEFAULT_DAYS,
         'filter_json': filter_json,
         'filters': filter_json['filters'],
+        'is_manager': is_manager,
+        'pending_remark_groups': pending_remark_groups,
+        'confirmed_remark_groups': confirmed_remark_groups,
+        'remark_groups_map': remark_groups_map,
+        'active_tab': request.GET.get('tab', 'workorders'),
     })
 
 
@@ -6209,47 +6273,61 @@ def water_requests_list(request):
     return render(request, 'core/water_requests.html', context)
 
 
-@login_required(login_url='core:login')
-def remarks_list(request):
-    """待确认备注 — zones with unconfirmed remarks, with inline confirm for managers.
+def _group_zone_remarks(notes_field):
+    """Group a Zone notes JSON-list field into remark groups.
 
-    Reads the raw Zone.remarks JSON (not the lossy dashboard payload) so each remark's
-    date/content/author is shown. Confirming a remark POSTs to the existing
-    zone_remark_confirm endpoint (manager-only).
+    Works for any of the four Zone note fields (remarks / confirmed_remarks /
+    irrigation_management_notes / equipment_maintenance_notes). Remarks sourced
+    from one workorder are duplicated across every zone it touches; group those
+    by ``workorder_id`` (one card, all its zones). Hand-added remarks (no
+    workorder_id) stay per-zone.
+
+    Returns a list of dicts, each: ``{remark, key, is_grouped, zones:[(zone,idx)],
+    hierarchy:[{land, names:[{name,count,pairs}], zone_count}]}``, sorted grouped-first
+    then by date desc. ``zone`` items carry ``.id``/``.name``/``.land`` so callers
+    can build transfer endpoints. Shared by the /remarks/ page and the work-reports
+    待确认备注 tab.
     """
     import json as _json
     from collections import OrderedDict
-    from core.models import Zone
-    from core.role_utils import is_admin
+    from core.models import Zone, WorkReportEntry, WorkItem
 
-    admin = is_admin(request.user)
-
-    # Remarks that came from a single workorder (is_difficult) are duplicated across
-    # every zone of that workorder. Group them by workorder_id so the page shows ONE
-    # entry (with all its zones) and the manager confirms once → propagates to all.
-    # Hand-added remarks (no workorder_id) stay per-zone.
-    grouped = OrderedDict()   # key -> {'remark', 'zones':[(zone, index),...], 'key'}
+    grouped = OrderedDict()
     for z in (Zone.objects.select_related('land', 'patch')
-              .exclude(remarks='').exclude(remarks__isnull=True)
+              .exclude(**{notes_field: ''}).exclude(**{notes_field + '__isnull': True})
               .order_by('code')):
+        raw = getattr(z, notes_field)
         try:
-            items = _json.loads(z.remarks)
+            items = _json.loads(raw)
         except (ValueError, TypeError):
             continue
         for idx, it in enumerate(items):
+            if it.get('archived'):          # 归档备注不进列表（仍保留在 confirmed_remarks 供工单详情反查）
+                continue
             woid = it.get('workorder_id')
-            if woid:
-                key = 'wo:' + str(woid)
-            else:
-                # Hand-added: unique per (zone, index).
-                key = 'z:%d:%d' % (z.id, idx)
+            key = 'wo:' + str(woid) if woid else 'z:%d:%d' % (z.id, idx)
             entry = grouped.setdefault(key, {
                 'remark': it, 'zones': [], 'key': key, 'is_grouped': bool(woid),
             })
             entry['zones'].append((z, idx))
 
-    # Collapse the flat zone list of each group into a Land → name hierarchy so the
-    # page reads like "探险岛: BOH (3), 主入口 (2)" instead of 5 identical "BOH" chips.
+    # Enrich workorder-sourced groups with the source workorder's section labels
+    # (工单类别, e.g. 常规维护/灌溉项目) so the UI can show the category alongside
+    # the (often-generic) remark content. One batched query, not per-group.
+    section_labels = dict(WorkItem.SECTION_CHOICES)
+    woids = [g['remark'].get('workorder_id') for g in grouped.values()
+             if g['remark'].get('workorder_id')]
+    wo_sections = {}
+    if woids:
+        for row in (WorkReportEntry.objects
+                    .filter(work_report_id__in=woids, work_item__active=True)
+                    .values_list('work_report_id', 'work_item__section')):
+            wo_sections.setdefault(row[0], set()).add(row[1])
+    for g in grouped.values():
+        woid = g['remark'].get('workorder_id')
+        secs = sorted(wo_sections.get(woid, [])) if woid else []
+        g['section_labels'] = [section_labels.get(s, s) for s in secs]
+
     for g in grouped.values():
         lands = OrderedDict()
         for z, idx in g['zones']:
@@ -6264,10 +6342,23 @@ def remarks_list(request):
             for ln, names in lands.items()
         ]
 
-    # Build a flat list sorted so grouped (workorder) remarks come first.
     groups = list(grouped.values())
     groups.sort(key=lambda g: (0 if g['is_grouped'] else 1,
                                g['remark'].get('date', '')), reverse=True)
+    return groups
+
+
+def remarks_list(request):
+    """待确认备注 — zones with unconfirmed remarks, with inline confirm for managers.
+
+    Reads the raw Zone.remarks JSON (not the lossy dashboard payload) so each remark's
+    date/content/author is shown. Confirming a remark POSTs to the existing
+    zone_remark_confirm endpoint (manager-only).
+    """
+    from core.role_utils import is_admin
+
+    admin = is_admin(request.user)
+    groups = _group_zone_remarks('remarks')
 
     context = {
         'groups': groups,
@@ -6314,7 +6405,7 @@ def work_report_detail(request, report_id):
     report = get_object_or_404(
         WorkReport.objects.select_related(
             'worker', 'location'
-        ).prefetch_related('entries__work_item', 'entries__project', 'zones__land'),
+        ).prefetch_related('entries__work_item', 'entries__project', 'zones__land', 'edit_logs__editor'),
         pk=report_id
     )
 
@@ -6336,10 +6427,32 @@ def work_report_detail(request, report_id):
     from core.workorder_tree_views import attach_zone_hierarchy
     attach_zone_hierarchy([report])
 
+    # 备注：与该工单关联的 remark（含已确认 / 已归档），去重后展示。一条工单
+    # 的 remark 在其触及的每个 zone 的 confirmed_remarks 里重复，按 (content+date)
+    # 去重取一份。注意：以 workorder_id 为权威链接，扫描全部 zone，不限于
+    # report.zones m2m（后者可能因编辑/补录而与备注实际所在 zone 不一致）。
+    import json as _json
+    from core.models import Zone as _Zone
+    seen_keys, related_remarks = set(), []
+    for z in _Zone.objects.exclude(confirmed_remarks='').exclude(confirmed_remarks__isnull=True):
+        try:
+            clist = _json.loads(z.confirmed_remarks)
+        except (ValueError, TypeError):
+            continue
+        for it in clist:
+            if not isinstance(it, dict) or it.get('workorder_id') != report.id:
+                continue
+            dedup = (it.get('content', ''), it.get('date', ''), it.get('archived'))
+            if dedup in seen_keys:
+                continue
+            seen_keys.add(dedup)
+            related_remarks.append(it)
+
     return render(request, 'core/work_report_detail.html', {
         'report': report,
         'tree_entry_groups': list(grouped.values()),
         'zone_hierarchy': report.zone_hierarchy,
+        'related_remarks': related_remarks,
     })
 
 
@@ -6593,8 +6706,8 @@ def workorder_mobile_v2(request):
     from core.role_utils import ROLE_SUPER_ADMIN, ROLE_MANAGER, resolve_or_create_worker
     from core.workorder_tree_views import (
         _calc_hours, _save_entries, _collect_entry_photos, _save_photo,
-        _resolve_pending_repairs,
-)
+        _resolve_pending_repairs, _record_edit,
+    )
     from datetime import date, datetime, time
 
     role = get_user_role(request.user)
@@ -6665,7 +6778,8 @@ def workorder_mobile_v2(request):
             if is_edit:
                 report = get_object_or_404(WorkReport, pk=report_id)
                 report.date = request.POST.get('date') or report.date
-                report.worker = post_worker
+                # 编辑不改处理人：保留原 worker，仅更新内容字段。改派走管理员
+                # 专用的 work_report_reassign 入口（已校验 is_admin），不经此路径。
                 report.location = location
                 report.zone_location = first_zone
                 report.remark = request.POST.get('remark', '')
@@ -6682,6 +6796,8 @@ def workorder_mobile_v2(request):
                 report.zone_names = zone_names
                 report.work_content = request.POST.get('work_content', '')
                 report.save()
+                # 编辑历史：edit 分支记录一次，新建工单不记。
+                _record_edit(report, request.user)
             else:
                 report = WorkReport.objects.create(
                     date=request.POST.get('date') or date.today().isoformat(),

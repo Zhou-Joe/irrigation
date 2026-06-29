@@ -33,7 +33,7 @@
             {% for p in report.photos %}
                 {% if forloop.counter <= 4 %}
                 <div class="wr-thumb-wrap" onclick="openLb(photoData[{{ report.id }}] || ['{{ p|addslashes }}'], {{ forloop.counter0 }})">
-                    <img class="wr-thumb" src="/media/{{ p|thumb }}" loading="lazy" alt="照片">
+                    <img class="wr-thumb" src="/media/{{ p|thumb }}" data-orig="{{ p }}" loading="lazy" alt="照片">
                     {% if forloop.counter == 4 and report.photos|length > 4 %}
                         <span class="wr-thumb-more">+{{ report.photos|length|add:'-4' }}</span>
                     {% endif %}
@@ -122,12 +122,12 @@
                 {% for p in report.photos %}
                 {% if p|is_video %}
                 <div class="wr-photo-wrap" onclick="playInlineVid(this,'{{ p|addslashes }}')">
-                    <img class="wr-photo" src="/media/{{ p|thumb }}" loading="lazy" alt="视频缩略图">
+                    <img class="wr-photo" src="/media/{{ p|thumb }}" data-orig="{{ p }}" loading="lazy" alt="视频缩略图">
                     <span class="wr-photo-play">▶</span>
                 </div>
                 {% else %}
                 <div class="wr-photo-wrap" onclick="openLb(photoData[{{ report.id }}] || ['{{ p|addslashes }}'], {{ forloop.counter0 }})">
-                    <img class="wr-photo" src="/media/{{ p|thumb }}" loading="lazy" alt="照片">
+                    <img class="wr-photo" src="/media/{{ p|thumb }}" data-orig="{{ p }}" loading="lazy" alt="照片">
                 </div>
                 {% endif %}
                 {% endfor %}
