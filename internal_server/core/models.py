@@ -1088,6 +1088,35 @@ class WorkReportComment(models.Model):
         return f"{name} @ {self.created_at:%Y-%m-%d %H:%M}"
 
 
+class WorkReportEditLog(models.Model):
+    """编辑记录 - 每次有人编辑保存工单时自动写入一条。
+
+    记录编辑人、编辑时间，一条工单可对应多条，按时间正序保留全部历史。
+    编辑人通过 role_utils.resolve_or_create_worker 解析，任意账号类型都能
+    正确归因（与 WorkReportComment.author 一致）。
+    """
+
+    work_report = models.ForeignKey(
+        WorkReport, on_delete=models.CASCADE, related_name='edit_logs',
+        verbose_name='工单',
+    )
+    editor = models.ForeignKey(
+        Worker, on_delete=models.SET_NULL, null=True,
+        related_name='workreport_edits', verbose_name='编辑人',
+    )
+    note = models.CharField('说明', max_length=200, blank=True, default='')
+    created_at = models.DateTimeField('编辑时间', auto_now_add=True)
+
+    class Meta:
+        ordering = ['created_at']           # 时间正序，最旧→最新
+        verbose_name = '编辑记录'
+        verbose_name_plural = '编辑记录'
+
+    def __str__(self):
+        name = self.editor.full_name if self.editor else '(未知)'
+        return f"{name} @ {self.created_at:%Y-%m-%d %H:%M}"
+
+
 class Announcement(models.Model):
     """通知公告 - a global announcement published by a manager/admin.
 

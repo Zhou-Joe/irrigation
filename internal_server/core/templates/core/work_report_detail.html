@@ -110,6 +110,45 @@
         </div>
     </div>
 
+    {# ── 编辑历史 (only shown when the report has been edited) ── #}
+    {% with logs=report.edit_logs.all %}
+    {% if logs %}
+    <div class="wr-card">
+        <h2>编辑历史 <span style="font-size:0.72em;color:var(--color-text-muted,#999);">{{ logs|length }} 次</span></h2>
+        <div class="wr-cmt-list">
+            {% for log in logs %}
+            <div class="wr-cmt-item">
+                <div class="wr-cmt-head">
+                    <span class="wr-cmt-author">{{ log.editor.full_name|default:"(未知)" }}</span>
+                    <span class="wr-cmt-time">{{ log.created_at|date:"Y-m-d H:i" }}</span>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+    {% endwith %}
+
+    {# ── 备注历史 (remarks linked to this workorder: confirmed + archived) ── #}
+    {% if related_remarks %}
+    <div class="wr-card">
+        <h2>备注历史 <span style="font-size:0.72em;color:var(--color-text-muted,#999);">{{ related_remarks|length }} 条</span></h2>
+        <div class="wr-cmt-list">
+            {% for rm in related_remarks %}
+            <div class="wr-cmt-item">
+                <div class="wr-cmt-head">
+                    <span class="wr-cmt-author">{{ rm.author|default:"(未知)" }}</span>
+                    <span class="wr-cmt-time">{{ rm.confirm_date|default:rm.date|default:"" }}</span>
+                    {% if rm.archived %}<span class="wr-flag warn">已归档</span>{% endif %}
+                </div>
+                <div class="wr-cmt-body">{{ rm.content }}</div>
+                {% if rm.confirm_reply %}<div class="wr-cmt-body" style="color:var(--color-text-muted,#999);">确认回复：{{ rm.confirm_reply }}</div>{% endif %}
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
     {# ── 区域 (deduplicated Land → name hierarchy) ── #}
     {% if zone_hierarchy %}
     <div class="wr-card">
@@ -167,10 +206,10 @@
             {% for photo in report.photos %}
             <div class="wr-photo-thumb" onclick="openLightbox({{ forloop.counter0 }})">
                 {% if photo|is_video %}
-                <video src="/media/{{ photo|thumb }}" muted preload="metadata"></video>
+                <video src="/media/{{ photo|thumb }}" data-orig="{{ photo }}" muted preload="metadata"></video>
                 <span class="wr-photo-play">▶</span>
                 {% else %}
-                <img src="/media/{{ photo|thumb }}" alt="照片 {{ forloop.counter }}" loading="lazy">
+                <img src="/media/{{ photo|thumb }}" data-orig="{{ photo }}" alt="照片 {{ forloop.counter }}" loading="lazy">
                 {% endif %}
             </div>
             {% endfor %}
@@ -202,9 +241,25 @@
 </div>
 
 <script>
-var photos = {{ report.photos|safe }};
+var photos = {{ report.photos|to_json|safe }};
 var currentIdx = 0;
 var WR_ID = {{ report.id }};
+
+// Thumbnail fallback — thumb 404 → try original → if that 404s too (0-byte
+// upload or missing file), hide the tile. Videos skip the original-image step.
+document.addEventListener('error', function (e) {
+    var el = e.target;
+    if (el.dataset.fb) return;
+    if (el.tagName !== 'IMG' && el.tagName !== 'VIDEO') return;
+    if (!el.closest('.wr-photo-thumb')) return;
+    var orig = el.dataset.orig;
+    if (!orig) return;
+    el.dataset.fb = '1';
+    if (isVideoPath(orig)) { el.style.visibility = 'hidden'; return; }
+    if (el.tagName === 'VIDEO') { el.style.visibility = 'hidden'; return; }
+    el.onerror = function () { var t = el.closest('.wr-photo-thumb'); if (t) t.style.display = 'none'; };
+    el.src = '/media/' + orig;
+}, true);
 
 // ── Comments ──
 function wrCmtCSRF() {
