@@ -4479,29 +4479,29 @@ def _resolve_stats_window(request):
 
 def _work_report_count_columns():
     """Fixed fault-matrix columns for the Excel export: every count leaf node in
-    the routine_maint section, returned as [(work_item_id, path_label), ...].
+    the routine_maint section, returned as [(work_item_id, path_segments), ...].
 
-    Sorted by parent-path then order so columns are stable across exports
-    regardless of which date range is selected. path_label is the human-readable
-    group hierarchy, e.g. "计划性维修 / 喷头 / 喷头盖掉/松/坏".
+    ``path_segments`` is the group hierarchy from the top level down to the leaf
+    name (the section-root name itself is dropped), e.g.
+    ``['计划性维修', '喷头', '喷嘴丢/坏']``. This lets the caller build a proper
+    multi-row merged header instead of cramming the whole path into one cell.
+
+    Sorted by path then id so columns are stable across exports regardless of
+    which date range is selected.
     """
     from core.models import WorkItem
     items = {it.id: it for it in WorkItem.objects.filter(section='routine_maint')}
 
-    def path_of(it):
+    def segs_of(it):
         parts, cur, seen = [], it, set()
         while cur and cur.id not in seen:
             seen.add(cur.id)
             parts.append(cur.name_zh)
             cur = items.get(cur.parent_id) if cur.parent_id else None
         parts.reverse()
-        return ' / '.join(parts[1:]) or it.name_zh   # drop the section name itself
+        return parts[1:] or [it.name_zh]   # drop the section-root name itself
 
-    cols = []
-    for it in items.values():
-        if it.value_type != 'count':
-            continue
-        cols.append((it.id, path_of(it)))
+    cols = [(it.id, segs_of(it)) for it in items.values() if it.value_type == 'count']
     # Stable ordering: by path then by id (deterministic, same every export).
     cols.sort(key=lambda c: (c[1], c[0]))
     return cols
@@ -4538,7 +4538,10 @@ def work_reports_excel(request):
     admin = is_admin(user)
     start, end = _resolve_stats_window(request)
 
-    # 1) Fixed fault-matrix columns (deterministic across exports).
+    # 1) Fixed fault-matrix columns (deterministic across exports). Each entry
+    # is (work_item_id, [seg, seg, leaf]) — the group hierarchy with the section
+    # root stripped, so we can render a proper multi-row merged header instead
+    # of cramming the whole breadcrumb into one cell.
     count_nodes = _work_report_count_columns()
 
     # 2) Work orders in window (role-scoped). _scoped_work_reports_qs already
@@ -4549,25 +4552,68 @@ def work_reports_excel(request):
         Prefetch('entries', queryset=WorkReportEntry.objects.select_related('work_item').filter(work_item__value_type='count'), to_attr='_count_entries')
     ).order_by('date', 'id'))
 
-    # 3) Build workbook.
+    # 3) Build workbook with a grouped (merged) multi-row header.
     wb = Workbook()
     ws = wb.active
     ws.title = '维修记录'
     base_header = ['序号', '日期', '处理人', '位置', '工作分类', '故障/事件位置',
                    '备注', '信息来源', '疑难问题', '疑难已处理']
-    header = base_header + [label for _, label in count_nodes]
-    ws.append(header)
+    n_base = len(base_header)
+    n_cols = n_base + len(count_nodes)
+    hdr_rows = max((len(segs) for _, segs in count_nodes), default=1)
 
-    # Header styling.
+    # Header styling. Style every header cell up front so merged ranges keep
+    # their borders (openpyxl only draws borders per underlying cell).
     hfill = PatternFill('solid', fgColor='1B4332')
     hfont = Font(color='FFFFFF', bold=True, size=10)
     center = Alignment(horizontal='center', vertical='center', wrap_text=True)
-    for ci in range(1, len(header) + 1):
-        c = ws.cell(row=1, column=ci)
-        c.fill = hfill; c.font = hfont; c.alignment = center
+    thin = Side(style='thin', color='FFFFFF')
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+    for rr in range(1, hdr_rows + 1):
+        for cc in range(1, n_cols + 1):
+            cell = ws.cell(row=rr, column=cc)
+            cell.fill = hfill; cell.font = hfont; cell.alignment = center; cell.border = border
 
-    # work_item_id → matrix column index (1-based, offset after the 10 base cols).
-    id_to_col = {wid: 11 + i for i, (wid, _) in enumerate(count_nodes)}
+    # Base columns span every header row (vertical merge).
+    for ci, label in enumerate(base_header, 1):
+        ws.cell(row=1, column=ci, value=label)
+        if hdr_rows > 1:
+            ws.merge_cells(start_row=1, start_column=ci, end_row=hdr_rows, end_column=ci)
+
+    # Count columns: walk each depth level and merge consecutive siblings that
+    # share the same path prefix. Columns are sorted by path, so siblings are
+    # always contiguous. Shorter paths get merged down to fill remaining rows.
+    for depth in range(hdr_rows):
+        row = depth + 1
+        ci = 0
+        while ci < len(count_nodes):
+            segs = count_nodes[ci][1]
+            if depth >= len(segs):
+                ci += 1          # already merged down at a shallower terminal depth
+                continue
+            prefix = segs[:depth + 1]
+            cj = ci + 1
+            while cj < len(count_nodes) and count_nodes[cj][1][:depth + 1] == prefix:
+                cj += 1
+            col_start = n_base + ci + 1
+            col_end = n_base + cj              # inclusive
+            ws.cell(row=row, column=col_start, value=segs[depth])
+            need_h = col_end > col_start                 # siblings → merge across
+            need_v = depth == len(segs) - 1 and row < hdr_rows   # terminal → merge down
+            if need_h and need_v:              # one rectangular block merge
+                ws.merge_cells(start_row=row, start_column=col_start,
+                               end_row=hdr_rows, end_column=col_end)
+            elif need_h:
+                ws.merge_cells(start_row=row, start_column=col_start,
+                               end_row=row, end_column=col_end)
+            elif need_v:
+                ws.merge_cells(start_row=row, start_column=col_start,
+                               end_row=hdr_rows, end_column=col_start)
+            # else: single cell, value already set — no merge needed
+            ci = cj
+
+    # work_item_id → matrix column index (1-based, offset after the base cols).
+    id_to_col = {wid: n_base + i + 1 for i, (wid, _) in enumerate(count_nodes)}
 
     for idx, r in enumerate(reports, 1):
         row = [idx, r.date.isoformat() if r.date else '',
@@ -4587,12 +4633,29 @@ def work_reports_excel(request):
                 row[ci - 1] = (row[ci - 1] or 0) + e.count
         ws.append(row)
 
-    # Column widths + freeze header.
+    # Data cell styling: thin grey borders everywhere, centre numerics, wrap 备注.
+    gside = Side(style='thin', color='D0D0D0')
+    gborder = Border(left=gside, right=gside, top=gside, bottom=gside)
+    dcenter = Alignment(horizontal='center', vertical='center')
+    dwrap = Alignment(horizontal='left', vertical='center', wrap_text=True)
+    last_row = hdr_rows + len(reports)
+    for rr in range(hdr_rows + 1, last_row + 1):
+        for cc in range(1, n_cols + 1):
+            cell = ws.cell(row=rr, column=cc)
+            cell.border = gborder
+            cell.alignment = dwrap if cc == 7 else dcenter
+
+    # Column widths + freeze the header rows and the first four ID columns
+    # (序号/日期/处理人/位置) so they stay visible while scrolling the matrix.
     from openpyxl.utils import get_column_letter
-    for ci, label in enumerate(header, 1):
-        width = 12 if ci <= len(base_header) else max(10, min(28, len(label) * 1.6))
+    for ci in range(1, n_cols + 1):
+        if ci <= n_base:
+            width = 28 if ci == 7 else 12          # 备注 wider
+        else:
+            leaf = count_nodes[ci - n_base - 1][1][-1]
+            width = max(8, min(20, len(leaf) * 1.7 + 2))
         ws.column_dimensions[get_column_letter(ci)].width = width
-    ws.freeze_panes = 'A2'
+    ws.freeze_panes = ws.cell(row=hdr_rows + 1, column=5)
 
     buf = io.BytesIO(); wb.save(buf); buf.seek(0)
     fname = f'workreports_{start}_{end}.xlsx'
