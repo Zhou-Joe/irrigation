@@ -536,40 +536,61 @@
         // Scope tab toggling to this toolbar (#v2DrawToolBar) only — the workorder
         // selection bar (#v2WoSelectBar) reuses .v2-draw-tab and must not be touched.
         document.querySelectorAll('#v2DrawToolBar .v2-draw-tab').forEach(function (t) { t.classList.toggle('active', t.dataset.tab === tab); });
-        $('v2TabPatch').classList.toggle('active', tab === 'patch');
         $('v2TabName').classList.toggle('active', tab === 'name');
         $('v2TabDraw').classList.toggle('active', tab === 'draw');
-        if (tab === 'patch') { cancelDraw(); getMap().getContainer().style.cursor = ''; }
-        if (tab === 'name') { cancelDraw(); getMap().getContainer().style.cursor = ''; buildWoNameChips(); }
+        if (tab === 'name') { cancelDraw(); getMap().getContainer().style.cursor = ''; buildWrNameChips(); }
     };
+
+    // Flat 通用名称 list for the water-request tool bar: one chip per distinct
+    // 通用名称 (across all Lands). Clicking a chip selects ALL zones that share
+    // that name (incl. boundary-less ones). No level-2 popup — unlike the
+    // workorder's buildWoNameChips which groups by Land first.
+    function buildWrNameChips() {
+        var container = $('wrNameChips');
+        if (!container) return;
+        // Distinct names, Chinese-locale sorted, non-empty.
+        var names = {};
+        getWoZoneRecords().forEach(function (z) {
+            if (z.name) names[z.name] = (names[z.name] || 0) + 1;
+        });
+        var distinct = Object.keys(names).sort(function (a, b) { return a.localeCompare(b, 'zh'); });
+        container.innerHTML = '';
+        if (distinct.length === 0) {
+            container.innerHTML = '<div style="font-size:0.85em;color:#aaa;padding:8px;">无通用名称数据</div>';
+            return;
+        }
+        var hint = document.createElement('div');
+        hint.style.cssText = 'font-size:0.78em;color:#999;width:100%;margin-bottom:4px;';
+        hint.textContent = '点击名称选中其下全部区域（可多选）';
+        container.appendChild(hint);
+        distinct.forEach(function (nm) {
+            var chip = document.createElement('div');
+            chip.className = 'v2-chip';
+            chip.style.cssText = 'font-size:0.85em;padding:5px 10px;';
+            chip.dataset.name = nm;
+            chip.addEventListener('click', function () {
+                // Toggle: if any of this name's zones are selected, clear all; else select all.
+                var c = countWoZones(function (z) { return z.name === nm; });
+                var select = !(c.selected > 0);
+                selectZonesWhere(function (z) { return z.name === nm; }, select);
+                chip.classList.toggle('active', select);
+                updateInfoBarText();
+            });
+            var label = document.createElement('span');
+            label.textContent = nm;
+            chip.appendChild(label);
+            var badge = document.createElement('span');
+            badge.style.cssText = 'margin-left:5px;font-size:0.8em;color:#aaa;';
+            badge.textContent = '(' + names[nm] + ')';
+            chip.appendChild(badge);
+            container.appendChild(chip);
+        });
+    }
 
     function showDrawToolBar() {
         var bar = $('v2DrawToolBar'); if (bar) bar.style.display = '';
-        // Build patch chips once
-        if (!_patchChipsBuilt) {
-            _patchChipsBuilt = true;
-            var patchEl = document.getElementById('patches-data');
-            if (patchEl && patchEl.textContent) {
-                try {
-                    var patches = JSON.parse(patchEl.textContent);
-                    var container = $('v2PatchChips');
-                    if (container) {
-                        patches.forEach(function (p) {
-                            var chip = document.createElement('div');
-                            chip.className = 'v2-chip';
-                            chip.style.cssText = 'font-size:0.85em;padding:3px 8px;';
-                            chip.textContent = p.name || p.code;
-                            chip.dataset.patchId = p.id;
-                            chip.addEventListener('click', function () {
-                                chip.classList.toggle('active');
-                                selectZonesByPatch(p.id, chip.classList.contains('active'));
-                            });
-                            container.appendChild(chip);
-                        });
-                    }
-                } catch (e) {}
-            }
-        }
+        // Default to the flat 通用名称 tab and build its chips.
+        switchDrawTab('name');
     }
 
     function selectZonesByPatch(patchId, selected) {

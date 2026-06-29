@@ -199,16 +199,17 @@
             inset: 0;
             z-index: 2147483000;          /* near int32 max — always on top */
             pointer-events: none;
-            opacity: 0.10;
-            /* Steeper diagonal (-40°) + denser tile. Desktop: single-column repeat. */
-            background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='300' height='300'><text x='-60' y='270' fill='%23888' font-size='22' font-family='sans-serif' transform='rotate(-40)' text-anchor='start'>{{ watermark_text|urlencode }}</text><text x='90' y='150' fill='%23888' font-size='22' font-family='sans-serif' transform='rotate(-40)' text-anchor='start'>{{ watermark_text|urlencode }}</text></svg>");
+            opacity: 0.55;
+            /* White text with a dark stroke so it stays legible over BOTH the dark
+               satellite map AND the light UI. Steeper -40° diagonal, denser tile. */
+            background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='300' height='300'><text x='-60' y='270' fill='%23ffffff' stroke='%23000000' stroke-width='0.6' stroke-opacity='0.35' font-size='22' font-family='sans-serif' transform='rotate(-40)' text-anchor='start'>{{ watermark_text|urlencode }}</text><text x='90' y='150' fill='%23ffffff' stroke='%23000000' stroke-width='0.6' stroke-opacity='0.35' font-size='22' font-family='sans-serif' transform='rotate(-40)' text-anchor='start'>{{ watermark_text|urlencode }}</text></svg>");
             background-repeat: repeat;
         }
         /* Phones: two-column watermark so coverage is denser on tall screens. */
         @media (max-width: 768px) {
             .anti-leak-watermark {
-                opacity: 0.12;
-                background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='220'><text x='-50' y='200' fill='%23888' font-size='20' font-family='sans-serif' transform='rotate(-40)' text-anchor='start'>{{ watermark_text|urlencode }}</text><text x='-50' y='100' fill='%23888' font-size='20' font-family='sans-serif' transform='rotate(-40)' text-anchor='start'>{{ watermark_text|urlencode }}</text><text x='80' y='150' fill='%23888' font-size='20' font-family='sans-serif' transform='rotate(-40)' text-anchor='start'>{{ watermark_text|urlencode }}</text></svg>");
+                opacity: 0.6;
+                background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='220'><text x='-50' y='200' fill='%23ffffff' stroke='%23000000' stroke-width='0.6' stroke-opacity='0.35' font-size='20' font-family='sans-serif' transform='rotate(-40)' text-anchor='start'>{{ watermark_text|urlencode }}</text><text x='-50' y='100' fill='%23ffffff' stroke='%23000000' stroke-width='0.6' stroke-opacity='0.35' font-size='20' font-family='sans-serif' transform='rotate(-40)' text-anchor='start'>{{ watermark_text|urlencode }}</text><text x='80' y='150' fill='%23ffffff' stroke='%23000000' stroke-width='0.6' stroke-opacity='0.35' font-size='20' font-family='sans-serif' transform='rotate(-40)' text-anchor='start'>{{ watermark_text|urlencode }}</text></svg>");
             }
         }
 

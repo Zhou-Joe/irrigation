@@ -325,14 +325,10 @@
 <!-- V2 Drawing Tool Bar (for water request) -->
 <div class="v2-draw-toolbar" id="v2DrawToolBar" style="display:none;">
     <div class="v2-draw-tabs">
-        <div class="v2-draw-tab active" data-tab="patch" onclick="switchDrawTab('patch')">区域选择</div>
-        <div class="v2-draw-tab" data-tab="name" onclick="switchDrawTab('name')">通用名称</div>
+        <div class="v2-draw-tab active" data-tab="name" onclick="switchDrawTab('name')">通用名称</div>
         <div class="v2-draw-tab" data-tab="draw" onclick="switchDrawTab('draw')">绘图框选</div>
     </div>
-    <div class="v2-draw-content active" id="v2TabPatch">
-        <div id="v2PatchChips" class="v2-chip-group" style="gap:4px;flex-wrap:wrap;max-height:30vh;overflow-y:auto;"></div>
-    </div>
-    <div class="v2-draw-content" id="v2TabName">
+    <div class="v2-draw-content active" id="v2TabName">
         <div id="wrNameChips" class="v2-chip-group" style="gap:4px;flex-wrap:wrap;max-height:30vh;max-height:30dvh;overflow-y:auto;-webkit-overflow-scrolling:touch;"></div>
     </div>
     <div class="v2-draw-content" id="v2TabDraw">
