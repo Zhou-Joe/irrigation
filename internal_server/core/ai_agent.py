@@ -27,7 +27,7 @@ from langgraph.checkpoint.memory import InMemorySaver
 
 from core.models import (
     AISettings, WorkReport, WorkReportEntry, WorkItem, Project,
-    Zone, Patch, WeatherData,
+    Zone, Patch, WeatherData, WaterRequest,
 )
 
 logger = logging.getLogger(__name__)
@@ -333,6 +333,113 @@ def query_work_entries_stats(
     }, ensure_ascii=False)
 
 
+@tool
+def query_pending_repairs(start_date: str = "", limit: int = 30) -> str:
+    """查询待修工单（is_pending_repair=True）的明细：哪些工单标记了待修、待修的具体内容、负责人、位置、日期。
+    用于跟进未完成的维修任务。
+
+    Args:
+        start_date: 起始日期 YYYY-MM-DD，留空默认最近90天
+        limit: 最多返回条数，默认30
+    """
+    today = date.today()
+    start = _parse_date(start_date) or (today - timedelta(days=90))
+    qs = (WorkReport.objects.filter(date__gte=start, is_pending_repair=True)
+          .select_related('worker', 'location')
+          .order_by('-date', '-id')[:limit])
+    rows = []
+    for r in qs:
+        rows.append({
+            '日期': r.date.isoformat(),
+            '处理人': str(r.worker) if r.worker else '',
+            '位置': str(r.location) if r.location else '',
+            '工作内容': (r.work_content or r.remark or '')[:200],
+            '是否疑难': r.is_difficult,
+            '疑难已处理': r.is_difficult_resolved,
+        })
+    return json.dumps({
+        '待修工单总数': WorkReport.objects.filter(date__gte=start, is_pending_repair=True).count(),
+        'returned': len(rows),
+        'date_range_start': start.isoformat(),
+        'records': rows,
+    }, ensure_ascii=False)
+
+
+@tool
+def query_difficult_workorders(start_date: str = "", resolved_only: bool = False, limit: int = 30) -> str:
+    """查询疑难问题工单（is_difficult=True）的明细：疑难问题描述、是否已处理、处理人。
+    可筛选未处理的疑难，便于跟进。
+
+    Args:
+        start_date: 起始日期 YYYY-MM-DD，留空默认最近90天
+        resolved_only: True 只看已处理的，False(默认)看全部疑难
+        limit: 最多返回条数，默认30
+    """
+    today = date.today()
+    start = _parse_date(start_date) or (today - timedelta(days=90))
+    qs = WorkReport.objects.filter(date__gte=start, is_difficult=True)
+    if resolved_only:
+        qs = qs.filter(is_difficult_resolved=True)
+    qs = (qs.select_related('worker', 'location')
+          .order_by('-date', '-id')[:limit])
+    rows = []
+    for r in qs:
+        rows.append({
+            '日期': r.date.isoformat(),
+            '处理人': str(r.worker) if r.worker else '',
+            '位置': str(r.location) if r.location else '',
+            '工作内容': (r.work_content or r.remark or '')[:200],
+            '已处理': r.is_difficult_resolved,
+            '是否待修': r.is_pending_repair,
+        })
+    total = WorkReport.objects.filter(date__gte=start, is_difficult=True).count()
+    resolved = WorkReport.objects.filter(date__gte=start, is_difficult=True, is_difficult_resolved=True).count()
+    return json.dumps({
+        '疑难工单总数': total,
+        '已处理数': resolved,
+        '未处理数': total - resolved,
+        'returned': len(rows),
+        'date_range_start': start.isoformat(),
+        'records': rows,
+    }, ensure_ascii=False)
+
+
+@tool
+def query_water_requests(start_date: str = "", status: str = "", limit: int = 30) -> str:
+    """查询浇水协调需求(WaterRequest)：停水/新苗程序/调水量等需求，按状态(已提交/已批准/已拒绝)筛选，
+    含提交人、涉及区域、需求时段。用于了解各区域的浇水协调情况。
+
+    Args:
+        start_date: 起始日期 YYYY-MM-DD，留空默认最近30天
+        status: 状态过滤 submitted(已提交)/approved(已批准)/rejected(已拒绝)/info_needed(需补充)，留空看全部
+        limit: 最多返回条数，默认30
+    """
+    today = date.today()
+    start = _parse_date(start_date) or (today - timedelta(days=30))
+    qs = WaterRequest.objects.filter(created_at__date__gte=start)
+    if status:
+        qs = qs.filter(status=status)
+    qs = qs.select_related('submitter').prefetch_related('zones').order_by('-created_at')[:limit]
+    status_map = dict(WaterRequest.STATUS_CHOICES)
+    rows = []
+    for req in qs:
+        rows.append({
+            '提交时间': req.created_at.strftime('%Y-%m-%d %H:%M'),
+            '提交人': str(req.submitter) if req.submitter else '',
+            '用户类型': req.user_type,
+            '需求类型': req.request_type,
+            '状态': status_map.get(req.status, req.status),
+            '起始时间': req.start_datetime.strftime('%Y-%m-%d %H:%M') if req.start_datetime else '',
+            '结束时间': req.end_datetime.strftime('%Y-%m-%d %H:%M') if req.end_datetime else '',
+            '涉及区域': ', '.join(z.code for z in req.zones.all()[:8]) or '—',
+        })
+    return json.dumps({
+        '需求总数': WaterRequest.objects.filter(created_at__date__gte=start).count(),
+        'returned': len(rows),
+        'date_range_start': start.isoformat(),
+        'records': rows,
+    }, ensure_ascii=False)
+
 
 @tool
 def query_zones(zone_code: str = "", limit: int = 50) -> str:
@@ -469,6 +576,120 @@ _ALLOWED_EXTS = {'.xlsx', '.xls', '.csv', '.json', '.txt'}
 _MAX_FILE_BYTES = 20 * 1024 * 1024  # 20 MB
 
 
+def _fault_matrix_columns():
+    """Fixed fault-matrix columns for the Excel export: every count leaf node in
+    the routine_maint section, as [(work_item_id, path_label), ...], sorted by
+    path then id so columns stay identical across exports. Mirrors the
+    work_reports_excel view's _work_report_count_columns.
+    """
+    items = {it.id: it for it in WorkItem.objects.filter(section='routine_maint')}
+
+    def path_of(it):
+        parts, cur, seen = [], it, set()
+        while cur and cur.id not in seen:
+            seen.add(cur.id)
+            parts.append(cur.name_zh)
+            cur = items.get(cur.parent_id) if cur.parent_id else None
+        parts.reverse()
+        return ' / '.join(parts[1:]) or it.name_zh   # drop the section name itself
+
+    cols = [(it.id, path_of(it)) for it in items.values() if it.value_type == 'count']
+    cols.sort(key=lambda c: (c[1], c[0]))
+    return cols
+
+
+@tool
+def export_work_reports_excel(start_date: str = "", end_date: str = "", runtime: ToolRuntime = None) -> str:
+    """导出维修工单为 Excel 报表（reporttemplate 格式），生成 .xlsx 文件并返回下载链接。
+
+    报表结构：一行一个工单，固定列头 = 常规维护章节下所有计数型节点（故障类型矩阵），
+    无值留空。基础列含日期/处理人/位置/工作分类/故障位置/备注/疑难/待修。
+    不同时间范围导出格式一致。文件可在对话中直接下载。
+
+    Args:
+        start_date: 起始日期 YYYY-MM-DD，留空默认最近30天
+        end_date: 结束日期 YYYY-MM-DD，留空默认今天
+        runtime: LangChain 运行时（自动注入，提供会话 context.thread_id）
+    """
+    import io
+    from django.db.models import Prefetch
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment
+
+    ctx = (runtime.context if runtime is not None else None) or {}
+    thread_id = ctx.get('thread_id')
+    if not thread_id:
+        return json.dumps({'error': '无法确定会话工作区'}, ensure_ascii=False)
+    ws = ensure_workspace(thread_id)
+
+    today = date.today()
+    end = _parse_date(end_date) or today
+    start = _parse_date(start_date) or (end - timedelta(days=30))
+
+    # Fixed fault-matrix columns (deterministic across exports).
+    count_nodes = _fault_matrix_columns()
+
+    qs = (WorkReport.objects.filter(date__gte=start, date__lte=end)
+          .select_related('worker', 'location')
+          .prefetch_related(Prefetch(
+              'entries',
+              queryset=WorkReportEntry.objects.select_related('work_item').filter(work_item__value_type='count'),
+              to_attr='_count_entries'))
+          .order_by('date', 'id'))
+
+    wb = Workbook()
+    sh = wb.active
+    sh.title = '维修记录'
+    base_header = ['序号', '日期', '处理人', '位置', '工作分类', '故障/事件位置',
+                   '备注', '信息来源', '疑难问题', '疑难已处理']
+    header = base_header + [label for _, label in count_nodes]
+    sh.append(header)
+    hfill = PatternFill('solid', fgColor='1B4332')
+    hfont = Font(color='FFFFFF', bold=True, size=10)
+    center = Alignment(horizontal='center', vertical='center', wrap_text=True)
+    for ci in range(1, len(header) + 1):
+        c = sh.cell(row=1, column=ci)
+        c.fill = hfill; c.font = hfont; c.alignment = center
+    id_to_col = {wid: 11 + i for i, (wid, _) in enumerate(count_nodes)}
+
+    for idx, r in enumerate(qs, 1):
+        # 工作分类 = 该工单明细的 section（优先非常规维护）
+        secs = [e.work_item.section for e in getattr(r, '_count_entries', [])]
+        cat = '常规维护'
+        for s in secs:
+            if s and s != 'routine_maint':
+                cat = _SECTION_LABELS.get(s, s); break
+        row = [idx, r.date.isoformat() if r.date else '',
+               r.worker.full_name if r.worker_id and r.worker else '',
+               r.location.code if r.location_id and r.location else '',
+               cat, r.zone_names or '',
+               (r.work_content or r.remark or ''), '',
+               '是' if r.is_difficult else '',
+               '是' if r.is_difficult_resolved else '']
+        row += [None] * len(count_nodes)
+        for e in getattr(r, '_count_entries', []):
+            ci = id_to_col.get(e.work_item_id)
+            if ci is not None and e.count:
+                row[ci - 1] = (row[ci - 1] or 0) + e.count
+        sh.append(row)
+
+    fname = f'workreports_{start}_{end}.xlsx'
+    out_path = os.path.join(ws, fname)
+    wb.save(out_path)
+    size = os.path.getsize(out_path)
+
+    return json.dumps({
+        'file': {
+            'name': fname,
+            'size': size,
+            'url': f'{settings.MEDIA_URL}ai_workspaces/{thread_id}/{fname}',
+        },
+        'report_count': qs.count(),
+        'matrix_columns': len(count_nodes),
+        'date_range': [start.isoformat(), end.isoformat()],
+    }, ensure_ascii=False)
+
+
 @tool
 def run_python_code(code: str, description: str = "", runtime: ToolRuntime = None) -> str:
     """运行 Python 代码进行数据分析、计算、并生成报表文件。
@@ -549,10 +770,14 @@ ALL_TOOLS = [
     query_work_reports,
     query_work_report_stats,
     query_work_entries_stats,
+    query_pending_repairs,
+    query_difficult_workorders,
+    query_water_requests,
     query_zones,
     query_weather,
     query_irrigation_overview,
     get_today_date,
+    export_work_reports_excel,
     run_python_code,
 ]
 

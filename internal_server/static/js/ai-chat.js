@@ -218,8 +218,8 @@
                 '<button id="aiChatClose" title="关闭" style="background:none;border:none;color:#fff;font-size:1.3em;cursor:pointer;line-height:1;">×</button>' +
               '</div>' +
             '</div>' +
-            '<div id="aiChatMessages" style="flex:1;overflow-y:auto;padding:12px;background:#f7f9f8;"></div>' +
-            '<div style="display:flex;gap:8px;padding:10px 12px;border-top:1px solid #eee;background:#fff;">' +
+            '<div id="aiChatMessages" style="flex:1 1 auto;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:12px;background:#f7f9f8;"></div>' +
+            '<div style="display:flex;gap:8px;padding:10px 12px;border-top:1px solid #eee;background:#fff;flex-shrink:0;">' +
               '<textarea id="aiChatInput" placeholder="Shift+Enter 发送" rows="1" ' +
                 'style="flex:1;border:1px solid #ddd;border-radius:8px;padding:8px 10px;font-size:0.92em;resize:none;max-height:90px;outline:none;font-family:inherit;"></textarea>' +
               '<button id="aiChatSend" style="background:#2D6A4F;color:#fff;border:none;border-radius:8px;padding:0 16px;cursor:pointer;font-weight:600;">发送</button>' +
