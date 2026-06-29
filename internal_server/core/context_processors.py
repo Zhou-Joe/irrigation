@@ -61,6 +61,18 @@ def user_role(request):
     if admin:
         pending_reg = RegistrationRequest.objects.filter(status='pending').count()
 
+    # Watermark text for anti-leak: name + employee_id. Falls back to the
+    # display name when the user has no linked Worker row.
+    wm_name = user.get_full_name() or user.username
+    wm_parts = [wm_name]
+    worker = getattr(user, 'worker_profile', None)
+    if worker:
+        if worker.employee_id:
+            wm_parts.append(worker.employee_id)
+        elif worker.full_name and worker.full_name != wm_name:
+            wm_parts[0] = worker.full_name
+    watermark_text = ' · '.join(p for p in wm_parts if p)
+
     return {
         'is_admin': admin,
         'is_manager': role == 'manager',
@@ -68,4 +80,5 @@ def user_role(request):
         'is_dept_user': is_dept_user(user),
         'user_role': role,
         'pending_registrations': pending_reg,
+        'watermark_text': watermark_text,
     }

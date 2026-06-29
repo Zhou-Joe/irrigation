@@ -157,19 +157,27 @@ def _events_from_chunk(chunk, seen_tool_calls):
         content = getattr(chunk, 'content', '')
         if isinstance(content, list):
             content = json.dumps(content, ensure_ascii=False)
-        # run_python_code returns JSON with a `files` list — emit one
-        # `file` event per generated artifact so the UI shows a download card.
+        # run_python_code returns JSON with a `files` list, export_work_reports_excel
+        # returns a single `file` object — emit one `file` event per generated
+        # artifact so the UI shows a download card.
+        try:
+            parsed = json.loads(content) if isinstance(content, str) else (content or {})
+        except (json.JSONDecodeError, TypeError):
+            parsed = {}
         if name == 'run_python_code':
-            try:
-                parsed = json.loads(content) if isinstance(content, str) else (content or {})
-                for finfo in parsed.get('files', []):
-                    yield ('file', {
-                        'name': finfo.get('name', ''),
-                        'url': finfo.get('url', ''),
-                        'size': finfo.get('size', 0),
-                    })
-            except (json.JSONDecodeError, AttributeError, TypeError):
-                pass
+            for finfo in parsed.get('files', []):
+                yield ('file', {
+                    'name': finfo.get('name', ''),
+                    'url': finfo.get('url', ''),
+                    'size': finfo.get('size', 0),
+                })
+        elif name == 'export_work_reports_excel' and parsed.get('file'):
+            finfo = parsed['file']
+            yield ('file', {
+                'name': finfo.get('name', ''),
+                'url': finfo.get('url', ''),
+                'size': finfo.get('size', 0),
+            })
         out_preview = str(content)[:800]
         yield ('tool_end', {'name': name, 'output': out_preview})
         return

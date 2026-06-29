@@ -186,6 +186,26 @@
             .top-nav-right .top-nav-user { display: none; }
         }
 
+        /* ── Anti-leak watermark ───────────────────────────────────────────────
+           A full-screen, repeating, diagonal overlay showing the viewer's name +
+           employee_id so any screenshot leaks are traceable to the account.
+           Sits above content (so it's captured in screenshots) but below the
+           nav/modals, with pointer-events:none so it never blocks clicks. The
+           SVG tile is data-URI-encoded inline; {{ watermark_text|urlencode }} is
+           injected into the <text> so it shows the right person per login. */
+        .anti-leak-watermark {
+            position: fixed;
+            inset: 0;
+            z-index: 9999;
+            pointer-events: none;
+            opacity: 0.10;
+            background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='320' height='240'><text x='-40' y='210' fill='%23888' font-size='20' font-family='sans-serif' transform='rotate(-28)' text-anchor='start'>{{ watermark_text|urlencode }}</text><text x='120' y='110' fill='%23888' font-size='20' font-family='sans-serif' transform='rotate(-28)' text-anchor='start'>{{ watermark_text|urlencode }}</text></svg>");
+            background-repeat: repeat;
+        }
+        @media (max-width: 768px) {
+            .anti-leak-watermark { opacity: 0.12; }
+        }
+
     </style>
     <script>
     function toggleMobileNav() {
@@ -270,6 +290,10 @@
     {% endif %}
 
     {% block content %}{% endblock %}
+
+    {% if user.is_authenticated and watermark_text %}
+    <div class="anti-leak-watermark" aria-hidden="true"></div>
+    {% endif %}
 
     {% block extra_js %}{% endblock %}
 </body>
