@@ -1,5 +1,7 @@
+import json
 import os
 from django import template
+from django.utils.safestring import mark_safe
 
 register = template.Library()
 
@@ -27,3 +29,17 @@ def thumb(path):
         return path
     base, _ext = os.path.splitext(str(path))
     return base + '_thumb.jpg'
+
+
+@register.filter
+def to_json(value):
+    """Serialize a Python value to a JSON string for safe embedding in a
+    <script> block. Use this instead of ``|safe`` on JSONFields — ``str(list)``
+    emits single-quoted Python repr, which breaks ``JSON.parse``.
+
+    Output is marked safe and escapes ``<``/``>`` so a value containing
+    ``</script>`` can't break out of the script context.
+    """
+    s = json.dumps(value, ensure_ascii=False)
+    s = s.replace('<', '\\u003c').replace('>', '\\u003e')
+    return mark_safe(s)

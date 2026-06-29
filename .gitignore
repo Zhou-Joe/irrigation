@@ -56,3 +56,21 @@ flutter-master/
 # Misc
 *.bak
 *.tmp
+
+# Secrets / tunnel credentials
+cert.pem
+cert.pem:Zone.Identifier
+*.pem
+!internal_server/**/*.pem
+
+# Local Claude Code state
+.claude/
+
+# DB snapshots / operational backups
+db1.sqlite3
+db_backups/
+
+# User-uploaded media (photos, videos, AI workspaces)
+internal_server/media/workorder_photos/
+internal_server/media/ai_workspaces/
+internal_server/media/workreport/
