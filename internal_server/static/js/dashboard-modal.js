@@ -570,10 +570,6 @@
             var label = document.createElement('span');
             label.textContent = land.name;
             chip.appendChild(label);
-            var badge = document.createElement('span');
-            badge.style.cssText = 'margin-left:5px;font-size:0.8em;color:#aaa;';
-            badge.textContent = '(' + land.zoneCount + ')';
-            chip.appendChild(badge);
             chip.addEventListener('click', function () {
                 // Toggle: if ANY zone in this land is selected, clear all of it;
                 // otherwise select all.
