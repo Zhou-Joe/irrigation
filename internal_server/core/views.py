@@ -5973,7 +5973,7 @@ def _scoped_work_reports_qs(user, admin):
     qs = WorkReport.objects.select_related(
         'worker', 'location'
     ).prefetch_related(
-        'entries__work_item', 'entries__project', 'zones__land'
+        'entries__work_item', 'entries__project', 'zones__land', 'edit_logs__editor'
     ).order_by('-date', '-id')
 
     if not admin and not is_field_worker(user):
@@ -6019,6 +6019,14 @@ def _serialize_work_reports(reports):
             'is_difficult_resolved': bool(r.is_difficult_resolved),
             'detail_url': reverse('core:work_report_detail', args=[r.id]),
             'edit_url': reverse('core:dashboard') + '?edit_workorder=' + str(r.id),
+            # Edit history (oldest→newest). Empty when never edited.
+            'edit_logs': [
+                {
+                    'editor': log.editor.full_name if log.editor_id and log.editor else '(未知)',
+                    'time': log.created_at.strftime('%Y-%m-%d %H:%M') if log.created_at else '',
+                }
+                for log in r.edit_logs.all()
+            ],
         })
     return out
 
