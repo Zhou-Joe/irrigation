@@ -407,8 +407,9 @@
 
 {# Filter state for load-more, serialized safely to JS via json_script. #}
 {{ filter_json|json_script:"wr-filter-json" }}
-{# Photo path registry for the lightbox, keyed by report id (initial server-rendered batch). #}
-<script id="wr-photo-data" type="application/json">{% for report in reports %}{% if report.photos %}"{{ report.id }}":{{ report.photos|safe }},{% endif %}{% endfor %}</script>
+{# Photo path registry for the lightbox, keyed by report id (initial server-rendered batch).
+   Must use to_json — str(list) emits single-quoted Python repr that breaks JSON.parse. #}
+<script id="wr-photo-data" type="application/json">{% for report in reports %}{% if report.photos %}"{{ report.id }}":{{ report.photos|to_json }},{% endif %}{% endfor %}</script>
 {% comment %}Remark groups: maps group key → [[zone_id, index], ...] so the confirm/move
 JS can fan the action out to every zone a group touches. Built in the view (covers
 both pending and confirmed groups — keys are unique across them) and serialized via
@@ -429,6 +430,30 @@ var photoData = {};
     var raw = (document.getElementById('wr-photo-data').textContent || '').trim().replace(/,$/, '');
     if (raw) { try { photoData = JSON.parse('{' + raw + '}'); } catch (e) {} }
 })();
+
+// ── Thumbnail fallback ───────────────────────────────────────────────────
+// Captures the non-bubbling 'error' event so one listener covers every
+// <img class="wr-thumb|wr-photo">, server-rendered or AJAX-built.
+// Chain: thumb 404 → try original → if that fails too (0-byte upload), hide tile.
+// Videos skip the original-image step (an <img> can't render a video) and just
+// hide the broken icon; the ▶ overlay on the parent wrap stays clickable.
+document.addEventListener('error', function (e) {
+    var img = e.target;
+    if (img.tagName !== 'IMG' || img.dataset.fb) return;
+    if (!img.classList.contains('wr-thumb') && !img.classList.contains('wr-photo')) return;
+    var orig = img.dataset.orig;
+    if (!orig) return;
+    img.dataset.fb = '1';
+    if (isVideoPath(orig)) {
+        img.style.visibility = 'hidden';
+        return;
+    }
+    img.onerror = function () {
+        var tile = img.closest('.wr-thumb-wrap, .wr-photo-wrap');
+        if (tile) tile.style.display = 'none';
+    };
+    img.src = '/media/' + orig;
+}, true);
 
 // Remark groups: key -> [[zone_id, index], ...]. Built for managers only.
 var remarkGroups = {};
@@ -760,7 +785,7 @@ function renderCard(r) {
             if (i < 4) {
                 var clean = p.replace(/'/g, "\\'");
                 html += '<div class="wr-thumb-wrap" onclick="openLb(photoData[' + r.id + '] || [\'' + clean + '\'], ' + i + ')">';
-                html += '<img class="wr-thumb" src="/media/' + thumbPath(p) + '" loading="lazy" alt="照片">';
+                html += '<img class="wr-thumb" src="/media/' + thumbPath(p) + '" data-orig="' + p + '" loading="lazy" alt="照片">';
                 if (i === 3 && r.photos.length > 4) html += '<span class="wr-thumb-more">+' + (r.photos.length - 4) + '</span>';
                 html += '</div>';
             }
@@ -833,9 +858,9 @@ function renderCard(r) {
         html += '<div class="wr-dsec"><div class="wr-dlabel">照片</div><div class="wr-photo-grid">';
         r.photos.forEach(function (p) {
             if (isVideoPath(p)) {
-                html += '<div class="wr-photo-wrap" onclick="playInlineVid(this,\'' + p.replace(/'/g, "\\'") + '\')"><img class="wr-photo" src="/media/' + thumbPath(p) + '" loading="lazy"><span class="wr-photo-play">▶</span></div>';
+                html += '<div class="wr-photo-wrap" onclick="playInlineVid(this,\'' + p.replace(/'/g, "\\'") + '\')"><img class="wr-photo" src="/media/' + thumbPath(p) + '" data-orig="' + p + '" loading="lazy"><span class="wr-photo-play">▶</span></div>';
             } else {
-                html += '<div class="wr-photo-wrap" onclick="openLbPath(\'' + p.replace(/'/g, "\\'") + '\')"><img class="wr-photo" src="/media/' + thumbPath(p) + '" loading="lazy"></div>';
+                html += '<div class="wr-photo-wrap" onclick="openLbPath(\'' + p.replace(/'/g, "\\'") + '\')"><img class="wr-photo" src="/media/' + thumbPath(p) + '" data-orig="' + p + '" loading="lazy"></div>';
             }
         });
         html += '</div></div>';
