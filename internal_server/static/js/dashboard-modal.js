@@ -497,7 +497,7 @@
         if (!infoBar) return;
         var codes = Array.from(_selectedZoneCodes);
         var type = _currentModal;
-        var hint = type === 'water_request' ? '请使用绘图工具绘制区域' : '请在地图上选择区域';
+        var hint = type === 'water_request' ? '请选择或绘制区域' : '请在地图上选择区域';
         if (codes.length === 0) {
             infoBar.innerHTML = '<span style="color:#888;">' + hint + '</span>';
             return;
@@ -533,10 +533,14 @@
     var _patchChipsBuilt = false;
 
     window.switchDrawTab = function (tab) {
-        document.querySelectorAll('.v2-draw-tab').forEach(function (t) { t.classList.toggle('active', t.dataset.tab === tab); });
+        // Scope tab toggling to this toolbar (#v2DrawToolBar) only — the workorder
+        // selection bar (#v2WoSelectBar) reuses .v2-draw-tab and must not be touched.
+        document.querySelectorAll('#v2DrawToolBar .v2-draw-tab').forEach(function (t) { t.classList.toggle('active', t.dataset.tab === tab); });
         $('v2TabPatch').classList.toggle('active', tab === 'patch');
+        $('v2TabName').classList.toggle('active', tab === 'name');
         $('v2TabDraw').classList.toggle('active', tab === 'draw');
         if (tab === 'patch') { cancelDraw(); getMap().getContainer().style.cursor = ''; }
+        if (tab === 'name') { cancelDraw(); getMap().getContainer().style.cursor = ''; buildWoNameChips(); }
     };
 
     function showDrawToolBar() {
@@ -781,7 +785,14 @@
     }
 
     function buildWoNameChips() {
+        // Target whichever name-chips container is currently in use: the workorder's
+        // (#woNameChips, inside v2WoSelectBar) or the water-request's (#wrNameChips,
+        // inside v2DrawToolBar). They share the same selection set + popup logic; only
+        // one toolbar is visible at a time, so prefer the visible/parent-shown one.
         var container = $('woNameChips');
+        if (!container || !container.offsetParent) {
+            container = $('wrNameChips') || container;
+        }
         if (!container) return;
         var lands = getWoLands();
         container.innerHTML = '';
@@ -922,7 +933,9 @@
     }
 
     function syncWoNameChipsState() {
-        document.querySelectorAll('#woNameChips .v2-chip[data-land-id]').forEach(function (chip) {
+        // Keep both the workorder (#woNameChips) and water-request (#wrNameChips)
+        // land-chip states in sync after a selection change (popup close, etc.).
+        document.querySelectorAll('#woNameChips .v2-chip[data-land-id], #wrNameChips .v2-chip[data-land-id]').forEach(function (chip) {
             setWoLandChipState(chip, parseInt(chip.dataset.landId, 10));
         });
     }

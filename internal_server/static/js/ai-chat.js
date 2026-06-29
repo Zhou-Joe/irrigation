@@ -209,20 +209,19 @@
         panel.id = 'aiChatPanel';
         panel.className = 'ai-chat-panel';
         panel.style.cssText = 'background:#fff;border-radius:16px;box-shadow:0 8px 32px rgba(0,0,0,0.2);' +
-                              'flex-direction:column;overflow:hidden;z-index:2001;display:none;';
+                              'overflow:hidden;z-index:2001;display:none;';
         panel.innerHTML =
-            '<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:#2D6A4F;color:#fff;">' +
+            '<div class="ai-chat-header">' +
               '<div style="font-weight:600;font-size:1em;">🤖 AI 数据助手</div>' +
               '<div style="display:flex;align-items:center;gap:4px;">' +
                 '<button id="aiChatNew" title="新建对话" style="background:none;border:none;color:#fff;font-size:0.82em;cursor:pointer;line-height:1;opacity:0.85;padding:4px 8px;border-radius:6px;">✚ 新对话</button>' +
                 '<button id="aiChatClose" title="关闭" style="background:none;border:none;color:#fff;font-size:1.3em;cursor:pointer;line-height:1;">×</button>' +
               '</div>' +
             '</div>' +
-            '<div id="aiChatMessages" style="flex:1 1 auto;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:12px;background:#f7f9f8;"></div>' +
-            '<div style="display:flex;gap:8px;padding:10px 12px;border-top:1px solid #eee;background:#fff;flex-shrink:0;">' +
-              '<textarea id="aiChatInput" placeholder="Shift+Enter 发送" rows="1" ' +
-                'style="flex:1;border:1px solid #ddd;border-radius:8px;padding:8px 10px;font-size:0.92em;resize:none;max-height:90px;outline:none;font-family:inherit;"></textarea>' +
-              '<button id="aiChatSend" style="background:#2D6A4F;color:#fff;border:none;border-radius:8px;padding:0 16px;cursor:pointer;font-weight:600;">发送</button>' +
+            '<div id="aiChatMessages" class="ai-chat-messages"></div>' +
+            '<div class="ai-chat-input-row">' +
+              '<textarea id="aiChatInput" placeholder="Shift+Enter 发送" rows="1"></textarea>' +
+              '<button id="aiChatSend">发送</button>' +
             '</div>';
         document.body.appendChild(panel);
 
