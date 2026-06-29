@@ -6213,6 +6213,127 @@ def work_reports_list(request):
     })
 
 
+# ── 媒体下载 tab ─────────────────────────────────────────────────────────
+# 经理/管理员专用的「媒体下载」tab：列出带照片/视频的工单，勾选后打 zip 下载。
+VIDEO_EXTS = {'.mp4', '.mov', '.m4v', '.webm', '.ogg', '.ogv', '.avi', '.mkv'}
+
+
+def _is_media_video(path):
+    p = (path or '').lower()
+    return any(p.endswith(ext) for ext in VIDEO_EXTS)
+
+
+@login_required(login_url='core:login')
+def work_report_photos(request):
+    """「媒体下载」tab 的工单-媒体列表 (AJAX JSON)。
+
+    沿用 work_reports_list 的日期/位置/人员筛选；只返回 photos 非空的工单。
+    每条工单带工作类别(section)、所属Land、处理人等简要信息 + 媒体路径列表。
+    """
+    from core.models import Patch, Worker
+    from core.role_utils import is_admin
+    from core.workorder_tree_views import workitem_path_map, enrich_reports, attach_zone_hierarchy
+
+    user = request.user
+    admin = is_admin(user)
+    if not admin:
+        return JsonResponse({'reports': [], 'error': '无权限'}, status=403)
+
+    date_from, date_to, location_id, worker_id, difficult, pending, before_id = _work_report_filters(request)
+    qs = _scoped_work_reports_qs(user, admin).filter(date__gte=date_from)
+    if date_to:
+        qs = qs.filter(date__lte=date_to)
+    if location_id:
+        qs = qs.filter(location_id=location_id)
+    if worker_id:
+        qs = qs.filter(worker_id=worker_id)
+    if difficult:
+        qs = qs.filter(is_difficult=True)
+    if pending:
+        qs = qs.filter(is_pending_repair=True)
+
+    # 只取带媒体的工单（排除空 photos / 空 list）。限制条数避免一次拉太多。
+    page = list(qs.exclude(photos=[]).exclude(photos__isnull=True)[:200])
+    enrich_reports(page, workitem_path_map())
+    attach_zone_hierarchy(page)
+
+    out = []
+    for r in page:
+        zh = getattr(r, 'zone_hierarchy', None) or []
+        section_labels = getattr(r, 'section_labels', None) or []
+        out.append({
+            'id': r.id,
+            'date': r.date.isoformat() if r.date else '',
+            'category': section_labels[0] if section_labels else '',   # 工作类别
+            'land': zh[0]['land'] if zh and zh[0].get('land') else '',
+            'worker_name': r.worker.full_name if r.worker_id and r.worker else '',
+            'shift_display': r.get_shift_display() if hasattr(r, 'get_shift_display') else '',
+            'photos': [
+                {'path': p, 'is_video': _is_media_video(p)}
+                for p in (r.photos or [])
+            ],
+        })
+    return JsonResponse({'reports': out})
+
+
+@login_required(login_url='core:login')
+def work_report_photos_download(request):
+    """打包选中媒体为 zip 流式下载。
+
+    前端收集勾选的原始媒体路径（相对 MEDIA_ROOT）POST 到这里。安全：白名单
+    前缀(workorder_photos/ work_reports/) + 拒绝 '..', 防路径穿越。
+    """
+    import io
+    import zipfile
+    from django.http import FileResponse, HttpResponseForbidden
+    from django.conf import settings
+    from django.utils import timezone
+    from core.role_utils import is_admin
+
+    if not is_admin(request.user):
+        return HttpResponseForbidden('无权限')
+    if request.method != 'POST':
+        return HttpResponseForbidden('POST only')
+
+    items = request.POST.getlist('items')
+    if not items:
+        try:
+            import json as _json
+            items = _json.loads(request.POST.get('items', '[]') or '[]')
+        except (ValueError, TypeError):
+            items = []
+
+    ALLOWED_PREFIXES = ('workorder_photos/', 'work_reports/')
+    media_root = settings.MEDIA_ROOT
+
+    buf = io.BytesIO()
+    added = 0
+    with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
+        for p in items:
+            p = (p or '').lstrip('/')
+            if not p or '..' in p:
+                continue
+            if not p.startswith(ALLOWED_PREFIXES):
+                continue
+            abs_path = (media_root / p).resolve()
+            # 二次确认：解析后仍在 media_root 内
+            try:
+                abs_path.relative_to(media_root.resolve())
+            except ValueError:
+                continue
+            if abs_path.exists() and abs_path.is_file():
+                zf.write(abs_path, p)
+                added += 1
+
+    if added == 0:
+        return JsonResponse({'error': '没有可下载的文件（路径无效或不存在）'}, status=400)
+
+    buf.seek(0)
+    resp = FileResponse(buf, content_type='application/zip')
+    resp['Content-Disposition'] = 'attachment; filename="workreport_media_{:%Y%m%d_%H%M}.zip"'.format(timezone.now())
+    return resp
+
+
 @login_required(login_url='core:login')
 def water_requests_list(request):
     """需求列表 — 浇水协调 (WaterRequest) records.
