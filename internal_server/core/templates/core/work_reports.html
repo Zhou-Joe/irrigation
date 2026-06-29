@@ -185,6 +185,23 @@
   .wr-rm-btn.eq { background:#e3f2fd; color:#1565c0; border:1px solid #1565c0; }
   .wr-rm-btn.archive { background:#f3f4f6; color:#6b7280; border:1px solid #d1d5db; }
   .wr-rm-btn:disabled { opacity:0.6; cursor:default; }
+
+  /* ── 媒体下载 tab ── */
+  .wr-photo-dl-toolbar { display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding:10px 14px; margin-bottom:10px; background:var(--wr-card-bg); border:1px solid var(--wr-card-border); border-radius:12px; }
+  .wr-photo-dl-btn { padding:6px 14px; font-size:0.85rem; border-radius:8px; background:#fff; color:var(--wr-text); border:1px solid var(--wr-card-border); cursor:pointer; }
+  .wr-photo-dl-btn.primary { background:var(--wr-accent); color:#fff; border-color:var(--wr-accent); }
+  .wr-photo-report { background:var(--wr-card-bg); border:1px solid var(--wr-card-border); border-radius:12px; padding:10px 14px; margin-bottom:10px; }
+  .wr-photo-report-head { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:8px; font-size:0.85rem; }
+  .wr-report-sel-lbl { display:inline-flex; align-items:center; gap:4px; cursor:pointer; }
+  .wr-photo-tag { padding:1px 8px; border-radius:6px; background:#eef; color:#4a4ae0; font-size:0.75rem; }
+  .wr-photo-land { padding:1px 8px; border-radius:6px; background:#e8f5e9; color:#2D6A4F; font-size:0.75rem; }
+  .wr-photo-cnt { margin-left:auto; }
+  .wr-photo-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(86px, 1fr)); gap:6px; }
+  .wr-photo-cell { position:relative; display:block; aspect-ratio:1; border-radius:8px; overflow:hidden; border:1px solid var(--wr-card-border); cursor:pointer; background:#f5f5f5; }
+  .wr-photo-cell img { width:100%; height:100%; object-fit:cover; display:block; }
+  .wr-photo-cell input[type=checkbox] { position:absolute; top:4px; left:4px; z-index:2; }
+  .wr-photo-cell .wr-vid-mark { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); color:#fff; font-size:1.4rem; text-shadow:0 1px 3px rgba(0,0,0,.6); pointer-events:none; }
+  .wr-photo-cell:has(input:checked) { outline:2px solid var(--wr-accent); outline-offset:-2px; }
   .wr-rm-empty { padding:32px; text-align:center; color:var(--wr-muted); font-size:0.9rem; background:var(--wr-card-bg); border-radius:12px; border:1px solid var(--wr-card-border); }
   .wr-rm-cats { display:flex; flex-wrap:wrap; gap:4px; margin-top:6px; }
   .wr-rm-cat { display:inline-block; padding:2px 9px; border-radius:12px; font-size:0.72rem; font-weight:600; background:var(--wr-accent-soft); color:var(--wr-accent); }
@@ -255,16 +272,17 @@
 
     {% if is_manager %}
     <div class="wr-tab-bar">
-        <button type="button" class="wr-tab {% if active_tab != 'remarks' %}active{% endif %}" onclick="switchTab('workorders')">维修日志</button>
-        <button type="button" class="wr-tab {% if active_tab == 'remarks' %}active{% endif %}" onclick="switchTab('remarks')">
+        <button type="button" class="wr-tab {% if active_tab != 'remarks' and active_tab != 'photos' %}active{% endif %}" data-tab="workorders" onclick="switchTab('workorders')">维修日志</button>
+        <button type="button" class="wr-tab {% if active_tab == 'remarks' %}active{% endif %}" data-tab="remarks" onclick="switchTab('remarks')">
             待确认备注
             {% if pending_remark_groups %}<span class="wr-tab-badge">{{ pending_remark_groups|length }}</span>{% endif %}
         </button>
+        <button type="button" class="wr-tab {% if active_tab == 'photos' %}active{% endif %}" data-tab="photos" onclick="switchTab('photos')">媒体下载</button>
     </div>
     {% endif %}
 
     {# ── Tab 1: workorders list (the existing filter + card list) ────────── #}
-    <div id="tabWorkorders" class="wr-remarks-panel {% if active_tab != 'remarks' %}active{% endif %}">
+    <div id="tabWorkorders" class="wr-remarks-panel {% if active_tab != 'remarks' and active_tab != 'photos' %}active{% endif %}">
 
     <div class="filter-card">
         {# Date-range presets. The selected one sets date_from accordingly; near-7-days is the default. #}
@@ -369,6 +387,19 @@
         {% endif %}
     </div>
     {% endif %}
+
+    {# ── Tab 3: 媒体下载 (managers only) ─────────────────────────────────── #}
+    {% if is_manager %}
+    <div id="tabPhotos" class="wr-remarks-panel {% if active_tab == 'photos' %}active{% endif %}">
+        <div class="wr-photo-dl-toolbar">
+            <button type="button" class="wr-photo-dl-btn" onclick="selectAllPhotoReports(this)">全选工单</button>
+            <button type="button" class="wr-photo-dl-btn primary" onclick="downloadSelectedPhotos()">⬇ 下载选中</button>
+            <span id="photoDlCount" class="wr-muted"></span>
+            <span class="wr-muted" style="margin-left:auto;">视频也一并打包；勾选工单即选其全部媒体，也可逐张勾选。</span>
+        </div>
+        <div id="photoReportList"><p class="wr-muted">切换到此 tab 时加载带媒体的工单…</p></div>
+    </div>
+    {% endif %}
 </div>
 
 <!-- Transfer selector modal (待确认备注 → 转至灌溉/设备记录) -->
@@ -462,15 +493,110 @@ var remarkGroups = {};
     if (el && el.textContent.trim()) { try { remarkGroups = JSON.parse(el.textContent); } catch (e) {} }
 })();
 
-// ── Tab switching (维修日志 / 待确认备注) ─────────────────────────────────
+// ── Tab switching (维修日志 / 待确认备注 / 媒体下载) ──────────────────────
 function switchTab(tab) {
-    var wo = document.getElementById('tabWorkorders');
+    document.getElementById('tabWorkorders').classList.toggle('active', tab === 'workorders');
     var rm = document.getElementById('tabRemarks');
-    if (wo) wo.classList.toggle('active', tab === 'workorders');
     if (rm) rm.classList.toggle('active', tab === 'remarks');
-    document.querySelectorAll('.wr-tab').forEach(function (t, i) {
-        t.classList.toggle('active', (i === 0) === (tab === 'workorders'));
+    var ph = document.getElementById('tabPhotos');
+    if (ph) ph.classList.toggle('active', tab === 'photos');
+    document.querySelectorAll('.wr-tab').forEach(function (t) {
+        t.classList.toggle('active', t.getAttribute('data-tab') === tab);
     });
+    if (tab === 'photos') loadPhotoReports();
+}
+
+// ── 媒体下载 tab: lazy-load report→media list, render, select, download ──
+var photoReportsLoaded = false, photoReportsData = [];
+function loadPhotoReports() {
+    if (photoReportsLoaded) { updatePhotoDlCount(); return; }
+    var box = document.getElementById('photoReportList');
+    if (box) box.innerHTML = '<p class="wr-muted">加载中…</p>';
+    fetch('/work-reports/photos/' + location.search, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            photoReportsLoaded = true;
+            photoReportsData = data.reports || [];
+            renderPhotoReports();
+        })
+        .catch(function () {
+            if (box) box.innerHTML = '<p class="wr-muted">加载失败，请刷新重试。</p>';
+        });
+}
+function renderPhotoReports() {
+    var reports = photoReportsData;
+    var box = document.getElementById('photoReportList');
+    if (!box) return;
+    if (!reports.length) {
+        box.innerHTML = '<p class="wr-muted">该筛选范围内没有带照片/视频的工单。</p>';
+        updatePhotoDlCount();
+        return;
+    }
+    var html = '';
+    reports.forEach(function (r) {
+        html += '<div class="wr-photo-report">'
+            + '<div class="wr-photo-report-head">'
+              + '<label class="wr-report-sel-lbl"><input type="checkbox" class="wr-report-sel" data-rid="' + r.id + '" onchange="toggleReportPhotos(' + r.id + ', this.checked)"> <b>#' + r.id + '</b></label>'
+              + (r.category ? '<span class="wr-photo-tag">' + esc(r.category) + '</span>' : '')
+              + (r.land ? '<span class="wr-photo-land">' + esc(r.land) + '</span>' : '')
+              + '<span class="wr-muted">' + esc(r.date) + ' ' + esc(r.worker_name) + '</span>'
+              + '<span class="wr-muted wr-photo-cnt">' + r.photos.length + ' 个媒体</span>'
+            + '</div><div class="wr-photo-grid">';
+        r.photos.forEach(function (p) {
+            html += '<label class="wr-photo-cell" title="' + esc(p.path) + '">'
+                + '<input type="checkbox" class="wr-media-sel" value="' + esc(p.path) + '" data-rid="' + r.id + '" onchange="onMediaToggle(' + r.id + ')">'
+                + (p.is_video ? '<span class="wr-vid-mark">▶</span>' : '')
+                + '<img loading="lazy" src="/media/' + esc(thumbPath(p.path)) + '" onerror="this.parentElement.style.opacity=0.3">'
+                + '</label>';
+        });
+        html += '</div></div>';
+    });
+    box.innerHTML = html;
+    updatePhotoDlCount();
+}
+// 工单级 checkbox → 联动该工单所有媒体
+function toggleReportPhotos(rid, checked) {
+    document.querySelectorAll('.wr-media-sel[data-rid="' + rid + '"]').forEach(function (c) { c.checked = checked; });
+    updatePhotoDlCount();
+}
+// 单媒体勾选 → 反向同步工单级 checkbox（全选/半选状态）
+function onMediaToggle(rid) {
+    var all = document.querySelectorAll('.wr-media-sel[data-rid="' + rid + '"]');
+    var rep = document.querySelector('.wr-report-sel[data-rid="' + rid + '"]');
+    if (!all.length || !rep) { updatePhotoDlCount(); return; }
+    var n = 0; all.forEach(function (c) { if (c.checked) n++; });
+    rep.checked = (n === all.length);
+    rep.indeterminate = (n > 0 && n < all.length);
+    updatePhotoDlCount();
+}
+function selectAllPhotoReports(btn) {
+    var sels = document.querySelectorAll('.wr-report-sel');
+    if (!sels.length) return;
+    var allOn = true;
+    sels.forEach(function (c) { if (!c.checked) allOn = false; });
+    sels.forEach(function (c) { c.checked = !allOn; c.indeterminate = false; });
+    document.querySelectorAll('.wr-media-sel').forEach(function (c) { c.checked = !allOn; });
+    if (btn) btn.textContent = allOn ? '全选工单' : '取消全选';
+    updatePhotoDlCount();
+}
+function updatePhotoDlCount() {
+    var n = document.querySelectorAll('.wr-media-sel:checked').length;
+    var el = document.getElementById('photoDlCount');
+    if (el) el.textContent = n ? ('已选 ' + n + ' 个') : '';
+}
+function downloadSelectedPhotos() {
+    var items = [];
+    document.querySelectorAll('.wr-media-sel:checked').forEach(function (c) { items.push(c.value); });
+    if (!items.length) { wrToast('请先勾选照片/视频', true); return; }
+    // 用隐藏 form POST，浏览器直接触发 zip 下载
+    var f = document.createElement('form');
+    f.method = 'POST'; f.action = '/work-reports/photos/download/';
+    var csrf = document.createElement('input');
+    csrf.type = 'hidden'; csrf.name = 'csrfmiddlewaretoken';
+    csrf.value = (window.csrftoken || (document.cookie.match(/csrftoken=([^;]+)/) || [])[1] || '');
+    f.appendChild(csrf);
+    items.forEach(function (p) { var i = document.createElement('input'); i.type = 'hidden'; i.name = 'items'; i.value = p; f.appendChild(i); });
+    document.body.appendChild(f); f.submit(); f.remove();
 }
 
 // Confirm (Step 1): fans out to ALL the group's zones (a pending remark lives in
