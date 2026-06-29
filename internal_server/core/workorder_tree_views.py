@@ -581,6 +581,20 @@ def _report_header_dict(report):
     }
 
 
+def _record_edit(report, user, note=''):
+    """编辑保存成功后写入一条编辑记录。仅在 edit（report 已存在）时调用。
+
+    编辑人通过 resolve_or_create_worker 解析，任意账号类型都能正确归因。
+    调用方应将其置于保存事务内，使编辑记录与工单同生共死。
+    """
+    from core.models import WorkReportEditLog
+    from core.role_utils import resolve_or_create_worker
+    editor, _created = resolve_or_create_worker(user)
+    WorkReportEditLog.objects.create(
+        work_report=report, editor=editor, note=(note or '')[:200],
+    )
+
+
 def _handle_save(request, report):
     # Resolve the real submitter. Field workers have a linked Worker row;
     # managers/admins do not, so provision one from their profile (idempotent).
@@ -637,6 +651,9 @@ def _handle_save(request, report):
         # Save first so report.id exists for photo paths.
         report.save()
         report.zones.set(zones)
+        # 编辑历史：仅 edit（非新建）记录一次，新建工单不记。
+        if not is_new:
+            _record_edit(report, request.user)
 
         # Report-level photos (1.1.12). Merge instead of replace: drop any photos
         # the user marked for removal (deleting their files + thumbnails), then

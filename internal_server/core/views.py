@@ -6368,7 +6368,7 @@ def work_report_detail(request, report_id):
     report = get_object_or_404(
         WorkReport.objects.select_related(
             'worker', 'location'
-        ).prefetch_related('entries__work_item', 'entries__project', 'zones__land'),
+        ).prefetch_related('entries__work_item', 'entries__project', 'zones__land', 'edit_logs__editor'),
         pk=report_id
     )
 
@@ -6647,8 +6647,8 @@ def workorder_mobile_v2(request):
     from core.role_utils import ROLE_SUPER_ADMIN, ROLE_MANAGER, resolve_or_create_worker
     from core.workorder_tree_views import (
         _calc_hours, _save_entries, _collect_entry_photos, _save_photo,
-        _resolve_pending_repairs,
-)
+        _resolve_pending_repairs, _record_edit,
+    )
     from datetime import date, datetime, time
 
     role = get_user_role(request.user)
@@ -6719,7 +6719,8 @@ def workorder_mobile_v2(request):
             if is_edit:
                 report = get_object_or_404(WorkReport, pk=report_id)
                 report.date = request.POST.get('date') or report.date
-                report.worker = post_worker
+                # 编辑不改处理人：保留原 worker，仅更新内容字段。改派走管理员
+                # 专用的 work_report_reassign 入口（已校验 is_admin），不经此路径。
                 report.location = location
                 report.zone_location = first_zone
                 report.remark = request.POST.get('remark', '')
@@ -6736,6 +6737,8 @@ def workorder_mobile_v2(request):
                 report.zone_names = zone_names
                 report.work_content = request.POST.get('work_content', '')
                 report.save()
+                # 编辑历史：edit 分支记录一次，新建工单不记。
+                _record_edit(report, request.user)
             else:
                 report = WorkReport.objects.create(
                     date=request.POST.get('date') or date.today().isoformat(),
