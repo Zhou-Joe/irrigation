@@ -36,6 +36,7 @@ router.register(r'work-reports', WorkReportViewSet, basename='workreport')
 urlpatterns = [
     path('', views.dashboard, name='dashboard'),
     path('stats/', views.stats_dashboard, name='stats_dashboard'),
+    path('stats/excel/', views.work_reports_excel, name='work_reports_excel'),
     path('irrigation/', views.irrigation_dashboard, name='irrigation_dashboard'),
     path('irrigation/report.pdf', views.irrigation_report_pdf, name='irrigation_report_pdf'),
     path('irrigation/report.xlsx', views.irrigation_report_excel, name='irrigation_report_excel'),

@@ -4442,6 +4442,165 @@ def maxicom_dashboard_api(request):
 # ==========================================================================
 
 
+def _resolve_stats_window(request):
+    """Resolve the stats date window from ?from=/&to= or ?week= (default: current week).
+
+    Shared by stats_dashboard and the Excel export endpoint so they stay in sync.
+    Returns (start_date, end_date).
+    """
+    from django.utils import timezone
+    from datetime import datetime, timedelta
+    today = timezone.now().date()
+    from_param = request.GET.get('from')
+    to_param = request.GET.get('to')
+    week_param = request.GET.get('week')
+    is_custom_range = bool(from_param or to_param)
+
+    def _parse(s):
+        try:
+            return datetime.strptime(s, '%Y-%m-%d').date()
+        except Exception:
+            return None
+
+    if is_custom_range:
+        start = _parse(from_param) or (today - timedelta(days=6))
+        end = _parse(to_param) or today
+        if end < start:
+            start, end = end, start
+    elif week_param:
+        parsed = _parse(week_param)
+        start = (parsed - timedelta(days=parsed.weekday())) if parsed else (today - timedelta(days=today.weekday()))
+        end = start + timedelta(days=6)
+    else:
+        start = today - timedelta(days=today.weekday())  # current week, Monday
+        end = start + timedelta(days=6)
+    return start, end
+
+
+def _work_report_count_columns():
+    """Fixed fault-matrix columns for the Excel export: every count leaf node in
+    the routine_maint section, returned as [(work_item_id, path_label), ...].
+
+    Sorted by parent-path then order so columns are stable across exports
+    regardless of which date range is selected. path_label is the human-readable
+    group hierarchy, e.g. "计划性维修 / 喷头 / 喷头盖掉/松/坏".
+    """
+    from core.models import WorkItem
+    items = {it.id: it for it in WorkItem.objects.filter(section='routine_maint')}
+
+    def path_of(it):
+        parts, cur, seen = [], it, set()
+        while cur and cur.id not in seen:
+            seen.add(cur.id)
+            parts.append(cur.name_zh)
+            cur = items.get(cur.parent_id) if cur.parent_id else None
+        parts.reverse()
+        return ' / '.join(parts[1:]) or it.name_zh   # drop the section name itself
+
+    cols = []
+    for it in items.values():
+        if it.value_type != 'count':
+            continue
+        cols.append((it.id, path_of(it)))
+    # Stable ordering: by path then by id (deterministic, same every export).
+    cols.sort(key=lambda c: (c[1], c[0]))
+    return cols
+
+
+def _report_section_label(report):
+    """Work category label for a report (template's F column): derived from the
+    sections of its entries, preferring non-routine ones; falls back to 常规维护."""
+    from core.models import WorkReportEntry, WorkItem
+    secs = WorkReportEntry.objects.filter(work_report=report).values_list('work_item__section', flat=True)
+    label_map = dict(WorkItem.SECTION_CHOICES)
+    # prefer the first non-routine section present; else 常规维护.
+    for s in secs:
+        if s and s != 'routine_maint':
+            return label_map.get(s, s)
+    return label_map.get('routine_maint', '常规维护')
+
+
+@login_required(login_url='core:login')
+def work_reports_excel(request):
+    """Export work orders in the current stats date window as a reporttemplate-style
+    Excel: one row per work order, fixed columns = the routine_maint count leaf
+    nodes (fault matrix), blanks where a node wasn't filled. Admins see all
+    reports; others see only their own — same scoping as stats_dashboard.
+    """
+    import io
+    from core.models import WorkReport, WorkReportEntry, WorkItem
+    from core.role_utils import is_admin
+    from django.db.models import Prefetch
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+
+    user = request.user
+    admin = is_admin(user)
+    start, end = _resolve_stats_window(request)
+
+    # 1) Fixed fault-matrix columns (deterministic across exports).
+    count_nodes = _work_report_count_columns()
+
+    # 2) Work orders in window (role-scoped). _scoped_work_reports_qs already
+    # prefetches 'entries', so fetch the count-only subset into a distinct attr
+    # via to_attr to avoid a duplicate-prefetch conflict.
+    qs = _scoped_work_reports_qs(user, admin).filter(date__gte=start, date__lte=end)
+    reports = list(qs.prefetch_related(
+        Prefetch('entries', queryset=WorkReportEntry.objects.select_related('work_item').filter(work_item__value_type='count'), to_attr='_count_entries')
+    ).order_by('date', 'id'))
+
+    # 3) Build workbook.
+    wb = Workbook()
+    ws = wb.active
+    ws.title = '维修记录'
+    base_header = ['序号', '日期', '处理人', '位置', '工作分类', '故障/事件位置',
+                   '备注', '信息来源', '疑难问题', '疑难已处理']
+    header = base_header + [label for _, label in count_nodes]
+    ws.append(header)
+
+    # Header styling.
+    hfill = PatternFill('solid', fgColor='1B4332')
+    hfont = Font(color='FFFFFF', bold=True, size=10)
+    center = Alignment(horizontal='center', vertical='center', wrap_text=True)
+    for ci in range(1, len(header) + 1):
+        c = ws.cell(row=1, column=ci)
+        c.fill = hfill; c.font = hfont; c.alignment = center
+
+    # work_item_id → matrix column index (1-based, offset after the 10 base cols).
+    id_to_col = {wid: 11 + i for i, (wid, _) in enumerate(count_nodes)}
+
+    for idx, r in enumerate(reports, 1):
+        row = [idx, r.date.isoformat() if r.date else '',
+               r.worker.full_name if r.worker_id and r.worker else '',
+               r.location.code if r.location_id and r.location else '',
+               _report_section_label(r),
+               r.zone_names or '',
+               (r.work_content or r.remark or ''),
+               '',  # 信息来源 (no dedicated field on WorkReport)
+               '是' if r.is_difficult else '',
+               '是' if r.is_difficult_resolved else '']
+        # pad matrix columns so indices line up
+        row += [None] * len(count_nodes)
+        for e in getattr(r, '_count_entries', []):
+            ci = id_to_col.get(e.work_item_id)
+            if ci is not None and e.count:
+                row[ci - 1] = (row[ci - 1] or 0) + e.count
+        ws.append(row)
+
+    # Column widths + freeze header.
+    from openpyxl.utils import get_column_letter
+    for ci, label in enumerate(header, 1):
+        width = 12 if ci <= len(base_header) else max(10, min(28, len(label) * 1.6))
+        ws.column_dimensions[get_column_letter(ci)].width = width
+    ws.freeze_panes = 'A2'
+
+    buf = io.BytesIO(); wb.save(buf); buf.seek(0)
+    fname = f'workreports_{start}_{end}.xlsx'
+    resp = HttpResponse(buf, content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    resp['Content-Disposition'] = f'attachment; filename="{fname}"'
+    return resp
+
+
 @login_required(login_url='core:login')
 def stats_dashboard(request):
     """维修日志 数据报表 — hours, counts, distribution across section / project /

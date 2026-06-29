@@ -123,6 +123,11 @@
                 {% endfor %}
             </select>
             <button class="range-nav-btn" onclick="navRange(7)">后7天 →</button>
+            {% if is_admin %}
+            <a class="range-nav-btn sec-export" href="{% url 'core:work_reports_excel' %}?{{ request.GET.urlencode }}" title="把当前范围内的工单导出为 Excel（一行一个工单，含故障类型矩阵）">
+                <i class="fa fa-file-excel-o"></i> 导出工单 Excel
+            </a>
+            {% endif %}
         </div>
     </div>
 

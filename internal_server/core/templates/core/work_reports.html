@@ -438,8 +438,7 @@
 
 {# Filter state for load-more, serialized safely to JS via json_script. #}
 {{ filter_json|json_script:"wr-filter-json" }}
-{# Photo path registry for the lightbox, keyed by report id (initial server-rendered batch).
-   Must use to_json — str(list) emits single-quoted Python repr that breaks JSON.parse. #}
+{# Photo path registry for the lightbox (keyed by report id). to_json avoids Python repr breaking JSON.parse. #}
 <script id="wr-photo-data" type="application/json">{% for report in reports %}{% if report.photos %}"{{ report.id }}":{{ report.photos|to_json }},{% endif %}{% endfor %}</script>
 {% comment %}Remark groups: maps group key → [[zone_id, index], ...] so the confirm/move
 JS can fan the action out to every zone a group touches. Built in the view (covers
