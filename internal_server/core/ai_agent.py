@@ -578,22 +578,24 @@ _MAX_FILE_BYTES = 20 * 1024 * 1024  # 20 MB
 
 def _fault_matrix_columns():
     """Fixed fault-matrix columns for the Excel export: every count leaf node in
-    the routine_maint section, as [(work_item_id, path_label), ...], sorted by
-    path then id so columns stay identical across exports. Mirrors the
-    work_reports_excel view's _work_report_count_columns.
+    the routine_maint section, as [(work_item_id, path_segments), ...], sorted by
+    path then id so columns stay identical across exports. ``path_segments`` is
+    the group hierarchy with the section root dropped, e.g.
+    ``['计划性维修', '喷头', '喷嘴丢/坏']`` — so the caller can render a merged
+    multi-row header. Mirrors work_reports_excel's _work_report_count_columns.
     """
     items = {it.id: it for it in WorkItem.objects.filter(section='routine_maint')}
 
-    def path_of(it):
+    def segs_of(it):
         parts, cur, seen = [], it, set()
         while cur and cur.id not in seen:
             seen.add(cur.id)
             parts.append(cur.name_zh)
             cur = items.get(cur.parent_id) if cur.parent_id else None
         parts.reverse()
-        return ' / '.join(parts[1:]) or it.name_zh   # drop the section name itself
+        return parts[1:] or [it.name_zh]   # drop the section-root name itself
 
-    cols = [(it.id, path_of(it)) for it in items.values() if it.value_type == 'count']
+    cols = [(it.id, segs_of(it)) for it in items.values() if it.value_type == 'count']
     cols.sort(key=lambda c: (c[1], c[0]))
     return cols
 
@@ -614,7 +616,7 @@ def export_work_reports_excel(start_date: str = "", end_date: str = "", runtime:
     import io
     from django.db.models import Prefetch
     from openpyxl import Workbook
-    from openpyxl.styles import Font, PatternFill, Alignment
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 
     ctx = (runtime.context if runtime is not None else None) or {}
     thread_id = ctx.get('thread_id')
@@ -642,15 +644,54 @@ def export_work_reports_excel(start_date: str = "", end_date: str = "", runtime:
     sh.title = '维修记录'
     base_header = ['序号', '日期', '处理人', '位置', '工作分类', '故障/事件位置',
                    '备注', '信息来源', '疑难问题', '疑难已处理']
-    header = base_header + [label for _, label in count_nodes]
-    sh.append(header)
+    n_base = len(base_header)
+    n_cols = n_base + len(count_nodes)
+    hdr_rows = max((len(segs) for _, segs in count_nodes), default=1)
+
+    # Style every header cell up front so merged ranges keep their borders.
     hfill = PatternFill('solid', fgColor='1B4332')
     hfont = Font(color='FFFFFF', bold=True, size=10)
     center = Alignment(horizontal='center', vertical='center', wrap_text=True)
-    for ci in range(1, len(header) + 1):
-        c = sh.cell(row=1, column=ci)
-        c.fill = hfill; c.font = hfont; c.alignment = center
-    id_to_col = {wid: 11 + i for i, (wid, _) in enumerate(count_nodes)}
+    thin = Side(style='thin', color='FFFFFF')
+    hborder = Border(left=thin, right=thin, top=thin, bottom=thin)
+    for rr in range(1, hdr_rows + 1):
+        for cc in range(1, n_cols + 1):
+            cell = sh.cell(row=rr, column=cc)
+            cell.fill = hfill; cell.font = hfont; cell.alignment = center; cell.border = hborder
+
+    # Base columns span every header row (vertical merge).
+    for ci, label in enumerate(base_header, 1):
+        sh.cell(row=1, column=ci, value=label)
+        if hdr_rows > 1:
+            sh.merge_cells(start_row=1, start_column=ci, end_row=hdr_rows, end_column=ci)
+
+    # Count columns: merge consecutive siblings sharing the same path prefix.
+    for depth in range(hdr_rows):
+        row = depth + 1
+        ci = 0
+        while ci < len(count_nodes):
+            segs = count_nodes[ci][1]
+            if depth >= len(segs):
+                ci += 1
+                continue
+            prefix = segs[:depth + 1]
+            cj = ci + 1
+            while cj < len(count_nodes) and count_nodes[cj][1][:depth + 1] == prefix:
+                cj += 1
+            col_start = n_base + ci + 1
+            col_end = n_base + cj
+            sh.cell(row=row, column=col_start, value=segs[depth])
+            need_h = col_end > col_start
+            need_v = depth == len(segs) - 1 and row < hdr_rows
+            if need_h and need_v:
+                sh.merge_cells(start_row=row, start_column=col_start, end_row=hdr_rows, end_column=col_end)
+            elif need_h:
+                sh.merge_cells(start_row=row, start_column=col_start, end_row=row, end_column=col_end)
+            elif need_v:
+                sh.merge_cells(start_row=row, start_column=col_start, end_row=hdr_rows, end_column=col_start)
+            ci = cj
+
+    id_to_col = {wid: n_base + i + 1 for i, (wid, _) in enumerate(count_nodes)}
 
     for idx, r in enumerate(qs, 1):
         # 工作分类 = 该工单明细的 section（优先非常规维护）
@@ -672,6 +713,29 @@ def export_work_reports_excel(start_date: str = "", end_date: str = "", runtime:
             if ci is not None and e.count:
                 row[ci - 1] = (row[ci - 1] or 0) + e.count
         sh.append(row)
+
+    # Data cell styling: thin grey borders, centre numerics, wrap 备注.
+    gside = Side(style='thin', color='D0D0D0')
+    gborder = Border(left=gside, right=gside, top=gside, bottom=gside)
+    dcenter = Alignment(horizontal='center', vertical='center')
+    dwrap = Alignment(horizontal='left', vertical='center', wrap_text=True)
+    last_row = hdr_rows + qs.count()
+    for rr in range(hdr_rows + 1, last_row + 1):
+        for cc in range(1, n_cols + 1):
+            cell = sh.cell(row=rr, column=cc)
+            cell.border = gborder
+            cell.alignment = dwrap if cc == 7 else dcenter
+
+    # Column widths + freeze the header rows and first four ID columns.
+    from openpyxl.utils import get_column_letter
+    for ci in range(1, n_cols + 1):
+        if ci <= n_base:
+            width = 28 if ci == 7 else 12
+        else:
+            leaf = count_nodes[ci - n_base - 1][1][-1]
+            width = max(8, min(20, len(leaf) * 1.7 + 2))
+        sh.column_dimensions[get_column_letter(ci)].width = width
+    sh.freeze_panes = sh.cell(row=hdr_rows + 1, column=5)
 
     fname = f'workreports_{start}_{end}.xlsx'
     out_path = os.path.join(ws, fname)
