@@ -119,10 +119,13 @@ if not DEBUG:
     CSRF_COOKIE_SECURE = True
     SESSION_COOKIE_HTTPONLY = True
     SESSION_COOKIE_SAMESITE = 'Lax'
-    SECURE_SSL_REDIRECT = True
-    SECURE_HSTS_SECONDS = 31536000
-    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
-    SECURE_HSTS_PRELOAD = True
+    # Ali Cloud nginx terminates TLS and forwards to FRP tunnel over HTTP. It does
+    # NOT send X-Forwarded-Proto, so Django sees every request as HTTP — and a
+    # SECURE_SSL_REDIRECT here loops forever (browser hits HTTPS → nginx → HTTP →
+    # Django issues 301 → HTTPS → nginx → HTTP → …). The nginx layer already
+    # redirects HTTP→HTTPS at the edge, so Django's redirect is redundant.
+    # To re-enable, ensure the proxy sends X-Forwarded-Proto: https.
+    # SECURE_SSL_REDIRECT = True
     SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 
 # Login settings
