@@ -38,6 +38,12 @@ def validate_upload(uploaded_file):
 
     # Size check — read .size (already buffered by Django), cheap.
     size = getattr(uploaded_file, 'size', 0) or 0
+    if size == 0:
+        # 0-byte parts happen on iOS when iCloud photos aren't downloaded locally
+        # before the picker returns them; the multipart header arrives but the body
+        # is empty. PIL.verify() catches this for images, but videos skip the content
+        # check, so reject by size up front for every file type.
+        return False, '文件为空，可能是设备未完成下载/转码。请在相册中确认照片已下载到本地后重试。'
     if size > MAX_FILE_BYTES:
         return False, f'文件过大({size // (1024*1024)}MB)，单文件上限 {MAX_FILE_BYTES//(1024*1024)}MB。'
 
