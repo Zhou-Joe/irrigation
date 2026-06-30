@@ -87,6 +87,14 @@ def ai_chat(request):
     resp = StreamingHttpResponse(event_stream(), content_type='text/event-stream')
     resp['Cache-Control'] = 'no-cache'
     resp['X-Accel-Buffering'] = 'no'  # disable proxy buffering for true streaming
+    # Bypass GZipMiddleware. SSE token frames are tiny (~40B each); gzip's
+    # internal buffer accumulates them and only flushes in big batches, which
+    # collapses per-token streaming into a few delayed chunks (verified: a 45-
+    # token stream compresses to just 2 large blocks delivered ~2s apart).
+    # Setting Content-Encoding makes GZipMiddleware skip this response entirely
+    # (it returns early when the header is already set), preserving true
+    # incremental token delivery.
+    resp['Content-Encoding'] = 'identity'
     return resp
 
 
