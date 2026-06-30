@@ -600,6 +600,22 @@ def _fault_matrix_columns():
     return cols
 
 
+def _dedup_zone_names(raw):
+    """Collapse repeated zone names in a stored zone_names string, preserving
+    first-seen order. Older reports list the same name N times when several
+    same-named zones were selected (e.g. 'BOH, BOH, BOH'). Mirrors the helper
+    in views.py to avoid a cross-module import.
+    """
+    if not raw:
+        return ''
+    out, seen = [], set()
+    for p in (part.strip() for part in raw.split(',')):
+        if p and p not in seen:
+            seen.add(p)
+            out.append(p)
+    return ', '.join(out)
+
+
 @tool
 def export_work_reports_excel(start_date: str = "", end_date: str = "", runtime: ToolRuntime = None) -> str:
     """导出维修工单为 Excel 报表（reporttemplate 格式），生成 .xlsx 文件并返回下载链接。
@@ -703,7 +719,7 @@ def export_work_reports_excel(start_date: str = "", end_date: str = "", runtime:
         row = [idx, r.date.isoformat() if r.date else '',
                r.worker.full_name if r.worker_id and r.worker else '',
                r.location.code if r.location_id and r.location else '',
-               cat, r.zone_names or '',
+               cat, _dedup_zone_names(r.zone_names),
                (r.work_content or r.remark or ''), '',
                '是' if r.is_difficult else '',
                '是' if r.is_difficult_resolved else '']
