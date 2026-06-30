@@ -199,16 +199,25 @@ class ZoneSerializer(serializers.ModelSerializer):
         return obj.get_status_display()
 
     def get_pending_requests(self, obj):
-        """返回待审批的浇水协调需求。"""
-        from datetime import date
-        today = date.today()
+        """返回待审批的浇水协调需求。
+
+        On list views the queryset is prefetched with `_pending_requests`
+        (see ZoneViewSet.get_queryset), so this reads from memory with no query.
+        Falls back to a per-zone query for single-object retrieve.
+        """
+        # Prefetched list takes priority (avoids N+1 on list endpoints).
+        reqs = getattr(obj, '_pending_requests', None)
+        if reqs is None:
+            from datetime import date
+            today = date.today()
+            reqs = WaterRequest.objects.filter(
+                zones=obj,
+                status='submitted',
+                start_datetime__date__lte=today,
+                end_datetime__date__gte=today,
+            )
         pending = []
-        for req in WaterRequest.objects.filter(
-            zones=obj,
-            status='submitted',
-            start_datetime__date__lte=today,
-            end_datetime__date__gte=today
-        ):
+        for req in reqs:
             pending.append({
                 'id': req.id,
                 'type': 'water',
@@ -321,6 +330,22 @@ class ZoneViewSet(viewsets.ModelViewSet):
     serializer_class = ZoneSerializer
     authentication_classes = [TokenAuthentication, authentication.SessionAuthentication]
     permission_classes = [IsAdminOrReadOnly]
+
+    def get_queryset(self):
+        """Prefetch the relations ZoneSerializer reads per-object (was N+1):
+        patch/region via select_related, and each zone's pending WaterRequests
+        via a filtered Prefetch so get_pending_requests needs no extra query."""
+        from datetime import date
+        from django.db.models import Prefetch
+        today = date.today()
+        pending_qs = (WaterRequest.objects
+                      .filter(status='submitted',
+                              start_datetime__date__lte=today,
+                              end_datetime__date__gte=today))
+        return (super().get_queryset()
+                .select_related('patch', 'patch__region')
+                .prefetch_related(Prefetch('water_requests', queryset=pending_qs,
+                                           to_attr='_pending_requests')))
 
     def perform_create(self, serializer):
         """Auto-close boundary polygons before saving."""
@@ -860,6 +885,14 @@ class WorkReportViewSet(viewsets.ModelViewSet):
 
         if not files:
             return Response({'error': 'No files provided'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Validate every file BEFORE writing any to disk: extension allow-list +
+        # size cap + Pillow content check (rejects renamed non-image payloads).
+        from core.upload_security import validate_upload
+        for f in files:
+            ok, err = validate_upload(f)
+            if not ok:
+                return Response({'error': f'{f.name}: {err}'}, status=status.HTTP_400_BAD_REQUEST)
 
         import os
         from django.conf import settings

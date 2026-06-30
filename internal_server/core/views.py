@@ -10,6 +10,7 @@ from django.views.decorators.http import require_POST
 from django.http import HttpResponse, JsonResponse
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.http import url_has_allowed_host_and_scheme
 from core.models import Zone, Patch
 
 def auto_close_boundary_points(boundary_data):
@@ -330,6 +331,14 @@ def user_login(request):
                 pass
 
             next_url = request.GET.get('next', redirect_url)
+            # Only honor relative (same-origin) redirects — a bare host/path like
+            # "/dashboard/" passes; an absolute URL to another site is rejected,
+            # preventing open-redirect phishing after login.
+            if not url_has_allowed_host_and_scheme(
+                    url=next_url,
+                    allowed_hosts={request.get_host()},
+                    require_https=request.is_secure()):
+                next_url = redirect_url
             return redirect(next_url)
         else:
             messages.error(request, '用户名或密码错误')
@@ -1270,14 +1279,22 @@ def announcement_unacked_api(request, pk):
     }
     users = []
     from django.contrib.auth import get_user_model
-    for u in get_user_model().objects.filter(is_active=True).order_by('username'):
-        if not _announcement_eligible(u):
+    # Prefetch all three profile types in ONE query each (was 3 queries/user via
+    # get_user_role's .exists() calls + 3 FK lookups in _user_display_name → ~6N
+    # queries for the whole panel). select_related turns each into an in-memory
+    # attribute read with zero extra queries.
+    User = get_user_model()
+    for u in (User.objects.filter(is_active=True)
+              .order_by('username')
+              .select_related('worker_profile', 'manager_profile', 'dept_profile')):
+        role = _role_from_prefetched(u)
+        if role not in (ROLE_FIELD_WORKER, ROLE_MANAGER, ROLE_SUPER_ADMIN):
             continue  # dept users / others are not part of the audience
         if u.id in acked_user_ids:
             continue
         users.append({
             'name': _user_display_name(u),
-            'role': label_map.get(get_user_role(u), '—'),
+            'role': label_map.get(role, '—'),
         })
     return JsonResponse({'success': True, 'count': len(users), 'users': users})
 
@@ -1288,10 +1305,53 @@ def _user_display_name(user):
     if name:
         return name
     for attr in ('worker_profile', 'manager_profile', 'dept_profile'):
-        profile = getattr(user, attr, None)
+        # Reverse OneToOne access raises RelatedObjectDoesNotExist (an
+        # ObjectDoesNotExist subclass, not AttributeError) when no row exists,
+        # so getattr's default doesn't apply — guard explicitly.
+        try:
+            profile = getattr(user, attr, None)
+        except Exception:
+            profile = None
         if profile and getattr(profile, 'full_name', None):
             return profile.full_name
     return user.username
+
+
+def _role_from_prefetched(user):
+    """Resolve a user's role from already-prefetched profile relations.
+
+    Mirror of role_utils.get_user_role but with ZERO queries: it reads the
+    select_related profiles instead of running .exists(). Use only when the
+    queryset was built with select_related('worker_profile','manager_profile',
+    'dept_profile'); otherwise the related access would lazy-load (N+1).
+    """
+    from core.role_utils import (
+        ROLE_SUPER_ADMIN, ROLE_MANAGER, ROLE_FIELD_WORKER, ROLE_DEPT_USER,
+    )
+    if not user or not getattr(user, 'is_authenticated', False):
+        return None
+    if getattr(user, 'is_superuser', False) or getattr(user, 'is_staff', False):
+        return ROLE_SUPER_ADMIN
+    # For a reverse OneToOne, accessing the attribute raises
+    # RelatedObjectDoesNotExist (a subclass of ObjectDoesNotExist, NOT
+    # AttributeError) when no related row exists. Catch that and treat as None
+    # — the profile was prefetched (or absent), so this never triggers a query.
+    def _get(attr):
+        try:
+            return getattr(user, attr, None)
+        except Exception:  # ObjectDoesNotExist / RelatedObjectDoesNotExist
+            return None
+
+    mp = _get('manager_profile')
+    if mp and getattr(mp, 'active', True):
+        return ROLE_SUPER_ADMIN if getattr(mp, 'is_super_admin', False) else ROLE_MANAGER
+    wp = _get('worker_profile')
+    if wp and getattr(wp, 'active', True):
+        return ROLE_FIELD_WORKER
+    dp = _get('dept_profile')
+    if dp and getattr(dp, 'active', True):
+        return ROLE_DEPT_USER
+    return None
 
 
 
@@ -2817,10 +2877,10 @@ def zone_detail_page(request, zone_id):
             'model_name': eq.equipment.model_name,
         }
 
-    # Recent work reports
+    # Recent work reports (by 工单号 descending — newest #id first).
     recent_reports = WorkReport.objects.filter(zone_location=zone).select_related(
         'worker', 'location'
-    ).order_by('-date', '-id')[:10]
+    ).order_by('-id')[:10]
 
     # Sibling zones (same patch)
     sibling_zones = []
@@ -4317,15 +4377,18 @@ def maxicom_dashboard_api(request):
         'locked_stations': Patch.objects.filter(parent__isnull=False, lockout=True).count(),
     }
 
-    # Site hierarchy: sites with controller/station counts and station details
+    # Site hierarchy: sites with controller/station counts and station details.
+    # Annotate the four reverse counts in ONE query (was 4 queries/site → N+1)
+    # and prefetch children so the per-site station loop adds no extra queries.
     sites = []
-    for site in Patch.objects.filter(parent__isnull=True).all():
-        ctrl_count = site.controllers.count()
-        stn_count = site.children.count()
-        sched_count = site.schedules.count()
-        fz_count = site.flow_zones.count()
-
-        # Station details for hierarchy table
+    root_sites = (Patch.objects.filter(parent__isnull=True)
+                  .annotate(ctrl_count=Count('controllers', distinct=True),
+                            stn_count=Count('children', distinct=True),
+                            sched_count=Count('schedules', distinct=True),
+                            fz_count=Count('flow_zones', distinct=True))
+                  .prefetch_related('children'))
+    for site in root_sites:
+        # Station details for hierarchy table (uses prefetched children — no query)
         station_list = []
         for stn in site.children.all():
             station_list.append({
@@ -4350,10 +4413,10 @@ def maxicom_dashboard_api(request):
             'et_default': site.et_default,
             'water_pricing': site.water_pricing,
             'rain_shutdown': site.rain_shutdown,
-            'controller_count': ctrl_count,
-            'station_count': stn_count,
-            'schedule_count': sched_count,
-            'flow_zone_count': fz_count,
+            'controller_count': site.ctrl_count,
+            'station_count': site.stn_count,
+            'schedule_count': site.sched_count,
+            'flow_zone_count': site.fz_count,
             'stations': station_list,
         })
 
@@ -4367,21 +4430,40 @@ def maxicom_dashboard_api(request):
             'text': ev.text,
         })
 
-    # Weather summary: latest reading per station
+    # Weather summary: latest reading per station. Previously this ran one
+    # `readings.order_by('-timestamp').first()` query PER station (N+1). Now a
+    # single query fetches the latest-timestamp log per station via a Max()
+    # subquery, then we read those rows. (weather_station,timestamp) is indexed.
     weather_summary = []
-    for ws in MaxicomWeatherStation.objects.all():
-        latest = ws.readings.order_by('-timestamp').first()
-        if latest:
-            weather_summary.append({
-                'station': ws.name,
-                'timestamp': latest.timestamp,
-                'temperature': latest.temperature,
-                'humidity': latest.humidity,
-                'rainfall': latest.rainfall,
-                'et': latest.et,
-                'wind_run': latest.wind_run,
-                'solar_radiation': latest.solar_radiation,
-            })
+    stations = list(MaxicomWeatherStation.objects.all())
+    if stations:
+        from django.db.models import Max as _Max
+        latest_per_station = {}
+        for log in (MaxicomWeatherLog.objects
+                    .filter(weather_station__in=stations,
+                            timestamp__in=MaxicomWeatherLog.objects
+                                .filter(weather_station__in=stations)
+                                .values('weather_station')
+                                .annotate(lt=_Max('timestamp'))
+                                .values('lt'))
+                    .select_related('weather_station')):
+            # Keep only the first (latest) per station in case of timestamp ties.
+            ws_id = log.weather_station_id
+            if ws_id not in latest_per_station:
+                latest_per_station[ws_id] = log
+        for ws in stations:
+            latest = latest_per_station.get(ws.id)
+            if latest:
+                weather_summary.append({
+                    'station': ws.name,
+                    'timestamp': latest.timestamp,
+                    'temperature': latest.temperature,
+                    'humidity': latest.humidity,
+                    'rainfall': latest.rainfall,
+                    'et': latest.et,
+                    'wind_run': latest.wind_run,
+                    'solar_radiation': latest.solar_radiation,
+                })
 
     # ET trend: last 30 days of ET readings aggregated by day
     et_trend = []
@@ -6241,7 +6323,8 @@ def _scoped_work_reports_qs(user, admin):
         'worker', 'location'
     ).prefetch_related(
         'entries__work_item', 'entries__project', 'zones__land', 'edit_logs__editor'
-    ).order_by('-date', '-id')
+    ).order_by('-id')   # 按工单号降序：最新工单(#最大号)永远排最前,与日期无关。
+                        # 游标分页用 id__lt(before_id),与此排序天然兼容。
 
     if not admin and not is_field_worker(user):
         worker = get_worker_for_user(user)
@@ -6522,6 +6605,11 @@ def work_report_photos_download(request):
 
     前端收集勾选的原始媒体路径（相对 MEDIA_ROOT）POST 到这里。安全：白名单
     前缀(workorder_photos/ work_reports/) + 拒绝 '..', 防路径穿越。
+
+    quality 参数：
+      - 'thumb'（默认）：图片打包缩略图(_thumb.jpg，体积小、下载快)；视频无
+        小尺寸版，始终打包原文件。
+      - 'original'：图片和视频都打包原文件。
     """
     import io
     import zipfile
@@ -6529,6 +6617,7 @@ def work_report_photos_download(request):
     from django.conf import settings
     from django.utils import timezone
     from core.role_utils import is_admin
+    from core.workorder_tree_views import thumb_path
 
     if not is_admin(request.user):
         return HttpResponseForbidden('无权限')
@@ -6543,34 +6632,70 @@ def work_report_photos_download(request):
         except (ValueError, TypeError):
             items = []
 
+    quality = (request.POST.get('quality') or 'thumb').strip()
+    use_thumb = (quality == 'thumb')
+
     ALLOWED_PREFIXES = ('workorder_photos/', 'work_reports/')
     media_root = settings.MEDIA_ROOT
+    VIDEO_EXTS = ('.mp4', '.mov', '.avi', '.m4v', '.webm', '.mkv')
+
+    def _resolve(rel):
+        """Resolve a relative media path to an absolute path inside MEDIA_ROOT,
+        or None if it's invalid / escapes / missing. Guards against traversal."""
+        rel = (rel or '').lstrip('/')
+        if not rel or '..' in rel or not rel.startswith(ALLOWED_PREFIXES):
+            return None
+        abs_path = (media_root / rel).resolve()
+        try:
+            abs_path.relative_to(media_root.resolve())
+        except ValueError:
+            return None
+        return abs_path if (abs_path.exists() and abs_path.is_file()) else None
 
     buf = io.BytesIO()
     added = 0
+    # Track archive entry names to avoid collisions (e.g. two originals mapping to
+    # the same thumb name is unlikely but possible after manual file moves).
+    seen_names = set()
     with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
         for p in items:
-            p = (p or '').lstrip('/')
-            if not p or '..' in p:
+            abs_path = _resolve(p)
+            if abs_path is None:
                 continue
-            if not p.startswith(ALLOWED_PREFIXES):
-                continue
-            abs_path = (media_root / p).resolve()
-            # 二次确认：解析后仍在 media_root 内
-            try:
-                abs_path.relative_to(media_root.resolve())
-            except ValueError:
-                continue
-            if abs_path.exists() and abs_path.is_file():
-                zf.write(abs_path, p)
-                added += 1
+            is_video = p.lower().endswith(VIDEO_EXTS)
+            # 缩略图模式仅对图片生效；视频始终用原文件。
+            if use_thumb and not is_video:
+                thumb_rel = thumb_path(p)
+                thumb_abs = _resolve(thumb_rel)
+                if thumb_abs:
+                    # 缩略图存在 → 用它（小、快）。文件名沿用 _thumb 形式。
+                    arc_name = thumb_rel
+                    abs_path = thumb_abs
+                else:
+                    # 缩略图缺失（旧数据未生成）→ 回退原图，但文件名保持原始名，
+                    # 避免和其它原图/缩略图在 zip 内重名冲突。
+                    arc_name = p
+            else:
+                arc_name = p
+            # Dedupe archive entry names (append a counter suffix on collision).
+            final_name = arc_name
+            if final_name in seen_names:
+                base, dot, ext = arc_name.rpartition('.')
+                i = 2
+                while f'{base}_{i}{dot}{ext}' in seen_names:
+                    i += 1
+                final_name = f'{base}_{i}{dot}{ext}'
+            seen_names.add(final_name)
+            zf.write(abs_path, final_name)
+            added += 1
 
     if added == 0:
         return JsonResponse({'error': '没有可下载的文件（路径无效或不存在）'}, status=400)
 
     buf.seek(0)
     resp = FileResponse(buf, content_type='application/zip')
-    resp['Content-Disposition'] = 'attachment; filename="workreport_media_{:%Y%m%d_%H%M}.zip"'.format(timezone.now())
+    tag = '_thumb' if use_thumb else '_original'
+    resp['Content-Disposition'] = 'attachment; filename="workreport_media{0}_{1:%Y%m%d_%H%M}.zip"'.format(tag, timezone.now())
     return resp
 
 
@@ -6709,6 +6834,7 @@ def _group_zone_remarks(notes_field):
     return groups
 
 
+@login_required(login_url='core:login')
 def remarks_list(request):
     """待确认备注 — zones with unconfirmed remarks, with inline confirm for managers.
 
@@ -6954,6 +7080,14 @@ def work_report_upload_photo(request, report_id):
     files = request.FILES.getlist('files')
     if not files:
         return JsonResponse({'error': '未选择文件'}, status=400)
+
+    # Validate every file BEFORE writing any to disk: extension allow-list +
+    # size cap + Pillow content check (rejects renamed non-image payloads).
+    from core.upload_security import validate_upload
+    for f in files:
+        ok, err = validate_upload(f)
+        if not ok:
+            return JsonResponse({'error': f'{f.name}: {err}'}, status=400)
 
     photo_paths = list(report.photos or [])
     upload_dir = os.path.join(settings.MEDIA_ROOT, 'work_reports', str(report.id))

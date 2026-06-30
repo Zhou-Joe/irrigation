@@ -2,9 +2,30 @@ import os
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-SECRET_KEY = os.environ.get('SECRET_KEY', '65=850236hyhtzpqp(m$%l_ff1tmf@oxul7_0(-9u2*y%j!so7')
+# SECRET_KEY must be provided via the environment — a leaked key lets an attacker
+# forge session cookies / CSRF / password-reset tokens (full auth bypass). The old
+# hardcoded default has been removed and must be rotated. In DEBUG mode we tolerate a
+# throwaway generated key so local dev still boots; production refuses to start without one.
 DEBUG = os.environ.get('DEBUG', 'False') == 'True'
-ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', 'localhost,127.0.0.1,10.136.182.88,172.31.69.1,47.100.237.113,zctestbench.asia,www.zctestbench.asia,.trycloudflare.com,irrigation.zctestbench.asia').split(',')
+_secret = os.environ.get('SECRET_KEY')
+if _secret:
+    SECRET_KEY = _secret
+elif DEBUG:
+    import secrets as _secrets
+    SECRET_KEY = 'dev-only-' + _secrets.token_urlsafe(50)
+else:
+    raise RuntimeError(
+        'SECRET_KEY environment variable is required in production. '
+        'Generate one with: python -c "import secrets; print(secrets.token_urlsafe(50))"'
+    )
+ALLOWED_HOSTS = os.environ.get(
+    'ALLOWED_HOSTS',
+    'localhost,127.0.0.1,zctestbench.asia,www.zctestbench.asia,irrigation.zctestbench.asia'
+).split(',')
+# Note: the previous default included the ephemeral `.trycloudflare.com` wildcard and
+# hardcoded LAN/public IPs — the wildcard let anyone Host-spoof via a free Quick
+# Tunnel, and the IPs leaked topology. Override via the env var if a specific
+# temporary host or IP is genuinely needed.
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -92,8 +113,13 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # Security settings
 if not DEBUG:
-    SESSION_COOKIE_SECURE = False
-    CSRF_COOKIE_SECURE = False
+    # Cookie flags were previously forced False here (a bug) — they must be True in
+    # production so session/CSRF cookies are only ever sent over HTTPS.
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SESSION_COOKIE_HTTPONLY = True
+    SESSION_COOKIE_SAMESITE = 'Lax'
+    SECURE_SSL_REDIRECT = True
     SECURE_HSTS_SECONDS = 31536000
     SECURE_HSTS_INCLUDE_SUBDOMAINS = True
     SECURE_HSTS_PRELOAD = True
@@ -122,13 +148,12 @@ CORS_ALLOWED_ORIGIN_REGEXES = [
     r'^https?://127\.0\.0\.1:\d+$',
 ]
 
-# CSRF trusted origins for Django 4+
+# CSRF trusted origins for Django 4+ — HTTPS hostnames only. The previous list
+# included a bare http:// public IP which undermined HTTPS-based CSRF protection.
 CSRF_TRUSTED_ORIGINS = [
     'https://zctestbench.asia',
     'https://www.zctestbench.asia',
     'https://irrigation.zctestbench.asia',
-    'http://47.100.237.113',
-    'https://47.100.237.113',
 ]
 
 # Cloud Relay settings

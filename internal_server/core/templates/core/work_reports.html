@@ -191,6 +191,10 @@
   .wr-photo-dl-toolbar { display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding:10px 14px; margin-bottom:10px; background:var(--wr-card-bg); border:1px solid var(--wr-card-border); border-radius:12px; }
   .wr-photo-dl-btn { padding:6px 14px; font-size:0.85rem; border-radius:8px; background:#fff; color:var(--wr-text); border:1px solid var(--wr-card-border); cursor:pointer; }
   .wr-photo-dl-btn.primary { background:var(--wr-accent); color:#fff; border-color:var(--wr-accent); }
+  /* Quality toggle (缩略图/原图) inside the photo-download toolbar. */
+  .wr-photo-quality { display:inline-flex; align-items:center; gap:10px; font-size:0.84rem; padding:4px 12px; border:1px solid var(--wr-card-border); border-radius:8px; background:#fff; }
+  .wr-photo-quality label { display:inline-flex; align-items:center; gap:4px; cursor:pointer; color:var(--wr-text); }
+  .wr-photo-quality input { margin:0; cursor:pointer; }
   .wr-photo-report { background:var(--wr-card-bg); border:1px solid var(--wr-card-border); border-radius:12px; padding:10px 14px; margin-bottom:10px; }
   .wr-photo-report-head { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:8px; font-size:0.85rem; }
   .wr-report-sel-lbl { display:inline-flex; align-items:center; gap:4px; cursor:pointer; }
@@ -282,9 +286,7 @@
     </div>
     {% endif %}
 
-    {# ── Tab 1: workorders list (the existing filter + card list) ────────── #}
-    <div id="tabWorkorders" class="wr-remarks-panel {% if active_tab != 'remarks' and active_tab != 'photos' %}active{% endif %}">
-
+    {# ── Filter card: shared across all three tabs (kept visible on tab switch). #}
     <div class="filter-card">
         {# Date-range presets. The selected one sets date_from accordingly; near-7-days is the default. #}
         <div class="preset-row" id="presetRow">
@@ -298,6 +300,7 @@
             <span id="moreFiltersLabel">更多筛选</span><span class="badge" id="moreFiltersBadge" style="display:none;">0</span><span class="arrow" id="moreFiltersArrow">▾</span>
         </button>
         <form method="get" class="filter-row" id="filterForm">
+            <input type="hidden" name="tab" value="{{ active_tab }}" id="filterTabInput">
             <div class="ff"><label>起始日期</label><input type="date" name="date_from" value="{{ filters.date_from }}" id="dateFrom"></div>
             <div class="ff"><label>截止日期</label><input type="date" name="date_to" value="{{ filters.date_to }}" id="dateTo"></div>
             <div class="ff"><label>CCU</label>
@@ -320,6 +323,9 @@
             <a href="{% url 'core:work_reports' %}" class="btn-sm btn-secondary">重置</a>
         </form>
     </div>
+
+    {# ── Tab 1: workorders list (the existing card list) ──────────────────── #}
+    <div id="tabWorkorders" class="wr-remarks-panel {% if active_tab != 'remarks' and active_tab != 'photos' %}active{% endif %}">
 
     {# Cards — server-rendered initial batch. Appended to by "加载更多" (loadCards appends markup). #}
     <div id="cardList">
@@ -395,8 +401,12 @@
         <div class="wr-photo-dl-toolbar">
             <button type="button" class="wr-photo-dl-btn" onclick="selectAllPhotoReports(this)">全选工单</button>
             <button type="button" class="wr-photo-dl-btn primary" onclick="downloadSelectedPhotos()">⬇ 下载选中</button>
+            <span class="wr-photo-quality" title="缩略图体积小、下载快，适合快速预览汇总；原图清晰但较慢。视频始终打包原文件。">
+                <label><input type="radio" name="dlQuality" value="thumb" checked onchange="updatePhotoDlHint()"> 缩略图(快)</label>
+                <label><input type="radio" name="dlQuality" value="original" onchange="updatePhotoDlHint()"> 原图(慢)</label>
+            </span>
             <span id="photoDlCount" class="wr-muted"></span>
-            <span class="wr-muted" style="margin-left:auto;">视频也一并打包；勾选工单即选其全部媒体，也可逐张勾选。</span>
+            <span class="wr-muted wr-photo-tip" id="photoDlTip" style="margin-left:auto;">缩略图体积小、下载快；视频始终打包原文件。</span>
         </div>
         <div id="photoReportList"><p class="wr-muted">切换到此 tab 时加载带媒体的工单…</p></div>
     </div>
@@ -503,6 +513,10 @@ function switchTab(tab) {
     document.querySelectorAll('.wr-tab').forEach(function (t) {
         t.classList.toggle('active', t.getAttribute('data-tab') === tab);
     });
+    // Keep the filter form's hidden tab field in sync, so applying a filter from
+    // the 媒体下载/待确认备注 tab returns to that same tab instead of workorders.
+    var tabInput = document.getElementById('filterTabInput');
+    if (tabInput) tabInput.value = tab;
     if (tab === 'photos') loadPhotoReports();
 }
 
@@ -588,6 +602,9 @@ function downloadSelectedPhotos() {
     var items = [];
     document.querySelectorAll('.wr-media-sel:checked').forEach(function (c) { items.push(c.value); });
     if (!items.length) { wrToast('请先勾选照片/视频', true); return; }
+    // 缩略图/原图选择：缩略图体积小、下载快（适合快速汇总预览），原图清晰但慢。
+    // 视频无小尺寸版，后端始终打包原文件。
+    var quality = (document.querySelector('input[name="dlQuality"]:checked') || {}).value || 'thumb';
     // 用隐藏 form POST，浏览器直接触发 zip 下载
     var f = document.createElement('form');
     f.method = 'POST'; f.action = '/work-reports/photos/download/';
@@ -595,8 +612,18 @@ function downloadSelectedPhotos() {
     csrf.type = 'hidden'; csrf.name = 'csrfmiddlewaretoken';
     csrf.value = (window.csrftoken || (document.cookie.match(/csrftoken=([^;]+)/) || [])[1] || '');
     f.appendChild(csrf);
+    var qi = document.createElement('input'); qi.type = 'hidden'; qi.name = 'quality'; qi.value = quality; f.appendChild(qi);
     items.forEach(function (p) { var i = document.createElement('input'); i.type = 'hidden'; i.name = 'items'; i.value = p; f.appendChild(i); });
     document.body.appendChild(f); f.submit(); f.remove();
+}
+// 根据 quality 选择更新右侧提示文字。
+function updatePhotoDlHint() {
+    var q = (document.querySelector('input[name="dlQuality"]:checked') || {}).value || 'thumb';
+    var tip = document.getElementById('photoDlTip');
+    if (!tip) return;
+    tip.textContent = (q === 'original')
+        ? '下载原图（清晰但较慢）；视频始终打包原文件。'
+        : '下载缩略图（体积小、速度快）；视频始终打包原文件。';
 }
 
 // Confirm (Step 1): fans out to ALL the group's zones (a pending remark lives in
