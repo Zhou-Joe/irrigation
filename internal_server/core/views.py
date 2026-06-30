@@ -4507,6 +4507,23 @@ def _work_report_count_columns():
     return cols
 
 
+def _dedup_zone_names(raw):
+    """Collapse repeated zone names in a stored zone_names string, preserving
+    first-seen order. Older reports were filled before name-dedup existed, so a
+    single value could list the same name dozens of times (e.g. 'BOH, BOH, ...').
+    Returns '' for empty/None input.
+    """
+    if not raw:
+        return ''
+    parts = [p.strip() for p in raw.split(',') if p.strip()]
+    out, seen = [], set()
+    for p in parts:
+        if p not in seen:
+            seen.add(p)
+            out.append(p)
+    return ', '.join(out)
+
+
 def _report_section_label(report):
     """Work category label for a report (template's F column): derived from the
     sections of its entries, preferring non-routine ones; falls back to 常规维护."""
@@ -4620,7 +4637,7 @@ def work_reports_excel(request):
                r.worker.full_name if r.worker_id and r.worker else '',
                r.location.code if r.location_id and r.location else '',
                _report_section_label(r),
-               r.zone_names or '',
+               _dedup_zone_names(r.zone_names),
                (r.work_content or r.remark or ''),
                '',  # 信息来源 (no dedicated field on WorkReport)
                '是' if r.is_difficult else '',
@@ -7098,7 +7115,18 @@ def workorder_mobile_v2(request):
 
             zone_codes = request.POST.getlist('zones')
             selected_zones = Zone.objects.filter(code__in=zone_codes).select_related('patch')
-            zone_names = ', '.join(z.name or z.code for z in selected_zones) if selected_zones else ''
+            # Deduplicate display names while preserving first-seen order. The same
+            # 通用名称 can map to multiple zone rows (different codes), and without
+            # dedup a selection of N same-named zones repeats the name N times
+            # (e.g. "BOH, BOH, BOH"). Show each distinct name once.
+            names = []
+            seen = set()
+            for z in selected_zones:
+                n = z.name or z.code
+                if n not in seen:
+                    seen.add(n)
+                    names.append(n)
+            zone_names = ', '.join(names)
 
             # Resolve the report's location (CCU/Patch). Prefer the patch of the
             # first selected zone; some zones belong to a Land but have no Patch
