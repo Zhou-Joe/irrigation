@@ -519,6 +519,13 @@ function switchTab(tab) {
     if (tabInput) tabInput.value = tab;
     if (tab === 'photos') loadPhotoReports();
 }
+// On a deep-link (?tab=photos) the server renders the tab active but switchTab()
+// never fires — kick the lazy load manually so the placeholder doesn't linger.
+(function () {
+    if (document.getElementById('tabPhotos') && document.getElementById('tabPhotos').classList.contains('active')) {
+        loadPhotoReports();
+    }
+})();
 
 // ── 媒体下载 tab: lazy-load report→media list, render, select, download ──
 var photoReportsLoaded = false, photoReportsData = [];
