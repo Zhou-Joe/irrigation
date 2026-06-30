@@ -22,18 +22,17 @@
 .sec-export:hover { background:var(--color-primary-dark); }
 .section-title.collapsible .sec-export { flex:0 0 auto; }
 
-/* Date-range control (week nav + custom range presets) */
+/* Date-range control (custom from/to date picker + presets) */
 .range-nav { display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; padding:12px; background:var(--color-surface-alt); border-radius:8px; flex-wrap:wrap; gap:10px; }
 .range-nav-btn { background:var(--color-primary); color:white; border:none; padding:8px 16px; border-radius:6px; cursor:pointer; font-size:0.85rem; }
 .range-nav-btn:disabled { background:var(--color-text-muted); cursor:not-allowed; }
+.range-picker input[type="date"] { padding:6px 10px; border:1px solid var(--color-border); border-radius:6px; font-size:0.9rem; }
 .preset-row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
 .preset-pill { padding:6px 14px; border-radius:18px; font-size:0.82rem; font-weight:600; background:#fff; color:#555; border:1px solid #e0e0e0; cursor:pointer; text-decoration:none; }
-.preset-pill.on { background:var(--color-primary); color:#fff; border-color:var(--color-primary); }
+.preset-pill:hover { background:var(--color-surface-dark); }
 .range-current { text-align:center; flex:1; min-width:160px; }
 .range-current-label { font-size:0.75rem; color:var(--color-text-muted); margin-bottom:2px; }
 .range-current-range { font-size:1rem; font-weight:600; color:var(--color-primary); }
-.week-badge { background:var(--color-accent); color:white; padding:4px 12px; border-radius:12px; font-size:0.8rem; font-weight:600; margin-left:6px; }
-.week-selector select { padding:6px 12px; border:1px solid var(--color-border); border-radius:6px; font-size:0.9rem; }
 
 /* Overview tiles */
 .overview-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(150px, 1fr)); gap:14px; margin-bottom:20px; }
@@ -98,31 +97,25 @@
 <div class="form-container">
     <div class="page-header"><h1>数据报表</h1></div>
 
-    {# ── Date-range control: preset pills + week nav + custom range ────────── #}
+    {# ── Date-range control: custom start/end date picker + presets ────────── #}
     <div class="range-nav">
-        <div class="preset-row">
-            <a class="preset-pill {% if not is_custom_range %}on{% endif %}" href="{% url 'core:stats_dashboard' %}">本周</a>
-            <a class="preset-pill" href="?from={{ from_param|default:'' }}&to={{ to_param|default:'' }}" id="pReset">当前</a>
+        <div class="range-picker" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+            <input type="date" id="dateFrom" value="{{ from_param }}" max="{{ to_param }}">
+            <span style="color:var(--color-text-muted);">—</span>
+            <input type="date" id="dateTo" value="{{ to_param }}" min="{{ from_param }}">
+            <button class="range-nav-btn" onclick="applyDateRange()">查询</button>
         </div>
         <div class="range-current">
             <div class="range-current-label">查看范围</div>
             <div class="range-current-range">
                 {{ start|date:"Y/m/d" }} — {{ end|date:"Y/m/d" }}
-                {% if not is_custom_range %}<span class="week-badge">W{{ week_number }}</span>{% endif %}
             </div>
         </div>
-        <div class="week-selector" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
-            <button class="range-nav-btn" onclick="navRange(-7)">← 前7天</button>
-            <select id="weekSelect" onchange="jumpToWeek()">
-                {% for year, weeks in year_weeks.items %}
-                {% for w in weeks %}
-                <option value="{{ w.start.isoformat }}" {% if w.start == start and not is_custom_range %}selected{% endif %}>
-                    {{ year }} W{{ w.week }} ({{ w.start|date:"m/d" }})
-                </option>
-                {% endfor %}
-                {% endfor %}
-            </select>
-            <button class="range-nav-btn" onclick="navRange(7)">后7天 →</button>
+        <div class="preset-row">
+            <a class="preset-pill" data-days="7">近7天</a>
+            <a class="preset-pill" data-days="30">近30天</a>
+            <a class="preset-pill" data-days="90">近90天</a>
+            <a class="preset-pill" data-days="0">本月</a>
             {% if is_admin %}
             <a class="range-nav-btn sec-export" href="{% url 'core:work_reports_excel' %}?{{ request.GET.urlencode }}" title="把当前范围内的工单导出为 Excel（一行一个工单，含故障类型矩阵）">
                 <i class="fa fa-file-excel-o"></i> 导出工单 Excel
@@ -329,28 +322,47 @@ function exportStats(type) {
         downloadCsv('人员工时统计.csv', rows);
     }
 }
-// Move the date window by `days` (keeps the same mode: week or custom range).
-function navRange(days) {
+// Apply a custom start/end date range. Reads the two <input type="date"> and
+// reloads with ?from=&to= (the backend reads these directly).
+function applyDateRange() {
+    var from = document.getElementById('dateFrom').value;
+    var to = document.getElementById('dateTo').value;
+    if (!from || !to) { alert('请选择起止日期'); return; }
     var url = new URL(window.location.href);
-    var base = url.searchParams.get('from') || '{{ start.isoformat }}';
-    var d = new Date(base);
-    d.setDate(d.getDate() + days);
-    var iso = d.toISOString().split('T')[0];
-    if (url.searchParams.get('from') || url.searchParams.get('to')) {
-        url.searchParams.set('from', iso);
-        var to = new Date(iso); to.setDate(to.getDate() + ({{ end|date:'U' }} - {{ start|date:'U' }}) / 86400);
-        url.searchParams.set('to', to.toISOString().split('T')[0]);
-    } else {
-        url.searchParams.set('from', iso);
-        var to2 = new Date(iso); to2.setDate(to2.getDate() + 6);
-        url.searchParams.set('to', to2.toISOString().split('T')[0]);
-    }
+    url.searchParams.delete('week');
+    url.searchParams.set('from', from);
+    url.searchParams.set('to', to);
     window.location.href = url.toString();
 }
-function jumpToWeek() {
-    var sel = document.getElementById('weekSelect');
-    if (sel && sel.value) window.location.href = '{% url "core:stats_dashboard" %}?week=' + sel.value;
-}
+// Preset pills: data-days="N" → last N days ending today; data-days="0" → 本月.
+    var pills = document.querySelectorAll('.preset-pill[data-days]');
+    var today = new Date('{{ today_iso }}');
+    function iso(d) { return d.toISOString().split('T')[0]; }
+    pills.forEach(function(p) {
+        p.style.cursor = 'pointer';
+        p.addEventListener('click', function() {
+            var days = parseInt(p.getAttribute('data-days'), 10);
+            var from, to = new Date(today);
+            if (days === 0) {
+                from = new Date(today.getFullYear(), today.getMonth(), 1);
+            } else {
+                from = new Date(today);
+                from.setDate(from.getDate() - days + 1);
+            }
+            var url = new URL(window.location.href);
+            url.searchParams.delete('week');
+            url.searchParams.set('from', iso(from));
+            url.searchParams.set('to', iso(to));
+            window.location.href = url.toString();
+        });
+    });
+})();
+// Allow pressing Enter in either date input to apply.
+document.getElementById('dateFrom').addEventListener('keydown', function(e){ if(e.key==='Enter') applyDateRange(); });
+document.getElementById('dateTo').addEventListener('keydown', function(e){ if(e.key==='Enter') applyDateRange(); });
+// Keep the to/from min/max constraints in sync as the user edits the inputs.
+document.getElementById('dateFrom').addEventListener('change', function(){ document.getElementById('dateTo').min = this.value; });
+document.getElementById('dateTo').addEventListener('change', function(){ document.getElementById('dateFrom').max = this.value; });
 // Apply the 通用名称 filter to the 工作内容·按章节 tree, keeping the current
 // date window (from/to or week) intact.
 function applyZoneFilter(val) {

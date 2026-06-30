@@ -5035,6 +5035,7 @@ def stats_dashboard(request):
         'is_custom_range': is_custom_range,
         'from_param': from_param or start.isoformat(),
         'to_param': to_param or end.isoformat(),
+        'today_iso': today.isoformat(),
         'week_number': week_number,
         'week_iso': start.isoformat(),
         'years': years, 'year_weeks': year_weeks,

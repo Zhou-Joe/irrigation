@@ -61,16 +61,20 @@ def user_role(request):
     if admin:
         pending_reg = RegistrationRequest.objects.filter(status='pending').count()
 
-    # Watermark text for anti-leak: name + employee_id. Falls back to the
-    # display name when the user has no linked Worker row.
+    # Watermark text for anti-leak: 姓名 + 手机号. The canonical full name and
+    # phone live on a linked profile (one of worker / manager / dept), not on the
+    # auth User itself, so pick whichever profile this user has. Falls back to
+    # the display name / username when no profile or phone is set.
     wm_name = user.get_full_name() or user.username
     wm_parts = [wm_name]
-    worker = getattr(user, 'worker_profile', None)
-    if worker:
-        if worker.employee_id:
-            wm_parts.append(worker.employee_id)
-        elif worker.full_name and worker.full_name != wm_name:
-            wm_parts[0] = worker.full_name
+    profile = (getattr(user, 'worker_profile', None)
+               or getattr(user, 'manager_profile', None)
+               or getattr(user, 'dept_profile', None))
+    if profile:
+        if profile.full_name:
+            wm_parts[0] = profile.full_name
+        if profile.phone:
+            wm_parts.append(profile.phone)
     watermark_text = ' · '.join(p for p in wm_parts if p)
 
     return {
