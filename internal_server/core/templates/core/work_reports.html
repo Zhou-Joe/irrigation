@@ -295,12 +295,20 @@
             <button type="button" class="preset-pill" data-days="90">近90天</button>
             <button type="button" class="preset-pill" data-days="all">全部</button>
         </div>
+        {# Sort pills. Clicking one submits the filter form with the new sort. #}
+        <div class="preset-row" id="sortRow" style="margin-top:6px;">
+            <span style="font-size:0.72rem;color:var(--wr-muted);align-self:center;margin-right:4px;">排序</span>
+            <button type="button" class="preset-pill" data-sort="created">创建时间</button>
+            <button type="button" class="preset-pill" data-sort="id">工单号</button>
+            <button type="button" class="preset-pill" data-sort="worker">创建人</button>
+        </div>
         {% comment %}Detailed-filter toggle (mobile only). Shows a count badge when any detailed filter is active so it stays discoverable. Form auto-opens on load in that case.{% endcomment %}
         <button type="button" class="wr-more-filters" id="moreFiltersBtn" onclick="toggleMoreFilters()" aria-expanded="false">
             <span id="moreFiltersLabel">更多筛选</span><span class="badge" id="moreFiltersBadge" style="display:none;">0</span><span class="arrow" id="moreFiltersArrow">▾</span>
         </button>
         <form method="get" class="filter-row" id="filterForm">
             <input type="hidden" name="tab" value="{{ active_tab }}" id="filterTabInput">
+            <input type="hidden" name="sort" value="{{ filters.sort|default:'created' }}" id="filterSortInput">
             <div class="ff"><label>起始日期</label><input type="date" name="date_from" value="{{ filters.date_from }}" id="dateFrom"></div>
             <div class="ff"><label>截止日期</label><input type="date" name="date_to" value="{{ filters.date_to }}" id="dateTo"></div>
             <div class="ff"><label>CCU</label>
@@ -820,6 +828,21 @@ function toggleAllMoveModal(on) {
     refreshPillHighlight();
 })();
 
+// ── Sort pills ────────────────────────────────────────────────────────────
+(function () {
+    var sortPills = document.querySelectorAll('#sortRow .preset-pill');
+    var sortInput = document.getElementById('filterSortInput');
+    var active = (sortInput && sortInput.value) || 'created';
+    sortPills.forEach(function (p) {
+        if (p.getAttribute('data-sort') === active) p.classList.add('on');
+        p.addEventListener('click', function () {
+            sortInput.value = p.getAttribute('data-sort');
+            // Resubmit so the new sort drives both the first page and the AJAX cursor.
+            document.getElementById('filterForm').submit();
+        });
+    });
+})();
+
 // ── Mobile "more filters" toggle ──────────────────────────────────────────
 // On phones the detailed filter form is collapsed behind the toggle (the preset
 // pills handle the common date-range case). Show a count badge of active detailed
@@ -868,6 +891,7 @@ function loadMore() {
     if (currentFilter.worker) params.set('worker', currentFilter.worker);
     if (currentFilter.is_pending_repair) params.set('is_pending_repair', '1');
     if (currentFilter.is_difficult) params.set('is_difficult', '1');
+    if (currentFilter.sort) params.set('sort', currentFilter.sort);
 
     fetch('{% url "core:work_reports" %}?' + params.toString(), {
         headers: { 'X-Requested-With': 'XMLHttpRequest' }

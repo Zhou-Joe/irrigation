@@ -6279,6 +6279,17 @@ def custom_report(request):
 WORK_REPORTS_PAGE_SIZE = 30
 # Default window shown on first visit / when no explicit date range is chosen.
 WORK_REPORTS_DEFAULT_DAYS = 7
+# Sort options for the work-report list. Key = URL value, value = ORM order_by.
+# created  — newest by created_at (the model default; id is monotonic with it,
+#            kept as a deterministic tiebreaker)
+# id       — newest by workorder number (id DESC), independent of creation time
+# worker   — alphabetical by creator full_name; same id tiebreaker for stability
+WORK_REPORTS_SORT_OPTIONS = {
+    'created': ('-created_at', '-id'),
+    'id': ('-id',),
+    'worker': ('worker__full_name', '-id'),
+}
+WORK_REPORTS_DEFAULT_SORT = 'created'
 
 
 def _work_report_filters(request):
@@ -6286,8 +6297,9 @@ def _work_report_filters(request):
 
     Shared by the server-rendered list and the AJAX "load more" endpoint so both
     apply exactly the same scoping. Returns ``(date_from, date_to, location_id,
-    worker_id, difficult, pending, before_id)`` where ``date_from``/``date_to``
-    are strings (or '') ready to echo back into the filter form, and the rest are
+    worker_id, difficult, pending, before_id, sort)`` where ``date_from``/
+    ``date_to`` are strings (or '') ready to echo back into the filter form,
+    ``sort`` is one of ``WORK_REPORTS_SORT_OPTIONS`` keys, and the rest are
     already-coerced values. ``before_id`` is the cursor for "load more".
     """
     date_from = (request.GET.get('date_from') or '').strip()
@@ -6297,6 +6309,9 @@ def _work_report_filters(request):
     difficult = request.GET.get('is_difficult')
     pending = request.GET.get('is_pending_repair')
     before_id = request.GET.get('before_id')
+    sort = (request.GET.get('sort') or WORK_REPORTS_DEFAULT_SORT).strip()
+    if sort not in WORK_REPORTS_SORT_OPTIONS:
+        sort = WORK_REPORTS_DEFAULT_SORT
 
     # Default to the most recent N days only when the user hasn't picked any
     # explicit start (neither a preset nor a manual date). This keeps the first
@@ -6305,10 +6320,10 @@ def _work_report_filters(request):
         today = timezone.localdate()
         date_from = (today - timedelta(days=WORK_REPORTS_DEFAULT_DAYS)).isoformat()
 
-    return date_from, date_to, location_id, worker_id, difficult, pending, before_id
+    return date_from, date_to, location_id, worker_id, difficult, pending, before_id, sort
 
 
-def _scoped_work_reports_qs(user, admin):
+def _scoped_work_reports_qs(user, admin, sort=WORK_REPORTS_DEFAULT_SORT):
     """Base queryset with role-based visibility applied (no filters yet).
 
     Both 灌溉一线 (field workers) and managers/admins see ALL workorders — the
@@ -6319,12 +6334,15 @@ def _scoped_work_reports_qs(user, admin):
     from core.models import WorkReport
     from core.role_utils import get_worker_for_user, is_field_worker
 
+    order = WORK_REPORTS_SORT_OPTIONS.get(sort, WORK_REPORTS_SORT_OPTIONS[WORK_REPORTS_DEFAULT_SORT])
     qs = WorkReport.objects.select_related(
         'worker', 'location'
     ).prefetch_related(
         'entries__work_item', 'entries__project', 'zones__land', 'edit_logs__editor'
-    ).order_by('-id')   # 按工单号降序：最新工单(#最大号)永远排最前,与日期无关。
-                        # 游标分页用 id__lt(before_id),与此排序天然兼容。
+    ).order_by(*order)
+                        # 游标分页用 id__lt(before_id) — 任何排序下都按 "更老的工单"
+                        # 取下一页,再以所选排序渲染。对 created/id 完全等价;
+                        # 对 worker 排序,每页内字母序连续,翻页时仍是按 id 取更老批次。
 
     if not admin and not is_field_worker(user):
         worker = get_worker_for_user(user)
@@ -6432,9 +6450,9 @@ def work_reports_list(request):
     user = request.user
     admin = is_admin(user)
 
-    date_from, date_to, location_id, worker_id, difficult, pending, before_id = _work_report_filters(request)
+    date_from, date_to, location_id, worker_id, difficult, pending, before_id, sort = _work_report_filters(request)
 
-    qs = _scoped_work_reports_qs(user, admin)
+    qs = _scoped_work_reports_qs(user, admin, sort=sort)
     qs = qs.annotate(comment_count=Count('comments'))
 
     # Apply filters (shared with the load-more endpoint).
@@ -6510,6 +6528,7 @@ def work_reports_list(request):
             'worker': int(worker_id) if worker_id else '',
             'is_difficult': bool(difficult),
             'is_pending_repair': bool(pending),
+            'sort': sort,
         },
         'last_id': reports[-1].id if reports else None,
         'is_admin': admin,
@@ -6562,8 +6581,8 @@ def work_report_photos(request):
     if not admin:
         return JsonResponse({'reports': [], 'error': '无权限'}, status=403)
 
-    date_from, date_to, location_id, worker_id, difficult, pending, before_id = _work_report_filters(request)
-    qs = _scoped_work_reports_qs(user, admin).filter(date__gte=date_from)
+    date_from, date_to, location_id, worker_id, difficult, pending, before_id, sort = _work_report_filters(request)
+    qs = _scoped_work_reports_qs(user, admin, sort=sort).filter(date__gte=date_from)
     if date_to:
         qs = qs.filter(date__lte=date_to)
     if location_id:
