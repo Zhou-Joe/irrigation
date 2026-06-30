@@ -11,6 +11,7 @@ generator drains — so tokens reach the browser incrementally instead of buffer
 import json
 import logging
 import queue
+import re
 import threading
 import uuid
 
@@ -77,7 +78,18 @@ def ai_chat(request):
     if not message:
         return HttpResponseBadRequest('message is required')
     # Per-user conversation thread. New id if the client didn't supply one.
-    thread_id = body.get('thread_id') or f'u{request.user.id}-{uuid.uuid4().hex[:8]}'
+    # A client-supplied thread_id MUST match the safe pattern (u<uid>-<hex>) — it
+    # is used directly as a filesystem path segment under MEDIA_ROOT/ai_workspaces,
+    # so an unvalidated value like "../../" would let a manager write/create dirs
+    # outside the workspace. Reject anything that isn't a plain identifier.
+    client_thread_id = body.get('thread_id') or ''
+    _THREAD_ID_RE = re.compile(r'^u\d+-[0-9a-f]{8,32}$')
+    if client_thread_id:
+        if not _THREAD_ID_RE.match(client_thread_id):
+            return HttpResponseBadRequest('invalid thread_id')
+        thread_id = client_thread_id
+    else:
+        thread_id = f'u{request.user.id}-{uuid.uuid4().hex[:8]}'
 
     def event_stream():
         # Echo the thread id first so the client can store it for follow-ups.

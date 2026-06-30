@@ -51,6 +51,8 @@ def user_role(request):
             'is_dept_user': False,
             'user_role': None,
             'pending_registrations': 0,
+            'watermark_text': '',
+            'watermark_warning': '',
         }
 
     user = request.user
@@ -61,10 +63,14 @@ def user_role(request):
     if admin:
         pending_reg = RegistrationRequest.objects.filter(status='pending').count()
 
-    # Watermark text for anti-leak: 姓名 + 手机号. The canonical full name and
-    # phone live on a linked profile (one of worker / manager / dept), not on the
-    # auth User itself, so pick whichever profile this user has. Falls back to
-    # the display name / username when no profile or phone is set.
+    # Watermark text for anti-leak: 姓名 + 手机号 + 部门 + 警示文字.
+    # Per 甲方要求 the warning "仅限内部沟通，严禁外传" is appended so a leaked
+    # screenshot carries both the culprit's identity and an explicit non-disclosure
+    # notice. The canonical name/phone/department live on a linked profile (one of
+    # worker / manager / dept), not on the auth User itself, so pick whichever
+    # profile this user has. Falls back to display name / username when fields are
+    # unset. Note: ManagerProfile has no department field (it IS management), so
+    # only Worker / DepartmentUserProfile contribute a department segment.
     wm_name = user.get_full_name() or user.username
     wm_parts = [wm_name]
     profile = (getattr(user, 'worker_profile', None)
@@ -75,7 +81,19 @@ def user_role(request):
             wm_parts[0] = profile.full_name
         if profile.phone:
             wm_parts.append(profile.phone)
+        # Department — only Worker/DepartmentUserProfile carry this; both expose
+        # get_department_display_name(). ManagerProfile has no such attribute.
+        dept_fn = getattr(profile, 'get_department_display_name', None)
+        if callable(dept_fn):
+            dept = dept_fn()
+            if dept:
+                wm_parts.append(dept)
     watermark_text = ' · '.join(p for p in wm_parts if p)
+    # Warning notice (甲方要求) — rendered as a second line under the identity
+    # text so a leaked screenshot carries both the culprit's identity and an
+    # explicit non-disclosure notice. Kept as a separate variable so the SVG
+    # tile can place it on its own line for readability.
+    watermark_warning = '仅限内部沟通，严禁外传' if watermark_text else ''
 
     return {
         'is_admin': admin,
@@ -85,4 +103,5 @@ def user_role(request):
         'user_role': role,
         'pending_registrations': pending_reg,
         'watermark_text': watermark_text,
+        'watermark_warning': watermark_warning,
     }

@@ -939,6 +939,9 @@ class MaxicomRuntime(models.Model):
     class Meta:
         verbose_name = 'Maxicom运行时间'
         verbose_name_plural = 'Maxicom运行时间'
+        # (site, timestamp) backs the dashboard/PDF/Excel pivot queries that filter
+        # `site=<ccu> AND timestamp__gte/lte`; timestamp alone is already indexed.
+        indexes = [models.Index(fields=['site', 'timestamp'])]
 
     def __str__(self):
         return f"Runtime {self.site.name} @ {self.timestamp}"
@@ -1016,7 +1019,7 @@ class WorkReport(models.Model):
         ('夜班', '夜班'),
     ]
 
-    date = models.DateField('日期')
+    date = models.DateField('日期', db_index=True)
     weather = models.CharField('天气', max_length=50, blank=True)
     worker = models.ForeignKey(Worker, on_delete=models.PROTECT, related_name='work_reports', verbose_name='处理人')
     location = models.ForeignKey(Patch, on_delete=models.PROTECT, null=True, blank=True, related_name='work_reports', verbose_name='位置/CCU',

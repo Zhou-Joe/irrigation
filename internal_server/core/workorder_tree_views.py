@@ -408,7 +408,15 @@ def _save_photo(report, uploaded):
     saved at the same path with a ``_thumb`` suffix + ``.jpg`` extension, and can
     be derived via :func:`thumb_path`. The list page loads thumbnails (a few KB)
     instead of multi-MB originals so it doesn't choke on a cloud tunnel.
+
+    Raises ValueError for files failing the allow-list / content check so the
+    caller can reject the whole submission rather than silently dropping a file.
     """
+    from core.upload_security import validate_upload
+    ok, err = validate_upload(uploaded)
+    if not ok:
+        raise ValueError(f'{getattr(uploaded, "name", "")}: {err}')
+
     subdir = f'workorder_photos/{report.id}'
     name = default_storage.get_available_name(os.path.join(subdir, uploaded.name))
     saved = default_storage.save(name, uploaded)
@@ -671,6 +679,15 @@ def _handle_save(request, report):
                     kept.append(p)
             existing = kept
         # New uploads append to the surviving list.
+        # Validate uploads BEFORE the save loop: _save_photo raises ValueError on
+        # a disallowed extension/size/content, which would otherwise abort the
+        # whole atomic block as a 500. Pre-checking gives a clean user-facing error.
+        from core.upload_security import validate_upload
+        for f in request.FILES.getlist('report_photos'):
+            ok, err = validate_upload(f)
+            if not ok:
+                messages.error(request, f'{getattr(f, "name", "")}: {err}')
+                return _handle_render(request, report)
         new_photos = [_save_photo(report, f)
                       for f in request.FILES.getlist('report_photos')]
         if new_photos:
@@ -682,6 +699,14 @@ def _handle_save(request, report):
         # Work-content entries.
         entries = json.loads(request.POST.get('entries', '[]') or '[]')
         entry_photos = _collect_entry_photos(request)
+        # Validate entry-level uploads too (same pre-check pattern as report photos).
+        from core.upload_security import validate_upload
+        for _wid, files in entry_photos.items():
+            for f in files:
+                ok, err = validate_upload(f)
+                if not ok:
+                    messages.error(request, f'{getattr(f, "name", "")}: {err}')
+                    return _handle_render(request, report)
         _save_entries(report, entries, entry_photos)
 
     messages.success(request, f'现场作业记录已保存 (ID: {report.id})')

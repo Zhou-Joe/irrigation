@@ -1,9 +1,11 @@
 """Django sync API endpoint for receiving data from Maxicom2 sync agent."""
 
 import os
+import hmac
 import json
 from datetime import datetime, timedelta
 from django.http import JsonResponse
+from django.contrib.auth.decorators import login_required
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 from django.utils import timezone
@@ -15,13 +17,17 @@ from core.models import (
     Patch,
 )
 
-SYNC_API_KEY = os.environ.get('SYNC_API_KEY', 'dev-sync-key-change-in-production')
+# No insecure default — the env var MUST be set. A missing key means the sync
+# write endpoint refuses every request rather than trusting a known constant.
+SYNC_API_KEY = os.environ.get('SYNC_API_KEY', '')
 
 
 def verify_api_key(request):
-    """Verify the sync API key from request header."""
+    """Verify the sync API key from request header using a constant-time compare."""
+    if not SYNC_API_KEY:
+        return False
     key = request.headers.get('X-Sync-Key', '')
-    return key == SYNC_API_KEY
+    return hmac.compare_digest(key, SYNC_API_KEY)
 
 
 @csrf_exempt
@@ -74,9 +80,14 @@ def _site_by_mdb(idx):
     return Patch.objects.filter(mdb_index=idx).first()
 
 
-@csrf_exempt
+@login_required(login_url='/login/')
 def sync_status(request):
-    """Return current sync status — last record counts per table."""
+    """Return current sync status — last record counts per table.
+
+    This is a human-facing status panel (read by the dashboard), so login is
+    sufficient. Only the machine-to-machine writer (sync_receive) needs the
+    X-Sync-Key.
+    """
     counts = {
         'sites': Patch.objects.count(),
         'stations': Patch.objects.filter(parent__isnull=False).count(),
@@ -105,8 +116,13 @@ def sync_status(request):
     return JsonResponse({'counts': counts, 'latest': latest})
 
 
+@login_required(login_url='/login/')
 def agent_status(request):
-    """Return sync agent connection status based on heartbeat."""
+    """Return sync agent connection status based on heartbeat.
+
+    Read by the dashboard's sync indicator — login is sufficient (no sync key,
+    which is reserved for the machine-to-machine write path).
+    """
     try:
         heartbeat = SyncAgentHeartbeat.objects.get(pk=1)
         last = heartbeat.last_heartbeat

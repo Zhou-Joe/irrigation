@@ -1,5 +1,4 @@
 from rest_framework import authentication, exceptions
-from django.contrib.auth import get_user_model
 from .models import Worker, ManagerProfile, DepartmentUserProfile
 
 
@@ -50,14 +49,9 @@ class TokenAuthentication(authentication.BaseAuthentication):
         except (DepartmentUserProfile.DoesNotExist, Exception):
             pass
 
-        # 4. Fallback: superuser by user ID (for Django admin users without a profile)
-        try:
-            user_id = int(token)
-            User = get_user_model()
-            user = User.objects.get(id=user_id, is_active=True, is_superuser=True)
-            return (user, token)
-        except (ValueError, Exception):
-            pass
+        # NOTE: a numeric user-ID fallback was removed — it let any caller forge
+        # `Authorization: Token 1` to impersonate a superuser (low/PK-guessable).
+        # Admins authenticate via a real ManagerProfile.api_token instead.
 
         raise exceptions.AuthenticationFailed('Invalid or inactive token.')
 

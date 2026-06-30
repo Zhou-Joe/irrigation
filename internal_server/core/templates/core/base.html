@@ -188,12 +188,12 @@
 
         /* ── Anti-leak watermark ───────────────────────────────────────────────
            A full-screen, repeating, diagonal overlay showing the viewer's name +
-           phone number so any screenshot leaks are traceable to the account.
+           phone + department so any screenshot leaks are traceable to the account,
+           plus a second line "仅限内部沟通，严禁外传" warning (甲方要求).
            Sits ABOVE everything (incl. modals/toasts) so it's captured in every
            screenshot; pointer-events:none so it never blocks clicks. The SVG tile
-           is data-URI-encoded inline; {{ watermark_text|urlencode }} is injected
-           into the <text>. Uses a huge z-index so dynamic modals (z-index up to
-           5000) never paint over it. */
+           is data-URI-encoded inline; identity + warning are injected into two
+           <text> lines. Tile widened to fit 姓名·手机·部门 without truncation. */
         .anti-leak-watermark {
             position: fixed;
             inset: 0;
@@ -201,15 +201,17 @@
             pointer-events: none;
             opacity: 0.55;
             /* White text with a dark stroke so it stays legible over BOTH the dark
-               satellite map AND the light UI. Tile doubled in size (~half density). */
-            background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='420' height='420'><text x='-80' y='380' fill='%23ffffff' stroke='%23000000' stroke-width='0.6' stroke-opacity='0.35' font-size='22' font-family='sans-serif' transform='rotate(-40)' text-anchor='start'>{{ watermark_text|urlencode }}</text></svg>");
+               satellite map AND the light UI. Two rotated <text> lines: identity
+               then warning. Tile widened (680px) so the longer identity string
+               (姓名·手机·部门) isn't clipped. */
+            background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='680' height='680'><text x='-90' y='610' fill='%23ffffff' stroke='%23000000' stroke-width='0.6' stroke-opacity='0.35' font-size='22' font-family='sans-serif' transform='rotate(-40)' text-anchor='start'>{{ watermark_text|urlencode }}</text><text x='-90' y='650' fill='%23ffffff' stroke='%23000000' stroke-width='0.6' stroke-opacity='0.35' font-size='20' font-family='sans-serif' transform='rotate(-40)' text-anchor='start'>{{ watermark_warning|urlencode }}</text></svg>");
             background-repeat: repeat;
         }
-        /* Phones: sparser (halved) — one text per larger tile. */
+        /* Phones: sparser (halved) — the identity + warning pair per larger tile. */
         @media (max-width: 768px) {
             .anti-leak-watermark {
                 opacity: 0.6;
-                background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='280' height='320'><text x='-70' y='290' fill='%23ffffff' stroke='%23000000' stroke-width='0.6' stroke-opacity='0.35' font-size='20' font-family='sans-serif' transform='rotate(-40)' text-anchor='start'>{{ watermark_text|urlencode }}</text><text x='110' y='150' fill='%23ffffff' stroke='%23000000' stroke-width='0.6' stroke-opacity='0.35' font-size='20' font-family='sans-serif' transform='rotate(-40)' text-anchor='start'>{{ watermark_text|urlencode }}</text></svg>");
+                background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='460' height='520'><text x='-80' y='440' fill='%23ffffff' stroke='%23000000' stroke-width='0.6' stroke-opacity='0.35' font-size='19' font-family='sans-serif' transform='rotate(-40)' text-anchor='start'>{{ watermark_text|urlencode }}</text><text x='-80' y='475' fill='%23ffffff' stroke='%23000000' stroke-width='0.6' stroke-opacity='0.35' font-size='18' font-family='sans-serif' transform='rotate(-40)' text-anchor='start'>{{ watermark_warning|urlencode }}</text><text x='200' y='230' fill='%23ffffff' stroke='%23000000' stroke-width='0.6' stroke-opacity='0.35' font-size='19' font-family='sans-serif' transform='rotate(-40)' text-anchor='start'>{{ watermark_text|urlencode }}</text><text x='200' y='265' fill='%23ffffff' stroke='%23000000' stroke-width='0.6' stroke-opacity='0.35' font-size='18' font-family='sans-serif' transform='rotate(-40)' text-anchor='start'>{{ watermark_warning|urlencode }}</text></svg>");
             }
         }
 
