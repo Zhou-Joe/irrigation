@@ -335,6 +335,7 @@ function applyDateRange() {
     window.location.href = url.toString();
 }
 // Preset pills: data-days="N" → last N days ending today; data-days="0" → 本月.
+(function () {
     var pills = document.querySelectorAll('.preset-pill[data-days]');
     var today = new Date('{{ today_iso }}');
     function iso(d) { return d.toISOString().split('T')[0]; }
