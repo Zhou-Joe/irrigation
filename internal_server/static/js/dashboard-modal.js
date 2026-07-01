@@ -47,7 +47,13 @@
     function isValidFormData(type, data) {
         if (!data || data.error) return false;
         if (type === 'workorder') return Array.isArray(data.sorted_shifts);
+        if (type === 'inventory') return Array.isArray(data.inventory_tree);
         return true; // water_request: no strict required arrays
+    }
+
+    // Map a modal type to its element-id prefix (workorder→wo, water_request→wr, inventory→inv).
+    function _modalPrefix(type) {
+        return type === 'workorder' ? 'wo' : type === 'inventory' ? 'inv' : 'wr';
     }
 
     function getMap() { return window._map; }
@@ -110,7 +116,9 @@
         _editingReportId = null; _existingPhotos = []; _photoRemove.clear();   // create mode
 
         // Fetch form data in background (cached or from API)
-        var dataUrl = type === 'workorder' ? '/api/modal/workorder-data/' : '/api/modal/water-request-data/';
+        var dataUrl = type === 'workorder' ? '/api/modal/workorder-data/'
+                    : type === 'inventory' ? '/api/modal/inventory-data/'
+                    : '/api/modal/water-request-data/';
         if (!_formDataCache[type]) {
             fetch(dataUrl, { credentials: 'same-origin' })
                 .then(function (r) { return r.json(); })
@@ -118,6 +126,30 @@
                     if (isValidFormData(type, data)) _formDataCache[type] = data;
                 })
                 .catch(function () {});
+        }
+
+        // Inventory opens the form directly (no zone-first step). The zone is an
+        // optional association the user can add later from the footer button.
+        if (type === 'inventory') {
+            _zoneConfirmed = true;  // zone not required for inventory
+            var showInv = function () {
+                var p = _modalPrefix('inventory');
+                buildForm('inventory', _formDataCache.inventory);
+                var bd = $(p + 'ModalBackdrop'), ct = $(p + 'ModalContainer');
+                if (bd) bd.style.display = '';
+                if (ct) { ct.style.display = ''; ct.classList.add('open'); }
+            };
+            if (_formDataCache.inventory) { showInv(); }
+            else {
+                fetch('/api/modal/inventory-data/', { credentials: 'same-origin' })
+                    .then(function (r) { return r.json(); })
+                    .then(function (data) {
+                        if (isValidFormData('inventory', data)) { _formDataCache.inventory = data; showInv(); }
+                        else { showToast('加载库存数据失败', 'error'); }
+                    })
+                    .catch(function () { showToast('加载库存数据失败', 'error'); });
+            }
+            return;
         }
 
         // Zone-first flow: go directly to map mode
@@ -310,8 +342,9 @@
         // P0-3: skip zone validation when closing/canceling
         _zoneConfirmed = true;
         var exitOk = _mapMode ? exitMapMode() : true;
-        var backdrop = $(type === 'workorder' ? 'woModalBackdrop' : 'wrModalBackdrop');
-        var container = $(type === 'workorder' ? 'woModalContainer' : 'wrModalContainer');
+        var p = _modalPrefix(type);
+        var backdrop = $(p + 'ModalBackdrop');
+        var container = $(p + 'ModalContainer');
         if (container) container.classList.remove('open');
         if (_closeTimeout) clearTimeout(_closeTimeout);
         _closeTimeout = setTimeout(function () {
@@ -325,6 +358,7 @@
         // Reset zone summaries
         var woZS = $('woZoneSummary'); if (woZS) woZS.innerHTML = '<h2>工作记录</h2>';
         var wrZS = $('wrZoneSummary'); if (wrZS) wrZS.innerHTML = '<h2>浇水需求</h2>';
+        var invZS = $('invZoneSummary'); if (invZS) invZS.innerHTML = '<h2>库存管理</h2>';
     };
 
     window.enterMapMode = function (type) {
@@ -338,8 +372,9 @@
         if (!_selectionLayerGroup) _selectionLayerGroup = L.layerGroup().addTo(map);
 
         // Hide the entire modal container so map is fully clickable
-        var backdrop = $(type === 'workorder' ? 'woModalBackdrop' : 'wrModalBackdrop');
-        var container = $(type === 'workorder' ? 'woModalContainer' : 'wrModalContainer');
+        var pfx = _modalPrefix(type);
+        var backdrop = $(pfx + 'ModalBackdrop');
+        var container = $(pfx + 'ModalContainer');
         if (backdrop) backdrop.style.display = 'none';
         if (container) container.style.display = 'none';
 
@@ -378,14 +413,15 @@
         }
 
         // Restore modal container
-        var backdrop = $(type === 'workorder' ? 'woModalBackdrop' : 'wrModalBackdrop');
-        var container = $(type === 'workorder' ? 'woModalContainer' : 'wrModalContainer');
+        var pfx2 = _modalPrefix(type);
+        var backdrop = $(pfx2 + 'ModalBackdrop');
+        var container = $(pfx2 + 'ModalContainer');
         if (backdrop) backdrop.style.display = '';
         if (container) { container.style.display = ''; container.classList.add('open'); }
 
         // Build form if not yet rendered
         if (_formDataCache[type] && isValidFormData(type, _formDataCache[type])) {
-            var bodyId = type === 'workorder' ? 'woModalBody' : 'wrModalBody';
+            var bodyId = pfx2 + 'ModalBody';
             var body = $(bodyId);
             if (body && (!body.querySelector('form') || body.querySelector('.loading'))) {
                 buildForm(type, _formDataCache[type]);
@@ -1392,6 +1428,7 @@
 
     function buildForm(type, data) {
         if (type === 'workorder') buildWorkorderForm(data);
+        else if (type === 'inventory') buildInventoryForm(data);
         else buildWaterRequestForm(data);
     }
 
@@ -2170,6 +2207,258 @@
                     setTimeout(function () { closeV2Modal('workorder'); }, 1500);
                 }
                 else { showToast(data.message, 'error'); btn.disabled = false; btn.textContent = '提交'; }
+            }).catch(function (err) { showToast('提交失败: ' + err, 'error'); btn.disabled = false; btn.textContent = '提交'; });
+    };
+
+    // ── Inventory modal (库存管理) ──
+    // Multi-item cart of stock movements under one operation type (入库/出库/借用/归还).
+    // Opens the form directly (no zone-first). Zone is optional.
+    var _invCart = [];        // [{id, name, stock, quantity, unit}]
+    var _invTree = [];        // cached catalog tree from API
+    var _invNodeMap = {};     // id -> node (flat lookup over _invTree)
+    var _invData = {};        // cached modal-data payload (operations/projects/borrowers)
+
+    function _invIndexTree(nodes) {
+        nodes.forEach(function (n) {
+            _invNodeMap[n.id] = n;
+            if (n.children && n.children.length) _invIndexTree(n.children);
+        });
+    }
+
+    function buildInventoryForm(data) {
+        var body = $('invModalBody'); if (!body) return;
+        _invTree = data.inventory_tree || [];
+        _invNodeMap = {};
+        _invIndexTree(_invTree);
+        _invCart = [];
+        _invData = data;  // cache for subtype/project/borrower lookups
+
+        var ops = data.operations.map(function (o, i) {
+            return '<div class="v2-chip inv-op-chip' + (i === 0 ? ' active' : '') + '" data-val="' + o.op + '">' + o.label + '</div>';
+        }).join('');
+
+        body.innerHTML =
+            '<form id="invModalForm" style="display:contents;">' +
+            '<input type="hidden" name="operation" id="invOpInput" value="' + data.operations[0].op + '">' +
+            '<input type="hidden" name="entry_subtype" id="invSubInput" value="">' +
+            '<input type="hidden" name="project_id" id="invProjInput" value="">' +
+            '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;"><span style="font-size:0.85em;color:#888;">' + data.today + ' ' + data.now_time + '</span><span style="font-size:0.85em;color:#888;">' + data.worker_name + '</span></div>' +
+            '<div class="v2-fg"><div class="v2-fl">操作类型</div><div class="v2-chip-group">' + ops + '</div></div>' +
+            '<div class="v2-fg" id="invSubRow"><div class="v2-fl" id="invSubLabel">来源类型</div><div class="v2-chip-group" id="invSubChips"></div></div>' +
+            '<div class="v2-fg"><div class="v2-form-row"><div><div class="v2-fl">日期</div><select name="date" id="invDate" class="v2-select">' + dateOptionsHTML(7, data.today) + '</select></div></div></div>' +
+            '<div class="v2-fg" id="invOrderRow" style="display:none;"><div class="v2-fl">订单号</div><input type="text" name="order_no" id="invOrderNo" class="v2-input" placeholder="采购订单号"></div>' +
+            '<div class="v2-fg" id="invProjCatRow" style="display:none;"><div class="v2-form-row"><div style="flex:1;"><div class="v2-fl">项目类别</div><select id="invProjCat" class="v2-select"><option value="">--</option></select></div><div style="flex:1.2;"><div class="v2-fl">项目名称</div><select id="invProjName" class="v2-select" disabled><option value="">先选类别</option></select></div></div></div>' +
+            '<div class="v2-fg" id="invCpRow" style="display:none;"><div class="v2-fl">借用方</div><input type="text" name="counterparty" id="invCounterparty" class="v2-input" list="invBorrowerList" placeholder="选择或输入借用方"><datalist id="invBorrowerList">' + (data.borrowers || []).map(function (b) { return '<option value="' + _esc(b) + '">'; }).join('') + '</datalist></div>' +
+            '<div class="v2-fg"><div class="v2-fl">物料清单</div>' +
+                '<div id="invCartList"></div>' +
+                '<div id="invAddTrigger" style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border:1px dashed #bbb;border-radius:8px;cursor:pointer;background:#fff;font-size:16px;margin-top:6px;"><span id="invAddLabel" style="color:#2D6A4F;">+ 添加物料</span><span style="font-size:0.8em;color:#999;">▶</span></div>' +
+            '</div>' +
+            '<div class="v2-fg"><div class="v2-fl">备注</div><textarea name="remark" class="v2-textarea" placeholder="可选备注..." rows="2"></textarea></div>' +
+            '<input type="hidden" name="lines" id="invLinesInput" value="[]"></form>';
+
+        injectCSRF(body.querySelector('form'));
+        var sb = $('invSubmitBtn'); if (sb) { sb.disabled = false; sb.textContent = '提交'; }
+
+        // Main operation selection (入库/出库) → rebuild subtype chips.
+        document.querySelectorAll('.inv-op-chip').forEach(function (chip) {
+            chip.addEventListener('click', function () {
+                document.querySelectorAll('.inv-op-chip').forEach(function (c) { c.classList.remove('active'); });
+                chip.classList.add('active');
+                $('invOpInput').value = chip.dataset.val;
+                _invBuildSubtypes();
+                _invSyncCondFields();
+            });
+        });
+
+        // Build the project-category cascade.
+        var pcat = $('invProjCat');
+        if (pcat) {
+            (data.project_categories || []).forEach(function (c) {
+                var o = document.createElement('option'); o.value = c.code; o.textContent = c.label; pcat.appendChild(o);
+            });
+            pcat.addEventListener('change', function () { _invBuildProjectNames(this.value); });
+        }
+
+        _invBuildSubtypes();
+        _invSyncCondFields();
+
+        // Catalog tree picker (nested bottom sheet, opened by the add trigger).
+        var addTrigger = $('invAddTrigger');
+        if (addTrigger) addTrigger.addEventListener('click', function () { _invOpenTreeSheet([]); });
+
+        _invRenderCart();
+    }
+
+    // Rebuild the subtype/destination chips based on the selected main operation.
+    function _invBuildSubtypes() {
+        var op = $('invOpInput') ? $('invOpInput').value : '';
+        var opDef = (_invData.operations || []).find(function (o) { return o.op === op; }) || {};
+        var subs = opDef.subtypes || [];
+        $('invSubLabel').textContent = (op === '入库') ? '来源类型' : '去向';
+        $('invSubInput').value = subs[0] || '';
+        $('invSubChips').innerHTML = subs.map(function (s, i) {
+            return '<div class="v2-chip inv-sub-chip' + (i === 0 ? ' active' : '') + '" data-val="' + s + '">' + s + '</div>';
+        }).join('');
+        document.querySelectorAll('.inv-sub-chip').forEach(function (chip) {
+            chip.addEventListener('click', function () {
+                document.querySelectorAll('.inv-sub-chip').forEach(function (c) { c.classList.remove('active'); });
+                chip.classList.add('active');
+                $('invSubInput').value = chip.dataset.val;
+                _invSyncCondFields();
+            });
+        });
+    }
+
+    // Populate the project-name dropdown for a chosen category.
+    function _invBuildProjectNames(catCode) {
+        var sel = $('invProjName'), inp = $('invProjInput');
+        if (!sel) return;
+        sel.innerHTML = '';
+        var matches = (_invData.projects || []).filter(function (p) { return p.category === catCode; });
+        if (!matches.length) {
+            sel.disabled = true;
+            sel.innerHTML = '<option value="">该类别下无项目</option>';
+            inp.value = '';
+            return;
+        }
+        sel.disabled = false;
+        var o = document.createElement('option'); o.value = ''; o.textContent = '--'; sel.appendChild(o);
+        matches.forEach(function (p) {
+            var opt = document.createElement('option'); opt.value = p.id; opt.textContent = p.name; sel.appendChild(opt);
+        });
+        sel.onchange = function () { inp.value = this.value; };
+    }
+
+    // Show/hide conditional fields based on operation + subtype.
+    function _invSyncCondFields() {
+        var op = $('invOpInput') ? $('invOpInput').value : '';
+        var sub = $('invSubInput') ? $('invSubInput').value : '';
+        // 入库-采购 → 订单号; 出库-项目 → 项目级联; 出库-借用 → 借用方.
+        if ($('invOrderRow')) $('invOrderRow').style.display = (op === '入库' && sub === '采购') ? '' : 'none';
+        if ($('invProjCatRow')) $('invProjCatRow').style.display = (op === '出库' && sub === '项目') ? '' : 'none';
+        if ($('invCpRow')) $('invCpRow').style.display = (op === '出库' && sub === '借用') ? '' : 'none';
+    }
+
+    function _invRenderCart() {
+        var box = $('invCartList'); if (!box) return;
+        if (!_invCart.length) {
+            box.innerHTML = '<div style="font-size:0.85em;color:#bbb;padding:8px 0;">尚未添加物料</div>';
+            return;
+        }
+        box.innerHTML = _invCart.map(function (it, idx) {
+            return '<div class="inv-cart-row" style="display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid #eee;border-radius:8px;margin-bottom:6px;">' +
+                '<div style="flex:1;min-width:0;"><div style="font-size:0.9em;font-weight:500;">' + _esc(it.name) +
+                '</div><div style="font-size:0.72em;color:#999;">当前库存: <b style="color:#444;">' + it.stock + '</b></div></div>' +
+                '<input type="number" step="1" min="1" value="' + it.quantity + '" data-idx="' + idx + '" class="inv-qty-input" style="width:64px;padding:6px;border:1px solid #ddd;border-radius:6px;text-align:center;font-size:0.9em;">' +
+                '<input type="text" value="' + _esc(it.unit) + '" data-idx="' + idx + '" class="inv-unit-input" placeholder="单位" style="width:48px;padding:6px;border:1px solid #ddd;border-radius:6px;font-size:0.85em;text-align:center;">' +
+                '<button type="button" data-idx="' + idx + '" class="inv-del-btn" style="background:#fee;border:none;border-radius:6px;width:28px;height:28px;color:#c0392b;cursor:pointer;font-size:0.9em;">×</button>' +
+                '</div>';
+        }).join('');
+        box.querySelectorAll('.inv-qty-input').forEach(function (inp) {
+            inp.addEventListener('input', function () { _invCart[this.dataset.idx].quantity = parseFloat(this.value) || 0; });
+        });
+        box.querySelectorAll('.inv-unit-input').forEach(function (inp) {
+            inp.addEventListener('input', function () { _invCart[this.dataset.idx].unit = this.value; });
+        });
+        box.querySelectorAll('.inv-del-btn').forEach(function (btn) {
+            btn.addEventListener('click', function () { _invCart.splice(this.dataset.idx, 1); _invRenderCart(); });
+        });
+    }
+
+    function _esc(s) {
+        var d = document.createElement('div'); d.textContent = s == null ? '' : s; return d.innerHTML;
+    }
+
+    // Catalog drill-down sheet. `path` is the array of node ids walked so far.
+    function _invOpenTreeSheet(path) {
+        // Find the node at this depth.
+        var nodes = _invTree;
+        for (var i = 0; i < path.length; i++) {
+            var parent = _invNodeMap[path[i]];
+            nodes = (parent && parent.children) ? parent.children : [];
+        }
+        // Build (or reuse) a bottom sheet.
+        var sheet = $('invTreeSheet');
+        if (!sheet) {
+            sheet = document.createElement('div');
+            sheet.id = 'invTreeSheet';
+            sheet.className = 'v2-sheet-overlay';
+            sheet.innerHTML = '<div class="v2-sheet"><div style="width:36px;height:4px;background:#ccc;border-radius:2px;margin:10px auto 0;"></div>' +
+                '<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid #f0f0f0;"><span id="invTreeTitle" style="font-weight:600;">选择物料</span><button type="button" id="invTreeClose" style="width:32px;height:32px;border:none;background:#f0f0f0;border-radius:50%;font-size:1.1em;cursor:pointer;">×</button></div>' +
+                '<div id="invTreeBody" style="flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:8px 16px;min-height:0;"></div>' +
+                '<div style="padding:8px 16px 12px;border-top:1px solid #f0f0f0;"><button type="button" id="invTreeDone" style="width:100%;padding:12px;border:none;border-radius:10px;font-size:0.95em;font-weight:600;cursor:pointer;background:#2D6A4F;color:#fff;">完成</button></div></div>';
+            document.body.appendChild(sheet);
+            $('invTreeClose').addEventListener('click', function () { sheet.style.display = 'none'; });
+            $('invTreeDone').addEventListener('click', function () { sheet.style.display = 'none'; });
+        }
+        var title = $('invTreeTitle'), tbody = $('invTreeBody');
+        // Title = breadcrumb of names.
+        var names = path.map(function (id) { return _invNodeMap[id] ? _invNodeMap[id].name : ''; });
+        title.textContent = names.length ? names.join(' › ') : '选择物料';
+
+        tbody.innerHTML = '';
+        if (!nodes.length) {
+            tbody.innerHTML = '<div style="text-align:center;color:#999;padding:20px;">无子分类</div>';
+        }
+        nodes.forEach(function (n) {
+            var isLeaf = !n.children || !n.children.length;
+            var row = document.createElement('div');
+            row.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:12px 10px;border-bottom:1px solid #f5f5f5;cursor:pointer;';
+            row.innerHTML = '<span style="font-size:0.95em;">' + (isLeaf ? '🔹 ' : '📁 ') + _esc(n.name) +
+                (isLeaf ? ' <span style="font-size:0.72em;color:#999;">库存 ' + (n.current_stock || 0) + '</span>' : '') + '</span>' +
+                (isLeaf ? '<span style="font-size:0.8em;color:#2D6A4F;font-weight:600;">+ 选择</span>' : '<span style="color:#bbb;">▶</span>');
+            row.addEventListener('click', function () {
+                if (isLeaf) {
+                    // Add to cart (skip if already present).
+                    if (_invCart.some(function (c) { return c.id === n.id; })) {
+                        showToast('该物料已在清单中', 'error');
+                    } else {
+                        _invCart.push({ id: n.id, name: n.name, stock: n.current_stock || 0, quantity: 1, unit: '' });
+                        _invRenderCart();
+                    }
+                    sheet.style.display = 'none';
+                } else {
+                    _invOpenTreeSheet(path.concat([n.id]));   // drill deeper
+                }
+            });
+            tbody.appendChild(row);
+        });
+
+        // Back button if not at root.
+        if (path.length) {
+            var back = document.createElement('div');
+            back.style.cssText = 'padding:8px 10px;color:#2D6A4F;font-size:0.85em;cursor:pointer;';
+            back.textContent = '‹ 返回';
+            back.addEventListener('click', function () { _invOpenTreeSheet(path.slice(0, -1)); });
+            tbody.insertBefore(back, tbody.firstChild);
+        }
+
+        sheet.style.display = 'flex';
+    }
+
+    window.submitV2Inventory = function () {
+        if (!_invCart.length) { showToast('请至少添加一个物料', 'error'); return; }
+        var form = $('invModalForm'); if (!form) return;
+        var lines = _invCart.filter(function (c) { return (c.quantity || 0) > 0; })
+            .map(function (c) { return { category: c.id, quantity: c.quantity, unit: c.unit || '' }; });
+        if (!lines.length) { showToast('请填写有效数量', 'error'); return; }
+        $('invLinesInput').value = JSON.stringify(lines);
+        var fd = new FormData(form);
+        // Optional zone (only if the user associated one via 关联区域).
+        if (_selectedZoneCodes.size) {
+            fd.set('zone_id', Array.from(_selectedZoneCodes)[0]);  // inventory uses a single optional zone
+        }
+        var btn = $('invSubmitBtn'); btn.disabled = true; btn.textContent = '提交中...';
+        fetch('/mobile/inventory/v2/', { method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+            .then(function (r) { return r.json(); }).then(function (data) {
+                if (data.success) {
+                    showToast(data.message, 'success');
+                    btn.disabled = false; btn.textContent = '提交';
+                    _invCart = [];
+                    setTimeout(function () { closeV2Modal('inventory'); }, 1500);
+                } else {
+                    showToast(data.message, 'error'); btn.disabled = false; btn.textContent = '提交';
+                }
             }).catch(function (err) { showToast('提交失败: ' + err, 'error'); btn.disabled = false; btn.textContent = '提交'; });
     };
 

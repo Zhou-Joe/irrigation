@@ -1,0 +1,31 @@
+{% comment %}
+Recursive partial: renders one InventoryCategory tree node.
+- Branch (has children): an expandable drill-head; drill-body recurses into children. Collapsed by default.
+- Leaf (no children): name + editable stock input + a lazy "查看出入库记录" trigger.
+The whole tree lives inside the stock-save <form>, so leaf inputs keep name="stock_<id>".
+{% endcomment %}
+{% with node.obj as cat %}
+{% if node.children %}
+<div class="iv-branch">
+    <div class="iv-head" onclick="ivToggle(this)">
+        <span class="iv-arrow">▶</span>
+        <span class="iv-name">{{ cat.name_zh }}</span>
+        <span class="iv-child-count">{{ node.children|length }} 项</span>
+    </div>
+    <div class="iv-body" style="display:none;">
+        {% for child in node.children %}
+            {% include 'core/_inventory_tree_node.html' with node=child %}
+        {% endfor %}
+    </div>
+</div>
+{% else %}
+<div class="iv-leaf">
+    <div class="iv-leaf-row">
+        <span class="iv-leaf-name">{{ cat.name_zh }}</span>
+        <input type="number" step="1" class="iv-stock-input" name="stock_{{ cat.id }}" value="{{ cat.current_stock }}" title="现有库存">
+        <button type="button" class="iv-txn-btn" onclick="ivLoadTxn(this, {{ cat.id }})">记录 ▾</button>
+    </div>
+    <div class="iv-txn-panel" data-cat="{{ cat.id }}" style="display:none;"></div>
+</div>
+{% endif %}
+{% endwith %}

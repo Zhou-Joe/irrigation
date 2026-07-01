@@ -1303,8 +1303,118 @@ class WorkReportEntry(models.Model):
 
 
 # ==========================================================================
-# 需求周报系统 (Demand Record System - Other departments' requests)
+# 库存管理系统 (Inventory Management)
 # ==========================================================================
+
+
+class InventoryCategory(models.Model):
+    """库存物料目录树 - 自引用树，承载 库存管理tree.md 的层级。
+
+    由 seed_inventory_items 命令从 markdown 灌入；之后管理员可在后台增删改。
+    叶子节点（无 children）才是可出入库的具体物料；中间节点为分类。
+    current_stock 由经理在 /inventory/manage/ 页面设定/调整，每次出入库提交后自动增减。
+    """
+
+    code = models.CharField('编码', max_length=200, unique=True, help_text='路径派生的稳定编码，幂等灌入键')
+    parent = models.ForeignKey(
+        'self', null=True, blank=True, on_delete=models.CASCADE,
+        related_name='children', verbose_name='父节点',
+    )
+    name_zh = models.CharField('中文名', max_length=255)
+    order = models.PositiveIntegerField('同级排序', default=0)
+    level = models.PositiveIntegerField('层级深度', default=0)
+    current_stock = models.IntegerField(
+        '现有库存数量', default=0,
+        help_text='由经理设定初始值；每次出入库提交后自动增减',
+    )
+    active = models.BooleanField('启用', default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['order', 'code']
+        verbose_name = '库存物料'
+        verbose_name_plural = '库存物料'
+
+    def __str__(self):
+        return f"{self.code} {self.name_zh}"
+
+
+class InventoryTransaction(models.Model):
+    """库存流水单 - 一次提交（一个 cart），含一种操作类型 + 多个物料行。
+
+    operation 决定库存增减方向：入库（含采购/借用归还/拆回利旧）→ +，
+    出库（含日常维护/项目/借用）→ -。
+    """
+
+    OPERATION_CHOICES = [
+        ('入库', '入库'),
+        ('出库', '出库'),
+    ]
+    # 入库子类型: 采购(填订单号) / 借用归还 / 拆回利旧
+    INBOUND_SUBTYPES = [('采购', '采购'), ('借用归还', '借用归还'), ('拆回利旧', '拆回利旧')]
+    # 出库去向: 日常维护 / 项目 / 借用
+    OUTBOUND_DESTINATIONS = [('日常维护', '日常维护'), ('项目', '项目'), ('借用', '借用')]
+    date = models.DateField('日期', default=date.today)
+    worker = models.ForeignKey(
+        Worker, on_delete=models.PROTECT, related_name='inventory_transactions',
+        verbose_name='提交人',
+    )
+    operation = models.CharField('操作类型', max_length=10, choices=OPERATION_CHOICES)
+    # 入库时的来源类型(采购/借用归还/拆回利旧) 或 出库时的去向类型(日常维护/项目/借用)。
+    entry_subtype = models.CharField('来源/去向类型', max_length=20, blank=True)
+    order_no = models.CharField('订单号', max_length=100, blank=True, help_text='入库-采购时填写')
+    counterparty = models.CharField('借用方', max_length=200, blank=True,
+                                    help_text='出库-借用时填写（历史去重 + 可自填）')
+    related_project = models.ForeignKey(
+        Project, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='inventory_transactions', verbose_name='关联项目',
+        help_text='出库-项目时选择',
+    )
+    zone = models.ForeignKey(
+        Zone, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='inventory_transactions', verbose_name='关联区域',
+        help_text='可选；与具体区域关联',
+    )
+    remark = models.TextField('备注', blank=True)
+    photos = models.JSONField('照片', default=list, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-date', '-id']
+        verbose_name = '库存流水'
+        verbose_name_plural = '库存流水'
+
+    def __str__(self):
+        return f"{self.date} | {self.operation}-{self.entry_subtype} | {self.worker}"
+
+
+class InventoryTransactionLine(models.Model):
+    """库存流水明细 - cart 中每个物料一行。"""
+
+    transaction = models.ForeignKey(
+        InventoryTransaction, on_delete=models.CASCADE, related_name='lines',
+        verbose_name='流水单',
+    )
+    category = models.ForeignKey(
+        InventoryCategory, on_delete=models.PROTECT, related_name='transaction_lines',
+        verbose_name='物料',
+    )
+    quantity = models.PositiveIntegerField('数量', default=1)
+    unit = models.CharField('单位', max_length=20, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('transaction', 'category')
+        verbose_name = '库存明细'
+        verbose_name_plural = '库存明细'
+
+    def __str__(self):
+        return f"{self.category.name_zh} × {self.quantity}"
+
+
+
 
 
 # (removed: DemandCategory)

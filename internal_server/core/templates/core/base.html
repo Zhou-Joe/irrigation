@@ -250,6 +250,7 @@
                 {% if is_admin %}
                 <a href="{% url 'core:settings' %}" class="{% block nav_settings %}{% endblock %}">区域管理</a>
                 <a href="{% url 'core:project_management' %}" class="{% block nav_projects %}{% endblock %}">项目管理</a>
+                <a href="{% url 'core:inventory_management' %}" class="{% block nav_inventory_mgmt %}{% endblock %}">库存管理</a>
                 <a href="{% url 'core:announcement_management' %}" class="{% block nav_announcements %}{% endblock %}">通知管理</a>
                 <a href="{% url 'core:user_management' %}" class="{% block nav_user_mgmt %}{% endblock %}">
                     用户管理{% if pending_registrations %}<span style="background:var(--color-warning);color:#fff;padding:1px 6px;border-radius:10px;font-size:0.7rem;margin-left:4px;">{{ pending_registrations }}</span>{% endif %}
@@ -281,6 +282,7 @@
         {% if is_admin %}
         <a href="{% url 'core:settings' %}" class="{% block nav_settings_m %}{% endblock %}">区域管理</a>
         <a href="{% url 'core:project_management' %}" class="{% block nav_projects_m %}{% endblock %}">项目管理</a>
+        <a href="{% url 'core:inventory_management' %}" class="{% block nav_inventory_mgmt_m %}{% endblock %}">库存管理</a>
         <a href="{% url 'core:announcement_management' %}" class="{% block nav_announcements_m %}{% endblock %}">通知管理</a>
         <a href="{% url 'core:user_management' %}" class="{% block nav_user_mgmt_m %}{% endblock %}">用户管理</a>
         <div class="mobile-sub-menu">
