@@ -2247,7 +2247,7 @@
             '<div class="v2-fg" id="invSubRow"><div class="v2-fl" id="invSubLabel">来源类型</div><div class="v2-chip-group" id="invSubChips"></div></div>' +
             '<div class="v2-fg"><div class="v2-form-row"><div><div class="v2-fl">日期</div><select name="date" id="invDate" class="v2-select">' + dateOptionsHTML(7, data.today) + '</select></div></div></div>' +
             '<div class="v2-fg" id="invOrderRow" style="display:none;"><div class="v2-fl">订单号</div><input type="text" name="order_no" id="invOrderNo" class="v2-input" placeholder="采购订单号"></div>' +
-            '<div class="v2-fg" id="invProjCatRow" style="display:none;"><div class="v2-form-row"><div style="flex:1;"><div class="v2-fl">项目类别</div><select id="invProjCat" class="v2-select"><option value="">--</option></select></div><div style="flex:1.2;"><div class="v2-fl">项目名称</div><select id="invProjName" class="v2-select" disabled><option value="">先选类别</option></select></div></div></div>' +
+            '<div class="v2-fg" id="invProjCatRow" style="display:none;"><div class="v2-fl">项目类别</div><div class="v2-chip-group" id="invProjCatChips"></div><div class="v2-fl" style="margin-top:10px;">项目名称</div><div class="v2-chip-group" id="invProjNameChips"><div class="v2-chip" style="opacity:0.5;cursor:default;">先选类别</div></div></div>' +
             '<div class="v2-fg" id="invCpRow" style="display:none;"><div class="v2-fl">借用方</div><input type="text" name="counterparty" id="invCounterparty" class="v2-input" list="invBorrowerList" placeholder="选择或输入借用方"><datalist id="invBorrowerList">' + (data.borrowers || []).map(function (b) { return '<option value="' + _esc(b) + '">'; }).join('') + '</datalist></div>' +
             '<div class="v2-fg"><div class="v2-fl">物料清单</div>' +
                 '<div id="invCartList"></div>' +
@@ -2270,14 +2270,8 @@
             });
         });
 
-        // Build the project-category cascade.
-        var pcat = $('invProjCat');
-        if (pcat) {
-            (data.project_categories || []).forEach(function (c) {
-                var o = document.createElement('option'); o.value = c.code; o.textContent = c.label; pcat.appendChild(o);
-            });
-            pcat.addEventListener('change', function () { _invBuildProjectNames(this.value); });
-        }
+        // Build the project-category chips (cascade into project names on click).
+        _invBuildProjectCategories();
 
         _invBuildSubtypes();
         _invSyncCondFields();
@@ -2309,24 +2303,46 @@
         });
     }
 
-    // Populate the project-name dropdown for a chosen category.
+    // Build the project-category chips. Clicking a category cascades into the
+    // project-name chip group below it (mirrors the subtype-chip pattern).
+    function _invBuildProjectCategories() {
+        var box = $('invProjCatChips');
+        if (!box) return;
+        box.innerHTML = (_invData.project_categories || []).map(function (c) {
+            return '<div class="v2-chip inv-pcat-chip" data-val="' + _esc(c.code) + '">' + _esc(c.label) + '</div>';
+        }).join('');
+        document.querySelectorAll('.inv-pcat-chip').forEach(function (chip) {
+            chip.addEventListener('click', function () {
+                document.querySelectorAll('.inv-pcat-chip').forEach(function (c) { c.classList.remove('active'); });
+                chip.classList.add('active');
+                _invBuildProjectNames(chip.dataset.val);
+            });
+        });
+        // Reset the name group to its placeholder until a category is chosen.
+        _invBuildProjectNames('');
+    }
+
+    // Populate the project-name chips for a chosen category.
     function _invBuildProjectNames(catCode) {
-        var sel = $('invProjName'), inp = $('invProjInput');
-        if (!sel) return;
-        sel.innerHTML = '';
+        var box = $('invProjNameChips'), inp = $('invProjInput');
+        if (!box) return;
+        inp.value = '';
         var matches = (_invData.projects || []).filter(function (p) { return p.category === catCode; });
-        if (!matches.length) {
-            sel.disabled = true;
-            sel.innerHTML = '<option value="">该类别下无项目</option>';
-            inp.value = '';
+        if (!catCode || !matches.length) {
+            box.innerHTML = '<div class="v2-chip" style="opacity:0.5;cursor:default;">' +
+                (catCode ? '该类别下无项目' : '先选类别') + '</div>';
             return;
         }
-        sel.disabled = false;
-        var o = document.createElement('option'); o.value = ''; o.textContent = '--'; sel.appendChild(o);
-        matches.forEach(function (p) {
-            var opt = document.createElement('option'); opt.value = p.id; opt.textContent = p.name; sel.appendChild(opt);
+        box.innerHTML = matches.map(function (p) {
+            return '<div class="v2-chip inv-pname-chip" data-val="' + p.id + '">' + _esc(p.name) + '</div>';
+        }).join('');
+        document.querySelectorAll('.inv-pname-chip').forEach(function (chip) {
+            chip.addEventListener('click', function () {
+                document.querySelectorAll('.inv-pname-chip').forEach(function (c) { c.classList.remove('active'); });
+                chip.classList.add('active');
+                inp.value = chip.dataset.val;
+            });
         });
-        sel.onchange = function () { inp.value = this.value; };
     }
 
     // Show/hide conditional fields based on operation + subtype.
