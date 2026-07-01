@@ -28,8 +28,18 @@
 
     function el(id) { return document.getElementById(id); }
 
-    function toggle() { var p = el('aiChatPanel'); if (p) { var open = p.style.display === 'none' || !p.style.display; p.style.display = open ? 'flex' : 'none'; if (open) { var i = el('aiChatInput'); if (i) i.focus(); } } }
-    function open() { var p = el('aiChatPanel'); if (p) { p.style.display = 'flex'; var i = el('aiChatInput'); if (i) i.focus(); } }
+    // Show/hide the chat panel. The floating launcher is hidden while the panel
+    // is open so the two never overlap (on mobile the launcher otherwise sits on
+    // top of the panel's send button).
+    function _setPanelOpen(open) {
+        var p = el('aiChatPanel'), lc = el('aiChatLauncher');
+        if (!p) return;
+        p.style.display = open ? 'flex' : 'none';
+        if (lc) lc.style.display = open ? 'none' : '';
+        if (open) { var i = el('aiChatInput'); if (i) i.focus(); }
+    }
+    function toggle() { var p = el('aiChatPanel'); if (p) { _setPanelOpen(p.style.display === 'none' || !p.style.display); } }
+    function open() { _setPanelOpen(true); }
 
     function addMsg(role, contentHtml) {
         var box = el('aiChatMessages'); if (!box) return null;
