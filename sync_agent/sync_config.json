@@ -1,8 +1,9 @@
 {
-  "server_url": "http://localhost:8000",
+  "server_url": "http://127.0.0.1:8000",
   "api_key": "dev-sync-key-change-in-production",
-  "mdb_path": "/Users/chen/development/maxicom/Database/Maxicom2.mdb",
+  "mdb_path": "C:\\Users\\czhou7\\PythonProjects\\irrigation\\Database\\Maxicom2.mdb",
   "mdb_password": "RLM6808",
   "sync_interval_minutes": 5,
-  "overlap_buffer_minutes": 2
+  "overlap_buffer_minutes": 2,
+  "days_window": 7
 }

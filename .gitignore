@@ -71,6 +71,8 @@ cert.pem:Zone.Identifier
 # DB snapshots / operational backups
 db1.sqlite3
 db_backups/
+*.sqlite3.bak.*
+db.sqlite3.bak.*
 
 # User-uploaded media (photos, videos, AI workspaces)
 internal_server/media/workorder_photos/

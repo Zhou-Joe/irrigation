@@ -4655,8 +4655,10 @@ def work_reports_excel(request):
     wb = Workbook()
     ws = wb.active
     ws.title = '维修记录'
-    base_header = ['序号', '日期', '处理人', '位置', '工作分类', '故障/事件位置',
-                   '备注', '信息来源', '疑难问题', '疑难已处理']
+    base_header = ['序号', '日期', '工单号', '处理人', '位置', '工作分类',
+                   '故障/事件位置', '区域', '灌溉组人数', '灌溉组工时',
+                   '第三方人数', '第三方工时', '消耗材料', '备注',
+                   '信息来源', '疑难问题', '疑难已处理']
     n_base = len(base_header)
     n_cols = n_base + len(count_nodes)
     hdr_rows = max((len(segs) for _, segs in count_nodes), default=1)
@@ -4715,11 +4717,25 @@ def work_reports_excel(request):
     id_to_col = {wid: n_base + i + 1 for i, (wid, _) in enumerate(count_nodes)}
 
     for idx, r in enumerate(reports, 1):
+        # Zone codes: show only when the workorder covers ≤5 zones (sum of all
+        # linked zone rows, regardless of duplicate names). Over 5 → blank, since
+        # a sprawling multi-zone ticket's codes would be unreadable in one cell.
+        zone_codes = ''
+        zones = list(r.zones.all())
+        if len(zones) <= 5:
+            zone_codes = ', '.join(z.code for z in zones if z.code)
         row = [idx, r.date.isoformat() if r.date else '',
+               f'#{r.id}' if r.id else '',
                r.worker.full_name if r.worker_id and r.worker else '',
                r.location.code if r.location_id and r.location else '',
                _report_section_label(r),
                _dedup_zone_names(r.zone_names),
+               zone_codes,
+               r.team_size or '',
+               r.team_hours if r.team_hours else '',
+               r.third_party_count or '',
+               r.third_party_hours if r.third_party_hours else '',
+               '',  # 消耗材料 — placeholder, business logic TBD
                (r.work_content or r.remark or ''),
                '',  # 信息来源 (no dedicated field on WorkReport)
                '是' if r.is_difficult else '',
@@ -4738,23 +4754,31 @@ def work_reports_excel(request):
     dcenter = Alignment(horizontal='center', vertical='center')
     dwrap = Alignment(horizontal='left', vertical='center', wrap_text=True)
     last_row = hdr_rows + len(reports)
+    # Wrap the long text columns: 区域 (codes list), 消耗材料, 备注 (free text).
+    wrap_cols = {8, 13, 14}
     for rr in range(hdr_rows + 1, last_row + 1):
         for cc in range(1, n_cols + 1):
             cell = ws.cell(row=rr, column=cc)
             cell.border = gborder
-            cell.alignment = dwrap if cc == 7 else dcenter
+            cell.alignment = dwrap if cc in wrap_cols else dcenter
 
-    # Column widths + freeze the header rows and the first four ID columns
-    # (序号/日期/处理人/位置) so they stay visible while scrolling the matrix.
+    # Column widths + freeze the header rows and the first five ID columns
+    # (序号/日期/工单号/处理人/位置) so they stay visible while scrolling the matrix.
     from openpyxl.utils import get_column_letter
+    # Per-column width overrides for the base columns (1-based):
+    # 1序号 2日期 3工单号 4处理人 5位置 6工作分类 7故障位置 8区域
+    # 9灌溉组人数 10灌溉组工时 11第三方人数 12第三方工时 13消耗材料 14备注
+    # 15信息来源 16疑难问题 17疑难已处理
+    base_widths = {3: 10, 4: 11, 5: 12, 6: 14, 7: 18, 8: 20,
+                   13: 18, 14: 28}
     for ci in range(1, n_cols + 1):
         if ci <= n_base:
-            width = 28 if ci == 7 else 12          # 备注 wider
+            width = base_widths.get(ci, 11)
         else:
             leaf = count_nodes[ci - n_base - 1][1][-1]
             width = max(8, min(20, len(leaf) * 1.7 + 2))
         ws.column_dimensions[get_column_letter(ci)].width = width
-    ws.freeze_panes = ws.cell(row=hdr_rows + 1, column=5)
+    ws.freeze_panes = ws.cell(row=hdr_rows + 1, column=6)
 
     buf = io.BytesIO(); wb.save(buf); buf.seek(0)
     fname = f'workreports_{start}_{end}.xlsx'
@@ -5128,6 +5152,70 @@ def stats_dashboard(request):
             'third_hours': round(w['third_hours'], 1), 'difficult': w['difficult'],
         } for w in sorted(wmap.values(), key=lambda x: x['team_hours'], reverse=True)]
 
+    # ── 7. Excel-format preview table (admin only) ──────────────────────────
+    # Same row/column layout as work_reports_excel so managers can preview the
+    # export on screen: the base columns + the routine_maint count-leaf matrix
+    # with a multi-row merged header. Built only for admins since the export
+    # itself is admin-only. Keep this list in sync with work_reports_excel.
+    excel_base_header = ['序号', '日期', '工单号', '处理人', '位置', '工作分类',
+                         '故障/事件位置', '区域', '灌溉组人数', '灌溉组工时',
+                         '第三方人数', '第三方工时', '消耗材料', '备注',
+                         '信息来源', '疑难问题', '疑难已处理']
+    excel_matrix_header, excel_preview_rows, excel_hdr_rows = [], [], 1
+    excel_matrix_col_count = 0
+    if admin:
+        excel_matrix_cols = _work_report_count_columns()
+        excel_matrix_col_count = len(excel_matrix_cols)
+        excel_hdr_rows = max((len(segs) for _, segs in excel_matrix_cols), default=1)
+        # Multi-row merged header for the count matrix, rendered as rows of
+        # {text, colspan, rowspan}. Mirrors the openpyxl merge logic so the
+        # on-screen header matches the exported spreadsheet exactly.
+        for depth in range(excel_hdr_rows):
+            hrow, ci = [], 0
+            while ci < len(excel_matrix_cols):
+                segs = excel_matrix_cols[ci][1]
+                if depth >= len(segs):
+                    ci += 1
+                    continue
+                prefix = segs[:depth + 1]
+                cj = ci + 1
+                while cj < len(excel_matrix_cols) and excel_matrix_cols[cj][1][:depth + 1] == prefix:
+                    cj += 1
+                terminal = depth == len(segs) - 1
+                hrow.append({'text': segs[depth], 'colspan': cj - ci,
+                             'rowspan': excel_hdr_rows - depth if terminal else 1})
+                ci = cj
+            if hrow:
+                excel_matrix_header.append(hrow)
+        # Data rows in Excel order (date, id), one cell per matrix column.
+        excel_count_wids = {wid for wid, _ in excel_matrix_cols}
+        for idx, r in enumerate(sorted(reports, key=lambda x: (x.date, x.id)), 1):
+            zones = list(r.zones.all())
+            zone_codes = ', '.join(z.code for z in zones if z.code) if len(zones) <= 5 else ''
+            counts_map = {}
+            for e in r.entries.all():
+                if e.work_item_id in excel_count_wids and e.count:
+                    counts_map[e.work_item_id] = (counts_map.get(e.work_item_id, 0) or 0) + e.count
+            excel_preview_rows.append({
+                'idx': idx,
+                'date': r.date.isoformat() if r.date else '',
+                'workorder_no': f'#{r.id}' if r.id else '',
+                'worker': r.worker.full_name if (r.worker_id and r.worker) else '',
+                'location': r.location.code if (r.location_id and r.location) else '',
+                'section': _report_section_label(r),
+                'zone_names': _dedup_zone_names(r.zone_names),
+                'zone_codes': zone_codes,
+                'team_size': r.team_size or '',
+                'team_hours': r.team_hours if r.team_hours else '',
+                'third_party_count': r.third_party_count or '',
+                'third_party_hours': r.third_party_hours if r.third_party_hours else '',
+                'materials': '',   # 消耗材料 — placeholder, business logic TBD
+                'remark': r.work_content or r.remark or '',
+                'difficult': '是' if r.is_difficult else '',
+                'resolved': '是' if r.is_difficult_resolved else '',
+                'counts': [counts_map.get(wid, '') for wid, _ in excel_matrix_cols],
+            })
+
     context = {
         'is_admin': admin,
         'start': start, 'end': end,
@@ -5160,6 +5248,12 @@ def stats_dashboard(request):
         'land_rows': land_rows,
         # 6. worker hours
         'worker_stats': worker_stats,
+        # 7. Excel-format preview (admin only)
+        'excel_base_header': excel_base_header,
+        'excel_matrix_header': excel_matrix_header,
+        'excel_matrix_col_count': excel_matrix_col_count,
+        'excel_hdr_rows': excel_hdr_rows,
+        'excel_preview_rows': excel_preview_rows,
     }
     return render(request, 'core/stats_dashboard.html', context)
 
@@ -7555,6 +7649,307 @@ def water_request_modal_data(request):
         'today': date.today().isoformat(),
         'now_time': now.strftime('%H:%M'),
     })
+
+
+# ─── Inventory Management (库存管理) ──────────────────────────────────
+
+def serialize_inventory_tree():
+    """Emit the InventoryCategory tree as nested JSON (depth-first).
+
+    Each leaf carries ``current_stock`` so the mobile form can display it
+    read-only. Mirrors serialize_workitem_tree's algorithm.
+    """
+    from core.models import InventoryCategory
+    qs = (InventoryCategory.objects.filter(active=True)
+          .order_by('order', 'code')
+          .values('id', 'code', 'name_zh', 'parent_id', 'current_stock'))
+    nodes = {n['id']: {**n, 'name': n['name_zh'], 'children': []} for n in qs}
+    roots = []
+    for n in qs:
+        node = nodes[n['id']]
+        pid = n['parent_id']
+        if pid in nodes:
+            nodes[pid]['children'].append(node)
+        else:
+            roots.append(node)
+    # Skip a single wrapper root (e.g. "库存材料和工具") — it just adds an extra
+    # expand click. Promote its children to top-level so the picker opens
+    # straight onto the real sections (喷头 / PVC管 / ...).
+    if len(roots) == 1 and roots[0]['children']:
+        roots = roots[0]['children']
+    return roots
+
+
+@login_required(login_url='core:login')
+def inventory_modal_data(request):
+    """API: return inventory form metadata as JSON for the dashboard modal."""
+    from core.models import InventoryTransaction, Project
+    from core.role_utils import get_worker_for_user, get_user_role, ROLE_FIELD_WORKER, ROLE_MANAGER, ROLE_SUPER_ADMIN
+    from core.workorder_tree_views import serialize_projects
+    from datetime import date, datetime
+
+    role = get_user_role(request.user)
+    if role not in (ROLE_FIELD_WORKER, ROLE_MANAGER, ROLE_SUPER_ADMIN):
+        return JsonResponse({'error': '无权限'}, status=403)
+
+    worker = get_worker_for_user(request.user)
+    now = datetime.now()
+
+    # Borrower list = distinct counterparties from past 出库-借用 transactions,
+    # so the field self-populates over time. Users can still type a new one.
+    borrowers = list(InventoryTransaction.objects
+                     .filter(operation='出库', entry_subtype='借用')
+                     .exclude(counterparty='')
+                     .values_list('counterparty', flat=True)
+                     .distinct().order_by('counterparty'))
+
+    return JsonResponse({
+        'inventory_tree': serialize_inventory_tree(),
+        'operations': [
+            {'op': '入库', 'label': '入库', 'subtypes': [s for s, _ in InventoryTransaction.INBOUND_SUBTYPES]},
+            {'op': '出库', 'label': '出库', 'subtypes': [s for s, _ in InventoryTransaction.OUTBOUND_DESTINATIONS]},
+        ],
+        'projects': serialize_projects(),
+        'project_categories': [{'code': c, 'label': label} for c, label in Project.CATEGORY_CHOICES],
+        'borrowers': borrowers,
+        'today': date.today().isoformat(),
+        'now_time': now.strftime('%H:%M'),
+        'worker_name': worker.full_name if worker else request.user.get_full_name() or request.user.username,
+    })
+
+
+@login_required(login_url='core:login')
+def inventory_mobile_v2(request):
+    """Submit an inventory transaction (a multi-item cart of stock movements).
+
+    Mirrors workorder_mobile_v2's structure: role-gated POST that reads form
+    fields + a JSON ``lines`` array, creates the transaction + its lines, then
+    atomically adjusts each category's current_stock via F().
+    """
+    from core.models import (
+        InventoryTransaction, InventoryTransactionLine, InventoryCategory, Project, Zone,
+    )
+    from core.role_utils import get_user_role, resolve_or_create_worker
+    from core.role_utils import ROLE_FIELD_WORKER, ROLE_MANAGER, ROLE_SUPER_ADMIN
+    from datetime import date
+
+    role = get_user_role(request.user)
+    if role not in (ROLE_FIELD_WORKER, ROLE_MANAGER, ROLE_SUPER_ADMIN):
+        return JsonResponse({'success': False, 'message': '无权限'}, status=403)
+
+    if request.method != 'POST':
+        return redirect('core:dashboard')
+
+    try:
+        worker, _created = resolve_or_create_worker(request.user)
+        if not worker:
+            return JsonResponse({'success': False, 'message': '未关联处理人账号'}, status=400)
+
+        operation = (request.POST.get('operation') or '').strip()
+        if operation not in dict(InventoryTransaction.OPERATION_CHOICES):
+            return JsonResponse({'success': False, 'message': '操作类型无效'}, status=400)
+        entry_subtype = (request.POST.get('entry_subtype') or '').strip()
+
+        lines_raw = request.POST.get('lines', '[]')
+        try:
+            lines = json.loads(lines_raw)
+        except (json.JSONDecodeError, TypeError):
+            lines = []
+        if not lines:
+            return JsonResponse({'success': False, 'message': '请至少添加一个物料'}, status=400)
+
+        # Optional zone association.
+        zone_id = request.POST.get('zone_id')
+        zone = None
+        if zone_id and zone_id.isdigit():
+            zone = Zone.objects.filter(pk=zone_id).first()
+
+        # Optional project (出库-项目).
+        project_id = request.POST.get('project_id')
+        project = None
+        if project_id and project_id.isdigit():
+            project = Project.objects.filter(pk=project_id).first()
+
+        txn = InventoryTransaction.objects.create(
+            date=request.POST.get('date') or date.today().isoformat(),
+            worker=worker,
+            operation=operation,
+            entry_subtype=entry_subtype,
+            order_no=(request.POST.get('order_no') or '').strip(),
+            counterparty=(request.POST.get('counterparty') or '').strip(),
+            related_project=project,
+            remark=(request.POST.get('remark') or '').strip(),
+            zone=zone,
+        )
+
+        # Direction: 入库 adds stock; 出库 subtracts.
+        sign = 1 if operation == '入库' else -1
+        created_lines = 0
+        for ln in lines:
+            cat_id = ln.get('category')
+            qty = ln.get('quantity') or 0
+            try:
+                qty = abs(float(qty))
+            except (ValueError, TypeError):
+                continue
+            cat = InventoryCategory.objects.filter(pk=cat_id).first()
+            if not cat or qty <= 0:
+                continue
+            InventoryTransactionLine.objects.create(
+                transaction=txn, category=cat,
+                quantity=qty, unit=(ln.get('unit') or '').strip(),
+            )
+            # Atomically adjust current_stock (F() avoids race on concurrent submits).
+            InventoryCategory.objects.filter(pk=cat_id).update(
+                current_stock=F('current_stock') + sign * qty,
+            )
+            created_lines += 1
+
+        if created_lines == 0:
+            txn.delete()
+            return JsonResponse({'success': False, 'message': '没有有效的物料行'}, status=400)
+
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            sub = f'-{entry_subtype}' if entry_subtype else ''
+            return JsonResponse({
+                'success': True,
+                'message': f'库存{operation}{sub}已提交 ({created_lines} 项)',
+            })
+        return redirect('core:dashboard')
+
+    except Exception as e:
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return JsonResponse({'success': False, 'message': str(e)}, status=400)
+        return redirect('core:dashboard')
+
+
+@login_required(login_url='core:login')
+def inventory_management(request):
+    """Manager-only page: collapsible inventory tree + per-item stock editing.
+
+    The catalog renders as a nested, all-collapsed-by-default tree. Leaf nodes
+    show an editable current-stock input and a "查看出入库记录" trigger that
+    lazy-loads that item's transactions within the selected date range.
+    """
+    from core.models import InventoryCategory
+    from core.role_utils import get_user_role, ROLE_MANAGER, ROLE_SUPER_ADMIN
+    from datetime import date, timedelta
+
+    role = get_user_role(request.user)
+    if role not in (ROLE_MANAGER, ROLE_SUPER_ADMIN):
+        messages.error(request, '无权限访问库存管理')
+        return redirect('core:dashboard')
+
+    # Flat query → nested tree (same algorithm as serialize_inventory_tree,
+    # but on real model objects so the template can render them directly).
+    cats = list(InventoryCategory.objects.filter(active=True).order_by('order', 'code'))
+    nodes = {c.id: {'obj': c, 'children': []} for c in cats}
+    roots = []
+    for c in cats:
+        node = nodes[c.id]
+        if c.parent_id and c.parent_id in nodes:
+            nodes[c.parent_id]['children'].append(node)
+        else:
+            roots.append(node)
+
+    # Skip a single wrapper root — promote its children to top-level (see
+    # serialize_inventory_tree for the rationale).
+    if len(roots) == 1 and roots[0]['children']:
+        roots = roots[0]['children']
+
+    # Default date range: last 30 days.
+    today = date.today()
+    date_from = request.GET.get('from') or (today - timedelta(days=30)).isoformat()
+    date_to = request.GET.get('to') or today.isoformat()
+
+    return render(request, 'core/inventory_management.html', {
+        'roots': roots,
+        'date_from': date_from,
+        'date_to': date_to,
+    })
+
+
+@login_required(login_url='core:login')
+def inventory_category_transactions(request, cat_id):
+    """JSON: a leaf category's in/out transactions within a date range.
+
+    Manager-only. Used by the lazy-loaded "查看出入库记录" panel on each leaf.
+    """
+    from core.models import InventoryCategory, InventoryTransactionLine
+    from core.role_utils import get_user_role, ROLE_MANAGER, ROLE_SUPER_ADMIN
+
+    role = get_user_role(request.user)
+    if role not in (ROLE_MANAGER, ROLE_SUPER_ADMIN):
+        return JsonResponse({'error': '无权限'}, status=403)
+
+    cat = get_object_or_404(InventoryCategory, pk=cat_id)
+    date_from = request.GET.get('from') or ''
+    date_to = request.GET.get('to') or ''
+
+    qs = (InventoryTransactionLine.objects
+          .filter(category=cat)
+          .select_related('transaction', 'transaction__worker', 'transaction__related_project'))
+    if date_from:
+        qs = qs.filter(transaction__date__gte=date_from)
+    if date_to:
+        qs = qs.filter(transaction__date__lte=date_to)
+    qs = qs.order_by('-transaction__date', '-transaction__id')
+
+    records = []
+    for ln in qs:
+        t = ln.transaction
+        records.append({
+            'date': t.date.isoformat() if t.date else '',
+            'operation': t.operation,
+            'subtype': t.entry_subtype,
+            'quantity': ln.quantity,
+            'unit': ln.unit,
+            'counterparty': t.counterparty,
+            'order_no': t.order_no,
+            'project': t.related_project.name if t.related_project else '',
+            'worker': t.worker.full_name if t.worker else '',
+            'remark': t.remark,
+        })
+    return JsonResponse({'success': True, 'name': cat.name_zh, 'count': len(records), 'records': records})
+
+
+@require_POST
+@login_required(login_url='core:login')
+def inventory_save_stock(request):
+    """Update current_stock for one or more inventory categories (manager only).
+
+    Reads POST fields named ``stock_<id>`` = new quantity. Responds with JSON
+    when the request is AJAX (so the tree's expand state is preserved); falls
+    back to a redirect for non-AJAX form posts.
+    """
+    from core.models import InventoryCategory
+    from core.role_utils import get_user_role, ROLE_MANAGER, ROLE_SUPER_ADMIN
+    role = get_user_role(request.user)
+    if role not in (ROLE_MANAGER, ROLE_SUPER_ADMIN):
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return JsonResponse({'success': False, 'message': '无权限'}, status=403)
+        messages.error(request, '无权限')
+        return redirect('core:dashboard')
+
+    updated = 0
+    for key, val in request.POST.items():
+        if not key.startswith('stock_'):
+            continue
+        cat_id = key[6:]
+        if not cat_id.isdigit():
+            continue
+        try:
+            new_stock = int(val)
+        except (ValueError, TypeError):
+            continue
+        InventoryCategory.objects.filter(pk=cat_id).update(current_stock=new_stock)
+        updated += 1
+
+    msg = f'已更新 {updated} 个物料的库存数量'
+    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        return JsonResponse({'success': True, 'message': msg, 'updated': updated})
+    messages.success(request, msg)
+    return redirect('core:inventory_management')
 
 
 @login_required(login_url='core:login')

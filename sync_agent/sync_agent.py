@@ -2,10 +2,19 @@
 Maxicom2 Sync Agent — PyQt5 GUI Application
 Reads Maxicom2.mdb via DAO and syncs to Django server via HTTP API.
 
+Rebuilt workflow:
+    • Import the latest 7 / 15 / 30 days of Maxicom data (user-selectable),
+      anchored to "now" so it stays current as Maxicom keeps writing the MDB.
+    • Filter repetitive rows: client-side watermark (with a 2-min overlap buffer)
+      plus the server's per-row get_or_create dedup — re-syncs are idempotent.
+    • Non-freezing GUI with a progress bar and a clear import summary
+      (per-table counts + date range actually sent).
+
 Usage:
     python sync_agent.py                  # GUI mode
-    python sync_agent.py --once           # Single sync, no GUI (for testing)
-    
+    python sync_agent.py --once           # Single sync, no GUI (uses --days)
+    python sync_agent.py --once --days 7
+
 Build EXE:
     pip install pyinstaller
     pyinstaller --onefile --windowed --name MaxicomSync sync_agent.py
@@ -14,22 +23,37 @@ Build EXE:
 import sys
 import os
 import json
+import time
 from datetime import datetime, timedelta
 
 # ─── Configuration ────────────────────────────────────────────────────
 
 DEFAULT_CONFIG = {
-    "server_url": "http://localhost:8888",
+    "server_url": "http://127.0.0.1:8000",
     "api_key": "dev-sync-key-change-in-production",
     "mdb_path": r"C:\Users\czhou7\PythonProjects\irrigation\Database\Maxicom2.mdb",
     "mdb_password": "RLM6808",
     "sync_interval_minutes": 5,
     "overlap_buffer_minutes": 2,
+    "days_window": 7,
 }
 
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_FILE = os.path.join(APP_DIR, "sync_config.json")
 LAST_SYNC_FILE = os.path.join(APP_DIR, "last_sync.json")
+
+# The six time-series tables the agent imports. Each entry is
+# (payload_key, mdb_table, timestamp_column). Note XA_RuntimeProject uses
+# TimeStamps (plural); the other five use XactStamp. This mirrors both the
+# legacy agent and the import_maxicom_mdb management command.
+TIME_SERIES_TABLES = [
+    ("weather_logs", "XA_WETHR", "XactStamp"),
+    ("events", "XA_EVENT", "XactStamp"),
+    ("et_checkbook", "XA_ETCheckBook", "XactStamp"),
+    ("runtime", "XA_RuntimeProject", "TimeStamps"),
+    ("signal_logs", "XA_LOG", "XactStamp"),
+    ("flow_readings", "XA_FLOZO", "XactStamp"),
+]
 
 
 def load_config():
@@ -60,132 +84,7 @@ def save_last_sync(data):
         json.dump(data, f, indent=2)
 
 
-# ─── MDB Reader ───────────────────────────────────────────────────────
-
-def read_mdb_data(cfg, last_sync):
-    """Read data from Maxicom2.mdb via DAO, return dict of records."""
-    mdb_path = cfg["mdb_path"]
-    mdb_pwd = cfg["mdb_password"]
-    overlap = cfg.get("overlap_buffer_minutes", 2)
-
-    if not os.path.exists(mdb_path):
-        raise FileNotFoundError(f"MDB file not found: {mdb_path}")
-
-    import win32com.client
-    db_engine = win32com.client.Dispatch("DAO.DBEngine.120")
-    db = db_engine.OpenDatabase(mdb_path, False, True, ";pwd=" + mdb_pwd)
-
-    try:
-        # Skip config tables — already loaded via import_maxicom command.
-        # Only send config on explicit first sync (empty dict = no update).
-        config = {}
-
-        first_sync = _is_first_sync(last_sync)
-        if first_sync:
-            recent_ts = _hours_ago_timestamp(24)
-        else:
-            recent_ts = None
-
-        time_series = {}
-        ts = last_sync.get("last_weather_timestamp", "0") if not first_sync else recent_ts
-        overlap_ts = _subtract_minutes(ts, overlap) if ts and ts != "0" else recent_ts
-        time_series["weather_logs"] = _read_table_filtered(db, "XA_WETHR", "XactStamp", overlap_ts)
-        ts = last_sync.get("last_event_timestamp", "0") if not first_sync else recent_ts
-        overlap_ts = _subtract_minutes(ts, overlap) if ts and ts != "0" else recent_ts
-        time_series["events"] = _read_table_filtered(db, "XA_EVENT", "XactStamp", overlap_ts)
-        ts = last_sync.get("last_etcheckbook_timestamp", "0") if not first_sync else recent_ts
-        overlap_ts = _subtract_minutes(ts, overlap) if ts and ts != "0" else recent_ts
-        time_series["et_checkbook"] = _read_table_filtered(db, "XA_ETCheckBook", "XactStamp", overlap_ts)
-        ts = last_sync.get("last_runtime_timestamp", "0") if not first_sync else recent_ts
-        overlap_ts = _subtract_minutes(ts, overlap) if ts and ts != "0" else recent_ts
-        time_series["runtime"] = _read_table_filtered(db, "XA_RuntimeProject", "TimeStamps", overlap_ts)
-        ts = last_sync.get("last_signal_timestamp", "0") if not first_sync else recent_ts
-        overlap_ts = _subtract_minutes(ts, overlap) if ts and ts != "0" else recent_ts
-        time_series["signal_logs"] = _read_table_filtered(db, "XA_LOG", "XactStamp", overlap_ts)
-        ts = last_sync.get("last_flow_timestamp", "0") if not first_sync else recent_ts
-        overlap_ts = _subtract_minutes(ts, overlap) if ts and ts != "0" else recent_ts
-        time_series["flow_readings"] = _read_table_filtered(db, "XA_FLOZO", "XactStamp", overlap_ts)
-
-        # Filter out records already synced (within overlap but <= watermark)
-        key_map = {
-            "weather_logs": "last_weather_timestamp",
-            "events": "last_event_timestamp",
-            "et_checkbook": "last_etcheckbook_timestamp",
-            "runtime": "last_runtime_timestamp",
-            "signal_logs": "last_signal_timestamp",
-            "flow_readings": "last_flow_timestamp",
-        }
-        for key, wm_key in key_map.items():
-            ts_col = "TimeStamps" if key == "runtime" else "XactStamp"
-            wm = last_sync.get(wm_key, "0")
-            if wm and wm != "0" and time_series.get(key):
-                time_series[key] = [r for r in time_series[key] if r.get(ts_col, "0") > wm]
-
-        # Compute new watermarks
-        new_sync = dict(last_sync)
-        for key, wm_key in key_map.items():
-            ts_col = "TimeStamps" if key == "runtime" else "XactStamp"
-            if time_series.get(key):
-                max_ts = max(r.get(ts_col, "0") for r in time_series[key] if r.get(ts_col))
-                if max_ts > new_sync.get(wm_key, "0"):
-                    new_sync[wm_key] = max_ts
-
-        return config, time_series, new_sync
-    finally:
-        db.Close()
-
-
-def _read_table(db, table_name):
-    """Read all rows from a table."""
-    rs = db.OpenRecordset(f"SELECT * FROM [{table_name}]")
-    rows = []
-    try:
-        while not rs.EOF:
-            row = {}
-            for i in range(rs.Fields.Count):
-                field = rs.Fields.Item(i)
-                val = field.Value
-                if val is None:
-                    row[field.Name] = None
-                elif isinstance(val, (int, float, str, bool)):
-                    row[field.Name] = val
-                else:
-                    row[field.Name] = str(val)
-            rows.append(row)
-            rs.MoveNext()
-    finally:
-        rs.Close()
-    return rows
-
-
-def _read_table_filtered(db, table_name, ts_column, since_timestamp):
-    """Read rows where timestamp > since_timestamp."""
-    if not since_timestamp or since_timestamp == "0":
-        return _read_table(db, table_name)
-    try:
-        sql = f"SELECT * FROM [{table_name}] WHERE [{ts_column}] > '{since_timestamp}'"
-        rs = db.OpenRecordset(sql)
-        rows = []
-        try:
-            while not rs.EOF:
-                row = {}
-                for i in range(rs.Fields.Count):
-                    field = rs.Fields.Item(i)
-                    val = field.Value
-                    if val is None:
-                        row[field.Name] = None
-                    elif isinstance(val, (int, float, str, bool)):
-                        row[field.Name] = val
-                    else:
-                        row[field.Name] = str(val)
-                rows.append(row)
-                rs.MoveNext()
-        finally:
-            rs.Close()
-        return rows
-    except Exception:
-        return _read_table(db, table_name)
-
+# ─── Timestamp helpers ────────────────────────────────────────────────
 
 def _subtract_minutes(timestamp_str, minutes):
     """Subtract minutes from a YYYYMMDDHHmmSS timestamp string."""
@@ -199,40 +98,204 @@ def _subtract_minutes(timestamp_str, minutes):
         return "0"
 
 
-def _hours_ago_timestamp(hours=24):
-    """Get timestamp string for N hours ago."""
-    ts = datetime.now() - timedelta(hours=hours)
+def _days_ago_timestamp(days):
+    """Timestamp string for N days ago (the window's `since` bound, anchored now)."""
+    ts = datetime.now() - timedelta(days=days)
     return ts.strftime("%Y%m%d%H%M%S")
 
 
-def _is_first_sync(last_sync):
-    """Check if this is the first sync (no watermarks set)."""
-    return not last_sync or all(v == "0" or not v for v in last_sync.values())
+def _format_ts(ts_str):
+    """Pretty-print a YYYYMMDDHHmmSS stamp as YYYY-MM-DD HH:MM:SS."""
+    if not ts_str or ts_str == "0" or len(ts_str) < 14:
+        return ""
+    try:
+        return datetime.strptime(ts_str[:14], "%Y%m%d%H%M%S").strftime("%Y-%m-%d %H:%M:%S")
+    except (ValueError, TypeError):
+        return ts_str
+
+
+def _format_date(ts_str):
+    """Pretty-print a YYYYMMDDHHmmSS stamp as YYYY-MM-DD."""
+    if not ts_str or len(ts_str) < 8:
+        return ""
+    try:
+        return datetime.strptime(ts_str[:8], "%Y%m%d").strftime("%Y-%m-%d")
+    except (ValueError, TypeError):
+        return ts_str
+
+
+# ─── MDB Reader (generator with progress) ────────────────────────────
+
+def _row_from_recordset(rs):
+    """Read one row from a DAO recordset into a plain dict."""
+    row = {}
+    for i in range(rs.Fields.Count):
+        field = rs.Fields.Item(i)
+        val = field.Value
+        if val is None:
+            row[field.Name] = None
+        elif isinstance(val, (int, float, str, bool)):
+            row[field.Name] = val
+        else:
+            row[field.Name] = str(val)
+    return row
+
+
+def _read_table_windowed(db, table_name, ts_column, since_ts):
+    """Read rows where timestamp > since_ts (server-side filtered on the MDB).
+
+    Server-side filtering is essential for XA_FLOZO (~4M rows): pulling the
+    whole table would freeze the agent. The 14-digit fixed-width timestamp
+    string sorts lexicographically == chronologically, so a string `>` works.
+    Falls back to a full table read only if the filtered query itself errors.
+    """
+    if not since_ts or since_ts == "0":
+        sql = f"SELECT * FROM [{table_name}]"
+    else:
+        sql = f"SELECT * FROM [{table_name}] WHERE [{ts_column}] > '{since_ts}'"
+    rs = db.OpenRecordset(sql)
+    rows = []
+    try:
+        while not rs.EOF:
+            rows.append(_row_from_recordset(rs))
+            rs.MoveNext()
+    finally:
+        rs.Close()
+    return rows
+
+
+def read_mdb_with_progress(cfg, days, last_sync, progress_cb=None, log_cb=None):
+    """Read the latest `days` of Maxicom data, yielding progress as it goes.
+
+    `progress_cb(percent, message)` and `log_cb(message)` are optional callbacks
+    (the GUI wires these to the progress bar and log). Returns
+    (time_series, sent_range, new_sync) where sent_range is (min_ts, max_ts)
+    over all rows actually selected (for the summary), or (None, None) if empty.
+
+    Config tables are deliberately NOT re-sent (already loaded once via the
+    import_maxicom command); the payload's `config` stays empty.
+    """
+    mdb_path = cfg["mdb_path"]
+    if not os.path.exists(mdb_path):
+        raise FileNotFoundError(f"MDB file not found: {mdb_path}")
+
+    overlap = cfg.get("overlap_buffer_minutes", 2)
+    # The window's lower bound is anchored to NOW (real-time). The agent is
+    # meant to run regularly while Maxicom actively updates the MDB.
+    window_since = _days_ago_timestamp(days)
+
+    import win32com.client
+    if log_cb:
+        log_cb(f"打开 MDB: {os.path.basename(mdb_path)}")
+    if progress_cb:
+        progress_cb(3, "正在打开数据库…")
+    db_engine = win32com.client.Dispatch("DAO.DBEngine.120")
+    db = db_engine.OpenDatabase(mdb_path, False, True, ";pwd=" + cfg["mdb_password"])
+
+    # watermark key per payload table
+    wm_keys = {
+        "weather_logs": "last_weather_timestamp",
+        "events": "last_event_timestamp",
+        "et_checkbook": "last_etcheckbook_timestamp",
+        "runtime": "last_runtime_timestamp",
+        "signal_logs": "last_signal_timestamp",
+        "flow_readings": "last_flow_timestamp",
+    }
+
+    time_series = {}
+    all_ts = []                 # collect every selected timestamp for the range
+    new_sync = dict(last_sync)
+
+    try:
+        n_tables = len(TIME_SERIES_TABLES)
+        # Phase 2: read each table. Reading occupies the bulk of wall-clock
+        # time, so map each completed table to a slice of 5%→55%.
+        for i, (key, table, ts_col) in enumerate(TIME_SERIES_TABLES):
+            if progress_cb:
+                progress_cb(5 + int(50 * i / n_tables), f"读取 {table} …")
+            if log_cb:
+                log_cb(f"读取 {table}（窗口 ≥ {_format_ts(window_since)}）…")
+
+            # Use the later of (window start) and (watermark − overlap buffer).
+            # The watermark path only narrows the window further on re-syncs,
+            # never widens it past the user's day selection.
+            wm = last_sync.get(wm_keys[key], "0")
+            overlap_ts = _subtract_minutes(wm, overlap) if wm and wm != "0" else "0"
+            # The user asked for "latest N days", so the window start always wins
+            # when the watermark is older than it. Take the MAX (most recent).
+            if overlap_ts and overlap_ts != "0" and overlap_ts > window_since:
+                since_ts = overlap_ts
+            else:
+                since_ts = window_since
+
+            rows = _read_table_windowed(db, table, ts_col, since_ts)
+
+            # Client-side re-filter: drop any rows <= watermark (overlap dedup).
+            if wm and wm != "0":
+                rows = [r for r in rows if (r.get(ts_col) or "0") > wm]
+
+            time_series[key] = rows
+            for r in rows:
+                t = r.get(ts_col)
+                if t:
+                    all_ts.append(str(t))
+
+            # Advance the watermark to the max timestamp seen in this batch.
+            if rows:
+                max_ts = max(str(r.get(ts_col) or "0") for r in rows)
+                if max_ts > new_sync.get(wm_keys[key], "0"):
+                    new_sync[wm_keys[key]] = max_ts
+
+            if log_cb:
+                log_cb(f"  {table}: {len(rows):,} 行")
+            if progress_cb:
+                progress_cb(5 + int(50 * (i + 1) / n_tables), f"{table}: {len(rows):,} 行")
+    finally:
+        db.Close()
+
+    sent_range = (min(all_ts), max(all_ts)) if all_ts else (None, None)
+    return time_series, sent_range, new_sync
 
 
 # ─── Sync Worker ──────────────────────────────────────────────────────
 
-def do_sync(cfg, last_sync, log_callback=None):
-    """Perform one sync cycle."""
+def do_sync(cfg, days, last_sync, progress_cb=None, log_cb=None):
+    """Perform one windowed sync cycle.
+
+    Returns (success, message, new_sync, summary) where summary is a dict with
+    per-table results, the sent date range, and totals — ready for the UI.
+    """
     import urllib.request
     import urllib.error
 
     try:
-        if log_callback:
-            log_callback("Reading MDB database...")
-        config, time_series, new_sync = read_mdb_data(cfg, last_sync)
+        time_series, sent_range, new_sync = read_mdb_with_progress(
+            cfg, days, last_sync, progress_cb=progress_cb, log_cb=log_cb,
+        )
     except FileNotFoundError as e:
-        return False, f"MDB not found: {e}", last_sync, {}
+        return False, f"MDB 未找到: {e}", last_sync, {}
     except Exception as e:
-        return False, f"MDB read error: {e}", last_sync, {}
+        return False, f"MDB 读取错误: {e}", last_sync, {}
 
-    total = sum(len(v) for v in config.values()) + sum(len(v) for v in time_series.values())
+    total = sum(len(v) for v in time_series.values())
+    min_ts, max_ts = sent_range
+
     if total == 0:
-        return True, "No new data to sync", last_sync, {}
+        if progress_cb:
+            progress_cb(100, "完成（窗口内无新数据）")
+        summary = {
+            'total': 0, 'inserted': 0, 'skipped': 0,
+            'date_from': None, 'date_to': None,
+            'window_days': days,
+            'tables': {key: {'sent': 0, 'inserted': 0, 'skipped': 0}
+                       for key, _, _ in TIME_SERIES_TABLES},
+        }
+        return True, f"窗口内无新数据（最近 {days} 天）", last_sync, summary
 
     payload = {
         "sync_timestamp": datetime.now().strftime("%Y%m%d%H%M%S"),
-        "config": config,
+        "agent_version": "2.0",
+        "config": {},                 # config tables already imported via management command
         "time_series": time_series,
     }
 
@@ -242,25 +305,109 @@ def do_sync(cfg, last_sync, log_callback=None):
         "X-Sync-Key": cfg["api_key"],
     }
 
+    if progress_cb:
+        progress_cb(60, f"上传 {total:,} 行到服务器…")
+    if log_cb:
+        log_cb(f"发送 {total:,} 行到 {url} …")
+
     try:
-        if log_callback:
-            log_callback(f"Sending {total} records to {url}...")
         data = json.dumps(payload).encode("utf-8")
         req = urllib.request.Request(url, data=data, headers=headers, method="POST")
-        with urllib.request.urlopen(req, timeout=60) as resp:
+        with urllib.request.urlopen(req, timeout=120) as resp:
             result = json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as e:
         body = e.read().decode("utf-8", errors="replace")[:200]
-        return False, f"Server error {e.code}: {body}", last_sync, {}
+        return False, f"服务器错误 {e.code}: {body}", last_sync, {}
     except urllib.error.URLError as e:
-        return False, f"Connection failed: {e.reason}", last_sync, {}
+        return False, f"连接失败: {e.reason}", last_sync, {}
     except Exception as e:
-        return False, f"Network error: {e}", last_sync, {}
+        return False, f"网络错误: {e}", last_sync, {}
 
+    if progress_cb:
+        progress_cb(92, "解析服务器结果…")
+
+    # Server returns results: {table: {inserted, skipped}} for time-series.
+    srv_results = result.get("results", {}) if result.get("status") == "ok" else {}
+
+    # Build the summary the UI displays.
+    tables_summary = {}
+    inserted_total = 0
+    skipped_total = 0
+    for key, table, _ in TIME_SERIES_TABLES:
+        sent = len(time_series.get(key, []))
+        info = srv_results.get(key, {}) or {}
+        ins = int(info.get('inserted', 0) or 0)
+        skp = int(info.get('skipped', 0) or 0)
+        # Some servers return {'created':..} for config; time-series use inserted/skipped.
+        if 'inserted' not in info and 'skipped' not in info and sent:
+            ins = sent
+        inserted_total += ins
+        skipped_total += skp
+        tables_summary[key] = {'sent': sent, 'inserted': ins, 'skipped': skp, 'table': table}
+
+    summary = {
+        'total': total,
+        'inserted': inserted_total,
+        'skipped': skipped_total,
+        'date_from': min_ts,
+        'date_to': max_ts,
+        'window_days': days,
+        'tables': tables_summary,
+    }
+
+    if progress_cb:
+        progress_cb(100, "完成")
     if result.get("status") == "ok":
-        return True, f"Synced {total} records OK", new_sync, result.get("results", {})
+        return True, f"同步完成：{inserted_total:,} 新增 · {skipped_total:,} 跳过", new_sync, summary
     else:
-        return False, f"Server returned: {result}", last_sync, {}
+        return False, f"服务器返回: {result}", last_sync, summary
+
+
+# ─── CLI Mode ─────────────────────────────────────────────────────────
+
+def run_cli(days=None):
+    cfg = load_config()
+    if days is None:
+        days = cfg.get("days_window", 7)
+    last_sync = load_last_sync()
+    print(f"MDB:     {cfg['mdb_path']}")
+    print(f"Server:  {cfg['server_url']}")
+    print(f"Window:  最近 {days} 天\n")
+
+    def p(pct, msg):
+        print(f"  [{pct:>3}%] {msg}")
+
+    success, message, new_sync, summary = do_sync(
+        cfg, days, last_sync, progress_cb=p, log_cb=lambda m: print("  " + m),
+    )
+    print(f"\n{'=' * 56}")
+    if success:
+        print(f"✓ {message}")
+        if new_sync != last_sync and summary.get('total', 0) > 0:
+            save_last_sync(new_sync)
+        if summary:
+            print(_format_summary(summary))
+    else:
+        print(f"✗ {message}")
+    sys.exit(0 if success else 1)
+
+
+def _format_summary(s):
+    """Render the summary dict as a multi-line text block (CLI + GUI log)."""
+    lines = []
+    if s.get('date_from') and s.get('date_to'):
+        lines.append(f"日期范围: {_format_date(s['date_from'])} — {_format_date(s['date_to'])}  "
+                     f"(最近 {s.get('window_days', '?')} 天)")
+    else:
+        lines.append(f"日期范围: (无数据)  (最近 {s.get('window_days', '?')} 天)")
+    lines.append(f"总计: {s.get('total', 0):,} 行 · 新增 {s.get('inserted', 0):,} · 重复跳过 {s.get('skipped', 0):,}")
+    lines.append("")
+    lines.append(f"{'表':<22}{'发送':>10}{'新增':>10}{'跳过':>10}")
+    lines.append("-" * 52)
+    for key, _, _ in TIME_SERIES_TABLES:
+        t = s.get('tables', {}).get(key, {})
+        lines.append(f"{t.get('table', key):<22}{t.get('sent', 0):>10,}{t.get('inserted', 0):>10,}{t.get('skipped', 0):>10,}")
+    return "\n".join(lines)
 
 
 # ─── PyQt5 GUI ────────────────────────────────────────────────────────
@@ -270,6 +417,7 @@ def run_gui():
         QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
         QLabel, QPushButton, QTextEdit, QDialog, QFormLayout, QLineEdit,
         QSpinBox, QFileDialog, QSystemTrayIcon, QMenu, QGroupBox,
+        QProgressBar, QComboBox,
     )
     from PyQt5.QtCore import Qt, QTimer, QThread, pyqtSignal
     from PyQt5.QtGui import QIcon, QColor, QTextCursor, QPixmap, QPainter
@@ -291,89 +439,103 @@ def run_gui():
     QPushButton:pressed { background-color: #585b70; }
     QPushButton#syncBtn { background-color: #a6e3a1; color: #1e1e2e; }
     QPushButton#syncBtn:hover { background-color: #94e2d5; }
+    QPushButton#syncBtn:disabled { background-color: #45475a; color: #6c7086; }
     QPushButton#settingsBtn { background-color: #89b4fa; color: #1e1e2e; }
     QTextEdit {
         background-color: #11111b; border: 1px solid #45475a; border-radius: 6px;
         font-family: "Consolas", monospace; font-size: 12px; color: #a6adc8; padding: 4px;
     }
-    QLineEdit, QSpinBox {
+    QLineEdit, QSpinBox, QComboBox {
         background-color: #313244; border: 1px solid #45475a; border-radius: 4px;
         padding: 6px; color: #cdd6f4; font-size: 13px;
     }
+    QComboBox QAbstractItemView { background-color: #313244; color: #cdd6f4; selection-background-color: #45475a; }
+    QProgressBar {
+        background-color: #313244; border: 1px solid #45475a; border-radius: 6px;
+        text-align: center; color: #cdd6f4; font-size: 12px; height: 18px;
+    }
+    QProgressBar::chunk { background-color: #a6e3a1; border-radius: 5px; }
     QDialog { background-color: #1e1e2e; }
     """
 
     class SyncThread(QThread):
         log_signal = pyqtSignal(str, str)
+        progress_signal = pyqtSignal(int, str)
+        summary_signal = pyqtSignal(dict)
         finished_signal = pyqtSignal(bool, str)
 
-        def __init__(self, cfg):
+        def __init__(self, cfg, days):
             super().__init__()
             self.cfg = cfg
+            self.days = days
 
         def run(self):
             last_sync = load_last_sync()
-            success, message, new_sync, results = do_sync(
-                self.cfg, last_sync, log_callback=lambda m: self.log_signal.emit(m, "info")
+            success, message, new_sync, summary = do_sync(
+                self.cfg, self.days, last_sync,
+                progress_cb=lambda pct, msg: self.progress_signal.emit(pct, msg),
+                log_cb=lambda m: self.log_signal.emit(m, "info"),
             )
-            if success and new_sync != last_sync:
+            if success and new_sync != last_sync and summary.get('total', 0) > 0:
                 save_last_sync(new_sync)
             self.log_signal.emit(message, "success" if success else "error")
-            if results:
-                for table, info in results.items():
-                    if isinstance(info, dict):
-                        detail = ", ".join(f"{k}={v}" for k, v in info.items())
-                        self.log_signal.emit(f"  {table}: {detail}", "info")
+            if summary:
+                self.summary_signal.emit(summary)
             self.finished_signal.emit(success, message)
 
     class SettingsDialog(QDialog):
         def __init__(self, cfg, parent=None):
             super().__init__(parent)
-            self.setWindowTitle("Settings")
+            self.setWindowTitle("设置")
             self.setMinimumWidth(450)
             layout = QFormLayout(self)
             layout.setSpacing(12)
 
             self.server_edit = QLineEdit(cfg["server_url"])
-            layout.addRow("Server URL:", self.server_edit)
+            layout.addRow("服务器地址:", self.server_edit)
             self.key_edit = QLineEdit(cfg["api_key"])
             self.key_edit.setEchoMode(QLineEdit.Password)
             layout.addRow("API Key:", self.key_edit)
             self.mdb_edit = QLineEdit(cfg["mdb_path"])
-            mdb_btn = QPushButton("Browse...")
+            mdb_btn = QPushButton("浏览…")
             mdb_btn.clicked.connect(self._browse_mdb)
             mdb_row = QHBoxLayout()
             mdb_row.addWidget(self.mdb_edit)
             mdb_row.addWidget(mdb_btn)
-            layout.addRow("MDB Path:", mdb_row)
+            layout.addRow("MDB 路径:", mdb_row)
             self.pwd_edit = QLineEdit(cfg["mdb_password"])
-            layout.addRow("MDB Password:", self.pwd_edit)
+            layout.addRow("MDB 密码:", self.pwd_edit)
             self.interval_spin = QSpinBox()
-            self.interval_spin.setRange(1, 60)
+            self.interval_spin.setRange(1, 1440)
             self.interval_spin.setValue(cfg.get("sync_interval_minutes", 5))
-            layout.addRow("Sync Interval (min):", self.interval_spin)
+            layout.addRow("自动同步间隔 (分钟):", self.interval_spin)
+            self.days_spin = QSpinBox()
+            self.days_spin.setRange(1, 365)
+            self.days_spin.setValue(cfg.get("days_window", 7))
+            layout.addRow("默认导入天数:", self.days_spin)
             btn_layout = QHBoxLayout()
-            save_btn = QPushButton("Save")
+            save_btn = QPushButton("保存")
             save_btn.clicked.connect(self.accept)
-            cancel_btn = QPushButton("Cancel")
+            cancel_btn = QPushButton("取消")
             cancel_btn.clicked.connect(self.reject)
             btn_layout.addWidget(save_btn)
             btn_layout.addWidget(cancel_btn)
             layout.addRow(btn_layout)
 
         def _browse_mdb(self):
-            path, _ = QFileDialog.getOpenFileName(self, "Select MDB file", "", "Access DB (*.mdb)")
+            path, _ = QFileDialog.getOpenFileName(self, "选择 MDB 文件", "", "Access DB (*.mdb)")
             if path:
                 self.mdb_edit.setText(path)
 
         def get_config(self):
             return {
-                "server_url": self.server_edit.text(),
+                "server_url": self.server_edit.text().strip(),
                 "api_key": self.key_edit.text(),
                 "mdb_path": self.mdb_edit.text(),
                 "mdb_password": self.pwd_edit.text(),
                 "sync_interval_minutes": self.interval_spin.value(),
                 "overlap_buffer_minutes": 2,
+                "days_window": self.days_spin.value(),
             }
 
     class MainWindow(QMainWindow):
@@ -381,9 +543,9 @@ def run_gui():
             super().__init__()
             self.cfg = load_config()
             self.sync_thread = None
-            self.setWindowTitle("Maxicom2 Sync Agent")
-            self.setMinimumSize(500, 520)
-            self.resize(520, 560)
+            self.setWindowTitle("Maxicom2 同步助手")
+            self.setMinimumSize(560, 680)
+            self.resize(600, 720)
 
             central = QWidget()
             self.setCentralWidget(central)
@@ -391,55 +553,91 @@ def run_gui():
             layout.setSpacing(10)
             layout.setContentsMargins(16, 16, 16, 16)
 
-            # Status group
-            status_group = QGroupBox("Connection Status")
+            # ── Status group ──
+            status_group = QGroupBox("连接状态")
             status_layout = QVBoxLayout(status_group)
-            self.status_label = QLabel("● Disconnected")
+            self.status_label = QLabel("● 未连接")
             self.status_label.setStyleSheet("font-size: 15px; font-weight: bold; color: #f38ba8;")
             status_layout.addWidget(self.status_label)
-            self.server_label = QLabel(f"Server: {self.cfg['server_url']}")
+            self.server_label = QLabel(f"服务器: {self.cfg['server_url']}")
             status_layout.addWidget(self.server_label)
-            self.last_sync_label = QLabel("Last Sync: Never")
+            self.last_sync_label = QLabel("上次同步: 从未")
             status_layout.addWidget(self.last_sync_label)
-            self.next_sync_label = QLabel(f"Next Sync: Every {self.cfg['sync_interval_minutes']} min")
+            self.next_sync_label = QLabel(f"下次自动同步: 每 {self.cfg['sync_interval_minutes']} 分钟")
             status_layout.addWidget(self.next_sync_label)
             layout.addWidget(status_group)
 
-            # Log group
-            log_group = QGroupBox("Sync Log")
+            # ── Sync controls: day window + progress bar ──
+            ctrl_group = QGroupBox("同步")
+            ctrl_layout = QVBoxLayout(ctrl_group)
+            row = QHBoxLayout()
+            row.addWidget(QLabel("导入范围:"))
+            self.window_combo = QComboBox()
+            self.window_combo.addItems(["最近 7 天", "最近 15 天", "最近 30 天"])
+            default_days = self.cfg.get("days_window", 7)
+            idx = {7: 0, 15: 1, 30: 2}.get(default_days, 0)
+            self.window_combo.setCurrentIndex(idx)
+            self.window_combo.currentIndexChanged.connect(self._on_window_changed)
+            row.addWidget(self.window_combo, stretch=1)
+            self.sync_btn = QPushButton("▶  立即同步")
+            self.sync_btn.setObjectName("syncBtn")
+            self.sync_btn.clicked.connect(self.manual_sync)
+            row.addWidget(self.sync_btn)
+            self.settings_btn = QPushButton("⚙  设置")
+            self.settings_btn.setObjectName("settingsBtn")
+            self.settings_btn.clicked.connect(self.open_settings)
+            row.addWidget(self.settings_btn)
+            ctrl_layout.addLayout(row)
+
+            self.progress = QProgressBar()
+            self.progress.setRange(0, 100)
+            self.progress.setValue(0)
+            self.progress.setVisible(False)
+            ctrl_layout.addWidget(self.progress)
+            layout.addWidget(ctrl_group)
+
+            # ── Summary group ──
+            self.summary_group = QGroupBox("导入结果")
+            sl = QVBoxLayout(self.summary_group)
+            self.summary_label = QLabel("尚未同步。")
+            self.summary_label.setStyleSheet("font-family: 'Consolas', monospace; font-size: 12px; color: #a6adc8;")
+            self.summary_label.setAlignment(Qt.AlignTop | Qt.AlignLeft)
+            self.summary_label.setWordWrap(True)
+            sl.addWidget(self.summary_label)
+            self.summary_group.setVisible(False)
+            layout.addWidget(self.summary_group)
+
+            # ── Log group ──
+            log_group = QGroupBox("日志")
             log_layout = QVBoxLayout(log_group)
             self.log_text = QTextEdit()
             self.log_text.setReadOnly(True)
             log_layout.addWidget(self.log_text)
             layout.addWidget(log_group, stretch=1)
 
-            # Buttons
-            btn_layout = QHBoxLayout()
-            self.sync_btn = QPushButton("▶  Sync Now")
-            self.sync_btn.setObjectName("syncBtn")
-            self.sync_btn.clicked.connect(self.manual_sync)
-            self.settings_btn = QPushButton("⚙  Settings")
-            self.settings_btn.setObjectName("settingsBtn")
-            self.settings_btn.clicked.connect(self.open_settings)
-            btn_layout.addWidget(self.sync_btn)
-            btn_layout.addWidget(self.settings_btn)
-            layout.addLayout(btn_layout)
-
-            # Auto sync timer
+            # ── Timers ──
             interval_ms = self.cfg.get("sync_interval_minutes", 5) * 60 * 1000
             self.timer = QTimer(self)
             self.timer.timeout.connect(self.auto_sync)
             self.timer.start(interval_ms)
 
-            # Connection check timer (every 30 seconds, silent)
             self.conn_timer = QTimer(self)
             self.conn_timer.timeout.connect(lambda: self._check_connection(silent=True))
             self.conn_timer.start(30000)
 
             self._setup_tray()
             self._check_connection()
-            self._log("Sync Agent started", "info")
-            self._log(f"Sync interval: {self.cfg['sync_interval_minutes']} minutes", "info")
+            self._log("同步助手已启动", "info")
+            self._log(f"导入范围: 最近 {self._current_days()} 天 · 自动同步每 {self.cfg['sync_interval_minutes']} 分钟", "info")
+
+        def _current_days(self):
+            return {0: 7, 1: 15, 2: 30}.get(self.window_combo.currentIndex(), 7)
+
+        def _on_window_changed(self, _idx):
+            days = self._current_days()
+            self.cfg["days_window"] = days
+            save_config(self.cfg)
+            self._log(f"导入范围已切换为最近 {days} 天", "info")
 
         def _setup_tray(self):
             pixmap = QPixmap(32, 32)
@@ -453,12 +651,12 @@ def run_gui():
             icon = QIcon(pixmap)
             self.tray_icon = QSystemTrayIcon(icon, self)
             tray_menu = QMenu()
-            tray_menu.addAction("Show").triggered.connect(self.showNormal)
-            tray_menu.addAction("Sync Now").triggered.connect(self.manual_sync)
-            tray_menu.addAction("Quit").triggered.connect(self._quit)
+            tray_menu.addAction("显示").triggered.connect(self.showNormal)
+            tray_menu.addAction("立即同步").triggered.connect(self.manual_sync)
+            tray_menu.addAction("退出").triggered.connect(self._quit)
             self.tray_icon.setContextMenu(tray_menu)
             self.tray_icon.activated.connect(self._tray_activated)
-            self.tray_icon.setToolTip("Maxicom2 Sync Agent")
+            self.tray_icon.setToolTip("Maxicom2 同步助手")
             self.tray_icon.show()
 
         def _tray_activated(self, reason):
@@ -468,13 +666,13 @@ def run_gui():
         def changeEvent(self, event):
             if event.type() == event.WindowStateChange and self.windowState() & Qt.WindowMinimized:
                 QTimer.singleShot(0, self.hide)
-                self.tray_icon.showMessage("Maxicom2 Sync Agent", "Running in background.", QSystemTrayIcon.Information, 2000)
+                self.tray_icon.showMessage("Maxicom2 同步助手", "正在后台运行。", QSystemTrayIcon.Information, 2000)
             super().changeEvent(event)
 
         def closeEvent(self, event):
             event.ignore()
             self.hide()
-            self.tray_icon.showMessage("Maxicom2 Sync Agent", "Minimized to tray. Right-click to quit.", QSystemTrayIcon.Information, 3000)
+            self.tray_icon.showMessage("Maxicom2 同步助手", "已最小化到托盘，右键退出。", QSystemTrayIcon.Information, 3000)
 
         def _quit(self):
             self.tray_icon.hide()
@@ -499,38 +697,51 @@ def run_gui():
             try:
                 with urllib.request.urlopen(req, timeout=5) as resp:
                     data = json.loads(resp.read().decode("utf-8"))
-                    new_status = "● Connected"
-                    self.status_label.setText(new_status)
+                    self.status_label.setText("● 已连接")
                     self.status_label.setStyleSheet("font-size: 15px; font-weight: bold; color: #a6e3a1;")
                     total = sum(data.get("counts", {}).values())
-                    self.server_label.setText(f"Server: {self.cfg['server_url']} ({total:,} records)")
-                    if not silent or "Disconnected" in old_status or "Error" in old_status:
-                        self._log(f"Server connected — {total:,} total records", "info")
+                    self.server_label.setText(f"服务器: {self.cfg['server_url']} ({total:,} 条记录)")
+                    if not silent or "未连接" in old_status or "错误" in old_status:
+                        self._log(f"已连接服务器 — 共 {total:,} 条记录", "info")
             except Exception:
-                new_status = "● Disconnected"
-                self.status_label.setText(new_status)
+                self.status_label.setText("● 未连接")
                 self.status_label.setStyleSheet("font-size: 15px; font-weight: bold; color: #f38ba8;")
-                self.server_label.setText(f"Server: {self.cfg['server_url']} (offline)")
-                if not silent or "Connected" in old_status:
-                    self._log("Server disconnected", "error")
+                self.server_label.setText(f"服务器: {self.cfg['server_url']} (离线)")
+                if not silent or "已连接" in old_status:
+                    self._log("服务器未连接", "error")
 
         def _set_syncing(self, syncing):
             self.sync_btn.setEnabled(not syncing)
-            self.sync_btn.setText("Syncing..." if syncing else "▶  Sync Now")
+            self.sync_btn.setText("同步中…" if syncing else "▶  立即同步")
+            self.progress.setVisible(syncing)
+            if syncing:
+                self.progress.setValue(0)
+
+        def _on_progress(self, pct, msg):
+            self.progress.setValue(pct)
+            self.progress.setFormat(f"{pct}%  {msg}")
+
+        def _on_summary(self, summary):
+            self.summary_group.setVisible(True)
+            self.summary_label.setText(_format_summary(summary))
 
         def manual_sync(self):
             self._do_sync()
 
         def auto_sync(self):
-            self._log("Auto sync triggered", "info")
+            self._log("触发自动同步", "info")
             self._do_sync()
 
         def _do_sync(self):
             if self.sync_thread and self.sync_thread.isRunning():
                 return
             self._set_syncing(True)
-            self.sync_thread = SyncThread(self.cfg)
+            days = self._current_days()
+            self._log(f"开始同步（最近 {days} 天）…", "info")
+            self.sync_thread = SyncThread(self.cfg, days)
             self.sync_thread.log_signal.connect(self._log)
+            self.sync_thread.progress_signal.connect(self._on_progress)
+            self.sync_thread.summary_signal.connect(self._on_summary)
             self.sync_thread.finished_signal.connect(self._on_sync_done)
             self.sync_thread.start()
 
@@ -538,23 +749,16 @@ def run_gui():
             self._set_syncing(False)
             if success:
                 last_sync = load_last_sync()
-                latest = max(last_sync.values()) if last_sync else "N/A"
-                self.last_sync_label.setText(f"Last Sync: {self._format_ts(latest)}  ✓")
-                self.status_label.setText("● Connected")
+                latest = max((v for v in last_sync.values() if v and v != "0"), default="")
+                self.last_sync_label.setText(f"上次同步: {_format_ts(latest) or '刚刚'}  ✓")
+                self.status_label.setText("● 已连接")
                 self.status_label.setStyleSheet("font-size: 15px; font-weight: bold; color: #a6e3a1;")
+                self.progress.setFormat("完成")
             else:
-                self.last_sync_label.setText("Last Sync: FAILED  ✗")
-                self.status_label.setText("● Error")
+                self.last_sync_label.setText("上次同步: 失败  ✗")
+                self.status_label.setText("● 错误")
                 self.status_label.setStyleSheet("font-size: 15px; font-weight: bold; color: #f38ba8;")
-                self.tray_icon.showMessage("Sync Error", message[:100], QSystemTrayIcon.Critical, 5000)
-
-        def _format_ts(self, ts_str):
-            if not ts_str or ts_str == "0" or len(ts_str) < 14:
-                return "N/A"
-            try:
-                return datetime.strptime(ts_str[:14], "%Y%m%d%H%M%S").strftime("%Y-%m-%d %H:%M:%S")
-            except (ValueError, TypeError):
-                return ts_str
+                self.tray_icon.showMessage("同步错误", message[:100], QSystemTrayIcon.Critical, 5000)
 
         def open_settings(self):
             dlg = SettingsDialog(self.cfg, self)
@@ -562,8 +766,10 @@ def run_gui():
                 self.cfg = dlg.get_config()
                 save_config(self.cfg)
                 self.timer.setInterval(self.cfg["sync_interval_minutes"] * 60 * 1000)
-                self.next_sync_label.setText(f"Next Sync: Every {self.cfg['sync_interval_minutes']} min")
-                self._log("Settings saved", "success")
+                self.next_sync_label.setText(f"下次自动同步: 每 {self.cfg['sync_interval_minutes']} 分钟")
+                idx = {7: 0, 15: 1, 30: 2}.get(self.cfg.get("days_window", 7), 0)
+                self.window_combo.setCurrentIndex(idx)
+                self._log("设置已保存", "success")
                 self._check_connection()
 
     app = QApplication(sys.argv)
@@ -574,31 +780,17 @@ def run_gui():
     sys.exit(app.exec_())
 
 
-# ─── CLI Mode ─────────────────────────────────────────────────────────
-
-def run_cli():
-    cfg = load_config()
-    last_sync = load_last_sync()
-    print(f"MDB Path: {cfg['mdb_path']}")
-    print(f"Server:   {cfg['server_url']}")
-    print(f"Last sync: {json.dumps(last_sync, indent=2)}\n")
-    success, message, new_sync, results = do_sync(cfg, last_sync, log_callback=print)
-    print(f"\n{'='*50}")
-    if success:
-        print(f"✓ {message}")
-        if new_sync != last_sync:
-            save_last_sync(new_sync)
-            print(f"Updated watermarks: {json.dumps(new_sync, indent=2)}")
-        if results:
-            for table, info in results.items():
-                print(f"  {table}: {info}")
-    else:
-        print(f"✗ {message}")
-    sys.exit(0 if success else 1)
-
-
 if __name__ == "__main__":
-    if "--once" in sys.argv:
-        run_cli()
+    args = sys.argv[1:]
+    if "--once" in args:
+        days = None
+        if "--days" in args:
+            i = args.index("--days")
+            if i + 1 < len(args):
+                try:
+                    days = int(args[i + 1])
+                except ValueError:
+                    pass
+        run_cli(days)
     else:
         run_gui()

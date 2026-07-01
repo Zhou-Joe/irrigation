@@ -1,0 +1,252 @@
+{% extends 'core/base.html' %}
+{% load static %}
+
+{% block title %}库存管理{% endblock %}
+{% block nav_inventory_mgmt %}active{% endblock %}
+
+{% block extra_css %}
+<style>
+.iv-wrap { max-width: 900px; margin: 0 auto; padding: 16px; }
+.iv-card { background: #fff; border-radius: 12px; padding: 16px; margin-bottom: 16px; box-shadow: 0 1px 4px rgba(0,0,0,.06); }
+.iv-card h2 { margin: 0 0 12px; font-size: 1.05rem; color: var(--color-primary, #2D6A4F); }
+.iv-hint { font-size: .82rem; color: #888; margin: 0 0 12px; }
+
+/* Date-range filter bar */
+.iv-range { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+.iv-range label { font-size: .82rem; color: #666; }
+.iv-range input[type=date] { padding: 6px 8px; border: 1px solid #d8d8d8; border-radius: 6px; font-size: .88rem; }
+.iv-preset { padding: 5px 12px; border: 1px solid #d8d8d8; border-radius: 16px; background: #fff; font-size: .8rem; cursor: pointer; color: #555; }
+.iv-preset.on { background: var(--color-primary, #2D6A4F); color: #fff; border-color: var(--color-primary, #2D6A4F); }
+
+/* Tree */
+.iv-tree { font-size: .9rem; }
+.iv-branch { margin-left: 4px; }
+.iv-head { display: flex; align-items: center; gap: 6px; padding: 7px 6px; cursor: pointer; border-radius: 6px; user-select: none; }
+.iv-head:hover { background: #f4f7f4; }
+.iv-arrow { display: inline-block; width: 12px; color: #999; transition: transform .15s; font-size: .75rem; }
+.iv-head.open .iv-arrow { transform: rotate(90deg); }
+.iv-name { font-weight: 500; color: #333; }
+.iv-child-count { font-size: .74rem; color: #aaa; }
+
+.iv-body { margin-left: 16px; border-left: 1px dashed #e0e0e0; padding-left: 4px; }
+
+/* Leaf */
+.iv-leaf { margin-left: 4px; }
+.iv-leaf-row { display: flex; align-items: center; gap: 8px; padding: 6px 6px; border-radius: 6px; }
+.iv-leaf-row:hover { background: #f9fbf9; }
+.iv-leaf-name { flex: 1; min-width: 120px; color: #444; }
+.iv-stock-input { width: 80px; padding: 4px 8px; border: 1px solid #d8d8d8; border-radius: 6px; font-size: .88rem; text-align: right; }
+.iv-txn-btn { padding: 4px 10px; border: 1px solid #cfe8d8; border-radius: 6px; background: #f0f7f3; color: var(--color-primary, #2D6A4F); font-size: .78rem; cursor: pointer; white-space: nowrap; }
+.iv-txn-btn:hover { background: #e3f0ea; }
+.iv-txn-btn.loaded { background: #e8f5e9; }
+
+/* Leaf transaction panel (lazy-loaded) */
+.iv-txn-panel { margin: 4px 0 8px 30px; }
+.iv-txn-empty { font-size: .8rem; color: #aaa; padding: 4px 0; }
+.iv-txn-table { width: 100%; border-collapse: collapse; font-size: .8rem; }
+.iv-txn-table th { text-align: left; color: #888; font-weight: 500; padding: 4px 8px; border-bottom: 1px solid #eee; }
+.iv-txn-table td { padding: 5px 8px; border-bottom: 1px solid #f5f5f5; }
+.iv-txn-table .in { color: var(--color-primary, #2D6A4F); font-weight: 600; }
+.iv-txn-table .out { color: #c0392b; font-weight: 600; }
+.iv-txn-loading { font-size: .8rem; color: #aaa; padding: 4px 0; }
+
+/* Title row: heading on the left, save button on the right. Sticky so both
+   stay visible while scrolling through the (very long) category tree. */
+.iv-card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; position: sticky; top: 0; background: #fff; padding: 8px 0; z-index: 10; border-bottom: 1px solid #f0f0f0; }
+.iv-card-head h2 { margin: 0; }
+.iv-head-actions { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+.iv-head-actions #ivSaveMsg { font-size: .8rem; color: #2D6A4F; white-space: nowrap; min-height: 1em; }
+.iv-search { width: 100%; padding: 8px 12px; border: 1px solid #d8d8d8; border-radius: 8px; font-size: .9rem; margin-bottom: 12px; box-sizing: border-box; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="iv-wrap">
+  <div class="form-header" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+    <h1>库存管理</h1>
+  </div>
+
+  {% if messages %}
+  <div class="messages">
+    {% for message in messages %}
+      <div class="alert alert-{{ message.tags }}">{{ message }}</div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <div class="iv-card">
+    <div class="iv-card-head">
+      <h2>库存数量与流水</h2>
+      <div class="iv-head-actions">
+        <span id="ivSaveMsg"></span>
+        <button type="button" class="btn btn-primary" id="ivSaveBtn" onclick="ivSave()">保存库存数量</button>
+      </div>
+    </div>
+    <p class="iv-hint">点击层级展开 · 叶子节点可编辑库存数量并查看出入库记录 · 记录范围由下方日期筛选</p>
+
+    {# Date-range filter — drives the leaf transaction query #}
+    <div class="iv-range">
+      <label>记录范围:</label>
+      <input type="date" id="ivFrom" value="{{ date_from }}">
+      <span>~</span>
+      <input type="date" id="ivTo" value="{{ date_to }}">
+      <button type="button" class="iv-preset" data-days="30" onclick="ivPreset(30)">最近30天</button>
+      <button type="button" class="iv-preset" data-days="90" onclick="ivPreset(90)">最近90天</button>
+      <button type="button" class="iv-preset" data-days="365" onclick="ivPreset(365)">最近1年</button>
+    </div>
+
+    <input type="text" class="iv-search" id="ivSearch" placeholder="搜索物料名称…" oninput="ivFilter()">
+
+    <form method="post" action="{% url 'core:inventory_save_stock' %}">
+      {% csrf_token %}
+      <div class="iv-tree" id="ivTree">
+        {% for root in roots %}
+          {% include 'core/_inventory_tree_node.html' with node=root %}
+        {% empty %}
+          <div style="color:#aaa;padding:14px 0;font-size:.9rem;">暂无物料，请先运行 <code>python manage.py seed_inventory_items</code></div>
+        {% endfor %}
+      </div>
+    </form>
+  </div>
+</div>
+
+<div id="ivToast" style="position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#333;color:#fff;padding:9px 20px;border-radius:20px;font-size:.86em;z-index:1000;opacity:0;transition:opacity .2s;pointer-events:none;"></div>
+
+<script>
+var _ivLoadedTxn = {};  // catId -> true once fetched (reset on date-range change)
+
+// Collapse/expand a branch.
+function ivToggle(head) {
+    var body = head.nextElementSibling;
+    if (!body) return;
+    var open = head.classList.toggle('open');
+    body.style.display = open ? '' : 'none';
+}
+
+// AJAX save: POST the stock inputs as form data so the tree state is preserved
+// (no full-page reload → branches stay expanded). Shows an inline toast.
+function ivSave() {
+    var form = document.querySelector('form[action*="save-stock"]');
+    if (!form) return;
+    var btn = document.getElementById('ivSaveBtn');
+    var msg = document.getElementById('ivSaveMsg');
+    btn.disabled = true; btn.textContent = '保存中…';
+    var fd = new FormData(form);
+    fetch('{% url "core:inventory_save_stock" %}', {
+        method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest' }
+    }).then(function (r) { return r.json(); }).then(function (d) {
+        btn.disabled = false; btn.textContent = '保存库存数量';
+        ivToast(d.message || (d.success ? '已保存' : '保存失败'), !d.success);
+        if (msg) { msg.textContent = d.success ? ('✓ ' + d.message) : ''; msg.style.color = d.success ? '#2D6A4F' : '#c0392b'; }
+    }).catch(function () {
+        btn.disabled = false; btn.textContent = '保存库存数量';
+        ivToast('网络错误，请重试', true);
+    });
+}
+
+function ivToast(text, isErr) {
+    var t = document.getElementById('ivToast');
+    t.textContent = text;
+    t.style.background = isErr ? '#b3261e' : '#333';
+    t.style.opacity = '1';
+    clearTimeout(window._ivToastT);
+    window._ivToastT = setTimeout(function () { t.style.opacity = '0'; }, 2200);
+}
+
+// Lazy-load a leaf's transactions within the current date range.
+function ivLoadTxn(btn, catId) {
+    var panel = btn.parentElement.nextElementSibling;
+    if (!panel) return;
+    var open = panel.style.display !== 'none';
+    if (open) { panel.style.display = 'none'; btn.textContent = '记录 ▾'; return; }
+    panel.style.display = '';
+    btn.textContent = '记录 ▴';
+
+    var from = document.getElementById('ivFrom').value;
+    var to = document.getElementById('ivTo').value;
+    var qs = '?from=' + encodeURIComponent(from) + '&to=' + encodeURIComponent(to);
+
+    // Refresh if not loaded or date range changed since last fetch.
+    if (!_ivLoadedTxn[catId]) {
+        panel.innerHTML = '<div class="iv-txn-loading">加载中…</div>';
+        fetch('/inventory/manage/category/' + catId + '/transactions/' + qs, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+            .then(function (r) { return r.json(); })
+            .then(function (d) {
+                _ivLoadedTxn[catId] = from + '~' + to;  // cache key includes the range
+                btn.classList.add('loaded');
+                if (d.error) { panel.innerHTML = '<div class="iv-txn-loading">' + esc(d.error) + '</div>'; return; }
+                panel.innerHTML = renderTxn(d.records);
+            })
+            .catch(function () { panel.innerHTML = '<div class="iv-txn-loading">加载失败，请重试。</div>'; });
+    }
+}
+
+function renderTxn(records) {
+    if (!records || !records.length) return '<div class="iv-txn-empty">该范围内无记录</div>';
+    var rows = records.map(function (r) {
+        var cls = r.operation === '入库' ? 'in' : 'out';
+        var sign = r.operation === '入库' ? '+' : '−';
+        var ctx = '';
+        if (r.operation === '入库' && r.subtype === '采购' && r.order_no) ctx = ' · 订单 ' + esc(r.order_no);
+        if (r.operation === '出库' && r.subtype === '项目' && r.project) ctx = ' · ' + esc(r.project);
+        if (r.operation === '出库' && r.subtype === '借用' && r.counterparty) ctx = ' · ' + esc(r.counterparty);
+        return '<tr><td>' + esc(r.date) + '</td>' +
+            '<td class="' + cls + '">' + esc(r.operation) + (r.subtype ? '-' + esc(r.subtype) : '') + '</td>' +
+            '<td class="' + cls + '">' + sign + r.quantity + (r.unit ? ' ' + esc(r.unit) : '') + '</td>' +
+            '<td>' + esc(r.worker) + ctx + '</td></tr>';
+    }).join('');
+    return '<table class="iv-txn-table"><thead><tr><th>日期</th><th>类型</th><th>数量</th><th>经办/去向</th></tr></thead><tbody>' + rows + '</tbody></table>';
+}
+
+function esc(s) {
+    var d = document.createElement('div'); d.textContent = s == null ? '' : s; return d.innerHTML;
+}
+
+// Quick date-range presets.
+function ivPreset(days) {
+    document.querySelectorAll('.iv-preset').forEach(function (b) { b.classList.remove('on'); });
+    event.target.classList.add('on');
+    var to = new Date(), from = new Date();
+    from.setDate(from.getDate() - days);
+    document.getElementById('ivFrom').value = from.toISOString().slice(0, 10);
+    document.getElementById('ivTo').value = to.toISOString().slice(0, 10);
+    _invalidateTxnCache();
+}
+
+// Any manual date change invalidates the cached leaf panels so they re-fetch on next open.
+document.getElementById('ivFrom').addEventListener('change', _invalidateTxnCache);
+document.getElementById('ivTo').addEventListener('change', _invalidateTxnCache);
+function _invalidateTxnCache() { _ivLoadedTxn = {}; }
+
+// Name search: hide non-matching leaves + auto-expand their ancestor branches.
+function ivFilter() {
+    var q = (document.getElementById('ivSearch').value || '').trim().toLowerCase();
+    var tree = document.getElementById('ivTree');
+    if (!q) {
+        // Reset: collapse everything back to default.
+        tree.querySelectorAll('.iv-body').forEach(function (b) { b.style.display = 'none'; });
+        tree.querySelectorAll('.iv-head').forEach(function (h) { h.classList.remove('open'); });
+        tree.querySelectorAll('.iv-leaf').forEach(function (l) { l.style.display = ''; });
+        return;
+    }
+    // Walk leaves; show matches and reveal their ancestor branches.
+    tree.querySelectorAll('.iv-leaf').forEach(function (leaf) {
+        var name = (leaf.querySelector('.iv-leaf-name') || {}).textContent || '';
+        var match = name.toLowerCase().indexOf(q) !== -1;
+        leaf.style.display = match ? '' : 'none';
+        if (match) {
+            // Expand every ancestor .iv-body + open its sibling .iv-head.
+            var el = leaf.parentElement;
+            while (el && el !== tree) {
+                if (el.classList.contains('iv-body')) {
+                    el.style.display = '';
+                    var head = el.previousElementSibling;
+                    if (head && head.classList.contains('iv-head')) head.classList.add('open');
+                }
+                el = el.parentElement;
+            }
+        }
+    });
+}
+</script>
+{% endblock %}

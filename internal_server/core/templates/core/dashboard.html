@@ -310,6 +310,22 @@
     </div>
 </div>
 
+<!-- Inventory modal (库存管理) — form opens directly, zone optional -->
+<div class="v2-modal-backdrop" id="invModalBackdrop" style="display:none;" onclick="closeV2Modal('inventory')"></div>
+<div class="v2-modal-container" id="invModalContainer" style="display:none;">
+    <div class="v2-modal-header">
+        <div id="invZoneSummary" style="flex:1;"><h2>库存管理</h2></div>
+        <button class="v2-modal-close" onclick="closeV2Modal('inventory')">&#x2715;</button>
+    </div>
+    <div class="v2-modal-body" id="invModalBody">
+        <div style="text-align:center;padding:30px;color:#888;">加载中...</div>
+    </div>
+    <div class="v2-modal-footer" id="invModalFooter">
+        <button type="button" class="v2-btn-map" onclick="enterMapMode('inventory')">关联区域</button>
+        <button type="button" class="v2-btn-submit" id="invSubmitBtn" onclick="submitV2Inventory()">提交</button>
+    </div>
+</div>
+
 <!-- V2 Map Selection Info Bar (top — shows selection info only) -->
 <div class="v2-map-info-bar" id="v2MapInfoBar" style="display:none;">
     <span id="v2MapInfoText" style="color:#888;">请在地图上选择区域</span>

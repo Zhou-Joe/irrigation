@@ -90,6 +90,19 @@
     .weekly-dashboard { grid-template-columns:1fr; }
     .range-nav { flex-direction:column; align-items:stretch; }
 }
+
+/* Excel-format preview table (工单明细) — mirrors the export's merged header
+   and per-workorder rows. Wrapped in a scrollable container so the wide
+   count-matrix stays usable; the header row sticks to the top while scrolling. */
+.excel-preview-wrap { overflow:auto; max-height:75vh; border:1px solid var(--color-border); border-radius:8px; }
+table.excel-preview { border-collapse:collapse; font-size:0.8rem; white-space:nowrap; }
+table.excel-preview thead th { position:sticky; top:0; z-index:2; background:#1B4332; color:#fff; font-weight:600; font-size:0.75rem; padding:6px 8px; border:1px solid #fff; text-align:center; white-space:nowrap; }
+table.excel-preview tbody td { padding:5px 8px; border:1px solid #e8e8e8; text-align:center; background:#fff; }
+table.excel-preview tbody td.num { text-align:right; font-variant-numeric:tabular-nums; }
+table.excel-preview tbody td.remark { text-align:left; max-width:280px; overflow:hidden; text-overflow:ellipsis; }
+table.excel-preview tbody tr:nth-child(even) td { background:#f8faf8; }
+table.excel-preview tbody tr:hover td { background:#e8f5e9; }
+
 </style>
 {% endblock %}
 
@@ -144,6 +157,58 @@
         <div class="ov-tile warn"><div class="stat-number">{{ pending_count }}</div><div class="stat-label">待修工单</div></div>
         <div class="ov-tile danger"><div class="stat-number">{{ difficult_count }}</div><div class="stat-label">疑难工单</div></div>
     </div>
+
+    {% if is_admin %}
+    {# ── 2. Excel-format preview (same columns/rows as the export) ─────────── #}
+    <div class="section-title collapsible" onclick="toggleSection(this)">工单明细 <span style="font-weight:400;font-size:0.8rem;color:var(--color-text-muted);">(与导出 Excel 格式一致 · {{ excel_preview_rows|length }} 条)</span> <a class="sec-export" href="{% url 'core:work_reports_excel' %}?{{ request.GET.urlencode }}"><i class="fa fa-file-excel-o"></i> 导出 Excel</a> <span class="sec-arrow">▼</span></div>
+    <div class="weekly-dashboard">
+        <div class="dashboard-card full">
+            {% if excel_preview_rows %}
+            <div class="excel-preview-wrap">
+            <table class="stats-table excel-preview">
+                <thead>
+                    {# Base header columns — each spans all header rows (vertical merge) #}
+                    <tr>
+                        {% for h in excel_base_header %}<th rowspan="{{ excel_hdr_rows }}">{{ h }}</th>{% endfor %}
+                        {% for hcell in excel_matrix_header.0 %}<th colspan="{{ hcell.colspan }}"{% if hcell.rowspan > 1 %} rowspan="{{ hcell.rowspan }}"{% endif %}>{{ hcell.text }}</th>{% endfor %}
+                    </tr>
+                    {# Remaining matrix header rows (groups → sub-groups → leaf names) #}
+                    {% for hrow in excel_matrix_header|slice:"1:" %}
+                    <tr>
+                        {% for hcell in hrow %}<th colspan="{{ hcell.colspan }}"{% if hcell.rowspan > 1 %} rowspan="{{ hcell.rowspan }}"{% endif %}>{{ hcell.text }}</th>{% endfor %}
+                    </tr>
+                    {% endfor %}
+                </thead>
+                <tbody>
+                {% for r in excel_preview_rows %}
+                <tr>
+                    <td class="num">{{ r.idx }}</td>
+                    <td>{{ r.date }}</td>
+                    <td>{{ r.workorder_no }}</td>
+                    <td>{{ r.worker }}</td>
+                    <td>{{ r.location }}</td>
+                    <td>{{ r.section }}</td>
+                    <td>{{ r.zone_names }}</td>
+                    <td>{{ r.zone_codes }}</td>
+                    <td class="num">{{ r.team_size }}</td>
+                    <td class="num">{{ r.team_hours }}</td>
+                    <td class="num">{{ r.third_party_count }}</td>
+                    <td class="num">{{ r.third_party_hours }}</td>
+                    <td class="remark">{{ r.materials }}</td>
+                    <td class="remark">{{ r.remark }}</td>
+                    <td></td>
+                    <td>{{ r.difficult }}</td>
+                    <td>{{ r.resolved }}</td>
+                    {% for c in r.counts %}<td class="num">{{ c }}</td>{% endfor %}
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+            </div>
+            {% else %}<div class="chart-empty">该范围内无工单</div>{% endif %}
+        </div>
+    </div>
+    {% endif %}
 
     {# ── 3. By section → nested WorkItem tree (every level shows totals) ─ #}
     <div class="section-title collapsible" onclick="toggleSection(this)">工作内容 · 按章节 <span style="font-weight:400;font-size:0.8rem;color:var(--color-text-muted);">(共 {{ entries_total }} 项 · 计数合计 {{ entries_count_sum }})</span> <button type="button" class="sec-export" onclick="event.stopPropagation();exportStats('section')">导出 CSV</button> <span class="sec-arrow">▼</span></div>
