@@ -5612,7 +5612,7 @@ def stats_zone_heatmap(request):
     land_agg = {k: defaultdict(lambda: {'reports': 0, 'team_hours': 0.0, 'third_hours': 0.0})
                 for k in SCOPE_KEYS}
 
-    for r in wr_qs.prefetch_related('zones').iterator():
+    for r in wr_qs.prefetch_related('zones').iterator(chunk_size=200):
         # Collect the distinct zones / names / lands this report touches.
         r_zone_ids = []
         seen_names = set()
