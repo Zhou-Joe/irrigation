@@ -719,6 +719,71 @@ def _build_zones_payload(today, week_ago):
     ).values_list('zone_id', 'name'):
         plant_names_map[zone_id].append(name)
 
+    # ── Bulk: recent workorders per zone (top N, last 90 days) ──
+    # For each zone, attach up to N recent workorders with: id, date, sections
+    # (work-type labels), first_entry_path (work-content prefix), detail_url.
+    # Bounded window keeps the M2M join small; client-side the list shows under
+    # the zone-popup card next to 设备维护记录.
+    from core.workorder_tree_views import workitem_path_map as _wim_path_map
+    from core.models import WorkItem, WorkReportEntry
+    from django.urls import reverse as _reverse
+    RECENT_WO_WINDOW_DAYS = 90
+    RECENT_WO_PER_ZONE = 5
+    _section_label_lookup = dict(WorkItem.SECTION_CHOICES)
+    wo_window_start = today - timedelta(days=RECENT_WO_WINDOW_DAYS)
+    # Step 1: zone→workreport pairs in window (M2M), keep most recent per zone.
+    recent_wo_map = defaultdict(list)  # zone_id -> list of workreport ids
+    pairs = (WorkReport.objects
+             .filter(date__gte=wo_window_start, zones__in=zone_ids)
+             .values_list('zones', 'id', 'date')
+             .order_by('-date', '-id'))
+    seen_per_zone = defaultdict(int)
+    wr_ids_set = set()
+    for zid, wrid, d in pairs:
+        if seen_per_zone[zid] >= RECENT_WO_PER_ZONE:
+            continue
+        recent_wo_map[zid].append(wrid)
+        wr_ids_set.add(wrid)
+        seen_per_zone[zid] += 1
+    # Step 2: prefetch the workreports + first entry's WorkItem for path lookup.
+    workorder_info_map = {}  # wr_id -> dict
+    if wr_ids_set:
+        path_lookup = _wim_path_map()
+        # Pull one entry per report (the first by id) — that's the "前级" prefix.
+        first_entries = (WorkReportEntry.objects
+                         .filter(work_report_id__in=wr_ids_set)
+                         .select_related('work_item', 'project')
+                         .order_by('work_report_id', 'id'))
+        first_entry_per_report = {}
+        sections_per_report = defaultdict(set)
+        for fe in first_entries:
+            rid = fe.work_report_id
+            if rid not in first_entry_per_report:
+                wi = fe.work_item
+                first_entry_per_report[rid] = {
+                    'path': path_lookup.get(wi.id, wi.name_zh) if wi else '',
+                    'value': fe.count if hasattr(fe, 'count') else '',
+                }
+            sec = getattr(fe.work_item, 'section', '') if fe.work_item else ''
+            if sec:
+                sections_per_report[rid].add(_section_label_lookup.get(sec, sec))
+        # Pull the workreport date (pairs above already gave us this but we want
+        # a single source of truth).
+        for wr in WorkReport.objects.filter(id__in=wr_ids_set).values('id', 'date'):
+            wid = wr['id']
+            workorder_info_map[wid] = {
+                'id': wid,
+                'date': wr['date'].isoformat() if wr['date'] else '',
+                'sections': sorted(sections_per_report[wid]),
+                'first_entry_path': first_entry_per_report.get(wid, {}).get('path', ''),
+                'detail_url': _reverse('core:work_report_detail', args=[wid]),
+            }
+    # Build per-zone list (preserves the date-desc order from pairs query).
+    recent_workorders_map = {}  # zone_id -> list of workorder dicts
+    for zid, wr_ids in recent_wo_map.items():
+        recent_workorders_map[zid] = [workorder_info_map[wid] for wid in wr_ids if wid in workorder_info_map]
+
+
     # ── Build zones_list (no per-zone DB queries) ──
     zones_list = []
     for zone in zones:
@@ -790,6 +855,7 @@ def _build_zones_payload(today, week_ago):
             'water_count': water_count_map.get(zone.id, 0),
             # Recent items (from bulk queries)
             'recent_water': recent_water_map.get(zone.id, []),
+            'recent_workorders': recent_workorders_map.get(zone.id, []),
         })
     return zones_list
 

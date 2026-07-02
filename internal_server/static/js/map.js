@@ -955,6 +955,7 @@
                     currentStatus: zone.current_status || '',
                     equipmentNotes: zone.equipment_maintenance_notes || '',
                     irrigationNotes: zone.irrigation_management_notes || '',
+                    recentWorkorders: zone.recent_workorders || [],
                     hasRemarks: zone.has_remarks || false,
                     hasConfirmedRemarks: zone.has_confirmed_remarks || false,
                     center: zone.center || null,
@@ -1161,6 +1162,7 @@
         { key: 'soilMoisture', label: '土壤湿度', getValue: z => z.soilMoisture },
         { key: 'equipmentNotes', label: '设备维护记录', getValue: z => z.equipmentNotes, isList: true },
         { key: 'irrigationNotes', label: '灌溉管理记录', getValue: z => z.irrigationNotes, isList: true },
+        { key: 'recentWorkorders', label: '工单记录', getValue: z => z.recentWorkorders, isWorkorder: true },
     ];
 
     const CARD_SETTINGS_KEY = 'zoneProfileCardFields';
@@ -1234,6 +1236,32 @@
                 const remaining = entries.length - maxShow;
                 const moreBtn = remaining > 0
                     ? `<div class="notes-expand-btn" style="font-size:0.78em;color:var(--color-primary);padding-top:1px;cursor:pointer;text-decoration:underline;" onclick="window._toggleNotesExpand('${listId}', this)">还有 ${remaining} 条记录</div>`
+                    : '';
+                fieldsHtml += `<div class="popup-field" style="flex-direction:column;align-items:stretch;gap:2px;"><span class="popup-field-label">${f.label}</span><div id="${listId}_collapsed" style="margin-left:0;">${collapsedHtml}${moreBtn}</div><div id="${listId}_expanded" style="margin-left:0;display:none;">${allHtml}<div class="notes-expand-btn" style="font-size:0.78em;color:var(--color-primary);padding-top:1px;cursor:pointer;text-decoration:underline;" onclick="window._toggleNotesExpand('${listId}', this)">收起</div></div></div>`;
+            } else if (f.isWorkorder) {
+                // Render recent workorder list as clickable rows opening detail in a new tab.
+                const entries = Array.isArray(val) ? val : [];
+                if (entries.length === 0) return;
+                const maxShow = 5;
+                const listId = 'wo_' + f.key + '_' + zone.id;
+                const rowHtml = (items) => items.map(w => {
+                    const id = w.id || '';
+                    const date = (w.date || '').replace(/-0*/g, '/').replace(/^20/, '');
+                    const sections = (w.sections || []).join('/');
+                    const path = w.first_entry_path || '';
+                    const url = w.detail_url || ('/work-reports/' + id + '/');
+                    return `<div style="display:flex;gap:6px;font-size:0.82em;padding:2px 0;align-items:baseline;">
+                        <a href="${url}" target="_blank" rel="noopener" style="color:var(--color-primary);font-weight:600;flex-shrink:0;text-decoration:none;" title="在新标签打开工单 #${id}">#${id}</a>
+                        <span style="color:#888;flex-shrink:0;min-width:46px;">${date}</span>
+                        ${sections ? `<span style="color:#1565c0;background:#e3f2fd;padding:0 5px;border-radius:8px;font-size:0.92em;flex-shrink:0;">${sections}</span>` : ''}
+                        <span style="color:#555;word-break:break-all;flex:1;min-width:0;">${path}</span>
+                    </div>`;
+                }).join('');
+                const collapsedHtml = rowHtml(entries.slice(0, maxShow));
+                const allHtml = rowHtml(entries);
+                const remaining = entries.length - maxShow;
+                const moreBtn = remaining > 0
+                    ? `<div class="notes-expand-btn" style="font-size:0.78em;color:var(--color-primary);padding-top:1px;cursor:pointer;text-decoration:underline;" onclick="window._toggleNotesExpand('${listId}', this)">还有 ${remaining} 条工单</div>`
                     : '';
                 fieldsHtml += `<div class="popup-field" style="flex-direction:column;align-items:stretch;gap:2px;"><span class="popup-field-label">${f.label}</span><div id="${listId}_collapsed" style="margin-left:0;">${collapsedHtml}${moreBtn}</div><div id="${listId}_expanded" style="margin-left:0;display:none;">${allHtml}<div class="notes-expand-btn" style="font-size:0.78em;color:var(--color-primary);padding-top:1px;cursor:pointer;text-decoration:underline;" onclick="window._toggleNotesExpand('${listId}', this)">收起</div></div></div>`;
             } else {
