@@ -40,7 +40,7 @@
   .filter-row { display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; }
   .ff { display:flex; flex-direction:column; gap:3px; }
   .ff label { font-size: 0.68rem; color: var(--wr-muted); text-transform: uppercase; letter-spacing: 0.03em; }
-  .ff input[type=date], .ff select { padding: 7px 10px; border:1px solid #e5e7eb; border-radius: 8px; font-size: 0.85rem; background:#fff; color: var(--wr-text); transition: border-color .15s; }
+  .ff input[type=date], .ff input[type=text], .ff select { padding: 7px 10px; border:1px solid #e5e7eb; border-radius: 8px; font-size: 0.85rem; background:#fff; color: var(--wr-text); transition: border-color .15s; }
   .ff input:focus, .ff select:focus { outline:none; border-color: var(--wr-accent); }
   .check-inline { display:flex; align-items:center; gap:5px; font-size:0.8rem; color: var(--wr-text); padding-bottom:7px; cursor:pointer; user-select:none; }
   .btn-sm { padding: 7px 14px; border-radius: 8px; font-size: 0.82rem; font-weight: 600; border:none; cursor:pointer; text-decoration:none; display:inline-flex; align-items:center; }
@@ -159,10 +159,10 @@
   .wr-loadmore:disabled { opacity: 0.6; cursor: default; }
   .wr-loadmore-err { color: var(--wr-danger); font-size: 0.82rem; margin-top: 8px; }
 
-  /* Tab bar (维修日志 / 待确认备注) */
-  .wr-tab-bar { display:flex; gap:6px; margin-bottom:14px; border-bottom:2px solid var(--wr-card-border); }
-  .wr-tab { padding:10px 18px; font-size:0.92rem; font-weight:600; color:var(--wr-muted); background:none; border:none; border-bottom:2px solid transparent; margin-bottom:-2px; cursor:pointer; display:inline-flex; align-items:center; gap:6px; }
-  .wr-tab.active { color:var(--wr-accent); border-bottom-color:var(--wr-accent); }
+  /* Tab bar (维修日志 / 待确认备注 / 媒体下载) — segmented pill style */
+  .wr-tab-bar { display:flex; gap:0; border-radius:10px; overflow:hidden; background:#f0f2f0; margin-bottom:14px; max-width:420px; }
+  .wr-tab { flex:1; padding:9px 0; text-align:center; font-size:0.88rem; font-weight:600; color:#888; background:transparent; border:none; cursor:pointer; transition:all .2s; user-select:none; display:inline-flex; align-items:center; justify-content:center; gap:6px; }
+  .wr-tab.active { background:#fff; color:var(--wr-accent, #2D6A4F); box-shadow:0 1px 3px rgba(0,0,0,.1); }
   .wr-tab-badge { background:#9B2226; color:#fff; font-size:0.68rem; font-weight:700; padding:1px 7px; border-radius:10px; }
 
   /* Remarks panel */
@@ -311,11 +311,14 @@
             <input type="hidden" name="sort" value="{{ filters.sort|default:'created' }}" id="filterSortInput">
             <div class="ff"><label>起始日期</label><input type="date" name="date_from" value="{{ filters.date_from }}" id="dateFrom"></div>
             <div class="ff"><label>截止日期</label><input type="date" name="date_to" value="{{ filters.date_to }}" id="dateTo"></div>
-            <div class="ff"><label>CCU</label>
+            <div class="ff"><label>位置</label>
                 <select name="location">
                     <option value="">全部</option>
                     {% for loc in locations %}<option value="{{ loc.id }}" {% if filters.location == loc.id %}selected{% endif %}>{{ loc.name }}</option>{% endfor %}
                 </select>
+            </div>
+            <div class="ff"><label>工单号</label>
+                <input type="text" name="q" value="{{ filters.q|default:'' }}" placeholder="如 42 或 #42">
             </div>
             {% if is_admin %}
             <div class="ff"><label>处理人</label>
@@ -891,6 +894,7 @@ function loadMore() {
     if (currentFilter.worker) params.set('worker', currentFilter.worker);
     if (currentFilter.is_pending_repair) params.set('is_pending_repair', '1');
     if (currentFilter.is_difficult) params.set('is_difficult', '1');
+    if (currentFilter.q) params.set('q', currentFilter.q);
     if (currentFilter.sort) params.set('sort', currentFilter.sort);
 
     fetch('{% url "core:work_reports" %}?' + params.toString(), {

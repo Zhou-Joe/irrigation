@@ -4619,6 +4619,20 @@ def _report_section_label(report):
     return label_map.get('routine_maint', '常规维护')
 
 
+def _report_materials_summary(report):
+    """One-line summary of a report's material consumption, e.g. "喷头1804 ×2, 4寸管 ×3m".
+
+    Reads the report's linked outbound transaction lines. Returns '' when no
+    materials were consumed. Used to fill the previously-empty 消耗材料 column
+    in both the Excel export and the on-screen preview."""
+    parts = []
+    for txn in getattr(report, '_materials_txn', []):
+        for ln in getattr(txn, '_lines', []):
+            unit = ln.unit or ''
+            parts.append(f"{ln.category.name_zh} ×{int(ln.quantity)}{unit}")
+    return '、'.join(parts)
+
+
 @login_required(login_url='core:login')
 def work_reports_excel(request):
     """Export work orders in the current stats date window as a reporttemplate-style
@@ -4627,7 +4641,7 @@ def work_reports_excel(request):
     reports; others see only their own — same scoping as stats_dashboard.
     """
     import io
-    from core.models import WorkReport, WorkReportEntry, WorkItem
+    from core.models import WorkReport, WorkReportEntry, WorkItem, InventoryTransaction, InventoryTransactionLine
     from core.role_utils import is_admin
     from django.db.models import Prefetch
     from openpyxl import Workbook
@@ -4648,7 +4662,10 @@ def work_reports_excel(request):
     # via to_attr to avoid a duplicate-prefetch conflict.
     qs = _scoped_work_reports_qs(user, admin).filter(date__gte=start, date__lte=end)
     reports = list(qs.prefetch_related(
-        Prefetch('entries', queryset=WorkReportEntry.objects.select_related('work_item').filter(work_item__value_type='count'), to_attr='_count_entries')
+        Prefetch('entries', queryset=WorkReportEntry.objects.select_related('work_item').filter(work_item__value_type='count'), to_attr='_count_entries'),
+        Prefetch('material_consumptions', queryset=InventoryTransaction.objects.prefetch_related(
+            Prefetch('lines', queryset=InventoryTransactionLine.objects.select_related('category'), to_attr='_lines')
+        ), to_attr='_materials_txn'),
     ).order_by('date', 'id'))
 
     # 3) Build workbook with a grouped (merged) multi-row header.
@@ -4735,7 +4752,7 @@ def work_reports_excel(request):
                r.team_hours if r.team_hours else '',
                r.third_party_count or '',
                r.third_party_hours if r.third_party_hours else '',
-               '',  # 消耗材料 — placeholder, business logic TBD
+               _report_materials_summary(r),
                (r.work_content or r.remark or ''),
                '',  # 信息来源 (no dedicated field on WorkReport)
                '是' if r.is_difficult else '',
@@ -4867,8 +4884,17 @@ def stats_dashboard(request):
             base_qs = base_qs.none()
     base_qs = base_qs.filter(date__gte=start, date__lte=end)
 
-    # Materialize once — most aggregations below reuse this list.
-    reports = list(base_qs.prefetch_related('zones__land', 'entries__work_item', 'entries__project'))
+    # Materialize once — most aggregations below reuse this list. Prefetch the
+    # material-consumption outbound lines too, so the Excel preview's 消耗材料
+    # column can be filled without N+1 queries.
+    from django.db.models import Prefetch
+    from core.models import InventoryTransaction, InventoryTransactionLine
+    reports = list(base_qs.prefetch_related(
+        'zones__land', 'entries__work_item', 'entries__project',
+        Prefetch('material_consumptions', queryset=InventoryTransaction.objects.prefetch_related(
+            Prefetch('lines', queryset=InventoryTransactionLine.objects.select_related('category'), to_attr='_lines')
+        ), to_attr='_materials_txn'),
+    ))
     report_ids = [r.id for r in reports]
 
     section_labels = dict(WorkItem.SECTION_CHOICES)
@@ -5209,7 +5235,7 @@ def stats_dashboard(request):
                 'team_hours': r.team_hours if r.team_hours else '',
                 'third_party_count': r.third_party_count or '',
                 'third_party_hours': r.third_party_hours if r.third_party_hours else '',
-                'materials': '',   # 消耗材料 — placeholder, business logic TBD
+                'materials': _report_materials_summary(r),
                 'remark': r.work_content or r.remark or '',
                 'difficult': '是' if r.is_difficult else '',
                 'resolved': '是' if r.is_difficult_resolved else '',
@@ -5428,7 +5454,7 @@ def irrigation_dashboard(request):
             sat_name = ctrl.name if ctrl else f'SAT {st.controller_number}'
             sat_names_seen.add(sat_name)
             station_rows.append({
-                'station': f"{st.controller_channel:02d}",
+                'station': f"{st.controller_channel:02d}" if st.controller_channel is not None else "—",
                 'channel': st.controller_channel,
                 'site': station_site.get(st.id, ''),
                 'satellite': sat_name,
@@ -5515,6 +5541,239 @@ def irrigation_dashboard(request):
         })
 
     return render(request, 'core/irrigation_dashboard.html', context)
+
+
+@login_required(login_url='core:login')
+def stats_zone_heatmap(request):
+    """API: per-zone work-order stats for the 数据报表 heatmap tab.
+
+    Returns ``{zones: [...], max: {reports, hours, difficult}}`` scoped to the
+    same date window the stats page uses (via _resolve_stats_window). Each zone
+    carries its boundary points + center (so the JS can draw polygons without a
+    second fetch) and four metric values: report count, total hours, entry count
+    (填报数量), and difficult/pending count.
+    """
+    from core.models import Zone, WorkReport, WorkReportEntry
+    from collections import defaultdict
+
+    # --- resolve date range (same helper as stats_dashboard) ---
+    start, end = _resolve_stats_window(request)
+    wr_qs = WorkReport.objects.filter(date__gte=start, date__lte=end)
+
+    # --- optional worker filter (?workers=1,3,5) ---
+    workers_param = request.GET.get('workers', '').strip()
+    if workers_param:
+        wids = [int(x) for x in workers_param.split(',') if x.strip().isdigit()]
+        if wids:
+            wr_qs = wr_qs.filter(worker_id__in=wids)
+
+    # active_boundary_points is a Python @property (resolves dxf vs manual), so
+    # we can't filter on it in the ORM — load all zones and filter in Python.
+    all_zones = list(Zone.objects.select_related('land'))
+    zones_with_boundary = [z for z in all_zones if z.active_boundary_points]
+    zone_id_set = set(z.id for z in zones_with_boundary)
+    # zone_id -> zone object (for boundary lookup during output).
+    zone_map = {z.id: z for z in zones_with_boundary}
+
+    # Pre-aggregate entry counts per report (sum of WorkReportEntry.count).
+    report_ids = list(wr_qs.values_list('id', flat=True))
+    entry_count_map = defaultdict(int)
+    if report_ids:
+        from django.db.models import Sum
+        for row in (WorkReportEntry.objects
+                    .filter(work_report_id__in=report_ids)
+                    .values('work_report_id')
+                    .annotate(total=Sum('count'))):
+            entry_count_map[row['work_report_id']] = row['total'] or 0
+
+    # ── Deduplicated aggregation at all 3 hierarchy levels ────────────────
+    # At zone level, a report touching N zones credits each zone once (full
+    # hours). But at land/name level, the same report must count only ONCE per
+    # land (or name) — otherwise a multi-zone report is double-counted when its
+    # zones are aggregated upward.
+    #
+    # We do this by iterating reports and, for each, crediting each DISTINCT
+    # land / name / zone it touches exactly once.
+    SCOPE_KEYS = ['all', 'difficult', 'pending', 'risk']
+
+    def _blank():
+        return {k: {'reports': 0, 'team_hours': 0.0, 'third_hours': 0.0}
+                for k in SCOPE_KEYS}
+
+    # agg[entity_key][scope] = counters. entity_key is prefixed by level so the
+    # same land appearing in different names doesn't collide.
+    agg = defaultdict(lambda: {'all': _blank(), 'difficult': _blank(),
+                               'pending': _blank(), 'risk': _blank()})
+    # Actually simpler: 4 separate dicts, one per scope.
+    zone_agg = {k: defaultdict(lambda: {'reports': 0, 'team_hours': 0.0, 'third_hours': 0.0})
+                for k in SCOPE_KEYS}
+    name_agg = {k: defaultdict(lambda: {'reports': 0, 'team_hours': 0.0, 'third_hours': 0.0})
+                for k in SCOPE_KEYS}
+    land_agg = {k: defaultdict(lambda: {'reports': 0, 'team_hours': 0.0, 'third_hours': 0.0})
+                for k in SCOPE_KEYS}
+
+    for r in wr_qs.prefetch_related('zones').iterator():
+        # Collect the distinct zones / names / lands this report touches.
+        r_zone_ids = []
+        seen_names = set()
+        seen_lands = set()
+        for z in r.zones.all():
+            if z.id not in zone_id_set:
+                continue
+            land = z.land.name if z.land else '未分类'
+            nm = z.name or z.code
+            name_key = land + '||' + nm
+            r_zone_ids.append(z.id)
+            seen_names.add(name_key)
+            seen_lands.add(land)
+        if not r_zone_ids:
+            continue
+
+        team_h = r.team_hours or 0
+        third_h = r.third_party_hours or 0
+        scopes = ['all']
+        if r.is_difficult:
+            scopes.append('difficult')
+        if r.is_pending_repair:
+            scopes.append('pending')
+        if r.is_difficult or r.is_pending_repair:
+            scopes.append('risk')
+
+        # Credit zone level: each touched zone gets full credit.
+        for zid in r_zone_ids:
+            for k in scopes:
+                d = zone_agg[k][zid]
+                d['reports'] += 1
+                d['team_hours'] += team_h
+                d['third_hours'] += third_h
+        # Credit name level: each distinct name gets credit ONCE.
+        for nk in seen_names:
+            for k in scopes:
+                d = name_agg[k][nk]
+                d['reports'] += 1
+                d['team_hours'] += team_h
+                d['third_hours'] += third_h
+        # Credit land level: each distinct land gets credit ONCE.
+        for lk in seen_lands:
+            for k in scopes:
+                d = land_agg[k][lk]
+                d['reports'] += 1
+                d['team_hours'] += team_h
+                d['third_hours'] += third_h
+
+    def _scope_dict(agg_dict, key):
+        """Build the 4-scope breakdown (all/difficult/pending/risk) for one key."""
+        def _round_sc(d):
+            th = round(d['team_hours'], 1)
+            tph = round(d['third_hours'], 1)
+            return {
+                'reports': d['reports'],
+                'team_hours': th,
+                'third_hours': tph,
+                'hours': round(th + tph, 1),
+            }
+        return {
+            'all': _round_sc(agg_dict['all'][key]),
+            'difficult': _round_sc(agg_dict['difficult'][key]),
+            'pending': _round_sc(agg_dict['pending'][key]),
+            'risk': _round_sc(agg_dict['risk'][key]),
+        }
+
+    # ── Build the zone-level output (same shape as before, for the map) ────
+    zones_out = []
+    for z in zones_with_boundary:
+        bp = z.active_boundary_points
+        center = get_zone_center(bp)
+        scopes = _scope_dict(zone_agg, z.id)
+        a = scopes['all']
+        zones_out.append({
+            'id': z.id,
+            'code': z.code,
+            'name': z.name or '',
+            'land_name': z.land.name if z.land else '',
+            'boundary_points': bp,
+            'center': center,
+            'reports': a['reports'],
+            'team_hours': a['team_hours'],
+            'third_hours': a['third_hours'],
+            'hours': a['hours'],
+            'f_difficult': scopes['difficult'],
+            'f_pending': scopes['pending'],
+            'f_risk': scopes['risk'],
+        })
+
+    # ── Build name-level + land-level aggregates (for the higher granularities) ─
+    # Collect all distinct name_keys and land_keys that appeared.
+    name_keys = set()
+    land_keys = set()
+    for k in SCOPE_KEYS:
+        name_keys.update(name_agg[k].keys())
+        land_keys.update(land_agg[k].keys())
+
+    names_out = []
+    for nk in name_keys:
+        parts = nk.split('||', 1)
+        land = parts[0] if len(parts) > 0 else '未分类'
+        nm = parts[1] if len(parts) > 1 else ''
+        scopes = _scope_dict(name_agg, nk)
+        a = scopes['all']
+        names_out.append({
+            'key': nk,
+            'land_name': land,
+            'name': nm,
+            'reports': a['reports'],
+            'team_hours': a['team_hours'],
+            'third_hours': a['third_hours'],
+            'hours': a['hours'],
+            'f_difficult': scopes['difficult'],
+            'f_pending': scopes['pending'],
+            'f_risk': scopes['risk'],
+        })
+
+    lands_out = []
+    for lk in land_keys:
+        scopes = _scope_dict(land_agg, lk)
+        a = scopes['all']
+        lands_out.append({
+            'key': lk,
+            'land_name': lk,
+            'reports': a['reports'],
+            'team_hours': a['team_hours'],
+            'third_hours': a['third_hours'],
+            'hours': a['hours'],
+            'f_difficult': scopes['difficult'],
+            'f_pending': scopes['pending'],
+            'f_risk': scopes['risk'],
+        })
+
+    def _max_from(rows, metric):
+        return max((r[metric] for r in rows), default=0)
+
+    # Distinct workers in the (unfiltered) date window — for the dropdown. We
+    # query the base window (ignoring the workers param) so the list is stable
+    # regardless of the current filter selection.
+    worker_rows = (WorkReport.objects
+                   .filter(date__gte=start, date__lte=end, worker__isnull=False)
+                   .values('worker__id', 'worker__full_name')
+                   .distinct()
+                   .order_by('worker__full_name'))
+    workers_out = [{'id': r['worker__id'], 'name': r['worker__full_name'] or ''}
+                   for r in worker_rows]
+
+    # Max is computed at zone level (the finest granularity) — the heatmap
+    # recalculates its own max client-side when the granularity changes.
+    return JsonResponse({
+        'zones': zones_out,
+        'names': names_out,
+        'lands': lands_out,
+        'workers': workers_out,
+        'max': {
+            'reports': _max_from(zones_out, 'reports'),
+            'team_hours': _max_from(zones_out, 'team_hours'),
+            'third_hours': _max_from(zones_out, 'third_hours'),
+            'hours': _max_from(zones_out, 'hours'),
+        },
+    }, json_dumps_params={'ensure_ascii': False})
 
 
 @login_required(login_url='core:login')
@@ -6403,6 +6662,9 @@ def _work_report_filters(request):
     difficult = request.GET.get('is_difficult')
     pending = request.GET.get('is_pending_repair')
     before_id = request.GET.get('before_id')
+    # Free-text search by work-order number (id). Accepts "42", "#42", or a
+    # fragment; strips the leading # and matches as a prefix on the id.
+    q = (request.GET.get('q') or '').strip().lstrip('#')
     sort = (request.GET.get('sort') or WORK_REPORTS_DEFAULT_SORT).strip()
     if sort not in WORK_REPORTS_SORT_OPTIONS:
         sort = WORK_REPORTS_DEFAULT_SORT
@@ -6414,7 +6676,7 @@ def _work_report_filters(request):
         today = timezone.localdate()
         date_from = (today - timedelta(days=WORK_REPORTS_DEFAULT_DAYS)).isoformat()
 
-    return date_from, date_to, location_id, worker_id, difficult, pending, before_id, sort
+    return date_from, date_to, location_id, worker_id, difficult, pending, before_id, sort, q
 
 
 def _scoped_work_reports_qs(user, admin, sort=WORK_REPORTS_DEFAULT_SORT):
@@ -6544,7 +6806,7 @@ def work_reports_list(request):
     user = request.user
     admin = is_admin(user)
 
-    date_from, date_to, location_id, worker_id, difficult, pending, before_id, sort = _work_report_filters(request)
+    date_from, date_to, location_id, worker_id, difficult, pending, before_id, sort, q = _work_report_filters(request)
 
     qs = _scoped_work_reports_qs(user, admin, sort=sort)
     qs = qs.annotate(comment_count=Count('comments'))
@@ -6561,6 +6823,11 @@ def work_reports_list(request):
         qs = qs.filter(is_difficult=True)
     if pending:
         qs = qs.filter(is_pending_repair=True)
+    # Work-order number search: match the id (or #id) as a prefix so "4" finds
+    # #4, #40-49, #400-499, etc. An exact integer narrows to that one report.
+    if q:
+        if q.isdigit():
+            qs = qs.filter(id__startswith=q)
     # Cursor pagination — older records have smaller ids under (-date, -id).
     if before_id:
         try:
@@ -6623,6 +6890,7 @@ def work_reports_list(request):
             'is_difficult': bool(difficult),
             'is_pending_repair': bool(pending),
             'sort': sort,
+            'q': q,
         },
         'last_id': reports[-1].id if reports else None,
         'is_admin': admin,
@@ -6675,7 +6943,7 @@ def work_report_photos(request):
     if not admin:
         return JsonResponse({'reports': [], 'error': '无权限'}, status=403)
 
-    date_from, date_to, location_id, worker_id, difficult, pending, before_id, sort = _work_report_filters(request)
+    date_from, date_to, location_id, worker_id, difficult, pending, before_id, sort, q = _work_report_filters(request)
     qs = _scoped_work_reports_qs(user, admin, sort=sort).filter(date__gte=date_from)
     if date_to:
         qs = qs.filter(date__lte=date_to)
@@ -6687,6 +6955,8 @@ def work_report_photos(request):
         qs = qs.filter(is_difficult=True)
     if pending:
         qs = qs.filter(is_pending_repair=True)
+    if q and q.isdigit():
+        qs = qs.filter(id__startswith=q)
 
     # 只取带媒体的工单（排除空 photos / 空 list）。限制条数避免一次拉太多。
     page = list(qs.exclude(photos=[]).exclude(photos__isnull=True)[:200])
@@ -7053,6 +7323,13 @@ def work_report_detail(request, report_id):
         'tree_entry_groups': list(grouped.values()),
         'zone_hierarchy': report.zone_hierarchy,
         'related_remarks': related_remarks,
+        # Material consumption (材料消耗): the report's linked outbound transactions,
+        # flattened to [{name, quantity, unit}] rows for display.
+        'materials': [
+            {'name': ln.category.name_zh, 'quantity': ln.quantity, 'unit': ln.unit}
+            for txn in report.material_consumptions.all()
+            for ln in txn.lines.select_related('category')
+        ],
     })
 
 
@@ -7314,7 +7591,8 @@ def workorder_mobile_v2(request):
     from core.role_utils import ROLE_SUPER_ADMIN, ROLE_MANAGER, resolve_or_create_worker
     from core.workorder_tree_views import (
         _calc_hours, _save_entries, _collect_entry_photos, _save_photo,
-        _resolve_pending_repairs, _record_edit,
+        _resolve_pending_repairs, _record_edit, _save_workorder_materials,
+        _resolve_material_dest,
     )
     from datetime import date, datetime, time
 
@@ -7446,6 +7724,13 @@ def workorder_mobile_v2(request):
             # _save_entries deletes-then-recreates, so it's idempotent on edit.
             entries = json.loads(request.POST.get('entries', '[]') or '[]')
             _save_entries(report, entries, _collect_entry_photos(request))
+            # Material consumption (材料消耗): rebuild the report's outbound
+            # transaction from the cart (rolls back prior, then applies). The
+            # destination is auto-derived from the work category or user-picked.
+            materials = json.loads(request.POST.get('materials', '[]') or '[]')
+            m_dest, m_proj, m_cp = _resolve_material_dest(request, entries)
+            _save_workorder_materials(report, materials, entry_subtype=m_dest,
+                                      related_project_id=m_proj, counterparty=m_cp)
             # 计划性维修: resolve the checked past 待修 workorders (create only —
             # re-resolving on edit would double-link).
             if not is_edit:
@@ -7580,7 +7865,8 @@ def workorder_modal_data(request):
     from core.role_utils import get_worker_for_user, get_user_role, is_admin, ROLE_FIELD_WORKER, ROLE_SUPER_ADMIN, ROLE_MANAGER
     from core.workorder_tree_views import (
         serialize_workitem_tree, serialize_projects, IRRIGATION_SUBCATEGORIES,
-        serialize_existing_entries, _report_header_dict,
+        serialize_existing_entries, _report_header_dict, _serialize_workorder_materials,
+        _serialize_workorder_material_dest,
     )
     from datetime import date, datetime
     from django.shortcuts import get_object_or_404
@@ -7620,12 +7906,17 @@ def workorder_modal_data(request):
         'now_time': now.strftime('%H:%M'),
         'default_time': default_time,
         'worker_name': worker.full_name if worker else request.user.get_full_name() or request.user.username,
+        # Inventory catalog so the workorder modal can render the material-
+        # consumption picker without a second round trip.
+        'inventory_tree': serialize_inventory_tree(),
     }
     if report:
         payload['report_id'] = report.id
         payload['header'] = _report_header_dict(report)
         payload['existing'] = serialize_existing_entries(report)
         payload['report_photos'] = report.photos or []
+        payload['existing_materials'] = _serialize_workorder_materials(report)
+        payload['existing_material_dest'] = _serialize_workorder_material_dest(report)
     return JsonResponse(payload)
 
 
@@ -7656,13 +7947,14 @@ def water_request_modal_data(request):
 def serialize_inventory_tree():
     """Emit the InventoryCategory tree as nested JSON (depth-first).
 
-    Each leaf carries ``current_stock`` so the mobile form can display it
-    read-only. Mirrors serialize_workitem_tree's algorithm.
+    Each leaf carries ``current_stock``, ``min_stock`` and ``is_main_material``
+    so the mobile form can display them read-only. Mirrors serialize_workitem_tree's algorithm.
     """
     from core.models import InventoryCategory
     qs = (InventoryCategory.objects.filter(active=True)
           .order_by('order', 'code')
-          .values('id', 'code', 'name_zh', 'parent_id', 'current_stock'))
+          .values('id', 'code', 'name_zh', 'parent_id', 'current_stock',
+                  'min_stock', 'is_main_material', 'node_type'))
     nodes = {n['id']: {**n, 'name': n['name_zh'], 'children': []} for n in qs}
     roots = []
     for n in qs:
@@ -7862,10 +8154,41 @@ def inventory_management(request):
     date_from = request.GET.get('from') or (today - timedelta(days=30)).isoformat()
     date_to = request.GET.get('to') or today.isoformat()
 
+    # Transactions ledger (出入库记录 tab): every transaction in the date range
+    # with its lines expanded, newest first. Prefetch lines + related objects so
+    # the template renders without N+1 queries.
+    from core.models import InventoryTransaction
+    txns = (InventoryTransaction.objects
+            .filter(date__gte=date_from, date__lte=date_to)
+            .select_related('worker', 'related_project', 'zone', 'work_report')
+            .prefetch_related('lines__category')
+            .order_by('-date', '-id'))
+
+    # Stockable leaves for the alert tab — {id, name, path, stock, min}. The
+    # threshold filtering is done client-side so the slider updates instantly.
+    leaves = []
+    for c in cats:
+        if c.node_type != 'part':
+            continue   # only 'part' nodes carry stock; empty categories are skipped
+        # Build a display path (ancestor names) for context.
+        chain = []
+        p = c.parent
+        while p:
+            chain.append(p.name_zh)
+            p = p.parent
+        chain.reverse()
+        leaves.append({
+            'id': c.id, 'name': c.name_zh, 'path': ' › '.join(chain),
+            'stock': c.current_stock, 'min': c.min_stock,
+            'main': c.is_main_material,
+        })
+
     return render(request, 'core/inventory_management.html', {
         'roots': roots,
         'date_from': date_from,
         'date_to': date_to,
+        'txns': txns,
+        'leaves_json': json.dumps(leaves, ensure_ascii=False),
     })
 
 
@@ -7916,11 +8239,15 @@ def inventory_category_transactions(request, cat_id):
 @require_POST
 @login_required(login_url='core:login')
 def inventory_save_stock(request):
-    """Update current_stock for one or more inventory categories (manager only).
+    """Update inventory category attributes for one or more leaves (manager only).
 
-    Reads POST fields named ``stock_<id>`` = new quantity. Responds with JSON
-    when the request is AJAX (so the tree's expand state is preserved); falls
-    back to a redirect for non-AJAX form posts.
+    Reads three kinds of POST fields:
+      • ``stock_<id>`` — current_stock (int)
+      • ``min_<id>``   — min_stock (int)
+      • ``main_<id>``  — is_main_material (checkbox: present=on, absent=off)
+
+    Responds with JSON when the request is AJAX (so the tree's expand state is
+    preserved); falls back to a redirect for non-AJAX form posts.
     """
     from core.models import InventoryCategory
     from core.role_utils import get_user_role, ROLE_MANAGER, ROLE_SUPER_ADMIN
@@ -7931,23 +8258,181 @@ def inventory_save_stock(request):
         messages.error(request, '无权限')
         return redirect('core:dashboard')
 
-    updated = 0
+    # Collect the three field types into per-id update dicts so we issue one
+    # .update() per touched category instead of three.
+    changes = {}   # cat_id -> {field: value}
     for key, val in request.POST.items():
-        if not key.startswith('stock_'):
-            continue
-        cat_id = key[6:]
-        if not cat_id.isdigit():
-            continue
-        try:
-            new_stock = int(val)
-        except (ValueError, TypeError):
-            continue
-        InventoryCategory.objects.filter(pk=cat_id).update(current_stock=new_stock)
+        if key.startswith('stock_') and key[6:].isdigit():
+            cid = key[6:]
+            try:
+                changes.setdefault(cid, {})['current_stock'] = int(val)
+            except (ValueError, TypeError):
+                pass
+        elif key.startswith('min_') and key[4:].isdigit():
+            cid = key[4:]
+            try:
+                changes.setdefault(cid, {})['min_stock'] = int(val)
+            except (ValueError, TypeError):
+                pass
+        elif key.startswith('main_') and key[5:].isdigit():
+            # Checkbox: any presence means "on".
+            changes.setdefault(key[5:], {})['is_main_material'] = True
+
+    # Any category that has a main_ checkbox absent from the POST was unchecked.
+    # We still need to flip it to False — but only for categories shown on the
+    # page (which are exactly the ones whose stock_/min_ fields were submitted).
+    for cid in changes:
+        changes[cid].setdefault('is_main_material', False)
+
+    updated = 0
+    for cid, fields in changes.items():
+        InventoryCategory.objects.filter(pk=cid).update(**fields)
         updated += 1
 
-    msg = f'已更新 {updated} 个物料的库存数量'
+    msg = f'已更新 {updated} 个物料的库存设置'
     if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
         return JsonResponse({'success': True, 'message': msg, 'updated': updated})
+    messages.success(request, msg)
+    return redirect('core:inventory_management')
+
+
+@require_POST
+@login_required(login_url='core:login')
+def inventory_category_create(request):
+    """Create a new inventory category (sub-directory or leaf part) under a parent.
+
+    Manager-only. ``parent_id`` may be empty (creates a top-level root). ``node_type``
+    is 'category' (a branch that can hold children) or 'part' (a leaf — also gets
+    initial stock/min/main values). The code is derived from the parent's code path
+    + a slugified name + a numeric suffix to stay unique.
+    """
+    import re
+    from core.models import InventoryCategory
+    from core.role_utils import get_user_role, ROLE_MANAGER, ROLE_SUPER_ADMIN
+    role = get_user_role(request.user)
+    if role not in (ROLE_MANAGER, ROLE_SUPER_ADMIN):
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return JsonResponse({'success': False, 'message': '无权限'}, status=403)
+        messages.error(request, '无权限')
+        return redirect('core:inventory_management')
+
+    name = (request.POST.get('name') or '').strip()
+    if not name:
+        return _iv_create_err(request, '请填写名称')
+    node_type = request.POST.get('node_type') or 'category'
+    parent_id = request.POST.get('parent_id') or ''
+
+    parent = None
+    if parent_id:
+        parent = InventoryCategory.objects.filter(pk=parent_id).first()
+        if not parent:
+            return _iv_create_err(request, '父节点不存在')
+
+    # Derive a stable, unique code: parent.code + slug(name) + .N suffix if needed.
+    base = _iv_slug(name)
+    if parent:
+        prefix = parent.code + '.' + base
+        level = parent.level + 1
+    else:
+        prefix = base
+        level = 0
+    code = prefix
+    n = 1
+    while InventoryCategory.objects.filter(code=code).exists():
+        code = f'{prefix}.{n}'
+        n += 1
+
+    # order: append after the last sibling so new nodes show up at the end.
+    last_order = (InventoryCategory.objects.filter(parent=parent)
+                  .order_by('-order').values_list('order', flat=True).first()) or 0
+
+    cat = InventoryCategory.objects.create(
+        code=code, parent=parent, name_zh=name, level=level,
+        order=last_order + 1, node_type=node_type,
+    )
+    # Leaf-only attributes (a 'part' starts as a leaf; a 'category' has no stock).
+    if node_type == 'part':
+        try:
+            cat.current_stock = int(request.POST.get('current_stock') or 0)
+        except (ValueError, TypeError):
+            cat.current_stock = 0
+        try:
+            cat.min_stock = int(request.POST.get('min_stock') or 0)
+        except (ValueError, TypeError):
+            cat.min_stock = 0
+        cat.is_main_material = bool(request.POST.get('is_main_material'))
+        cat.save()
+
+    msg = f'已创建「{name}」' + ('（部件）' if node_type == 'part' else '（目录）')
+    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        # Return full node data so the frontend can insert it into the live DOM
+        # without a page reload (preserving tab + expand state).
+        return JsonResponse({
+            'success': True, 'message': msg, 'id': cat.id,
+            'node': {
+                'id': cat.id, 'name': cat.name_zh, 'node_type': cat.node_type,
+                'current_stock': cat.current_stock, 'min_stock': cat.min_stock,
+                'is_main_material': cat.is_main_material, 'level': cat.level,
+                'parent_id': parent.id if parent else None,
+            },
+        })
+    messages.success(request, msg)
+    return redirect('core:inventory_management')
+
+
+def _iv_create_err(request, message):
+    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        return JsonResponse({'success': False, 'message': message}, status=400)
+    messages.error(request, message)
+    return redirect('core:inventory_management')
+
+
+def _iv_slug(name):
+    """Best-effort ASCII slug for code derivation. Falls back to pinyin-less
+    stripping: non-alphanumerics removed; Chinese chars become 'cat' so the code
+    stays ASCII-stable (the real uniqueness comes from the .N suffix anyway)."""
+    import re
+    s = re.sub(r'[^A-Za-z0-9]+', '', name).lower()
+    return s[:30] if s else 'cat'
+
+
+@require_POST
+@login_required(login_url='core:login')
+def inventory_category_delete(request, cat_id):
+    """Delete an inventory category — but only if it has no children and no
+    transaction history (PROTECT on InventoryTransactionLine.category would raise
+    otherwise). Soft-block with a clear message when blocked.
+    """
+    from core.models import InventoryCategory, InventoryTransactionLine
+    from django.db.models import ProtectedError
+    from core.role_utils import get_user_role, ROLE_MANAGER, ROLE_SUPER_ADMIN
+    role = get_user_role(request.user)
+    if role not in (ROLE_MANAGER, ROLE_SUPER_ADMIN):
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return JsonResponse({'success': False, 'message': '无权限'}, status=403)
+        messages.error(request, '无权限')
+        return redirect('core:inventory_management')
+
+    cat = get_object_or_404(InventoryCategory, pk=cat_id)
+    # Block 1: has children → must delete children first.
+    if cat.children.exists():
+        msg = f'「{cat.name_zh}」下还有 {cat.children.count()} 个子节点，请先删除子节点'
+        return _iv_create_err(request, msg)
+    # Block 2: has transaction history → PROTECT prevents deletion; refuse up front
+    # with a helpful message instead of letting it raise a 500.
+    if InventoryTransactionLine.objects.filter(category=cat).exists():
+        n = InventoryTransactionLine.objects.filter(category=cat).count()
+        msg = f'「{cat.name_zh}」有 {n} 条出入库记录，无法删除（请保留历史或改为停用）'
+        return _iv_create_err(request, msg)
+
+    label = cat.name_zh
+    try:
+        cat.delete()
+    except ProtectedError:
+        return _iv_create_err(request, f'「{label}」被引用，无法删除')
+    msg = f'已删除「{label}」'
+    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        return JsonResponse({'success': True, 'message': msg})
     messages.success(request, msg)
     return redirect('core:inventory_management')
 

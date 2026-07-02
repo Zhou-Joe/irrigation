@@ -116,6 +116,65 @@
                 text-transform: uppercase; letter-spacing: .03em; }
 
 @media (min-width: 640px) { .wo-grid { grid-template-columns: 1fr 1fr 1fr; } }
+
+/* ── Material consumption (材料消耗) widget ────────────────────────────── */
+.wo-hint { font-size: .72rem; font-weight: 400; color: var(--wo-muted); margin-left: 4px; }
+/* Destination (出库去向) selector */
+.wo-mat-dest-row { margin-bottom: 10px; padding: 10px 12px; border: 1px solid var(--wo-accent-soft); border-radius: 8px; background: #f8fbf8; }
+.wo-mat-dest-label { font-size: .8rem; font-weight: 600; color: var(--wo-text); margin-bottom: 6px; }
+.wo-mat-dest-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.wo-mat-dest-chip { font-size: .8rem; padding: 5px 13px; border-radius: 16px; background: #fff; color: #555; border: 1px solid #e0e0e0; cursor: pointer; transition: all .15s; user-select: none; }
+.wo-mat-dest-chip:hover { background: var(--wo-accent-soft); }
+.wo-mat-dest-chip.active { background: var(--wo-accent); color: #fff; border-color: var(--wo-accent); }
+.wo-mat-dest-input { padding: 5px 10px; border: 1px solid var(--wo-border); border-radius: 6px; font-size: .85rem; margin-top: 4px; width: 100%; box-sizing: border-box; }
+.wo-mat-dest-sub { font-size: .74rem; color: var(--wo-muted); margin: 6px 0 3px; font-weight: 600; }
+.wo-mat-recommend { margin-bottom: 10px; }
+.wo-mat-recommend-title { font-size: .76rem; color: var(--wo-muted); margin-bottom: 6px; font-weight: 600; }
+.wo-mat-rec-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.wo-mat-rec-chip { font-size: .78rem; padding: 5px 11px; border-radius: 16px; background: var(--wo-accent-soft);
+    color: var(--wo-accent); border: 1px solid transparent; cursor: pointer; transition: all .15s; }
+.wo-mat-rec-chip:hover { background: var(--wo-accent); color: #fff; }
+.wo-mat-rec-chip small { color: var(--wo-muted); font-size: .68rem; margin-left: 4px; }
+.wo-mat-rec-chip:hover small { color: rgba(255,255,255,.85); }
+.wo-mat-row { display: flex; align-items: center; gap: 8px; padding: 9px 10px; border: 1px solid var(--wo-border);
+    border-radius: 10px; margin-bottom: 7px; background: #fafafa; flex-wrap: wrap; }
+.wo-mat-name { flex: 1 1 140px; min-width: 0; font-size: .88rem; font-weight: 600; color: var(--wo-text);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wo-mat-stock { font-size: .72rem; color: var(--wo-muted); white-space: nowrap; }
+.wo-mat-stock.low { color: #c0392b; font-weight: 600; }
+.wo-mat-row input.wo-mat-qty { width: 64px; padding: 5px 6px; border: 1px solid var(--wo-border);
+    border-radius: 6px; font-size: .85rem; text-align: center; }
+.wo-mat-row input.wo-mat-unit { width: 56px; padding: 5px 6px; border: 1px solid var(--wo-border);
+    border-radius: 6px; font-size: .82rem; }
+.wo-mat-del { border: none; background: transparent; color: #c0392b; font-size: 1.1rem; cursor: pointer;
+    padding: 0 4px; line-height: 1; }
+.wo-mat-del:hover { opacity: .7; }
+.wo-mat-empty { font-size: .82rem; color: var(--wo-muted); padding: 8px 0; }
+#wo-mat-add { margin-top: 4px; font-size: .85rem; padding: 7px 14px; }
+/* Bottom-sheet tree picker */
+.wo-mat-sheet-mask { position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 10000;
+    display: none; align-items: flex-end; justify-content: center; }
+.wo-mat-sheet-mask.open { display: flex; }
+.wo-mat-sheet { background: #fff; width: 100%; max-width: 480px; max-height: 78vh; border-radius: 16px 16px 0 0;
+    display: flex; flex-direction: column; box-shadow: 0 -4px 24px rgba(0,0,0,0.18); }
+@media (min-width: 640px) { .wo-mat-sheet-mask { align-items: center; }
+    .wo-mat-sheet { border-radius: 16px; max-height: 80vh; } }
+.wo-mat-sheet-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px;
+    border-bottom: 1px solid var(--wo-border); }
+.wo-mat-sheet-title { font-size: .92rem; font-weight: 700; color: var(--wo-text); flex: 1; min-width: 0;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wo-mat-sheet-body { overflow-y: auto; padding: 4px 0; flex: 1; }
+.wo-mat-sheet-row { display: flex; align-items: center; padding: 12px 16px; cursor: pointer; border: none;
+    background: none; width: 100%; text-align: left; border-bottom: 1px solid #f0f0f0; font-size: .9rem;
+    color: var(--wo-text); }
+.wo-mat-sheet-row:hover { background: var(--wo-accent-soft); }
+.wo-mat-sheet-row .wo-mat-sr-name { flex: 1; }
+.wo-mat-sheet-row .wo-mat-sr-meta { font-size: .74rem; color: var(--wo-muted); margin-left: 8px; white-space: nowrap; }
+.wo-mat-sheet-row.leaf .wo-mat-sr-name::before { content: '🔹 '; }
+.wo-mat-sheet-row.branch .wo-mat-sr-arrow { color: var(--wo-muted); font-size: .8rem; }
+.wo-mat-sheet-row.back .wo-mat-sr-name { color: var(--wo-muted); font-size: .84rem; }
+.wo-mat-sheet-close { border: none; background: var(--wo-accent); color: #fff; border-radius: 8px;
+    padding: 6px 14px; font-size: .82rem; cursor: pointer; margin-left: 8px; }
 </style>
 {% endblock %}
 
@@ -204,7 +263,26 @@
     <p class="wo-empty" id="wo-empty" hidden>未找到匹配项</p>
   </div>
 
+  <!-- 材料消耗 / 出库：工单内直接登记消耗的库存物料，提交时自动生成出库单并扣减库存 -->
+  <div class="wo-card">
+    <h2>材料消耗 / 出库 <span class="badge" id="wo-mat-count">0</span> <span class="wo-hint">(可选，提交时自动扣减库存)</span></h2>
+    <div id="wo-mat-dest-row" class="wo-mat-dest-row" hidden>
+      <div class="wo-mat-dest-label">出库去向 <span id="wo-mat-dest-auto" class="wo-hint"></span></div>
+      <div class="wo-mat-dest-chips" id="wo-mat-dest-chips"></div>
+      <div id="wo-mat-dest-project" hidden></div>
+      <div id="wo-mat-dest-cp" hidden><input type="text" id="wo-mat-dest-cp-input" class="wo-mat-dest-input" placeholder="借用方"></div>
+      <div id="wo-mat-dest-other" hidden><input type="text" id="wo-mat-dest-other-input" class="wo-mat-dest-input" placeholder="请填写去向"></div>
+    </div>
+    <div id="wo-mat-cart"></div>
+    <button type="button" id="wo-mat-add" class="wo-btn-secondary">+ 添加材料</button>
+    <div id="wo-mat-recommend" class="wo-mat-recommend" hidden></div>
+  </div>
+
   <input type="hidden" name="entries" id="entries-json" value="[]">
+  <input type="hidden" name="materials" id="materials-json" value="[]">
+  <input type="hidden" name="mat_dest" id="mat-dest-input" value="">
+  <input type="hidden" name="mat_project_id" id="mat-project-input" value="">
+  <input type="hidden" name="mat_counterparty" id="mat-cp-input" value="">
 
   <div class="wo-actions">
     <button type="submit" class="wo-btn-primary">保存</button>
@@ -583,10 +661,21 @@ document.addEventListener('DOMContentLoaded', ()=>{
   buildExistingSummary();   // explicit list of prior content (above the tree)
   applyHeader();
   document.getElementById('wo-search-input').addEventListener('input', onSearch);
-  document.getElementById('workorder-form').addEventListener('submit', collectEntries);
+  const form = document.getElementById('workorder-form');
+  form.addEventListener('submit', collectEntries);
+  form.addEventListener('submit', collectMaterials);
   // Photo management (edit page): render existing + live upload preview.
   renderExistingPhotos();
   setupPhotoUpload();
+  // Material consumption widget.
+  initMaterialWidget();
+  // Refresh material recommendations whenever the work-content tree changes
+  // (so the suggestion chips track what the user is actually working on).
+  document.getElementById('wo-tree').addEventListener('input', scheduleMatRecommend);
+  document.getElementById('wo-tree').addEventListener('change', scheduleMatRecommend);
+  // Material destination tracks the work-content sections too.
+  document.getElementById('wo-tree').addEventListener('input', () => setTimeout(updateMatDest, 260));
+  document.getElementById('wo-tree').addEventListener('change', () => setTimeout(updateMatDest, 260));
   // Auto-fill 天气 with the current-hour snapshot (only when empty, i.e. new report
   // or an old one with no weather set — never overwrite an existing value).
   const wEl = document.getElementById('f-weather');
@@ -597,5 +686,347 @@ document.addEventListener('DOMContentLoaded', ()=>{
       .catch(() => {});
   }
 });
+
+// ── Material consumption widget (材料消耗 / 出库) ──────────────────────────
+// Independent of the work-content tree. Users pick concrete inventory SKUs
+// (the full catalog, 6 levels) from a bottom-sheet drill-down; the selection
+// becomes a cart of {category, quantity, unit}. On submit the cart is JSON'd
+// into #materials-json and the server creates an outbound transaction +
+// decrements stock. A "recommend" strip surfaces SKUs whose name/ancestor
+// matches material keywords found in the filled work-content leaves.
+const INV_TREE = {{ inventory_tree_json|safe }};
+const EXISTING_MATERIALS = {{ existing_materials_json|safe }};
+let _matCart = [];          // [{id, name, stock, min, quantity, unit}]
+const _matNodeMap = {};     // id -> node (flat)
+const _matAncestors = {};   // id -> [ancestor names] (for keyword matching)
+
+(function buildMatIndex(){
+  function walk(node, chain){
+    _matNodeMap[node.id] = node;
+    const names = chain.map(n => n.name || n.name_zh || '');
+    _matAncestors[node.id] = names;
+    const childChain = chain.concat([node]);
+    (node.children || []).forEach(c => walk(c, childChain));
+  }
+  (INV_TREE || []).forEach(r => walk(r, []));
+})();
+
+function isMatLeaf(n){ return n.node_type === 'part' || (!n.children || !n.children.length); }
+
+function renderMatCart(){
+  const box = document.getElementById('wo-mat-cart');
+  const cnt = document.getElementById('wo-mat-count');
+  cnt.textContent = _matCart.length;
+  if (!_matCart.length){
+    box.innerHTML = '<div class="wo-mat-empty">尚未添加材料 · 点击「+ 添加材料」从库存目录选择</div>';
+    return;
+  }
+  box.innerHTML = '';
+  _matCart.forEach((c, i) => {
+    const row = document.createElement('div');
+    row.className = 'wo-mat-row';
+    const lowCls = (c.min && c.stock <= c.min) ? ' low' : '';
+    row.innerHTML =
+      '<span class="wo-mat-name" title="'+esc(c.label || c.name)+'">'+esc(c.label || c.name)+'</span>'+
+      '<span class="wo-mat-stock'+lowCls+'">库存 '+c.stock+'</span>'+
+      '<input type="number" min="1" step="1" class="wo-mat-qty" value="'+c.quantity+'" placeholder="数量">'+
+      '<button type="button" class="wo-mat-del" title="移除">✕</button>';
+    row.querySelector('.wo-mat-qty').addEventListener('input', e => { c.quantity = parseFloat(e.target.value)||0; });
+    row.querySelector('.wo-mat-del').addEventListener('click', () => { _matCart.splice(i,1); renderMatCart(); updateMatDest(); });
+    box.appendChild(row);
+  });
+}
+
+// Build the display label "类别 › 子类 › 名称" from a leaf node (up to 2 ancestors).
+function _matLabel(node) {
+  const anc = (_matAncestors[node.id]||[]).slice(-2);
+  const parts = anc.map(a => a); parts.push(node.name || node.name_zh);
+  return parts.join(' › ');
+}
+
+function addToMatCart(nodeId){
+  const n = _matNodeMap[nodeId];
+  if (!n || !isMatLeaf(n)) return;
+  if (_matCart.some(c => c.id === nodeId)) return;   // de-dupe
+  _matCart.push({ id: nodeId, name: n.name || n.name_zh, label: _matLabel(n),
+                  stock: n.current_stock||0, min: n.min_stock||0, quantity: 1 });
+  renderMatCart();
+  updateMatDest();
+}
+
+// Bottom-sheet drill-down picker (mirrors the inventory modal's _invOpenTreeSheet).
+let _matSheetPath = [];
+function openMatSheet(path){
+  _matSheetPath = path || [];
+  let level = INV_TREE;
+  for (const id of _matSheetPath){
+    const n = _matNodeMap[id];
+    if (!n || !n.children) { _matSheetPath = _matSheetPath.slice(0,-1); break; }
+    level = n.children;
+  }
+  let mask = document.getElementById('wo-mat-sheet-mask');
+  if (!mask){
+    mask = document.createElement('div');
+    mask.className = 'wo-mat-sheet-mask';
+    mask.id = 'wo-mat-sheet-mask';
+    mask.innerHTML =
+      '<div class="wo-mat-sheet">'+
+        '<div class="wo-mat-sheet-head">'+
+          '<span class="wo-mat-sheet-title" id="wo-mat-sheet-title"></span>'+
+          '<button type="button" class="wo-mat-sheet-close" id="wo-mat-sheet-close">完成</button>'+
+        '</div>'+
+        '<div class="wo-mat-sheet-body" id="wo-mat-sheet-body"></div>'+
+      '</div>';
+    document.body.appendChild(mask);
+    mask.addEventListener('click', e => { if (e.target === mask) closeMatSheet(); });
+    document.getElementById('wo-mat-sheet-close').addEventListener('click', closeMatSheet);
+  }
+  // Breadcrumb title.
+  document.getElementById('wo-mat-sheet-title').textContent =
+    _matSheetPath.length ? _matSheetPath.map(id => _matNodeMap[id].name || _matNodeMap[id].name_zh).join(' › ')
+                         : '选择材料';
+  const body = document.getElementById('wo-mat-sheet-body');
+  body.innerHTML = '';
+  if (_matSheetPath.length){
+    const back = document.createElement('button');
+    back.type = 'button'; back.className = 'wo-mat-sheet-row back';
+    back.innerHTML = '<span class="wo-mat-sr-name">‹ 返回</span>';
+    back.addEventListener('click', () => openMatSheet(_matSheetPath.slice(0,-1)));
+    body.appendChild(back);
+  }
+  level.forEach(n => {
+    const row = document.createElement('button');
+    row.type = 'button';
+    const leaf = isMatLeaf(n);
+    row.className = 'wo-mat-sheet-row ' + (leaf ? 'leaf' : 'branch');
+    const meta = leaf ? ('库存 ' + (n.current_stock||0)) : '';
+    row.innerHTML = '<span class="wo-mat-sr-name">'+esc(n.name||n.name_zh)+'</span>'+
+                    '<span class="wo-mat-sr-meta">'+meta+'</span>'+
+                    (leaf ? '' : '<span class="wo-mat-sr-arrow">▶</span>');
+    row.addEventListener('click', () => {
+      if (leaf){ addToMatCart(n.id); closeMatSheet(); }
+      else openMatSheet(_matSheetPath.concat([n.id]));
+    });
+    body.appendChild(row);
+  });
+  mask.classList.add('open');
+}
+function closeMatSheet(){ const m = document.getElementById('wo-mat-sheet-mask'); if (m) m.classList.remove('open'); }
+
+// Recommend: pull material keywords out of the filled work-content leaves and
+// surface matching inventory SKUs as quick-add chips.
+const MAT_KEYWORDS = ['喷头','管','弯头','三通','阀箱','电磁阀','滴灌','接头','过滤器','取水阀','冲洗阀','调压器','控制线','通讯线'];
+let _matRecTimer = null;
+function scheduleMatRecommend(){
+  clearTimeout(_matRecTimer);
+  _matRecTimer = setTimeout(updateMatRecommend, 250);
+}
+function collectFilledKeywords(){
+  // Reuse collectEntries' logic to discover which leaves have a value, then
+  // resolve their display names via nodeById.
+  const kws = new Set();
+  Object.values(nodeEls).forEach(el => {
+    if (!el.classList.contains('wo-leaf')) return;
+    const vt = el.dataset.vt;
+    let hasData = false;
+    if (vt === 'count'){ hasData = (parseInt(el.querySelector('.wo-count')?.value||0,10)||0) > 0; }
+    else if (vt === 'status'){ hasData = !!(el.querySelector('.wo-status')?.value); }
+    else if (el.dataset.linked === 'pending_repair'){ hasData = !!(el.querySelector('.wo-toggle-cb')?.checked); }
+    else { const t = el.querySelector('.wo-text')?.value||''; const f = el.querySelector('.wo-file'); hasData = !!(t || (f && f.files.length)); }
+    if (!hasData) return;
+    const wid = parseInt(el.dataset.wid, 10);
+    const node = nodeById[wid];
+    if (!node) return;
+    // Walk the node + its ancestor chain (path string) collecting keywords.
+    const hay = ((node.name||'') + ' ' + (node.path||'') + ' ' + (node.section||''));
+    MAT_KEYWORDS.forEach(k => { if (hay.includes(k)) kws.add(k); });
+  });
+  return Array.from(kws);
+}
+function updateMatRecommend(){
+  const strip = document.getElementById('wo-mat-recommend');
+  if (!strip) return;
+  const kws = collectFilledKeywords();
+  if (!kws.length){ strip.hidden = true; return; }
+  // Score every inventory leaf by how many filled keywords appear in its
+  // own name or any ancestor name. Keep the top matches as quick-add chips.
+  const scored = [];
+  Object.values(_matNodeMap).forEach(n => {
+    if (!isMatLeaf(n)) return;
+    const hay = (n.name||n.name_zh||'') + ' ' + (_matAncestors[n.id]||[]).join(' ');
+    let hits = 0;
+    kws.forEach(k => { if (hay.includes(k)) hits++; });
+    if (hits > 0) scored.push({ n, hits });
+  });
+  if (!scored.length){ strip.hidden = true; return; }
+  scored.sort((a,b) => b.hits - a.hits || String(a.n.name||a.n.name_zh).localeCompare(String(b.n.name||b.n.name_zh)));
+  const top = scored.slice(0, 8);
+  strip.hidden = false;
+  strip.innerHTML = '<div class="wo-mat-recommend-title">根据工单内容推荐 💡</div><div class="wo-mat-rec-chips">'+
+    top.map(s => {
+      // Inline label: "类别 › 子类 › 名称" (up to 2 ancestor levels) + stock.
+      const anc = (_matAncestors[s.n.id]||[]).slice(-2);
+      const parts = anc.map(a => esc(a)); parts.push(esc(s.n.name||s.n.name_zh));
+      const label = parts.join(' › ');
+      return '<span class="wo-mat-rec-chip" data-id="'+s.n.id+'">'+label+
+             '<small>库存'+(s.n.current_stock||0)+'</small></span>';
+    }).join('') + '</div>';
+  strip.querySelectorAll('.wo-mat-rec-chip').forEach(ch => {
+    ch.addEventListener('click', () => addToMatCart(parseInt(ch.dataset.id, 10)));
+  });
+}
+
+function collectMaterials(){
+  document.getElementById('materials-json').value = JSON.stringify(
+    _matCart.filter(c => (c.quantity||0) > 0)
+            .map(c => ({ category: c.id, quantity: c.quantity }))
+  );
+  // Also write the destination hidden fields.
+  collectMatDest();
+}
+
+// ── Material destination (出库去向) ─────────────────────────────────────
+// Derived from the filled work-content sections: project sections → 项目,
+// routine_maint → 日常维护, other sections → user picks via chips.
+const PROJECT_SECTIONS_MAT = new Set(['irrigation_project','drainage_project','other_project']);
+let _matDest = { subtype: '', projectId: null, counterparty: '', other: '', projectCat: null };
+const MAT_DEST_PREFILL = {{ material_dest_json|safe }};
+
+function deriveFilledSections(){
+  // Walk the filled leaves (same logic as collectFilledKeywords) and collect
+  // the distinct WorkItem sections that have a value.
+  const secs = new Set();
+  Object.values(nodeEls).forEach(el => {
+    if (!el.classList.contains('wo-leaf')) return;
+    const vt = el.dataset.vt;
+    let hasData = false;
+    if (vt === 'count'){ hasData = (parseInt(el.querySelector('.wo-count')?.value||0,10)||0) > 0; }
+    else if (vt === 'status'){ hasData = !!(el.querySelector('.wo-status')?.value); }
+    else if (el.dataset.linked === 'pending_repair'){ hasData = !!(el.querySelector('.wo-toggle-cb')?.checked); }
+    else { const t = el.querySelector('.wo-text')?.value||''; const f = el.querySelector('.wo-file'); hasData = !!(t || (f && f.files.length)); }
+    if (hasData) secs.add(el.dataset.section);
+  });
+  return secs;
+}
+function updateMatDest(){
+  const row = document.getElementById('wo-mat-dest-row'); if (!row) return;
+  const autoEl = document.getElementById('wo-mat-dest-auto');
+  // Only show the destination selector once the user has added at least one
+  // material to the cart.
+  const hasMaterials = _matCart && _matCart.length > 0;
+  if (!hasMaterials) { row.hidden = true; return; }
+
+  const secs = deriveFilledSections();
+  const hasProject = [...secs].some(s => PROJECT_SECTIONS_MAT.has(s));
+  const hasRoutine = secs.has('routine_maint');
+
+  if (hasProject) {
+    // Project section filled: auto-bind. Show chips pre-selected so the user
+    // sees the binding (项目 + the project name) without being forced to pick.
+    _matDest.subtype = '项目';
+    const projSel = document.getElementById('irrigation-project-select');
+    _matDest.projectId = projSel && projSel.value ? parseInt(projSel.value,10) : _matDest.projectId;
+    if (autoEl) autoEl.textContent = '(已按工单项目自动绑定)';
+  } else if (hasRoutine) {
+    // Routine maintenance filled: auto 日常维护, chip pre-selected.
+    _matDest.subtype = '日常维护';
+    if (autoEl) autoEl.textContent = '(已按常规维护自动绑定)';
+  } else {
+    // Other categories: user picks. Default to 日常维护 if unset.
+    if (!_matDest.subtype) { _matDest.subtype = '日常维护'; _matDest.projectId = null; _matDest.counterparty = ''; _matDest.other = ''; }
+    if (autoEl) autoEl.textContent = '(请选择去向)';
+  }
+  row.hidden = false;
+  renderMatDestChips();
+}
+function renderMatDestChips(){
+  const box = document.getElementById('wo-mat-dest-chips'); if (!box) return;
+  const dests = ['日常维护','项目','借用','其他'];
+  box.innerHTML = dests.map(d => {
+    const on = (_matDest.subtype === d) ? ' active' : '';
+    return '<span class="wo-mat-dest-chip'+on+'" data-dest="'+d+'">'+d+'</span>';
+  }).join('');
+  box.querySelectorAll('.wo-mat-dest-chip').forEach(ch => {
+    ch.addEventListener('click', () => {
+      _matDest.subtype = ch.dataset.dest;
+      if (ch.dataset.dest !== '项目') _matDest.projectId = null;
+      if (ch.dataset.dest !== '借用') _matDest.counterparty = '';
+      if (ch.dataset.dest !== '其他') _matDest.other = '';
+      renderMatDestChips();
+    });
+  });
+  const projBox = document.getElementById('wo-mat-dest-project');
+  const cpBox = document.getElementById('wo-mat-dest-cp');
+  const otherBox = document.getElementById('wo-mat-dest-other');
+  if (projBox) {
+    projBox.hidden = _matDest.subtype !== '项目';
+    if (_matDest.subtype === '项目') {
+      const cats = {}; (PROJECTS||[]).forEach(p => { cats[p.category] = p.category_display||p.category; });
+      const catList = Object.keys(cats);
+      const curCat = _matDest.projectCat || catList[0]; _matDest.projectCat = curCat;
+      const projInCat = (PROJECTS||[]).filter(p => p.category === curCat);
+      let html = '<div class="wo-mat-dest-sub">类别</div><div class="wo-mat-dest-chips">'+
+        catList.map(c => '<span class="wo-mat-dest-chip'+(c===curCat?' active':'')+'" data-pcat="'+c+'">'+cats[c]+'</span>').join('') + '</div>';
+      html += '<div class="wo-mat-dest-sub">项目</div><div class="wo-mat-dest-chips">'+
+        projInCat.map(p => '<span class="wo-mat-dest-chip'+(p.id===_matDest.projectId?' active':'')+'" data-pid="'+p.id+'">'+esc(p.name)+'</span>').join('') + '</div>';
+      projBox.innerHTML = html;
+      projBox.querySelectorAll('[data-pcat]').forEach(c => c.addEventListener('click', () => { _matDest.projectCat = c.dataset.pcat; _matDest.projectId = null; renderMatDestChips(); }));
+      projBox.querySelectorAll('[data-pid]').forEach(c => c.addEventListener('click', () => { _matDest.projectId = parseInt(c.dataset.pid,10); renderMatDestChips(); }));
+    }
+  }
+  if (cpBox) {
+    cpBox.hidden = _matDest.subtype !== '借用';
+    if (_matDest.subtype === '借用') {
+      const inp = document.getElementById('wo-mat-dest-cp-input');
+      if (inp) { inp.value = _matDest.counterparty; inp.oninput = () => { _matDest.counterparty = inp.value; }; }
+    }
+  }
+  if (otherBox) {
+    otherBox.hidden = _matDest.subtype !== '其他';
+    if (_matDest.subtype === '其他') {
+      const inp = document.getElementById('wo-mat-dest-other-input');
+      if (inp) { inp.value = _matDest.other; inp.oninput = () => { _matDest.other = inp.value; }; }
+    }
+  }
+}
+function collectMatDest(){
+  const dEl = document.getElementById('mat-dest-input');
+  const pEl = document.getElementById('mat-project-input');
+  const cEl = document.getElementById('mat-cp-input');
+  if (!dEl) return;
+  // Always run updateMatDest first so the derivation reflects current content.
+  updateMatDest();
+  let dest = _matDest.subtype;
+  if (dest === '其他') dest = _matDest.other || '其他';
+  dEl.value = dest;
+  pEl.value = (_matDest.subtype === '项目' && _matDest.projectId) ? _matDest.projectId : '';
+  cEl.value = (_matDest.subtype === '借用') ? _matDest.counterparty : '';
+}
+
+function initMaterialWidget(){
+  // Prefill from existing (edit mode).
+  if (Array.isArray(EXISTING_MATERIALS)){
+    _matCart = EXISTING_MATERIALS.map(m => {
+      const n = _matNodeMap[m.category];
+      return {
+        id: m.category, name: m.name || (n?.name) || ('#'+m.category),
+        label: m.name || (n ? _matLabel(n) : m.name) || ('#'+m.category),
+        stock: n?.current_stock || 0,
+        min: n?.min_stock || 0,
+        quantity: m.quantity || 1,
+      };
+    });
+  }
+  // Restore destination from the existing txn (edit mode).
+  if (MAT_DEST_PREFILL) {
+    _matDest.subtype = MAT_DEST_PREFILL.entry_subtype || '';
+    _matDest.projectId = MAT_DEST_PREFILL.project_id || null;
+    _matDest.counterparty = MAT_DEST_PREFILL.counterparty || '';
+  }
+  renderMatCart();
+  document.getElementById('wo-mat-add').addEventListener('click', () => openMatSheet([]));
+  updateMatRecommend();
+  updateMatDest();
+}
 </script>
 {% endblock %}

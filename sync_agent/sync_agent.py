@@ -43,7 +43,14 @@ DEFAULT_CONFIG = {
     "connect_timeout": 15,
 }
 
-APP_DIR = os.path.dirname(os.path.abspath(__file__))
+# When frozen by PyInstaller (--onefile), __file__ points into a temporary
+# _MEIxxxxxx extraction dir that vanishes on exit. Resolve config/last-sync to
+# the directory the EXE lives in (sys.executable's dir) so a side-by-side
+# sync_config.json is found and last_sync.json persists across runs.
+if getattr(sys, 'frozen', False):
+    APP_DIR = os.path.dirname(os.path.abspath(sys.executable))
+else:
+    APP_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_FILE = os.path.join(APP_DIR, "sync_config.json")
 LAST_SYNC_FILE = os.path.join(APP_DIR, "last_sync.json")
 
@@ -58,6 +65,20 @@ TIME_SERIES_TABLES = [
     ("runtime", "XA_RuntimeProject", "TimeStamps"),
     ("signal_logs", "XA_LOG", "XactStamp"),
     ("flow_readings", "XA_FLOZO", "XactStamp"),
+]
+
+# Config (setup) tables — read in full (no windowing) and upserted server-side.
+# Each entry is (payload_key, mdb_table). The server's sync_receive endpoint has
+# matching _upsert_* handlers keyed on the raw column names (IndexNumber, etc.),
+# so we just send every row as-is. Only active rows (DateClose IS NULL) are sent
+# for SITE_CF; the others have no date-closed column to filter on.
+CONFIG_TABLES = [
+    ("sites", "SITE_CF"),
+    ("weather_stations", "WETHR_CF"),
+    ("controllers", "CTROL_CF"),
+    ("flow_zones", "FLOZO_CF"),
+    ("schedules", "SCHED_CF"),
+    ("stations", "STATN_CF"),
 ]
 
 
@@ -169,6 +190,70 @@ def _read_table_windowed(db, table_name, ts_column, since_ts):
     return rows
 
 
+def _read_config_tables(db, progress_cb=None, log_cb=None):
+    """Read all 6 config tables in full (no windowing) and return a dict keyed
+    by payload_key → list of row dicts. SITE_CF is filtered to active sites
+    (DateClose IS NULL); the rest are read in full.
+
+    Server-side sync_receive has matching _upsert_* handlers that resolve FK
+    relationships via mdb_index lookups, so the raw rows can be sent as-is.
+    """
+    config = {}
+    n = len(CONFIG_TABLES)
+    for i, (key, table) in enumerate(CONFIG_TABLES):
+        if progress_cb:
+            progress_cb(int(5 * i / n), f"读取配置表 {table} …")
+        if log_cb:
+            log_cb(f"读取配置表 {table} …")
+        # SITE_CF: only active sites (DateClose IS NULL). Others have no such column.
+        if table == "SITE_CF":
+            sql = (f"SELECT IndexNumber, SiteNumber, IndexName, SiteTimeZone, "
+                   f"SiteWaterPricing, SiteCCUVersion, SiteWaterETCurrent, "
+                   f"SiteWaterETDefault, SiteWaterETMinimum, SiteWaterETMaximum, "
+                   f"SiteWaterCropCoefficient, SiteRainShutDownApplies, "
+                   f"SiteContactTelephone, DateOpen FROM [{table}] WHERE DateClose IS NULL")
+        else:
+            sql = f"SELECT * FROM [{table}]"
+        rs = db.OpenRecordset(sql)
+        rows = []
+        try:
+            while not rs.EOF:
+                rows.append(_row_from_recordset(rs))
+                rs.MoveNext()
+        finally:
+            rs.Close()
+        config[key] = rows
+        if log_cb:
+            log_cb(f"  {table}: {len(rows)} 行")
+    return config
+
+
+def _get_dao_engine():
+    """Return a working DAO DBEngine, auto-detecting the installed version.
+
+    Different Maxicom / Office installations register different DAO ProgIDs:
+      • DAO.DBEngine.120  — Access 2010+ (ACE), most common on modern setups
+      • DAO.DBEngine.36   — Office 2007 / older Access (JET 4.0)
+      • DAO.DBEngine.35   — very old (JET 3.5)
+
+    We try newest-first and return the first that Dispatches successfully,
+    raising a clear error listing what was tried if none work.
+    """
+    import win32com.client
+    candidates = ["DAO.DBEngine.120", "DAO.DBEngine.36", "DAO.DBEngine.35"]
+    errors = []
+    for progid in candidates:
+        try:
+            return win32com.client.Dispatch(progid)
+        except Exception as e:
+            errors.append(f"{progid}: {e}")
+    raise RuntimeError(
+        "无法创建 DAO 数据库引擎。尝试了以下版本均失败：\n  " +
+        "\n  ".join(errors) +
+        "\n请确认机器上已安装 Microsoft Access Database Engine（32 位）。"
+    )
+
+
 def read_mdb_with_progress(cfg, days, last_sync, progress_cb=None, log_cb=None):
     """Read the latest `days` of Maxicom data, yielding progress as it goes.
 
@@ -177,8 +262,10 @@ def read_mdb_with_progress(cfg, days, last_sync, progress_cb=None, log_cb=None):
     (time_series, sent_range, new_sync) where sent_range is (min_ts, max_ts)
     over all rows actually selected (for the summary), or (None, None) if empty.
 
-    Config tables are deliberately NOT re-sent (already loaded once via the
-    import_maxicom command); the payload's `config` stays empty.
+    Config tables (SITE_CF etc.) are also read here in full (no windowing)
+    and returned alongside the time-series data, so the caller can send both
+    in one payload. This makes the agent self-sufficient: no separate
+    import_maxicom_mdb run is needed server-side.
     """
     mdb_path = cfg["mdb_path"]
     if not os.path.exists(mdb_path):
@@ -194,7 +281,7 @@ def read_mdb_with_progress(cfg, days, last_sync, progress_cb=None, log_cb=None):
         log_cb(f"打开 MDB: {os.path.basename(mdb_path)}")
     if progress_cb:
         progress_cb(3, "正在打开数据库…")
-    db_engine = win32com.client.Dispatch("DAO.DBEngine.120")
+    db_engine = _get_dao_engine()
     db = db_engine.OpenDatabase(mdb_path, False, True, ";pwd=" + cfg["mdb_password"])
 
     # watermark key per payload table
@@ -255,11 +342,14 @@ def read_mdb_with_progress(cfg, days, last_sync, progress_cb=None, log_cb=None):
                 log_cb(f"  {table}: {len(rows):,} 行")
             if progress_cb:
                 progress_cb(5 + int(50 * (i + 1) / n_tables), f"{table}: {len(rows):,} 行")
+
+        # Read the 6 config tables in full while the DB handle is still open.
+        config_data = _read_config_tables(db, progress_cb=progress_cb, log_cb=log_cb)
     finally:
         db.Close()
 
     sent_range = (min(all_ts), max(all_ts)) if all_ts else (None, None)
-    return time_series, sent_range, new_sync
+    return time_series, sent_range, new_sync, config_data
 
 
 # ─── Sync Worker ──────────────────────────────────────────────────────
@@ -274,7 +364,7 @@ def do_sync(cfg, days, last_sync, progress_cb=None, log_cb=None):
     import urllib.error
 
     try:
-        time_series, sent_range, new_sync = read_mdb_with_progress(
+        time_series, sent_range, new_sync, config_data = read_mdb_with_progress(
             cfg, days, last_sync, progress_cb=progress_cb, log_cb=log_cb,
         )
     except FileNotFoundError as e:
@@ -283,11 +373,14 @@ def do_sync(cfg, days, last_sync, progress_cb=None, log_cb=None):
         return False, f"MDB 读取错误: {e}", last_sync, {}
 
     total = sum(len(v) for v in time_series.values())
+    config_total = sum(len(v) for v in config_data.values())
     min_ts, max_ts = sent_range
 
-    if total == 0:
+    # Config tables are always sent (small, upsert server-side). Time-series
+    # may be empty if the window has no new data — but we still send config.
+    if total == 0 and config_total == 0:
         if progress_cb:
-            progress_cb(100, "完成（窗口内无新数据）")
+            progress_cb(100, "完成（无数据）")
         summary = {
             'total': 0, 'inserted': 0, 'skipped': 0,
             'date_from': None, 'date_to': None,
@@ -295,12 +388,12 @@ def do_sync(cfg, days, last_sync, progress_cb=None, log_cb=None):
             'tables': {key: {'sent': 0, 'inserted': 0, 'skipped': 0}
                        for key, _, _ in TIME_SERIES_TABLES},
         }
-        return True, f"窗口内无新数据（最近 {days} 天）", last_sync, summary
+        return True, f"无数据（最近 {days} 天）", last_sync, summary
 
     payload = {
         "sync_timestamp": datetime.now().strftime("%Y%m%d%H%M%S"),
         "agent_version": "2.0",
-        "config": {},                 # config tables already imported via management command
+        "config": config_data,
         "time_series": time_series,
     }
 
@@ -311,14 +404,16 @@ def do_sync(cfg, days, last_sync, progress_cb=None, log_cb=None):
     }
 
     if progress_cb:
-        progress_cb(60, f"上传 {total:,} 行到服务器…")
+        progress_cb(60, f"上传 {config_total:,} 配置 + {total:,} 时序行到服务器…")
     if log_cb:
-        log_cb(f"发送 {total:,} 行到 {url} …")
+        log_cb(f"发送 {config_total:,} 配置 + {total:,} 时序行到 {url} …")
 
     try:
         data = json.dumps(payload).encode("utf-8")
         req = urllib.request.Request(url, data=data, headers=headers, method="POST")
-        upload_timeout = int(cfg.get("upload_timeout", 600))
+        # Large windows (e.g. 30 days of XA_FLOZO) can take minutes to insert
+        # server-side. Default 1000s; overridable via config key "upload_timeout".
+        upload_timeout = int(cfg.get("upload_timeout", 1000))
         with urllib.request.urlopen(req, timeout=upload_timeout) as resp:
             result = json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as e:
@@ -351,6 +446,19 @@ def do_sync(cfg, days, last_sync, progress_cb=None, log_cb=None):
         skipped_total += skp
         tables_summary[key] = {'sent': sent, 'inserted': ins, 'skipped': skp, 'table': table}
 
+    # Config table results (created/updated/errors from server).
+    config_summary = {}
+    for key, table in CONFIG_TABLES:
+        sent = len(config_data.get(key, []))
+        info = srv_results.get(key, {}) or {}
+        config_summary[key] = {
+            'sent': sent,
+            'created': int(info.get('created', 0) or 0),
+            'updated': int(info.get('updated', 0) or 0),
+            'errors': int(info.get('errors', 0) or 0),
+            'table': table,
+        }
+
     summary = {
         'total': total,
         'inserted': inserted_total,
@@ -359,6 +467,7 @@ def do_sync(cfg, days, last_sync, progress_cb=None, log_cb=None):
         'date_to': max_ts,
         'window_days': days,
         'tables': tables_summary,
+        'config': config_summary,
     }
 
     if progress_cb:
@@ -372,6 +481,13 @@ def do_sync(cfg, days, last_sync, progress_cb=None, log_cb=None):
 # ─── CLI Mode ─────────────────────────────────────────────────────────
 
 def run_cli(days=None):
+    # Force UTF-8 on stdout/stderr so Chinese output survives the cp1252 default
+    # encoding when a windowed (console-less) build is run from a terminal.
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding='utf-8')
+        except Exception:
+            pass
     cfg = load_config()
     if days is None:
         days = cfg.get("days_window", 7)
@@ -413,6 +529,15 @@ def _format_summary(s):
     for key, _, _ in TIME_SERIES_TABLES:
         t = s.get('tables', {}).get(key, {})
         lines.append(f"{t.get('table', key):<22}{t.get('sent', 0):>10,}{t.get('inserted', 0):>10,}{t.get('skipped', 0):>10,}")
+    # Config tables (created/updated/errors, not inserted/skipped).
+    config = s.get('config', {})
+    if config:
+        lines.append("")
+        lines.append(f"{'配置表':<22}{'发送':>10}{'新增':>10}{'更新':>10}")
+        lines.append("-" * 52)
+        for key, _ in CONFIG_TABLES:
+            t = config.get(key, {})
+            lines.append(f"{t.get('table', key):<22}{t.get('sent', 0):>10,}{t.get('created', 0):>10,}{t.get('updated', 0):>10,}")
     return "\n".join(lines)
 
 
@@ -447,6 +572,9 @@ def run_gui():
     QPushButton#syncBtn:hover { background-color: #94e2d5; }
     QPushButton#syncBtn:disabled { background-color: #45475a; color: #6c7086; }
     QPushButton#settingsBtn { background-color: #89b4fa; color: #1e1e2e; }
+    QPushButton#testBtn { background-color: #f9e2af; color: #1e1e2e; }
+    QPushButton#testBtn:hover { background-color: #f5c97e; }
+    QPushButton#testBtn:disabled { background-color: #45475a; color: #6c7086; }
     QTextEdit {
         background-color: #11111b; border: 1px solid #45475a; border-radius: 6px;
         font-family: "Consolas", monospace; font-size: 12px; color: #a6adc8; padding: 4px;
@@ -571,6 +699,15 @@ def run_gui():
             status_layout.addWidget(self.last_sync_label)
             self.next_sync_label = QLabel(f"下次自动同步: 每 {self.cfg['sync_interval_minutes']} 分钟")
             status_layout.addWidget(self.next_sync_label)
+            # Manual "test connection" button — pings /api/sync/status and shows
+            # the result in the log + status indicator.
+            test_row = QHBoxLayout()
+            self.test_btn = QPushButton("🔗  测试连接")
+            self.test_btn.setObjectName("testBtn")
+            self.test_btn.clicked.connect(self.test_connection)
+            test_row.addWidget(self.test_btn)
+            test_row.addStretch()
+            status_layout.addLayout(test_row)
             layout.addWidget(status_group)
 
             # ── Sync controls: day window + progress bar ──
@@ -716,6 +853,46 @@ def run_gui():
                 self.server_label.setText(f"服务器: {self.cfg['server_url']} (离线)")
                 if not silent or "已连接" in old_status:
                     self._log("服务器未连接", "error")
+
+        def test_connection(self):
+            """Manual "test connection" — always logs a detailed result so the
+            user can diagnose network / API-key issues at a glance."""
+            import urllib.request
+            import urllib.error
+            if not self.test_btn.isEnabled():
+                return
+            self.test_btn.setEnabled(False)
+            self.test_btn.setText("测试中…")
+            url = self.cfg["server_url"].rstrip("/") + "/api/sync/status"
+            self._log(f"正在测试连接 {url} …", "info")
+            req = urllib.request.Request(url, headers={"X-Sync-Key": self.cfg["api_key"]})
+            try:
+                with urllib.request.urlopen(req, timeout=10) as resp:
+                    data = json.loads(resp.read().decode("utf-8"))
+                    self.status_label.setText("● 已连接")
+                    self.status_label.setStyleSheet("font-size: 15px; font-weight: bold; color: #a6e3a1;")
+                    total = sum(data.get("counts", {}).values())
+                    self.server_label.setText(f"服务器: {self.cfg['server_url']} ({total:,} 条记录)")
+                    self._log(f"✓ 连接成功！服务器已响应，共有 {total:,} 条记录。", "success")
+            except urllib.error.HTTPError as e:
+                self.status_label.setText("● 连接错误")
+                self.status_label.setStyleSheet("font-size: 15px; font-weight: bold; color: #f9e2af;")
+                if e.code == 403:
+                    self._log(f"✗ 服务器拒绝了连接 (403) — API 密钥不匹配，请检查 sync_config.json 里的 api_key。", "error")
+                else:
+                    body = e.read().decode("utf-8", errors="replace")[:200]
+                    self._log(f"✗ 服务器返回错误 {e.code}: {body}", "error")
+            except urllib.error.URLError as e:
+                self.status_label.setText("● 未连接")
+                self.status_label.setStyleSheet("font-size: 15px; font-weight: bold; color: #f38ba8;")
+                self._log(f"✗ 无法连接服务器: {e.reason} — 请检查网线、IP 地址、Django 是否运行、端口转发是否设置。", "error")
+            except Exception as e:
+                self.status_label.setText("● 未连接")
+                self.status_label.setStyleSheet("font-size: 15px; font-weight: bold; color: #f38ba8;")
+                self._log(f"✗ 连接异常: {e}", "error")
+            finally:
+                self.test_btn.setEnabled(True)
+                self.test_btn.setText("🔗  测试连接")
 
         def _set_syncing(self, syncing):
             self.sync_btn.setEnabled(not syncing)

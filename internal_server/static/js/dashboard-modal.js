@@ -310,6 +310,17 @@
         _existingPhotos = Array.isArray(data.report_photos) ? data.report_photos.slice() : [];
         renderWoExistingPhotos();
 
+        // Prefill the material-consumption cart from the report's existing
+        // outbound transaction (edit mode).
+        prefillWoMaterials(Array.isArray(data.existing_materials) ? data.existing_materials : []);
+        // Restore the material destination from the existing txn.
+        if (data.existing_material_dest) {
+            _woMatDest.subtype = data.existing_material_dest.entry_subtype || '日常维护';
+            _woMatDest.projectId = data.existing_material_dest.project_id || null;
+            _woMatDest.counterparty = data.existing_material_dest.counterparty || '';
+            _woMatDest.other = '';
+        }
+
         var sb = $('woSubmitBtn'); if (sb) { sb.textContent = '保存'; }
     }
 
@@ -1510,7 +1521,8 @@
             '<div class="v2-fg"><div class="v2-form-row"><div style="flex:0.8;"><div class="v2-fl">待修</div><div class="v2-chip-group"><div class="v2-chip active" data-val=""><input type="radio" name="is_pending_repair" value="" style="display:none;" checked>否</div><div class="v2-chip" data-val="1"><input type="radio" name="is_pending_repair" value="1" style="display:none;">是</div></div></div><div style="flex:1.2;"><div class="v2-fl">疑难</div><div class="v2-chip-group"><div class="v2-chip active" data-val=""><input type="radio" name="is_difficult" value="" style="display:none;" checked>否</div><div class="v2-chip" data-val="1"><input type="radio" name="is_difficult" value="1" style="display:none;">是</div></div></div><div><div class="v2-fl">已处理</div><div class="v2-chip-group"><div class="v2-chip active" data-val=""><input type="radio" name="is_difficult_resolved" value="" style="display:none;" checked>否</div><div class="v2-chip" data-val="1"><input type="radio" name="is_difficult_resolved" value="1" style="display:none;">是</div></div></div></div></div>' +
             '<div class="v2-fg"><div class="v2-fl">备注</div><textarea name="remark" class="v2-textarea" placeholder="可选备注..." rows="2"></textarea></div>' +
             '<div class="v2-fg"><div class="v2-fl">照片/视频 (最多6个)</div><div class="v2-photo-area" id="woPhotoArea"><div class="v2-photo-add v2-photo-camera" id="woPhotoCamera" title="拍摄">📷</div><div class="v2-photo-add" id="woPhotoAdd" title="从相册选择">+</div></div><input type="file" id="woPhotoInput" accept="image/*,video/*" multiple style="display:none;"><input type="file" id="woPhotoCameraInput" accept="image/*,video/*" capture="environment" style="display:none;"></div>' +
-            '<input type="hidden" name="entries" id="woEntriesInput" value="[]"><input type="hidden" name="pm_resolved" id="woPmResolved" value=""></form>' +
+            '<div class="v2-fg"><div class="v2-fl">材料消耗 / 出库 <span style="font-size:0.78em;color:#aaa;font-weight:400;">(可选，提交时扣减库存)</span></div><div id="woMatDestRow" style="display:none;margin-bottom:8px;"><div style="font-size:0.8em;color:#888;margin-bottom:4px;">出库去向 <span id="woMatDestAuto" style="color:#2D6A4F;"></span></div><div class="v2-chip-group" id="woMatDestChips"></div><div id="woMatDestProject" style="display:none;margin-top:6px;"></div><div id="woMatDestCp" style="display:none;margin-top:6px;"><input type="text" id="woMatDestCpInput" placeholder="借用方" class="v2-input" style="font-size:0.88em;"></div><div id="woMatDestOther" style="display:none;margin-top:6px;"><input type="text" id="woMatDestOtherInput" placeholder="请填写去向" class="v2-input" style="font-size:0.88em;"></div></div><div id="woMatCart"></div><button type="button" id="woMatAdd" style="margin-top:4px;width:100%;padding:9px;border:1px dashed #2D6A4F;border-radius:8px;background:#fff;color:#2D6A4F;font-size:0.9em;font-weight:600;cursor:pointer;">+ 添加材料</button><div id="woMatRecommend" style="display:none;margin-top:8px;"></div></div>' +
+            '<input type="hidden" name="entries" id="woEntriesInput" value="[]"><input type="hidden" name="pm_resolved" id="woPmResolved" value=""><input type="hidden" name="materials" id="woMaterialsInput" value="[]"></form>' +
             '<div id="woCatModal" class="v2-sheet-overlay"><div class="v2-sheet"><div style="width:36px;height:4px;background:#ccc;border-radius:2px;margin:10px auto 0;"></div><div style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px 10px;border-bottom:1px solid #f0f0f0;flex-shrink:0;"><span style="font-weight:600;">选择工作类别</span><button type="button" onclick="document.getElementById(\'woCatModal\').style.display=\'none\'" style="width:32px;height:32px;border:none;background:#f0f0f0;border-radius:50%;font-size:1.1em;cursor:pointer;">×</button></div><div style="padding:16px;overflow-y:auto;-webkit-overflow-scrolling:touch;touch-action:pan-y;flex:1;min-height:0;"><div style="font-size:0.85em;color:#999;margin-bottom:6px;">类别</div><div class="v2-chip-group" id="woCatPrimary"></div><div id="woCatSubDivider" style="display:none;border-top:1px solid #e0e0e0;margin:12px 0;"></div><div id="woCatSubLabel" style="display:none;font-size:0.85em;color:#999;margin-bottom:6px;">子类别</div><div class="v2-chip-group" id="woCatSub"></div></div></div></div>' +
             '<div id="woTreeModal" class="v2-sheet-overlay"><div class="v2-sheet"><div style="width:36px;height:4px;background:#ccc;border-radius:2px;margin:10px auto 0;"></div><div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid #f0f0f0;flex-shrink:0;"><span style="font-weight:600;">工作内容</span><button type="button" onclick="document.getElementById(\'woTreeModal\').style.display=\'none\'" style="width:32px;height:32px;border:none;background:#f0f0f0;border-radius:50%;font-size:1.1em;cursor:pointer;">×</button></div><div id="woBreadcrumb" class="v2-wo-bc"></div><div id="woSheetBody" style="flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;touch-action:pan-y;padding:8px 16px;min-height:0;"></div><div style="padding:12px 16px;border-top:1px solid #f0f0f0;flex-shrink:0;"><button type="button" onclick="document.getElementById(\'woTreeModal\').style.display=\'none\'" style="width:100%;padding:12px;border:none;border-radius:10px;font-size:0.95em;font-weight:600;cursor:pointer;background:#2D6A4F;color:#fff;">完成</button></div></div></div>' +
             '<div id="woLeafModal" class="v2-sheet-overlay" style="z-index:4100;"><div class="v2-sheet"><div style="width:36px;height:4px;background:#ccc;border-radius:2px;margin:10px auto 0;"></div><div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid #f0f0f0;flex-shrink:0;"><span id="woLeafTitle" style="font-weight:600;"></span><button type="button" onclick="document.getElementById(\'woLeafModal\').style.display=\'none\'" style="width:32px;height:32px;border:none;background:#f0f0f0;border-radius:50%;font-size:1.1em;cursor:pointer;">×</button></div><div id="woLeafBody" style="padding:16px;overflow-y:auto;-webkit-overflow-scrolling:touch;touch-action:pan-y;flex:1;min-height:0;"></div><div style="padding:12px 16px;border-top:1px solid #f0f0f0;display:flex;gap:10px;flex-shrink:0;"><button type="button" onclick="document.getElementById(\'woLeafModal\').style.display=\'none\'" style="flex:1;padding:12px;border:1px solid #2D6A4F;border-radius:10px;font-size:0.95em;font-weight:600;cursor:pointer;background:#fff;color:#2D6A4F;">取消</button><button type="button" id="woLeafConfirmBtn" style="flex:1;padding:12px;border:none;border-radius:10px;font-size:0.95em;font-weight:600;cursor:pointer;background:#2D6A4F;color:#fff;">确定</button></div></div></div>';
@@ -1519,9 +1531,16 @@
         // `transform`. On iOS Safari a transformed ancestor turns position:fixed into
         // position:absolute (relative to that ancestor), so sheets nested in the modal
         // got clipped at the top and overlapped by the modal footer (提交/修改区域).
+        // Re-opening rebuilds body.innerHTML (creating fresh sheet elements), but the
+        // PREVIOUS open's sheets were reparented to <body> and survive — so remove
+        // those stale orphans first to avoid duplicate IDs (which made 工作类别 chips
+        // accumulate on each reopen).
         ['woCatModal', 'woTreeModal', 'woLeafModal'].forEach(function (id) {
+            // Drop any stale sheet left on <body> from a prior open.
+            var stale = document.body.querySelector('#' + id);
+            if (stale && stale.parentNode === document.body) stale.remove();
             var el = document.getElementById(id);
-            if (el && el.parentNode !== document.body) document.body.appendChild(el);
+            if (el) document.body.appendChild(el);
         });
 
         injectCSRF(body.querySelector('form'));
@@ -1581,6 +1600,8 @@
         _woCanCreateProject = !!data.can_create_project;
         resetWoState();
         updateWoTrigger();
+        // Material consumption widget (材料消耗): catalog tree + cart + recommend.
+        initWoMaterialWidget(data.inventory_tree || []);
         // 工作类别: cascading sheet — level-1 chips first; selecting one reveals the next level below.
         // 灌溉项目 is special: 灌溉项目 → FAM/WDI/绿化 → 项目名称 (from DB, or create).
         var catTrigger = $('woCatTrigger'), catModal = $('woCatModal');
@@ -1629,6 +1650,7 @@
             var d = $('woCatDisplay');
             if (d) { d.textContent = sub ? (root.name + ' › ' + sub.name) : root.name; d.style.color = '#222'; }
             closeCatModal();
+            if (typeof updateWoMatDest === 'function') updateWoMatDest();
         }
         var PROJECT_TOP = { irrigation_project: 'IRRIGATION', drainage_project: 'DRAINAGE', other_project: 'OTHER' };
         function pickWoProject(root, subLabel, project) {
@@ -1640,6 +1662,7 @@
             var d = $('woCatDisplay');
             if (d) { d.textContent = root.name + (subLabel ? ' › ' + subLabel : '') + ' › ' + project.name; d.style.color = '#222'; }
             closeCatModal();
+            if (typeof updateWoMatDest === 'function') updateWoMatDest();
         }
         function showProjectsFor(root, top, sub, subLabel) {
             var items = _woProjects.filter(function (p) {
@@ -1670,6 +1693,7 @@
                 'irrigation_project', 'drainage_project', 'other_project',
                 'meeting_training', 'warehouse', 'typhoon_emergency',
                 'greenhouse_nursery', 'safety_incident', 'good_deed'];
+            catPrimary.innerHTML = '';   // clear any chips left from a prior open
             var orderedCats = _woRoots.slice().sort(function (a, b) {
                 var ia = CAT_ORDER.indexOf(a.section), ib = CAT_ORDER.indexOf(b.section);
                 return (ia < 0 ? 999 : ia) - (ib < 0 ? 999 : ib);
@@ -1717,6 +1741,7 @@
                 var dd = $('woCatDisplay');
                 if (dd) { dd.textContent = rmRoot.name + ' › ' + sub.name; dd.style.color = '#222'; }
                 setContentVisible(true);
+                if (typeof updateWoMatDest === 'function') updateWoMatDest();
             }
         })();
         var contentTrigger = $('woContentTrigger');
@@ -2130,6 +2155,8 @@
         var n = Object.keys(_woEntries).length;
         var d = $('woContentDisplay');
         if (d) { d.textContent = n ? ('已填 ' + n + ' 项') : '选择'; d.style.color = n ? '#222' : '#bbb'; }
+        // Keep the material recommend strip in sync with the work content.
+        updateWoMatRecommend();
     }
 
     function collectWoEntries() {
@@ -2137,6 +2164,295 @@
             var e = _woEntries[id];
             return { work_item: parseInt(id, 10), project: e.project || null, count: e.count || 0, status: e.status || '', text_value: e.text_value || '' };
         });
+    }
+
+    // ── Material consumption widget (材料消耗 / 出库) for the workorder modal ──
+    // Independent of the inventory modal's _invCart — kept in its own state so the
+    // two modals never share a cart. Picks concrete SKUs from the full inventory
+    // catalog (6 levels) via a drill-down sheet; a "recommend" strip surfaces SKUs
+    // matching material keywords found in the filled work-content leaves.
+    var _woMatCart = [];        // [{id, name, stock, min, quantity, unit}]
+    var _woInvTree = [];        // cached inventory catalog
+    var _woInvNodeMap = {};     // id -> node
+    var _woInvAncestors = {};   // id -> [ancestor names]
+    var _woMatKeywords = ['喷头','管','弯头','三通','阀箱','电磁阀','滴灌','接头','过滤器','取水阀','冲洗阀','调压器','控制线','通讯线'];
+
+    function indexWoInvTree(nodes) {
+        function walk(node, chain) {
+            _woInvNodeMap[node.id] = node;
+            _woInvAncestors[node.id] = chain.map(function (n) { return n.name || n.name_zh || ''; });
+            var next = chain.concat([node]);
+            (node.children || []).forEach(function (c) { walk(c, next); });
+        }
+        (nodes || []).forEach(function (r) { walk(r, []); });
+    }
+    function isWoMatLeaf(n) { return n.node_type === 'part' || (!n.children || !n.children.length); }
+
+    function renderWoMatCart() {
+        var box = $('woMatCart'); if (!box) return;
+        if (!_woMatCart.length) { box.innerHTML = '<div style="font-size:0.82em;color:#aaa;padding:4px 0;">尚未添加材料</div>'; return; }
+        box.innerHTML = '';
+        _woMatCart.forEach(function (c, i) {
+            var low = (c.min && c.stock <= c.min);
+            var row = document.createElement('div');
+            row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:9px 10px;border:1px solid #e0e0e0;border-radius:8px;margin-bottom:6px;background:#fafafa;flex-wrap:wrap;';
+            row.innerHTML =
+                '<span style="flex:1 1 120px;min-width:0;font-size:0.86em;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + _esc(c.label || c.name) + '</span>' +
+                '<span style="font-size:0.72em;color:' + (low ? '#c0392b' : '#999') + ';white-space:nowrap;">库存 ' + c.stock + '</span>' +
+                '<input type="number" min="1" step="1" class="wo-mat-qty" value="' + c.quantity + '" style="width:60px;padding:5px;border:1px solid #ddd;border-radius:6px;text-align:center;font-size:0.85em;">' +
+                '<button type="button" class="wo-mat-del" style="border:none;background:transparent;color:#c0392b;font-size:1.1em;cursor:pointer;padding:0 4px;">✕</button>';
+            var qi = row.querySelector('.wo-mat-qty'), db = row.querySelector('.wo-mat-del');
+            qi.addEventListener('input', function () { c.quantity = parseFloat(qi.value) || 0; });
+            db.addEventListener('click', function () { _woMatCart.splice(i, 1); renderWoMatCart(); if (typeof updateWoMatDest === 'function') updateWoMatDest(); });
+            box.appendChild(row);
+        });
+    }
+    // Build the display label "类别 › 子类 › 名称" from a leaf node (up to 2 ancestors).
+    function _woMatLabel(node) {
+        var anc = (_woInvAncestors[node.id] || []).slice(-2);
+        var parts = anc.map(function (a) { return a; });
+        parts.push(node.name || node.name_zh);
+        return parts.join(' › ');
+    }
+    function addToWoMatCart(id) {
+        var n = _woInvNodeMap[id];
+        if (!n || !isWoMatLeaf(n)) return;
+        if (_woMatCart.some(function (c) { return c.id === id; })) return;
+        _woMatCart.push({ id: id, name: n.name || n.name_zh, label: _woMatLabel(n),
+                          stock: n.current_stock || 0, min: n.min_stock || 0, quantity: 1 });
+        renderWoMatCart();
+        if (typeof updateWoMatDest === 'function') updateWoMatDest();
+    }
+    function collectWoMaterials() {
+        return _woMatCart.filter(function (c) { return (c.quantity || 0) > 0; })
+                         .map(function (c) { return { category: c.id, quantity: c.quantity }; });
+    }
+    function prefillWoMaterials(items) {
+        _woMatCart = (items || []).map(function (m) {
+            var n = _woInvNodeMap[m.category] || {};
+            return { id: m.category, name: m.name || n.name || n.name_zh || ('#' + m.category),
+                     label: m.name || _woMatLabel(n) || ('#' + m.category),
+                     stock: n.current_stock || 0, min: n.min_stock || 0,
+                     quantity: m.quantity || 1 };
+        });
+        renderWoMatCart();
+        if (typeof updateWoMatDest === 'function') updateWoMatDest();
+    }
+
+    // Bottom-sheet drill-down (mirrors _invOpenTreeSheet, namespaced to wo).
+    var _woMatPath = [];
+    function openWoMatSheet(path) {
+        _woMatPath = path || [];
+        var level = _woInvTree;
+        for (var i = 0; i < _woMatPath.length; i++) {
+            var nn = _woInvNodeMap[_woMatPath[i]];
+            if (!nn || !nn.children) { _woMatPath = _woMatPath.slice(0, i); break; }
+            level = nn.children;
+        }
+        var sheet = $('woMatSheet');
+        if (!sheet) {
+            sheet = document.createElement('div');
+            sheet.id = 'woMatSheet';
+            sheet.className = 'v2-sheet-overlay';
+            sheet.innerHTML = '<div class="v2-sheet"><div style="width:36px;height:4px;background:#ccc;border-radius:2px;margin:10px auto 0;"></div>' +
+                '<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid #f0f0f0;flex-shrink:0;">' +
+                '<span id="woMatSheetTitle" style="font-weight:600;"></span>' +
+                '<button type="button" id="woMatSheetClose" style="width:32px;height:32px;border:none;background:#f0f0f0;border-radius:50%;font-size:1.1em;cursor:pointer;">×</button></div>' +
+                '<div id="woMatSheetBody" style="flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;touch-action:pan-y;padding:4px 0;min-height:0;"></div></div>';
+            document.body.appendChild(sheet);
+            sheet.addEventListener('click', function (e) { if (e.target === sheet) sheet.style.display = 'none'; });
+            $('woMatSheetClose').addEventListener('click', function () { sheet.style.display = 'none'; });
+        }
+        $('woMatSheetTitle').textContent = _woMatPath.length
+            ? _woMatPath.map(function (id) { var n = _woInvNodeMap[id]; return n.name || n.name_zh; }).join(' › ')
+            : '选择材料';
+        var body = $('woMatSheetBody');
+        body.innerHTML = '';
+        if (_woMatPath.length) {
+            var back = document.createElement('button');
+            back.type = 'button';
+            back.style.cssText = 'display:flex;width:100%;padding:12px 16px;border:none;background:none;border-bottom:1px solid #f0f0f0;font-size:0.84em;color:#999;cursor:pointer;text-align:left;';
+            back.textContent = '‹ 返回';
+            back.addEventListener('click', function () { openWoMatSheet(_woMatPath.slice(0, -1)); });
+            body.appendChild(back);
+        }
+        level.forEach(function (n) {
+            var leaf = isWoMatLeaf(n);
+            var row = document.createElement('button');
+            row.type = 'button';
+            row.style.cssText = 'display:flex;align-items:center;width:100%;padding:12px 16px;border:none;background:none;border-bottom:1px solid #f0f0f0;font-size:0.9em;color:#222;cursor:pointer;text-align:left;';
+            row.innerHTML = '<span style="flex:1;">' + (leaf ? '🔹 ' : '📁 ') + _esc(n.name || n.name_zh) + '</span>' +
+                (leaf ? '<span style="font-size:0.74em;color:#999;margin-left:8px;">库存 ' + (n.current_stock || 0) + '</span>' : '<span style="color:#999;font-size:0.8em;">▶</span>');
+            row.addEventListener('click', function () {
+                if (leaf) { addToWoMatCart(n.id); sheet.style.display = 'none'; }
+                else openWoMatSheet(_woMatPath.concat([n.id]));
+            });
+            body.appendChild(row);
+        });
+        sheet.style.display = 'flex';
+    }
+
+    function updateWoMatRecommend() {
+        var strip = $('woMatRecommend'); if (!strip) return;
+        // Collect material keywords from the filled work-content leaves (name + ancestor path).
+        var kws = {};
+        Object.keys(_woEntries).forEach(function (id) {
+            var e = _woEntries[id]; if (!e) return;
+            var has = (e.count > 0) || !!e.status || !!(e.text_value) || e.hasPhoto;
+            if (!has) return;
+            var node = _woNodeById[id]; if (!node) return;
+            var hay = (node.name || '') + ' ' + (node.section || '');
+            // Walk ancestor chain for richer keyword context.
+            var p = _woParentById[id];
+            while (p) { hay += ' ' + (p.name || ''); p = _woParentById[p.id]; }
+            _woMatKeywords.forEach(function (k) { if (hay.indexOf(k) >= 0) kws[k] = (kws[k] || 0) + 1; });
+        });
+        var kwList = Object.keys(kws);
+        if (!kwList.length) { strip.style.display = 'none'; return; }
+        var scored = [];
+        Object.keys(_woInvNodeMap).forEach(function (id) {
+            var n = _woInvNodeMap[id]; if (!isWoMatLeaf(n)) return;
+            var hay = (n.name || n.name_zh || '') + ' ' + (_woInvAncestors[id] || []).join(' ');
+            var hits = 0;
+            kwList.forEach(function (k) { if (hay.indexOf(k) >= 0) hits++; });
+            if (hits > 0) scored.push({ n: n, hits: hits });
+        });
+        if (!scored.length) { strip.style.display = 'none'; return; }
+        scored.sort(function (a, b) { return b.hits - a.hits || String(a.n.name || a.n.name_zh).localeCompare(String(b.n.name || b.n.name_zh)); });
+        var top = scored.slice(0, 8);
+        strip.style.display = '';
+        strip.innerHTML = '<div style="font-size:0.76em;color:#999;margin-bottom:5px;">根据工单内容推荐 <span style="font-size:0.9em;">💡</span></div><div style="display:flex;flex-wrap:wrap;gap:6px;">' +
+            top.map(function (s) {
+                // Inline label: "类别 › 子类 › 名称" (up to 2 ancestor levels) + stock.
+                var anc = (_woInvAncestors[s.n.id] || []).slice(-2);
+                var parts = anc.map(function (a) { return _esc(a); });
+                parts.push(_esc(s.n.name || s.n.name_zh));
+                var label = parts.join(' › ');
+                return '<span class="wo-mat-rec-chip" data-id="' + s.n.id + '" style="font-size:0.78em;padding:5px 11px;border-radius:16px;background:#e8f5e9;color:#2D6A4F;cursor:pointer;">' + label +
+                    '<small style="color:#888;font-size:0.68em;margin-left:4px;">库存' + (s.n.current_stock || 0) + '</small></span>';
+            }).join('') + '</div>';
+        strip.querySelectorAll('.wo-mat-rec-chip').forEach(function (ch) {
+            ch.addEventListener('click', function () { addToWoMatCart(parseInt(ch.dataset.id, 10)); });
+        });
+    }
+
+    // ── Material destination (出库去向) ──────────────────────────────────
+    // Derived from the work category: routine_maint → 日常维护, project sections
+    // → 项目 (auto-bound to the selected project), other categories → user picks
+    // via chips (日常维护/项目[级联]/借用/其他). Mirrors the standalone inventory
+    // form's OUTBOUND_DESTINATIONS so workorder-generated txns are consistent.
+    var _woMatDest = { subtype: '', projectId: null, counterparty: '', other: '' };
+    var PROJECT_SECTIONS_MAT = { irrigation_project: 1, drainage_project: 1, other_project: 1 };
+
+    function updateWoMatDest() {
+        var row = $('woMatDestRow'); if (!row) return;
+        var autoEl = $('woMatDestAuto');
+        // Only show the destination selector once the user has added at least
+        // one material to the cart — there's nothing to assign a 去向 to otherwise.
+        var hasMaterials = _woMatCart && _woMatCart.length > 0;
+        if (!hasMaterials) { row.style.display = 'none'; return; }
+
+        var node = _woCatNode ? _woNodeById[_woCatNode] : null;
+        var section = node ? node.section : '';
+
+        if (section && PROJECT_SECTIONS_MAT[section]) {
+            // Project category: auto-bind to the selected project. Show the chips
+            // (项目 pre-selected + the project name) so the user sees the binding,
+            // but don't force them to pick.
+            _woMatDest.subtype = '项目';
+            _woMatDest.projectId = _woProject;
+            if (autoEl) autoEl.textContent = '(已按工单项目自动绑定)';
+        } else if (section === 'routine_maint') {
+            // Routine maintenance: auto 日常维护. Show the chip pre-selected.
+            _woMatDest.subtype = '日常维护';
+            if (autoEl) autoEl.textContent = '(已按常规维护自动绑定)';
+        } else {
+            // Other categories: user picks. Default to 日常维护 if unset.
+            if (!_woMatDest.subtype) {
+                _woMatDest.subtype = '日常维护';
+                _woMatDest.projectId = null; _woMatDest.counterparty = ''; _woMatDest.other = '';
+            }
+            if (autoEl) autoEl.textContent = '(请选择去向)';
+        }
+        row.style.display = '';
+        renderWoMatDestChips();
+    }
+
+    function renderWoMatDestChips() {
+        var box = $('woMatDestChips'); if (!box) return;
+        var dests = ['日常维护', '项目', '借用', '其他'];
+        box.innerHTML = dests.map(function (d) {
+            var on = (_woMatDest.subtype === d) ? ' active' : '';
+            return '<div class="v2-chip' + on + '" data-dest="' + d + '">' + d + '</div>';
+        }).join('');
+        box.querySelectorAll('.v2-chip').forEach(function (c) {
+            c.addEventListener('click', function () {
+                _woMatDest.subtype = c.dataset.dest;
+                if (c.dataset.dest !== '项目') _woMatDest.projectId = null;
+                if (c.dataset.dest !== '借用') _woMatDest.counterparty = '';
+                if (c.dataset.dest !== '其他') _woMatDest.other = '';
+                renderWoMatDestChips();
+            });
+        });
+        // Conditional sub-fields.
+        var projBox = $('woMatDestProject'), cpBox = $('woMatDestCp'), otherBox = $('woMatDestOther');
+        if (projBox) {
+            projBox.style.display = _woMatDest.subtype === '项目' ? '' : 'none';
+            if (_woMatDest.subtype === '项目') {
+                // Project cascade: category chips → project-name chips (reuse _woProjects).
+                var cats = {};
+                (_woProjects || []).forEach(function (p) { cats[p.category] = p.category_display || p.category; });
+                var catList = Object.keys(cats);
+                var curCat = _woMatDest.projectCat || catList[0];
+                _woMatDest.projectCat = curCat;
+                var projInCat = (_woProjects || []).filter(function (p) { return p.category === curCat; });
+                var html = '<div style="font-size:0.78em;color:#999;margin-bottom:3px;">类别</div><div class="v2-chip-group" id="woMatDestProjCats">' +
+                    catList.map(function (c) { return '<div class="v2-chip' + (c === curCat ? ' active' : '') + '" data-pcat="' + c + '">' + cats[c] + '</div>'; }).join('') + '</div>';
+                html += '<div style="font-size:0.78em;color:#999;margin:6px 0 3px;">项目</div><div class="v2-chip-group" id="woMatDestProjNames" style="flex-wrap:wrap;">' +
+                    projInCat.map(function (p) { return '<div class="v2-chip' + (p.id === _woMatDest.projectId ? ' active' : '') + '" data-pid="' + p.id + '">' + _esc(p.name) + '</div>'; }).join('') + '</div>';
+                projBox.innerHTML = html;
+                projBox.querySelectorAll('#woMatDestProjCats .v2-chip').forEach(function (c) {
+                    c.addEventListener('click', function () { _woMatDest.projectCat = c.dataset.pcat; _woMatDest.projectId = null; renderWoMatDestChips(); });
+                });
+                projBox.querySelectorAll('#woMatDestProjNames .v2-chip').forEach(function (c) {
+                    c.addEventListener('click', function () { _woMatDest.projectId = parseInt(c.dataset.pid, 10); renderWoMatDestChips(); });
+                });
+            }
+        }
+        if (cpBox) {
+            cpBox.style.display = _woMatDest.subtype === '借用' ? '' : 'none';
+            if (_woMatDest.subtype === '借用') {
+                var cpInput = $('woMatDestCpInput');
+                if (cpInput) { cpInput.value = _woMatDest.counterparty; cpInput.oninput = function () { _woMatDest.counterparty = cpInput.value; }; }
+            }
+        }
+        if (otherBox) {
+            otherBox.style.display = _woMatDest.subtype === '其他' ? '' : 'none';
+            if (_woMatDest.subtype === '其他') {
+                var oInput = $('woMatDestOtherInput');
+                if (oInput) { oInput.value = _woMatDest.other; oInput.oninput = function () { _woMatDest.other = oInput.value; }; }
+            }
+        }
+    }
+    function collectWoMatDest() {
+        // Returns the POST fields for the destination. The '其他' subtype sends
+        // the typed text as entry_subtype; the server stores it verbatim.
+        var d = _woMatDest;
+        if (d.subtype === '其他') return { mat_dest: d.other || '其他', mat_project_id: '', mat_counterparty: '' };
+        if (d.subtype === '借用') return { mat_dest: '借用', mat_project_id: '', mat_counterparty: d.counterparty };
+        if (d.subtype === '项目') return { mat_dest: '项目', mat_project_id: d.projectId || '', mat_counterparty: '' };
+        return { mat_dest: '日常维护', mat_project_id: '', mat_counterparty: '' };
+    }
+
+    function initWoMaterialWidget(invTree) {
+        _woInvTree = invTree || [];
+        _woInvNodeMap = {}; _woInvAncestors = {};
+        indexWoInvTree(_woInvTree);
+        _woMatCart = [];
+        renderWoMatCart();
+        var addBtn = $('woMatAdd');
+        if (addBtn) addBtn.addEventListener('click', function () { openWoMatSheet([]); });
+        updateWoMatRecommend();
     }
 
     function buildWaterRequestForm(data) {
@@ -2190,7 +2506,14 @@
             entries.push({ work_item: _woCatNode, project: null, count: 0, status: '', text_value: '' });
         }
         var entriesInput = $('woEntriesInput'); if (entriesInput) entriesInput.value = JSON.stringify(entries);
+        // Material consumption cart → JSON for the server (creates the outbound txn).
+        var matInput = $('woMaterialsInput'); if (matInput) matInput.value = JSON.stringify(collectWoMaterials());
         var fd = new FormData(form); _photoFiles.forEach(function (f) { fd.append('report_photos', f); });
+        // Material destination (出库去向) — auto-derived or user-picked.
+        var dest = collectWoMatDest();
+        fd.set('mat_dest', dest.mat_dest);
+        if (dest.mat_project_id) fd.set('mat_project_id', dest.mat_project_id);
+        if (dest.mat_counterparty) fd.set('mat_counterparty', dest.mat_counterparty);
         Object.keys(_woEntryPhotos).forEach(function (id) { _woEntryPhotos[id].forEach(function (f) { fd.append('ep_' + id, f); }); });
         // Edit mode: tell the server which report to update and which existing
         // photos the user removed.
@@ -2417,7 +2740,7 @@
             tbody.innerHTML = '<div style="text-align:center;color:#999;padding:20px;">无子分类</div>';
         }
         nodes.forEach(function (n) {
-            var isLeaf = !n.children || !n.children.length;
+            var isLeaf = n.node_type === 'part' || (!n.children || !n.children.length);
             var row = document.createElement('div');
             row.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:12px 10px;border-bottom:1px solid #f5f5f5;cursor:pointer;';
             row.innerHTML = '<span style="font-size:0.95em;">' + (isLeaf ? '🔹 ' : '📁 ') + _esc(n.name) +

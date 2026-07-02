@@ -6,331 +6,573 @@
 
 {% block extra_css %}
 <link rel="stylesheet" href="{% static 'css/settings.css' %}">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <style>
-.page-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; flex-wrap:wrap; gap:12px; }
-.page-header h1 { margin:0; color: var(--color-primary); }
+{# ════════════════════ FULLSCREEN MAP LAYOUT (dashboard-style) ════════════════════ #}
+{# These override base.html's default body layout to give a true fullscreen map. #}
+
+{# The fullscreen flex container — sits below the 52px sticky nav. #}
+.sh-container {
+    display: flex;
+    height: calc(100vh - 52px);
+    width: 100vw;
+    overflow: hidden;
+    box-sizing: border-box;
+    background: linear-gradient(135deg, #f7f3eb 0%, #ebe5d8 100%);
+}
+
+{# Left sidebar — collapsible, holds all heatmap controls + the ranked table. #}
+.sh-sidebar {
+    width: 340px;
+    min-width: 340px;
+    background: rgba(245, 240, 232, 0.94);
+    border-right: 1px solid rgba(27, 67, 50, 0.14);
+    box-shadow: 10px 0 30px rgba(27, 67, 50, 0.12);
+    backdrop-filter: blur(14px);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    z-index: 500;
+    transition: width 0.3s ease, min-width 0.3s ease, opacity 0.2s ease;
+}
+.sh-sidebar.collapsed {
+    width: 0; min-width: 0; border-right: none; opacity: 0; pointer-events: none;
+}
+.sh-sidebar-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 16px; border-bottom: 1px solid rgba(27,67,50,0.1);
+    flex-shrink: 0;
+}
+.sh-sidebar-header h2 { margin: 0; font-size: 1.05rem; color: var(--color-primary); }
+.sh-sidebar-body { flex: 1; overflow-y: auto; padding: 12px; }
+.sh-sidebar-close {
+    width: 28px; height: 28px; border: none; border-radius: 50%; cursor: pointer;
+    background: var(--color-surface-dark); color: #555; font-size: 0.9rem;
+    display: flex; align-items: center; justify-content: center;
+}
+
+{# Floating reopen handle (shows when sidebar collapsed). #}
+.sh-sidebar-expand {
+    position: absolute; left: 0; top: 50%; transform: translateY(-50%);
+    width: 32px; min-height: 120px; background: var(--color-primary); color: #fff;
+    border: none; border-radius: 0 8px 8px 0; cursor: pointer; font-size: 1.1rem;
+    font-weight: bold; z-index: 1000; display: none; align-items: center;
+    justify-content: center; box-shadow: 3px 0 10px rgba(0,0,0,0.25);
+    writing-mode: vertical-lr; letter-spacing: 2px;
+}
+.sh-sidebar-expand:hover { background: #081C15; width: 40px; }
+.sh-sidebar-expand.visible { display: flex; }
+
+{# Map area. #}
+.sh-map-area { flex: 1; position: relative; overflow: hidden; min-height: 0; }
+#statsHeatMap { width: 100%; height: 100%; position: absolute; top: 0; left: 0; z-index: 0; }
+
+{# ════════════════════ OVERLAY CONTROLS (on top of map) ════════════════════ #}
+
+{# Top-right overlay button group — toggle sidebar + open report panel. #}
+.sh-overlay-tl {
+    position: absolute; top: 16px; left: 16px; z-index: 1000;
+    display: flex; gap: 8px; align-items: center;
+}
+.sh-btn {
+    height: 38px; padding: 0 16px; border-radius: 19px; cursor: pointer;
+    border: 3px solid rgba(255,255,255,0.95);
+    background: linear-gradient(145deg, #52b788, #2d6a4f);
+    box-shadow: 0 4px 16px rgba(27,67,50,0.3);
+    color: #fff; font-size: 0.85rem; font-weight: 600; white-space: nowrap;
+    display: flex; align-items: center; gap: 5px;
+    transition: all 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.sh-btn:hover { transform: scale(1.05); box-shadow: 0 6px 20px rgba(27,67,50,0.4); }
+.sh-btn.active { background: linear-gradient(145deg, #e74c3c, #b91c1c); }
+
+{# Bottom-center legend overlay. #}
+.sh-legend-overlay {
+    position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%);
+    z-index: 1000; display: flex; align-items: center; gap: 8px;
+    background: rgba(245,240,232,0.92); backdrop-filter: blur(12px);
+    border: 1px solid rgba(27,67,50,0.14); border-radius: 20px;
+    padding: 6px 16px; box-shadow: 0 4px 16px rgba(0,0,0,0.1);
+    font-size: 0.78rem; color: #555;
+}
+.sh-legend-overlay .sh-legend-bar { width: 100px; height: 10px; border-radius: 5px; border: 1px solid #ddd; }
+
+{# ════════════════════ REPORT OVERLAY PANEL ════════════════════ #}
+{# A full-screen scrollable panel that slides over the map when "数据报表" is open. #}
+.sh-report-panel {
+    position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+    z-index: 1500; background: rgba(247,243,235,0.98); backdrop-filter: blur(16px);
+    overflow-y: auto; display: none; padding: 20px;
+}
+.sh-report-panel.open { display: block; }
+.sh-report-panel .sh-report-inner { max-width: 1400px; margin: 0 auto; }
+
+{# ════════════════════ SIDEBAR CONTENT STYLES ════════════════════ #}
+
+{# Date range picker in sidebar. #}
+.sh-date-range { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
+.sh-date-range .sh-date-row { display: flex; gap: 6px; align-items: center; }
+.sh-date-range input[type=date] {
+    flex: 1; padding: 6px 8px; border: 1px solid #d8d8d8; border-radius: 6px; font-size: 0.85rem;
+}
+.sh-date-btn {
+    padding: 6px 14px; border: none; border-radius: 6px; cursor: pointer;
+    background: var(--color-primary); color: #fff; font-size: 0.85rem; font-weight: 600;
+}
+.sh-presets { display: flex; gap: 6px; flex-wrap: wrap; }
+.sh-preset {
+    padding: 4px 10px; border-radius: 14px; font-size: 0.78rem; font-weight: 600;
+    background: #fff; color: #555; border: 1px solid #e0e0e0; cursor: pointer;
+}
+.sh-preset:hover { background: var(--color-surface-alt); }
+.sh-preset.active { background: var(--color-primary); color: #fff; border-color: var(--color-primary); }
+.sh-export-btn {
+    padding: 4px 10px; border-radius: 14px; font-size: 0.78rem; font-weight: 600;
+    background: var(--color-primary); color: #fff; text-decoration: none; border: none; cursor: pointer;
+}
+
+{# Control section labels. #}
+.sh-ctrl-section { margin-bottom: 14px; }
+.sh-ctrl-label { font-size: 0.75rem; font-weight: 700; color: #888; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 6px; }
+.sh-ctrl-row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+
+{# Metric / filter pills (reused from old layout). #}
+.sh-pill { padding: 5px 12px; border-radius: 16px; font-size: 0.8rem; font-weight: 600; background: #fff; color: #555; border: 1px solid #e0e0e0; cursor: pointer; transition: all 0.15s; user-select: none; white-space: nowrap; }
+.sh-pill:hover { background: var(--color-surface-alt); }
+.sh-pill.active { background: var(--color-primary); color: #fff; border-color: var(--color-primary); }
+
+{# Dropdown (hours / workers). #}
+.sh-dropdown { position: relative; }
+.sh-dropdown-menu { display: none; position: absolute; top: calc(100% + 4px); left: 0; background: #fff; border: 1px solid #e0e0e0; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.12); z-index: 2000; min-width: 140px; overflow: hidden; }
+.sh-dropdown-menu.open { display: block; }
+.sh-dropdown-item { padding: 8px 14px; font-size: 0.82rem; cursor: pointer; color: #555; white-space: nowrap; }
+.sh-dropdown-item:hover { background: var(--color-surface-alt); }
+.sh-dropdown-item.active { color: var(--color-primary); font-weight: 600; background: #e8f5e9; }
+
+{# Filter checkboxes. #}
+.sh-filter-sep { color: #ccc; font-size: 0.9rem; }
+.sh-filter { display: flex; align-items: center; gap: 4px; font-size: 0.8rem; font-weight: 600; color: #555; cursor: pointer; user-select: none; white-space: nowrap; padding: 5px 10px; border-radius: 16px; border: 1px solid #e0e0e0; background: #fff; }
+.sh-filter:hover { background: var(--color-surface-alt); }
+.sh-filter input { width: 14px; height: 14px; accent-color: var(--color-primary); }
+.sh-filter.on { background: #fff3e0; border-color: #e6a23c; color: #cc7722; }
+
+{# Worker multi-select. #}
+#shWorkerMenu { min-width: 160px; max-height: 280px; overflow-y: auto; }
+.sh-worker-actions { display: flex; gap: 12px; padding: 6px 14px; border-bottom: 1px solid #eee; font-size: 0.78rem; }
+.sh-worker-actions a { color: var(--color-primary); cursor: pointer; font-weight: 600; }
+.sh-worker-item { display: flex; align-items: center; gap: 6px; padding: 6px 14px; font-size: 0.82rem; cursor: pointer; color: #555; }
+.sh-worker-item:hover { background: var(--color-surface-alt); }
+.sh-worker-item input { width: 14px; height: 14px; accent-color: var(--color-primary); }
+
+{# Granularity pills. #}
+.sh-gran-pill { padding: 5px 12px; border-radius: 16px; font-size: 0.78rem; font-weight: 600; background: #fff; color: #555; border: 1px solid #e0e0e0; cursor: pointer; white-space: nowrap; }
+.sh-gran-pill:hover { background: var(--color-surface-alt); }
+.sh-gran-pill.active { background: var(--color-primary); color: #fff; border-color: var(--color-primary); }
+
+{# Ranked table (in sidebar, below controls). #}
+.sh-table-wrap { margin-top: 14px; border: 1px solid rgba(27,67,50,0.1); border-radius: 8px; overflow: hidden; }
+.sh-table-title { font-size: 0.78rem; font-weight: 700; color: var(--color-primary); padding: 8px 10px; background: rgba(27,67,50,0.04); border-bottom: 1px solid rgba(27,67,50,0.06); }
+.sh-table-scroll { max-height: 400px; overflow-y: auto; }
+.sh-table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+.sh-table thead { position: sticky; top: 0; z-index: 2; }
+.sh-table th { background: var(--color-primary); color: #fff; font-weight: 600; font-size: 0.72rem; padding: 5px 8px; text-align: left; }
+.sh-table th.num { text-align: right; }
+.sh-table td { padding: 4px 8px; border-bottom: 1px solid #f0f0f0; }
+.sh-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.sh-table .heat-toggle { cursor: pointer; user-select: none; }
+.sh-table .heat-toggle:hover td { background: #e8f5e9; }
+.sh-table .heat-arrow { display: inline-block; width: 12px; color: #999; font-size: 0.72rem; }
+.sh-table .heat-arrow-spacer { display: inline-block; width: 12px; }
+.sh-table .heat-branch td { font-weight: 600; }
+.sh-table tr.heat-branch td:first-child { color: var(--color-primary); }
+.sh-table tr.heat-leaf { cursor: pointer; }
+.sh-table tr.heat-leaf:hover td { background: #e8f5e9; }
+.sh-table .heat-label { color: #444; }
+.sh-table .heat-val { font-weight: 600; color: #c0392b; }
+.sh-table .heat-bar-cell { width: 40px; }
+.sh-table .heat-bar { height: 5px; border-radius: 3px; min-width: 2px; }
+
+{# ════════════════════ REPORT PANEL CONTENT (old stats page styles) ════════════════════ #}
 .section-title { font-size:1.1rem; font-weight:600; color: var(--color-primary); margin:24px 0 12px 0; padding-bottom:8px; border-bottom:2px solid var(--color-primary); }
-/* Collapsible section: the .section-title becomes a clickable header that
-   toggles the .weekly-dashboard right after it. A small arrow shows state. */
 .section-title.collapsible { cursor:pointer; display:flex; align-items:center; justify-content:space-between; user-select:none; }
 .section-title.collapsible:hover { color: var(--color-primary-dark); }
 .section-title.collapsible .sec-arrow { font-size:0.8em; transition:transform 0.15s; }
 .section-title.collapsible.collapsed .sec-arrow { transform:rotate(-90deg); }
 .section-title.collapsed + .weekly-dashboard { display:none; }
-/* Export button (sits in the section-title row) */
-.sec-export { font-size:0.78rem; font-weight:600; padding:4px 12px; border-radius:14px; background:var(--color-primary); color:#fff; border:none; cursor:pointer; margin-left:8px; }
-.sec-export:hover { background:var(--color-primary-dark); }
-.section-title.collapsible .sec-export { flex:0 0 auto; }
-
-/* Date-range control (custom from/to date picker + presets) */
-.range-nav { display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; padding:12px; background:var(--color-surface-alt); border-radius:8px; flex-wrap:wrap; gap:10px; }
-.range-nav-btn { background:var(--color-primary); color:white; border:none; padding:8px 16px; border-radius:6px; cursor:pointer; font-size:0.85rem; }
-.range-nav-btn:disabled { background:var(--color-text-muted); cursor:not-allowed; }
-.range-picker input[type="date"] { padding:6px 10px; border:1px solid var(--color-border); border-radius:6px; font-size:0.9rem; }
-.preset-row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
-.preset-pill { padding:6px 14px; border-radius:18px; font-size:0.82rem; font-weight:600; background:#fff; color:#555; border:1px solid #e0e0e0; cursor:pointer; text-decoration:none; }
-.preset-pill:hover { background:var(--color-surface-dark); }
-.range-current { text-align:center; flex:1; min-width:160px; }
-.range-current-label { font-size:0.75rem; color:var(--color-text-muted); margin-bottom:2px; }
-.range-current-range { font-size:1rem; font-weight:600; color:var(--color-primary); }
-
-/* Overview tiles */
+.sec-export { font-size:0.78rem; font-weight:600; padding:4px 12px; border-radius:14px; background:var(--color-primary); color:#fff; border:none; cursor:pointer; margin-left:8px; text-decoration:none; display:inline-block; }
+.sec-export:hover { background:var(--color-primary-dark); color:#fff; }
 .overview-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(150px, 1fr)); gap:14px; margin-bottom:20px; }
 .ov-tile { background:white; border-radius:10px; padding:16px; box-shadow:0 1px 3px rgba(0,0,0,0.08); text-align:center; }
 .ov-tile .stat-number { font-size:2rem; font-weight:700; color:var(--color-primary); line-height:1; }
 .ov-tile.danger .stat-number { color:#9B2226; }
 .ov-tile.warn .stat-number { color:#CC7722; }
 .ov-tile .stat-label { margin-top:6px; font-size:0.82rem; color:var(--color-text-muted); }
-
-/* Cards */
 .weekly-dashboard { display:grid; grid-template-columns:repeat(auto-fit, minmax(320px, 1fr)); gap:16px; margin-bottom:20px; }
 .dashboard-card { background:white; border-radius:10px; padding:16px; box-shadow:0 1px 3px rgba(0,0,0,0.08); }
 .dashboard-card.full { grid-column:1 / -1; }
 .dashboard-card h3 { margin:0 0 12px 0; font-size:0.95rem; color:var(--color-primary); border-bottom:2px solid var(--color-primary); padding-bottom:8px; }
-
-.stat-row { display:flex; justify-content:space-between; align-items:center; padding:6px 0; border-bottom:1px solid var(--color-surface-dark); font-size:0.85rem; }
-.stat-row:last-child { border-bottom:none; }
-.chart-empty { text-align:center; padding:20px; color:var(--color-text-muted); font-size:0.85rem; }
-
-.stat-bar { display:flex; align-items:center; gap:8px; width:100%; padding:4px 0; }
-.stat-bar-label { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:0.85rem; }
-.stat-bar-track { flex:2; height:8px; background:var(--color-surface-dark); border-radius:4px; overflow:hidden; }
-.stat-bar-fill { height:100%; background:var(--color-primary); border-radius:4px; }
-.stat-bar-value { min-width:40px; text-align:right; font-weight:600; font-size:0.85rem; }
-
-/* Generic stats table */
+.drill-head { display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom:1px solid var(--color-surface-dark); cursor:pointer; font-size:0.85rem; }
+.drill-head:hover { background:var(--color-surface-alt); }
+.drill-head .dh-arrow { transition:transform 0.15s; }
+.drill-head.open .dh-arrow { transform:rotate(90deg); }
+.drill-body { display:none; padding-left:16px; border-left:2px solid var(--color-surface-dark); margin-left:4px; }
+.drill-body.open { display:block; }
+.drill-body .drill-body .drill-body .drill-body { padding-left:12px; }
+.drill-leaf { display:flex; justify-content:space-between; align-items:center; padding:5px 0; font-size:0.82rem; color:var(--color-text); }
 .stats-table { width:100%; border-collapse:collapse; font-size:0.82rem; }
 .stats-table th, .stats-table td { padding:7px 8px; text-align:left; border-bottom:1px solid var(--color-surface-dark); }
-.stats-table th { background:var(--color-surface-alt); color:var(--color-text-muted); font-weight:600; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.02em; }
+.stats-table th { background:var(--color-surface-alt); color:var(--color-text-muted); font-weight:600; font-size:0.75rem; }
 .stats-table td.num { text-align:right; font-variant-numeric:tabular-nums; }
-.stats-table tr:hover td { background:var(--color-surface-alt); }
 .tag { display:inline-block; padding:1px 7px; border-radius:10px; font-size:0.7rem; font-weight:600; background:var(--color-surface-dark); color:var(--color-text-muted); }
 .tag.irr { background:#e8f5e9; color:#2D6A4F; }
 .tag.drn { background:#e3f2fd; color:#1565c0; }
 .tag.oth { background:#fff3e0; color:#e65100; }
-
-/* Drilldown (expandable rows: section→node, land→name→zone) */
-.drill-head { display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom:1px solid var(--color-surface-dark); cursor:pointer; font-size:0.85rem; }
-.drill-head:hover { background:var(--color-surface-alt); }
-.drill-head .dh-label { font-weight:600; }
-.drill-head .dh-arrow { color:var(--color-text-muted); transition:transform 0.15s; }
-.drill-head.open .dh-arrow { transform:rotate(90deg); }
-.drill-head .dh-meta { color:var(--color-text-muted); font-size:0.78rem; margin-left:8px; }
-.drill-body { display:none; padding-left:16px; border-left:2px solid var(--color-surface-dark); margin-left:4px; }
-.drill-body.open { display:block; }
-/* Deep nesting (level 4+): tighten indent + slightly shrink text so a tall
-   WorkItem tree stays readable on a phone without overflowing. */
-.drill-body .drill-body .drill-body .drill-body { padding-left:12px; }
-.drill-body .drill-body .drill-body .drill-body .dh-meta { font-size:0.72rem; }
-.drill-leaf { display:flex; justify-content:space-between; align-items:center; padding:5px 0; font-size:0.82rem; color:var(--color-text); }
-.drill-leaf .dl-label { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.drill-leaf .dl-num { font-weight:600; color:var(--color-primary); font-variant-numeric:tabular-nums; white-space:nowrap; margin-left:8px; }
-
-@media (max-width: 560px) {
-    .weekly-dashboard { grid-template-columns:1fr; }
-    .range-nav { flex-direction:column; align-items:stretch; }
-}
-
-/* Excel-format preview table (工单明细) — mirrors the export's merged header
-   and per-workorder rows. Wrapped in a scrollable container so the wide
-   count-matrix stays usable; the header row sticks to the top while scrolling. */
+.chart-empty { text-align:center; padding:20px; color:var(--color-text-muted); font-size:0.85rem; }
 .excel-preview-wrap { overflow:auto; max-height:75vh; border:1px solid var(--color-border); border-radius:8px; }
 table.excel-preview { border-collapse:collapse; font-size:0.8rem; white-space:nowrap; }
-table.excel-preview thead th { position:sticky; top:0; z-index:2; background:#1B4332; color:#fff; font-weight:600; font-size:0.75rem; padding:6px 8px; border:1px solid #fff; text-align:center; white-space:nowrap; }
+table.excel-preview thead th { position:sticky; top:0; z-index:2; background:#1B4332; color:#fff; font-weight:600; font-size:0.75rem; padding:6px 8px; border:1px solid #fff; text-align:center; }
 table.excel-preview tbody td { padding:5px 8px; border:1px solid #e8e8e8; text-align:center; background:#fff; }
 table.excel-preview tbody td.num { text-align:right; font-variant-numeric:tabular-nums; }
 table.excel-preview tbody td.remark { text-align:left; max-width:280px; overflow:hidden; text-overflow:ellipsis; }
 table.excel-preview tbody tr:nth-child(even) td { background:#f8faf8; }
 table.excel-preview tbody tr:hover td { background:#e8f5e9; }
 
+@media (max-width: 768px) {
+    .sh-container { flex-direction: column; height: calc(100vh - 52px) !important; }
+    .sh-sidebar { display: none !important; }
+    .sh-sidebar-expand { display: none !important; }
+}
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="form-container">
-    <div class="page-header"><h1>数据报表</h1></div>
-
-    {# ── Date-range control: custom start/end date picker + presets ────────── #}
-    <div class="range-nav">
-        <div class="range-picker" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
-            <input type="date" id="dateFrom" value="{{ from_param }}" max="{{ to_param }}">
-            <span style="color:var(--color-text-muted);">—</span>
-            <input type="date" id="dateTo" value="{{ to_param }}" min="{{ from_param }}">
-            <button class="range-nav-btn" onclick="applyDateRange()">查询</button>
+<div class="sh-container">
+    {# ════════ Left sidebar: date range + heatmap controls + ranked table ════════ #}
+    <aside class="sh-sidebar" id="shSidebar">
+        <div class="sh-sidebar-header">
+            <h2>数据报表</h2>
+            <button class="sh-sidebar-close" onclick="toggleShSidebar()" title="收起">✕</button>
         </div>
-        <div class="range-current">
-            <div class="range-current-label">查看范围</div>
-            <div class="range-current-range">
-                {{ start|date:"Y/m/d" }} — {{ end|date:"Y/m/d" }}
-            </div>
-        </div>
-        <div class="preset-row">
-            <a class="preset-pill" data-days="7">近7天</a>
-            <a class="preset-pill" data-days="30">近30天</a>
-            <a class="preset-pill" data-days="90">近90天</a>
-            <a class="preset-pill" data-days="0">本月</a>
-            {% if is_admin %}
-            <a class="range-nav-btn sec-export" href="{% url 'core:work_reports_excel' %}?{{ request.GET.urlencode }}" title="把当前范围内的工单导出为 Excel（一行一个工单，含故障类型矩阵）">
-                <i class="fa fa-file-excel-o"></i> 导出工单 Excel
-            </a>
-            {% endif %}
-        </div>
-    </div>
-
-    {% comment %}Export data island: the four tables' rows serialized as JSON so the
-    client-side CSV exporter can build a spreadsheet without a backend round-trip.
-    Trees (section + land) are flattened client-side to preserve the full path.{% endcomment %}
-    <script id="stats-export-data" type="application/json">{
-        "range": "{{ start|date:'Y-m-d' }} 至 {{ end|date:'Y-m-d' }}",
-        "section_rows": [{% for r in section_export %}{"section": "{{ r.section|escapejs }}", "path": "{{ r.path|escapejs }}", "level": {{ r.level }}, "reports": {{ r.reports }}, "hours": {{ r.hours }}, "entries": {{ r.entries }}, "counts": {{ r.counts|default:0 }}, "value_type": "{{ r.value_type|escapejs }}", "unit": "{{ r.unit|escapejs }}"}{% if not forloop.last %},{% endif %}{% endfor %}],
-        "project_rows": [{% for p in project_rows %}{"name": "{{ p.name|escapejs }}", "category": "{{ p.category|escapejs }}{% if p.subcategory %} · {{ p.subcategory|escapejs }}{% endif %}", "entries": {{ p.entries }}, "counts": {{ p.counts }}, "reports": {{ p.reports }}, "hours": {{ p.hours }}}{% if not forloop.last %},{% endif %}{% endfor %}],
-        "land_rows": [{% for land in land_rows %}{"land": "{{ land.name|escapejs }}", "names": [{% for nm in land.names %}{"name": "{{ nm.name|escapejs }}", "reports": {{ nm.reports }}, "hours": {{ nm.hours }}, "codes": [{% for c in nm.codes %}{"code": "{{ c.code|escapejs }}", "reports": {{ c.reports }}, "hours": {{ c.hours }}}{% if not forloop.last %},{% endif %}{% endfor %}]}{% if not forloop.last %},{% endif %}{% endfor %}]}{% if not forloop.last %},{% endif %}{% endfor %}],
-        "worker_rows": [{% for w in worker_stats %}{"name": "{{ w.name|escapejs }}", "employee_id": "{{ w.employee_id|escapejs }}", "total": {{ w.total }}, "team_hours": {{ w.team_hours }}, "third_hours": {{ w.third_hours }}, "difficult": {{ w.difficult }}}{% if not forloop.last %},{% endif %}{% endfor %}]
-    }</script>
-
-    {# ── 1. Overview tiles ────────────────────────────────────────────────── #}
-    <div class="section-title">概览</div>
-    <div class="overview-grid">
-        <div class="ov-tile"><div class="stat-number">{{ total_reports }}</div><div class="stat-label">工单总数</div></div>
-        <div class="ov-tile"><div class="stat-number">{{ team_hours|floatformat:1 }}h</div><div class="stat-label">灌溉组总工时</div></div>
-        <div class="ov-tile"><div class="stat-number">{{ third_hours|floatformat:1 }}h</div><div class="stat-label">第三方总工时</div></div>
-        <div class="ov-tile warn"><div class="stat-number">{{ pending_count }}</div><div class="stat-label">待修工单</div></div>
-        <div class="ov-tile danger"><div class="stat-number">{{ difficult_count }}</div><div class="stat-label">疑难工单</div></div>
-    </div>
-
-    {% if is_admin %}
-    {# ── 2. Excel-format preview (same columns/rows as the export) ─────────── #}
-    <div class="section-title collapsible" onclick="toggleSection(this)">工单明细 <span style="font-weight:400;font-size:0.8rem;color:var(--color-text-muted);">(与导出 Excel 格式一致 · {{ excel_preview_rows|length }} 条)</span> <a class="sec-export" href="{% url 'core:work_reports_excel' %}?{{ request.GET.urlencode }}"><i class="fa fa-file-excel-o"></i> 导出 Excel</a> <span class="sec-arrow">▼</span></div>
-    <div class="weekly-dashboard">
-        <div class="dashboard-card full">
-            {% if excel_preview_rows %}
-            <div class="excel-preview-wrap">
-            <table class="stats-table excel-preview">
-                <thead>
-                    {# Base header columns — each spans all header rows (vertical merge) #}
-                    <tr>
-                        {% for h in excel_base_header %}<th rowspan="{{ excel_hdr_rows }}">{{ h }}</th>{% endfor %}
-                        {% for hcell in excel_matrix_header.0 %}<th colspan="{{ hcell.colspan }}"{% if hcell.rowspan > 1 %} rowspan="{{ hcell.rowspan }}"{% endif %}>{{ hcell.text }}</th>{% endfor %}
-                    </tr>
-                    {# Remaining matrix header rows (groups → sub-groups → leaf names) #}
-                    {% for hrow in excel_matrix_header|slice:"1:" %}
-                    <tr>
-                        {% for hcell in hrow %}<th colspan="{{ hcell.colspan }}"{% if hcell.rowspan > 1 %} rowspan="{{ hcell.rowspan }}"{% endif %}>{{ hcell.text }}</th>{% endfor %}
-                    </tr>
-                    {% endfor %}
-                </thead>
-                <tbody>
-                {% for r in excel_preview_rows %}
-                <tr>
-                    <td class="num">{{ r.idx }}</td>
-                    <td>{{ r.date }}</td>
-                    <td>{{ r.workorder_no }}</td>
-                    <td>{{ r.worker }}</td>
-                    <td>{{ r.location }}</td>
-                    <td>{{ r.section }}</td>
-                    <td>{{ r.zone_names }}</td>
-                    <td>{{ r.zone_codes }}</td>
-                    <td class="num">{{ r.team_size }}</td>
-                    <td class="num">{{ r.team_hours }}</td>
-                    <td class="num">{{ r.third_party_count }}</td>
-                    <td class="num">{{ r.third_party_hours }}</td>
-                    <td class="remark">{{ r.materials }}</td>
-                    <td class="remark">{{ r.remark }}</td>
-                    <td></td>
-                    <td>{{ r.difficult }}</td>
-                    <td>{{ r.resolved }}</td>
-                    {% for c in r.counts %}<td class="num">{{ c }}</td>{% endfor %}
-                </tr>
-                {% endfor %}
-                </tbody>
-            </table>
-            </div>
-            {% else %}<div class="chart-empty">该范围内无工单</div>{% endif %}
-        </div>
-    </div>
-    {% endif %}
-
-    {# ── 3. By section → nested WorkItem tree (every level shows totals) ─ #}
-    <div class="section-title collapsible" onclick="toggleSection(this)">工作内容 · 按章节 <span style="font-weight:400;font-size:0.8rem;color:var(--color-text-muted);">(共 {{ entries_total }} 项 · 计数合计 {{ entries_count_sum }})</span> <button type="button" class="sec-export" onclick="event.stopPropagation();exportStats('section')">导出 CSV</button> <span class="sec-arrow">▼</span></div>
-    <div class="weekly-dashboard">
-        <div class="dashboard-card">
-            <h3>工作内容明细 <span style="font-weight:400;font-size:0.8rem;color:var(--color-text-muted);">(点击节点逐级展开)</span></h3>
-            {% comment %}Zone-name filter: scopes this tree to reports touching the chosen 通用名称. Resubmits the page keeping the date range.{% endcomment %}
-            <div style="margin-bottom:10px; display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
-                <label style="font-size:0.78rem; color:var(--color-text-muted);">通用名称筛选:</label>
-                <select id="zoneNameFilter" onchange="applyZoneFilter(this.value)" style="padding:5px 10px; border:1px solid var(--color-border); border-radius:6px; font-size:0.82rem; max-width:220px;">
-                    <option value="" {% if not zone_filter %}selected{% endif %}>全部</option>
-                    {% for name in zone_filter_names %}
-                    <option value="{{ name }}" {% if name == zone_filter %}selected{% endif %}>{{ name }}</option>
-                    {% endfor %}
-                </select>
-                {% if zone_filter %}<a href="javascript:applyZoneFilter('')" style="font-size:0.78rem; color:var(--color-primary);">清除</a>{% endif %}
-                <span style="font-size:0.75rem; color:var(--color-text-muted);">{% if zone_filter %}当前: {{ zone_filter_label }}{% else %}未筛选{% endif %}</span>
-            </div>
-            {% if section_rows %}
-            {% for sec in section_rows %}
-            <div class="drill-head" onclick="toggleDrill(this)">
-                <span><span class="dh-arrow">▶</span> <span class="dh-label">{{ sec.label }}</span><span class="dh-meta">{{ sec.reports }} 单 · {{ sec.hours|floatformat:1 }}h · {{ sec.entries }} 项{% if sec.counts %} · {{ sec.counts }}{% endif %}</span></span>
-            </div>
-            <div class="drill-body">
-                {% for child in sec.children %}
-                    {% include 'core/_stats_tree_node.html' with node=child %}
-                {% endfor %}
-            </div>
-            {% endfor %}
-            {% else %}<div class="chart-empty">暂无数据</div>{% endif %}
-        </div>
-    </div>
-
-    {# ── 4. By project (hours credited per distinct report) ───────────────── #}
-    <div class="section-title collapsible" onclick="toggleSection(this)">项目分布 <span style="font-weight:400;font-size:0.8rem;color:var(--color-text-muted);">(工时按涉及该项目的工单合计)</span> <button type="button" class="sec-export" onclick="event.stopPropagation();exportStats('project')">导出 CSV</button> <span class="sec-arrow">▼</span></div>
-    <div class="weekly-dashboard">
-        <div class="dashboard-card full">
-            {% if project_rows %}
-            <table class="stats-table">
-                <thead><tr><th>项目</th><th>类别</th><th class="num">填报次数</th><th class="num">合计数量</th><th class="num">工单数</th><th class="num">关联工时</th></tr></thead>
-                <tbody>
-                {% for p in project_rows %}
-                <tr>
-                    <td>{{ p.name }}</td>
-                    <td><span class="tag {% if p.category == '灌溉项目' %}irr{% elif p.category == '排水项目' %}drn{% else %}oth{% endif %}">{{ p.category }}{% if p.subcategory %} · {{ p.subcategory }}{% endif %}</span></td>
-                    <td class="num">{{ p.entries }}</td>
-                    <td class="num">{{ p.counts }}</td>
-                    <td class="num">{{ p.reports }}</td>
-                    <td class="num">{{ p.hours|floatformat:1 }}h</td>
-                </tr>
-                {% endfor %}
-                </tbody>
-            </table>
-            {% else %}<div class="chart-empty">该范围内无项目相关工单</div>{% endif %}
-        </div>
-    </div>
-
-    {# ── 5. Land → 通用名称 → Zone (multi-zone tree) ─────────────────────── #}
-    <div class="section-title collapsible" onclick="toggleSection(this)">区域分布 · Land → 通用名称 → Zone <span style="font-weight:400;font-size:0.8rem;color:var(--color-text-muted);">(按工单多区域展开)</span> <button type="button" class="sec-export" onclick="event.stopPropagation();exportStats('land')">导出 CSV</button> <span class="sec-arrow">▼</span></div>
-    <div class="weekly-dashboard">
-        <div class="dashboard-card full">
-            {% if land_rows %}
-            {% for land in land_rows %}
-            <div class="drill-head" onclick="toggleDrill(this)">
-                <span><span class="dh-arrow">▶</span> <span class="dh-label">{{ land.name }}</span><span class="dh-meta">{{ land.reports }} 单 · {{ land.hours|floatformat:1 }}h</span></span>
-            </div>
-            <div class="drill-body">
-                {% for nm in land.names %}
-                <div class="drill-head" onclick="toggleDrill(this)" style="padding-left:0;">
-                    <span><span class="dh-arrow">▶</span> <span class="dh-label">{{ nm.name }}</span><span class="dh-meta">{{ nm.reports }} 单 · {{ nm.hours|floatformat:1 }}h</span></span>
+        <div class="sh-sidebar-body">
+            {# ── Date range ── #}
+            <div class="sh-date-range">
+                <div class="sh-date-row">
+                    <input type="date" id="dateFrom" value="{{ from_param }}" max="{{ to_param }}">
+                    <input type="date" id="dateTo" value="{{ to_param }}" min="{{ from_param }}">
                 </div>
-                <div class="drill-body">
-                    {% for c in nm.codes %}
-                    <div class="drill-leaf"><span class="dl-label">{{ c.code }}</span><span class="dl-num">{{ c.reports }}单 · {{ c.hours|floatformat:1 }}h</span></div>
-                    {% endfor %}
+                <button class="sh-date-btn" onclick="applyDateRange()">查询</button>
+                <div class="sh-presets">
+                    <a class="sh-preset" data-days="7">近7天</a>
+                    <a class="sh-preset" data-days="30">近30天</a>
+                    <a class="sh-preset" data-days="90">近90天</a>
+                    <a class="sh-preset" data-days="0">本月</a>
+                    {% if is_admin %}
+                    <a class="sh-export-btn" href="{% url 'core:work_reports_excel' %}?{{ request.GET.urlencode }}"><i class="fa fa-file-excel-o"></i> Excel</a>
+                    {% endif %}
                 </div>
-                {% endfor %}
+                <div style="font-size:0.75rem;color:var(--color-text-muted);text-align:center;">
+                    {{ start|date:"Y/m/d" }} — {{ end|date:"Y/m/d" }}
+                </div>
             </div>
-            {% endfor %}
-            {% else %}<div class="chart-empty">暂无区域数据</div>{% endif %}
-        </div>
-    </div>
 
-    {# ── 6. Worker hours (admin only) ────────────────────────────────────── #}
-    {% if is_admin %}
-    <div class="section-title collapsible" onclick="toggleSection(this)">人员工时统计 <button type="button" class="sec-export" onclick="event.stopPropagation();exportStats('worker')">导出 CSV</button> <span class="sec-arrow">▼</span></div>
-    <div class="weekly-dashboard">
-        <div class="dashboard-card full">
-            {% if worker_stats %}
-            <table class="stats-table">
-                <thead><tr><th>处理人</th><th>工号</th><th class="num">工单数</th><th class="num">灌溉组工时</th><th class="num">第三方工时</th><th class="num">疑难</th></tr></thead>
-                <tbody>
-                {% for w in worker_stats %}
-                <tr>
-                    <td>{{ w.name }}</td><td>{{ w.employee_id|default:'—' }}</td>
-                    <td class="num">{{ w.total }}</td><td class="num">{{ w.team_hours|floatformat:1 }}h</td>
-                    <td class="num">{{ w.third_hours|floatformat:1 }}h</td><td class="num">{{ w.difficult }}</td>
-                </tr>
-                {% endfor %}
-                </tbody>
-            </table>
-            {% else %}<div class="chart-empty">暂无数据</div>{% endif %}
+            {# ── Metric selector ── #}
+            <div class="sh-ctrl-section">
+                <div class="sh-ctrl-label">指标</div>
+                <div class="sh-ctrl-row">
+                    <div class="sh-pill active" data-metric="reports" onclick="switchStatsHeatMetric('reports')">工单数</div>
+                    <div class="sh-dropdown">
+                        <div class="sh-pill" id="statsHoursPill" data-metric="hours" onclick="toggleHoursDropdown(event)">总工时 ▾</div>
+                        <div class="sh-dropdown-menu" id="statsHoursMenu">
+                            <div class="sh-dropdown-item active" data-sub="hours" onclick="selectHoursMetric(event,'hours')">总工时</div>
+                            <div class="sh-dropdown-item" data-sub="team_hours" onclick="selectHoursMetric(event,'team_hours')">灌溉组工时</div>
+                            <div class="sh-dropdown-item" data-sub="third_hours" onclick="selectHoursMetric(event,'third_hours')">第三方工时</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {# ── Filters ── #}
+            <div class="sh-ctrl-section">
+                <div class="sh-ctrl-label">筛选</div>
+                <div class="sh-ctrl-row">
+                    <label class="sh-filter"><input type="checkbox" id="filterDifficult" onchange="toggleHeatFilter()">疑难</label>
+                    <label class="sh-filter"><input type="checkbox" id="filterPending" onchange="toggleHeatFilter()">待修</label>
+                    <div class="sh-dropdown">
+                        <div class="sh-pill" id="statsWorkerPill" onclick="toggleWorkerDropdown(event)">创建人 ▾</div>
+                        <div class="sh-dropdown-menu" id="statsWorkerMenu">
+                            <div class="sh-worker-actions">
+                                <a onclick="selectAllWorkers(event)">全选</a>
+                                <a onclick="clearAllWorkers(event)">清空</a>
+                            </div>
+                            <div id="statsWorkerList"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {# ── Granularity ── #}
+            <div class="sh-ctrl-section">
+                <div class="sh-ctrl-label">颗粒度</div>
+                <div class="sh-ctrl-row">
+                    <div class="sh-gran-pill" data-gran="land" onclick="switchHeatGranularity('land')">Land</div>
+                    <div class="sh-gran-pill" data-gran="name" onclick="switchHeatGranularity('name')">通用名称</div>
+                    <div class="sh-gran-pill active" data-gran="zone" onclick="switchHeatGranularity('zone')">Zone</div>
+                </div>
+            </div>
+
+            {# ── Ranked table ── #}
+            <div class="sh-table-wrap">
+                <div class="sh-table-title">热力排行</div>
+                <div class="sh-table-scroll">
+                    <table class="sh-table">
+                        <thead><tr><th>区域</th><th class="num" id="statsHeatColMetric">工单数</th><th style="width:40px;"></th></tr></thead>
+                        <tbody id="statsHeatTableBody"></tbody>
+                    </table>
+                </div>
+            </div>
         </div>
-    </div>
-    {% endif %}
-</div>
+    </aside>
+
+    {# ════════ Map area ════════ #}
+    <div class="sh-map-area">
+        <button class="sh-sidebar-expand" id="shSidebarExpand" onclick="toggleShSidebar()" title="展开侧边栏">侧边栏 ▶</button>
+
+        {# Top-left overlay buttons ── #}
+        <div class="sh-overlay-tl">
+            <button class="sh-btn" onclick="toggleShSidebar()" title="侧边栏">☰</button>
+            <button class="sh-btn" id="shReportBtn" onclick="toggleShReport()" title="数据报表">📊 数据报表</button>
+        </div>
+
+        {# Map mounts here ── #}
+        <div id="statsHeatMap"></div>
+
+        {# Bottom-center legend ── #}
+        <div class="sh-legend-overlay">
+            <span>少</span>
+            <div class="sh-legend-bar" id="statsHeatLegendBar"></div>
+            <span>多</span>
+            <span id="statsHeatMaxLabel" style="font-weight:600;color:#555;"></span>
+        </div>
+
+        {# ════════ Report overlay panel (slides over map) ════════ #}
+        <div class="sh-report-panel" id="shReportPanel">
+            <div class="sh-report-inner">
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+                    <h1 style="margin:0;color:var(--color-primary);">数据报表</h1>
+                    <button class="sh-btn" onclick="toggleShReport()" style="height:36px;">✕ 关闭</button>
+                </div>
+
+                {% comment %}Export data island: the four tables' rows serialized as JSON so the
+                client-side CSV exporter can build a spreadsheet without a backend round-trip.
+                Trees (section + land) are flattened client-side to preserve the full path.{% endcomment %}
+                <script id="stats-export-data" type="application/json">{
+                    "range": "{{ start|date:'Y-m-d' }} 至 {{ end|date:'Y-m-d' }}",
+                    "section_rows": [{% for r in section_export %}{"section": "{{ r.section|escapejs }}", "path": "{{ r.path|escapejs }}", "level": {{ r.level }}, "reports": {{ r.reports }}, "hours": {{ r.hours }}, "entries": {{ r.entries }}, "counts": {{ r.counts|default:0 }}, "value_type": "{{ r.value_type|escapejs }}", "unit": "{{ r.unit|escapejs }}"}{% if not forloop.last %},{% endif %}{% endfor %}],
+                    "project_rows": [{% for p in project_rows %}{"name": "{{ p.name|escapejs }}", "category": "{{ p.category|escapejs }}{% if p.subcategory %} · {{ p.subcategory|escapejs }}{% endif %}", "entries": {{ p.entries }}, "counts": {{ p.counts }}, "reports": {{ p.reports }}, "hours": {{ p.hours }}}{% if not forloop.last %},{% endif %}{% endfor %}],
+                    "land_rows": [{% for land in land_rows %}{"land": "{{ land.name|escapejs }}", "names": [{% for nm in land.names %}{"name": "{{ nm.name|escapejs }}", "reports": {{ nm.reports }}, "hours": {{ nm.hours }}, "codes": [{% for c in nm.codes %}{"code": "{{ c.code|escapejs }}", "reports": {{ c.reports }}, "hours": {{ c.hours }}}{% if not forloop.last %},{% endif %}{% endfor %}]}{% if not forloop.last %},{% endif %}{% endfor %}]}{% if not forloop.last %},{% endif %}{% endfor %}],
+                    "worker_rows": [{% for w in worker_stats %}{"name": "{{ w.name|escapejs }}", "employee_id": "{{ w.employee_id|escapejs }}", "total": {{ w.total }}, "team_hours": {{ w.team_hours }}, "third_hours": {{ w.third_hours }}, "difficult": {{ w.difficult }}}{% if not forloop.last %},{% endif %}{% endfor %}]
+                }</script>
+
+                {# ── 1. Overview tiles ── #}
+                <div class="section-title">概览</div>
+                <div class="overview-grid">
+                    <div class="ov-tile"><div class="stat-number">{{ total_reports }}</div><div class="stat-label">工单总数</div></div>
+                    <div class="ov-tile"><div class="stat-number">{{ team_hours|floatformat:1 }}h</div><div class="stat-label">灌溉组总工时</div></div>
+                    <div class="ov-tile"><div class="stat-number">{{ third_hours|floatformat:1 }}h</div><div class="stat-label">第三方总工时</div></div>
+                    <div class="ov-tile warn"><div class="stat-number">{{ pending_count }}</div><div class="stat-label">待修工单</div></div>
+                    <div class="ov-tile danger"><div class="stat-number">{{ difficult_count }}</div><div class="stat-label">疑难工单</div></div>
+                </div>
+
+                {% if is_admin %}
+                {# ── 2. Excel-format preview ── #}
+                <div class="section-title collapsible" onclick="toggleSection(this)">工单明细 <span style="font-weight:400;font-size:0.8rem;color:var(--color-text-muted);">(与导出 Excel 格式一致 · {{ excel_preview_rows|length }} 条)</span> <a class="sec-export" href="{% url 'core:work_reports_excel' %}?{{ request.GET.urlencode }}"><i class="fa fa-file-excel-o"></i> 导出 Excel</a> <span class="sec-arrow">▼</span></div>
+                <div class="weekly-dashboard">
+                    <div class="dashboard-card full">
+                        {% if excel_preview_rows %}
+                        <div class="excel-preview-wrap">
+                        <table class="stats-table excel-preview">
+                            <thead>
+                                <tr>
+                                    {% for h in excel_base_header %}<th rowspan="{{ excel_hdr_rows }}">{{ h }}</th>{% endfor %}
+                                    {% for hcell in excel_matrix_header.0 %}<th colspan="{{ hcell.colspan }}"{% if hcell.rowspan > 1 %} rowspan="{{ hcell.rowspan }}"{% endif %}>{{ hcell.text }}</th>{% endfor %}
+                                </tr>
+                                {% for hrow in excel_matrix_header|slice:"1:" %}
+                                <tr>
+                                    {% for hcell in hrow %}<th colspan="{{ hcell.colspan }}"{% if hcell.rowspan > 1 %} rowspan="{{ hcell.rowspan }}"{% endif %}>{{ hcell.text }}</th>{% endfor %}
+                                </tr>
+                                {% endfor %}
+                            </thead>
+                            <tbody>
+                            {% for r in excel_preview_rows %}
+                            <tr>
+                                <td class="num">{{ r.idx }}</td>
+                                <td>{{ r.date }}</td>
+                                <td>{{ r.workorder_no }}</td>
+                                <td>{{ r.worker }}</td>
+                                <td>{{ r.location }}</td>
+                                <td>{{ r.section }}</td>
+                                <td>{{ r.zone_names }}</td>
+                                <td>{{ r.zone_codes }}</td>
+                                <td class="num">{{ r.team_size }}</td>
+                                <td class="num">{{ r.team_hours }}</td>
+                                <td class="num">{{ r.third_party_count }}</td>
+                                <td class="num">{{ r.third_party_hours }}</td>
+                                <td class="remark">{{ r.materials }}</td>
+                                <td class="remark">{{ r.remark }}</td>
+                                <td></td>
+                                <td>{{ r.difficult }}</td>
+                                <td>{{ r.resolved }}</td>
+                                {% for c in r.counts %}<td class="num">{{ c }}</td>{% endfor %}
+                            </tr>
+                            {% endfor %}
+                            </tbody>
+                        </table>
+                        </div>
+                        {% else %}<div class="chart-empty">该范围内无工单</div>{% endif %}
+                    </div>
+                </div>
+                {% endif %}
+
+                {# ── 3. By section ── #}
+                <div class="section-title collapsible" onclick="toggleSection(this)">工作内容 · 按章节 <span style="font-weight:400;font-size:0.8rem;color:var(--color-text-muted);">(共 {{ entries_total }} 项 · 计数合计 {{ entries_count_sum }})</span> <button type="button" class="sec-export" onclick="event.stopPropagation();exportStats('section')">导出 CSV</button> <span class="sec-arrow">▼</span></div>
+                <div class="weekly-dashboard">
+                    <div class="dashboard-card">
+                        <h3>工作内容明细 <span style="font-weight:400;font-size:0.8rem;color:var(--color-text-muted);">(点击节点逐级展开)</span></h3>
+                        <div style="margin-bottom:10px; display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
+                            <label style="font-size:0.78rem; color:var(--color-text-muted);">通用名称筛选:</label>
+                            <select id="zoneNameFilter" onchange="applyZoneFilter(this.value)" style="padding:5px 10px; border:1px solid var(--color-border); border-radius:6px; font-size:0.82rem; max-width:220px;">
+                                <option value="" {% if not zone_filter %}selected{% endif %}>全部</option>
+                                {% for name in zone_filter_names %}
+                                <option value="{{ name }}" {% if name == zone_filter %}selected{% endif %}>{{ name }}</option>
+                                {% endfor %}
+                            </select>
+                            {% if zone_filter %}<a href="javascript:applyZoneFilter('')" style="font-size:0.78rem; color:var(--color-primary);">清除</a>{% endif %}
+                            <span style="font-size:0.75rem; color:var(--color-text-muted);">{% if zone_filter %}当前: {{ zone_filter_label }}{% else %}未筛选{% endif %}</span>
+                        </div>
+                        {% if section_rows %}
+                        {% for sec in section_rows %}
+                        <div class="drill-head" onclick="toggleDrill(this)">
+                            <span><span class="dh-arrow">▶</span> <span class="dh-label">{{ sec.label }}</span><span class="dh-meta">{{ sec.reports }} 单 · {{ sec.hours|floatformat:1 }}h · {{ sec.entries }} 项{% if sec.counts %} · {{ sec.counts }}{% endif %}</span></span>
+                        </div>
+                        <div class="drill-body">
+                            {% for child in sec.children %}
+                                {% include 'core/_stats_tree_node.html' with node=child %}
+                            {% endfor %}
+                        </div>
+                        {% endfor %}
+                        {% else %}<div class="chart-empty">暂无数据</div>{% endif %}
+                    </div>
+                </div>
+
+                {# ── 4. By project ── #}
+                <div class="section-title collapsible" onclick="toggleSection(this)">项目分布 <span style="font-weight:400;font-size:0.8rem;color:var(--color-text-muted);">(工时按涉及该项目的工单合计)</span> <button type="button" class="sec-export" onclick="event.stopPropagation();exportStats('project')">导出 CSV</button> <span class="sec-arrow">▼</span></div>
+                <div class="weekly-dashboard">
+                    <div class="dashboard-card full">
+                        {% if project_rows %}
+                        <table class="stats-table">
+                            <thead><tr><th>项目</th><th>类别</th><th class="num">填报次数</th><th class="num">合计数量</th><th class="num">工单数</th><th class="num">关联工时</th></tr></thead>
+                            <tbody>
+                            {% for p in project_rows %}
+                            <tr>
+                                <td>{{ p.name }}</td>
+                                <td><span class="tag {% if p.category == '灌溉项目' %}irr{% elif p.category == '排水项目' %}drn{% else %}oth{% endif %}">{{ p.category }}{% if p.subcategory %} · {{ p.subcategory }}{% endif %}</span></td>
+                                <td class="num">{{ p.entries }}</td>
+                                <td class="num">{{ p.counts }}</td>
+                                <td class="num">{{ p.reports }}</td>
+                                <td class="num">{{ p.hours|floatformat:1 }}h</td>
+                            </tr>
+                            {% endfor %}
+                            </tbody>
+                        </table>
+                        {% else %}<div class="chart-empty">该范围内无项目相关工单</div>{% endif %}
+                    </div>
+                </div>
+
+                {# ── 5. Land → 通用名称 → Zone ── #}
+                <div class="section-title collapsible" onclick="toggleSection(this)">区域分布 · Land → 通用名称 → Zone <span style="font-weight:400;font-size:0.8rem;color:var(--color-text-muted);">(按工单多区域展开)</span> <button type="button" class="sec-export" onclick="event.stopPropagation();exportStats('land')">导出 CSV</button> <span class="sec-arrow">▼</span></div>
+                <div class="weekly-dashboard">
+                    <div class="dashboard-card full">
+                        {% if land_rows %}
+                        {% for land in land_rows %}
+                        <div class="drill-head" onclick="toggleDrill(this)">
+                            <span><span class="dh-arrow">▶</span> <span class="dh-label">{{ land.name }}</span><span class="dh-meta">{{ land.reports }} 单 · {{ land.hours|floatformat:1 }}h</span></span>
+                        </div>
+                        <div class="drill-body">
+                            {% for nm in land.names %}
+                            <div class="drill-head" onclick="toggleDrill(this)" style="padding-left:0;">
+                                <span><span class="dh-arrow">▶</span> <span class="dh-label">{{ nm.name }}</span><span class="dh-meta">{{ nm.reports }} 单 · {{ nm.hours|floatformat:1 }}h</span></span>
+                            </div>
+                            <div class="drill-body">
+                                {% for c in nm.codes %}
+                                <div class="drill-leaf"><span class="dl-label">{{ c.code }}</span><span class="dl-num">{{ c.reports }}单 · {{ c.hours|floatformat:1 }}h</span></div>
+                                {% endfor %}
+                            </div>
+                            {% endfor %}
+                        </div>
+                        {% endfor %}
+                        {% else %}<div class="chart-empty">暂无区域数据</div>{% endif %}
+                    </div>
+                </div>
+
+                {# ── 6. Worker hours ── #}
+                {% if is_admin %}
+                <div class="section-title collapsible" onclick="toggleSection(this)">人员工时统计 <button type="button" class="sec-export" onclick="event.stopPropagation();exportStats('worker')">导出 CSV</button> <span class="sec-arrow">▼</span></div>
+                <div class="weekly-dashboard">
+                    <div class="dashboard-card full">
+                        {% if worker_stats %}
+                        <table class="stats-table">
+                            <thead><tr><th>处理人</th><th>工号</th><th class="num">工单数</th><th class="num">灌溉组工时</th><th class="num">第三方工时</th><th class="num">疑难</th></tr></thead>
+                            <tbody>
+                            {% for w in worker_stats %}
+                            <tr>
+                                <td>{{ w.name }}</td><td>{{ w.employee_id|default:'—' }}</td>
+                                <td class="num">{{ w.total }}</td><td class="num">{{ w.team_hours|floatformat:1 }}h</td>
+                                <td class="num">{{ w.third_hours|floatformat:1 }}h</td><td class="num">{{ w.difficult }}</td>
+                            </tr>
+                            {% endfor %}
+                            </tbody>
+                        </table>
+                        {% else %}<div class="chart-empty">暂无数据</div>{% endif %}
+                    </div>
+                </div>
+                {% endif %}
+            </div>{# /.sh-report-inner #}
+        </div>{# /.sh-report-panel #}
+    </div>{# /.sh-map-area #}
+</div>{# /.sh-container #}
 
 <script>
+// ── Sidebar toggle (collapse/expand, dashboard-style) ──────────────────
+function toggleShSidebar() {
+    var sidebar = document.getElementById('shSidebar');
+    var expand = document.getElementById('shSidebarExpand');
+    sidebar.classList.toggle('collapsed');
+    var collapsed = sidebar.classList.contains('collapsed');
+    if (collapsed) expand.classList.add('visible');
+    else expand.classList.remove('visible');
+    setTimeout(function () { if (window._statsHeatMap) window._statsHeatMap.invalidateSize(); }, 300);
+}
+
+// ── Report panel toggle (slides over map) ──────────────────────────────
+function toggleShReport() {
+    var panel = document.getElementById('shReportPanel');
+    var btn = document.getElementById('shReportBtn');
+    panel.classList.toggle('open');
+    btn.classList.toggle('active', panel.classList.contains('open'));
+}
+
 // Expand/collapse a drilldown section (section→node, land→name, name→zone).
 function toggleDrill(head) {
     var body = head.nextElementSibling;
     var opened = head.classList.toggle('open');
     if (body && body.classList.contains('drill-body')) body.classList.toggle('open', opened);
 }
-// Collapse/expand a whole stats card via its .section-title header. Toggles the
-// `.collapsed` class, which hides the following .weekly-dashboard via CSS.
+// Collapse/expand a whole stats card via its .section-title header.
 function toggleSection(title) {
     title.classList.toggle('collapsed');
 }
-// ── CSV export ────────────────────────────────────────────────────────────
-// Builds a CSV from the embedded #stats-export-data island and triggers a
-// download. The BOM (\uFEFF) makes Excel open it as UTF-8 so Chinese renders.
+
+// ── CSV export ─────────────────────────────────────────────────────────
 function csvCell(v) {
     v = (v == null ? '' : String(v));
     if (/[",\n\r]/.test(v)) v = '"' + v.replace(/"/g, '""') + '"';
@@ -352,8 +594,6 @@ function exportStats(type) {
     var rng = d.range || '';
     var rows = [];
     if (type === 'section') {
-        // Full nested tree flattened: one row per node (section root + every
-        // descendant), with the breadcrumb path, depth level, and per-node totals.
         rows.push(['统计范围', rng]);
         rows.push(['章节', '层级路径', '层级深度', '工单数', '工时', '填报项数', '计数合计', '值类型', '单位']);
         (d.section_rows || []).forEach(function (s) {
@@ -387,8 +627,8 @@ function exportStats(type) {
         downloadCsv('人员工时统计.csv', rows);
     }
 }
-// Apply a custom start/end date range. Reads the two <input type="date"> and
-// reloads with ?from=&to= (the backend reads these directly).
+
+// ── Date range + presets ───────────────────────────────────────────────
 function applyDateRange() {
     var from = document.getElementById('dateFrom').value;
     var to = document.getElementById('dateTo').value;
@@ -399,9 +639,8 @@ function applyDateRange() {
     url.searchParams.set('to', to);
     window.location.href = url.toString();
 }
-// Preset pills: data-days="N" → last N days ending today; data-days="0" → 本月.
 (function () {
-    var pills = document.querySelectorAll('.preset-pill[data-days]');
+    var pills = document.querySelectorAll('.sh-preset[data-days]');
     var today = new Date('{{ today_iso }}');
     function iso(d) { return d.toISOString().split('T')[0]; }
     pills.forEach(function(p) {
@@ -423,21 +662,19 @@ function applyDateRange() {
         });
     });
 })();
-// Allow pressing Enter in either date input to apply.
 document.getElementById('dateFrom').addEventListener('keydown', function(e){ if(e.key==='Enter') applyDateRange(); });
 document.getElementById('dateTo').addEventListener('keydown', function(e){ if(e.key==='Enter') applyDateRange(); });
-// Keep the to/from min/max constraints in sync as the user edits the inputs.
 document.getElementById('dateFrom').addEventListener('change', function(){ document.getElementById('dateTo').min = this.value; });
 document.getElementById('dateTo').addEventListener('change', function(){ document.getElementById('dateFrom').max = this.value; });
-// Apply the 通用名称 filter to the 工作内容·按章节 tree, keeping the current
-// date window (from/to or week) intact.
 function applyZoneFilter(val) {
     var url = new URL(window.location.href);
-    // Drop the legacy zone_land param if present from an older bookmark.
     url.searchParams.delete('zone_land');
     if (val) url.searchParams.set('zone_name', val);
     else url.searchParams.delete('zone_name');
     window.location.href = url.toString();
 }
 </script>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="{% static 'js/stats-heatmap.js' %}?v=3"></script>
 {% endblock %}
