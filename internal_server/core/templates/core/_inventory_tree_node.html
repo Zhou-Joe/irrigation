@@ -1,30 +1,41 @@
 {% comment %}
 Recursive partial: renders one InventoryCategory tree node.
-- Branch (has children): an expandable drill-head; drill-body recurses into children. Collapsed by default.
-- Leaf (no children): name + editable stock input + a lazy "查看出入库记录" trigger.
+- Branch (node_type == 'category'): an expandable drill-head; drill-body recurses
+  into children. An EMPTY category still renders as a branch (with a + to add
+  children) — this is why node_type, not children.exists(), drives the split.
+- Leaf (node_type == 'part'): name + editable stock input + a lazy "查看出入库记录".
 The whole tree lives inside the stock-save <form>, so leaf inputs keep name="stock_<id>".
 {% endcomment %}
 {% with node.obj as cat %}
-{% if node.children %}
+{% if cat.node_type == 'category' or node.children %}
 <div class="iv-branch">
     <div class="iv-head" onclick="ivToggle(this)">
         <span class="iv-arrow">▶</span>
         <span class="iv-name">{{ cat.name_zh }}</span>
-        <span class="iv-child-count">{{ node.children|length }} 项</span>
+        {% if node.children %}<span class="iv-child-count">{{ node.children|length }} 项</span>{% else %}<span class="iv-child-count" style="color:#bbb;">空</span>{% endif %}
+        <span class="iv-node-actions">
+            <button type="button" class="iv-add-btn" title="在此目录下新建" onclick="event.stopPropagation();ivOpenCreate({{ cat.id }}, '{{ cat.name_zh|escapejs }}')">+</button>
+            <button type="button" class="iv-del-btn" title="删除此目录" onclick="event.stopPropagation();ivDelete({{ cat.id }}, '{{ cat.name_zh|escapejs }}')">🗑</button>
+        </span>
     </div>
     <div class="iv-body" style="display:none;">
         {% for child in node.children %}
             {% include 'core/_inventory_tree_node.html' with node=child %}
         {% endfor %}
+        {% if not node.children %}<div style="color:#bbb;font-size:.8rem;padding:6px 0;">（空目录，点击 + 添加子项）</div>{% endif %}
     </div>
 </div>
 {% else %}
 <div class="iv-leaf">
     <div class="iv-leaf-row">
-        <span class="iv-leaf-name">{{ cat.name_zh }}</span>
-        <input type="number" step="1" class="iv-stock-input" name="stock_{{ cat.id }}" value="{{ cat.current_stock }}" title="现有库存">
+        <span class="iv-leaf-name">{{ cat.name_zh }}{% if cat.is_main_material %}<span class="iv-main-tag" title="主材">主材</span>{% endif %}</span>
+        <label class="iv-field-label">现有<input type="number" step="1" min="0" class="iv-stock-input" name="stock_{{ cat.id }}" value="{{ cat.current_stock }}" title="现有库存"></label>
+        <label class="iv-field-label">最低<input type="number" step="1" min="0" class="iv-min-input" name="min_{{ cat.id }}" value="{{ cat.min_stock }}" title="最小库存量"{% if cat.current_stock < cat.min_stock %} data-low="1"{% endif %}></label>
+        <label class="iv-main-toggle" title="是否主材"><input type="checkbox" name="main_{{ cat.id }}" {% if cat.is_main_material %}checked{% endif %}><span>主材</span></label>
         <button type="button" class="iv-txn-btn" onclick="ivLoadTxn(this, {{ cat.id }})">记录 ▾</button>
+        <button type="button" class="iv-del-btn" title="删除此部件" onclick="ivDelete({{ cat.id }}, '{{ cat.name_zh|escapejs }}')">🗑</button>
     </div>
+    {% if cat.current_stock < cat.min_stock %}<div class="iv-low-warn">⚠ 库存低于最低量</div>{% endif %}
     <div class="iv-txn-panel" data-cat="{{ cat.id }}" style="display:none;"></div>
 </div>
 {% endif %}

@@ -39,6 +39,14 @@
 .wr-entry-count { font-weight: 600; flex-shrink: 0; }
 .wr-entry-text { color: var(--color-text-muted, #666); font-size: 0.8em; margin-top: 2px; }
 
+/* Material consumption list */
+.wr-mat-list { display: flex; flex-direction: column; gap: 4px; }
+.wr-mat-item { display: flex; justify-content: space-between; align-items: center; padding: 6px 0;
+               border-bottom: 1px solid var(--color-surface-dark, #f0f0f0); font-size: 0.85rem; }
+.wr-mat-item:last-child { border-bottom: none; }
+.wr-mat-name { color: var(--color-text, #333); }
+.wr-mat-qty { font-weight: 600; color: #c0392b; flex-shrink: 0; font-variant-numeric: tabular-nums; }
+
 /* Zone hierarchy: Land → name → codes */
 .wr-zone-land { margin-bottom: 8px; }
 .wr-zone-land-name { font-weight: 600; font-size: 0.85rem; color: var(--color-primary, #2D6A4F); }
@@ -187,6 +195,21 @@
         </div>
         {% endfor %}
         {% endfor %}
+    </div>
+    {% endif %}
+
+    {# ── 材料消耗 / 出库 (consumed materials, linked outbound transactions) ── #}
+    {% if materials %}
+    <div class="wr-card">
+        <h2>材料消耗 <span style="font-size:0.72em;color:var(--color-text-muted,#999);">{{ materials|length }} 项</span></h2>
+        <div class="wr-mat-list">
+            {% for m in materials %}
+            <div class="wr-mat-item">
+                <span class="wr-mat-name">{{ m.name }}</span>
+                <span class="wr-mat-qty">×{{ m.quantity }}{% if m.unit %}{{ m.unit }}{% endif %}</span>
+            </div>
+            {% endfor %}
+        </div>
     </div>
     {% endif %}
 

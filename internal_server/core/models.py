@@ -1313,6 +1313,7 @@ class InventoryCategory(models.Model):
     由 seed_inventory_items 命令从 markdown 灌入；之后管理员可在后台增删改。
     叶子节点（无 children）才是可出入库的具体物料；中间节点为分类。
     current_stock 由经理在 /inventory/manage/ 页面设定/调整，每次出入库提交后自动增减。
+    min_stock / is_main_material 同样由经理在该页面设定，便于库存预警与主材统计。
     """
 
     code = models.CharField('编码', max_length=200, unique=True, help_text='路径派生的稳定编码，幂等灌入键')
@@ -1326,6 +1327,23 @@ class InventoryCategory(models.Model):
     current_stock = models.IntegerField(
         '现有库存数量', default=0,
         help_text='由经理设定初始值；每次出入库提交后自动增减',
+    )
+    min_stock = models.IntegerField(
+        '最小库存量', default=0,
+        help_text='由经理设定；低于此值视为库存不足，便于日后预警',
+    )
+    is_main_material = models.BooleanField(
+        '是否主材', default=False,
+        help_text='主材在日后管理中着重统计与分析',
+    )
+    # Explicit node type so an empty directory (no children yet) is not mistaken
+    # for a stockable part. 'category' = branch (holds sub-items), 'part' = leaf
+    # (a concrete SKU with stock). Seeded from the markdown tree's structure;
+    # manager-created nodes set this on creation.
+    NODE_TYPE_CHOICES = [('category', '目录'), ('part', '部件')]
+    node_type = models.CharField(
+        '节点类型', max_length=10, choices=NODE_TYPE_CHOICES, default='part',
+        help_text='目录=可含子项的分类；部件=可出入库的具体物料',
     )
     active = models.BooleanField('启用', default=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -1375,6 +1393,13 @@ class InventoryTransaction(models.Model):
         Zone, on_delete=models.SET_NULL, null=True, blank=True,
         related_name='inventory_transactions', verbose_name='关联区域',
         help_text='可选；与具体区域关联',
+    )
+    # 工单内登记的材料消耗会生成一张关联此工单的出库单。SET_NULL 使得
+    # 删除工单不会连带删除库存流水（保留库存账可追溯）。
+    work_report = models.ForeignKey(
+        'WorkReport', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='material_consumptions', verbose_name='关联工单',
+        help_text='工单内登记的材料消耗会生成此关联的出库单',
     )
     remark = models.TextField('备注', blank=True)
     photos = models.JSONField('照片', default=list, blank=True)

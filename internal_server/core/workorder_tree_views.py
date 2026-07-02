@@ -551,6 +551,10 @@ def workorder_tree_form(request, report_id=None):
 
 def _handle_render(request, report):
     tree = serialize_workitem_tree()
+    # Inventory catalog tree + the report's current material cart, so the form
+    # can render the material-consumption section (lazy import: views.py imports
+    # from this module, so the reverse import must stay inside the function).
+    from core.views import serialize_inventory_tree
     ctx = {
         'tree_json': json.dumps(tree, ensure_ascii=False),
         'projects_json': json.dumps(serialize_projects(), ensure_ascii=False),
@@ -564,6 +568,11 @@ def _handle_render(request, report):
         'report_photos_json': json.dumps(report.photos or []) if report else '[]',
         'header_json': json.dumps(_report_header_dict(report), ensure_ascii=False)
                         if report else '{}',
+        'inventory_tree_json': json.dumps(serialize_inventory_tree(), ensure_ascii=False),
+        'existing_materials_json': json.dumps(_serialize_workorder_materials(report))
+                                   if report else '[]',
+        'material_dest_json': json.dumps(_serialize_workorder_material_dest(report))
+                              if report else 'null',
     }
     return render(request, 'core/workorder_tree_form.html', ctx)
 
@@ -709,6 +718,16 @@ def _handle_save(request, report):
                     return _handle_render(request, report)
         _save_entries(report, entries, entry_photos)
 
+        # Material consumption (材料消耗): rebuild the report's outbound
+        # transaction from the cart. _save_workorder_materials rolls back the
+        # prior linked transaction first, so edits keep stock correct. The
+        # destination is auto-derived from the work category (routine→日常维护,
+        # project sections→项目) unless the user picked one for 'other' categories.
+        materials = json.loads(request.POST.get('materials', '[]') or '[]')
+        m_dest, m_proj, m_cp = _resolve_material_dest(request, entries)
+        _save_workorder_materials(report, materials, entry_subtype=m_dest,
+                                  related_project_id=m_proj, counterparty=m_cp)
+
     messages.success(request, f'现场作业记录已保存 (ID: {report.id})')
     if request.POST.get('save_and_new'):
         return redirect('core:workorder_tree_form')
@@ -757,6 +776,159 @@ def _save_entries(report, entries, entry_photos):
         report.is_difficult = True
         report.is_difficult_resolved = False
         report.save(update_fields=['is_difficult', 'is_difficult_resolved'])
+
+
+def _resolve_material_dest(request, entries):
+    """Resolve the outbound destination for a workorder's material consumption.
+
+    Priority:
+    1. Explicit POST fields (mat_dest / mat_project_id / mat_counterparty) — set
+       by the client when the user picks a destination chip for 'other' categories.
+    2. Auto-derived from the filled entries' WorkItem sections:
+       - project section (irrigation/drainage/other_project) → '项目' + the entry's project
+       - routine_maint → '日常维护'
+       - anything else → '日常维护' (safe default; the client overrides for 'other')
+    Returns (entry_subtype, project_id, counterparty).
+    """
+    from core.models import WorkItem
+    PROJECT_SECTIONS = {'irrigation_project', 'drainage_project', 'other_project'}
+    entry_subtype = (request.POST.get('mat_dest') or '').strip()
+    project_id = request.POST.get('mat_project_id') or None
+    counterparty = (request.POST.get('mat_counterparty') or '').strip()
+
+    if not entry_subtype:
+        # Auto-derive from the submitted entries' sections.
+        wid_ids = [e.get('work_item') for e in entries if e.get('work_item')]
+        sections = set()
+        if wid_ids:
+            sections = set(WorkItem.objects.filter(id__in=wid_ids).values_list('section', flat=True))
+        proj_sections = sections & PROJECT_SECTIONS
+        if proj_sections:
+            entry_subtype = '项目'
+            # Use the first project-scoped entry's project if not explicitly set.
+            if not project_id:
+                for e in entries:
+                    node = WorkItem.objects.filter(id=e.get('work_item')).first()
+                    if node and node.section in PROJECT_SECTIONS and e.get('project'):
+                        project_id = e.get('project')
+                        break
+        else:
+            entry_subtype = '日常维护'
+    return entry_subtype, project_id, counterparty
+
+
+def _save_workorder_materials(report, lines, entry_subtype='日常维护',
+                              related_project_id=None, counterparty=''):
+    """工单材料消耗：先回滚该工单旧的关联出库单，再按新的 lines 建出库单并扣减库存。
+
+    Must run inside the caller's ``transaction.atomic()`` block. Idempotent —
+    every save rebuilds the report's material-consumption transaction so the
+    stock reflects exactly the current cart (editing then re-saving corrects
+    both the ledger and the stock).
+
+    ``lines = [{category: <id>, quantity: <num>, unit: <str>}, ...]``
+
+    The outbound destination mirrors the standalone inventory form:
+    ``entry_subtype`` ∈ 日常维护/项目/借用/其他, with ``related_project_id`` for
+    项目 and ``counterparty`` for 借用. Callers derive the default from the work
+    category (routine→日常维护, project sections→项目) and let the user override
+    for other categories.
+    """
+    from django.db.models import F
+    from core.models import (
+        InventoryTransaction, InventoryTransactionLine, InventoryCategory, Project,
+    )
+
+    # 1) Roll back any prior outbound transaction linked to this report: refund
+    #    each line's quantity back to current_stock, then drop txn + lines.
+    old_txns = InventoryTransaction.objects.filter(work_report=report)
+    for txn in old_txns:
+        for ln in txn.lines.all():
+            InventoryCategory.objects.filter(pk=ln.category_id).update(
+                current_stock=F('current_stock') + ln.quantity,
+            )
+    old_txns.delete()
+
+    if not lines:
+        return
+
+    # 2) Build one outbound transaction for the whole cart.
+    first_zone = report.zones.first()
+    project = None
+    if related_project_id:
+        project = Project.objects.filter(pk=related_project_id).first()
+    txn = InventoryTransaction.objects.create(
+        date=report.date if isinstance(report.date, date) else (report.date or date.today()),
+        worker=report.worker,
+        operation='出库',
+        entry_subtype=entry_subtype or '日常维护',
+        work_report=report,
+        related_project=project,
+        counterparty=(counterparty or '').strip(),
+        zone=first_zone,
+        remark=f'工单 #{report.id} 材料消耗',
+    )
+
+    # 3) One line per material; subtract stock atomically (F avoids races).
+    created = 0
+    for ln in lines:
+        cat_id = ln.get('category')
+        qty = ln.get('quantity') or 0
+        try:
+            qty = abs(float(qty))
+        except (ValueError, TypeError):
+            continue
+        cat = InventoryCategory.objects.filter(pk=cat_id).first()
+        if not cat or qty <= 0:
+            continue
+        InventoryTransactionLine.objects.create(
+            transaction=txn, category=cat,
+            quantity=qty, unit=(ln.get('unit') or '').strip(),
+        )
+        InventoryCategory.objects.filter(pk=cat_id).update(
+            current_stock=F('current_stock') - qty,
+        )
+        created += 1
+
+    # If nothing survived validation, drop the empty txn (no stock moved).
+    if created == 0:
+        txn.delete()
+
+
+def _serialize_workorder_materials(report):
+    """Return the report's current material cart as a list for edit prefill.
+
+    Shape: ``[{category, quantity, unit, name}, ...]`` — ``name`` is the leaf's
+    display name so the cart can render without re-fetching the inventory tree.
+    """
+    if not report:
+        return []
+    out = []
+    for txn in report.material_consumptions.all():
+        for ln in txn.lines.all():
+            out.append({
+                'category': ln.category_id,
+                'quantity': ln.quantity,
+                'unit': ln.unit,
+                'name': ln.category.name_zh,
+            })
+    return out
+
+
+def _serialize_workorder_material_dest(report):
+    """Return the destination of the report's last material-consumption txn, for
+    edit prefill of the destination selector. ``{entry_subtype, project_id, counterparty}``
+    or ``None`` when no material txn exists yet."""
+    if not report:
+        return None
+    txn = report.material_consumptions.order_by('-id').first()
+    if not txn:
+        return None
+    return {
+        'entry_subtype': txn.entry_subtype,
+        'project_id': txn.related_project_id,
+        'counterparty': txn.counterparty,
+    }
 
 
 def _resolve_pending_repairs(pm_report, report_ids):
