@@ -36,6 +36,11 @@ DEFAULT_CONFIG = {
     "sync_interval_minutes": 5,
     "overlap_buffer_minutes": 2,
     "days_window": 7,
+    # HTTP timeouts (seconds). Upload default matches gunicorn's --timeout 600 so
+    # the agent won't give up before the server does. Connection check is short
+    # so the UI doesn't hang on a dead link.
+    "upload_timeout": 600,
+    "connect_timeout": 15,
 }
 
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -313,7 +318,8 @@ def do_sync(cfg, days, last_sync, progress_cb=None, log_cb=None):
     try:
         data = json.dumps(payload).encode("utf-8")
         req = urllib.request.Request(url, data=data, headers=headers, method="POST")
-        with urllib.request.urlopen(req, timeout=120) as resp:
+        upload_timeout = int(cfg.get("upload_timeout", 600))
+        with urllib.request.urlopen(req, timeout=upload_timeout) as resp:
             result = json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as e:
         body = e.read().decode("utf-8", errors="replace")[:200]
@@ -695,7 +701,8 @@ def run_gui():
             req = urllib.request.Request(url, headers={"X-Sync-Key": self.cfg["api_key"]})
             old_status = self.status_label.text()
             try:
-                with urllib.request.urlopen(req, timeout=5) as resp:
+                connect_timeout = int(self.cfg.get("connect_timeout", 15))
+                with urllib.request.urlopen(req, timeout=connect_timeout) as resp:
                     data = json.loads(resp.read().decode("utf-8"))
                     self.status_label.setText("● 已连接")
                     self.status_label.setStyleSheet("font-size: 15px; font-weight: bold; color: #a6e3a1;")

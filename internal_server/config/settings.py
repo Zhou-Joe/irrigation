@@ -20,7 +20,7 @@ else:
     )
 ALLOWED_HOSTS = os.environ.get(
     'ALLOWED_HOSTS',
-    'localhost,127.0.0.1,zctestbench.asia,www.zctestbench.asia,irrigation.zctestbench.asia'
+    'localhost,127.0.0.1,zctestbench.asia,www.zctestbench.asia,irrigation.zctestbench.asia,192.168.137.2'
 ).split(',')
 # Note: the previous default included the ephemeral `.trycloudflare.com` wildcard and
 # hardcoded LAN/public IPs — the wildcard let anyone Host-spoof via a free Quick
