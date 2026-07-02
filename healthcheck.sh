@@ -15,14 +15,15 @@ if ! curl -s -o /dev/null -w '' http://localhost:8000/ 2>/dev/null; then
     echo "$(date): Gunicorn down, restarting..."
     pkill -f "gunicorn.*config.wsgi" 2>/dev/null
     sleep 2
-    # Bind to loopback only — the cloud tunnel (frpc) is the sole public ingress,
-    # so the app must not be reachable on other interfaces. Timeout kept at 600s
-    # (overriding SECURITY_AUDIT_FIXES.md's 120s) because large photo/video uploads
-    # over the FRP tunnel can take >2min; --graceful-timeout + limit-request-line
-    # come from the audit doc.
+    # Bind to all interfaces — needs to be reachable from the Windows host (which
+    # port-forwards to here from its 192.168.137.2 LAN IP for the Maxicom sync
+    # agent on 192.168.137.1). The cloud tunnel (frpc) is still the sole public
+    # ingress; this only exposes the app on the WSL internal NIC, which the
+    # Windows host proxies. Timeout kept at 600s for large photo/video uploads
+    # over the FRP tunnel.
     /home/projects/irrigation/.venv/bin/gunicorn config.wsgi:application \
         --chdir /home/projects/irrigation/internal_server \
-        --bind 127.0.0.1:8000 --workers 4 --timeout 600 --graceful-timeout 30 \
+        --bind 0.0.0.0:8000 --workers 4 --timeout 600 --graceful-timeout 30 \
         --limit-request-line 8190 \
         --error-logfile /home/projects/irrigation/gunicorn_error.log \
         --access-logfile - --daemon

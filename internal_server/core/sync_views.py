@@ -80,14 +80,23 @@ def _site_by_mdb(idx):
     return Patch.objects.filter(mdb_index=idx).first()
 
 
-@login_required(login_url='/login/')
+def _auth_key_or_session(request):
+    """Allow either a logged-in session (dashboard) or a valid X-Sync-Key
+    (sync agent). Without one or the other, return 401 — sync agent's HTTP
+    client treats that as a clean auth failure rather than following a 302
+    redirect to the login page like @login_required does.
+    """
+    return request.user.is_authenticated or verify_api_key(request)
+
+
 def sync_status(request):
     """Return current sync status — last record counts per table.
 
-    This is a human-facing status panel (read by the dashboard), so login is
-    sufficient. Only the machine-to-machine writer (sync_receive) needs the
-    X-Sync-Key.
+    Read by both the dashboard (session cookie) and the sync agent's
+    connection check (X-Sync-Key). Either auth method works.
     """
+    if not _auth_key_or_session(request):
+        return JsonResponse({'error': 'Auth required'}, status=401)
     counts = {
         'sites': Patch.objects.count(),
         'stations': Patch.objects.filter(parent__isnull=False).count(),
@@ -116,13 +125,14 @@ def sync_status(request):
     return JsonResponse({'counts': counts, 'latest': latest})
 
 
-@login_required(login_url='/login/')
 def agent_status(request):
     """Return sync agent connection status based on heartbeat.
 
-    Read by the dashboard's sync indicator — login is sufficient (no sync key,
-    which is reserved for the machine-to-machine write path).
+    Read by the dashboard's sync indicator (session) and by the sync agent
+    itself when polling its own heartbeat (X-Sync-Key). Either auth works.
     """
+    if not _auth_key_or_session(request):
+        return JsonResponse({'error': 'Auth required'}, status=401)
     try:
         heartbeat = SyncAgentHeartbeat.objects.get(pk=1)
         last = heartbeat.last_heartbeat
