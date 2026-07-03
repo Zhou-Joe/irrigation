@@ -22,6 +22,10 @@
   .wr-list-head { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; margin-bottom: 12px; }
   .wr-list-head h1 { font-size: 1.4rem; margin: 0; font-weight: 700; color: var(--wr-text); }
   .wr-subtitle { font-size: 0.82rem; color: var(--wr-muted); }
+  /* Excel export — opens /stats/excel/ in a new tab with the current date
+     window translated to the stats ?from=&to= convention. */
+  .wr-export-btn { display:inline-flex; align-items:center; gap:6px; padding:8px 16px; border-radius:8px; background: var(--wr-accent); color:#fff; font-size:0.85rem; font-weight:600; text-decoration:none; border:none; cursor:pointer; white-space:nowrap; }
+  .wr-export-btn:hover { background:#245543; color:#fff; }
 
   .msg { padding: 10px 14px; border-radius: 10px; margin-bottom: 12px; font-size: 0.9rem; }
   .msg-success { background: rgba(64,145,108,0.12); color: var(--color-success); }
@@ -267,6 +271,9 @@
             <h1>维修日志</h1>
             <div class="wr-subtitle">默认显示最近 {{ default_days }} 天 · 点击卡片展开详情</div>
         </div>
+        <a class="wr-export-btn" href="{% url 'core:work_reports_excel' %}?from={{ filters.date_from|default:'' }}&to={{ filters.date_to|default:'' }}" target="_blank" rel="noopener" title="导出当前日期范围内的工单为 Excel">
+            <i class="fa fa-file-excel-o"></i> 导出 Excel
+        </a>
     </div>
 
     {% if messages %}
