@@ -319,9 +319,9 @@
             <div class="ff"><label>起始日期</label><input type="date" name="date_from" value="{{ filters.date_from }}" id="dateFrom"></div>
             <div class="ff"><label>截止日期</label><input type="date" name="date_to" value="{{ filters.date_to }}" id="dateTo"></div>
             <div class="ff"><label>位置</label>
-                <select name="location">
+                <select name="land">
                     <option value="">全部</option>
-                    {% for loc in locations %}<option value="{{ loc.id }}" {% if filters.location == loc.id %}selected{% endif %}>{{ loc.name }}</option>{% endfor %}
+                    {% for ld in lands %}<option value="{{ ld.id }}" {% if filters.land == ld.id %}selected{% endif %}>{{ ld.name }}</option>{% endfor %}
                 </select>
             </div>
             <div class="ff"><label>工单号</label>
@@ -897,7 +897,7 @@ function loadMore() {
     params.set('before_id', lastLoadedId);
     if (currentFilter.date_from) params.set('date_from', currentFilter.date_from);
     if (currentFilter.date_to) params.set('date_to', currentFilter.date_to);
-    if (currentFilter.location) params.set('location', currentFilter.location);
+    if (currentFilter.land) params.set('land', currentFilter.land);
     if (currentFilter.worker) params.set('worker', currentFilter.worker);
     if (currentFilter.is_pending_repair) params.set('is_pending_repair', '1');
     if (currentFilter.is_difficult) params.set('is_difficult', '1');
