@@ -91,7 +91,11 @@ table.iv-ledger .op-tag { display: inline-block; padding: 1px 7px; border-radius
 table.iv-ledger .op-tag.in { background: #e8f5e9; color: var(--color-primary, #2D6A4F); }
 table.iv-ledger .op-tag.out { background: #fdecea; color: #c0392b; }
 .iv-ledger-lines { font-size: .78rem; color: #555; line-height: 1.5; }
-.iv-ledger-lines .ln { display: inline-block; margin-right: 8px; }
+.iv-ledger-lines .ln-row { display: flex; align-items: baseline; gap: 6px; padding: 2px 0; border-bottom: 1px solid #f5f5f5; }
+.iv-ledger-lines .ln-row:last-child { border-bottom: none; }
+.iv-ledger-lines .ln-qty { font-weight: 700; white-space: nowrap; min-width: 48px; }
+.iv-ledger-lines .ln-path { color: #666; }
+.iv-ledger-lines .ln-path .sep { color: #ccc; font-size: .72rem; margin: 0 1px; }
 .iv-ledger-wo { font-size: .72rem; }
 .iv-ledger-wo a { color: var(--color-primary, #2D6A4F); }
 .iv-ledger-empty { text-align: center; color: #aaa; padding: 30px 0; font-size: .88rem; }
@@ -99,17 +103,22 @@ table.iv-ledger .op-tag.out { background: #fdecea; color: #c0392b; }
 /* ── Node action buttons (+ / 🗑) + create modal ────────────────────── */
 .iv-node-actions { display: none; gap: 4px; margin-left: auto; padding-right: 4px; }
 .iv-head:hover .iv-node-actions, .iv-leaf-row:hover .iv-node-actions { display: inline-flex; }
-.iv-add-btn, .iv-del-btn { border: none; border-radius: 6px; cursor: pointer; font-size: .82rem;
+.iv-add-btn, .iv-del-btn, .iv-edit-btn { border: none; border-radius: 6px; cursor: pointer; font-size: .82rem;
     padding: 2px 8px; line-height: 1.4; background: #e8f5e9; color: var(--color-primary, #2D6A4F); }
 .iv-add-btn:hover { background: #d4eadd; }
 .iv-del-btn { background: #fdecea; color: #c0392b; padding: 2px 6px; }
 .iv-del-btn:hover { background: #f5d4d0; }
+.iv-edit-btn { background: #e3f2fd; color: #1565c0; padding: 2px 6px; }
+.iv-edit-btn:hover { background: #bbdefb; }
 /* The 🗑 on a leaf row sits inline (not in a .iv-node-actions wrapper), so show it on row hover. */
 .iv-leaf-row .iv-del-btn { display: none; }
 .iv-leaf-row:hover .iv-del-btn { display: inline-block; }
 .iv-add-top-btn { padding: 6px 14px; border: 1px solid var(--color-primary, #2D6A4F); border-radius: 8px;
     background: #fff; color: var(--color-primary, #2D6A4F); font-size: .84rem; font-weight: 600; cursor: pointer; }
 .iv-add-top-btn:hover { background: #e8f5e9; }
+.iv-export-btn { display: inline-block; padding: 6px 14px; border: 1px solid #d8d8d8; border-radius: 8px;
+    background: #fff; color: #555; font-size: .84rem; font-weight: 600; cursor: pointer; text-decoration: none; }
+.iv-export-btn:hover { background: #f0f2f0; }
 
 /* Create-category modal */
 .iv-create-mask { position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 10000;
@@ -195,7 +204,10 @@ table.iv-ledger .lvl-tag.warn { background: #fdf6ec; color: #cc7722; }
   {# ── Tab 1: transactions ledger (all 出入库 records in range) ── #}
   <div class="iv-tab-content active" id="ivTabLedger">
   <div class="iv-ledger-card">
-    <h2>出入库记录</h2>
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:4px;">
+      <h2 style="margin:0;">出入库记录</h2>
+      <a href="{% url 'core:inventory_transactions_export' %}?from={{ date_from }}&to={{ date_to }}" class="iv-export-btn">⬇ 导出Excel</a>
+    </div>
     <p class="iv-hint">范围 {{ date_from }} ~ {{ date_to }} · 共 {{ txns|length }} 条流水 · 点击「记录范围」日期可切换</p>
 
     {# Reuse the same date-range filter to reload the page with a new window. #}
@@ -218,6 +230,7 @@ table.iv-ledger .lvl-tag.warn { background: #fdf6ec; color: #cc7722; }
           <th>日期</th>
           <th>类型</th>
           <th>物料明细</th>
+          <th>数量变动</th>
           <th>经办人</th>
           <th>去向/来源</th>
           <th>关联</th>
@@ -236,12 +249,18 @@ table.iv-ledger .lvl-tag.warn { background: #fdf6ec; color: #cc7722; }
           <td class="l-left">
             <div class="iv-ledger-lines">
               {% for ln in t.lines.all %}
-              <span class="ln">
-                <span class="{% if t.operation == '入库' %}in{% else %}out{% endif %}">
+              <div class="ln-row"><span class="ln-path" data-cat="{{ ln.category_id }}">{{ ln.category.name_zh }}</span></div>
+              {% endfor %}
+            </div>
+          </td>
+          <td class="num">
+            <div class="iv-ledger-lines">
+              {% for ln in t.lines.all %}
+              <div class="ln-row">
+                <span class="{% if t.operation == '入库' %}in{% else %}out{% endif %} ln-qty">
                   {% if t.operation == '入库' %}+{% else %}−{% endif %}{{ ln.quantity }}{% if ln.unit %}{{ ln.unit }}{% endif %}
                 </span>
-                {{ ln.category.name_zh }}
-              </span>
+              </div>
               {% endfor %}
             </div>
           </td>
@@ -318,6 +337,7 @@ table.iv-ledger .lvl-tag.warn { background: #fdf6ec; color: #cc7722; }
       <div class="iv-head-actions">
         <span id="ivSaveMsg"></span>
         <button type="button" class="iv-add-top-btn" onclick="ivOpenCreate('', '顶层')">+ 新建目录/部件</button>
+        <a href="{% url 'core:inventory_export_excel' %}" class="iv-export-btn">⬇ 导出Excel</a>
         <button type="button" class="btn btn-primary" id="ivSaveBtn" onclick="ivSave()">保存库存数量</button>
       </div>
     </div>
@@ -383,6 +403,33 @@ table.iv-ledger .lvl-tag.warn { background: #fdf6ec; color: #cc7722; }
   </div>
 </div>
 
+{# ── Edit category/part modal ── #}
+<div class="iv-create-mask" id="ivEditMask">
+  <div class="iv-create-dialog">
+    <div class="iv-create-head">
+      <h3 id="ivEditTitle">编辑</h3>
+      <button type="button" class="iv-create-close" onclick="ivCloseEdit()">×</button>
+    </div>
+    <div class="iv-create-body">
+      <div id="ivEditTypeLabel" style="font-size:.8rem;color:#999;margin-bottom:10px;"></div>
+      <label>名称</label>
+      <input type="text" id="ivEditName" placeholder="名称" autocomplete="off">
+      <div class="iv-create-part-fields" id="ivEditPartFields">
+        <div class="iv-part-row">
+          <div><label>最低量</label><input type="number" id="ivEditMin" value="0" min="0" step="1"></div>
+        </div>
+        <label style="display:flex;align-items:center;gap:6px;margin-top:8px;cursor:pointer;font-weight:400;color:#555;">
+          <input type="checkbox" id="ivEditMain" style="width:16px;height:16px;"> 是否主材
+        </label>
+      </div>
+    </div>
+    <div class="iv-create-foot">
+      <button type="button" class="iv-create-cancel" onclick="ivCloseEdit()">取消</button>
+      <button type="button" class="iv-create-submit" id="ivEditSubmit" onclick="ivSubmitEdit()">保存</button>
+    </div>
+  </div>
+</div>
+
 <div id="ivToast" style="position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#333;color:#fff;padding:9px 20px;border-radius:20px;font-size:.86em;z-index:1000;opacity:0;transition:opacity .2s;pointer-events:none;"></div>
 
 <script>
@@ -390,6 +437,23 @@ var _ivLoadedTxn = {};  // catId -> true once fetched (reset on date-range chang
 
 // Stockable leaves for the alert tab (server-rendered). Each: {id,name,path,stock,min,main}.
 var IV_LEAVES = {{ leaves_json|safe }};
+// Cat id → full hierarchy path, for the ledger tab's 物料明细 column.
+var IV_CAT_PATHS = {{ cat_paths_json|safe }};
+// Replace each .ln-path leaf name with its full "大类别 › … › 品名" path.
+(function () {
+    document.querySelectorAll('.ln-path[data-cat]').forEach(function (el) {
+        var cid = el.getAttribute('data-cat');
+        var full = IV_CAT_PATHS[cid];
+        if (full && full.indexOf(' › ') >= 0) {
+            // Render with dimmed separators for readability.
+            el.innerHTML = full.split(' › ').map(function (seg, i, arr) {
+                var esc = document.createElement('div'); esc.textContent = seg;
+                if (i < arr.length - 1) return esc.innerHTML + '<span class="sep">›</span>';
+                return '<b>' + esc.innerHTML + '</b>';
+            }).join('');
+        }
+    });
+})();
 
 // Recompute the alert table from the current slider threshold. Pure client-side
 // so dragging the slider filters instantly with no server round-trip.
@@ -533,6 +597,42 @@ function ivDelete(catId, catName) {
         .catch(function () { ivToast('网络错误，请重试', true); });
 }
 
+// ── Edit category/part (rename + part attributes) ─────────────────────
+var _ivEditId = null;
+var _ivEditType = 'category';
+function ivOpenEdit(catId, catName, nodeType, minStock, isMain) {
+    _ivEditId = catId;
+    _ivEditType = nodeType || 'part';
+    document.getElementById('ivEditTitle').textContent = nodeType === 'category' ? '编辑目录' : '编辑部件';
+    document.getElementById('ivEditTypeLabel').textContent = nodeType === 'category' ? '类型：📁 目录' : '类型：🔹 部件';
+    document.getElementById('ivEditName').value = catName;
+    document.getElementById('ivEditMin').value = minStock || 0;
+    document.getElementById('ivEditMain').checked = !!isMain;
+    document.getElementById('ivEditPartFields').classList.toggle('show', nodeType !== 'category');
+    document.getElementById('ivEditMask').classList.add('open');
+    setTimeout(function () { document.getElementById('ivEditName').focus(); }, 50);
+}
+function ivCloseEdit() { document.getElementById('ivEditMask').classList.remove('open'); }
+function ivSubmitEdit() {
+    var name = document.getElementById('ivEditName').value.trim();
+    if (!name) { ivToast('请填写名称', true); return; }
+    var btn = document.getElementById('ivEditSubmit'); btn.disabled = true; btn.textContent = '保存中…';
+    var fd = new FormData();
+    fd.append('name', name);
+    if (_ivEditType !== 'category') {
+        fd.append('min_stock', document.getElementById('ivEditMin').value || '0');
+        if (document.getElementById('ivEditMain').checked) fd.append('is_main_material', '1');
+    }
+    fetch('/inventory/category/' + _ivEditId + '/edit/', { method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRFToken': _ivCsrf() } })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+            btn.disabled = false; btn.textContent = '保存';
+            if (d.success) { ivToast(d.message, false); ivCloseEdit(); ivUpdateNode(d.node); }
+            else { ivToast(d.message || '保存失败', true); }
+        })
+        .catch(function () { btn.disabled = false; btn.textContent = '保存'; ivToast('网络错误，请重试', true); });
+}
+
 // ── Live DOM updates (no page reload) ──────────────────────────────────
 // Build the HTML for a newly-created node, matching the server-rendered
 // _inventory_tree_node.html partial so the live tree stays consistent.
@@ -632,9 +732,50 @@ function ivRefreshChildCount(branch) {
     if (n > 0) { countEl.textContent = n + ' 项'; countEl.style.color = ''; }
     else { countEl.textContent = '空'; countEl.style.color = '#bbb'; }
 }
-// Close the create modal on backdrop click or Escape.
+// Update an edited node's name + part attributes in the live DOM (no reload).
+function ivUpdateNode(nd) {
+    var tree = document.getElementById('ivTree'); if (!tree) return;
+    var node = tree.querySelector('[data-cat="' + nd.id + '"]');
+    if (!node) return;
+    // Update the displayed name.
+    var nameEl = node.querySelector('.iv-name') || node.querySelector('.iv-leaf-name');
+    if (nameEl) {
+        // Preserve the 主材 tag if it exists (leaf rows embed it after the name).
+        var mainTag = nameEl.querySelector('.iv-main-tag');
+        nameEl.textContent = nd.name;
+        if (mainTag) nameEl.appendChild(mainTag);
+    }
+    // For parts: update min-stock input, main-material toggle, low-warn, edit button attrs.
+    if (nd.node_type === 'part') {
+        var minInput = node.querySelector('.iv-min-input');
+        if (minInput) {
+            minInput.value = nd.min_stock;
+            minInput.setAttribute('data-low', (nd.current_stock < nd.min_stock) ? '1' : '0');
+        }
+        var mainToggle = node.querySelector('.iv-main-toggle input');
+        if (mainToggle) mainToggle.checked = nd.is_main_material;
+        // Refresh the 主材 tag on the leaf name.
+        var leafName = node.querySelector('.iv-leaf-name');
+        if (leafName) {
+            var existingTag = leafName.querySelector('.iv-main-tag');
+            if (nd.is_main_material && !existingTag) {
+                var t = document.createElement('span'); t.className = 'iv-main-tag'; t.title = '主材'; t.textContent = '主材';
+                leafName.appendChild(t);
+            } else if (!nd.is_main_material && existingTag) {
+                existingTag.remove();
+            }
+        }
+        // Refresh low-warn.
+        var warn = node.querySelector('.iv-low-warn');
+        if (nd.current_stock < nd.min_stock) {
+            if (!warn) { warn = document.createElement('div'); warn.className = 'iv-low-warn'; warn.textContent = '⚠ 库存低于最低量'; node.querySelector('.iv-leaf-row').insertAdjacentElement('afterend', warn); }
+        } else if (warn) { warn.remove(); }
+    }
+}
+// Close the create/edit modals on backdrop click or Escape.
 document.getElementById('ivCreateMask').addEventListener('click', function (e) { if (e.target === this) ivCloseCreate(); });
-document.addEventListener('keydown', function (e) { if (e.key === 'Escape') ivCloseCreate(); });
+document.getElementById('ivEditMask').addEventListener('click', function (e) { if (e.target === this) ivCloseEdit(); });
+document.addEventListener('keydown', function (e) { if (e.key === 'Escape') { ivCloseCreate(); ivCloseEdit(); } });
 
 // AJAX save: POST the stock inputs as form data so the tree state is preserved
 // (no full-page reload → branches stay expanded). Shows an inline toast.

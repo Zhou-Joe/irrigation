@@ -7,6 +7,8 @@ Idempotent: upserts by ``code``. Run after migration 0068:
 
 Parsing lives in core.inventory_tree_parser (pure function, no Django).
 Existing ``current_stock`` values are preserved on update (not overwritten).
+``is_main_material`` / ``min_stock`` are synced from the spec annotations
+(主材 / 最小库存) so they reflect the latest markdown.
 """
 
 import os
@@ -24,8 +26,8 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument(
             '--file',
-            default=str(settings.BASE_DIR.parent / '库存管理tree.md'),
-            help='Path to the markdown spec (default: <repo>/库存管理tree.md)',
+            default=str(settings.BASE_DIR.parent / '库存框架tree更新.md'),
+            help='Path to the markdown spec (default: <repo>/库存框架tree更新.md)',
         )
         parser.add_argument(
             '--clear',
@@ -55,28 +57,41 @@ class Command(BaseCommand):
         rows = parse_inventory_tree(text)
 
         created = updated = 0
+        main_count = 0
         cache = {}  # code -> InventoryCategory
 
         # Rows are depth-first pre-order, so a parent is always seeded first.
         for row in rows:
             parent = cache.get(row['parent_code']) if row['parent_code'] else None
+            is_main = row.get('is_main_material', False)
+            min_stock = row.get('min_stock', 0)
+            defaults = {
+                'parent': parent,
+                'name_zh': row['name_zh'],
+                'order': row['order'],
+                'level': row['level'],
+                'active': True,
+                # Sync these from the spec (annotations are authoritative).
+                'is_main_material': is_main,
+                'min_stock': min_stock,
+                # NOTE: current_stock intentionally NOT in defaults —
+                # preserve manager-set values on re-seed.
+            }
             obj, was_created = InventoryCategory.objects.update_or_create(
-                code=row['code'],
-                defaults={
-                    'parent': parent,
-                    'name_zh': row['name_zh'],
-                    'order': row['order'],
-                    'level': row['level'],
-                    'active': True,
-                    # NOTE: current_stock intentionally NOT in defaults —
-                    # preserve manager-set values on re-seed.
-                },
+                code=row['code'], defaults=defaults,
             )
+            # New nodes: set node_type based on whether the spec marks them as
+            # a stockable part (main material / min_stock) or a category.
+            if was_created and not (is_main or min_stock):
+                obj.node_type = 'category'
+                obj.save(update_fields=['node_type'])
             cache[row['code']] = obj
             if was_created:
                 created += 1
             else:
                 updated += 1
+            if is_main:
+                main_count += 1
 
         # Leaf count (no children) = pickable items.
         leaves = sum(1 for c in InventoryCategory.objects.all()
@@ -84,5 +99,5 @@ class Command(BaseCommand):
 
         self.stdout.write(self.style.SUCCESS(
             f'InventoryCategory: {created} created, {updated} updated '
-            f'({len(rows)} total, {leaves} pickable leaves).'
+            f'({len(rows)} total, {leaves} pickable leaves, {main_count} 主材).'
         ))

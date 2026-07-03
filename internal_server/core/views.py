@@ -8232,17 +8232,21 @@ def inventory_management(request):
 
     # Stockable leaves for the alert tab — {id, name, path, stock, min}. The
     # threshold filtering is done client-side so the slider updates instantly.
+    # Also builds a cat_id → full hierarchy path map reused by the ledger tab.
     leaves = []
+    cat_paths = {}   # id → "大类别 › 小类别 › … › 品名"
     for c in cats:
-        if c.node_type != 'part':
-            continue   # only 'part' nodes carry stock; empty categories are skipped
-        # Build a display path (ancestor names) for context.
+        # Build a display path (ancestor names) for every node, not just parts.
         chain = []
         p = c.parent
         while p:
             chain.append(p.name_zh)
             p = p.parent
         chain.reverse()
+        full = ' › '.join(chain + [c.name_zh]) if chain else c.name_zh
+        cat_paths[c.id] = full
+        if c.node_type != 'part':
+            continue   # only 'part' nodes carry stock; empty categories are skipped
         leaves.append({
             'id': c.id, 'name': c.name_zh, 'path': ' › '.join(chain),
             'stock': c.current_stock, 'min': c.min_stock,
@@ -8254,6 +8258,7 @@ def inventory_management(request):
         'date_from': date_from,
         'date_to': date_to,
         'txns': txns,
+        'cat_paths_json': json.dumps(cat_paths, ensure_ascii=False),
         'leaves_json': json.dumps(leaves, ensure_ascii=False),
     })
 
@@ -8501,6 +8506,248 @@ def inventory_category_delete(request, cat_id):
         return JsonResponse({'success': True, 'message': msg})
     messages.success(request, msg)
     return redirect('core:inventory_management')
+
+
+@require_POST
+@login_required(login_url='core:login')
+def inventory_category_edit(request, cat_id):
+    """Rename / update an inventory category or part (manager only).
+
+    Updates ``name_zh`` (always), and for parts also ``min_stock`` /
+    ``is_main_material``. ``current_stock`` is left untouched (it's adjusted by
+    transactions, not by editing). ``node_type`` is preserved.
+    """
+    from core.models import InventoryCategory
+    from core.role_utils import get_user_role, ROLE_MANAGER, ROLE_SUPER_ADMIN
+    role = get_user_role(request.user)
+    if role not in (ROLE_MANAGER, ROLE_SUPER_ADMIN):
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return JsonResponse({'success': False, 'message': '无权限'}, status=403)
+        messages.error(request, '无权限')
+        return redirect('core:inventory_management')
+
+    cat = get_object_or_404(InventoryCategory, pk=cat_id)
+    name = (request.POST.get('name') or '').strip()
+    if not name:
+        return _iv_create_err(request, '请填写名称')
+
+    cat.name_zh = name
+    # Part-only fields (categories have no stock/min/main).
+    if cat.node_type == 'part':
+        try:
+            cat.min_stock = int(request.POST.get('min_stock') or 0)
+        except (ValueError, TypeError):
+            cat.min_stock = 0
+        cat.is_main_material = bool(request.POST.get('is_main_material'))
+    cat.save()
+
+    msg = f'已更新「{name}」'
+    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        return JsonResponse({
+            'success': True, 'message': msg,
+            'node': {
+                'id': cat.id, 'name': cat.name_zh, 'node_type': cat.node_type,
+                'current_stock': cat.current_stock, 'min_stock': cat.min_stock,
+                'is_main_material': cat.is_main_material,
+            },
+        })
+    messages.success(request, msg)
+    return redirect('core:inventory_management')
+
+
+@login_required(login_url='core:login')
+def inventory_export_excel(request):
+    """Export the inventory catalog (leaves only) as an Excel spreadsheet.
+
+    Columns: 大类别 / 小类别 / 系列 / 品名 / 是否主材 / 最小库存 / 现有库存.
+    The hierarchy depth varies (1–5 levels); the last node is always the 品名
+    (part name), the first is always 大类别. Intermediate levels fill 小类别 /
+    系列 in order; when a path is shorter than 4 levels, the gaps are filled
+    bottom-up by repeating the nearest available ancestor (per the user's spec:
+    "如果只有2级，则系列、品名都可以重复小类别的内容").
+    """
+    from core.models import InventoryCategory
+    from core.role_utils import get_user_role, ROLE_MANAGER, ROLE_SUPER_ADMIN
+    import io
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+
+    role = get_user_role(request.user)
+    if role not in (ROLE_MANAGER, ROLE_SUPER_ADMIN):
+        messages.error(request, '无权限')
+        return redirect('core:dashboard')
+
+    # Build the ancestor chain (root → ... → leaf) for every part leaf.
+    cats = {c.id: c for c in InventoryCategory.objects.filter(active=True)}
+    rows = []
+    for c in cats.values():
+        if c.node_type != 'part':
+            continue
+        chain = []
+        node = c
+        while node:
+            chain.append(node.name_zh)
+            node = cats.get(node.parent_id) if node.parent_id else None
+        chain.reverse()   # root → leaf
+        rows.append((chain, c))
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = '库存目录'
+    headers = ['大类别', '小类别', '系列', '品名', '是否主材', '最小库存', '现有库存']
+    hdr_font = Font(bold=True, color='FFFFFF', size=11)
+    hdr_fill = PatternFill(start_color='1B4332', end_color='1B4332', fill_type='solid')
+    hdr_align = Alignment(horizontal='center', vertical='center')
+    thin = Side(style='thin', color='CCCCCC')
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+
+    for ci, h in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=ci, value=h)
+        cell.font = hdr_font
+        cell.fill = hdr_fill
+        cell.alignment = hdr_align
+        cell.border = border
+
+    for ri, (chain, cat) in enumerate(rows, 2):
+        # Map the variable-length chain onto 4 fixed columns.
+        # 品名 = last element; 大类别 = first element.
+        # 小类别 / 系列 = the middle levels; if fewer than 4 levels, fill
+        # bottom-up by repeating the nearest ancestor.
+        name = chain[-1]                      # 品名 (always the leaf)
+        big = chain[0] if chain else ''       # 大类别 (always the root)
+        mid = chain[1:-1] if len(chain) > 2 else []   # levels between root and leaf
+        # Target 2 middle slots: [小类别, 系列]
+        if len(mid) >= 2:
+            small, series = mid[0], mid[1]
+        elif len(mid) == 1:
+            small = series = mid[0]
+        else:
+            # Only 2 levels (root + leaf): repeat root as small + series.
+            small = series = big
+        vals = [big, small, series, name,
+                '是' if cat.is_main_material else '',
+                cat.min_stock or 0, cat.current_stock or 0]
+        for ci, v in enumerate(vals, 1):
+            cell = ws.cell(row=ri, column=ci, value=v)
+            cell.border = border
+            if ci >= 6:
+                cell.alignment = Alignment(horizontal='right')
+            if cat.is_main_material and ci == 5:
+                cell.font = Font(bold=True, color='2D6A4F')
+
+    # Column widths
+    for ci, w in enumerate([18, 22, 22, 28, 10, 10, 10], 1):
+        ws.column_dimensions[chr(64 + ci)].width = w
+    ws.freeze_panes = 'A2'
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    resp = HttpResponse(buf.getvalue(),
+                        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    resp['Content-Disposition'] = 'attachment; filename="inventory_catalog.xlsx"'
+    return resp
+
+
+@login_required(login_url='core:login')
+def inventory_transactions_export(request):
+    """Export the 出入库记录 ledger as an Excel spreadsheet.
+
+    One row per transaction line (a multi-item cart expands to multiple rows).
+    Columns: 日期 / 类型 / 物料(full hierarchy path) / 数量 / 单位 / 经办人 /
+    去向来源 / 关联 / 备注. Date range from ?from=&to= (defaults to last 30 days).
+    """
+    from core.models import InventoryCategory, InventoryTransaction
+    from core.role_utils import get_user_role, ROLE_MANAGER, ROLE_SUPER_ADMIN
+    from datetime import date, timedelta
+    import io
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+
+    role = get_user_role(request.user)
+    if role not in (ROLE_MANAGER, ROLE_SUPER_ADMIN):
+        messages.error(request, '无权限')
+        return redirect('core:dashboard')
+
+    today = date.today()
+    date_from = request.GET.get('from') or (today - timedelta(days=30)).isoformat()
+    date_to = request.GET.get('to') or today.isoformat()
+
+    # Build cat_id → full hierarchy path (same as the ledger tab).
+    cats = {c.id: c for c in InventoryCategory.objects.filter(active=True)}
+    cat_paths = {}
+    for c in cats.values():
+        chain = []
+        p = c.parent
+        while p:
+            chain.append(p.name_zh)
+            p = cats.get(p.parent_id) if p.parent_id else None
+        chain.reverse()
+        cat_paths[c.id] = ' › '.join(chain + [c.name_zh]) if chain else c.name_zh
+
+    txns = (InventoryTransaction.objects
+            .filter(date__gte=date_from, date__lte=date_to)
+            .select_related('worker', 'related_project', 'zone', 'work_report')
+            .prefetch_related('lines__category')
+            .order_by('-date', '-id'))
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = '出入库记录'
+    headers = ['日期', '类型', '物料', '数量', '单位', '经办人', '去向/来源', '关联', '备注']
+    hdr_font = Font(bold=True, color='FFFFFF', size=11)
+    hdr_fill = PatternFill(start_color='1B4332', end_color='1B4332', fill_type='solid')
+    hdr_align = Alignment(horizontal='center', vertical='center')
+    thin = Side(style='thin', color='CCCCCC')
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+    for ci, h in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=ci, value=h)
+        cell.font = hdr_font; cell.fill = hdr_fill; cell.alignment = hdr_align; cell.border = border
+
+    ri = 2
+    for t in txns:
+        op = f"{t.operation}-{t.entry_subtype}" if t.entry_subtype else t.operation
+        ctx = ''
+        if t.operation == '出库' and t.entry_subtype == '项目' and t.related_project:
+            ctx = '项目 · ' + t.related_project.name
+        elif t.operation == '出库' and t.entry_subtype == '借用' and t.counterparty:
+            ctx = '借用 · ' + t.counterparty
+        elif t.operation == '入库' and t.entry_subtype == '采购' and t.order_no:
+            ctx = '采购 · 订单 ' + t.order_no
+        else:
+            ctx = t.entry_subtype or ''
+        link = ''
+        if t.work_report_id:
+            link = f'工单 #{t.work_report_id}'
+        elif t.zone:
+            link = t.zone.code or t.zone.name_zh
+        for ln in t.lines.all():
+            vals = [
+                t.date.isoformat() if t.date else '',
+                op,
+                cat_paths.get(ln.category_id, ln.category.name_zh if ln.category_id else ''),
+                ('+' if t.operation == '入库' else '-') + str(ln.quantity),
+                ln.unit or '',
+                t.worker.full_name if t.worker_id and t.worker else '',
+                ctx, link, t.remark or '',
+            ]
+            for ci, v in enumerate(vals, 1):
+                cell = ws.cell(row=ri, column=ci, value=v)
+                cell.border = border
+                if ci == 4:
+                    cell.font = Font(bold=True, color='2D6A4F' if t.operation == '入库' else 'c0392b')
+            ri += 1
+
+    for ci, w in enumerate([12, 14, 36, 10, 8, 12, 22, 14, 24], 1):
+        ws.column_dimensions[chr(64 + ci)].width = w
+    ws.freeze_panes = 'A2'
+
+    buf = io.BytesIO()
+    wb.save(buf); buf.seek(0)
+    resp = HttpResponse(buf.getvalue(),
+                        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    resp['Content-Disposition'] = 'attachment; filename="inventory_transactions.xlsx"'
+    return resp
 
 
 @login_required(login_url='core:login')
