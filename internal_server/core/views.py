@@ -6715,15 +6715,16 @@ def _work_report_filters(request):
     """Collect + normalize the work-report list query filters.
 
     Shared by the server-rendered list and the AJAX "load more" endpoint so both
-    apply exactly the same scoping. Returns ``(date_from, date_to, location_id,
-    worker_id, difficult, pending, before_id, sort)`` where ``date_from``/
+    apply exactly the same scoping. Returns ``(date_from, date_to, land_id,
+    worker_id, difficult, pending, before_id, sort, q)`` where ``date_from``/
     ``date_to`` are strings (or '') ready to echo back into the filter form,
-    ``sort`` is one of ``WORK_REPORTS_SORT_OPTIONS`` keys, and the rest are
-    already-coerced values. ``before_id`` is the cursor for "load more".
+    ``land_id`` filters by the report's zones' Land (top-level area), ``sort``
+    is one of ``WORK_REPORTS_SORT_OPTIONS`` keys, and the rest are already-coerced
+    values. ``before_id`` is the cursor for "load more".
     """
     date_from = (request.GET.get('date_from') or '').strip()
     date_to = (request.GET.get('date_to') or '').strip()
-    location_id = request.GET.get('location') or ''
+    land_id = request.GET.get('land') or ''
     worker_id = request.GET.get('worker') or ''
     difficult = request.GET.get('is_difficult')
     pending = request.GET.get('is_pending_repair')
@@ -6742,7 +6743,7 @@ def _work_report_filters(request):
         today = timezone.localdate()
         date_from = (today - timedelta(days=WORK_REPORTS_DEFAULT_DAYS)).isoformat()
 
-    return date_from, date_to, location_id, worker_id, difficult, pending, before_id, sort, q
+    return date_from, date_to, land_id, worker_id, difficult, pending, before_id, sort, q
 
 
 def _scoped_work_reports_qs(user, admin, sort=WORK_REPORTS_DEFAULT_SORT):
@@ -6865,14 +6866,14 @@ def work_reports_list(request):
     id), ``worker`` (Worker id, admin only), ``is_pending_repair`` / ``is_difficult``
     (any truthy value), and ``before_id`` (report id cursor for load-more).
     """
-    from core.models import Patch, Worker
+    from core.models import Patch, Worker, Land
     from core.role_utils import is_admin
     from core.workorder_tree_views import workitem_path_map, enrich_reports, attach_zone_hierarchy
 
     user = request.user
     admin = is_admin(user)
 
-    date_from, date_to, location_id, worker_id, difficult, pending, before_id, sort, q = _work_report_filters(request)
+    date_from, date_to, land_id, worker_id, difficult, pending, before_id, sort, q = _work_report_filters(request)
 
     qs = _scoped_work_reports_qs(user, admin, sort=sort)
     qs = qs.annotate(comment_count=Count('comments'))
@@ -6881,8 +6882,10 @@ def work_reports_list(request):
     qs = qs.filter(date__gte=date_from)
     if date_to:
         qs = qs.filter(date__lte=date_to)
-    if location_id:
-        qs = qs.filter(location_id=location_id)
+    if land_id:
+        # Subquery (not a JOIN) so the comment_count annotation above isn't
+        # multiplied by the number of matching zones.
+        qs = qs.filter(zones__in=Zone.objects.filter(land_id=land_id))
     if worker_id:
         qs = qs.filter(worker_id=worker_id)
     if difficult:
@@ -6920,7 +6923,7 @@ def work_reports_list(request):
                         for w in Worker.objects.all().order_by('full_name')] if admin else [],
         })
 
-    locations = Patch.objects.filter(active=True).order_by('order')
+    lands = Land.objects.filter(active=True).order_by('order', 'name')
     workers = Worker.objects.all().order_by('full_name') if admin else []
 
     # Remarks tab (managers only): pending remarks (Step 1: confirm) + confirmed
@@ -6951,7 +6954,7 @@ def work_reports_list(request):
         'filters': {
             'date_from': date_from,
             'date_to': date_to,
-            'location': int(location_id) if location_id else '',
+            'land': int(land_id) if land_id else '',
             'worker': int(worker_id) if worker_id else '',
             'is_difficult': bool(difficult),
             'is_pending_repair': bool(pending),
@@ -6967,7 +6970,7 @@ def work_reports_list(request):
 
     return render(request, 'core/work_reports.html', {
         'reports': reports,
-        'locations': locations,
+        'lands': lands,
         'workers': workers,
         'is_admin': admin,
         'has_more': has_more,
@@ -7000,7 +7003,7 @@ def work_report_photos(request):
     沿用 work_reports_list 的日期/位置/人员筛选；只返回 photos 非空的工单。
     每条工单带工作类别(section)、所属Land、处理人等简要信息 + 媒体路径列表。
     """
-    from core.models import Patch, Worker
+    from core.models import Patch, Worker, Land
     from core.role_utils import is_admin
     from core.workorder_tree_views import workitem_path_map, enrich_reports, attach_zone_hierarchy
 
@@ -7009,12 +7012,12 @@ def work_report_photos(request):
     if not admin:
         return JsonResponse({'reports': [], 'error': '无权限'}, status=403)
 
-    date_from, date_to, location_id, worker_id, difficult, pending, before_id, sort, q = _work_report_filters(request)
+    date_from, date_to, land_id, worker_id, difficult, pending, before_id, sort, q = _work_report_filters(request)
     qs = _scoped_work_reports_qs(user, admin, sort=sort).filter(date__gte=date_from)
     if date_to:
         qs = qs.filter(date__lte=date_to)
-    if location_id:
-        qs = qs.filter(location_id=location_id)
+    if land_id:
+        qs = qs.filter(zones__in=Zone.objects.filter(land_id=land_id))
     if worker_id:
         qs = qs.filter(worker_id=worker_id)
     if difficult:
