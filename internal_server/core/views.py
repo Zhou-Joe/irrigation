@@ -8020,7 +8020,7 @@ def serialize_inventory_tree():
     qs = (InventoryCategory.objects.filter(active=True)
           .order_by('order', 'code')
           .values('id', 'code', 'name_zh', 'parent_id', 'current_stock',
-                  'min_stock', 'is_main_material', 'node_type'))
+                  'min_stock', 'is_main_material', 'node_type', 'unit'))
     nodes = {n['id']: {**n, 'name': n['name_zh'], 'children': []} for n in qs}
     roots = []
     for n in qs:
@@ -8250,7 +8250,7 @@ def inventory_management(request):
         leaves.append({
             'id': c.id, 'name': c.name_zh, 'path': ' › '.join(chain),
             'stock': c.current_stock, 'min': c.min_stock,
-            'main': c.is_main_material,
+            'main': c.is_main_material, 'unit': c.unit,
         })
 
     return render(request, 'core/inventory_management.html', {
@@ -8539,6 +8539,7 @@ def inventory_category_edit(request, cat_id):
         except (ValueError, TypeError):
             cat.min_stock = 0
         cat.is_main_material = bool(request.POST.get('is_main_material'))
+        cat.unit = (request.POST.get('unit') or '').strip()
     cat.save()
 
     msg = f'已更新「{name}」'
@@ -8548,7 +8549,7 @@ def inventory_category_edit(request, cat_id):
             'node': {
                 'id': cat.id, 'name': cat.name_zh, 'node_type': cat.node_type,
                 'current_stock': cat.current_stock, 'min_stock': cat.min_stock,
-                'is_main_material': cat.is_main_material,
+                'is_main_material': cat.is_main_material, 'unit': cat.unit,
             },
         })
     messages.success(request, msg)
@@ -8594,7 +8595,7 @@ def inventory_export_excel(request):
     wb = Workbook()
     ws = wb.active
     ws.title = '库存目录'
-    headers = ['大类别', '小类别', '系列', '品名', '是否主材', '最小库存', '现有库存']
+    headers = ['大类别', '小类别', '系列', '品名', '是否主材', '单位', '最小库存', '现有库存']
     hdr_font = Font(bold=True, color='FFFFFF', size=11)
     hdr_fill = PatternFill(start_color='1B4332', end_color='1B4332', fill_type='solid')
     hdr_align = Alignment(horizontal='center', vertical='center')
@@ -8626,6 +8627,7 @@ def inventory_export_excel(request):
             small = series = big
         vals = [big, small, series, name,
                 '是' if cat.is_main_material else '',
+                cat.unit or '',
                 cat.min_stock or 0, cat.current_stock or 0]
         for ci, v in enumerate(vals, 1):
             cell = ws.cell(row=ri, column=ci, value=v)
@@ -8636,7 +8638,7 @@ def inventory_export_excel(request):
                 cell.font = Font(bold=True, color='2D6A4F')
 
     # Column widths
-    for ci, w in enumerate([18, 22, 22, 28, 10, 10, 10], 1):
+    for ci, w in enumerate([18, 22, 22, 28, 10, 8, 10, 10], 1):
         ws.column_dimensions[chr(64 + ci)].width = w
     ws.freeze_panes = 'A2'
 

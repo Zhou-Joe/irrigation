@@ -1336,6 +1336,10 @@ class InventoryCategory(models.Model):
         '是否主材', default=False,
         help_text='主材在日后管理中着重统计与分析',
     )
+    # Unit for stock quantities (e.g. '个', 'm', '瓶'). Parsed from the 盘点
+    # spreadsheet's 最小库存 column ("100个" → unit='个', "1000m" → unit='m').
+    unit = models.CharField('单位', max_length=10, blank=True, default='',
+                            help_text='库存计量单位，如 个/m/瓶')
     # Explicit node type so an empty directory (no children yet) is not mistaken
     # for a stockable part. 'category' = branch (holds sub-items), 'part' = leaf
     # (a concrete SKU with stock). Seeded from the markdown tree's structure;

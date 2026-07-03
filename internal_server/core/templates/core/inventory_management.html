@@ -46,6 +46,7 @@
 .iv-min-input[data-low="1"] { border-color: #e6a23c; background: #fdf6ec; }
 .iv-low-warn { margin-left: 30px; font-size: .74rem; color: #e6a23c; padding: 1px 0 3px; }
 .iv-main-tag { display: inline-block; margin-left: 4px; padding: 0 5px; border-radius: 8px; font-size: .68rem; font-weight: 600; background: #e8f5e9; color: var(--color-primary, #2D6A4F); }
+.iv-unit-tag { display: inline-block; font-size: .72rem; color: #888; margin-left: 1px; }
 .iv-main-toggle { display: flex; align-items: center; gap: 3px; font-size: .74rem; color: #999; cursor: pointer; user-select: none; white-space: nowrap; }
 .iv-main-toggle input { width: 14px; height: 14px; cursor: pointer; }
 
@@ -417,6 +418,7 @@ table.iv-ledger .lvl-tag.warn { background: #fdf6ec; color: #cc7722; }
       <div class="iv-create-part-fields" id="ivEditPartFields">
         <div class="iv-part-row">
           <div><label>最低量</label><input type="number" id="ivEditMin" value="0" min="0" step="1"></div>
+          <div><label>单位</label><input type="text" id="ivEditUnit" value="" placeholder="个/m/瓶" style="width:60px;"></div>
         </div>
         <label style="display:flex;align-items:center;gap:6px;margin-top:8px;cursor:pointer;font-weight:400;color:#555;">
           <input type="checkbox" id="ivEditMain" style="width:16px;height:16px;"> 是否主材
@@ -600,13 +602,14 @@ function ivDelete(catId, catName) {
 // ── Edit category/part (rename + part attributes) ─────────────────────
 var _ivEditId = null;
 var _ivEditType = 'category';
-function ivOpenEdit(catId, catName, nodeType, minStock, isMain) {
+function ivOpenEdit(catId, catName, nodeType, minStock, isMain, unit) {
     _ivEditId = catId;
     _ivEditType = nodeType || 'part';
     document.getElementById('ivEditTitle').textContent = nodeType === 'category' ? '编辑目录' : '编辑部件';
     document.getElementById('ivEditTypeLabel').textContent = nodeType === 'category' ? '类型：📁 目录' : '类型：🔹 部件';
     document.getElementById('ivEditName').value = catName;
     document.getElementById('ivEditMin').value = minStock || 0;
+    document.getElementById('ivEditUnit').value = unit || '';
     document.getElementById('ivEditMain').checked = !!isMain;
     document.getElementById('ivEditPartFields').classList.toggle('show', nodeType !== 'category');
     document.getElementById('ivEditMask').classList.add('open');
@@ -621,6 +624,7 @@ function ivSubmitEdit() {
     fd.append('name', name);
     if (_ivEditType !== 'category') {
         fd.append('min_stock', document.getElementById('ivEditMin').value || '0');
+        fd.append('unit', document.getElementById('ivEditUnit').value || '');
         if (document.getElementById('ivEditMain').checked) fd.append('is_main_material', '1');
     }
     fetch('/inventory/category/' + _ivEditId + '/edit/', { method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRFToken': _ivCsrf() } })
