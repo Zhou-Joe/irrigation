@@ -7,11 +7,8 @@
 set -euo pipefail
 
 # ── Config ────────────────────────────────────────────────────────────────
-SMB_HOST="192.168.137.1"
-SMB_SHARE="maxicom backup"
-SMB_USER="Administrator"
-SMB_PASS="maxicom123"
-ZIP_PASS="RLM6808"                       # Maxicom2.mdb DB password (also the zip password)
+# Credentials/share come from .env.production (MAXICOM_SMB_* / MAXICOM_ZIP_PASS).
+# Defaults below are only fallbacks for ad-hoc runs without the env file.
 PROJECT="/home/projects/irrigation"
 PY="$PROJECT/.venv/bin/python"
 MANAGE="$PROJECT/internal_server/manage.py"
@@ -24,10 +21,16 @@ ts() { date '+%Y-%m-%d %H:%M:%S'; }
 echo "$(ts) === Maxicom nightly import start ==="
 echo "$(ts) tmp dir: $TMP_DIR"
 
-# Load Django env (SECRET_KEY etc.) — cron doesn't source profiles.
+# Load Django env (SECRET_KEY + MAXICOM_* + SYNC_API_KEY) — cron doesn't source profiles.
 if [ -f "$ENV_FILE" ]; then
     set -a; . "$ENV_FILE"; set +a
 fi
+
+SMB_HOST="${MAXICOM_SMB_HOST:?MAXICOM_SMB_HOST not set in $ENV_FILE}"
+SMB_SHARE="${MAXICOM_SMB_SHARE:?MAXICOM_SMB_SHARE not set in $ENV_FILE}"
+SMB_USER="${MAXICOM_SMB_USER:?MAXICOM_SMB_USER not set in $ENV_FILE}"
+SMB_PASS="${MAXICOM_SMB_PASS:?MAXICOM_SMB_PASS not set in $ENV_FILE}"
+ZIP_PASS="${MAXICOM_ZIP_PASS:?MAXICOM_ZIP_PASS not set in $ENV_FILE}"
 
 trap 'rm -rf "$TMP_DIR"' EXIT
 
