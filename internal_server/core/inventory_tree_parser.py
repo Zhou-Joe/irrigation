@@ -5,9 +5,14 @@ etc. The real catalog is the subtree under ``## 库存材料和工具`` and ends
 ``### 工具``; everything after (浇水协调需求记录 / 传感器数据展示 / ...) is
 unrelated and must be skipped.
 
-Output: a flat list of ``{code, parent_code, name_zh, order, level}`` dicts in
-depth-first pre-order (parents before children), suitable for seeding. Codes
-are derived from the heading path so they're stable across re-seeds.
+Leaf headings may carry inline annotations like ``主材最小库存300个`` or
+``主材 按需备货`` — these are parsed into ``is_main_material`` / ``min_stock``
+and stripped from the display name.
+
+Output: a flat list of ``{code, parent_code, name_zh, order, level,
+is_main_material, min_stock}`` dicts in depth-first pre-order (parents before
+children), suitable for seeding. Codes are derived from the heading path so
+they're stable across re-seeds.
 
 Pure functions, no Django imports.
 """
@@ -22,6 +27,50 @@ _END_MARKERS = {
 }
 
 _HEADING_RE = re.compile(r'^(#{1,6})\s+(.*)$')
+
+# Annotation patterns (matched greedily, in priority order). Each captures the
+# trailing part of a heading: "主材最小库存300个", "主材 按需备货", etc.
+# Returns (is_main_material, min_stock) or None if no annotation.
+# Matches "最小库存" and "最小备货" (the spec uses both terms interchangeably),
+# with optional spaces/duplicate "主材" prefixes.
+_MAIN_MIN_RE = re.compile(r'(?:主材\s*)+最小(?:库存|备货)\s*(\d+)\s*(个|m|瓶)?')
+# "按需备货" — optionally preceded by "主材". Strips both.
+_MAIN_ONDEMAND_RE = re.compile(r'(?:主材\s*)*按需备货')
+# Bare trailing "主材" with no quantity — still a main material, min_stock=0.
+_MAIN_BARE_RE = re.compile(r'(?:\s+主材\s*$|(?<=[^\u4e00-\u9fff])主材\s*$)')
+
+
+def _extract_annotation(heading):
+    """Parse trailing inventory annotations from a heading text.
+
+    Recognizes patterns like:
+      "1812-SAM-PRS-30  主材最小库存300个"  → (True, 300), name="1812-SAM-PRS-30"
+      "1"不锈钢管主材  最小库存8m"          → (True, 8), name='1"不锈钢管'
+      "16mm滴灌管  主材最小库存2000m"       → (True, 2000), name="16mm滴灌管"
+      "SCH80 PVC短管 3/4" 30cm 主材最小库存200个" → (True, 200)
+      "国标PN16 ... 主材 按需备货"          → (True, 0)  [order as needed]
+      "U8H 主材最小库存500个"               → (True, 500)
+    Returns ``(is_main_material, min_stock, clean_name)``. When no annotation
+    is present, returns ``(False, 0, heading)``.
+    """
+    # Try the min-stock pattern first (greediest).
+    m = _MAIN_MIN_RE.search(heading)
+    if m:
+        qty = int(m.group(1))
+        # Strip the matched annotation (and any leading spaces before 主材).
+        name = heading[:m.start()].rstrip(' 　*-').rstrip()
+        return True, qty, name
+    # "按需备货" — main material but no fixed min stock.
+    m = _MAIN_ONDEMAND_RE.search(heading)
+    if m:
+        name = heading[:m.start()].rstrip(' 　*-').rstrip()
+        return True, 0, name
+    # Bare trailing "主材" — main material, no min stock specified.
+    m = _MAIN_BARE_RE.search(heading)
+    if m:
+        name = heading[:m.start()].rstrip(' 　*-').rstrip()
+        return True, 0, name
+    return False, 0, heading
 
 
 def _slug(name):
@@ -102,12 +151,16 @@ def parse_inventory_tree(text):
             pass
 
         order = sibling_counter.get(parent_path, 0)
+        # Extract inline annotations (主材 / 最小库存) from leaf headings.
+        is_main, min_stock, display_name = _extract_annotation(clean)
         nodes.append({
             'code': code,
             'parent_code': parent_code,
-            'name_zh': clean,
+            'name_zh': display_name,
             'order': order,
             'level': level,
+            'is_main_material': is_main,
+            'min_stock': min_stock,
         })
         stack.append((level, code, slug))
 
