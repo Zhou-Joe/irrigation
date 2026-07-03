@@ -30,11 +30,11 @@ The whole tree lives inside the stock-save <form>, so leaf inputs keep name="sto
 <div class="iv-leaf" data-cat="{{ cat.id }}">
     <div class="iv-leaf-row">
         <span class="iv-leaf-name">{{ cat.name_zh }}{% if cat.is_main_material %}<span class="iv-main-tag" title="主材">主材</span>{% endif %}</span>
-        <label class="iv-field-label">现有<input type="number" step="1" min="0" class="iv-stock-input" name="stock_{{ cat.id }}" value="{{ cat.current_stock }}" title="现有库存"></label>
-        <label class="iv-field-label">最低<input type="number" step="1" min="0" class="iv-min-input" name="min_{{ cat.id }}" value="{{ cat.min_stock }}" title="最小库存量"{% if cat.current_stock < cat.min_stock %} data-low="1"{% endif %}></label>
+        <label class="iv-field-label">现有<input type="number" step="1" min="0" class="iv-stock-input" name="stock_{{ cat.id }}" value="{{ cat.current_stock }}" title="现有库存"></label>{% if cat.unit %}<span class="iv-unit-tag">{{ cat.unit }}</span>{% endif %}
+        <label class="iv-field-label">最低<input type="number" step="1" min="0" class="iv-min-input" name="min_{{ cat.id }}" value="{{ cat.min_stock }}" title="最小库存量"{% if cat.current_stock < cat.min_stock %} data-low="1"{% endif %}>{% if cat.unit %}<span class="iv-unit-tag">{{ cat.unit }}</span>{% endif %}</label>
         <label class="iv-main-toggle" title="是否主材"><input type="checkbox" name="main_{{ cat.id }}" {% if cat.is_main_material %}checked{% endif %}><span>主材</span></label>
         <button type="button" class="iv-txn-btn" onclick="ivLoadTxn(this, {{ cat.id }})">记录 ▾</button>
-        <button type="button" class="iv-edit-btn" title="编辑此部件" onclick="ivOpenEdit({{ cat.id }}, '{{ cat.name_zh|escapejs }}', 'part', {{ cat.min_stock }}, {{ cat.is_main_material|yesno:'1,0' }})">✏️</button>
+        <button type="button" class="iv-edit-btn" title="编辑此部件" onclick="ivOpenEdit({{ cat.id }}, '{{ cat.name_zh|escapejs }}', 'part', {{ cat.min_stock }}, {{ cat.is_main_material|yesno:'1,0' }}, '{{ cat.unit|escapejs }}')">✏️</button>
         <button type="button" class="iv-del-btn" title="删除此部件" onclick="ivDelete({{ cat.id }}, '{{ cat.name_zh|escapejs }}')">🗑</button>
     </div>
     {% if cat.current_stock < cat.min_stock %}<div class="iv-low-warn">⚠ 库存低于最低量</div>{% endif %}
