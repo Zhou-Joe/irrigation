@@ -289,7 +289,16 @@
         // Load and render pipelines
         loadPipelines();
 
-        // Update zone label sizes on zoom (debounced — see updateLabelSizesDebounced)
+        // During the zoom animation Leaflet CSS-transforms every label DOM node
+        // (~1100) each frame — the main source of zoom lag. Hide them instantly at
+        // zoomstart via a CSS class (see .map-zooming in style.css) so they leave the
+        // render tree entirely during the animation.
+        map.on('zoomstart', function () {
+            map.getContainer().classList.add('map-zooming');
+        });
+        // Re-layout labels on zoomend (debounced). updateLabelSizes re-applies the
+        // correct per-element display, then clears the zooming class so labels
+        // reappear with the right layout (see _updateLabelSizesAndClearZoom wrapper).
         map.on('zoomend', updateLabelSizesDebounced);
         // Re-cull labels to the viewport after panning so only on-screen labels render.
         map.on('moveend', _cullLabelsToViewportDebounced);
@@ -622,7 +631,14 @@
             t = setTimeout(() => { fn.apply(null, arguments); }, wait);
         };
     }
-    const updateLabelSizesDebounced = _debounce(updateLabelSizes, 120);
+    // Wrapper: run the heavy re-layout, THEN drop the .map-zooming flag set at zoomstart.
+    // Clearing the class after the layout pass (not before) avoids a flash where the CSS
+    // override lifts before per-element display has been re-applied.
+    function _updateLabelSizesAndClearZoom() {
+        updateLabelSizes();
+        map.getContainer().classList.remove('map-zooming');
+    }
+    const updateLabelSizesDebounced = _debounce(_updateLabelSizesAndClearZoom, 120);
 
     /**
      * Hide zone labels whose center is outside the current viewport (plus a small margin).

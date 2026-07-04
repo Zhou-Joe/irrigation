@@ -1244,31 +1244,6 @@ def announcement_acknowledge(request, pk):
 
 
 @login_required(login_url='core:login')
-def announcement_management(request):
-    """List/create/edit announcements (manager / super-admin only)."""
-    from core.models import Announcement
-    from core.role_utils import get_user_role, ROLE_MANAGER, ROLE_SUPER_ADMIN
-    role = get_user_role(request.user)
-    if role not in (ROLE_MANAGER, ROLE_SUPER_ADMIN):
-        messages.error(request, '无权限访问通知管理')
-        return redirect('core:dashboard')
-
-    edit_obj = None
-    edit_id = request.GET.get('edit')
-    if edit_id:
-        edit_obj = get_object_or_404(Announcement, pk=edit_id)
-
-    announcements = (Announcement.objects.all()
-                     .annotate(ack_count=Count('acknowledgments'))
-                     .order_by('-created_at'))
-    return render(request, 'core/announcement_management.html', {
-        'announcements': announcements,
-        'edit_obj': edit_obj,
-    })
-
-
-@require_POST
-@login_required(login_url='core:login')
 def announcement_save(request):
     """Create or update an Announcement (manager / super-admin only)."""
     from core.models import Announcement
@@ -1284,7 +1259,7 @@ def announcement_save(request):
     active = request.POST.get('active') in ('1', 'on', 'true', 'True')
     if not title:
         messages.error(request, '标题不能为空')
-        return redirect('core:announcement_management')
+        return redirect(f"{reverse('core:user_management')}?tab=announcements")
 
     if pid:
         ann = get_object_or_404(Announcement, pk=pid)
@@ -1298,7 +1273,7 @@ def announcement_save(request):
             title=title, body=body, active=active, created_by=request.user,
         )
         messages.success(request, f'通知已发布：{ann.title}')
-    return redirect('core:announcement_management')
+    return redirect(f"{reverse('core:user_management')}?tab=announcements")
 
 
 @require_POST
@@ -1316,7 +1291,7 @@ def announcement_delete(request, pk):
     title = ann.title
     ann.delete()
     messages.success(request, f'通知已删除：{title}')
-    return redirect('core:announcement_management')
+    return redirect(f"{reverse('core:user_management')}?tab=announcements")
 
 
 @login_required(login_url='core:login')
@@ -2901,7 +2876,6 @@ def map_style_editor(request):
     context = {
         'zones_json': json.dumps(all_drawn_zones),
         'map_style_json': json.dumps(current_style),
-        'nav_quickdraw': 'active',
     }
     return render(request, 'core/map_style_editor.html', context)
 
@@ -4319,6 +4293,16 @@ def user_management(request):
         'rejected': RegistrationRequest.objects.filter(status='rejected').count(),
     }
 
+    # Announcement data for the 通知管理 tab (manager-visible under 用户管理).
+    from core.models import Announcement
+    announcements = (Announcement.objects.all()
+                     .annotate(ack_count=Count('acknowledgments'))
+                     .order_by('-created_at'))
+    edit_obj = None
+    edit_id = request.GET.get('edit')
+    if edit_id:
+        edit_obj = get_object_or_404(Announcement, pk=edit_id)
+
     context = {
         'active_tab': active_tab,
         'filter': filter_status,
@@ -4329,6 +4313,8 @@ def user_management(request):
         'requests': requests_qs,
         'stats': stats,
         'drawn_zone_map_json': json.dumps(drawn_zone_map),
+        'announcements': announcements,
+        'edit_obj': edit_obj,
     }
 
     return render(request, 'core/user_management.html', context)
@@ -8044,7 +8030,7 @@ def serialize_inventory_tree():
 @login_required(login_url='core:login')
 def inventory_modal_data(request):
     """API: return inventory form metadata as JSON for the dashboard modal."""
-    from core.models import InventoryTransaction, Project
+    from core.models import InventoryTransaction, Project, PurchaseOrder
     from core.role_utils import get_worker_for_user, get_user_role, ROLE_FIELD_WORKER, ROLE_MANAGER, ROLE_SUPER_ADMIN
     from core.workorder_tree_views import serialize_projects
     from datetime import date, datetime
@@ -8073,6 +8059,10 @@ def inventory_modal_data(request):
         'projects': serialize_projects(),
         'project_categories': [{'code': c, 'label': label} for c, label in Project.CATEGORY_CHOICES],
         'borrowers': borrowers,
+        # 灌溉订单编号列表 → 入库-采购表单的订单号 datalist 选项（仍允许自由输入）。
+        'purchase_orders': list(PurchaseOrder.objects
+                                .values_list('order_number', flat=True)
+                                .order_by('-created_at')),
         'today': date.today().isoformat(),
         'now_time': now.strftime('%H:%M'),
         'worker_name': worker.full_name if worker else request.user.get_full_name() or request.user.username,
@@ -8089,6 +8079,7 @@ def inventory_mobile_v2(request):
     """
     from core.models import (
         InventoryTransaction, InventoryTransactionLine, InventoryCategory, Project, Zone,
+        PurchaseOrder,
     )
     from core.role_utils import get_user_role, resolve_or_create_worker
     from core.role_utils import ROLE_FIELD_WORKER, ROLE_MANAGER, ROLE_SUPER_ADMIN
@@ -8142,6 +8133,14 @@ def inventory_mobile_v2(request):
             remark=(request.POST.get('remark') or '').strip(),
             zone=zone,
         )
+
+        # 入库-采购时，若订单号命中某张采购订单，则自动关联该流水到订单。
+        # （自由输入且未命中的订单号保持 purchase_order=NULL，仍以文本形式保留。）
+        if operation == '入库' and entry_subtype == '采购' and txn.order_no:
+            po = PurchaseOrder.objects.filter(order_number=txn.order_no).first()
+            if po is not None:
+                txn.purchase_order = po
+                txn.save(update_fields=['purchase_order'])
 
         # Direction: 入库 adds stock; 出库 subtracts.
         sign = 1 if operation == '入库' else -1
@@ -8256,6 +8255,12 @@ def inventory_management(request):
             'main': c.is_main_material, 'unit': c.unit,
         })
 
+    # Purchase orders for the 采购订单 tab. Serialize with the same helper used by
+    # the (now-removed) standalone page: aggregates 入库-采购 lines per order.
+    from core.models import PurchaseOrder
+    pos = list(PurchaseOrder.objects.all().order_by('-created_at'))
+    pos_json = json.dumps([_serialize_purchase_order(po) for po in pos], ensure_ascii=False)
+
     return render(request, 'core/inventory_management.html', {
         'roots': roots,
         'date_from': date_from,
@@ -8263,6 +8268,8 @@ def inventory_management(request):
         'txns': txns,
         'cat_paths_json': json.dumps(cat_paths, ensure_ascii=False),
         'leaves_json': json.dumps(leaves, ensure_ascii=False),
+        'pos_json': pos_json,
+        'inventory_tree_json': json.dumps(serialize_inventory_tree(), ensure_ascii=False),
     })
 
 
@@ -8752,6 +8759,330 @@ def inventory_transactions_export(request):
     resp = HttpResponse(buf.getvalue(),
                         content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
     resp['Content-Disposition'] = 'attachment; filename="inventory_transactions.xlsx"'
+    return resp
+
+
+# ==========================================================================
+# 采购订单 (Purchase Order) 管理
+# ==========================================================================
+
+def _po_received_parts(po):
+    """Aggregate the 入库-采购 lines linked to a PurchaseOrder into a list of
+    {category_id, name, path, qty, unit} and a count of inbound transactions.
+
+    A PO's "received parts" are derived from its linked 入库-采购 transactions'
+    line items — quantities summed across all such transactions.
+    """
+    from core.models import InventoryTransaction
+    agg = {}   # category_id → {name, unit, qty, path}
+    txn_count = 0
+    txns = (po.transactions
+            .filter(operation='入库', entry_subtype='采购')
+            .prefetch_related('lines__category'))
+    for t in txns:
+        txn_count += 1
+        for ln in t.lines.all():
+            cat = ln.category
+            key = cat.id
+            if key not in agg:
+                # Build the full hierarchy path for display (大类别 › … › 品名),
+                # including the leaf part itself. Matches the cat_paths convention
+                # used elsewhere in this view for the ledger/目录 tabs.
+                chain = []
+                p = cat.parent
+                while p:
+                    chain.append(p.name_zh)
+                    p = p.parent
+                chain.reverse()
+                full_path = ' › '.join(chain + [cat.name_zh]) if chain else cat.name_zh
+                agg[key] = {'category_id': cat.id, 'name': cat.name_zh,
+                            'path': full_path, 'unit': ln.unit or cat.unit,
+                            'qty': 0}
+            agg[key]['qty'] += ln.quantity
+    return list(agg.values()), txn_count
+
+
+def _po_planned_lines(po):
+    """Serialize a PO's planned purchase lines (PurchaseOrderLine) for the page.
+
+    Each entry: {category_id, name, path, qty, unit} where path is the full
+    hierarchy "大类别 › … › 品名" (leaf included). Distinct from received parts
+    (`_po_received_parts`), which are derived from 入库-采购 transactions.
+    """
+    lines = []
+    for ln in po.planned_lines.select_related('category__parent'):
+        cat = ln.category
+        chain = []
+        p = cat.parent
+        while p:
+            chain.append(p.name_zh)
+            p = p.parent
+        chain.reverse()
+        full_path = ' › '.join(chain + [cat.name_zh]) if chain else cat.name_zh
+        lines.append({
+            'category_id': cat.id, 'name': cat.name_zh,
+            'path': full_path, 'qty': ln.quantity,
+            'unit': ln.unit or cat.unit,
+        })
+    return lines
+
+
+def _po_upsert_planned_lines(po, lines_raw):
+    """Apply planned purchase lines (from the JSON ``lines`` POST field) to a PO.
+
+    ``lines_raw`` is the raw JSON string (same contract as the 入库 cart):
+    a list of ``{category, quantity, unit}``. Replace semantics: lines for
+    categories not in the payload are removed; the rest are created/updated.
+    Invalid entries (bad category id / non-positive qty) are skipped silently.
+    """
+    from core.models import InventoryCategory, PurchaseOrderLine
+    try:
+        lines = json.loads(lines_raw or '[]')
+    except (json.JSONDecodeError, TypeError):
+        lines = []
+    if not isinstance(lines, list):
+        return
+    seen = {}
+    for ln in lines:
+        if not isinstance(ln, dict):
+            continue
+        cat_id = ln.get('category')
+        try:
+            qty = int(ln.get('quantity') or 0)
+        except (ValueError, TypeError):
+            continue
+        if not cat_id or qty <= 0:
+            continue
+        # Last write wins if a category appears more than once.
+        seen[cat_id] = {'qty': qty, 'unit': (str(ln.get('unit') or '').strip())}
+
+    # Remove lines whose category isn't in the payload.
+    po.planned_lines.exclude(category_id__in=seen.keys()).delete()
+    # Upsert the rest.
+    valid_cat_ids = set(InventoryCategory.objects.filter(pk__in=seen.keys())
+                        .values_list('id', flat=True))
+    for cat_id, data in seen.items():
+        if int(cat_id) not in valid_cat_ids:
+            continue
+        PurchaseOrderLine.objects.update_or_create(
+            purchase_order=po, category_id=cat_id,
+            defaults={'quantity': data['qty'], 'unit': data['unit']},
+        )
+
+
+def _serialize_purchase_order(po):
+    """Serialize a PurchaseOrder (planned + received parts) for the page."""
+    parts, txn_count = _po_received_parts(po)
+    return {
+        'id': po.id,
+        'order_number': po.order_number,
+        'po_number': po.po_number,
+        'po_amount_untaxed': ('' if po.po_amount_untaxed is None
+                              else f'{po.po_amount_untaxed:.2f}'),
+        'project_name': po.project_name,
+        'project_code': po.project_code,
+        'received_date': po.received_date.isoformat() if po.received_date else '',
+        'created_at': po.created_at.strftime('%Y-%m-%d') if po.created_at else '',
+        'txn_count': txn_count,
+        'planned_lines': _po_planned_lines(po),
+        'parts': parts,
+    }
+
+
+@login_required(login_url='core:login')
+@require_POST
+def purchase_order_create(request):
+    """Create a PurchaseOrder. 灌溉订单编号 is mandatory and must be unique."""
+    from core.models import PurchaseOrder
+    from core.role_utils import get_user_role, ROLE_MANAGER, ROLE_SUPER_ADMIN
+    from decimal import InvalidOperation
+
+    role = get_user_role(request.user)
+    if role not in (ROLE_MANAGER, ROLE_SUPER_ADMIN):
+        return JsonResponse({'success': False, 'message': '无权限'}, status=403)
+
+    order_number = (request.POST.get('order_number') or '').strip()
+    if not order_number:
+        return JsonResponse({'success': False, 'message': '灌溉订单编号不能为空'}, status=400)
+    if PurchaseOrder.objects.filter(order_number=order_number).exists():
+        return JsonResponse({'success': False, 'message': '灌溉订单编号已存在'}, status=400)
+
+    amount_raw = (request.POST.get('po_amount_untaxed') or '').strip()
+    amount = None
+    if amount_raw:
+        try:
+            from decimal import Decimal
+            amount = Decimal(amount_raw)
+        except InvalidOperation:
+            return JsonResponse({'success': False, 'message': 'PO未税金额格式无效'}, status=400)
+    from datetime import date as _date
+    received_date = None
+    rd_raw = (request.POST.get('received_date') or '').strip()
+    if rd_raw:
+        try:
+            received_date = _date.fromisoformat(rd_raw)
+        except ValueError:
+            return JsonResponse({'success': False, 'message': '收货日期格式无效'}, status=400)
+
+    po = PurchaseOrder.objects.create(
+        order_number=order_number,
+        po_number=(request.POST.get('po_number') or '').strip(),
+        po_amount_untaxed=amount,
+        project_name=(request.POST.get('project_name') or '').strip(),
+        project_code=(request.POST.get('project_code') or '').strip(),
+        received_date=received_date,
+    )
+    _po_upsert_planned_lines(po, request.POST.get('lines'))
+    return JsonResponse({'success': True, 'message': '采购订单已创建',
+                         'node': _serialize_purchase_order(po)})
+
+
+@login_required(login_url='core:login')
+@require_POST
+def purchase_order_edit(request, po_id):
+    """Edit a PurchaseOrder's fields. 灌溉订单编号 stays unique."""
+    from core.models import PurchaseOrder
+    from core.role_utils import get_user_role, ROLE_MANAGER, ROLE_SUPER_ADMIN
+    from decimal import Decimal, InvalidOperation
+
+    role = get_user_role(request.user)
+    if role not in (ROLE_MANAGER, ROLE_SUPER_ADMIN):
+        return JsonResponse({'success': False, 'message': '无权限'}, status=403)
+
+    po = get_object_or_404(PurchaseOrder, pk=po_id)
+
+    order_number = (request.POST.get('order_number') or '').strip()
+    if not order_number:
+        return JsonResponse({'success': False, 'message': '灌溉订单编号不能为空'}, status=400)
+    if (PurchaseOrder.objects.filter(order_number=order_number)
+            .exclude(pk=po_id).exists()):
+        return JsonResponse({'success': False, 'message': '灌溉订单编号已存在'}, status=400)
+
+    amount_raw = (request.POST.get('po_amount_untaxed') or '').strip()
+    amount = None
+    if amount_raw:
+        try:
+            amount = Decimal(amount_raw)
+        except InvalidOperation:
+            return JsonResponse({'success': False, 'message': 'PO未税金额格式无效'}, status=400)
+    from datetime import date as _date
+    received_date = None
+    rd_raw = (request.POST.get('received_date') or '').strip()
+    if rd_raw:
+        try:
+            received_date = _date.fromisoformat(rd_raw)
+        except ValueError:
+            return JsonResponse({'success': False, 'message': '收货日期格式无效'}, status=400)
+
+    po.order_number = order_number
+    po.po_number = (request.POST.get('po_number') or '').strip()
+    po.po_amount_untaxed = amount
+    po.project_name = (request.POST.get('project_name') or '').strip()
+    po.project_code = (request.POST.get('project_code') or '').strip()
+    po.received_date = received_date
+    po.save()
+    _po_upsert_planned_lines(po, request.POST.get('lines'))
+    return JsonResponse({'success': True, 'message': '采购订单已更新',
+                         'node': _serialize_purchase_order(po)})
+
+
+@login_required(login_url='core:login')
+@require_POST
+def purchase_order_delete(request, po_id):
+    """Delete a PurchaseOrder. SET_NULL keeps linked 入库流水 intact."""
+    from core.models import PurchaseOrder
+    from core.role_utils import get_user_role, ROLE_MANAGER, ROLE_SUPER_ADMIN
+
+    role = get_user_role(request.user)
+    if role not in (ROLE_MANAGER, ROLE_SUPER_ADMIN):
+        return JsonResponse({'success': False, 'message': '无权限'}, status=403)
+
+    po = get_object_or_404(PurchaseOrder, pk=po_id)
+    order_number = po.order_number
+    po.delete()
+    return JsonResponse({'success': True,
+                         'message': f'已删除采购订单「{order_number}」'})
+
+
+@login_required(login_url='core:login')
+def purchase_order_export_excel(request):
+    """Export all purchase orders to Excel.
+
+    Columns mirror the management table plus two material columns: 计划采购 and
+    已入库. Within each cell multiple materials are newline-separated; the two
+    columns are aligned by material name so rows correspond.
+    """
+    import io
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.utils import get_column_letter
+    from core.models import PurchaseOrder
+    from core.role_utils import get_user_role, ROLE_MANAGER, ROLE_SUPER_ADMIN
+
+    role = get_user_role(request.user)
+    if role not in (ROLE_MANAGER, ROLE_SUPER_ADMIN):
+        return redirect('core:dashboard')
+
+    pos = list(PurchaseOrder.objects.all().order_by('-created_at'))
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = '采购订单'
+    headers = ['灌溉订单编号', 'PO号', '项目名称', '项目code', '收货日期',
+               'PO未税金额', '计划采购', '已入库', '入库次数', '创建日期']
+    ws.append(headers)
+
+    header_fill = PatternFill('solid', fgColor='1B4332')
+    header_font = Font(color='FFFFFF', bold=True, size=10)
+    thin = Side(style='thin', color='D9D0C0')
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+    wrap_top = Alignment(wrap_text=True, vertical='top')
+    for ci in range(1, len(headers) + 1):
+        c = ws.cell(row=1, column=ci)
+        c.fill = header_fill; c.font = header_font; c.border = border
+        c.alignment = Alignment(horizontal='center', vertical='center')
+
+    for po in pos:
+        data = _serialize_purchase_order(po)
+        # Align planned vs received by category_id, newline-separated.
+        planned = {ln['category_id']: ln for ln in data.get('planned_lines', [])}
+        received = {ln['category_id']: ln for ln in data.get('parts', [])}
+        all_ids = list(planned.keys()) + [k for k in received if k not in planned]
+        planned_lines, received_lines = [], []
+        for cid in all_ids:
+            pl = planned.get(cid); rc = received.get(cid)
+            ref = pl or rc
+            nm = ref['name']; unit = ref.get('unit', '') or ''
+            planned_lines.append('%s ×%d %s' % (nm, pl['qty'] if pl else 0, unit))
+            received_lines.append('%s ×%d %s' % (nm, rc['qty'] if rc else 0, unit))
+
+        row = [
+            po.order_number,
+            po.po_number,
+            po.project_name,
+            po.project_code,
+            po.received_date.isoformat() if po.received_date else '',
+            float(po.po_amount_untaxed) if po.po_amount_untaxed is not None else '',
+            '\n'.join(planned_lines),
+            '\n'.join(received_lines),
+            data.get('txn_count', 0),
+            po.created_at.strftime('%Y-%m-%d') if po.created_at else '',
+        ]
+        ws.append(row)
+        r = ws.max_row
+        for ci in range(1, len(headers) + 1):
+            ws.cell(row=r, column=ci).border = border
+            ws.cell(row=r, column=ci).alignment = wrap_top
+
+    widths = [18, 12, 18, 12, 12, 12, 40, 40, 8, 12]
+    for i, w in enumerate(widths, 1):
+        ws.column_dimensions[get_column_letter(i)].width = w
+
+    buf = io.BytesIO()
+    wb.save(buf); buf.seek(0)
+    resp = HttpResponse(buf.getvalue(),
+                        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    resp['Content-Disposition'] = 'attachment; filename="purchase_orders.xlsx"'
     return resp
 
 

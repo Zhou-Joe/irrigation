@@ -2569,7 +2569,7 @@
             '<div class="v2-fg"><div class="v2-fl">操作类型</div><div class="v2-chip-group">' + ops + '</div></div>' +
             '<div class="v2-fg" id="invSubRow"><div class="v2-fl" id="invSubLabel">来源类型</div><div class="v2-chip-group" id="invSubChips"></div></div>' +
             '<div class="v2-fg"><div class="v2-form-row"><div><div class="v2-fl">日期</div><select name="date" id="invDate" class="v2-select">' + dateOptionsHTML(7, data.today) + '</select></div></div></div>' +
-            '<div class="v2-fg" id="invOrderRow" style="display:none;"><div class="v2-fl">订单号</div><input type="text" name="order_no" id="invOrderNo" class="v2-input" placeholder="采购订单号"></div>' +
+            '<div class="v2-fg" id="invOrderRow" style="display:none;"><div class="v2-fl">订单号</div><input type="text" name="order_no" id="invOrderNo" class="v2-input" list="invOrderList" placeholder="选择或输入采购订单号"><datalist id="invOrderList">' + (data.purchase_orders || []).map(function (o) { return '<option value="' + _esc(o) + '">'; }).join('') + '</datalist></div>' +
             '<div class="v2-fg" id="invProjCatRow" style="display:none;"><div class="v2-fl">项目类别</div><div class="v2-chip-group" id="invProjCatChips"></div><div class="v2-fl" style="margin-top:10px;">项目名称</div><div class="v2-chip-group" id="invProjNameChips"><div class="v2-chip" style="opacity:0.5;cursor:default;">先选类别</div></div></div>' +
             '<div class="v2-fg" id="invCpRow" style="display:none;"><div class="v2-fl">借用方</div><input type="text" name="counterparty" id="invCounterparty" class="v2-input" list="invBorrowerList" placeholder="选择或输入借用方"><datalist id="invBorrowerList">' + (data.borrowers || []).map(function (b) { return '<option value="' + _esc(b) + '">'; }).join('') + '</datalist></div>' +
             '<div class="v2-fg"><div class="v2-fl">物料清单</div>' +
@@ -2689,15 +2689,12 @@
                 '<div style="flex:1;min-width:0;"><div style="font-size:0.9em;font-weight:500;">' + _esc(it.name) +
                 '</div><div style="font-size:0.72em;color:#999;">当前库存: <b style="color:#444;">' + it.stock + '</b></div></div>' +
                 '<input type="number" step="1" min="1" value="' + it.quantity + '" data-idx="' + idx + '" class="inv-qty-input" style="width:64px;padding:6px;border:1px solid #ddd;border-radius:6px;text-align:center;font-size:0.9em;">' +
-                '<input type="text" value="' + _esc(it.unit) + '" data-idx="' + idx + '" class="inv-unit-input" placeholder="单位" style="width:48px;padding:6px;border:1px solid #ddd;border-radius:6px;font-size:0.85em;text-align:center;">' +
+                '<span style="width:48px;text-align:center;font-size:0.85em;color:#666;">' + _esc(it.unit || '—') + '</span>' +
                 '<button type="button" data-idx="' + idx + '" class="inv-del-btn" style="background:#fee;border:none;border-radius:6px;width:28px;height:28px;color:#c0392b;cursor:pointer;font-size:0.9em;">×</button>' +
                 '</div>';
         }).join('');
         box.querySelectorAll('.inv-qty-input').forEach(function (inp) {
             inp.addEventListener('input', function () { _invCart[this.dataset.idx].quantity = parseFloat(this.value) || 0; });
-        });
-        box.querySelectorAll('.inv-unit-input').forEach(function (inp) {
-            inp.addEventListener('input', function () { _invCart[this.dataset.idx].unit = this.value; });
         });
         box.querySelectorAll('.inv-del-btn').forEach(function (btn) {
             btn.addEventListener('click', function () { _invCart.splice(this.dataset.idx, 1); _invRenderCart(); });
@@ -2752,7 +2749,7 @@
                     if (_invCart.some(function (c) { return c.id === n.id; })) {
                         showToast('该物料已在清单中', 'error');
                     } else {
-                        _invCart.push({ id: n.id, name: n.name, stock: n.current_stock || 0, quantity: 1, unit: '' });
+                        _invCart.push({ id: n.id, name: n.name, stock: n.current_stock || 0, quantity: 1, unit: n.unit || '' });
                         _invRenderCart();
                     }
                     sheet.style.display = 'none';

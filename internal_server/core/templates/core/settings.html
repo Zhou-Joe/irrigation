@@ -58,7 +58,10 @@
                 <a href="{% url 'core:zone_export_excel' %}" class="btn btn-sm btn-secondary">导出</a>
                 <button type="button" class="btn btn-sm btn-secondary" onclick="showImportModal()">导入</button>
                 <a href="{% url 'core:zone_new' %}" class="btn btn-sm btn-primary" target="_blank">+ 新建</a>
-                <a href="{% url 'core:zone_quick_draw' %}" class="btn btn-sm btn-secondary" target="_blank">快速绘制边界</a>
+                <a href="{% url 'core:zone_quick_draw' %}" class="btn btn-sm btn-secondary" target="_blank">快速绘制(电脑)</a>
+                <a href="{% url 'core:zone_quick_draw_mobile' %}" class="btn btn-sm btn-secondary" target="_blank">手机版</a>
+                <a href="{% url 'core:zone_dxf_import' %}" class="btn btn-sm btn-secondary">DXF导入</a>
+                <a href="{% url 'core:map_style_editor' %}" class="btn btn-sm btn-secondary">样式调节</a>
             </div>
         </div>
 

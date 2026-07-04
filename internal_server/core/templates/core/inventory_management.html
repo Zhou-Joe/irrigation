@@ -69,11 +69,87 @@
 .iv-search { width: 100%; padding: 8px 12px; border: 1px solid #d8d8d8; border-radius: 8px; font-size: .9rem; margin-bottom: 12px; box-sizing: border-box; }
 
 /* ── Tab switcher (库存树 / 出入库记录) ──────────────────────────────── */
-.iv-tabs { display: flex; gap: 0; border-radius: 10px; overflow: hidden; background: #f0f2f0; margin-bottom: 16px; max-width: 340px; }
+.iv-tabs { display: flex; gap: 0; border-radius: 10px; overflow: hidden; background: #f0f2f0; margin-bottom: 16px; max-width: 460px; }
 .iv-tab { flex: 1; padding: 9px 0; text-align: center; font-size: .88rem; font-weight: 600; cursor: pointer; transition: all .2s; color: #888; border: none; background: transparent; user-select: none; }
 .iv-tab.active { background: #fff; color: var(--color-primary, #2D6A4F); box-shadow: 0 1px 3px rgba(0,0,0,.1); }
 .iv-tab-content { display: none; }
 .iv-tab-content.active { display: block; }
+
+/* ── 采购订单 tab ─────────────────────────────────────────────────────── */
+.po-top { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }
+.po-new-btn { margin-left: auto; padding: 7px 16px; border-radius: 8px; background: var(--color-primary, #2D6A4F); color: #fff; border: none; font-size: .88rem; cursor: pointer; }
+.po-new-btn:hover { opacity: .92; }
+.po-search { flex: 1; min-width: 160px; padding: 7px 12px; border: 1px solid #d8d8d8; border-radius: 8px; font-size: .88rem; }
+.po-empty { text-align: center; color: #aaa; padding: 40px 0; font-size: .9rem; }
+/* ── PO table ── */
+.po-table-wrap { overflow-x: auto; }
+table.po-table { width: 100%; border-collapse: collapse; font-size: .84rem; }
+table.po-table thead th { text-align: left; color: #888; font-weight: 600; font-size: .76rem; padding: 8px 8px; border-bottom: 2px solid #e8e8e8; white-space: nowrap; }
+table.po-table tbody td { padding: 9px 8px; border-bottom: 1px solid #f0f0f0; vertical-align: middle; }
+table.po-table tbody tr:hover td { background: #f9fbf9; }
+.po-t-num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.po-t-order { font-weight: 600; color: #333; }
+.po-t-row-detail { display: none; }
+.po-t-row-detail.open { display: table-row; }
+.po-t-row-detail > td { padding: 0 !important; }
+.po-t-detail-inner { padding: 10px 14px 14px; background: #fafbfa; }
+.po-card { background: #fff; border-radius: 12px; padding: 16px; margin-bottom: 14px; box-shadow: 0 1px 4px rgba(0,0,0,.06); }
+.po-card-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+.po-order-num { font-size: 1.02rem; font-weight: 600; color: #333; }
+.po-po-tag { font-size: .74rem; color: var(--color-primary, #2D6A4F); background: #e8f5e9; padding: 2px 8px; border-radius: 8px; }
+.po-amt { margin-left: auto; font-size: .92rem; font-weight: 600; color: #c0392b; }
+.po-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 18px; font-size: .84rem; color: #555; margin-bottom: 10px; }
+.po-grid .lbl { color: #999; margin-right: 6px; }
+@media (max-width: 560px) { .po-grid { grid-template-columns: 1fr; } }
+.po-parts-title { font-size: .8rem; color: #888; margin: 8px 0 4px; }
+.po-parts { display: flex; flex-wrap: wrap; gap: 6px; }
+.po-part { font-size: .78rem; background: #f4f7f4; border: 1px solid #e6ece6; border-radius: 6px; padding: 3px 9px; color: #444; }
+.po-part .pq { font-weight: 600; color: var(--color-primary, #2D6A4F); }
+.po-txn-count { font-size: .76rem; color: #aaa; margin-top: 8px; }
+.po-actions { display: flex; gap: 8px; margin-top: 10px; }
+.po-act-btn { padding: 4px 12px; border-radius: 6px; border: 1px solid #d8d8d8; background: #fff; font-size: .8rem; cursor: pointer; color: #555; }
+.po-act-btn:hover { background: #f4f7f4; }
+.po-act-btn.danger { color: #c0392b; border-color: #f5cccc; }
+.po-act-btn.danger:hover { background: #fdf2f2; }
+.po-mask { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: none; align-items: center; justify-content: center; z-index: 999; padding: 16px; }
+.po-mask.open { display: flex; }
+.po-dialog { background: #fff; border-radius: 14px; width: 100%; max-width: 460px; max-height: 90vh; overflow-y: auto; }
+.po-dlg-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; border-bottom: 1px solid #f0f0f0; }
+.po-dlg-head h3 { margin: 0; font-size: 1rem; color: var(--color-primary, #2D6A4F); }
+.po-dlg-close { background: none; border: none; font-size: 1.4rem; color: #999; cursor: pointer; line-height: 1; }
+.po-dlg-body { padding: 16px; }
+.po-dlg-body label { display: block; font-size: .82rem; color: #666; margin: 10px 0 4px; }
+.po-dlg-body label .req { color: #c0392b; }
+.po-dlg-body input { width: 100%; padding: 8px 10px; border: 1px solid #d8d8d8; border-radius: 8px; font-size: .9rem; box-sizing: border-box; }
+.po-dlg-foot { display: flex; gap: 10px; padding: 12px 16px; border-top: 1px solid #f0f0f0; }
+.po-dlg-cancel { flex: 1; padding: 9px; border-radius: 8px; border: 1px solid #d8d8d8; background: #fff; cursor: pointer; font-size: .9rem; color: #555; }
+.po-dlg-submit { flex: 1; padding: 9px; border-radius: 8px; border: none; background: var(--color-primary, #2D6A4F); color: #fff; cursor: pointer; font-size: .9rem; }
+.po-dlg-submit:disabled { opacity: .6; cursor: default; }
+
+/* PO planned-materials rows (in create/edit modal) */
+.po-planned-row { display: flex; align-items: flex-start; gap: 10px; padding: 10px 0; border-bottom: 1px solid #f0f0f0; }
+.po-planned-row:last-child { border-bottom: none; }
+.po-planned-main { flex: 1; min-width: 0; }
+.po-planned-name { font-size: .88rem; color: #333; }
+.po-planned-path { font-size: .72rem; color: #aaa; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.po-planned-controls { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.po-planned-qty { width: 56px; padding: 4px 6px; border: 1px solid #d8d8d8; border-radius: 6px; font-size: .82rem; text-align: center; }
+.po-planned-unit-ro { font-size: .8rem; color: #888; white-space: nowrap; }
+.po-planned-del { width: 24px; height: 24px; border: none; background: #f0f0f0; border-radius: 50%; color: #c0392b; cursor: pointer; font-size: .95rem; line-height: 1; flex-shrink: 0; }
+
+/* Full-path sub-line inside a PO card's part chip */
+.po-part-path { display: block; font-size: .68rem; color: #aaa; margin-top: 1px; line-height: 1.3; }
+
+/* Bottom-sheet tree picker (the dashboard.css version isn't loaded on this page) */
+.v2-sheet-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 4000;
+    display: none; align-items: flex-end; justify-content: center; touch-action: manipulation;
+}
+.v2-sheet-overlay[style*="display: flex"], .v2-sheet-overlay[style*="display:flex"] { display: flex; }
+.v2-sheet {
+    background: #fff; border-radius: 16px 16px 0 0; width: 100%; max-width: 420px;
+    max-height: 85vh; display: flex; flex-direction: column; overflow: hidden;
+}
 
 /* ── Transactions ledger table ──────────────────────────────────────── */
 .iv-ledger-card { background: #fff; border-radius: 12px; padding: 16px; box-shadow: 0 1px 4px rgba(0,0,0,.06); }
@@ -200,6 +276,7 @@ table.iv-ledger .lvl-tag.warn { background: #fdf6ec; color: #cc7722; }
     <button type="button" class="iv-tab active" data-tab="ledger" onclick="ivSwitchTab('ledger')">出入库记录</button>
     <button type="button" class="iv-tab" data-tab="alert" onclick="ivSwitchTab('alert')">库存警告</button>
     <button type="button" class="iv-tab" data-tab="tree" onclick="ivSwitchTab('tree')">库存目录</button>
+    <button type="button" class="iv-tab" data-tab="orders" onclick="ivSwitchTab('orders')">采购订单</button>
   </div>
 
   {# ── Tab 1: transactions ledger (all 出入库 records in range) ── #}
@@ -363,12 +440,56 @@ table.iv-ledger .lvl-tag.warn { background: #fdf6ec; color: #cc7722; }
         {% for root in roots %}
           {% include 'core/_inventory_tree_node.html' with node=root %}
         {% empty %}
-          <div style="color:#aaa;padding:14px 0;font-size:.9rem;">暂无物料，请先运行 <code>python manage.py seed_inventory_items</code></div>
+          <div style="color:#aaa;padding:14px 0;font-size:.9rem;">暂无物料，请先运行 <code>python manage.py seed_inventory_from_xlsx</code></div>
         {% endfor %}
       </div>
     </form>
   </div>
   </div>{# /#ivTabTree #}
+
+  {# ── Tab 4: 采购订单 ── #}
+  <div class="iv-tab-content" id="ivTabOrders">
+    <div class="po-top">
+      <input type="text" id="poSearch" class="po-search" placeholder="搜索 灌溉订单编号 / PO号 / 项目名称…">
+      <a href="{% url 'core:purchase_order_export_excel' %}" class="po-new-btn" style="background:#fff;color:var(--color-primary,#2D6A4F);border:1px solid var(--color-primary,#2D6A4F);text-decoration:none;display:inline-block;margin-right:0;">⬇ 导出Excel</a>
+      <button type="button" class="po-new-btn" onclick="poOpenCreate()">+ 新建订单</button>
+    </div>
+    <div id="poList"></div>
+    <div id="poEmpty" class="po-empty" style="display:none;">暂无采购订单，点击「新建订单」创建。</div>
+  </div>
+</div>
+
+{# ── 采购订单 create / edit modal ── #}
+<div class="po-mask" id="poMask">
+  <div class="po-dialog">
+    <div class="po-dlg-head">
+      <h3 id="poDlgTitle">新建采购订单</h3>
+      <button type="button" class="po-dlg-close" onclick="poCloseModal()">×</button>
+    </div>
+    <div class="po-dlg-body">
+      <label>灌溉订单编号 <span class="req">*</span></label>
+      <input type="text" id="poForder_number" placeholder="必填，唯一" autocomplete="off">
+      <label>PO号</label>
+      <input type="text" id="poFpo_number" placeholder="PO号（可选）" autocomplete="off">
+      <label>PO未税金额</label>
+      <input type="number" id="poFpo_amount_untaxed" placeholder="如 12345.67（可选）" step="0.01" min="0">
+      <label>收货日期</label>
+      <input type="date" id="poFreceived_date">
+      <label>项目名称</label>
+      <input type="text" id="poFproject_name" placeholder="项目名称（可选）" autocomplete="off">
+      <label>项目code</label>
+      <input type="text" id="poFproject_code" placeholder="项目code（可选）" autocomplete="off">
+      <label>计划采购物料</label>
+      <div id="poPlannedList"></div>
+      <div id="poAddTrigger" style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border:1px dashed #bbb;border-radius:8px;cursor:pointer;background:#fff;font-size:.9rem;margin-top:6px;">
+        <span style="color:#2D6A4F;">+ 添加物料</span><span style="font-size:.8em;color:#999;">▶</span>
+      </div>
+    </div>
+    <div class="po-dlg-foot">
+      <button type="button" class="po-dlg-cancel" onclick="poCloseModal()">取消</button>
+      <button type="button" class="po-dlg-submit" id="poDlgSubmit" onclick="poSubmit()">创建</button>
+    </div>
+  </div>
 </div>
 
 {# ── Create category/part modal ── #}
@@ -433,6 +554,7 @@ table.iv-ledger .lvl-tag.warn { background: #fdf6ec; color: #cc7722; }
 </div>
 
 <div id="ivToast" style="position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#333;color:#fff;padding:9px 20px;border-radius:20px;font-size:.86em;z-index:1000;opacity:0;transition:opacity .2s;pointer-events:none;"></div>
+<div id="poToast" style="position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#333;color:#fff;padding:9px 20px;border-radius:20px;font-size:.86em;z-index:1000;opacity:0;transition:opacity .2s;pointer-events:none;"></div>
 
 <script>
 var _ivLoadedTxn = {};  // catId -> true once fetched (reset on date-range change)
@@ -441,6 +563,17 @@ var _ivLoadedTxn = {};  // catId -> true once fetched (reset on date-range chang
 var IV_LEAVES = {{ leaves_json|safe }};
 // Cat id → full hierarchy path, for the ledger tab's 物料明细 column.
 var IV_CAT_PATHS = {{ cat_paths_json|safe }};
+// 采购订单 tab data (each: {id,order_number,...,txn_count,planned_lines[],parts[]}).
+var PO_DATA = {{ pos_json|safe }};
+// Inventory tree (for the PO 计划采购物料 picker). Reuses serialize_inventory_tree().
+var PO_INV_TREE = {{ inventory_tree_json|safe }};
+var PO_INV_NODE_MAP = {};
+(function _poIndexTree(nodes) {
+    nodes.forEach(function (n) {
+        PO_INV_NODE_MAP[n.id] = n;
+        if (n.children && n.children.length) _poIndexTree(n.children);
+    });
+})(PO_INV_TREE);
 // Replace each .ln-path leaf name with its full "大类别 › … › 品名" path.
 (function () {
     document.querySelectorAll('.ln-path[data-cat]').forEach(function (el) {
@@ -501,12 +634,12 @@ function ivAlertRefresh() {
     }).join('');
 }
 
-// Tab switching (出入库记录 / 库存警告 / 库存目录).
+// Tab switching (出入库记录 / 库存警告 / 库存目录 / 采购订单).
 function ivSwitchTab(tab) {
     document.querySelectorAll('.iv-tab').forEach(function (t) { t.classList.toggle('active', t.dataset.tab === tab); });
-    document.getElementById('ivTabLedger').classList.toggle('active', tab === 'ledger');
-    document.getElementById('ivTabAlert').classList.toggle('active', tab === 'alert');
-    document.getElementById('ivTabTree').classList.toggle('active', tab === 'tree');
+    document.querySelectorAll('.iv-tab-content').forEach(function (c) {
+        c.classList.toggle('active', c.id === 'ivTab' + tab.charAt(0).toUpperCase() + tab.slice(1));
+    });
     if (tab === 'alert') ivAlertRefresh();
 }
 // Ledger date-range: reload the page with ?from=&to= so the server re-queries.
@@ -906,5 +1039,307 @@ function ivFilter() {
         }
     });
 }
+
+// ── 采购订单 tab (ported from the former standalone page) ────────────────
+var _poEditingId = null;   // null = create mode
+function _poCsrf() {
+    var m = document.cookie.match(/csrftoken=([^;]+)/);
+    return m ? m[1] : '';
+}
+function _poEsc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+        return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+}
+function poToast(text, isErr) {
+    var t = document.getElementById('poToast');
+    t.textContent = text;
+    t.style.background = isErr ? '#c0392b' : '#333';
+    t.style.opacity = '1';
+    clearTimeout(window._poToastT);
+    window._poToastT = setTimeout(function () { t.style.opacity = '0'; }, 2200);
+}
+// Render a part line (planned or received) with its full hierarchy path dimmed.
+function _poPartHtml(ln) {
+    return '<span class="po-part">' + _poEsc(ln.name) +
+        ' <span class="pq">×' + ln.qty + '</span>' +
+        (ln.unit ? _poEsc(ln.unit) : '') +
+        (ln.path && ln.path !== ln.name ? '<span class="po-part-path">' + _poEsc(ln.path) + '</span>' : '') +
+        '</span>';
+}
+function poBuildRows(p) {
+    var key = (p.order_number + ' ' + p.po_number + ' ' + p.project_name + ' ' + p.project_code).toLowerCase();
+    // Detail row content.
+    var plannedHtml = '';
+    if (p.planned_lines && p.planned_lines.length) {
+        plannedHtml = '<div class="po-parts-title">计划采购 (' + p.planned_lines.length + ')</div><div class="po-parts">' +
+            p.planned_lines.map(_poPartHtml).join('') + '</div>';
+    }
+    var partsHtml = '';
+    if (p.parts && p.parts.length) {
+        partsHtml = '<div class="po-parts-title">已入库物料</div><div class="po-parts">' +
+            p.parts.map(_poPartHtml).join('') + '</div>';
+    }
+    var txnLine = p.txn_count
+        ? '<div class="po-txn-count">入库次数：' + p.txn_count + ' 次</div>'
+        : '<div class="po-txn-count">尚无入库记录</div>';
+    var detail = '<div class="po-t-detail-inner">' +
+        (p.project_name || p.project_code
+            ? '<div class="po-grid">' +
+                (p.project_name ? '<div><span class="lbl">项目名称</span>' + _poEsc(p.project_name) + '</div>' : '') +
+                (p.project_code ? '<div><span class="lbl">项目code</span>' + _poEsc(p.project_code) + '</div>' : '') +
+              '</div>' : '') +
+        plannedHtml + partsHtml + txnLine +
+        '<div class="po-actions">' +
+            '<button class="po-act-btn" onclick="poOpenEdit(' + p.id + ')">编辑</button>' +
+            '<button class="po-act-btn danger" onclick="poDelete(' + p.id + ')">删除</button>' +
+        '</div></div>';
+    return '<tr class="po-t-row" data-key="' + _poEsc(key) + '">' +
+        '<td class="po-t-order">' + _poEsc(p.order_number) + '</td>' +
+        '<td>' + (p.po_number ? _poEsc(p.po_number) : '—') + '</td>' +
+        '<td>' + _poEsc(p.project_name || '—') + '</td>' +
+        '<td>' + _poEsc(p.received_date || '—') + '</td>' +
+        '<td class="po-t-num">' + (p.po_amount_untaxed ? '¥' + _poEsc(p.po_amount_untaxed) : '—') + '</td>' +
+        '<td class="po-t-num">' + (p.planned_lines ? p.planned_lines.length : 0) + '</td>' +
+        '<td class="po-t-num">' + (p.txn_count || 0) + '</td>' +
+        '<td>' + _poEsc(p.created_at || '—') + '</td>' +
+        '<td style="text-align:right;white-space:nowrap;">' +
+            '<button type="button" class="po-act-btn" style="font-size:.76rem;padding:3px 8px;" onclick="poToggleDetail(' + p.id + ')">详情 ▾</button>' +
+        '</td>' +
+    '</tr>' +
+    '<tr class="po-t-row-detail" id="poDetailRow-' + p.id + '"><td colspan="9">' + detail + '</td></tr>';
+}
+function poToggleDetail(pid) {
+    var row = document.getElementById('poDetailRow-' + pid);
+    if (row) row.classList.toggle('open');
+}
+function poRender() {
+    var list = document.getElementById('poList');
+    var empty = document.getElementById('poEmpty');
+    if (!PO_DATA.length) { list.innerHTML = ''; empty.style.display = ''; return; }
+    empty.style.display = 'none';
+    var head = '<div class="po-table-wrap"><table class="po-table"><thead><tr>' +
+        '<th>灌溉订单编号</th><th>PO号</th><th>项目名称</th><th>收货日期</th>' +
+        '<th class="po-t-num">PO未税金额</th><th class="po-t-num">计划采购</th>' +
+        '<th class="po-t-num">入库次数</th><th>创建日期</th><th style="text-align:right;">操作</th>' +
+        '</tr></thead><tbody>';
+    list.innerHTML = head + PO_DATA.map(poBuildRows).join('') + '</tbody></table></div>';
+    poApplyFilter();
+}
+function poApplyFilter() {
+    var q = (document.getElementById('poSearch').value || '').trim().toLowerCase();
+    document.querySelectorAll('.po-t-row').forEach(function (row) {
+        row.style.display = (!q || (row.dataset.key || '').indexOf(q) >= 0) ? '' : 'none';
+    });
+}
+function _poFind(id) {
+    for (var i = 0; i < PO_DATA.length; i++) if (PO_DATA[i].id === id) return PO_DATA[i];
+    return null;
+}
+function poOpenCreate() {
+    _poEditingId = null;
+    document.getElementById('poDlgTitle').textContent = '新建采购订单';
+    document.getElementById('poDlgSubmit').textContent = '创建';
+    document.getElementById('poForder_number').value = '';
+    document.getElementById('poFpo_number').value = '';
+    document.getElementById('poFpo_amount_untaxed').value = '';
+    document.getElementById('poFreceived_date').value = '';
+    document.getElementById('poFproject_name').value = '';
+    document.getElementById('poFproject_code').value = '';
+    _poPlannedCart = [];
+    _poRenderPlanned();
+    document.getElementById('poMask').classList.add('open');
+    setTimeout(function () { document.getElementById('poForder_number').focus(); }, 50);
+}
+function poOpenEdit(id) {
+    var p = _poFind(id); if (!p) return;
+    _poEditingId = id;
+    document.getElementById('poDlgTitle').textContent = '编辑采购订单';
+    document.getElementById('poDlgSubmit').textContent = '保存';
+    document.getElementById('poForder_number').value = p.order_number;
+    document.getElementById('poFpo_number').value = p.po_number;
+    document.getElementById('poFpo_amount_untaxed').value = p.po_amount_untaxed;
+    document.getElementById('poFreceived_date').value = p.received_date || '';
+    document.getElementById('poFproject_name').value = p.project_name;
+    document.getElementById('poFproject_code').value = p.project_code;
+    // Hydrate the planned-materials cart from the PO's planned_lines.
+    _poPlannedCart = (p.planned_lines || []).map(function (ln) {
+        return { id: ln.category_id, name: ln.name, path: ln.path, quantity: ln.qty, unit: ln.unit || '' };
+    });
+    _poRenderPlanned();
+    document.getElementById('poMask').classList.add('open');
+}
+function poCloseModal() { document.getElementById('poMask').classList.remove('open'); }
+function poSubmit() {
+    var order_number = document.getElementById('poForder_number').value.trim();
+    if (!order_number) { poToast('灌溉订单编号不能为空', true); return; }
+    var fd = new FormData();
+    fd.append('order_number', order_number);
+    fd.append('po_number', document.getElementById('poFpo_number').value.trim());
+    fd.append('po_amount_untaxed', document.getElementById('poFpo_amount_untaxed').value.trim());
+    fd.append('received_date', document.getElementById('poFreceived_date').value.trim());
+    fd.append('project_name', document.getElementById('poFproject_name').value.trim());
+    fd.append('project_code', document.getElementById('poFproject_code').value.trim());
+    // Planned-materials cart → JSON lines (same contract as the 入库 cart).
+    var lines = _poPlannedCart.filter(function (c) { return (c.quantity || 0) > 0; })
+        .map(function (c) { return { category: c.id, quantity: c.quantity, unit: c.unit || '' }; });
+    fd.append('lines', JSON.stringify(lines));
+    var url = _poEditingId ? '/purchase-orders/' + _poEditingId + '/edit/' : '/purchase-orders/create/';
+    var btn = document.getElementById('poDlgSubmit');
+    btn.disabled = true; btn.textContent = '提交中…';
+    fetch(url, { method: 'POST', body: fd,
+                 headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRFToken': _poCsrf() } })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+            btn.disabled = false;
+            btn.textContent = _poEditingId ? '保存' : '创建';
+            if (d.success) {
+                poToast(d.message, false);
+                poCloseModal();
+                if (_poEditingId) {
+                    var i = PO_DATA.findIndex(function (x) { return x.id === _poEditingId; });
+                    if (i >= 0) PO_DATA[i] = d.node;
+                } else {
+                    PO_DATA.unshift(d.node);
+                }
+                poRender();
+            } else {
+                poToast(d.message || '操作失败', true);
+            }
+        })
+        .catch(function () {
+            btn.disabled = false; btn.textContent = _poEditingId ? '保存' : '创建';
+            poToast('网络错误，请重试', true);
+        });
+}
+function poDelete(id) {
+    var p = _poFind(id); if (!p) return;
+    if (!confirm('确定删除采购订单「' + p.order_number + '」？\n（关联的入库流水不会被删除，仅解除关联）')) return;
+    var fd = new FormData();
+    fetch('/purchase-orders/' + id + '/delete/',
+          { method: 'POST', body: fd,
+            headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRFToken': _poCsrf() } })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+            if (d.success) {
+                poToast(d.message, false);
+                PO_DATA = PO_DATA.filter(function (x) { return x.id !== id; });
+                poRender();
+            } else {
+                poToast(d.message || '删除失败', true);
+            }
+        })
+        .catch(function () { poToast('网络错误，请重试', true); });
+}
+// Wire up the PO search input + modal dismiss, then render.
+// ── 采购订单 计划采购物料 picker (bottom-sheet tree, mirrors _invOpenTreeSheet) ──
+var _poPlannedCart = [];   // [{id, name, path, quantity, unit}]
+
+// Render the planned-materials list inside the create/edit modal.
+function _poRenderPlanned() {
+    var box = document.getElementById('poPlannedList');
+    if (!box) return;
+    if (!_poPlannedCart.length) { box.innerHTML = '<div style="color:#aaa;font-size:.82rem;padding:4px 0;">暂无，点击下方添加</div>'; return; }
+    box.innerHTML = _poPlannedCart.map(function (c, idx) {
+        return '<div class="po-planned-row">' +
+            '<div class="po-planned-main">' +
+                '<div class="po-planned-name">' + _poEsc(c.name) + '</div>' +
+                (c.path && c.path !== c.name ? '<div class="po-planned-path">' + _poEsc(c.path) + '</div>' : '') +
+            '</div>' +
+            '<div class="po-planned-controls">' +
+                '<input type="number" min="1" step="1" class="po-planned-qty" value="' + c.quantity + '" data-idx="' + idx + '">' +
+                '<span class="po-planned-unit-ro">' + _poEsc(c.unit || '—') + '</span>' +
+                '<button type="button" class="po-planned-del" data-idx="' + idx + '">×</button>' +
+            '</div>' +
+        '</div>';
+    }).join('');
+    box.querySelectorAll('.po-planned-qty').forEach(function (inp) {
+        inp.addEventListener('input', function () { _poPlannedCart[this.dataset.idx].quantity = parseInt(this.value, 10) || 0; });
+    });
+    box.querySelectorAll('.po-planned-del').forEach(function (btn) {
+        btn.addEventListener('click', function () { _poPlannedCart.splice(this.dataset.idx, 1); _poRenderPlanned(); });
+    });
+}
+
+// Catalog drill-down bottom-sheet. `path` is the array of node ids walked so far.
+function poOpenTreeSheet(path) {
+    var nodes = PO_INV_TREE;
+    for (var i = 0; i < path.length; i++) {
+        var parent = PO_INV_NODE_MAP[path[i]];
+        nodes = (parent && parent.children) ? parent.children : [];
+    }
+    var sheet = document.getElementById('poTreeSheet');
+    if (!sheet) {
+        sheet = document.createElement('div');
+        sheet.id = 'poTreeSheet';
+        sheet.className = 'v2-sheet-overlay';
+        sheet.innerHTML = '<div class="v2-sheet"><div style="width:36px;height:4px;background:#ccc;border-radius:2px;margin:10px auto 0;"></div>' +
+            '<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid #f0f0f0;"><span id="poTreeTitle" style="font-weight:600;">选择物料</span><button type="button" id="poTreeClose" style="width:32px;height:32px;border:none;background:#f0f0f0;border-radius:50%;font-size:1.1em;cursor:pointer;">×</button></div>' +
+            '<div id="poTreeBody" style="flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:8px 16px;min-height:0;"></div>' +
+            '<div style="padding:8px 16px 12px;border-top:1px solid #f0f0f0;"><button type="button" id="poTreeDone" style="width:100%;padding:12px;border:none;border-radius:10px;font-size:0.95em;font-weight:600;cursor:pointer;background:#2D6A4F;color:#fff;">完成</button></div></div>';
+        document.body.appendChild(sheet);
+        document.getElementById('poTreeClose').addEventListener('click', function () { sheet.style.display = 'none'; });
+        document.getElementById('poTreeDone').addEventListener('click', function () { sheet.style.display = 'none'; });
+    }
+    var title = document.getElementById('poTreeTitle'), tbody = document.getElementById('poTreeBody');
+    var names = path.map(function (id) { return PO_INV_NODE_MAP[id] ? PO_INV_NODE_MAP[id].name : ''; });
+    title.textContent = names.length ? names.join(' › ') : '选择物料';
+
+    tbody.innerHTML = '';
+    if (!nodes.length) tbody.innerHTML = '<div style="text-align:center;color:#999;padding:20px;">无子分类</div>';
+    nodes.forEach(function (n) {
+        var isLeaf = n.node_type === 'part' || (!n.children || !n.children.length);
+        var row = document.createElement('div');
+        row.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:12px 10px;border-bottom:1px solid #f5f5f5;cursor:pointer;';
+        row.innerHTML = '<span style="font-size:0.95em;">' + (isLeaf ? '🔹 ' : '📁 ') + _poEsc(n.name) +
+            (isLeaf ? ' <span style="font-size:0.72em;color:#999;">库存 ' + (n.current_stock || 0) + '</span>' : '') + '</span>' +
+            (isLeaf ? '<span style="font-size:0.8em;color:#2D6A4F;font-weight:600;">+ 选择</span>' : '<span style="color:#bbb;">▶</span>');
+        row.addEventListener('click', function () {
+            if (isLeaf) {
+                if (_poPlannedCart.some(function (c) { return c.id === n.id; })) {
+                    poToast('该物料已在清单中', true);
+                } else {
+                    _poPlannedCart.push({ id: n.id, name: n.name, path: _poNodePath(n.id), quantity: 1, unit: n.unit || '' });
+                    _poRenderPlanned();
+                }
+                sheet.style.display = 'none';
+            } else {
+                poOpenTreeSheet(path.concat([n.id]));
+            }
+        });
+        tbody.appendChild(row);
+    });
+    if (path.length) {
+        var back = document.createElement('div');
+        back.style.cssText = 'padding:8px 10px;color:#2D6A4F;font-size:0.85em;cursor:pointer;';
+        back.textContent = '‹ 返回';
+        back.addEventListener('click', function () { poOpenTreeSheet(path.slice(0, -1)); });
+        tbody.insertBefore(back, tbody.firstChild);
+    }
+    sheet.style.display = 'flex';
+}
+
+// Build the full hierarchy path for a node id (大类别 › … › 品名).
+function _poNodePath(id) {
+    var chain = [], n = PO_INV_NODE_MAP[id];
+    // Walk parents via parent_id.
+    while (n && n.parent_id) {
+        var p = PO_INV_NODE_MAP[n.parent_id];
+        if (!p) break;
+        chain.unshift(p.name);
+        n = p;
+    }
+    return chain.join(' › ');
+}
+
+document.getElementById('poSearch').addEventListener('input', poApplyFilter);
+document.getElementById('poAddTrigger').addEventListener('click', function () { poOpenTreeSheet([]); });
+document.getElementById('poMask').addEventListener('click', function (e) {
+    if (e.target === this) poCloseModal();
+});
+document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && document.getElementById('poMask').classList.contains('open')) poCloseModal();
+});
+poRender();
 </script>
 {% endblock %}

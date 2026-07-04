@@ -16,6 +16,7 @@ from core.views import equipment_catalog_autocomplete
 from core.workorder_tree_views import (
     workorder_tree_form, project_create_api, planned_maintenance_pending,
     project_management, project_save, project_delete,
+    project_budget_save, project_pos_save, project_export_excel,
 )
 
 app_name = 'core'
@@ -97,8 +98,11 @@ urlpatterns = [
     path('api/irrigation-project/create/', project_create_api, name='irrigation_project_create'),
     path('api/planned-maintenance/pending/', planned_maintenance_pending, name='planned_maintenance_pending'),
     path('projects/', project_management, name='project_management'),
+    path('projects/export/', project_export_excel, name='project_export_excel'),
     path('projects/save/', project_save, name='project_save'),
     path('projects/<int:pk>/delete/', project_delete, name='project_delete'),
+    path('projects/<int:pk>/budget/save/', project_budget_save, name='project_budget_save'),
+    path('projects/<int:pk>/pos/save/', project_pos_save, name='project_pos_save'),
     path('inventory/manage/', views.inventory_management, name='inventory_management'),
     path('inventory/manage/category/<int:cat_id>/transactions/', views.inventory_category_transactions, name='inventory_category_transactions'),
     path('inventory/save-stock/', views.inventory_save_stock, name='inventory_save_stock'),
@@ -107,7 +111,10 @@ urlpatterns = [
     path('inventory/category/create/', views.inventory_category_create, name='inventory_category_create'),
     path('inventory/category/<int:cat_id>/delete/', views.inventory_category_delete, name='inventory_category_delete'),
     path('inventory/category/<int:cat_id>/edit/', views.inventory_category_edit, name='inventory_category_edit'),
-    path('announcements/', views.announcement_management, name='announcement_management'),
+    path('purchase-orders/create/', views.purchase_order_create, name='purchase_order_create'),
+    path('purchase-orders/export/', views.purchase_order_export_excel, name='purchase_order_export_excel'),
+    path('purchase-orders/<int:po_id>/edit/', views.purchase_order_edit, name='purchase_order_edit'),
+    path('purchase-orders/<int:po_id>/delete/', views.purchase_order_delete, name='purchase_order_delete'),
     path('announcements/save/', views.announcement_save, name='announcement_save'),
     path('announcements/<int:pk>/delete/', views.announcement_delete, name='announcement_delete'),
     path('api/announcements/<int:pk>/acknowledge/', views.announcement_acknowledge, name='announcement_acknowledge'),
