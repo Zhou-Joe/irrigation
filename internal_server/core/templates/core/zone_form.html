@@ -270,7 +270,7 @@
                 <div class="form-group">
                     <label for="plant_feature">植物特点</label>
                     <input type="text" id="plant_feature" name="plant_feature"
-                           value="{% if zone %}{{ zone.plant_feature }}{% endif %}" placeholder="例如：新栽、成龄">
+                           value="{% if zone %}{{ zone.plant_feature }}{% endif %}" placeholder="植物特征">
                 </div>
             </div>
 
@@ -360,11 +360,11 @@
                 <h3 style="margin: 0 0 15px 0; font-size: 1.1em;">创建新设备型号</h3>
                 <div class="form-group">
                     <label for="new_equipment_manufacturer">制造商</label>
-                    <input type="text" id="new_equipment_manufacturer" placeholder="例如：Hunter, Rain Bird">
+                    <input type="text" id="new_equipment_manufacturer" placeholder="制造商">
                 </div>
                 <div class="form-group">
                     <label for="new_equipment_model">型号名称 *</label>
-                    <input type="text" id="new_equipment_model" placeholder="例如：PGV-101">
+                    <input type="text" id="new_equipment_model" placeholder="型号">
                 </div>
                 <div class="form-group">
                     <label for="new_equipment_specs">规格参数 (JSON格式)</label>
@@ -1696,7 +1696,7 @@ function handleComboSelect(selectEl, customInputId, hiddenId) {
                     </div>
                     <div style="margin-top: 10px;">
                         <label style="font-size: 0.85em; display: block; margin-bottom: 3px;">位置：</label>
-                        <input type="text" value="${eq.location}" placeholder="例如：区域东北角"
+                        <input type="text" value="${eq.location}" placeholder="位置"
                                onchange="updateEquipmentField(${index}, 'location', this.value)"
                                style="width: 100%; padding: 8px; border: 1px solid var(--color-surface-dark); border-radius: 4px;">
                     </div>
