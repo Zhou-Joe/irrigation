@@ -24,6 +24,122 @@
 .pm-empty { color: #aaa; padding: 14px 0; font-size: .9rem; }
 .pm-inline { display: flex; gap: 6px; }
 .pm-inline .btn { padding: 5px 10px; font-size: .82rem; }
+
+/* ── Project table ── */
+.pm-table-wrap { overflow-x: auto; }
+table.pm-table { width: 100%; border-collapse: collapse; font-size: .84rem; }
+table.pm-table thead th {
+    text-align: left; color: #888; font-weight: 600; font-size: .76rem;
+    padding: 8px 8px; border-bottom: 2px solid #e8e8e8; white-space: nowrap;
+}
+table.pm-table tbody td { padding: 9px 8px; border-bottom: 1px solid #f0f0f0; vertical-align: middle; }
+table.pm-table tbody tr:hover td { background: #f9fbf9; }
+.pm-t-name { font-weight: 600; color: #333; min-width: 140px; }
+.pm-t-name small { display: block; font-weight: 400; color: #999; font-size: .74rem; margin-top: 1px; }
+.pm-t-date { color: #666; font-size: .8rem; white-space: nowrap; }
+.pm-t-num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pm-t-row-detail { display: none; padding: 0 !important; border-bottom: 1px solid #f0f0f0; }
+.pm-t-row-detail.open { display: table-row; }
+.pm-t-row-detail > td { padding: 0 !important; }
+.pm-t-detail-inner { padding: 8px 12px 12px; background: #fafbfa; }
+
+/* ── Filter bar ── */
+.pm-filter { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
+.pm-filter input[type=text], .pm-filter select {
+    padding: 8px 11px; border: 1px solid #d8d8d8; border-radius: 8px; font-size: .9rem; box-sizing: border-box; }
+.pm-filter .pm-q { flex: 1; min-width: 180px; }
+.pm-new-btn { margin-left: auto; padding: 9px 16px; border-radius: 8px; background: var(--color-primary, #2e7d32); color: #fff; border: none; font-size: .9rem; cursor: pointer; }
+.pm-new-btn:hover { opacity: .92; }
+.pm-filter-count { font-size: .8rem; color: #888; margin-bottom: 10px; }
+.pm-date-range { display: flex; align-items: center; gap: 6px; font-size: .82rem; color: #666; }
+.pm-date-range input[type=date] { padding: 7px 9px; border: 1px solid #d8d8d8; border-radius: 8px; font-size: .88rem; }
+
+/* completed badge / toggle on a project row */
+.pm-done-tag { font-size: .72rem; background: #e3f2fd; color: #1565c0; padding: 2px 8px; border-radius: 8px; }
+
+/* ── Project create/edit modal ── */
+.pe-mask { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: none; align-items: center; justify-content: center; z-index: 999; padding: 16px; }
+.pe-mask.open { display: flex; }
+.pe-dialog { background: #fff; border-radius: 14px; width: 100%; max-width: 520px; max-height: 90vh; overflow-y: auto; }
+.pe-dlg-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; border-bottom: 1px solid #f0f0f0; }
+.pe-dlg-head h3 { margin: 0; font-size: 1rem; color: var(--color-primary, #2e7d32); }
+.pe-close { background: none; border: none; font-size: 1.4rem; color: #999; cursor: pointer; line-height: 1; }
+.pe-body { padding: 16px; }
+.pe-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.pe-grid .full { grid-column: 1 / -1; }
+.pe-grid label { display: block; font-size: .8rem; color: #555; margin-bottom: 3px; }
+.pe-grid input, .pe-grid select, .pe-grid textarea {
+    width: 100%; padding: 8px 9px; border: 1px solid #d8d8d8; border-radius: 8px; font-size: .92rem; box-sizing: border-box; }
+.pe-checks { display: flex; gap: 16px; padding: 4px 0 8px; }
+.pe-checks label { display: flex; align-items: center; gap: 5px; font-size: .85rem; color: #555; margin: 0; }
+.pe-foot { display: flex; gap: 10px; padding: 12px 16px; border-top: 1px solid #f0f0f0; }
+.pe-foot button { flex: 1; padding: 9px; border-radius: 8px; font-size: .9rem; cursor: pointer; }
+.pe-cancel { border: 1px solid #d8d8d8; background: #fff; color: #555; }
+.pe-submit { border: none; background: var(--color-primary, #2e7d32); color: #fff; }
+@media (max-width: 560px) { .pe-grid { grid-template-columns: 1fr; } }
+
+/* ── Expandable budget detail panel ── */
+.pm-toggle { font-size: .8rem; color: var(--color-primary, #2e7d32); background: none; border: none; cursor: pointer; padding: 2px 0; font-weight: 600; }
+.pm-detail { display: none; flex-basis: 100%; padding: 8px 0 4px; }
+.pm-detail.open { display: block; }
+.pm-sub { font-size: .78rem; color: #888; margin: 8px 0 4px; }
+.pm-mat-table { width: 100%; border-collapse: collapse; font-size: .82rem; }
+.pm-mat-table th { text-align: left; color: #aaa; font-weight: 500; padding: 4px 6px; border-bottom: 1px solid #eee; }
+.pm-mat-table td { padding: 5px 6px; border-bottom: 1px solid #f5f5f5; vertical-align: top; }
+.pm-mat-path { color: #666; max-width: 280px; }
+.pm-mat-path .leaf { color: #333; font-weight: 500; }
+.pm-bal.pos { color: var(--color-primary, #2e7d32); font-weight: 600; }
+.pm-bal.neg { color: #c0392b; font-weight: 600; }
+.pm-po-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.pm-po-chip { font-size: .76rem; background: #e8f5e9; color: var(--color-primary, #2e7d32); padding: 3px 9px; border-radius: 8px; }
+.pm-labor-row { display: flex; gap: 16px; font-size: .84rem; color: #555; flex-wrap: wrap; }
+
+/* ── 出库记录 cards ── */
+.pm-rec { border: 1px solid #eee; border-radius: 8px; padding: 8px 10px; margin-bottom: 8px; background: #fafbfa; }
+.pm-rec-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.pm-rec-date { font-size: .82rem; font-weight: 600; color: #333; }
+.pm-rec-meta { font-size: .78rem; color: #888; }
+.pm-rec-remark { font-size: .78rem; color: #666; margin: 3px 0; font-style: italic; }
+.pm-rec-lines { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 5px; }
+.pm-rec-line { font-size: .76rem; background: #fff; border: 1px solid #e8e8e8; border-radius: 6px; padding: 2px 8px; color: #555; }
+.pm-rec-line b { color: var(--color-primary, #2e7d32); }
+.pm-rec-line-name { display: inline; }
+.pm-rec-line-path { display: block; font-size: .68rem; color: #aaa; margin-top: 1px; }
+.pm-rec-sub { font-size: .74rem; color: #888; margin-top: 4px; }
+.pm-out-tag { display: inline-block; font-size: .68rem; color: #c0392b; background: #fdecea; padding: 1px 7px; border-radius: 6px; font-weight: 600; }
+.pm-wr .pm-rec-date { color: #1565c0; text-decoration: none; }
+
+/* ── Budget edit modal (mirrors inventory page po-mask) ── */
+.pb-mask { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: none; align-items: center; justify-content: center; z-index: 999; padding: 16px; }
+.pb-mask.open { display: flex; }
+.pb-dialog { background: #fff; border-radius: 14px; width: 100%; max-width: 480px; max-height: 90vh; overflow-y: auto; }
+.pb-dlg-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; border-bottom: 1px solid #f0f0f0; }
+.pb-dlg-head h3 { margin: 0; font-size: 1rem; color: var(--color-primary, #2e7d32); }
+.pb-dlg-close { background: none; border: none; font-size: 1.4rem; color: #999; cursor: pointer; line-height: 1; }
+.pb-dlg-body { padding: 16px; }
+.pb-dlg-body label { display: block; font-size: .82rem; color: #666; margin: 10px 0 4px; }
+.pb-dlg-body input { width: 100%; padding: 8px 10px; border: 1px solid #d8d8d8; border-radius: 8px; font-size: .9rem; box-sizing: border-box; }
+.pb-planned-row { display: flex; align-items: flex-start; gap: 10px; padding: 10px 0; border-bottom: 1px solid #f0f0f0; }
+.pb-planned-row:last-child { border-bottom: none; }
+.pb-planned-main { flex: 1; min-width: 0; }
+.pb-planned-name { font-size: .88rem; color: #333; }
+.pb-planned-path { font-size: .72rem; color: #aaa; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pb-planned-controls { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.pb-planned-qty { width: 56px; padding: 4px 6px; border: 1px solid #d8d8d8; border-radius: 6px; font-size: .82rem; text-align: center; }
+.pb-planned-unit-ro { font-size: .8rem; color: #888; white-space: nowrap; }
+.pb-planned-del { width: 24px; height: 24px; border: none; background: #f0f0f0; border-radius: 50%; color: #c0392b; cursor: pointer; font-size: .95rem; line-height: 1; flex-shrink: 0; }
+.pb-add-trigger { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; border: 1px dashed #bbb; border-radius: 8px; cursor: pointer; background: #fff; font-size: .9rem; margin-top: 6px; }
+.pb-dlg-foot { display: flex; gap: 10px; padding: 12px 16px; border-top: 1px solid #f0f0f0; }
+.pb-dlg-cancel { flex: 1; padding: 9px; border-radius: 8px; border: 1px solid #d8d8d8; background: #fff; cursor: pointer; font-size: .9rem; color: #555; }
+.pb-dlg-submit { flex: 1; padding: 9px; border-radius: 8px; border: none; background: var(--color-primary, #2e7d32); color: #fff; cursor: pointer; font-size: .9rem; }
+.pb-dlg-submit:disabled { opacity: .6; cursor: default; }
+.pb-po-pick { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.pb-po-opt { font-size: .8rem; padding: 4px 10px; border: 1px solid #d8d8d8; border-radius: 8px; cursor: pointer; color: #555; background: #fff; }
+.pb-po-opt.on { background: var(--color-primary, #2e7d32); color: #fff; border-color: var(--color-primary, #2e7d32); }
+
+/* Bottom-sheet tree picker (dashboard.css not loaded here) */
+.v2-sheet-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 4000; display: none; align-items: flex-end; justify-content: center; touch-action: manipulation; }
+.v2-sheet { background: #fff; border-radius: 16px 16px 0 0; width: 100%; max-width: 420px; max-height: 85vh; display: flex; flex-direction: column; overflow: hidden; }
 </style>
 {% endblock %}
 
@@ -41,75 +157,96 @@
   </div>
   {% endif %}
 
-  <!-- create / edit form -->
-  <div class="pm-card">
-    <h2>{% if edit_obj %}编辑项目{% else %}+ 新建项目{% endif %}</h2>
-    <form method="post" action="{% url 'core:project_save' %}" class="pm-form">
-      {% csrf_token %}
-      {% if edit_obj %}<input type="hidden" name="id" value="{{ edit_obj.id }}">{% endif %}
-      <div>
-        <label>项目类别 *</label>
-        <select name="category" id="pmCategory" required>
-          {% for c, label in categories %}<option value="{{ c }}" {% if edit_obj.category == c %}selected{% endif %}>{{ label }}</option>{% endfor %}
-        </select>
-      </div>
-      <div id="pmSubWrap" {% if edit_obj.category != 'IRRIGATION' %}style="visibility:hidden"{% endif %}>
-        <label>子类别（灌溉）</label>
-        <select name="subcategory" id="pmSub">
-          <option value="">--</option>
-          {% for s, label in subcategories %}<option value="{{ s }}" {% if edit_obj.subcategory == s %}selected{% endif %}>{{ label }}</option>{% endfor %}
-        </select>
-      </div>
-      <div>
-        <label>项目名称 *</label>
-        <input type="text" name="name" required value="{{ edit_obj.name|default:'' }}">
-      </div>
-      <div>
-        <label>项目代号</label>
-        <input type="text" name="symbol" value="{{ edit_obj.symbol|default:'' }}">
-      </div>
-      <div>
-        <label>项目Code</label>
-        <input type="text" name="code" value="{{ edit_obj.code|default:'' }}">
-      </div>
-      <div style="display:flex;align-items:center;gap:6px;padding-bottom:8px;">
-        <label style="margin:0;"><input type="checkbox" name="active" value="1" {% if not edit_obj or edit_obj.active %}checked{% endif %}> 启用</label>
-      </div>
-      <div class="full">
-        <label>备注</label>
-        <input type="text" name="notes" value="{{ edit_obj.notes|default:'' }}">
-      </div>
-      <div class="full">
-        <button type="submit" class="btn btn-primary">{% if edit_obj %}保存修改{% else %}创建项目{% endif %}</button>
-        {% if edit_obj %}<a href="{% url 'core:project_management' %}" class="btn btn-secondary">取消编辑</a>{% endif %}
-      </div>
-    </form>
-  </div>
+  <!-- filter bar -->
+  <form method="get" class="pm-filter" id="pmFilterForm">
+    <input type="text" name="q" class="pm-q" placeholder="搜索 项目名称 / 代号 / Code / 备注…" value="{{ fq }}">
+    <span class="pm-date-range">
+      <label>开工</label>
+      <input type="date" name="from" value="{{ ffrom }}">
+      <span>~</span>
+      <input type="date" name="to" value="{{ fto }}">
+    </span>
+    <select name="category">
+      <option value="">全部类别</option>
+      {% for c, label in categories %}<option value="{{ c }}" {% if fcat == c %}selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select>
+    <select name="completed">
+      <option value="">全部状态</option>
+      <option value="0" {% if fcompleted == '0' %}selected{% endif %}>未完成</option>
+      <option value="1" {% if fcompleted == '1' %}selected{% endif %}>已完成</option>
+    </select>
+    <button type="submit" class="btn btn-secondary" style="font-size:.88rem;">筛选</button>
+    <button type="button" class="btn btn-secondary" style="font-size:.88rem;" onclick="pmClearFilter()">清除</button>
+    <button type="button" class="btn btn-secondary" style="font-size:.88rem;" onclick="pmExport()">⬇ 导出Excel</button>
+    <button type="button" class="pm-new-btn" onclick="pmOpenCreate()">+ 新建项目</button>
+  </form>
+  <div class="pm-filter-count">共 {{ total_projects }} 个项目{% if fq or fcat or fcompleted %}（已筛选）{% endif %}</div>
 
-  <!-- project groups -->
+  <!-- project groups (per-category tables) -->
   {% for cat, group in groups.items %}
   <div class="pm-card">
     <h2>{{ group.label }}（{{ group.items|length }}）</h2>
     {% if group.items %}
-      {% for it in group.items %}
-      <div class="pm-proj">
-        <div class="pm-proj-name">
-          {{ it.project.name }}
-          {% if it.project.symbol %}<small>代号 {{ it.project.symbol }}{% if it.project.code %} · Code {{ it.project.code }}{% endif %}</small>{% endif %}
-          {% if it.project.subcategory %}<small>子类：{{ it.project.get_subcategory_display }}</small>{% endif %}
-          {% if not it.project.active %}<small style="color:#c0392b;">已停用</small>{% endif %}
-        </div>
-        <span class="pm-stat">工单 <b>{{ it.report_count }}</b></span>
-        <span class="pm-stat">工时 <b>{{ it.hours|floatformat:1 }}h</b></span>
-        <div class="pm-inline">
-          <a href="{% url 'core:project_management' %}?edit={{ it.project.id }}" class="btn btn-secondary">编辑</a>
-          <form method="post" action="{% url 'core:project_delete' it.project.id %}" style="display:inline;" onsubmit="return confirm('删除项目 {{ it.project.name }}？关联工单的项目引用将被清空。');">
-            {% csrf_token %}<button type="submit" class="btn btn-secondary" style="color:#c0392b;">删除</button>
-          </form>
-        </div>
-        {% if it.phases %}<div class="pm-phases">阶段统计：{% for ph, n in it.phases.items %}{{ ph }} {{ n }}{% if not forloop.last %} · {% endif %}{% endfor %}</div>{% endif %}
-      </div>
-      {% endfor %}
+    <div class="pm-table-wrap">
+      <table class="pm-table">
+        <thead>
+          <tr>
+            <th>项目</th>
+            <th>开工 ~ 计划完工</th>
+            <th class="pm-t-num">第一方预算</th>
+            <th class="pm-t-num">第三方预算</th>
+            <th class="pm-t-num">材料预算</th>
+            <th class="pm-t-num">第一方工时</th>
+            <th class="pm-t-num">第三方工时</th>
+            <th class="pm-t-num">工单</th>
+            <th>状态</th>
+            <th style="text-align:right;">操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for it in group.items %}
+          <tr>
+            <td class="pm-t-name">
+              {{ it.project.name }}
+              {% if it.project.symbol or it.project.code or it.project.subcategory or not it.project.active %}
+              <small>
+                {% if it.project.subcategory %}{{ it.project.get_subcategory_display }}{% endif %}
+                {% if it.project.symbol %}{% if it.project.subcategory %} · {% endif %}代号 {{ it.project.symbol }}{% endif %}
+                {% if it.project.code %} · Code {{ it.project.code }}{% endif %}
+                {% if not it.project.active %} · <span style="color:#c0392b;">已停用</span>{% endif %}
+              </small>
+              {% endif %}
+            </td>
+            <td class="pm-t-date">
+              {% if it.project.start_date or it.project.planned_end_date %}
+                {{ it.project.start_date|date:"Y-m-d"|default:"—" }} ~ {{ it.project.planned_end_date|date:"Y-m-d"|default:"—" }}
+              {% else %}—{% endif %}
+            </td>
+            <td class="pm-t-num" id="pmCellLabor-{{ it.project.id }}">{{ it.labor_budget|default_if_none:"—"|floatformat:0 }}h</td>
+            <td class="pm-t-num" id="pmCellThird-{{ it.project.id }}">{{ it.third_budget|default_if_none:"—"|floatformat:0 }}h</td>
+            <td class="pm-t-num" id="pmCellMat-{{ it.project.id }}">{{ it.mat_budget_count }} 种</td>
+            <td class="pm-t-num">{{ it.team_hours|floatformat:1 }}h</td>
+            <td class="pm-t-num">{{ it.third_hours|floatformat:1 }}h</td>
+            <td class="pm-t-num">{{ it.report_count }}</td>
+            <td>{% if it.project.is_completed %}<span class="pm-done-tag">已完成</span>{% else %}<span style="color:#999;font-size:.8rem;">进行中</span>{% endif %}</td>
+            <td style="text-align:right;white-space:nowrap;">
+              <button type="button" class="btn btn-secondary pm-toggle" style="font-size:.78rem;padding:3px 9px;" onclick="pmToggleDetail({{ it.project.id }})">详情 ▾</button>
+              <button type="button" class="btn btn-secondary" style="font-size:.78rem;padding:3px 9px;"
+                onclick='pmOpenEdit({{ it.project.id }}, {{ it.edit_json|default:"null"|safe }})'>编辑</button>
+              <form method="post" action="{% url 'core:project_delete' it.project.id %}" style="display:inline;" onsubmit="return confirm('删除项目 {{ it.project.name }}？关联工单的项目引用将被清空。');">
+                {% csrf_token %}<button type="submit" class="btn btn-secondary" style="color:#c0392b;font-size:.78rem;padding:3px 9px;">删除</button>
+              </form>
+            </td>
+          </tr>
+          <tr class="pm-t-row-detail" id="pmDetailRow-{{ it.project.id }}">
+            <td colspan="10">
+              <div class="pm-t-detail-inner" id="pmDetail-{{ it.project.id }}" data-budget="{{ it.budget_json|escape }}"></div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
     {% else %}
       <div class="pm-empty">暂无项目</div>
     {% endif %}
@@ -117,13 +254,485 @@
   {% endfor %}
 </div>
 
+{# ── Project create / edit modal ── #}
+<div class="pe-mask" id="peMask">
+  <div class="pe-dialog">
+    <div class="pe-dlg-head">
+      <h3 id="peTitle">新建项目</h3>
+      <button type="button" class="pe-close" onclick="peClose()">×</button>
+    </div>
+    <form method="post" action="{% url 'core:project_save' %}" id="peForm">
+      {% csrf_token %}
+      <input type="hidden" name="id" id="peId" value="">
+      <div class="pe-body">
+        <div class="pe-grid">
+          <div>
+            <label>项目类别 *</label>
+            <select name="category" id="peCategory" required>
+              {% for c, label in categories %}<option value="{{ c }}">{{ label }}</option>{% endfor %}
+            </select>
+          </div>
+          <div id="peSubWrap">
+            <label>子类别（灌溉）</label>
+            <select name="subcategory" id="peSub">
+              <option value="">--</option>
+              {% for s, label in subcategories %}<option value="{{ s }}">{{ label }}</option>{% endfor %}
+            </select>
+          </div>
+          <div class="full">
+            <label>项目名称 *</label>
+            <input type="text" name="name" id="peName" required>
+          </div>
+          <div>
+            <label>项目代号</label>
+            <input type="text" name="symbol" id="peSymbol">
+          </div>
+          <div>
+            <label>项目Code</label>
+            <input type="text" name="code" id="peCode">
+          </div>
+          <div>
+            <label>开工日期</label>
+            <input type="date" name="start_date" id="peStart">
+          </div>
+          <div>
+            <label>计划完工日期</label>
+            <input type="date" name="planned_end_date" id="peEnd">
+          </div>
+          <div class="full">
+            <label>备注</label>
+            <input type="text" name="notes" id="peNotes">
+          </div>
+        </div>
+        <div class="pe-checks">
+          <label><input type="checkbox" name="active" value="1" id="peActive"> 启用</label>
+          <label><input type="checkbox" name="is_completed" value="1" id="peCompleted"> 已完成</label>
+        </div>
+      </div>
+      <div class="pe-foot">
+        <button type="button" class="pe-cancel" onclick="peClose()">取消</button>
+        <button type="submit" class="pe-submit" id="peSubmit">创建项目</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+{# ── Budget edit modal (shared) ── #}
+<div class="pb-mask" id="pbMask">
+  <div class="pb-dialog">
+    <div class="pb-dlg-head">
+      <h3 id="pbTitle">预算与关联</h3>
+      <button type="button" class="pb-dlg-close" onclick="pbClose()">×</button>
+    </div>
+    <div class="pb-dlg-body">
+      <div style="display:flex;gap:12px;">
+        <div style="flex:1;">
+          <label>第一方预算工时</label>
+          <input type="number" id="pbLabor" min="0" step="0.5" placeholder="如 200（可选）">
+        </div>
+        <div style="flex:1;">
+          <label>第三方预算工时</label>
+          <input type="number" id="pbLabor3rd" min="0" step="0.5" placeholder="如 50（可选）">
+        </div>
+      </div>
+      <label>材料预算（从库存目录选择）</label>
+      <div id="pbPlannedList"></div>
+      <div class="pb-add-trigger" id="pbAddTrigger"><span style="color:#2e7d32;">+ 添加物料</span><span style="font-size:.8em;color:#999;">▶</span></div>
+      <label style="margin-top:14px;">关联采购订单</label>
+      <div class="pb-po-pick" id="pbPoPick"></div>
+    </div>
+    <div class="pb-dlg-foot">
+      <button type="button" class="pb-dlg-cancel" onclick="pbClose()">取消</button>
+      <button type="button" class="pb-dlg-submit" id="pbSubmit" onclick="pbSave()">保存</button>
+    </div>
+  </div>
+</div>
+
+<div id="pmToast" style="position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#333;color:#fff;padding:9px 20px;border-radius:20px;font-size:.86em;z-index:1000;opacity:0;transition:opacity .2s;pointer-events:none;"></div>
+
 <script>
-// subcategory only applies to 灌溉项目
+var PM_INV_TREE = {{ inventory_tree_json|safe }};
+var PM_INV_NODE_MAP = {};
+(function _pmIndex(nodes) {
+    nodes.forEach(function (n) { PM_INV_NODE_MAP[n.id] = n; if (n.children && n.children.length) _pmIndex(n.children); });
+})(PM_INV_TREE);
+var PM_ALL_POS = {{ all_pos_json|safe }};
+
+// budget data per project: {pid -> {material_budget:[], material_consumed:[], labor_budget_hours, linked_pos:[]}}
+// Lazily parsed from each panel's data-budget attribute in pmBudget(pid).
+var PM_BUDGET = {};
+
+function _pmEsc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+        return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+}
+function _pmCsrf() { var m = document.cookie.match(/csrftoken=([^;]+)/); return m ? m[1] : ''; }
+function pmToast(t, err) {
+    var el = document.getElementById('pmToast'); el.textContent = t;
+    el.style.background = err ? '#c0392b' : '#333'; el.style.opacity = '1';
+    clearTimeout(window._pmT); window._pmT = setTimeout(function () { el.style.opacity = '0'; }, 2200);
+}
+
+// ── Expand / render a project's detail panel ──
+function pmBudget(pid) {
+    // Load from the data attribute (authoritative server data) on first access.
+    if (!PM_BUDGET[pid]) {
+        var el = document.getElementById('pmDetail-' + pid);
+        try { PM_BUDGET[pid] = JSON.parse(el.getAttribute('data-budget')); } catch (e) { PM_BUDGET[pid] = {material_budget:[],material_consumed:[],labor_budget_hours:null,linked_pos:[]}; }
+    }
+    return PM_BUDGET[pid];
+}
+
+function pmToggleDetail(pid) {
+    var row = document.getElementById('pmDetailRow-' + pid);
+    var open = row.classList.toggle('open');
+    if (open) pmRenderDetail(pid);
+}
+
+function pmRenderDetail(pid) {
+    var b = pmBudget(pid);
+    var panel = document.getElementById('pmDetail-' + pid);
+
+    // Build a category-keyed merge of budget + consumed.
+    var byCat = {};
+    (b.material_budget || []).forEach(function (ln) { byCat[ln.category_id] = {name: ln.name, path: ln.path, unit: ln.unit, budget: ln.qty, consumed: 0}; });
+    (b.material_consumed || []).forEach(function (ln) {
+        if (!byCat[ln.category_id]) byCat[ln.category_id] = {name: ln.name, path: ln.path, unit: ln.unit, budget: 0};
+        byCat[ln.category_id].consumed = ln.qty;
+    });
+    var rows = Object.values(byCat);
+    var matHtml;
+    if (!rows.length) {
+        matHtml = '<div style="color:#aaa;font-size:.82rem;padding:4px 0;">暂无材料预算</div>';
+    } else {
+        matHtml = '<table class="pm-mat-table"><thead><tr><th>物料</th><th>预算</th><th>已消耗</th><th>余额</th></tr></thead><tbody>' +
+            rows.map(function (r) {
+                var bal = (r.budget || 0) - (r.consumed || 0);
+                var balCls = bal >= 0 ? 'pos' : 'neg';
+                var pathHtml = (r.path && r.path !== r.name)
+                    ? '<span class="leaf">' + _pmEsc(r.name) + '</span><br><span style="color:#aaa;font-size:.72rem;">' + _pmEsc(r.path) + '</span>'
+                    : '<span class="leaf">' + _pmEsc(r.name) + '</span>';
+                return '<tr><td class="pm-mat-path">' + pathHtml + '</td>' +
+                    '<td>' + (r.budget || 0) + ' ' + _pmEsc(r.unit||'') + '</td>' +
+                    '<td>' + (r.consumed || 0) + ' ' + _pmEsc(r.unit||'') + '</td>' +
+                    '<td class="pm-bal ' + balCls + '">' + bal + ' ' + _pmEsc(r.unit||'') + '</td></tr>';
+            }).join('') + '</tbody></table>';
+    }
+
+    // Linked POs.
+    var poHtml;
+    if (b.linked_pos && b.linked_pos.length) {
+        poHtml = '<div class="pm-po-chips">' + b.linked_pos.map(function (p) {
+            return '<span class="pm-po-chip">' + _pmEsc(p.order_number) + (p.po_number ? ' · PO ' + _pmEsc(p.po_number) : '') + (p.po_amount_untaxed ? ' · ¥' + _pmEsc(p.po_amount_untaxed) : '') + '</span>';
+        }).join('') + '</div>';
+    } else {
+        poHtml = '<div style="color:#aaa;font-size:.82rem;">暂未关联采购订单</div>';
+    }
+
+    // 工单列表: related work reports (date + hours + link + material out lines).
+    var wrHtml;
+    if (b.work_reports && b.work_reports.length) {
+        wrHtml = b.work_reports.map(function (wr) {
+            var matHtml = '';
+            if (wr.materials && wr.materials.length) {
+                var allLines = [];
+                wr.materials.forEach(function (m) {
+                    m.lines.forEach(function (ln) {
+                        var pathBit = (ln.path && ln.path !== ln.name)
+                            ? '<span class="pm-rec-line-path">' + _pmEsc(ln.path) + '</span>' : '';
+                        allLines.push('<span class="pm-rec-line">' +
+                            '<span class="pm-rec-line-name">' + _pmEsc(ln.name) +
+                            ' <b>×' + ln.qty + '</b>' + (ln.unit ? _pmEsc(ln.unit) : '') + '</span>' +
+                            pathBit + '</span>');
+                    });
+                });
+                if (allLines.length) matHtml =
+                    '<div class="pm-rec-sub"><span class="pm-out-tag">出库</span></div>' +
+                    '<div class="pm-rec-lines">' + allLines.join('') + '</div>';
+            }
+            return '<div class="pm-rec pm-wr">' +
+                '<div class="pm-rec-head"><a class="pm-rec-date" href="/work-reports/' + wr.id + '/">工单 #' + wr.id + '</a>' +
+                '<span class="pm-rec-meta">' + _pmEsc(wr.date) +
+                ' · 第一方 ' + wr.team_hours + 'h · 第三方 ' + wr.third_hours + 'h</span></div>' +
+                matHtml +
+            '</div>';
+        }).join('');
+    } else {
+        wrHtml = '<div style="color:#aaa;font-size:.82rem;">暂无关联工单</div>';
+    }
+
+    // 其他出库记录: standalone 出库 form records (not from a work order).
+    var recHtml;
+    if (b.consumption_records && b.consumption_records.length) {
+        recHtml = b.consumption_records.map(function (r) {
+            var src = _pmEsc(r.source);
+            if (r.work_report_id) {
+                src = '<a href="/work-reports/' + r.work_report_id + '/" style="color:#1565c0;">' + src + '</a>';
+            }
+            var linesHtml = r.lines.map(function (ln) {
+                return '<span class="pm-rec-line">' + _pmEsc(ln.name) +
+                    ' <b>×' + ln.qty + '</b>' + (ln.unit ? _pmEsc(ln.unit) : '') + '</span>';
+            }).join('');
+            return '<div class="pm-rec">' +
+                '<div class="pm-rec-head"><span class="pm-rec-date">' + _pmEsc(r.date) + '</span>' +
+                '<span class="pm-rec-meta">' + src + ' · ' + _pmEsc(r.worker) +
+                (r.zone ? ' · ' + _pmEsc(r.zone) : '') + '</span></div>' +
+                (r.remark ? '<div class="pm-rec-remark">' + _pmEsc(r.remark) + '</div>' : '') +
+                '<div class="pm-rec-lines">' + linesHtml + '</div>' +
+            '</div>';
+        }).join('');
+    } else {
+        recHtml = '<div style="color:#aaa;font-size:.82rem;">暂无出库记录</div>';
+    }
+
+    panel.innerHTML =
+        '<div class="pm-sub">材料预算与消耗</div>' + matHtml +
+        '<div class="pm-sub">关联采购订单</div>' + poHtml +
+        '<div class="pm-sub">关联工单（' + (b.work_reports ? b.work_reports.length : 0) + '）</div>' + wrHtml +
+        '<div class="pm-sub">其他出库记录（' + (b.consumption_records ? b.consumption_records.length : 0) + '）</div>' + recHtml +
+        '<div style="margin-top:10px;"><button type="button" class="btn btn-primary" style="font-size:.82rem;padding:5px 12px;" onclick="pbOpen(' + pid + ')">编辑预算与关联</button></div>';
+}
+
+// Refresh the table row's budget cells after an inline save (no page reload).
+function pmRefreshCells(pid) {
+    var b = pmBudget(pid);
+    var elL = document.getElementById('pmCellLabor-' + pid);
+    var elT = document.getElementById('pmCellThird-' + pid);
+    var elM = document.getElementById('pmCellMat-' + pid);
+    if (elL) elL.textContent = (b.labor_budget_hours != null) ? parseFloat(b.labor_budget_hours).toFixed(0) + 'h' : '—';
+    if (elT) elT.textContent = (b.third_party_budget_hours != null) ? parseFloat(b.third_party_budget_hours).toFixed(0) + 'h' : '—';
+    if (elM) elM.textContent = (b.material_budget ? b.material_budget.length : 0) + ' 种';
+}
+
+// ── Budget edit modal state ──
+var _pbPid = null;
+var _pbCart = [];        // planned material cart [{id,name,path,quantity,unit}]
+var _pbLinkedPos = [];   // [po_id, ...]
+
+function pbRenderCart() {
+    var box = document.getElementById('pbPlannedList');
+    if (!_pbCart.length) { box.innerHTML = '<div style="color:#aaa;font-size:.82rem;padding:4px 0;">暂无，点击下方添加</div>'; return; }
+    box.innerHTML = _pbCart.map(function (c, idx) {
+        return '<div class="pb-planned-row"><div class="pb-planned-main">' +
+            '<div class="pb-planned-name">' + _pmEsc(c.name) + '</div>' +
+            (c.path && c.path !== c.name ? '<div class="pb-planned-path">' + _pmEsc(c.path) + '</div>' : '') +
+            '</div><div class="pb-planned-controls">' +
+            '<input type="number" min="1" step="1" class="pb-planned-qty" value="' + c.quantity + '" data-idx="' + idx + '">' +
+            '<span class="pb-planned-unit-ro">' + _pmEsc(c.unit || '—') + '</span>' +
+            '<button type="button" class="pb-planned-del" data-idx="' + idx + '">×</button>' +
+            '</div></div>';
+    }).join('');
+    box.querySelectorAll('.pb-planned-qty').forEach(function (inp) {
+        inp.addEventListener('input', function () { _pbCart[this.dataset.idx].quantity = parseInt(this.value, 10) || 0; });
+    });
+    box.querySelectorAll('.pb-planned-del').forEach(function (btn) {
+        btn.addEventListener('click', function () { _pbCart.splice(this.dataset.idx, 1); pbRenderCart(); });
+    });
+}
+
+function pbRenderPoPick() {
+    var box = document.getElementById('pbPoPick');
+    var linked = new Set(_pbLinkedPos);
+    box.innerHTML = PM_ALL_POS.map(function (po) {
+        var on = linked.has(po.id);
+        return '<span class="pb-po-opt' + (on ? ' on' : '') + '" data-poid="' + po.id + '">' +
+            _pmEsc(po.order_number) + (po.po_number ? ' · ' + _pmEsc(po.po_number) : '') + '</span>';
+    }).join('');
+    box.querySelectorAll('.pb-po-opt').forEach(function (chip) {
+        chip.addEventListener('click', function () {
+            var id = parseInt(this.dataset.poid, 10);
+            var i = _pbLinkedPos.indexOf(id);
+            if (i >= 0) _pbLinkedPos.splice(i, 1); else _pbLinkedPos.push(id);
+            pbRenderPoPick();
+        });
+    });
+    if (!PM_ALL_POS.length) box.innerHTML = '<div style="color:#aaa;font-size:.82rem;">暂无采购订单</div>';
+}
+
+function pbOpen(pid) {
+    _pbPid = pid;
+    var b = pmBudget(pid);
+    document.getElementById('pbLabor').value = (b.labor_budget_hours != null) ? b.labor_budget_hours : '';
+    document.getElementById('pbLabor3rd').value = (b.third_party_budget_hours != null) ? b.third_party_budget_hours : '';
+    _pbCart = (b.material_budget || []).map(function (ln) { return {id: ln.category_id, name: ln.name, path: ln.path, quantity: ln.qty, unit: ln.unit || ''}; });
+    _pbLinkedPos = (b.linked_pos || []).map(function (p) { return p.id; });
+    pbRenderCart(); pbRenderPoPick();
+    document.getElementById('pbMask').classList.add('open');
+}
+function pbClose() { document.getElementById('pbMask').classList.remove('open'); }
+document.getElementById('pbMask').addEventListener('click', function (e) { if (e.target === this) pbClose(); });
+document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && document.getElementById('pbMask').classList.contains('open')) pbClose(); });
+document.getElementById('pbAddTrigger').addEventListener('click', function () { pmOpenTreeSheet([]); });
+
+function _pmNodePath(id) {
+    var chain = [], n = PM_INV_NODE_MAP[id];
+    while (n && n.parent_id) { var p = PM_INV_NODE_MAP[n.parent_id]; if (!p) break; chain.unshift(p.name); n = p; }
+    return chain.join(' › ');
+}
+
+// ── Bottom-sheet tree picker ──
+function pmOpenTreeSheet(path) {
+    var nodes = PM_INV_TREE;
+    for (var i = 0; i < path.length; i++) { var p = PM_INV_NODE_MAP[path[i]]; nodes = (p && p.children) ? p.children : []; }
+    var sheet = document.getElementById('pmTreeSheet');
+    if (!sheet) {
+        sheet = document.createElement('div'); sheet.id = 'pmTreeSheet'; sheet.className = 'v2-sheet-overlay';
+        sheet.innerHTML = '<div class="v2-sheet"><div style="width:36px;height:4px;background:#ccc;border-radius:2px;margin:10px auto 0;"></div>' +
+            '<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid #f0f0f0;"><span id="pmTreeTitle" style="font-weight:600;">选择物料</span><button type="button" id="pmTreeClose" style="width:32px;height:32px;border:none;background:#f0f0f0;border-radius:50%;font-size:1.1em;cursor:pointer;">×</button></div>' +
+            '<div id="pmTreeBody" style="flex:1;overflow-y:auto;padding:8px 16px;min-height:0;"></div>' +
+            '<div style="padding:8px 16px 12px;border-top:1px solid #f0f0f0;"><button type="button" id="pmTreeDone" style="width:100%;padding:12px;border:none;border-radius:10px;font-size:0.95em;font-weight:600;cursor:pointer;background:#2e7d32;color:#fff;">完成</button></div></div>';
+        document.body.appendChild(sheet);
+        document.getElementById('pmTreeClose').addEventListener('click', function () { sheet.style.display = 'none'; });
+        document.getElementById('pmTreeDone').addEventListener('click', function () { sheet.style.display = 'none'; });
+    }
+    var names = path.map(function (id) { return PM_INV_NODE_MAP[id] ? PM_INV_NODE_MAP[id].name : ''; });
+    document.getElementById('pmTreeTitle').textContent = names.length ? names.join(' › ') : '选择物料';
+    var tbody = document.getElementById('pmTreeBody'); tbody.innerHTML = '';
+    if (!nodes.length) tbody.innerHTML = '<div style="text-align:center;color:#999;padding:20px;">无子分类</div>';
+    nodes.forEach(function (n) {
+        var isLeaf = n.node_type === 'part' || (!n.children || !n.children.length);
+        var row = document.createElement('div');
+        row.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:12px 10px;border-bottom:1px solid #f5f5f5;cursor:pointer;';
+        row.innerHTML = '<span style="font-size:0.95em;">' + (isLeaf ? '🔹 ' : '📁 ') + _pmEsc(n.name) + '</span>' +
+            (isLeaf ? '<span style="font-size:0.8em;color:#2e7d32;font-weight:600;">+ 选择</span>' : '<span style="color:#bbb;">▶</span>');
+        row.addEventListener('click', function () {
+            if (isLeaf) {
+                if (_pbCart.some(function (c) { return c.id === n.id; })) { pmToast('该物料已在清单中', true); }
+                else { _pbCart.push({id: n.id, name: n.name, path: _pmNodePath(n.id), quantity: 1, unit: n.unit || ''}); pbRenderCart(); }
+                sheet.style.display = 'none';
+            } else { pmOpenTreeSheet(path.concat([n.id])); }
+        });
+        tbody.appendChild(row);
+    });
+    if (path.length) {
+        var back = document.createElement('div'); back.style.cssText = 'padding:8px 10px;color:#2e7d32;font-size:0.85em;cursor:pointer;'; back.textContent = '‹ 返回';
+        back.addEventListener('click', function () { pmOpenTreeSheet(path.slice(0, -1)); });
+        tbody.insertBefore(back, tbody.firstChild);
+    }
+    sheet.style.display = 'flex';
+}
+
+// ── Save (budget lines + labor + PO links) ──
+function pbSave() {
+    var labor = document.getElementById('pbLabor').value.trim();
+    var labor3rd = document.getElementById('pbLabor3rd').value.trim();
+    var lines = _pbCart.filter(function (c) { return (c.quantity || 0) > 0; })
+        .map(function (c) { return {category: c.id, quantity: c.quantity, unit: c.unit || ''}; });
+    // 1. Save budget + labor.
+    var fd = new FormData();
+    fd.append('labor_budget_hours', labor);
+    fd.append('third_party_budget_hours', labor3rd);
+    fd.append('lines', JSON.stringify(lines));
+    var btn = document.getElementById('pbSubmit'); btn.disabled = true; btn.textContent = '保存中…';
+    fetch('/projects/' + _pbPid + '/budget/save/', {method: 'POST', body: fd, headers: {'X-Requested-With':'XMLHttpRequest','X-CSRFToken':_pmCsrf()}})
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+            if (!d.success) { btn.disabled = false; btn.textContent = '保存'; pmToast(d.message || '保存失败', true); return; }
+            // 2. Save PO links.
+            var fd2 = new FormData(); fd2.append('po_ids', JSON.stringify(_pbLinkedPos));
+            return fetch('/projects/' + _pbPid + '/pos/save/', {method: 'POST', body: fd2, headers: {'X-Requested-With':'XMLHttpRequest','X-CSRFToken':_pmCsrf()}})
+                .then(function (r) { return r.json(); })
+                .then(function (d2) {
+                    btn.disabled = false; btn.textContent = '保存';
+                    if (d2.success) {
+                        pmToast('已保存', false); pbClose();
+                        // Update local state + re-render detail.
+                        var b = pmBudget(_pbPid);
+                        b.material_budget = lines.map(function (c) { return {category_id: c.category, name: PM_INV_NODE_MAP[c.category] ? PM_INV_NODE_MAP[c.category].name : '', path: _pmNodePath(c.category), qty: c.quantity, unit: c.unit}; });
+                        b.labor_budget_hours = labor ? parseFloat(labor) : null;
+                        b.third_party_budget_hours = labor3rd ? parseFloat(labor3rd) : null;
+                        b.linked_pos = PM_ALL_POS.filter(function (p) { return _pbLinkedPos.indexOf(p.id) >= 0; });
+                        PM_BUDGET[_pbPid] = b;
+                        pmRenderDetail(_pbPid);
+                        pmRefreshCells(_pbPid);
+                    } else { pmToast(d2.message || '关联订单保存失败', true); }
+                });
+        })
+        .catch(function () { btn.disabled = false; btn.textContent = '保存'; pmToast('网络错误', true); });
+}
+
+// ── Project create/edit modal ──
+function peSyncSub() {
+    var cat = document.getElementById('peCategory'), sub = document.getElementById('peSubWrap');
+    if (cat && sub) sub.style.visibility = (cat.value === 'IRRIGATION') ? '' : 'hidden';
+}
+document.getElementById('peCategory').addEventListener('change', peSyncSub);
+
+function pmOpenCreate() {
+    document.getElementById('peTitle').textContent = '新建项目';
+    document.getElementById('peSubmit').textContent = '创建项目';
+    document.getElementById('peId').value = '';
+    document.getElementById('peCategory').value = 'IRRIGATION';
+    document.getElementById('peSub').value = '';
+    document.getElementById('peName').value = '';
+    document.getElementById('peSymbol').value = '';
+    document.getElementById('peCode').value = '';
+    document.getElementById('peStart').value = '';
+    document.getElementById('peEnd').value = '';
+    document.getElementById('peNotes').value = '';
+    document.getElementById('peActive').checked = true;
+    document.getElementById('peCompleted').checked = false;
+    peSyncSub();
+    document.getElementById('peMask').classList.add('open');
+    setTimeout(function () { document.getElementById('peName').focus(); }, 50);
+}
+function pmOpenEdit(pid, data) {
+    if (!data) { pmToast('项目数据缺失，请刷新页面重试', true); return; }
+    document.getElementById('peTitle').textContent = '编辑项目';
+    document.getElementById('peSubmit').textContent = '保存修改';
+    document.getElementById('peId').value = data.id;
+    document.getElementById('peCategory').value = data.category || 'IRRIGATION';
+    document.getElementById('peSub').value = data.subcategory || '';
+    document.getElementById('peName').value = data.name || '';
+    document.getElementById('peSymbol').value = data.symbol || '';
+    document.getElementById('peCode').value = data.code || '';
+    document.getElementById('peStart').value = data.start_date || '';
+    document.getElementById('peEnd').value = data.planned_end_date || '';
+    document.getElementById('peNotes').value = data.notes || '';
+    document.getElementById('peActive').checked = data.active !== false;
+    document.getElementById('peCompleted').checked = !!data.is_completed;
+    peSyncSub();
+    document.getElementById('peMask').classList.add('open');
+}
+function peClose() { document.getElementById('peMask').classList.remove('open'); }
+document.getElementById('peMask').addEventListener('click', function (e) { if (e.target === this) peClose(); });
+document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && document.getElementById('peMask').classList.contains('open')) peClose();
+});
+
+// Clear all filters.
+function pmClearFilter() {
+    window.location.href = '{% url "core:project_management" %}';
+}
+
+// Export to Excel, carrying the current filter values.
+function pmExport() {
+    var f = document.getElementById('pmFilterForm');
+    var params = new URLSearchParams();
+    ['q','from','to','category','completed'].forEach(function (name) {
+        var el = f.querySelector('[name="' + name + '"]');
+        if (el && el.value) params.set(name, el.value);
+    });
+    var qs = params.toString();
+    window.location.href = '{% url "core:project_export_excel" %}' + (qs ? '?' + qs : '');
+}
+
+// subcategory toggle + auto-open edit mode via ?edit=<id> (deep-link back-compat).
 (function () {
-  var cat = document.getElementById('pmCategory'), sub = document.getElementById('pmSubWrap');
-  if (!cat || !sub) return;
-  function sync() { sub.style.visibility = (cat.value === 'IRRIGATION') ? '' : 'hidden'; }
-  cat.addEventListener('change', sync); sync();
+    peSyncSub();
+    var params = new URLSearchParams(window.location.search);
+    var editId = params.get('edit');
+    if (editId) {
+        // Find the row's edit_json by scanning the DOM for an onclick referencing this id.
+        var btn = document.querySelector('.pm-inline button[onclick*="pmOpenEdit(' + editId + '"]');
+        if (btn) {
+            try {
+                var m = btn.getAttribute('onclick').match(/pmOpenEdit\(\d+,\s*(\{.*\})\)/);
+                if (m) pmOpenEdit(parseInt(editId, 10), JSON.parse(m[1]));
+            } catch (e) {}
+        }
+    }
 })();
 </script>
 {% endblock %}

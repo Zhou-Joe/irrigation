@@ -1258,7 +1258,16 @@ class Project(models.Model):
     symbol = models.CharField('项目代号', max_length=50, blank=True)
     code = models.CharField('项目Code', max_length=100, blank=True)
     active = models.BooleanField('启用', default=True)
+    is_completed = models.BooleanField('已完成', default=False,
+                                        help_text='标记项目是否已完工')
+    start_date = models.DateField('开工日期', null=True, blank=True)
+    planned_end_date = models.DateField('计划完工日期', null=True, blank=True)
     notes = models.TextField('备注', blank=True)
+    # 人工预算工时（经理填写）。已用工时由关联工单的 Σ team_hours / Σ third_party_hours 自动聚合。
+    labor_budget_hours = models.FloatField('第一方预算工时', null=True, blank=True,
+                                            help_text='经理填写；已用工时由工单自动汇总')
+    third_party_budget_hours = models.FloatField('第三方预算工时', null=True, blank=True,
+                                                  help_text='经理填写；已用工时由工单自动汇总')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -1308,9 +1317,9 @@ class WorkReportEntry(models.Model):
 
 
 class InventoryCategory(models.Model):
-    """库存物料目录树 - 自引用树，承载 库存管理tree.md 的层级。
+    """库存物料目录树 - 自引用树，承载 盘点.xlsx 的层级。
 
-    由 seed_inventory_items 命令从 markdown 灌入；之后管理员可在后台增删改。
+    由 seed_inventory_from_xlsx 命令从 盘点.xlsx 灌入；之后管理员可在后台增删改。
     叶子节点（无 children）才是可出入库的具体物料；中间节点为分类。
     current_stock 由经理在 /inventory/manage/ 页面设定/调整，每次出入库提交后自动增减。
     min_stock / is_main_material 同样由经理在该页面设定，便于库存预警与主材统计。
@@ -1386,6 +1395,12 @@ class InventoryTransaction(models.Model):
     # 入库时的来源类型(采购/借用归还/拆回利旧) 或 出库时的去向类型(日常维护/项目/借用)。
     entry_subtype = models.CharField('来源/去向类型', max_length=20, blank=True)
     order_no = models.CharField('订单号', max_length=100, blank=True, help_text='入库-采购时填写')
+    # 命中某张采购订单时建立关联（入库-采购）。保留 order_no 文本以兼容历史/自由输入。
+    purchase_order = models.ForeignKey(
+        'PurchaseOrder', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='transactions', verbose_name='采购订单',
+        help_text='入库-采购且订单号命中采购订单时自动关联',
+    )
     counterparty = models.CharField('借用方', max_length=200, blank=True,
                                     help_text='出库-借用时填写（历史去重 + 可自填）')
     related_project = models.ForeignKey(
@@ -1443,7 +1458,117 @@ class InventoryTransactionLine(models.Model):
         return f"{self.category.name_zh} × {self.quantity}"
 
 
+class PurchaseOrder(models.Model):
+    """采购订单 (Purchase Order).
 
+    灌溉订单编号 (order_number) 是必填且唯一的标识，用于在入库-采购表单的
+    订单号下拉中匹配。入库-采购流水通过 ``InventoryTransaction.purchase_order``
+    反向关联本订单；订单上“已入库物料”由这些流水的明细行聚合得出，不在本表存储。
+    """
+
+    order_number = models.CharField('灌溉订单编号', max_length=100, unique=True,
+                                    help_text='必填且唯一；入库-采购时据此匹配订单')
+    po_number = models.CharField('PO号', max_length=100, blank=True)
+    po_amount_untaxed = models.DecimalField(
+        'PO未税金额', max_digits=14, decimal_places=2, null=True, blank=True)
+    project_name = models.CharField('项目名称', max_length=200, blank=True)
+    project_code = models.CharField('项目code', max_length=100, blank=True)
+    received_date = models.DateField('收货日期', null=True, blank=True,
+                                      help_text='采购订单的收货/到货日期')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = '采购订单'
+        verbose_name_plural = '采购订单'
+
+    def __str__(self):
+        return self.order_number
+
+
+class PurchaseOrderLine(models.Model):
+    """采购订单计划明细 - 用户在订单上规划的待采购物料。
+
+    与 InventoryTransactionLine（出入库流水明细）结构一致：每个物料一行，
+    PROTECT 防止删除尚被订单引用的目录节点，CASCADE 使订单删除时连带清除明细。
+    ``quantity`` 是计划采购量；实际入库量由关联的 入库-采购 流水聚合得出。
+    """
+
+    purchase_order = models.ForeignKey(
+        PurchaseOrder, on_delete=models.CASCADE, related_name='planned_lines',
+        verbose_name='采购订单',
+    )
+    category = models.ForeignKey(
+        InventoryCategory, on_delete=models.PROTECT, related_name='po_lines',
+        verbose_name='物料',
+    )
+    quantity = models.PositiveIntegerField('计划数量', default=1)
+    unit = models.CharField('单位', max_length=20, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('purchase_order', 'category')
+        verbose_name = '计划采购明细'
+        verbose_name_plural = '计划采购明细'
+
+    def __str__(self):
+        return f"{self.category.name_zh} × {self.quantity}"
+
+
+class ProjectMaterialBudget(models.Model):
+    """项目材料预算 - 经理为项目规划的材料清单（按数量）。
+
+    与出库自动聚合的"材料消耗"对齐：消耗来自 ``InventoryTransaction.related_project``
+    （出库-项目），本表则是计划侧。余额在前端按 category 对齐相减得出，不入库。
+    每个物料每个项目一行（unique_together）。
+    """
+
+    project = models.ForeignKey(
+        Project, on_delete=models.CASCADE, related_name='material_budget',
+        verbose_name='项目',
+    )
+    category = models.ForeignKey(
+        InventoryCategory, on_delete=models.PROTECT, related_name='project_budgets',
+        verbose_name='物料',
+    )
+    quantity = models.PositiveIntegerField('预算数量', default=1)
+    unit = models.CharField('单位', max_length=20, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('project', 'category')
+        verbose_name = '项目材料预算'
+        verbose_name_plural = '项目材料预算'
+
+    def __str__(self):
+        return f"{self.project} → {self.category.name_zh} × {self.quantity}"
+
+
+class ProjectPurchaseOrder(models.Model):
+    """项目-采购订单轻量关联。
+
+    一个采购订单可能服务于多个项目或日常维护；本表仅表达"这单与这个项目有关"，
+    不分摊数量。材料消耗始终走出库-项目自动汇总，与本表无关。
+    """
+
+    project = models.ForeignKey(
+        Project, on_delete=models.CASCADE, related_name='po_links',
+        verbose_name='项目',
+    )
+    purchase_order = models.ForeignKey(
+        PurchaseOrder, on_delete=models.CASCADE, related_name='project_links',
+        verbose_name='采购订单',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('project', 'purchase_order')
+        verbose_name = '项目-采购订单'
+        verbose_name_plural = '项目-采购订单'
+
+    def __str__(self):
+        return f"{self.project} ↔ {self.purchase_order}"
 
 
 # (removed: DemandCategory)

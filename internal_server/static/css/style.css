@@ -377,6 +377,19 @@ body {
     display: inline-block;
 }
 
+/* Hide all zone/landmark labels during the zoom animation. Without this, Leaflet
+   CSS-transforms ~1100 label DOM nodes each animation frame (the main source of
+   zoom lag); updateLabelSizes() only re-hides/groups them on zoomend. Setting
+   display:none here instantly removes them from the render tree so the animation
+   stays smooth, and updateLabelSizes() restores the correct layout on zoomend. */
+.map-zooming .zone-label,
+.map-zooming .zone-ring-label,
+.map-zooming .zone-watermark,
+.map-zooming .landmark-label {
+    display: none !important;
+}
+
+
 /* Responsive Design */
 @media (max-width: 768px) {
     .dashboard-container {

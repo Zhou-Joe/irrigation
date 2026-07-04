@@ -14,7 +14,7 @@
     <!-- Design System CSS -->
     <link rel="stylesheet" href="{% static 'css/design-system.css' %}?v=20260421">
     <!-- Component Styles -->
-    <link rel="stylesheet" href="{% static 'css/style.css' %}?v=20260421">
+    <link rel="stylesheet" href="{% static 'css/style.css' %}?v=20260704">
 
     {% block extra_css %}{% endblock %}
 
@@ -135,40 +135,7 @@
         .mobile-nav-dropdown a:active { background: var(--color-surface); }
         .mobile-nav-dropdown a.active { color: var(--color-primary); font-weight: 600; background: rgba(45,106,79,0.06); }
 
-        /* Desktop nav dropdown (快速绘制) */
-        .nav-dropdown { position: relative; display: inline-block; }
-        .nav-dropdown-toggle {
-            color: rgba(245, 240, 232, 0.8) !important; text-decoration: none;
-            padding: 6px 14px; border-radius: 6px; font-size: 0.88rem; font-weight: 500;
-            transition: background 150ms, color 150ms; cursor: pointer;
-        }
-        .nav-dropdown-toggle:hover, .nav-dropdown-toggle.active {
-            background: rgba(255,255,255,0.12); color: #fff !important;
-        }
-        .nav-dropdown-menu {
-            display: none; position: absolute; top: 100%; left: 0; margin-top: 4px;
-            background: white; border-radius: 8px; min-width: 110px; z-index: 2000;
-            box-shadow: 0 4px 16px rgba(0,0,0,0.15); overflow: hidden;
-        }
-        .nav-dropdown-menu.open { display: block; }
-        .nav-dropdown-menu a {
-            display: block; padding: 10px 16px; color: #1C1C1C !important;
-            text-decoration: none; font-size: 0.85rem; white-space: nowrap;
-        }
-        .nav-dropdown-menu a:hover { background: var(--color-surface); }
-
-        /* Mobile sub-menu (快速绘制) */
-        .mobile-sub-menu { border-bottom: 1px solid var(--color-surface); }
-        .mobile-sub-toggle {
-            display: block; padding: 14px 18px; color: var(--color-text);
-            text-decoration: none; font-size: 0.92rem; cursor: pointer;
-        }
-        .mobile-sub-items { display: none; }
-        .mobile-sub-menu.open .mobile-sub-items { display: block; }
-        .mobile-sub-items a {
-            display: block; padding: 12px 18px 12px 36px; color: var(--color-text-secondary);
-            text-decoration: none; font-size: 0.88rem; border-bottom: 1px solid var(--color-surface);
-        }
+        /* Mobile sub-menu — removed (快速绘制 folded into 区域管理) */
         .mobile-sub-items a:last-child { border-bottom: none; }
         .mobile-sub-items a:active { background: var(--color-surface); }
 
@@ -221,18 +188,6 @@
         document.getElementById('mobileNavDropdown').classList.toggle('visible');
         document.getElementById('mobileNavOverlay').classList.toggle('visible');
     }
-    function toggleQuickDrawMenu(e) {
-        e.preventDefault();
-        e.stopPropagation();
-        var menu = document.getElementById('quickDrawMenu');
-        menu.classList.toggle('open');
-    }
-    document.addEventListener('click', function(e) {
-        var menu = document.getElementById('quickDrawMenu');
-        if (menu && menu.classList.contains('open') && !e.target.closest('.nav-dropdown')) {
-            menu.classList.remove('open');
-        }
-    });
     </script>
 </head>
 <body>
@@ -248,22 +203,12 @@
                 <a href="{% url 'core:stats_dashboard' %}" class="{% block nav_stats %}{% endblock %}">数据报表</a>
                 <a href="{% url 'core:irrigation_dashboard' %}" class="{% block nav_irrigation %}{% endblock %}">灌溉数据</a>
                 {% if is_admin %}
-                <a href="{% url 'core:settings' %}" class="{% block nav_settings %}{% endblock %}">区域管理</a>
                 <a href="{% url 'core:project_management' %}" class="{% block nav_projects %}{% endblock %}">项目管理</a>
                 <a href="{% url 'core:inventory_management' %}" class="{% block nav_inventory_mgmt %}{% endblock %}">库存管理</a>
-                <a href="{% url 'core:announcement_management' %}" class="{% block nav_announcements %}{% endblock %}">通知管理</a>
                 <a href="{% url 'core:user_management' %}" class="{% block nav_user_mgmt %}{% endblock %}">
                     用户管理{% if pending_registrations %}<span style="background:var(--color-warning);color:#fff;padding:1px 6px;border-radius:10px;font-size:0.7rem;margin-left:4px;">{{ pending_registrations }}</span>{% endif %}
                 </a>
-                <div class="nav-dropdown">
-                    <a href="javascript:void(0)" class="nav-dropdown-toggle {% block nav_quickdraw %}{% endblock %}" onclick="toggleQuickDrawMenu(event)">快速绘制 ▾</a>
-                    <div class="nav-dropdown-menu" id="quickDrawMenu">
-                        <a href="{% url 'core:zone_quick_draw' %}">电脑版</a>
-                        <a href="{% url 'core:zone_quick_draw_mobile' %}">手机版</a>
-                        <a href="{% url 'core:zone_dxf_import' %}">DXF导入</a>
-                        <a href="{% url 'core:map_style_editor' %}">样式调节</a>
-                    </div>
-                </div>
+                <a href="{% url 'core:settings' %}" class="{% block nav_settings %}{% endblock %}">区域管理</a>
                 {% endif %}
             </div>
         </div>
@@ -280,20 +225,10 @@
         <a href="{% url 'core:stats_dashboard' %}" class="{% block nav_stats_m %}{% endblock %}">数据报表</a>
         <a href="{% url 'core:irrigation_dashboard' %}" class="{% block nav_irrigation_m %}{% endblock %}">灌溉数据</a>
         {% if is_admin %}
-        <a href="{% url 'core:settings' %}" class="{% block nav_settings_m %}{% endblock %}">区域管理</a>
         <a href="{% url 'core:project_management' %}" class="{% block nav_projects_m %}{% endblock %}">项目管理</a>
         <a href="{% url 'core:inventory_management' %}" class="{% block nav_inventory_mgmt_m %}{% endblock %}">库存管理</a>
-        <a href="{% url 'core:announcement_management' %}" class="{% block nav_announcements_m %}{% endblock %}">通知管理</a>
         <a href="{% url 'core:user_management' %}" class="{% block nav_user_mgmt_m %}{% endblock %}">用户管理</a>
-        <div class="mobile-sub-menu">
-            <a href="javascript:void(0)" class="mobile-sub-toggle" onclick="this.parentElement.classList.toggle('open')">快速绘制 ▾</a>
-            <div class="mobile-sub-items">
-                <a href="{% url 'core:zone_quick_draw' %}">电脑版</a>
-                <a href="{% url 'core:zone_quick_draw_mobile' %}">手机版</a>
-                <a href="{% url 'core:zone_dxf_import' %}">DXF导入</a>
-                <a href="{% url 'core:map_style_editor' %}">样式调节</a>
-            </div>
-        </div>
+        <a href="{% url 'core:settings' %}" class="{% block nav_settings_m %}{% endblock %}">区域管理</a>
         {% endif %}
         <a href="{% url 'core:profile' %}">{{ user.get_full_name|default:user.username }}</a>
         <a href="{% url 'core:logout' %}">退出</a>

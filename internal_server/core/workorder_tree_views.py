@@ -14,6 +14,7 @@ from datetime import date, datetime, timedelta
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
+from django.views.decorators.http import require_POST
 from django.core.files.storage import default_storage
 from django.db import transaction
 from django.http import JsonResponse
@@ -121,10 +122,10 @@ def _phase_map():
 
 
 def _project_summaries(projects):
-    """Per-project work summary: {project_id: {reports, hours, phases:{phase:count}}}."""
-    from django.db.models import Sum
+    """Per-project work summary: {project_id: {reports, hours, third_hours, phases}}."""
     pmap = _phase_map()
-    summ = {p.id: {'reports': set(), 'hours': 0, 'phases': {}} for p in projects}
+    summ = {p.id: {'reports': set(), 'hours': 0, 'third_hours': 0, 'phases': {}}
+            for p in projects}
     entries = (WorkReportEntry.objects.filter(project__in=[p.id for p in projects])
                .select_related('work_item'))
     rep_to_projects = {}
@@ -134,48 +135,356 @@ def _project_summaries(projects):
         ph = pmap.get(e.work_item_id, '其他')
         s['phases'][ph] = s['phases'].get(ph, 0) + (e.count or 0)
         rep_to_projects.setdefault(e.work_report_id, set()).add(e.project_id)
-    rep_hours = {r['id']: (r['team_hours'] or 0) for r in
-                 WorkReport.objects.filter(id__in=rep_to_projects.keys()).values('id', 'team_hours')}
+    # Fetch both labor fields in one query.
+    rep_hours = {r['id']: (r['team_hours'] or 0, r['third_party_hours'] or 0)
+                 for r in WorkReport.objects.filter(id__in=rep_to_projects.keys())
+                 .values('id', 'team_hours', 'third_party_hours')}
     for rid, pids in rep_to_projects.items():
-        h = rep_hours.get(rid, 0)
+        team_h, third_h = rep_hours.get(rid, (0, 0))
         for pid in pids:
-            summ[pid]['hours'] += h
+            summ[pid]['hours'] += team_h
+            summ[pid]['third_hours'] += third_h
     return summ
+
+
+def _category_full_path(cat):
+    """Full hierarchy path "大类别 › … › 品名" (leaf included)."""
+    chain = []
+    p = cat.parent
+    while p:
+        chain.append(p.name_zh)
+        p = p.parent
+    chain.reverse()
+    return ' › '.join(chain + [cat.name_zh]) if chain else cat.name_zh
+
+
+def _project_budget_data(projects):
+    """Per-project material budget + consumed + linked POs, for the budget panel.
+
+    Returns {project_id: {material_budget: [...], material_consumed: [...],
+    labor_budget_hours, linked_pos: [...]}}.
+    - material_budget: [{category_id, name, path, qty, unit}] from ProjectMaterialBudget.
+    - material_consumed: aggregated from 出库-项目 transactions' lines, summed by category.
+    - labor_budget_hours: the project's budget field (None allowed).
+    - linked_pos: [{id, order_number, po_number, po_amount_untaxed}].
+    Material balance (budget − consumed) is computed client-side by category_id.
+    """
+    from core.models import (ProjectMaterialBudget, ProjectPurchaseOrder,
+                              InventoryTransaction)
+    from django.db.models import Prefetch
+    pids = [p.id for p in projects]
+
+    # Material budget rows.
+    budget = {}
+    for b in (ProjectMaterialBudget.objects
+              .filter(project_id__in=pids)
+              .select_related('category__parent')):
+        budget.setdefault(b.project_id, []).append({
+            'category_id': b.category_id, 'name': b.category.name_zh,
+            'path': _category_full_path(b.category),
+            'qty': b.quantity, 'unit': b.unit or b.category.unit,
+        })
+
+    # Material consumed: aggregate 出库-项目 lines by category, AND keep the
+    # raw per-transaction records (date/worker/source/lines) for the 出库记录 list.
+    consumed = {}
+    records = {}
+    txns = (InventoryTransaction.objects
+            .filter(related_project_id__in=pids, operation='出库', entry_subtype='项目')
+            .select_related('worker', 'work_report', 'zone')
+            .prefetch_related('lines__category')
+            .order_by('-date', '-id'))
+    for t in txns:
+        # Aggregate by category (for the budget vs consumed balance table).
+        for ln in t.lines.all():
+            cat = ln.category
+            entry = consumed.setdefault(t.related_project_id, {}).get(cat.id)
+            if entry is None:
+                entry = {'category_id': cat.id, 'name': cat.name_zh,
+                         'path': _category_full_path(cat),
+                         'unit': ln.unit or cat.unit, 'qty': 0}
+                consumed.setdefault(t.related_project_id, {})[cat.id] = entry
+            entry['qty'] += ln.quantity
+        # Per-transaction record (for the 出库记录 list).
+        rec = {
+            'id': t.id, 'date': t.date.isoformat() if t.date else '',
+            'worker': t.worker.full_name if t.worker else '—',
+            'source': ('工单 #' + str(t.work_report_id)) if t.work_report_id else '出库登记',
+            'work_report_id': t.work_report_id,
+            'zone': t.zone.name if t.zone else '',
+            'remark': t.remark or '',
+            'lines': [{'name': ln.category.name_zh,
+                       'path': _category_full_path(ln.category),
+                       'qty': ln.quantity, 'unit': ln.unit or ln.category.unit}
+                      for ln in t.lines.all()],
+        }
+        records.setdefault(t.related_project_id, []).append(rec)
+    consumed_list = {pid: list(d.values()) for pid, d in consumed.items()}
+
+    # Linked POs.
+    links = {}
+    for lk in (ProjectPurchaseOrder.objects
+               .filter(project_id__in=pids)
+               .select_related('purchase_order')
+               .order_by('-created_at')):
+        po = lk.purchase_order
+        links.setdefault(lk.project_id, []).append({
+            'id': po.id, 'order_number': po.order_number,
+            'po_number': po.po_number,
+            'po_amount_untaxed': ('' if po.po_amount_untaxed is None
+                                  else f'{po.po_amount_untaxed:.2f}'),
+        })
+
+    # Related work reports (工单) — via WorkReportEntry.project, distinct + with hours.
+    from core.models import WorkReport, WorkReportEntry
+    reports = {}
+    rep_ids_by_proj = {}
+    for e in (WorkReportEntry.objects.filter(project_id__in=pids)
+              .values('project_id', 'work_report_id').distinct()):
+        rep_ids_by_proj.setdefault(e['project_id'], set()).add(e['work_report_id'])
+    all_rep_ids = set().union(*rep_ids_by_proj.values()) if rep_ids_by_proj else set()
+    rep_map = {r['id']: r for r in (WorkReport.objects.filter(id__in=all_rep_ids)
+                .values('id', 'date', 'team_hours', 'third_party_hours'))}
+    for pid, rids in rep_ids_by_proj.items():
+        for rid in sorted(rids, reverse=True):
+            r = rep_map.get(rid)
+            if not r:
+                continue
+            reports.setdefault(pid, []).append({
+                'id': r['id'],
+                'date': r['date'].isoformat() if r['date'] else '',
+                'team_hours': r['team_hours'] or 0,
+                'third_hours': r['third_party_hours'] or 0,
+            })
+
+    # Split consumption records: those from a work order are grouped under that work
+    # report (shown in 关联工单 with its material lines); the rest (standalone 出库
+    # form) stay in consumption_records as 「其他出库记录」.
+    standalone_records = {}
+    for pid, recs in records.items():
+        standalone_records[pid] = [r for r in recs if not r['work_report_id']]
+    # Attach material-out lines to each work report.
+    wr_by_pid = {pid: {wr['id']: wr for wr in wrs} for pid, wrs in reports.items()}
+    for pid, recs in records.items():
+        for r in recs:
+            wid = r['work_report_id']
+            if wid and pid in wr_by_pid and wid in wr_by_pid[pid]:
+                wr_by_pid[pid][wid].setdefault('materials', []).append({
+                    'date': r['date'], 'worker': r['worker'],
+                    'zone': r['zone'], 'remark': r['remark'],
+                    'lines': r['lines'],
+                })
+
+    return {p.id: {
+        'material_budget': budget.get(p.id, []),
+        'material_consumed': consumed_list.get(p.id, []),
+        'consumption_records': standalone_records.get(p.id, []),
+        'labor_budget_hours': p.labor_budget_hours,
+        'third_party_budget_hours': p.third_party_budget_hours,
+        'linked_pos': links.get(p.id, []),
+        'work_reports': reports.get(p.id, []),
+    } for p in projects}
 
 
 @login_required(login_url='core:login')
 def project_management(request):
     """List/create/edit projects grouped by category, with per-project work summary."""
     from core.role_utils import get_user_role, ROLE_MANAGER, ROLE_SUPER_ADMIN
+    from core.views import serialize_inventory_tree
     from collections import OrderedDict
     role = get_user_role(request.user)
     if role not in (ROLE_MANAGER, ROLE_SUPER_ADMIN):
         messages.error(request, '无权限访问项目管理')
         return redirect('core:dashboard')
 
-    projects = list(Project.objects.all().order_by('category', 'subcategory', 'name'))
+    # Filters: q (name/symbol/code/notes), category (ALL/...), completed (all/0/1).
+    from django.db.models import Q
+    fq = (request.GET.get('q') or '').strip()
+    fcat = (request.GET.get('category') or '').strip()
+    fcompleted = (request.GET.get('completed') or '').strip()
+    ffrom = _parse_date(request.GET.get('from'))
+    fto = _parse_date(request.GET.get('to'))
+
+    qs = Project.objects.all()
+    if fq:
+        qs = qs.filter(Q(name__icontains=fq) | Q(symbol__icontains=fq)
+                       | Q(code__icontains=fq) | Q(notes__icontains=fq))
+    if fcat in {c for c, _ in Project.CATEGORY_CHOICES}:
+        qs = qs.filter(category=fcat)
+    if fcompleted in ('0', '1'):
+        qs = qs.filter(is_completed=(fcompleted == '1'))
+    # Date range filters against 开工日期. A project with no start_date is only
+    # shown when no date range is applied (can't place it on the timeline).
+    if ffrom or fto:
+        qs = qs.exclude(start_date__isnull=True)
+        if ffrom:
+            qs = qs.filter(start_date__gte=ffrom)
+        if fto:
+            qs = qs.filter(start_date__lte=fto)
+    projects = list(qs.order_by('category', 'subcategory', 'name'))
+
     summ = _project_summaries(projects)
+    budget_data = _project_budget_data(projects)
     groups = OrderedDict((c, {'label': lbl, 'items': []}) for c, lbl in Project.CATEGORY_CHOICES)
     for p in projects:
         s = summ[p.id]
+        b = budget_data.get(p.id, {})
         groups[p.category]['items'].append({
             'project': p,
             'report_count': len(s['reports']),
-            'hours': s['hours'],
+            'team_hours': s['hours'],
+            'third_hours': s['third_hours'],
             'phases': s['phases'],
+            'mat_budget_count': len(b.get('material_budget', [])),
+            'labor_budget': b.get('labor_budget_hours'),
+            'third_budget': b.get('third_party_budget_hours'),
+            'budget_json': json.dumps(b, ensure_ascii=False),
+            'edit_json': json.dumps({
+                'id': p.id, 'name': p.name, 'category': p.category,
+                'subcategory': p.subcategory, 'symbol': p.symbol, 'code': p.code,
+                'active': p.active, 'is_completed': p.is_completed, 'notes': p.notes,
+                'start_date': p.start_date.isoformat() if p.start_date else '',
+                'planned_end_date': p.planned_end_date.isoformat() if p.planned_end_date else '',
+            }, ensure_ascii=False),
         })
     edit_id = request.GET.get('edit')
     edit_obj = Project.objects.filter(pk=edit_id).first() if edit_id else None
+
+    # All POs available for linking (the 关联订单 dropdown).
+    from core.models import PurchaseOrder
+    all_pos = [{'id': po.id, 'order_number': po.order_number, 'po_number': po.po_number}
+               for po in PurchaseOrder.objects.all().order_by('-created_at')]
+
     ctx = {
         'groups': groups,
         'subcategories': Project.SUBCATEGORY_CHOICES,
         'categories': Project.CATEGORY_CHOICES,
         'edit_obj': edit_obj,
+        'all_pos_json': json.dumps(all_pos, ensure_ascii=False),
+        'inventory_tree_json': json.dumps(serialize_inventory_tree(), ensure_ascii=False),
+        # filter values (to re-populate the filter bar)
+        'fq': fq, 'fcat': fcat, 'fcompleted': fcompleted,
+        'ffrom': ffrom.isoformat() if ffrom else '',
+        'fto': fto.isoformat() if fto else '',
+        'total_projects': len(projects),
     }
     return render(request, 'core/project_management.html', ctx)
 
 
-def _clean_project_fields(post):
+@login_required(login_url='core:login')
+def project_export_excel(request):
+    """Export all projects (with current filters) to an Excel workbook.
+
+    Columns mirror the management table plus two material columns: 材料预算 and
+    材料消耗. Within each cell, multiple materials are newline-separated, and the
+    rows in the two columns correspond by material (budget-only / consumed-only /
+    both), so the line-up stays consistent.
+    """
+    import io
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.utils import get_column_letter
+    from django.http import HttpResponse
+    from core.role_utils import get_user_role, ROLE_MANAGER, ROLE_SUPER_ADMIN
+    role = get_user_role(request.user)
+    if role not in (ROLE_MANAGER, ROLE_SUPER_ADMIN):
+        return redirect('core:dashboard')
+
+    # Apply the same filters as the management page.
+    from django.db.models import Q
+    fq = (request.GET.get('q') or '').strip()
+    fcat = (request.GET.get('category') or '').strip()
+    fcompleted = (request.GET.get('completed') or '').strip()
+    ffrom = _parse_date(request.GET.get('from'))
+    fto = _parse_date(request.GET.get('to'))
+    qs = Project.objects.all()
+    if fq:
+        qs = qs.filter(Q(name__icontains=fq) | Q(symbol__icontains=fq)
+                       | Q(code__icontains=fq) | Q(notes__icontains=fq))
+    if fcat in {c for c, _ in Project.CATEGORY_CHOICES}:
+        qs = qs.filter(category=fcat)
+    if fcompleted in ('0', '1'):
+        qs = qs.filter(is_completed=(fcompleted == '1'))
+    if ffrom or fto:
+        qs = qs.exclude(start_date__isnull=True)
+        if ffrom:
+            qs = qs.filter(start_date__gte=ffrom)
+        if fto:
+            qs = qs.filter(start_date__lte=fto)
+    projects = list(qs.order_by('category', 'subcategory', 'name'))
+    summ = _project_summaries(projects)
+    budget_data = _project_budget_data(projects)
+
+    cat_labels = dict(Project.CATEGORY_CHOICES)
+    sub_labels = dict(Project.SUBCATEGORY_CHOICES)
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = '项目管理'
+    headers = ['项目', '类别', '子类别', '开工日期', '计划完工日期',
+               '第一方预算工时', '第三方预算工时', '材料预算', '材料消耗',
+               '第一方工时', '第三方工时', '工单数', '状态', '备注']
+    ws.append(headers)
+
+    # Styles.
+    header_fill = PatternFill('solid', fgColor='1B4332')
+    header_font = Font(color='FFFFFF', bold=True, size=10)
+    thin = Side(style='thin', color='D9D0C0')
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+    wrap_top = Alignment(wrap_text=True, vertical='top')
+    for ci in range(1, len(headers) + 1):
+        c = ws.cell(row=1, column=ci)
+        c.fill = header_fill; c.font = header_font; c.border = border
+        c.alignment = Alignment(horizontal='center', vertical='center')
+
+    for p in projects:
+        s = summ[p.id]
+        b = budget_data.get(p.id, {})
+        # Align material budget vs consumed by category_id.
+        budget = {ln['category_id']: ln for ln in b.get('material_budget', [])}
+        consumed = {ln['category_id']: ln for ln in b.get('material_consumed', [])}
+        all_ids = list(budget.keys()) + [k for k in consumed if k not in budget]
+        budget_lines, consumed_lines = [], []
+        for cid in all_ids:
+            bl = budget.get(cid); cl = consumed.get(cid)
+            ref = bl or cl
+            nm = ref['name']; unit = ref.get('unit', '') or ''
+            budget_lines.append('%s ×%d %s' % (nm, bl['qty'] if bl else 0, unit))
+            consumed_lines.append('%s ×%d %s' % (nm, cl['qty'] if cl else 0, unit))
+
+        row = [
+            p.name,
+            cat_labels.get(p.category, p.category),
+            sub_labels.get(p.subcategory, p.subcategory or ''),
+            p.start_date.isoformat() if p.start_date else '',
+            p.planned_end_date.isoformat() if p.planned_end_date else '',
+            p.labor_budget_hours if p.labor_budget_hours is not None else '',
+            p.third_party_budget_hours if p.third_party_budget_hours is not None else '',
+            '\n'.join(budget_lines),
+            '\n'.join(consumed_lines),
+            round(s['hours'], 1),
+            round(s['third_hours'], 1),
+            len(s['reports']),
+            '已完成' if p.is_completed else '进行中',
+            p.notes,
+        ]
+        ws.append(row)
+        r = ws.max_row
+        for ci in range(1, len(headers) + 1):
+            ws.cell(row=r, column=ci).border = border
+            ws.cell(row=r, column=ci).alignment = wrap_top
+
+    # Column widths.
+    widths = [20, 10, 10, 12, 12, 12, 12, 40, 40, 10, 10, 8, 8, 24]
+    for i, w in enumerate(widths, 1):
+        ws.column_dimensions[get_column_letter(i)].width = w
+
+    buf = io.BytesIO()
+    wb.save(buf); buf.seek(0)
+    resp = HttpResponse(buf.getvalue(),
+                        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    resp['Content-Disposition'] = 'attachment; filename="projects.xlsx"'
+    return resp
     name = (post.get('name') or '').strip()
     category = (post.get('category') or 'IRRIGATION').strip()
     if category not in {c for c, _ in Project.CATEGORY_CHOICES}:
@@ -186,6 +495,18 @@ def _clean_project_fields(post):
     if category != 'IRRIGATION':
         subcategory = ''
     return name, category, subcategory
+
+
+def _parse_date(raw):
+    """Parse a YYYY-MM-DD string into a date, or None if blank/invalid."""
+    from datetime import date as _date
+    s = (str(raw) if raw else '').strip()
+    if not s:
+        return None
+    try:
+        return _date.fromisoformat(s)
+    except ValueError:
+        return None
 
 
 @login_required(login_url='core:login')
@@ -207,16 +528,23 @@ def project_save(request):
     code = (request.POST.get('code') or '').strip()
     notes = (request.POST.get('notes') or '').strip()
     active = bool(request.POST.get('active'))
+    is_completed = bool(request.POST.get('is_completed'))
+    start_date = _parse_date(request.POST.get('start_date'))
+    planned_end_date = _parse_date(request.POST.get('planned_end_date'))
     if pid:
         proj = get_object_or_404(Project, pk=pid)
         proj.name = name; proj.category = category; proj.subcategory = subcategory
-        proj.symbol = symbol; proj.code = code; proj.notes = notes; proj.active = active
+        proj.symbol = symbol; proj.code = code; proj.notes = notes
+        proj.active = active; proj.is_completed = is_completed
+        proj.start_date = start_date; proj.planned_end_date = planned_end_date
         proj.save()
         messages.success(request, f'项目已更新：{proj.name}')
     else:
         proj, created = Project.objects.get_or_create(
             category=category, subcategory=subcategory, name=name,
-            defaults={'symbol': symbol, 'code': code, 'notes': notes, 'active': active})
+            defaults={'symbol': symbol, 'code': code, 'notes': notes,
+                      'active': active, 'is_completed': is_completed,
+                      'start_date': start_date, 'planned_end_date': planned_end_date})
         messages.success(request, ('项目已创建：' if created else '项目已存在：') + proj.name)
     return redirect('core:project_management')
 
@@ -235,6 +563,100 @@ def project_delete(request, pk):
         proj.delete()
         messages.success(request, f'项目已删除：{name}')
     return redirect('core:project_management')
+
+
+@login_required(login_url='core:login')
+@require_POST
+def project_budget_save(request, pk):
+    """Save a project's material budget (JSON ``lines``) + labor budget hours.
+
+    Replace semantics for budget lines (mirrors PO planned-lines): lines for
+    categories not in the payload are removed; the rest upserted.
+    """
+    from core.role_utils import get_user_role, ROLE_MANAGER, ROLE_SUPER_ADMIN
+    from core.models import ProjectMaterialBudget, InventoryCategory
+    role = get_user_role(request.user)
+    if role not in (ROLE_MANAGER, ROLE_SUPER_ADMIN):
+        return JsonResponse({'success': False, 'message': '无权限'}, status=403)
+    proj = get_object_or_404(Project, pk=pk)
+
+    # Labor budget hours (optional) — first-party + third-party.
+    def _parse_hours(key):
+        raw = (request.POST.get(key) or '').strip()
+        if not raw:
+            return None, None
+        try:
+            return float(raw), None
+        except ValueError:
+            return None, '人工预算工时格式无效'
+    lbh, err = _parse_hours('labor_budget_hours')
+    if err:
+        return JsonResponse({'success': False, 'message': err}, status=400)
+    tbh, err = _parse_hours('third_party_budget_hours')
+    if err:
+        return JsonResponse({'success': False, 'message': err}, status=400)
+    proj.labor_budget_hours = lbh
+    proj.third_party_budget_hours = tbh
+    proj.save(update_fields=['labor_budget_hours', 'third_party_budget_hours'])
+
+    # Material budget lines (JSON [{category, quantity, unit}]).
+    try:
+        lines = json.loads(request.POST.get('lines', '[]'))
+    except (json.JSONDecodeError, TypeError):
+        lines = []
+    seen = {}
+    for ln in lines or []:
+        if not isinstance(ln, dict):
+            continue
+        cat_id = ln.get('category')
+        try:
+            qty = int(ln.get('quantity') or 0)
+        except (ValueError, TypeError):
+            continue
+        if not cat_id or qty <= 0:
+            continue
+        seen[cat_id] = {'qty': qty, 'unit': (str(ln.get('unit') or '').strip())}
+
+    proj.material_budget.exclude(category_id__in=seen.keys()).delete()
+    valid = set(InventoryCategory.objects.filter(pk__in=seen.keys()).values_list('id', flat=True))
+    for cat_id, data in seen.items():
+        if int(cat_id) not in valid:
+            continue
+        ProjectMaterialBudget.objects.update_or_create(
+            project=proj, category_id=cat_id,
+            defaults={'quantity': data['qty'], 'unit': data['unit']},
+        )
+    return JsonResponse({'success': True, 'message': '预算已保存'})
+
+
+@login_required(login_url='core:login')
+@require_POST
+def project_pos_save(request, pk):
+    """Save a project's linked purchase orders (JSON [po_id, ...], replace)."""
+    from core.role_utils import get_user_role, ROLE_MANAGER, ROLE_SUPER_ADMIN
+    from core.models import ProjectPurchaseOrder, PurchaseOrder
+    role = get_user_role(request.user)
+    if role not in (ROLE_MANAGER, ROLE_SUPER_ADMIN):
+        return JsonResponse({'success': False, 'message': '无权限'}, status=403)
+    proj = get_object_or_404(Project, pk=pk)
+
+    try:
+        po_ids = json.loads(request.POST.get('po_ids', '[]'))
+    except (json.JSONDecodeError, TypeError):
+        po_ids = []
+    if not isinstance(po_ids, list):
+        po_ids = []
+    po_ids = [int(x) for x in po_ids if str(x).isdigit()]
+
+    # Replace: drop links not in the payload, add the rest.
+    ProjectPurchaseOrder.objects.filter(project=proj).exclude(purchase_order_id__in=po_ids).delete()
+    existing = set(ProjectPurchaseOrder.objects.filter(project=proj)
+                   .values_list('purchase_order_id', flat=True))
+    valid = set(PurchaseOrder.objects.filter(pk__in=po_ids).values_list('id', flat=True))
+    for pid in valid:
+        if pid not in existing:
+            ProjectPurchaseOrder.objects.create(project=proj, purchase_order_id=pid)
+    return JsonResponse({'success': True, 'message': '关联订单已更新'})
 
 
 @login_required(login_url='core:login')
