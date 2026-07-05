@@ -660,7 +660,13 @@ class RequestBase(models.Model):
 
     zone = models.ForeignKey(Zone, on_delete=models.CASCADE, related_name='%(class)s',
                              null=True, blank=True, help_text='(Legacy) 主区域，新记录使用 zones M2M')
+    # submitter is the legacy Worker FK (kept for irrigation-worker submissions).
+    # Department users have no Worker row, so submitter_user holds their Django User.
+    # Display should prefer submitter_user → submitter → username (see submitter_display).
     submitter = models.ForeignKey(Worker, on_delete=models.CASCADE, null=True, blank=True)
+    submitter_user = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True, related_name='+',
+        help_text='提交需求的部门用户（Django User）。灌溉员提交走 submitter(Worker)。')
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_SUBMITTED)
     status_notes = models.TextField(blank=True, help_text='管理员处理备注')
     approver = models.ForeignKey(
@@ -677,11 +683,11 @@ class RequestBase(models.Model):
 
 # (removed: MaintenanceRequest)
 class WaterRequest(RequestBase):
-    """浇水协调需求 request."""
+    """浇水协调需求 request.
 
-    submitter = models.ForeignKey(
-        Worker, on_delete=models.CASCADE, related_name='water_requests'
-    )
+    submitter 继承自 RequestBase（可空）：灌溉员提交时填 submitter(Worker)，
+    部门用户提交时填 submitter_user(User)，二者至少一个有值。
+    """
 
     USER_TYPE_CHOICES = [
         ('ENT', 'ENT'),
@@ -720,6 +726,18 @@ class WaterRequest(RequestBase):
         if not zs and self.zone_id:
             zs = [self.zone]
         return zs
+
+    @property
+    def submitter_display(self):
+        """Display name for whoever submitted this request. Department users are
+        stored on submitter_user (a Django User with no Worker row); irrigation
+        workers on submitter. Prefer whichever is set, fall back to username."""
+        if self.submitter_user_id:
+            u = self.submitter_user
+            return (u.get_full_name() or u.username) if u else '(未知用户)'
+        if self.submitter_id and self.submitter:
+            return self.submitter.full_name or self.submitter.employee_id or '(未知)'
+        return '(未知)'
 
     def __str__(self):
         names = ', '.join(z.name for z in self.all_zones) or '未指定区域'
@@ -1498,6 +1516,8 @@ class PurchaseOrder(models.Model):
     project_code = models.CharField('项目code', max_length=100, blank=True)
     received_date = models.DateField('收货日期', null=True, blank=True,
                                       help_text='采购订单的收货/到货日期')
+    is_completed = models.BooleanField('已完成', default=False,
+                                        help_text='计划采购与已入库物料完全匹配后可标记完成；完成的订单仍可被项目引用')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -1716,3 +1736,43 @@ class AISettings(models.Model):
     def get_system_prompt(self):
         """Use the configured prompt, or fall back to the default."""
         return self.system_prompt.strip() or self.DEFAULT_SYSTEM_PROMPT
+
+
+class Notification(models.Model):
+    """Per-user in-app notification (popup in the top nav, all pages).
+
+    Each row is one recipient + one event. Recipient is a Django ``User``
+    (not Worker) because department users — the majority of water-request
+    submitters — have no Worker row; keying on User covers every account type.
+
+    Lifecycle: created unread (read_at IS NULL) → the base.html popup shows it
+    on the recipient's next page load → 我已知晓 sets read_at → it stops popping
+    up but the row is retained as a lightweight inbox history.
+    """
+
+    recipient = models.ForeignKey(
+        User, on_delete=models.CASCADE, related_name='notifications',
+        verbose_name='接收人',
+    )
+    verb = models.CharField('类型', max_length=40,
+                            help_text='事件类型: comment / request_approved / request_rejected / '
+                                      'request_info_needed / request_resubmitted')
+    title = models.CharField('标题', max_length=200)
+    body = models.TextField('内容', blank=True)
+    link = models.CharField('跳转链接', max_length=500, blank=True,
+                            help_text='转到按钮的绝对路径，如 /work-reports/42/')
+    read_at = models.DateTimeField('已读时间', null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = '通知'
+        verbose_name_plural = '通知'
+        indexes = [
+            # The popup queries "unread notifications for this user, newest-first"
+            # on every authenticated page load — index the recipient + read flag.
+            models.Index(fields=['recipient', '-read_at'], name='core_notif_unread'),
+        ]
+
+    def __str__(self):
+        return f'{self.verb} → {self.recipient.username}: {self.title}'

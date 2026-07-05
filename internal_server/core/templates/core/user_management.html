@@ -7,72 +7,10 @@
 
 {% block extra_css %}
 <style>
-.mgmt-container {
-    padding: var(--space-lg);
-    max-width: 1400px;
-    margin: 0 auto;
-}
-
-.page-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: var(--space-lg);
-}
-
-.page-header h1 {
-    font-family: var(--font-display);
-    font-size: 1.75rem;
-    color: var(--color-primary);
-}
-
-/* Main Tab Bar */
-.main-tabs {
-    display: flex;
-    gap: var(--space-xs);
-    margin-bottom: var(--space-lg);
-    border-bottom: 2px solid var(--color-surface-dark);
-    padding-bottom: var(--space-xs);
-}
-
-.main-tab {
-    padding: 10px 24px;
-    border: none;
-    background: transparent;
-    color: var(--color-text-secondary);
-    font-size: 0.95rem;
-    font-weight: 500;
-    cursor: pointer;
-    border-radius: var(--radius-md) var(--radius-md) 0 0;
-    transition: all var(--transition-fast);
-}
-
-.main-tab:hover {
-    background: var(--color-surface-dark);
-}
-
-.main-tab.active {
-    background: var(--color-primary);
-    color: white;
-}
-
-.tab-badge {
-    display: inline-block;
-    background: var(--color-warning);
-    color: white;
-    padding: 1px 8px;
-    border-radius: 10px;
-    font-size: 0.7rem;
-    margin-left: 6px;
-}
-
-.tab-panel {
-    display: none;
-}
-
-.tab-panel.active {
-    display: block;
-}
+/* Page container, header and segmented tab bar now use the shared
+   .app-wrap / .app-head / .app-tabs / .app-tab-content classes (app.css).
+   This page keeps its own button system (.btn / .btn-primary / .btn-approve /
+   .btn-reject) because the dense user-list tables rely on the smaller padding. */
 
 /* ── Announcement management (通知管理 tab) ── */
 .am-card { background: #fff; border-radius: 12px; padding: 16px; margin-bottom: 16px; box-shadow: 0 1px 4px rgba(0,0,0,.06); }
@@ -453,33 +391,33 @@
 {% endblock %}
 
 {% block content %}
-<div class="mgmt-container">
-    <div class="page-header">
+<div class="app-wrap" style="max-width:1400px;">
+    <div class="app-head">
         <h1>用户管理</h1>
         <a href="{% url 'core:dashboard' %}" class="btn btn-secondary">返回首页</a>
     </div>
 
     <!-- Main Tabs -->
-    <div class="main-tabs">
-        <button class="main-tab {% if active_tab == 'users' %}active{% endif %}"
+    <div class="app-tabs" style="max-width:560px;">
+        <button class="app-tab {% if active_tab == 'users' %}active{% endif %}"
                 data-tab="users" onclick="switchTab('users')">
             用户列表 ({{ total_users }})
         </button>
-        <button class="main-tab {% if active_tab == 'approval' %}active{% endif %}"
+        <button class="app-tab {% if active_tab == 'approval' %}active{% endif %}"
                 data-tab="approval" onclick="switchTab('approval')">
             注册审批
             {% if stats.pending > 0 %}
-            <span class="tab-badge">{{ stats.pending }}</span>
+            <span class="app-tab-badge">{{ stats.pending }}</span>
             {% endif %}
         </button>
-        <button class="main-tab {% if active_tab == 'announcements' %}active{% endif %}"
+        <button class="app-tab {% if active_tab == 'announcements' %}active{% endif %}"
                 data-tab="announcements" onclick="switchTab('announcements')">
             通知管理 ({{ announcements|length }})
         </button>
     </div>
 
     <!-- Tab 1: User List -->
-    <div id="tab-users" class="tab-panel {% if active_tab == 'users' %}active{% endif %}">
+    <div id="tab-users" class="app-tab-content {% if active_tab == 'users' %}active{% endif %}">
         <div class="stats-bar">
             <div class="stat-card">
                 <div class="stat-number">{{ total_users }}</div>
@@ -546,7 +484,7 @@
     </div>
 
     <!-- Tab 2: Registration Approval -->
-    <div id="tab-approval" class="tab-panel {% if active_tab == 'approval' %}active{% endif %}">
+    <div id="tab-approval" class="app-tab-content {% if active_tab == 'approval' %}active{% endif %}">
         <div class="stats-bar">
             <div class="stat-card pending">
                 <div class="stat-number">{{ stats.pending }}</div>
@@ -629,7 +567,7 @@
     </div>
 
     <!-- Tab 3: Announcement Management (通知管理) -->
-    <div id="tab-announcements" class="tab-panel {% if active_tab == 'announcements' %}active{% endif %}">
+    <div id="tab-announcements" class="app-tab-content {% if active_tab == 'announcements' %}active{% endif %}">
       {% if messages %}
       <div class="messages">
         {% for message in messages %}
@@ -760,10 +698,10 @@
 <script>
 // --- Tab Switching ---
 function switchTab(tab) {
-    document.querySelectorAll('.main-tab').forEach(function(el) {
+    document.querySelectorAll('.app-tab').forEach(function(el) {
         el.classList.toggle('active', el.dataset.tab === tab);
     });
-    document.querySelectorAll('.tab-panel').forEach(function(p) {
+    document.querySelectorAll('.app-tab-content').forEach(function(p) {
         p.classList.toggle('active', p.id === 'tab-' + tab);
     });
     var params = '?tab=' + tab;

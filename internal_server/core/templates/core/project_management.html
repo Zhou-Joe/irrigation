@@ -6,80 +6,25 @@
 
 {% block extra_css %}
 <style>
-.pm-wrap { max-width: 1000px; margin: 0 auto; padding: 16px; }
-.pm-card { background: #fff; border-radius: 12px; padding: 16px; margin-bottom: 16px; box-shadow: 0 1px 4px rgba(0,0,0,.06); }
-.pm-card h2 { margin: 0 0 12px; font-size: 1.05rem; color: var(--color-primary, #2e7d32); }
-.pm-form { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; align-items: end; }
-.pm-form .full { grid-column: 1 / -1; }
-.pm-form label { display: block; font-size: .8rem; color: #555; margin-bottom: 3px; }
-.pm-form input, .pm-form select, .pm-form textarea {
-    width: 100%; padding: 8px 9px; border: 1px solid #d8d8d8; border-radius: 8px; font-size: .92rem; box-sizing: border-box; }
-.pm-proj { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid #f0f0f0; flex-wrap: wrap; }
-.pm-proj:last-child { border-bottom: none; }
-.pm-proj-name { flex: 1; min-width: 180px; font-weight: 600; }
-.pm-proj-name small { display: block; font-weight: 400; color: #888; font-size: .8rem; }
-.pm-stat { font-size: .82rem; color: #666; background: #f4f7f4; padding: 3px 9px; border-radius: 10px; white-space: nowrap; }
-.pm-stat b { color: var(--color-primary, #2e7d32); }
-.pm-phases { font-size: .78rem; color: #888; flex-basis: 100%; padding-left: 2px; }
-.pm-empty { color: #aaa; padding: 14px 0; font-size: .9rem; }
-.pm-inline { display: flex; gap: 6px; }
-.pm-inline .btn { padding: 5px 10px; font-size: .82rem; }
+/* Page-specific: per-category group cards + budget detail + record cards + the
+   material/PO picker rows. The list-page shell — wrapper, header, filter card,
+   buttons, table, modal dialog — now lives in app.css on the global tokens.
+   Accent references below use var(--color-primary-light) for consistency. */
 
-/* ── Project table ── */
-.pm-table-wrap { overflow-x: auto; }
-table.pm-table { width: 100%; border-collapse: collapse; font-size: .84rem; }
-table.pm-table thead th {
-    text-align: left; color: #888; font-weight: 600; font-size: .76rem;
-    padding: 8px 8px; border-bottom: 2px solid #e8e8e8; white-space: nowrap;
-}
-table.pm-table tbody td { padding: 9px 8px; border-bottom: 1px solid #f0f0f0; vertical-align: middle; }
-table.pm-table tbody tr:hover td { background: #f9fbf9; }
+.pm-card { background: #fff; border-radius: 12px; padding: 16px; margin-bottom: 16px; box-shadow: 0 1px 4px rgba(0,0,0,.06); }
+.pm-card h2 { margin: 0 0 12px; font-size: 1.05rem; color: var(--color-primary-light, #2D6A4F); }
+
+/* Project table uses shared table.app-table + .num + .app-row-detail (app.css). */
 .pm-t-name { font-weight: 600; color: #333; min-width: 140px; }
 .pm-t-name small { display: block; font-weight: 400; color: #999; font-size: .74rem; margin-top: 1px; }
 .pm-t-date { color: #666; font-size: .8rem; white-space: nowrap; }
-.pm-t-num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.pm-t-row-detail { display: none; padding: 0 !important; border-bottom: 1px solid #f0f0f0; }
-.pm-t-row-detail.open { display: table-row; }
-.pm-t-row-detail > td { padding: 0 !important; }
-.pm-t-detail-inner { padding: 8px 12px 12px; background: #fafbfa; }
-
-/* ── Filter bar ── */
-.pm-filter { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
-.pm-filter input[type=text], .pm-filter select {
-    padding: 8px 11px; border: 1px solid #d8d8d8; border-radius: 8px; font-size: .9rem; box-sizing: border-box; }
-.pm-filter .pm-q { flex: 1; min-width: 180px; }
-.pm-new-btn { margin-left: auto; padding: 9px 16px; border-radius: 8px; background: var(--color-primary, #2e7d32); color: #fff; border: none; font-size: .9rem; cursor: pointer; }
-.pm-new-btn:hover { opacity: .92; }
 .pm-filter-count { font-size: .8rem; color: #888; margin-bottom: 10px; }
-.pm-date-range { display: flex; align-items: center; gap: 6px; font-size: .82rem; color: #666; }
-.pm-date-range input[type=date] { padding: 7px 9px; border: 1px solid #d8d8d8; border-radius: 8px; font-size: .88rem; }
 
 /* completed badge / toggle on a project row */
 .pm-done-tag { font-size: .72rem; background: #e3f2fd; color: #1565c0; padding: 2px 8px; border-radius: 8px; }
 
-/* ── Project create/edit modal ── */
-.pe-mask { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: none; align-items: center; justify-content: center; z-index: 999; padding: 16px; }
-.pe-mask.open { display: flex; }
-.pe-dialog { background: #fff; border-radius: 14px; width: 100%; max-width: 520px; max-height: 90vh; overflow-y: auto; }
-.pe-dlg-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; border-bottom: 1px solid #f0f0f0; }
-.pe-dlg-head h3 { margin: 0; font-size: 1rem; color: var(--color-primary, #2e7d32); }
-.pe-close { background: none; border: none; font-size: 1.4rem; color: #999; cursor: pointer; line-height: 1; }
-.pe-body { padding: 16px; }
-.pe-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-.pe-grid .full { grid-column: 1 / -1; }
-.pe-grid label { display: block; font-size: .8rem; color: #555; margin-bottom: 3px; }
-.pe-grid input, .pe-grid select, .pe-grid textarea {
-    width: 100%; padding: 8px 9px; border: 1px solid #d8d8d8; border-radius: 8px; font-size: .92rem; box-sizing: border-box; }
-.pe-checks { display: flex; gap: 16px; padding: 4px 0 8px; }
-.pe-checks label { display: flex; align-items: center; gap: 5px; font-size: .85rem; color: #555; margin: 0; }
-.pe-foot { display: flex; gap: 10px; padding: 12px 16px; border-top: 1px solid #f0f0f0; }
-.pe-foot button { flex: 1; padding: 9px; border-radius: 8px; font-size: .9rem; cursor: pointer; }
-.pe-cancel { border: 1px solid #d8d8d8; background: #fff; color: #555; }
-.pe-submit { border: none; background: var(--color-primary, #2e7d32); color: #fff; }
-@media (max-width: 560px) { .pe-grid { grid-template-columns: 1fr; } }
-
 /* ── Expandable budget detail panel ── */
-.pm-toggle { font-size: .8rem; color: var(--color-primary, #2e7d32); background: none; border: none; cursor: pointer; padding: 2px 0; font-weight: 600; }
+.pm-toggle { font-size: .78rem; color: var(--color-primary-light, #2D6A4F); background: none; border: 1px solid #e0e0e0; cursor: pointer; padding: 3px 9px; font-weight: 600; border-radius: 8px; }
 .pm-detail { display: none; flex-basis: 100%; padding: 8px 0 4px; }
 .pm-detail.open { display: block; }
 .pm-sub { font-size: .78rem; color: #888; margin: 8px 0 4px; }
@@ -88,16 +33,16 @@ table.pm-table tbody tr:hover td { background: #f9fbf9; }
 .pm-mat-table td { padding: 5px 6px; border-bottom: 1px solid #f5f5f5; vertical-align: top; }
 .pm-mat-path { color: #666; max-width: 280px; }
 .pm-mat-path .leaf { color: #333; font-weight: 500; }
-.pm-bal.pos { color: var(--color-primary, #2e7d32); font-weight: 600; }
+.pm-bal.pos { color: var(--color-primary-light, #2D6A4F); font-weight: 600; }
 .pm-bal.neg { color: #c0392b; font-weight: 600; }
 .pm-po-chips { display: flex; flex-wrap: wrap; gap: 6px; }
-.pm-po-chip { font-size: .76rem; background: #e8f5e9; color: var(--color-primary, #2e7d32); padding: 3px 9px; border-radius: 8px; }
+.pm-po-chip { font-size: .76rem; background: #e8f5e9; color: var(--color-primary-light, #2D6A4F); padding: 3px 9px; border-radius: 8px; }
 .pm-po-card { border: 1px solid #e6ece6; border-radius: 8px; padding: 8px 10px; margin-bottom: 8px; background: #fafbfa; }
 .pm-po-card-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.pm-po-card-name { font-weight: 600; font-size: .84rem; color: var(--color-primary, #2e7d32); }
+.pm-po-card-name { font-weight: 600; font-size: .84rem; color: var(--color-primary-light, #2D6A4F); }
 .pm-po-card-meta { font-size: .76rem; color: #888; }
 .pm-po-part { font-size: .76rem; color: #555; padding: 2px 0; }
-.pm-po-part b { color: var(--color-primary, #2e7d32); }
+.pm-po-part b { color: var(--color-primary-light, #2D6A4F); }
 .pm-labor-row { display: flex; gap: 16px; font-size: .84rem; color: #555; flex-wrap: wrap; }
 
 /* ── 出库记录 cards ── */
@@ -108,23 +53,14 @@ table.pm-table tbody tr:hover td { background: #f9fbf9; }
 .pm-rec-remark { font-size: .78rem; color: #666; margin: 3px 0; font-style: italic; }
 .pm-rec-lines { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 5px; }
 .pm-rec-line { font-size: .76rem; background: #fff; border: 1px solid #e8e8e8; border-radius: 6px; padding: 2px 8px; color: #555; }
-.pm-rec-line b { color: var(--color-primary, #2e7d32); }
+.pm-rec-line b { color: var(--color-primary-light, #2D6A4F); }
 .pm-rec-line-name { display: inline; }
 .pm-rec-line-path { display: block; font-size: .68rem; color: #aaa; margin-top: 1px; }
 .pm-rec-sub { font-size: .74rem; color: #888; margin-top: 4px; }
 .pm-out-tag { display: inline-block; font-size: .68rem; color: #c0392b; background: #fdecea; padding: 1px 7px; border-radius: 6px; font-weight: 600; }
 .pm-wr .pm-rec-date { color: #1565c0; text-decoration: none; }
 
-/* ── Budget edit modal (mirrors inventory page po-mask) ── */
-.pb-mask { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: none; align-items: center; justify-content: center; z-index: 999; padding: 16px; }
-.pb-mask.open { display: flex; }
-.pb-dialog { background: #fff; border-radius: 14px; width: 100%; max-width: 480px; max-height: 90vh; overflow-y: auto; }
-.pb-dlg-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; border-bottom: 1px solid #f0f0f0; }
-.pb-dlg-head h3 { margin: 0; font-size: 1rem; color: var(--color-primary, #2e7d32); }
-.pb-dlg-close { background: none; border: none; font-size: 1.4rem; color: #999; cursor: pointer; line-height: 1; }
-.pb-dlg-body { padding: 16px; }
-.pb-dlg-body label { display: block; font-size: .82rem; color: #666; margin: 10px 0 4px; }
-.pb-dlg-body input { width: 100%; padding: 8px 10px; border: 1px solid #d8d8d8; border-radius: 8px; font-size: .9rem; box-sizing: border-box; }
+/* Budget-edit material/PO picker rows (inside the shared .app-dialog). */
 .pb-planned-row { display: flex; align-items: flex-start; gap: 10px; padding: 10px 0; border-bottom: 1px solid #f0f0f0; }
 .pb-planned-row:last-child { border-bottom: none; }
 .pb-planned-main { flex: 1; min-width: 0; }
@@ -135,13 +71,9 @@ table.pm-table tbody tr:hover td { background: #f9fbf9; }
 .pb-planned-unit-ro { font-size: .8rem; color: #888; white-space: nowrap; }
 .pb-planned-del { width: 24px; height: 24px; border: none; background: #f0f0f0; border-radius: 50%; color: #c0392b; cursor: pointer; font-size: .95rem; line-height: 1; flex-shrink: 0; }
 .pb-add-trigger { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; border: 1px dashed #bbb; border-radius: 8px; cursor: pointer; background: #fff; font-size: .9rem; margin-top: 6px; }
-.pb-dlg-foot { display: flex; gap: 10px; padding: 12px 16px; border-top: 1px solid #f0f0f0; }
-.pb-dlg-cancel { flex: 1; padding: 9px; border-radius: 8px; border: 1px solid #d8d8d8; background: #fff; cursor: pointer; font-size: .9rem; color: #555; }
-.pb-dlg-submit { flex: 1; padding: 9px; border-radius: 8px; border: none; background: var(--color-primary, #2e7d32); color: #fff; cursor: pointer; font-size: .9rem; }
-.pb-dlg-submit:disabled { opacity: .6; cursor: default; }
 .pb-po-pick { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 .pb-po-opt { font-size: .8rem; padding: 4px 10px; border: 1px solid #d8d8d8; border-radius: 8px; cursor: pointer; color: #555; background: #fff; }
-.pb-po-opt.on { background: var(--color-primary, #2e7d32); color: #fff; border-color: var(--color-primary, #2e7d32); }
+.pb-po-opt.on { background: var(--color-primary-light, #2D6A4F); color: #fff; border-color: var(--color-primary-light, #2D6A4F); }
 
 /* Bottom-sheet tree picker (dashboard.css not loaded here) */
 .v2-sheet-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 4000; display: none; align-items: flex-end; justify-content: center; touch-action: manipulation; }
@@ -150,42 +82,41 @@ table.pm-table tbody tr:hover td { background: #f9fbf9; }
 {% endblock %}
 
 {% block content %}
-<div class="pm-wrap">
-  <div class="form-header" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+<div class="app-wrap wide">
+  <div class="app-head">
     <h1>项目管理</h1>
   </div>
 
   {% if messages %}
-  <div class="messages">
     {% for message in messages %}
-      <div class="alert alert-{{ message.tags }}">{{ message }}</div>
+      <div class="msg msg-{{ message.tags|default:'info' }}">{{ message }}</div>
     {% endfor %}
-  </div>
   {% endif %}
 
   <!-- filter bar -->
-  <form method="get" class="pm-filter" id="pmFilterForm">
-    <input type="text" name="q" class="pm-q" placeholder="搜索 项目名称 / 代号 / Code / 备注…" value="{{ fq }}">
-    <span class="pm-date-range">
-      <label>开工</label>
-      <input type="date" name="from" value="{{ ffrom }}">
-      <span>~</span>
-      <input type="date" name="to" value="{{ fto }}">
-    </span>
-    <select name="category">
-      <option value="">全部类别</option>
-      {% for c, label in categories %}<option value="{{ c }}" {% if fcat == c %}selected{% endif %}>{{ label }}</option>{% endfor %}
-    </select>
-    <select name="completed">
-      <option value="">全部状态</option>
-      <option value="0" {% if fcompleted == '0' %}selected{% endif %}>未完成</option>
-      <option value="1" {% if fcompleted == '1' %}selected{% endif %}>已完成</option>
-    </select>
-    <button type="submit" class="btn btn-secondary" style="font-size:.88rem;">筛选</button>
-    <button type="button" class="btn btn-secondary" style="font-size:.88rem;" onclick="pmClearFilter()">清除</button>
-    <button type="button" class="btn btn-secondary" style="font-size:.88rem;" onclick="pmExport()">⬇ 导出Excel</button>
-    <button type="button" class="pm-new-btn" onclick="pmOpenCreate()">+ 新建项目</button>
-  </form>
+  <div class="filter-card">
+    <form method="get" class="filter-row" id="pmFilterForm">
+      <div class="ff" style="flex:1;min-width:180px;"><label>搜索</label>
+        <input type="text" name="q" placeholder="项目名称 / 代号 / Code / 备注" value="{{ fq }}"></div>
+      <div class="ff"><label>开工起</label><input type="date" name="from" value="{{ ffrom }}"></div>
+      <div class="ff"><label>开工止</label><input type="date" name="to" value="{{ fto }}"></div>
+      <div class="ff"><label>类别</label>
+        <select name="category">
+          <option value="">全部</option>
+          {% for c, label in categories %}<option value="{{ c }}" {% if fcat == c %}selected{% endif %}>{{ label }}</option>{% endfor %}
+        </select></div>
+      <div class="ff"><label>状态</label>
+        <select name="completed">
+          <option value="">全部</option>
+          <option value="0" {% if fcompleted == '0' %}selected{% endif %}>未完成</option>
+          <option value="1" {% if fcompleted == '1' %}selected{% endif %}>已完成</option>
+        </select></div>
+      <button type="submit" class="btn-sm btn-primary">筛选</button>
+      <button type="button" class="btn-sm btn-secondary" onclick="pmClearFilter()">清除</button>
+      <button type="button" class="btn-sm btn-secondary" onclick="pmExport()">⬇ 导出Excel</button>
+      <button type="button" class="btn-sm btn-primary" onclick="pmOpenCreate()">+ 新建项目</button>
+    </form>
+  </div>
   <div class="pm-filter-count">共 {{ total_projects }} 个项目{% if fq or fcat or fcompleted %}（已筛选）{% endif %}</div>
 
   <!-- project groups (per-category tables) -->
@@ -193,18 +124,18 @@ table.pm-table tbody tr:hover td { background: #f9fbf9; }
   <div class="pm-card">
     <h2>{{ group.label }}（{{ group.items|length }}）</h2>
     {% if group.items %}
-    <div class="pm-table-wrap">
-      <table class="pm-table">
+    <div class="app-table-wrap">
+      <table class="app-table">
         <thead>
           <tr>
             <th>项目</th>
             <th>开工 ~ 计划完工</th>
-            <th class="pm-t-num">灌溉组预算</th>
-            <th class="pm-t-num">第三方预算</th>
-            <th class="pm-t-num">材料预算</th>
-            <th class="pm-t-num">灌溉组工时</th>
-            <th class="pm-t-num">第三方工时</th>
-            <th class="pm-t-num">工单</th>
+            <th class="num">灌溉组预算</th>
+            <th class="num">第三方预算</th>
+            <th class="num">材料预算</th>
+            <th class="num">灌溉组工时</th>
+            <th class="num">第三方工时</th>
+            <th class="num">工单</th>
             <th>状态</th>
             <th style="text-align:right;">操作</th>
           </tr>
@@ -228,25 +159,25 @@ table.pm-table tbody tr:hover td { background: #f9fbf9; }
                 {{ it.project.start_date|date:"Y-m-d"|default:"—" }} ~ {{ it.project.planned_end_date|date:"Y-m-d"|default:"—" }}
               {% else %}—{% endif %}
             </td>
-            <td class="pm-t-num" id="pmCellLabor-{{ it.project.id }}">{{ it.labor_budget|default_if_none:"—"|floatformat:0 }}h</td>
-            <td class="pm-t-num" id="pmCellThird-{{ it.project.id }}">{{ it.third_budget|default_if_none:"—"|floatformat:0 }}h</td>
-            <td class="pm-t-num" id="pmCellMat-{{ it.project.id }}">{{ it.mat_budget_count }} 种</td>
-            <td class="pm-t-num">{{ it.team_hours|floatformat:1 }}h</td>
-            <td class="pm-t-num">{{ it.third_hours|floatformat:1 }}h</td>
-            <td class="pm-t-num">{{ it.report_count }}</td>
+            <td class="num" id="pmCellLabor-{{ it.project.id }}">{{ it.labor_budget|default_if_none:"—"|floatformat:0 }}h</td>
+            <td class="num" id="pmCellThird-{{ it.project.id }}">{{ it.third_budget|default_if_none:"—"|floatformat:0 }}h</td>
+            <td class="num" id="pmCellMat-{{ it.project.id }}">{{ it.mat_budget_count }} 种</td>
+            <td class="num">{{ it.team_hours|floatformat:1 }}h</td>
+            <td class="num">{{ it.third_hours|floatformat:1 }}h</td>
+            <td class="num">{{ it.report_count }}</td>
             <td>{% if it.project.is_completed %}<span class="pm-done-tag">已完成</span>{% else %}<span style="color:#999;font-size:.8rem;">进行中</span>{% endif %}</td>
             <td style="text-align:right;white-space:nowrap;">
-              <button type="button" class="btn btn-secondary pm-toggle" style="font-size:.78rem;padding:3px 9px;" onclick="pmToggleDetail({{ it.project.id }})">详情 ▾</button>
-              <button type="button" class="btn btn-secondary" style="font-size:.78rem;padding:3px 9px;"
+              <button type="button" class="btn-sm btn-secondary pm-toggle" onclick="pmToggleDetail({{ it.project.id }})">详情 ▾</button>
+              <button type="button" class="btn-sm btn-secondary"
                 onclick='pmOpenEdit({{ it.project.id }}, {{ it.edit_json|default:"null"|safe }})'>编辑</button>
               <form method="post" action="{% url 'core:project_delete' it.project.id %}" style="display:inline;" onsubmit="return confirm('删除项目 {{ it.project.name }}？关联工单的项目引用将被清空。');">
-                {% csrf_token %}<button type="submit" class="btn btn-secondary" style="color:#c0392b;font-size:.78rem;padding:3px 9px;">删除</button>
+                {% csrf_token %}<button type="submit" class="btn-sm btn-danger">删除</button>
               </form>
             </td>
           </tr>
-          <tr class="pm-t-row-detail" id="pmDetailRow-{{ it.project.id }}">
+          <tr class="app-row-detail" id="pmDetailRow-{{ it.project.id }}">
             <td colspan="10">
-              <div class="pm-t-detail-inner" id="pmDetail-{{ it.project.id }}" data-budget="{{ it.budget_json|escape }}"></div>
+              <div class="app-detail-inner" id="pmDetail-{{ it.project.id }}" data-budget="{{ it.budget_json|escape }}"></div>
             </td>
           </tr>
           {% endfor %}
@@ -260,18 +191,18 @@ table.pm-table tbody tr:hover td { background: #f9fbf9; }
   {% endfor %}
 </div>
 
-{# ── Project create / edit modal ── #}
-<div class="pe-mask" id="peMask">
-  <div class="pe-dialog">
-    <div class="pe-dlg-head">
+{# ── Project create / edit modal (shared .app-mask / .app-dialog shell) ── #}
+<div class="app-mask" id="peMask">
+  <div class="app-dialog">
+    <div class="app-dlg-head">
       <h3 id="peTitle">新建项目</h3>
-      <button type="button" class="pe-close" onclick="peClose()">×</button>
+      <button type="button" class="app-close" onclick="peClose()">×</button>
     </div>
     <form method="post" action="{% url 'core:project_save' %}" id="peForm">
       {% csrf_token %}
       <input type="hidden" name="id" id="peId" value="">
-      <div class="pe-body">
-        <div class="pe-grid">
+      <div class="app-body">
+        <div class="app-grid">
           <div>
             <label>项目类别 *</label>
             <select name="category" id="peCategory" required>
@@ -310,46 +241,46 @@ table.pm-table tbody tr:hover td { background: #f9fbf9; }
             <input type="text" name="notes" id="peNotes">
           </div>
         </div>
-        <div class="pe-checks">
+        <div class="app-checks">
           <label><input type="checkbox" name="active" value="1" id="peActive"> 启用</label>
           <label><input type="checkbox" name="is_completed" value="1" id="peCompleted"> 已完成</label>
         </div>
       </div>
-      <div class="pe-foot">
-        <button type="button" class="pe-cancel" onclick="peClose()">取消</button>
-        <button type="submit" class="pe-submit" id="peSubmit">创建项目</button>
+      <div class="app-foot">
+        <button type="button" class="btn-sm btn-secondary" style="flex:1;justify-content:center;" onclick="peClose()">取消</button>
+        <button type="submit" class="btn-sm btn-primary" style="flex:1;justify-content:center;" id="peSubmit">创建项目</button>
       </div>
     </form>
   </div>
 </div>
 
-{# ── Budget edit modal (shared) ── #}
-<div class="pb-mask" id="pbMask">
-  <div class="pb-dialog">
-    <div class="pb-dlg-head">
+{# ── Budget edit modal (shared .app-mask / .app-dialog shell) ── #}
+<div class="app-mask" id="pbMask">
+  <div class="app-dialog">
+    <div class="app-dlg-head">
       <h3 id="pbTitle">预算与关联</h3>
-      <button type="button" class="pb-dlg-close" onclick="pbClose()">×</button>
+      <button type="button" class="app-close" onclick="pbClose()">×</button>
     </div>
-    <div class="pb-dlg-body">
-      <div style="display:flex;gap:12px;">
-        <div style="flex:1;">
+    <div class="app-body">
+      <div class="app-grid" style="grid-template-columns:1fr 1fr;">
+        <div>
           <label>灌溉组预算工时</label>
           <input type="number" id="pbLabor" min="0" step="0.5" placeholder="小时数（可选）">
         </div>
-        <div style="flex:1;">
+        <div>
           <label>第三方预算工时</label>
           <input type="number" id="pbLabor3rd" min="0" step="0.5" placeholder="小时数（可选）">
         </div>
       </div>
-      <label>材料预算（从库存目录选择）</label>
+      <label class="pm-field" style="display:block;font-size:.8rem;color:#555;margin:14px 0 4px;">材料预算（从库存目录选择）</label>
       <div id="pbPlannedList"></div>
-      <div class="pb-add-trigger" id="pbAddTrigger"><span style="color:#2e7d32;">+ 添加物料</span><span style="font-size:.8em;color:#999;">▶</span></div>
-      <label style="margin-top:14px;">关联采购订单</label>
+      <div class="pb-add-trigger" id="pbAddTrigger"><span style="color:#2D6A4F;">+ 添加物料</span><span style="font-size:.8em;color:#999;">▶</span></div>
+      <label class="pm-field" style="display:block;font-size:.8rem;color:#555;margin:14px 0 4px;">关联采购订单</label>
       <div class="pb-po-pick" id="pbPoPick"></div>
     </div>
-    <div class="pb-dlg-foot">
-      <button type="button" class="pb-dlg-cancel" onclick="pbClose()">取消</button>
-      <button type="button" class="pb-dlg-submit" id="pbSubmit" onclick="pbSave()">保存</button>
+    <div class="app-foot">
+      <button type="button" class="btn-sm btn-secondary" style="flex:1;justify-content:center;" onclick="pbClose()">取消</button>
+      <button type="button" class="btn-sm btn-primary" style="flex:1;justify-content:center;" id="pbSubmit" onclick="pbSave()">保存</button>
     </div>
   </div>
 </div>

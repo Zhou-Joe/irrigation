@@ -7,49 +7,20 @@
 
 {% block extra_css %}
 <style>
+  /* Page-specific tokens (the report card / remarks / lightbox styles below
+     still reference these). The shared list-page shell — wrapper, header,
+     filter card, preset pills, buttons, tab bar, load-more, flash messages —
+     now lives in app.css and references the global design tokens directly. */
   :root {
     --wr-card-bg: #ffffff;
     --wr-card-border: #eef0f3;
-    --wr-accent: #2D6A4F;
+    --wr-accent: var(--color-primary-light, #2D6A4F);
     --wr-accent-soft: #e8f5e9;
     --wr-text: #1f2937;
     --wr-muted: #6b7280;
     --wr-warn: #CC7722;
     --wr-danger: #9B2226;
   }
-
-  .wr-list-wrap { max-width: 920px; margin: 0 auto; padding: 16px; }
-  .wr-list-head { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; margin-bottom: 12px; }
-  .wr-list-head h1 { font-size: 1.4rem; margin: 0; font-weight: 700; color: var(--wr-text); }
-  .wr-subtitle { font-size: 0.82rem; color: var(--wr-muted); }
-  /* Excel export — opens /stats/excel/ in a new tab with the current date
-     window translated to the stats ?from=&to= convention. */
-  .wr-export-btn { display:inline-flex; align-items:center; gap:6px; padding:8px 16px; border-radius:8px; background: var(--wr-accent); color:#fff; font-size:0.85rem; font-weight:600; text-decoration:none; border:none; cursor:pointer; white-space:nowrap; }
-  .wr-export-btn:hover { background:#245543; color:#fff; }
-
-  .msg { padding: 10px 14px; border-radius: 10px; margin-bottom: 12px; font-size: 0.9rem; }
-  .msg-success { background: rgba(64,145,108,0.12); color: var(--color-success); }
-  .msg-error   { background: rgba(155,34,38,0.12); color: var(--color-error); }
-  .msg-info    { background: rgba(82,183,136,0.12); color: var(--color-info); }
-  .msg-warning { background: rgba(204,119,34,0.12); color: var(--color-warning); }
-
-  /* Filter card */
-  .filter-card { background: var(--wr-card-bg); border:1px solid var(--wr-card-border); border-radius: 14px; padding: 12px 14px; margin-bottom: 14px; }
-  /* Preset pills: 近7天 / 近30天 / 近90天 / 全部. Active = filled accent. */
-  .preset-row { display:flex; gap:8px; flex-wrap:wrap; margin-bottom: 10px; }
-  .preset-pill { padding:6px 14px; border-radius:18px; font-size:0.82rem; font-weight:600; background:#fff; color:#555; border:1px solid #e0e0e0; text-decoration:none; cursor:pointer; transition: background .12s, color .12s, border-color .12s; }
-  .preset-pill:hover { border-color: var(--wr-accent); color: var(--wr-accent); }
-  .preset-pill.on { background: var(--wr-accent); color:#fff; border-color: var(--wr-accent); }
-
-  .filter-row { display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; }
-  .ff { display:flex; flex-direction:column; gap:3px; }
-  .ff label { font-size: 0.68rem; color: var(--wr-muted); text-transform: uppercase; letter-spacing: 0.03em; }
-  .ff input[type=date], .ff input[type=text], .ff select { padding: 7px 10px; border:1px solid #e5e7eb; border-radius: 8px; font-size: 0.85rem; background:#fff; color: var(--wr-text); transition: border-color .15s; }
-  .ff input:focus, .ff select:focus { outline:none; border-color: var(--wr-accent); }
-  .check-inline { display:flex; align-items:center; gap:5px; font-size:0.8rem; color: var(--wr-text); padding-bottom:7px; cursor:pointer; user-select:none; }
-  .btn-sm { padding: 7px 14px; border-radius: 8px; font-size: 0.82rem; font-weight: 600; border:none; cursor:pointer; text-decoration:none; display:inline-flex; align-items:center; }
-  .btn-primary { background: var(--wr-accent); color:#fff; }
-  .btn-secondary { background: #f3f4f6; color: var(--wr-text); }
 
   /* ── Report card: expandable (collapsed summary → click → full detail) ── */
   .wr-card {
@@ -154,20 +125,7 @@
   .wr-act.view { background: var(--wr-accent); color:#fff; }
   .wr-act.edit { background:#f3f4f6; color: var(--wr-text); }
 
-  .wr-empty { padding: 48px; text-align:center; color: var(--wr-muted); font-size: 0.95rem; background: var(--wr-card-bg); border-radius: 14px; border: 1px solid var(--wr-card-border); }
-
-  /* Load more */
-  .wr-loadmore-wrap { text-align:center; padding: 8px 0 20px; }
-  .wr-loadmore { padding: 10px 28px; border-radius: 24px; font-size: 0.88rem; font-weight:600; background:#fff; color: var(--wr-accent); border:1px solid var(--wr-accent); cursor:pointer; transition: background .15s, color .15s; }
-  .wr-loadmore:hover:not(:disabled) { background: var(--wr-accent); color:#fff; }
-  .wr-loadmore:disabled { opacity: 0.6; cursor: default; }
   .wr-loadmore-err { color: var(--wr-danger); font-size: 0.82rem; margin-top: 8px; }
-
-  /* Tab bar (维修日志 / 待确认备注 / 媒体下载) — segmented pill style */
-  .wr-tab-bar { display:flex; gap:0; border-radius:10px; overflow:hidden; background:#f0f2f0; margin-bottom:14px; max-width:420px; }
-  .wr-tab { flex:1; padding:9px 0; text-align:center; font-size:0.88rem; font-weight:600; color:#888; background:transparent; border:none; cursor:pointer; transition:all .2s; user-select:none; display:inline-flex; align-items:center; justify-content:center; gap:6px; }
-  .wr-tab.active { background:#fff; color:var(--wr-accent, #2D6A4F); box-shadow:0 1px 3px rgba(0,0,0,.1); }
-  .wr-tab-badge { background:#9B2226; color:#fff; font-size:0.68rem; font-weight:700; padding:1px 7px; border-radius:10px; }
 
   /* Remarks panel */
   .wr-remarks-panel { display:none; }
@@ -244,34 +202,22 @@
   .wr-toast.show { opacity:1; }
   .wr-toast.error { background:#b3261e; }
 
-  /* Mobile "more filters" toggle — hidden on desktop, shown on narrow screens.
-     The preset pills (date ranges) stay always visible; the detailed form
-     (date pickers, CCU, worker, checkboxes) collapses behind this toggle so the
-     top of the page stays short on phones. */
-  .wr-more-filters { display:none; align-items:center; gap:6px; margin-top:2px; background:none; border:none; color: var(--wr-accent); font-size:0.82rem; font-weight:600; cursor:pointer; padding:4px 0; }
-  .wr-more-filters .arrow { font-size:0.7rem; }
-  .wr-more-filters .badge { display:inline-flex; align-items:center; justify-content:center; min-width:17px; height:17px; padding:0 5px; border-radius:9px; background: var(--wr-accent); color:#fff; font-size:0.68rem; }
-
-  /* Narrow screens: cards go full width, preset pills stay, detailed form collapses. */
+  /* Narrow screens: collapsed summary gets tighter padding. The mobile
+     "more filters" toggle + filter-form collapse live in app.css. */
   @media (max-width: 560px) {
-    .wr-list-wrap { padding: 10px; }
-    .wr-list-head h1 { font-size: 1.2rem; }
     .wr-summary { padding: 9px 12px; }
-    .wr-more-filters { display:inline-flex; }   /* show the toggle on phones */
-    #filterForm { display:none; }                /* detailed form hidden by default */
-    #filterForm.open { display:flex; }           /* revealed when toggled */
   }
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="wr-list-wrap">
-    <div class="wr-list-head">
+<div class="app-wrap">
+    <div class="app-head">
         <div>
             <h1>维修日志</h1>
-            <div class="wr-subtitle">默认显示最近 {{ default_days }} 天 · 点击卡片展开详情</div>
+            <div class="app-subtitle">默认显示最近 {{ default_days }} 天 · 点击卡片展开详情</div>
         </div>
-        <a class="wr-export-btn" href="{% url 'core:work_reports_excel' %}?from={{ filters.date_from|default:'' }}&to={{ filters.date_to|default:'' }}" target="_blank" rel="noopener" title="导出当前日期范围内的工单为 Excel">
+        <a class="export-btn" href="{% url 'core:work_reports_excel' %}?from={{ filters.date_from|default:'' }}&to={{ filters.date_to|default:'' }}" target="_blank" rel="noopener" title="导出当前日期范围内的工单为 Excel">
             <i class="fa fa-file-excel-o"></i> 导出 Excel
         </a>
     </div>
@@ -283,13 +229,13 @@
     {% endif %}
 
     {% if is_manager %}
-    <div class="wr-tab-bar">
-        <button type="button" class="wr-tab {% if active_tab != 'remarks' and active_tab != 'photos' %}active{% endif %}" data-tab="workorders" onclick="switchTab('workorders')">维修日志</button>
-        <button type="button" class="wr-tab {% if active_tab == 'remarks' %}active{% endif %}" data-tab="remarks" onclick="switchTab('remarks')">
+    <div class="app-tabs">
+        <button type="button" class="app-tab {% if active_tab != 'remarks' and active_tab != 'photos' %}active{% endif %}" data-tab="workorders" onclick="switchTab('workorders')">维修日志</button>
+        <button type="button" class="app-tab {% if active_tab == 'remarks' %}active{% endif %}" data-tab="remarks" onclick="switchTab('remarks')">
             待确认备注
-            {% if pending_remark_groups %}<span class="wr-tab-badge">{{ pending_remark_groups|length }}</span>{% endif %}
+            {% if pending_remark_groups %}<span class="app-tab-badge">{{ pending_remark_groups|length }}</span>{% endif %}
         </button>
-        <button type="button" class="wr-tab {% if active_tab == 'photos' %}active{% endif %}" data-tab="photos" onclick="switchTab('photos')">媒体下载</button>
+        <button type="button" class="app-tab {% if active_tab == 'photos' %}active{% endif %}" data-tab="photos" onclick="switchTab('photos')">媒体下载</button>
     </div>
     {% endif %}
 
@@ -310,10 +256,10 @@
             <button type="button" class="preset-pill" data-sort="worker">创建人</button>
         </div>
         {% comment %}Detailed-filter toggle (mobile only). Shows a count badge when any detailed filter is active so it stays discoverable. Form auto-opens on load in that case.{% endcomment %}
-        <button type="button" class="wr-more-filters" id="moreFiltersBtn" onclick="toggleMoreFilters()" aria-expanded="false">
+        <button type="button" class="app-more-filters" id="moreFiltersBtn" onclick="toggleMoreFilters()" aria-expanded="false">
             <span id="moreFiltersLabel">更多筛选</span><span class="badge" id="moreFiltersBadge" style="display:none;">0</span><span class="arrow" id="moreFiltersArrow">▾</span>
         </button>
-        <form method="get" class="filter-row" id="filterForm">
+        <form method="get" class="filter-row hidden-mobile" id="filterForm">
             <input type="hidden" name="tab" value="{{ active_tab }}" id="filterTabInput">
             <input type="hidden" name="sort" value="{{ filters.sort|default:'created' }}" id="filterSortInput">
             <div class="ff"><label>起始日期</label><input type="date" name="date_from" value="{{ filters.date_from }}" id="dateFrom"></div>
@@ -350,13 +296,13 @@
     {% for report in reports %}
         {% include 'core/_work_report_card.html' %}
     {% empty %}
-    <div class="wr-empty">暂无工作日报记录</div>
+    <div class="app-empty">暂无工作日报记录</div>
     {% endfor %}
     </div>
 
     {# Load more — fetches the next older batch via cursor pagination. #}
-    <div class="wr-loadmore-wrap" id="loadMoreWrap" {% if not has_more %}style="display:none;"{% endif %}>
-        <button type="button" class="wr-loadmore" id="loadMoreBtn" onclick="loadMore()">加载更多</button>
+    <div class="app-loadmore-wrap" id="loadMoreWrap" {% if not has_more %}style="display:none;"{% endif %}>
+        <button type="button" class="app-loadmore" id="loadMoreBtn" onclick="loadMore()">加载更多</button>
         <div class="wr-loadmore-err" id="loadMoreErr" style="display:none;"></div>
     </div>
 
