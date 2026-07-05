@@ -570,7 +570,7 @@ def get_all_requests(request):
             'status': req.status,
             'status_display': req.get_status_display(),
             'date': str(req.start_datetime.date()),
-            'user': req.submitter.full_name,
+            'user': req.submitter_display,
             'created_at': req.created_at,
         })
 

@@ -7,36 +7,19 @@
 
 {% block extra_css %}
 <style>
+  /* Page-specific card + lightbox styles. The shared list-page shell
+     (wrapper, header, filter-card, preset pills, buttons, flash messages)
+     now lives in app.css and references the global design tokens directly. */
   :root {
     --wq-card-bg: #ffffff;
     --wq-card-border: #eef0f3;
-    --wq-accent: #2D6A4F;
-    --wq-accent-soft: #e8f5e9;
+    --wq-accent: var(--color-primary-light, #2D6A4F);
     --wq-text: #1f2937;
     --wq-muted: #6b7280;
     --wq-warn: #CC7722;
     --wq-danger: #9B2226;
     --wq-info: #2563eb;
   }
-  .wq-wrap { max-width: 1100px; margin: 0 auto; padding: 16px; }
-  .wq-list-head { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; margin-bottom: 16px; }
-  .wq-list-head h1 { font-size: 1.4rem; margin: 0; font-weight: 700; color: var(--wq-text); }
-
-  .msg { padding: 10px 14px; border-radius: 10px; margin-bottom: 12px; font-size: 0.9rem; }
-  .msg-success { background: rgba(64,145,108,0.12); color: #40916C; }
-  .msg-error   { background: rgba(155,34,38,0.12); color: var(--wq-danger); }
-  .msg-info    { background: rgba(37,99,235,0.10); color: var(--wq-info); }
-  .msg-warning { background: rgba(204,119,34,0.12); color: var(--wq-warn); }
-
-  .filter-card { background: var(--wq-card-bg); border:1px solid var(--wq-card-border); border-radius: 14px; padding: 14px 16px; margin-bottom: 16px; }
-  .filter-row { display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; }
-  .ff { display:flex; flex-direction:column; gap:3px; }
-  .ff label { font-size: 0.68rem; color: var(--wq-muted); text-transform: uppercase; letter-spacing: 0.03em; }
-  .ff input[type=date], .ff select { padding: 7px 10px; border:1px solid #e5e7eb; border-radius: 8px; font-size: 0.85rem; background:#fff; color: var(--wq-text); }
-  .ff input:focus, .ff select:focus { outline:none; border-color: var(--wq-accent); }
-  .btn-sm { padding: 7px 14px; border-radius: 8px; font-size: 0.82rem; font-weight: 600; border:none; cursor:pointer; text-decoration:none; display:inline-flex; align-items:center; }
-  .btn-primary { background: var(--wq-accent); color:#fff; }
-  .btn-secondary { background: #f3f4f6; color: var(--wq-text); }
 
   /* card: info left, actions right */
   .wq-card { background: var(--wq-card-bg); border:1px solid var(--wq-card-border); border-radius:14px; padding:14px 16px; margin-bottom:10px;
@@ -79,8 +62,6 @@
   .wq-notes-input { width:100%; padding:6px 9px; border:1px solid #e5e7eb; border-radius:8px; font-size:0.78rem; margin-top:6px; box-sizing:border-box; }
   .wq-side-id { font-size:0.68rem; color:var(--wq-muted); margin-top:2px; }
 
-  .wq-empty { padding:48px; text-align:center; color:var(--wq-muted); font-size:0.95rem; background:var(--wq-card-bg); border-radius:14px; border:1px solid var(--wq-card-border); }
-
   @media (max-width: 560px) {
     .wq-card { flex-direction:column; gap:10px; }
     .wq-card-side { flex-direction:column; align-items:stretch; border-left:none; border-top:1px solid var(--wq-card-border); padding-left:0; padding-top:10px; }
@@ -99,8 +80,8 @@
 {% endblock %}
 
 {% block content %}
-<div class="wq-wrap">
-  <div class="wq-list-head"><h1>需求</h1></div>
+<div class="app-wrap wide">
+  <div class="app-head"><h1>需求</h1></div>
 
   {% if messages %}{% for message in messages %}<div class="msg msg-{{ message.tags|default:'info' }}">{{ message }}</div>{% endfor %}{% endif %}
 
@@ -150,7 +131,7 @@
       </div>
       {% endif %}
       <div class="wq-meta">
-        <span><b>{{ wr.submitter.full_name|default:"–" }}</b>{% if wr.user_type %} · {{ wr.user_type }}{% endif %}</span>
+        <span><b>{{ wr.submitter_display }}</b>{% if wr.user_type %} · {{ wr.user_type }}{% endif %}</span>
         <span>{{ wr.start_datetime|date:"m-d H:i" }} – {{ wr.end_datetime|date:"m-d H:i" }}</span>
         <span>提交 {{ wr.created_at|date:"m-d H:i" }}</span>
         {% if wr.approver %}<span>审批 {{ wr.approver.full_name }}{% if wr.processed_at %} · {{ wr.processed_at|date:"m-d H:i" }}{% endif %}</span>{% endif %}
@@ -176,12 +157,18 @@
         <button class="wq-act reject" onclick="updateReq({{ wr.id }}, 'rejected')">拒绝</button>
         <button class="wq-act info" onclick="updateReq({{ wr.id }}, 'info_needed')">需补充</button>
         <input type="text" class="wq-notes-input" id="notes-{{ wr.id }}" placeholder="处理备注…" value="{{ wr.status_notes }}">
+      {% elif wr.status == 'info_needed' %}
+        {# Submitter's resubmit box: shown only on the submitter's own info_needed requests. #}
+        <div class="wq-resubmit" id="resubmit-{{ wr.id }}">
+          <textarea class="wq-notes-input wq-resubmit-note" id="resubmit-note-{{ wr.id }}" placeholder="补充信息…" rows="2" style="min-height:54px;"></textarea>
+          <button type="button" class="wq-act info" onclick="resubmitReq({{ wr.id }})">补充并重新提交</button>
+        </div>
       {% endif %}
       <span class="wq-side-id">#{{ wr.id }}</span>
     </div>
   </div>
   {% empty %}
-  <div class="wq-empty">暂无需求记录</div>
+  <div class="app-empty">暂无需求记录</div>
   {% endfor %}
 </div>
 
@@ -222,6 +209,27 @@ function updateReq(id, status){
           badge.className = 'wq-badge '+status; badge.textContent = d.status_display;
           if(d.status_notes){ var n=card.querySelector('.wq-notes'); if(!n){ n=document.createElement('div'); n.className='wq-notes'; card.querySelector('.wq-card-main').appendChild(n);} n.textContent='📝 '+d.status_notes; }
         }
+      } else { alert(d.message||'操作失败'); }
+    })
+    .catch(function(){ alert('网络错误'); });
+}
+
+// Submitter resubmit an info_needed request after补充信息.
+function resubmitReq(id){
+  var note = (document.getElementById('resubmit-note-'+id)||{}).value || '';
+  var fd = new FormData(); fd.append('note', note);
+  fetch('/requests/'+id+'/resubmit/', { method:'POST', body: fd, credentials:'same-origin',
+    headers:{'X-Requested-With':'XMLHttpRequest','X-CSRFToken':(document.cookie.match(/csrftoken=([^;]+)/)||[])[1]||''} })
+    .then(function(r){ return r.json(); })
+    .then(function(d){
+      if(d.success){
+        var card = document.querySelector('.wq-card[data-pk="'+id+'"]');
+        if(card){
+          var badge = card.querySelector('.wq-badge');
+          badge.className = 'wq-badge submitted'; badge.textContent = d.status_display || '已提交';
+          var box = document.getElementById('resubmit-'+id); if(box) box.style.display='none';
+        }
+        alert('已补充信息并重新提交，等待审批');
       } else { alert(d.message||'操作失败'); }
     })
     .catch(function(){ alert('网络错误'); });

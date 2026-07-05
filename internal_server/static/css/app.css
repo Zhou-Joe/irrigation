@@ -1,0 +1,267 @@
+/**
+ * Shared application component styles.
+ *
+ * The 维修日志 (work_reports) page is the visual reference. These classes
+ * reproduce its list-page shell — page wrapper, header, segmented tab bar,
+ * filter card with preset pills, buttons, tables, and modal dialogs — so every
+ * list-style page (inventory, project, user-management, water-requests, …)
+ * renders the same look without each re-defining it.
+ *
+ * All colors/radii/shadows reference the GLOBAL tokens from design-system.css
+ * (--color-primary, --color-primary-light, --radius-*, --shadow-*). No page is
+ * expected to define its own accent variables for these components.
+ */
+
+/* ── Page wrapper ────────────────────────────────────────────────────────
+   Centered, single-column content column. .wide bumps the max-width for
+   denser pages (project / inventory tables). */
+.app-wrap { max-width: 920px; margin: 0 auto; padding: 16px; }
+.app-wrap.wide { max-width: 1100px; }
+
+/* ── Page header ─────────────────────────────────────────────────────────
+   Title + subtitle on the left, action (export / new) on the right. */
+.app-head {
+    display: flex; align-items: center; justify-content: space-between;
+    flex-wrap: wrap; gap: 8px; margin-bottom: 12px;
+}
+.app-head h1 {
+    font-size: 1.4rem; margin: 0; font-weight: 700;
+    color: var(--color-text-primary, #1f2937);
+    font-family: var(--font-body, inherit);   /* body, not serif display */
+}
+.app-subtitle { font-size: 0.82rem; color: var(--color-text-muted, #6b7280); margin-top: 2px; }
+
+/* ── Flash messages ───────────────────────────────────────────────────── */
+.msg { padding: 10px 14px; border-radius: 10px; margin-bottom: 12px; font-size: 0.9rem; }
+.msg-success { background: rgba(64,145,108,0.12);  color: var(--color-success, #40916C); }
+.msg-error   { background: rgba(155,34,38,0.12);   color: var(--color-error, #9B2226); }
+.msg-info    { background: rgba(82,183,136,0.12);  color: var(--color-info, #52B788); }
+.msg-warning { background: rgba(204,119,34,0.12);  color: var(--color-warning, #CC7722); }
+
+/* ── Filter card ────────────────────────────────────────────────────────
+   White rounded card holding the preset pills + the detailed filter form. */
+.filter-card {
+    background: #fff;
+    border: 1px solid #eef0f3;
+    border-radius: 14px;
+    padding: 12px 14px;
+    margin-bottom: 14px;
+}
+
+/* Preset pills: 近7天 / 近30天 / 排序 / … Active = filled accent. */
+.preset-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; align-items: center; }
+.preset-pill {
+    padding: 6px 14px; border-radius: 18px; font-size: 0.82rem; font-weight: 600;
+    background: #fff; color: #555; border: 1px solid #e0e0e0;
+    text-decoration: none; cursor: pointer; user-select: none;
+    transition: background .12s, color .12s, border-color .12s;
+}
+.preset-pill:hover { border-color: var(--color-primary-light, #2D6A4F); color: var(--color-primary-light, #2D6A4F); }
+.preset-pill.on {
+    background: var(--color-primary-light, #2D6A4F); color: #fff;
+    border-color: var(--color-primary-light, #2D6A4F);
+}
+
+/* Detailed filter form: a flex row of labelled fields. */
+.filter-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
+.ff { display: flex; flex-direction: column; gap: 3px; }
+.ff label {
+    font-size: 0.68rem; color: var(--color-text-muted, #6b7280);
+    text-transform: uppercase; letter-spacing: 0.03em;
+}
+.ff input[type=date],
+.ff input[type=text],
+.ff input[type=number],
+.ff select {
+    padding: 7px 10px; border: 1px solid #e5e7eb; border-radius: 8px;
+    font-size: 0.85rem; background: #fff; color: var(--color-text-primary, #1f2937);
+    transition: border-color .15s; box-sizing: border-box;
+}
+.ff input:focus, .ff select:focus { outline: none; border-color: var(--color-primary-light, #2D6A4F); }
+
+/* Inline checkbox row inside the filter form. */
+.check-inline {
+    display: flex; align-items: center; gap: 5px; font-size: 0.8rem;
+    color: var(--color-text-primary, #1f2937); padding-bottom: 7px;
+    cursor: pointer; user-select: none;
+}
+.check-inline input { margin: 0; cursor: pointer; }
+
+/* ── Buttons ──────────────────────────────────────────────────────────── */
+.btn-sm {
+    padding: 7px 14px; border-radius: 8px; font-size: 0.82rem; font-weight: 600;
+    border: none; cursor: pointer; text-decoration: none;
+    display: inline-flex; align-items: center; gap: 6px; line-height: 1.2;
+    transition: background .15s, opacity .15s;
+}
+.btn-primary   { background: var(--color-primary-light, #2D6A4F); color: #fff; }
+.btn-primary:hover { background: var(--color-primary, #1B4332); }
+.btn-secondary { background: #f3f4f6; color: var(--color-text-primary, #1f2937); }
+.btn-secondary:hover { background: #e7e9ec; }
+.btn-danger    { background: var(--color-error, #9B2226); color: #fff; }
+.btn-danger:hover { opacity: .92; }
+.btn-primary:disabled, .btn-danger:disabled { opacity: .6; cursor: default; }
+
+/* Export / new action button that sits in the page header. */
+.export-btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 8px 16px; border-radius: 8px;
+    background: var(--color-primary-light, #2D6A4F); color: #fff;
+    font-size: 0.85rem; font-weight: 600; text-decoration: none;
+    border: none; cursor: pointer; white-space: nowrap;
+}
+.export-btn:hover { background: var(--color-primary, #1B4332); color: #fff; }
+
+/* ── Segmented tab bar ──────────────────────────────────────────────────
+   Rounded pill container; the active tab is a white inset. */
+.app-tabs {
+    display: flex; gap: 0; border-radius: 10px; overflow: hidden;
+    background: #f0f2f0; margin-bottom: 14px; max-width: 480px;
+}
+.app-tab {
+    flex: 1; padding: 9px 0; text-align: center;
+    font-size: 0.88rem; font-weight: 600; color: #888;
+    background: transparent; border: none; cursor: pointer; user-select: none;
+    transition: background .2s, color .2s, box-shadow .2s;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+}
+.app-tab:hover { color: var(--color-primary-light, #2D6A4F); }
+.app-tab.active {
+    background: #fff; color: var(--color-primary-light, #2D6A4F);
+    box-shadow: 0 1px 3px rgba(0,0,0,.1);
+}
+.app-tab-badge {
+    background: var(--color-error, #9B2226); color: #fff;
+    font-size: 0.68rem; font-weight: 700; padding: 1px 7px; border-radius: 10px;
+}
+
+/* Tab content panels — toggled via .active. */
+.app-tab-content { display: none; }
+.app-tab-content.active { display: block; }
+
+/* ── Tables ─────────────────────────────────────────────────────────────
+   Standard list table: dense rows, muted header, hover highlight. */
+.app-table-wrap { overflow-x: auto; }
+table.app-table { width: 100%; border-collapse: collapse; font-size: 0.84rem; }
+table.app-table thead th {
+    text-align: left; color: #888; font-weight: 600; font-size: 0.76rem;
+    padding: 8px 8px; border-bottom: 2px solid #e8e8e8; white-space: nowrap;
+}
+table.app-table tbody td {
+    padding: 9px 8px; border-bottom: 1px solid #f0f0f0; vertical-align: middle;
+}
+table.app-table tbody tr:hover td { background: #f9fbf9; }
+/* Right-aligned tabular numerics. */
+.app-table .num,
+table.app-table .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+/* Expandable detail row (used by project + PO tables). Hidden until .open. */
+.app-row-detail { display: none; padding: 0 !important; border-bottom: 1px solid #f0f0f0; }
+.app-row-detail.open { display: table-row; }
+.app-row-detail > td { padding: 0 !important; }
+.app-detail-inner { padding: 8px 12px 12px; background: #fafbfa; }
+
+/* ── Generic card / empty state ───────────────────────────────────────── */
+.app-card {
+    background: #fff; border-radius: 12px; padding: 16px; margin-bottom: 16px;
+    box-shadow: 0 1px 4px rgba(0,0,0,.06);
+}
+.app-card h2 {
+    margin: 0 0 12px; font-size: 1.05rem; font-weight: 600;
+    color: var(--color-primary-light, #2D6A4F); font-family: var(--font-body, inherit);
+}
+.app-empty {
+    padding: 48px; text-align: center;
+    color: var(--color-text-muted, #6b7280); font-size: 0.95rem;
+    background: #fff; border-radius: 14px; border: 1px solid #eef0f3;
+}
+
+/* ── Modal dialog ───────────────────────────────────────────────────────
+   Centered overlay + rounded white panel. Shared by PO create/edit,
+   project create/edit, work-reports transfer, etc. */
+.app-mask {
+    position: fixed; inset: 0; background: rgba(0,0,0,.45);
+    display: none; align-items: center; justify-content: center;
+    z-index: 999; padding: 16px;
+}
+.app-mask.open { display: flex; }
+.app-dialog {
+    background: #fff; border-radius: 14px; width: 100%;
+    max-width: 520px; max-height: 90vh; overflow-y: auto;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+}
+.app-dialog.wide { max-width: 680px; }
+.app-dlg-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 16px; border-bottom: 1px solid #f0f0f0;
+}
+.app-dlg-head h3 {
+    margin: 0; font-size: 1rem; font-weight: 700;
+    color: var(--color-primary-light, #2D6A4F); font-family: var(--font-body, inherit);
+}
+.app-close {
+    background: none; border: none; font-size: 1.4rem; color: #999;
+    cursor: pointer; line-height: 1; padding: 0 4px;
+}
+.app-close:hover { color: #555; }
+.app-body { padding: 16px; }
+.app-foot {
+    display: flex; gap: 10px; padding: 12px 16px;
+    border-top: 1px solid #f0f0f0;
+}
+.app-foot .btn-sm { flex: 0 0 auto; }
+
+/* ── Form grids inside dialogs/cards ───────────────────────────────────── */
+.app-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.app-grid .full { grid-column: 1 / -1; }
+.app-grid label { display: block; font-size: 0.8rem; color: #555; margin-bottom: 3px; }
+.app-grid input,
+.app-grid select,
+.app-grid textarea {
+    width: 100%; padding: 8px 9px; border: 1px solid #d8d8d8; border-radius: 8px;
+    font-size: 0.92rem; box-sizing: border-box; font-family: inherit;
+}
+.app-grid input:focus, .app-grid select:focus, .app-grid textarea:focus {
+    outline: none; border-color: var(--color-primary-light, #2D6A4F);
+}
+.app-checks { display: flex; gap: 16px; padding: 4px 0 8px; flex-wrap: wrap; }
+.app-checks label {
+    display: flex; align-items: center; gap: 5px; font-size: 0.85rem;
+    color: #555; margin: 0; cursor: pointer; user-select: none;
+}
+
+/* ── Load more (cursor pagination footer) ─────────────────────────────── */
+.app-loadmore-wrap { text-align: center; padding: 8px 0 20px; }
+.app-loadmore {
+    padding: 10px 28px; border-radius: 24px; font-size: 0.88rem; font-weight: 600;
+    background: #fff; color: var(--color-primary-light, #2D6A4F);
+    border: 1px solid var(--color-primary-light, #2D6A4F);
+    cursor: pointer; transition: background .15s, color .15s;
+}
+.app-loadmore:hover:not(:disabled) {
+    background: var(--color-primary-light, #2D6A4F); color: #fff;
+}
+.app-loadmore:disabled { opacity: 0.6; cursor: default; }
+
+/* ── Mobile filter toggle ───────────────────────────────────────────────
+   On phones the detailed filter form collapses behind this toggle; the
+   preset pills stay always visible. */
+.app-more-filters {
+    display: none; align-items: center; gap: 6px; margin-top: 2px;
+    background: none; border: none;
+    color: var(--color-primary-light, #2D6A4F);
+    font-size: 0.82rem; font-weight: 600; cursor: pointer; padding: 4px 0;
+}
+.app-more-filters .arrow { font-size: 0.7rem; }
+.app-more-filters .badge {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-width: 17px; height: 17px; padding: 0 5px; border-radius: 9px;
+    background: var(--color-primary-light, #2D6A4F); color: #fff; font-size: 0.68rem;
+}
+@media (max-width: 560px) {
+    .app-wrap, .app-wrap.wide { padding: 10px; }
+    .app-head h1 { font-size: 1.2rem; }
+    .app-more-filters { display: inline-flex; }
+    .filter-row.hidden-mobile { display: none; }
+    .filter-row.hidden-mobile.open { display: flex; }
+}

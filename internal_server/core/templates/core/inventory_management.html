@@ -11,12 +11,11 @@
 .iv-card h2 { margin: 0 0 12px; font-size: 1.05rem; color: var(--color-primary, #2D6A4F); }
 .iv-hint { font-size: .82rem; color: #888; margin: 0 0 12px; }
 
-/* Date-range filter bar */
+/* Date-range filter bar — uses shared .preset-pill (app.css) for the buttons.
+   Only the row layout + date inputs are page-specific. */
 .iv-range { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
 .iv-range label { font-size: .82rem; color: #666; }
-.iv-range input[type=date] { padding: 6px 8px; border: 1px solid #d8d8d8; border-radius: 6px; font-size: .88rem; }
-.iv-preset { padding: 5px 12px; border: 1px solid #d8d8d8; border-radius: 16px; background: #fff; font-size: .8rem; cursor: pointer; color: #555; }
-.iv-preset.on { background: var(--color-primary, #2D6A4F); color: #fff; border-color: var(--color-primary, #2D6A4F); }
+.iv-range input[type=date] { padding: 6px 10px; border: 1px solid #e5e7eb; border-radius: 8px; font-size: .85rem; }
 
 /* Tree */
 .iv-tree { font-size: .9rem; }
@@ -68,31 +67,18 @@
 .iv-head-actions #ivSaveMsg { font-size: .8rem; color: #2D6A4F; white-space: nowrap; min-height: 1em; }
 .iv-search { width: 100%; padding: 8px 12px; border: 1px solid #d8d8d8; border-radius: 8px; font-size: .9rem; margin-bottom: 12px; box-sizing: border-box; }
 
-/* ── Tab switcher (库存树 / 出入库记录) ──────────────────────────────── */
-.iv-tabs { display: flex; gap: 0; border-radius: 10px; overflow: hidden; background: #f0f2f0; margin-bottom: 16px; max-width: 460px; }
-.iv-tab { flex: 1; padding: 9px 0; text-align: center; font-size: .88rem; font-weight: 600; cursor: pointer; transition: all .2s; color: #888; border: none; background: transparent; user-select: none; }
-.iv-tab.active { background: #fff; color: var(--color-primary, #2D6A4F); box-shadow: 0 1px 3px rgba(0,0,0,.1); }
-.iv-tab-content { display: none; }
-.iv-tab-content.active { display: block; }
+/* ── Tab switcher (库存树 / 出入库记录) ── uses shared .app-tabs (app.css) */
 
 /* ── 采购订单 tab ─────────────────────────────────────────────────────── */
 .po-top { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }
-.po-new-btn { margin-left: auto; padding: 7px 16px; border-radius: 8px; background: var(--color-primary, #2D6A4F); color: #fff; border: none; font-size: .88rem; cursor: pointer; }
-.po-new-btn:hover { opacity: .92; }
+/* .po-new-btn → .btn-sm.btn-primary; .po-act-btn → .btn-sm.btn-secondary/.btn-danger (app.css) */
 .po-search { flex: 1; min-width: 160px; padding: 7px 12px; border: 1px solid #d8d8d8; border-radius: 8px; font-size: .88rem; }
 .po-empty { text-align: center; color: #aaa; padding: 40px 0; font-size: .9rem; }
-/* ── PO table ── */
-.po-table-wrap { overflow-x: auto; }
-table.po-table { width: 100%; border-collapse: collapse; font-size: .84rem; }
-table.po-table thead th { text-align: left; color: #888; font-weight: 600; font-size: .76rem; padding: 8px 8px; border-bottom: 2px solid #e8e8e8; white-space: nowrap; }
-table.po-table tbody td { padding: 9px 8px; border-bottom: 1px solid #f0f0f0; vertical-align: middle; }
-table.po-table tbody tr:hover td { background: #f9fbf9; }
-.po-t-num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+/* ── PO table ── uses shared table.app-table (app.css) + .num / .app-row-detail */
 .po-t-order { font-weight: 600; color: #333; }
-.po-t-row-detail { display: none; }
-.po-t-row-detail.open { display: table-row; }
-.po-t-row-detail > td { padding: 0 !important; }
-.po-t-detail-inner { padding: 10px 14px 14px; background: #fafbfa; }
+/* completion badge on a PO row (计划==已入库 已收货完成). */
+.po-done-tag { display: inline-block; font-size: .7rem; font-weight: 600; background: #e8f5e9; color: var(--color-primary, #2D6A4F); padding: 2px 8px; border-radius: 8px; margin-left: 5px; }
+.po-can-complete { font-size: .7rem; font-weight: 600; background: #e3f2fd; color: #1565c0; padding: 2px 8px; border-radius: 8px; margin-left: 5px; cursor: default; }
 .po-card { background: #fff; border-radius: 12px; padding: 16px; margin-bottom: 14px; box-shadow: 0 1px 4px rgba(0,0,0,.06); }
 .po-card-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
 .po-order-num { font-size: 1.02rem; font-weight: 600; color: #333; }
@@ -107,24 +93,13 @@ table.po-table tbody tr:hover td { background: #f9fbf9; }
 .po-part .pq { font-weight: 600; color: var(--color-primary, #2D6A4F); }
 .po-txn-count { font-size: .76rem; color: #aaa; margin-top: 8px; }
 .po-actions { display: flex; gap: 8px; margin-top: 10px; }
-.po-act-btn { padding: 4px 12px; border-radius: 6px; border: 1px solid #d8d8d8; background: #fff; font-size: .8rem; cursor: pointer; color: #555; }
-.po-act-btn:hover { background: #f4f7f4; }
-.po-act-btn.danger { color: #c0392b; border-color: #f5cccc; }
-.po-act-btn.danger:hover { background: #fdf2f2; }
-.po-mask { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: none; align-items: center; justify-content: center; z-index: 999; padding: 16px; }
-.po-mask.open { display: flex; }
-.po-dialog { background: #fff; border-radius: 14px; width: 100%; max-width: 460px; max-height: 90vh; overflow-y: auto; }
-.po-dlg-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; border-bottom: 1px solid #f0f0f0; }
-.po-dlg-head h3 { margin: 0; font-size: 1rem; color: var(--color-primary, #2D6A4F); }
-.po-dlg-close { background: none; border: none; font-size: 1.4rem; color: #999; cursor: pointer; line-height: 1; }
-.po-dlg-body { padding: 16px; }
-.po-dlg-body label { display: block; font-size: .82rem; color: #666; margin: 10px 0 4px; }
-.po-dlg-body label .req { color: #c0392b; }
-.po-dlg-body input { width: 100%; padding: 8px 10px; border: 1px solid #d8d8d8; border-radius: 8px; font-size: .9rem; box-sizing: border-box; }
-.po-dlg-foot { display: flex; gap: 10px; padding: 12px 16px; border-top: 1px solid #f0f0f0; }
-.po-dlg-cancel { flex: 1; padding: 9px; border-radius: 8px; border: 1px solid #d8d8d8; background: #fff; cursor: pointer; font-size: .9rem; color: #555; }
-.po-dlg-submit { flex: 1; padding: 9px; border-radius: 8px; border: none; background: var(--color-primary, #2D6A4F); color: #fff; cursor: pointer; font-size: .9rem; }
-.po-dlg-submit:disabled { opacity: .6; cursor: default; }
+/* PO modal now uses shared .app-mask / .app-dialog / .app-dlg-head / .app-body /
+   .app-foot (app.css). Only the PO-specific form labels are kept here. */
+.app-body label.iv-field { display: block; font-size: .82rem; color: #666; margin: 10px 0 4px; }
+.app-body label.iv-field .req { color: #c0392b; }
+.app-body input[type=text].iv-input,
+.app-body input[type=number].iv-input,
+.app-body input[type=date].iv-input { width: 100%; padding: 8px 10px; border: 1px solid #d8d8d8; border-radius: 8px; font-size: .9rem; box-sizing: border-box; }
 
 /* PO planned-materials rows (in create/edit modal) */
 .po-planned-row { display: flex; align-items: flex-start; gap: 10px; padding: 10px 0; border-bottom: 1px solid #f0f0f0; }
@@ -190,13 +165,6 @@ table.iv-ledger .op-tag.out { background: #fdecea; color: #c0392b; }
 /* The 🗑 on a leaf row sits inline (not in a .iv-node-actions wrapper), so show it on row hover. */
 .iv-leaf-row .iv-del-btn { display: none; }
 .iv-leaf-row:hover .iv-del-btn { display: inline-block; }
-.iv-add-top-btn { padding: 6px 14px; border: 1px solid var(--color-primary, #2D6A4F); border-radius: 8px;
-    background: #fff; color: var(--color-primary, #2D6A4F); font-size: .84rem; font-weight: 600; cursor: pointer; }
-.iv-add-top-btn:hover { background: #e8f5e9; }
-.iv-export-btn { display: inline-block; padding: 6px 14px; border: 1px solid #d8d8d8; border-radius: 8px;
-    background: #fff; color: #555; font-size: .84rem; font-weight: 600; cursor: pointer; text-decoration: none; }
-.iv-export-btn:hover { background: #f0f2f0; }
-
 /* Create-category modal */
 .iv-create-mask { position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 10000;
     display: none; align-items: center; justify-content: center; padding: 16px; }
@@ -258,33 +226,31 @@ table.iv-ledger .lvl-tag.warn { background: #fdf6ec; color: #cc7722; }
 {% endblock %}
 
 {% block content %}
-<div class="iv-wrap">
-  <div class="form-header" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+<div class="app-wrap wide">
+  <div class="app-head">
     <h1>库存管理</h1>
   </div>
 
   {% if messages %}
-  <div class="messages">
     {% for message in messages %}
-      <div class="alert alert-{{ message.tags }}">{{ message }}</div>
+      <div class="msg msg-{{ message.tags|default:'info' }}">{{ message }}</div>
     {% endfor %}
-  </div>
   {% endif %}
 
   {# ── Tab switcher ── #}
-  <div class="iv-tabs">
-    <button type="button" class="iv-tab active" data-tab="ledger" onclick="ivSwitchTab('ledger')">出入库记录</button>
-    <button type="button" class="iv-tab" data-tab="alert" onclick="ivSwitchTab('alert')">库存警告</button>
-    <button type="button" class="iv-tab" data-tab="tree" onclick="ivSwitchTab('tree')">库存目录</button>
-    <button type="button" class="iv-tab" data-tab="orders" onclick="ivSwitchTab('orders')">采购订单</button>
+  <div class="app-tabs">
+    <button type="button" class="app-tab active" data-tab="ledger" onclick="ivSwitchTab('ledger')">出入库记录</button>
+    <button type="button" class="app-tab" data-tab="alert" onclick="ivSwitchTab('alert')">库存警告</button>
+    <button type="button" class="app-tab" data-tab="tree" onclick="ivSwitchTab('tree')">库存目录</button>
+    <button type="button" class="app-tab" data-tab="orders" onclick="ivSwitchTab('orders')">采购订单</button>
   </div>
 
   {# ── Tab 1: transactions ledger (all 出入库 records in range) ── #}
-  <div class="iv-tab-content active" id="ivTabLedger">
+  <div class="app-tab-content active" id="ivTabLedger">
   <div class="iv-ledger-card">
     <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:4px;">
       <h2 style="margin:0;">出入库记录</h2>
-      <a href="{% url 'core:inventory_transactions_export' %}?from={{ date_from }}&to={{ date_to }}" class="iv-export-btn">⬇ 导出Excel</a>
+      <a href="{% url 'core:inventory_transactions_export' %}?from={{ date_from }}&to={{ date_to }}" class="export-btn">⬇ 导出Excel</a>
     </div>
     <p class="iv-hint">范围 {{ date_from }} ~ {{ date_to }} · 共 {{ txns|length }} 条流水 · 点击「记录范围」日期可切换</p>
 
@@ -294,10 +260,10 @@ table.iv-ledger .lvl-tag.warn { background: #fdf6ec; color: #cc7722; }
       <input type="date" id="ivLedgerFrom" value="{{ date_from }}">
       <span>~</span>
       <input type="date" id="ivLedgerTo" value="{{ date_to }}">
-      <button type="button" class="iv-preset" onclick="ivLedgerApply()">应用</button>
-      <button type="button" class="iv-preset" onclick="ivLedgerPreset(30)">最近30天</button>
-      <button type="button" class="iv-preset" onclick="ivLedgerPreset(90)">最近90天</button>
-      <button type="button" class="iv-preset" onclick="ivLedgerPreset(365)">最近1年</button>
+      <button type="button" class="preset-pill" onclick="ivLedgerApply()">应用</button>
+      <button type="button" class="preset-pill" onclick="ivLedgerPreset(30)">最近30天</button>
+      <button type="button" class="preset-pill" onclick="ivLedgerPreset(90)">最近90天</button>
+      <button type="button" class="preset-pill" onclick="ivLedgerPreset(365)">最近1年</button>
     </div>
 
     {% if txns %}
@@ -376,7 +342,7 @@ table.iv-ledger .lvl-tag.warn { background: #fdf6ec; color: #cc7722; }
   </div>{# /#ivTabLedger #}
 
   {# ── Tab 2: stock alert (warning / alert levels with slider) ── #}
-  <div class="iv-tab-content" id="ivTabAlert">
+  <div class="app-tab-content" id="ivTabAlert">
   <div class="iv-alert-card">
     <h2>库存警告</h2>
     <div class="iv-alert-ctrl">
@@ -408,15 +374,15 @@ table.iv-ledger .lvl-tag.warn { background: #fdf6ec; color: #cc7722; }
   </div>{# /#ivTabAlert #}
 
   {# ── Tab 3: inventory tree (stock editing) ── #}
-  <div class="iv-tab-content" id="ivTabTree">
+  <div class="app-tab-content" id="ivTabTree">
   <div class="iv-card">
     <div class="iv-card-head">
       <h2>库存数量与流水</h2>
       <div class="iv-head-actions">
         <span id="ivSaveMsg"></span>
-        <button type="button" class="iv-add-top-btn" onclick="ivOpenCreate('', '顶层')">+ 新建目录/部件</button>
-        <a href="{% url 'core:inventory_export_excel' %}" class="iv-export-btn">⬇ 导出Excel</a>
-        <button type="button" class="btn btn-primary" id="ivSaveBtn" onclick="ivSave()">保存库存数量</button>
+        <button type="button" class="btn-sm btn-secondary" onclick="ivOpenCreate('', '顶层')">+ 新建目录/部件</button>
+        <a href="{% url 'core:inventory_export_excel' %}" class="btn-sm btn-secondary" style="text-decoration:none;">⬇ 导出Excel</a>
+        <button type="button" class="btn-sm btn-primary" id="ivSaveBtn" onclick="ivSave()">保存库存数量</button>
       </div>
     </div>
     <p class="iv-hint">点击层级展开 · 叶子节点可编辑库存数量并查看出入库记录 · 每个节点右侧 + 可新建子项、🗑 可删除</p>
@@ -427,9 +393,9 @@ table.iv-ledger .lvl-tag.warn { background: #fdf6ec; color: #cc7722; }
       <input type="date" id="ivFrom" value="{{ date_from }}">
       <span>~</span>
       <input type="date" id="ivTo" value="{{ date_to }}">
-      <button type="button" class="iv-preset" data-days="30" onclick="ivPreset(30)">最近30天</button>
-      <button type="button" class="iv-preset" data-days="90" onclick="ivPreset(90)">最近90天</button>
-      <button type="button" class="iv-preset" data-days="365" onclick="ivPreset(365)">最近1年</button>
+      <button type="button" class="preset-pill" data-days="30" onclick="ivPreset(30)">最近30天</button>
+      <button type="button" class="preset-pill" data-days="90" onclick="ivPreset(90)">最近90天</button>
+      <button type="button" class="preset-pill" data-days="365" onclick="ivPreset(365)">最近1年</button>
     </div>
 
     <input type="text" class="iv-search" id="ivSearch" placeholder="搜索物料名称…" oninput="ivFilter()">
@@ -448,46 +414,46 @@ table.iv-ledger .lvl-tag.warn { background: #fdf6ec; color: #cc7722; }
   </div>{# /#ivTabTree #}
 
   {# ── Tab 4: 采购订单 ── #}
-  <div class="iv-tab-content" id="ivTabOrders">
+  <div class="app-tab-content" id="ivTabOrders">
     <div class="po-top">
       <input type="text" id="poSearch" class="po-search" placeholder="搜索 灌溉订单编号 / PO号 / 项目名称…">
-      <a href="{% url 'core:purchase_order_export_excel' %}" class="po-new-btn" style="background:#fff;color:var(--color-primary,#2D6A4F);border:1px solid var(--color-primary,#2D6A4F);text-decoration:none;display:inline-block;margin-right:0;">⬇ 导出Excel</a>
-      <button type="button" class="po-new-btn" onclick="poOpenCreate()">+ 新建订单</button>
+      <a href="{% url 'core:purchase_order_export_excel' %}" class="btn-sm btn-secondary">⬇ 导出Excel</a>
+      <button type="button" class="btn-sm btn-primary" onclick="poOpenCreate()" style="margin-left:auto;">+ 新建订单</button>
     </div>
     <div id="poList"></div>
-    <div id="poEmpty" class="po-empty" style="display:none;">暂无采购订单，点击「新建订单」创建。</div>
+    <div id="poEmpty" class="app-empty" style="display:none; padding:40px;">暂无采购订单，点击「新建订单」创建。</div>
   </div>
 </div>
 
-{# ── 采购订单 create / edit modal ── #}
-<div class="po-mask" id="poMask">
-  <div class="po-dialog">
-    <div class="po-dlg-head">
+{# ── 采购订单 create / edit modal (shared .app-mask / .app-dialog shell) ── #}
+<div class="app-mask" id="poMask">
+  <div class="app-dialog">
+    <div class="app-dlg-head">
       <h3 id="poDlgTitle">新建采购订单</h3>
-      <button type="button" class="po-dlg-close" onclick="poCloseModal()">×</button>
+      <button type="button" class="app-close" onclick="poCloseModal()">×</button>
     </div>
-    <div class="po-dlg-body">
-      <label>灌溉订单编号 <span class="req">*</span></label>
-      <input type="text" id="poForder_number" placeholder="必填，唯一" autocomplete="off">
-      <label>PO号</label>
-      <input type="text" id="poFpo_number" placeholder="PO号（可选）" autocomplete="off">
-      <label>PO未税金额</label>
-      <input type="number" id="poFpo_amount_untaxed" placeholder="金额（可选）" step="0.01" min="0">
-      <label>收货日期</label>
-      <input type="date" id="poFreceived_date">
-      <label>项目名称</label>
-      <input type="text" id="poFproject_name" placeholder="项目名称（可选）" autocomplete="off">
-      <label>项目code</label>
-      <input type="text" id="poFproject_code" placeholder="项目code（可选）" autocomplete="off">
-      <label>计划采购物料</label>
+    <div class="app-body">
+      <label class="iv-field">灌溉订单编号 <span class="req">*</span></label>
+      <input type="text" id="poForder_number" class="iv-input" placeholder="必填，唯一" autocomplete="off">
+      <label class="iv-field">PO号</label>
+      <input type="text" id="poFpo_number" class="iv-input" placeholder="PO号（可选）" autocomplete="off">
+      <label class="iv-field">PO未税金额</label>
+      <input type="number" id="poFpo_amount_untaxed" class="iv-input" placeholder="金额（可选）" step="0.01" min="0">
+      <label class="iv-field">收货日期</label>
+      <input type="date" id="poFreceived_date" class="iv-input">
+      <label class="iv-field">项目名称</label>
+      <input type="text" id="poFproject_name" class="iv-input" placeholder="项目名称（可选）" autocomplete="off">
+      <label class="iv-field">项目code</label>
+      <input type="text" id="poFproject_code" class="iv-input" placeholder="项目code（可选）" autocomplete="off">
+      <label class="iv-field">计划采购物料</label>
       <div id="poPlannedList"></div>
       <div id="poAddTrigger" style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border:1px dashed #bbb;border-radius:8px;cursor:pointer;background:#fff;font-size:.9rem;margin-top:6px;">
         <span style="color:#2D6A4F;">+ 添加物料</span><span style="font-size:.8em;color:#999;">▶</span>
       </div>
     </div>
-    <div class="po-dlg-foot">
-      <button type="button" class="po-dlg-cancel" onclick="poCloseModal()">取消</button>
-      <button type="button" class="po-dlg-submit" id="poDlgSubmit" onclick="poSubmit()">创建</button>
+    <div class="app-foot">
+      <button type="button" class="btn-sm btn-secondary" style="flex:1;justify-content:center;" onclick="poCloseModal()">取消</button>
+      <button type="button" class="btn-sm btn-primary" style="flex:1;justify-content:center;" id="poDlgSubmit" onclick="poSubmit()">创建</button>
     </div>
   </div>
 </div>
@@ -636,8 +602,8 @@ function ivAlertRefresh() {
 
 // Tab switching (出入库记录 / 库存警告 / 库存目录 / 采购订单).
 function ivSwitchTab(tab) {
-    document.querySelectorAll('.iv-tab').forEach(function (t) { t.classList.toggle('active', t.dataset.tab === tab); });
-    document.querySelectorAll('.iv-tab-content').forEach(function (c) {
+    document.querySelectorAll('.app-tab').forEach(function (t) { t.classList.toggle('active', t.dataset.tab === tab); });
+    document.querySelectorAll('.app-tab-content').forEach(function (c) {
         c.classList.toggle('active', c.id === 'ivTab' + tab.charAt(0).toUpperCase() + tab.slice(1));
     });
     if (tab === 'alert') ivAlertRefresh();
@@ -995,7 +961,7 @@ function esc(s) {
 
 // Quick date-range presets.
 function ivPreset(days) {
-    document.querySelectorAll('.iv-preset').forEach(function (b) { b.classList.remove('on'); });
+    document.querySelectorAll('#ivTabTree .preset-pill').forEach(function (b) { b.classList.remove('on'); });
     event.target.classList.add('on');
     var to = new Date(), from = new Date();
     from.setDate(from.getDate() - days);
@@ -1083,31 +1049,75 @@ function poBuildRows(p) {
     var txnLine = p.txn_count
         ? '<div class="po-txn-count">入库次数：' + p.txn_count + ' 次</div>'
         : '<div class="po-txn-count">尚无入库记录</div>';
-    var detail = '<div class="po-t-detail-inner">' +
+    var canComplete = !p.is_completed && _poMatchComplete(p);
+    var actions = '<div class="po-actions">' +
+        '<button class="btn-sm btn-secondary" onclick="poOpenEdit(' + p.id + ')">编辑</button>';
+    if (p.is_completed) {
+        actions += '<span class="po-done-tag">✓ 已完成</span>';
+    } else if (canComplete) {
+        actions += '<button class="btn-sm btn-primary" onclick="poComplete(' + p.id + ')">确认完成</button>';
+    }
+    actions += '<button class="btn-sm btn-danger" onclick="poDelete(' + p.id + ')">删除</button></div>';
+    var detail = '<div>' +
         (p.project_name || p.project_code
             ? '<div class="po-grid">' +
                 (p.project_name ? '<div><span class="lbl">项目名称</span>' + _poEsc(p.project_name) + '</div>' : '') +
                 (p.project_code ? '<div><span class="lbl">项目code</span>' + _poEsc(p.project_code) + '</div>' : '') +
               '</div>' : '') +
         plannedHtml + partsHtml + txnLine +
-        '<div class="po-actions">' +
-            '<button class="po-act-btn" onclick="poOpenEdit(' + p.id + ')">编辑</button>' +
-            '<button class="po-act-btn danger" onclick="poDelete(' + p.id + ')">删除</button>' +
-        '</div></div>';
+        actions +
+        (canComplete ? '<div class="po-txn-count" style="color:#1565c0;">计划采购与已入库物料完全一致，可确认收货完成。</div>' : '') +
+        '</div>';
+    // Order-number cell: append a state chip so completed / completable status is visible at a glance.
+    var stateChip = p.is_completed
+        ? '<span class="po-done-tag">已完成</span>'
+        : (canComplete ? '<span class="po-can-complete">可收货完成</span>' : '');
     return '<tr class="po-t-row" data-key="' + _poEsc(key) + '">' +
-        '<td class="po-t-order">' + _poEsc(p.order_number) + '</td>' +
+        '<td class="po-t-order">' + _poEsc(p.order_number) + stateChip + '</td>' +
         '<td>' + (p.po_number ? _poEsc(p.po_number) : '—') + '</td>' +
         '<td>' + _poEsc(p.project_name || '—') + '</td>' +
         '<td>' + _poEsc(p.received_date || '—') + '</td>' +
-        '<td class="po-t-num">' + (p.po_amount_untaxed ? '¥' + _poEsc(p.po_amount_untaxed) : '—') + '</td>' +
-        '<td class="po-t-num">' + (p.planned_lines ? p.planned_lines.length : 0) + '</td>' +
-        '<td class="po-t-num">' + (p.txn_count || 0) + '</td>' +
+        '<td class="num">' + (p.po_amount_untaxed ? '¥' + _poEsc(p.po_amount_untaxed) : '—') + '</td>' +
+        '<td class="num">' + (p.planned_lines ? p.planned_lines.length : 0) + '</td>' +
+        '<td class="num">' + (p.txn_count || 0) + '</td>' +
         '<td>' + _poEsc(p.created_at || '—') + '</td>' +
         '<td style="text-align:right;white-space:nowrap;">' +
-            '<button type="button" class="po-act-btn" style="font-size:.76rem;padding:3px 8px;" onclick="poToggleDetail(' + p.id + ')">详情 ▾</button>' +
+            '<button type="button" class="btn-sm btn-secondary" style="font-size:.76rem;padding:3px 10px;" onclick="poToggleDetail(' + p.id + ')">详情 ▾</button>' +
         '</td>' +
     '</tr>' +
-    '<tr class="po-t-row-detail" id="poDetailRow-' + p.id + '"><td colspan="9">' + detail + '</td></tr>';
+    '<tr class="app-row-detail" id="poDetailRow-' + p.id + '"><td colspan="9"><div class="app-detail-inner">' + detail + '</div></td></tr>';
+}
+// A PO is "match-complete" when its planned lines and received parts agree on
+// every category AND per-category quantity. Empty planned + empty received
+// (nothing to receive) does NOT count — there must be at least one planned line.
+function _poMatchComplete(p) {
+    var planned = p.planned_lines || [], parts = p.parts || [];
+    if (!planned.length) return false;
+    if (planned.length !== (parts.length || 0)) {
+        // lengths can still differ when received aggregates duplicates; compare maps.
+    }
+    var pm = {}, rm = {};
+    planned.forEach(function (ln) { pm[ln.category_id] = (pm[ln.category_id] || 0) + (ln.qty || 0); });
+    parts.forEach(function (ln) { rm[ln.category_id] = (rm[ln.category_id] || 0) + (ln.qty || 0); });
+    var keys = Object.keys(pm);
+    if (keys.length !== Object.keys(rm).length) return false;
+    return keys.every(function (k) { return pm[k] === rm[k]; });
+}
+function poComplete(pid) {
+    if (!confirm('确认此订单已收货完成？将自动填入今日为收货日期并标记为已完成（仍可被项目引用）。')) return;
+    var csrf = (document.cookie.match(/csrftoken=([^;]+)/) || [])[1] || '';
+    fetch('/purchase-orders/' + pid + '/complete/', {
+        method: 'POST', headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRFToken': csrf }
+    }).then(function (r) { return r.json(); }).then(function (d) {
+        if (d.success) {
+            var p = _poFind(pid);
+            if (p) { p.is_completed = true; if (d.received_date) p.received_date = d.received_date; }
+            poRender();
+            ivToast(d.message, false);
+        } else {
+            ivToast(d.message || '操作失败', true);
+        }
+    }).catch(function () { ivToast('网络错误', true); });
 }
 function poToggleDetail(pid) {
     var row = document.getElementById('poDetailRow-' + pid);
@@ -1118,10 +1128,10 @@ function poRender() {
     var empty = document.getElementById('poEmpty');
     if (!PO_DATA.length) { list.innerHTML = ''; empty.style.display = ''; return; }
     empty.style.display = 'none';
-    var head = '<div class="po-table-wrap"><table class="po-table"><thead><tr>' +
+    var head = '<div class="app-table-wrap"><table class="app-table"><thead><tr>' +
         '<th>灌溉订单编号</th><th>PO号</th><th>项目名称</th><th>收货日期</th>' +
-        '<th class="po-t-num">PO未税金额</th><th class="po-t-num">计划采购</th>' +
-        '<th class="po-t-num">入库次数</th><th>创建日期</th><th style="text-align:right;">操作</th>' +
+        '<th class="num">PO未税金额</th><th class="num">计划采购</th>' +
+        '<th class="num">入库次数</th><th>创建日期</th><th style="text-align:right;">操作</th>' +
         '</tr></thead><tbody>';
     list.innerHTML = head + PO_DATA.map(poBuildRows).join('') + '</tbody></table></div>';
     poApplyFilter();

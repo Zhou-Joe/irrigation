@@ -15,6 +15,8 @@
     <link rel="stylesheet" href="{% static 'css/design-system.css' %}?v=20260421">
     <!-- Component Styles -->
     <link rel="stylesheet" href="{% static 'css/style.css' %}?v=20260704">
+    <!-- Shared list-page components (wrap, tabs, filter-card, btn-sm, app-table, modal) -->
+    <link rel="stylesheet" href="{% static 'css/app.css' %}?v=20260705">
 
     {% block extra_css %}{% endblock %}
 
@@ -182,6 +184,43 @@
             }
         }
 
+        /* ── Notification popup (shared, all authenticated pages) ────────────
+           Surfaces per-user notifications (comments, request status changes,
+           resubmits) as a modal card. Department users — the majority of request
+           submitters — land on /requests/ (not the dashboard) so this lives in
+           base.html rather than the dashboard-only announcement popup. */
+        .notif-popup { position: fixed; inset: 0; background: rgba(0,0,0,0.55); z-index: 4000; display: none; align-items: center; justify-content: center; padding: 16px; }
+        .notif-card { background: #fff; border-radius: 14px; max-width: 460px; width: 100%; max-height: 86vh; overflow-y: auto; padding: 22px 24px; box-shadow: 0 12px 40px rgba(0,0,0,0.25); }
+        .notif-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; gap: 8px; }
+        .notif-badge { font-size: 0.82rem; font-weight: 600; color: #1565c0; background: #e3f2fd; padding: 3px 10px; border-radius: 12px; }
+        .notif-counter { font-size: 0.78rem; color: #999; margin-left: auto; }
+        .notif-x { background: none; border: none; font-size: 1.5rem; color: #aaa; cursor: pointer; line-height: 1; padding: 0 2px; }
+        .notif-x:hover { color: #555; }
+        .notif-title { font-size: 1.12rem; font-weight: 700; color: #222; margin: 0 0 4px; }
+        .notif-time { font-size: 0.76rem; color: #aaa; margin: 0 0 12px; }
+        .notif-body { font-size: 0.92rem; color: #333; line-height: 1.6; white-space: pre-wrap; word-break: break-word; margin-bottom: 18px; }
+        .notif-actions { display: flex; gap: 10px; justify-content: flex-end; }
+        .notif-btn { border: none; border-radius: 8px; padding: 9px 22px; font-size: 0.9rem; font-weight: 600; cursor: pointer; }
+        .notif-btn:active { transform: scale(0.97); }
+        .notif-btn:disabled { opacity: 0.6; cursor: default; }
+        .notif-btn.goto { background: #f3f4f6; color: #333; text-decoration: none; display: none; }   /* shown only when link present */
+        .notif-btn.ack { background: var(--color-primary, #2D6A4F); color: #fff; }
+
+        /* Nav unread badge — sits next to the username so notifications are
+           discoverable even after the popup is dismissed. The count pill pins to
+           the bell's top-right (the conventional spot) instead of sitting beside it. */
+        .top-nav-notif { position: relative; display: inline-flex; align-items: center; color: rgba(245,240,232,0.85); padding: 6px 8px; border-radius: 6px; cursor: pointer; line-height: 0; }
+        .top-nav-notif:hover { background: rgba(255,255,255,0.12); color: #fff; }
+        .top-nav-notif-icon { display: block; }
+        .top-nav-notif .notif-count {
+            position: absolute; top: 0; right: 0; transform: translate(40%, -40%);
+            background: var(--color-warning, #CC7722); color: #fff;
+            font-size: 0.66rem; font-weight: 700; padding: 0 5px;
+            border-radius: 9px; min-width: 16px; height: 16px; line-height: 16px;
+            text-align: center; display: none; border: 1.5px solid var(--color-primary, #1B4332);
+        }
+        .top-nav-notif .notif-count.show { display: inline-block; }
+
     </style>
     <script>
     function toggleMobileNav() {
@@ -213,6 +252,13 @@
             </div>
         </div>
         <div class="top-nav-right">
+            <span class="top-nav-notif" id="navNotifBtn" title="通知" onclick="reopenNotifPopup()">
+                <svg class="top-nav-notif-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"></path>
+                    <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+                </svg>
+                <span class="notif-count" id="navNotifCount">0</span>
+            </span>
             <a href="{% url 'core:profile' %}" class="top-nav-user">{{ user.get_full_name|default:user.username }}</a>
             <a href="{% url 'core:logout' %}" class="top-nav-logout">退出</a>
         </div>
@@ -239,6 +285,112 @@
 
     {% if user.is_authenticated and watermark_text %}
     <div class="anti-leak-watermark" aria-hidden="true"></div>
+    {% endif %}
+
+    {# ── Per-user notification popup (shared, all authed pages) ── #}
+    {% if user.is_authenticated %}
+    <div id="notifPopup" class="notif-popup" onclick="if(event.target===this)closeNotifPopup()">
+        <div class="notif-card">
+            <div class="notif-header">
+                <span class="notif-badge"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg> 通知</span>
+                <span class="notif-counter" id="notifCounter"></span>
+                <button type="button" class="notif-x" onclick="closeNotifPopup()" title="关闭">&times;</button>
+            </div>
+            <div id="notifEmpty" style="display:none; text-align:center; color:#999; padding:24px 0; font-size:0.9rem;">暂无新通知</div>
+            <div id="notifContent">
+                <h3 class="notif-title" id="notifTitle"></h3>
+                <p class="notif-time" id="notifTime"></p>
+                <div class="notif-body" id="notifBody"></div>
+                <div class="notif-actions">
+                    <a class="notif-btn goto" id="notifGoto" href="#" target="_blank" rel="noopener">转到</a>
+                    <button type="button" class="notif-btn ack" id="notifAckBtn" onclick="ackNotif()">我已知晓</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script id="unread-notifications-data" type="application/json">{{ unread_notifications_json|default:'[]'|safe }}</script>
+    <script>
+    (function () {
+        var queue = [];
+        var autoShown = false;   // only auto-pop once per page-load, for unread items
+        function load() {
+            var el = document.getElementById('unread-notifications-data');
+            if (!el) return;
+            try { queue = JSON.parse(el.textContent || '[]'); } catch (e) { queue = []; }
+            updateBadge();
+            // Auto-show the popup once on load IF there are unread notifications.
+            // After that, the bell is the only way to reopen it (a toggle), so the
+            // popup doesn't keep re-appearing on every navigation.
+            if (queue.length && !autoShown) { autoShown = true; openPopup(); }
+        }
+        function updateBadge() {
+            var b = document.getElementById('navNotifCount');
+            if (!b) return;
+            if (queue.length) { b.textContent = queue.length > 99 ? '99+' : queue.length; b.classList.add('show'); }
+            else { b.classList.remove('show'); }
+        }
+        function renderCurrent() {
+            var popup = document.getElementById('notifPopup');
+            if (!popup) return;
+            var empty = document.getElementById('notifEmpty');
+            var content = document.getElementById('notifContent');
+            if (!queue.length) {
+                // Empty state: bell click still gives feedback ("暂无新通知").
+                if (empty) empty.style.display = 'block';
+                if (content) content.style.display = 'none';
+                document.getElementById('notifCounter').textContent = '';
+                popup.style.display = 'flex';
+                return;
+            }
+            if (empty) empty.style.display = 'none';
+            if (content) content.style.display = '';
+            var n = queue[0];
+            document.getElementById('notifTitle').textContent = n.title || '';
+            document.getElementById('notifTime').textContent = n.time || '';
+            document.getElementById('notifBody').textContent = n.body || '';
+            document.getElementById('notifCounter').textContent = queue.length > 1 ? (queue.length + ' 条待确认') : '';
+            var goto = document.getElementById('notifGoto');
+            if (n.link) { goto.href = n.link; goto.style.display = 'inline-block'; }
+            else { goto.style.display = 'none'; }
+            document.getElementById('notifAckBtn').disabled = false;
+            popup.style.display = 'flex';
+        }
+        // The bell: TOGGLES the popup open/closed. Always responsive — opens even
+        // when the queue is empty (shows the empty state) so a click is never a no-op.
+        function openPopup() { renderCurrent(); }
+        window.reopenNotifPopup = function () {
+            var popup = document.getElementById('notifPopup');
+            if (!popup) return;
+            if (popup.style.display === 'flex') { popup.style.display = 'none'; }   // toggle off
+            else { openPopup(); }                                                    // toggle on
+        };
+        // Close (✕ / backdrop click / Esc) — dismisses WITHOUT marking read, so the
+        // notification stays in the queue and reappears next page-load until acked.
+        window.closeNotifPopup = function () {
+            var popup = document.getElementById('notifPopup');
+            if (popup) popup.style.display = 'none';
+        };
+        document.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape') { window.closeNotifPopup(); }
+        });
+        window.ackNotif = function () {
+            if (!queue.length) return;
+            var n = queue[0];
+            var btn = document.getElementById('notifAckBtn');
+            btn.disabled = true;
+            var csrf = (document.cookie.split('; ').find(function (c) { return c.indexOf('csrftoken=') === 0; }) || '').split('=')[1] || '';
+            fetch('/api/notifications/' + n.id + '/read/', {
+                method: 'POST', headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRFToken': csrf },
+            }).then(function (r) { return r.json(); }).then(function () {
+                queue.shift(); updateBadge();
+                // After acking the last one, show the empty state (don't auto-close)
+                // so the user sees confirmation their queue cleared.
+                renderCurrent();
+            }).catch(function () { btn.disabled = false; alert('网络错误，请重试'); });
+        };
+        if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', load); else load();
+    })();
+    </script>
     {% endif %}
 
     {% block extra_js %}{% endblock %}

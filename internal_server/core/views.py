@@ -326,7 +326,7 @@ def user_login(request):
             # Check if dept user - redirect to requests page (water requests focus)
             try:
                 DepartmentUserProfile.objects.get(user=user, active=True)
-                redirect_url = 'core:requests'
+                redirect_url = 'core:water_requests'
             except DepartmentUserProfile.DoesNotExist:
                 pass
 
@@ -6552,16 +6552,27 @@ def _build_chart_data(data_source, metric, date_from, date_to,
             }
 
         elif metric == 'by_submitter':
-            entries = list(qs.filter(submitter__isnull=False)
-                           .values('submitter__full_name').annotate(count=Count('id'))
-                           .order_by('-count')[:15])
+            # Merge two attribution paths: irrigation workers (submitter) and
+            # department users (submitter_user). The WaterRequest model now allows
+            # either; grouping only on submitter__full_name silently drops dept users.
+            agg = {}
+            for e in qs.filter(submitter__isnull=False).values('submitter__full_name').annotate(c=Count('id')):
+                nm = e['submitter__full_name'] or '未指定'
+                agg[nm] = agg.get(nm, 0) + e['c']
+            from django.contrib.auth import get_user_model as _gum
+            _User = _gum()
+            for e in qs.filter(submitter_user__isnull=False).values('submitter_user_id').annotate(c=Count('id')):
+                u = _User.objects.filter(pk=e['submitter_user_id']).first()
+                nm = (u.get_full_name() or u.username) if u else '未指定'
+                agg[nm] = agg.get(nm, 0) + e['c']
+            entries = sorted(agg.items(), key=lambda kv: kv[1], reverse=True)[:15]
             if not entries:
                 return None
             return {
-                'labels': [e['submitter__full_name'] or '未指定' for e in entries],
+                'labels': [nm for nm, _c in entries],
                 'datasets': [{
                     'label': '需求数',
-                    'data': [e['count'] for e in entries],
+                    'data': [c for _nm, c in entries],
                     'backgroundColor': _chart_colors(len(entries)),
                 }]
             }
@@ -7149,10 +7160,17 @@ def water_requests_list(request):
 
     user = request.user
     admin = is_admin(user)
-    qs = WaterRequest.objects.select_related('zone', 'submitter', 'approver').prefetch_related('zones').order_by('-created_at', '-id')
+    qs = WaterRequest.objects.select_related('zone', 'submitter', 'submitter_user', 'approver').prefetch_related('zones').order_by('-created_at', '-id')
     if not admin:
+        # Show this user's own submissions. Department users are stored on
+        # submitter_user (they have no Worker row); irrigation workers on submitter.
+        # Match either attribution so both paths see their own requests.
+        from django.db.models import Q
         worker = get_worker_for_user(user)
-        qs = qs.filter(submitter=worker) if worker else qs.none()
+        q = Q(submitter_user=user)
+        if worker:
+            q |= Q(submitter=worker)
+        qs = qs.filter(q)
 
     status_filter = request.GET.get('status', '')
     zone_id = request.GET.get('zone', '')
@@ -7311,6 +7329,23 @@ def water_request_update(request, pk):
     wr.approver = get_worker_for_user(request.user)
     wr.processed_at = timezone.now()
     wr.save()
+
+    # Notify the submitter on approve/reject/info_needed (not on bare re-submit).
+    # Recipient is the dept User if set (the common case), else the Worker's User.
+    from core.notifications import notify
+    recipient = wr.submitter_user or (getattr(wr.submitter, 'user', None) if wr.submitter_id else None)
+    zone_label = wr.zone.code if (wr.zone_id and wr.zone) else '区域'
+    _STATUS_NOTIFY = {
+        'approved':     ('request_approved',     '需求已批准',     '你的浇水协调需求已批准'),
+        'rejected':     ('request_rejected',     '需求已拒绝',     '你的浇水协调需求已被拒绝'),
+        'info_needed':  ('request_info_needed',  '需补充信息',     '你的浇水协调需求需补充信息'),
+    }
+    if recipient is not None and new_status in _STATUS_NOTIFY:
+        verb, title, prefix = _STATUS_NOTIFY[new_status]
+        note_suffix = f'：{wr.status_notes}' if wr.status_notes else ''
+        notify(recipient, verb, f'【{zone_label}】{title}',
+               prefix + note_suffix, '/requests/')
+
     return JsonResponse({
         'success': True,
         'message': '已更新',
@@ -7319,6 +7354,71 @@ def water_request_update(request, pk):
         'status_notes': wr.status_notes,
         'approver': wr.approver.full_name if wr.approver else '',
     })
+
+
+@login_required(login_url='core:login')
+@require_POST
+def water_request_resubmit(request, pk):
+    """Re-open an info_needed WaterRequest after the submitter补充信息.
+
+    Submitter-only (matched by submitter_user or submitter). Sets status back to
+    'submitted', appends the note to status_notes (prefixed 【补充】), and notifies
+    the admin who requested the info (wr.approver.user). Idempotent: if an unread
+    resubmitted notification already exists since the last processed_at, don't
+    create a duplicate (submitter re-editing without the admin having seen it).
+    """
+    from core.models import WaterRequest
+    from core.role_utils import get_worker_for_user
+    from core.notifications import notify, resubmit_already_notified
+
+    wr = get_object_or_404(WaterRequest, pk=pk)
+    # Only the request's owner may resubmit (dept user via submitter_user, or
+    # irrigation worker via submitter).
+    worker = get_worker_for_user(request.user)
+    is_owner = (wr.submitter_user_id == request.user.id
+                or (worker is not None and wr.submitter_id == worker.id))
+    if not is_owner:
+        return JsonResponse({'success': False, 'message': '无权操作此需求'}, status=403)
+    if wr.status != 'info_needed':
+        return JsonResponse({'success': False, 'message': '该需求当前无需补充信息'}, status=400)
+
+    note = (request.POST.get('note') or '').strip()
+    if not note:
+        return JsonResponse({'success': False, 'message': '请填写补充信息'}, status=400)
+
+    append = f'\n【补充 {timezone.now():%Y-%m-%d %H:%M}】{note}'
+    wr.status_notes = (wr.status_notes + append) if wr.status_notes else append.strip()
+    wr.status = 'submitted'
+    wr.save()
+
+    # Notify the admin who requested the info (the recorded approver). The approver
+    # is a Worker; reach their User via .user (managers created via
+    # resolve_or_create_worker carry a linked User). Idempotency guard avoids
+    # duplicate unread notifications if the submitter re-edits before the admin
+    # opens the popup.
+    approver_user = getattr(wr.approver, 'user', None) if wr.approver_id else None
+    if approver_user and not resubmit_already_notified(wr):
+        zone_label = wr.zone.code if (wr.zone_id and wr.zone) else '区域'
+        notify(approver_user, 'request_resubmitted',
+               f'【{zone_label}】需求已补充信息重新提交',
+               note[:200], '/requests/')
+
+    return JsonResponse({
+        'success': True,
+        'message': '已补充信息并重新提交',
+        'status': wr.status,
+        'status_display': wr.get_status_display(),
+        'status_notes': wr.status_notes,
+    })
+
+
+@login_required(login_url='core:login')
+@require_POST
+def notification_read(request, nid):
+    """Mark a single notification as read (我已知晓 in the popup)."""
+    from core.notifications import mark_read
+    ok = mark_read(nid, request.user)
+    return JsonResponse({'success': ok})
 
 
 @login_required(login_url='core:login')
@@ -7399,8 +7499,9 @@ def work_report_comments(request, report_id):
     """
     from core.models import WorkReport, WorkReportComment
     from core.role_utils import resolve_or_create_worker, is_admin
+    from core.notifications import notify
 
-    report = get_object_or_404(WorkReport.objects.only('id'), pk=report_id)
+    report = get_object_or_404(WorkReport.objects.select_related('worker'), pk=report_id)
 
     if request.method == 'POST':
         body = (request.POST.get('body') or '').strip()
@@ -7410,6 +7511,27 @@ def work_report_comments(request, report_id):
         comment = WorkReportComment.objects.create(
             work_report=report, author=author, body=body[:2000],
         )
+
+        # Fire notifications: the report owner + prior commenters in the thread,
+        # each excluding the current author (don't notify yourself) and de-duped
+        # within this call. Recipient is a User (the popup key); a Worker with no
+        # linked User is silently skipped by notify().
+        link = f'/work-reports/{report.id}/'
+        author_id = author.id if author else None
+        recipients = []
+        owner_user = getattr(report.worker, 'user', None) if report.worker_id else None
+        if owner_user:
+            recipients.append(owner_user)
+        for c in report.comments.exclude(author_id=author_id).select_related('author__user'):
+            u = getattr(c.author, 'user', None) if c.author_id else None
+            if u and u not in recipients:
+                recipients.append(u)
+        author_name = author.full_name if author else '(未知)'
+        for u in recipients:
+            notify(u, 'comment',
+                   f'{author_name} 评论了工单 #{report.id}',
+                   body[:200], link)
+
         return JsonResponse({
             'success': True,
             'message': '评论已发布',
@@ -7890,9 +8012,11 @@ def water_request_mobile_v2(request):
 
             # ONE request covering all selected zones (multi-zone M2M), so it needs only
             # one approval. Previously each zone got its own request → N rows + N labels.
-            wr = WaterRequest.objects.create(
+            # Submitter attribution: dept users (the common case) are stored on
+            # submitter_user (a Django User); irrigation workers go on submitter(Worker).
+            # Most submitters are department users with no Worker row at all.
+            create_kwargs = dict(
                 zone=zones[0],  # legacy single-zone FK kept for backward-compat
-                submitter=worker,
                 user_type=user_type,
                 request_type=request_type,
                 start_datetime=start_datetime,
@@ -7900,6 +8024,10 @@ def water_request_mobile_v2(request):
                 status='submitted',
                 status_notes=remark,
             )
+            if worker:
+                create_kwargs['submitter'] = worker
+            create_kwargs['submitter_user'] = request.user
+            wr = WaterRequest.objects.create(**create_kwargs)
             wr.zones.set(zones)
 
             return JsonResponse({
@@ -8914,6 +9042,7 @@ def _serialize_purchase_orders(pos):
             'project_name': po.project_name,
             'project_code': po.project_code,
             'received_date': po.received_date.isoformat() if po.received_date else '',
+            'is_completed': po.is_completed,
             'created_at': po.created_at.strftime('%Y-%m-%d') if po.created_at else '',
             'txn_count': txn_count,
             'planned_lines': planned.get(po.id, []),
@@ -9044,6 +9173,64 @@ def purchase_order_delete(request, po_id):
 
 
 @login_required(login_url='core:login')
+@require_POST
+def purchase_order_complete(request, po_id):
+    """Mark a PurchaseOrder completed: requires the planned materials and the
+    received (入库-采购) materials to match exactly — same categories AND same
+    per-category quantity. On success, fills received_date with today (if empty)
+    and sets is_completed=True. Completed POs remain referenceable by projects.
+
+    The match check reuses the same aggregation the page uses: planned lines
+    come from PurchaseOrderLine, received parts from 入库-采购 transaction lines.
+    """
+    from core.models import PurchaseOrder
+    from core.role_utils import get_user_role, ROLE_MANAGER, ROLE_SUPER_ADMIN
+    from datetime import date
+
+    role = get_user_role(request.user)
+    if role not in (ROLE_MANAGER, ROLE_SUPER_ADMIN):
+        return JsonResponse({'success': False, 'message': '无权限'}, status=403)
+
+    po = get_object_or_404(PurchaseOrder, pk=po_id)
+    if po.is_completed:
+        return JsonResponse({'success': False, 'message': '该订单已完成，无需重复操作'})
+
+    # Build {category_id: qty} for planned vs received, then compare exactly.
+    cat_paths = inventory_category_paths()
+    received, _ = _po_received_parts_batch([po.id], cat_paths).get(po.id, ([], 0))
+    planned_map = {}
+    for ln in po.planned_lines.all():
+        planned_map[ln.category_id] = planned_map.get(ln.category_id, 0) + ln.quantity
+    received_map = {}
+    for p in received:
+        received_map[p['category_id']] = received_map.get(p['category_id'], 0) + p['qty']
+
+    if planned_map != received_map:
+        # Build a human-readable diff so the user knows what's still missing/extra.
+        all_cids = set(planned_map) | set(received_map)
+        diffs = []
+        for cid in sorted(all_cids):
+            pq = planned_map.get(cid, 0)
+            rq = received_map.get(cid, 0)
+            if pq != rq:
+                nm = next((p['name'] for p in received if p['category_id'] == cid), None) \
+                     or next((ln.category.name_zh for ln in po.planned_lines.all()
+                              if ln.category_id == cid), f'类别{cid}')
+                diffs.append(f'{nm}（计划 {pq} / 已入库 {rq}）')
+        detail = '；'.join(diffs[:5]) + ('…' if len(diffs) > 5 else '')
+        return JsonResponse({'success': False,
+                             'message': '计划采购与已入库物料不一致，无法完成：' + detail})
+
+    if not po.received_date:
+        po.received_date = date.today()
+    po.is_completed = True
+    po.save()
+    return JsonResponse({'success': True,
+                         'message': f'已确认完成采购订单「{po.order_number}」',
+                         'received_date': po.received_date.isoformat() if po.received_date else ''})
+
+
+@login_required(login_url='core:login')
 def purchase_order_export_excel(request):
     """Export all purchase orders to Excel.
 
@@ -9071,7 +9258,7 @@ def purchase_order_export_excel(request):
     ws = wb.active
     ws.title = '采购订单'
     headers = ['灌溉订单编号', 'PO号', '项目名称', '项目code', '收货日期',
-               'PO未税金额', '计划采购', '已入库', '入库次数', '创建日期']
+               'PO未税金额', '计划采购', '已入库', '入库次数', '状态', '创建日期']
     ws.append(headers)
 
     header_fill = PatternFill('solid', fgColor='1B4332')
@@ -9110,6 +9297,7 @@ def purchase_order_export_excel(request):
             '\n'.join(planned_lines),
             '\n'.join(received_lines),
             data.get('txn_count', 0),
+            '已完成' if po.is_completed else '进行中',
             po.created_at.strftime('%Y-%m-%d') if po.created_at else '',
         ]
         ws.append(row)

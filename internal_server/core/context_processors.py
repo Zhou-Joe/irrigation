@@ -1,6 +1,8 @@
 """
 Context processors for making data available to all templates.
 """
+import json
+
 from .models import RegistrationRequest, WaterRequest
 from .role_utils import get_user_role, is_admin, is_field_worker, is_dept_user
 
@@ -8,36 +10,51 @@ from .role_utils import get_user_role, is_admin, is_field_worker, is_dept_user
 def notifications(request):
     """
     Provide notification data to all templates.
+
+    Two channels feed the UI:
+    - ``unread_notifications_json``: per-user Notification rows (the base.html
+      popup). Computed for EVERY authenticated user (admins, workers, and the
+      department users who are the majority of request submitters) so the popup
+      shows on whichever page they land.
+    - ``notifications_list`` / ``notification_count``: a legacy admin-only
+      pending-registrations + pending-water-requests digest. Currently unused by
+      any template but retained; the unread_notifications channel above is what
+      the popup actually consumes.
     """
     notifications_list = []
+    unread_notifications_json = '[]'
 
-    # Only show notifications for authenticated admins
-    if request.user.is_authenticated and is_admin(request.user):
-        # Pending registration requests
-        for reg in RegistrationRequest.objects.filter(status='pending').order_by('-created_at')[:5]:
-            notifications_list.append({
-                'type': 'registration',
-                'id': reg.id,
-                'title': f'新注册申请: {reg.full_name}',
-                'description': f'{reg.get_requested_role_display()} - {reg.phone}',
-                'url': '/user-management/?tab=approval',
-                'created_at': reg.created_at,
-            })
+    if request.user.is_authenticated:
+        # Per-user inbox (the popup). Cheap: one indexed query per page load.
+        from .notifications import unread_notifications_for
+        unread = unread_notifications_for(request.user)
+        unread_notifications_json = json.dumps(unread, ensure_ascii=False)
 
-        # Pending water requests
-        for req in WaterRequest.objects.filter(status='submitted').order_by('-created_at')[:5]:
-            notifications_list.append({
-                'type': 'water',
-                'id': req.id,
-                'title': f'浇水协调需求: {req.zone.name}',
-                'description': f'{req.get_request_type_display()} - {req.user_type}',
-                'url': f'/requests/water/{req.id}/',
-                'created_at': req.created_at,
-            })
+        # Legacy admin digest (retained for backward compat).
+        if is_admin(request.user):
+            for reg in RegistrationRequest.objects.filter(status='pending').order_by('-created_at')[:5]:
+                notifications_list.append({
+                    'type': 'registration',
+                    'id': reg.id,
+                    'title': f'新注册申请: {reg.full_name}',
+                    'description': f'{reg.get_requested_role_display()} - {reg.phone}',
+                    'url': '/user-management/?tab=approval',
+                    'created_at': reg.created_at,
+                })
+            for req in WaterRequest.objects.filter(status='submitted').order_by('-created_at')[:5]:
+                notifications_list.append({
+                    'type': 'water',
+                    'id': req.id,
+                    'title': f'浇水协调需求: {req.zone.name}',
+                    'description': f'{req.get_request_type_display()} - {req.user_type}',
+                    'url': f'/requests/water/{req.id}/',
+                    'created_at': req.created_at,
+                })
 
     return {
         'notifications_list': notifications_list,
         'notification_count': len(notifications_list),
+        'unread_notifications_json': unread_notifications_json,
     }
 
 
