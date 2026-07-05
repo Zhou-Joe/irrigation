@@ -92,6 +92,12 @@ table.pm-table tbody tr:hover td { background: #f9fbf9; }
 .pm-bal.neg { color: #c0392b; font-weight: 600; }
 .pm-po-chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .pm-po-chip { font-size: .76rem; background: #e8f5e9; color: var(--color-primary, #2e7d32); padding: 3px 9px; border-radius: 8px; }
+.pm-po-card { border: 1px solid #e6ece6; border-radius: 8px; padding: 8px 10px; margin-bottom: 8px; background: #fafbfa; }
+.pm-po-card-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.pm-po-card-name { font-weight: 600; font-size: .84rem; color: var(--color-primary, #2e7d32); }
+.pm-po-card-meta { font-size: .76rem; color: #888; }
+.pm-po-part { font-size: .76rem; color: #555; padding: 2px 0; }
+.pm-po-part b { color: var(--color-primary, #2e7d32); }
 .pm-labor-row { display: flex; gap: 16px; font-size: .84rem; color: #555; flex-wrap: wrap; }
 
 /* ── 出库记录 cards ── */
@@ -193,10 +199,10 @@ table.pm-table tbody tr:hover td { background: #f9fbf9; }
           <tr>
             <th>项目</th>
             <th>开工 ~ 计划完工</th>
-            <th class="pm-t-num">第一方预算</th>
+            <th class="pm-t-num">灌溉组预算</th>
             <th class="pm-t-num">第三方预算</th>
             <th class="pm-t-num">材料预算</th>
-            <th class="pm-t-num">第一方工时</th>
+            <th class="pm-t-num">灌溉组工时</th>
             <th class="pm-t-num">第三方工时</th>
             <th class="pm-t-num">工单</th>
             <th>状态</th>
@@ -327,7 +333,7 @@ table.pm-table tbody tr:hover td { background: #f9fbf9; }
     <div class="pb-dlg-body">
       <div style="display:flex;gap:12px;">
         <div style="flex:1;">
-          <label>第一方预算工时</label>
+          <label>灌溉组预算工时</label>
           <input type="number" id="pbLabor" min="0" step="0.5" placeholder="小时数（可选）">
         </div>
         <div style="flex:1;">
@@ -420,12 +426,28 @@ function pmRenderDetail(pid) {
             }).join('') + '</tbody></table>';
     }
 
-    // Linked POs.
+    // Linked POs — for each, list materials it purchased that this project also
+    // consumes (matched by category_id), showing the order's total purchased qty.
+    var consumedIds = {};
+    (b.material_consumed || []).forEach(function (ln) { consumedIds[ln.category_id] = true; });
     var poHtml;
     if (b.linked_pos && b.linked_pos.length) {
-        poHtml = '<div class="pm-po-chips">' + b.linked_pos.map(function (p) {
-            return '<span class="pm-po-chip">' + _pmEsc(p.order_number) + (p.po_number ? ' · PO ' + _pmEsc(p.po_number) : '') + (p.po_amount_untaxed ? ' · ¥' + _pmEsc(p.po_amount_untaxed) : '') + '</span>';
-        }).join('') + '</div>';
+        poHtml = b.linked_pos.map(function (p) {
+            var matched = (p.parts || []).filter(function (pt) { return consumedIds[pt.category_id]; });
+            var partsHtml = '';
+            if (matched.length) {
+                partsHtml = '<div style="margin-top:5px;">' + matched.map(function (pt) {
+                    return '<div class="pm-po-part">' + _pmEsc(pt.name) + ' · 共采购 <b>' + pt.qty + '</b> ' + _pmEsc(pt.unit || '') + '</div>';
+                }).join('') + '</div>';
+            }
+            return '<div class="pm-po-card">' +
+                '<div class="pm-po-card-head">' +
+                    '<span class="pm-po-card-name">' + _pmEsc(p.order_number) + '</span>' +
+                    (p.po_number ? '<span class="pm-po-card-meta">PO ' + _pmEsc(p.po_number) + '</span>' : '') +
+                    (p.po_amount_untaxed ? '<span class="pm-po-card-meta">¥' + _pmEsc(p.po_amount_untaxed) + '</span>' : '') +
+                '</div>' + partsHtml +
+            '</div>';
+        }).join('');
     } else {
         poHtml = '<div style="color:#aaa;font-size:.82rem;">暂未关联采购订单</div>';
     }
@@ -454,7 +476,7 @@ function pmRenderDetail(pid) {
             return '<div class="pm-rec pm-wr">' +
                 '<div class="pm-rec-head"><a class="pm-rec-date" href="/work-reports/' + wr.id + '/">工单 #' + wr.id + '</a>' +
                 '<span class="pm-rec-meta">' + _pmEsc(wr.date) +
-                ' · 第一方 ' + wr.team_hours + 'h · 第三方 ' + wr.third_hours + 'h</span></div>' +
+                ' · 灌溉组 ' + wr.team_hours + 'h · 第三方 ' + wr.third_hours + 'h</span></div>' +
                 matHtml +
             '</div>';
         }).join('');

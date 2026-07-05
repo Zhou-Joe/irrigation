@@ -8027,6 +8027,33 @@ def serialize_inventory_tree():
     return roots
 
 
+def inventory_category_paths():
+    """Map every InventoryCategory id → full display path "大类别 › … › 品名".
+
+    Single query + in-memory parent walk. Replaces the previous per-call
+    ``c.parent`` chain walk that fired one DB query per ancestor hop and was
+    copy-pasted across inventory_management, _po_received_parts,
+    _po_planned_lines and _project_budget_data.
+    """
+    from core.models import InventoryCategory
+    rows = (InventoryCategory.objects
+            .values('id', 'name_zh', 'parent_id'))
+    name = {r['id']: r['name_zh'] for r in rows}
+    parent = {r['id']: r['parent_id'] for r in rows}
+    out = {}
+    for cid in name:
+        chain = []
+        cur = parent.get(cid)
+        seen = set()
+        while cur and cur not in seen:        # guard against accidental cycles
+            seen.add(cur)
+            chain.append(name.get(cur, '?'))
+            cur = parent.get(cur)
+        chain.reverse()
+        out[cid] = ' › '.join(chain + [name[cid]]) if chain else name[cid]
+    return out
+
+
 @login_required(login_url='core:login')
 def inventory_modal_data(request):
     """API: return inventory form metadata as JSON for the dashboard modal."""
@@ -8235,31 +8262,26 @@ def inventory_management(request):
     # Stockable leaves for the alert tab — {id, name, path, stock, min}. The
     # threshold filtering is done client-side so the slider updates instantly.
     # Also builds a cat_id → full hierarchy path map reused by the ledger tab.
+    # Path computation uses one query + in-memory parent walk (was N×D queries).
+    full_paths = inventory_category_paths()   # id → "大类别 › … › 品名" (leaf incl.)
+    cat_paths = dict(full_paths)              # alias used by the ledger tab
     leaves = []
-    cat_paths = {}   # id → "大类别 › 小类别 › … › 品名"
     for c in cats:
-        # Build a display path (ancestor names) for every node, not just parts.
-        chain = []
-        p = c.parent
-        while p:
-            chain.append(p.name_zh)
-            p = p.parent
-        chain.reverse()
-        full = ' › '.join(chain + [c.name_zh]) if chain else c.name_zh
-        cat_paths[c.id] = full
         if c.node_type != 'part':
             continue   # only 'part' nodes carry stock; empty categories are skipped
+        # leaves[].path is ancestors only (no leaf name); strip the trailing leaf.
+        full = full_paths.get(c.id, c.name_zh)
+        ancestor_path = full.rsplit(' › ', 1)[0] if ' › ' in full else ''
         leaves.append({
-            'id': c.id, 'name': c.name_zh, 'path': ' › '.join(chain),
+            'id': c.id, 'name': c.name_zh, 'path': ancestor_path,
             'stock': c.current_stock, 'min': c.min_stock,
             'main': c.is_main_material, 'unit': c.unit,
         })
 
-    # Purchase orders for the 采购订单 tab. Serialize with the same helper used by
-    # the (now-removed) standalone page: aggregates 入库-采购 lines per order.
+    # Purchase orders for the 采购订单 tab — batched (2 queries total, was 2 per PO).
     from core.models import PurchaseOrder
     pos = list(PurchaseOrder.objects.all().order_by('-created_at'))
-    pos_json = json.dumps([_serialize_purchase_order(po) for po in pos], ensure_ascii=False)
+    pos_json = json.dumps(_serialize_purchase_orders(pos), ensure_ascii=False)
 
     return render(request, 'core/inventory_management.html', {
         'roots': roots,
@@ -8766,65 +8788,64 @@ def inventory_transactions_export(request):
 # 采购订单 (Purchase Order) 管理
 # ==========================================================================
 
-def _po_received_parts(po):
-    """Aggregate the 入库-采购 lines linked to a PurchaseOrder into a list of
-    {category_id, name, path, qty, unit} and a count of inbound transactions.
+def _po_received_parts_batch(po_ids, cat_paths):
+    """Batched replacement for the old per-PO _po_received_parts.
 
-    A PO's "received parts" are derived from its linked 入库-采购 transactions'
-    line items — quantities summed across all such transactions.
+    One query over 入库-采购 transaction lines for all POs in ``po_ids``,
+    grouped by purchase_order_id. Returns ``{po_id: (parts_list, txn_count)}``,
+    where each part is ``{category_id, name, path, qty, unit}`` (path looked up
+    from the precomputed ``cat_paths`` map — no per-line parent walk).
     """
     from core.models import InventoryTransaction
-    agg = {}   # category_id → {name, unit, qty, path}
-    txn_count = 0
-    txns = (po.transactions
-            .filter(operation='入库', entry_subtype='采购')
+    po_ids = list(po_ids)
+    if not po_ids:
+        return {}
+    agg = {}        # (po_id, cat_id) → entry
+    txn_count = {}  # po_id → int
+    txns = (InventoryTransaction.objects
+            .filter(purchase_order_id__in=po_ids, operation='入库', entry_subtype='采购')
             .prefetch_related('lines__category'))
     for t in txns:
-        txn_count += 1
+        pid = t.purchase_order_id
+        txn_count[pid] = txn_count.get(pid, 0) + 1
         for ln in t.lines.all():
             cat = ln.category
-            key = cat.id
-            if key not in agg:
-                # Build the full hierarchy path for display (大类别 › … › 品名),
-                # including the leaf part itself. Matches the cat_paths convention
-                # used elsewhere in this view for the ledger/目录 tabs.
-                chain = []
-                p = cat.parent
-                while p:
-                    chain.append(p.name_zh)
-                    p = p.parent
-                chain.reverse()
-                full_path = ' › '.join(chain + [cat.name_zh]) if chain else cat.name_zh
-                agg[key] = {'category_id': cat.id, 'name': cat.name_zh,
-                            'path': full_path, 'unit': ln.unit or cat.unit,
-                            'qty': 0}
-            agg[key]['qty'] += ln.quantity
-    return list(agg.values()), txn_count
+            key = (pid, cat.id)
+            entry = agg.get(key)
+            if entry is None:
+                entry = {'category_id': cat.id, 'name': cat.name_zh,
+                         'path': cat_paths.get(cat.id, cat.name_zh),
+                         'unit': ln.unit or cat.unit, 'qty': 0}
+                agg[key] = entry
+            entry['qty'] += ln.quantity
+    out = {}
+    for pid in po_ids:
+        out[pid] = ([v for (p, _c), v in agg.items() if p == pid],
+                    txn_count.get(pid, 0))
+    return out
 
 
-def _po_planned_lines(po):
-    """Serialize a PO's planned purchase lines (PurchaseOrderLine) for the page.
+def _po_planned_lines_batch(po_ids, cat_paths):
+    """Batched replacement for the old per-PO _po_planned_lines.
 
-    Each entry: {category_id, name, path, qty, unit} where path is the full
-    hierarchy "大类别 › … › 品名" (leaf included). Distinct from received parts
-    (`_po_received_parts`), which are derived from 入库-采购 transactions.
+    One query over PurchaseOrderLine for all POs in ``po_ids``, grouped by
+    purchase_order_id. Returns ``{po_id: [{category_id, name, path, qty, unit}]}``.
     """
-    lines = []
-    for ln in po.planned_lines.select_related('category__parent'):
+    from core.models import PurchaseOrderLine
+    po_ids = list(po_ids)
+    if not po_ids:
+        return {}
+    out = {pid: [] for pid in po_ids}
+    for ln in (PurchaseOrderLine.objects
+               .filter(purchase_order_id__in=po_ids)
+               .select_related('category')):
         cat = ln.category
-        chain = []
-        p = cat.parent
-        while p:
-            chain.append(p.name_zh)
-            p = p.parent
-        chain.reverse()
-        full_path = ' › '.join(chain + [cat.name_zh]) if chain else cat.name_zh
-        lines.append({
+        out[ln.purchase_order_id].append({
             'category_id': cat.id, 'name': cat.name_zh,
-            'path': full_path, 'qty': ln.quantity,
-            'unit': ln.unit or cat.unit,
+            'path': cat_paths.get(cat.id, cat.name_zh),
+            'qty': ln.quantity, 'unit': ln.unit or cat.unit,
         })
-    return lines
+    return out
 
 
 def _po_upsert_planned_lines(po, lines_raw):
@@ -8870,23 +8891,41 @@ def _po_upsert_planned_lines(po, lines_raw):
         )
 
 
+def _serialize_purchase_orders(pos):
+    """Serialize a list of PurchaseOrders with 2 queries total (received + planned)
+    instead of 2 queries per PO. Builds the category-path map once.
+    """
+    pos = list(pos)
+    if not pos:
+        return []
+    cat_paths = inventory_category_paths()
+    po_ids = [po.id for po in pos]
+    received = _po_received_parts_batch(po_ids, cat_paths)
+    planned = _po_planned_lines_batch(po_ids, cat_paths)
+    out = []
+    for po in pos:
+        parts, txn_count = received.get(po.id, ([], 0))
+        out.append({
+            'id': po.id,
+            'order_number': po.order_number,
+            'po_number': po.po_number,
+            'po_amount_untaxed': ('' if po.po_amount_untaxed is None
+                                  else f'{po.po_amount_untaxed:.2f}'),
+            'project_name': po.project_name,
+            'project_code': po.project_code,
+            'received_date': po.received_date.isoformat() if po.received_date else '',
+            'created_at': po.created_at.strftime('%Y-%m-%d') if po.created_at else '',
+            'txn_count': txn_count,
+            'planned_lines': planned.get(po.id, []),
+            'parts': parts,
+        })
+    return out
+
+
 def _serialize_purchase_order(po):
-    """Serialize a PurchaseOrder (planned + received parts) for the page."""
-    parts, txn_count = _po_received_parts(po)
-    return {
-        'id': po.id,
-        'order_number': po.order_number,
-        'po_number': po.po_number,
-        'po_amount_untaxed': ('' if po.po_amount_untaxed is None
-                              else f'{po.po_amount_untaxed:.2f}'),
-        'project_name': po.project_name,
-        'project_code': po.project_code,
-        'received_date': po.received_date.isoformat() if po.received_date else '',
-        'created_at': po.created_at.strftime('%Y-%m-%d') if po.created_at else '',
-        'txn_count': txn_count,
-        'planned_lines': _po_planned_lines(po),
-        'parts': parts,
-    }
+    """Serialize a single PurchaseOrder. Thin wrapper over the batched serializer
+    so the create/edit response paths share one code path."""
+    return _serialize_purchase_orders([po])[0]
 
 
 @login_required(login_url='core:login')
@@ -9024,6 +9063,9 @@ def purchase_order_export_excel(request):
         return redirect('core:dashboard')
 
     pos = list(PurchaseOrder.objects.all().order_by('-created_at'))
+    # Batched serialization (2 queries for all POs, not 2 × len(pos)).
+    po_data_list = _serialize_purchase_orders(pos)
+    po_data_by_id = {d['id']: d for d in po_data_list}
 
     wb = Workbook()
     ws = wb.active
@@ -9043,7 +9085,9 @@ def purchase_order_export_excel(request):
         c.alignment = Alignment(horizontal='center', vertical='center')
 
     for po in pos:
-        data = _serialize_purchase_order(po)
+        data = po_data_by_id.get(po.id)
+        if data is None:
+            continue
         # Align planned vs received by category_id, newline-separated.
         planned = {ln['category_id']: ln for ln in data.get('planned_lines', [])}
         received = {ln['category_id']: ln for ln in data.get('parts', [])}
