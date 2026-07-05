@@ -1055,6 +1055,14 @@ class WorkReport(models.Model):
         ordering = ['-date', '-id']
         verbose_name = '维修工作日报'
         verbose_name_plural = '维修工作日报'
+        indexes = [
+            # list/stats queries always pair a date window with worker or
+            # zone_location; the single-column date index could serve only one
+            # dimension. These composites cover both.
+            models.Index(fields=['worker', '-date'], name='core_wr_worker_date'),
+            models.Index(fields=['zone_location', '-date'],
+                         name='core_wr_zone_date'),
+        ]
 
     def __str__(self):
         return f"{self.date} | {self.worker} | {self.location or '(无位置)'}"
@@ -1264,7 +1272,7 @@ class Project(models.Model):
     planned_end_date = models.DateField('计划完工日期', null=True, blank=True)
     notes = models.TextField('备注', blank=True)
     # 人工预算工时（经理填写）。已用工时由关联工单的 Σ team_hours / Σ third_party_hours 自动聚合。
-    labor_budget_hours = models.FloatField('第一方预算工时', null=True, blank=True,
+    labor_budget_hours = models.FloatField('灌溉组预算工时', null=True, blank=True,
                                             help_text='经理填写；已用工时由工单自动汇总')
     third_party_budget_hours = models.FloatField('第三方预算工时', null=True, blank=True,
                                                   help_text='经理填写；已用工时由工单自动汇总')
@@ -1429,6 +1437,16 @@ class InventoryTransaction(models.Model):
         ordering = ['-date', '-id']
         verbose_name = '库存流水'
         verbose_name_plural = '库存流水'
+        indexes = [
+            # Default ordering + the date-range filter on every ledger query.
+            # `date` had no index at all before — every filter(date__gte=…,
+            # date__lte=…) was a full scan.
+            models.Index(fields=['-date', '-id'], name='core_invtxn_date_id'),
+            # 出库-项目 consumption rollup (_project_budget_data) filters on
+            # related_project + operation together.
+            models.Index(fields=['related_project', 'operation'],
+                         name='core_invtxn_proj_op'),
+        ]
 
     def __str__(self):
         return f"{self.date} | {self.operation}-{self.entry_subtype} | {self.worker}"
@@ -1453,6 +1471,11 @@ class InventoryTransactionLine(models.Model):
         unique_together = ('transaction', 'category')
         verbose_name = '库存明细'
         verbose_name_plural = '库存明细'
+        indexes = [
+            # Per-category history query (filter(category=cat).order_by(...)) —
+            # unique_together covers (transaction, category), not this order.
+            models.Index(fields=['category'], name='core_invline_cat'),
+        ]
 
     def __str__(self):
         return f"{self.category.name_zh} × {self.quantity}"
@@ -1482,6 +1505,10 @@ class PurchaseOrder(models.Model):
         ordering = ['-created_at']
         verbose_name = '采购订单'
         verbose_name_plural = '采购订单'
+        indexes = [
+            # Every list view orders by -created_at; was an in-memory sort.
+            models.Index(fields=['-created_at'], name='core_po_created'),
+        ]
 
     def __str__(self):
         return self.order_number

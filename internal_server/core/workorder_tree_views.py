@@ -147,17 +147,6 @@ def _project_summaries(projects):
     return summ
 
 
-def _category_full_path(cat):
-    """Full hierarchy path "大类别 › … › 品名" (leaf included)."""
-    chain = []
-    p = cat.parent
-    while p:
-        chain.append(p.name_zh)
-        p = p.parent
-    chain.reverse()
-    return ' › '.join(chain + [cat.name_zh]) if chain else cat.name_zh
-
-
 def _project_budget_data(projects):
     """Per-project material budget + consumed + linked POs, for the budget panel.
 
@@ -172,16 +161,21 @@ def _project_budget_data(projects):
     from core.models import (ProjectMaterialBudget, ProjectPurchaseOrder,
                               InventoryTransaction)
     from django.db.models import Prefetch
+    from core.views import inventory_category_paths, _po_received_parts_batch
     pids = [p.id for p in projects]
+
+    # Precompute every InventoryCategory's full display path once (1 query);
+    # replaces the old _category_full_path per-line parent-chain walk.
+    cat_paths = inventory_category_paths()
 
     # Material budget rows.
     budget = {}
     for b in (ProjectMaterialBudget.objects
               .filter(project_id__in=pids)
-              .select_related('category__parent')):
+              .select_related('category')):
         budget.setdefault(b.project_id, []).append({
             'category_id': b.category_id, 'name': b.category.name_zh,
-            'path': _category_full_path(b.category),
+            'path': cat_paths.get(b.category_id, b.category.name_zh),
             'qty': b.quantity, 'unit': b.unit or b.category.unit,
         })
 
@@ -201,7 +195,7 @@ def _project_budget_data(projects):
             entry = consumed.setdefault(t.related_project_id, {}).get(cat.id)
             if entry is None:
                 entry = {'category_id': cat.id, 'name': cat.name_zh,
-                         'path': _category_full_path(cat),
+                         'path': cat_paths.get(cat.id, cat.name_zh),
                          'unit': ln.unit or cat.unit, 'qty': 0}
                 consumed.setdefault(t.related_project_id, {})[cat.id] = entry
             entry['qty'] += ln.quantity
@@ -214,25 +208,32 @@ def _project_budget_data(projects):
             'zone': t.zone.name if t.zone else '',
             'remark': t.remark or '',
             'lines': [{'name': ln.category.name_zh,
-                       'path': _category_full_path(ln.category),
+                       'path': cat_paths.get(ln.category_id, ln.category.name_zh),
                        'qty': ln.quantity, 'unit': ln.unit or ln.category.unit}
                       for ln in t.lines.all()],
         }
         records.setdefault(t.related_project_id, []).append(rec)
     consumed_list = {pid: list(d.values()) for pid, d in consumed.items()}
 
-    # Linked POs.
+    # Linked POs — with their received parts (so the panel can show, for materials
+    # the project also consumes, how many that order purchased in total). Batched:
+    # one query for all linked POs' received parts, not one per PO.
     links = {}
-    for lk in (ProjectPurchaseOrder.objects
-               .filter(project_id__in=pids)
-               .select_related('purchase_order')
-               .order_by('-created_at')):
+    link_rows = list((ProjectPurchaseOrder.objects
+                      .filter(project_id__in=pids)
+                      .select_related('purchase_order')
+                      .order_by('-created_at')))
+    linked_po_ids = [lk.purchase_order_id for lk in link_rows]
+    po_parts_map = _po_received_parts_batch(linked_po_ids, cat_paths)
+    for lk in link_rows:
         po = lk.purchase_order
+        po_parts, _ = po_parts_map.get(po.id, ([], 0))
         links.setdefault(lk.project_id, []).append({
             'id': po.id, 'order_number': po.order_number,
             'po_number': po.po_number,
             'po_amount_untaxed': ('' if po.po_amount_untaxed is None
                                   else f'{po.po_amount_untaxed:.2f}'),
+            'parts': po_parts,
         })
 
     # Related work reports (工单) — via WorkReportEntry.project, distinct + with hours.
@@ -422,8 +423,8 @@ def project_export_excel(request):
     ws = wb.active
     ws.title = '项目管理'
     headers = ['项目', '类别', '子类别', '开工日期', '计划完工日期',
-               '第一方预算工时', '第三方预算工时', '材料预算', '材料消耗',
-               '第一方工时', '第三方工时', '工单数', '状态', '备注']
+               '灌溉组预算工时', '第三方预算工时', '材料预算', '材料消耗',
+               '灌溉组工时', '第三方工时', '工单数', '状态', '备注']
     ws.append(headers)
 
     # Styles.
