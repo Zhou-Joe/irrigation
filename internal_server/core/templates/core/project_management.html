@@ -28,22 +28,19 @@
 .pm-detail { display: none; flex-basis: 100%; padding: 8px 0 4px; }
 .pm-detail.open { display: block; }
 .pm-sub { font-size: .78rem; color: #888; margin: 8px 0 4px; }
-.pm-mat-table { width: 100%; border-collapse: collapse; font-size: .82rem; }
-.pm-mat-table th { text-align: left; color: #aaa; font-weight: 500; padding: 4px 6px; border-bottom: 1px solid #eee; }
-.pm-mat-table td { padding: 5px 6px; border-bottom: 1px solid #f5f5f5; vertical-align: top; }
-.pm-mat-path { color: #666; max-width: 280px; }
-.pm-mat-path .leaf { color: #333; font-weight: 500; }
+.pm-mat-table { width: 100%; border-collapse: collapse; font-size: .86rem; }
+.pm-mat-table td { padding: 6px 8px; border-bottom: 1px solid #f5f5f5; }
+.pm-overview-lbl { color: #888; font-size: .8rem; width: 32%; }
+.pm-overview-val { color: #333; font-weight: 500; }
 .pm-bal.pos { color: var(--color-primary-light, #2D6A4F); font-weight: 600; }
 .pm-bal.neg { color: #c0392b; font-weight: 600; }
+.pm-po-chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .pm-po-chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .pm-po-chip { font-size: .76rem; background: #e8f5e9; color: var(--color-primary-light, #2D6A4F); padding: 3px 9px; border-radius: 8px; }
 .pm-po-card { border: 1px solid #e6ece6; border-radius: 8px; padding: 8px 10px; margin-bottom: 8px; background: #fafbfa; }
 .pm-po-card-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .pm-po-card-name { font-weight: 600; font-size: .84rem; color: var(--color-primary-light, #2D6A4F); }
 .pm-po-card-meta { font-size: .76rem; color: #888; }
-.pm-po-part { font-size: .76rem; color: #555; padding: 2px 0; }
-.pm-po-part b { color: var(--color-primary-light, #2D6A4F); }
-.pm-labor-row { display: flex; gap: 16px; font-size: .84rem; color: #555; flex-wrap: wrap; }
 
 /* ── 出库记录 cards ── */
 .pm-rec { border: 1px solid #eee; border-radius: 8px; padding: 8px 10px; margin-bottom: 8px; background: #fafbfa; }
@@ -60,24 +57,10 @@
 .pm-out-tag { display: inline-block; font-size: .68rem; color: #c0392b; background: #fdecea; padding: 1px 7px; border-radius: 6px; font-weight: 600; }
 .pm-wr .pm-rec-date { color: #1565c0; text-decoration: none; }
 
-/* Budget-edit material/PO picker rows (inside the shared .app-dialog). */
-.pb-planned-row { display: flex; align-items: flex-start; gap: 10px; padding: 10px 0; border-bottom: 1px solid #f0f0f0; }
-.pb-planned-row:last-child { border-bottom: none; }
-.pb-planned-main { flex: 1; min-width: 0; }
-.pb-planned-name { font-size: .88rem; color: #333; }
-.pb-planned-path { font-size: .72rem; color: #aaa; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pb-planned-controls { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
-.pb-planned-qty { width: 56px; padding: 4px 6px; border: 1px solid #d8d8d8; border-radius: 6px; font-size: .82rem; text-align: center; }
-.pb-planned-unit-ro { font-size: .8rem; color: #888; white-space: nowrap; }
-.pb-planned-del { width: 24px; height: 24px; border: none; background: #f0f0f0; border-radius: 50%; color: #c0392b; cursor: pointer; font-size: .95rem; line-height: 1; flex-shrink: 0; }
-.pb-add-trigger { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; border: 1px dashed #bbb; border-radius: 8px; cursor: pointer; background: #fff; font-size: .9rem; margin-top: 6px; }
+/* Budget-edit PO picker chips (inside the shared .app-dialog). */
 .pb-po-pick { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 .pb-po-opt { font-size: .8rem; padding: 4px 10px; border: 1px solid #d8d8d8; border-radius: 8px; cursor: pointer; color: #555; background: #fff; }
 .pb-po-opt.on { background: var(--color-primary-light, #2D6A4F); color: #fff; border-color: var(--color-primary-light, #2D6A4F); }
-
-/* Bottom-sheet tree picker (dashboard.css not loaded here) */
-.v2-sheet-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 4000; display: none; align-items: flex-end; justify-content: center; touch-action: manipulation; }
-.v2-sheet { background: #fff; border-radius: 16px 16px 0 0; width: 100%; max-width: 420px; max-height: 85vh; display: flex; flex-direction: column; overflow: hidden; }
 </style>
 {% endblock %}
 
@@ -130,9 +113,10 @@
           <tr>
             <th>项目</th>
             <th>开工 ~ 计划完工</th>
-            <th class="num">灌溉组预算</th>
-            <th class="num">第三方预算</th>
             <th class="num">材料预算</th>
+            <th class="num">人工预算</th>
+            <th class="num">材料余额</th>
+            <th class="num">人工余额</th>
             <th class="num">灌溉组工时</th>
             <th class="num">第三方工时</th>
             <th class="num">工单</th>
@@ -159,9 +143,10 @@
                 {{ it.project.start_date|date:"Y-m-d"|default:"—" }} ~ {{ it.project.planned_end_date|date:"Y-m-d"|default:"—" }}
               {% else %}—{% endif %}
             </td>
-            <td class="num" id="pmCellLabor-{{ it.project.id }}">{{ it.labor_budget|default_if_none:"—"|floatformat:0 }}h</td>
-            <td class="num" id="pmCellThird-{{ it.project.id }}">{{ it.third_budget|default_if_none:"—"|floatformat:0 }}h</td>
-            <td class="num" id="pmCellMat-{{ it.project.id }}">{{ it.mat_budget_count }} 种</td>
+            <td class="num" id="pmCellMat-{{ it.project.id }}">{% if it.material_budget_amount %}¥{{ it.material_budget_amount }}{% else %}—{% endif %}</td>
+            <td class="num" id="pmCellLabor-{{ it.project.id }}">{% if it.labor_budget_amount %}¥{{ it.labor_budget_amount }}{% else %}—{% endif %}</td>
+            <td class="num" id="pmCellBal-{{ it.project.id }}">{% if it.material_balance %}{% if it.material_balance|slice:":1" == "-" %}<span style="color:#c0392b;font-weight:600;">¥{{ it.material_balance }}</span>{% else %}¥{{ it.material_balance }}{% endif %}{% else %}—{% endif %}</td>
+            <td class="num" id="pmCellLaborBal-{{ it.project.id }}">{% if it.labor_balance %}{% if it.labor_balance|slice:":1" == "-" %}<span style="color:#c0392b;font-weight:600;">¥{{ it.labor_balance }}</span>{% else %}¥{{ it.labor_balance }}{% endif %}{% else %}—{% endif %}</td>
             <td class="num">{{ it.team_hours|floatformat:1 }}h</td>
             <td class="num">{{ it.third_hours|floatformat:1 }}h</td>
             <td class="num">{{ it.report_count }}</td>
@@ -176,7 +161,7 @@
             </td>
           </tr>
           <tr class="app-row-detail" id="pmDetailRow-{{ it.project.id }}">
-            <td colspan="10">
+            <td colspan="11">
               <div class="app-detail-inner" id="pmDetail-{{ it.project.id }}" data-budget="{{ it.budget_json|escape }}"></div>
             </td>
           </tr>
@@ -261,23 +246,33 @@
       <h3 id="pbTitle">预算与关联</h3>
       <button type="button" class="app-close" onclick="pbClose()">×</button>
     </div>
-    <div class="app-body">
-      <div class="app-grid" style="grid-template-columns:1fr 1fr;">
-        <div>
-          <label>灌溉组预算工时</label>
-          <input type="number" id="pbLabor" min="0" step="0.5" placeholder="小时数（可选）">
+      <div class="app-body">
+        <div class="app-grid" style="grid-template-columns:1fr 1fr;">
+          <div>
+            <label>材料预算金额</label>
+            <input type="number" id="pbMaterialAmt" min="0" step="0.01" placeholder="金额（可选）">
+          </div>
+          <div>
+            <label>人工预算金额</label>
+            <input type="number" id="pbLaborAmt" min="0" step="0.01" placeholder="金额（可选）">
+          </div>
         </div>
-        <div>
-          <label>第三方预算工时</label>
-          <input type="number" id="pbLabor3rd" min="0" step="0.5" placeholder="小时数（可选）">
+        <div class="app-grid" style="grid-template-columns:1fr 1fr;margin-top:10px;">
+          <div>
+            <label>灌溉组工时费率（元/小时）</label>
+            <input type="number" id="pbTeamRate" min="0" step="0.01" placeholder="元/小时（可选）">
+          </div>
+          <div>
+            <label>第三方工时费率（元/小时）</label>
+            <input type="number" id="pbThirdRate" min="0" step="0.01" placeholder="元/小时（可选）">
+          </div>
         </div>
+        <div style="font-size:.78rem;color:#888;margin:6px 0 0;">材料余额 = 材料预算金额 − 关联采购订单金额合计；人工余额 = 人工预算金额 − (已用工时 × 费率)。保存后按实际工时自动更新。</div>
+        <div id="pbBalancePreview" style="display:none;font-size:.86rem;color:#2D6A4F;background:#e8f5e9;border-radius:8px;padding:8px 12px;margin-top:8px;"></div>
+        <div id="pbLaborPreview" style="display:none;font-size:.86rem;color:#2D6A4F;background:#e8f5e9;border-radius:8px;padding:8px 12px;margin-top:8px;"></div>
+        <label class="pm-field" style="display:block;font-size:.8rem;color:#555;margin:14px 0 4px;">关联采购订单</label>
+        <div class="pb-po-pick" id="pbPoPick"></div>
       </div>
-      <label class="pm-field" style="display:block;font-size:.8rem;color:#555;margin:14px 0 4px;">材料预算（从库存目录选择）</label>
-      <div id="pbPlannedList"></div>
-      <div class="pb-add-trigger" id="pbAddTrigger"><span style="color:#2D6A4F;">+ 添加物料</span><span style="font-size:.8em;color:#999;">▶</span></div>
-      <label class="pm-field" style="display:block;font-size:.8rem;color:#555;margin:14px 0 4px;">关联采购订单</label>
-      <div class="pb-po-pick" id="pbPoPick"></div>
-    </div>
     <div class="app-foot">
       <button type="button" class="btn-sm btn-secondary" style="flex:1;justify-content:center;" onclick="pbClose()">取消</button>
       <button type="button" class="btn-sm btn-primary" style="flex:1;justify-content:center;" id="pbSubmit" onclick="pbSave()">保存</button>
@@ -288,15 +283,11 @@
 <div id="pmToast" style="position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#333;color:#fff;padding:9px 20px;border-radius:20px;font-size:.86em;z-index:1000;opacity:0;transition:opacity .2s;pointer-events:none;"></div>
 
 <script>
-var PM_INV_TREE = {{ inventory_tree_json|safe }};
-var PM_INV_NODE_MAP = {};
-(function _pmIndex(nodes) {
-    nodes.forEach(function (n) { PM_INV_NODE_MAP[n.id] = n; if (n.children && n.children.length) _pmIndex(n.children); });
-})(PM_INV_TREE);
 var PM_ALL_POS = {{ all_pos_json|safe }};
 
-// budget data per project: {pid -> {material_budget:[], material_consumed:[], labor_budget_hours, linked_pos:[]}}
-// Lazily parsed from each panel's data-budget attribute in pmBudget(pid).
+// budget data per project: {pid -> {material_consumed, consumption_records,
+// material_budget_amount, labor_budget_amount, material_balance, po_amount_total,
+// linked_pos, work_reports}}. Lazily parsed from each panel's data-budget attr.
 var PM_BUDGET = {};
 
 function _pmEsc(s) {
@@ -316,7 +307,7 @@ function pmBudget(pid) {
     // Load from the data attribute (authoritative server data) on first access.
     if (!PM_BUDGET[pid]) {
         var el = document.getElementById('pmDetail-' + pid);
-        try { PM_BUDGET[pid] = JSON.parse(el.getAttribute('data-budget')); } catch (e) { PM_BUDGET[pid] = {material_budget:[],material_consumed:[],labor_budget_hours:null,linked_pos:[]}; }
+        try { PM_BUDGET[pid] = JSON.parse(el.getAttribute('data-budget')); } catch (e) { PM_BUDGET[pid] = {material_consumed:[],consumption_records:[],material_budget_amount:'',labor_budget_amount:'',team_rate:'',third_party_rate:'',material_balance:'',po_amount_total:'',labor_balance:'',labor_cost:'',team_hours:'',third_hours:'',linked_pos:[],work_reports:[]}; }
     }
     return PM_BUDGET[pid];
 }
@@ -331,52 +322,39 @@ function pmRenderDetail(pid) {
     var b = pmBudget(pid);
     var panel = document.getElementById('pmDetail-' + pid);
 
-    // Build a category-keyed merge of budget + consumed.
-    var byCat = {};
-    (b.material_budget || []).forEach(function (ln) { byCat[ln.category_id] = {name: ln.name, path: ln.path, unit: ln.unit, budget: ln.qty, consumed: 0}; });
-    (b.material_consumed || []).forEach(function (ln) {
-        if (!byCat[ln.category_id]) byCat[ln.category_id] = {name: ln.name, path: ln.path, unit: ln.unit, budget: 0};
-        byCat[ln.category_id].consumed = ln.qty;
-    });
-    var rows = Object.values(byCat);
-    var matHtml;
-    if (!rows.length) {
-        matHtml = '<div style="color:#aaa;font-size:.82rem;padding:4px 0;">暂无材料预算</div>';
-    } else {
-        matHtml = '<table class="pm-mat-table"><thead><tr><th>物料</th><th>预算</th><th>已消耗</th><th>余额</th></tr></thead><tbody>' +
-            rows.map(function (r) {
-                var bal = (r.budget || 0) - (r.consumed || 0);
-                var balCls = bal >= 0 ? 'pos' : 'neg';
-                var pathHtml = (r.path && r.path !== r.name)
-                    ? '<span class="leaf">' + _pmEsc(r.name) + '</span><br><span style="color:#aaa;font-size:.72rem;">' + _pmEsc(r.path) + '</span>'
-                    : '<span class="leaf">' + _pmEsc(r.name) + '</span>';
-                return '<tr><td class="pm-mat-path">' + pathHtml + '</td>' +
-                    '<td>' + (r.budget || 0) + ' ' + _pmEsc(r.unit||'') + '</td>' +
-                    '<td>' + (r.consumed || 0) + ' ' + _pmEsc(r.unit||'') + '</td>' +
-                    '<td class="pm-bal ' + balCls + '">' + bal + ' ' + _pmEsc(r.unit||'') + '</td></tr>';
-            }).join('') + '</tbody></table>';
+    // ── 预算概览: 金额预算 / 费率 / 已用 / 余额 ──
+    function moneyCell(v) { return v ? '¥' + _pmEsc(v) : '<span style="color:#bbb;">—</span>'; }
+    function rateCell(v) { return v ? '¥' + _pmEsc(v) + '/h' : '<span style="color:#bbb;">—</span>'; }
+    function hoursCell(v) { return v ? _pmEsc(v) + 'h' : '<span style="color:#bbb;">0h</span>'; }
+    function balSpan(v) {
+        if (v === '' || v == null) return '<span style="color:#bbb;">—</span>';
+        var cls = v.charAt(0) === '-' ? 'neg' : 'pos';
+        return '<span class="pm-bal ' + cls + '" style="font-size:.95rem;">¥' + _pmEsc(v) + '</span>';
     }
+    var overviewHtml =
+        '<table class="pm-mat-table"><tbody>' +
+        '<tr><td class="pm-overview-lbl">材料预算金额</td><td class="pm-overview-val">' + moneyCell(b.material_budget_amount) + '</td>' +
+            '<td class="pm-overview-lbl">人工预算金额</td><td class="pm-overview-val">' + moneyCell(b.labor_budget_amount) + '</td></tr>' +
+        '<tr><td class="pm-overview-lbl">关联PO金额合计</td><td class="pm-overview-val">' + moneyCell(b.po_amount_total) + '</td>' +
+            '<td class="pm-overview-lbl">已用人工成本</td><td class="pm-overview-val">' + moneyCell(b.labor_cost) + '</td></tr>' +
+        '<tr><td class="pm-overview-lbl">灌溉组费率</td><td class="pm-overview-val">' + rateCell(b.team_rate) + '</td>' +
+            '<td class="pm-overview-lbl">第三方费率</td><td class="pm-overview-val">' + rateCell(b.third_party_rate) + '</td></tr>' +
+        '<tr><td class="pm-overview-lbl">灌溉组已用工时</td><td class="pm-overview-val">' + hoursCell(b.team_hours) + '</td>' +
+            '<td class="pm-overview-lbl">第三方已用工时</td><td class="pm-overview-val">' + hoursCell(b.third_hours) + '</td></tr>' +
+        '<tr><td class="pm-overview-lbl">材料余额</td><td class="pm-overview-val">' + balSpan(b.material_balance) + '</td>' +
+            '<td class="pm-overview-lbl">人工余额</td><td class="pm-overview-val">' + balSpan(b.labor_balance) + '</td></tr>' +
+        '</tbody></table>';
 
-    // Linked POs — for each, list materials it purchased that this project also
-    // consumes (matched by category_id), showing the order's total purchased qty.
-    var consumedIds = {};
-    (b.material_consumed || []).forEach(function (ln) { consumedIds[ln.category_id] = true; });
+    // Linked POs — each with its order amount (材料余额抵扣来源).
     var poHtml;
     if (b.linked_pos && b.linked_pos.length) {
         poHtml = b.linked_pos.map(function (p) {
-            var matched = (p.parts || []).filter(function (pt) { return consumedIds[pt.category_id]; });
-            var partsHtml = '';
-            if (matched.length) {
-                partsHtml = '<div style="margin-top:5px;">' + matched.map(function (pt) {
-                    return '<div class="pm-po-part">' + _pmEsc(pt.name) + ' · 共采购 <b>' + pt.qty + '</b> ' + _pmEsc(pt.unit || '') + '</div>';
-                }).join('') + '</div>';
-            }
             return '<div class="pm-po-card">' +
                 '<div class="pm-po-card-head">' +
                     '<span class="pm-po-card-name">' + _pmEsc(p.order_number) + '</span>' +
                     (p.po_number ? '<span class="pm-po-card-meta">PO ' + _pmEsc(p.po_number) + '</span>' : '') +
-                    (p.po_amount_untaxed ? '<span class="pm-po-card-meta">¥' + _pmEsc(p.po_amount_untaxed) + '</span>' : '') +
-                '</div>' + partsHtml +
+                    (p.po_amount_untaxed ? '<span class="pm-po-card-meta">¥' + _pmEsc(p.po_amount_untaxed) + '</span>' : '<span class="pm-po-card-meta">金额未填</span>') +
+                '</div>' +
             '</div>';
         }).join('');
     } else {
@@ -440,8 +418,8 @@ function pmRenderDetail(pid) {
     }
 
     panel.innerHTML =
-        '<div class="pm-sub">材料预算与消耗</div>' + matHtml +
-        '<div class="pm-sub">关联采购订单</div>' + poHtml +
+        '<div class="pm-sub">预算概览</div>' + overviewHtml +
+        '<div class="pm-sub">关联采购订单（' + (b.linked_pos ? b.linked_pos.length : 0) + '）</div>' + poHtml +
         '<div class="pm-sub">关联工单（' + (b.work_reports ? b.work_reports.length : 0) + '）</div>' + wrHtml +
         '<div class="pm-sub">其他出库记录（' + (b.consumption_records ? b.consumption_records.length : 0) + '）</div>' + recHtml +
         '<div style="margin-top:10px;"><button type="button" class="btn btn-primary" style="font-size:.82rem;padding:5px 12px;" onclick="pbOpen(' + pid + ')">编辑预算与关联</button></div>';
@@ -450,39 +428,25 @@ function pmRenderDetail(pid) {
 // Refresh the table row's budget cells after an inline save (no page reload).
 function pmRefreshCells(pid) {
     var b = pmBudget(pid);
-    var elL = document.getElementById('pmCellLabor-' + pid);
-    var elT = document.getElementById('pmCellThird-' + pid);
     var elM = document.getElementById('pmCellMat-' + pid);
-    if (elL) elL.textContent = (b.labor_budget_hours != null) ? parseFloat(b.labor_budget_hours).toFixed(0) + 'h' : '—';
-    if (elT) elT.textContent = (b.third_party_budget_hours != null) ? parseFloat(b.third_party_budget_hours).toFixed(0) + 'h' : '—';
-    if (elM) elM.textContent = (b.material_budget ? b.material_budget.length : 0) + ' 种';
+    var elL = document.getElementById('pmCellLabor-' + pid);
+    var elB = document.getElementById('pmCellBal-' + pid);
+    var elLB = document.getElementById('pmCellLaborBal-' + pid);
+    if (elM) elM.innerHTML = b.material_budget_amount ? '¥' + _pmEsc(b.material_budget_amount) : '—';
+    if (elL) elL.innerHTML = b.labor_budget_amount ? '¥' + _pmEsc(b.labor_budget_amount) : '—';
+    function setBal(el, v) {
+        if (!el) return;
+        if (v === '' || v == null) { el.innerHTML = '—'; return; }
+        if (v.charAt(0) === '-') { el.innerHTML = '<span style="color:#c0392b;font-weight:600;">¥' + _pmEsc(v) + '</span>'; }
+        else { el.innerHTML = '¥' + _pmEsc(v); }
+    }
+    setBal(elB, b.material_balance);
+    setBal(elLB, b.labor_balance);
 }
 
 // ── Budget edit modal state ──
 var _pbPid = null;
-var _pbCart = [];        // planned material cart [{id,name,path,quantity,unit}]
 var _pbLinkedPos = [];   // [po_id, ...]
-
-function pbRenderCart() {
-    var box = document.getElementById('pbPlannedList');
-    if (!_pbCart.length) { box.innerHTML = '<div style="color:#aaa;font-size:.82rem;padding:4px 0;">暂无，点击下方添加</div>'; return; }
-    box.innerHTML = _pbCart.map(function (c, idx) {
-        return '<div class="pb-planned-row"><div class="pb-planned-main">' +
-            '<div class="pb-planned-name">' + _pmEsc(c.name) + '</div>' +
-            (c.path && c.path !== c.name ? '<div class="pb-planned-path">' + _pmEsc(c.path) + '</div>' : '') +
-            '</div><div class="pb-planned-controls">' +
-            '<input type="number" min="1" step="1" class="pb-planned-qty" value="' + c.quantity + '" data-idx="' + idx + '">' +
-            '<span class="pb-planned-unit-ro">' + _pmEsc(c.unit || '—') + '</span>' +
-            '<button type="button" class="pb-planned-del" data-idx="' + idx + '">×</button>' +
-            '</div></div>';
-    }).join('');
-    box.querySelectorAll('.pb-planned-qty').forEach(function (inp) {
-        inp.addEventListener('input', function () { _pbCart[this.dataset.idx].quantity = parseInt(this.value, 10) || 0; });
-    });
-    box.querySelectorAll('.pb-planned-del').forEach(function (btn) {
-        btn.addEventListener('click', function () { _pbCart.splice(this.dataset.idx, 1); pbRenderCart(); });
-    });
-}
 
 function pbRenderPoPick() {
     var box = document.getElementById('pbPoPick');
@@ -498,85 +462,104 @@ function pbRenderPoPick() {
             var i = _pbLinkedPos.indexOf(id);
             if (i >= 0) _pbLinkedPos.splice(i, 1); else _pbLinkedPos.push(id);
             pbRenderPoPick();
+            pbUpdateBalancePreview();
         });
     });
     if (!PM_ALL_POS.length) box.innerHTML = '<div style="color:#aaa;font-size:.82rem;">暂无采购订单</div>';
 }
 
+// Live 材料余额 preview = 材料预算金额 − Σ所选PO金额.
+// PM_ALL_POS lacks amounts; read each selected PO's amount from the detail panel's
+// linked_pos data (which carries po_amount_untaxed). Falls back to '—' if unknown.
+function pbSelectedPoSum() {
+    var b = pmBudget(_pbPid);
+    var byId = {};
+    (b.linked_pos || []).forEach(function (p) { byId[p.id] = p.po_amount_untaxed; });
+    var sum = 0, any = false, missing = false;
+    _pbLinkedPos.forEach(function (id) {
+        var amt = byId[id];
+        if (amt && amt !== '') { sum += parseFloat(amt); any = true; } else { missing = true; }
+    });
+    return { sum: any ? sum : 0, missing: missing };
+}
+
+function pbUpdateBalancePreview() {
+    var box = document.getElementById('pbBalancePreview');
+    if (!box) return;
+    var matRaw = document.getElementById('pbMaterialAmt').value.trim();
+    if (!matRaw) { box.style.display = 'none'; return; }
+    var mat = parseFloat(matRaw);
+    if (isNaN(mat)) { box.style.display = 'none'; return; }
+    var info = pbSelectedPoSum();
+    var bal = mat - info.sum;
+    var txt = '材料余额 = ¥' + mat.toFixed(2) + ' − ¥' + info.sum.toFixed(2) + '（关联PO金额）= ';
+    var cls;
+    if (bal < 0) { txt += '<b style="color:#c0392b;">¥' + bal.toFixed(2) + '</b>'; }
+    else { txt += '<b>¥' + bal.toFixed(2) + '</b>'; }
+    if (info.missing) txt += '<div style="font-size:.74rem;color:#999;margin-top:2px;">部分关联订单未填写金额，未计入</div>';
+    box.innerHTML = txt;
+    box.style.display = 'block';
+}
+
+// Live 人工余额 preview = 人工预算金额 − (灌溉组已用工时 × 灌溉组费率 + 第三方已用工时 × 第三方费率).
+// 已用工时 read from the project's budget data (server-aggregated from work orders).
+function pbUpdateLaborPreview() {
+    var box = document.getElementById('pbLaborPreview');
+    if (!box) return;
+    var laborRaw = document.getElementById('pbLaborAmt').value.trim();
+    var trRaw = document.getElementById('pbTeamRate').value.trim();
+    var tprRaw = document.getElementById('pbThirdRate').value.trim();
+    if (!laborRaw) { box.style.display = 'none'; return; }
+    var labor = parseFloat(laborRaw);
+    var tr = parseFloat(trRaw) || 0;
+    var tpr = parseFloat(tprRaw) || 0;
+    if (isNaN(labor)) { box.style.display = 'none'; return; }
+    var b = pmBudget(_pbPid);
+    var teamH = parseFloat(b.team_hours) || 0;
+    var thirdH = parseFloat(b.third_hours) || 0;
+    var laborCost = teamH * tr + thirdH * tpr;
+    var bal = labor - laborCost;
+    var txt = '人工余额 = ¥' + labor.toFixed(2) + ' − (' + teamH.toFixed(1) + 'h × ¥' + tr.toFixed(2) +
+              ' + ' + thirdH.toFixed(1) + 'h × ¥' + tpr.toFixed(2) + ') = ';
+    if (bal < 0) { txt += '<b style="color:#c0392b;">¥' + bal.toFixed(2) + '</b>'; }
+    else { txt += '<b>¥' + bal.toFixed(2) + '</b>'; }
+    box.innerHTML = txt;
+    box.style.display = 'block';
+}
+
 function pbOpen(pid) {
     _pbPid = pid;
     var b = pmBudget(pid);
-    document.getElementById('pbLabor').value = (b.labor_budget_hours != null) ? b.labor_budget_hours : '';
-    document.getElementById('pbLabor3rd').value = (b.third_party_budget_hours != null) ? b.third_party_budget_hours : '';
-    _pbCart = (b.material_budget || []).map(function (ln) { return {id: ln.category_id, name: ln.name, path: ln.path, quantity: ln.qty, unit: ln.unit || ''}; });
+    document.getElementById('pbMaterialAmt').value = b.material_budget_amount || '';
+    document.getElementById('pbLaborAmt').value = b.labor_budget_amount || '';
+    document.getElementById('pbTeamRate').value = b.team_rate || '';
+    document.getElementById('pbThirdRate').value = b.third_party_rate || '';
     _pbLinkedPos = (b.linked_pos || []).map(function (p) { return p.id; });
-    pbRenderCart(); pbRenderPoPick();
+    pbRenderPoPick();
+    pbUpdateBalancePreview();
+    pbUpdateLaborPreview();
     document.getElementById('pbMask').classList.add('open');
 }
 function pbClose() { document.getElementById('pbMask').classList.remove('open'); }
 document.getElementById('pbMask').addEventListener('click', function (e) { if (e.target === this) pbClose(); });
 document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && document.getElementById('pbMask').classList.contains('open')) pbClose(); });
-document.getElementById('pbAddTrigger').addEventListener('click', function () { pmOpenTreeSheet([]); });
+document.getElementById('pbMaterialAmt').addEventListener('input', pbUpdateBalancePreview);
+['pbLaborAmt','pbTeamRate','pbThirdRate'].forEach(function (id) {
+    document.getElementById(id).addEventListener('input', pbUpdateLaborPreview);
+});
 
-function _pmNodePath(id) {
-    var chain = [], n = PM_INV_NODE_MAP[id];
-    while (n && n.parent_id) { var p = PM_INV_NODE_MAP[n.parent_id]; if (!p) break; chain.unshift(p.name); n = p; }
-    return chain.join(' › ');
-}
-
-// ── Bottom-sheet tree picker ──
-function pmOpenTreeSheet(path) {
-    var nodes = PM_INV_TREE;
-    for (var i = 0; i < path.length; i++) { var p = PM_INV_NODE_MAP[path[i]]; nodes = (p && p.children) ? p.children : []; }
-    var sheet = document.getElementById('pmTreeSheet');
-    if (!sheet) {
-        sheet = document.createElement('div'); sheet.id = 'pmTreeSheet'; sheet.className = 'v2-sheet-overlay';
-        sheet.innerHTML = '<div class="v2-sheet"><div style="width:36px;height:4px;background:#ccc;border-radius:2px;margin:10px auto 0;"></div>' +
-            '<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid #f0f0f0;"><span id="pmTreeTitle" style="font-weight:600;">选择物料</span><button type="button" id="pmTreeClose" style="width:32px;height:32px;border:none;background:#f0f0f0;border-radius:50%;font-size:1.1em;cursor:pointer;">×</button></div>' +
-            '<div id="pmTreeBody" style="flex:1;overflow-y:auto;padding:8px 16px;min-height:0;"></div>' +
-            '<div style="padding:8px 16px 12px;border-top:1px solid #f0f0f0;"><button type="button" id="pmTreeDone" style="width:100%;padding:12px;border:none;border-radius:10px;font-size:0.95em;font-weight:600;cursor:pointer;background:#2e7d32;color:#fff;">完成</button></div></div>';
-        document.body.appendChild(sheet);
-        document.getElementById('pmTreeClose').addEventListener('click', function () { sheet.style.display = 'none'; });
-        document.getElementById('pmTreeDone').addEventListener('click', function () { sheet.style.display = 'none'; });
-    }
-    var names = path.map(function (id) { return PM_INV_NODE_MAP[id] ? PM_INV_NODE_MAP[id].name : ''; });
-    document.getElementById('pmTreeTitle').textContent = names.length ? names.join(' › ') : '选择物料';
-    var tbody = document.getElementById('pmTreeBody'); tbody.innerHTML = '';
-    if (!nodes.length) tbody.innerHTML = '<div style="text-align:center;color:#999;padding:20px;">无子分类</div>';
-    nodes.forEach(function (n) {
-        var isLeaf = n.node_type === 'part' || (!n.children || !n.children.length);
-        var row = document.createElement('div');
-        row.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:12px 10px;border-bottom:1px solid #f5f5f5;cursor:pointer;';
-        row.innerHTML = '<span style="font-size:0.95em;">' + (isLeaf ? '🔹 ' : '📁 ') + _pmEsc(n.name) + '</span>' +
-            (isLeaf ? '<span style="font-size:0.8em;color:#2e7d32;font-weight:600;">+ 选择</span>' : '<span style="color:#bbb;">▶</span>');
-        row.addEventListener('click', function () {
-            if (isLeaf) {
-                if (_pbCart.some(function (c) { return c.id === n.id; })) { pmToast('该物料已在清单中', true); }
-                else { _pbCart.push({id: n.id, name: n.name, path: _pmNodePath(n.id), quantity: 1, unit: n.unit || ''}); pbRenderCart(); }
-                sheet.style.display = 'none';
-            } else { pmOpenTreeSheet(path.concat([n.id])); }
-        });
-        tbody.appendChild(row);
-    });
-    if (path.length) {
-        var back = document.createElement('div'); back.style.cssText = 'padding:8px 10px;color:#2e7d32;font-size:0.85em;cursor:pointer;'; back.textContent = '‹ 返回';
-        back.addEventListener('click', function () { pmOpenTreeSheet(path.slice(0, -1)); });
-        tbody.insertBefore(back, tbody.firstChild);
-    }
-    sheet.style.display = 'flex';
-}
-
-// ── Save (budget lines + labor + PO links) ──
+// ── Save (material amount + labor amount + rates + PO links) ──
 function pbSave() {
-    var labor = document.getElementById('pbLabor').value.trim();
-    var labor3rd = document.getElementById('pbLabor3rd').value.trim();
-    var lines = _pbCart.filter(function (c) { return (c.quantity || 0) > 0; })
-        .map(function (c) { return {category: c.id, quantity: c.quantity, unit: c.unit || ''}; });
-    // 1. Save budget + labor.
+    var matAmt = document.getElementById('pbMaterialAmt').value.trim();
+    var laborAmt = document.getElementById('pbLaborAmt').value.trim();
+    var teamRate = document.getElementById('pbTeamRate').value.trim();
+    var thirdRate = document.getElementById('pbThirdRate').value.trim();
+    // 1. Save amounts + rates.
     var fd = new FormData();
-    fd.append('labor_budget_hours', labor);
-    fd.append('third_party_budget_hours', labor3rd);
-    fd.append('lines', JSON.stringify(lines));
+    fd.append('material_budget_amount', matAmt);
+    fd.append('labor_budget_amount', laborAmt);
+    fd.append('team_rate', teamRate);
+    fd.append('third_party_rate', thirdRate);
     var btn = document.getElementById('pbSubmit'); btn.disabled = true; btn.textContent = '保存中…';
     fetch('/projects/' + _pbPid + '/budget/save/', {method: 'POST', body: fd, headers: {'X-Requested-With':'XMLHttpRequest','X-CSRFToken':_pmCsrf()}})
         .then(function (r) { return r.json(); })
@@ -590,15 +573,8 @@ function pbSave() {
                     btn.disabled = false; btn.textContent = '保存';
                     if (d2.success) {
                         pmToast('已保存', false); pbClose();
-                        // Update local state + re-render detail.
-                        var b = pmBudget(_pbPid);
-                        b.material_budget = lines.map(function (c) { return {category_id: c.category, name: PM_INV_NODE_MAP[c.category] ? PM_INV_NODE_MAP[c.category].name : '', path: _pmNodePath(c.category), qty: c.quantity, unit: c.unit}; });
-                        b.labor_budget_hours = labor ? parseFloat(labor) : null;
-                        b.third_party_budget_hours = labor3rd ? parseFloat(labor3rd) : null;
-                        b.linked_pos = PM_ALL_POS.filter(function (p) { return _pbLinkedPos.indexOf(p.id) >= 0; });
-                        PM_BUDGET[_pbPid] = b;
-                        pmRenderDetail(_pbPid);
-                        pmRefreshCells(_pbPid);
+                        // Reload so 材料余额 / 关联PO金额合计 are recomputed server-side.
+                        window.location.reload();
                     } else { pmToast(d2.message || '关联订单保存失败', true); }
                 });
         })

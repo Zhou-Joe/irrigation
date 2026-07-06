@@ -1289,11 +1289,22 @@ class Project(models.Model):
     start_date = models.DateField('开工日期', null=True, blank=True)
     planned_end_date = models.DateField('计划完工日期', null=True, blank=True)
     notes = models.TextField('备注', blank=True)
-    # 人工预算工时（经理填写）。已用工时由关联工单的 Σ team_hours / Σ third_party_hours 自动聚合。
-    labor_budget_hours = models.FloatField('灌溉组预算工时', null=True, blank=True,
-                                            help_text='经理填写；已用工时由工单自动汇总')
-    third_party_budget_hours = models.FloatField('第三方预算工时', null=True, blank=True,
-                                                  help_text='经理填写；已用工时由工单自动汇总')
+    # 项目预算（经理按金额填写）。材料余额 = 材料预算 − Σ关联采购订单金额，在前端实时计算。
+    # 已用工时仍由关联工单的 Σ team_hours / Σ third_party_hours 自动聚合展示。
+    material_budget_amount = models.DecimalField(
+        '材料预算金额', max_digits=14, decimal_places=2, null=True, blank=True,
+        help_text='经理填写；材料余额 = 材料预算 − Σ关联采购订单金额')
+    labor_budget_amount = models.DecimalField(
+        '人工预算金额', max_digits=14, decimal_places=2, null=True, blank=True,
+        help_text='经理填写')
+    # 工时费率（每项目独立，元/小时）。人工余额 = 人工预算金额 −
+    # (Σ灌溉组已用工时 × 灌溉组rate + Σ第三方已用工时 × 第三方rate)，已用工时由工单汇总。
+    team_rate = models.DecimalField(
+        '灌溉组工时费率', max_digits=14, decimal_places=2, null=True, blank=True,
+        help_text='元/小时；人工余额 = 人工预算 − 已用工时 × 费率')
+    third_party_rate = models.DecimalField(
+        '第三方工时费率', max_digits=14, decimal_places=2, null=True, blank=True,
+        help_text='元/小时；人工余额 = 人工预算 − 已用工时 × 费率')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -1561,35 +1572,6 @@ class PurchaseOrderLine(models.Model):
 
     def __str__(self):
         return f"{self.category.name_zh} × {self.quantity}"
-
-
-class ProjectMaterialBudget(models.Model):
-    """项目材料预算 - 经理为项目规划的材料清单（按数量）。
-
-    与出库自动聚合的"材料消耗"对齐：消耗来自 ``InventoryTransaction.related_project``
-    （出库-项目），本表则是计划侧。余额在前端按 category 对齐相减得出，不入库。
-    每个物料每个项目一行（unique_together）。
-    """
-
-    project = models.ForeignKey(
-        Project, on_delete=models.CASCADE, related_name='material_budget',
-        verbose_name='项目',
-    )
-    category = models.ForeignKey(
-        InventoryCategory, on_delete=models.PROTECT, related_name='project_budgets',
-        verbose_name='物料',
-    )
-    quantity = models.PositiveIntegerField('预算数量', default=1)
-    unit = models.CharField('单位', max_length=20, blank=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        unique_together = ('project', 'category')
-        verbose_name = '项目材料预算'
-        verbose_name_plural = '项目材料预算'
-
-    def __str__(self):
-        return f"{self.project} → {self.category.name_zh} × {self.quantity}"
 
 
 class ProjectPurchaseOrder(models.Model):

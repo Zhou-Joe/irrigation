@@ -148,36 +148,23 @@ def _project_summaries(projects):
 
 
 def _project_budget_data(projects):
-    """Per-project material budget + consumed + linked POs, for the budget panel.
+    """Per-project consumed material + linked POs + budget amounts, for the panel.
 
-    Returns {project_id: {material_budget: [...], material_consumed: [...],
-    labor_budget_hours, linked_pos: [...]}}.
-    - material_budget: [{category_id, name, path, qty, unit}] from ProjectMaterialBudget.
-    - material_consumed: aggregated from 出库-项目 transactions' lines, summed by category.
-    - labor_budget_hours: the project's budget field (None allowed).
+    Returns {project_id: {material_consumed, consumption_records,
+    material_budget_amount, labor_budget_amount, linked_pos, work_reports}}.
+    - material_consumed: aggregated from 出库-项目 transactions' lines, by category
+      (used to show what materials were actually pulled for this project).
+    - material_budget_amount / labor_budget_amount: the project's amount fields.
     - linked_pos: [{id, order_number, po_number, po_amount_untaxed}].
-    Material balance (budget − consumed) is computed client-side by category_id.
+    材料余额 = material_budget_amount − Σ(linked_pos.po_amount_untaxed) is computed
+    here as material_balance and exposed to the table + panel.
     """
-    from core.models import (ProjectMaterialBudget, ProjectPurchaseOrder,
-                              InventoryTransaction)
-    from django.db.models import Prefetch
+    from core.models import (ProjectPurchaseOrder, InventoryTransaction)
     from core.views import inventory_category_paths, _po_received_parts_batch
     pids = [p.id for p in projects]
 
-    # Precompute every InventoryCategory's full display path once (1 query);
-    # replaces the old _category_full_path per-line parent-chain walk.
+    # Precompute every InventoryCategory's full display path once (1 query).
     cat_paths = inventory_category_paths()
-
-    # Material budget rows.
-    budget = {}
-    for b in (ProjectMaterialBudget.objects
-              .filter(project_id__in=pids)
-              .select_related('category')):
-        budget.setdefault(b.project_id, []).append({
-            'category_id': b.category_id, 'name': b.category.name_zh,
-            'path': cat_paths.get(b.category_id, b.category.name_zh),
-            'qty': b.quantity, 'unit': b.unit or b.category.unit,
-        })
 
     # Material consumed: aggregate 出库-项目 lines by category, AND keep the
     # raw per-transaction records (date/worker/source/lines) for the 出库记录 list.
@@ -189,7 +176,7 @@ def _project_budget_data(projects):
             .prefetch_related('lines__category')
             .order_by('-date', '-id'))
     for t in txns:
-        # Aggregate by category (for the budget vs consumed balance table).
+        # Aggregate by category (consumption summary table).
         for ln in t.lines.all():
             cat = ln.category
             entry = consumed.setdefault(t.related_project_id, {}).get(cat.id)
@@ -219,6 +206,7 @@ def _project_budget_data(projects):
     # the project also consumes, how many that order purchased in total). Batched:
     # one query for all linked POs' received parts, not one per PO.
     links = {}
+    links_po_total = {}  # {project_id: Σ po_amount_untaxed}
     link_rows = list((ProjectPurchaseOrder.objects
                       .filter(project_id__in=pids)
                       .select_related('purchase_order')
@@ -227,14 +215,16 @@ def _project_budget_data(projects):
     po_parts_map = _po_received_parts_batch(linked_po_ids, cat_paths)
     for lk in link_rows:
         po = lk.purchase_order
+        amt = po.po_amount_untaxed
         po_parts, _ = po_parts_map.get(po.id, ([], 0))
         links.setdefault(lk.project_id, []).append({
             'id': po.id, 'order_number': po.order_number,
             'po_number': po.po_number,
-            'po_amount_untaxed': ('' if po.po_amount_untaxed is None
-                                  else f'{po.po_amount_untaxed:.2f}'),
+            'po_amount_untaxed': ('' if amt is None else f'{amt:.2f}'),
             'parts': po_parts,
         })
+        if amt is not None:
+            links_po_total[lk.project_id] = links_po_total.get(lk.project_id, 0) + amt
 
     # Related work reports (工单) — via WorkReportEntry.project, distinct + with hours.
     from core.models import WorkReport, WorkReportEntry
@@ -276,22 +266,36 @@ def _project_budget_data(projects):
                     'lines': r['lines'],
                 })
 
-    return {p.id: {
-        'material_budget': budget.get(p.id, []),
-        'material_consumed': consumed_list.get(p.id, []),
-        'consumption_records': standalone_records.get(p.id, []),
-        'labor_budget_hours': p.labor_budget_hours,
-        'third_party_budget_hours': p.third_party_budget_hours,
-        'linked_pos': links.get(p.id, []),
-        'work_reports': reports.get(p.id, []),
-    } for p in projects}
+    # 材料余额 = 材料预算金额 − Σ关联采购订单金额（无预算时为 None；预算为0则按0算）。
+    out = {}
+    for p in projects:
+        mba = p.material_budget_amount
+        po_sum = links_po_total.get(p.id)
+        if mba is None:
+            balance = None
+        else:
+            balance = mba - (po_sum or 0)
+        out[p.id] = {
+            'material_consumed': consumed_list.get(p.id, []),
+            'consumption_records': standalone_records.get(p.id, []),
+            'material_budget_amount': ('' if mba is None else f'{mba:.2f}'),
+            'labor_budget_amount': ('' if p.labor_budget_amount is None
+                                    else f'{p.labor_budget_amount:.2f}'),
+            'team_rate': ('' if p.team_rate is None else f'{p.team_rate:.2f}'),
+            'third_party_rate': ('' if p.third_party_rate is None
+                                 else f'{p.third_party_rate:.2f}'),
+            'material_balance': ('' if balance is None else f'{balance:.2f}'),
+            'po_amount_total': ('' if po_sum is None else f'{po_sum:.2f}'),
+            'linked_pos': links.get(p.id, []),
+            'work_reports': reports.get(p.id, []),
+        }
+    return out
 
 
 @login_required(login_url='core:login')
 def project_management(request):
     """List/create/edit projects grouped by category, with per-project work summary."""
     from core.role_utils import get_user_role, ROLE_MANAGER, ROLE_SUPER_ADMIN
-    from core.views import serialize_inventory_tree
     from collections import OrderedDict
     role = get_user_role(request.user)
     if role not in (ROLE_MANAGER, ROLE_SUPER_ADMIN):
@@ -330,15 +334,36 @@ def project_management(request):
     for p in projects:
         s = summ[p.id]
         b = budget_data.get(p.id, {})
+        # 人工余额 = 人工预算金额 − (灌溉组已用工时 × 灌溉组rate + 第三方已用工时 × 第三方rate)。
+        # 已用工时来自 _project_summaries（关联工单汇总）。预算或费率任一缺失则余额为空。
+        from decimal import Decimal
+        tr = p.team_rate
+        tpr = p.third_party_rate
+        labor_cost = (Decimal(str(s['hours'])) * tr if tr is not None else Decimal('0')) + \
+                     (Decimal(str(s['third_hours'])) * tpr if tpr is not None else Decimal('0'))
+        if p.labor_budget_amount is not None:
+            labor_balance = p.labor_budget_amount - labor_cost
+            b['labor_balance'] = f'{labor_balance:.2f}'
+            b['labor_cost'] = f'{labor_cost:.2f}'
+            b['team_hours'] = f'{s["hours"]:.1f}'
+            b['third_hours'] = f'{s["third_hours"]:.1f}'
+            labor_balance_str = f'{labor_balance:.2f}'
+        else:
+            b['labor_balance'] = ''
+            b['labor_cost'] = f'{labor_cost:.2f}' if labor_cost else ''
+            b['team_hours'] = f'{s["hours"]:.1f}'
+            b['third_hours'] = f'{s["third_hours"]:.1f}'
+            labor_balance_str = ''
         groups[p.category]['items'].append({
             'project': p,
             'report_count': len(s['reports']),
             'team_hours': s['hours'],
             'third_hours': s['third_hours'],
             'phases': s['phases'],
-            'mat_budget_count': len(b.get('material_budget', [])),
-            'labor_budget': b.get('labor_budget_hours'),
-            'third_budget': b.get('third_party_budget_hours'),
+            'material_budget_amount': b.get('material_budget_amount', ''),
+            'labor_budget_amount': b.get('labor_budget_amount', ''),
+            'material_balance': b.get('material_balance', ''),
+            'labor_balance': labor_balance_str,
             'budget_json': json.dumps(b, ensure_ascii=False),
             'edit_json': json.dumps({
                 'id': p.id, 'name': p.name, 'category': p.category,
@@ -362,7 +387,6 @@ def project_management(request):
         'categories': Project.CATEGORY_CHOICES,
         'edit_obj': edit_obj,
         'all_pos_json': json.dumps(all_pos, ensure_ascii=False),
-        'inventory_tree_json': json.dumps(serialize_inventory_tree(), ensure_ascii=False),
         # filter values (to re-populate the filter bar)
         'fq': fq, 'fcat': fcat, 'fcompleted': fcompleted,
         'ffrom': ffrom.isoformat() if ffrom else '',
@@ -423,7 +447,7 @@ def project_export_excel(request):
     ws = wb.active
     ws.title = '项目管理'
     headers = ['项目', '类别', '子类别', '开工日期', '计划完工日期',
-               '灌溉组预算工时', '第三方预算工时', '材料预算', '材料消耗',
+               '材料预算金额', '人工预算金额', '材料余额', '人工余额',
                '灌溉组工时', '第三方工时', '工单数', '状态', '备注']
     ws.append(headers)
 
@@ -441,28 +465,23 @@ def project_export_excel(request):
     for p in projects:
         s = summ[p.id]
         b = budget_data.get(p.id, {})
-        # Align material budget vs consumed by category_id.
-        budget = {ln['category_id']: ln for ln in b.get('material_budget', [])}
-        consumed = {ln['category_id']: ln for ln in b.get('material_consumed', [])}
-        all_ids = list(budget.keys()) + [k for k in consumed if k not in budget]
-        budget_lines, consumed_lines = [], []
-        for cid in all_ids:
-            bl = budget.get(cid); cl = consumed.get(cid)
-            ref = bl or cl
-            nm = ref['name']; unit = ref.get('unit', '') or ''
-            budget_lines.append('%s ×%d %s' % (nm, bl['qty'] if bl else 0, unit))
-            consumed_lines.append('%s ×%d %s' % (nm, cl['qty'] if cl else 0, unit))
-
+        # 人工余额 = 人工预算 − 已用工时×费率。Decimal 与 float 不能直接运算，统一转 float。
+        tr = p.team_rate
+        tpr = p.third_party_rate
+        labor_cost = (s['hours'] * float(tr) if tr is not None else 0) + \
+                     (s['third_hours'] * float(tpr) if tpr is not None else 0)
+        labor_bal = (float(p.labor_budget_amount) - labor_cost) \
+            if p.labor_budget_amount is not None else ''
         row = [
             p.name,
             cat_labels.get(p.category, p.category),
             sub_labels.get(p.subcategory, p.subcategory or ''),
             p.start_date.isoformat() if p.start_date else '',
             p.planned_end_date.isoformat() if p.planned_end_date else '',
-            p.labor_budget_hours if p.labor_budget_hours is not None else '',
-            p.third_party_budget_hours if p.third_party_budget_hours is not None else '',
-            '\n'.join(budget_lines),
-            '\n'.join(consumed_lines),
+            float(p.material_budget_amount) if p.material_budget_amount is not None else '',
+            float(p.labor_budget_amount) if p.labor_budget_amount is not None else '',
+            float(b.get('material_balance') or 0) if b.get('material_balance') != '' else '',
+            labor_bal,
             round(s['hours'], 1),
             round(s['third_hours'], 1),
             len(s['reports']),
@@ -476,7 +495,7 @@ def project_export_excel(request):
             ws.cell(row=r, column=ci).alignment = wrap_top
 
     # Column widths.
-    widths = [20, 10, 10, 12, 12, 12, 12, 40, 40, 10, 10, 8, 8, 24]
+    widths = [20, 10, 10, 12, 12, 14, 14, 14, 14, 10, 10, 8, 8, 24]
     for i, w in enumerate(widths, 1):
         ws.column_dimensions[get_column_letter(i)].width = w
 
@@ -569,64 +588,48 @@ def project_delete(request, pk):
 @login_required(login_url='core:login')
 @require_POST
 def project_budget_save(request, pk):
-    """Save a project's material budget (JSON ``lines``) + labor budget hours.
+    """Save a project's material budget amount + labor budget amount.
 
-    Replace semantics for budget lines (mirrors PO planned-lines): lines for
-    categories not in the payload are removed; the rest upserted.
+    材料余额 = 材料预算金额 − Σ关联采购订单金额，在前端/明细面板实时展示，
+    此处只持久化两个金额字段。
     """
     from core.role_utils import get_user_role, ROLE_MANAGER, ROLE_SUPER_ADMIN
-    from core.models import ProjectMaterialBudget, InventoryCategory
+    from decimal import Decimal, InvalidOperation
     role = get_user_role(request.user)
     if role not in (ROLE_MANAGER, ROLE_SUPER_ADMIN):
         return JsonResponse({'success': False, 'message': '无权限'}, status=403)
     proj = get_object_or_404(Project, pk=pk)
 
-    # Labor budget hours (optional) — first-party + third-party.
-    def _parse_hours(key):
+    def _parse_amount(key, label):
         raw = (request.POST.get(key) or '').strip()
         if not raw:
             return None, None
         try:
-            return float(raw), None
-        except ValueError:
-            return None, '人工预算工时格式无效'
-    lbh, err = _parse_hours('labor_budget_hours')
+            val = Decimal(raw)
+        except (InvalidOperation, ValueError):
+            return None, f'{label}格式无效'
+        if val < 0:
+            return None, f'{label}不能为负'
+        return val, None
+
+    mba, err = _parse_amount('material_budget_amount', '材料预算金额')
     if err:
         return JsonResponse({'success': False, 'message': err}, status=400)
-    tbh, err = _parse_hours('third_party_budget_hours')
+    lba, err = _parse_amount('labor_budget_amount', '人工预算金额')
     if err:
         return JsonResponse({'success': False, 'message': err}, status=400)
-    proj.labor_budget_hours = lbh
-    proj.third_party_budget_hours = tbh
-    proj.save(update_fields=['labor_budget_hours', 'third_party_budget_hours'])
-
-    # Material budget lines (JSON [{category, quantity, unit}]).
-    try:
-        lines = json.loads(request.POST.get('lines', '[]'))
-    except (json.JSONDecodeError, TypeError):
-        lines = []
-    seen = {}
-    for ln in lines or []:
-        if not isinstance(ln, dict):
-            continue
-        cat_id = ln.get('category')
-        try:
-            qty = int(ln.get('quantity') or 0)
-        except (ValueError, TypeError):
-            continue
-        if not cat_id or qty <= 0:
-            continue
-        seen[cat_id] = {'qty': qty, 'unit': (str(ln.get('unit') or '').strip())}
-
-    proj.material_budget.exclude(category_id__in=seen.keys()).delete()
-    valid = set(InventoryCategory.objects.filter(pk__in=seen.keys()).values_list('id', flat=True))
-    for cat_id, data in seen.items():
-        if int(cat_id) not in valid:
-            continue
-        ProjectMaterialBudget.objects.update_or_create(
-            project=proj, category_id=cat_id,
-            defaults={'quantity': data['qty'], 'unit': data['unit']},
-        )
+    tr, err = _parse_amount('team_rate', '灌溉组工时费率')
+    if err:
+        return JsonResponse({'success': False, 'message': err}, status=400)
+    tpr, err = _parse_amount('third_party_rate', '第三方工时费率')
+    if err:
+        return JsonResponse({'success': False, 'message': err}, status=400)
+    proj.material_budget_amount = mba
+    proj.labor_budget_amount = lba
+    proj.team_rate = tr
+    proj.third_party_rate = tpr
+    proj.save(update_fields=['material_budget_amount', 'labor_budget_amount',
+                             'team_rate', 'third_party_rate'])
     return JsonResponse({'success': True, 'message': '预算已保存'})
 
 
