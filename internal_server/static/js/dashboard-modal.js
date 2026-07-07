@@ -39,6 +39,10 @@
     // Edit mode state. When set, submitV2Workorder sends report_id + report_photos_remove
     // so the server updates the existing report instead of creating a new one.
     var _editingReportId = null;
+    // Set BEFORE buildForm during an edit open so initWorkorderBehaviors can skip
+    // the create-only default-category selection. _editingReportId is set later
+    // (after the fetch resolves), so it can't gate the IIFE directly.
+    var _pendingEdit = false;
     var _existingPhotos = [];      // [{path}] persisted report photos shown with × remove
     var _photoRemove = new Set();  // paths the user removed (sent as report_photos_remove)
 
@@ -113,7 +117,7 @@
         _photoFiles = [];
         _zoneConfirmed = false;
         resetWoZoneRecords();
-        _editingReportId = null; _existingPhotos = []; _photoRemove.clear();   // create mode
+        _editingReportId = null; _pendingEdit = false; _existingPhotos = []; _photoRemove.clear();   // create mode
 
         // Fetch form data in background (cached or from API)
         var dataUrl = type === 'workorder' ? '/api/modal/workorder-data/'
@@ -132,6 +136,7 @@
         // optional association the user can add later from the footer button.
         if (type === 'inventory') {
             _zoneConfirmed = true;  // zone not required for inventory
+            _editingTxnId = null;   // create mode
             var showInv = function () {
                 var p = _modalPrefix('inventory');
                 buildForm('inventory', _formDataCache.inventory);
@@ -169,7 +174,7 @@
         resetWoZoneRecords();
         zoneCodes.forEach(function (c) { _selectedZoneCodes.add(c); });
         _zoneConfirmed = true;
-        _editingReportId = null; _existingPhotos = []; _photoRemove.clear();   // create mode
+        _editingReportId = null; _pendingEdit = false; _existingPhotos = []; _photoRemove.clear();   // create mode
 
         // Ensure form data is loaded, then show form
         var showForm = function () {
@@ -217,6 +222,7 @@
         _selectedZoneCodes.clear();
         _photoFiles = [];
         _existingPhotos = []; _photoRemove.clear();
+        _pendingEdit = true;   // suppress create-only default category in buildForm
         _editingReportId = null;  // set only after data loads + pre-fill succeeds
         resetWoZoneRecords();
 
@@ -321,7 +327,157 @@
             _woMatDest.other = '';
         }
 
+        // Restore the 工作类别 (category) selection from the existing entries.
+        // Without this, the default routine-maint category would be submitted on
+        // re-save and silently flip the report's category to 日常维护.
+        try { restoreWoCategory(data.existing || []); } catch (e) { /* keep form usable */ }
+
         var sb = $('woSubmitBtn'); if (sb) { sb.textContent = '保存'; }
+    }
+
+    // Reconstruct _woCatNode / _woProject for edit mode from the report's existing
+    // entries. Each entry's work_item id resolves to a node in _woNodeById; walking
+    // up _woParentById reaches the root (whose section is the category type). This
+    // mirrors pickWoCategory/pickWoProject so the restored state round-trips.
+    function restoreWoCategory(existing) {
+        // Find a representative entry: prefer one with a work_item present in the tree.
+        var rep = null;
+        for (var i = 0; i < existing.length; i++) {
+            var wid = existing[i].work_item;
+            if (wid != null && _woNodeById[wid]) { rep = existing[i]; break; }
+        }
+        if (!rep) return;  // nothing to restore; leave the (create-default) category
+
+        var node = _woNodeById[rep.work_item];
+        // Walk to the root (parent === null) and remember the direct child of the
+        // root — that's the `sub` level pickWoCategory(root, sub) selects.
+        var cur = node, root = node, sub = null;
+        while (cur) {
+            var parent = _woParentById[cur.id];
+            if (!parent) { root = cur; break; }
+            sub = cur;           // this node is a candidate sub (one below root)
+            cur = parent;
+        }
+        var display = $('woCatDisplay');
+        var setDisplay = function (text) { if (display) { display.textContent = text; display.style.color = '#222'; } };
+        var setContentRow = function (visible) {
+            var trig = $('woContentTrigger');
+            var row = trig ? trig.closest('.v2-fg') : null;
+            if (row) row.style.display = visible ? '' : 'none';
+        };
+
+        var PROJECT_SECTIONS = { irrigation_project: 1, drainage_project: 1, other_project: 1 };
+        if (PROJECT_SECTIONS[root.section]) {
+            // Project-typed category: _woCatNode is the root, _woProject the entry's project.
+            _woCatNode = root.id;
+            _woProject = rep.project || null;
+            var proj = _woProject ? (_woProjects.filter(function (p) { return p.id === _woProject; })[0]) : null;
+            setDisplay(root.name + (proj ? ' › ' + (proj.name || '') : ''));
+            setContentRow(true);
+        } else {
+            // Normal category: if the root has children, _woCatNode is the sub that is
+            // an ancestor of (or equal to) the entry node. Otherwise it's the root.
+            var chosen = (root.children && root.children.length) ? (sub || root) : root;
+            _woCatNode = chosen.id;
+            _woProject = null;
+            setDisplay(chosen === root ? root.name : (root.name + ' › ' + chosen.name));
+            setContentRow(!!(chosen.children && chosen.children.length));
+        }
+        if (typeof updateWoMatDest === 'function') updateWoMatDest();
+        updateWoTrigger();
+    }
+
+    // Edit an existing inventory transaction: open the same modal as create, but
+    // pre-fill it with the txn's operation/subtype/date/lines/etc. Mirrors
+    // openV2ModalForEdit for workorders. Triggered from the ledger 编辑 button
+    // via ?edit_inventory=<id>.
+    window.openV2ModalForEditInv = function (txnId) {
+        if (!txnId) return;
+        if (_closeTimeout) { clearTimeout(_closeTimeout); _closeTimeout = null; }
+        if (_currentModal) closeV2Modal(_currentModal);
+        if (_closeTimeout) { clearTimeout(_closeTimeout); _closeTimeout = null; }
+        _currentModal = 'inventory';
+        _selectedZoneCodes.clear();
+        _zoneConfirmed = true;          // inventory never requires a zone
+        _editingTxnId = null;           // set only after pre-fill succeeds
+
+        var p = _modalPrefix('inventory');
+        var bd = $(p + 'ModalBackdrop'), ct = $(p + 'ModalContainer');
+        if (bd) bd.style.display = '';
+        if (ct) { ct.style.display = ''; ct.classList.add('open'); }
+        var body = $(p + 'ModalBody');
+        if (body) body.innerHTML = '<div style="text-align:center;padding:40px;color:#888;">加载库存记录中...</div>';
+        var sb = $('invSubmitBtn'); if (sb) { sb.disabled = true; sb.textContent = '保存'; }
+
+        fetch('/api/modal/inventory-data/?txn_id=' + encodeURIComponent(txnId), { credentials: 'same-origin' })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                if (!isValidFormData('inventory', data)) {
+                    closeV2Modal('inventory');
+                    showToast(data && data.error ? data.error : '加载库存记录失败', 'error');
+                    return;
+                }
+                buildForm('inventory', data);
+                try { applyInvEditPrefill(data); } catch (e) { /* keep form usable */ }
+                _editingTxnId = txnId;
+                if (sb) sb.disabled = false;
+            })
+            .catch(function () { showToast('加载库存记录失败', 'error'); if (sb) { sb.disabled = false; sb.textContent = '保存'; } });
+    };
+
+    // Write the existing txn's values into the inventory modal built by
+    // buildInventoryForm. Mirrors applyWoEditPrefill.
+    function applyInvEditPrefill(data) {
+        var h = data.header || {};
+        // Operation type: activate the matching chip + hidden input.
+        if (h.operation) {
+            document.querySelectorAll('.inv-op-chip').forEach(function (c) {
+                c.classList.toggle('active', c.dataset.val === h.operation);
+            });
+            var opInput = $('invOpInput'); if (opInput) opInput.value = h.operation;
+        }
+        // Subtype chips are rebuilt by _invBuildSubtypes() (called in buildForm);
+        // activate the one matching the saved entry_subtype.
+        if (h.entry_subtype) {
+            document.querySelectorAll('.inv-sub-chip').forEach(function (c) {
+                c.classList.toggle('active', c.dataset.val === h.entry_subtype);
+            });
+            var subInput = $('invSubInput'); if (subInput) subInput.value = h.entry_subtype;
+        }
+        _invSyncCondFields();   // show order_no / project / counterparty rows as needed
+        // Date.
+        if (h.date) {
+            var dateSel = $('invDate');
+            if (dateSel) {
+                var opt = dateSel.querySelector('option[value="' + h.date + '"]');
+                if (opt) dateSel.value = h.date; else dateSel.value = h.date;
+            }
+        }
+        // Order no / counterparty / remark.
+        if (h.order_no != null) { var on = $('invOrderNo'); if (on) on.value = h.order_no; }
+        if (h.counterparty != null) { var cp = $('invCounterparty'); if (cp) cp.value = h.counterparty; }
+        var rm = document.querySelector('#invModalForm [name="remark"]'); if (rm && h.remark != null) rm.value = h.remark;
+        // 出库-项目: activate the project-category chip + project-name chip.
+        if (h.operation === '出库' && h.entry_subtype === '项目' && h.project_id) {
+            if (h.project_category) {
+                document.querySelectorAll('.inv-pcat-chip').forEach(function (c) {
+                    if (c.dataset.val === h.project_category) c.click();   // cascades into name chips
+                });
+            }
+            document.querySelectorAll('.inv-pname-chip').forEach(function (c) {
+                c.classList.toggle('active', String(c.dataset.val) === String(h.project_id));
+            });
+            var pj = $('invProjInput'); if (pj) pj.value = h.project_id;
+        }
+        // Material cart: rebuild from existing_lines (id/name/stock/quantity/unit).
+        _invCart = (data.existing_lines || []).map(function (ln) {
+            return { id: ln.category, name: ln.name, stock: ln.stock, quantity: ln.quantity, unit: ln.unit || '' };
+        });
+        _invRenderCart();
+        // Zone association (optional).
+        if (h.zone_id) _selectedZoneCodes.add(String(h.zone_id));
+        // Submit button label.
+        var sb = $('invSubmitBtn'); if (sb) sb.textContent = '保存';
     }
 
     function renderWoExistingPhotos() {
@@ -1729,21 +1885,26 @@
         }
         if (catTrigger && catModal) catTrigger.addEventListener('click', function () { catModal.style.display = 'flex'; });
         // Default 工作类别 to 常规维护 › 维保定期检查 (the most common type).
-        (function defaultCategory() {
-            var rmRoot = null;
-            for (var i = 0; i < _woRoots.length; i++) { if (_woRoots[i].section === 'routine_maint') { rmRoot = _woRoots[i]; break; } }
-            var sub = null;
-            if (rmRoot && rmRoot.children) {
-                for (var j = 0; j < rmRoot.children.length; j++) { if (rmRoot.children[j].name === '维保定期检查') { sub = rmRoot.children[j]; break; } }
-            }
-            if (sub) {
-                _woCatNode = sub.id; _woProject = null;
-                var dd = $('woCatDisplay');
-                if (dd) { dd.textContent = rmRoot.name + ' › ' + sub.name; dd.style.color = '#222'; }
-                setContentVisible(true);
-                if (typeof updateWoMatDest === 'function') updateWoMatDest();
-            }
-        })();
+        // Skip for edit mode — applyWoEditPrefill restores the original category
+        // from the report's existing entries. Without this, re-saving an edited
+        // report would silently flip its category to 日常维护.
+        if (!_pendingEdit) {
+            (function defaultCategory() {
+                var rmRoot = null;
+                for (var i = 0; i < _woRoots.length; i++) { if (_woRoots[i].section === 'routine_maint') { rmRoot = _woRoots[i]; break; } }
+                var sub = null;
+                if (rmRoot && rmRoot.children) {
+                    for (var j = 0; j < rmRoot.children.length; j++) { if (rmRoot.children[j].name === '维保定期检查') { sub = rmRoot.children[j]; break; } }
+                }
+                if (sub) {
+                    _woCatNode = sub.id; _woProject = null;
+                    var dd = $('woCatDisplay');
+                    if (dd) { dd.textContent = rmRoot.name + ' › ' + sub.name; dd.style.color = '#222'; }
+                    setContentVisible(true);
+                    if (typeof updateWoMatDest === 'function') updateWoMatDest();
+                }
+            })();
+        }
         var contentTrigger = $('woContentTrigger');
         if (contentTrigger) contentTrigger.addEventListener('click', openWoSheet);
         var leafConfirm = $('woLeafConfirmBtn');
@@ -2540,6 +2701,9 @@
     var _invTree = [];        // cached catalog tree from API
     var _invNodeMap = {};     // id -> node (flat lookup over _invTree)
     var _invData = {};        // cached modal-data payload (operations/projects/borrowers)
+    // Edit mode state. When set, submitV2Inventory sends txn_id so the server
+    // updates the existing transaction instead of creating a new one.
+    var _editingTxnId = null;
 
     function _invIndexTree(nodes) {
         nodes.forEach(function (n) {
@@ -2784,18 +2948,21 @@
         if (_selectedZoneCodes.size) {
             fd.set('zone_id', Array.from(_selectedZoneCodes)[0]);  // inventory uses a single optional zone
         }
-        var btn = $('invSubmitBtn'); btn.disabled = true; btn.textContent = '提交中...';
+        // Edit mode: tell the server which transaction to update.
+        var isEdit = !!_editingTxnId;
+        if (isEdit) fd.append('txn_id', _editingTxnId);
+        var btn = $('invSubmitBtn'); btn.disabled = true; btn.textContent = (isEdit ? '保存' : '提交') + '中...';
         fetch('/mobile/inventory/v2/', { method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest' } })
             .then(function (r) { return r.json(); }).then(function (data) {
                 if (data.success) {
                     showToast(data.message, 'success');
                     btn.disabled = false; btn.textContent = '提交';
-                    _invCart = [];
+                    _invCart = []; _editingTxnId = null;
                     setTimeout(function () { closeV2Modal('inventory'); }, 1500);
                 } else {
-                    showToast(data.message, 'error'); btn.disabled = false; btn.textContent = '提交';
+                    showToast(data.message, 'error'); btn.disabled = false; btn.textContent = isEdit ? '保存' : '提交';
                 }
-            }).catch(function (err) { showToast('提交失败: ' + err, 'error'); btn.disabled = false; btn.textContent = '提交'; });
+            }).catch(function (err) { showToast('提交失败: ' + err, 'error'); btn.disabled = false; btn.textContent = isEdit ? '保存' : '提交'; });
     };
 
     window.submitV2WaterRequest = function () {
@@ -2822,16 +2989,23 @@
             }).catch(function (err) { showToast('提交失败: ' + err, 'error'); btn.disabled = false; btn.textContent = '提交'; });
     };
 
-    // Auto-open the workorder modal in edit mode when the dashboard is reached
-    // via the ?edit_workorder=<id> link (from the work-reports list / detail 编辑
-    // buttons). Handles both "DOM still loading" and "DOM already ready" cases.
+    // Auto-open a modal in edit mode when the dashboard is reached via a
+    // ?edit_workorder=<id> or ?edit_inventory=<id> link (from the work-reports
+    // list / inventory ledger 编辑 buttons). Handles both "DOM still loading"
+    // and "DOM already ready" cases.
     function runEditTrigger() {
         try {
-            var id = new URLSearchParams(window.location.search).get('edit_workorder');
-            if (id && /^\d+$/.test(id)) {
+            var params = new URLSearchParams(window.location.search);
+            var woId = params.get('edit_workorder');
+            if (woId && /^\d+$/.test(woId)) {
                 // Small delay lets the map finish initializing so the zone summary
                 // highlights correctly.
-                setTimeout(function () { window.openV2ModalForEdit(id); }, 600);
+                setTimeout(function () { window.openV2ModalForEdit(woId); }, 600);
+                return;
+            }
+            var invId = params.get('edit_inventory');
+            if (invId && /^\d+$/.test(invId)) {
+                setTimeout(function () { window.openV2ModalForEditInv(invId); }, 600);
             }
         } catch (e) { /* URLSearchParams unsupported — no-op */ }
     }

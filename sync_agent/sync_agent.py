@@ -343,13 +343,11 @@ def read_mdb_with_progress(cfg, days, last_sync, progress_cb=None, log_cb=None):
             if progress_cb:
                 progress_cb(5 + int(50 * (i + 1) / n_tables), f"{table}: {len(rows):,} 行")
 
-        # Read the 6 config tables in full while the DB handle is still open.
-        config_data = _read_config_tables(db, progress_cb=progress_cb, log_cb=log_cb)
     finally:
         db.Close()
 
     sent_range = (min(all_ts), max(all_ts)) if all_ts else (None, None)
-    return time_series, sent_range, new_sync, config_data
+    return time_series, sent_range, new_sync, {}
 
 
 # ─── Sync Worker ──────────────────────────────────────────────────────
@@ -364,7 +362,7 @@ def do_sync(cfg, days, last_sync, progress_cb=None, log_cb=None):
     import urllib.error
 
     try:
-        time_series, sent_range, new_sync, config_data = read_mdb_with_progress(
+        time_series, sent_range, new_sync, _config_data = read_mdb_with_progress(
             cfg, days, last_sync, progress_cb=progress_cb, log_cb=log_cb,
         )
     except FileNotFoundError as e:
@@ -373,12 +371,11 @@ def do_sync(cfg, days, last_sync, progress_cb=None, log_cb=None):
         return False, f"MDB 读取错误: {e}", last_sync, {}
 
     total = sum(len(v) for v in time_series.values())
-    config_total = sum(len(v) for v in config_data.values())
     min_ts, max_ts = sent_range
 
-    # Config tables are always sent (small, upsert server-side). Time-series
-    # may be empty if the window has no new data — but we still send config.
-    if total == 0 and config_total == 0:
+    # Only time-series data is sent. Config tables are no longer uploaded
+    # (the server keeps its existing config; this saves bandwidth and read time).
+    if total == 0:
         if progress_cb:
             progress_cb(100, "完成（无数据）")
         summary = {
@@ -393,7 +390,6 @@ def do_sync(cfg, days, last_sync, progress_cb=None, log_cb=None):
     payload = {
         "sync_timestamp": datetime.now().strftime("%Y%m%d%H%M%S"),
         "agent_version": "2.0",
-        "config": config_data,
         "time_series": time_series,
     }
 
@@ -404,9 +400,9 @@ def do_sync(cfg, days, last_sync, progress_cb=None, log_cb=None):
     }
 
     if progress_cb:
-        progress_cb(60, f"上传 {config_total:,} 配置 + {total:,} 时序行到服务器…")
+        progress_cb(60, f"上传 {total:,} 时序行到服务器…")
     if log_cb:
-        log_cb(f"发送 {config_total:,} 配置 + {total:,} 时序行到 {url} …")
+        log_cb(f"发送 {total:,} 时序行到 {url} …")
 
     try:
         data = json.dumps(payload).encode("utf-8")
@@ -446,19 +442,6 @@ def do_sync(cfg, days, last_sync, progress_cb=None, log_cb=None):
         skipped_total += skp
         tables_summary[key] = {'sent': sent, 'inserted': ins, 'skipped': skp, 'table': table}
 
-    # Config table results (created/updated/errors from server).
-    config_summary = {}
-    for key, table in CONFIG_TABLES:
-        sent = len(config_data.get(key, []))
-        info = srv_results.get(key, {}) or {}
-        config_summary[key] = {
-            'sent': sent,
-            'created': int(info.get('created', 0) or 0),
-            'updated': int(info.get('updated', 0) or 0),
-            'errors': int(info.get('errors', 0) or 0),
-            'table': table,
-        }
-
     summary = {
         'total': total,
         'inserted': inserted_total,
@@ -467,7 +450,6 @@ def do_sync(cfg, days, last_sync, progress_cb=None, log_cb=None):
         'date_to': max_ts,
         'window_days': days,
         'tables': tables_summary,
-        'config': config_summary,
     }
 
     if progress_cb:
@@ -529,15 +511,6 @@ def _format_summary(s):
     for key, _, _ in TIME_SERIES_TABLES:
         t = s.get('tables', {}).get(key, {})
         lines.append(f"{t.get('table', key):<22}{t.get('sent', 0):>10,}{t.get('inserted', 0):>10,}{t.get('skipped', 0):>10,}")
-    # Config tables (created/updated/errors, not inserted/skipped).
-    config = s.get('config', {})
-    if config:
-        lines.append("")
-        lines.append(f"{'配置表':<22}{'发送':>10}{'新增':>10}{'更新':>10}")
-        lines.append("-" * 52)
-        for key, _ in CONFIG_TABLES:
-            t = config.get(key, {})
-            lines.append(f"{t.get('table', key):<22}{t.get('sent', 0):>10,}{t.get('created', 0):>10,}{t.get('updated', 0):>10,}")
     return "\n".join(lines)
 
 
@@ -716,9 +689,9 @@ def run_gui():
             row = QHBoxLayout()
             row.addWidget(QLabel("导入范围:"))
             self.window_combo = QComboBox()
-            self.window_combo.addItems(["最近 7 天", "最近 15 天", "最近 30 天"])
+            self.window_combo.addItems(["最近 1 天", "最近 3 天", "最近 7 天", "最近 15 天", "最近 30 天"])
             default_days = self.cfg.get("days_window", 7)
-            idx = {7: 0, 15: 1, 30: 2}.get(default_days, 0)
+            idx = {1: 0, 3: 1, 7: 2, 15: 3, 30: 4}.get(default_days, 2)
             self.window_combo.setCurrentIndex(idx)
             self.window_combo.currentIndexChanged.connect(self._on_window_changed)
             row.addWidget(self.window_combo, stretch=1)
@@ -774,7 +747,7 @@ def run_gui():
             self._log(f"导入范围: 最近 {self._current_days()} 天 · 自动同步每 {self.cfg['sync_interval_minutes']} 分钟", "info")
 
         def _current_days(self):
-            return {0: 7, 1: 15, 2: 30}.get(self.window_combo.currentIndex(), 7)
+            return {0: 1, 1: 3, 2: 7, 3: 15, 4: 30}.get(self.window_combo.currentIndex(), 7)
 
         def _on_window_changed(self, _idx):
             days = self._current_days()
@@ -951,7 +924,7 @@ def run_gui():
                 save_config(self.cfg)
                 self.timer.setInterval(self.cfg["sync_interval_minutes"] * 60 * 1000)
                 self.next_sync_label.setText(f"下次自动同步: 每 {self.cfg['sync_interval_minutes']} 分钟")
-                idx = {7: 0, 15: 1, 30: 2}.get(self.cfg.get("days_window", 7), 0)
+                idx = {1: 0, 3: 1, 7: 2, 15: 3, 30: 4}.get(self.cfg.get("days_window", 7), 2)
                 self.window_combo.setCurrentIndex(idx)
                 self._log("设置已保存", "success")
                 self._check_connection()
