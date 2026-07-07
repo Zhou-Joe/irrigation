@@ -8205,6 +8205,44 @@ def inventory_modal_data(request):
                      .values_list('counterparty', flat=True)
                      .distinct().order_by('counterparty'))
 
+    # Edit mode: when a txn_id is supplied, also return the existing txn's
+    # fields + lines + edit history so the modal can pre-fill (mirrors
+    # workorder_modal_data's report_id block).
+    txn_id = request.GET.get('txn_id')
+    edit_payload = {}
+    if txn_id and txn_id.isdigit():
+        from django.shortcuts import get_object_or_404
+        txn = get_object_or_404(
+            InventoryTransaction.objects
+            .select_related('related_project', 'zone')
+            .prefetch_related('lines__category', 'edit_logs__editor'),
+            pk=txn_id,
+        )
+        edit_payload = {
+            'txn_id': txn.id,
+            'header': {
+                'operation': txn.operation,
+                'entry_subtype': txn.entry_subtype,
+                'date': txn.date.isoformat(),
+                'order_no': txn.order_no,
+                'counterparty': txn.counterparty,
+                'project_id': txn.related_project_id,
+                'project_category': txn.related_project.category if txn.related_project else None,
+                'zone_id': txn.zone_id,
+                'remark': txn.remark,
+            },
+            'existing_lines': [
+                {'category': ln.category_id, 'quantity': ln.quantity, 'unit': ln.unit,
+                 'name': ln.category.name_zh, 'stock': ln.category.current_stock}
+                for ln in txn.lines.all()
+            ],
+            'edit_logs': [
+                {'editor': (log.editor.full_name if log.editor else '(未知)'),
+                 'time': log.created_at.strftime('%Y-%m-%d %H:%M')}
+                for log in txn.edit_logs.all()
+            ],
+        }
+
     return JsonResponse({
         'inventory_tree': serialize_inventory_tree(),
         'operations': [
@@ -8221,6 +8259,7 @@ def inventory_modal_data(request):
         'today': date.today().isoformat(),
         'now_time': now.strftime('%H:%M'),
         'worker_name': worker.full_name if worker else request.user.get_full_name() or request.user.username,
+        **edit_payload,
     })
 
 
@@ -8277,58 +8316,97 @@ def inventory_mobile_v2(request):
         if project_id and project_id.isdigit():
             project = Project.objects.filter(pk=project_id).first()
 
-        txn = InventoryTransaction.objects.create(
-            date=request.POST.get('date') or date.today().isoformat(),
-            worker=worker,
-            operation=operation,
-            entry_subtype=entry_subtype,
-            order_no=(request.POST.get('order_no') or '').strip(),
-            counterparty=(request.POST.get('counterparty') or '').strip(),
-            related_project=project,
-            remark=(request.POST.get('remark') or '').strip(),
-            zone=zone,
-        )
+        # Edit mode: load the existing txn and reverse its old stock delta before
+        # re-applying. Both paths then share the same line-application + PO-linking
+        # tail. Wrapped in a transaction so a partial failure can't corrupt stock.
+        from django.db import transaction as _db_txn
+        from core.models import InventoryTransactionEditLog
+        edit_txn_id = request.POST.get('txn_id')
+        is_edit = bool(edit_txn_id and edit_txn_id.isdigit())
+        with _db_txn.atomic():
+            if is_edit:
+                txn = get_object_or_404(InventoryTransaction, pk=edit_txn_id)
+                # Reverse the OLD delta so stock reflects only what the new lines
+                # will apply below. Old direction may differ from the new one.
+                old_sign = 1 if txn.operation == '入库' else -1
+                for old_ln in txn.lines.all():
+                    InventoryCategory.objects.filter(pk=old_ln.category_id).update(
+                        current_stock=F('current_stock') - old_sign * old_ln.quantity,
+                    )
+                txn.lines.all().delete()
+                # Apply the edited fields.
+                txn.date = request.POST.get('date') or date.today().isoformat()
+                txn.operation = operation
+                txn.entry_subtype = entry_subtype
+                txn.order_no = (request.POST.get('order_no') or '').strip()
+                txn.counterparty = (request.POST.get('counterparty') or '').strip()
+                txn.related_project = project
+                txn.remark = (request.POST.get('remark') or '').strip()
+                txn.zone = zone
+                txn.purchase_order = None   # re-linked below if 入库-采购 hits a PO
+                txn.save()
+            else:
+                txn = InventoryTransaction.objects.create(
+                    date=request.POST.get('date') or date.today().isoformat(),
+                    worker=worker,
+                    operation=operation,
+                    entry_subtype=entry_subtype,
+                    order_no=(request.POST.get('order_no') or '').strip(),
+                    counterparty=(request.POST.get('counterparty') or '').strip(),
+                    related_project=project,
+                    remark=(request.POST.get('remark') or '').strip(),
+                    zone=zone,
+                )
 
-        # 入库-采购时，若订单号命中某张采购订单，则自动关联该流水到订单。
-        # （自由输入且未命中的订单号保持 purchase_order=NULL，仍以文本形式保留。）
-        if operation == '入库' and entry_subtype == '采购' and txn.order_no:
-            po = PurchaseOrder.objects.filter(order_number=txn.order_no).first()
-            if po is not None:
-                txn.purchase_order = po
-                txn.save(update_fields=['purchase_order'])
+            # 入库-采购时，若订单号命中某张采购订单，则自动关联该流水到订单。
+            # （自由输入且未命中的订单号保持 purchase_order=NULL，仍以文本形式保留。）
+            if operation == '入库' and entry_subtype == '采购' and txn.order_no:
+                po = PurchaseOrder.objects.filter(order_number=txn.order_no).first()
+                if po is not None:
+                    txn.purchase_order = po
+                    txn.save(update_fields=['purchase_order'])
 
-        # Direction: 入库 adds stock; 出库 subtracts.
-        sign = 1 if operation == '入库' else -1
-        created_lines = 0
-        for ln in lines:
-            cat_id = ln.get('category')
-            qty = ln.get('quantity') or 0
-            try:
-                qty = abs(float(qty))
-            except (ValueError, TypeError):
-                continue
-            cat = InventoryCategory.objects.filter(pk=cat_id).first()
-            if not cat or qty <= 0:
-                continue
-            InventoryTransactionLine.objects.create(
-                transaction=txn, category=cat,
-                quantity=qty, unit=(ln.get('unit') or '').strip(),
-            )
-            # Atomically adjust current_stock (F() avoids race on concurrent submits).
-            InventoryCategory.objects.filter(pk=cat_id).update(
-                current_stock=F('current_stock') + sign * qty,
-            )
-            created_lines += 1
+            # Direction: 入库 adds stock; 出库 subtracts.
+            sign = 1 if operation == '入库' else -1
+            created_lines = 0
+            for ln in lines:
+                cat_id = ln.get('category')
+                qty = ln.get('quantity') or 0
+                try:
+                    qty = abs(float(qty))
+                except (ValueError, TypeError):
+                    continue
+                cat = InventoryCategory.objects.filter(pk=cat_id).first()
+                if not cat or qty <= 0:
+                    continue
+                InventoryTransactionLine.objects.create(
+                    transaction=txn, category=cat,
+                    quantity=qty, unit=(ln.get('unit') or '').strip(),
+                )
+                # Atomically adjust current_stock (F() avoids race on concurrent submits).
+                InventoryCategory.objects.filter(pk=cat_id).update(
+                    current_stock=F('current_stock') + sign * qty,
+                )
+                created_lines += 1
 
-        if created_lines == 0:
-            txn.delete()
-            return JsonResponse({'success': False, 'message': '没有有效的物料行'}, status=400)
+            if created_lines == 0:
+                if is_edit:
+                    raise ValueError('没有有效的物料行')   # rolls back the whole atomic block
+                txn.delete()
+                return JsonResponse({'success': False, 'message': '没有有效的物料行'}, status=400)
+
+            # Edit history: record one log row per edit save (new txns get none).
+            if is_edit:
+                InventoryTransactionEditLog.objects.create(
+                    transaction=txn, editor=worker, note='',
+                )
 
         if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
             sub = f'-{entry_subtype}' if entry_subtype else ''
+            verb = '已更新' if is_edit else '已提交'
             return JsonResponse({
                 'success': True,
-                'message': f'库存{operation}{sub}已提交 ({created_lines} 项)',
+                'message': f'库存{operation}{sub}{verb} ({created_lines} 项)',
             })
         return redirect('core:dashboard')
 
@@ -8384,7 +8462,7 @@ def inventory_management(request):
     txns = (InventoryTransaction.objects
             .filter(date__gte=date_from, date__lte=date_to)
             .select_related('worker', 'related_project', 'zone', 'work_report')
-            .prefetch_related('lines__category')
+            .prefetch_related('lines__category', 'edit_logs__editor')
             .order_by('-date', '-id'))
 
     # Stockable leaves for the alert tab — {id, name, path, stock, min}. The
