@@ -664,6 +664,22 @@ document.addEventListener('DOMContentLoaded', ()=>{
   const form = document.getElementById('workorder-form');
   form.addEventListener('submit', collectEntries);
   form.addEventListener('submit', collectMaterials);
+  // Warn (don't hard-block) when the outflow destination disagrees with the
+  // work category. Runs after collectMaterials so _matDest is up to date.
+  let _matOverride = false, _lastSubmitBtn = null;
+  form.querySelectorAll('button[type="submit"]').forEach(b =>
+    b.addEventListener('click', () => { _lastSubmitBtn = b; }));
+  form.addEventListener('submit', function(e){
+    if (_matOverride) return;                 // already confirmed this submission
+    const msg = checkMatDestConsistency();
+    if (!msg) return;
+    e.preventDefault();
+    if (confirm('出库去向与工单类别不一致：\n\n' + msg + '\n\n确定仍要这样提交吗？')) {
+      _matOverride = true;
+      // Re-trigger the original button so name="save_and_new" is preserved.
+      if (_lastSubmitBtn) _lastSubmitBtn.click(); else form.submit();
+    }
+  });
   // Photo management (edit page): render existing + live upload preview.
   renderExistingPhotos();
   setupPhotoUpload();
@@ -1001,6 +1017,44 @@ function collectMatDest(){
   dEl.value = dest;
   pEl.value = (_matDest.subtype === '项目' && _matDest.projectId) ? _matDest.projectId : '';
   cEl.value = (_matDest.subtype === '借用') ? _matDest.counterparty : '';
+}
+
+// ── Outflow ↔ work-category consistency check ────────────────────────────
+// On submit, if the work order carries any materials (出库), verify the
+// outflow destination agrees with the work content:
+//   • 常规维护 (routine_maint)        → outflow should be 日常维护
+//   • a project section (xx项目)      → outflow should be 项目 with the SAME
+//     project as the work-content project selector
+// Returns a human-readable reason when they disagree, else null. This catches
+// the WO-277 case: materials tagged to a project whose work-item entries were
+// left un-tagged (or tagged to a different project).
+function checkMatDestConsistency(){
+  if (!_matCart || _matCart.length === 0) return null;   // no outflow → no check
+  const secs = deriveFilledSections();
+  const hasProject = [...secs].some(s => PROJECT_SECTIONS_MAT.has(s));
+  const hasRoutine = secs.has('routine_maint');
+  if (!hasProject && !hasRoutine) return null;           // other categories → user's call
+
+  const workSel = document.getElementById('irrigation-project-select');
+  const workPid = workSel && workSel.value ? parseInt(workSel.value, 10) : null;
+  const destSub = _matDest.subtype;
+  const destPid = _matDest.projectId;
+  const projName = id => ((PROJECTS || []).find(p => p.id === id) || {}).name || '';
+
+  if (hasProject) {
+    // Work content is project-scoped → outflow must be 项目, same project.
+    if (destSub !== '项目')
+      return `工作内容是项目类，但出库去向选了「${destSub || '未选'}」，应为「项目」。`;
+    if (workPid && destPid && workPid !== destPid)
+      return `工单项目是「${projName(workPid)}」，但出库去向选了「${projName(destPid)}」，项目不一致。`;
+    if (workPid && !destPid)
+      return `工单已选项目「${projName(workPid)}」，但出库去向未选具体项目。`;
+  } else if (hasRoutine) {
+    // Work content is routine maintenance → outflow should be 日常维护.
+    if (destSub !== '日常维护')
+      return `工作内容是常规维护，但出库去向选了「${destSub || '未选'}」，应为「日常维护」。`;
+  }
+  return null;
 }
 
 function initMaterialWidget(){
