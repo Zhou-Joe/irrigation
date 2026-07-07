@@ -505,6 +505,9 @@ def project_export_excel(request):
                         content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
     resp['Content-Disposition'] = 'attachment; filename="projects.xlsx"'
     return resp
+
+
+def _clean_project_fields(post):
     name = (post.get('name') or '').strip()
     category = (post.get('category') or 'IRRIGATION').strip()
     if category not in {c for c, _ in Project.CATEGORY_CHOICES}:
