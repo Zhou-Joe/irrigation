@@ -1676,7 +1676,7 @@
             '<div class="v2-fg"><div class="v2-fl">工作内容</div><div id="woContentTrigger" style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border:1px solid #ddd;border-radius:8px;cursor:pointer;background:#fff;font-size:16px;"><span id="woContentDisplay" style="color:#bbb;">选择</span><span style="font-size:0.8em;color:#999;">▶</span></div></div>' +
             '<div class="v2-fg"><div class="v2-form-row"><div style="flex:0.8;"><div class="v2-fl">待修</div><div class="v2-chip-group"><div class="v2-chip active" data-val=""><input type="radio" name="is_pending_repair" value="" style="display:none;" checked>否</div><div class="v2-chip" data-val="1"><input type="radio" name="is_pending_repair" value="1" style="display:none;">是</div></div></div><div style="flex:1.2;"><div class="v2-fl">疑难</div><div class="v2-chip-group"><div class="v2-chip active" data-val=""><input type="radio" name="is_difficult" value="" style="display:none;" checked>否</div><div class="v2-chip" data-val="1"><input type="radio" name="is_difficult" value="1" style="display:none;">是</div></div></div><div><div class="v2-fl">已处理</div><div class="v2-chip-group"><div class="v2-chip active" data-val=""><input type="radio" name="is_difficult_resolved" value="" style="display:none;" checked>否</div><div class="v2-chip" data-val="1"><input type="radio" name="is_difficult_resolved" value="1" style="display:none;">是</div></div></div></div></div>' +
             '<div class="v2-fg"><div class="v2-fl">备注</div><textarea name="remark" class="v2-textarea" placeholder="可选备注..." rows="2"></textarea></div>' +
-            '<div class="v2-fg"><div class="v2-fl">照片/视频 (最多6个)</div><div class="v2-photo-area" id="woPhotoArea"><div class="v2-photo-add v2-photo-camera" id="woPhotoCamera" title="拍摄">📷</div><div class="v2-photo-add" id="woPhotoAdd" title="从相册选择">+</div></div><input type="file" id="woPhotoInput" accept="image/*,video/*" multiple style="display:none;"><input type="file" id="woPhotoCameraInput" accept="image/*,video/*" capture="environment" style="display:none;"></div>' +
+            '<div class="v2-fg"><div class="v2-fl">照片/视频 (最多12个)</div><div class="v2-photo-area" id="woPhotoArea"><div class="v2-photo-add v2-photo-camera" id="woPhotoCamera" title="拍摄">📷</div><div class="v2-photo-add" id="woPhotoAdd" title="从相册选择">+</div></div><input type="file" id="woPhotoInput" accept="image/*,video/*" multiple style="display:none;"><input type="file" id="woPhotoCameraInput" accept="image/*,video/*" capture="environment" style="display:none;"></div>' +
             '<div class="v2-fg"><div class="v2-fl">材料消耗 / 出库 <span style="font-size:0.78em;color:#aaa;font-weight:400;">(可选，提交时扣减库存)</span></div><div id="woMatDestRow" style="display:none;margin-bottom:8px;"><div style="font-size:0.8em;color:#888;margin-bottom:4px;">出库去向 <span id="woMatDestAuto" style="color:#2D6A4F;"></span></div><div class="v2-chip-group" id="woMatDestChips"></div><div id="woMatDestProject" style="display:none;margin-top:6px;"></div><div id="woMatDestCp" style="display:none;margin-top:6px;"><input type="text" id="woMatDestCpInput" placeholder="借用方" class="v2-input" style="font-size:0.88em;"></div><div id="woMatDestOther" style="display:none;margin-top:6px;"><input type="text" id="woMatDestOtherInput" placeholder="请填写去向" class="v2-input" style="font-size:0.88em;"></div></div><div id="woMatCart"></div><button type="button" id="woMatAdd" style="margin-top:4px;width:100%;padding:9px;border:1px dashed #2D6A4F;border-radius:8px;background:#fff;color:#2D6A4F;font-size:0.9em;font-weight:600;cursor:pointer;">+ 添加材料</button><div id="woMatRecommend" style="display:none;margin-top:8px;"></div></div>' +
             '<input type="hidden" name="entries" id="woEntriesInput" value="[]"><input type="hidden" name="pm_resolved" id="woPmResolved" value=""><input type="hidden" name="materials" id="woMaterialsInput" value="[]"></form>' +
             '<div id="woCatModal" class="v2-sheet-overlay"><div class="v2-sheet"><div style="width:36px;height:4px;background:#ccc;border-radius:2px;margin:10px auto 0;"></div><div style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px 10px;border-bottom:1px solid #f0f0f0;flex-shrink:0;"><span style="font-weight:600;">选择工作类别</span><button type="button" onclick="document.getElementById(\'woCatModal\').style.display=\'none\'" style="width:32px;height:32px;border:none;background:#f0f0f0;border-radius:50%;font-size:1.1em;cursor:pointer;">×</button></div><div style="padding:16px;overflow-y:auto;-webkit-overflow-scrolling:touch;touch-action:pan-y;flex:1;min-height:0;"><div style="font-size:0.85em;color:#999;margin-bottom:6px;">类别</div><div class="v2-chip-group" id="woCatPrimary"></div><div id="woCatSubDivider" style="display:none;border-top:1px solid #e0e0e0;margin:12px 0;"></div><div id="woCatSubLabel" style="display:none;font-size:0.85em;color:#999;margin-bottom:6px;">子类别</div><div class="v2-chip-group" id="woCatSub"></div></div></div></div>' +
@@ -1916,14 +1916,14 @@
         var photoArea = $('woPhotoArea'), photoInput = $('woPhotoInput');
         var cameraInput = $('woPhotoCameraInput');
         function refreshPhotoAddBtns() {
-            var show = _photoFiles.length < 6;
+            var show = _photoFiles.length < 12;
             var add = $('woPhotoAdd'), cam = $('woPhotoCamera');
             if (add) add.style.display = show ? '' : 'none';
             if (cam) cam.style.display = show ? '' : 'none';
         }
         function addWoPhotoFiles(files) {
             Array.from(files).forEach(function (f) {
-                if (_photoFiles.length >= 6) return;
+                if (_photoFiles.length >= 12) return;
                 var isVid = f.type && f.type.startsWith('video/');
                 // Compress photos (resize to max 1600px, JPEG q0.8) before adding to the
                 // upload queue. Cuts upload size ~70%+ so submission is fast on a slow link.
@@ -1938,7 +1938,7 @@
             });
         }
         function addOnePhotoFile(f, isVid) {
-            if (_photoFiles.length >= 6) return;
+            if (_photoFiles.length >= 12) return;
             _photoFiles.push(f);
             // Use an object URL (cheap, works for large video files) instead of a
             // base64 data URL which would balloon memory for multi-MB videos.
