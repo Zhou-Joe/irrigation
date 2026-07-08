@@ -104,6 +104,10 @@ STATICFILES_DIRS = [BASE_DIR / 'static']
 # Allow large DXF uploads (default Django limit is 2.5MB → "request entity too large").
 DATA_UPLOAD_MAX_MEMORY_SIZE = 100 * 1024 * 1024       # 100 MB
 FILE_UPLOAD_MAX_MEMORY_SIZE = 100 * 1024 * 1024       # 100 MB
+# The 库存目录 "保存库存数量" form submits one stock/min/main input per part.
+# Default field cap (1000) is blown once the catalog passes ~333 parts; raise it
+# so the bulk stock-save keeps working as the catalog grows.
+DATA_UPLOAD_MAX_NUMBER_FIELDS = 10000
 
 
 MEDIA_URL = '/media/'
