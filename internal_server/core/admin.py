@@ -13,6 +13,7 @@ from .models import (
     Pipeline, Patch,
     WorkReport,
     WorkItem, Project, WorkReportEntry,
+    InventoryTransaction, InventoryTransactionLine,
     SyncAgentHeartbeat, AISettings,
 )
 from .role_utils import get_worker_profile
@@ -488,6 +489,40 @@ class WorkReportEntryAdmin(admin.ModelAdmin):
     search_fields = ('work_item__name_zh', 'work_item__code', 'text_value')
     raw_id_fields = ('work_report', 'work_item', 'project')
     autocomplete_fields = ()
+
+
+# ==========================================================================
+# 库存出入库 Admin
+# ==========================================================================
+
+
+class InventoryTransactionLineInline(admin.TabularInline):
+    model = InventoryTransactionLine
+    extra = 0
+    raw_id_fields = ('category',)
+    readonly_fields = ('created_at',)
+
+
+@admin.register(InventoryTransaction)
+class InventoryTransactionAdmin(admin.ModelAdmin):
+    list_display = ('id', 'date', 'operation', 'entry_subtype', 'worker',
+                    'related_project', 'work_report', 'counterparty', 'remark', 'created_at')
+    list_filter = ('operation', 'entry_subtype', 'date', 'related_project')
+    search_fields = ('remark', 'order_no', 'counterparty', 'worker__full_name')
+    date_hierarchy = 'date'
+    raw_id_fields = ('worker', 'related_project', 'zone', 'work_report', 'purchase_order')
+    inlines = [InventoryTransactionLineInline]
+    ordering = ('-date', '-id')
+
+
+@admin.register(InventoryTransactionLine)
+class InventoryTransactionLineAdmin(admin.ModelAdmin):
+    list_display = ('id', 'transaction', 'category', 'quantity', 'unit', 'created_at')
+    list_filter = ('unit',)
+    search_fields = ('category__name_zh',)
+    raw_id_fields = ('transaction', 'category')
+    ordering = ('-id',)
+
 # ==========================================================================
 
 
