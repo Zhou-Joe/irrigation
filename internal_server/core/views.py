@@ -8501,8 +8501,11 @@ def inventory_management(request):
     # with its lines expanded, newest first. Prefetch lines + related objects so
     # the template renders without N+1 queries.
     from core.models import InventoryTransaction
+    # 出入库记录只显示已确认的实际流水——预估消耗(estimated)尚未扣库存，
+    # 只出现在「预估消耗确认」标签页，确认后才进入出入库记录。
+    txn_filter = {'date__gte': date_from, 'date__lte': date_to,
+                  'consumption_mode': 'actual'}
     # 灌溉一线只看到本人提交的出入库记录；管理員看到全部。
-    txn_filter = {'date__gte': date_from, 'date__lte': date_to}
     if not is_full_access:
         from core.role_utils import get_worker_for_user
         worker = get_worker_for_user(request.user)
