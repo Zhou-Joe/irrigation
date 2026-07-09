@@ -168,10 +168,14 @@ def _project_budget_data(projects):
 
     # Material consumed: aggregate 出库-项目 lines by category, AND keep the
     # raw per-transaction records (date/worker/source/lines) for the 出库记录 list.
+    # Only 'actual' consumption counts toward the balance — estimated (预估消耗)
+    # transactions are tracked separately below and shown as a reminder, not
+    # deducted from the budget until confirmed.
     consumed = {}
     records = {}
     txns = (InventoryTransaction.objects
-            .filter(related_project_id__in=pids, operation='出库', entry_subtype='项目')
+            .filter(related_project_id__in=pids, operation='出库', entry_subtype='项目',
+                    consumption_mode='actual')
             .select_related('worker', 'work_report', 'zone')
             .prefetch_related('lines__category')
             .order_by('-date', '-id'))
@@ -201,6 +205,27 @@ def _project_budget_data(projects):
         }
         records.setdefault(t.related_project_id, []).append(rec)
     consumed_list = {pid: list(d.values()) for pid, d in consumed.items()}
+
+    # Estimated (预估消耗) consumption — pending, not yet deducted from stock or
+    # the budget. Surfaced as a per-project reminder so managers can see expected
+    # usage before it is confirmed. Aggregated by category per project.
+    estimated = {}
+    est_txns = (InventoryTransaction.objects
+                .filter(related_project_id__in=pids, operation='出库', entry_subtype='项目',
+                        consumption_mode='estimated')
+                .prefetch_related('lines__category')
+                .order_by('-date', '-id'))
+    for t in est_txns:
+        for ln in t.lines.all():
+            cat = ln.category
+            entry = estimated.setdefault(t.related_project_id, {}).get(cat.id)
+            if entry is None:
+                entry = {'category_id': cat.id, 'name': cat.name_zh,
+                         'path': cat_paths.get(cat.id, cat.name_zh),
+                         'unit': ln.unit or cat.unit, 'qty': 0}
+                estimated.setdefault(t.related_project_id, {})[cat.id] = entry
+            entry['qty'] += ln.quantity
+    estimated_list = {pid: list(d.values()) for pid, d in estimated.items()}
 
     # Linked POs — with their received parts (so the panel can show, for materials
     # the project also consumes, how many that order purchased in total). Batched:
@@ -277,6 +302,7 @@ def _project_budget_data(projects):
             balance = mba - (po_sum or 0)
         out[p.id] = {
             'material_consumed': consumed_list.get(p.id, []),
+            'estimated_consumed': estimated_list.get(p.id, []),
             'consumption_records': standalone_records.get(p.id, []),
             'material_budget_amount': ('' if mba is None else f'{mba:.2f}'),
             'labor_budget_amount': ('' if p.labor_budget_amount is None

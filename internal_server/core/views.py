@@ -8340,6 +8340,11 @@ def inventory_mobile_v2(request):
         if project_id and project_id.isdigit():
             project = Project.objects.filter(pk=project_id).first()
 
+        # Consumption mode (出库-项目 only): 'actual' (default) or 'estimated'.
+        # Estimated consumption records the txn + lines but does NOT deduct stock —
+        # it's confirmed (and stock applied) later from the inventory manage page.
+        consumption_mode = 'estimated' if request.POST.get('consumption_mode') == 'estimated' else 'actual'
+
         # Edit mode: load the existing txn and reverse its old stock delta before
         # re-applying. Both paths then share the same line-application + PO-linking
         # tail. Wrapped in a transaction so a partial failure can't corrupt stock.
@@ -8352,11 +8357,14 @@ def inventory_mobile_v2(request):
                 txn = get_object_or_404(InventoryTransaction, pk=edit_txn_id)
                 # Reverse the OLD delta so stock reflects only what the new lines
                 # will apply below. Old direction may differ from the new one.
-                old_sign = 1 if txn.operation == '入库' else -1
-                for old_ln in txn.lines.all():
-                    InventoryCategory.objects.filter(pk=old_ln.category_id).update(
-                        current_stock=F('current_stock') - old_sign * old_ln.quantity,
-                    )
+                # Skip reversal for the OLD txn's estimated lines — they never
+                # deducted stock, so reversing them would corrupt the balance.
+                if txn.consumption_mode != 'estimated':
+                    old_sign = 1 if txn.operation == '入库' else -1
+                    for old_ln in txn.lines.all():
+                        InventoryCategory.objects.filter(pk=old_ln.category_id).update(
+                            current_stock=F('current_stock') - old_sign * old_ln.quantity,
+                        )
                 txn.lines.all().delete()
                 # Apply the edited fields.
                 txn.date = request.POST.get('date') or date.today().isoformat()
@@ -8365,6 +8373,7 @@ def inventory_mobile_v2(request):
                 txn.order_no = (request.POST.get('order_no') or '').strip()
                 txn.counterparty = (request.POST.get('counterparty') or '').strip()
                 txn.related_project = project
+                txn.consumption_mode = consumption_mode
                 txn.remark = (request.POST.get('remark') or '').strip()
                 txn.zone = zone
                 txn.purchase_order = None   # re-linked below if 入库-采购 hits a PO
@@ -8378,6 +8387,7 @@ def inventory_mobile_v2(request):
                     order_no=(request.POST.get('order_no') or '').strip(),
                     counterparty=(request.POST.get('counterparty') or '').strip(),
                     related_project=project,
+                    consumption_mode=consumption_mode,
                     remark=(request.POST.get('remark') or '').strip(),
                     zone=zone,
                 )
@@ -8390,8 +8400,11 @@ def inventory_mobile_v2(request):
                     txn.purchase_order = po
                     txn.save(update_fields=['purchase_order'])
 
-            # Direction: 入库 adds stock; 出库 subtracts.
+            # Direction: 入库 adds stock; 出库 subtracts. Estimated consumption
+            # (预估消耗) records the line but defers the stock deduction until the
+            # transaction is confirmed from the inventory manage page.
             sign = 1 if operation == '入库' else -1
+            deduct_stock = consumption_mode != 'estimated'
             created_lines = 0
             for ln in lines:
                 cat_id = ln.get('category')
@@ -8407,10 +8420,11 @@ def inventory_mobile_v2(request):
                     transaction=txn, category=cat,
                     quantity=qty, unit=(ln.get('unit') or '').strip(),
                 )
-                # Atomically adjust current_stock (F() avoids race on concurrent submits).
-                InventoryCategory.objects.filter(pk=cat_id).update(
-                    current_stock=F('current_stock') + sign * qty,
-                )
+                if deduct_stock:
+                    # Atomically adjust current_stock (F() avoids race on concurrent submits).
+                    InventoryCategory.objects.filter(pk=cat_id).update(
+                        current_stock=F('current_stock') + sign * qty,
+                    )
                 created_lines += 1
 
             if created_lines == 0:
@@ -8453,7 +8467,11 @@ def inventory_management(request):
     from datetime import date, timedelta
 
     role = get_user_role(request.user)
-    if role not in (ROLE_MANAGER, ROLE_SUPER_ADMIN):
+    # 管理員/超管可访问整个页面。灌溉一线(field_worker)可见「出入库记录」+
+    # 「预估消耗确认」两个标签——出入库记录只显示本人提交的流水，其余管理功能
+    # （库存警告、库存目录、采购订单）仍限管理員。
+    is_full_access = role in (ROLE_MANAGER, ROLE_SUPER_ADMIN)
+    if not is_full_access and role != 'field_worker':
         messages.error(request, '无权限访问库存管理')
         return redirect('core:dashboard')
 
@@ -8483,8 +8501,17 @@ def inventory_management(request):
     # with its lines expanded, newest first. Prefetch lines + related objects so
     # the template renders without N+1 queries.
     from core.models import InventoryTransaction
+    # 灌溉一线只看到本人提交的出入库记录；管理員看到全部。
+    txn_filter = {'date__gte': date_from, 'date__lte': date_to}
+    if not is_full_access:
+        from core.role_utils import get_worker_for_user
+        worker = get_worker_for_user(request.user)
+        if worker:
+            txn_filter['worker_id'] = worker.id
+        else:
+            txn_filter['worker_id'] = -1   # no linked worker → show nothing
     txns = (InventoryTransaction.objects
-            .filter(date__gte=date_from, date__lte=date_to)
+            .filter(**txn_filter)
             .select_related('worker', 'related_project', 'zone', 'work_report')
             .prefetch_related('lines__category', 'edit_logs__editor')
             .order_by('-date', '-id'))
@@ -8513,16 +8540,112 @@ def inventory_management(request):
     pos = list(PurchaseOrder.objects.all().order_by('-created_at'))
     pos_json = json.dumps(_serialize_purchase_orders(pos), ensure_ascii=False)
 
+    # Pending estimated-consumption transactions for the 预估消耗确认 tab.
+    pending_estimates = (InventoryTransaction.objects
+                         .filter(consumption_mode='estimated')
+                         .select_related('worker', 'related_project')
+                         .prefetch_related('lines__category')
+                         .order_by('-date', '-id'))
+
     return render(request, 'core/inventory_management.html', {
         'roots': roots,
         'date_from': date_from,
         'date_to': date_to,
         'txns': txns,
+        'pending_estimates': pending_estimates,
+        'is_full_access': is_full_access,
         'cat_paths_json': json.dumps(cat_paths, ensure_ascii=False),
         'leaves_json': json.dumps(leaves, ensure_ascii=False),
         'pos_json': pos_json,
         'inventory_tree_json': json.dumps(serialize_inventory_tree(), ensure_ascii=False),
     })
+
+
+@login_required(login_url='core:login')
+def inventory_estimate_confirm(request, txn_id):
+    """Confirm a pending estimated-consumption transaction as actual.
+
+    Manager + field-worker. Field workers can submit estimated consumption and
+    also need to confirm it. Updates each line to the (possibly revised) actual
+    quantity, flips consumption_mode 'estimated' → 'actual', and only NOW deducts
+    stock — this is the deferred deduction the original submission skipped.
+    Writes an InventoryTransactionEditLog entry as an audit trail.
+
+    POST params: ``quantities`` = JSON ``{line_id: qty}``.
+    """
+    from core.models import InventoryTransaction, InventoryTransactionEditLog, InventoryCategory
+    from core.role_utils import get_user_role, ROLE_MANAGER, ROLE_SUPER_ADMIN, ROLE_FIELD_WORKER
+    from django.db import transaction as _db_txn
+    import json as _json
+
+    role = get_user_role(request.user)
+    if role not in (ROLE_MANAGER, ROLE_SUPER_ADMIN, ROLE_FIELD_WORKER):
+        return JsonResponse({'success': False, 'error': '无权限'}, status=403)
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'POST only'}, status=405)
+
+    txn = get_object_or_404(InventoryTransaction, pk=txn_id)
+    if txn.consumption_mode != 'estimated':
+        return JsonResponse({'success': False, 'error': '该流水不是预估消耗'}, status=400)
+
+    # Revised actual quantities: {line_id: qty}. Missing lines keep their estimate.
+    try:
+        quantities = _json.loads(request.POST.get('quantities') or '{}')
+    except (ValueError, TypeError):
+        quantities = {}
+
+    try:
+        with _db_txn.atomic():
+            for ln in txn.lines.select_related('category'):
+                new_qty = quantities.get(str(ln.id))
+                if new_qty is not None:
+                    try:
+                        new_qty = abs(float(new_qty))
+                    except (ValueError, TypeError):
+                        continue
+                    ln.quantity = new_qty
+                    ln.save(update_fields=['quantity'])
+                # Apply the (possibly revised) stock deduction NOW — the original
+                # estimated submission recorded the line but skipped this step.
+                InventoryCategory.objects.filter(pk=ln.category_id).update(
+                    current_stock=F('current_stock') - ln.quantity,
+                )
+            txn.consumption_mode = 'actual'
+            txn.save(update_fields=['consumption_mode'])
+            worker = getattr(request.user, 'worker_profile', None)
+            InventoryTransactionEditLog.objects.create(
+                transaction=txn, editor=worker,
+                note='预估消耗确认（确认前未扣库存，确认后按实际量扣减）',
+            )
+    except Exception as exc:
+        return JsonResponse({'success': False, 'error': str(exc)}, status=500)
+
+    return JsonResponse({'success': True})
+
+
+@login_required(login_url='core:login')
+def inventory_estimate_void(request, txn_id):
+    """Void (delete) a pending estimated-consumption transaction.
+
+    Manager + field-worker. Only estimated txns can be voided — they never
+    deducted stock, so deletion is clean (no reversal needed). Actual txns must
+    be edited instead.
+    """
+    from core.models import InventoryTransaction
+    from core.role_utils import get_user_role, ROLE_MANAGER, ROLE_SUPER_ADMIN, ROLE_FIELD_WORKER
+
+    role = get_user_role(request.user)
+    if role not in (ROLE_MANAGER, ROLE_SUPER_ADMIN, ROLE_FIELD_WORKER):
+        return JsonResponse({'success': False, 'error': '无权限'}, status=403)
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'POST only'}, status=405)
+
+    txn = get_object_or_404(InventoryTransaction, pk=txn_id)
+    if txn.consumption_mode != 'estimated':
+        return JsonResponse({'success': False, 'error': '实际消耗流水不能作废，请改用编辑'}, status=400)
+
+    txn.delete()   # CASCADE removes lines; estimated never touched stock.
+    return JsonResponse({'success': True})
 
 
 @login_required(login_url='core:login')

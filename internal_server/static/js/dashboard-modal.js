@@ -2729,12 +2729,14 @@
             '<input type="hidden" name="operation" id="invOpInput" value="' + data.operations[0].op + '">' +
             '<input type="hidden" name="entry_subtype" id="invSubInput" value="">' +
             '<input type="hidden" name="project_id" id="invProjInput" value="">' +
+            '<input type="hidden" name="consumption_mode" id="invConsumeModeInput" value="actual">' +
             '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;"><span style="font-size:0.85em;color:#888;">' + data.today + ' ' + data.now_time + '</span><span style="font-size:0.85em;color:#888;">' + data.worker_name + '</span></div>' +
             '<div class="v2-fg"><div class="v2-fl">操作类型</div><div class="v2-chip-group">' + ops + '</div></div>' +
             '<div class="v2-fg" id="invSubRow"><div class="v2-fl" id="invSubLabel">来源类型</div><div class="v2-chip-group" id="invSubChips"></div></div>' +
             '<div class="v2-fg"><div class="v2-form-row"><div><div class="v2-fl">日期</div><select name="date" id="invDate" class="v2-select">' + dateOptionsHTML(7, data.today) + '</select></div></div></div>' +
             '<div class="v2-fg" id="invOrderRow" style="display:none;"><div class="v2-fl">订单号</div><input type="text" name="order_no" id="invOrderNo" class="v2-input" list="invOrderList" placeholder="选择或输入采购订单号"><datalist id="invOrderList">' + (data.purchase_orders || []).map(function (o) { return '<option value="' + _esc(o) + '">'; }).join('') + '</datalist></div>' +
             '<div class="v2-fg" id="invProjCatRow" style="display:none;"><div class="v2-fl">项目类别</div><div class="v2-chip-group" id="invProjCatChips"></div><div class="v2-fl" style="margin-top:10px;">项目名称</div><div class="v2-chip-group" id="invProjNameChips"><div class="v2-chip" style="opacity:0.5;cursor:default;">先选类别</div></div></div>' +
+            '<div class="v2-fg" id="invConsumeModeRow" style="display:none;"><div class="v2-fl">消耗类型</div><div class="v2-chip-group"><div class="v2-chip inv-cmode-chip active" data-val="actual">实际消耗</div><div class="v2-chip inv-cmode-chip" data-val="estimated">预估消耗</div></div><div style="font-size:0.72em;color:#999;margin-top:4px;" id="invCmodeHint">实际消耗提交后立即扣减库存；预估消耗仅作提醒，确认后才扣库存。</div></div>' +
             '<div class="v2-fg" id="invCpRow" style="display:none;"><div class="v2-fl">借用方</div><input type="text" name="counterparty" id="invCounterparty" class="v2-input" list="invBorrowerList" placeholder="选择或输入借用方"><datalist id="invBorrowerList">' + (data.borrowers || []).map(function (b) { return '<option value="' + _esc(b) + '">'; }).join('') + '</datalist></div>' +
             '<div class="v2-fg"><div class="v2-fl">物料清单</div>' +
                 '<div id="invCartList"></div>' +
@@ -2762,6 +2764,16 @@
 
         _invBuildSubtypes();
         _invSyncCondFields();
+
+        // Consumption-mode toggle (实际/预估) — only relevant for 出库-项目.
+        // Mirrors the op/sub chip pattern: single-select, writes to hidden input.
+        document.querySelectorAll('.inv-cmode-chip').forEach(function (chip) {
+            chip.addEventListener('click', function () {
+                document.querySelectorAll('.inv-cmode-chip').forEach(function (c) { c.classList.remove('active'); });
+                chip.classList.add('active');
+                $('invConsumeModeInput').value = chip.dataset.val;
+            });
+        });
 
         // Catalog tree picker (nested bottom sheet, opened by the add trigger).
         var addTrigger = $('invAddTrigger');
@@ -2839,6 +2851,7 @@
         // 入库-采购 → 订单号; 出库-项目 → 项目级联; 出库-借用 → 借用方.
         if ($('invOrderRow')) $('invOrderRow').style.display = (op === '入库' && sub === '采购') ? '' : 'none';
         if ($('invProjCatRow')) $('invProjCatRow').style.display = (op === '出库' && sub === '项目') ? '' : 'none';
+        if ($('invConsumeModeRow')) $('invConsumeModeRow').style.display = (op === '出库' && sub === '项目') ? '' : 'none';
         if ($('invCpRow')) $('invCpRow').style.display = (op === '出库' && sub === '借用') ? '' : 'none';
     }
 

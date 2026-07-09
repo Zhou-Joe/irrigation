@@ -1423,6 +1423,9 @@ class InventoryTransaction(models.Model):
     INBOUND_SUBTYPES = [('采购', '采购'), ('借用归还', '借用归还'), ('拆回利旧', '拆回利旧')]
     # 出库去向: 日常维护 / 项目 / 借用
     OUTBOUND_DESTINATIONS = [('日常维护', '日常维护'), ('项目', '项目'), ('借用', '借用')]
+    # 出库-项目时可选预估/实际消耗。预估消耗提交后不扣库存、不计入项目实际
+    # 消耗，待在库存管理页确认（可调整实际数量）后才扣库存并计入项目。
+    CONSUMPTION_MODE_CHOICES = [('actual', '实际'), ('estimated', '预估')]
     date = models.DateField('日期', default=date.today)
     worker = models.ForeignKey(
         Worker, on_delete=models.PROTECT, related_name='inventory_transactions',
@@ -1457,6 +1460,10 @@ class InventoryTransaction(models.Model):
         related_name='material_consumptions', verbose_name='关联工单',
         help_text='工单内登记的材料消耗会生成此关联的出库单',
     )
+    consumption_mode = models.CharField(
+        '消耗类型', max_length=10, choices=CONSUMPTION_MODE_CHOICES, default='actual',
+        help_text='出库-项目时可选预估消耗，确认前不扣库存、不计入项目实际消耗',
+    )
     remark = models.TextField('备注', blank=True)
     photos = models.JSONField('照片', default=list, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -1479,6 +1486,17 @@ class InventoryTransaction(models.Model):
 
     def __str__(self):
         return f"{self.date} | {self.operation}-{self.entry_subtype} | {self.worker}"
+
+    @property
+    def latest_edit_log(self):
+        """Newest edit-log entry (edit_logs is ordered oldest→newest).
+
+        Django's ``|last`` template filter cannot negative-index a queryset
+        (raises ValueError on Django 5+), so this property gives the template a
+        safe way to read the most recent editor without the filter.
+        """
+        logs = list(self.edit_logs.all())   # prefetched → no extra query
+        return logs[-1] if logs else None
 
 
 class InventoryTransactionLine(models.Model):
