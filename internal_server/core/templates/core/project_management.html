@@ -55,6 +55,7 @@
 .pm-rec-line-path { display: block; font-size: .68rem; color: #aaa; margin-top: 1px; }
 .pm-rec-sub { font-size: .74rem; color: #888; margin-top: 4px; }
 .pm-out-tag { display: inline-block; font-size: .68rem; color: #c0392b; background: #fdecea; padding: 1px 7px; border-radius: 6px; font-weight: 600; }
+.pm-est-warn { font-size: .8rem; background: rgba(204,119,34,0.08); border: 1px solid rgba(204,119,34,0.25); border-radius: 8px; padding: 7px 10px; margin: 6px 0; color: #CC7722; }
 .pm-wr .pm-rec-date { color: #1565c0; text-decoration: none; }
 
 /* Budget-edit PO picker chips (inside the shared .app-dialog). */
@@ -307,7 +308,7 @@ function pmBudget(pid) {
     // Load from the data attribute (authoritative server data) on first access.
     if (!PM_BUDGET[pid]) {
         var el = document.getElementById('pmDetail-' + pid);
-        try { PM_BUDGET[pid] = JSON.parse(el.getAttribute('data-budget')); } catch (e) { PM_BUDGET[pid] = {material_consumed:[],consumption_records:[],material_budget_amount:'',labor_budget_amount:'',team_rate:'',third_party_rate:'',material_balance:'',po_amount_total:'',labor_balance:'',labor_cost:'',team_hours:'',third_hours:'',linked_pos:[],work_reports:[]}; }
+        try { PM_BUDGET[pid] = JSON.parse(el.getAttribute('data-budget')); } catch (e) { PM_BUDGET[pid] = {material_consumed:[],estimated_consumed:[],consumption_records:[],material_budget_amount:'',labor_budget_amount:'',team_rate:'',third_party_rate:'',material_balance:'',po_amount_total:'',labor_balance:'',labor_cost:'',team_hours:'',third_hours:'',linked_pos:[],work_reports:[]}; }
     }
     return PM_BUDGET[pid];
 }
@@ -393,6 +394,18 @@ function pmRenderDetail(pid) {
         wrHtml = '<div style="color:#aaa;font-size:.82rem;">暂无关联工单</div>';
     }
 
+    // 预估消耗提醒: pending estimated consumption (not yet deducted from budget).
+    var estHtml;
+    if (b.estimated_consumed && b.estimated_consumed.length) {
+        estHtml = b.estimated_consumed.map(function (m) {
+            return '<span class="pm-rec-line"><span style="color:#CC7722;">' + _pmEsc(m.name) +
+                ' <b>×' + m.qty + '</b>' + (m.unit ? _pmEsc(m.unit) : '') + '</span></span>';
+        }).join('');
+        estHtml = '<div class="pm-est-warn">⚠ 以下为预估消耗，确认前不计入余额：<div class="pm-rec-lines">' + estHtml + '</div></div>';
+    } else {
+        estHtml = '';
+    }
+
     // 其他出库记录: standalone 出库 form records (not from a work order).
     var recHtml;
     if (b.consumption_records && b.consumption_records.length) {
@@ -419,6 +432,7 @@ function pmRenderDetail(pid) {
 
     panel.innerHTML =
         '<div class="pm-sub">预算概览</div>' + overviewHtml +
+        estHtml +
         '<div class="pm-sub">关联采购订单（' + (b.linked_pos ? b.linked_pos.length : 0) + '）</div>' + poHtml +
         '<div class="pm-sub">关联工单（' + (b.work_reports ? b.work_reports.length : 0) + '）</div>' + wrHtml +
         '<div class="pm-sub">其他出库记录（' + (b.consumption_records ? b.consumption_records.length : 0) + '）</div>' + recHtml +

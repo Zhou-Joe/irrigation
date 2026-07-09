@@ -240,9 +240,12 @@ table.iv-ledger .lvl-tag.warn { background: #fdf6ec; color: #cc7722; }
   {# ── Tab switcher ── #}
   <div class="app-tabs">
     <button type="button" class="app-tab active" data-tab="ledger" onclick="ivSwitchTab('ledger')">出入库记录</button>
+    {% if is_full_access %}
     <button type="button" class="app-tab" data-tab="alert" onclick="ivSwitchTab('alert')">库存警告</button>
     <button type="button" class="app-tab" data-tab="tree" onclick="ivSwitchTab('tree')">库存目录</button>
     <button type="button" class="app-tab" data-tab="orders" onclick="ivSwitchTab('orders')">采购订单</button>
+    {% endif %}
+    <button type="button" class="app-tab" data-tab="estimate" onclick="ivSwitchTab('estimate')">预估消耗确认{% if pending_estimates %}<span class="app-tab-badge">{{ pending_estimates|length }}</span>{% endif %}</button>
   </div>
 
   {# ── Tab 1: transactions ledger (all 出入库 records in range) ── #}
@@ -250,9 +253,9 @@ table.iv-ledger .lvl-tag.warn { background: #fdf6ec; color: #cc7722; }
   <div class="iv-ledger-card">
     <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:4px;">
       <h2 style="margin:0;">出入库记录</h2>
-      <a href="{% url 'core:inventory_transactions_export' %}?from={{ date_from }}&to={{ date_to }}" class="export-btn">⬇ 导出Excel</a>
+      {% if is_full_access %}<a href="{% url 'core:inventory_transactions_export' %}?from={{ date_from }}&to={{ date_to }}" class="export-btn">⬇ 导出Excel</a>{% endif %}
     </div>
-    <p class="iv-hint">范围 {{ date_from }} ~ {{ date_to }} · 共 {{ txns|length }} 条流水 · 点击「记录范围」日期可切换</p>
+    <p class="iv-hint">{% if is_full_access %}范围 {{ date_from }} ~ {{ date_to }} · 共 {{ txns|length }} 条流水{% else %}仅显示你提交的出入库记录 · {{ date_from }} ~ {{ date_to }} · 共 {{ txns|length }} 条{% endif %} · 点击「记录范围」日期可切换</p>
 
     {# Reuse the same date-range filter to reload the page with a new window. #}
     <div class="iv-range">
@@ -338,7 +341,7 @@ table.iv-ledger .lvl-tag.warn { background: #fdf6ec; color: #cc7722; }
             {% else %}
               <a class="iv-edit-btn" href="{% url 'core:dashboard' %}?edit_inventory={{ t.id }}">编辑</a>
               {% if t.edit_logs.all|length %}
-                {% with last=t.edit_logs.all|last %}
+                {% with last=t.latest_edit_log %}
                 <div style="font-size:.68rem;color:#999;margin-top:2px;">编辑 {{ t.edit_logs.all|length }} 次<br>最近: {{ last.editor.full_name|default:'?' }} {{ last.created_at|date:"m-d H:i" }}</div>
                 {% endwith %}
               {% endif %}
@@ -437,6 +440,53 @@ table.iv-ledger .lvl-tag.warn { background: #fdf6ec; color: #cc7722; }
     <div id="poList"></div>
     <div id="poEmpty" class="app-empty" style="display:none; padding:40px;">暂无采购订单，点击「新建订单」创建。</div>
   </div>
+
+  {# ── Tab 5: 预估消耗确认 (pending estimated-consumption transactions) ── #}
+  <div class="app-tab-content" id="ivTabEstimate">
+  <div class="iv-ledger-card">
+    <h2 style="margin:0 0 4px;">预估消耗确认</h2>
+    <p class="iv-hint">此处显示提交为「预估消耗」的出库-项目流水。确认时可调整各物料实际数量（确认后才扣减库存并计入项目）；作废则直接删除。</p>
+    {% if pending_estimates %}
+    <div class="iv-ledger-wrap">
+      <table class="iv-ledger">
+        <thead>
+          <tr>
+            <th>日期</th><th>项目</th><th>物料 / 实际数量</th><th>经办人</th><th>备注</th><th>操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for t in pending_estimates %}
+          <tr data-txn="{{ t.id }}">
+            <td>{{ t.date|date:"Y-m-d" }}</td>
+            <td>{{ t.related_project.name|default:'—' }}</td>
+            <td class="l-left">
+              {% for ln in t.lines.all %}
+              <div class="ln-row" data-line="{{ ln.id }}" style="display:flex;align-items:center;gap:6px;">
+                <span class="ln-path">{{ ln.category.name_zh }}</span>
+                <span style="color:#aaa;font-size:.76rem;">预估 {{ ln.quantity }}</span>
+                <input type="number" min="0" step="1" value="{{ ln.quantity }}"
+                       class="iv-est-qty" data-line="{{ ln.id }}"
+                       style="width:60px;padding:3px 6px;border:1px solid #ddd;border-radius:6px;text-align:center;font-size:.84rem;">
+                <span style="font-size:.78rem;color:#888;">{{ ln.unit|default:'' }}</span>
+              </div>
+              {% endfor %}
+            </td>
+            <td>{{ t.worker.full_name|default:'—' }}</td>
+            <td class="l-left">{{ t.remark|default:'' }}</td>
+            <td class="l-left" style="white-space:nowrap;">
+              <button type="button" class="iv-edit-btn" onclick="confirmEstimate({{ t.id }})">确认</button>
+              <button type="button" class="iv-edit-btn" style="color:#9B2226;" onclick="voidEstimate({{ t.id }})">作废</button>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="iv-ledger-empty">暂无待确认的预估消耗</div>
+    {% endif %}
+  </div>
+  </div>{# /#ivTabEstimate #}
 </div>
 
 {# ── 采购订单 create / edit modal (shared .app-mask / .app-dialog shell) ── #}
@@ -614,13 +664,50 @@ function ivAlertRefresh() {
     }).join('');
 }
 
-// Tab switching (出入库记录 / 库存警告 / 库存目录 / 采购订单).
+// Tab switching (出入库记录 / 库存警告 / 库存目录 / 采购订单 / 预估消耗确认).
 function ivSwitchTab(tab) {
     document.querySelectorAll('.app-tab').forEach(function (t) { t.classList.toggle('active', t.dataset.tab === tab); });
     document.querySelectorAll('.app-tab-content').forEach(function (c) {
         c.classList.toggle('active', c.id === 'ivTab' + tab.charAt(0).toUpperCase() + tab.slice(1));
     });
     if (tab === 'alert') ivAlertRefresh();
+}
+
+// ── 预估消耗确认/作废 ──
+function _ivGetCsrf() {
+    var m = document.cookie.match(/csrftoken=([^;]+)/);
+    return m ? m[1] : '';
+}
+// Confirm: collect the (possibly edited) actual quantities per line, POST them.
+function confirmEstimate(txnId) {
+    var tr = document.querySelector('tr[data-txn="' + txnId + '"]');
+    if (!tr) return;
+    var quantities = {};
+    tr.querySelectorAll('.iv-est-qty').forEach(function (inp) {
+        quantities[inp.dataset.line] = inp.value;
+    });
+    if (!confirm('确认将按当前实际数量扣减库存并计入项目，确定吗？')) return;
+    var fd = new FormData();
+    fd.append('quantities', JSON.stringify(quantities));
+    fetch('/inventory/estimate/' + txnId + '/confirm/', {
+        method: 'POST', body: fd,
+        headers: {'X-CSRFToken': _ivGetCsrf(), 'X-Requested-With': 'XMLHttpRequest'}
+    }).then(function (r) { return r.json(); }).then(function (data) {
+        if (data.success) { location.reload(); }
+        else { alert(data.error || '确认失败'); }
+    }).catch(function () { alert('网络错误，请重试'); });
+}
+// Void: delete the estimated transaction (it never deducted stock).
+function voidEstimate(txnId) {
+    if (!confirm('作废后该预估消耗记录将被删除，确定吗？')) return;
+    var fd = new FormData();
+    fetch('/inventory/estimate/' + txnId + '/void/', {
+        method: 'POST', body: fd,
+        headers: {'X-CSRFToken': _ivGetCsrf(), 'X-Requested-With': 'XMLHttpRequest'}
+    }).then(function (r) { return r.json(); }).then(function (data) {
+        if (data.success) { location.reload(); }
+        else { alert(data.error || '作废失败'); }
+    }).catch(function () { alert('网络错误，请重试'); });
 }
 // Ledger date-range: reload the page with ?from=&to= so the server re-queries.
 function ivLedgerApply() {
