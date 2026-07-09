@@ -78,6 +78,28 @@
   .wr-dlabel { font-size: 0.74rem; color: #999; margin-bottom: 4px; }
   .wr-dvalue { font-size: 0.86rem; color: var(--wr-text); line-height: 1.5; }
 
+  /* Compact info grid — packs short scalar fields (填写人 / 人数 / 时段 …)
+     side-by-side instead of one per row, so the detail panel uses horizontal
+     space. All values at 0.82rem to stay typographically consistent. */
+  .wr-info-grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 3px 16px; }
+  .wr-info { font-size: 0.82rem; line-height: 1.7; color: var(--wr-text); display:flex; align-items:baseline; gap:5px; min-width:0; }
+  .wr-info .wr-info-k { color: #999; flex:0 0 auto; }
+  .wr-info .wr-info-v { color: var(--wr-text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .wr-info-v b { font-weight: 600; }
+
+  /* Work-content entries (工作内容) — multi-column grid like the materials list
+     so entries pack into columns rather than a single tall stack. */
+  .wr-entry-grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 0 14px; }
+
+  /* Material consumption (材料消耗) — multi-column grid to use horizontal space.
+     Same 0.82rem size as other detail sections so the card stays typographically
+     consistent; items wrap into as many columns as the card width allows. */
+  .wr-mat-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 2px 14px; }
+  .wr-mat-item { display: flex; justify-content: space-between; align-items: baseline;
+                 font-size: 0.82rem; color: var(--wr-text); line-height: 1.7; }
+  .wr-mat-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-right: 6px; }
+  .wr-mat-qty { font-weight: 600; color: #c0392b; flex-shrink: 0; font-variant-numeric: tabular-nums; }
+
   /* Zone hierarchy: Land → 通用名称 → zone codes */
   .wr-zone-hier { font-size: 0.84em; }
   .wr-zh-land { margin-bottom: 6px; }
@@ -89,9 +111,9 @@
   .wr-zh-codes { color:#999; font-size: 0.78em; }
 
   .wr-grp-title { font-size:0.8rem; color: var(--wr-accent); font-weight:600; margin: 8px 0 4px; }
-  .wr-entry-row { display:flex; justify-content:space-between; gap:8px; font-size:0.84rem; padding:5px 0; border-bottom:1px solid #efefef; }
-  .wr-entry-row:last-child { border-bottom:none; }
-  .wr-entry-path { color:#333; line-height:1.35; }
+  .wr-entry-row { display:flex; justify-content:space-between; gap:8px; font-size:0.82rem; padding:2px 0; line-height:1.5; }
+  .wr-entry-path { color:#333; line-height:1.35; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .wr-entry-path .wr-entry-proj { white-space:normal; overflow:visible; text-overflow:clip; }
   .wr-entry-val { flex:0 0 auto; color: var(--wr-accent); font-weight:600; white-space:nowrap; }
   .wr-entry-proj { font-size:0.72rem; color:#aaa; margin-top:2px; }
 
@@ -937,11 +959,23 @@ function renderCard(r) {
     html += '<div class="wr-expand-hint">点击查看详情 ▾</div>';
     // detail panel
     html += '<div class="wr-detail" onclick="event.stopPropagation()">';
+    // Compact info grid: short scalar fields packed side-by-side.
+    html += '<div class="wr-dsec"><div class="wr-info-grid">';
     if (r.worker_name) {
-        html += '<div class="wr-dsec"><div class="wr-dlabel">填写人</div><div class="wr-dvalue" id="wrWorker-' + r.id + '">' + esc(r.worker_name);
+        html += '<div class="wr-info"><span class="wr-info-k">填写人</span><span class="wr-info-v" id="wrWorker-' + r.id + '"><b>' + esc(r.worker_name);
         if (r.worker_employee_id) html += ' (' + esc(r.worker_employee_id) + ')';
-        html += '</div></div>';
+        html += '</b></span></div>';
     }
+    html += '<div class="wr-info"><span class="wr-info-k">人数</span><span class="wr-info-v">灌溉组 ' + r.team_size + '人';
+    if (r.third_party_count) html += ' +' + r.third_party_count + '三方';
+    html += '</span></div>';
+    if (r.work_start_time) {
+        html += '<div class="wr-info"><span class="wr-info-k">时段</span><span class="wr-info-v">' + esc(r.work_start_time) + '–' + esc(r.work_end_time);
+        if (r.team_hours) html += ' · ' + r.team_hours + 'h';
+        if (r.third_party_hours) html += ' +' + r.third_party_hours + 'h';
+        html += '</span></div>';
+    }
+    html += '</div></div>';
     // Expanded: full edit history (all records, oldest→newest).
     if (r.edit_logs && r.edit_logs.length) {
         html += '<div class="wr-dsec"><div class="wr-dlabel">编辑历史 <span style="color:#aaa;font-weight:400;">' + r.edit_logs.length + ' 次</span></div><div class="wr-edit-list">';
@@ -975,22 +1009,29 @@ function renderCard(r) {
         });
         html += '</div></div>';
     }
-    // headcount
-    html += '<div class="wr-dsec"><div class="wr-dlabel">人数</div><div class="wr-dvalue">灌溉组 ' + r.team_size + '人';
-    if (r.third_party_count) html += '，第三方 ' + r.third_party_count + '人';
-    html += '</div></div>';
     // work content
     if (r.entry_groups && r.entry_groups.length) {
         html += '<div class="wr-dsec"><div class="wr-dlabel">工作内容</div>';
         r.entry_groups.forEach(function (g) {
-            html += '<div class="wr-grp-title">' + esc(g.section_label) + '</div>';
+            html += '<div class="wr-grp-title">' + esc(g.section_label) + '</div><div class="wr-entry-grid">';
             g.items.forEach(function (it) {
                 html += '<div class="wr-entry-row"><div class="wr-entry-path">' + esc(it.path);
                 if (it.project) html += '<div class="wr-entry-proj">项目: ' + esc(it.project) + '</div>';
                 html += '</div>' + (it.value ? '<span class="wr-entry-val">' + esc(it.value) + '</span>' : '') + '</div>';
             });
+            html += '</div>';
         });
         html += '</div>';
+    }
+    // materials (材料消耗)
+    if (r.materials && r.materials.length) {
+        html += '<div class="wr-dsec"><div class="wr-dlabel">材料消耗</div><div class="wr-mat-list">';
+        r.materials.forEach(function (m) {
+            html += '<div class="wr-mat-item"><span class="wr-mat-name">' + esc(m.name) +
+                    '</span><span class="wr-mat-qty">×' + esc(String(m.quantity)) +
+                    (m.unit ? esc(m.unit) : '') + '</span></div>';
+        });
+        html += '</div></div>';
     }
     // remark
     if (r.remark) html += '<div class="wr-dsec"><div class="wr-dlabel">备注</div><div class="wr-dvalue" style="white-space:pre-wrap;">' + esc(r.remark) + '</div></div>';
@@ -1010,7 +1051,7 @@ function renderCard(r) {
     html += '<div class="wr-dsec"><div class="wr-dlabel">评论</div><div class="wr-cmt-loading" id="cmtLoading-' + r.id + '" style="display:none;">加载中…</div><div class="wr-cmt-list" id="cmtList-' + r.id + '"></div><div class="wr-cmt-add"><textarea class="wr-cmt-input" id="cmtInput-' + r.id + '" rows="1" placeholder="写评论… (Ctrl+Enter 发送)" onkeydown="if((event.metaKey||event.ctrlKey)&&event.key===\'Enter\'){event.preventDefault();postComment(' + r.id + ');}"></textarea><button type="button" class="wr-cmt-send" onclick="postComment(' + r.id + ')">发送</button></div></div>';
     html += '</div>';
     // side actions
-    html += '<div class="wr-side-actions"><a class="wr-act view" href="' + r.detail_url + '">查看</a><a class="wr-act edit" href="' + r.edit_url + '">编辑</a></div>';
+    html += '<div class="wr-side-actions"><a class="wr-act view" href="' + r.detail_url + '" target="_blank" rel="noopener">查看</a><a class="wr-act edit" href="' + r.edit_url + '" target="_blank" rel="noopener">编辑</a></div>';
     html += '</div>';
     return html;
 }

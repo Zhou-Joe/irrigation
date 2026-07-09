@@ -6802,6 +6802,14 @@ def _serialize_work_reports(reports):
             'comment_count': getattr(r, 'comment_count', 0),
             'photos': r.photos or [],
             'remark': r.remark or '',
+            # Material consumption (材料消耗) outbound lines, flattened to
+            # [{name, quantity, unit}]. Reads the prefetched _materials_txn attr
+            # so the load-more AJAX path stays N+1-free.
+            'materials': [
+                {'name': ln.category.name_zh, 'quantity': ln.quantity, 'unit': ln.unit or ''}
+                for txn in getattr(r, '_materials_txn', [])
+                for ln in getattr(txn, '_lines', [])
+            ],
             'is_pending_repair': bool(r.is_pending_repair),
             'is_difficult': bool(r.is_difficult),
             'is_difficult_resolved': bool(r.is_difficult_resolved),
@@ -6904,6 +6912,18 @@ def work_reports_list(request):
     page = list(qs[:WORK_REPORTS_PAGE_SIZE + 1])  # +1 to detect a next page.
     has_more = len(page) > WORK_REPORTS_PAGE_SIZE
     reports = page[:WORK_REPORTS_PAGE_SIZE]
+    # Material consumption (材料消耗) outbound lines for the expanded card.
+    # Prefetched here (not in _scoped_work_reports_qs) so other callers of that
+    # helper — the stats/Excel path — can attach their own material_consumptions
+    # prefetch without a duplicate-to_attr conflict.
+    from django.db.models import prefetch_related_objects, Prefetch
+    from core.models import InventoryTransaction, InventoryTransactionLine
+    prefetch_related_objects(reports, Prefetch(
+        'material_consumptions',
+        queryset=InventoryTransaction.objects.prefetch_related(
+            Prefetch('lines', queryset=InventoryTransactionLine.objects.select_related('category'), to_attr='_lines')
+        ), to_attr='_materials_txn',
+    ))
     enrich_reports(reports, workitem_path_map())
     attach_zone_hierarchy(reports)
 
@@ -7103,6 +7123,7 @@ def work_report_photos_download(request):
 
     buf = io.BytesIO()
     added = 0
+    import os
     # Track archive entry names to avoid collisions (e.g. two originals mapping to
     # the same thumb name is unlikely but possible after manual file moves).
     seen_names = set()
@@ -7126,6 +7147,9 @@ def work_report_photos_download(request):
                     arc_name = p
             else:
                 arc_name = p
+            # Flatten to a single folder: strip the on-disk directory structure so
+            # the zip holds all files at its root (no per-workorder subfolders).
+            arc_name = os.path.basename(arc_name)
             # Dedupe archive entry names (append a counter suffix on collision).
             final_name = arc_name
             if final_name in seen_names:
