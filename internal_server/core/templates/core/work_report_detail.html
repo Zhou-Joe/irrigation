@@ -39,12 +39,11 @@
 .wr-entry-count { font-weight: 600; flex-shrink: 0; }
 .wr-entry-text { color: var(--color-text-muted, #666); font-size: 0.8em; margin-top: 2px; }
 
-/* Material consumption list */
-.wr-mat-list { display: flex; flex-direction: column; gap: 4px; }
-.wr-mat-item { display: flex; justify-content: space-between; align-items: center; padding: 6px 0;
-               border-bottom: 1px solid var(--color-surface-dark, #f0f0f0); font-size: 0.85rem; }
-.wr-mat-item:last-child { border-bottom: none; }
-.wr-mat-name { color: var(--color-text, #333); }
+/* Material consumption list — multi-column grid to use horizontal space */
+.wr-mat-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 2px 16px; }
+.wr-mat-item { display: flex; justify-content: space-between; align-items: baseline;
+               font-size: 0.85rem; color: var(--color-text, #333); line-height: 1.7; }
+.wr-mat-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-right: 6px; }
 .wr-mat-qty { font-weight: 600; color: #c0392b; flex-shrink: 0; font-variant-numeric: tabular-nums; }
 
 /* Zone hierarchy: Land → name → codes */
@@ -99,7 +98,7 @@
 <div class="wr-detail">
     <div class="wr-btn-row">
         <a href="{% url 'core:dashboard' %}?edit_workorder={{ report.id }}" class="wr-btn wr-btn-primary">编辑</a>
-        <a href="{% url 'core:work_reports' %}" class="wr-btn wr-btn-secondary">← 返回列表</a>
+        <a href="{% url 'core:work_reports' %}" class="wr-btn wr-btn-secondary" onclick="window.close();">← 返回列表</a>
     </div>
 
     {# ── 基本信息 (only fields from the v2 submit form) ── #}

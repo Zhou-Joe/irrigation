@@ -6,297 +6,145 @@
 {% block extra_css %}
 <link rel="stylesheet" href="{% static 'css/settings.css' %}?v=20260514c">
 <style>
-.zone-detail-container {
-    max-width: 960px;
-    margin: 0 auto;
-    padding: var(--space-xl);
+/* Mobile-first compact detail page. Mirrors the work-report detail aesthetic:
+   white rounded cards, small body-font headers, token colors, responsive grids
+   that stack on phones and expand on tablets/desktops. */
+.zd-wrap { max-width: 860px; margin: 0 auto; padding: 12px 14px; }
+
+.zd-breadcrumb {
+    display: flex; align-items: center; gap: 5px; flex-wrap: wrap;
+    font-size: 0.8rem; color: var(--color-text-muted, #8B9A8F);
+    margin-bottom: 8px;
+}
+.zd-breadcrumb a { color: var(--color-primary-light, #2D6A4F); text-decoration: none; }
+.zd-breadcrumb a:hover { text-decoration: underline; }
+.zd-breadcrumb .sep { opacity: 0.4; }
+
+/* Header — compact: name + code + edit on one row, badges wrap below. */
+.zd-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
+.zd-title { font-size: 1.25rem; font-weight: 700; margin: 0; color: var(--color-text-primary, #1B4332);
+            display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-family: var(--font-body, inherit); }
+.zd-code { font-family: var(--font-mono, monospace); font-size: 0.7rem; background: var(--color-surface-dark, #D9D0C0);
+           padding: 2px 8px; border-radius: 6px; font-weight: 400; color: var(--color-text-secondary, #4A6355); }
+.zd-desc { color: var(--color-text-secondary, #4A6355); margin-top: 4px; font-size: 0.85rem; }
+.zd-badges { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.zd-badge { display: inline-flex; align-items: center; padding: 2px 9px; border-radius: 12px;
+            font-size: 0.74rem; font-weight: 600; }
+.zd-badge.bp-critical { background: rgba(155,34,38,0.12); color: #9B2226; }
+.zd-badge.bp-high     { background: rgba(204,119,34,0.12); color: #CC7722; }
+.zd-badge.bp-medium   { background: rgba(82,183,136,0.12); color: #2D6A4F; }
+.zd-badge.bp-low      { background: rgba(100,116,139,0.12); color: #64748B; }
+.zd-badge.bp-abolished{ background: rgba(148,163,184,0.12); color: #94A3B8; text-decoration: line-through; }
+.zd-badge.bs-normal       { background: rgba(82,183,136,0.12); color: #2D6A4F; }
+.zd-badge.bs-construction { background: rgba(204,119,34,0.12); color: #CC7722; }
+.zd-badge.bs-stopped      { background: rgba(155,34,38,0.12); color: #9B2226; }
+.zd-badge.area { background: var(--color-surface-dark, #D9D0C0); color: var(--color-text-secondary, #4A6355);
+                 font-family: var(--font-mono, monospace); font-weight: 500; }
+.zd-edit { flex-shrink: 0; }
+
+/* Stats — compact inline counters, wrap on small screens. */
+.zd-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 12px; }
+.zd-stat { background: #fff; border: 1px solid #eef0f3; border-radius: 10px; padding: 10px; text-align: center; }
+.zd-stat .v { font-size: 1.3rem; font-weight: 700; line-height: 1.1; }
+.zd-stat .l { font-size: 0.74rem; color: var(--color-text-muted, #8B9A8F); margin-top: 1px; }
+.zd-stat.plants .v    { color: #52B788; }
+.zd-stat.equipment .v { color: #40916C; }
+.zd-stat.reports .v   { color: var(--color-primary-light, #2D6A4F); }
+
+/* Card — the canonical white rounded panel. */
+.zd-card { background: #fff; border: 1px solid #eef0f3; border-radius: 12px;
+           padding: 12px 14px; margin-bottom: 10px; }
+.zd-card h2 { font-size: 0.92rem; color: var(--color-primary-light, #2D6A4F); margin: 0 0 10px 0;
+              font-weight: 700; display: flex; align-items: center; gap: 6px; font-family: var(--font-body, inherit); }
+.zd-card h2 .count { font-size: 0.72rem; color: var(--color-text-muted, #8B9A8F); font-weight: 500; }
+
+/* Two-up row: cards sit side by side on wide screens, stack on phones. */
+.zd-row { display: grid; grid-template-columns: 1fr; gap: 10px; margin-bottom: 10px; }
+@media (min-width: 640px) { .zd-row { grid-template-columns: 1fr 1fr; } }
+
+/* Property grid. */
+.zd-prop { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px 14px; }
+.zd-prop .k { font-size: 0.74rem; color: var(--color-text-muted, #8B9A8F); }
+.zd-prop .v { font-size: 0.84rem; font-weight: 500; color: var(--color-text-primary, #1B4332); word-break: break-word; }
+.zd-prop .v.empty { color: var(--color-text-muted, #8B9A8F); font-weight: 400; }
+.zd-prop hr { grid-column: 1 / -1; border: none; border-top: 1px dashed #eef0f3; margin: 2px 0; }
+
+/* Notes / remark timeline. */
+.zd-notes { display: flex; flex-direction: column; gap: 4px; }
+.zd-note { display: flex; gap: 8px; align-items: baseline; padding: 5px 0; font-size: 0.82rem; border-bottom: 1px solid #f3f4f6; }
+.zd-note:last-child { border-bottom: none; }
+.zd-note .nd { font-weight: 600; color: var(--color-primary-light, #2D6A4F); white-space: nowrap;
+               font-family: var(--font-mono, monospace); font-size: 0.76rem; }
+.zd-note .nc { flex: 1; word-break: break-word; color: var(--color-text-primary, #1B4332); }
+.zd-note .na { color: var(--color-text-muted, #8B9A8F); font-size: 0.76rem; white-space: nowrap; }
+.zd-note a.zd-wo { color: var(--color-primary-light, #2D6A4F); font-size: 0.76rem; text-decoration: none; }
+.zd-note a.zd-wo:hover { text-decoration: underline; }
+.zd-confirm-line { margin-top: 3px; padding-left: 10px; border-left: 3px solid var(--color-success, #40916C); font-size: 0.8rem; }
+.zd-confirm-line .cd { color: var(--color-text-muted, #8B9A8F); }
+.zd-confirm-line .cr { color: var(--color-success, #40916C); }
+
+/* Remark form — compact, uses token buttons. */
+.zd-rform { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+.zd-input { padding: 6px 10px; border: 1px solid #e5e7eb; border-radius: 8px; font-size: 0.82rem; background: #fff; }
+.zd-input[type=text] { flex: 1; min-width: 120px; }
+.zd-btn { padding: 6px 12px; border: none; border-radius: 8px; font-size: 0.8rem; font-weight: 600; cursor: pointer; }
+.zd-btn-primary { background: var(--color-primary-light, #2D6A4F); color: #fff; }
+.zd-btn-confirm { background: var(--color-primary-light, #2D6A4F); color: #fff; }
+.zd-btn-move-irr { background: var(--color-primary, #1B4332); color: #fff; }
+.zd-btn-move-eq  { background: var(--color-warning, #CC7722); color: #fff; }
+.zd-btn-secondary { background: var(--color-surface-dark, #D9D0C0); color: var(--color-text-primary, #1B4332); border: 1px solid #e5e7eb; }
+.zd-confirm-form { display: none; margin-top: 6px; }
+.zd-confirm-form .zd-input { width: 70%; }
+.zd-note-actions { margin-top: 6px; display: flex; gap: 6px; flex-wrap: wrap; }
+
+/* Mini cards (plants / equipment). */
+.zd-mgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+.zd-mini { background: var(--color-surface, #F5F0E8); border: 1px solid #eef0f3; border-radius: 8px; padding: 8px 10px; }
+.zd-mini .mt { font-weight: 600; font-size: 0.82rem; margin-bottom: 3px; }
+.zd-mini .mt.plant { color: #52B788; }
+.zd-mini .mt.eq    { color: #40916C; }
+.zd-mini .msci { font-style: italic; color: var(--color-text-secondary, #4A6355); font-size: 0.76rem; margin-bottom: 3px; }
+.zd-mini .mmeta { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 0.76rem; color: var(--color-text-secondary, #4A6355); }
+.zd-eq-row { display: flex; justify-content: space-between; align-items: center; gap: 6px; margin-bottom: 3px; }
+.zd-eq-status { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 0.72rem; font-weight: 600; }
+.zd-eq-status.working      { background: rgba(64,145,108,0.15); color: #40916C; }
+.zd-eq-status.needs_repair { background: rgba(204,119,34,0.15); color: #CC7722; }
+
+/* Reports table — responsive: collapses to definition-style rows on phones. */
+.zd-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+.zd-table th { text-align: left; padding: 6px 8px; border-bottom: 2px solid #eef0f3; color: var(--color-text-muted, #8B9A8F); font-weight: 600; font-size: 0.76rem; }
+.zd-table td { padding: 6px 8px; border-bottom: 1px solid #f3f4f6; vertical-align: top; }
+.zd-table tr:last-child td { border-bottom: none; }
+@media (max-width: 600px) {
+    .zd-table thead { display: none; }
+    .zd-table, .zd-table tbody, .zd-table tr, .zd-table td { display: block; width: 100%; }
+    .zd-table tr { padding: 6px 0; border-bottom: 1px solid #eef0f3; }
+    .zd-table td { border: none; padding: 1px 0; }
+    .zd-table td::before { content: attr(data-l) "："; color: var(--color-text-muted, #8B9A8F); font-size: 0.74rem; }
 }
 
-/* --- Breadcrumb --- */
-.zone-breadcrumb {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 0.85em;
-    color: var(--color-text-secondary);
-    margin-bottom: var(--space-md);
-}
-.zone-breadcrumb a { color: var(--color-primary); text-decoration: none; }
-.zone-breadcrumb a:hover { text-decoration: underline; }
-.zone-breadcrumb .sep { opacity: 0.4; }
+/* Sibling zones chips. */
+.zd-siblings { display: flex; flex-wrap: wrap; gap: 6px; }
+.zd-sib { display: inline-flex; align-items: center; gap: 4px; padding: 3px 9px; background: var(--color-surface, #F5F0E8);
+          border: 1px solid #eef0f3; border-radius: 14px; font-size: 0.78rem; text-decoration: none;
+          color: var(--color-text-primary, #1B4332); transition: border-color 0.15s; }
+.zd-sib:hover { border-color: var(--color-primary-light, #2D6A4F); color: var(--color-primary-light, #2D6A4F); }
+.zd-sib .dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
+.dot-critical { background: #9B2226; } .dot-high { background: #CC7722; } .dot-medium { background: #52B788; }
+.dot-low { background: #64748B; } .dot-abolished { background: #94A3B8; }
 
-/* --- Header --- */
-.zone-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    gap: var(--space-lg);
-    margin-bottom: var(--space-xl);
-    padding-bottom: var(--space-lg);
-    border-bottom: 2px solid var(--color-surface-dark);
-}
-.zone-header-left h1 {
-    font-family: var(--font-display);
-    font-size: 1.8rem;
-    color: var(--color-primary);
-    margin: 0 0 var(--space-xs) 0;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-}
-.zone-code-tag {
-    font-family: var(--font-mono);
-    font-size: 0.55em;
-    background: var(--color-surface-dark);
-    padding: 3px 10px;
-    border-radius: var(--radius-md);
-    font-weight: 400;
-}
-.zone-description { color: var(--color-text-secondary); margin-top: 6px; font-size: 0.95em; }
-
-.zone-badges {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    margin-top: 10px;
-}
-.badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    padding: 4px 12px;
-    border-radius: 20px;
-    font-size: 0.8em;
-    font-weight: 600;
-}
-.badge-priority-critical { background: rgba(155,34,38,0.12); color: #9B2226; }
-.badge-priority-high     { background: rgba(204,119,34,0.12); color: #CC7722; }
-.badge-priority-medium   { background: rgba(82,183,136,0.12); color: #2D6A4F; }
-.badge-priority-low      { background: rgba(100,116,139,0.12); color: #64748B; }
-.badge-priority-abolished{ background: rgba(148,163,184,0.12); color: #94A3B8; text-decoration: line-through; }
-.badge-status-normal { background: rgba(82,183,136,0.12); color: #2D6A4F; }
-.badge-status-construction { background: rgba(204,119,34,0.12); color: #CC7722; }
-.badge-status-stopped { background: rgba(155,34,38,0.12); color: #9B2226; }
-.badge-area {
-    background: var(--color-surface-dark);
-    color: var(--color-text-secondary);
-    font-weight: 500;
-    font-family: var(--font-mono);
-}
-
-.zone-header-actions {
-    display: flex;
-    gap: 8px;
-    flex-shrink: 0;
-}
-
-/* --- Stats Grid --- */
-.stats-grid {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: var(--space-md);
-    margin-bottom: var(--space-xl);
-}
-.stat-card {
-    background: var(--color-surface-alt);
-    border-radius: var(--radius-lg);
-    padding: var(--space-lg);
-    text-align: center;
-    border: 1px solid var(--color-surface-dark);
-}
-.stat-value {
-    font-size: 2rem;
-    font-weight: 700;
-    margin-bottom: 2px;
-}
-.stat-label {
-    color: var(--color-text-secondary);
-    font-size: 0.85em;
-}
-.stat-card.plants    { border-left: 4px solid #52B788; }
-.stat-card.plants .stat-value { color: #52B788; }
-.stat-card.equipment { border-left: 4px solid #40916C; }
-.stat-card.equipment .stat-value { color: #40916C; }
-.stat-card.reports   { border-left: 4px solid #2D6A4F; }
-.stat-card.reports .stat-value { color: #2D6A4F; }
-.stat-card.faults    { border-left: 4px solid #CC7722; }
-.stat-card.faults .stat-value { color: #CC7722; }
-
-/* --- Section Card --- */
-.detail-section {
-    background: var(--color-surface-alt);
-    border-radius: var(--radius-lg);
-    padding: var(--space-xl);
-    margin-bottom: var(--space-lg);
-    border: 1px solid var(--color-surface-dark);
-}
-.section-title {
-    font-family: var(--font-display);
-    font-size: 1.15rem;
-    color: var(--color-primary);
-    margin: 0 0 var(--space-lg) 0;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-/* --- Property Grid --- */
-.prop-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-    gap: 12px 24px;
-}
-.prop-item {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-}
-.prop-label {
-    font-size: 0.8em;
-    color: var(--color-text-secondary);
-    font-weight: 500;
-}
-.prop-value {
-    font-size: 0.95em;
-    font-weight: 500;
-    color: var(--color-text-primary);
-    word-break: break-all;
-}
-.prop-value.empty { color: var(--color-text-secondary); font-weight: 400; }
-.prop-divider {
-    grid-column: 1 / -1;
-    border: none;
-    border-top: 1px dashed var(--color-surface-dark);
-    margin: 4px 0;
-}
-
-/* --- Notes Timeline --- */
-.notes-timeline { display: flex; flex-direction: column; gap: 6px; }
-.note-entry {
-    display: flex;
-    gap: 10px;
-    align-items: baseline;
-    padding: 6px 0;
-    font-size: 0.9em;
-}
-.note-date {
-    font-weight: 600;
-    color: var(--color-primary);
-    white-space: nowrap;
-    min-width: 80px;
-    font-family: var(--font-mono);
-    font-size: 0.85em;
-}
-.note-content { flex: 1; word-break: break-all; }
-
-/* --- Plant / Equipment Cards --- */
-.card-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-    gap: var(--space-md);
-}
-.mini-card {
-    background: var(--color-surface);
-    border-radius: var(--radius-md);
-    padding: var(--space-md);
-    border: 1px solid var(--color-surface-dark);
-}
-.mini-card-title {
-    font-weight: 600;
-    color: #52B788;
-    margin-bottom: 6px;
-}
-.mini-card-meta {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px 16px;
-    font-size: 0.85em;
-    color: var(--color-text-secondary);
-}
-.eq-card-title { color: #40916C; }
-.eq-status {
-    display: inline-block;
-    padding: 2px 10px;
-    border-radius: 12px;
-    font-size: 0.8em;
-    font-weight: 600;
-}
-.eq-status.working     { background: rgba(64,145,108,0.15); color: #40916C; }
-.eq-status.needs_repair{ background: rgba(204,119,34,0.15); color: #CC7722; }
-
-/* --- Report Table --- */
-.report-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 0.88em;
-}
-.report-table th {
-    text-align: left;
-    padding: 8px 10px;
-    border-bottom: 2px solid var(--color-surface-dark);
-    color: var(--color-text-secondary);
-    font-weight: 600;
-    font-size: 0.85em;
-}
-.report-table td {
-    padding: 8px 10px;
-    border-bottom: 1px solid var(--color-surface-dark);
-}
-.report-table tr:last-child td { border-bottom: none; }
-.report-table a { color: var(--color-primary); text-decoration: none; }
-.report-table a:hover { text-decoration: underline; }
-
-/* --- Sibling Zones --- */
-.sibling-list {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-}
-.sibling-chip {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    padding: 4px 10px;
-    background: var(--color-surface);
-    border: 1px solid var(--color-surface-dark);
-    border-radius: 16px;
-    font-size: 0.82em;
-    text-decoration: none;
-    color: var(--color-text-primary);
-    transition: border-color 0.15s;
-}
-.sibling-chip:hover { border-color: var(--color-primary); color: var(--color-primary); }
-.sibling-chip .dot {
-    width: 8px; height: 8px; border-radius: 50%; display: inline-block;
-}
-.dot-critical { background: #9B2226; }
-.dot-high     { background: #CC7722; }
-.dot-medium   { background: #52B788; }
-.dot-low      { background: #64748B; }
-.dot-abolished{ background: #94A3B8; }
-
-/* --- Empty State --- */
-.empty-state {
-    text-align: center;
-    padding: var(--space-lg);
-    color: var(--color-text-secondary);
-    font-size: 0.9em;
-}
-
-/* --- Responsive --- */
-@media (max-width: 768px) {
-    .zone-header { flex-direction: column; }
-    .stats-grid { grid-template-columns: repeat(2, 1fr); }
-    .prop-grid { grid-template-columns: 1fr 1fr; }
-}
+.zd-empty { text-align: center; padding: 14px; color: var(--color-text-muted, #8B9A8F); font-size: 0.82rem; }
+.zd-foot { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; padding-top: 10px;
+           border-top: 1px solid #eef0f3; font-size: 0.76rem; color: var(--color-text-muted, #8B9A8F); }
+.zd-foot a { color: var(--color-primary-light, #2D6A4F); text-decoration: none; }
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="zone-detail-container">
+<div class="zd-wrap">
 
     <!-- Breadcrumb -->
-    <div class="zone-breadcrumb">
+    <div class="zd-breadcrumb">
         <a href="{% url 'core:dashboard' %}">地图总览</a>
         <span class="sep">/</span>
         {% if zone.patch %}
@@ -307,219 +155,152 @@
     </div>
 
     <!-- Header -->
-    <div class="zone-header">
-        <div class="zone-header-left">
-            <h1>
-                {{ zone.name }}
-                <span class="zone-code-tag">{{ zone.code }}</span>
-            </h1>
-            {% if zone.description %}
-            <p class="zone-description">{{ zone.description }}</p>
-            {% endif %}
-            <div class="zone-badges">
-                <span class="badge badge-priority-{{ zone.priority }}">优先级: {{ priority_display }}</span>
-                {% if status_display == '正常' %}
-                <span class="badge badge-status-normal">状态: {{ status_display }}</span>
-                {% elif status_display == '施工中' %}
-                <span class="badge badge-status-construction">状态: {{ status_display }}</span>
-                {% elif status_display == '停浇' %}
-                <span class="badge badge-status-stopped">状态: {{ status_display }}</span>
-                {% endif %}
-                {% if zone.area_sqm %}
-                <span class="badge badge-area">面积: {{ zone.area_display }}</span>
-                {% endif %}
+    <div class="zd-head">
+        <div style="min-width:0;">
+            <h1 class="zd-title">{{ zone.name }}<span class="zd-code">{{ zone.code }}</span></h1>
+            {% if zone.description %}<p class="zd-desc">{{ zone.description }}</p>{% endif %}
+            <div class="zd-badges">
+                <span class="zd-badge bp-{{ zone.priority }}">优先级: {{ priority_display }}</span>
+                {% if status_display == '正常' %}<span class="zd-badge bs-normal">状态: {{ status_display }}</span>
+                {% elif status_display == '施工中' %}<span class="zd-badge bs-construction">状态: {{ status_display }}</span>
+                {% elif status_display == '停浇' %}<span class="zd-badge bs-stopped">状态: {{ status_display }}</span>{% endif %}
+                {% if zone.area_sqm %}<span class="zd-badge area">面积: {{ zone.area_display }}</span>{% endif %}
             </div>
         </div>
-        <div class="zone-header-actions">
-            <a href="{% url 'core:zone_edit' zone.id %}" class="btn btn-secondary">编辑</a>
-        </div>
+        <a href="{% url 'core:zone_edit' zone.id %}" class="zd-edit zd-btn zd-btn-secondary">编辑</a>
     </div>
 
     <!-- Stats -->
-    <div class="stats-grid">
-        <div class="stat-card plants">
-            <div class="stat-value">{{ plant_count }}</div>
-            <div class="stat-label">种植物</div>
-        </div>
-        <div class="stat-card equipment">
-            <div class="stat-value">{{ equipment_count }}</div>
-            <div class="stat-label">设备</div>
-        </div>
-        <div class="stat-card reports">
-            <div class="stat-value">{{ work_report_count }}</div>
-            <div class="stat-label">工作报告</div>
-        </div>
+    <div class="zd-stats">
+        <div class="zd-stat plants"><div class="v">{{ plant_count }}</div><div class="l">种植物</div></div>
+        <div class="zd-stat equipment"><div class="v">{{ equipment_count }}</div><div class="l">设备</div></div>
+        <div class="zd-stat reports"><div class="v">{{ work_report_count }}</div><div class="l">工作报告</div></div>
     </div>
 
-    <!-- 备注 & 备注确认 side by side -->
-    <div style="display:flex;gap:16px;">
-        <!-- 备注 Section -->
-        <div class="detail-section" style="flex:1;min-width:0;">
-            <h2 class="section-title">备注</h2>
-            <div id="remark-form" style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
-                <input type="date" id="remark-date" value="{{ today }}" style="padding:4px 8px;border:1px solid #ddd;border-radius:4px;">
-                <input type="text" id="remark-content" placeholder="备注内容..." style="flex:1;min-width:150px;padding:4px 8px;border:1px solid #ddd;border-radius:4px;">
-                <button type="button" id="remark-add-btn" onclick="addRemark()" style="padding:4px 12px;background:#28a745;color:white;border:none;border-radius:4px;cursor:pointer;">添加</button>
+    <!-- 备注 & 备注确认 -->
+    <div class="zd-row">
+        <!-- 备注 -->
+        <div class="zd-card">
+            <h2>备注</h2>
+            <div class="zd-rform">
+                <input type="date" id="remark-date" value="{{ today }}" class="zd-input">
+                <input type="text" id="remark-content" placeholder="备注内容..." class="zd-input">
+                <button type="button" class="zd-btn zd-btn-primary" onclick="addRemark()">添加</button>
             </div>
-            <div id="remarks-list" style="max-height:300px;overflow-y:auto;">
+            <div class="zd-notes" id="remarks-list">
             {% for remark in remarks %}
-                <div class="note-entry" data-index="{{ forloop.counter0 }}">
-                    <span class="note-date">{{ remark.date }}</span>
-                    <span class="note-content">{{ remark.content }}</span>
-                    <span style="color:#888;font-size:0.85em;">({{ remark.author }})</span>
+                <div class="zd-note" data-index="{{ forloop.counter0 }}">
+                    <span class="nd">{{ remark.date }}</span>
+                    <span class="nc">{{ remark.content }}</span>
+                    <span class="na">({{ remark.author }})</span>
                     {% if remark.workorder_id %}
-                    <a href="{% url 'core:work_report_detail' remark.workorder_id %}" style="color:#007bff;font-size:0.85em;margin-left:6px;text-decoration:none;">[工单#{{ remark.workorder_id }}]</a>
+                    <a class="zd-wo" href="{% url 'core:work_report_detail' remark.workorder_id %}">[工单#{{ remark.workorder_id }}]</a>
                     {% endif %}
                     {% if is_manager %}
-                    <button type="button" class="remark-confirm-btn" onclick="showConfirmForm(this, {{ forloop.counter0 }})" style="margin-left:8px;padding:2px 8px;background:#007bff;color:white;border:none;border-radius:3px;cursor:pointer;font-size:0.8em;">确认</button>
-                    <div class="confirm-form" style="display:none;margin-top:6px;">
-                        <input type="text" class="confirm-reply" placeholder="确认回复..." style="padding:2px 6px;border:1px solid #ddd;border-radius:3px;width:70%;">
-                        <button type="button" onclick="confirmRemark({{ forloop.counter0 }}, this)" style="padding:2px 8px;background:#17a2b8;color:white;border:none;border-radius:3px;cursor:pointer;font-size:0.8em;">提交</button>
-                        <button type="button" onclick="this.parentElement.style.display='none'" style="padding:2px 8px;border:1px solid #ccc;border-radius:3px;cursor:pointer;font-size:0.8em;">取消</button>
+                    <button type="button" class="zd-btn zd-btn-confirm" style="padding:2px 8px;font-size:0.74rem;" onclick="showConfirmForm(this, {{ forloop.counter0 }})">确认</button>
+                    <div class="zd-confirm-form">
+                        <input type="text" class="zd-input confirm-reply" placeholder="确认回复...">
+                        <button type="button" class="zd-btn zd-btn-confirm" style="padding:2px 8px;font-size:0.74rem;" onclick="confirmRemark({{ forloop.counter0 }}, this)">提交</button>
+                        <button type="button" class="zd-btn zd-btn-secondary" style="padding:2px 8px;font-size:0.74rem;" onclick="this.parentElement.style.display='none'">取消</button>
                     </div>
                     {% endif %}
                 </div>
             {% empty %}
-                <div class="empty-state">暂无备注</div>
+                <div class="zd-empty">暂无备注</div>
             {% endfor %}
             </div>
         </div>
 
-        <!-- 备注确认 Section -->
-        <div class="detail-section" style="flex:1;min-width:0;">
-            <h2 class="section-title">备注确认</h2>
-            <div id="confirmed-list" style="max-height:300px;overflow-y:auto;">
+        <!-- 备注确认 -->
+        <div class="zd-card">
+            <h2>备注确认</h2>
+            <div class="zd-notes" id="confirmed-list">
             {% for item in confirmed_remarks %}
-                <div class="note-entry confirmed-entry" data-index="{{ forloop.counter0 }}">
-                    <div>
-                        <span class="note-date">{{ item.date }}</span>
-                        <span class="note-content">{{ item.content }}</span>
-                        <span style="color:#888;font-size:0.85em;">({{ item.author }})</span>
-                    </div>
-                    <div style="margin-top:4px;padding-left:16px;border-left:3px solid #28a745;font-size:0.9em;">
-                        <span style="color:#888;">{{ item.confirm_date }}</span>
-                        <span style="color:#28a745;">{{ item.confirm_reply }}</span>
-                        <span style="color:#888;font-size:0.85em;">({{ item.confirm_author }})</span>
+                <div class="zd-note" data-index="{{ forloop.counter0 }}">
+                    <div style="flex:1;">
+                        <span class="nd">{{ item.date }}</span>
+                        <span class="nc">{{ item.content }}</span>
+                        <span class="na">({{ item.author }})</span>
+                        <div class="zd-confirm-line">
+                            <span class="cd">{{ item.confirm_date }}</span>
+                            <span class="cr">{{ item.confirm_reply }}</span>
+                            <span class="na">({{ item.confirm_author }})</span>
+                        </div>
                     </div>
                     {% if is_manager %}
-                    <div style="margin-top:6px;">
-                        <button type="button" onclick="moveRemark({{ forloop.counter0 }}, 'irrigation')" style="padding:2px 8px;background:#6f42c1;color:white;border:none;border-radius:3px;cursor:pointer;font-size:0.8em;">转至灌溉管理记录</button>
-                        <button type="button" onclick="moveRemark({{ forloop.counter0 }}, 'equipment')" style="padding:2px 8px;background:#fd7e14;color:white;border:none;border-radius:3px;cursor:pointer;font-size:0.8em;">转至设备维护记录</button>
+                    <div class="zd-note-actions">
+                        <button type="button" class="zd-btn zd-btn-move-irr" style="padding:2px 8px;font-size:0.74rem;" onclick="moveRemark({{ forloop.counter0 }}, 'irrigation')">转灌溉管理</button>
+                        <button type="button" class="zd-btn zd-btn-move-eq" style="padding:2px 8px;font-size:0.74rem;" onclick="moveRemark({{ forloop.counter0 }}, 'equipment')">转设备维护</button>
                     </div>
                     {% endif %}
                 </div>
             {% empty %}
-                <div class="empty-state">暂无确认备注</div>
+                <div class="zd-empty">暂无确认备注</div>
             {% endfor %}
             </div>
         </div>
     </div>
 
-    <!-- Irrigation & Environment Parameters -->
-    <div class="detail-section">
-        <h2 class="section-title">灌溉与环境参数</h2>
-        <div class="prop-grid">
-            <div class="prop-item">
-                <span class="prop-label">灌水器类型</span>
-                <span class="prop-value {% if not zone.sprinkler_type %}empty{% endif %}">{{ zone.sprinkler_type|default:"—" }}</span>
-            </div>
-            <div class="prop-item">
-                <span class="prop-label">灌溉强度</span>
-                <span class="prop-value {% if not zone.irrigation_intensity %}empty{% endif %}">{% if zone.irrigation_intensity %}{{ zone.irrigation_intensity }} mm/h{% else %}—{% endif %}</span>
-            </div>
-            <div class="prop-item">
-                <span class="prop-label">电磁阀尺寸</span>
-                <span class="prop-value {% if not zone.solenoid_valve_size %}empty{% endif %}">{% if zone.solenoid_valve_size %}{{ zone.solenoid_valve_size }} 寸{% else %}—{% endif %}</span>
-            </div>
-            <div class="prop-item">
-                <span class="prop-label">景观系数 (LC)</span>
-                <span class="prop-value {% if not zone.landscape_coefficient %}empty{% endif %}">{{ zone.landscape_coefficient|default:"—" }}</span>
-            </div>
-            <hr class="prop-divider">
-            <div class="prop-item">
-                <span class="prop-label">植物类型</span>
-                <span class="prop-value {% if not zone.plant_type %}empty{% endif %}">{{ zone.plant_type|default:"—" }}</span>
-            </div>
-            <div class="prop-item">
-                <span class="prop-label">植物特点</span>
-                <span class="prop-value {% if not zone.plant_feature %}empty{% endif %}">{{ zone.plant_feature|default:"—" }}</span>
-            </div>
-            <div class="prop-item">
-                <span class="prop-label">土壤湿度</span>
-                <span class="prop-value {% if not zone.soil_moisture %}empty{% endif %}">{{ zone.soil_moisture|default:"—" }}</span>
-            </div>
-            <div class="prop-item">
-                <span class="prop-label">地形特点</span>
-                <span class="prop-value {% if not zone.terrain_feature %}empty{% endif %}">{{ zone.terrain_feature|default:"—" }}</span>
-            </div>
+    <!-- 灌溉与环境参数 -->
+    <div class="zd-card">
+        <h2>灌溉与环境参数</h2>
+        <div class="zd-prop">
+            <div><div class="k">灌水器类型</div><div class="v {% if not zone.sprinkler_type %}empty{% endif %}">{{ zone.sprinkler_type|default:"—" }}</div></div>
+            <div><div class="k">灌溉强度</div><div class="v {% if not zone.irrigation_intensity %}empty{% endif %}">{% if zone.irrigation_intensity %}{{ zone.irrigation_intensity }} mm/h{% else %}—{% endif %}</div></div>
+            <div><div class="k">电磁阀尺寸</div><div class="v {% if not zone.solenoid_valve_size %}empty{% endif %}">{% if zone.solenoid_valve_size %}{{ zone.solenoid_valve_size }} 寸{% else %}—{% endif %}</div></div>
+            <div><div class="k">景观系数 (LC)</div><div class="v {% if not zone.landscape_coefficient %}empty{% endif %}">{{ zone.landscape_coefficient|default:"—" }}</div></div>
+            <hr>
+            <div><div class="k">植物类型</div><div class="v {% if not zone.plant_type %}empty{% endif %}">{{ zone.plant_type|default:"—" }}</div></div>
+            <div><div class="k">植物特点</div><div class="v {% if not zone.plant_feature %}empty{% endif %}">{{ zone.plant_feature|default:"—" }}</div></div>
+            <div><div class="k">土壤湿度</div><div class="v {% if not zone.soil_moisture %}empty{% endif %}">{{ zone.soil_moisture|default:"—" }}</div></div>
+            <div><div class="k">地形特点</div><div class="v {% if not zone.terrain_feature %}empty{% endif %}">{{ zone.terrain_feature|default:"—" }}</div></div>
         </div>
     </div>
 
-    <!-- Personnel & Zones -->
-    <div class="detail-section">
-        <h2 class="section-title">人员与分区</h2>
-        <div class="prop-grid">
-            <div class="prop-item">
-                <span class="prop-label">灌溉领班</span>
-                <span class="prop-value {% if not zone.irrigation_foreman %}empty{% endif %}">{{ zone.irrigation_foreman|default:"—" }}</span>
-            </div>
-            <div class="prop-item">
-                <span class="prop-label">绿化领班</span>
-                <span class="prop-value {% if not zone.greenery_foreman %}empty{% endif %}">{{ zone.greenery_foreman|default:"—" }}</span>
-            </div>
-            <div class="prop-item">
-                <span class="prop-label">植保领班</span>
-                <span class="prop-value {% if not zone.pest_control_foreman %}empty{% endif %}">{{ zone.pest_control_foreman|default:"—" }}</span>
-            </div>
-            <hr class="prop-divider">
-            <div class="prop-item">
-                <span class="prop-label">绿化分区</span>
-                <span class="prop-value {% if not zone.greenery_zone %}empty{% endif %}">{{ zone.greenery_zone|default:"—" }}</span>
-            </div>
-            <div class="prop-item">
-                <span class="prop-label">植保分区</span>
-                <span class="prop-value {% if not zone.pest_control_zone %}empty{% endif %}">{{ zone.pest_control_zone|default:"—" }}</span>
-            </div>
+    <!-- 人员与分区 -->
+    <div class="zd-card">
+        <h2>人员与分区</h2>
+        <div class="zd-prop">
+            <div><div class="k">灌溉领班</div><div class="v {% if not zone.irrigation_foreman %}empty{% endif %}">{{ zone.irrigation_foreman|default:"—" }}</div></div>
+            <div><div class="k">绿化领班</div><div class="v {% if not zone.greenery_foreman %}empty{% endif %}">{{ zone.greenery_foreman|default:"—" }}</div></div>
+            <div><div class="k">植保领班</div><div class="v {% if not zone.pest_control_foreman %}empty{% endif %}">{{ zone.pest_control_foreman|default:"—" }}</div></div>
+            <hr>
+            <div><div class="k">绿化分区</div><div class="v {% if not zone.greenery_zone %}empty{% endif %}">{{ zone.greenery_zone|default:"—" }}</div></div>
+            <div><div class="k">植保分区</div><div class="v {% if not zone.pest_control_zone %}empty{% endif %}">{{ zone.pest_control_zone|default:"—" }}</div></div>
         </div>
     </div>
 
-    <!-- 当前植物 & 当前设备 side by side -->
-    <div style="display:flex;gap:16px;">
-        <div class="detail-section" style="flex:1;min-width:0;">
-            <h2 class="section-title">当前植物</h2>
+    <!-- 当前植物 & 当前设备 -->
+    <div class="zd-row">
+        <div class="zd-card">
+            <h2>当前植物 <span class="count">{{ plants|length }}</span></h2>
             {% if plants %}
-            <div class="card-grid">
+            <div class="zd-mgrid">
                 {% for plant in plants %}
-                <div class="mini-card">
-                    <div class="mini-card-title">{{ plant.name }}</div>
-                    {% if plant.scientific_name %}
-                    <div style="font-style:italic;color:var(--color-text-secondary);font-size:0.85em;margin-bottom:4px;">{{ plant.scientific_name }}</div>
-                    {% endif %}
-                    <div class="mini-card-meta">
+                <div class="zd-mini">
+                    <div class="mt plant">{{ plant.name }}</div>
+                    {% if plant.scientific_name %}<div class="msci">{{ plant.scientific_name }}</div>{% endif %}
+                    <div class="mmeta">
                         <span>数量: {{ plant.quantity }}</span>
-                        {% if plant.planting_date %}
-                        <span>{{ plant.planting_date|date:"Y/m/d" }}{% if plant.end_date %} ~ {{ plant.end_date|date:"Y/m/d" }}{% else %} ~ 持续{% endif %}</span>
-                        {% endif %}
+                        {% if plant.planting_date %}<span>{{ plant.planting_date|date:"Y/m/d" }}{% if plant.end_date %} ~ {{ plant.end_date|date:"Y/m/d" }}{% else %} ~ 持续{% endif %}</span>{% endif %}
                     </div>
                 </div>
                 {% endfor %}
             </div>
-            {% else %}
-            <div class="empty-state">暂无当前植物记录</div>
-            {% endif %}
+            {% else %}<div class="zd-empty">暂无当前植物记录</div>{% endif %}
         </div>
 
-        <div class="detail-section" style="flex:1;min-width:0;">
-            <h2 class="section-title">当前设备</h2>
+        <div class="zd-card">
+            <h2>当前设备 <span class="count">{{ equipment|length }}</span></h2>
             {% if equipment %}
-            <div class="card-grid">
+            <div class="zd-mgrid">
                 {% for eq in equipment %}
-                <div class="mini-card">
-                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-                        <div class="mini-card-title eq-card-title">{{ eq.equipment_details.manufacturer }} {{ eq.equipment_details.model_name }}</div>
-                        <span class="eq-status {{ eq.status }}">{{ eq.status_display }}</span>
+                <div class="zd-mini">
+                    <div class="zd-eq-row">
+                        <div class="mt eq">{{ eq.equipment_details.manufacturer }} {{ eq.equipment_details.model_name }}</div>
+                        <span class="zd-eq-status {{ eq.status }}">{{ eq.status_display }}</span>
                     </div>
-                    <div class="mini-card-meta">
+                    <div class="mmeta">
                         <span>{{ eq.equipment_details.equipment_type_display }}</span>
                         <span>数量: {{ eq.quantity }}</span>
                         {% if eq.location_in_zone %}<span>位置: {{ eq.location_in_zone }}</span>{% endif %}
@@ -528,67 +309,48 @@
                 </div>
                 {% endfor %}
             </div>
-            {% else %}
-            <div class="empty-state">暂无当前设备记录</div>
-            {% endif %}
+            {% else %}<div class="zd-empty">暂无当前设备记录</div>{% endif %}
         </div>
     </div>
 
-    <!-- 设备维护记录 & 管理记录 side by side -->
-    <div style="display:flex;gap:16px;">
-        <div class="detail-section" style="flex:1;min-width:0;">
-            <h2 class="section-title">灌溉设备维护记录</h2>
+    <!-- 维护记录 & 管理记录 -->
+    <div class="zd-row">
+        <div class="zd-card">
+            <h2>灌溉设备维护记录</h2>
             {% if equip_notes %}
-            <div class="notes-timeline">
+            <div class="zd-notes">
                 {% for note in equip_notes %}
-                <div class="note-entry">
-                    <span class="note-date">{{ note.date }}</span>
-                    <span class="note-content">{{ note.content }}</span>
-                </div>
+                <div class="zd-note"><span class="nd">{{ note.date }}</span><span class="nc">{{ note.content }}</span></div>
                 {% endfor %}
             </div>
-            {% else %}
-            <div class="empty-state">暂无维护记录</div>
-            {% endif %}
+            {% else %}<div class="zd-empty">暂无维护记录</div>{% endif %}
         </div>
 
-        <div class="detail-section" style="flex:1;min-width:0;">
-            <h2 class="section-title">灌溉管理记录</h2>
+        <div class="zd-card">
+            <h2>灌溉管理记录</h2>
             {% if irrig_notes %}
-            <div class="notes-timeline">
+            <div class="zd-notes">
                 {% for note in irrig_notes %}
-                <div class="note-entry">
-                    <span class="note-date">{{ note.date }}</span>
-                    <span class="note-content">{{ note.content }}</span>
-                </div>
+                <div class="zd-note"><span class="nd">{{ note.date }}</span><span class="nc">{{ note.content }}</span></div>
                 {% endfor %}
             </div>
-            {% else %}
-            <div class="empty-state">暂无管理记录</div>
-            {% endif %}
+            {% else %}<div class="zd-empty">暂无管理记录</div>{% endif %}
         </div>
     </div>
 
-    <!-- Recent Work Reports -->
+    <!-- 近期工作报告 -->
     {% if recent_reports %}
-    <div class="detail-section">
-        <h2 class="section-title">近期工作报告</h2>
-        <table class="report-table">
-            <thead>
-                <tr>
-                    <th>日期</th>
-                    <th>处理人</th>
-                    <th>分类</th>
-                    <th>内容</th>
-                </tr>
-            </thead>
+    <div class="zd-card">
+        <h2>近期工作报告</h2>
+        <table class="zd-table">
+            <thead><tr><th>日期</th><th>处理人</th><th>分类</th><th>内容</th></tr></thead>
             <tbody>
                 {% for r in recent_reports %}
                 <tr>
-                    <td>{{ r.date|date:"Y/m/d" }}</td>
-                    <td>{{ r.worker.full_name }}</td>
-                    <td>{{ r.section_labels|join:" / " }}</td>
-                    <td>{{ r.remark|truncatewords:12 }}</td>
+                    <td data-l="日期">{{ r.date|date:"Y/m/d" }}</td>
+                    <td data-l="处理人">{{ r.worker.full_name }}</td>
+                    <td data-l="分类">{{ r.section_labels|join:" / " }}</td>
+                    <td data-l="内容">{{ r.remark|truncatewords:12 }}</td>
                 </tr>
                 {% endfor %}
             </tbody>
@@ -596,31 +358,30 @@
     </div>
     {% endif %}
 
-    <!-- Sibling Zones -->
+    <!-- 同片区区域 -->
     {% if sibling_zones %}
-    <div class="detail-section">
-        <h2 class="section-title">同片区区域</h2>
-        <div class="sibling-list">
+    <div class="zd-card">
+        <h2>同片区区域</h2>
+        <div class="zd-siblings">
             {% for sz in sibling_zones %}
-            <a href="{% url 'core:zone_detail' sz.id %}" class="sibling-chip">
-                <span class="dot dot-{{ sz.priority }}"></span>
-                {{ sz.code }} {{ sz.name }}
-            </a>
+            <a href="{% url 'core:zone_detail' sz.id %}" class="zd-sib"><span class="dot dot-{{ sz.priority }}"></span>{{ sz.code }} {{ sz.name }}</a>
             {% endfor %}
         </div>
     </div>
     {% endif %}
 
-    <!-- Meta footer -->
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:var(--space-lg);padding-top:var(--space-md);border-top:1px solid var(--color-surface-dark);font-size:0.82em;color:var(--color-text-secondary);">
+    <div class="zd-foot">
         <span>更新于 {{ zone.updated_at|date:"Y/m/d H:i" }}</span>
-        <a href="{% url 'core:settings' %}" style="color:var(--color-primary);text-decoration:none;">返回设置</a>
+        <a href="{% url 'core:settings' %}">返回设置</a>
     </div>
 </div>
 
 <script>
 (function() {
     const zoneId = {{ zone.id }};
+    const remarkAddUrl = '{% url "core:zone_remark_add" zone.id %}';
+    const remarkConfirmUrl = idx => '{% url "core:zone_remark_confirm" zone.id 0 %}'.replace('/0/', '/' + idx + '/');
+    const remarkMoveUrl = idx => '{% url "core:zone_remark_move" zone.id 0 %}'.replace('/0/', '/' + idx + '/');
     const csrfToken = '{{ csrf_token }}';
 
     function getCSRF() {
@@ -642,12 +403,9 @@
         const date = document.getElementById('remark-date').value;
         const content = document.getElementById('remark-content').value.trim();
         if (!content) { alert('请输入备注内容'); return; }
-        postAction('/zone/' + zoneId + '/remark/add/', {date: date, content: content}).then(function(data) {
-            if (data.success) {
-                location.reload();
-            } else {
-                alert(data.error || '添加失败');
-            }
+        postAction(remarkAddUrl, {date: date, content: content}).then(function(data) {
+            if (data.success) location.reload();
+            else alert(data.error || '添加失败');
         });
     };
 
@@ -663,24 +421,18 @@
     window.confirmRemark = function(index, btn) {
         var form = btn.parentElement;
         var reply = form.querySelector('.confirm-reply').value.trim();
-        postAction('/zone/' + zoneId + '/remark/' + index + '/confirm/', {confirm_reply: reply}).then(function(data) {
-            if (data.success) {
-                location.reload();
-            } else {
-                alert(data.error || '确认失败');
-            }
+        postAction(remarkConfirmUrl(index), {confirm_reply: reply}).then(function(data) {
+            if (data.success) location.reload();
+            else alert(data.error || '确认失败');
         });
     };
 
     window.moveRemark = function(index, target) {
         var label = target === 'irrigation' ? '灌溉管理记录' : '设备维护记录';
         if (!confirm('确认转至' + label + '？')) return;
-        postAction('/zone/' + zoneId + '/remark/' + index + '/move/', {target: target}).then(function(data) {
-            if (data.success) {
-                location.reload();
-            } else {
-                alert(data.error || '转移失败');
-            }
+        postAction(remarkMoveUrl(index), {target: target}).then(function(data) {
+            if (data.success) location.reload();
+            else alert(data.error || '转移失败');
         });
     };
 })();

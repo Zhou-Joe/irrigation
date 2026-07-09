@@ -45,12 +45,16 @@
     </div>
     <div class="wr-expand-hint">点击查看详情 ▾</div>
     <div class="wr-detail" onclick="event.stopPropagation()">
-        {% if report.worker.full_name %}
+        {# Compact info grid: short scalar fields packed side-by-side. #}
         <div class="wr-dsec">
-            <div class="wr-dlabel">填写人</div>
-            <div class="wr-dvalue" id="wrWorker-{{ report.id }}">{{ report.worker.full_name }}{% if report.worker.employee_id %} ({{ report.worker.employee_id }}){% endif %}</div>
+            <div class="wr-info-grid">
+                {% if report.worker.full_name %}
+                <div class="wr-info"><span class="wr-info-k">填写人</span><span class="wr-info-v" id="wrWorker-{{ report.id }}"><b>{{ report.worker.full_name }}</b>{% if report.worker.employee_id %} ({{ report.worker.employee_id }}){% endif %}</span></div>
+                {% endif %}
+                <div class="wr-info"><span class="wr-info-k">人数</span><span class="wr-info-v">灌溉组 {{ report.team_size }}人{% if report.third_party_count %} +{{ report.third_party_count }}三方{% endif %}</span></div>
+                {% if report.work_start_time %}<div class="wr-info"><span class="wr-info-k">时段</span><span class="wr-info-v">{{ report.work_start_time }}–{{ report.work_end_time }}{% if report.team_hours %} · {{ report.team_hours }}h{% endif %}{% if report.third_party_hours %} +{{ report.third_party_hours }}h{% endif %}</span></div>{% endif %}
+            </div>
         </div>
-        {% endif %}
 
         {% if is_admin %}
         {% comment %}Admin-only: re-assign this report's creator (worker). Used to fix reports attributed to the wrong worker (e.g. after a DB mishap).{% endcomment %}
@@ -88,25 +92,39 @@
         </div>
         {% endif %}
 
-        <div class="wr-dsec">
-            <div class="wr-dlabel">人数</div>
-            <div class="wr-dvalue">灌溉组 {{ report.team_size }}人{% if report.third_party_count %}，第三方 {{ report.third_party_count }}人{% endif %}</div>
-        </div>
-
         {% if report.entry_groups %}
         <div class="wr-dsec">
             <div class="wr-dlabel">工作内容</div>
             {% for grp in report.entry_groups %}
             <div class="wr-grp-title">{{ grp.section_label }}</div>
-            {% for it in grp.items %}
-            <div class="wr-entry-row">
-                <div class="wr-entry-path">{{ it.path }}{% if it.project %}<div class="wr-entry-proj">项目: {{ it.project }}</div>{% endif %}</div>
-                {% if it.value %}<span class="wr-entry-val">{{ it.value }}</span>{% endif %}
+            <div class="wr-entry-grid">
+                {% for it in grp.items %}
+                <div class="wr-entry-row">
+                    <div class="wr-entry-path">{{ it.path }}{% if it.project %}<div class="wr-entry-proj">项目: {{ it.project }}</div>{% endif %}</div>
+                    {% if it.value %}<span class="wr-entry-val">{{ it.value }}</span>{% endif %}
+                </div>
+                {% endfor %}
             </div>
-            {% endfor %}
             {% endfor %}
         </div>
         {% endif %}
+
+        {# ── 材料消耗 (consumed materials, linked outbound transactions) ── #}
+        {% with txns=report.material_consumptions.all %}
+        {% if txns %}
+        <div class="wr-dsec">
+            <div class="wr-dlabel">材料消耗</div>
+            <div class="wr-mat-list">
+                {% for txn in txns %}{% for ln in txn.lines.all %}
+                <div class="wr-mat-item">
+                    <span class="wr-mat-name">{{ ln.category.name_zh }}</span>
+                    <span class="wr-mat-qty">×{{ ln.quantity }}{% if ln.unit %}{{ ln.unit }}{% endif %}</span>
+                </div>
+                {% endfor %}{% endfor %}
+            </div>
+        </div>
+        {% endif %}
+        {% endwith %}
 
         {% if report.remark %}
         <div class="wr-dsec">
@@ -146,7 +164,7 @@
         </div>
     </div>
     <div class="wr-side-actions">
-        <a class="wr-act view" href="{% url 'core:work_report_detail' report.id %}">查看</a>
-        <a class="wr-act edit" href="{% url 'core:dashboard' %}?edit_workorder={{ report.id }}">编辑</a>
+        <a class="wr-act view" href="{% url 'core:work_report_detail' report.id %}" target="_blank" rel="noopener">查看</a>
+        <a class="wr-act edit" href="{% url 'core:dashboard' %}?edit_workorder={{ report.id }}" target="_blank" rel="noopener">编辑</a>
     </div>
 </div>
