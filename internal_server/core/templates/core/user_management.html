@@ -398,7 +398,7 @@
     </div>
 
     <!-- Main Tabs -->
-    <div class="app-tabs" style="max-width:560px;">
+    <div class="app-tabs" style="max-width:760px; flex-wrap:wrap;">
         <button class="app-tab {% if active_tab == 'users' %}active{% endif %}"
                 data-tab="users" onclick="switchTab('users')">
             用户列表 ({{ total_users }})
@@ -413,6 +413,10 @@
         <button class="app-tab {% if active_tab == 'announcements' %}active{% endif %}"
                 data-tab="announcements" onclick="switchTab('announcements')">
             通知管理 ({{ announcements|length }})
+        </button>
+        <button class="app-tab {% if active_tab == 'crews' %}active{% endif %}"
+                data-tab="crews" onclick="switchTab('crews')">
+            班组管理 ({{ crews|length }})
         </button>
     </div>
 
@@ -624,6 +628,40 @@
           {% endfor %}
         {% else %}
           <div class="am-empty">暂无通知</div>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- Tab 4: Crew Management (班组管理) -->
+    <div id="tab-crews" class="app-tab-content {% if active_tab == 'crews' %}active{% endif %}">
+      <div class="am-card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+          <h2 style="margin:0;">班组列表（{{ crews|length }}）</h2>
+          <a href="{% url 'core:crew_new' %}" class="btn btn-primary" target="_blank">+ 新建班组</a>
+        </div>
+        {% if crews %}
+        <table class="user-table">
+          <thead>
+            <tr><th>班组名称</th><th>组长</th><th>成员数</th><th>负责区域</th><th>状态</th><th>操作</th></tr>
+          </thead>
+          <tbody>
+            {% for c in crews %}
+            <tr>
+              <td><strong>{{ c.name }}</strong></td>
+              <td>{{ c.leader.full_name|default:'—' }}</td>
+              <td>{{ c.members.count }} 人</td>
+              <td>{% for l in c.lands.all %}{{ l.name }}{% if not forloop.last %}、{% endif %}{% empty %}—{% endfor %}</td>
+              <td>{% if c.active %}<span class="status-active">启用</span>{% else %}<span class="status-inactive">停用</span>{% endif %}</td>
+              <td><a href="{% url 'core:crew_edit' c.id %}" class="btn btn-sm btn-secondary" target="_blank">编辑</a></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <div class="empty-state">
+          <p>暂无班组</p>
+          <a href="{% url 'core:crew_new' %}" class="btn btn-primary" target="_blank">创建班组</a>
+        </div>
         {% endif %}
       </div>
     </div>

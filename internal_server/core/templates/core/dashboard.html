@@ -69,6 +69,8 @@
 
 <!-- Map View Container -->
 <div class="mobile-overlay" id="mobileOverlay" onclick="toggleSidebar()"></div>
+
+<!-- 一线今日 PM 任务已整合进顶部通知铃铛弹窗（见 base.html #pmTaskSection）-->
 <div class="dashboard-container" id="mapContainer">
     <!-- 侧边栏 -->
     <aside class="sidebar" id="sidebar">
@@ -413,7 +415,20 @@
 <script id="pending-remarks" type="application/json">{{ pending_remarks_json|safe }}</script>
 <!-- Custom Map JS -->
 <script src="{% static 'js/map.js' %}?v=20260704"></script>
-<script src="{% static 'js/dashboard-modal.js' %}?v=20260705"></script>
+<script src="{% static 'js/dashboard-modal.js' %}?v=20260714"></script>
+<script>
+// Override the notification popup's PM-task "填写" handler: on the dashboard we
+// can open the work-order edit modal directly. base.html's default fallback
+// just navigates home.
+window.fillPmTask = function (reportId) {
+    if (typeof openV2ModalForEdit === 'function') {
+        closeNotifPopup();
+        openV2ModalForEdit(reportId);
+    } else {
+        window.location.href = '/';
+    }
+};
+</script>
 <!-- Dashboard JS — pass Django URL to external script -->
 <script>window.HISTORY_URL = '{% url "core:work_reports" %}';</script>
 <script src="{% static 'js/dashboard.js' %}?v=20260618"></script>

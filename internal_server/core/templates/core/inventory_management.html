@@ -506,9 +506,9 @@ table.iv-ledger .lvl-tag.warn { background: #fdf6ec; color: #cc7722; }
       <label class="iv-field">收货日期</label>
       <input type="date" id="poFreceived_date" class="iv-input">
       <label class="iv-field">项目名称</label>
-      <input type="text" id="poFproject_name" class="iv-input" placeholder="项目名称（可选）" autocomplete="off">
-      <label class="iv-field">项目code</label>
-      <input type="text" id="poFproject_code" class="iv-input" placeholder="项目code（可选）" autocomplete="off">
+      <select id="poFproject" class="iv-input"><option value="">— 不关联项目 —</option></select>
+      <input type="hidden" id="poFproject_name">
+      <input type="hidden" id="poFproject_code">
       <label class="iv-field">计划采购物料</label>
       <div id="poPlannedList"></div>
       <div id="poAddTrigger" style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border:1px dashed #bbb;border-radius:8px;cursor:pointer;background:#fff;font-size:.9rem;margin-top:6px;">
@@ -595,6 +595,8 @@ var IV_LEAVES = {{ leaves_json|safe }};
 var IV_CAT_PATHS = {{ cat_paths_json|safe }};
 // 采购订单 tab data (each: {id,order_number,...,txn_count,planned_lines[],parts[]}).
 var PO_DATA = {{ pos_json|safe }};
+// 项目选项 (grouped by category → subcategory) for the PO modal's project <select>.
+var PO_PROJECTS = {{ projects_json|safe }};
 // Inventory tree (for the PO 计划采购物料 picker). Reuses serialize_inventory_tree().
 var PO_INV_TREE = {{ inventory_tree_json|safe }};
 var PO_INV_NODE_MAP = {};
@@ -1247,7 +1249,45 @@ function _poFind(id) {
     for (var i = 0; i < PO_DATA.length; i++) if (PO_DATA[i].id === id) return PO_DATA[i];
     return null;
 }
+// Build the project <select> optgroups once from PO_PROJECTS data.
+// Each item gets data-name + data-code so onchange can auto-fill the hidden fields.
+var _poProjectReady = false;
+function _poInitProjectSelect() {
+    if (_poProjectReady) return;
+    var sel = document.getElementById('poFproject');
+    if (!sel) return;
+    PO_PROJECTS.forEach(function (grp) {
+        var og = document.createElement('optgroup');
+        og.label = grp.category;
+        grp.subgroups.forEach(function (sub) {
+            sub.items.forEach(function (item) {
+                var opt = document.createElement('option');
+                opt.value = item.id;
+                opt.textContent = (sub.label && sub.label !== '—' ? sub.label + ' · ' : '') + item.name;
+                opt.dataset.name = item.name;
+                opt.dataset.code = item.code || '';
+                og.appendChild(opt);
+            });
+        });
+        sel.appendChild(og);
+    });
+    sel.addEventListener('change', function () {
+        var opt = sel.options[sel.selectedIndex];
+        document.getElementById('poFproject_name').value = opt.dataset.name || '';
+        document.getElementById('poFproject_code').value = opt.dataset.code || '';
+    });
+    _poProjectReady = true;
+}
+// Select the option whose name matches the given project_name (for edit mode).
+function _poSelectProjectByName(name) {
+    var sel = document.getElementById('poFproject');
+    if (!sel || !name) { if (sel) sel.value = ''; return; }
+    for (var i = 0; i < sel.options.length; i++) {
+        if (sel.options[i].dataset.name === name) { sel.selectedIndex = i; break; }
+    }
+}
 function poOpenCreate() {
+    _poInitProjectSelect();
     _poEditingId = null;
     document.getElementById('poDlgTitle').textContent = '新建采购订单';
     document.getElementById('poDlgSubmit').textContent = '创建';
@@ -1255,6 +1295,7 @@ function poOpenCreate() {
     document.getElementById('poFpo_number').value = '';
     document.getElementById('poFpo_amount_untaxed').value = '';
     document.getElementById('poFreceived_date').value = '';
+    document.getElementById('poFproject').value = '';
     document.getElementById('poFproject_name').value = '';
     document.getElementById('poFproject_code').value = '';
     _poPlannedCart = [];
@@ -1264,6 +1305,7 @@ function poOpenCreate() {
 }
 function poOpenEdit(id) {
     var p = _poFind(id); if (!p) return;
+    _poInitProjectSelect();
     _poEditingId = id;
     document.getElementById('poDlgTitle').textContent = '编辑采购订单';
     document.getElementById('poDlgSubmit').textContent = '保存';
@@ -1271,6 +1313,8 @@ function poOpenEdit(id) {
     document.getElementById('poFpo_number').value = p.po_number;
     document.getElementById('poFpo_amount_untaxed').value = p.po_amount_untaxed;
     document.getElementById('poFreceived_date').value = p.received_date || '';
+    // Project: select the matching option and sync hidden fields.
+    _poSelectProjectByName(p.project_name);
     document.getElementById('poFproject_name').value = p.project_name;
     document.getElementById('poFproject_code').value = p.project_code;
     // Hydrate the planned-materials cart from the PO's planned_lines.
@@ -1291,6 +1335,7 @@ function poSubmit() {
     fd.append('received_date', document.getElementById('poFreceived_date').value.trim());
     fd.append('project_name', document.getElementById('poFproject_name').value.trim());
     fd.append('project_code', document.getElementById('poFproject_code').value.trim());
+    fd.append('project_id', document.getElementById('poFproject').value.trim());
     // Planned-materials cart → JSON lines (same contract as the 入库 cart).
     var lines = _poPlannedCart.filter(function (c) { return (c.quantity || 0) > 0; })
         .map(function (c) { return { category: c.id, quantity: c.quantity, unit: c.unit || '' }; });

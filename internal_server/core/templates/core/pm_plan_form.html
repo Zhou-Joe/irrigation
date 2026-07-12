@@ -1,0 +1,104 @@
+{% extends 'core/base.html' %}
+{% load static %}
+
+{% block title %}{{ plan|yesno:"编辑PM计划,新建PM计划" }} - 作业计划{% endblock %}
+{% block nav_pm %}active{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'css/settings.css' %}?v=20260430">
+<style>
+.pm-wrap { max-width: 680px; margin: 0 auto; padding: 16px; }
+.pm-card { background: #fff; border: 1px solid #eef0f3; border-radius: 12px; padding: 16px 18px; }
+.pm-card h1 { font-size: 1.2rem; margin: 0 0 14px; color: var(--color-primary-light, #2D6A4F); }
+.pm-field { margin-bottom: 12px; }
+.pm-field label { display: block; font-size: 0.82rem; color: #888; margin-bottom: 4px; }
+.pm-input, .pm-select { width: 100%; padding: 8px 10px; border: 1px solid #ddd; border-radius: 8px; font-size: 0.88rem; background: #fff; }
+.pm-row { display: flex; gap: 10px; }
+.pm-row > div { flex: 1; }
+.pm-actions { display: flex; gap: 8px; margin-top: 16px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="pm-wrap">
+    <div class="pm-card">
+        <h1>{{ plan|yesno:"编辑PM计划,新建PM计划" }}</h1>
+        <form method="post">
+            {% csrf_token %}
+            <div class="pm-field">
+                <label>PM编号 *</label>
+                <input type="text" name="pm_number" class="pm-input" value="{{ plan.pm_number|default:'' }}" required>
+            </div>
+            <div class="pm-field">
+                <label>作业计划 (JobPlan) *</label>
+                <select name="job_plan" class="pm-select" required>
+                    <option value="">— 选择 —</option>
+                    {% for jp in job_plans %}
+                    <option value="{{ jp.id }}" {% if plan.job_plan_id == jp.id %}selected{% endif %}>{{ jp.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="pm-field">
+                <label>负责班组</label>
+                <select name="crew" class="pm-select">
+                    <option value="">— 不指定 —</option>
+                    {% for c in crews %}
+                    <option value="{{ c.id }}" {% if plan.crew_id == c.id %}selected{% endif %}>{{ c.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="pm-row">
+                <div class="pm-field">
+                    <label>频率值</label>
+                    <input type="number" name="frequency_value" class="pm-input" value="{{ plan.frequency_value|default:'1' }}" min="1">
+                </div>
+                <div class="pm-field">
+                    <label>频率单位</label>
+                    <select name="frequency_unit" class="pm-select">
+                        {% for val, label in plan.FREQ_UNIT_CHOICES %}
+                        <option value="{{ val }}" {% if plan.frequency_unit == val %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                        {% if not plan %}<option value="days">天</option><option value="weeks" selected>周</option><option value="months">月</option>{% endif %}
+                    </select>
+                </div>
+                <div class="pm-field">
+                    <label>提前生成天数</label>
+                    <input type="number" name="lead_days" class="pm-input" value="{{ plan.lead_days|default:'1' }}" min="0">
+                </div>
+            </div>
+            <div class="pm-field">
+                <label>工配备注模板</label>
+                <input type="text" name="remark_template" class="pm-input" value="{{ plan.remark_template|default:'' }}" placeholder="如：超级重点区目检 - TSL/TL绿柱">
+            </div>
+            <div class="pm-row">
+                <div class="pm-field">
+                    <label>关联CCU (CCU级用)</label>
+                    <select name="patch" class="pm-select">
+                        <option value="">— 不关联 —</option>
+                        {% for p in patches %}
+                        <option value="{{ p.id }}" {% if plan.patch_id == p.id %}selected{% endif %}>{{ p.code }} {{ p.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="pm-field">
+                    <label>关联SAT (SAT级用)</label>
+                    <select name="satellite" class="pm-select">
+                        <option value="">— 不关联 —</option>
+                        {% for s in satellites %}
+                        <option value="{{ s.id }}" {% if plan.satellite_id == s.id %}selected{% endif %}>{{ s.code }} {{ s.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+            <div class="pm-field">
+                <label>启用</label>
+                <input type="checkbox" name="active" {% if not plan or plan.active %}checked{% endif %}>
+            </div>
+            <div class="pm-actions">
+                <button type="submit" class="btn-sm btn-primary">保存</button>
+                <a href="{% url 'core:pm_management' %}" class="btn-sm btn-secondary">取消</a>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

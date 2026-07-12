@@ -39,6 +39,7 @@
     // Edit mode state. When set, submitV2Workorder sends report_id + report_photos_remove
     // so the server updates the existing report instead of creating a new one.
     var _editingReportId = null;
+    var _pmGwoId = null;  // PM GeneratedWorkOrder id for extension requests
     // Set BEFORE buildForm during an edit open so initWorkorderBehaviors can skip
     // the create-only default-category selection. _editingReportId is set later
     // (after the fetch resolves), so it can't gate the IIFE directly.
@@ -266,6 +267,10 @@
     // tree-form template (workorder_tree_form.html), adapted to this modal's IDs.
     function applyWoEditPrefill(data) {
         var h = data.header || {};
+        // Reset PM extension state from any prior modal open (state-leak guard).
+        _pmGwoId = null;
+        var staleExt = document.getElementById('pmExtSection');
+        if (staleExt) staleExt.remove();
         // Date: set the visible <select> if the option exists, else the hidden input.
         var dateSel = $('woDate'), dateHidden = $('woDateHidden'), headerDate = $('woHeaderDate');
         if (h.h_date) {
@@ -331,6 +336,68 @@
         // Without this, the default routine-maint category would be submitted on
         // re-save and silently flip the report's category to 日常维护.
         try { restoreWoCategory(data.existing || []); } catch (e) { /* keep form usable */ }
+
+        // PM auto-dispatched work order: pre-fill 工作类别=常规维护 › 维保定期检查
+        // and seed a work-content entry with the JobPlan name. restoreWoCategory
+        // is a no-op for these (entries empty), so this branch takes over.
+        // NOTE: pickWoCategory lives inside the initWorkorderBehaviors closure and
+        // isn't accessible here, so we set _woCatNode + the display label inline —
+        // mirroring what restoreWoCategory does above.
+        if (h.h_pm_job_plan) {
+            // Derive the category from the PM leaf node (h_pm_work_item) by
+            // walking up _woParentById — robust to category renames, unlike
+            // matching by the Chinese display name '维保定期检查'.
+            var pmLeaf = (h.h_pm_work_item != null) ? _woNodeById[h.h_pm_work_item] : null;
+            var rmRoot = null, pmSub = null;
+            if (pmLeaf) {
+                var cur = pmLeaf;
+                while (cur) {
+                    var parent = _woParentById[cur.id];
+                    if (!parent) { rmRoot = cur; break; }
+                    pmSub = cur;   // direct child of root = the sub-category
+                    cur = parent;
+                }
+            }
+            if (rmRoot && pmSub) {
+                _woCatNode = pmSub.id;
+                _woProject = null;
+                var pmDisp = $('woCatDisplay');
+                if (pmDisp) { pmDisp.textContent = rmRoot.name + ' › ' + pmSub.name; pmDisp.style.color = '#222'; }
+                var pmTrig = $('woContentTrigger');
+                var pmRow = pmTrig ? pmTrig.closest('.v2-fg') : null;
+                if (pmRow) pmRow.style.display = '';
+                if (typeof updateWoMatDest === 'function') updateWoMatDest();
+            }
+            // Seed the JobPlan name into the PM leaf entry AFTER setting the
+            // category, so the content tree shows it.
+            if (h.h_pm_work_item != null && _woNodeById[h.h_pm_work_item]) {
+                _woEntries[h.h_pm_work_item] = {
+                    count: 0, status: '', text_value: h.h_pm_job_plan,
+                    hasPhoto: false, project: null
+                };
+                updateWoTrigger();
+            }
+            // Inject "申请延期" button for PM work orders.
+            if (h.h_pm_gwo_id) {
+                _pmGwoId = h.h_pm_gwo_id;
+                var body = $('woModalBody');
+                if (body && !document.getElementById('pmExtSection')) {
+                    var todayStr = new Date().toISOString().slice(0, 10);
+                    var extDiv = document.createElement('div');
+                    extDiv.id = 'pmExtSection';
+                    extDiv.style.cssText = 'margin-top:12px;padding:10px;border:1px dashed #d1e7dd;border-radius:8px;background:#f8fdfb;';
+                    extDiv.innerHTML =
+                        '<details style="font-size:.85rem;">' +
+                        '<summary style="cursor:pointer;color:#2D6A4F;font-weight:600;">📅 无法按时完成？申请延期</summary>' +
+                        '<div style="margin-top:8px;display:flex;flex-direction:column;gap:6px;">' +
+                        '<label style="font-size:.8rem;color:#666;">期望延期到 <input type="date" id="pmExtDate" min="' + todayStr + '" style="margin-left:6px;padding:4px 6px;border:1px solid #ddd;border-radius:6px;"></label>' +
+                        '<input type="text" id="pmExtReason" placeholder="延期理由（如：下雨设备故障等）" style="padding:6px 8px;border:1px solid #ddd;border-radius:6px;font-size:.85rem;">' +
+                        '<button type="button" class="btn-sm btn-secondary" onclick="submitPmExtension()" style="align-self:flex-start;">提交延期申请</button>' +
+                        '</div></details>';
+                    body.appendChild(extDiv);
+                }
+            }
+        }
 
         var sb = $('woSubmitBtn'); if (sb) { sb.textContent = '保存'; }
     }
@@ -1894,7 +1961,9 @@
                 for (var i = 0; i < _woRoots.length; i++) { if (_woRoots[i].section === 'routine_maint') { rmRoot = _woRoots[i]; break; } }
                 var sub = null;
                 if (rmRoot && rmRoot.children) {
-                    for (var j = 0; j < rmRoot.children.length; j++) { if (rmRoot.children[j].name === '维保定期检查') { sub = rmRoot.children[j]; break; } }
+                    // Match by code '1.2' (routine sub-category) rather than the
+                    // Chinese display name, so a rename of 维保定期检查 won't break it.
+                    for (var j = 0; j < rmRoot.children.length; j++) { if (rmRoot.children[j].code === '1.2') { sub = rmRoot.children[j]; break; } }
                 }
                 if (sub) {
                     _woCatNode = sub.id; _woProject = null;
@@ -2650,6 +2719,30 @@
             chip.addEventListener('click', function () { document.querySelectorAll('.modal-req-chip').forEach(function (c) { c.classList.remove('active'); }); chip.classList.add('active'); $('wrTypeInput').value = chip.dataset.val; });
         });
     }
+
+    // Submit a PM extension request (field worker asks for more time).
+    window.submitPmExtension = function () {
+        if (!_pmGwoId) { showToast('无法确定工单', 'error'); return; }
+        var dateEl = document.getElementById('pmExtDate');
+        var reasonEl = document.getElementById('pmExtReason');
+        var date = dateEl ? dateEl.value : '';
+        var reason = reasonEl ? reasonEl.value.trim() : '';
+        if (!date) { showToast('请选择延期日期', 'error'); return; }
+        if (!reason) { showToast('请填写延期理由', 'error'); return; }
+        var fd = new FormData();
+        fd.append('requested_date', date);
+        fd.append('reason', reason);
+        fetch('/api/pm/' + _pmGwoId + '/extension/request/', {
+            method: 'POST', body: fd,
+            headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRFToken': getCSRFToken() }
+        }).then(function(r) { return r.json(); }).then(function(d) {
+            showToast(d.message, d.success ? 'success' : 'error');
+            if (d.success) {
+                var sec = document.getElementById('pmExtSection');
+                if (sec) sec.innerHTML = '<div style="padding:6px;color:#40916C;font-size:.85rem;">✓ 延期申请已提交，等待经理审批</div>';
+            }
+        }).catch(function() { showToast('网络错误', 'error'); });
+    };
 
     window.submitV2Workorder = function () {
         var codes = Array.from(_selectedZoneCodes);

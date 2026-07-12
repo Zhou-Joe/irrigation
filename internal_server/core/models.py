@@ -145,6 +145,7 @@ class Zone(models.Model):
 
     patch = models.ForeignKey(Patch, on_delete=models.SET_NULL, null=True, blank=True, related_name='zones', verbose_name='所属片区')
     land = models.ForeignKey(Land, on_delete=models.SET_NULL, null=True, blank=True, related_name='zones', verbose_name='所属Land')
+    satellite = models.ForeignKey('Satellite', on_delete=models.SET_NULL, null=True, blank=True, related_name='zones', verbose_name='所属SAT')
     name = models.CharField(max_length=255)
     code = models.CharField(max_length=50, unique=True)
     description = models.TextField(blank=True)
@@ -1065,6 +1066,9 @@ class WorkReport(models.Model):
     zones = models.ManyToManyField(Zone, blank=True, related_name='workorder_records', verbose_name='区域')
     zone_names = models.TextField('通称位置', blank=True, help_text='Auto-filled from zone codes')
     work_content = models.TextField('工作内容', blank=True)
+    # Human-readable ticket number. PM-dispatched work orders get "PM-{gwo_id}";
+    # manually submitted ones stay blank and display as "#{id}".
+    ticket_number = models.CharField('工单编号', max_length=30, blank=True, default='')
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -1084,6 +1088,12 @@ class WorkReport(models.Model):
 
     def __str__(self):
         return f"{self.date} | {self.worker} | {self.location or '(无位置)'}"
+
+    @property
+    def display_number(self):
+        """User-facing ticket number. PM-dispatched orders show 'PM-xxx',
+        regular submissions fall back to '#{id}'."""
+        return self.ticket_number or f'#{self.id}'
 
 
 class WorkReportComment(models.Model):
@@ -1804,3 +1814,218 @@ class Notification(models.Model):
 
     def __str__(self):
         return f'{self.verb} → {self.recipient.username}: {self.title}'
+
+
+# ==========================================================================
+# 作业计划-定期维护工单系统 (PM / Preventive Maintenance)
+# ==========================================================================
+
+
+class Satellite(models.Model):
+    """SAT 卫星控制器 — 对应 zone.code 的前两段（CCU号-控制器号）。
+
+    一个 SAT 下挂多个 Zone。POC 取水点本质上是同一层（某些 SAT 同时是
+    POC）。从 zone.code 自动生成，无需手动维护。
+    """
+
+    code = models.CharField('SAT编号', max_length=20, unique=True, help_text='如 "35-2"')
+    name = models.CharField('名称', max_length=255, blank=True, help_text='如 "探索路"')
+    patch = models.ForeignKey(
+        Patch, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='satellites', verbose_name='所属CCU',
+    )
+    active = models.BooleanField('启用', default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['code']
+        verbose_name = 'SAT卫星控制器'
+        verbose_name_plural = 'SAT卫星控制器'
+
+    def __str__(self):
+        return f'{self.code} {self.name}'.strip()
+
+
+class Crew(models.Model):
+    """班组 — 一组工人负责一片区域。
+
+    PM 计划关联到班组，派发时由班组组长(worker)接收工单。
+    """
+
+    name = models.CharField('班组名称', max_length=100)
+    leader = models.ForeignKey(
+        Worker, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='led_crews', verbose_name='组长',
+    )
+    members = models.ManyToManyField(Worker, blank=True, related_name='crews', verbose_name='成员')
+    lands = models.ManyToManyField(Land, blank=True, related_name='crews', verbose_name='负责区域(Land)')
+    active = models.BooleanField('启用', default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['name']
+        verbose_name = '班组'
+        verbose_name_plural = '班组'
+
+    def __str__(self):
+        return self.name
+
+
+class JobPlanTemplate(models.Model):
+    """作业计划模板（JobPlan）— 一类定期维护任务的标准定义。
+
+    对应 Maximo 的 JobPlan，如「超级重点区目检」「主阀检查」等。
+    每类 JobPlan 对应一种 asset_level（资产粒度）。
+    """
+
+    ASSET_LEVEL_CHOICES = [
+        ('ccu', 'CCU级（每CCU一个工单）'),
+        ('sat', 'SAT级（每SAT一个工单）'),
+        ('zone_group', 'Zone组级（按通用位置分组）'),
+    ]
+
+    name = models.CharField('JobPlan名称', max_length=100, unique=True)
+    description = models.TextField('描述', blank=True)
+    asset_level = models.CharField('资产粒度', max_length=20, choices=ASSET_LEVEL_CHOICES, default='zone_group')
+    active = models.BooleanField('启用', default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['name']
+        verbose_name = '作业计划模板'
+        verbose_name_plural = '作业计划模板'
+
+    def __str__(self):
+        return self.name
+
+
+class MaintenancePlan(models.Model):
+    """PM 预防性维护计划 — 资产 + JobPlan + 频率 = 唯一PM编号。
+
+    对应 Maximo 的 PM。按频率周期性自动生成工单（WorkReport）。
+    资产关联三选一，由 job_plan.asset_level 决定使用哪个字段。
+    """
+
+    FREQ_UNIT_CHOICES = [
+        ('days', '天'),
+        ('weeks', '周'),
+        ('months', '月'),
+    ]
+
+    pm_number = models.CharField('PM编号', max_length=50, unique=True, help_text='Maximo PM编号，如 "703605MJ1D"')
+    job_plan = models.ForeignKey(
+        JobPlanTemplate, on_delete=models.PROTECT, related_name='plans', verbose_name='作业计划',
+    )
+    crew = models.ForeignKey(
+        Crew, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='pm_plans', verbose_name='负责班组',
+    )
+    # 频率
+    frequency_value = models.PositiveIntegerField('频率值', default=1, help_text='如 每2周 → 值=2')
+    frequency_unit = models.CharField('频率单位', max_length=10, choices=FREQ_UNIT_CHOICES, default='weeks')
+    # 派发控制
+    start_date = models.DateField('启动日期', help_text='基准日期（上次执行日），首次到期日从此开始算')
+    lead_days = models.PositiveIntegerField('提前生成天数', default=1, help_text='提前N天生成工单')
+    active = models.BooleanField('启用', default=True)
+    last_generated_date = models.DateField('上次生成日期', null=True, blank=True)
+    # 资产关联（三选一）
+    patch = models.ForeignKey(Patch, on_delete=models.SET_NULL, null=True, blank=True, related_name='pm_plans', verbose_name='关联CCU')
+    satellite = models.ForeignKey(Satellite, on_delete=models.SET_NULL, null=True, blank=True, related_name='pm_plans', verbose_name='关联SAT')
+    zones = models.ManyToManyField(Zone, blank=True, related_name='pm_plans', verbose_name='关联Zone组')
+    # 工单模板
+    remark_template = models.CharField('工配备注模板', max_length=255, blank=True, help_text='生成工单时填入备注')
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['pm_number']
+        verbose_name = 'PM维护计划'
+        verbose_name_plural = 'PM维护计划'
+
+    def __str__(self):
+        return f'{self.pm_number} ({self.job_plan.name})'
+
+
+class GeneratedWorkOrder(models.Model):
+    """PM 派发记录 — 防重复生成 + 审计。
+
+    每次派发命令为一条 PM + 一个到期日创建一条记录。
+    同一 plan + scheduled_date 只允许一条（防重复）。
+    """
+
+    STATUS_CHOICES = [
+        ('pending', '待执行'),
+        ('dispatched', '已派发'),
+        ('completed', '已完成'),
+        ('overdue', '逾期'),
+        ('skipped', '跳过'),
+    ]
+
+    plan = models.ForeignKey(MaintenancePlan, on_delete=models.CASCADE, related_name='generated_orders')
+    work_report = models.OneToOneField(
+        WorkReport, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='pm_generation', verbose_name='生成的工单',
+    )
+    # Snapshot of plan.crew at dispatch time so a worker's "today's PM tasks"
+    # query can match against GeneratedWorkOrder.crew (entire crew visible)
+    # without joining back through plan → crew.
+    crew = models.ForeignKey(
+        Crew, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='generated_orders', verbose_name='派发班组',
+    )
+    scheduled_date = models.DateField('计划执行日期')
+    status = models.CharField('状态', max_length=20, choices=STATUS_CHOICES, default='dispatched')
+    generated_at = models.DateTimeField(auto_now_add=True)
+    completed_at = models.DateTimeField('完成时间', null=True, blank=True)
+
+    class Meta:
+        unique_together = ('plan', 'scheduled_date')
+        ordering = ['-scheduled_date']
+        verbose_name = 'PM派发记录'
+        verbose_name_plural = 'PM派发记录'
+
+    def __str__(self):
+        return f'{self.plan.pm_number} → {self.scheduled_date}'
+
+
+class ExtensionRequest(models.Model):
+    """PM 工单延期申请 — 一线提交，经理审批。
+
+    批准后：旧 GWO 标 skipped，plan.start_date 更新为 requested_date，
+    下次 cron 派发按新日期算到期日。
+    """
+    REQ_STATUS_CHOICES = [
+        ('pending', '待审批'),
+        ('approved', '已批准'),
+        ('rejected', '已拒绝'),
+    ]
+    gwo = models.ForeignKey(
+        GeneratedWorkOrder, on_delete=models.CASCADE,
+        related_name='extension_requests', verbose_name='关联工单',
+    )
+    requester = models.ForeignKey(
+        Worker, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='pm_extension_requests', verbose_name='申请人',
+    )
+    reason = models.TextField('延期理由')
+    requested_date = models.DateField('期望延期到')
+    status = models.CharField('审批状态', max_length=20, choices=REQ_STATUS_CHOICES, default='pending')
+    reviewed_by = models.ForeignKey(
+        'auth.User', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='reviewed_pm_extensions', verbose_name='审批人',
+    )
+    reviewed_at = models.DateTimeField('审批时间', null=True, blank=True)
+    review_note = models.TextField('审批备注', blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = '延期申请'
+        verbose_name_plural = '延期申请'
+
+    def __str__(self):
+        return f'{self.gwo.plan.pm_number} → {self.requested_date} ({self.status})'

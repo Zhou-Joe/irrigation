@@ -250,16 +250,20 @@
         {% endfor %}
     {% endif %}
 
-    {% if is_manager %}
     <div class="app-tabs">
-        <button type="button" class="app-tab {% if active_tab != 'remarks' and active_tab != 'photos' %}active{% endif %}" data-tab="workorders" onclick="switchTab('workorders')">维修日志</button>
+        <button type="button" class="app-tab {% if active_tab != 'remarks' and active_tab != 'photos' and active_tab != 'pm' %}active{% endif %}" data-tab="workorders" onclick="switchTab('workorders')">维修日志</button>
+        <button type="button" class="app-tab {% if active_tab == 'pm' %}active{% endif %}" data-tab="pm" onclick="switchTab('pm')">
+            PM工单
+            {% if pm_tasks_total %}<span class="app-tab-badge">{{ pm_tasks_total }}</span>{% endif %}
+        </button>
+        {% if is_manager %}
         <button type="button" class="app-tab {% if active_tab == 'remarks' %}active{% endif %}" data-tab="remarks" onclick="switchTab('remarks')">
             待确认备注
             {% if pending_remark_groups %}<span class="app-tab-badge">{{ pending_remark_groups|length }}</span>{% endif %}
         </button>
         <button type="button" class="app-tab {% if active_tab == 'photos' %}active{% endif %}" data-tab="photos" onclick="switchTab('photos')">媒体下载</button>
+        {% endif %}
     </div>
-    {% endif %}
 
     {# ── Filter card: shared across all three tabs (kept visible on tab switch). #}
     <div class="filter-card">
@@ -306,12 +310,12 @@
             <label class="check-inline"><input type="checkbox" name="is_pending_repair" value="1" {% if filters.is_pending_repair %}checked{% endif %}> 待修</label>
             <label class="check-inline"><input type="checkbox" name="is_difficult" value="1" {% if filters.is_difficult %}checked{% endif %}> 疑难</label>
             <button type="submit" class="btn-sm btn-primary">筛选</button>
-            <a href="{% url 'core:work_reports' %}" class="btn-sm btn-secondary">重置</a>
+            <a href="{% url 'core:work_reports' %}{% if active_tab and active_tab != 'workorders' %}?tab={{ active_tab }}{% endif %}" class="btn-sm btn-secondary">重置</a>
         </form>
     </div>
 
     {# ── Tab 1: workorders list (the existing card list) ──────────────────── #}
-    <div id="tabWorkorders" class="wr-remarks-panel {% if active_tab != 'remarks' and active_tab != 'photos' %}active{% endif %}">
+    <div id="tabWorkorders" class="wr-remarks-panel {% if active_tab != 'remarks' and active_tab != 'photos' and active_tab != 'pm' %}active{% endif %}">
 
     {# Cards — server-rendered initial batch. Appended to by "加载更多" (loadCards appends markup). #}
     <div id="cardList">
@@ -397,6 +401,59 @@
         <div id="photoReportList"><p class="wr-muted">切换到此 tab 时加载带媒体的工单…</p></div>
     </div>
     {% endif %}
+
+    {# ── PM工单 tab: dispatched/overdue PM work orders with quick-complete link ── #}
+    <div id="tabPm" class="wr-remarks-panel {% if active_tab == 'pm' %}active{% endif %}">
+        {% if pm_tasks %}
+        <table class="card-table" style="width:100%;border-collapse:collapse;font-size:.9rem;">
+            <thead>
+                <tr style="text-align:left;border-bottom:2px solid #e2e8f0;">
+                    <th style="padding:8px 6px;">PM编号</th>
+                    <th style="padding:8px 6px;">作业计划</th>
+                    <th style="padding:8px 6px;">计划日期</th>
+                    <th style="padding:8px 6px;">状态</th>
+                    {% if is_manager %}<th style="padding:8px 6px;">班组</th>{% endif %}
+                    <th style="padding:8px 6px;">区域</th>
+                    <th style="padding:8px 6px;">操作</th>
+                </tr>
+            </thead>
+            <tbody id="pmTaskBody">
+                {% for t in pm_tasks %}
+                <tr style="border-bottom:1px solid #f1f5f9;" data-gwo-id="{{ t.gwo_id }}">
+                    <td style="padding:8px 6px;"><strong>{{ t.pm_number }}</strong></td>
+                    <td style="padding:8px 6px;">{{ t.job_plan_name }}</td>
+                    <td style="padding:8px 6px;">{{ t.scheduled_date }}</td>
+                    <td style="padding:8px 6px;">
+                        {% if t.overdue %}<span style="color:#dc2626;font-weight:600;">⚠️ 已逾期</span>
+                        {% else %}<span style="color:#d97706;">今天到期</span>{% endif %}
+                    </td>
+                    {% if is_manager %}<td style="padding:8px 6px;">{{ t.crew_name }}</td>{% endif %}
+                    <td style="padding:8px 6px;font-size:.82rem;color:#666;">
+                        {% if t.zone_count %}{{ t.zone_count }} zones ({{ t.zone_preview }}…){% else %}—{% endif %}
+                    </td>
+                    <td style="padding:8px 6px;">
+                        {% if t.report_id %}
+                        <a href="/?edit_workorder={{ t.report_id }}" class="btn btn-sm btn-primary" style="text-decoration:none;">去完成</a>
+                        {% else %}
+                        <span style="color:#ccc;">无工单</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% if pm_tasks_total > pm_tasks|length %}
+        <div id="pmLoadMoreWrap" style="text-align:center;padding:12px;">
+            <button type="button" class="btn-sm btn-secondary" id="pmLoadMoreBtn" onclick="loadMorePmTasks()">加载更多</button>
+            <span class="wr-muted" style="margin-left:8px;font-size:.78rem;">已加载 {{ pm_tasks|length }}/{{ pm_tasks_total }}</span>
+        </div>
+        {% endif %}
+        {% else %}
+        <div style="text-align:center;padding:40px 12px;color:#aaa;">
+            <p style="font-size:1.1rem;color:#40916C;">✓ 暂无待完成PM工单</p>
+        </div>
+        {% endif %}
+    </div>
 </div>
 
 <!-- Transfer selector modal (待确认备注 → 转至灌溉/设备记录) -->
@@ -492,11 +549,13 @@ var remarkGroups = {};
 // ── Tab switching (维修日志 / 待确认备注 / 媒体下载) ──────────────────────
 function switchTab(tab) {
     document.getElementById('tabWorkorders').classList.toggle('active', tab === 'workorders');
+    var pm = document.getElementById('tabPm');
+    if (pm) pm.classList.toggle('active', tab === 'pm');
     var rm = document.getElementById('tabRemarks');
     if (rm) rm.classList.toggle('active', tab === 'remarks');
     var ph = document.getElementById('tabPhotos');
     if (ph) ph.classList.toggle('active', tab === 'photos');
-    document.querySelectorAll('.wr-tab').forEach(function (t) {
+    document.querySelectorAll('.app-tab').forEach(function (t) {
         t.classList.toggle('active', t.getAttribute('data-tab') === tab);
     });
     // Keep the filter form's hidden tab field in sync, so applying a filter from
@@ -512,6 +571,63 @@ function switchTab(tab) {
         loadPhotoReports();
     }
 })();
+
+// ── PM工单 tab: cursor-paginated "load more" via AJAX ─────────────────────
+var _pmIsManager = {{ is_manager|yesno:'true,false' }};
+var _pmLoading = false;
+function loadMorePmTasks() {
+    if (_pmLoading) return;
+    var body = document.getElementById('pmTaskBody');
+    var btn = document.getElementById('pmLoadMoreBtn');
+    if (!body || !btn) return;
+    // Cursor: the last rendered row's gwo_id.
+    var rows = body.querySelectorAll('tr[data-gwo-id]');
+    var lastGwoId = rows.length ? rows[rows.length - 1].dataset.gwoId : '';
+    _pmLoading = true;
+    btn.disabled = true; btn.textContent = '加载中…';
+    var params = new URLSearchParams();
+    if (lastGwoId) params.set('before_id', lastGwoId);
+    fetch('{% url "core:work_reports_pm_tasks" %}?' + params.toString(), {
+        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+    }).then(function (r) { return r.json(); }).then(function (d) {
+        (d.tasks || []).forEach(function (t) { body.appendChild(_buildPmRow(t)); });
+        var loaded = body.querySelectorAll('tr[data-gwo-id]').length;
+        var wrap = document.getElementById('pmLoadMoreWrap');
+        if (loaded >= d.total && wrap) { wrap.style.display = 'none'; }
+        else if (wrap) {
+            wrap.querySelector('.wr-muted').textContent = '已加载 ' + loaded + '/' + d.total;
+        }
+        btn.disabled = false; btn.textContent = '加载更多';
+    }).catch(function () {
+        btn.disabled = false; btn.textContent = '加载更多';
+    }).finally(function () { _pmLoading = false; });
+}
+function _buildPmRow(t) {
+    var tr = document.createElement('tr');
+    tr.style.borderBottom = '1px solid #f1f5f9';
+    tr.dataset.gwoId = t.gwo_id;
+    var escEl = document.createElement('div');
+    function esc(s) { escEl.textContent = s == null ? '' : String(s); return escEl.innerHTML; }
+    var statusHtml = t.overdue
+        ? '<span style="color:#dc2626;font-weight:600;">⚠️ 已逾期</span>'
+        : '<span style="color:#d97706;">今天到期</span>';
+    var crewHtml = _pmIsManager ? '<td style="padding:8px 6px;">' + esc(t.crew_name) + '</td>' : '';
+    var zoneHtml = t.zone_count
+        ? t.zone_count + ' zones (' + esc(t.zone_preview) + '…)'
+        : '—';
+    var actionHtml = t.report_id
+        ? '<a href="/?edit_workorder=' + t.report_id + '" class="btn btn-sm btn-primary" style="text-decoration:none;">去完成</a>'
+        : '<span style="color:#ccc;">无工单</span>';
+    tr.innerHTML =
+        '<td style="padding:8px 6px;"><strong>' + esc(t.pm_number) + '</strong></td>' +
+        '<td style="padding:8px 6px;">' + esc(t.job_plan_name) + '</td>' +
+        '<td style="padding:8px 6px;">' + esc(t.scheduled_date) + '</td>' +
+        '<td style="padding:8px 6px;">' + statusHtml + '</td>' +
+        crewHtml +
+        '<td style="padding:8px 6px;font-size:.82rem;color:#666;">' + zoneHtml + '</td>' +
+        '<td style="padding:8px 6px;">' + actionHtml + '</td>';
+    return tr;
+}
 
 // ── 媒体下载 tab: lazy-load report→media list, render, select, download ──
 var photoReportsLoaded = false, photoReportsData = [];
@@ -543,7 +659,7 @@ function renderPhotoReports() {
     reports.forEach(function (r) {
         html += '<div class="wr-photo-report">'
             + '<div class="wr-photo-report-head">'
-              + '<label class="wr-report-sel-lbl"><input type="checkbox" class="wr-report-sel" data-rid="' + r.id + '" onchange="toggleReportPhotos(' + r.id + ', this.checked)"> <b>#' + r.id + '</b></label>'
+              + '<label class="wr-report-sel-lbl"><input type="checkbox" class="wr-report-sel" data-rid="' + r.id + '" onchange="toggleReportPhotos(' + r.id + ', this.checked)"> <b>' + (r.display_number || ('#' + r.id)) + '</b></label>'
               + (r.category ? '<span class="wr-photo-tag">' + esc(r.category) + '</span>' : '')
               + (r.land ? '<span class="wr-photo-land">' + esc(r.land) + '</span>' : '')
               + '<span class="wr-muted">' + esc(r.date) + ' ' + esc(r.worker_name) + '</span>'
@@ -903,7 +1019,7 @@ function renderCard(r) {
     // top row
     html += '<div class="wr-card-top"><span class="wr-card-date">' + esc(r.date) + '</span>';
     if (r.shift_display) html += '<span class="wr-card-shift">' + esc(r.shift_display) + '</span>';
-    html += '<span class="wr-card-id">#' + r.id + '</span>';
+    html += '<span class="wr-card-id">' + (r.display_number || ('#' + r.id)) + '</span>';
     html += '<div class="wr-card-flags">';
     if (r.is_pending_repair) html += '<span class="wr-flag pending">待修</span>';
     if (r.is_difficult) html += '<span class="wr-flag difficult">疑难</span>';

@@ -10,6 +10,7 @@ docs/superpowers/specs/2026-06-16-workorder-form-refactor-design.md.
 import json
 import os
 from datetime import date, datetime, timedelta
+from functools import lru_cache
 
 from django.conf import settings
 from django.contrib import messages
@@ -24,6 +25,46 @@ from core.models import (
     Patch, Project, Worker, WorkItem,
     WorkReport, WorkReportEntry, Zone,
 )
+
+
+# ── PM (preventive maintenance) helpers ─────────────────────────────────────
+
+@lru_cache(maxsize=1)
+def _pm_leaf_id():
+    """Cached id of the WorkItem with code '1.2.pm' (PM作业计划 leaf).
+
+    This is static reference data (seeded by migration 0094), so we cache it
+    to avoid a DB query on every PM work-order edit-modal render.
+    """
+    leaf = WorkItem.objects.filter(code='1.2.pm').only('id').first()
+    return leaf.id if leaf else None
+
+
+def mark_pm_completed(report):
+    """Mark a PM-dispatched GeneratedWorkOrder as completed.
+
+    Called from BOTH submit paths (mobile `workorder_mobile_v2` and desktop
+    `_handle_save`) so that completing a PM task via either UI records the
+    completion. Safe to call on non-PM reports (no-op when the report has no
+    `pm_generation`).
+
+    Re-fetches the GWO with select_for_update so concurrent submits by two
+    crew members (the whole crew sees each task) serialize at the DB level —
+    the second caller sees status='completed' and becomes a no-op.
+    """
+    from core.models import GeneratedWorkOrder
+    try:
+        gwo = (GeneratedWorkOrder.objects
+               .select_for_update()
+               .get(work_report=report))
+    except GeneratedWorkOrder.DoesNotExist:
+        return
+    if gwo.status not in ('dispatched', 'overdue'):
+        return
+    from django.utils import timezone as _tz
+    gwo.status = 'completed'
+    gwo.completed_at = _tz.now()
+    gwo.save(update_fields=['status', 'completed_at'])
 
 
 # ── serialization ──────────────────────────────────────────────────────────
@@ -1035,7 +1076,7 @@ def _handle_render(request, report):
 def _report_header_dict(report):
     """Header field values to pre-fill the form in edit mode."""
     zones = list(report.zones.values_list('code', flat=True))
-    return {
+    header = {
         'h_date': report.date.isoformat(),
         'h_weather': report.weather,
         'h_shift': report.shift,
@@ -1051,6 +1092,14 @@ def _report_header_dict(report):
         'h_work_start_time': report.work_start_time.strftime('%H:%M') if report.work_start_time else '',
         'h_work_end_time': report.work_end_time.strftime('%H:%M') if report.work_end_time else '',
     }
+    # PM auto-dispatched work orders carry the JobPlan name so the edit modal
+    # can pre-fill the 工作类别 (常规维护 › 维保定期检查) + a work-content entry.
+    gwo = getattr(report, 'pm_generation', None)
+    if gwo and gwo.plan_id:
+        header['h_pm_job_plan'] = gwo.plan.job_plan.name if gwo.plan.job_plan_id else ''
+        header['h_pm_work_item'] = _pm_leaf_id()
+        header['h_pm_gwo_id'] = gwo.id
+    return header
 
 
 def _record_edit(report, user, note=''):
@@ -1182,6 +1231,10 @@ def _handle_save(request, report):
         m_dest, m_proj, m_cp = _resolve_material_dest(request, entries)
         _save_workorder_materials(report, materials, entry_subtype=m_dest,
                                   related_project_id=m_proj, counterparty=m_cp)
+
+        # PM completion: mirror the mobile path so a PM task submitted via the
+        # desktop tree form also marks its GeneratedWorkOrder completed.
+        mark_pm_completed(report)
 
     messages.success(request, f'现场作业记录已保存 (ID: {report.id})')
     if request.POST.get('save_and_new'):
