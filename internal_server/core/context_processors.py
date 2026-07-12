@@ -23,12 +23,19 @@ def notifications(request):
     """
     notifications_list = []
     unread_notifications_json = '[]'
+    pm_tasks_json = '[]'
 
     if request.user.is_authenticated:
         # Per-user inbox (the popup). Cheap: one indexed query per page load.
-        from .notifications import unread_notifications_for
+        from .notifications import unread_notifications_for, pm_tasks_for_field_worker
         unread = unread_notifications_for(request.user)
         unread_notifications_json = json.dumps(unread, ensure_ascii=False)
+
+        # Today's PM tasks for field workers (the popup's PM section). Only
+        # computed for field workers — admins/managers get an empty list.
+        pm_tasks_json = '[]'
+        if is_field_worker(request.user):
+            pm_tasks_json = json.dumps(pm_tasks_for_field_worker(request.user), ensure_ascii=False)
 
         # Legacy admin digest (retained for backward compat).
         if is_admin(request.user):
@@ -55,6 +62,7 @@ def notifications(request):
         'notifications_list': notifications_list,
         'notification_count': len(notifications_list),
         'unread_notifications_json': unread_notifications_json,
+        'pm_tasks_json': pm_tasks_json,
     }
 
 

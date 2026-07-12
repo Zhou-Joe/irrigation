@@ -1,0 +1,60 @@
+{% extends 'core/base.html' %}
+{% load static %}
+
+{% block title %}{{ jp|yesno:"编辑作业计划,新建作业计划" }} - 作业计划{% endblock %}
+{% block nav_pm %}active{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'css/settings.css' %}?v=20260430">
+<style>
+.jp-wrap { max-width: 560px; margin: 0 auto; padding: 16px; }
+.jp-card { background: #fff; border: 1px solid #eef0f3; border-radius: 12px; padding: 16px 18px; }
+.jp-card h1 { font-size: 1.2rem; margin: 0 0 14px; color: var(--color-primary-light, #2D6A4F); }
+.jp-field { margin-bottom: 14px; }
+.jp-field label { display: block; font-size: 0.82rem; color: #888; margin-bottom: 4px; }
+.jp-input, .jp-select, textarea.jp-input { width: 100%; padding: 8px 10px; border: 1px solid #ddd; border-radius: 8px; font-size: 0.88rem; background: #fff; font-family: inherit; }
+.jp-actions { display: flex; gap: 8px; margin-top: 16px; }
+.jp-hint { font-size: 0.76rem; color: #aaa; margin-top: 4px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="jp-wrap">
+    <div class="jp-card">
+        <h1>{{ jp|yesno:"编辑作业计划模板,新建作业计划模板" }}</h1>
+        <form method="post">
+            {% csrf_token %}
+            <div class="jp-field">
+                <label>JobPlan名称 *</label>
+                <input type="text" name="name" class="jp-input" value="{{ jp.name|default:'' }}" placeholder="如：超级重点区目检" required>
+            </div>
+            <div class="jp-field">
+                <label>资产粒度 *</label>
+                <select name="asset_level" class="jp-select">
+                    {% for val, label in jp.ASSET_LEVEL_CHOICES %}
+                    <option value="{{ val }}" {% if jp.asset_level == val %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                    {% if not jp %}
+                    <option value="zone_group" selected>Zone组级（按通用位置分组）</option>
+                    <option value="sat">SAT级（每SAT一个工单）</option>
+                    <option value="ccu">CCU级（每CCU一个工单）</option>
+                    {% endif %}
+                </select>
+                <div class="jp-hint">决定此 JobPlan 的 PM 关联资产的粒度。Zone组=多个区域一个工单；SAT=每个卫星控制器一个工单；CCU=每个片区一个工单。</div>
+            </div>
+            <div class="jp-field">
+                <label>描述</label>
+                <textarea name="description" class="jp-input" rows="3" placeholder="检查内容说明...">{{ jp.description|default:'' }}</textarea>
+            </div>
+            <div class="jp-field">
+                <label>启用</label>
+                <input type="checkbox" name="active" {% if not jp or jp.active %}checked{% endif %}>
+            </div>
+            <div class="jp-actions">
+                <button type="submit" class="btn-sm btn-primary">保存</button>
+                <a href="{% url 'core:pm_management' %}" class="btn-sm btn-secondary">取消</a>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

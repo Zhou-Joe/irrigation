@@ -5,7 +5,7 @@
         <div class="wr-card-top">
             <span class="wr-card-date">{{ report.date }}</span>
             {% if report.shift %}<span class="wr-card-shift">{{ report.get_shift_display|default:report.shift }}</span>{% endif %}
-            <span class="wr-card-id">#{{ report.id }}</span>
+            <span class="wr-card-id">{{ report.display_number }}</span>
             <div class="wr-card-flags">
                 {% if report.is_pending_repair %}<span class="wr-flag pending">待修</span>{% endif %}
                 {% if report.is_difficult %}<span class="wr-flag difficult">疑难</span>{% endif %}

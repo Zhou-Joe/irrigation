@@ -85,3 +85,51 @@ def resubmit_already_notified(water_request):
         recipient=approver_user, verb='request_resubmitted',
         read_at__isnull=True, created_at__gte=since,
     ).exists()
+
+
+def pm_tasks_for_field_worker(user):
+    """Today's pending PM tasks visible to a logged-in field worker.
+
+    A task is visible to the whole crew (leader + members), so we match on
+    GeneratedWorkOrder.crew against the worker's crews. Returns a list of
+    plain dicts (serialized to pm_tasks_json for the notification popup).
+    Lives here (rather than views.py) so the context processor can call it
+    without importing the large views module.
+    """
+    from datetime import date as _date
+    from .models import Worker, GeneratedWorkOrder
+    try:
+        worker = Worker.objects.get(user=user, active=True)
+    except Worker.DoesNotExist:
+        return []
+    # Crews this worker belongs to (as member) or leads.
+    crew_ids = set(worker.crews.values_list('id', flat=True)) | \
+        set(worker.led_crews.values_list('id', flat=True))
+    if not crew_ids:
+        return []
+    from django.utils import timezone as _tz
+    today = _tz.localdate()
+    tasks = (GeneratedWorkOrder.objects
+             .filter(status__in=['dispatched', 'overdue'],
+                     crew_id__in=crew_ids, scheduled_date__lte=today)
+             .select_related('work_report', 'plan__job_plan')
+             .prefetch_related('work_report__zones')
+             .order_by('scheduled_date')[:20])
+    result = []
+    for gwo in tasks:
+        report = gwo.work_report
+        zones_qs = report.zones.all() if report else None
+        zone_count = zones_qs.count() if zones_qs else 0
+        first_codes = [z.code for z in zones_qs[:3]] if zones_qs else []
+        result.append({
+            'gwo_id': gwo.id,
+            'report_id': report.id if report else None,
+            'pm_number': gwo.plan.pm_number,
+            'job_plan_name': gwo.plan.job_plan.name,
+            'remark': report.remark if report else '',
+            'scheduled_date': gwo.scheduled_date.strftime('%Y-%m-%d'),
+            'zone_count': zone_count,
+            'zone_preview': '、'.join(first_codes),
+            'overdue': gwo.scheduled_date < today,
+        })
+    return result

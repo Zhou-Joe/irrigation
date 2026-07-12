@@ -103,7 +103,7 @@
 
     {# ── 基本信息 (only fields from the v2 submit form) ── #}
     <div class="wr-card">
-        <h2>基本信息 <span style="font-size:0.72em;color:var(--color-text-muted,#999);">#{{ report.id }}</span></h2>
+        <h2>基本信息 <span style="font-size:0.72em;color:var(--color-text-muted,#999);">{{ report.display_number }}</span></h2>
         <div class="wr-meta">
             <div class="wr-meta-row"><span class="wr-meta-label">日期</span><span class="wr-meta-val">{{ report.date }}</span></div>
             {% if report.shift %}<div class="wr-meta-row"><span class="wr-meta-label">班次</span><span class="wr-meta-val">{{ report.get_shift_display|default:report.shift }}</span></div>{% endif %}

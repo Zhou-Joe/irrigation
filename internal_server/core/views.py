@@ -914,6 +914,17 @@ def today_weather_api(request):
     return JsonResponse({'summary': summary, 'has_data': True})
 
 
+def _pm_tasks_for_field_worker(user):
+    """Today's pending PM tasks for a field worker.
+
+    Moved to core.notifications.pm_tasks_for_field_worker so the context
+    processor can call it without importing views. Kept here as a thin
+    re-export for backward compatibility.
+    """
+    from .notifications import pm_tasks_for_field_worker
+    return pm_tasks_for_field_worker(user)
+
+
 @login_required(login_url='core:login')
 def dashboard(request):
     """
@@ -1824,6 +1835,10 @@ def settings_page(request):
     from .models import Landmark
     landmarks = Landmark.objects.annotate(zone_count=Count('zone_assignments')).order_by('order', 'name')
 
+    # SAT satellite controllers shown under the 片区管理 tab.
+    from .models import Satellite
+    satellites = Satellite.objects.all().order_by('code')
+
     context = {
         'zones': zones,
         'grouped_zones': grouped_zones_data,
@@ -1838,9 +1853,615 @@ def settings_page(request):
         'regions': regions,
         'region_patch_counts': region_patch_counts,
         'landmarks': landmarks,
+        'satellites': satellites,
     }
 
     return render(request, 'core/settings.html', context)
+
+
+@login_required(login_url='core:login')
+def crew_new(request):
+    """Create a new Crew (班组)."""
+    from .role_utils import is_admin
+    if not is_admin(request.user):
+        messages.error(request, '无权限执行此操作')
+        return redirect('/user-management/?tab=crews')
+    from .models import Crew, Land
+    if request.method == 'POST':
+        crew = Crew.objects.create(
+            name=request.POST.get('name', '').strip(),
+            leader_id=request.POST.get('leader') or None,
+        )
+        crew.members.set(request.POST.getlist('members'))
+        crew.lands.set(request.POST.getlist('lands'))
+        messages.success(request, f'班组「{crew.name}」已创建')
+        return redirect('/user-management/?tab=crews')
+    from .models import Worker
+    context = {'crew': None, 'workers': Worker.objects.filter(active=True).order_by('full_name'),
+               'lands': Land.objects.order_by('order', 'name')}
+    return render(request, 'core/crew_form.html', context)
+
+
+@login_required(login_url='core:login')
+def crew_edit(request, crew_id):
+    """Edit an existing Crew."""
+    from .role_utils import is_admin
+    if not is_admin(request.user):
+        messages.error(request, '无权限执行此操作')
+        return redirect('/user-management/?tab=crews')
+    from .models import Crew, Worker, Land
+    crew = get_object_or_404(Crew, pk=crew_id)
+    if request.method == 'POST':
+        crew.name = request.POST.get('name', '').strip()
+        crew.leader_id = request.POST.get('leader') or None
+        crew.save()
+        crew.members.set(request.POST.getlist('members'))
+        crew.lands.set(request.POST.getlist('lands'))
+        messages.success(request, f'班组「{crew.name}」已更新')
+        return redirect('/user-management/?tab=crews')
+    context = {'crew': crew, 'workers': Worker.objects.filter(active=True).order_by('full_name'),
+               'lands': Land.objects.order_by('order', 'name')}
+    return render(request, 'core/crew_form.html', context)
+
+
+@login_required(login_url='core:login')
+def pm_plan_new(request):
+    """Create a new MaintenancePlan (PM 计划)."""
+    from .role_utils import is_admin
+    if not is_admin(request.user):
+        messages.error(request, '无权限执行此操作')
+        return redirect('core:pm_management')
+    from .models import JobPlanTemplate, Crew, Zone, Satellite, MaintenancePlan, Patch
+    from django.utils import timezone as _tz
+    if request.method == 'POST':
+        plan = MaintenancePlan.objects.create(
+            pm_number=request.POST.get('pm_number', '').strip(),
+            job_plan_id=request.POST.get('job_plan') or None,
+            crew_id=request.POST.get('crew') or None,
+            frequency_value=int(request.POST.get('frequency_value', 1) or 1),
+            frequency_unit=request.POST.get('frequency_unit', 'weeks'),
+            start_date=_tz.localdate(),
+            lead_days=int(request.POST.get('lead_days', 1) or 1),
+            active=bool(request.POST.get('active')),
+            remark_template=request.POST.get('remark_template', '').strip(),
+            patch_id=request.POST.get('patch') or None,
+            satellite_id=request.POST.get('satellite') or None,
+        )
+        plan.zones.set(request.POST.getlist('zones'))
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return JsonResponse({'success': True, 'message': f'PM计划「{plan.pm_number}」已创建',
+                                 'plan': _serialize_pm_plan(plan)})
+        messages.success(request, f'PM计划「{plan.pm_number}」已创建')
+        return redirect('core:pm_management')
+    context = {
+        'plan': None,
+        'job_plans': JobPlanTemplate.objects.all().order_by('name'),
+        'crews': Crew.objects.all().order_by('name'),
+        'patches': Patch.objects.order_by('code'),
+        'satellites': Satellite.objects.all().order_by('code'),
+        'zones': Zone.objects.all().order_by('code')[:500],
+    }
+    return render(request, 'core/pm_plan_form.html', context)
+
+
+@login_required(login_url='core:login')
+def pm_plan_edit(request, plan_id):
+    """Edit an existing MaintenancePlan."""
+    from .role_utils import is_admin
+    if not is_admin(request.user):
+        messages.error(request, '无权限执行此操作')
+        return redirect('core:pm_management')
+    from .models import JobPlanTemplate, Crew, Zone, Satellite, MaintenancePlan, Patch
+    plan = get_object_or_404(MaintenancePlan, pk=plan_id)
+    if request.method == 'POST':
+        plan.pm_number = request.POST.get('pm_number', '').strip()
+        plan.job_plan_id = request.POST.get('job_plan') or None
+        plan.crew_id = request.POST.get('crew') or None
+        plan.frequency_value = int(request.POST.get('frequency_value', 1) or 1)
+        plan.frequency_unit = request.POST.get('frequency_unit', 'weeks')
+        plan.lead_days = int(request.POST.get('lead_days', 1) or 1)
+        plan.active = bool(request.POST.get('active'))
+        plan.remark_template = request.POST.get('remark_template', '').strip()
+        plan.patch_id = request.POST.get('patch') or None
+        plan.satellite_id = request.POST.get('satellite') or None
+        # 到期基准日：经理可改。改后仅影响未来派发（rrule 锚点），已有 GWO 不动。
+        from datetime import date as _dt
+        start_date_str = request.POST.get('start_date', '').strip()
+        if start_date_str:
+            try:
+                plan.start_date = _dt.fromisoformat(start_date_str)
+            except ValueError:
+                pass  # 格式无效时保持原值
+        plan.save()
+        plan.zones.set(request.POST.getlist('zones'))
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return JsonResponse({'success': True, 'message': f'PM计划「{plan.pm_number}」已更新',
+                                 'plan': _serialize_pm_plan(plan)})
+        messages.success(request, f'PM计划「{plan.pm_number}」已更新')
+        return redirect('core:pm_management')
+    context = {
+        'plan': plan,
+        'job_plans': JobPlanTemplate.objects.all().order_by('name'),
+        'crews': Crew.objects.all().order_by('name'),
+        'patches': Patch.objects.order_by('code'),
+        'satellites': Satellite.objects.all().order_by('code'),
+        'zones': Zone.objects.all().order_by('code')[:500],
+    }
+    return render(request, 'core/pm_plan_form.html', context)
+
+
+def _pm_period_window(freq_value, freq_unit, anchor, offset, today):
+    """Return (start, end, label) for a plan's own frequency-based period.
+
+    The period is anchored to ``anchor`` (the plan's start_date). offset=0 →
+    the period containing ``today``, -1 → the previous period, etc. Uses
+    frequency_value × frequency_unit to determine the period span:
+
+      每1天  → 1-day windows
+      每3周  → 21-day windows
+      每6月  → 6-month windows (via relativedelta for correct month math)
+      每12月 → 12-month windows
+
+    For offset < 0 that would land before the anchor, returns (None, None, label)
+    so the caller can show "暂无" (the plan hasn't existed long enough).
+    """
+    from datetime import timedelta
+    from dateutil.relativedelta import relativedelta
+
+    if freq_unit == 'days':
+        period = timedelta(days=freq_value)
+    elif freq_unit == 'weeks':
+        period = timedelta(weeks=freq_value)
+    else:  # months
+        period = relativedelta(months=freq_value)
+
+    # Find how many full periods have elapsed since anchor → current period #.
+    n = 0
+    cur_start = anchor
+    while cur_start + period <= today:
+        n += 1
+        cur_start = cur_start + period
+    target_n = n + offset
+    if target_n < 0:
+        return None, None, f'锚点前{abs(target_n)}期'
+
+    start = anchor
+    for _ in range(target_n):
+        start = start + period
+    end = start + period - (timedelta(days=1) if freq_unit != 'months' else relativedelta(days=1))
+    # Label: show date range, abbreviated for readability.
+    if freq_unit == 'days':
+        label = start.strftime('%m-%d')
+    elif freq_unit == 'weeks':
+        label = f'{start.strftime("%m-%d")}~{end.strftime("%m-%d")}'
+    else:
+        if start.year == end.year:
+            label = f'{start.strftime("%Y-%m-%d")}~{end.strftime("%m-%d")}'
+        else:
+            label = f'{start.strftime("%y-%m")}~{end.strftime("%y-%m")}'
+    return start, end, label
+
+
+def _serialize_jobplan(jp):
+    """Serialize a JobPlanTemplate for AJAX modal responses."""
+    return {
+        'id': jp.id,
+        'name': jp.name,
+        'asset_level': jp.asset_level,
+        'asset_level_display': jp.get_asset_level_display(),
+        'description': jp.description or '',
+        'active': jp.active,
+        'plan_count': jp.plans.count(),
+    }
+
+
+def _serialize_pm_plan(p):
+    """Serialize a MaintenancePlan for AJAX modal responses."""
+    if p.zones.exists():
+        asset = f'{p.zones.count()} zones'
+    elif p.satellite_id:
+        asset = f'SAT {p.satellite.code}'
+    elif p.patch_id:
+        asset = p.patch.code
+    else:
+        asset = '—'
+    return {
+        'id': p.id,
+        'pm_number': p.pm_number,
+        'job_plan_id': p.job_plan_id,
+        'job_plan_name': p.job_plan.name if p.job_plan_id else '',
+        'frequency_value': p.frequency_value,
+        'frequency_unit': p.frequency_unit,
+        'freq_display': f'每{p.frequency_value}{p.get_frequency_unit_display()}',
+        'asset_info': asset,
+        'crew_id': p.crew_id or '',
+        'crew_name': p.crew.name if p.crew_id else '',
+        'lead_days': p.lead_days,
+        'remark_template': p.remark_template or '',
+        'patch_id': p.patch_id or '',
+        'satellite_id': p.satellite_id or '',
+        'start_date': p.start_date.isoformat() if p.start_date else '',
+        'last_generated_date': p.last_generated_date.isoformat() if p.last_generated_date else '',
+        'active': p.active,
+        'order_count': p.generated_orders.count(),
+    }
+
+
+@login_required(login_url='core:login')
+def jobplan_new(request):
+    """Create a new JobPlanTemplate."""
+    from .role_utils import is_admin
+    if not is_admin(request.user):
+        messages.error(request, '无权限执行此操作')
+        return redirect('core:pm_management')
+    from .models import JobPlanTemplate
+    if request.method == 'POST':
+        jp = JobPlanTemplate.objects.create(
+            name=request.POST.get('name', '').strip(),
+            description=request.POST.get('description', '').strip(),
+            asset_level=request.POST.get('asset_level', 'zone_group'),
+            active=bool(request.POST.get('active')),
+        )
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return JsonResponse({'success': True, 'message': f'作业计划模板「{jp.name}」已创建',
+                                 'jp': _serialize_jobplan(jp)})
+        messages.success(request, f'作业计划模板「{jp.name}」已创建')
+        return redirect('core:pm_management')
+    from .models import JobPlanTemplate
+    context = {'jp': None}
+    return render(request, 'core/jobplan_form.html', context)
+
+
+@login_required(login_url='core:login')
+def jobplan_edit(request, jp_id):
+    """Edit an existing JobPlanTemplate."""
+    from .role_utils import is_admin
+    if not is_admin(request.user):
+        messages.error(request, '无权限执行此操作')
+        return redirect('core:pm_management')
+    from .models import JobPlanTemplate
+    jp = get_object_or_404(JobPlanTemplate, pk=jp_id)
+    if request.method == 'POST':
+        jp.name = request.POST.get('name', '').strip()
+        jp.description = request.POST.get('description', '').strip()
+        jp.asset_level = request.POST.get('asset_level', 'zone_group')
+        jp.active = bool(request.POST.get('active'))
+        jp.save()
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return JsonResponse({'success': True, 'message': f'作业计划模板「{jp.name}」已更新',
+                                 'jp': _serialize_jobplan(jp)})
+        messages.success(request, f'作业计划模板「{jp.name}」已更新')
+        return redirect('core:pm_management')
+    context = {'jp': jp}
+    return render(request, 'core/jobplan_form.html', context)
+
+
+@require_POST
+@login_required(login_url='core:login')
+def pm_generate_now(request):
+    """Manually trigger PM dispatch (POST only — GET would mutate the DB)."""
+    from .role_utils import is_admin
+    if not is_admin(request.user):
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return JsonResponse({'success': False, 'message': '无权限'}, status=403)
+        messages.error(request, '无权限执行此操作')
+        return redirect('core:pm_management')
+    from django.core.management import call_command
+    from io import StringIO
+    out = StringIO()
+    try:
+        # Transition past-due dispatched orders to 'overdue' before generating,
+        # so the completion tab reflects reality even on a manual trigger.
+        call_command('mark_pm_overdue', stdout=out)
+        call_command('generate_pm_workorders', stdout=out)
+        summary = out.getvalue().strip().splitlines()[-1] if out.getvalue().strip() else '完成'
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return JsonResponse({'success': True, 'message': f'PM派发完成：{summary}'})
+        messages.success(request, f'PM派发完成：{summary}')
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).exception('pm_generate_now failed')
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return JsonResponse({'success': False, 'message': f'PM派发失败：{e}'})
+        messages.error(request, f'PM派发失败：{e}')
+    return redirect('core:pm_management')
+
+
+@login_required(login_url='core:login')
+def pm_plan_orders(request, plan_id):
+    """AJAX: return a PM plan's generated work orders as JSON (lazy-load)."""
+    from .models import MaintenancePlan
+    plan = get_object_or_404(MaintenancePlan, pk=plan_id)
+    orders = []
+    for gwo in plan.generated_orders.select_related('work_report__worker', 'crew', 'work_report').order_by('-scheduled_date'):
+        wr = gwo.work_report
+        orders.append({
+            'scheduled_date': gwo.scheduled_date.strftime('%Y-%m-%d'),
+            'generated_at': gwo.generated_at.strftime('%Y-%m-%d %H:%M') if gwo.generated_at else '',
+            'status': gwo.status,
+            'report_id': wr.id if wr else None,
+            'report_number': wr.display_number if wr else '',
+            'crew_name': gwo.crew.name if gwo.crew_id else '',
+            'worker_name': wr.worker.full_name if wr and wr.worker_id else '',
+            'zone_count': wr.zones.count() if wr else 0,
+            'entry_count': wr.entries.count() if wr else 0,
+            'work_content': (wr.work_content[:30] if wr.work_content else '') if wr else '',
+        })
+    return JsonResponse({'orders': orders})
+
+
+@login_required(login_url='core:login')
+def pm_extension_request(request, gwo_id):
+    """Field worker submits a PM work order extension request."""
+    from core.role_utils import get_worker_for_user, is_admin
+    from .models import GeneratedWorkOrder, ExtensionRequest
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'message': '仅支持POST'}, status=405)
+    gwo = get_object_or_404(GeneratedWorkOrder, pk=gwo_id)
+    reason = request.POST.get('reason', '').strip()
+    req_date_str = request.POST.get('requested_date', '').strip()
+    if not reason or not req_date_str:
+        return JsonResponse({'success': False, 'message': '请填写延期理由和期望日期'}, status=400)
+    from datetime import date as _date
+    try:
+        requested_date = _date.fromisoformat(req_date_str)
+    except ValueError:
+        return JsonResponse({'success': False, 'message': '日期格式无效'}, status=400)
+    worker = get_worker_for_user(request.user)
+    # Lock the GWO row so concurrent extension requests serialize at the DB
+    # level — two crew members POSTing at the same time can't both pass the
+    # pending-check and both create a request.
+    from django.db import transaction
+    with transaction.atomic():
+        GeneratedWorkOrder.objects.select_for_update().get(pk=gwo_id)
+        # Only one pending request per GWO.
+        if ExtensionRequest.objects.filter(gwo=gwo, status='pending').exists():
+            return JsonResponse({'success': False, 'message': '该工单已有待审批的延期申请'}, status=400)
+        ext = ExtensionRequest.objects.create(
+            gwo=gwo, requester=worker, reason=reason, requested_date=requested_date,
+        )
+    return JsonResponse({'success': True, 'message': '延期申请已提交，等待经理审批',
+                         'ext_id': ext.id})
+
+
+@login_required(login_url='core:login')
+def pm_extension_approve(request, req_id):
+    """Manager approves an extension: skip old GWO + update plan.start_date."""
+    from core.role_utils import is_admin
+    from .models import ExtensionRequest
+    from django.utils import timezone as _tz
+    if not is_admin(request.user):
+        return JsonResponse({'success': False, 'message': '无权限'}, status=403)
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'message': '仅支持POST'}, status=405)
+    ext = get_object_or_404(ExtensionRequest, pk=req_id, status='pending')
+    gwo = ext.gwo
+    plan = gwo.plan
+    # Mark the old GWO as skipped (its work_report stays but is no longer tracked).
+    gwo.status = 'skipped'
+    gwo.save(update_fields=['status'])
+    # Shift the plan's frequency anchor so next dispatch uses the new date.
+    plan.start_date = ext.requested_date
+    plan.save(update_fields=['start_date'])
+    ext.status = 'approved'
+    ext.reviewed_by = request.user
+    ext.reviewed_at = _tz.now()
+    ext.review_note = request.POST.get('note', '').strip()
+    ext.save()
+    return JsonResponse({'success': True, 'message': f'已批准延期到 {ext.requested_date}，下次派发按新日期执行'})
+
+
+@login_required(login_url='core:login')
+def pm_extension_reject(request, req_id):
+    """Manager rejects an extension request."""
+    from core.role_utils import is_admin
+    from .models import ExtensionRequest
+    from django.utils import timezone as _tz
+    if not is_admin(request.user):
+        return JsonResponse({'success': False, 'message': '无权限'}, status=403)
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'message': '仅支持POST'}, status=405)
+    ext = get_object_or_404(ExtensionRequest, pk=req_id, status='pending')
+    ext.status = 'rejected'
+    ext.reviewed_by = request.user
+    ext.reviewed_at = _tz.now()
+    ext.review_note = request.POST.get('note', '').strip()
+    ext.save()
+    return JsonResponse({'success': True, 'message': '已拒绝延期申请'})
+
+
+@login_required(login_url='core:login')
+def pm_gwo_skip(request, gwo_id):
+    """Manager directly marks a GWO as skipped (no extension needed)."""
+    from core.role_utils import is_admin
+    from .models import GeneratedWorkOrder
+    if not is_admin(request.user):
+        return JsonResponse({'success': False, 'message': '无权限'}, status=403)
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'message': '仅支持POST'}, status=405)
+    gwo = get_object_or_404(GeneratedWorkOrder, pk=gwo_id)
+    gwo.status = 'skipped'
+    gwo.save(update_fields=['status'])
+    return JsonResponse({'success': True, 'message': f'已跳过 {gwo.plan.pm_number}'})
+
+
+@login_required(login_url='core:login')
+def pm_management(request):
+    """作业计划管理页 — JobPlan模板 + PM维护计划。"""
+    from core.role_utils import is_admin
+    from .models import (JobPlanTemplate, MaintenancePlan, Crew, Patch, Satellite)
+
+    if not is_admin(request.user):
+        messages.error(request, '无权限访问此页面')
+        return redirect('core:dashboard')
+
+    active_tab = request.GET.get('tab', 'jobplans')
+    period = request.GET.get('period', 'current')  # current | prev | prev2 | all
+    job_plans = JobPlanTemplate.objects.all().order_by('name')
+    pm_plans = (MaintenancePlan.objects.all()
+                .select_related('job_plan', 'crew', 'patch', 'satellite')
+                .prefetch_related(
+                    # Only need the count for "N 张" display; the detail rows are
+                    # lazy-loaded via AJAX on click to keep the page DOM small.
+                    'generated_orders',
+                )
+                # Order by job_plan FIRST so {% regroup %} in the template produces
+                # one group per JobPlan (regroup only merges consecutive runs).
+                .order_by('job_plan__name', 'pm_number'))
+
+    # 资产视图：把每个 PM 的关联资产按 CCU → 资产条目 聚合，让经理看清
+    # "哪些资产被哪些 PM 覆盖"。三种 asset_level 各自解析：
+    #   zone_group → 每个 zone 一行（合并同组）
+    #   sat        → SAT 一行
+    #   ccu        → CCU 一行
+    asset_rows = _build_pm_asset_rows(pm_plans)
+
+    # JSON data for the CRUD modals' dropdown options.
+    import json
+    modal_options = json.dumps({
+        'job_plans': [{'id': jp.id, 'name': jp.name} for jp in job_plans],
+        'crews': [{'id': c.id, 'name': c.name} for c in Crew.objects.all().order_by('name')],
+        'patches': [{'id': p.id, 'code': p.code, 'name': p.name} for p in Patch.objects.order_by('code')],
+        'satellites': [{'id': s.id, 'code': s.code, 'name': s.name} for s in Satellite.objects.all().order_by('code')],
+        'asset_levels': [{'value': v, 'label': l} for v, l in JobPlanTemplate.ASSET_LEVEL_CHOICES],
+        'freq_units': [{'value': v, 'label': l} for v, l in MaintenancePlan.FREQ_UNIT_CHOICES],
+    }, ensure_ascii=False)
+
+    # ── 完成情况 tab 数据 ──
+    from .models import GeneratedWorkOrder, ExtensionRequest
+    from django.utils import timezone as _tz
+    from django.db.models import Count, Q
+    today = _tz.localdate()
+    # Completion stats: each JobPlan's period window is driven by its dominant
+    # plan's frequency_value × frequency_unit, anchored to that plan's start_date.
+    # The period selector (current/prev/prev2/all) shifts the window back.
+    jp_ids_with_plans = [jp.id for jp in job_plans if jp.plans.exists()]
+    jp_name_map = {jp.id: jp.name for jp in job_plans}
+    # Pre-compute each JobPlan's dominant (frequency_value, frequency_unit, start_date).
+    dom_plan = {}
+    for row in (MaintenancePlan.objects
+                 .filter(job_plan_id__in=jp_ids_with_plans)
+                 .values('job_plan_id', 'frequency_value', 'frequency_unit', 'start_date')
+                 .annotate(c=Count('id'))
+                 .order_by('job_plan_id', '-c')):
+        dom_plan.setdefault(row['job_plan_id'], row)
+    period_offset = {'current': 0, 'prev': -1, 'prev2': -2}.get(period, 0)
+    freq_labels = {'days': '日', 'weeks': '周', 'months': '月'}
+    # Aggregate GWOs per JobPlan, applying the per-frequency date window.
+    completion_stats = []
+    for jp_id in jp_ids_with_plans:
+        dp = dom_plan.get(jp_id, {})
+        fv = dp.get('frequency_value', 1)
+        fu = dp.get('frequency_unit', 'weeks')
+        anchor = dp.get('start_date') or today
+        if period == 'all':
+            start, end, label = None, None, '全部'
+        else:
+            start, end, label = _pm_period_window(fv, fu, anchor, period_offset, today)
+        gwos = GeneratedWorkOrder.objects.filter(plan__job_plan_id=jp_id)
+        if start:
+            gwos = gwos.filter(scheduled_date__range=(start, end))
+        total = gwos.count()
+        completed = gwos.filter(status='completed').count()
+        dispatched = gwos.filter(status__in=['dispatched', 'overdue']).count()
+        overdue = gwos.filter(status__in=['dispatched', 'overdue'], scheduled_date__lt=today).count()
+        rate = round(completed * 100 / total) if total else 0
+        completion_stats.append({
+            'name': jp_name_map.get(jp_id, ''),
+            'freq_label': f'每{fv}{freq_labels.get(fu, fu)}',
+            'period_label': label or '',
+            'total': total, 'completed': completed,
+            'dispatched': dispatched, 'overdue': overdue, 'rate': rate,
+        })
+    completion_stats.sort(key=lambda s: s['name'])
+    # Overdue orders: dispatched/overdue GWOs past their scheduled_date.
+    overdue_orders = (GeneratedWorkOrder.objects
+        .filter(status__in=['dispatched', 'overdue'], scheduled_date__lt=today)
+        .select_related('plan__job_plan', 'plan__crew', 'work_report')
+        .order_by('scheduled_date')[:100])
+    overdue_list = [{
+        'gwo_id': g.id, 'pm_number': g.plan.pm_number,
+        'job_plan_name': g.plan.job_plan.name if g.plan.job_plan_id else '',
+        'scheduled_date': g.scheduled_date, 'days_overdue': (today - g.scheduled_date).days,
+        'crew_name': g.plan.crew.name if g.plan.crew_id else '—',
+    } for g in overdue_orders]
+    # Pending extension requests.
+    pending_exts = (ExtensionRequest.objects
+        .filter(status='pending')
+        .select_related('gwo__plan__job_plan', 'requester')
+        .order_by('-created_at')[:50])
+    ext_list = [{
+        'id': e.id, 'pm_number': e.gwo.plan.pm_number,
+        'job_plan_name': e.gwo.plan.job_plan.name if e.gwo.plan.job_plan_id else '',
+        'requester_name': e.requester.full_name if e.requester_id else '—',
+        'reason': e.reason, 'requested_date': e.requested_date,
+        'created_at': e.created_at.strftime('%Y-%m-%d %H:%M') if e.created_at else '',
+    } for e in pending_exts]
+
+    context = {
+        'active_tab': active_tab,
+        'period': period,
+        'job_plans': job_plans,
+        'pm_plans': pm_plans,
+        'crews': Crew.objects.all().order_by('name'),
+        'asset_rows': asset_rows,
+        'modal_options_json': modal_options,
+        'completion_stats': completion_stats,
+        'overdue_orders': overdue_list,
+        'pending_extensions': ext_list,
+    }
+    return render(request, 'core/pm_management.html', context)
+
+
+def _build_pm_asset_rows(pm_plans):
+    """Aggregate PM→asset links into rows grouped by CCU for the 资产 tab.
+
+    Returns a list of plain dicts:
+        {'ccu_code', 'ccu_name', 'asset_label', 'asset_type', 'pm_list'}
+    where pm_list is a list of (pm_number, job_plan_name, frequency) tuples.
+    Only assets that ARE linked to a PM appear (2508 zones are not listed).
+    """
+    from .models import Patch
+    patches_by_id = {p.id: p for p in Patch.objects.all()}
+    rows = []
+    for plan in pm_plans:
+        level = plan.job_plan.asset_level
+        pm_info = (plan.pm_number, plan.job_plan.name,
+                   f'{plan.frequency_value}{plan.get_frequency_unit_display()}')
+        if level == 'sat' and plan.satellite_id:
+            sat = plan.satellite
+            ccu = sat.patch
+            rows.append({
+                'ccu_code': ccu.code if ccu else '—', 'ccu_name': ccu.name if ccu else '',
+                'asset_label': f'SAT {sat.code} {sat.name}'.strip(),
+                'asset_type': 'SAT', 'pm_list': [pm_info],
+            })
+        elif level == 'ccu' and plan.patch_id:
+            ccu = patches_by_id.get(plan.patch_id)
+            rows.append({
+                'ccu_code': ccu.code if ccu else '—', 'ccu_name': ccu.name if ccu else '',
+                'asset_label': f'CCU {ccu.code} {ccu.name}'.strip() if ccu else 'CCU',
+                'asset_type': 'CCU', 'pm_list': [pm_info],
+            })
+        else:
+            # zone_group (default): one row per zone, grouped by CCU.
+            for z in plan.zones.all().select_related('patch'):
+                ccu = z.patch
+                rows.append({
+                    'ccu_code': ccu.code if ccu else '—', 'ccu_name': ccu.name if ccu else '',
+                    'asset_label': f'{z.code} {z.name}'.strip(),
+                    'asset_type': 'Zone', 'pm_list': [pm_info],
+                })
+    # Merge rows with the same (ccu_code, asset_label) so a zone covered by
+    # multiple PMs shows them together rather than as duplicate rows.
+    merged = {}
+    for r in rows:
+        key = (r['ccu_code'], r['asset_label'])
+        if key in merged:
+            merged[key]['pm_list'].extend(r['pm_list'])
+        else:
+            merged[key] = r
+    return sorted(merged.values(), key=lambda x: (x['ccu_code'], x['asset_label']))
 
 
 def _get_patches_by_region():
@@ -4303,6 +4924,10 @@ def user_management(request):
     if edit_id:
         edit_obj = get_object_or_404(Announcement, pk=edit_id)
 
+    # Crew data for the 班组管理 tab (manager-visible under 用户管理).
+    from core.models import Crew
+    crews = Crew.objects.all().prefetch_related('leader', 'members', 'lands').order_by('name')
+
     context = {
         'active_tab': active_tab,
         'filter': filter_status,
@@ -4315,6 +4940,7 @@ def user_management(request):
         'drawn_zone_map_json': json.dumps(drawn_zone_map),
         'announcements': announcements,
         'edit_obj': edit_obj,
+        'crews': crews,
     }
 
     return render(request, 'core/user_management.html', context)
@@ -6783,6 +7409,7 @@ def _serialize_work_reports(reports):
     for r in reports:
         out.append({
             'id': r.id,
+            'display_number': r.display_number,
             'date': r.date.isoformat() if r.date else '',
             'shift': r.shift or '',
             'shift_display': r.get_shift_display() if r.shift else '',
@@ -6857,6 +7484,72 @@ def work_report_reassign(request, report_id):
         'message': f'已改为 {worker.full_name}',
         'worker_name': worker.full_name,
         'worker_employee_id': worker.employee_id or '',
+    })
+
+
+def _pm_gwo_queryset(user, is_mgr):
+    """Return the dispatched/overdue GWO queryset visible to this user.
+
+    Field workers: their crew's tasks. Managers: all tasks. Ordered by date.
+    """
+    from core.models import GeneratedWorkOrder, Worker
+    from django.utils import timezone as _tz
+    today = _tz.localdate()
+    qs = GeneratedWorkOrder.objects.filter(
+        status__in=['dispatched', 'overdue'], scheduled_date__lte=today,
+    )
+    if not is_mgr:
+        try:
+            worker = Worker.objects.get(user=user, active=True)
+        except Worker.DoesNotExist:
+            return GeneratedWorkOrder.objects.none()
+        crew_ids = set(worker.crews.values_list('id', flat=True)) | \
+            set(worker.led_crews.values_list('id', flat=True))
+        if not crew_ids:
+            return GeneratedWorkOrder.objects.none()
+        qs = qs.filter(crew_id__in=crew_ids)
+    return qs.select_related('work_report', 'plan__job_plan', 'crew').order_by('scheduled_date')
+
+
+def _serialize_pm_tasks(gwos, is_mgr):
+    """Serialize a GWO iterable into PM-task dicts for the work-reports PM tab."""
+    from django.utils import timezone as _tz
+    today = _tz.localdate()
+    result = []
+    for gwo in gwos:
+        report = gwo.work_report
+        zones_qs = list(report.zones.all()) if report else []
+        first_codes = [z.code for z in zones_qs[:3]]
+        result.append({
+            'gwo_id': gwo.id,
+            'report_id': report.id if report else None,
+            'pm_number': gwo.plan.pm_number,
+            'job_plan_name': gwo.plan.job_plan.name if gwo.plan.job_plan_id else '',
+            'scheduled_date': gwo.scheduled_date.strftime('%Y-%m-%d'),
+            'zone_count': len(zones_qs),
+            'zone_preview': '、'.join(first_codes),
+            'overdue': gwo.scheduled_date < today,
+            'crew_name': gwo.crew.name if gwo.crew_id else '—',
+        })
+    return result
+
+
+@login_required(login_url='core:login')
+def work_reports_pm_tasks(request):
+    """AJAX endpoint: return the next batch of PM tasks (cursor-paginated by GWO id).
+
+    GET params: ``before_id`` — only return GWOs with id < before_id.
+    """
+    from core.role_utils import is_admin
+    admin = is_admin(request.user)
+    qs = _pm_gwo_queryset(request.user, admin)
+    before_id = request.GET.get('before_id', '').strip()
+    if before_id and before_id.isdigit():
+        qs = qs.filter(id__lt=int(before_id))
+    batch = list(qs[:20])
+    return JsonResponse({
+        'tasks': _serialize_pm_tasks(batch, admin),
+        'total': _pm_gwo_queryset(request.user, admin).count(),
     })
 
 
@@ -6985,6 +7678,14 @@ def work_reports_list(request):
                     for w in workers] if admin else [],
     }
 
+    # ── PM工单 tab: field workers see their crew's tasks, managers see all ──
+    # Initial batch is capped (20); the full count drives the badge. A dedicated
+    # AJAX endpoint (/work-reports/pm-tasks/) handles "load more".
+    from core.role_utils import is_field_worker
+    pm_qs = _pm_gwo_queryset(request.user, admin)
+    pm_tasks_total = pm_qs.count()
+    pm_tasks = _serialize_pm_tasks(pm_qs[:20], admin)
+
     return render(request, 'core/work_reports.html', {
         'reports': reports,
         'lands': lands,
@@ -6999,6 +7700,8 @@ def work_reports_list(request):
         'pending_remark_groups': pending_remark_groups,
         'confirmed_remark_groups': confirmed_remark_groups,
         'remark_groups_map': remark_groups_map,
+        'pm_tasks': pm_tasks,
+        'pm_tasks_total': pm_tasks_total,
         'active_tab': request.GET.get('tab', 'workorders'),
     })
 
@@ -7055,6 +7758,7 @@ def work_report_photos(request):
         section_labels = getattr(r, 'section_labels', None) or []
         out.append({
             'id': r.id,
+            'display_number': r.display_number,
             'date': r.date.isoformat() if r.date else '',
             'category': section_labels[0] if section_labels else '',   # 工作类别
             'land': zh[0]['land'] if zh and zh[0].get('land') else '',
@@ -7873,107 +8577,117 @@ def workorder_mobile_v2(request):
             # report in place; otherwise we create a new one.
             report_id = request.POST.get('report_id')
             is_edit = report_id and report_id.isdigit()
-            if is_edit:
-                report = get_object_or_404(WorkReport, pk=report_id)
-                report.date = request.POST.get('date') or report.date
-                # 编辑不改处理人：保留原 worker，仅更新内容字段。改派走管理员
-                # 专用的 work_report_reassign 入口（已校验 is_admin），不经此路径。
-                report.location = location
-                report.zone_location = first_zone
-                report.remark = request.POST.get('remark', '')
-                report.is_pending_repair = bool(request.POST.get('is_pending_repair'))
-                report.is_difficult = bool(request.POST.get('is_difficult'))
-                report.is_difficult_resolved = bool(request.POST.get('is_difficult_resolved'))
-                report.shift = shift
-                report.work_start_time = work_start
-                report.work_end_time = work_end
-                report.team_size = team_size
-                report.third_party_count = third_party_count
-                report.team_hours = team_hours
-                report.third_party_hours = third_party_hours
-                report.zone_names = zone_names
-                report.work_content = request.POST.get('work_content', '')
-                report.save()
-                # 编辑历史：edit 分支记录一次，新建工单不记。
-                _record_edit(report, request.user)
-            else:
-                report = WorkReport.objects.create(
-                    date=request.POST.get('date') or date.today().isoformat(),
-                    weather='',
-                    worker=post_worker,
-                    location=location,
-                    zone_location=first_zone,
-                    remark=request.POST.get('remark', ''),
-                    is_pending_repair=bool(request.POST.get('is_pending_repair')),
-                    is_difficult=bool(request.POST.get('is_difficult')),
-                    is_difficult_resolved=bool(request.POST.get('is_difficult_resolved')),
-                    shift=shift,
-                    work_start_time=work_start,
-                    work_end_time=work_end,
-                    team_size=team_size,
-                    third_party_count=third_party_count,
-                    team_hours=team_hours,
-                    third_party_hours=third_party_hours,
-                    zone_names=zone_names,
-                    work_content=request.POST.get('work_content', ''),
-                )
+            # Wrap all DB writes in a transaction so a failure mid-save doesn't
+            # leave a half-written report (the desktop path already does this).
+            from django.db import transaction
+            with transaction.atomic():
+                if is_edit:
+                    report = get_object_or_404(WorkReport, pk=report_id)
+                    report.date = request.POST.get('date') or report.date
+                    # 编辑不改处理人：保留原 worker，仅更新内容字段。改派走管理员
+                    # 专用的 work_report_reassign 入口（已校验 is_admin），不经此路径。
+                    report.location = location
+                    report.zone_location = first_zone
+                    report.remark = request.POST.get('remark', '')
+                    report.is_pending_repair = bool(request.POST.get('is_pending_repair'))
+                    report.is_difficult = bool(request.POST.get('is_difficult'))
+                    report.is_difficult_resolved = bool(request.POST.get('is_difficult_resolved'))
+                    report.shift = shift
+                    report.work_start_time = work_start
+                    report.work_end_time = work_end
+                    report.team_size = team_size
+                    report.third_party_count = third_party_count
+                    report.team_hours = team_hours
+                    report.third_party_hours = third_party_hours
+                    report.zone_names = zone_names
+                    report.work_content = request.POST.get('work_content', '')
+                    report.save()
+                    # 编辑历史：edit 分支记录一次，新建工单不记。
+                    _record_edit(report, request.user)
+                else:
+                    report = WorkReport.objects.create(
+                        date=request.POST.get('date') or date.today().isoformat(),
+                        weather='',
+                        worker=post_worker,
+                        location=location,
+                        zone_location=first_zone,
+                        remark=request.POST.get('remark', ''),
+                        is_pending_repair=bool(request.POST.get('is_pending_repair')),
+                        is_difficult=bool(request.POST.get('is_difficult')),
+                        is_difficult_resolved=bool(request.POST.get('is_difficult_resolved')),
+                        shift=shift,
+                        work_start_time=work_start,
+                        work_end_time=work_end,
+                        team_size=team_size,
+                        third_party_count=third_party_count,
+                        team_hours=team_hours,
+                        third_party_hours=third_party_hours,
+                        zone_names=zone_names,
+                        work_content=request.POST.get('work_content', ''),
+                    )
 
-            if selected_zones:
-                report.zones.set(selected_zones)
+                if selected_zones:
+                    report.zones.set(selected_zones)
 
-            # Work-content tree entries (replaces the old two-level fault model).
-            # _save_entries deletes-then-recreates, so it's idempotent on edit.
-            entries = json.loads(request.POST.get('entries', '[]') or '[]')
-            _save_entries(report, entries, _collect_entry_photos(request))
-            # Material consumption (材料消耗): rebuild the report's outbound
-            # transaction from the cart (rolls back prior, then applies). The
-            # destination is auto-derived from the work category or user-picked.
-            materials = json.loads(request.POST.get('materials', '[]') or '[]')
-            m_dest, m_proj, m_cp = _resolve_material_dest(request, entries)
-            _save_workorder_materials(report, materials, entry_subtype=m_dest,
-                                      related_project_id=m_proj, counterparty=m_cp)
-            # 计划性维修: resolve the checked past 待修 workorders (create only —
-            # re-resolving on edit would double-link).
-            if not is_edit:
-                pm_ids = [x for x in (request.POST.get('pm_resolved') or '').split(',') if x.strip().isdigit()]
-                if pm_ids:
-                    _resolve_pending_repairs(report, pm_ids)
-            entry_count = report.entries.count()
+                # Work-content tree entries (replaces the old two-level fault model).
+                # _save_entries deletes-then-recreates, so it's idempotent on edit.
+                entries = json.loads(request.POST.get('entries', '[]') or '[]')
+                _save_entries(report, entries, _collect_entry_photos(request))
+                # Material consumption (材料消耗): rebuild the report's outbound
+                # transaction from the cart (rolls back prior, then applies). The
+                # destination is auto-derived from the work category or user-picked.
+                materials = json.loads(request.POST.get('materials', '[]') or '[]')
+                m_dest, m_proj, m_cp = _resolve_material_dest(request, entries)
+                _save_workorder_materials(report, materials, entry_subtype=m_dest,
+                                          related_project_id=m_proj, counterparty=m_cp)
+                # 计划性维修: resolve the checked past 待修 workorders (create only —
+                # re-resolving on edit would double-link).
+                if not is_edit:
+                    pm_ids = [x for x in (request.POST.get('pm_resolved') or '').split(',') if x.strip().isdigit()]
+                    if pm_ids:
+                        _resolve_pending_repairs(report, pm_ids)
+                entry_count = report.entries.count()
 
-            if report.is_difficult and not is_edit:
-                note = request.POST.get('remark', '').strip()
-                remark_content = note or (f'疑难工单 · {entry_count} 项' if entry_count else '疑难工单')
-                remark_entry = {
-                    'date': report.date if isinstance(report.date, str) else report.date.isoformat(),
-                    'content': remark_content,
-                    'author': worker.full_name if worker else str(request.user),
-                    'workorder_id': report.id,
-                }
-                for z in selected_zones:
-                    remarks = json.loads(z.remarks) if z.remarks else []
-                    remarks.insert(0, remark_entry)
-                    z.remarks = json.dumps(remarks, ensure_ascii=False)
-                    z.save(update_fields=['remarks'])
+                if report.is_difficult and not is_edit:
+                    note = request.POST.get('remark', '').strip()
+                    remark_content = note or (f'疑难工单 · {entry_count} 项' if entry_count else '疑难工单')
+                    remark_entry = {
+                        'date': report.date if isinstance(report.date, str) else report.date.isoformat(),
+                        'content': remark_content,
+                        'author': worker.full_name if worker else str(request.user),
+                        'workorder_id': report.id,
+                    }
+                    for z in selected_zones:
+                        remarks = json.loads(z.remarks) if z.remarks else []
+                        remarks.insert(0, remark_entry)
+                        z.remarks = json.dumps(remarks, ensure_ascii=False)
+                        z.save(update_fields=['remarks'])
 
-            # Report-level photos. On edit, MERGE: keep existing photos except
-            # those the user explicitly removed, then append any new uploads.
-            # (On create, just use the new uploads.)
-            if is_edit:
-                removed = set(x for x in (request.POST.get('report_photos_remove') or '').split(',') if x.strip())
-                kept = [p for p in (report.photos or []) if p not in removed]
-                # Physically delete the removed media + thumbnails.
-                from core.workorder_tree_views import _delete_media
-                for p in removed:
-                    _delete_media(p)
-                new_paths = [_save_photo(report, f) for f in request.FILES.getlist('report_photos')]
-                report.photos = kept + new_paths
-                report.save(update_fields=['photos'])
-            else:
-                photo_paths = [_save_photo(report, f)
-                               for f in request.FILES.getlist('report_photos')]
-                if photo_paths:
-                    report.photos = photo_paths
+                # Report-level photos. On edit, MERGE: keep existing photos except
+                # those the user explicitly removed, then append any new uploads.
+                # (On create, just use the new uploads.)
+                if is_edit:
+                    removed = set(x for x in (request.POST.get('report_photos_remove') or '').split(',') if x.strip())
+                    kept = [p for p in (report.photos or []) if p not in removed]
+                    # Physically delete the removed media + thumbnails.
+                    from core.workorder_tree_views import _delete_media
+                    for p in removed:
+                        _delete_media(p)
+                    new_paths = [_save_photo(report, f) for f in request.FILES.getlist('report_photos')]
+                    report.photos = kept + new_paths
                     report.save(update_fields=['photos'])
+                else:
+                    photo_paths = [_save_photo(report, f)
+                                   for f in request.FILES.getlist('report_photos')]
+                    if photo_paths:
+                        report.photos = photo_paths
+                        report.save(update_fields=['photos'])
+
+                # PM 任务完成：如果这条工单关联了一条派发的 GeneratedWorkOrder，
+                # 提交即视为完成（班组全体可见的任务从待办列表消失）。
+                # 逻辑抽取到 workorder_tree_views.mark_pm_completed，两条提交路径共用。
+                from core.workorder_tree_views import mark_pm_completed
+                mark_pm_completed(report)
 
             success_msg = f'工作记录已更新 (ID: {report.id})' if is_edit else f'工作记录已提交 (ID: {report.id})'
             if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
@@ -8561,6 +9275,7 @@ def inventory_management(request):
         'leaves_json': json.dumps(leaves, ensure_ascii=False),
         'pos_json': pos_json,
         'inventory_tree_json': json.dumps(serialize_inventory_tree(), ensure_ascii=False),
+        'projects_json': json.dumps(_po_project_options(), ensure_ascii=False),
     })
 
 
@@ -9247,6 +9962,59 @@ def _po_upsert_planned_lines(po, lines_raw):
         )
 
 
+def _po_sync_project_link(po, project_id_raw):
+    """Sync the PO's ProjectPurchaseOrder link to match the selected project.
+
+    Called from both create and edit paths. If project_id is provided and
+    valid, ensures a link row exists (replacing any prior link so a PO tracks
+    at most one project via the dropdown). If project_id is empty/invalid,
+    removes all existing links for this PO.
+    """
+    from core.models import Project, ProjectPurchaseOrder
+    pid = (project_id_raw or '').strip()
+    if pid and pid.isdigit() and Project.objects.filter(pk=int(pid)).exists():
+        pid = int(pid)
+        # Replace any existing links for this PO with the selected project.
+        ProjectPurchaseOrder.objects.filter(purchase_order=po).exclude(project_id=pid).delete()
+        ProjectPurchaseOrder.objects.get_or_create(project_id=pid, purchase_order=po)
+    else:
+        # No project selected — clear links that were auto-created via dropdown.
+        # (Links created manually from the project panel are preserved by the
+        # user's explicit save there; this only clears what the dropdown manages.)
+        ProjectPurchaseOrder.objects.filter(purchase_order=po).delete()
+
+
+def _po_project_options():
+    """Build a category → subcategory grouped list of active, unfinished Projects
+    for the PO modal's project <select> with <optgroup> hierarchy.
+    """
+    from core.models import Project
+    cat_labels = dict(Project.CATEGORY_CHOICES)
+    sub_labels = dict(Project.SUBCATEGORY_CHOICES)
+    projects = (Project.objects.filter(active=True, is_completed=False)
+                .order_by('category', 'subcategory', 'name'))
+    groups = {}   # (cat_key, cat_label) → {sub_key → [items]}
+    for p in projects:
+        ck = p.category
+        cl = cat_labels.get(ck, ck)
+        sk = p.subcategory or ''
+        sl = sub_labels.get(sk, sk) if sk else ''
+        g = groups.setdefault((ck, cl), {})
+        g.setdefault((sk, sl), []).append({
+            'id': p.id, 'name': p.name, 'code': p.code or '',
+        })
+    return [
+        {
+            'category': cl,
+            'subgroups': [
+                {'label': sl or '—', 'items': items}
+                for (_, sl), items in sorted(subs.items(), key=lambda x: x[0][0])
+            ],
+        }
+        for (_, cl), subs in sorted(groups.items(), key=lambda x: x[0][0])
+    ]
+
+
 def _serialize_purchase_orders(pos):
     """Serialize a list of PurchaseOrders with 2 queries total (received + planned)
     instead of 2 queries per PO. Builds the category-path map once.
@@ -9329,6 +10097,9 @@ def purchase_order_create(request):
         received_date=received_date,
     )
     _po_upsert_planned_lines(po, request.POST.get('lines'))
+    # Auto-link the PO to the selected Project via the M2M-through table so it
+    # appears in the project's budget panel without manual linking.
+    _po_sync_project_link(po, request.POST.get('project_id'))
     return JsonResponse({'success': True, 'message': '采购订单已创建',
                          'node': _serialize_purchase_order(po)})
 
@@ -9378,6 +10149,8 @@ def purchase_order_edit(request, po_id):
     po.received_date = received_date
     po.save()
     _po_upsert_planned_lines(po, request.POST.get('lines'))
+    # Re-sync the project link (add new, remove old if project changed).
+    _po_sync_project_link(po, request.POST.get('project_id'))
     return JsonResponse({'success': True, 'message': '采购订单已更新',
                          'node': _serialize_purchase_order(po)})
 

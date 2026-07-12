@@ -1,0 +1,71 @@
+{% extends 'core/base.html' %}
+{% load static %}
+
+{% block title %}{{ crew|yesno:"编辑班组,新建班组" }} - 用户管理{% endblock %}
+{% block nav_user_mgmt %}active{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'css/settings.css' %}?v=20260430">
+<style>
+.crew-wrap { max-width: 600px; margin: 0 auto; padding: 16px; }
+.crew-card { background: #fff; border: 1px solid #eef0f3; border-radius: 12px; padding: 16px 18px; }
+.crew-card h1 { font-size: 1.2rem; margin: 0 0 14px; color: var(--color-primary-light, #2D6A4F); }
+.crew-field { margin-bottom: 14px; }
+.crew-field label { display: block; font-size: 0.82rem; color: #888; margin-bottom: 4px; }
+.crew-input, .crew-select { width: 100%; padding: 8px 10px; border: 1px solid #ddd; border-radius: 8px; font-size: 0.88rem; background: #fff; }
+.cree-chk-group { display: flex; flex-wrap: wrap; gap: 6px; max-height: 200px; overflow-y: auto; padding: 6px; border: 1px solid #eee; border-radius: 8px; }
+.cree-chk { display: inline-flex; align-items: center; gap: 4px; font-size: 0.82rem; padding: 3px 10px; background: #f5f5f5; border-radius: 6px; cursor: pointer; }
+.cree-chk input { margin: 0; }
+.crew-actions { display: flex; gap: 8px; margin-top: 16px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="crew-wrap">
+    <div class="crew-card">
+        <h1>{{ crew|yesno:"编辑班组,新建班组" }}</h1>
+        <form method="post">
+            {% csrf_token %}
+            <div class="crew-field">
+                <label>班组名称 *</label>
+                <input type="text" name="name" class="crew-input" value="{{ crew.name|default:'' }}" required>
+            </div>
+            <div class="crew-field">
+                <label>组长</label>
+                <select name="leader" class="crew-select">
+                    <option value="">— 不指定 —</option>
+                    {% for w in workers %}
+                    <option value="{{ w.id }}" {% if crew.leader_id == w.id %}selected{% endif %}>{{ w.full_name }} ({{ w.employee_id }})</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="crew-field">
+                <label>成员</label>
+                <div class="cree-chk-group">
+                    {% for w in workers %}
+                    <label class="cree-chk">
+                        <input type="checkbox" name="members" value="{{ w.id }}" {% if crew.members.all %}{% if w.id in crew.members.all %}checked{% endif %}{% endif %}>
+                        {{ w.full_name }}
+                    </label>
+                    {% endfor %}
+                </div>
+            </div>
+            <div class="crew-field">
+                <label>负责区域 (Land)</label>
+                <div class="cree-chk-group">
+                    {% for l in lands %}
+                    <label class="cree-chk">
+                        <input type="checkbox" name="lands" value="{{ l.id }}" {% if crew.lands.all %}{% if l.id in crew.lands.all %}checked{% endif %}{% endif %}>
+                        {{ l.name }}
+                    </label>
+                    {% endfor %}
+                </div>
+            </div>
+            <div class="crew-actions">
+                <button type="submit" class="btn-sm btn-primary">保存</button>
+                <a href="{% url 'core:user_management' %}?tab=crews" class="btn-sm btn-secondary">取消</a>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

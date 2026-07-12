@@ -1,0 +1,787 @@
+{% extends 'core/base.html' %}
+
+{% load static %}
+
+{% block title %}作业计划 - 灌溉管理{% endblock %}
+{% block nav_pm %}active{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'css/settings.css' %}?v=20260430">
+<style>
+/* Reuse the settings.css .app-tabs / .settings-card / .card-table patterns.
+   Widen the tab bar so the two labels sit comfortably on one row. */
+.app-tabs.pm-tabs { max-width: 720px; }
+.app-tabs.pm-tabs .app-tab { flex: 1 1 50%; }
+/* Override settings.css max-height:500px — the PM page has 700+ rows that
+   need more room. Use a taller scroll viewport. */
+.settings-card-body { max-height: 75vh; }
+.settings-card-header { display:flex; justify-content:space-between; align-items:center; gap:8px; cursor:pointer; }
+.settings-card-header h2 { margin:0; font-size:1rem; color:var(--color-primary-light,#2D6A4F); }
+.settings-card-header .header-actions { display:flex; gap:6px; }
+.card-search { width:100%; padding:7px 10px; border:1px solid #e2e8f0; border-radius:8px; font-size:0.85rem; margin-bottom:10px; }
+.card-empty { text-align:center; padding:28px 12px; color:#aaa; }
+.card-empty p { margin:0 0 10px; }
+/* Expandable "关联工单" detail row under each PM plan row. */
+.pm-wo-toggle { cursor:pointer; color:var(--color-primary,#2D6A4F); font-weight:600; }
+.pm-wo-toggle:hover { text-decoration:underline; }
+.pm-wo-arrow { font-size:0.7em; display:inline-block; transition:transform .15s; }
+.pm-wo-toggle.open .pm-wo-arrow { transform:rotate(180deg); }
+.pm-orders-row td { background:#f8faf9; }
+.pm-orders-detail { padding:8px 12px; }
+.pm-orders-table { width:100%; border-collapse:collapse; font-size:0.82rem; }
+.pm-orders-table th { text-align:left; color:#888; font-weight:600; padding:4px 8px; border-bottom:1px solid #e2e8f0; white-space:nowrap; }
+.pm-orders-table td { padding:5px 8px; border-bottom:1px solid #f1f5f9; vertical-align:top; }
+.pm-orders-table tr:last-child td { border-bottom:none; }
+/* PM sub-tabs (one per JobPlan) inside the PM维护计划 tab. */
+.pm-subtabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.pm-subtab {
+    border: 1px solid #e2e8f0; background: #fff; border-radius: 8px;
+    padding: 6px 14px; font-size: 0.84rem; color: #475569; cursor: pointer;
+    transition: all .15s; white-space: nowrap;
+}
+.pm-subtab:hover { border-color: var(--color-primary, #2D6A4F); color: var(--color-primary, #2D6A4F); }
+.pm-subtab.active { background: var(--color-primary, #2D6A4F); border-color: var(--color-primary, #2D6A4F); color: #fff; }
+.pm-subtab-count { display: inline-block; margin-left: 4px; font-size: 0.72rem; opacity: 0.7; }
+.pm-subpanel { display: none; }
+.pm-subpanel.active { display: block; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="settings-container">
+    <div class="settings-header">
+        <div class="header-content">
+            <h1>作业计划</h1>
+            <p class="subtitle">作业计划模板 (JobPlan) 与定期维护计划 (PM) 管理</p>
+        </div>
+    </div>
+
+    {% if messages %}
+    <div id="toastContainer" style="position:fixed;top:20px;right:20px;z-index:9999;display:flex;flex-direction:column;gap:8px;">
+        {% for message in messages %}
+        <div class="toast toast-{{ message.tags }}" style="
+            padding: 12px 20px; border-radius: 10px; font-size: 0.9em; font-weight: 500;
+            box-shadow: 0 6px 20px rgba(0,0,0,0.15); animation: toastIn 0.3s ease;
+            min-width: 200px; max-width: 400px;
+            {% if message.tags == 'success' %}background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0;{% elif message.tags == 'error' %}background:#fef2f2;color:#991b1b;border:1px solid #fecaca;{% else %}background:#f0f9ff;color:#0c4a6e;border:1px solid #bae6fd;{% endif %}
+        ">{{ message }}</div>
+        {% endfor %}
+    </div>
+    <style>@keyframes toastIn{from{opacity:0;transform:translateX(30px)}to{opacity:1;transform:translateX(0)}}</style>
+    <script>
+    setTimeout(() => {
+        document.querySelectorAll('#toastContainer .toast').forEach((t, i) => {
+            setTimeout(() => {
+                t.style.transition = 'opacity 0.3s, transform 0.3s';
+                t.style.opacity = '0';
+                t.style.transform = 'translateX(30px)';
+                setTimeout(() => t.remove(), 300);
+            }, 3000 + i * 500);
+        });
+    }, 100);
+    </script>
+    {% endif %}
+
+    <!-- Tab bar -->
+    <div class="app-tabs pm-tabs">
+        <button type="button" class="app-tab {% if active_tab == 'jobplans' %}active{% endif %}"
+                data-tab="jobplans" onclick="pmSwitchTab('jobplans')">
+            JobPlan模板 ({{ job_plans|length }})
+        </button>
+        <button type="button" class="app-tab {% if active_tab == 'plans' %}active{% endif %}"
+                data-tab="plans" onclick="pmSwitchTab('plans')">
+            PM维护计划 ({{ pm_plans|length }})
+        </button>
+        <button type="button" class="app-tab {% if active_tab == 'assets' %}active{% endif %}"
+                data-tab="assets" onclick="pmSwitchTab('assets')">
+            资产关联 ({{ asset_rows|length }})
+        </button>
+        <button type="button" class="app-tab {% if active_tab == 'completion' %}active{% endif %}"
+                data-tab="completion" onclick="pmSwitchTab('completion')">
+            完成情况
+            {% if pending_extensions %}<span class="app-tab-badge">{{ pending_extensions|length }}</span>{% endif %}
+        </button>
+    </div>
+
+    <!-- Tab 1: JobPlan 模板 -->
+    <div class="app-tab-content {% if active_tab == 'jobplans' %}active{% endif %}" id="tabJobplans">
+        <div class="settings-grid">
+            <div class="settings-card">
+                <div class="settings-card-header">
+                    <h2>作业计划模板</h2>
+                    <div class="header-actions">
+                        <button class="btn btn-sm btn-primary" onclick="openPmModal('jobplan-new')">+ 新建</button>
+                    </div>
+                </div>
+                <div class="settings-card-body">
+                    <input type="text" id="jpSearch" placeholder="搜索 JobPlan 名称..." class="card-search">
+                    {% if job_plans %}
+                    <table class="card-table" id="jpTable">
+                        <thead><tr><th>JobPlan名称</th><th>资产粒度</th><th>描述</th><th>关联PM数</th><th>状态</th><th>操作</th></tr></thead>
+                        <tbody>
+                            {% for jp in job_plans %}
+                            <tr id="jpRow-{{ jp.id }}"
+                                data-name="{{ jp.name }}"
+                                data-asset-level="{{ jp.asset_level }}"
+                                data-description="{{ jp.description|default:'' }}"
+                                data-active="{{ jp.active|yesno:'1,' }}">
+                                <td><strong>{{ jp.name }}</strong></td>
+                                <td>{{ jp.get_asset_level_display }}</td>
+                                <td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ jp.description|default:'—' }}</td>
+                                <td>{{ jp.plans.count }}</td>
+                                <td>{% if jp.active %}<span style="color:#40916C;">启用</span>{% else %}<span style="color:#aaa;">停用</span>{% endif %}</td>
+                                <td><button class="btn btn-sm btn-secondary" onclick="openPmModal('jobplan-edit', {{ jp.id }})">编辑</button></td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                    {% else %}
+                    <div class="card-empty"><p>暂无作业计划模板</p><button class="btn btn-sm btn-primary" onclick="openPmModal('jobplan-new')">创建</button></div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tab 2: PM 维护计划 (sub-tabs by JobPlan) -->
+    <div class="app-tab-content {% if active_tab == 'plans' %}active{% endif %}" id="tabPlans">
+        <div class="settings-grid">
+            <div class="settings-card">
+                <div class="settings-card-header" style="cursor:default;">
+                    <h2>PM维护计划 <span style="color:#aaa;font-size:.8em;">({{ pm_plans|length }})</span></h2>
+                    <div class="header-actions">
+                        <button class="btn btn-sm btn-secondary" onclick="pmGenerateNow(event)">立即生成</button>
+                        <button class="btn btn-sm btn-primary" onclick="openPmModal('pm-new')">+ 新建</button>
+                    </div>
+                </div>
+                <div class="settings-card-body" style="max-height:none;">
+                    {% if pm_plans %}
+                    {% regroup pm_plans by job_plan as jp_groups %}
+
+                    <!-- Sub-tab bar: one button per JobPlan -->
+                    <div class="pm-subtabs" id="pmSubtabs">
+                        {% for group in jp_groups %}
+                        <button type="button" class="pm-subtab {% if forloop.first %}active{% endif %}"
+                                data-jpid="{{ group.grouper.id }}" onclick="switchPmSubtab({{ group.grouper.id }})">
+                            {{ group.grouper.name }}
+                            <span class="pm-subtab-count">{{ group.list|length }}</span>
+                        </button>
+                        {% endfor %}
+                    </div>
+
+                    <input type="text" id="pmSearch" placeholder="搜索当前分类的PM编号/班组..." class="card-search" style="margin:10px 0;">
+
+                    <!-- Sub-tab panels -->
+                    {% for group in jp_groups %}
+                    <div class="pm-subpanel {% if forloop.first %}active{% endif %}" id="pmSubpanel-{{ group.grouper.id }}">
+                        <div style="margin-bottom:8px;font-size:0.82rem;color:#888;">
+                            {{ group.grouper.get_asset_level_display }} · {{ group.grouper.description|default:'' }}
+                        </div>
+                        <table class="card-table pm-table">
+                            <thead><tr><th>PM编号</th><th>频率</th><th>资产</th><th>班组</th><th>下次到期</th><th>状态</th><th>工单</th><th>操作</th></tr></thead>
+                            <tbody>
+                                {% for p in group.list %}
+                                <tr class="pm-data-row" id="pmRow-{{ p.id }}"
+                                    data-pm-number="{{ p.pm_number }}"
+                                    data-job-plan="{{ p.job_plan_id }}"
+                                    data-crew="{{ p.crew_id|default:'' }}"
+                                    data-freq-value="{{ p.frequency_value }}"
+                                    data-freq-unit="{{ p.frequency_unit }}"
+                                    data-lead-days="{{ p.lead_days }}"
+                                    data-start-date="{{ p.start_date|date:'Y-m-d' }}"
+                                    data-remark="{{ p.remark_template }}"
+                                    data-patch="{{ p.patch_id|default:'' }}"
+                                    data-satellite="{{ p.satellite_id|default:'' }}"
+                                    data-active="{{ p.active|yesno:'1,' }}">
+                                    <td><strong>{{ p.pm_number }}</strong></td>
+                                    <td>每{{ p.frequency_value }}{{ p.get_frequency_unit_display }}</td>
+                                    <td>
+                                        {% if p.zones.exists %}{{ p.zones.count }} zones
+                                        {% elif p.satellite %}SAT {{ p.satellite.code }}
+                                        {% elif p.patch %}{{ p.patch.code }}
+                                        {% else %}—{% endif %}
+                                    </td>
+                                    <td>{{ p.crew.name|default:'—' }}</td>
+                                    <td>{{ p.start_date|date:"Y-m-d" }}</td>
+                                    <td>{% if p.active %}<span style="color:#40916C;">启用</span>{% else %}<span style="color:#aaa;">停用</span>{% endif %}</td>
+                                    <td>
+                                        {% with orders=p.generated_orders.all %}
+                                        {% if orders %}
+                                        <span class="pm-wo-toggle" onclick="event.stopPropagation();togglePmOrders({{ p.id }})" title="点击展开关联工单">
+                                            {{ orders|length }} 张
+                                            <span class="pm-wo-arrow">▾</span>
+                                        </span>
+                                        {% else %}<span style="color:#ccc;">—</span>{% endif %}
+                                        {% endwith %}
+                                    </td>
+                                    <td><button class="btn btn-sm btn-secondary" onclick="openPmModal('pm-edit', {{ p.id }})">编辑</button></td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% endfor %}
+
+                    {% else %}
+                    <div class="card-empty"><p>暂无PM计划</p><button class="btn btn-sm btn-primary" onclick="openPmModal('pm-new')">创建</button></div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tab 3: 资产关联 (which assets are covered by which PMs) -->
+    <div class="app-tab-content {% if active_tab == 'assets' %}active{% endif %}" id="tabAssets">
+        <div class="settings-grid">
+            <div class="settings-card">
+                <div class="settings-card-header">
+                    <h2>资产关联视图</h2>
+                </div>
+                <div class="settings-card-body">
+                    <p style="font-size:0.8rem;color:#888;margin:0 0 10px;">只显示关联了 PM 的资产（按 CCU 分组）。同一资产被多个 PM 覆盖时会合并显示。</p>
+                    <input type="text" id="assetSearch" placeholder="搜索资产编号/名称/PM编号..." class="card-search">
+                    {% if asset_rows %}
+                    <table class="card-table" id="assetTable">
+                        <thead><tr><th>CCU</th><th>资产</th><th>类型</th><th>关联PM</th></tr></thead>
+                        <tbody>
+                            {% for row in asset_rows %}
+                            <tr data-text="{{ row.ccu_code }} {{ row.ccu_name }} {{ row.asset_label }} {% for pm in row.pm_list %}{{ pm.0 }} {{ pm.1 }}{% endfor %}">
+                                <td><strong>{{ row.ccu_code }}</strong><br><span style="font-size:.72em;color:#aaa;">{{ row.ccu_name }}</span></td>
+                                <td>{{ row.asset_label }}</td>
+                                <td><span style="font-size:.76em;background:#eef2f7;padding:2px 6px;border-radius:4px;color:#475569;">{{ row.asset_type }}</span></td>
+                                <td>
+                                    {% for pm in row.pm_list %}
+                                    <div style="margin-bottom:2px;">
+                                        <strong>{{ pm.0 }}</strong>
+                                        <span style="color:#666;font-size:.82em;">{{ pm.1 }}</span>
+                                        <span style="color:#aaa;font-size:.72em;">· 每{{ pm.2 }}</span>
+                                    </div>
+                                    {% endfor %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                    {% else %}
+                    <div class="card-empty"><p>暂无资产关联 PM</p></div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tab 4: 完成情况 (completion overview + overdue + extension approvals) -->
+    <div class="app-tab-content {% if active_tab == 'completion' %}active{% endif %}" id="tabCompletion">
+        <div class="settings-grid">
+            <!-- A. 完成率概览 -->
+            <div class="settings-card">
+                <div class="settings-card-header" style="cursor:default;">
+                    <h2>完成率概览</h2>
+                    <div class="header-actions" style="display:flex;gap:4px;">
+                        <a class="btn btn-sm {% if period == 'current' %}btn-primary{% else %}btn-secondary{% endif %}"
+                           href="?tab=completion&period=current">本期</a>
+                        <a class="btn btn-sm {% if period == 'prev' %}btn-primary{% else %}btn-secondary{% endif %}"
+                           href="?tab=completion&period=prev">上期</a>
+                        <a class="btn btn-sm {% if period == 'prev2' %}btn-primary{% else %}btn-secondary{% endif %}"
+                           href="?tab=completion&period=prev2">上上期</a>
+                        <a class="btn btn-sm {% if period == 'all' %}btn-primary{% else %}btn-secondary{% endif %}"
+                           href="?tab=completion&period=all">全部</a>
+                    </div>
+                </div>
+                <div class="settings-card-body" style="max-height:none;">
+                    {% if completion_stats %}
+                    <table class="card-table">
+                        <thead><tr><th>JobPlan</th><th>周期</th><th>总数</th><th>已完成</th><th>待处理</th><th>逾期</th><th>完成率</th></tr></thead>
+                        <tbody>
+                            {% for s in completion_stats %}
+                            <tr>
+                                <td><strong>{{ s.name }}</strong></td>
+                                <td style="font-size:.78rem;color:#888;">{{ s.freq_label }} {{ s.period_label }}</td>
+                                {% if s.total > 0 %}
+                                <td>{{ s.total }}</td>
+                                <td style="color:#40916C;">{{ s.completed }}</td>
+                                <td>{{ s.dispatched }}</td>
+                                <td style="color:{% if s.overdue > 0 %}#dc2626{% else %}#ccc{% endif %};">{{ s.overdue }}</td>
+                                <td>
+                                    <div style="display:flex;align-items:center;gap:6px;">
+                                        <div style="flex:1;height:8px;background:#e2e8f0;border-radius:4px;overflow:hidden;min-width:60px;">
+                                            <div style="width:{{ s.rate }}%;height:100%;background:#40916C;"></div>
+                                        </div>
+                                        <span style="font-size:.82rem;font-weight:600;min-width:36px;">{{ s.rate }}%</span>
+                                    </div>
+                                </td>
+                                {% else %}
+                                <td colspan="5" style="color:#ccc;text-align:center;">本周期暂无派发</td>
+                                {% endif %}
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                    {% else %}
+                    <div class="card-empty"><p>暂无派发工单数据</p></div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- B. 待审批延期申请 -->
+            {% if pending_extensions %}
+            <div class="settings-card">
+                <div class="settings-card-header" style="cursor:default;"><h2>待审批延期申请 ({{ pending_extensions|length }})</h2></div>
+                <div class="settings-card-body" style="max-height:none;">
+                    <table class="card-table">
+                        <thead><tr><th>PM编号</th><th>JobPlan</th><th>申请人</th><th>理由</th><th>延期到</th><th>申请时间</th><th>操作</th></tr></thead>
+                        <tbody>
+                            {% for e in pending_extensions %}
+                            <tr id="extRow-{{ e.id }}">
+                                <td><strong>{{ e.pm_number }}</strong></td>
+                                <td>{{ e.job_plan_name }}</td>
+                                <td>{{ e.requester_name }}</td>
+                                <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{{ e.reason }}">{{ e.reason }}</td>
+                                <td><strong>{{ e.requested_date|date:"Y-m-d" }}</strong></td>
+                                <td style="font-size:.78rem;color:#aaa;">{{ e.created_at }}</td>
+                                <td>
+                                    <button class="btn btn-sm btn-primary" onclick="approveExt({{ e.id }})">批准</button>
+                                    <button class="btn btn-sm btn-secondary" onclick="rejectExt({{ e.id }})">拒绝</button>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- C. 逾期工单清单 -->
+            <div class="settings-card">
+                <div class="settings-card-header" style="cursor:default;"><h2>逾期工单 {% if overdue_orders %}({{ overdue_orders|length }}){% endif %}</h2></div>
+                <div class="settings-card-body" style="max-height:none;">
+                    {% if overdue_orders %}
+                    <table class="card-table">
+                        <thead><tr><th>PM编号</th><th>JobPlan</th><th>计划日期</th><th>逾期天数</th><th>班组</th><th>操作</th></tr></thead>
+                        <tbody>
+                            {% for o in overdue_orders %}
+                            <tr id="overdueRow-{{ o.gwo_id }}">
+                                <td><strong>{{ o.pm_number }}</strong></td>
+                                <td>{{ o.job_plan_name }}</td>
+                                <td>{{ o.scheduled_date|date:"Y-m-d" }}</td>
+                                <td><span style="color:#dc2626;font-weight:600;">{{ o.days_overdue }}天</span></td>
+                                <td>{{ o.crew_name }}</td>
+                                <td><button class="btn btn-sm btn-secondary" onclick="skipGwo({{ o.gwo_id }})">标跳过</button></td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                    {% else %}
+                    <div class="card-empty"><p style="color:#40916C;">✓ 暂无逾期工单</p></div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="back-link">
+        <a href="{% url 'core:dashboard' %}">← 返回总览</a>
+    </div>
+</div>
+
+<!-- CRUD modal (JobPlan + PM计划 create/edit, shared) -->
+<div class="app-mask" id="pmCrudMask" onclick="if(event.target===this)closePmModal()">
+    <div class="app-dialog wide">
+        <div class="app-dlg-head">
+            <h3 id="pmCrudTitle">新建</h3>
+            <button class="app-close" onclick="closePmModal()">&times;</button>
+        </div>
+        <div class="app-body" id="pmCrudBody"></div>
+        <div class="app-foot">
+            <button class="btn btn-sm btn-secondary" onclick="closePmModal()">取消</button>
+            <button class="btn btn-sm btn-primary" id="pmCrudSubmit" onclick="submitPmModal()">保存</button>
+        </div>
+    </div>
+</div>
+<script>var PM_MODAL = document.getElementById('pmCrudMask');</script>
+
+<script>
+// Tab switching — mirrors the settings/work-reports pattern: toggle .active on
+// the panel divs and tab buttons, sync the URL via ?tab= for deep-linking.
+window.pmSwitchTab = function(tab) {
+    document.querySelectorAll('.pm-tabs .app-tab').forEach(function(btn) {
+        btn.classList.toggle('active', btn.getAttribute('data-tab') === tab);
+    });
+    var map = {jobplans: 'tabJobplans', plans: 'tabPlans', assets: 'tabAssets', completion: 'tabCompletion'};
+    document.querySelectorAll('.settings-container .app-tab-content').forEach(function(panel) {
+        panel.classList.toggle('active', panel.id === map[tab]);
+    });
+    try { history.replaceState(null, '', '?tab=' + tab); } catch (e) {}
+};
+// Restore tab from ?tab= on load.
+(function() {
+    var m = /(?:\?|&)tab=([a-z]+)/i.exec(location.search);
+    if (m && (m[1] === 'jobplans' || m[1] === 'plans' || m[1] === 'assets' || m[1] === 'completion')) { pmSwitchTab(m[1]); }
+})();
+
+// JobPlan search filter
+(function() {
+    var searchInput = document.getElementById('jpSearch');
+    var table = document.getElementById('jpTable');
+    if (!searchInput || !table) return;
+    var rows = Array.from(table.querySelectorAll('tbody tr'));
+    searchInput.addEventListener('input', function() {
+        var q = this.value.toLowerCase().trim();
+        rows.forEach(function(row) {
+            row.style.display = (!q || row.textContent.toLowerCase().includes(q)) ? '' : 'none';
+        });
+    });
+})();
+
+// Switch PM sub-tab (by JobPlan).
+window.switchPmSubtab = function (jpId) {
+    document.querySelectorAll('.pm-subtab').forEach(function (btn) {
+        btn.classList.toggle('active', btn.getAttribute('data-jpid') == jpId);
+    });
+    document.querySelectorAll('.pm-subpanel').forEach(function (panel) {
+        panel.classList.toggle('active', panel.id === 'pmSubpanel-' + jpId);
+    });
+    // Clear search when switching tabs so the new tab shows all rows.
+    var search = document.getElementById('pmSearch');
+    if (search) { search.value = ''; filterPmRows(); }
+};
+
+// Lazy-load + toggle the "关联工单" detail row. Fetches via AJAX on first
+// expand, then just toggles visibility on subsequent clicks.
+window.togglePmOrders = function (planId) {
+    var rowId = 'pmRow-' + planId;
+    var detailId = 'pmOrders-' + planId;
+    var detail = document.getElementById(detailId);
+    var toggle = document.querySelector('#' + rowId + ' .pm-wo-toggle');
+    if (detail) {
+        // Already loaded — just toggle.
+        var open = detail.style.display === 'none';
+        detail.style.display = open ? '' : 'none';
+        if (toggle) toggle.classList.toggle('open', open);
+        return;
+    }
+    // First expand: fetch orders via AJAX and insert a detail row.
+    if (toggle) { toggle.style.opacity = '0.5'; }
+    fetch('/settings/pm/' + planId + '/orders/', { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            var pmRow = document.getElementById(rowId);
+            if (!pmRow) return;
+            var tr = document.createElement('tr');
+            tr.className = 'pm-orders-row'; tr.id = detailId;
+            tr.innerHTML = '<td colspan="8" style="padding:0;"><div class="pm-orders-detail"><table class="pm-orders-table">' +
+                '<thead><tr><th>派发日期</th><th>计划执行</th><th>状态</th><th>关联工单</th><th>执行班组</th><th>填报人</th><th>区域</th><th>工作内容</th></tr></thead><tbody>' +
+                d.orders.map(function(o) {
+                    var st = o.status === 'dispatched' ? '<span style=\"color:#d97706;\">🟡待填</span>'
+                           : o.status === 'completed' ? '<span style=\"color:#40916C;\">✅已完成</span>'
+                           : o.status === 'skipped' ? '<span style=\"color:#aaa;\">⏭跳过</span>' : o.status;
+                    var wr = o.report_id ? '<a href=\"/work-reports/' + o.report_id + '/\" target=\"_blank\" rel=\"noopener\">' + esc(o.report_number) + '</a>' : '<span style=\"color:#ccc;\">已删</span>';
+                    var wc = o.entry_count ? o.entry_count + ' 项' : (o.work_content ? esc(o.work_content) : '<span style=\"color:#ccc;\">未填</span>');
+                    return '<tr><td><span style=\"color:#aaa;font-size:.8em;\">' + esc(o.generated_at) + '</span></td>' +
+                        '<td><strong>' + esc(o.scheduled_date) + '</strong></td><td>' + st + '</td><td>' + wr + '</td>' +
+                        '<td>' + esc(o.crew_name || '—') + '</td><td>' + esc(o.worker_name || '—') + '</td>' +
+                        '<td>' + o.zone_count + ' zones</td><td>' + wc + '</td></tr>';
+                }).join('') +
+                '</tbody></table></div></td>';
+            pmRow.parentNode.insertBefore(tr, pmRow.nextSibling);
+            if (toggle) { toggle.style.opacity = ''; toggle.classList.add('open'); }
+        })
+        .catch(function() { if (toggle) toggle.style.opacity = ''; pmToast('加载工单失败', true); });
+};
+
+// PM search: filter rows within the ACTIVE sub-tab panel only.
+function filterPmRows() {
+    var search = document.getElementById('pmSearch');
+    if (!search) return;
+    var q = search.value.toLowerCase().trim();
+    var active = document.querySelector('.pm-subpanel.active');
+    if (!active) return;
+    active.querySelectorAll('.pm-data-row').forEach(function (row) {
+        var match = !q || row.textContent.toLowerCase().includes(q);
+        row.style.display = match ? '' : 'none';
+        var detail = row.nextElementSibling;
+        if (detail && detail.classList.contains('pm-orders-row') && !match) {
+            detail.style.display = 'none';
+        }
+    });
+}
+(function() {
+    var searchInput = document.getElementById('pmSearch');
+    if (searchInput) searchInput.addEventListener('input', filterPmRows);
+})();
+
+// Asset search filter
+(function() {
+    var searchInput = document.getElementById('assetSearch');
+    var table = document.getElementById('assetTable');
+    if (!searchInput || !table) return;
+    var rows = Array.from(table.querySelectorAll('tbody tr'));
+    searchInput.addEventListener('input', function() {
+        var q = this.value.toLowerCase().trim();
+        rows.forEach(function(row) {
+            var text = (row.dataset.text || row.textContent).toLowerCase();
+            row.style.display = (!q || text.includes(q)) ? '' : 'none';
+        });
+    });
+})();
+
+// ── In-page CRUD modal (JobPlan + PM计划 create/edit) ─────────────────
+</script>
+<script id="pm-modal-options" type="application/json">{{ modal_options_json|safe }}</script>
+<script>
+var PM_OPTS = {};
+try { PM_OPTS = JSON.parse(document.getElementById('pm-modal-options').textContent || '{}'); } catch(e) {}
+
+function pmCsrf() {
+    return (document.cookie.split('; ').find(function(c){ return c.indexOf('csrftoken=')===0; }) || '').split('=')[1] || '';
+}
+function pmToast(msg, isErr) {
+    var el = document.createElement('div');
+    el.style.cssText = 'position:fixed;top:20px;right:20px;z-index:9999;padding:12px 20px;border-radius:10px;font-size:.9em;font-weight:500;box-shadow:0 6px 20px rgba(0,0,0,.15);min-width:200px;max-width:400px;' +
+        (isErr ? 'background:#fef2f2;color:#991b1b;border:1px solid #fecaca;' : 'background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0;');
+    el.textContent = msg;
+    document.body.appendChild(el);
+    setTimeout(function(){ el.style.transition='opacity .3s'; el.style.opacity='0'; setTimeout(function(){ el.remove(); }, 300); }, 3000);
+}
+
+// PM_MODAL is set by the inline script after the modal DOM (see #pmCrudMask).
+// Re-resolve here in case this script runs first.
+if (typeof PM_MODAL === 'undefined' || !PM_MODAL) { PM_MODAL = document.getElementById('pmCrudMask'); }
+var _pmModalMode = null;
+var _pmModalId = null;
+
+function openPmModal(mode, id) {
+    _pmModalMode = mode;
+    _pmModalId = id || null;
+    var body = document.getElementById('pmCrudBody');
+    var title = document.getElementById('pmCrudTitle');
+    var isJobplan = mode.indexOf('jobplan') === 0;
+    var isEdit = mode.indexOf('-edit') > 0;
+    title.textContent = isJobplan ? (isEdit ? '编辑作业计划模板' : '新建作业计划模板') : (isEdit ? '编辑PM计划' : '新建PM计划');
+
+    if (isJobplan) {
+        body.innerHTML = _jpFormHtml(isEdit);
+        if (isEdit) _fillJpForm(id);
+    } else {
+        body.innerHTML = _pmFormHtml(isEdit);
+        if (isEdit) _fillPmForm(id);
+    }
+    PM_MODAL.classList.add('open');
+    setTimeout(function(){ var f = body.querySelector('input,select'); if (f) f.focus(); }, 50);
+}
+function closePmModal() { PM_MODAL.classList.remove('open'); }
+
+function _jpFormHtml(isEdit) {
+    var d = isEdit ? {} : { name: '', asset_level: 'zone_group', description: '', active: '1' };
+    var opts = (PM_OPTS.asset_levels || []).map(function(a) {
+        return '<option value="' + a.value + '"' + (d.asset_level === a.value ? ' selected' : '') + '>' + a.label + '</option>';
+    }).join('');
+    return '<div class="app-grid">' +
+        '<div class="full"><label>名称 *</label><input id="f-jp-name" value="' + esc(d.name) + '" placeholder="如：超级重点区目检"></div>' +
+        '<div class="full"><label>资产粒度</label><select id="f-jp-asset-level">' + opts + '</select></div>' +
+        '<div class="full"><label>描述</label><textarea id="f-jp-desc" rows="2">' + esc(d.description) + '</textarea></div>' +
+        '<div class="full"><label><input type="checkbox" id="f-jp-active"' + (d.active !== '0' ? ' checked' : '') + '> 启用</label></div>' +
+    '</div>';
+}
+function _pmFormHtml(isEdit) {
+    var d = isEdit ? {} : { pm_number:'', job_plan:'', crew:'', frequency_value:1, frequency_unit:'weeks', lead_days:1, remark:'', patch:'', satellite:'', active:'1' };
+    var jpOpts = '<option value="">— 选择 —</option>' + (PM_OPTS.job_plans || []).map(function(j){ return '<option value="'+j.id+'"'+(d.job_plan==j.id?' selected':'')+'>'+j.name+'</option>'; }).join('');
+    var crewOpts = '<option value="">— 不指定 —</option>' + (PM_OPTS.crews || []).map(function(c){ return '<option value="'+c.id+'"'+(d.crew==c.id?' selected':'')+'>'+c.name+'</option>'; }).join('');
+    var unitOpts = (PM_OPTS.freq_units || []).map(function(u){ return '<option value="'+u.value+'"'+(d.frequency_unit===u.value?' selected':'')+'>'+u.label+'</option>'; }).join('');
+    var patchOpts = '<option value="">— 不关联 —</option>' + (PM_OPTS.patches || []).map(function(p){ return '<option value="'+p.id+'"'+(d.patch==p.id?' selected':'')+'>'+p.code+' '+p.name+'</option>'; }).join('');
+    var satOpts = '<option value="">— 不关联 —</option>' + (PM_OPTS.satellites || []).map(function(s){ return '<option value="'+s.id+'"'+(d.satellite==s.id?' selected':'')+'>'+s.code+' '+s.name+'</option>'; }).join('');
+    return '<div class="app-grid">' +
+        '<div class="full"><label>PM编号 *</label><input id="f-pm-number" value="'+esc(d.pm_number)+'" placeholder="如：703605MJ1D"></div>' +
+        '<div><label>作业计划 (JobPlan) *</label><select id="f-pm-jobplan">'+jpOpts+'</select></div>' +
+        '<div><label>负责班组</label><select id="f-pm-crew">'+crewOpts+'</select></div>' +
+        '<div><label>频率值</label><input type="number" id="f-pm-freq-val" value="'+d.frequency_value+'" min="1"></div>' +
+        '<div><label>频率单位</label><select id="f-pm-freq-unit">'+unitOpts+'</select></div>' +
+        '<div><label>提前生成天数</label><input type="number" id="f-pm-lead-days" value="'+d.lead_days+'" min="0"></div>' +
+        '<div><label>到期基准日</label><input type="date" id="f-pm-start" value="'+esc(d.start_date||'')+'"><small style="color:#aaa;font-size:.72rem;">改后仅影响未来派发，已生成工单不变</small></div>' +
+        '<div><label>工配备注模板</label><input id="f-pm-remark" value="'+esc(d.remark)+'"></div>' +
+        '<div><label>关联CCU</label><select id="f-pm-patch">'+patchOpts+'</select></div>' +
+        '<div><label>关联SAT</label><select id="f-pm-satellite">'+satOpts+'</select></div>' +
+        '<div class="full"><label><input type="checkbox" id="f-pm-active"'+(d.active!=='0'?' checked':'')+'> 启用</label></div>' +
+    '</div>';
+}
+function _fillJpForm(id) {
+    var row = document.getElementById('jpRow-' + id);
+    if (!row) return;
+    setVal('f-jp-name', row.dataset.name);
+    setVal('f-jp-asset-level', row.dataset.assetLevel);
+    setVal('f-jp-desc', row.dataset.description);
+    document.getElementById('f-jp-active').checked = row.dataset.active === '1';
+}
+function _fillPmForm(id) {
+    var row = document.getElementById('pmRow-' + id);
+    if (!row) return;
+    setVal('f-pm-number', row.dataset.pmNumber);
+    setVal('f-pm-jobplan', row.dataset.jobPlan);
+    setVal('f-pm-crew', row.dataset.crew);
+    setVal('f-pm-freq-val', row.dataset.freqValue);
+    setVal('f-pm-freq-unit', row.dataset.freqUnit);
+    setVal('f-pm-lead-days', row.dataset.leadDays);
+    setVal('f-pm-start', row.dataset.startDate);
+    setVal('f-pm-remark', row.dataset.remark);
+    setVal('f-pm-patch', row.dataset.patch);
+    setVal('f-pm-satellite', row.dataset.satellite);
+    document.getElementById('f-pm-active').checked = row.dataset.active === '1';
+}
+function setVal(id, v) { var el = document.getElementById(id); if (el) el.value = v; }
+function esc(s) { var d = document.createElement('div'); d.textContent = s == null ? '' : s; return d.innerHTML; }
+
+function submitPmModal() {
+    var fd = new FormData();
+    var url, isJobplan = _pmModalMode.indexOf('jobplan') === 0;
+    if (isJobplan) {
+        var name = val('f-jp-name').trim();
+        if (!name) { pmToast('请填写名称', true); return; }
+        fd.append('name', name);
+        fd.append('asset_level', val('f-jp-asset-level'));
+        fd.append('description', val('f-jp-desc'));
+        if (document.getElementById('f-jp-active').checked) fd.append('active', '1');
+        url = _pmModalMode === 'jobplan-edit' ? '/settings/jobplan/' + _pmModalId + '/' : '/settings/jobplan/new/';
+    } else {
+        var pmNum = val('f-pm-number').trim();
+        if (!pmNum) { pmToast('请填写PM编号', true); return; }
+        fd.append('pm_number', pmNum);
+        if (val('f-pm-jobplan')) fd.append('job_plan', val('f-pm-jobplan'));
+        if (val('f-pm-crew')) fd.append('crew', val('f-pm-crew'));
+        fd.append('frequency_value', val('f-pm-freq-val') || '1');
+        fd.append('frequency_unit', val('f-pm-freq-unit'));
+        fd.append('lead_days', val('f-pm-lead-days') || '1');
+        if (val('f-pm-start')) fd.append('start_date', val('f-pm-start'));
+        fd.append('remark_template', val('f-pm-remark'));
+        if (val('f-pm-patch')) fd.append('patch', val('f-pm-patch'));
+        if (val('f-pm-satellite')) fd.append('satellite', val('f-pm-satellite'));
+        if (document.getElementById('f-pm-active').checked) fd.append('active', '1');
+        url = _pmModalMode === 'pm-edit' ? '/settings/pm/' + _pmModalId + '/' : '/settings/pm/new/';
+    }
+    var btn = document.getElementById('pmCrudSubmit'); btn.disabled = true; btn.textContent = '保存中…';
+    fetch(url, { method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRFToken': pmCsrf() } })
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            btn.disabled = false; btn.textContent = '保存';
+            if (d.success) {
+                pmToast(d.message, false);
+                closePmModal();
+                if (isJobplan) _updateJpRow(d.jp, _pmModalMode === 'jobplan-edit');
+                else _updatePmRow(d.plan, _pmModalMode === 'pm-edit');
+            } else { pmToast(d.message || '操作失败', true); }
+        })
+        .catch(function() { btn.disabled = false; btn.textContent = '保存'; pmToast('网络错误，请重试', true); });
+}
+function val(id) { var el = document.getElementById(id); return el ? el.value : ''; }
+
+function _updateJpRow(jp, isEdit) {
+    if (isEdit) {
+        var row = document.getElementById('jpRow-' + jp.id);
+        if (!row) return;
+        row.dataset.name = jp.name; row.dataset.assetLevel = jp.asset_level;
+        row.dataset.description = jp.description; row.dataset.active = jp.active ? '1' : '';
+        var tds = row.querySelectorAll('td');
+        tds[0].innerHTML = '<strong>' + esc(jp.name) + '</strong>';
+        tds[1].textContent = jp.asset_level_display;
+        tds[2].textContent = jp.description || '—';
+        tds[3].textContent = jp.plan_count;
+        tds[4].innerHTML = jp.active ? '<span style="color:#40916C;">启用</span>' : '<span style="color:#aaa;">停用</span>';
+    } else {
+        // Insert new row — simplest: reload the JobPlan tab section.
+        var tbody = document.querySelector('#jpTable tbody');
+        if (!tbody) { location.reload(); return; }
+        var tr = document.createElement('tr');
+        tr.id = 'jpRow-' + jp.id;
+        tr.dataset.name = jp.name; tr.dataset.assetLevel = jp.asset_level;
+        tr.dataset.description = jp.description; tr.dataset.active = jp.active ? '1' : '';
+        tr.innerHTML = '<td><strong>' + esc(jp.name) + '</strong></td>' +
+            '<td>' + esc(jp.asset_level_display) + '</td>' +
+            '<td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + esc(jp.description || '—') + '</td>' +
+            '<td>' + jp.plan_count + '</td>' +
+            '<td>' + (jp.active ? '<span style="color:#40916C;">启用</span>' : '<span style="color:#aaa;">停用</span>') + '</td>' +
+            '<td><button class="btn btn-sm btn-secondary" onclick="openPmModal(\'jobplan-edit\', ' + jp.id + ')">编辑</button></td>';
+        tbody.appendChild(tr);
+    }
+}
+
+function _updatePmRow(plan, isEdit) {
+    if (isEdit) {
+        var row = document.getElementById('pmRow-' + plan.id);
+        if (!row) { location.reload(); return; }
+        row.dataset.pmNumber = plan.pm_number; row.dataset.jobPlan = plan.job_plan_id;
+        row.dataset.crew = plan.crew_id || ''; row.dataset.freqValue = plan.frequency_value;
+        row.dataset.freqUnit = plan.frequency_unit; row.dataset.active = plan.active ? '1' : '';
+        row.dataset.remark = plan.remark_template || ''; row.dataset.leadDays = plan.lead_days || 1;
+        row.dataset.startDate = plan.start_date || '';
+        row.dataset.patch = plan.patch_id || ''; row.dataset.satellite = plan.satellite_id || '';
+        var tds = row.querySelectorAll('td');
+        tds[0].innerHTML = '<strong>' + esc(plan.pm_number) + '</strong>';
+        tds[1].textContent = plan.freq_display;
+        tds[2].textContent = plan.asset_info;
+        tds[3].textContent = plan.crew_name || '—';
+        tds[4].textContent = plan.start_date;
+        tds[5].innerHTML = plan.active ? '<span style="color:#40916C;">启用</span>' : '<span style="color:#aaa;">停用</span>';
+    } else {
+        // New PM — if its JobPlan sub-tab exists, insert there; else reload.
+        var panel = document.getElementById('pmSubpanel-' + plan.job_plan_id);
+        if (!panel) { pmToast('新PM属于新JobPlan分类，刷新页面查看', false); setTimeout(function(){ location.reload(); }, 1500); return; }
+        var tbody = panel.querySelector('tbody');
+        var tr = document.createElement('tr');
+        tr.className = 'pm-data-row'; tr.id = 'pmRow-' + plan.id;
+        tr.dataset.pmNumber = plan.pm_number; tr.dataset.jobPlan = plan.job_plan_id;
+        tr.dataset.crew = plan.crew_id || ''; tr.dataset.freqValue = plan.frequency_value; tr.dataset.freqUnit = plan.frequency_unit;
+        tr.dataset.active = plan.active ? '1' : ''; tr.dataset.remark = plan.remark_template || ''; tr.dataset.leadDays = plan.lead_days || 1;
+        tr.dataset.startDate = plan.start_date || '';
+        tr.dataset.patch = plan.patch_id || ''; tr.dataset.satellite = plan.satellite_id || '';
+        tr.innerHTML = '<td><strong>' + esc(plan.pm_number) + '</strong></td>' +
+            '<td>' + esc(plan.freq_display) + '</td><td>' + esc(plan.asset_info) + '</td>' +
+            '<td>' + esc(plan.crew_name || '—') + '</td><td>' + esc(plan.start_date) + '</td>' +
+            '<td>' + (plan.active ? '<span style="color:#40916C;">启用</span>' : '<span style="color:#aaa;">停用</span>') + '</td>' +
+            '<td><span style="color:#ccc;">—</span></td>' +
+            '<td><button class="btn btn-sm btn-secondary" onclick="openPmModal(\'pm-edit\', ' + plan.id + ')">编辑</button></td>';
+        tbody.appendChild(tr);
+    }
+}
+
+function pmGenerateNow(e) {
+    var btn = (e && e.target) || event.target; btn.disabled = true; btn.textContent = '生成中…';
+    fetch('/settings/pm/generate-now/', {
+        method: 'POST',
+        headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRFToken': pmCsrf() }
+    })
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            btn.disabled = false; btn.textContent = '立即生成';
+            pmToast(d.message, !d.success);
+        })
+        .catch(function() { btn.disabled = false; btn.textContent = '立即生成'; pmToast('网络错误', true); });
+}
+
+// ── Extension approval / GWO skip (完成情况 tab) ──────────────────────
+function approveExt(reqId) {
+    if (!confirm('批准延期？旧工单将标跳过，下次派发按新日期执行。')) return;
+    fetch('/settings/pm/extension/' + reqId + '/approve/', {
+        method: 'POST', headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRFToken': pmCsrf() }
+    }).then(function(r) { return r.json(); }).then(function(d) {
+        pmToast(d.message, !d.success);
+        if (d.success) { var row = document.getElementById('extRow-' + reqId); if (row) row.remove(); }
+    }).catch(function() { pmToast('网络错误', true); });
+}
+function rejectExt(reqId) {
+    fetch('/settings/pm/extension/' + reqId + '/reject/', {
+        method: 'POST', headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRFToken': pmCsrf() }
+    }).then(function(r) { return r.json(); }).then(function(d) {
+        pmToast(d.message, !d.success);
+        if (d.success) { var row = document.getElementById('extRow-' + reqId); if (row) row.remove(); }
+    }).catch(function() { pmToast('网络错误', true); });
+}
+function skipGwo(gwoId) {
+    if (!confirm('确定跳过此工单？')) return;
+    fetch('/settings/pm/gwo/' + gwoId + '/skip/', {
+        method: 'POST', headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRFToken': pmCsrf() }
+    }).then(function(r) { return r.json(); }).then(function(d) {
+        pmToast(d.message, !d.success);
+        if (d.success) { var row = document.getElementById('overdueRow-' + gwoId); if (row) row.remove(); }
+    }).catch(function() { pmToast('网络错误', true); });
+}
+</script>
+{% endblock %}

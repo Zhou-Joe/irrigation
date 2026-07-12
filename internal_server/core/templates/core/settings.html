@@ -227,6 +227,29 @@
             </div>
             {% endif %}
         </div>
+
+        <!-- SAT 卫星控制器 -->
+        <div class="settings-card">
+            <div class="settings-card-header" onclick="toggleCardBody(this, 'satBody', 'satIndicator')">
+                <h2><span class="collapse-indicator" id="satIndicator">▼</span> SAT卫星控制器 <span style="color:#aaa;font-size:.8em;">({{ satellites|length }})</span></h2>
+            </div>
+            <div class="settings-card-body" id="satBody">
+                <input type="text" id="satSearch" placeholder="搜索SAT..." class="card-search">
+                <table class="card-table" id="satTable">
+                    <thead><tr><th>编号</th><th>名称</th><th>CCU</th><th>Zone数</th></tr></thead>
+                    <tbody id="satTableBody">
+                        {% for s in satellites %}
+                        <tr data-code="{{ s.code }}" data-name="{{ s.name }}">
+                            <td><code class="zone-code-cell">{{ s.code }}</code></td>
+                            <td>{{ s.name|default:'—' }}</td>
+                            <td>{{ s.patch.code|default:'—' }} {{ s.patch.name|default:'' }}</td>
+                            <td>{{ s.zones.count }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
     </div>
     </div><!-- /#tabPatches -->
 
@@ -955,5 +978,21 @@ function recalcLandmarks(btn) {
         btn.textContent = '重新分配';
     });
 }
+
+// SAT search filter
+(function() {
+    const searchInput = document.getElementById('satSearch');
+    const tbody = document.getElementById('satTableBody');
+    if (!searchInput || !tbody) return;
+    const rows = Array.from(tbody.querySelectorAll('tr'));
+    searchInput.addEventListener('input', function() {
+        const q = this.value.toLowerCase().trim();
+        rows.forEach(row => {
+            const code = (row.dataset.code || '').toLowerCase();
+            const name = (row.dataset.name || '').toLowerCase();
+            row.style.display = (!q || code.includes(q) || name.includes(q)) ? '' : 'none';
+        });
+    });
+})();
 </script>
 {% endblock %}

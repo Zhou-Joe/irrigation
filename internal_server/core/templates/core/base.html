@@ -206,6 +206,20 @@
         .notif-btn.goto { background: #f3f4f6; color: #333; text-decoration: none; display: none; }   /* shown only when link present */
         .notif-btn.ack { background: var(--color-primary, #2D6A4F); color: #fff; }
 
+        /* PM task section inside the notification popup. Shown only for field
+           workers with dispatched PM tasks (the whole section is hidden otherwise). */
+        .notif-pm-section { border-top: 1px solid #eef0f3; margin-top: 16px; padding-top: 14px; }
+        .notif-pm-head { font-size: 0.82rem; font-weight: 600; color: #065f46; margin-bottom: 8px; }
+        .notif-pm-list { display: flex; flex-direction: column; gap: 6px; }
+        .notif-pm-item { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 8px; background: #f8faf9; border: 1px solid #e2e8f0; }
+        .notif-pm-item.overdue { background: #fef2f2; border-color: #fecaca; }
+        .notif-pm-main { flex: 1; min-width: 0; }
+        .notif-pm-name { font-size: 0.82rem; font-weight: 600; color: #1e293b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .notif-pm-meta { font-size: 0.72rem; color: #94a3b8; margin-top: 1px; }
+        .notif-pm-meta .pm-due { color: #2563eb; }
+        .notif-pm-item.overdue .pm-due { color: #dc2626; font-weight: 600; }
+        .notif-pm-fill { flex-shrink: 0; padding: 4px 12px; font-size: 0.78rem; border-radius: 6px; background: var(--color-primary, #2D6A4F); color: #fff; border: none; cursor: pointer; white-space: nowrap; }
+
         /* Nav unread badge — sits next to the username so notifications are
            discoverable even after the popup is dismissed. The count pill pins to
            the bell's top-right (the conventional spot) instead of sitting beside it. */
@@ -247,6 +261,7 @@
                 <a href="{% url 'core:user_management' %}" class="{% block nav_user_mgmt %}{% endblock %}">
                     用户管理{% if pending_registrations %}<span style="background:var(--color-warning);color:#fff;padding:1px 6px;border-radius:10px;font-size:0.7rem;margin-left:4px;">{{ pending_registrations }}</span>{% endif %}
                 </a>
+                <a href="{% url 'core:pm_management' %}" class="{% block nav_pm %}{% endblock %}">作业计划</a>
                 <a href="{% url 'core:settings' %}" class="{% block nav_settings %}{% endblock %}">区域管理</a>
                 {% endif %}
             </div>
@@ -274,6 +289,7 @@
         {% if is_admin %}
         <a href="{% url 'core:project_management' %}" class="{% block nav_projects_m %}{% endblock %}">项目管理</a>
         <a href="{% url 'core:user_management' %}" class="{% block nav_user_mgmt_m %}{% endblock %}">用户管理</a>
+        <a href="{% url 'core:pm_management' %}" class="{% block nav_pm_m %}{% endblock %}">作业计划</a>
         <a href="{% url 'core:settings' %}" class="{% block nav_settings_m %}{% endblock %}">区域管理</a>
         {% endif %}
         <a href="{% url 'core:profile' %}">{{ user.get_full_name|default:user.username }}</a>
@@ -306,39 +322,83 @@
                     <button type="button" class="notif-btn ack" id="notifAckBtn" onclick="ackNotif()">我已知晓</button>
                 </div>
             </div>
+            <div id="pmTaskSection" class="notif-pm-section" style="display:none;">
+                <div class="notif-pm-head">📋 今日PM任务 (<span id="pmTaskCount">0</span>)</div>
+                <div id="pmTaskList" class="notif-pm-list"></div>
+            </div>
         </div>
     </div>
     <script id="unread-notifications-data" type="application/json">{{ unread_notifications_json|default:'[]'|safe }}</script>
+    <script id="pm-tasks-data" type="application/json">{{ pm_tasks_json|default:'[]'|safe }}</script>
     <script>
     (function () {
         var queue = [];
+        var pmTasks = [];
         var autoShown = false;   // only auto-pop once per page-load, for unread items
         function load() {
             var el = document.getElementById('unread-notifications-data');
             if (!el) return;
             try { queue = JSON.parse(el.textContent || '[]'); } catch (e) { queue = []; }
+            var pmEl = document.getElementById('pm-tasks-data');
+            try { pmTasks = pmEl ? JSON.parse(pmEl.textContent || '[]') : []; } catch (e) { pmTasks = []; }
             updateBadge();
             // Auto-show the popup once on load IF there are unread notifications.
-            // After that, the bell is the only way to reopen it (a toggle), so the
-            // popup doesn't keep re-appearing on every navigation.
+            // PM tasks don't auto-pop (too noisy on every page load) — the bell
+            // badge still counts them so the user knows to click.
             if (queue.length && !autoShown) { autoShown = true; openPopup(); }
         }
         function updateBadge() {
             var b = document.getElementById('navNotifCount');
             if (!b) return;
-            if (queue.length) { b.textContent = queue.length > 99 ? '99+' : queue.length; b.classList.add('show'); }
+            var total = queue.length + pmTasks.length;
+            if (total) { b.textContent = total > 99 ? '99+' : total; b.classList.add('show'); }
             else { b.classList.remove('show'); }
+        }
+        function renderPmTasks() {
+            var section = document.getElementById('pmTaskSection');
+            if (!section) return;
+            if (!pmTasks.length) { section.style.display = 'none'; return; }
+            section.style.display = '';
+            document.getElementById('pmTaskCount').textContent = pmTasks.length;
+            var list = document.getElementById('pmTaskList');
+            var escDiv = document.createElement('div');
+            function esc(s) {
+                escDiv.textContent = s == null ? '' : String(s);
+                return escDiv.innerHTML;
+            }
+            list.innerHTML = pmTasks.map(function (t) {
+                var dueText = t.overdue ? '⚠️ 已逾期' : '今天到期';
+                var zoneInfo = t.zone_count > 0
+                    ? (t.zone_preview ? t.zone_count + ' zones (' + esc(t.zone_preview) + '…)' : t.zone_count + ' zones')
+                    : '';
+                var fillBtn = t.report_id
+                    ? '<button class="notif-pm-fill" onclick="event.stopPropagation();fillPmTask(' + t.report_id + ')">填写</button>'
+                    : '';
+                return '<div class="notif-pm-item' + (t.overdue ? ' overdue' : '') + '">' +
+                    '<div class="notif-pm-main">' +
+                        '<div class="notif-pm-name">' + esc(t.job_plan_name) + ' · ' + esc(t.pm_number) + '</div>' +
+                        '<div class="notif-pm-meta"><span class="pm-due">' + dueText + '</span>' +
+                        (zoneInfo ? ' · ' + zoneInfo : '') + '</div>' +
+                    '</div>' + fillBtn + '</div>';
+            }).join('');
         }
         function renderCurrent() {
             var popup = document.getElementById('notifPopup');
             if (!popup) return;
             var empty = document.getElementById('notifEmpty');
             var content = document.getElementById('notifContent');
+            renderPmTasks();
             if (!queue.length) {
-                // Empty state: bell click still gives feedback ("暂无新通知").
-                if (empty) empty.style.display = 'block';
-                if (content) content.style.display = 'none';
-                document.getElementById('notifCounter').textContent = '';
+                // Empty state: bell click still gives feedback — but only when
+                // there are also no PM tasks (otherwise PM section is the content).
+                if (pmTasks.length) {
+                    if (empty) empty.style.display = 'none';
+                    if (content) content.style.display = 'none';
+                } else {
+                    if (empty) empty.style.display = 'block';
+                    if (content) content.style.display = 'none';
+                    document.getElementById('notifCounter').textContent = '';
+                }
                 popup.style.display = 'flex';
                 return;
             }
@@ -388,6 +448,10 @@
                 renderCurrent();
             }).catch(function () { btn.disabled = false; alert('网络错误，请重试'); });
         };
+        // PM task "填写" button. Overridden on the dashboard page to open the
+        // work-order modal; default fallback (other pages) navigates home where
+        // the modal is available.
+        window.fillPmTask = window.fillPmTask || function (reportId) { window.location.href = '/'; };
         if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', load); else load();
     })();
     </script>
