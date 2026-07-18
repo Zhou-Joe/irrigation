@@ -283,10 +283,19 @@ class Zone(models.Model):
 
     # ── Maxicom linkage ─────────────────────────────────────────────
     # Zone code "A-B-C" maps onto the Maxicom hardware tree:
-    #   A (site/CCU number) -> Patch (mdb_index)            [via self.patch]
+    #   A (site/CCU number) -> Patch (code='CCU'+A)         [via self.patch]
     #   B (satellite)       -> MaxicomController.link_channel
-    #   C (work zone)       -> no Maxicom equivalent (a landscape area, not a valve)
-    # So a zone resolves to one CCU Patch + one satellite controller under it.
+    #   C (channel)         -> Patch.controller_channel (1-24 valve under the satellite)
+    # So a zone resolves to one CCU Patch + one satellite controller + one valve
+    # channel. `maxicom_runtime` caches the resulting station Patch id(s) so the
+    # irrigation heatmap can join runtime minutes without re-deriving the path
+    # each render. Populated by `populate_zone_maxicom_runtime` and re-runnable
+    # after every nightly Maxicom import.
+    maxicom_runtime = models.JSONField(
+        default=list,
+        blank=True,
+        help_text='Station Patch IDs that irrigate this zone (derived from code A-B-C → CCU/satellite/channel).',
+    )
 
     @property
     def maxicom_satellite_number(self):
