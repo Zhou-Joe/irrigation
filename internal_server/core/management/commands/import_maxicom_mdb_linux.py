@@ -138,6 +138,12 @@ class Command(BaseCommand):
             ctrl_num = int((r.get('StationControllerNumber') or '0') or 0) or None
             parent_ccu = ctrl_to_ccu.get(ctrl_num) if ctrl_num else None
             if not parent_ccu:
+                # SiteID fallback: some sites (e.g. Maxicom 15/16/17) name their
+                # satellites "SAT1"/"SAT2" with no "<N>-x" prefix, so the name map
+                # can't place them — fall back to StationSiteNumber so they land on
+                # the CCU patch matching their site number (CCU15/16/17).
+                parent_ccu = site_map.get(site_number)
+            if not parent_ccu:
                 no_site += 1
                 continue
             to_create.append(Patch(
