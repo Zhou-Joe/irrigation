@@ -1,11 +1,11 @@
 #!/bin/bash
 # Daily database backup — uses SQLite's safe online-backup API so a live
-# Django write can't corrupt the snapshot, then gzip + retain 30 days.
+# Django write can't corrupt the snapshot, then gzip + retain 7 days.
 set -euo pipefail
 
 DB="/home/projects/irrigation/internal_server/db.sqlite3"
 BACKUP_DIR="/home/projects/irrigation/db_backups"
-RETAIN_DAYS=30
+RETAIN_DAYS=7
 PY="/home/projects/irrigation/.venv/bin/python"
 TS="$(date +%Y%m%d_%H%M%S)"
 OUT="$BACKUP_DIR/db_$TS.sqlite3"
