@@ -5989,6 +5989,28 @@ def _ccu_queryset():
     return ccus
 
 
+def _irrig_window(request):
+    """Resolve the irrigation dashboard's `from`/`to` GET params.
+
+    Returns (date_from_compact, date_to_compact, ts_from_14, ts_to_14) where
+    the compact form is the raw YYYYMMDDHHMM the user passed (or yesterday's
+    full day by default) and the ts_* forms are padded to 14-char strings
+    suitable for string-range matching against MaxicomRuntime.timestamp.
+
+    Shared by the irrigation dashboard view and the zone-heatmap API so both
+    honour the exact same date-window semantics.
+    """
+    yesterday = timezone.localdate() - timedelta(days=1)
+    ys = yesterday.strftime('%Y%m%d')
+    default_from = ys + '0000'
+    default_to = ys + '2359'
+    date_from = request.GET.get('from', default_from).strip()
+    date_to = request.GET.get('to', default_to).strip()
+    ts_from = date_from.ljust(14, '0')[:14] if date_from else ''
+    ts_to = date_to.ljust(14, '9')[:14] if date_to else ''
+    return date_from, date_to, ts_from, ts_to
+
+
 def _build_ccu_matrix(ccu, rt_qs, ctrl_map):
     """Build the 24 x N-satellite runtime matrix for one CCU.
 
@@ -6086,19 +6108,9 @@ def irrigation_dashboard(request):
 
     # default range = the last complete irrigation day (yesterday 00:00→23:59).
     # Today is partial: overnight runs are rolled to the next date by the
-    # importer, so yesterday is the most recent full day. Compact YYYYMMDDHHMM,
-    # padded below to the start (…0000) / end (…5999) of its minute.
-    yesterday = timezone.localdate() - timedelta(days=1)
-    ys = yesterday.strftime('%Y%m%d')
-    default_from = ys + '0000'
-    default_to = ys + '2359'
-    date_from = request.GET.get('from', default_from).strip()
-    date_to = request.GET.get('to', default_to).strip()
-
-    # pad to YYYYMMDDHHmmSS for string-range matching (timestamp is 14 chars):
-    # from → start of its minute, to → end of its minute.
-    ts_from = date_from.ljust(14, '0')[:14] if date_from else ''
-    ts_to = date_to.ljust(14, '9')[:14] if date_to else ''
+    # importer, so yesterday is the most recent full day. Shared with the
+    # zone-heatmap endpoint via _irrig_window so both honour identical windows.
+    date_from, date_to, ts_from, ts_to = _irrig_window(request)
 
     # --- build the pivot ---
     rt_qs = MaxicomRuntime.objects.select_related('station', 'station__parent', 'site')
@@ -6236,6 +6248,82 @@ def irrigation_dashboard(request):
         })
 
     return render(request, 'core/irrigation_dashboard.html', context)
+
+
+@login_required(login_url='core:login')
+def irrigation_zone_heatmap(request):
+    """API: per-zone irrigation runtime minutes for the /irrigation/ heatmap.
+
+    Same date-window semantics as ``irrigation_dashboard`` (via
+    ``_irrig_window``). Each zone carries its boundary points + center plus the
+    sum of ``MaxicomRuntime.run_time`` over the station Patch ids stored in
+    ``Zone.maxicom_runtime`` (populated by populate_zone_maxicom_runtime).
+
+    Returns ``{zones: [...], max: <minutes>}`` shaped to match stats_zone_heatmap
+    so the client can reuse the same Leaflet polygon renderer.
+    """
+    from core.models import Zone, MaxicomRuntime
+    from django.db.models import Sum
+    from collections import defaultdict
+
+    _date_from, _date_to, ts_from, ts_to = _irrig_window(request)
+
+    # active_boundary_points is a Python @property (resolves dxf vs manual), so
+    # we can't filter on it in the ORM — load all zones and filter in Python.
+    # Only zones with both a boundary AND a maxicom_runtime mapping are useful.
+    all_zones = list(Zone.objects.select_related('land'))
+    zones_out = []
+    station_ids = set()
+    for z in all_zones:
+        bp = z.active_boundary_points
+        if not bp or not z.maxicom_runtime:
+            continue
+        try:
+            sids = [int(sid) for sid in z.maxicom_runtime if sid is not None]
+        except (TypeError, ValueError):
+            continue
+        if not sids:
+            continue
+        station_ids.update(sids)
+        zones_out.append({
+            'zone': z,
+            'bp': bp,
+            'station_ids': sids,
+        })
+
+    # Single aggregated query: station_id -> sum of runtime minutes.
+    rt_qs = MaxicomRuntime.objects.filter(station_id__in=station_ids)
+    if ts_from:
+        rt_qs = rt_qs.filter(timestamp__gte=ts_from)
+    if ts_to:
+        rt_qs = rt_qs.filter(timestamp__lte=ts_to)
+    minutes_by_station = defaultdict(int)
+    for row in rt_qs.values('station_id').annotate(minutes=Sum('run_time')):
+        minutes_by_station[row['station_id']] = row['minutes'] or 0
+
+    out = []
+    max_minutes = 0
+    for entry in zones_out:
+        z = entry['zone']
+        minutes = sum(minutes_by_station.get(sid, 0) for sid in entry['station_ids'])
+        if minutes > max_minutes:
+            max_minutes = minutes
+        out.append({
+            'id': z.id,
+            'code': z.code,
+            'name': z.name or '',
+            'land_name': z.land.name if z.land else '',
+            'boundary_points': entry['bp'],
+            'center': get_zone_center(entry['bp']),
+            'runtime_minutes': minutes,
+        })
+
+    return JsonResponse({
+        'zones': out,
+        'max': max_minutes,
+        'date_from': _date_from,
+        'date_to': _date_to,
+    }, json_dumps_params={'ensure_ascii': False})
 
 
 @login_required(login_url='core:login')

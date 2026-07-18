@@ -39,6 +39,7 @@ urlpatterns = [
     path('stats/', views.stats_dashboard, name='stats_dashboard'),
     path('stats/excel/', views.work_reports_excel, name='work_reports_excel'),
     path('irrigation/', views.irrigation_dashboard, name='irrigation_dashboard'),
+    path('api/irrigation/zone-heatmap/', views.irrigation_zone_heatmap, name='irrigation_zone_heatmap'),
     path('api/stats/zone-heatmap/', views.stats_zone_heatmap, name='stats_zone_heatmap'),
     path('irrigation/report.pdf', views.irrigation_report_pdf, name='irrigation_report_pdf'),
     path('irrigation/report.xlsx', views.irrigation_report_excel, name='irrigation_report_excel'),

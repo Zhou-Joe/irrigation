@@ -6,6 +6,7 @@
 {% block nav_irrigation_m %}active{% endblock %}
 
 {% block extra_css %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <style>
 .page-header {
     display: flex;
@@ -183,75 +184,450 @@
 }
 .export-menu a:last-child { border-bottom: none; }
 .export-menu a:hover { background: var(--color-surface-alt); }
+
+/* View toggle (表格 / 热力图) */
+.view-toggle {
+    display: inline-flex;
+    gap: 4px;
+    background: var(--color-surface-alt);
+    border-radius: 8px;
+    padding: 4px;
+}
+.irrig-view-pill {
+    padding: 6px 14px;
+    border: none;
+    background: transparent;
+    color: var(--color-text-muted);
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.88rem;
+    font-weight: 600;
+    transition: background 0.15s, color 0.15s;
+}
+.irrig-view-pill.active {
+    background: var(--color-primary);
+    color: var(--color-text-inverse);
+}
+.irrig-view-pill:hover:not(.active) {
+    background: rgba(45, 106, 79, 0.08);
+    color: var(--color-primary);
+}
+
+/* Collapsed-state toggle button (always visible; click to expand panel). */
+.irrig-search-toggle {
+    position: absolute;
+    top: 12px;
+    left: 60px;          /* clear of the zoom +/- control */
+    z-index: 1001;
+    width: 36px;
+    height: 36px;
+    border: none;
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.96);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+    cursor: pointer;
+    font-size: 1.05rem;
+    line-height: 1;
+}
+.irrig-search-toggle:hover { background: #fff; }
+.irrig-search-box {
+    position: absolute;
+    top: 12px;
+    left: 60px;
+    z-index: 1000;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    background: rgba(255, 255, 255, 0.96);
+    border-radius: 6px;
+    padding: 8px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+    width: 360px;
+}
+.irrig-search-box > .irrig-search-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.irrig-search-box input {
+    flex: 1;
+    border: 1px solid var(--color-surface-dark);
+    border-radius: 4px;
+    padding: 5px 9px;
+    font-size: 0.86rem;
+    outline: none;
+}
+.irrig-search-box input:focus { border-color: var(--color-primary); }
+.irrig-search-box button {
+    border: none;
+    background: transparent;
+    color: var(--color-text-muted);
+    cursor: pointer;
+    font-size: 1rem;
+    padding: 2px 6px;
+    border-radius: 4px;
+}
+.irrig-search-box button:hover { background: var(--color-surface-alt); color: var(--color-primary); }
+.irrig-search-status {
+    font-size: 0.78rem;
+    color: var(--color-text-muted);
+    min-width: 80px;
+    white-space: nowrap;
+}
+/* Result list — each row shows code, name, runtime; click flies the map to it. */
+.irrig-search-results {
+    max-height: 320px;
+    overflow-y: auto;
+    border-top: 1px solid var(--color-surface-alt);
+    margin-top: 2px;
+    display: none;          /* shown only when there are results */
+}
+.irrig-search-results.has-results { display: block; }
+.irrig-result-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 5px 8px;
+    font-size: 0.82rem;
+    cursor: pointer;
+    border-bottom: 1px solid var(--color-surface-alt);
+    gap: 8px;
+}
+.irrig-result-row:last-child { border-bottom: none; }
+.irrig-result-row:hover { background: var(--color-surface-alt); }
+.irrig-result-row .irrig-result-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.irrig-result-row .irrig-result-code {
+    font-weight: 600;
+    color: var(--color-primary);
+    margin-right: 6px;
+}
+.irrig-result-row .irrig-result-mins {
+    font-weight: 700;
+    color: var(--color-accent);
+    white-space: nowrap;
+}
+/* Heatmap legend (inside sidebar, heatmap mode only) */
+.irrig-legend-panel {
+    display: none;          /* shown only in heatmap mode */
+    background: var(--color-surface);
+    border: 1px solid var(--color-surface-dark);
+    border-radius: 8px;
+    padding: 10px 12px;
+}
+.irrig-fullscreen.heatmap-mode .irrig-legend-panel { display: block; }
+.irrig-legend-title {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--color-primary);
+    margin-bottom: 6px;
+}
+.heat-legend {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.78rem;
+    color: var(--color-text-muted);
+}
+.heat-legend .scale {
+    flex: 1;
+    height: 12px;
+    border-radius: 4px;
+    background: linear-gradient(to right, rgb(255,243,176), rgb(232,89,12), rgb(139,0,0));
+}
+.irrig-legend-max {
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: var(--color-accent);
+    margin-top: 6px;
+}
+.irrig-legend-note {
+    font-size: 0.74rem;
+    color: var(--color-text-muted);
+    margin-top: 4px;
+    line-height: 1.4;
+}
+
+/* ── Heatmap fullscreen layout ───────────────────────────────────────
+   When the heatmap view is active, body.irrig-heatmap-active flips the
+   page into a flex row: a collapsible sidebar (filters / view toggle /
+   legend / export) + a fullscreen map area (only nav bar above it).
+   The chart view keeps the normal centered, padded layout. */
+
+/* The whole page is a full-viewport flex row under the sticky nav in BOTH
+   modes: sidebar on the left (always styled), content panel on the right
+   (pivot table in chart mode, map in heatmap mode). */
+.irrig-fullscreen {
+    display: flex;
+    position: relative;     /* anchors the floating sidebar-expand handle */
+    height: calc(100vh - 52px);
+    width: 100vw;
+    overflow: hidden;
+    box-sizing: border-box;
+    background: linear-gradient(135deg, #f7f3eb 0%, #ebe5d8 100%);
+}
+
+/* Sidebar — styled the same in both modes (340px glass panel). */
+.irrig-sidebar {
+    width: 340px;
+    min-width: 340px;
+    background: rgba(245, 240, 232, 0.94);
+    border-right: 1px solid rgba(27, 67, 50, 0.14);
+    box-shadow: 10px 0 30px rgba(27, 67, 50, 0.12);
+    backdrop-filter: blur(14px);
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+    z-index: 500;
+    transition: width 0.3s ease, min-width 0.3s ease, opacity 0.2s ease;
+}
+.irrig-sidebar.collapsed {
+    width: 0;
+    min-width: 0;
+    border-right: none;
+    opacity: 0;
+    pointer-events: none;
+}
+.irrig-sidebar-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 16px;
+    border-bottom: 1px solid rgba(27, 67, 50, 0.1);
+    flex-shrink: 0;
+}
+.irrig-sidebar-header h1 {
+    margin: 0;
+    font-size: 1.1rem;
+    color: var(--color-primary);
+}
+.irrig-sidebar-close {
+    width: 28px;
+    height: 28px;
+    border: none;
+    border-radius: 50%;
+    cursor: pointer;
+    background: var(--color-surface-dark);
+    color: #555;
+    font-size: 0.9rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.irrig-sidebar-close:hover { background: var(--color-surface-dark); color: var(--color-primary); }
+.irrig-sidebar-body { padding: 14px 16px; display: flex; flex-direction: column; gap: 14px; }
+
+/* Floating reopen handle (visible when sidebar collapsed). */
+.irrig-sidebar-expand {
+    position: absolute;
+    left: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 32px;
+    min-height: 120px;
+    background: var(--color-primary);
+    color: #fff;
+    border: none;
+    border-radius: 0 8px 8px 0;
+    cursor: pointer;
+    font-size: 1.05rem;
+    font-weight: bold;
+    z-index: 1000;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 3px 0 10px rgba(0, 0, 0, 0.25);
+    writing-mode: vertical-lr;
+    letter-spacing: 2px;
+    transition: background 0.15s, width 0.15s;
+}
+.irrig-sidebar-expand:hover { background: #081C15; width: 40px; }
+.irrig-sidebar-expand.visible { display: flex; }
+
+/* Right-side content panel base — fills everything not taken by the sidebar. */
+.irrig-map-area,
+.irrig-chart-view {
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    position: relative;
+}
+
+/* Map area (heatmap mode). */
+.irrig-map-area {
+    overflow: hidden;
+    display: none;
+}
+.irrig-fullscreen.heatmap-mode .irrig-map-area { display: block; }
+.irrig-map-area #irrigHeatMap {
+    width: 100%;
+    height: 100%;
+    position: absolute;
+    inset: 0;
+}
+
+/* Chart view (pivot) — scrollable panel with page-like padding. */
+.irrig-chart-view {
+    overflow-y: auto;
+    padding: 20px;
+    display: none;
+}
+.irrig-fullscreen.chart-mode .irrig-chart-view { display: block; }
+
+/* Controls shared by both modes. In heatmap mode these live in the sidebar
+   body; in chart mode they live in the sidebar body too (which itself is
+   full-width). They keep their original styling. */
+.irrig-controls { display: flex; flex-direction: column; gap: 14px; }
+.irrig-controls .filter-bar { margin: 0; }
+.irrig-controls .summary-cards { margin: 0; }
+
+.irrig-topbar {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+@media (max-width: 768px) {
+    /* On mobile, the sidebar overlays the content instead of the desktop
+       side-by-side layout. The toggle re-opens it from the expand handle. */
+    .irrig-fullscreen { flex-direction: column; }
+    .irrig-sidebar {
+        position: absolute;
+        top: 0;
+        left: 0;
+        bottom: 0;
+        max-width: 85vw;
+    }
+    .irrig-sidebar-expand { display: none !important; }
+}
 </style>
 {% endblock %}
 
 {% block content %}
-<div style="padding: 20px; max-width: 1400px; margin: 0 auto;">
-    <div class="page-header">
-        <h1>灌溉运行数据</h1>
-        <div class="export-dropdown" id="exportDropdown">
-            <button onclick="toggleExportMenu(event)" style="background:var(--color-accent);color:#fff;border:none;border-radius:6px;padding:8px 16px;cursor:pointer;font-weight:600;font-size:0.9rem;">⬇ 一键导出报告 ▾</button>
-            <div class="export-menu" id="exportMenu">
-                <a href="javascript:void(0)" onclick="exportPDF()">📄 PDF 报告（每CCU一页）</a>
-                <a href="javascript:void(0)" onclick="exportExcel()">📊 Excel 表格（每CCU一表）</a>
+<div class="irrig-fullscreen heatmap-mode" id="irrigFullscreen">
+    <!-- Sidebar (controls in heatmap mode; top stack in chart mode) -->
+    <aside class="irrig-sidebar" id="irrigSidebar">
+        <div class="irrig-sidebar-header">
+            <h1>灌溉运行数据</h1>
+            <button class="irrig-sidebar-close" onclick="toggleIrrigSidebar()" title="收起侧边栏">✕</button>
+        </div>
+        <div class="irrig-sidebar-body">
+            <div class="irrig-topbar">
+                <div class="view-toggle" role="tablist" aria-label="视图切换">
+                    <button class="irrig-view-pill" data-view="chart"
+                            onclick="switchIrrigView('chart')" role="tab">📊 表格</button>
+                    <button class="irrig-view-pill active" data-view="heatmap"
+                            onclick="switchIrrigView('heatmap')" role="tab">🗺️ 热力图</button>
+                </div>
+                <div class="export-dropdown" id="exportDropdown">
+                    <button onclick="toggleExportMenu(event)" style="background:var(--color-accent);color:#fff;border:none;border-radius:6px;padding:8px 16px;cursor:pointer;font-weight:600;font-size:0.9rem;">⬇ 导出 ▾</button>
+                    <div class="export-menu" id="exportMenu">
+                        <a href="javascript:void(0)" onclick="exportPDF()">📄 PDF 报告（每CCU一页）</a>
+                        <a href="javascript:void(0)" onclick="exportExcel()">📊 Excel 表格（每CCU一表）</a>
+                    </div>
+                </div>
+            </div>
+
+            <div class="irrig-controls">
+                <!-- Filters -->
+                <div class="filter-bar">
+                    <div class="field">
+                        <label>CCU 片区</label>
+                        <select id="ccuSelect">
+                            <option value="">全部 CCU</option>
+                            {% for ccu in ccus %}
+                            <option value="{{ ccu.id }}" {% if selected_ccu and selected_ccu.id == ccu.id %}selected{% endif %}>
+                                {{ ccu.code }} ({{ ccu.name }})
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label>开始时间</label>
+                        <input type="datetime-local" id="dateFrom" value="{{ datetime_from_iso }}" step="60">
+                    </div>
+                    <div class="field">
+                        <label>结束时间</label>
+                        <input type="datetime-local" id="dateTo" value="{{ datetime_to_iso }}" step="60">
+                    </div>
+                    <button onclick="applyFilters()">查询</button>
+                    <button onclick="resetFilters()" style="background:var(--color-surface-dark);">重置</button>
+                    <span class="hint">数据范围: {{ data_span.0 }} ~ {{ data_span.1 }}</span>
+                </div>
+
+                <!-- Summary (chart view only — heatmap has its own legend) -->
+                <div class="summary-cards" id="summaryCards">
+                    <div class="dashboard-card">
+                        <div class="stat-number" id="sumStations">{{ total_stations }}</div>
+                        <div class="stat-label">运行站点数</div>
+                    </div>
+                    <div class="dashboard-card">
+                        <div class="stat-number" id="sumControllers">{{ controllers|length }}</div>
+                        <div class="stat-label">控制器数</div>
+                    </div>
+                    <div class="dashboard-card">
+                        <div class="stat-number" id="sumRuntime">{{ grand_total }}</div>
+                        <div class="stat-label">总运行分钟</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Heatmap legend (heatmap mode only) -->
+            <div class="irrig-legend-panel" id="irrigLegendPanel">
+                <div class="irrig-legend-title">区域灌溉运行分钟</div>
+                <div class="heat-legend">
+                    <span>少</span>
+                    <div class="scale" id="irrigHeatLegendBar"></div>
+                    <span>多</span>
+                </div>
+                <div id="irrigHeatMaxLabel" class="irrig-legend-max">最大: 0 分钟</div>
+                <div class="irrig-legend-note">颜色 = 所选时间窗口内该区域的运行分钟数</div>
             </div>
         </div>
-    </div>
+    </aside>
 
-    <!-- Filters -->
-    <div class="filter-bar">
-        <div class="field">
-            <label>CCU 片区</label>
-            <select id="ccuSelect">
-                <option value="">全部 CCU</option>
-                {% for ccu in ccus %}
-                <option value="{{ ccu.id }}" {% if selected_ccu and selected_ccu.id == ccu.id %}selected{% endif %}>
-                    {{ ccu.code }} ({{ ccu.name }})
-                </option>
-                {% endfor %}
-            </select>
-        </div>
-        <div class="field">
-            <label>开始时间</label>
-            <input type="datetime-local" id="dateFrom" value="{{ datetime_from_iso }}" step="60">
-        </div>
-        <div class="field">
-            <label>结束时间</label>
-            <input type="datetime-local" id="dateTo" value="{{ datetime_to_iso }}" step="60">
-        </div>
-        <button onclick="applyFilters()">查询</button>
-        <button onclick="resetFilters()" style="background:var(--color-surface-dark);">重置</button>
-        <span class="hint">数据范围: {{ data_span.0 }} ~ {{ data_span.1 }}</span>
-    </div>
+    <!-- Sidebar expand handle — outside both panels so it works in chart AND
+         heatmap modes. Anchored to the .irrig-fullscreen left edge. -->
+    <button class="irrig-sidebar-expand" id="irrigSidebarExpand"
+            onclick="toggleIrrigSidebar()" title="展开侧边栏">侧边栏 ▶</button>
 
-    <!-- Summary -->
-    <div class="summary-cards">
-        <div class="dashboard-card">
-            <div class="stat-number" id="sumStations">{{ total_stations }}</div>
-            <div class="stat-label">运行站点数</div>
-        </div>
-        <div class="dashboard-card">
-            <div class="stat-number" id="sumControllers">{{ controllers|length }}</div>
-            <div class="stat-label">控制器数</div>
-        </div>
-        <div class="dashboard-card">
-            <div class="stat-number" id="sumRuntime">{{ grand_total }}</div>
-            <div class="stat-label">总运行分钟</div>
+    <!-- Map area (heatmap mode) -->
+    <div class="irrig-map-area">
+        <div id="irrigHeatMap"></div>
+        <!-- Collapsed by default: click 🔍 to expand the search panel -->
+        <button id="irrigSearchToggle" class="irrig-search-toggle"
+                onclick="toggleIrrigSearch()" title="搜索区域">🔍</button>
+        <div id="irrigSearchPanel" class="irrig-search-box" style="display:none;">
+            <div class="irrig-search-row">
+                <input type="text" id="irrigZoneSearch" placeholder="搜索 zone（代码或名称，如 1-1-5 或 BOH）"
+                       oninput="searchIrrigZone()">
+                <button onclick="document.getElementById('irrigZoneSearch').value=''; searchIrrigZone('');"
+                        title="清除">✕</button>
+                <span id="irrigZoneSearchStatus" class="irrig-search-status"></span>
+            </div>
+            <div id="irrigZoneResults" class="irrig-search-results"></div>
         </div>
     </div>
 
-    <!-- Pivot matrix -->
-    <div class="section-title">站点 × 卫星控制器 运行时间矩阵（分钟）</div>
-    <div class="pivot-wrap">
-        <div id="pivotContent">
-            {% include 'core/_irrigation_pivot.html' %}
+    <!-- Chart view (pivot) — chart mode only -->
+    <div class="irrig-chart-view">
+        <div class="section-title">站点 × 卫星控制器 运行时间矩阵（分钟）</div>
+        <div class="pivot-wrap">
+            <div id="pivotContent">
+                {% include 'core/_irrigation_pivot.html' %}
+            </div>
         </div>
     </div>
 </div>
 {% endblock %}
 
 {% block extra_js %}
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="{% static 'js/irrig-heatmap.js' %}?v=7"></script>
 <script>
 function toggleExportMenu(event) {
     event.stopPropagation();
@@ -293,6 +669,14 @@ function applyFilters() {
     if (ccu) params.set('ccu', ccu);
     if (from) params.set('from', from);
     if (to) params.set('to', to);
+
+    // Refresh whichever view is currently visible.
+    const root = document.getElementById('irrigFullscreen');
+    const heatVisible = root && root.classList.contains('heatmap-mode');
+    if (heatVisible && typeof window.loadIrrigHeatmap === 'function') {
+        window.loadIrrigHeatmap();
+        return;
+    }
 
     document.getElementById('pivotContent').innerHTML = '<div class="loading-overlay">加载中…</div>';
 
