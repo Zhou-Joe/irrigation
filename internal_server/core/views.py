@@ -6085,8 +6085,8 @@ def irrigation_dashboard(request):
     date_to = request.GET.get('to', default_to).strip()
 
     # pad to YYYYMMDD for LIKE-prefix matching (timestamp is YYYYMMDDHHmmSS)
-    ts_from = date_from.ljust(8, '0')[:8] if date_from else ''
-    ts_to = date_to.ljust(8, '9')[:8] + '999999' if date_to else ''
+    ts_from = date_from.ljust(14, '0')[:14] if date_from else ''
+    ts_to = date_to.ljust(14, '9')[:14] if date_to else ''
 
     # --- build the pivot ---
     rt_qs = MaxicomRuntime.objects.select_related('station', 'station__parent', 'site')
@@ -6176,10 +6176,13 @@ def irrigation_dashboard(request):
     def _iso8(yyyymmdd):
         s = (yyyymmdd or '').strip()
         return s[:4] + '-' + s[4:6] + '-' + s[6:8] if len(s) == 8 else s
-    date_from_iso = _iso8(date_from)
-    date_to_iso = _iso8(date_to)
+    date_from_iso = _iso8(date_from[:8])
+    date_to_iso = _iso8(date_to[:8])
     today_iso = timezone.localdate().isoformat()
     data_span_iso = (_iso8(default_from), _iso8(default_to))
+    # selected hour (if the filter included one: date_from may be YYYYMMDDHH)
+    from_hour = date_from[8:10] if len(date_from) >= 10 else ''
+    to_hour = date_to[8:10] if len(date_to) >= 10 else ''
 
     context = {
         'is_admin': is_admin,
@@ -6192,6 +6195,9 @@ def irrigation_dashboard(request):
         'date_to_iso': date_to_iso,
         'today_iso': today_iso,
         'data_span_iso': data_span_iso,
+        'hours': list(range(24)),
+        'from_hour': from_hour,
+        'to_hour': to_hour,
         'controllers': all_controllers,
         'rows': rows,
         'col_totals': [col_totals[c] for c in all_controllers],
@@ -6486,8 +6492,8 @@ def irrigation_report_pdf(request):
     default_to = last_ts[:8] if len(last_ts) >= 8 else ''
     date_from = request.GET.get('from', default_from).strip()
     date_to = request.GET.get('to', default_to).strip()
-    ts_from = date_from.ljust(8, '0')[:8] if date_from else ''
-    ts_to = date_to.ljust(8, '9')[:8] + '999999' if date_to else ''
+    ts_from = date_from.ljust(14, '0')[:14] if date_from else ''
+    ts_to = date_to.ljust(14, '9')[:14] if date_to else ''
 
     # --- precompute satellite lookup and runtime queryset once ---
     ctrl_map = {c.mdb_index: c for c in MaxicomController.objects.exclude(name__icontains='CCU')}
@@ -6625,8 +6631,8 @@ def irrigation_report_excel(request):
     default_to = last_ts[:8] if len(last_ts) >= 8 else ''
     date_from = request.GET.get('from', default_from).strip()
     date_to = request.GET.get('to', default_to).strip()
-    ts_from = date_from.ljust(8, '0')[:8] if date_from else ''
-    ts_to = date_to.ljust(8, '9')[:8] + '999999' if date_to else ''
+    ts_from = date_from.ljust(14, '0')[:14] if date_from else ''
+    ts_to = date_to.ljust(14, '9')[:14] if date_to else ''
 
     ctrl_map = {c.mdb_index: c for c in MaxicomController.objects.exclude(name__icontains='CCU')}
     rt_qs = MaxicomRuntime.objects.select_related('station', 'station__parent', 'site')
