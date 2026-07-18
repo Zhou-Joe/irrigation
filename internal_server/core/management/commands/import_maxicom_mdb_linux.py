@@ -1,6 +1,5 @@
-"""Import CTROL_CF (controllers) + STATN_CF (stations) + XA_RuntimeProject
-(runtime) from a Maxicom2.mdb into the Django DB — Linux (mdbtools), idempotent,
-CCU-safe.
+"""Import CTROL_CF (controllers) + STATN_CF (stations) + XA_LOG (runtime)
+from a Maxicom2.mdb into the Django DB — Linux (mdbtools), CCU-safe.
 
 CCU grouping: satellites are grouped into CCUs by the "<N>-<x>" prefix in the
 controller IndexName (e.g. "SAT 3-5" -> CCU3), NOT by Maxicom's SiteNumber. The
@@ -9,11 +8,13 @@ while the satellite names are stable. This map is re-derived from CTROL_CF every
 run and re-applied to controllers/stations/runtime, so a future renumbering
 self-heals on the next import.
 
-Idempotent: re-running with the same .mdb adds nothing; a newer .mdb only adds
-new runtime rows (deduped by (timestamp, site, station_id_raw)) and any newly
-appearing valves. Controllers are fully rebuilt from CTROL_CF each run so the
-satellite table never drifts from the mdb (a stale MaxicomController makes the
-runtime dashboard silently show 0).
+Runtime: read from XA_LOG (SignalType 'M') — the authoritative raw controller
+poll log, NOT XA_RuntimeProject (an incomplete derivative that drops long runs).
+Each 'M' reading (XactIndex = station, SignalValue = minutes) is stored with an
+"irrigation day" timestamp: a poll at >= 22:00 is attributed to the next date
+(overnight irrigation runs into the following day), so daily totals match the
+Maxicom UI. MaxicomRuntime is fully rebuilt from XA_LOG each run (XA_LOG is the
+cumulative source), which also clears any stale XA_RuntimeProject data.
 
 CCU safety: snapshots every CCU patch's (code, name, parent_id, mdb_index)
 before writing, verifies them unchanged after. If anything drifts, restores
@@ -24,6 +25,7 @@ Usage:
     python manage.py import_maxicom_mdb_linux --mdb /path/to/Maxicom2.mdb
 """
 import csv
+import datetime
 import os
 import re
 import subprocess
@@ -54,7 +56,7 @@ def _mdb_rows(mdb_path, table):
 
 
 class Command(BaseCommand):
-    help = 'Import CTROL_CF controllers + STATN_CF stations + XA_RuntimeProject runtime from a Maxicom2.mdb (Linux/mdbtools, idempotent, CCU-safe)'
+    help = 'Import CTROL_CF controllers + STATN_CF stations + XA_LOG runtime (SignalType M, irrigation-day rolled @22:00) from a Maxicom2.mdb (Linux/mdbtools, CCU-safe)'
 
     def add_arguments(self, parser):
         parser.add_argument('--mdb', type=str, required=True,
@@ -223,64 +225,59 @@ class Command(BaseCommand):
             f'Controllers rebuilt: {len(new_ctrls)} ({MaxicomController.objects.count()} total)'
         ))
 
-        # ── 3. XA_RuntimeProject -> MaxicomRuntime ──────────────────────────
-        # Site is derived from the station's controller NAME prefix (ctrl_to_ccu),
-        # with Maxicom SiteID only as a fallback when the station has no mapped
-        # controller. Reassign existing rows first so the dedup key
-        # (ts, site, station_id_raw) is consistent, then add new rows.
+        # ── 3. XA_LOG (SignalType 'M') -> MaxicomRuntime ────────────────────
+        # The authoritative runtime source is XA_LOG (the raw controller poll
+        # log), NOT XA_RuntimeProject (an incomplete derivative that silently
+        # drops long runs — e.g. a 538-min cycle was entirely absent there). Each
+        # 'M' signal: XactIndex = station IndexNumber, SignalValue = runtime
+        # minutes accumulated since the previous poll.
+        # Irrigation-day roll: landscape irrigation runs overnight and the nightly
+        # poll (~22:30) STARTS the next day's cycle, so a reading timestamped
+        # >= 22:00 is attributed to date+1. Daily totals then match the Maxicom
+        # UI exactly (verified across CCU9 SAT 9-1..9-4: 10/20/10/538/899…).
         stn_map = {p.mdb_index: p for p in
                    Patch.objects.filter(code__startswith='station-').exclude(mdb_index__isnull=True)}
 
-        def _site_for(station_id_raw, site_id_raw):
-            st = stn_map.get(station_id_raw)
-            cn = st.controller_number if st else None
-            ccu = ctrl_to_ccu.get(cn) if cn else None
-            return ccu or site_map.get(site_id_raw)
+        def _irrig_ts(xactstamp):
+            s = (xactstamp or '').strip()
+            d = s[:8]
+            if len(d) != 8:
+                return s
+            hh = int(s[8:10]) if len(s) >= 10 and s[8:10].isdigit() else 0
+            if hh >= 22:
+                d = (datetime.datetime.strptime(d, '%Y%m%d')
+                     + datetime.timedelta(days=1)).strftime('%Y%m%d')
+            return d + s[8:]
 
-        # Reassign existing runtime to its name-prefix CCU (self-healing).
-        by_ccu_rt = defaultdict(list)
-        for rt in MaxicomRuntime.objects.select_related('station'):
-            ccu = _site_for(rt.station_id_raw, None)
-            if ccu is not None and ccu.id != rt.site_id:
-                by_ccu_rt[ccu.id].append(rt.id)
-        reassigned = 0
-        for ccu_id, ids in by_ccu_rt.items():
-            MaxicomRuntime.objects.filter(id__in=ids).update(site_id=ccu_id)
-            reassigned += len(ids)
-
-        existing_keys = set()
-        for row in MaxicomRuntime.objects.values('timestamp', 'site_id', 'station_id_raw'):
-            existing_keys.add((row['timestamp'], row['site_id'], row['station_id_raw']))
-
-        rt_rows = list(_mdb_rows(mdb_path, 'XA_RuntimeProject'))
+        # Atomic full rebuild — XA_LOG is the cumulative source, so re-derive
+        # every run (also clears the old XA_RuntimeProject data). Streamed in
+        # batches so memory stays bounded; the transaction makes a failure leave
+        # the previous data intact.
         to_create = []
-        created_rt = skipped_dup = skipped_no_site = 0
-        for r in rt_rows:
-            ts = _sq(r.get('TimeStamps'))
-            site_id_raw = int((r.get('SiteID') or '0') or 0)
-            station_id_raw = int((r.get('StationID') or '0') or 0)
-            site = _site_for(station_id_raw, site_id_raw)
-            if site is None:
-                skipped_no_site += 1
-                continue
-            key = (ts, site.id, station_id_raw)
-            if key in existing_keys:
-                skipped_dup += 1
-                continue
-            existing_keys.add(key)
-            to_create.append(MaxicomRuntime(
-                timestamp=ts, site=site,
-                station=stn_map.get(station_id_raw),
-                station_id_raw=station_id_raw,
-                run_time=int((r.get('RunTime') or '0') or 0),
-            ))
-            if len(to_create) >= BATCH:
+        skipped_no_site = 0
+        with transaction.atomic():
+            MaxicomRuntime.objects.all().delete()
+            for r in _mdb_rows(mdb_path, 'XA_LOG'):
+                if (r.get('SignalType') or '').strip() != 'M':
+                    continue
+                xi = int((r.get('XactIndex') or '0') or 0)
+                st = stn_map.get(xi)
+                if st is None or st.parent_id is None:
+                    skipped_no_site += 1
+                    continue
+                to_create.append(MaxicomRuntime(
+                    timestamp=_irrig_ts(_sq(r.get('XactStamp'))),
+                    site_id=st.parent_id,
+                    station_id=st.id,
+                    station_id_raw=xi,
+                    run_time=int((r.get('SignalValue') or '0') or 0),
+                ))
+                if len(to_create) >= BATCH:
+                    MaxicomRuntime.objects.bulk_create(to_create)
+                    to_create = []
+            if to_create:
                 MaxicomRuntime.objects.bulk_create(to_create)
-                created_rt += len(to_create)
-                to_create = []
-        if to_create:
-            MaxicomRuntime.objects.bulk_create(to_create)
-            created_rt += len(to_create)
+        created_rt = MaxicomRuntime.objects.count()
 
         drifted = verify_ccus()
         if drifted:
@@ -290,8 +287,8 @@ class Command(BaseCommand):
             return
 
         self.stdout.write(self.style.SUCCESS(
-            f'Runtime: {created_rt} new, {skipped_dup} dup-skipped, '
-            f'{skipped_no_site} no-site-skipped, {reassigned} re-site to name-prefix CCU'
+            f'Runtime (XA_LOG M, irrigation-day rolled @22:00): {created_rt} rows, '
+            f'{skipped_no_site} no-CCU-skipped'
         ))
         self.stdout.write(self.style.SUCCESS(
             f'Done: {Patch.objects.count()} patches, '
