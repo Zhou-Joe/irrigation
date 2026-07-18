@@ -6064,6 +6064,7 @@ def irrigation_dashboard(request):
     from core.models import Patch, MaxicomController, MaxicomRuntime
     from django.db.models import Sum
     from collections import defaultdict
+    from datetime import timedelta
     import json as _json
 
     # --- filter inputs ---
@@ -6075,16 +6076,27 @@ def irrigation_dashboard(request):
     if ccu_param:
         ccu_obj = next((c for c in ccus if str(c.id) == ccu_param), None)
 
-    # date range — default to the full span of available runtime data
+    # full available data span — surfaced as the "数据范围" hint and restored by
+    # the 重置 button (zoom back out to everything).
     span = MaxicomRuntime.objects.order_by('timestamp')
     first_ts = span.first().timestamp if span.exists() else ''
     last_ts = span.last().timestamp if span.exists() else ''
-    default_from = first_ts[:12] if len(first_ts) >= 12 else (first_ts[:8] if first_ts else '')
-    default_to = last_ts[:12] if len(last_ts) >= 12 else (last_ts[:8] if last_ts else '')
+    span_from = first_ts[:12] if len(first_ts) >= 12 else (first_ts[:8] if first_ts else '')
+    span_to = last_ts[:12] if len(last_ts) >= 12 else (last_ts[:8] if last_ts else '')
+
+    # default range = the last complete irrigation day (yesterday 00:00→23:59).
+    # Today is partial: overnight runs are rolled to the next date by the
+    # importer, so yesterday is the most recent full day. Compact YYYYMMDDHHMM,
+    # padded below to the start (…0000) / end (…5999) of its minute.
+    yesterday = timezone.localdate() - timedelta(days=1)
+    ys = yesterday.strftime('%Y%m%d')
+    default_from = ys + '0000'
+    default_to = ys + '2359'
     date_from = request.GET.get('from', default_from).strip()
     date_to = request.GET.get('to', default_to).strip()
 
-    # pad to YYYYMMDD for LIKE-prefix matching (timestamp is YYYYMMDDHHmmSS)
+    # pad to YYYYMMDDHHmmSS for string-range matching (timestamp is 14 chars):
+    # from → start of its minute, to → end of its minute.
     ts_from = date_from.ljust(14, '0')[:14] if date_from else ''
     ts_to = date_to.ljust(14, '9')[:14] if date_to else ''
 
@@ -6184,7 +6196,7 @@ def irrigation_dashboard(request):
     datetime_from_iso = _iso_dt(date_from)
     datetime_to_iso = _iso_dt(date_to)
     today_iso = timezone.localdate().isoformat()
-    data_span_dt = (_iso_dt(default_from), _iso_dt(default_to))
+    data_span_dt = (_iso_dt(span_from), _iso_dt(span_to))
 
     context = {
         'is_admin': is_admin,
@@ -6192,7 +6204,7 @@ def irrigation_dashboard(request):
         'selected_ccu': ccu_obj,
         'date_from': date_from,
         'date_to': date_to,
-        'data_span': (default_from, default_to),
+        'data_span': (span_from, span_to),
         'datetime_from_iso': datetime_from_iso,
         'datetime_to_iso': datetime_to_iso,
         'today_iso': today_iso,
