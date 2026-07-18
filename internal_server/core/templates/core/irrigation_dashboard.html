@@ -213,20 +213,12 @@
             </select>
         </div>
         <div class="field">
-            <label>开始日期</label>
-            <input type="date" id="dateFrom" value="{{ date_from_iso }}" max="{{ date_to_iso }}">
-            <select id="hourFrom" title="开始小时（留空=当天0点起）">
-                <option value="">全天</option>
-                {% for h in hours %}<option value="{{ h|stringformat:'02d' }}" {% if from_hour == h|stringformat:'02d' %}selected{% endif %}>{{ h|stringformat:'02d' }}时</option>{% endfor %}
-            </select>
+            <label>开始时间</label>
+            <input type="datetime-local" id="dateFrom" value="{{ datetime_from_iso }}" step="60">
         </div>
         <div class="field">
-            <label>结束日期</label>
-            <input type="date" id="dateTo" value="{{ date_to_iso }}" max="{{ today_iso }}">
-            <select id="hourTo" title="结束小时（留空=当天结束）">
-                <option value="">全天</option>
-                {% for h in hours %}<option value="{{ h|stringformat:'02d' }}" {% if to_hour == h|stringformat:'02d' %}selected{% endif %}>{{ h|stringformat:'02d' }}时</option>{% endfor %}
-            </select>
+            <label>结束时间</label>
+            <input type="datetime-local" id="dateTo" value="{{ datetime_to_iso }}" step="60">
         </div>
         <button onclick="applyFilters()">查询</button>
         <button onclick="resetFilters()" style="background:var(--color-surface-dark);">重置</button>
@@ -269,18 +261,12 @@ document.addEventListener('click', () => {
     document.getElementById('exportMenu').classList.remove('open');
 });
 
-// The date inputs are <input type="date"> (native picker, ISO YYYY-MM-DD), but the
-// backend expects the compact YYYYMMDD form used throughout the irrigation views.
-// The optional hour <select> appends HH so a filter can target a specific hour.
-function _compactDate(iso) { return (iso || '').replace(/-/g, ''); }
-function _fromParam() {
-    const d = _compactDate(document.getElementById('dateFrom').value);
-    return d ? d + (document.getElementById('hourFrom').value || '') : '';
-}
-function _toParam() {
-    const d = _compactDate(document.getElementById('dateTo').value);
-    return d ? d + (document.getElementById('hourTo').value || '') : '';
-}
+// <input type="datetime-local"> yields YYYY-MM-DDTHH:MM; strip non-digits to the
+// compact YYYYMMDDHHMM form the backend expects (it pads to YYYYMMDDHHmmSS, so
+// any precision from day down to minute works).
+function _compactDt(v) { return (v || '').replace(/[^0-9]/g, ''); }
+function _fromParam() { return _compactDt(document.getElementById('dateFrom').value); }
+function _toParam()   { return _compactDt(document.getElementById('dateTo').value); }
 
 function _exportParams() {
     const from = _fromParam();
@@ -323,10 +309,8 @@ function applyFilters() {
 
 function resetFilters() {
     document.getElementById('ccuSelect').value = '';
-    document.getElementById('dateFrom').value = '{{ data_span_iso.0 }}';
-    document.getElementById('dateTo').value = '{{ data_span_iso.1 }}';
-    document.getElementById('hourFrom').value = '';
-    document.getElementById('hourTo').value = '';
+    document.getElementById('dateFrom').value = '{{ data_span_dt.0 }}';
+    document.getElementById('dateTo').value = '{{ data_span_dt.1 }}';
     applyFilters();
 }
 

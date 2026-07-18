@@ -6079,8 +6079,8 @@ def irrigation_dashboard(request):
     span = MaxicomRuntime.objects.order_by('timestamp')
     first_ts = span.first().timestamp if span.exists() else ''
     last_ts = span.last().timestamp if span.exists() else ''
-    default_from = first_ts[:8] if len(first_ts) >= 8 else ''
-    default_to = last_ts[:8] if len(last_ts) >= 8 else ''
+    default_from = first_ts[:12] if len(first_ts) >= 12 else (first_ts[:8] if first_ts else '')
+    default_to = last_ts[:12] if len(last_ts) >= 12 else (last_ts[:8] if last_ts else '')
     date_from = request.GET.get('from', default_from).strip()
     date_to = request.GET.get('to', default_to).strip()
 
@@ -6171,18 +6171,20 @@ def irrigation_dashboard(request):
     # The CCU column is only useful when multiple CCUs are in view (no CCU picked)
     show_ccu_col = ccu_obj is None
 
-    # ISO (YYYY-MM-DD) forms for the native <input type="date"> picker, which the
-    # template binds directly. The compact YYYYMMDD form is kept for export URLs.
-    def _iso8(yyyymmdd):
-        s = (yyyymmdd or '').strip()
-        return s[:4] + '-' + s[4:6] + '-' + s[6:8] if len(s) == 8 else s
-    date_from_iso = _iso8(date_from[:8])
-    date_to_iso = _iso8(date_to[:8])
+    # ISO datetime forms for the native <input type="datetime-local"> picker
+    # (YYYY-MM-DDTHH:MM), which the template binds directly. The compact
+    # YYYYMMDDHHMM form is kept for export URLs / backend filtering.
+    def _iso_dt(s):
+        s = (s or '').strip()
+        if len(s) < 8:
+            return s
+        hh = s[8:10] if len(s) >= 10 else '00'
+        mm = s[10:12] if len(s) >= 12 else '00'
+        return s[:4] + '-' + s[4:6] + '-' + s[6:8] + 'T' + hh + ':' + mm
+    datetime_from_iso = _iso_dt(date_from)
+    datetime_to_iso = _iso_dt(date_to)
     today_iso = timezone.localdate().isoformat()
-    data_span_iso = (_iso8(default_from), _iso8(default_to))
-    # selected hour (if the filter included one: date_from may be YYYYMMDDHH)
-    from_hour = date_from[8:10] if len(date_from) >= 10 else ''
-    to_hour = date_to[8:10] if len(date_to) >= 10 else ''
+    data_span_dt = (_iso_dt(default_from), _iso_dt(default_to))
 
     context = {
         'is_admin': is_admin,
@@ -6191,13 +6193,10 @@ def irrigation_dashboard(request):
         'date_from': date_from,
         'date_to': date_to,
         'data_span': (default_from, default_to),
-        'date_from_iso': date_from_iso,
-        'date_to_iso': date_to_iso,
+        'datetime_from_iso': datetime_from_iso,
+        'datetime_to_iso': datetime_to_iso,
         'today_iso': today_iso,
-        'data_span_iso': data_span_iso,
-        'hours': list(range(24)),
-        'from_hour': from_hour,
-        'to_hour': to_hour,
+        'data_span_dt': data_span_dt,
         'controllers': all_controllers,
         'rows': rows,
         'col_totals': [col_totals[c] for c in all_controllers],
@@ -6488,8 +6487,8 @@ def irrigation_report_pdf(request):
     span = MaxicomRuntime.objects.order_by('timestamp')
     first_ts = span.first().timestamp if span.exists() else ''
     last_ts = span.last().timestamp if span.exists() else ''
-    default_from = first_ts[:8] if len(first_ts) >= 8 else ''
-    default_to = last_ts[:8] if len(last_ts) >= 8 else ''
+    default_from = first_ts[:12] if len(first_ts) >= 12 else (first_ts[:8] if first_ts else '')
+    default_to = last_ts[:12] if len(last_ts) >= 12 else (last_ts[:8] if last_ts else '')
     date_from = request.GET.get('from', default_from).strip()
     date_to = request.GET.get('to', default_to).strip()
     ts_from = date_from.ljust(14, '0')[:14] if date_from else ''
@@ -6627,8 +6626,8 @@ def irrigation_report_excel(request):
     span = MaxicomRuntime.objects.order_by('timestamp')
     first_ts = span.first().timestamp if span.exists() else ''
     last_ts = span.last().timestamp if span.exists() else ''
-    default_from = first_ts[:8] if len(first_ts) >= 8 else ''
-    default_to = last_ts[:8] if len(last_ts) >= 8 else ''
+    default_from = first_ts[:12] if len(first_ts) >= 12 else (first_ts[:8] if first_ts else '')
+    default_to = last_ts[:12] if len(last_ts) >= 12 else (last_ts[:8] if last_ts else '')
     date_from = request.GET.get('from', default_from).strip()
     date_to = request.GET.get('to', default_to).strip()
     ts_from = date_from.ljust(14, '0')[:14] if date_from else ''
