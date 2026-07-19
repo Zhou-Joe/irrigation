@@ -6011,17 +6011,59 @@ def _irrig_window(request):
     return date_from, date_to, ts_from, ts_to
 
 
-def _build_ccu_matrix(ccu, rt_qs, ctrl_map):
+def _irrig_data_span():
+    """Return (first_ts, last_ts) — the min/max MaxicomRuntime.timestamp.
+
+    Used by the dashboard (for the 数据范围 hint and the 重置 default) and by
+    the PDF/Excel exports (for their default window when no params given).
+    Implemented as a single Min/Max aggregate rather than separate
+    .exists()/.first()/.last() calls (3 queries → 1).
+    """
+    from core.models import MaxicomRuntime
+    from django.db.models import Min, Max
+    row = MaxicomRuntime.objects.aggregate(min_ts=Min('timestamp'), max_ts=Max('timestamp'))
+    return (row['min_ts'] or '', row['max_ts'] or '')
+
+
+def _mapped_station_ids():
+    """Return the set of station Patch IDs that at least one landscape Zone
+    claims via its ``maxicom_runtime`` field.
+
+    A station NOT in this set is an "orphan": its runtime is real hardware
+    data, but no Zone maps to it, so it cannot be attributed to any landscape
+    area. The dashboard / PDF / Excel flag orphan rows in red so reviewers
+    know those valves have no Zone backing.
+    """
+    from core.models import Zone
+    mapped = set()
+    for raw in Zone.objects.exclude(maxicom_runtime=[]).values_list('maxicom_runtime', flat=True):
+        if not raw:
+            continue
+        if isinstance(raw, list):
+            for sid in raw:
+                try:
+                    mapped.add(int(sid))
+                except (TypeError, ValueError):
+                    pass
+        # JSONField never returns non-list here, but be defensive.
+    return mapped
+
+
+def _build_ccu_matrix(ccu, rt_qs, ctrl_map, mapped_station_ids=None):
     """Build the 24 x N-satellite runtime matrix for one CCU.
 
     Returns dict: {controllers, rows, col_totals, grand_total, max_cell}
       - controllers: sorted list of satellite names (columns)
-      - rows: 24 entries, station '01'..'24', each with values[] + total
+      - rows: 24 entries, station '01'..'24', each with values[] + total,
+        plus ``orphan`` (True if no Zone maps to this row's station).
       - col_totals: list aligned to controllers
-    Used by both the dashboard view and the PDF export.
+    Used by both the dashboard view and the PDF/Excel exports.
     """
     from core.models import Patch
     from collections import defaultdict
+
+    if mapped_station_ids is None:
+        mapped_station_ids = set()
 
     ccu_sats = sorted(
         {c.name for c in ctrl_map.values() if c.site_id == ccu.id},
@@ -6031,11 +6073,15 @@ def _build_ccu_matrix(ccu, rt_qs, ctrl_map):
     ctrl_index = {c: i for i, c in enumerate(all_controllers)}
 
     # All valves under this CCU, ensure every (satellite, channel) exists.
-    sat_chan_minutes = defaultdict(dict)   # satellite_name -> {channel: minutes}
+    # sat_chan_minutes: satellite_name -> {channel: [minutes, station_patch_id]}
+    # Tracking the station_id per (sat, channel) lets us flag orphan rows.
+    sat_chan_minutes = defaultdict(dict)
+    sat_chan_station = defaultdict(dict)
     for st in Patch.objects.filter(parent=ccu, controller_channel__isnull=False):
         ctrl = ctrl_map.get(st.controller_number)
         sat_name = ctrl.name if ctrl else f'SAT {st.controller_number}'
         sat_chan_minutes[sat_name][st.controller_channel] = 0
+        sat_chan_station[sat_name][st.controller_channel] = st.id
 
     # Fill in actual runtime minutes within the date range.
     for rt in rt_qs:
@@ -6047,25 +6093,68 @@ def _build_ccu_matrix(ccu, rt_qs, ctrl_map):
         if sat_name in ctrl_index:
             sat_chan_minutes[sat_name][st.controller_channel] = \
                 sat_chan_minutes[sat_name].get(st.controller_channel, 0) + (rt.run_time or 0)
+            sat_chan_station[sat_name][st.controller_channel] = st.id
 
     rows = []
     col_totals = defaultdict(int)
     for ch in range(1, 25):
         vals = [0] * len(all_controllers)
+        orphan_vals = [False] * len(all_controllers)   # per-cell orphan flags
         for sat_name, idx in ctrl_index.items():
             v = sat_chan_minutes.get(sat_name, {}).get(ch, 0)
+            sid = sat_chan_station.get(sat_name, {}).get(ch)
             if v:
                 vals[idx] = v
                 col_totals[sat_name] += v
+            # A cell is orphan if its station Patch exists but no Zone claims
+            # it. Per-cell because one row spans many satellites, each with its
+            # own valve; flagging the whole row would smear one valve's status
+            # across siblings (e.g. CCU1 ch23 has SAT 1-1 orphan but SAT 1-4
+            # mapped via zone 1-4-23).
+            if sid is not None and sid not in mapped_station_ids:
+                orphan_vals[idx] = True
+        non_zero = [v for v in vals if v > 0]
+        non_zero_orphan = [orphan_vals[i] for i, v in enumerate(vals) if v > 0]
         rows.append({
             'station': f"{ch:02d}",
             'channel': ch,
             'site': ccu.code,
             'values': vals,
+            'orphan_values': orphan_vals,
+            # cell_views (value, orphan, alpha) is filled in after max_cell is
+            # known — see the second pass below.
             'total': sum(vals),
+            # Row is "fully orphan" only when every runtime cell is orphan —
+            # used for the side label hint. Individual cells are flagged
+            # separately via orphan_values.
+            'orphan': bool(non_zero) and all(non_zero_orphan),
         })
     grand_total = sum(col_totals.values())
-    max_cell = max((max(r['values'], default=0) for r in rows), default=0)
+    # max_cell drives the heatmap color scale. Exclude orphan valves so their
+    # (often large) un-attributable runtime doesn't wash out the scale for the
+    # valid cells — orphans get a flat light-red fill instead of heat shading.
+    max_cell = 0
+    for r in rows:
+        ovals = r.get('orphan_values') or []
+        for i, v in enumerate(r['values']):
+            if v > 0 and not (i < len(ovals) and ovals[i]):
+                if v > max_cell:
+                    max_cell = v
+    # Second pass: build cell_views tuples with a pre-computed alpha (v/max_cell
+    # rounded to 2 decimals). Templates can't do float division safely — Django's
+    # {% widthratio %} emits an integer, which would produce invalid CSS like
+    # rgba(82,183,136,50/100). Doing the math here keeps the template a clean
+    # interpolation. Tuple shape: (value, orphan, alpha_string).
+    for r in rows:
+        ovals = r.get('orphan_values') or []
+        cv = []
+        for i, v in enumerate(r['values']):
+            is_orphan = i < len(ovals) and ovals[i]
+            alpha = '0.00'
+            if max_cell and v > 0:
+                alpha = f'{min(v / max_cell, 1.0):.2f}'
+            cv.append((v, is_orphan, alpha))
+        r['cell_views'] = cv
     return {
         'controllers': all_controllers,
         'rows': rows,
@@ -6099,10 +6188,9 @@ def irrigation_dashboard(request):
         ccu_obj = next((c for c in ccus if str(c.id) == ccu_param), None)
 
     # full available data span — surfaced as the "数据范围" hint and restored by
-    # the 重置 button (zoom back out to everything).
-    span = MaxicomRuntime.objects.order_by('timestamp')
-    first_ts = span.first().timestamp if span.exists() else ''
-    last_ts = span.last().timestamp if span.exists() else ''
+    # the 重置 button (zoom back out to everything). Single Min/Max aggregate
+    # (P2 fix) instead of three .exists()/.first()/.last() round-trips.
+    first_ts, last_ts = _irrig_data_span()
     span_from = first_ts[:12] if len(first_ts) >= 12 else (first_ts[:8] if first_ts else '')
     span_to = last_ts[:12] if len(last_ts) >= 12 else (last_ts[:8] if last_ts else '')
 
@@ -6124,13 +6212,17 @@ def irrigation_dashboard(request):
     # satellite lookup: MaxicomController.mdb_index -> controller.
     ctrl_map = {c.mdb_index: c for c in MaxicomController.objects.exclude(name__icontains='CCU')}
 
+    # Station Patch IDs claimed by at least one landscape Zone. A station not
+    # in this set is an "orphan" (no Zone backing) and its row gets flagged.
+    mapped_station_ids = _mapped_station_ids()
+
     # For a specific CCU, build a true 24 x N-satellites matrix: rows are the
     # Maxicom station numbers 01-24 (always shown, even with no runtime), columns
     # are the CCU's satellites, and each cell is the runtime of the valve at that
     # (channel, satellite). For "all CCUs" the valves span many satellites so we
     # keep the per-valve-row layout (one row per valve that ran).
     if ccu_obj is not None:
-        m = _build_ccu_matrix(ccu_obj, rt_qs, ctrl_map)
+        m = _build_ccu_matrix(ccu_obj, rt_qs, ctrl_map, mapped_station_ids)
         all_controllers = m['controllers']
         rows = m['rows']
         col_totals = defaultdict(int, dict(zip(all_controllers, m['col_totals'])))
@@ -6139,28 +6231,37 @@ def irrigation_dashboard(request):
         total_stations_with_runtime = sum(1 for r in rows if r['total'] > 0)
 
     else:
-        # "All CCUs" — one row per valve that actually ran (across many satellites)
+        # "All CCUs" — one row per valve that actually ran (across many satellites).
+        # rt_qs is select_related('station','station__parent','site'), so we
+        # collect everything we need (minutes + station metadata) in a single
+        # pass — no second Patch.objects.filter round-trip (P3 fix).
         station_minutes = defaultdict(int)   # station_id -> total minutes
-        station_site = {}                    # station_id -> site code
+        station_meta = {}                    # station_id -> (channel, site_code, controller_number)
         for rt in rt_qs:
             st = rt.station
             if st is None:
                 continue
             station_minutes[st.id] += (rt.run_time or 0)
-            station_site[st.id] = rt.site.code if rt.site else ''
+            station_meta[st.id] = (
+                st.controller_channel,
+                rt.site.code if rt.site else '',
+                st.controller_number,
+            )
 
         station_rows = []
         sat_names_seen = set()
-        for st in Patch.objects.filter(id__in=station_minutes.keys()):
-            ctrl = ctrl_map.get(st.controller_number)
-            sat_name = ctrl.name if ctrl else f'SAT {st.controller_number}'
+        for sid, total in station_minutes.items():
+            channel, site_code, ctrl_num = station_meta.get(sid, (None, '', None))
+            ctrl = ctrl_map.get(ctrl_num) if ctrl_num is not None else None
+            sat_name = ctrl.name if ctrl else f'SAT {ctrl_num}'
             sat_names_seen.add(sat_name)
             station_rows.append({
-                'station': f"{st.controller_channel:02d}" if st.controller_channel is not None else "—",
-                'channel': st.controller_channel,
-                'site': station_site.get(st.id, ''),
+                'station': f"{channel:02d}" if channel is not None else "—",
+                'channel': channel,
+                'site': site_code,
                 'satellite': sat_name,
-                'total': station_minutes[st.id],
+                'total': total,
+                'orphan': sid not in mapped_station_ids,
             })
 
         all_controllers = sorted(sat_names_seen, key=_sat_sort_key)
@@ -6168,19 +6269,36 @@ def irrigation_dashboard(request):
         rows = []
         col_totals = defaultdict(int)
         station_rows.sort(key=lambda r: (r['site'], _sat_sort_key(r['satellite']), r['channel'] or 0))
+        # All-CCU rows are one-valve-per-row, so orphan is per-row here. We
+        # also build orphan_values (a single-element list) so the JS renderer
+        # — which reads orphan_values uniformly — flags these rows too (B2 fix).
         for meta in station_rows:
             vals = [0] * len(all_controllers)
             vals[ctrl_index[meta['satellite']]] = meta['total']
             meta['values'] = vals
+            meta['orphan_values'] = [meta['orphan']]
             rows.append(meta)
             col_totals[meta['satellite']] += meta['total']
         grand_total = sum(col_totals.values())
-        max_cell = max((max(r['values'], default=0) for r in rows), default=0)
+        # All-CCU rows are one-valve-per-row, so orphan is per-row here.
+        # Excluded so un-attributable runtime doesn't wash out the heat scale.
+        max_cell = max((max(r['values'], default=0) for r in rows if not r.get('orphan')), default=0)
+        # Build cell_views with pre-computed alpha (mirrors _build_ccu_matrix's
+        # second pass) for the server-rendered pivot partial.
+        for r in rows:
+            cv = []
+            for i, v in enumerate(r['values']):
+                is_orphan = i < len(r['orphan_values']) and r['orphan_values'][i]
+                alpha = '0.00'
+                if max_cell and v > 0:
+                    alpha = f'{min(v / max_cell, 1.0):.2f}'
+                cv.append((v, is_orphan, alpha))
+            r['cell_views'] = cv
         total_stations_with_runtime = len(rows)
 
-
-    # color scale max for heatmap shading
-    max_cell = max((max(r['values'], default=0) for r in rows), default=0)
+    # Note: single-CCU path inherits max_cell from _build_ccu_matrix, which
+    # already excludes orphan cells (per-cell, since one row spans multiple
+    # satellites). The all-CCU path computes max_cell just above.
 
     # user role (mirrors other dashboard views)
     is_admin = request.user.is_superuser or request.user.is_staff
@@ -6270,26 +6388,26 @@ def irrigation_zone_heatmap(request):
 
     # active_boundary_points is a Python @property (resolves dxf vs manual), so
     # we can't filter on it in the ORM — load all zones and filter in Python.
-    # Only zones with both a boundary AND a maxicom_runtime mapping are useful.
+    # Only zones with both a boundary AND a maxicom_runtime mapping are useful
+    # for the map. Zones WITH a mapping but NO boundary are surfaced separately
+    # as "unmapped" so reviewers know which zones need polygons drawn.
     all_zones = list(Zone.objects.select_related('land'))
     zones_out = []
+    unmapped_entries = []      # zones with runtime mapping but no boundary
     station_ids = set()
     for z in all_zones:
-        bp = z.active_boundary_points
-        if not bp or not z.maxicom_runtime:
-            continue
         try:
-            sids = [int(sid) for sid in z.maxicom_runtime if sid is not None]
+            sids = [int(sid) for sid in (z.maxicom_runtime or []) if sid is not None]
         except (TypeError, ValueError):
             continue
         if not sids:
             continue
         station_ids.update(sids)
-        zones_out.append({
-            'zone': z,
-            'bp': bp,
-            'station_ids': sids,
-        })
+        bp = z.active_boundary_points
+        if bp:
+            zones_out.append({'zone': z, 'bp': bp, 'station_ids': sids})
+        else:
+            unmapped_entries.append({'zone': z, 'station_ids': sids})
 
     # Single aggregated query: station_id -> sum of runtime minutes.
     rt_qs = MaxicomRuntime.objects.filter(station_id__in=station_ids)
@@ -6318,9 +6436,26 @@ def irrigation_zone_heatmap(request):
             'runtime_minutes': minutes,
         })
 
+    # Unmapped zones (runtime mapping exists, but no polygon to draw). Sorted
+    # by runtime desc so the heaviest-irrigated missing zones surface first —
+    # those are the most valuable to draw next.
+    unmapped_out = []
+    for entry in unmapped_entries:
+        z = entry['zone']
+        minutes = sum(minutes_by_station.get(sid, 0) for sid in entry['station_ids'])
+        unmapped_out.append({
+            'id': z.id,
+            'code': z.code,
+            'name': z.name or '',
+            'land_name': z.land.name if z.land else '',
+            'runtime_minutes': minutes,
+        })
+    unmapped_out.sort(key=lambda r: r['runtime_minutes'], reverse=True)
+
     return JsonResponse({
         'zones': out,
         'max': max_minutes,
+        'unmapped': unmapped_out,
         'date_from': _date_from,
         'date_to': _date_to,
     }, json_dumps_params={'ensure_ascii': False})
@@ -6584,9 +6719,8 @@ def irrigation_report_pdf(request):
         CJK = 'Helvetica'  # fallback (Chinese will be missing)
 
     # --- date range (same logic as the dashboard, defaulting to full span) ---
-    span = MaxicomRuntime.objects.order_by('timestamp')
-    first_ts = span.first().timestamp if span.exists() else ''
-    last_ts = span.last().timestamp if span.exists() else ''
+    # Single Min/Max aggregate (P2 fix) instead of three queries.
+    first_ts, last_ts = _irrig_data_span()
     default_from = first_ts[:12] if len(first_ts) >= 12 else (first_ts[:8] if first_ts else '')
     default_to = last_ts[:12] if len(last_ts) >= 12 else (last_ts[:8] if last_ts else '')
     date_from = request.GET.get('from', default_from).strip()
@@ -6604,6 +6738,10 @@ def irrigation_report_pdf(request):
     rt_by_site = defaultdict(list)
     for rt in rt_qs:
         rt_by_site[rt.site_id].append(rt)
+
+    # Station Patch IDs claimed by at least one Zone — rows whose station is
+    # NOT in this set are flagged red as orphan (no Zone backing = un-attributable).
+    mapped_station_ids = _mapped_station_ids()
 
     # --- PDF setup (landscape A4) ---
     buf = BytesIO()
@@ -6633,18 +6771,21 @@ def irrigation_report_pdf(request):
     elements = []
 
     for idx, ccu in enumerate(ccus):
-        m = _build_ccu_matrix(ccu, rt_by_site.get(ccu.id, []), ctrl_map)
+        m = _build_ccu_matrix(ccu, rt_by_site.get(ccu.id, []), ctrl_map, mapped_station_ids)
         controllers = m['controllers']
         rows = m['rows']
         col_totals = m['col_totals']
         grand_total = m['grand_total']
         max_cell = m['max_cell'] or 1
         ran = sum(1 for r in rows if r['total'] > 0)
+        orphan_count = sum(1 for r in rows if r.get('orphan') and r['total'] > 0)
 
         elements.append(Paragraph(
             f'{ccu.code} ({ccu.name}) — 站点 × 卫星控制器 运行时间（分钟）', title_style))
-        elements.append(Paragraph(
-            f'卫星控制器 {len(controllers)} 个，运行站点 {ran} 个，总运行 {grand_total} 分钟', sub_style))
+        subtitle = f'卫星控制器 {len(controllers)} 个，运行站点 {ran} 个，总运行 {grand_total} 分钟'
+        if orphan_count:
+            subtitle += f'  ·  其中 {orphan_count} 个运行站点无 Zone 对应（红色标记）'
+        elements.append(Paragraph(subtitle, sub_style))
         elements.append(Spacer(1, 2 * mm))
 
         # table data
@@ -6682,12 +6823,23 @@ def irrigation_report_pdf(request):
             ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#EDE8DC')),
             ('LINEABOVE', (0, -1), (-1, -1), 1, colors.HexColor('#1B4332')),
         ]
-        # heatmap shading on non-zero cells (interpolate light->dark green)
+        # heatmap shading on non-zero VALID cells (interpolate light->dark green)
         gl = (0.929, 0.969, 0.847)   # #EDF7F1
         gd = (0.106, 0.263, 0.196)   # #1B4332
+        orphan_fill = colors.HexColor('#FDECEA')     # light red cell wash
+        orphan_text = colors.HexColor('#C62828')     # red text on orphan cells
         for ri, r in enumerate(rows, start=1):
+            orphan_vals = r.get('orphan_values') or []
             for ci, v in enumerate(r['values'], start=1):
-                if v > 0:
+                is_orphan = (ci - 1) < len(orphan_vals) and orphan_vals[ci - 1]
+                if is_orphan:
+                    # Orphan valve: flat light-red fill, no heat shading (its
+                    # runtime is excluded from max_cell so valid cells keep
+                    # their full color range).
+                    ts.append(('BACKGROUND', (ci, ri), (ci, ri), orphan_fill))
+                    if v > 0:
+                        ts.append(('TEXTCOLOR', (ci, ri), (ci, ri), orphan_text))
+                elif v > 0:
                     t = min(v / max_cell, 1.0)
                     c = colors.Color(gl[0] + (gd[0] - gl[0]) * t,
                                      gl[1] + (gd[1] - gl[1]) * t,
@@ -6695,6 +6847,11 @@ def irrigation_report_pdf(request):
                     ts.append(('BACKGROUND', (ci, ri), (ci, ri), c))
                     if t > 0.6:
                         ts.append(('TEXTCOLOR', (ci, ri), (ci, ri), colors.white))
+        # Side label hint: when every runtime cell in a row is orphan, tint the
+        # 站# cell red as a row-level cue.
+        for ri, r in enumerate(rows, start=1):
+            if r.get('orphan'):
+                ts.append(('TEXTCOLOR', (0, ri), (0, ri), orphan_text))
         tbl.setStyle(TableStyle(ts))
         elements.append(tbl)
 
@@ -6723,9 +6880,8 @@ def irrigation_report_excel(request):
     from openpyxl.utils import get_column_letter
 
     # --- date range (same logic as the dashboard) ---
-    span = MaxicomRuntime.objects.order_by('timestamp')
-    first_ts = span.first().timestamp if span.exists() else ''
-    last_ts = span.last().timestamp if span.exists() else ''
+    # Single Min/Max aggregate (P2 fix) instead of three queries.
+    first_ts, last_ts = _irrig_data_span()
     default_from = first_ts[:12] if len(first_ts) >= 12 else (first_ts[:8] if first_ts else '')
     default_to = last_ts[:12] if len(last_ts) >= 12 else (last_ts[:8] if last_ts else '')
     date_from = request.GET.get('from', default_from).strip()
@@ -6743,6 +6899,10 @@ def irrigation_report_excel(request):
     for rt in rt_qs:
         rt_by_site[rt.site_id].append(rt)
 
+    # Station Patch IDs claimed by at least one Zone — rows whose station is
+    # NOT in this set are flagged red as orphan (no Zone backing = un-attributable).
+    mapped_station_ids = _mapped_station_ids()
+
     # --- styles ---
     header_fill = PatternFill('solid', fgColor='1B4332')
     header_font = Font(color='FFFFFF', bold=True, size=10)
@@ -6752,6 +6912,9 @@ def irrigation_report_excel(request):
     center = Alignment(horizontal='center', vertical='center')
     thin = Side(style='thin', color='D9D0C0')
     border = Border(left=thin, right=thin, top=thin, bottom=thin)
+    # Orphan row (station has no Zone backing): light-red wash + red label font.
+    orphan_fill = PatternFill('solid', fgColor='FDECEA')
+    orphan_font = Font(color='C62828', bold=True)
 
     wb = Workbook()
     # remove the default sheet (we add per-CCU sheets)
@@ -6760,12 +6923,13 @@ def irrigation_report_excel(request):
     ccus = _ccu_queryset()
 
     for idx, ccu in enumerate(ccus):
-        m = _build_ccu_matrix(ccu, rt_by_site.get(ccu.id, []), ctrl_map)
+        m = _build_ccu_matrix(ccu, rt_by_site.get(ccu.id, []), ctrl_map, mapped_station_ids)
         controllers = m['controllers']
         rows = m['rows']
         col_totals = m['col_totals']
         grand_total = m['grand_total']
         ran = sum(1 for r in rows if r['total'] > 0)
+        orphan_count = sum(1 for r in rows if r.get('orphan') and r['total'] > 0)
 
         # Excel sheet names: max 31 chars, no special chars
         sheet_name = f"{ccu.code}_{ccu.name}"[:31]
@@ -6775,8 +6939,10 @@ def irrigation_report_excel(request):
         ws.cell(row=1, column=1,
                 value=f"{ccu.code} ({ccu.name}) — 站点 × 卫星控制器 运行时间（分钟）  {date_from}~{date_to}")
         ws.cell(row=1, column=1).font = Font(bold=True, size=12, color='1B4332')
-        ws.cell(row=2, column=1,
-                value=f"卫星控制器 {len(controllers)} 个，运行站点 {ran} 个，总运行 {grand_total} 分钟")
+        subtitle = f"卫星控制器 {len(controllers)} 个，运行站点 {ran} 个，总运行 {grand_total} 分钟"
+        if orphan_count:
+            subtitle += f"  ·  其中 {orphan_count} 个运行站点无 Zone 对应（红色标记）"
+        ws.cell(row=2, column=1, value=subtitle)
         ws.cell(row=2, column=1).font = Font(size=9, color='6B7B6E')
 
         # matrix starts at row 4
@@ -6801,11 +6967,19 @@ def irrigation_report_excel(request):
             sc.fill = side_fill
             sc.alignment = center
             sc.border = border
+            orphan_vals = r.get('orphan_values') or []
             for ci, v in enumerate(r['values']):
+                is_orphan = ci < len(orphan_vals) and orphan_vals[ci]
                 vc = ws.cell(row=rownum, column=2 + ci, value=v if v else None)
                 vc.alignment = center
                 vc.border = border
-                if v:
+                if is_orphan:
+                    # Orphan valve: flat light-red fill regardless of value
+                    # (no border emphasis — fill alone signals "no Zone backing").
+                    vc.fill = orphan_fill
+                    if v:
+                        vc.font = orphan_font
+                elif v:
                     vc.font = Font(bold=True)
             tc = ws.cell(row=rownum, column=2 + n_sat, value=r['total'] if r['total'] else None)
             tc.fill = total_fill

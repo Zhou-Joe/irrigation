@@ -135,6 +135,21 @@
 .matrix-table tbody tr:hover td { background: rgba(45,106,79,0.06); }
 .matrix-table tbody tr:hover td.sticky-col,
 .matrix-table tbody tr:hover td.sticky-col-sub { background: rgba(45,106,79,0.12); }
+/* Orphan cells/rows — station Patch has no Zone backing (real hardware data
+   but no landscape area to attribute it to). Per-cell flagging: each valve in
+   a (channel × satellite) grid is independent, so only the orphan valve(s)
+   get a light-red fill (no heatmap shading — orphan data is excluded from the
+   heat scale so it doesn't wash out valid cells). A row's 站# label turns red
+   only when ALL its runtime cells are orphan. */
+.matrix-table td.orphan-cell {
+    background: #FDECEA !important;
+    font-weight: 700;
+}
+.matrix-table td.orphan-label {
+    color: #C62828;
+    font-weight: 700;
+    box-shadow: inset 2px 0 0 #E53935;
+}
 .legend {
     display: flex;
     align-items: center;
@@ -350,6 +365,98 @@
     margin-top: 4px;
     line-height: 1.4;
 }
+
+/* Unmapped zones panel (zones with runtime but no boundary polygon). */
+.irrig-unmapped-panel {
+    display: none;          /* shown only in heatmap mode */
+    background: var(--color-surface);
+    border: 1px solid var(--color-surface-dark);
+    border-radius: 8px;
+    overflow: hidden;
+}
+.irrig-fullscreen.heatmap-mode .irrig-unmapped-panel { display: block; }
+.irrig-unmapped-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    padding: 10px 12px;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--color-primary);
+    text-align: left;
+}
+.irrig-unmapped-header:hover { background: var(--color-surface-alt); }
+.irrig-unmapped-badge {
+    display: inline-block;
+    min-width: 22px;
+    padding: 1px 6px;
+    margin-left: 4px;
+    background: #C62828;
+    color: #fff;
+    border-radius: 10px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-align: center;
+}
+.irrig-unmapped-badge.zero { background: var(--color-surface-dark); color: var(--color-text-muted); }
+.irrig-unmapped-arrow { font-size: 0.72rem; color: var(--color-text-muted); }
+.irrig-unmapped-body {
+    display: none;
+    padding: 0 12px 10px;
+    border-top: 1px solid var(--color-surface-alt);
+}
+.irrig-unmapped-panel.open .irrig-unmapped-body { display: block; }
+.irrig-unmapped-note {
+    font-size: 0.74rem;
+    color: var(--color-text-muted);
+    margin: 8px 0 6px;
+    line-height: 1.4;
+}
+.irrig-unmapped-list {
+    max-height: 280px;
+    overflow-y: auto;
+}
+.irrig-unmapped-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 5px 8px;
+    font-size: 0.8rem;
+    border-bottom: 1px solid var(--color-surface-alt);
+    gap: 8px;
+}
+.irrig-unmapped-row:last-child { border-bottom: none; }
+.irrig-unmapped-row .irrig-unmapped-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.irrig-unmapped-row .irrig-unmapped-code {
+    font-weight: 600;
+    color: var(--color-primary);
+    margin-right: 6px;
+}
+.irrig-unmapped-row .irrig-unmapped-mins {
+    font-weight: 700;
+    color: #C62828;
+    white-space: nowrap;
+}
+.irrig-unmapped-row a.irrig-unmapped-draw {
+    margin-left: 6px;
+    padding: 2px 8px;
+    background: var(--color-primary);
+    color: #fff;
+    border-radius: 4px;
+    text-decoration: none;
+    font-size: 0.72rem;
+    font-weight: 600;
+    white-space: nowrap;
+}
+.irrig-unmapped-row a.irrig-unmapped-draw:hover { background: var(--color-primary-light); }
 
 /* ── Heatmap fullscreen layout ───────────────────────────────────────
    When the heatmap view is active, body.irrig-heatmap-active flips the
@@ -587,6 +694,22 @@
                 <div id="irrigHeatMaxLabel" class="irrig-legend-max">最大: 0 分钟</div>
                 <div class="irrig-legend-note">颜色 = 所选时间窗口内该区域的运行分钟数</div>
             </div>
+
+            <!-- Unmapped zones: have runtime data but no boundary polygon.
+                 Collapsed by default; click header to expand the ranked list. -->
+            <div class="irrig-unmapped-panel" id="irrigUnmappedPanel">
+                <button type="button" class="irrig-unmapped-header"
+                        onclick="toggleIrrigUnmapped()" aria-expanded="false">
+                    <span>⚠ 未绘制边界区域 <span id="irrigUnmappedCount" class="irrig-unmapped-badge">0</span></span>
+                    <span id="irrigUnmappedArrow" class="irrig-unmapped-arrow">▶</span>
+                </button>
+                <div class="irrig-unmapped-body" id="irrigUnmappedBody">
+                    <div class="irrig-unmapped-note">
+                        以下区域有运行数据但未绘制边界，热力图无法显示。点击「绘制」前往 dashboard 画边界。
+                    </div>
+                    <div id="irrigUnmappedList" class="irrig-unmapped-list"></div>
+                </div>
+            </div>
         </div>
     </aside>
 
@@ -627,7 +750,7 @@
 
 {% block extra_js %}
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="{% static 'js/irrig-heatmap.js' %}?v=7"></script>
+<script src="{% static 'js/irrig-heatmap.js' %}?v=9"></script>
 <script>
 function toggleExportMenu(event) {
     event.stopPropagation();
@@ -737,10 +860,22 @@ function renderPivot(d) {
 
     d.rows.forEach(r => {
         const fg = r.total > max * 0.6 ? '#fff' : 'var(--color-primary)';
-        html += `<tr><td class="sticky-col">${r.station}</td>`;
+        const orphanVals = r.orphan_values || [];
+        const labelCls = r.orphan ? 'sticky-col orphan-label' : 'sticky-col';
+        const labelTitle = r.orphan ? ' title="该行所有运行单元均无 Zone 对应（未映射到任何景观区域）"' : '';
+        const labelSuffix = r.orphan ? ' ⚠' : '';
+        html += `<tr><td class="${labelCls}"${labelTitle}>${r.station}${labelSuffix}</td>`;
         if (d.show_ccu_col) html += `<td class="sticky-col-sub">${r.site}</td>`;
-        r.values.forEach(v => {
-            if (v > 0) {
+        r.values.forEach((v, ci) => {
+            const isOrphan = ci < orphanVals.length && orphanVals[ci];
+            if (isOrphan) {
+                // Orphan valve: solid light-red fill regardless of value, no
+                // heatmap shading (orphan data is excluded from the heat scale
+                // so it doesn't wash out the valid cells).
+                const color = v > 0 ? '#C62828' : '#E53935';
+                const text = v > 0 ? v : '·';
+                html += `<td class="cell orphan-cell" title="该单元无 Zone 对应" style="color:${color}">${text}</td>`;
+            } else if (v > 0) {
                 const bg = heatColor(v, max);
                 const color = v > max * 0.6 ? '#fff' : 'var(--color-primary)';
                 html += `<td class="cell" style="background:${bg};color:${color}">${v}</td>`;
@@ -757,7 +892,8 @@ function renderPivot(d) {
     html += `<td>${d.grand_total}</td></tr></tfoot></table></div>`;
 
     html += '<div class="legend"><span>少</span><div class="scale"></div><span>多</span>'
-        + '<span style="margin-left:12px;">列 = 卫星控制器（如 AI 7-1），每站24通道；单元格 = 运行分钟数</span></div>';
+        + '<span style="margin-left:12px;">列 = 卫星控制器（如 AI 7-1），每站24通道；单元格 = 运行分钟数</span>'
+        + '<span style="margin-left:12px;color:#C62828;">⚠ 红色行 = 该站点无 Zone 对应（运行数据真实，但未映射到任何景观区域）</span></div>';
 
     document.getElementById('pivotContent').innerHTML = html;
 }

@@ -15,14 +15,21 @@
         <tbody>
             {% for row in rows %}
             <tr>
-                <td class="sticky-col">{{ row.station }}</td>
+                <td class="sticky-col {% if row.orphan %}orphan-label{% endif %}"
+                    {% if row.orphan %}title="该行所有运行单元均无 Zone 对应（未映射到任何景观区域）"{% endif %}>
+                    {{ row.station }}{% if row.orphan %} ⚠{% endif %}
+                </td>
                 {% if show_ccu_col %}<td class="sticky-col-sub">{{ row.site }}</td>{% endif %}
-                {% for v in row.values %}
-                    {% if v > 0 %}
-                    <td class="cell" style="background:{% if max_cell %}rgba(82,183,136,{% widthratio v max_cell 100 %}/100){% endif %}">{{ v }}</td>
-                    {% else %}
-                    <td class="cell-zero">·</td>
-                    {% endif %}
+                {% for cv in row.cell_views %}
+                    {% with v=cv.0 orphan=cv.1 alpha=cv.2 %}
+                        {% if orphan %}
+                            <td class="cell orphan-cell" title="该单元无 Zone 对应" style="color:{% if v > 0 %}#C62828{% else %}#E53935{% endif %}">{% if v > 0 %}{{ v }}{% else %}·{% endif %}</td>
+                        {% elif v > 0 %}
+                            <td class="cell" style="background:rgba(82,183,136,{{ alpha }})">{{ v }}</td>
+                        {% else %}
+                            <td class="cell-zero">·</td>
+                        {% endif %}
+                    {% endwith %}
                 {% endfor %}
                 <td class="row-total">{{ row.total }}</td>
             </tr>

@@ -406,10 +406,54 @@
             .then(function (d) {
                 heatData = d;
                 renderHeatZones();
+                renderUnmappedZones();
             })
             .catch(function (err) {
                 console.error('[irrig-heatmap] load failed', err);
             });
+    }
+
+    // ── Unmapped zones panel ──────────────────────────────────────────────
+    // Zones with a runtime mapping but no boundary polygon can't be drawn on
+    // the map. Surface them as a ranked list (by runtime desc) with a link to
+    // the dashboard so reviewers know exactly which zones need polygons drawn.
+    function renderUnmappedZones() {
+        var countEl = document.getElementById('irrigUnmappedCount');
+        var listEl = document.getElementById('irrigUnmappedList');
+        if (!countEl || !listEl) return;
+        var items = (heatData && heatData.unmapped) || [];
+        countEl.textContent = items.length;
+        countEl.classList.toggle('zero', items.length === 0);
+        if (!items.length) {
+            listEl.innerHTML = '<div class="irrig-unmapped-note" style="margin:8px 0;">所有映射区域均已绘制边界 ✓</div>';
+            return;
+        }
+        var html = '';
+        for (var i = 0; i < items.length; i++) {
+            var it = items[i];
+            // Deep-link into the zone's edit page on /settings/, which hosts
+            // the boundary drawing tools.
+            html += '<div class="irrig-unmapped-row">' +
+                '<div class="irrig-unmapped-label">' +
+                '<span class="irrig-unmapped-code">' + _esc(it.code) + '</span>' +
+                _esc(it.name || '') +
+                '</div>' +
+                '<span class="irrig-unmapped-mins">' + (it.runtime_minutes || 0) + ' 分</span>' +
+                '<a class="irrig-unmapped-draw" href="/settings/zone/' + it.id + '/" '
+                + 'target="_blank" rel="noopener" title="绘制 ' + _esc(it.code) + ' 边界">绘制</a>' +
+                '</div>';
+        }
+        listEl.innerHTML = html;
+    }
+
+    function toggleIrrigUnmapped() {
+        var panel = document.getElementById('irrigUnmappedPanel');
+        var arrow = document.getElementById('irrigUnmappedArrow');
+        var header = panel ? panel.querySelector('.irrig-unmapped-header') : null;
+        if (!panel) return;
+        var open = panel.classList.toggle('open');
+        if (arrow) arrow.textContent = open ? '▼' : '▶';
+        if (header) header.setAttribute('aria-expanded', open ? 'true' : 'false');
     }
 
     // ── View switching (chart ↔ heatmap) ──────────────────────────────────
@@ -468,6 +512,7 @@
     window.searchIrrigZone = searchZone;
     window.toggleIrrigSearch = toggleIrrigSearch;
     window.toggleIrrigSidebar = toggleIrrigSidebar;
+    window.toggleIrrigUnmapped = toggleIrrigUnmapped;
     window._irrigHeatmapInitialized = function () { return initialized; };
 
     // ── Boot ──────────────────────────────────────────────────────────────
