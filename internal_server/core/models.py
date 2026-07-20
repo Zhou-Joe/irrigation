@@ -1937,7 +1937,7 @@ class MaintenancePlan(models.Model):
     frequency_unit = models.CharField('频率单位', max_length=10, choices=FREQ_UNIT_CHOICES, default='weeks')
     # 派发控制
     start_date = models.DateField('启动日期', help_text='基准日期（上次执行日），首次到期日从此开始算')
-    lead_days = models.PositiveIntegerField('提前生成天数', default=1, help_text='提前N天生成工单')
+    lead_days = models.PositiveIntegerField('提前生成天数', default=28, help_text='提前N天生成工单')
     active = models.BooleanField('启用', default=True)
     last_generated_date = models.DateField('上次生成日期', null=True, blank=True)
     # 资产关联（三选一）
