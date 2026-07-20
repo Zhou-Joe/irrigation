@@ -11275,7 +11275,7 @@
     "fields": {
       "pm_number": "喷头水检重点区域-10-3-11",
       "job_plan": "喷头水检重点区域",
-      "frequency_value": 1,
+      "frequency_value": 2,
       "frequency_unit": "weeks",
       "start_date": "2026-07-12",
       "lead_days": 1,
@@ -11298,7 +11298,7 @@
     "fields": {
       "pm_number": "喷头水检重点区域-11-1-22",
       "job_plan": "喷头水检重点区域",
-      "frequency_value": 1,
+      "frequency_value": 2,
       "frequency_unit": "weeks",
       "start_date": "2026-07-12",
       "lead_days": 1,
@@ -11328,7 +11328,7 @@
     "fields": {
       "pm_number": "喷头水检重点区域-12-1-13",
       "job_plan": "喷头水检重点区域",
-      "frequency_value": 1,
+      "frequency_value": 2,
       "frequency_unit": "weeks",
       "start_date": "2026-07-12",
       "lead_days": 1,
@@ -11352,7 +11352,7 @@
     "fields": {
       "pm_number": "喷头水检重点区域-13-2-1",
       "job_plan": "喷头水检重点区域",
-      "frequency_value": 1,
+      "frequency_value": 2,
       "frequency_unit": "weeks",
       "start_date": "2026-07-12",
       "lead_days": 1,
@@ -11372,7 +11372,7 @@
     "fields": {
       "pm_number": "喷头水检重点区域-14-7-1",
       "job_plan": "喷头水检重点区域",
-      "frequency_value": 1,
+      "frequency_value": 2,
       "frequency_unit": "weeks",
       "start_date": "2026-07-12",
       "lead_days": 1,
@@ -11394,7 +11394,7 @@
     "fields": {
       "pm_number": "喷头水检重点区域-3-12-3",
       "job_plan": "喷头水检重点区域",
-      "frequency_value": 1,
+      "frequency_value": 2,
       "frequency_unit": "weeks",
       "start_date": "2026-07-12",
       "lead_days": 1,
@@ -11415,7 +11415,7 @@
     "fields": {
       "pm_number": "喷头水检重点区域-38-1-1",
       "job_plan": "喷头水检重点区域",
-      "frequency_value": 1,
+      "frequency_value": 2,
       "frequency_unit": "weeks",
       "start_date": "2026-07-12",
       "lead_days": 1,
@@ -11455,7 +11455,7 @@
     "fields": {
       "pm_number": "喷头水检重点区域-39-1-1",
       "job_plan": "喷头水检重点区域",
-      "frequency_value": 1,
+      "frequency_value": 2,
       "frequency_unit": "weeks",
       "start_date": "2026-07-12",
       "lead_days": 1,
@@ -11478,7 +11478,7 @@
     "fields": {
       "pm_number": "喷头水检重点区域-43-1-1",
       "job_plan": "喷头水检重点区域",
-      "frequency_value": 1,
+      "frequency_value": 2,
       "frequency_unit": "weeks",
       "start_date": "2026-07-12",
       "lead_days": 1,
@@ -11521,7 +11521,7 @@
     "fields": {
       "pm_number": "喷头水检重点区域-5-1-4",
       "job_plan": "喷头水检重点区域",
-      "frequency_value": 1,
+      "frequency_value": 2,
       "frequency_unit": "weeks",
       "start_date": "2026-07-12",
       "lead_days": 1,
@@ -11576,7 +11576,7 @@
     "fields": {
       "pm_number": "喷头水检重点区域-7-2-6",
       "job_plan": "喷头水检重点区域",
-      "frequency_value": 1,
+      "frequency_value": 2,
       "frequency_unit": "weeks",
       "start_date": "2026-07-12",
       "lead_days": 1,
@@ -11613,7 +11613,7 @@
     "fields": {
       "pm_number": "喷头水检重点区域-8-1-11",
       "job_plan": "喷头水检重点区域",
-      "frequency_value": 1,
+      "frequency_value": 2,
       "frequency_unit": "weeks",
       "start_date": "2026-07-12",
       "lead_days": 1,
@@ -11636,7 +11636,7 @@
     "fields": {
       "pm_number": "喷头水检重点区域-9-1-10",
       "job_plan": "喷头水检重点区域",
-      "frequency_value": 1,
+      "frequency_value": 2,
       "frequency_unit": "weeks",
       "start_date": "2026-07-12",
       "lead_days": 1,
