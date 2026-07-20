@@ -584,7 +584,7 @@ function _jpFormHtml(isEdit) {
     '</div>';
 }
 function _pmFormHtml(isEdit) {
-    var d = isEdit ? {} : { pm_number:'', job_plan:'', crew:'', frequency_value:1, frequency_unit:'weeks', lead_days:1, remark:'', patch:'', satellite:'', active:'1' };
+    var d = isEdit ? {} : { pm_number:'', job_plan:'', crew:'', frequency_value:1, frequency_unit:'weeks', lead_days:28, remark:'', patch:'', satellite:'', active:'1' };
     var jpOpts = '<option value="">— 选择 —</option>' + (PM_OPTS.job_plans || []).map(function(j){ return '<option value="'+j.id+'"'+(d.job_plan==j.id?' selected':'')+'>'+j.name+'</option>'; }).join('');
     var crewOpts = '<option value="">— 不指定 —</option>' + (PM_OPTS.crews || []).map(function(c){ return '<option value="'+c.id+'"'+(d.crew==c.id?' selected':'')+'>'+c.name+'</option>'; }).join('');
     var unitOpts = (PM_OPTS.freq_units || []).map(function(u){ return '<option value="'+u.value+'"'+(d.frequency_unit===u.value?' selected':'')+'>'+u.label+'</option>'; }).join('');
@@ -649,7 +649,7 @@ function submitPmModal() {
         if (val('f-pm-crew')) fd.append('crew', val('f-pm-crew'));
         fd.append('frequency_value', val('f-pm-freq-val') || '1');
         fd.append('frequency_unit', val('f-pm-freq-unit'));
-        fd.append('lead_days', val('f-pm-lead-days') || '1');
+        fd.append('lead_days', val('f-pm-lead-days') || '28');
         if (val('f-pm-start')) fd.append('start_date', val('f-pm-start'));
         fd.append('remark_template', val('f-pm-remark'));
         if (val('f-pm-patch')) fd.append('patch', val('f-pm-patch'));

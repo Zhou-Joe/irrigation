@@ -1921,7 +1921,7 @@ def pm_plan_new(request):
             frequency_value=int(request.POST.get('frequency_value', 1) or 1),
             frequency_unit=request.POST.get('frequency_unit', 'weeks'),
             start_date=_tz.localdate(),
-            lead_days=int(request.POST.get('lead_days', 1) or 1),
+            lead_days=int(request.POST.get('lead_days', 28) or 28),
             active=bool(request.POST.get('active')),
             remark_template=request.POST.get('remark_template', '').strip(),
             patch_id=request.POST.get('patch') or None,
@@ -1959,7 +1959,7 @@ def pm_plan_edit(request, plan_id):
         plan.crew_id = request.POST.get('crew') or None
         plan.frequency_value = int(request.POST.get('frequency_value', 1) or 1)
         plan.frequency_unit = request.POST.get('frequency_unit', 'weeks')
-        plan.lead_days = int(request.POST.get('lead_days', 1) or 1)
+        plan.lead_days = int(request.POST.get('lead_days', 28) or 28)
         plan.active = bool(request.POST.get('active'))
         plan.remark_template = request.POST.get('remark_template', '').strip()
         plan.patch_id = request.POST.get('patch') or None
