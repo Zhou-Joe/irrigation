@@ -17,6 +17,7 @@
     var filterPending = false;      // when true, only count is_pending_repair reports
     var currentGranularity = 'zone'; // 'zone' | 'name' | 'land' — map + table grouping
     var selectedWorkers = null;     // null = all workers; otherwise array of worker IDs
+    var userMaxOverride = null;     // user color-scale cap (null = auto, use data max)
 
     // ── Map init (center/bounds/tiles mirror the dashboard map) ────────────
     function initMap() {
@@ -99,26 +100,55 @@
         return rings;
     }
 
-    // ── Color gradient: yellow → orange → dark red (all metrics use this) ──
-    // Red stands out clearly against the green/brown satellite basemap, unlike
-    // the old green gradient which blended into the terrain.
+    // ── Color gradient: green → yellow → red (all metrics use this) ───────
+    // Wide hue separation (green ↔ yellow ↔ red) makes value differences
+    // obvious. The high-value red end stands out clearly against the satellite
+    // basemap; low-value greens may blend slightly but matter least.
     function heatColor(v, max) {
-        if (!v || !max) return 'rgba(180,40,30,0.10)';
+        if (!v || !max) return 'rgba(40,150,70,0.12)';
         var t = Math.min(v / max, 1);
         if (t < 0.5) {
-            // Light yellow (#FFF3B0) → orange (#E8590C) at the midpoint.
+            // Green (#28B45A) → yellow (#FAD228) at the midpoint.
             var k = t / 0.5;
-            var r = Math.round(255 + (232 - 255) * k);
-            var g = Math.round(243 + (89 - 243) * k);
-            var b = Math.round(176 + (12 - 176) * k);
+            var r = Math.round(40 + (250 - 40) * k);
+            var g = Math.round(180 + (210 - 180) * k);
+            var b = Math.round(90 + (40 - 90) * k);
             return 'rgb(' + r + ',' + g + ',' + b + ')';
         }
-        // Orange (#E8590C) → dark red (#8B0000) at max.
+        // Yellow (#FAD228) → red (#C81E1E) at max.
         var k2 = (t - 0.5) / 0.5;
-        var r2 = Math.round(232 + (139 - 232) * k2);
-        var g2 = Math.round(89 + (0 - 89) * k2);
-        var b2 = Math.round(12 + (0 - 12) * k2);
+        var r2 = Math.round(250 + (200 - 250) * k2);
+        var g2 = Math.round(210 + (30 - 210) * k2);
+        var b2 = Math.round(40 + (30 - 40) * k2);
         return 'rgb(' + r2 + ',' + g2 + ',' + b2 + ')';
+    }
+
+    // ── User color-scale cap (persisted) ─────────────────────────────────
+    // One outlier zone can pin `max` so high that every other zone paints
+    // green (v/max ≈ 0). A user-set cap clamps the high end to red so the
+    // mid-range spreads across yellow/green. Empty/0/negative = auto.
+    // parseFloat: hours metrics are fractional.
+    var USERMAX_KEY = 'statsHeatUserMax';
+    function effectiveMax(dataMax) {
+        return (userMaxOverride && userMaxOverride > 0) ? userMaxOverride : (dataMax || 0);
+    }
+    function loadUserMax() {
+        var v = parseFloat(localStorage.getItem(USERMAX_KEY) || '');
+        userMaxOverride = (!isNaN(v) && v > 0) ? v : null;
+    }
+    function initUserMaxControl() {
+        var input = document.getElementById('statsHeatUserMax');
+        if (!input || input.dataset.bound) return;
+        input.dataset.bound = '1';
+        loadUserMax();
+        if (userMaxOverride) input.value = userMaxOverride;
+        input.addEventListener('input', function () {
+            var v = parseFloat(input.value);
+            userMaxOverride = (!isNaN(v) && v > 0) ? v : null;
+            if (userMaxOverride) localStorage.setItem(USERMAX_KEY, String(v));
+            else localStorage.removeItem(USERMAX_KEY);
+            renderHeatZones();
+        });
     }
 
     // ── Filter helpers ─────────────────────────────────────────────────────
@@ -212,21 +242,23 @@
         var groups = groupZones(zones);
 
         // Recompute max over the grouped data so the color scale adapts.
-        var max = 0;
+        var dataMax = 0;
         for (var mi = 0; mi < groups.length; mi++) {
             var v = (groups[mi].scope[currentMetric] || 0);
-            if (v > max) max = v;
+            if (v > dataMax) dataMax = v;
         }
+        var max = effectiveMax(dataMax);
 
         for (var i = 0; i < groups.length; i++) {
             var g = groups[i];
             var val = g.scope[currentMetric] || 0;
             var color = heatColor(val, max);
             var opacity = val > 0 ? 0.75 : 0.06;
+            // No outline — matches the irrigation heatmap's clean polygon style
+            // (boundary lines cluttered the map and fought the green→red fill).
             var style = {
-                color: val > 0 ? '#cc0000' : 'rgba(255,255,255,0.3)',
-                weight: val > 0 ? 1.5 : 1,
-                opacity: 0.7,
+                color: 'transparent',
+                weight: 0,
                 fillColor: color,
                 fillOpacity: opacity,
             };
@@ -247,12 +279,14 @@
         if (maxLabel) {
             var isHoursMetric = currentMetric in { 'hours': 1, 'team_hours': 1, 'third_hours': 1 };
             var suffix = isHoursMetric ? 'h' : '';
-            maxLabel.textContent = '最大: ' + round1(max) + suffix;
+            maxLabel.textContent = (userMaxOverride && userMaxOverride > 0)
+                ? '上限 ' + round1(userMaxOverride) + suffix + ' (最大 ' + round1(dataMax) + suffix + ')'
+                : '最大: ' + round1(dataMax) + suffix;
         }
         // Update legend bar gradient (yellow → orange → dark red, same as zones).
         var bar = document.getElementById('statsHeatLegendBar');
         if (bar) {
-            bar.style.background = 'linear-gradient(to right, rgb(255,243,176), rgb(232,89,12), rgb(139,0,0))';
+            bar.style.background = 'linear-gradient(to right, rgb(40,180,90), rgb(250,210,40), rgb(200,30,30))';
         }
 
         renderHeatTable(zones, max);
@@ -662,6 +696,7 @@
 
     document.addEventListener('DOMContentLoaded', function () {
         initMap();
+        initUserMaxControl();
         loadZoneHeatmap();
     });
 })();

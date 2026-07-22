@@ -352,6 +352,9 @@ table.excel-preview tbody tr:hover td { background:#e8f5e9; }
             <div class="sh-legend-bar" id="statsHeatLegendBar"></div>
             <span>多</span>
             <span id="statsHeatMaxLabel" style="font-weight:600;color:#555;"></span>
+            <label style="display:inline-flex;align-items:center;gap:3px;font-size:0.8rem;color:#555;">
+                上限 <input type="number" id="statsHeatUserMax" min="0" step="any" placeholder="自动" style="width:54px;padding:2px 4px;border:1px solid #ccc;border-radius:4px;">
+            </label>
         </div>
 
         {# ════════ Report overlay panel (slides over map) ════════ #}
@@ -676,5 +679,5 @@ function applyZoneFilter(val) {
 </script>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="{% static 'js/stats-heatmap.js' %}?v=3"></script>
+<script src="{% static 'js/stats-heatmap.js' %}?v=6"></script>
 {% endblock %}

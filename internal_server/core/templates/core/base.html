@@ -256,13 +256,13 @@
                 <a href="{% url 'core:stats_dashboard' %}" class="{% block nav_stats %}{% endblock %}">数据报表</a>
                 <a href="{% url 'core:irrigation_dashboard' %}" class="{% block nav_irrigation %}{% endblock %}">灌溉数据</a>
                 <a href="{% url 'core:inventory_management' %}" class="{% block nav_inventory_mgmt %}{% endblock %}">库存管理</a>
+                <a href="{% url 'core:settings' %}" class="{% block nav_settings %}{% endblock %}">区域管理</a>
                 {% if is_admin %}
                 <a href="{% url 'core:project_management' %}" class="{% block nav_projects %}{% endblock %}">项目管理</a>
                 <a href="{% url 'core:user_management' %}" class="{% block nav_user_mgmt %}{% endblock %}">
                     用户管理{% if pending_registrations %}<span style="background:var(--color-warning);color:#fff;padding:1px 6px;border-radius:10px;font-size:0.7rem;margin-left:4px;">{{ pending_registrations }}</span>{% endif %}
                 </a>
                 <a href="{% url 'core:pm_management' %}" class="{% block nav_pm %}{% endblock %}">作业计划</a>
-                <a href="{% url 'core:settings' %}" class="{% block nav_settings %}{% endblock %}">区域管理</a>
                 {% endif %}
             </div>
         </div>
@@ -286,11 +286,11 @@
         <a href="{% url 'core:stats_dashboard' %}" class="{% block nav_stats_m %}{% endblock %}">数据报表</a>
         <a href="{% url 'core:irrigation_dashboard' %}" class="{% block nav_irrigation_m %}{% endblock %}">灌溉数据</a>
         <a href="{% url 'core:inventory_management' %}" class="{% block nav_inventory_mgmt_m %}{% endblock %}">库存管理</a>
+        <a href="{% url 'core:settings' %}" class="{% block nav_settings_m %}{% endblock %}">区域管理</a>
         {% if is_admin %}
         <a href="{% url 'core:project_management' %}" class="{% block nav_projects_m %}{% endblock %}">项目管理</a>
         <a href="{% url 'core:user_management' %}" class="{% block nav_user_mgmt_m %}{% endblock %}">用户管理</a>
         <a href="{% url 'core:pm_management' %}" class="{% block nav_pm_m %}{% endblock %}">作业计划</a>
-        <a href="{% url 'core:settings' %}" class="{% block nav_settings_m %}{% endblock %}">区域管理</a>
         {% endif %}
         <a href="{% url 'core:profile' %}">{{ user.get_full_name|default:user.username }}</a>
         <a href="{% url 'core:logout' %}">退出</a>
