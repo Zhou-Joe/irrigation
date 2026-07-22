@@ -4,6 +4,7 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib import messages
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.decorators import login_required
+from django.views.decorators.cache import never_cache
 from django.db.models import Count, Q, Avg, Sum, F
 from django.db.models.functions import Coalesce
 from django.views.decorators.http import require_POST
@@ -1789,22 +1790,10 @@ def zone_import_confirm(request):
 @login_required(login_url='core:login')
 def settings_page(request):
     """
-    Settings page to manage zones and system configuration - admin only.
+    Settings page to manage zones and system configuration.
+    Accessible to all authenticated users.
     """
-    from .models import ManagerProfile, Pipeline, Patch, Plant, Region
-
-    # Check admin permission
-    is_admin = request.user.is_superuser or request.user.is_staff
-    if not is_admin:
-        try:
-            ManagerProfile.objects.get(user=request.user, active=True)
-            is_admin = True
-        except ManagerProfile.DoesNotExist:
-            pass
-
-    if not is_admin:
-        messages.error(request, '无权限访问设置页面')
-        return redirect('core:dashboard')
+    from .models import Pipeline, Patch, Plant, Region
 
     zones = Zone.objects.all().order_by('code')
     pipelines = Pipeline.objects.all().order_by('code')
@@ -3218,23 +3207,9 @@ def zone_quick_draw(request):
 @login_required(login_url='core:login')
 @ensure_csrf_cookie
 def zone_quick_draw_mobile(request):
-    """Mobile-optimized quick zone boundary drawing page."""
-    from .models import ManagerProfile, Worker, MapStyleSettings
-
-    is_admin = request.user.is_superuser or request.user.is_staff
-    if not is_admin:
-        try:
-            ManagerProfile.objects.get(user=request.user, active=True)
-            is_admin = True
-        except ManagerProfile.DoesNotExist:
-            pass
-
-    if not is_admin:
-        try:
-            Worker.objects.get(user=request.user, active=True)
-        except Worker.DoesNotExist:
-            messages.error(request, '无权限访问此页面')
-            return redirect('core:dashboard')
+    """Mobile-optimized quick zone boundary drawing page.
+    Accessible to all authenticated users."""
+    from .models import MapStyleSettings
 
     if request.method == 'POST':
         action = request.POST.get('action', '')
@@ -5482,6 +5457,7 @@ def work_reports_excel(request):
     return resp
 
 
+@never_cache
 @login_required(login_url='core:login')
 def stats_dashboard(request):
     """维修日志 数据报表 — hours, counts, distribution across section / project /
@@ -6164,6 +6140,7 @@ def _build_ccu_matrix(ccu, rt_qs, ctrl_map, mapped_station_ids=None):
     }
 
 
+@never_cache
 @login_required(login_url='core:login')
 def irrigation_dashboard(request):
     """Maxicom irrigation runtime dashboard.

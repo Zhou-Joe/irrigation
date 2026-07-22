@@ -2,9 +2,10 @@
  *
  * Mirrors stats-heatmap.js (the 数据报表 heatmap) but is scoped to a single
  * metric: per-zone irrigation runtime minutes, sourced from
- * /api/irrigation/zone-heatmap/. The color scale uses the irrigation page's
- * existing green gradient (#EDF7F1 → #52B788 → #1B4332) so it visually matches
- * the pivot-table cells on the adjacent 表格视图 tab.
+ * /api/irrigation/zone-heatmap/. The color scale is green → yellow → red
+ * (wide hue separation so value differences are obvious at a glance), matching
+ * the 数据报表 (stats) heatmap and the pivot-table cells' green family on the
+ * adjacent 表格视图 tab.
  *
  * Boundary format helpers (toLL / extractRings) are copied verbatim from
  * stats-heatmap.js — they handle all three shapes the dashboard stores.
@@ -19,6 +20,7 @@
     var initialized = false;
     var polygonByZoneId = {};   // zone.id -> L.polygon (for search highlight)
     var highlightLayer = null;  // L.layerGroup holding the yellow outline of matches
+    var userMaxOverride = null;  // user color-scale cap (null = auto, use data max)
 
     // ── Boundary format helpers (verbatim from stats-heatmap.js) ───────────
     function toLL(p) {
@@ -55,26 +57,55 @@
         return rings;
     }
 
-    // ── Color gradient: yellow → orange → dark red ────────────────────────
-    // Matches the 数据报表 (stats) heatmap; red stands out clearly against
-    // the green/brown satellite basemap.
+    // ── Color gradient: green → yellow → red ─────────────────────────────
+    // Wide hue separation (green ↔ yellow ↔ red) makes value differences
+    // obvious. The high-value red end stands out clearly against the satellite
+    // basemap; low-value greens may blend slightly but matter least.
     function heatColor(v, max) {
-        if (!v || !max) return 'rgba(180,40,30,0.10)';
+        if (!v || !max) return 'rgba(40,150,70,0.12)';
         var t = Math.min(v / max, 1);
         if (t < 0.5) {
-            // Light yellow (#FFF3B0) → orange (#E8590C) at the midpoint.
+            // Green (#28B45A) → yellow (#FAD228) at the midpoint.
             var k = t / 0.5;
-            var r = Math.round(255 + (232 - 255) * k);
-            var g = Math.round(243 + (89 - 243) * k);
-            var b = Math.round(176 + (12 - 176) * k);
+            var r = Math.round(40 + (250 - 40) * k);
+            var g = Math.round(180 + (210 - 180) * k);
+            var b = Math.round(90 + (40 - 90) * k);
             return 'rgb(' + r + ',' + g + ',' + b + ')';
         }
-        // Orange (#E8590C) → dark red (#8B0000) at max.
+        // Yellow (#FAD228) → red (#C81E1E) at max.
         var k2 = (t - 0.5) / 0.5;
-        var r2 = Math.round(232 + (139 - 232) * k2);
-        var g2 = Math.round(89 + (0 - 89) * k2);
-        var b2 = Math.round(12 + (0 - 12) * k2);
+        var r2 = Math.round(250 + (200 - 250) * k2);
+        var g2 = Math.round(210 + (30 - 210) * k2);
+        var b2 = Math.round(40 + (30 - 40) * k2);
         return 'rgb(' + r2 + ',' + g2 + ',' + b2 + ')';
+    }
+
+    // ── User color-scale cap (persisted) ─────────────────────────────────
+    // One outlier zone can pin `max` so high that every other zone paints
+    // green (v/max ≈ 0). A user-set cap clamps the high end to red so the
+    // mid-range spreads across yellow/green. Empty/0/negative = auto.
+    var USERMAX_KEY = 'irrigHeatUserMax';
+    function effectiveMax(dataMax) {
+        return (userMaxOverride && userMaxOverride > 0) ? userMaxOverride : (dataMax || 0);
+    }
+    function loadUserMax() {
+        var v = parseInt(localStorage.getItem(USERMAX_KEY) || '', 10);
+        userMaxOverride = (v > 0) ? v : null;
+    }
+    function initUserMaxControl() {
+        var input = document.getElementById('irrigHeatUserMax');
+        if (!input || input.dataset.bound) return;
+        input.dataset.bound = '1';
+        loadUserMax();
+        if (userMaxOverride) input.value = userMaxOverride;
+        input.addEventListener('input', function () {
+            var v = parseInt(input.value, 10);
+            v = isNaN(v) ? 0 : v;
+            userMaxOverride = (v > 0) ? v : null;
+            if (userMaxOverride) localStorage.setItem(USERMAX_KEY, String(v));
+            else localStorage.removeItem(USERMAX_KEY);
+            renderHeatZones();
+        });
     }
 
     // ── Map init ──────────────────────────────────────────────────────────
@@ -120,7 +151,8 @@
         if (highlightLayer) { highlightLayer.clearLayers(); }
 
         var zones = heatData.zones;
-        var max = heatData.max || 0;
+        var dataMax = heatData.max || 0;
+        var max = effectiveMax(dataMax);
 
         for (var i = 0; i < zones.length; i++) {
             var z = zones[i];
@@ -153,10 +185,14 @@
 
         // Legend max label + gradient bar.
         var maxLabel = document.getElementById('irrigHeatMaxLabel');
-        if (maxLabel) maxLabel.textContent = '最大: ' + max + ' 分钟';
+        if (maxLabel) {
+            maxLabel.textContent = (userMaxOverride && userMaxOverride > 0)
+                ? '色阶上限: ' + userMaxOverride + ' 分钟 (最大值 ' + dataMax + ')'
+                : '最大: ' + dataMax + ' 分钟';
+        }
         var bar = document.getElementById('irrigHeatLegendBar');
         if (bar) {
-            bar.style.background = 'linear-gradient(to right, rgb(255,243,176), rgb(232,89,12), rgb(139,0,0))';
+            bar.style.background = 'linear-gradient(to right, rgb(40,180,90), rgb(250,210,40), rgb(200,30,30))';
         }
         renderWatermarks();
 
@@ -431,15 +467,14 @@
         var html = '';
         for (var i = 0; i < items.length; i++) {
             var it = items[i];
-            // Deep-link into the zone's edit page on /settings/, which hosts
-            // the boundary drawing tools.
+            // Open the mobile-friendly boundary drawing page.
             html += '<div class="irrig-unmapped-row">' +
                 '<div class="irrig-unmapped-label">' +
                 '<span class="irrig-unmapped-code">' + _esc(it.code) + '</span>' +
                 _esc(it.name || '') +
                 '</div>' +
                 '<span class="irrig-unmapped-mins">' + (it.runtime_minutes || 0) + ' 分</span>' +
-                '<a class="irrig-unmapped-draw" href="/settings/zone/' + it.id + '/" '
+                '<a class="irrig-unmapped-draw" href="/settings/zone/quick-draw/mobile" '
                 + 'target="_blank" rel="noopener" title="绘制 ' + _esc(it.code) + ' 边界">绘制</a>' +
                 '</div>';
         }
@@ -520,6 +555,7 @@
     // the map and load data on DOMContentLoaded. (In chart mode the map
     // initializes lazily when the user switches over.)
     document.addEventListener('DOMContentLoaded', function () {
+        initUserMaxControl();
         var root = document.getElementById('irrigFullscreen');
         if (root && root.classList.contains('heatmap-mode')) {
             initMap();

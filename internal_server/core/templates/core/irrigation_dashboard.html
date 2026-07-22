@@ -247,7 +247,7 @@
 .irrig-search-toggle:hover { background: #fff; }
 .irrig-search-box {
     position: absolute;
-    top: 12px;
+    top: 56px;              /* sit below the 🔍 toggle so it can't cover the input */
     left: 60px;
     z-index: 1000;
     display: flex;
@@ -351,7 +351,7 @@
     flex: 1;
     height: 12px;
     border-radius: 4px;
-    background: linear-gradient(to right, rgb(255,243,176), rgb(232,89,12), rgb(139,0,0));
+    background: linear-gradient(to right, rgb(40,180,90), rgb(250,210,40), rgb(200,30,30));
 }
 .irrig-legend-max {
     font-size: 0.82rem;
@@ -609,7 +609,9 @@
         bottom: 0;
         max-width: 85vw;
     }
-    .irrig-sidebar-expand { display: none !important; }
+    /* Keep the reopen handle available on mobile — the old `display:none
+       !important` here left a collapsed sidebar with no way to bring it back. */
+    .irrig-sidebar-expand.visible { display: flex !important; width: 40px; }
 }
 </style>
 {% endblock %}
@@ -692,6 +694,12 @@
                     <span>多</span>
                 </div>
                 <div id="irrigHeatMaxLabel" class="irrig-legend-max">最大: 0 分钟</div>
+                <div style="display:flex;align-items:center;gap:5px;margin-top:6px;font-size:0.78rem;color:var(--color-text-muted,#888);">
+                    <span>色阶上限</span>
+                    <input type="number" id="irrigHeatUserMax" min="0" step="1" placeholder="自动"
+                           style="width:60px;padding:2px 4px;border:1px solid #ccc;border-radius:4px;font-size:0.78rem;">
+                    <span>分钟</span>
+                </div>
                 <div class="irrig-legend-note">颜色 = 所选时间窗口内该区域的运行分钟数</div>
             </div>
 
@@ -750,7 +758,7 @@
 
 {% block extra_js %}
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="{% static 'js/irrig-heatmap.js' %}?v=9"></script>
+<script src="{% static 'js/irrig-heatmap.js' %}?v=12"></script>
 <script>
 function toggleExportMenu(event) {
     event.stopPropagation();
@@ -793,16 +801,11 @@ function applyFilters() {
     if (from) params.set('from', from);
     if (to) params.set('to', to);
 
-    // Refresh whichever view is currently visible.
-    const root = document.getElementById('irrigFullscreen');
-    const heatVisible = root && root.classList.contains('heatmap-mode');
-    if (heatVisible && typeof window.loadIrrigHeatmap === 'function') {
-        window.loadIrrigHeatmap();
-        return;
-    }
-
+    // Always refresh the chart data (pivot table + sidebar summary cards) so
+    // 运行站点数 / 控制器数 / 总运行分钟 follow the filter even when the heatmap
+    // is the active view. The page defaults to heatmap mode; the old code
+    // returned early there and left these stats stale until a mode switch.
     document.getElementById('pivotContent').innerHTML = '<div class="loading-overlay">加载中…</div>';
-
     fetch('{% url "core:irrigation_dashboard" %}?' + params.toString(), {
         headers: { 'X-Requested-With': 'XMLHttpRequest' }
     })
@@ -812,6 +815,13 @@ function applyFilters() {
         document.getElementById('pivotContent').innerHTML = '<div class="chart-empty">加载失败</div>';
         console.error(err);
     });
+
+    // If the heatmap is visible, refresh it too (separate API).
+    const root = document.getElementById('irrigFullscreen');
+    if (root && root.classList.contains('heatmap-mode') &&
+        typeof window.loadIrrigHeatmap === 'function') {
+        window.loadIrrigHeatmap();
+    }
 }
 
 function resetFilters() {
