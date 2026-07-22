@@ -1,10 +1,14 @@
-"""Auto-assign MaintenancePlans to Crews based on Land coverage.
+"""Auto-assign MaintenancePlans to Crews based on asset coverage.
 
-For each PM, resolves the zones it covers (directly via plan.zones, or
-indirectly via plan.satellite.zones / plan.patch.zones), collects those
-zones' Land FKs, and matches against Crew.lands. If exactly one crew is
-responsible for all the lands → that crew is assigned. If multiple crews
-or no crew → crew stays None (manager assigns manually).
+Matching priority per plan:
+  1. CCU/SAT-level PMs are first matched by CCU (Crew.patches). A CCU-level
+     PM maps to its plan.patch; a SAT-level PM maps to its satellite.patch.
+     If a crew is responsible for that CCU → assign it.
+  2. Otherwise (zone_group PMs, or no CCU match) fall back to Land coverage:
+     collect the zones' Land FKs and intersect Crew.lands. If one crew covers
+     all lands → assign it.
+
+If neither resolves, crew stays None (manager assigns manually).
 
 Usage:
     python manage.py assign_pm_crews
@@ -17,7 +21,7 @@ from core.models import MaintenancePlan, Crew
 
 
 class Command(BaseCommand):
-    help = 'Auto-assign PM plans to crews based on Land coverage.'
+    help = 'Auto-assign PM plans to crews (CCU-first, then Land coverage).'
 
     def add_arguments(self, parser):
         parser.add_argument('--dry-run', action='store_true', help='Preview without saving.')
@@ -27,17 +31,23 @@ class Command(BaseCommand):
 
         # Pre-build land → crew lookup (a land may be covered by multiple crews).
         land_crew_map = {}   # land_id → set of crew ids
-        for crew in Crew.objects.filter(active=True).prefetch_related('lands'):
+        # Pre-build ccu(patch) → crew lookup (a CCU may be covered by multiple crews).
+        patch_crew_map = {}  # patch_id → set of crew ids
+        for crew in (Crew.objects.filter(active=True)
+                     .prefetch_related('lands', 'patches')):
             for land in crew.lands.all():
                 land_crew_map.setdefault(land.id, set()).add(crew.id)
+            for patch in crew.patches.all():
+                patch_crew_map.setdefault(patch.id, set()).add(crew.id)
 
-        assigned = 0
-        skipped_multi = 0    # spans multiple crews
-        skipped_none = 0     # no crew covers the land(s)
+        assigned_ccu = 0     # assigned via CCU match
+        assigned_land = 0    # assigned via Land match
+        skipped_multi = 0    # spans multiple crews (land fallback)
+        skipped_none = 0     # no crew covers the asset
         already = 0          # already had a crew
 
         plans = (MaintenancePlan.objects.all()
-                 .select_related('job_plan', 'satellite', 'patch')
+                 .select_related('job_plan', 'satellite', 'satellite__patch', 'patch')
                  .prefetch_related('zones__land'))
 
         for plan in plans:
@@ -45,10 +55,34 @@ class Command(BaseCommand):
                 already += 1
                 continue
 
-            # Collect land ids for this PM's asset scope.
             asset_level = plan.job_plan.asset_level
-            land_ids = set()
 
+            # ── Step 1: CCU match (CCU/SAT-level PMs only) ──────────────
+            ccu_patch = None
+            if asset_level == 'ccu' and plan.patch_id:
+                ccu_patch = plan.patch
+            elif asset_level == 'sat' and plan.satellite_id:
+                ccu_patch = plan.satellite.patch  # may be None
+
+            if ccu_patch and ccu_patch.id in patch_crew_map:
+                common = patch_crew_map[ccu_patch.id]
+                crew_id = min(common)  # deterministic pick when ambiguous
+                if not dry:
+                    plan.crew_id = crew_id
+                    plan.save(update_fields=['crew'])
+                crew = Crew.objects.get(id=crew_id)
+                if len(common) > 1:
+                    crews = sorted(Crew.objects.filter(id__in=common).values_list('name', flat=True))
+                    self.stdout.write(self.style.WARNING(
+                        f'  {plan.pm_number} → {crew.name} '
+                        f'(by-CCU {ccu_patch.code}; ambiguous: {crews}, picked first)'))
+                else:
+                    self.stdout.write(f'  {plan.pm_number} → {crew.name} (by-CCU {ccu_patch.code})')
+                assigned_ccu += 1
+                continue
+
+            # ── Step 2: Land fallback (zone_group, or CCU/SAT w/o CCU crew) ─
+            land_ids = set()
             if asset_level == 'zone_group':
                 for z in plan.zones.all():
                     if z.land_id:
@@ -87,10 +121,10 @@ class Command(BaseCommand):
                 if len(common) > 1:
                     crews = sorted(Crew.objects.filter(id__in=common).values_list('name', flat=True))
                     self.stdout.write(self.style.WARNING(
-                        f'  {plan.pm_number} → {crew.name} (ambiguous: {crews}, picked first)'))
+                        f'  {plan.pm_number} → {crew.name} (by-Land; ambiguous: {crews}, picked first)'))
                 else:
-                    self.stdout.write(f'  {plan.pm_number} → {crew.name}')
-                assigned += 1
+                    self.stdout.write(f'  {plan.pm_number} → {crew.name} (by-Land)')
+                assigned_land += 1
             else:
                 # No single crew covers ALL lands — lands split across crews.
                 skipped_multi += 1
@@ -101,6 +135,8 @@ class Command(BaseCommand):
                 self.stdout.write(f'  {plan.pm_number} → SPLIT ({crews})')
 
         self.stdout.write(self.style.SUCCESS(
-            f'\nDone: {assigned} assigned, {already} already had crew, '
+            f'\nDone: {assigned_ccu + assigned_land} assigned '
+            f'({assigned_ccu} by-CCU, {assigned_land} by-Land), '
+            f'{already} already had crew, '
             f'{skipped_multi} ambiguous/split, {skipped_none} no matching crew.'
             + (' [DRY RUN]' if dry else '')))

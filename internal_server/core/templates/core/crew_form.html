@@ -61,6 +61,17 @@
                     {% endfor %}
                 </div>
             </div>
+            <div class="crew-field">
+                <label>负责CCU <span style="font-size:.72em;color:#aaa;">（CCU/SAT级PM优先按CCU匹配班组）</span></label>
+                <div class="cree-chk-group">
+                    {% for p in ccu_patches %}
+                    <label class="cree-chk">
+                        <input type="checkbox" name="patches" value="{{ p.id }}" {% if crew.patches.all %}{% if p.id in crew.patches.all %}checked{% endif %}{% endif %}>
+                        {{ p.code }} {{ p.name }}
+                    </label>
+                    {% endfor %}
+                </div>
+            </div>
             <div class="crew-actions">
                 <button type="submit" class="btn-sm btn-primary">保存</button>
                 <a href="{% url 'core:user_management' %}?tab=crews" class="btn-sm btn-secondary">取消</a>

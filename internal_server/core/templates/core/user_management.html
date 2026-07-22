@@ -650,7 +650,15 @@
               <td><strong>{{ c.name }}</strong></td>
               <td>{{ c.leader.full_name|default:'—' }}</td>
               <td>{{ c.members.count }} 人</td>
-              <td>{% for l in c.lands.all %}{{ l.name }}{% if not forloop.last %}、{% endif %}{% empty %}—{% endfor %}</td>
+              <td>
+                {% for l in c.lands.all %}{{ l.name }}{% if not forloop.last %}、{% endif %}{% endfor %}
+                {% if c.patches.all %}
+                  <div style="font-size:.78em;color:#475569;margin-top:2px;">
+                    CCU：{% for p in c.patches.all %}{{ p.code }}{% if not forloop.last %}、{% endif %}{% endfor %}
+                  </div>
+                {% endif %}
+                {% if not c.lands.all and not c.patches.all %}—{% endif %}
+              </td>
               <td>{% if c.active %}<span class="status-active">启用</span>{% else %}<span class="status-inactive">停用</span>{% endif %}</td>
               <td><a href="{% url 'core:crew_edit' c.id %}" class="btn btn-sm btn-secondary" target="_blank">编辑</a></td>
             </tr>
