@@ -1869,6 +1869,11 @@ class Crew(models.Model):
     )
     members = models.ManyToManyField(Worker, blank=True, related_name='crews', verbose_name='成员')
     lands = models.ManyToManyField(Land, blank=True, related_name='crews', verbose_name='负责区域(Land)')
+    patches = models.ManyToManyField(
+        Patch, blank=True, related_name='crews', verbose_name='负责CCU',
+        help_text='班组负责的CCU。CCU/SAT级PM优先按CCU匹配班组，Land级仍按负责区域匹配。',
+        limit_choices_to={'code__regex': r'^CCU[0-9]+$'},
+    )
     active = models.BooleanField('启用', default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

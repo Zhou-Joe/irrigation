@@ -1855,7 +1855,8 @@ def crew_new(request):
     if not is_admin(request.user):
         messages.error(request, '无权限执行此操作')
         return redirect('/user-management/?tab=crews')
-    from .models import Crew, Land
+    from .models import Crew, Land, Patch
+    ccu_patches = Patch.objects.filter(code__regex=r'^CCU[0-9]+$').order_by('code')
     if request.method == 'POST':
         crew = Crew.objects.create(
             name=request.POST.get('name', '').strip(),
@@ -1863,11 +1864,13 @@ def crew_new(request):
         )
         crew.members.set(request.POST.getlist('members'))
         crew.lands.set(request.POST.getlist('lands'))
+        crew.patches.set(request.POST.getlist('patches'))
         messages.success(request, f'班组「{crew.name}」已创建')
         return redirect('/user-management/?tab=crews')
     from .models import Worker
     context = {'crew': None, 'workers': Worker.objects.filter(active=True).order_by('full_name'),
-               'lands': Land.objects.order_by('order', 'name')}
+               'lands': Land.objects.order_by('order', 'name'),
+               'ccu_patches': ccu_patches}
     return render(request, 'core/crew_form.html', context)
 
 
@@ -1878,7 +1881,8 @@ def crew_edit(request, crew_id):
     if not is_admin(request.user):
         messages.error(request, '无权限执行此操作')
         return redirect('/user-management/?tab=crews')
-    from .models import Crew, Worker, Land
+    from .models import Crew, Worker, Land, Patch
+    ccu_patches = Patch.objects.filter(code__regex=r'^CCU[0-9]+$').order_by('code')
     crew = get_object_or_404(Crew, pk=crew_id)
     if request.method == 'POST':
         crew.name = request.POST.get('name', '').strip()
@@ -1886,10 +1890,12 @@ def crew_edit(request, crew_id):
         crew.save()
         crew.members.set(request.POST.getlist('members'))
         crew.lands.set(request.POST.getlist('lands'))
+        crew.patches.set(request.POST.getlist('patches'))
         messages.success(request, f'班组「{crew.name}」已更新')
         return redirect('/user-management/?tab=crews')
     context = {'crew': crew, 'workers': Worker.objects.filter(active=True).order_by('full_name'),
-               'lands': Land.objects.order_by('order', 'name')}
+               'lands': Land.objects.order_by('order', 'name'),
+               'ccu_patches': ccu_patches}
     return render(request, 'core/crew_form.html', context)
 
 
@@ -2156,6 +2162,71 @@ def pm_generate_now(request):
     return redirect('core:pm_management')
 
 
+@require_POST
+@login_required(login_url='core:login')
+def pm_assign_crews(request):
+    """Auto-match PM plans to crews (POST only — mutates plan.crew).
+
+    Runs the assign_pm_crews management command: CCU/SAT-level PMs match by
+    Crew.patches first, falling back to Land coverage for zone_group PMs.
+    """
+    from .role_utils import is_admin
+    if not is_admin(request.user):
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return JsonResponse({'success': False, 'message': '无权限'}, status=403)
+        messages.error(request, '无权限执行此操作')
+        return redirect('core:pm_management')
+    from django.core.management import call_command
+    from io import StringIO
+    out = StringIO()
+    try:
+        call_command('assign_pm_crews', stdout=out)
+        summary = out.getvalue().strip().splitlines()[-1] if out.getvalue().strip() else '完成'
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return JsonResponse({'success': True, 'message': f'班组分配完成：{summary}'})
+        messages.success(request, f'班组分配完成：{summary}')
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).exception('pm_assign_crews failed')
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return JsonResponse({'success': False, 'message': f'班组分配失败：{e}'})
+        messages.error(request, f'班组分配失败：{e}')
+    return redirect('core:pm_management')
+
+
+@require_POST
+@login_required(login_url='core:login')
+def pm_reset_overdue(request):
+    """Re-anchor past-due PM start_dates and clear stale GWOs (POST only).
+
+    Runs the reset_pm_overdue management command with --apply: for each active
+    plan whose start_date is in the past, deletes its uncompleted work orders
+    and re-anchors start_date to the next future occurrence.
+    """
+    from .role_utils import is_admin
+    if not is_admin(request.user):
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return JsonResponse({'success': False, 'message': '无权限'}, status=403)
+        messages.error(request, '无权限执行此操作')
+        return redirect('core:pm_management')
+    from django.core.management import call_command
+    from io import StringIO
+    out = StringIO()
+    try:
+        call_command('reset_pm_overdue', '--apply', stdout=out)
+        summary = out.getvalue().strip().splitlines()[-1] if out.getvalue().strip() else '完成'
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return JsonResponse({'success': True, 'message': f'重置完成：{summary}'})
+        messages.success(request, f'重置完成：{summary}')
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).exception('pm_reset_overdue failed')
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return JsonResponse({'success': False, 'message': f'重置失败：{e}'})
+        messages.error(request, f'重置失败：{e}')
+    return redirect('core:pm_management')
+
+
 @login_required(login_url='core:login')
 def pm_plan_orders(request, plan_id):
     """AJAX: return a PM plan's generated work orders as JSON (lazy-load)."""
@@ -2274,6 +2345,113 @@ def pm_gwo_skip(request, gwo_id):
     return JsonResponse({'success': True, 'message': f'已跳过 {gwo.plan.pm_number}'})
 
 
+@require_POST
+@login_required(login_url='core:login')
+def pm_gwo_skip_all(request):
+    """Mark ALL overdue GeneratedWorkOrders as skipped (one-click bulk skip)."""
+    from core.role_utils import is_admin
+    from .models import GeneratedWorkOrder
+    if not is_admin(request.user):
+        return JsonResponse({'success': False, 'message': '无权限'}, status=403)
+    count = GeneratedWorkOrder.objects.filter(status='overdue').update(status='skipped')
+    return JsonResponse({'success': True, 'message': f'已跳过 {count} 张逾期工单'})
+
+
+@login_required(login_url='core:login')
+def pm_completion_chart(request):
+    """AJAX: overdue work-order counts bucketed by scheduled_date.
+
+    Overdue = any GWO whose status is NOT 'completed' (so dispatched/overdue/
+    pending/skipped all count — a skipped ticket was overdue before it was
+    skipped). Buckets are built in pure Python (no DB Trunc) for SQLite
+    compatibility, with zero-filled continuous buckets across the range.
+
+    Query params:
+        range: 1m | 3m | 6m | 1y | all  (default 6m)
+        granularity: day | week | month | auto (default auto)
+            auto picks day (≤2m), week (2-6m), month (>6m) from the range.
+    Returns: {labels, counts, granularity, total}
+    """
+    from core.role_utils import is_admin
+    from .models import GeneratedWorkOrder
+    from django.utils import timezone
+    from datetime import timedelta
+    from collections import defaultdict
+
+    if not is_admin(request.user):
+        return JsonResponse({'success': False, 'message': '无权限'}, status=403)
+
+    today = timezone.localdate()
+    rng = request.GET.get('range', '6m')
+    granularity = request.GET.get('granularity', 'auto')
+
+    # ── Resolve the date window ─────────────────────────────────────────
+    range_days = {'1m': 30, '3m': 90, '6m': 182, '1y': 365}.get(rng, 182)
+    if rng == 'all':
+        earliest = (GeneratedWorkOrder.objects
+                    .order_by('scheduled_date').values_list('scheduled_date', flat=True).first())
+        start = earliest or today
+    else:
+        start = today - timedelta(days=range_days)
+
+    # ── Resolve granularity (auto picks from range) ─────────────────────
+    if granularity == 'auto':
+        span = (today - start).days
+        granularity = 'day' if span <= 60 else ('week' if span <= 182 else 'month')
+
+    # ── Build the continuous bucket sequence (zero-filled) ──────────────
+    def _bucket_key(d):
+        if granularity == 'day':
+            return d
+        if granularity == 'week':
+            # Monday of that week.
+            return d - timedelta(days=d.weekday())
+        # month: collapse to first-of-month.
+        return d.replace(day=1)
+
+    def _bucket_label(d):
+        if granularity == 'day':
+            return f'{d.month}/{d.day}'
+        if granularity == 'week':
+            return f'{d.month}/{d.day}'
+        return f'{d.year}-{d.month}'
+
+    buckets = []
+    cur = _bucket_key(start)
+    end_key = _bucket_key(today)
+    # Cap iterations to avoid runaway loops on bad input.
+    for _ in range(4000):
+        buckets.append(cur)
+        if cur == end_key:
+            break
+        if granularity == 'day':
+            cur = cur + timedelta(days=1)
+        elif granularity == 'week':
+            cur = cur + timedelta(weeks=1)
+        else:
+            # Next month.
+            nm = cur.month % 12 + 1
+            ny = cur.year + (1 if cur.month == 12 else 0)
+            cur = cur.replace(year=ny, month=nm, day=1)
+
+    counts = defaultdict(int)
+    qs = (GeneratedWorkOrder.objects
+          .filter(scheduled_date__gte=start, scheduled_date__lte=today)
+          .exclude(status='completed')
+          .values_list('scheduled_date', flat=True))
+    for d in qs:
+        counts[_bucket_key(d)] += 1
+
+    labels = [_bucket_label(b) for b in buckets]
+    values = [counts.get(b, 0) for b in buckets]
+    return JsonResponse({
+        'labels': labels,
+        'counts': values,
+        'granularity': granularity,
+        'total': sum(values),
+    })
+
+
 @login_required(login_url='core:login')
 def pm_management(request):
     """作业计划管理页 — JobPlan模板 + PM维护计划。"""
@@ -2297,6 +2475,14 @@ def pm_management(request):
                 # Order by job_plan FIRST so {% regroup %} in the template produces
                 # one group per JobPlan (regroup only merges consecutive runs).
                 .order_by('job_plan__name', 'pm_number'))
+
+    # Annotate each plan with its real next due date (first rrule occurrence on/
+    # after today) so the "下次到期" column shows the true schedule, not the fixed
+    # start_date anchor. Materialize to a list since we attach a runtime attr.
+    _today = timezone.localdate()
+    pm_plans = list(pm_plans)
+    for _p in pm_plans:
+        _p.next_due_date = _compute_next_due(_p, _today)
 
     # 资产视图：把每个 PM 的关联资产按 CCU → 资产条目 聚合，让经理看清
     # "哪些资产被哪些 PM 覆盖"。三种 asset_level 各自解析：
@@ -2400,6 +2586,29 @@ def pm_management(request):
         'pending_extensions': ext_list,
     }
     return render(request, 'core/pm_management.html', context)
+
+
+def _compute_next_due(plan, today):
+    """First rrule occurrence on/after today for this plan.
+
+    Mirrors the engine's (generate_pm_workorders) scheduling math so the UI's
+    "下次到期" column shows the real next due date, not the fixed start_date
+    anchor. Returns None if frequency_unit is unknown or no future occurrence
+    exists within 730 days.
+    """
+    from datetime import timedelta
+    from dateutil.rrule import rrule, DAILY, WEEKLY, MONTHLY
+    freq_map = {'days': DAILY, 'weeks': WEEKLY, 'months': MONTHLY}
+    freq = freq_map.get(plan.frequency_unit)
+    if not freq or not plan.start_date:
+        return None
+    occs = list(rrule(freq, interval=plan.frequency_value,
+                      dtstart=plan.start_date, until=today + timedelta(days=730)))
+    for o in occs:
+        d = o.date() if hasattr(o, 'date') else o
+        if d >= today:
+            return d
+    return None
 
 
 def _build_pm_asset_rows(pm_plans):
@@ -4901,7 +5110,7 @@ def user_management(request):
 
     # Crew data for the 班组管理 tab (manager-visible under 用户管理).
     from core.models import Crew
-    crews = Crew.objects.all().prefetch_related('leader', 'members', 'lands').order_by('name')
+    crews = Crew.objects.all().prefetch_related('leader', 'members', 'lands', 'patches').order_by('name')
 
     context = {
         'active_tab': active_tab,

@@ -47,6 +47,10 @@
 </style>
 {% endblock %}
 
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+{% endblock %}
+
 {% block content %}
 <div class="settings-container">
     <div class="settings-header">
@@ -151,6 +155,8 @@
                     <h2>PM维护计划 <span style="color:#aaa;font-size:.8em;">({{ pm_plans|length }})</span></h2>
                     <div class="header-actions">
                         <button class="btn btn-sm btn-secondary" onclick="pmGenerateNow(event)">立即生成</button>
+                        <button class="btn btn-sm btn-secondary" onclick="pmAssignCrews(event)">自动分配班组</button>
+                        <button class="btn btn-sm btn-secondary" onclick="pmResetOverdue(event)">重置安排</button>
                         <button class="btn btn-sm btn-primary" onclick="openPmModal('pm-new')">+ 新建</button>
                     </div>
                 </div>
@@ -202,7 +208,7 @@
                                         {% else %}—{% endif %}
                                     </td>
                                     <td>{{ p.crew.name|default:'—' }}</td>
-                                    <td>{{ p.start_date|date:"Y-m-d" }}</td>
+                                    <td>{% if p.next_due_date %}{{ p.next_due_date|date:"Y-m-d" }}{% else %}<span style="color:#aaa;">{{ p.start_date|date:"Y-m-d" }}</span>{% endif %}</td>
                                     <td>{% if p.active %}<span style="color:#40916C;">启用</span>{% else %}<span style="color:#aaa;">停用</span>{% endif %}</td>
                                     <td>
                                         {% with orders=p.generated_orders.all %}
@@ -353,7 +359,12 @@
 
             <!-- C. 逾期工单清单 -->
             <div class="settings-card">
-                <div class="settings-card-header" style="cursor:default;"><h2>逾期工单 {% if overdue_orders %}({{ overdue_orders|length }}){% endif %}</h2></div>
+                <div class="settings-card-header" style="cursor:default;">
+                    <h2>逾期工单 {% if overdue_orders %}({{ overdue_orders|length }}){% endif %}</h2>
+                    {% if overdue_orders %}
+                    <div class="header-actions"><button class="btn btn-sm btn-secondary" onclick="skipAllOverdue(event)">一键全部跳过</button></div>
+                    {% endif %}
+                </div>
                 <div class="settings-card-body" style="max-height:none;">
                     {% if overdue_orders %}
                     <table class="card-table">
@@ -374,6 +385,31 @@
                     {% else %}
                     <div class="card-empty"><p style="color:#40916C;">✓ 暂无逾期工单</p></div>
                     {% endif %}
+                </div>
+            </div>
+
+            <!-- D. 逾期工单趋势图 -->
+            <div class="settings-card">
+                <div class="settings-card-header" style="cursor:default;">
+                    <h2>逾期工单趋势</h2>
+                    <div class="header-actions" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+                        <select id="overdueChartRange" class="pm-select" style="padding:4px 8px;font-size:.82rem;" onchange="onOverdueChartRangeChange()">
+                            <option value="1m">近1月</option>
+                            <option value="3m">近3月</option>
+                            <option value="6m" selected>近6月</option>
+                            <option value="1y">近1年</option>
+                            <option value="all">全部</option>
+                        </select>
+                        <div class="pm-subtabs" id="overdueChartGran" style="gap:2px;">
+                            <button type="button" class="pm-subtab" data-gran="day" onclick="setOverdueChartGran('day')">天</button>
+                            <button type="button" class="pm-subtab" data-gran="week" onclick="setOverdueChartGran('week')">周</button>
+                            <button type="button" class="pm-subtab" data-gran="month" onclick="setOverdueChartGran('month')">月</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="settings-card-body" style="max-height:none;">
+                    <canvas id="overdueTrendChart" style="max-height:320px;"></canvas>
+                    <p id="overdueChartEmpty" style="display:none;text-align:center;color:#aaa;padding:24px 0;">暂无数据</p>
                 </div>
             </div>
         </div>
@@ -412,12 +448,102 @@ window.pmSwitchTab = function(tab) {
         panel.classList.toggle('active', panel.id === map[tab]);
     });
     try { history.replaceState(null, '', '?tab=' + tab); } catch (e) {}
+    // Lazy-load the overdue trend chart when the completion tab becomes active.
+    if (tab === 'completion') { loadOverdueChart(); }
 };
 // Restore tab from ?tab= on load.
 (function() {
     var m = /(?:\?|&)tab=([a-z]+)/i.exec(location.search);
     if (m && (m[1] === 'jobplans' || m[1] === 'plans' || m[1] === 'assets' || m[1] === 'completion')) { pmSwitchTab(m[1]); }
+    // If landing directly on completion (no ?tab=, default may not fire above),
+    // still try to load the chart once.
+    if (document.querySelector('#tabCompletion.active')) { loadOverdueChart(); }
 })();
+
+// ── Overdue trend chart ────────────────────────────────────────────────
+// State: overdueChart = Chart.js instance; overdueChartGranManual = whether
+// the user has explicitly picked a granularity (if not, granularity=auto and
+// the backend chooses based on range).
+var overdueChart = null;
+var overdueChartGranManual = false;
+
+function onOverdueChartRangeChange() {
+    // Range changed. If the user hasn't manually picked a granularity, send
+    // 'auto' so the backend re-selects one fitting the new range.
+    loadOverdueChart();
+}
+
+function setOverdueChartGran(gran) {
+    overdueChartGranManual = true;
+    loadOverdueChart(gran);
+}
+
+function loadOverdueChart(forceGran) {
+    var canvas = document.getElementById('overdueTrendChart');
+    if (!canvas || typeof Chart === 'undefined') return;
+    var rangeEl = document.getElementById('overdueChartRange');
+    var range = rangeEl ? rangeEl.value : '6m';
+    var gran = forceGran || (overdueChartGranManual ? _currentManualGran() : 'auto');
+    var url = '/settings/pm/completion-chart/?range=' + encodeURIComponent(range)
+            + '&granularity=' + encodeURIComponent(gran);
+    fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            _highlightGranButtons(d.granularity);
+            var empty = document.getElementById('overdueChartEmpty');
+            var hasData = d.counts && d.counts.some(function(c) { return c > 0; });
+            if (empty) empty.style.display = hasData ? 'none' : 'block';
+            canvas.style.display = hasData ? '' : 'none';
+            if (overdueChart) { overdueChart.destroy(); overdueChart = null; }
+            if (!hasData) return;
+            overdueChart = new Chart(canvas.getContext('2d'), {
+                type: 'bar',
+                data: {
+                    labels: d.labels,
+                    datasets: [{
+                        label: '逾期工单数',
+                        data: d.counts,
+                        backgroundColor: 'rgba(220, 38, 38, 0.65)',
+                        borderColor: 'rgba(220, 38, 38, 1)',
+                        borderWidth: 1,
+                        maxBarThickness: 28,
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                title: function(items) { return items[0].label; },
+                                label: function(item) { return item.parsed.y + ' 张逾期'; }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: { grid: { display: false }, ticks: { maxRotation: 45, autoSkip: true } },
+                        y: { beginAtZero: true, ticks: { precision: 0 } }
+                    }
+                }
+            });
+        })
+        .catch(function() { /* network error — leave existing chart */ });
+}
+
+function _currentManualGran() {
+    var active = document.querySelector('#overdueChartGran .pm-subtab.active');
+    return active ? active.getAttribute('data-gran') : 'week';
+}
+
+function _highlightGranButtons(gran) {
+    // Only auto-highlight when the backend resolved the granularity (auto mode);
+    // if the user picked manually we keep their button highlighted.
+    document.querySelectorAll('#overdueChartGran .pm-subtab').forEach(function(btn) {
+        btn.classList.toggle('active', btn.getAttribute('data-gran') === gran);
+    });
+}
+// ── end overdue trend chart ────────────────────────────────────────────
 
 // JobPlan search filter
 (function() {
@@ -742,6 +868,73 @@ function _updatePmRow(plan, isEdit) {
     }
 }
 
+// Refresh just the active tab's content via AJAX, preserving the current tab
+// and sub-tab selection (so the user doesn't get bounced back to tab 1 after
+// running generate/assign/reset). Fetches the current page with ?tab=, lifts
+// the matching .app-tab-content out of the response, and swaps it in place.
+function pmReloadActiveTab() {
+    var activeBtn = document.querySelector('.pm-tabs .app-tab.active');
+    var tab = activeBtn ? activeBtn.getAttribute('data-tab') : 'plans';
+    // Remember the active PM sub-tab (by JobPlan) so we can restore it.
+    var activeSub = document.querySelector('.pm-subtab.active');
+    var activeJp = activeSub ? activeSub.getAttribute('data-jpid') : null;
+
+    fetch('/pm/?tab=' + encodeURIComponent(tab), { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+        .then(function(r) { return r.text(); })
+        .then(function(html) {
+            var doc = new DOMParser().parseFromString(html, 'text/html');
+            var tabIdMap = {jobplans: 'tabJobplans', plans: 'tabPlans', assets: 'tabAssets', completion: 'tabCompletion'};
+            var newPanel = doc.getElementById(tabIdMap[tab]);
+            var oldPanel = document.getElementById(tabIdMap[tab]);
+            if (!newPanel || !oldPanel) { location.reload(); return; }
+            oldPanel.innerHTML = newPanel.innerHTML;
+            // Restore the active PM sub-tab if there was one.
+            if (activeJp && typeof window.switchPmSubtab === 'function') {
+                window.switchPmSubtab(activeJp);
+            }
+            // Re-bind search inputs inside the replaced panel (the page-load
+            // IIFE only ran once on the original DOM).
+            _rebindTabSearch(tab);
+            // If the completion tab was refreshed, reload the overdue chart too
+            // (its data may have changed e.g. after a bulk skip).
+            if (tab === 'completion') { loadOverdueChart(); }
+        })
+        .catch(function() { location.reload(); });
+}
+
+// Re-attach search-filter listeners after a tab's DOM has been swapped in.
+function _rebindTabSearch(tab) {
+    if (tab === 'plans') {
+        var s = document.getElementById('pmSearch');
+        if (s) s.addEventListener('input', filterPmRows);
+    } else if (tab === 'jobplans') {
+        var s2 = document.getElementById('jpSearch');
+        var t2 = document.getElementById('jpTable');
+        if (s2 && t2) {
+            var rows = Array.from(t2.querySelectorAll('tbody tr'));
+            s2.addEventListener('input', function() {
+                var q = this.value.toLowerCase().trim();
+                rows.forEach(function(row) {
+                    row.style.display = (!q || row.textContent.toLowerCase().includes(q)) ? '' : 'none';
+                });
+            });
+        }
+    } else if (tab === 'assets') {
+        var s3 = document.getElementById('assetSearch');
+        var t3 = document.getElementById('assetTable');
+        if (s3 && t3) {
+            var arows = Array.from(t3.querySelectorAll('tbody tr'));
+            s3.addEventListener('input', function() {
+                var q = this.value.toLowerCase().trim();
+                arows.forEach(function(row) {
+                    var text = (row.dataset.text || row.textContent).toLowerCase();
+                    row.style.display = (!q || text.includes(q)) ? '' : 'none';
+                });
+            });
+        }
+    }
+}
+
 function pmGenerateNow(e) {
     var btn = (e && e.target) || event.target; btn.disabled = true; btn.textContent = '生成中…';
     fetch('/settings/pm/generate-now/', {
@@ -752,8 +945,43 @@ function pmGenerateNow(e) {
         .then(function(d) {
             btn.disabled = false; btn.textContent = '立即生成';
             pmToast(d.message, !d.success);
+            if (d.success) setTimeout(function(){ pmReloadActiveTab(); }, 1200);
         })
         .catch(function() { btn.disabled = false; btn.textContent = '立即生成'; pmToast('网络错误', true); });
+}
+
+function pmAssignCrews(e) {
+    var btn = (e && e.target) || event.target;
+    if (!confirm('按 CCU/Land 自动匹配班组到未分配的 PM？\n（已分配的 PM 不会被覆盖）')) return;
+    btn.disabled = true; btn.textContent = '分配中…';
+    fetch('/settings/pm/assign-crews/', {
+        method: 'POST',
+        headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRFToken': pmCsrf() }
+    })
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            btn.disabled = false; btn.textContent = '自动分配班组';
+            pmToast(d.message, !d.success);
+            if (d.success) setTimeout(function(){ pmReloadActiveTab(); }, 1200);
+        })
+        .catch(function() { btn.disabled = false; btn.textContent = '自动分配班组'; pmToast('网络错误', true); });
+}
+
+function pmResetOverdue(e) {
+    var btn = (e && e.target) || event.target;
+    if (!confirm('把 start_date 已过期的 PM 重置到下一个未来到期日？\n（会删除这些 PM 的未完工单，已完成的保留；重置后自动错峰派发日期）')) return;
+    btn.disabled = true; btn.textContent = '重置中…';
+    fetch('/settings/pm/reset-overdue/', {
+        method: 'POST',
+        headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRFToken': pmCsrf() }
+    })
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            btn.disabled = false; btn.textContent = '重置安排';
+            pmToast(d.message, !d.success);
+            if (d.success) setTimeout(function(){ pmReloadActiveTab(); }, 1200);
+        })
+        .catch(function() { btn.disabled = false; btn.textContent = '重置安排'; pmToast('网络错误', true); });
 }
 
 // ── Extension approval / GWO skip (完成情况 tab) ──────────────────────
@@ -782,6 +1010,18 @@ function skipGwo(gwoId) {
         pmToast(d.message, !d.success);
         if (d.success) { var row = document.getElementById('overdueRow-' + gwoId); if (row) row.remove(); }
     }).catch(function() { pmToast('网络错误', true); });
+}
+function skipAllOverdue(e) {
+    var btn = (e && e.target) || event.target;
+    if (!confirm('确定把所有逾期工单全部标为跳过？\n（操作不可撤销）')) return;
+    btn.disabled = true; btn.textContent = '跳过中…';
+    fetch('/settings/pm/gwo/skip-all/', {
+        method: 'POST', headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRFToken': pmCsrf() }
+    }).then(function(r) { return r.json(); }).then(function(d) {
+        btn.disabled = false; btn.textContent = '一键全部跳过';
+        pmToast(d.message, !d.success);
+        if (d.success) setTimeout(function(){ pmReloadActiveTab(); }, 800);
+    }).catch(function() { btn.disabled = false; btn.textContent = '一键全部跳过'; pmToast('网络错误', true); });
 }
 </script>
 {% endblock %}
