@@ -112,23 +112,22 @@ def pm_tasks_for_field_worker(user):
     tasks = (GeneratedWorkOrder.objects
              .filter(status__in=['dispatched', 'overdue'],
                      crew_id__in=crew_ids, scheduled_date__lte=today)
-             .select_related('work_report', 'plan__job_plan')
-             .prefetch_related('work_report__zones')
+             .select_related('plan__job_plan', 'worker')
+             .prefetch_related('zones')
              .order_by('scheduled_date')[:20])
     result = []
     for gwo in tasks:
-        report = gwo.work_report
-        zones_qs = report.zones.all() if report else None
-        zone_count = zones_qs.count() if zones_qs else 0
-        first_codes = [z.code for z in zones_qs[:3]] if zones_qs else []
+        # Dispatch stores zones/remark on the GWO itself (no WorkReport shell),
+        # so read them directly — work_report is deprecated and always None now.
+        zones_qs = list(gwo.zones.all())
+        first_codes = [z.code for z in zones_qs[:3]]
         result.append({
             'gwo_id': gwo.id,
-            'report_id': report.id if report else None,
             'pm_number': gwo.plan.pm_number,
-            'job_plan_name': gwo.plan.job_plan.name,
-            'remark': report.remark if report else '',
+            'job_plan_name': gwo.plan.job_plan.name if gwo.plan.job_plan_id else '',
+            'remark': gwo.remark or '',
             'scheduled_date': gwo.scheduled_date.strftime('%Y-%m-%d'),
-            'zone_count': zone_count,
+            'zone_count': len(zones_qs),
             'zone_preview': '、'.join(first_codes),
             'overdue': gwo.scheduled_date < today,
         })

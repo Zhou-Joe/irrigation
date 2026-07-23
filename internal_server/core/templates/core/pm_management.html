@@ -601,7 +601,7 @@ window.togglePmOrders = function (planId) {
                     var st = o.status === 'dispatched' ? '<span style=\"color:#d97706;\">🟡待填</span>'
                            : o.status === 'completed' ? '<span style=\"color:#40916C;\">✅已完成</span>'
                            : o.status === 'skipped' ? '<span style=\"color:#aaa;\">⏭跳过</span>' : o.status;
-                    var wr = o.report_id ? '<a href=\"/work-reports/' + o.report_id + '/\" target=\"_blank\" rel=\"noopener\">' + esc(o.report_number) + '</a>' : '<span style=\"color:#ccc;\">已删</span>';
+                    var wr = o.pm_order_id ? '<a href=\"/?pm_order_id=' + o.pm_order_id + '\" target=\"_blank\" rel=\"noopener\">' + esc(o.report_number) + '</a>' : '<span style=\"color:#aaa;\">未填</span>';
                     var wc = o.entry_count ? o.entry_count + ' 项' : (o.work_content ? esc(o.work_content) : '<span style=\"color:#ccc;\">未填</span>');
                     return '<tr><td><span style=\"color:#aaa;font-size:.8em;\">' + esc(o.generated_at) + '</span></td>' +
                         '<td><strong>' + esc(o.scheduled_date) + '</strong></td><td>' + st + '</td><td>' + wr + '</td>' +

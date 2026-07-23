@@ -129,6 +129,7 @@
                     <span class="wr-cmt-author">{{ log.editor.full_name|default:"(未知)" }}</span>
                     <span class="wr-cmt-time">{{ log.created_at|date:"Y-m-d H:i" }}</span>
                 </div>
+                {% if log.note %}<div class="wr-cmt-body" style="font-size:.85rem;color:#555;margin-top:2px;">{{ log.note }}</div>{% endif %}
             </div>
             {% endfor %}
         </div>

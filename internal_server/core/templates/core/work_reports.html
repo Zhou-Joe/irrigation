@@ -261,6 +261,10 @@
             待确认备注
             {% if pending_remark_groups %}<span class="app-tab-badge">{{ pending_remark_groups|length }}</span>{% endif %}
         </button>
+        <button type="button" class="app-tab {% if active_tab == 'repairs' %}active{% endif %}" data-tab="repairs" onclick="switchTab('repairs')">
+            待修工单
+            {% if pending_repairs %}<span class="app-tab-badge">{{ pending_repairs|length }}</span>{% endif %}
+        </button>
         <button type="button" class="app-tab {% if active_tab == 'photos' %}active{% endif %}" data-tab="photos" onclick="switchTab('photos')">媒体下载</button>
         {% endif %}
     </div>
@@ -385,6 +389,50 @@
     </div>
     {% endif %}
 
+    {# ── Tab: 待修工单 (managers only) — unresolved pending-repair reports #}
+    {% if is_manager %}
+    <div id="tabRepairs" class="wr-remarks-panel {% if active_tab == 'repairs' %}active{% endif %}">
+        <div class="wr-rm-subhead" style="display:flex;justify-content:space-between;align-items:center;">
+            <span>未解决待修 ({{ pending_repairs|length }})</span>
+            {% if pending_repairs %}
+            <button type="button" class="btn-sm btn-secondary" onclick="resolveAllRepairs(event)" style="font-size:.82rem;">一键全部标记已解决</button>
+            {% endif %}
+        </div>
+        {% if pending_repairs %}
+        <table class="card-table" style="width:100%;border-collapse:collapse;font-size:.9rem;margin-top:8px;">
+            <thead>
+                <tr style="text-align:left;border-bottom:2px solid #e2e8f0;">
+                    <th style="padding:8px 6px;">工单</th>
+                    <th style="padding:8px 6px;">日期</th>
+                    <th style="padding:8px 6px;">处理人</th>
+                    <th style="padding:8px 6px;">状态</th>
+                    <th style="padding:8px 6px;">区域</th>
+                    <th style="padding:8px 6px;">备注</th>
+                    <th style="padding:8px 6px;">操作</th>
+                </tr>
+            </thead>
+            <tbody id="repairBody">
+                {% for r in pending_repairs %}
+                <tr id="repairRow-{{ r.id }}" style="border-bottom:1px solid #f1f5f9;">
+                    <td style="padding:8px 6px;"><strong>#{{ r.id }}</strong></td>
+                    <td style="padding:8px 6px;">{{ r.date }}</td>
+                    <td style="padding:8px 6px;">{{ r.worker_name }}</td>
+                    <td style="padding:8px 6px;"><span class="wr-flag warn">{{ r.flags }}</span></td>
+                    <td style="padding:8px 6px;font-size:.82rem;color:#666;">{{ r.zone_count }} zones ({{ r.zone_preview }}{% if r.zone_count > 4 %}…{% endif %})</td>
+                    <td style="padding:8px 6px;font-size:.82rem;max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{{ r.remark }}">{{ r.remark }}</td>
+                    <td style="padding:8px 6px;">
+                        <button class="btn btn-sm btn-primary" onclick="resolveRepair({{ r.id }})">标记已解决</button>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div class="wr-rm-empty">✓ 暂无待修工单</div>
+        {% endif %}
+    </div>
+    {% endif %}
+
     {# ── Tab 3: 媒体下载 (managers only) ─────────────────────────────────── #}
     {% if is_manager %}
     <div id="tabPhotos" class="wr-remarks-panel {% if active_tab == 'photos' %}active{% endif %}">
@@ -404,6 +452,11 @@
 
     {# ── PM工单 tab: dispatched/overdue PM work orders with quick-complete link ── #}
     <div id="tabPm" class="wr-remarks-panel {% if active_tab == 'pm' %}active{% endif %}">
+        <div style="display:flex;justify-content:flex-end;margin-bottom:8px;">
+            <a href="?tab=pm{% if not pm_include_done %}&pm_done=1{% endif %}" class="btn-sm {% if pm_include_done %}btn-secondary{% else %}btn-primary{% endif %}" style="text-decoration:none;padding:5px 12px;font-size:.82rem;">
+                {% if pm_include_done %}仅看待完成{% else %}显示历史（含已完成）{% endif %}
+            </a>
+        </div>
         {% if pm_tasks %}
         <table class="card-table" style="width:100%;border-collapse:collapse;font-size:.9rem;">
             <thead>
@@ -412,6 +465,7 @@
                     <th style="padding:8px 6px;">作业计划</th>
                     <th style="padding:8px 6px;">计划日期</th>
                     <th style="padding:8px 6px;">状态</th>
+                    {% if pm_include_done %}<th style="padding:8px 6px;">完成时间</th><th style="padding:8px 6px;">执行人</th>{% endif %}
                     {% if is_manager %}<th style="padding:8px 6px;">班组</th>{% endif %}
                     <th style="padding:8px 6px;">区域</th>
                     <th style="padding:8px 6px;">操作</th>
@@ -420,22 +474,29 @@
             <tbody id="pmTaskBody">
                 {% for t in pm_tasks %}
                 <tr style="border-bottom:1px solid #f1f5f9;" data-gwo-id="{{ t.gwo_id }}">
-                    <td style="padding:8px 6px;"><strong>{{ t.pm_number }}</strong></td>
+                    <td style="padding:8px 6px;"><strong>{{ t.pm_number }}</strong><br><span style="font-size:.72em;color:#aaa;">{{ t.ticket }}</span></td>
                     <td style="padding:8px 6px;">{{ t.job_plan_name }}</td>
                     <td style="padding:8px 6px;">{{ t.scheduled_date }}</td>
                     <td style="padding:8px 6px;">
-                        {% if t.overdue %}<span style="color:#dc2626;font-weight:600;">⚠️ 已逾期</span>
-                        {% else %}<span style="color:#d97706;">今天到期</span>{% endif %}
+                        {% if t.status == 'completed' %}<span style="color:#40916C;">✓ 已完成</span>
+                        {% elif t.status == 'skipped' %}<span style="color:#aaa;">⏭ 跳过</span>
+                        {% elif t.overdue %}<span style="color:#dc2626;font-weight:600;">⚠️ 已逾期</span>
+                        {% else %}<span style="color:#d97706;">待执行</span>{% endif %}
                     </td>
+                    {% if pm_include_done %}<td style="padding:8px 6px;font-size:.82rem;color:#666;">{{ t.completed_at|default:'—' }}</td><td style="padding:8px 6px;font-size:.82rem;">{{ t.worker_name|default:'—' }}</td>{% endif %}
                     {% if is_manager %}<td style="padding:8px 6px;">{{ t.crew_name }}</td>{% endif %}
                     <td style="padding:8px 6px;font-size:.82rem;color:#666;">
                         {% if t.zone_count %}{{ t.zone_count }} zones ({{ t.zone_preview }}…){% else %}—{% endif %}
                     </td>
                     <td style="padding:8px 6px;">
-                        {% if t.report_id %}
-                        <a href="/?edit_workorder={{ t.report_id }}" class="btn btn-sm btn-primary" style="text-decoration:none;">去完成</a>
+                        {% if t.status == 'completed' and t.pm_order_id %}
+                        <a href="/?pm_order_id={{ t.pm_order_id }}" class="btn btn-sm btn-secondary" style="text-decoration:none;">查看</a>
+                        {% elif t.pm_order_id %}
+                        <a href="/?pm_order_id={{ t.pm_order_id }}" class="btn btn-sm btn-secondary" style="text-decoration:none;">查看/补填</a>
+                        {% elif t.status == 'skipped' %}
+                        <span style="color:#ccc;">—</span>
                         {% else %}
-                        <span style="color:#ccc;">无工单</span>
+                        <a href="/?pm_gwo_id={{ t.gwo_id }}" class="btn btn-sm btn-primary" style="text-decoration:none;">去完成</a>
                         {% endif %}
                     </td>
                 </tr>
@@ -553,6 +614,8 @@ function switchTab(tab) {
     if (pm) pm.classList.toggle('active', tab === 'pm');
     var rm = document.getElementById('tabRemarks');
     if (rm) rm.classList.toggle('active', tab === 'remarks');
+    var rp = document.getElementById('tabRepairs');
+    if (rp) rp.classList.toggle('active', tab === 'repairs');
     var ph = document.getElementById('tabPhotos');
     if (ph) ph.classList.toggle('active', tab === 'photos');
     document.querySelectorAll('.app-tab').forEach(function (t) {
@@ -587,6 +650,8 @@ function loadMorePmTasks() {
     btn.disabled = true; btn.textContent = '加载中…';
     var params = new URLSearchParams();
     if (lastGwoId) params.set('before_id', lastGwoId);
+    // Mirror the page's history-mode toggle so load-more fetches the same set.
+    if (new URLSearchParams(location.search).get('pm_done') === '1') params.set('done', '1');
     fetch('{% url "core:work_reports_pm_tasks" %}?' + params.toString(), {
         headers: { 'X-Requested-With': 'XMLHttpRequest' }
     }).then(function (r) { return r.json(); }).then(function (d) {
@@ -608,25 +673,62 @@ function _buildPmRow(t) {
     tr.dataset.gwoId = t.gwo_id;
     var escEl = document.createElement('div');
     function esc(s) { escEl.textContent = s == null ? '' : String(s); return escEl.innerHTML; }
-    var statusHtml = t.overdue
-        ? '<span style="color:#dc2626;font-weight:600;">⚠️ 已逾期</span>'
-        : '<span style="color:#d97706;">今天到期</span>';
+    var historyMode = new URLSearchParams(location.search).get('pm_done') === '1';
+    var statusHtml;
+    if (t.status === 'completed') statusHtml = '<span style="color:#40916C;">✓ 已完成</span>';
+    else if (t.status === 'skipped') statusHtml = '<span style="color:#aaa;">⏭ 跳过</span>';
+    else if (t.overdue) statusHtml = '<span style="color:#dc2626;font-weight:600;">⚠️ 已逾期</span>';
+    else statusHtml = '<span style="color:#d97706;">待执行</span>';
+    var historyCols = historyMode
+        ? '<td style="padding:8px 6px;font-size:.82rem;color:#666;">' + esc(t.completed_at || '—') + '</td>' +
+          '<td style="padding:8px 6px;font-size:.82rem;">' + esc(t.worker_name || '—') + '</td>'
+        : '';
     var crewHtml = _pmIsManager ? '<td style="padding:8px 6px;">' + esc(t.crew_name) + '</td>' : '';
     var zoneHtml = t.zone_count
         ? t.zone_count + ' zones (' + esc(t.zone_preview) + '…)'
         : '—';
-    var actionHtml = t.report_id
-        ? '<a href="/?edit_workorder=' + t.report_id + '" class="btn btn-sm btn-primary" style="text-decoration:none;">去完成</a>'
-        : '<span style="color:#ccc;">无工单</span>';
+    var actionHtml;
+    if (t.status === 'completed' && t.pm_order_id) actionHtml = '<a href="/?pm_order_id=' + t.pm_order_id + '" class="btn btn-sm btn-secondary" style="text-decoration:none;">查看</a>';
+    else if (t.pm_order_id) actionHtml = '<a href="/?pm_order_id=' + t.pm_order_id + '" class="btn btn-sm btn-secondary" style="text-decoration:none;">查看/补填</a>';
+    else if (t.status === 'skipped') actionHtml = '<span style="color:#ccc;">—</span>';
+    else actionHtml = '<a href="/?pm_gwo_id=' + t.gwo_id + '" class="btn btn-sm btn-primary" style="text-decoration:none;">去完成</a>';
     tr.innerHTML =
-        '<td style="padding:8px 6px;"><strong>' + esc(t.pm_number) + '</strong></td>' +
+        '<td style="padding:8px 6px;"><strong>' + esc(t.pm_number) + '</strong><br><span style="font-size:.72em;color:#aaa;">' + esc(t.ticket || '') + '</span></td>' +
         '<td style="padding:8px 6px;">' + esc(t.job_plan_name) + '</td>' +
         '<td style="padding:8px 6px;">' + esc(t.scheduled_date) + '</td>' +
         '<td style="padding:8px 6px;">' + statusHtml + '</td>' +
+        historyCols +
         crewHtml +
         '<td style="padding:8px 6px;font-size:.82rem;color:#666;">' + zoneHtml + '</td>' +
         '<td style="padding:8px 6px;">' + actionHtml + '</td>';
     return tr;
+}
+
+// ── 待修工单 resolve (marks pending-repair reports as resolved) ──
+function wrCsrf() {
+    var m = document.cookie.match(/csrftoken=([^;]+)/);
+    return m ? m[1] : '';
+}
+function resolveRepair(reportId) {
+    if (!confirm('确认 #' + reportId + ' 已修复，标记为已解决？\n（会留编辑记录：待修→已解决）')) return;
+    fetch('/work-reports/' + reportId + '/resolve-repair/', {
+        method: 'POST', headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRFToken': wrCsrf() }
+    }).then(function (r) { return r.json(); }).then(function (d) {
+        wrToast(d.message, !d.success);
+        if (d.success) { var row = document.getElementById('repairRow-' + reportId); if (row) row.remove(); }
+    }).catch(function () { wrToast('网络错误', true); });
+}
+function resolveAllRepairs(e) {
+    var btn = (e && e.target) || event.target;
+    if (!confirm('把所有待修工单标记为已解决？\n（会逐条留编辑记录：待修→已解决）')) return;
+    btn.disabled = true; btn.textContent = '处理中…';
+    fetch('/work-reports/resolve-all-repair/', {
+        method: 'POST', headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRFToken': wrCsrf() }
+    }).then(function (r) { return r.json(); }).then(function (d) {
+        btn.disabled = false; btn.textContent = '一键全部标记已解决';
+        wrToast(d.message, !d.success);
+        if (d.success) setTimeout(function () { location.href = '/work-reports/?tab=repairs'; }, 1200);
+    }).catch(function () { btn.disabled = false; btn.textContent = '一键全部标记已解决'; wrToast('网络错误', true); });
 }
 
 // ── 媒体下载 tab: lazy-load report→media list, render, select, download ──

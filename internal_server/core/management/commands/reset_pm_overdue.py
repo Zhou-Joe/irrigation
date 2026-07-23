@@ -94,16 +94,13 @@ class Command(BaseCommand):
 
             if do_apply:
                 with transaction.atomic():
-                    # Delete the uncompleted work orders (and their WorkReports).
+                    # Delete the uncompleted GWOs. Dispatch no longer creates a
+                    # WorkReport shell, so uncompleted GWOs have none to clean up;
+                    # the work_report FK (SET_NULL) just detaches if one existed.
                     # completed/skipped orders stay as history.
-                    deleted_ids = []
-                    for gwo in list(stale):
-                        deleted_ids.append(gwo.id)
-                        if gwo.work_report_id:
-                            gwo.work_report.delete()
-                        else:
-                            gwo.delete()
-                    gwo_deleted += len(deleted_ids)
+                    removed = stale.count()
+                    stale.delete()
+                    gwo_deleted += removed
                     MaintenancePlan.objects.filter(id=plan.id).update(start_date=new_start)
             else:
                 gwo_deleted += stale.count()
@@ -112,7 +109,7 @@ class Command(BaseCommand):
             self.stdout.write(
                 f'  {plan.pm_number}: {plan.start_date} → {new_start} '
                 f'({plan.frequency_value}{plan.frequency_unit}, '
-                f'{stale.count() if not do_apply else len(deleted_ids)} GWO removed)')
+                f'{stale.count()} GWO removed)')
 
         self.stdout.write(self.style.SUCCESS(
             f'\nDone: {reset} reset, {skipped} unchanged, {no_future} no future occ'
