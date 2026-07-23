@@ -345,6 +345,9 @@ function renderNode(node, container, isSectionRoot){
       const sel = document.createElement('select');
       sel.id = 'irrigation-project-select';
       sel.className = 'wo-project-sel';
+      // Section-root node id — collectEntries emits this as a project binding row
+      // so selecting a project links the work order even when no leaf carries a value.
+      sel.dataset.rootWid = node.id;
       sel.innerHTML = '<option value="">选择项目…</option>' +
         PROJECTS.map(p=>`<option value="${p.id}">${esc(p.category_display)} · ${esc(p.name)}</option>`).join('');
       sel.addEventListener('click', e=>e.stopPropagation());
@@ -544,6 +547,16 @@ function collectEntries(){
     else { text = el.querySelector('.wo-text').value||''; const f = el.querySelector('.wo-file'); const files = f ? f.files.length : 0; hasData = !!(text||files); }
     if (hasData) entries.push({work_item:wid, project: scoped?project:null, count, status, text_value:text});
   });
+  // Persist the project binding on the 灌溉项目 section-root node even when no
+  // leaf under it carries a value. Without this, picking a project alone never
+  // binds (and re-editing wipes any prior binding, since _save_entries deletes
+  // all entries first). The server keeps group nodes as category markers, so a
+  // bare root row survives and carries the project.
+  if (project) {
+    const rootSel = document.getElementById('irrigation-project-select');
+    const rootWid = rootSel && parseInt(rootSel.dataset.rootWid, 10);
+    if (rootWid) entries.push({work_item: rootWid, project: project, count: 0, status: '', text_value: ''});
+  }
   document.getElementById('entries-json').value = JSON.stringify(entries);
 }
 
