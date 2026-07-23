@@ -39,6 +39,8 @@
     // Edit mode state. When set, submitV2Workorder sends report_id + report_photos_remove
     // so the server updates the existing report instead of creating a new one.
     var _editingReportId = null;
+    // PMWorkOrder edit mode: when set, submit sends pm_order_id (not report_id).
+    var _editingPmOrderId = null;
     var _pmGwoId = null;  // PM GeneratedWorkOrder id for extension requests
     // Set BEFORE buildForm during an edit open so initWorkorderBehaviors can skip
     // the create-only default-category selection. _editingReportId is set later
@@ -99,12 +101,33 @@
         var overlays = [];
         zl.eachLayer(function (zlayer) {
             if (zlayer.zoneData && zlayer.zoneData.code === code && zlayer.getLatLngs) {
-                var hl = L.polygon(zlayer.getLatLngs(), { color: '#2D6A4F', weight: 2.5, fillColor: '#2D6A4F', fillOpacity: 0.35, interactive: false });
+                var hl = L.polygon(zlayer.getLatLngs(), { color: '#C0392B', weight: 3, fillColor: '#C0392B', fillOpacity: 1, interactive: false });
                 _selectionLayerGroup.addLayer(hl);
                 overlays.push(hl);
             }
         });
         _selectionOverlays[code] = overlays;
+    }
+
+    // Reconcile the red selection overlays on the map with _selectedZoneCodes.
+    // Called after the Set changes so the map always reflects the selection —
+    // including when the form opens pre-filled (PM completion / quick / edit)
+    // which otherwise only populate the Set without drawing overlays.
+    function syncSelectionOverlays() {
+        var map = getMap();
+        if (!map) return;
+        if (!_selectionLayerGroup) _selectionLayerGroup = L.layerGroup().addTo(map);
+        // Remove overlays for codes no longer selected.
+        Object.keys(_selectionOverlays).forEach(function (code) {
+            if (!_selectedZoneCodes.has(code)) {
+                (_selectionOverlays[code] || []).forEach(function (lyr) { _selectionLayerGroup.removeLayer(lyr); });
+                delete _selectionOverlays[code];
+            }
+        });
+        // Add overlays for newly selected codes.
+        _selectedZoneCodes.forEach(function (code) {
+            if (!_selectionOverlays[code]) addOverlayForCode(code);
+        });
     }
 
     window.openV2Modal = function (type) {
@@ -118,7 +141,7 @@
         _photoFiles = [];
         _zoneConfirmed = false;
         resetWoZoneRecords();
-        _editingReportId = null; _pendingEdit = false; _existingPhotos = []; _photoRemove.clear();   // create mode
+        _editingReportId = null; _editingPmOrderId = null; _pendingEdit = false; _existingPhotos = []; _photoRemove.clear();   // create mode
 
         // Fetch form data in background (cached or from API)
         var dataUrl = type === 'workorder' ? '/api/modal/workorder-data/'
@@ -175,7 +198,7 @@
         resetWoZoneRecords();
         zoneCodes.forEach(function (c) { _selectedZoneCodes.add(c); });
         _zoneConfirmed = true;
-        _editingReportId = null; _pendingEdit = false; _existingPhotos = []; _photoRemove.clear();   // create mode
+        _editingReportId = null; _editingPmOrderId = null; _pendingEdit = false; _existingPhotos = []; _photoRemove.clear();   // create mode
 
         // Ensure form data is loaded, then show form
         var showForm = function () {
@@ -187,6 +210,7 @@
             if (backdrop) backdrop.style.display = '';
             if (container) { container.style.display = ''; container.classList.add('open'); }
             renderZoneSummary();
+            syncSelectionOverlays();   // paint red on the map for pre-filled zones
         };
 
         if (_formDataCache.workorder) {
@@ -214,6 +238,91 @@
     // pre-fill it with the report's zones/header/entries/photos. The work-reports
     // list / detail 编辑 buttons link to the dashboard with ?edit_workorder=<id>,
     // which triggers this on dashboard load.
+    // Open the workorder CREATE form seeded for completing a PM task.
+    // Dispatch stores the task on the GWO (no WorkReport shell), so completion
+    // is a create flow: _pmGwoId is sent on submit so the server builds an
+    // is_pm=True WorkReport, links it to the GWO, and marks the GWO completed.
+    // Mirrors quickWorkorder (build the form directly — openV2Modal would route
+    // workorder into map/zone-first mode instead of showing the form).
+    window.openV2ModalForPm = function (gwoId) {
+        if (!gwoId) return;
+        if (_closeTimeout) { clearTimeout(_closeTimeout); _closeTimeout = null; }
+        if (_currentModal) closeV2Modal(_currentModal);
+        if (_closeTimeout) { clearTimeout(_closeTimeout); _closeTimeout = null; }
+        _currentModal = 'workorder';
+        _selectedZoneCodes.clear();
+        _photoFiles = [];
+        _zoneConfirmed = true;   // skip the zone-first gate; zones pre-filled below
+        _editingReportId = null; _editingPmOrderId = null; _pendingEdit = false; _existingPhotos = []; _photoRemove.clear();   // create mode
+        _pmGwoId = String(gwoId);
+        resetWoZoneRecords();
+
+        // GWO seed data (zones/date/remark) fetched alongside the form structure,
+        // then applied once the form is built so the worker doesn't re-enter them.
+        var pmSeed = null;
+
+        var applySeed = function () {
+            if (!pmSeed) return;
+            // Pre-select the GWO's zones.
+            (pmSeed.zone_codes || []).forEach(function (c) { _selectedZoneCodes.add(c); });
+            // Date: set the visible <select> if the option exists, else hidden input.
+            if (pmSeed.scheduled_date) {
+                var dateSel = $('woDate'), dateHidden = $('woDateHidden'), headerDate = $('woHeaderDate');
+                if (dateSel) {
+                    var opt = dateSel.querySelector('option[value="' + pmSeed.scheduled_date + '"]');
+                    if (opt) dateSel.value = pmSeed.scheduled_date;
+                }
+                if (dateHidden) dateHidden.value = pmSeed.scheduled_date;
+                if (headerDate) headerDate.textContent = pmSeed.scheduled_date;
+            }
+            // Remark.
+            if (pmSeed.remark != null) {
+                var rm = document.querySelector('#woModalForm [name="remark"]');
+                if (rm) rm.value = pmSeed.remark;
+            }
+            renderZoneSummary();
+            syncSelectionOverlays();   // paint red on the map for pre-filled zones
+        };
+
+        var showForm = function () {
+            if (_formDataCache.workorder) {
+                buildForm('workorder', _formDataCache.workorder);
+            }
+            var backdrop = $('woModalBackdrop');
+            var container = $('woModalContainer');
+            if (backdrop) backdrop.style.display = '';
+            if (container) { container.style.display = ''; container.classList.add('open'); }
+            applySeed();
+            // Reflect the PM task in the title so the worker sees what to complete.
+            var titleEl = document.querySelector('#woModalContainer .modal-title, #woModalContainer h2, #woModalContainer h3');
+            if (titleEl) { titleEl.textContent = '完成 PM 任务 (PM-' + gwoId + ')'; }
+        };
+
+        // Fetch both the GWO seed and the form data, then render.
+        var seedP = fetch('/settings/pm/gwo/' + gwoId + '/detail/', { credentials: 'same-origin' })
+            .then(function (r) { return r.json(); })
+            .then(function (d) { pmSeed = d; })
+            .catch(function () { /* seed optional — form still works without it */ });
+
+        var formP;
+        if (_formDataCache.workorder) {
+            formP = Promise.resolve();
+        } else {
+            formP = fetch('/api/modal/workorder-data/', { credentials: 'same-origin' })
+                .then(function (r) { return r.json(); })
+                .then(function (data) {
+                    if (!isValidFormData('workorder', data)) {
+                        _currentModal = null;
+                        _zoneConfirmed = false;
+                        showToast(data && data.error ? data.error : '加载表单失败', 'error');
+                        return Promise.reject(new Error('bad form data'));
+                    }
+                    _formDataCache.workorder = data;
+                });
+        }
+        Promise.all([seedP, formP]).then(showForm).catch(function () { /* already surfaced */ });
+    };
+
     window.openV2ModalForEdit = function (reportId) {
         if (!reportId) return;
         if (_closeTimeout) { clearTimeout(_closeTimeout); _closeTimeout = null; }
@@ -257,6 +366,52 @@
                 try { applyWoEditPrefill(data); } catch (e) { /* keep form visible */ }
                 _editingReportId = reportId;
                 renderZoneSummary();
+                syncSelectionOverlays();   // paint red on the map for the report's zones
+                if (sb) sb.disabled = false;
+            })
+            .catch(function () { showToast('加载工单失败', 'error'); if (sb) { sb.disabled = false; sb.textContent = '保存'; } });
+    };
+
+    // Open an existing PMWorkOrder in edit/view mode (mirrors openV2ModalForEdit
+    // but fetches by pm_order_id and sets _editingPmOrderId so submit updates the
+    // PMWorkOrder, not a WorkReport).
+    window.openV2ModalForPmEdit = function (pmOrderId) {
+        if (!pmOrderId) return;
+        if (_closeTimeout) { clearTimeout(_closeTimeout); _closeTimeout = null; }
+        if (_currentModal) closeV2Modal(_currentModal);
+        if (_closeTimeout) { clearTimeout(_closeTimeout); _closeTimeout = null; }
+        _currentModal = 'workorder';
+        _selectedZoneCodes.clear();
+        _photoFiles = [];
+        _existingPhotos = []; _photoRemove.clear();
+        _pendingEdit = true;
+        _editingReportId = null; _editingPmOrderId = null;
+        resetWoZoneRecords();
+
+        var backdrop = $('woModalBackdrop');
+        var container = $('woModalContainer');
+        if (backdrop) backdrop.style.display = '';
+        if (container) { container.style.display = ''; container.classList.add('open'); }
+        var body = $('woModalBody');
+        if (body) body.innerHTML = '<div style="text-align:center;padding:40px;color:#888;">加载工单中...</div>';
+        var sb = $('woSubmitBtn'); if (sb) { sb.disabled = true; sb.textContent = '保存'; }
+
+        fetch('/api/modal/workorder-data/?pm_order_id=' + encodeURIComponent(pmOrderId), { credentials: 'same-origin' })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                if (!isValidFormData('workorder', data) || !data.header) {
+                    closeV2Modal('workorder');
+                    showToast(data && data.error ? data.error : '加载工单失败', 'error');
+                    return;
+                }
+                _formDataCache.workorder = data;
+                (data.header.h_zones || []).forEach(function (c) { _selectedZoneCodes.add(c); });
+                _zoneConfirmed = true;
+                buildForm('workorder', data);
+                try { applyWoEditPrefill(data); } catch (e) { /* keep form visible */ }
+                _editingPmOrderId = pmOrderId;
+                renderZoneSummary();
+                syncSelectionOverlays();
                 if (sb) sb.disabled = false;
             })
             .catch(function () { showToast('加载工单失败', 'error'); if (sb) { sb.disabled = false; sb.textContent = '保存'; } });
@@ -664,6 +819,7 @@
 
         // Show selected zones above form
         renderZoneSummary();
+        syncSelectionOverlays();   // keep red overlays visible after exiting map mode
 
         var infoBar = $('v2MapInfoBar');
         if (infoBar) infoBar.style.display = 'none';
@@ -1866,7 +2022,7 @@
             if (kids.length === 1 && kids[0].value_type === 'toggle' && kids[0].name.indexOf('填写') < 0) {
                 var only = kids[0];
                 if (!_woEntries[only.id]) {
-                    _woEntries[only.id] = { count: 0, status: only.name, text_value: '', hasPhoto: false, project: null };
+                    _woEntries[only.id] = { count: 0, status: only.name, text_value: '', hasPhoto: false, project: only.is_project_scoped ? _woProject : null };
                     updateWoTrigger();
                 }
             }
@@ -2757,7 +2913,7 @@
         // the section/category grouping.
         var entries = collectWoEntries();
         if (_woCatNode && !entries.some(function (e) { return e.work_item === _woCatNode; })) {
-            entries.push({ work_item: _woCatNode, project: null, count: 0, status: '', text_value: '' });
+            entries.push({ work_item: _woCatNode, project: _woProject || null, count: 0, status: '', text_value: '' });
         }
         var entriesInput = $('woEntriesInput'); if (entriesInput) entriesInput.value = JSON.stringify(entries);
         // Material consumption cart → JSON for the server (creates the outbound txn).
@@ -2775,13 +2931,34 @@
             fd.append('report_id', _editingReportId);
             if (_photoRemove.size) fd.append('report_photos_remove', Array.from(_photoRemove).join(','));
         }
-        var btn = $('woSubmitBtn'); btn.disabled = true; btn.textContent = (_editingReportId ? '保存' : '提交') + '中...';
+        // PMWorkOrder edit mode: send pm_order_id so the server updates the
+        // existing PMWorkOrder instead of creating a WorkReport.
+        if (_editingPmOrderId) {
+            fd.append('pm_order_id', _editingPmOrderId);
+            if (_photoRemove.size) fd.append('report_photos_remove', Array.from(_photoRemove).join(','));
+        }
+        // PM task completion (create mode): send the GWO id so the server builds
+        // a PMWorkOrder and links it to this GeneratedWorkOrder.
+        if (_pmGwoId) {
+            fd.append('gwo_id', _pmGwoId);
+        }
+        var isSaving = !!(_editingReportId || _editingPmOrderId);
+        var btn = $('woSubmitBtn'); btn.disabled = true; btn.textContent = (isSaving ? '保存' : '提交') + '中...';
         fetch('/mobile/workorder/v2/', { method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest' } })
             .then(function (r) { return r.json(); }).then(function (data) {
                 if (data.success) {
                     showToast(data.message, 'success');
                     btn.disabled = false; btn.textContent = '提交';
-                    setTimeout(function () { closeV2Modal('workorder'); }, 1500);
+                    // PM task completion (create): after closing, navigate to the
+                    // work-reports PM tab so the worker sees the task marked done.
+                    if (_pmGwoId) {
+                        setTimeout(function () {
+                            closeV2Modal('workorder');
+                            window.location.href = '/work-reports/?tab=pm';
+                        }, 1500);
+                    } else {
+                        setTimeout(function () { closeV2Modal('workorder'); }, 1500);
+                    }
                 }
                 else { showToast(data.message, 'error'); btn.disabled = false; btn.textContent = '提交'; }
             }).catch(function (err) { showToast('提交失败: ' + err, 'error'); btn.disabled = false; btn.textContent = '提交'; });
@@ -3109,6 +3286,19 @@
                 setTimeout(function () { window.openV2ModalForEdit(woId); }, 600);
                 return;
             }
+            // PM task completion (create mode): ?pm_gwo_id=<id> opens the form
+            // seeded to complete that GeneratedWorkOrder.
+            var pmGwoId = params.get('pm_gwo_id');
+            if (pmGwoId && /^\d+$/.test(pmGwoId)) {
+                setTimeout(function () { window.openV2ModalForPm(pmGwoId); }, 600);
+                return;
+            }
+            // PM task view/edit: ?pm_order_id=<id> opens the existing PMWorkOrder.
+            var pmOrderId = params.get('pm_order_id');
+            if (pmOrderId && /^\d+$/.test(pmOrderId)) {
+                setTimeout(function () { window.openV2ModalForPmEdit(pmOrderId); }, 600);
+                return;
+            }
             var invId = params.get('edit_inventory');
             if (invId && /^\d+$/.test(invId)) {
                 setTimeout(function () { window.openV2ModalForEditInv(invId); }, 600);
@@ -3119,6 +3309,112 @@
         document.addEventListener('DOMContentLoaded', runEditTrigger);
     } else {
         runEditTrigger();
+    }
+
+    // ── PM task list panel (dashboard FAB "PM安排") ───────────────────────
+    // Reads the server-rendered #pm-tasks-data JSON (the logged-in worker's
+    // crew dispatched/overdue PM tasks) and shows a lightweight overlay list.
+    // Each row links to 去完成 (openV2ModalForPm) or 查看 (openV2ModalForPmEdit).
+    window.openPmTaskPanel = function () {
+        // Remove any existing panel first.
+        var existing = document.getElementById('pmTaskPanel');
+        if (existing) { existing.remove(); return; }
+        var tasks = [];
+        var el = document.getElementById('pm-tasks-data');
+        if (el) { try { tasks = JSON.parse(el.textContent); } catch (e) {} }
+
+        var overlay = document.createElement('div');
+        overlay.id = 'pmTaskPanel';
+        overlay.style.cssText = 'position:fixed;inset:0;z-index:3100;background:rgba(0,0,0,0.4);display:flex;align-items:flex-end;justify-content:center;';
+        overlay.addEventListener('click', function (e) { if (e.target === overlay) overlay.remove(); });
+
+        var sheet = document.createElement('div');
+        sheet.style.cssText = 'background:#fff;width:100%;max-width:560px;max-height:75vh;overflow-y:auto;border-radius:14px 14px 0 0;padding:14px 16px;';
+
+        var header = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">'
+            + '<h2 style="margin:0;font-size:1.05rem;color:#2D6A4F;">PM安排 <span id="pmPanelCount" style="color:#aaa;font-size:.8em;">(' + tasks.length + ')</span></h2>'
+            + '<button onclick="document.getElementById(\'pmTaskPanel\').remove()" style="border:none;background:none;font-size:1.4rem;cursor:pointer;color:#999;">&times;</button>'
+            + '</div>';
+
+        // Frequency filter chips (derived from the task set).
+        var freqs = [];
+        tasks.forEach(function (t) {
+            var f = t.freq_label || '其它';
+            if (freqs.indexOf(f) === -1) freqs.push(f);
+        });
+        freqs.sort();
+        var filterHtml = '';
+        if (freqs.length > 1) {
+            filterHtml = '<div id="pmFreqChips" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;">'
+                + '<button class="pmFreqChip" data-freq="" style="padding:3px 10px;border:1px solid #2D6A4F;border-radius:12px;background:#2D6A4F;color:#fff;font-size:.78rem;cursor:pointer;">全部</button>';
+            freqs.forEach(function (f) {
+                filterHtml += '<button class="pmFreqChip" data-freq="' + _esc(f) + '" style="padding:3px 10px;border:1px solid #cbd5e1;border-radius:12px;background:#fff;color:#475569;font-size:.78rem;cursor:pointer;">' + _esc(f) + '</button>';
+            });
+            filterHtml += '</div><div id="pmTableWrap"></div>';
+        } else {
+            filterHtml = '<div id="pmTableWrap"></div>';
+        }
+
+        function renderTable(freqFilter) {
+            var filtered = tasks.filter(function (t) {
+                return !freqFilter || (t.freq_label || '其它') === freqFilter;
+            });
+            var cnt = document.getElementById('pmPanelCount');
+            if (cnt) cnt.textContent = '(' + filtered.length + ')';
+            var html = '';
+            if (!filtered.length) {
+                html = '<p style="text-align:center;color:#aaa;padding:24px 0;">该频率下暂无工单</p>';
+            } else {
+                html = '<table style="width:100%;border-collapse:collapse;font-size:.88rem;"><thead><tr style="text-align:left;border-bottom:2px solid #e2e8f0;">'
+                    + '<th style="padding:6px 4px;">作业计划</th><th style="padding:6px 4px;">到期日</th><th style="padding:6px 4px;">区域</th><th style="padding:6px 4px;"></th>'
+                    + '</tr></thead><tbody>';
+                filtered.forEach(function (t) {
+                    var statusHtml = t.status === 'completed' ? '<span style="color:#40916C;">✓</span>'
+                        : t.overdue ? '<span style="color:#dc2626;font-weight:600;">逾期</span>'
+                        : '<span style="color:#d97706;">待办</span>';
+                    var area = t.area_desc || (t.zone_count ? t.zone_count + ' zones' : '—');
+                    var action;
+                    if (t.pm_order_id) {
+                        action = '<a href="javascript:void(0)" onclick="document.getElementById(\'pmTaskPanel\').remove();openV2ModalForPmEdit(' + t.pm_order_id + ')" style="color:#475569;text-decoration:none;font-size:.82rem;">查看</a>';
+                    } else {
+                        action = '<a href="javascript:void(0)" onclick="document.getElementById(\'pmTaskPanel\').remove();openV2ModalForPm(' + t.gwo_id + ')" style="color:#2D6A4F;font-weight:600;text-decoration:none;font-size:.82rem;">去完成</a>';
+                    }
+                    html += '<tr style="border-bottom:1px solid #f1f59;">'
+                        + '<td style="padding:7px 4px;"><strong>' + _esc(t.job_plan_name) + '</strong><br><span style="font-size:.72em;color:#aaa;">' + _esc(t.ticket) + '</span></td>'
+                        + '<td style="padding:7px 4px;">' + _esc(t.scheduled_date) + '<br>' + statusHtml + '</td>'
+                        + '<td style="padding:7px 4px;font-size:.8rem;color:#555;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + _esc(area) + '</td>'
+                        + '<td style="padding:7px 4px;">' + action + '</td>'
+                        + '</tr>';
+                });
+                html += '</tbody></table>';
+            }
+            var wrap = document.getElementById('pmTableWrap');
+            if (wrap) wrap.innerHTML = html;
+        }
+
+        sheet.innerHTML = header + filterHtml;
+        overlay.appendChild(sheet);
+        document.body.appendChild(overlay);
+
+        // Wire up chip clicks (toggle active + re-filter).
+        var chips = sheet.querySelectorAll('.pmFreqChip');
+        if (chips.length) {
+            chips.forEach(function (chip) {
+                chip.addEventListener('click', function () {
+                    chips.forEach(function (c) {
+                        c.style.background = '#fff'; c.style.color = '#475569'; c.style.borderColor = '#cbd5e1';
+                    });
+                    chip.style.background = '#2D6A4F'; chip.style.color = '#fff'; chip.style.borderColor = '#2D6A4F';
+                    renderTable(chip.getAttribute('data-freq'));
+                });
+            });
+        }
+        // Initial render (all tasks).
+        renderTable('');
+    };
+
+    function _esc(s) {
+        var d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML;
     }
 
 })();

@@ -41,13 +41,12 @@ def _pm_leaf_id():
     return leaf.id if leaf else None
 
 
-def mark_pm_completed(report):
+def mark_pm_completed(report, gwo_id=None):
     """Mark a PM-dispatched GeneratedWorkOrder as completed.
 
-    Called from BOTH submit paths (mobile `workorder_mobile_v2` and desktop
-    `_handle_save`) so that completing a PM task via either UI records the
-    completion. Safe to call on non-PM reports (no-op when the report has no
-    `pm_generation`).
+    ``report`` is a PMWorkOrder (the completion record). ``gwo_id`` identifies
+    which GWO's task was completed; we link gwo.pm_order = report and flip the
+    status to completed. Safe to call on non-PM reports (no-op).
 
     Re-fetches the GWO with select_for_update so concurrent submits by two
     crew members (the whole crew sees each task) serialize at the DB level —
@@ -55,17 +54,21 @@ def mark_pm_completed(report):
     """
     from core.models import GeneratedWorkOrder
     try:
-        gwo = (GeneratedWorkOrder.objects
-               .select_for_update()
-               .get(work_report=report))
-    except GeneratedWorkOrder.DoesNotExist:
+        if gwo_id:
+            gwo = (GeneratedWorkOrder.objects.select_for_update().get(pk=int(gwo_id)))
+        else:
+            # Legacy/edit path: find the GWO already linked to this report.
+            gwo = (GeneratedWorkOrder.objects.select_for_update()
+                   .get(pm_order=report))
+    except (GeneratedWorkOrder.DoesNotExist, ValueError, TypeError):
         return
     if gwo.status not in ('dispatched', 'overdue'):
         return
     from django.utils import timezone as _tz
+    gwo.pm_order = report
     gwo.status = 'completed'
     gwo.completed_at = _tz.now()
-    gwo.save(update_fields=['status', 'completed_at'])
+    gwo.save(update_fields=['status', 'completed_at', 'pm_order'])
 
 
 # ── serialization ──────────────────────────────────────────────────────────
@@ -1076,27 +1079,33 @@ def _handle_render(request, report):
 
 
 def _report_header_dict(report):
-    """Header field values to pre-fill the form in edit mode."""
+    """Header field values to pre-fill the form in edit mode.
+
+    Works for both WorkReport and PMWorkOrder (PM lacks weather/待修/疑难 fields).
+    """
+    from core.models import PMWorkOrder
+    is_pm = isinstance(report, PMWorkOrder)
     zones = list(report.zones.values_list('code', flat=True))
     header = {
         'h_date': report.date.isoformat(),
-        'h_weather': report.weather,
+        'h_weather': '' if is_pm else report.weather,
         'h_shift': report.shift,
         'h_location': report.location_id,
         'h_zone_names': report.zone_names,
         'h_zones': zones,
         'h_remark': report.remark,
-        'h_is_pending_repair': report.is_pending_repair,
-        'h_is_difficult': report.is_difficult,
-        'h_is_difficult_resolved': report.is_difficult_resolved,
+        'h_is_pending_repair': False if is_pm else report.is_pending_repair,
+        'h_is_difficult': False if is_pm else report.is_difficult,
+        'h_is_difficult_resolved': False if is_pm else report.is_difficult_resolved,
         'h_team_size': report.team_size,
         'h_third_party_count': report.third_party_count,
         'h_work_start_time': report.work_start_time.strftime('%H:%M') if report.work_start_time else '',
         'h_work_end_time': report.work_end_time.strftime('%H:%M') if report.work_end_time else '',
     }
-    # PM auto-dispatched work orders carry the JobPlan name so the edit modal
-    # can pre-fill the 工作类别 (常规维护 › 维保定期检查) + a work-content entry.
-    gwo = getattr(report, 'pm_generation', None)
+    # PM work orders carry the JobPlan name so the edit modal can pre-fill the
+    # 工作类别 (常规维护 › 维保定期检查) + a work-content entry. PMWorkOrder links
+    # to its GWO via the forward .gwo FK; WorkReport via the reverse pm_generation.
+    gwo = report.gwo if is_pm else getattr(report, 'pm_generation', None)
     if gwo and gwo.plan_id:
         header['h_pm_job_plan'] = gwo.plan.job_plan.name if gwo.plan.job_plan_id else ''
         header['h_pm_work_item'] = _pm_leaf_id()
@@ -1109,13 +1118,14 @@ def _record_edit(report, user, note=''):
 
     编辑人通过 resolve_or_create_worker 解析，任意账号类型都能正确归因。
     调用方应将其置于保存事务内，使编辑记录与工单同生共死。
+
+    Works for both WorkReport and PMWorkOrder owners (route by type).
     """
-    from core.models import WorkReportEditLog
+    from core.models import WorkReportEditLog, PMWorkOrder
     from core.role_utils import resolve_or_create_worker
     editor, _created = resolve_or_create_worker(user)
-    WorkReportEditLog.objects.create(
-        work_report=report, editor=editor, note=(note or '')[:200],
-    )
+    kw = {'pm_work_order': report} if isinstance(report, PMWorkOrder) else {'work_report': report}
+    WorkReportEditLog.objects.create(editor=editor, note=(note or '')[:200], **kw)
 
 
 def _handle_save(request, report):
@@ -1148,34 +1158,81 @@ def _handle_save(request, report):
 
     with transaction.atomic():
         is_new = report is None
-        if is_new:
+        # PM task completion (desktop tree form): creates a PMWorkOrder (own id
+        # sequence) instead of a WorkReport, so PM work never occupies a #id slot.
+        pm_gwo_id = request.POST.get('gwo_id')
+        is_pm_completion = bool(pm_gwo_id and pm_gwo_id.isdigit())
+        if is_new and is_pm_completion:
+            from core.models import PMWorkOrder
+            report = PMWorkOrder(gwo_id=int(pm_gwo_id), worker=worker)
+            report.date = request.POST.get('date') or date.today()
+            report.shift = request.POST.get('shift', '')
+            loc_id = request.POST.get('location') or None
+            if not loc_id and zones:
+                loc_id = next((z.patch_id for z in zones if z.patch_id), None)
+            report.location_id = loc_id
+            report.zone_names = request.POST.get('zone_names', '')
+            report.remark = request.POST.get('remark', '')
+            report.team_size = team_size
+            report.third_party_count = third_party_count
+            report.work_start_time = start
+            report.work_end_time = end
+            report.team_hours = _calc_hours(start, end, team_size)
+            report.third_party_hours = _calc_hours(start, end, third_party_count)
+            report.save()
+            report.zones.set(zones)
+        elif is_new:
             report = WorkReport(worker=worker)
-        report.date = request.POST.get('date') or date.today()
-        report.weather = request.POST.get('weather', '')
-        report.shift = request.POST.get('shift', '')
-        # 位置/CCU: explicit selection wins; otherwise auto-derive from the first
-        # selected zone's 所属位置 (patch). Leaves None when neither is available,
-        # which is now valid (the column is nullable).
-        loc_id = request.POST.get('location') or None
-        if not loc_id and zones:
-            loc_id = next((z.patch_id for z in zones if z.patch_id), None)
-        report.location_id = loc_id
-        report.zone_names = request.POST.get('zone_names', '')
-        report.remark = request.POST.get('remark', '')
-        report.is_pending_repair = bool(request.POST.get('is_pending_repair'))
-        report.is_difficult = bool(request.POST.get('is_difficult'))
-        report.is_difficult_resolved = bool(request.POST.get('is_difficult_resolved'))
-        report.team_size = team_size
-        report.third_party_count = third_party_count
-        report.work_start_time = start
-        report.work_end_time = end
-        report.team_hours = _calc_hours(start, end, team_size)
-        report.third_party_hours = _calc_hours(start, end, third_party_count)
-        # Save first so report.id exists for photo paths.
-        report.save()
-        report.zones.set(zones)
-        # 编辑历史：仅 edit（非新建）记录一次，新建工单不记。
-        if not is_new:
+            report.date = request.POST.get('date') or date.today()
+            report.weather = request.POST.get('weather', '')
+            report.shift = request.POST.get('shift', '')
+            # 位置/CCU: explicit selection wins; otherwise auto-derive from the first
+            # selected zone's 所属位置 (patch). Leaves None when neither is available,
+            # which is now valid (the column is nullable).
+            loc_id = request.POST.get('location') or None
+            if not loc_id and zones:
+                loc_id = next((z.patch_id for z in zones if z.patch_id), None)
+            report.location_id = loc_id
+            report.zone_names = request.POST.get('zone_names', '')
+            report.remark = request.POST.get('remark', '')
+            report.is_pending_repair = bool(request.POST.get('is_pending_repair'))
+            report.is_difficult = bool(request.POST.get('is_difficult'))
+            report.is_difficult_resolved = bool(request.POST.get('is_difficult_resolved'))
+            report.team_size = team_size
+            report.third_party_count = third_party_count
+            report.work_start_time = start
+            report.work_end_time = end
+            report.team_hours = _calc_hours(start, end, team_size)
+            report.third_party_hours = _calc_hours(start, end, third_party_count)
+            # Save first so report.id exists for photo paths.
+            report.save()
+            report.zones.set(zones)
+            # 编辑历史：仅 edit（非新建）记录一次，新建工单不记。
+            if not is_new:
+                _record_edit(report, request.user)
+        else:
+            # Edit existing (WorkReport or PMWorkOrder).
+            report.date = request.POST.get('date') or report.date
+            report.weather = request.POST.get('weather', getattr(report, 'weather', ''))
+            report.shift = request.POST.get('shift', '')
+            loc_id = request.POST.get('location') or None
+            if not loc_id and zones:
+                loc_id = next((z.patch_id for z in zones if z.patch_id), None)
+            report.location_id = loc_id
+            report.zone_names = request.POST.get('zone_names', '')
+            report.remark = request.POST.get('remark', '')
+            if hasattr(report, 'is_pending_repair'):
+                report.is_pending_repair = bool(request.POST.get('is_pending_repair'))
+                report.is_difficult = bool(request.POST.get('is_difficult'))
+                report.is_difficult_resolved = bool(request.POST.get('is_difficult_resolved'))
+            report.team_size = team_size
+            report.third_party_count = third_party_count
+            report.work_start_time = start
+            report.work_end_time = end
+            report.team_hours = _calc_hours(start, end, team_size)
+            report.third_party_hours = _calc_hours(start, end, third_party_count)
+            report.save()
+            report.zones.set(zones)
             _record_edit(report, request.user)
 
         # Report-level photos (1.1.12). Merge instead of replace: drop any photos
@@ -1235,13 +1292,25 @@ def _handle_save(request, report):
                                   related_project_id=m_proj, counterparty=m_cp)
 
         # PM completion: mirror the mobile path so a PM task submitted via the
-        # desktop tree form also marks its GeneratedWorkOrder completed.
-        mark_pm_completed(report)
+        # desktop tree form also marks its GeneratedWorkOrder completed. Pass the
+        # gwo_id on the PM-completion path so the report↔GWO link is established.
+        mark_pm_completed(report, gwo_id=pm_gwo_id if is_pm_completion else None)
 
     messages.success(request, f'现场作业记录已保存 (ID: {report.id})')
     if request.POST.get('save_and_new'):
         return redirect('core:workorder_tree_form')
     return redirect('core:work_report_detail', report_id=report.id)
+
+
+def _owner_kwargs(owner):
+    """Return the FK kwargs that attach a child row to the given owner.
+
+    Works for both WorkReport (work_report=) and PMWorkOrder (pm_work_order=).
+    """
+    from core.models import PMWorkOrder
+    if isinstance(owner, PMWorkOrder):
+        return {'pm_work_order': owner}
+    return {'work_report': owner}
 
 
 def _save_entries(report, entries, entry_photos):
@@ -1252,8 +1321,17 @@ def _save_entries(report, entries, entry_photos):
     it represents "this category was worked under" and prevents the report from being
     mislabeled as 旧版记录 when the user picked a category without drilling into
     specific leaf content.
+
+    Works for both WorkReport and PMWorkOrder owners.
     """
-    report.entries.all().delete()
+    from core.models import PMWorkOrder
+    is_pm = isinstance(report, PMWorkOrder)
+    # Clear existing entries for this owner.
+    if is_pm:
+        WorkReportEntry.objects.filter(pm_work_order=report).delete()
+    else:
+        report.entries.all().delete()
+    kw = _owner_kwargs(report)
     # Pre-fetch the WorkItems referenced, to tell group/category nodes from leaves.
     wids = [e.get('work_item') for e in entries if e.get('work_item')]
     group_wids = set()
@@ -1276,13 +1354,14 @@ def _save_entries(report, entries, entry_photos):
             continue
         saved_paths = [_save_photo(report, f) for f in photos]
         WorkReportEntry.objects.update_or_create(
-            work_report=report, work_item_id=wid, project_id=project_id,
+            work_item_id=wid, project_id=project_id, **kw,
             defaults={'count': count, 'status': status,
                       'text_value': text_value, 'photos': saved_paths},
         )
 
     # Safety net: 待修 flag ⇒ 疑难 / 疑难未解决 (mirrors the mobile UI behavior).
-    if report.is_pending_repair:
+    # PMWorkOrder has no is_pending_repair — skip.
+    if not is_pm and getattr(report, 'is_pending_repair', False):
         report.is_difficult = True
         report.is_difficult_resolved = False
         report.save(update_fields=['is_difficult', 'is_difficult_resolved'])
@@ -1351,7 +1430,7 @@ def _save_workorder_materials(report, lines, entry_subtype='日常维护',
 
     # 1) Roll back any prior outbound transaction linked to this report: refund
     #    each line's quantity back to current_stock, then drop txn + lines.
-    old_txns = InventoryTransaction.objects.filter(work_report=report)
+    old_txns = InventoryTransaction.objects.filter(**_owner_kwargs(report))
     for txn in old_txns:
         for ln in txn.lines.all():
             InventoryCategory.objects.filter(pk=ln.category_id).update(
@@ -1372,11 +1451,11 @@ def _save_workorder_materials(report, lines, entry_subtype='日常维护',
         worker=report.worker,
         operation='出库',
         entry_subtype=entry_subtype or '日常维护',
-        work_report=report,
         related_project=project,
         counterparty=(counterparty or '').strip(),
         zone=first_zone,
         remark=f'工单 #{report.id} 材料消耗',
+        **_owner_kwargs(report),
     )
 
     # 3) One line per material; subtract stock atomically (F avoids races).
@@ -1447,20 +1526,30 @@ def _resolve_pending_repairs(pm_report, report_ids):
     For each id: clear its 待修 flag (so it drops out of the planned-maintenance
     backlog, which filters on is_pending_repair=True) and append the
     计划性维修 work-order number to its remark.
+
+    ``resolved_by_pm`` is a WorkReport self-FK, so it can only be set when
+    ``pm_report`` is a WorkReport. PMWorkOrder completions clear the 待修 flag
+    and note the resolution in remark, but cannot back-link via that FK.
     """
-    note = f'已由计划性维修工单 #{pm_report.id} 处理'
+    from core.models import PMWorkOrder
+    is_pmwo = isinstance(pm_report, PMWorkOrder)
+    ticket = pm_report.display_number if hasattr(pm_report, 'display_number') else f'#{pm_report.id}'
+    note = f'已由计划性维修工单 {ticket} 处理'
     for rid in report_ids:
         past = WorkReport.objects.filter(pk=rid).first()
         if not past:
             continue
         past.is_pending_repair = False
-        past.resolved_by_pm = pm_report  # FK link for the manager inbox
+        if not is_pmwo:
+            past.resolved_by_pm = pm_report  # FK link for the manager inbox
         remark = past.remark or ''
+        update_fields = ['is_pending_repair']
+        if not is_pmwo:
+            update_fields.append('resolved_by_pm')
         if note not in remark:
             past.remark = (remark + '\n' + note).strip() if remark else note
-            past.save(update_fields=['is_pending_repair', 'resolved_by_pm', 'remark'])
-        else:
-            past.save(update_fields=['is_pending_repair', 'resolved_by_pm'])
+            update_fields.append('remark')
+        past.save(update_fields=update_fields)
 
 
 def _parse_time(value):

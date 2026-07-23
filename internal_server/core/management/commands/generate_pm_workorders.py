@@ -1,9 +1,13 @@
-"""PM dispatch engine — generates WorkReports for due MaintenancePlans.
+"""PM dispatch engine — generates GeneratedWorkOrders for due MaintenancePlans.
 
 Runs daily via cron. For each active MaintenancePlan, computes the next due
 date using ``dateutil.rrule``, and if the plan is within its ``lead_days``
-window, generates a WorkReport + a GeneratedWorkOrder record (preventing
-duplicates).
+window, generates a GeneratedWorkOrder record (preventing duplicates).
+
+Dispatch creates ONLY a GWO (no WorkReport shell). The GWO carries the worker,
+zones and remark so the PM tab can render and a worker can later complete the
+task — at which point a new is_pm=True WorkReport is created and linked. This
+keeps PM work out of 维修日志 and the normal WorkReport id sequence gap-free.
 
 Usage:
     python manage.py generate_pm_workorders              # run for today
@@ -21,7 +25,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from core.models import (
-    MaintenancePlan, GeneratedWorkOrder, WorkReport, Crew,
+    MaintenancePlan, GeneratedWorkOrder, Crew,
 )
 
 logger = logging.getLogger(__name__)
@@ -119,34 +123,22 @@ class Command(BaseCommand):
 
                 with transaction.atomic():
                     remark = plan.remark_template or f'{plan.job_plan.name} - {plan.pm_number}'
-                    report = WorkReport.objects.create(
-                        date=due_date,
-                        worker=worker,
-                        remark=remark,
-                        shift='白班',
-                    )
-                    report.zones.set(zones)
-                    # Auto-fill location from the first zone's patch.
-                    first_zone = zones[0] if isinstance(zones, list) else zones.first()
-                    if first_zone and first_zone.patch_id:
-                        report.location_id = first_zone.patch_id
-                        report.save(update_fields=['location'])
-
+                    # Dispatch creates ONLY a GWO — no WorkReport shell. The GWO
+                    # carries the dispatch payload (worker/zones/remark) so the PM
+                    # tab can render and the completion form can seed a new
+                    # is_pm=True WorkReport later. This keeps the normal WorkReport
+                    # id sequence gap-free and PM work out of 维修日志.
                     gwo = GeneratedWorkOrder.objects.create(
-                        plan=plan, work_report=report, crew=plan.crew,
-                        scheduled_date=due_date, status='dispatched',
+                        plan=plan, crew=plan.crew, worker=worker,
+                        scheduled_date=due_date, status='dispatched', remark=remark,
                     )
-                    # Stamp a human-readable ticket number (PM-{gwo_id}) so PM-
-                    # dispatched work orders are visually distinct from regular
-                    # submissions (which show as "#{id}").
-                    report.ticket_number = f'PM-{gwo.id}'
-                    report.save(update_fields=['ticket_number'])
+                    gwo.zones.set(zones)
                     plan.last_generated_date = today
                     plan.save(update_fields=['last_generated_date'])
 
                 generated += 1
                 self.stdout.write(self.style.SUCCESS(
-                    f'  {plan.pm_number} → WorkReport #{report.id} ({due_date}, '
+                    f'  {plan.pm_number} → GWO #{gwo.id} (PM-{gwo.id}, {due_date}, '
                     f'{len(zones)} zones)'))
 
           except Exception as ex:

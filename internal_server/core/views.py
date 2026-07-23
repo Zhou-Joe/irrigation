@@ -1191,6 +1191,17 @@ def dashboard(request):
         'announcements_json': json.dumps(_unacked_announcements_for(request.user), ensure_ascii=False),
     }
 
+    # PM tasks for the dashboard FAB "PM安排" panel: the logged-in worker's
+    # crew's dispatched/overdue tasks (managers see all). Capped for the panel.
+    try:
+        pm_tasks_qs = _pm_gwo_queryset(request.user, is_admin or is_manager)
+        context['pm_tasks_json'] = json.dumps(
+            _serialize_pm_tasks(pm_tasks_qs[:50], is_admin or is_manager), ensure_ascii=False)
+        context['pm_tasks_total'] = pm_tasks_qs.count()
+    except Exception:
+        context['pm_tasks_json'] = '[]'
+        context['pm_tasks_total'] = 0
+
     return render(request, 'core/dashboard.html', context)
 
 
@@ -2233,19 +2244,22 @@ def pm_plan_orders(request, plan_id):
     from .models import MaintenancePlan
     plan = get_object_or_404(MaintenancePlan, pk=plan_id)
     orders = []
-    for gwo in plan.generated_orders.select_related('work_report__worker', 'crew', 'work_report').order_by('-scheduled_date'):
-        wr = gwo.work_report
+    for gwo in plan.generated_orders.select_related('pm_order__worker', 'crew', 'worker').order_by('-scheduled_date'):
+        pmwo = gwo.pm_order
+        # Zones: from the PMWorkOrder after completion, else from the GWO (dispatch snapshot).
+        zones_src = pmwo if pmwo else gwo
         orders.append({
             'scheduled_date': gwo.scheduled_date.strftime('%Y-%m-%d'),
             'generated_at': gwo.generated_at.strftime('%Y-%m-%d %H:%M') if gwo.generated_at else '',
             'status': gwo.status,
-            'report_id': wr.id if wr else None,
-            'report_number': wr.display_number if wr else '',
+            'pm_order_id': pmwo.id if pmwo else None,
+            'report_number': pmwo.display_number if pmwo else f'PM-{gwo.id}',
             'crew_name': gwo.crew.name if gwo.crew_id else '',
-            'worker_name': wr.worker.full_name if wr and wr.worker_id else '',
-            'zone_count': wr.zones.count() if wr else 0,
-            'entry_count': wr.entries.count() if wr else 0,
-            'work_content': (wr.work_content[:30] if wr.work_content else '') if wr else '',
+            'worker_name': (pmwo.worker.full_name if pmwo and pmwo.worker_id
+                            else (gwo.worker.full_name if gwo.worker_id else '')),
+            'zone_count': zones_src.zones.count(),
+            'entry_count': pmwo.entries.count() if pmwo else 0,
+            'work_content': '',
         })
     return JsonResponse({'orders': orders})
 
@@ -2355,6 +2369,76 @@ def pm_gwo_skip_all(request):
         return JsonResponse({'success': False, 'message': '无权限'}, status=403)
     count = GeneratedWorkOrder.objects.filter(status='overdue').update(status='skipped')
     return JsonResponse({'success': True, 'message': f'已跳过 {count} 张逾期工单'})
+
+
+@require_POST
+@login_required(login_url='core:login')
+def work_report_resolve_repair(request, report_id):
+    """Mark a single pending-repair / difficult work order as resolved.
+
+    Clears is_pending_repair, and if the report is flagged 疑难 (is_difficult)
+    also flips is_difficult_resolved=True so the detail page's "已处理" shows
+    "是". Writes an edit-log entry recording the transition.
+    """
+    from core.role_utils import is_admin
+    from .models import WorkReport
+    from core.workorder_tree_views import _record_edit
+    if not is_admin(request.user):
+        return JsonResponse({'success': False, 'message': '无权限'}, status=403)
+    wr = get_object_or_404(WorkReport, pk=report_id)
+    if not wr.is_pending_repair and not (wr.is_difficult and not wr.is_difficult_resolved):
+        return JsonResponse({'success': False, 'message': '该工单非待修/疑难未处理状态'})
+    changes = []
+    update_fields = []
+    if wr.is_pending_repair:
+        wr.is_pending_repair = False
+        changes.append('待修→已解决')
+        update_fields.append('is_pending_repair')
+    if wr.is_difficult and not wr.is_difficult_resolved:
+        wr.is_difficult_resolved = True
+        changes.append('疑难未处理→已处理')
+        update_fields.append('is_difficult_resolved')
+    note = '；'.join(changes) + f'（由 {request.user.get_username()} 标记）'
+    wr.save(update_fields=update_fields)
+    _record_edit(wr, request.user, note)
+    return JsonResponse({'success': True, 'message': f'已标记 #{wr.id} 为已解决（{"；".join(changes)}）'})
+
+
+@require_POST
+@login_required(login_url='core:login')
+def work_report_resolve_all_repair(request):
+    """Mark ALL unresolved pending-repair / difficult work orders as resolved (bulk).
+
+    Clears is_pending_repair and (for 疑难 reports) sets is_difficult_resolved.
+    Writes an edit-log entry per report.
+    """
+    from core.role_utils import is_admin
+    from .models import WorkReport
+    from core.workorder_tree_views import _record_edit
+    if not is_admin(request.user):
+        return JsonResponse({'success': False, 'message': '无权限'}, status=403)
+    qs = WorkReport.objects.filter(
+        is_pending_repair=True, resolved_by_pm__isnull=True,
+    ) | WorkReport.objects.filter(is_difficult=True, is_difficult_resolved=False)
+    count = 0
+    for wr in qs.distinct():
+        changes = []
+        update_fields = []
+        if wr.is_pending_repair:
+            wr.is_pending_repair = False
+            changes.append('待修→已解决')
+            update_fields.append('is_pending_repair')
+        if wr.is_difficult and not wr.is_difficult_resolved:
+            wr.is_difficult_resolved = True
+            changes.append('疑难未处理→已处理')
+            update_fields.append('is_difficult_resolved')
+        if not changes:
+            continue
+        note = '；'.join(changes) + f'（由 {request.user.get_username()} 批量标记）'
+        wr.save(update_fields=update_fields)
+        _record_edit(wr, request.user, note)
+        count += 1
+    return JsonResponse({'success': True, 'message': f'已批量解决 {count} 条工单'})
 
 
 @login_required(login_url='core:login')
@@ -5604,7 +5688,7 @@ def work_reports_excel(request):
         if len(zones) <= 5:
             zone_codes = ', '.join(z.code for z in zones if z.code)
         row = [idx, r.date.isoformat() if r.date else '',
-               f'#{r.id}' if r.id else '',
+               r.display_number if r.id else '',
                r.worker.full_name if r.worker_id and r.worker else '',
                r.location.code if r.location_id and r.location else '',
                _report_section_label(r),
@@ -7850,7 +7934,7 @@ def _scoped_work_reports_qs(user, admin, sort=WORK_REPORTS_DEFAULT_SORT):
         'worker', 'location'
     ).prefetch_related(
         'entries__work_item', 'entries__project', 'zones__land', 'edit_logs__editor'
-    ).order_by(*order)
+    ).filter(is_pm=False).order_by(*order)
                         # 游标分页用 id__lt(before_id) — 任何排序下都按 "更老的工单"
                         # 取下一页,再以所选排序渲染。对 created/id 完全等价;
                         # 对 worker 排序,每页内字母序连续,翻页时仍是按 id 取更老批次。
@@ -7952,17 +8036,22 @@ def work_report_reassign(request, report_id):
     })
 
 
-def _pm_gwo_queryset(user, is_mgr):
-    """Return the dispatched/overdue GWO queryset visible to this user.
+def _pm_gwo_queryset(user, is_mgr, include_done=False):
+    """Return the GWO queryset visible to this user for the PM tab.
 
-    Field workers: their crew's tasks. Managers: all tasks. Ordered by date.
+    By default only dispatched/overdue tasks (today's to-do). With
+    ``include_done=True`` also includes completed/skipped GWOs so the PM tab can
+    show history. Field workers: their crew's tasks. Managers: all.
     """
     from core.models import GeneratedWorkOrder, Worker
     from django.utils import timezone as _tz
     today = _tz.localdate()
-    qs = GeneratedWorkOrder.objects.filter(
-        status__in=['dispatched', 'overdue'], scheduled_date__lte=today,
-    )
+    if include_done:
+        qs = GeneratedWorkOrder.objects.all()
+    else:
+        qs = GeneratedWorkOrder.objects.filter(
+            status__in=['dispatched', 'overdue'], scheduled_date__lte=today,
+        )
     if not is_mgr:
         try:
             worker = Worker.objects.get(user=user, active=True)
@@ -7973,7 +8062,7 @@ def _pm_gwo_queryset(user, is_mgr):
         if not crew_ids:
             return GeneratedWorkOrder.objects.none()
         qs = qs.filter(crew_id__in=crew_ids)
-    return qs.select_related('work_report', 'plan__job_plan', 'crew').order_by('scheduled_date')
+    return qs.select_related('pm_order', 'plan__job_plan', 'crew', 'worker').prefetch_related('zones').order_by('-scheduled_date', '-id')
 
 
 def _serialize_pm_tasks(gwos, is_mgr):
@@ -7982,21 +8071,64 @@ def _serialize_pm_tasks(gwos, is_mgr):
     today = _tz.localdate()
     result = []
     for gwo in gwos:
-        report = gwo.work_report
-        zones_qs = list(report.zones.all()) if report else []
-        first_codes = [z.code for z in zones_qs[:3]]
+        pmwo = gwo.pm_order
+        plan = gwo.plan
+        level = plan.job_plan.asset_level if plan.job_plan_id else 'zone_group'
+        # Smart area description: zone_group → zone codes; ccu/sat → the CCU/SAT
+        # label only (don't list every included zone for device-level tasks).
+        # patch.code already starts with "CCU" (e.g. CCU2), so no extra prefix.
+        if level == 'ccu' and plan.patch_id:
+            area_desc = f'{plan.patch.code} {plan.patch.name}'.strip()
+            area_count = 1
+        elif level == 'sat' and plan.satellite_id:
+            area_desc = f'{plan.satellite.code} {plan.satellite.name}'.strip()
+            area_count = 1
+        else:
+            zones_qs = list(gwo.zones.all())
+            area_desc = '、'.join(z.code for z in zones_qs[:3])
+            area_count = len(zones_qs)
         result.append({
             'gwo_id': gwo.id,
-            'report_id': report.id if report else None,
-            'pm_number': gwo.plan.pm_number,
-            'job_plan_name': gwo.plan.job_plan.name if gwo.plan.job_plan_id else '',
+            'ticket': f'PM-{gwo.id}',
+            'pm_order_id': pmwo.id if pmwo else None,
+            'pm_number': plan.pm_number,
+            'job_plan_name': plan.job_plan.name if plan.job_plan_id else '',
             'scheduled_date': gwo.scheduled_date.strftime('%Y-%m-%d'),
-            'zone_count': len(zones_qs),
-            'zone_preview': '、'.join(first_codes),
+            'area_desc': area_desc,
+            'area_count': area_count,
+            'freq_label': f'每{plan.frequency_value}{plan.get_frequency_unit_display()}',
+            # Legacy fields (kept for existing PM-tab template compatibility).
+            'zone_count': area_count,
+            'zone_preview': area_desc,
             'overdue': gwo.scheduled_date < today,
             'crew_name': gwo.crew.name if gwo.crew_id else '—',
+            'status': gwo.status,
+            'completed_at': gwo.completed_at.strftime('%Y-%m-%d') if gwo.completed_at else '',
+            'worker_name': gwo.worker.full_name if gwo.worker_id and gwo.worker else '',
         })
     return result
+
+
+@login_required(login_url='core:login')
+def pm_gwo_detail(request, gwo_id):
+    """AJAX: return a single GeneratedWorkOrder's seed data for the completion form.
+
+    The PM-tab "去完成" button opens a CREATE workorder form seeded from the GWO
+    (dispatch stores worker/zones/remark on the GWO). This endpoint feeds those
+    fields so the form can pre-select zones, date and remark without the worker
+    re-entering them.
+    """
+    from core.models import GeneratedWorkOrder
+    gwo = get_object_or_404(GeneratedWorkOrder, pk=gwo_id)
+    return JsonResponse({
+        'gwo_id': gwo.id,
+        'ticket': f'PM-{gwo.id}',
+        'pm_number': gwo.plan.pm_number,
+        'scheduled_date': gwo.scheduled_date.strftime('%Y-%m-%d'),
+        'remark': gwo.remark or '',
+        'zone_codes': list(gwo.zones.values_list('code', flat=True)),
+        'worker_id': gwo.worker_id,
+    })
 
 
 @login_required(login_url='core:login')
@@ -8007,14 +8139,15 @@ def work_reports_pm_tasks(request):
     """
     from core.role_utils import is_admin
     admin = is_admin(request.user)
-    qs = _pm_gwo_queryset(request.user, admin)
+    include_done = request.GET.get('done') in ('1', 'true', 'True')
+    qs = _pm_gwo_queryset(request.user, admin, include_done=include_done)
     before_id = request.GET.get('before_id', '').strip()
     if before_id and before_id.isdigit():
         qs = qs.filter(id__lt=int(before_id))
     batch = list(qs[:20])
     return JsonResponse({
         'tasks': _serialize_pm_tasks(batch, admin),
-        'total': _pm_gwo_queryset(request.user, admin).count(),
+        'total': _pm_gwo_queryset(request.user, admin, include_done=include_done).count(),
     })
 
 
@@ -8029,7 +8162,7 @@ def work_reports_list(request):
     id), ``worker`` (Worker id, admin only), ``is_pending_repair`` / ``is_difficult``
     (any truthy value), and ``before_id`` (report id cursor for load-more).
     """
-    from core.models import Patch, Worker, Land
+    from core.models import Patch, Worker, Land, WorkReport
     from core.role_utils import is_admin
     from core.workorder_tree_views import workitem_path_map, enrich_reports, attach_zone_hierarchy
 
@@ -8147,9 +8280,38 @@ def work_reports_list(request):
     # Initial batch is capped (20); the full count drives the badge. A dedicated
     # AJAX endpoint (/work-reports/pm-tasks/) handles "load more".
     from core.role_utils import is_field_worker
-    pm_qs = _pm_gwo_queryset(request.user, admin)
+    pm_include_done = request.GET.get('pm_done') in ('1', 'true', 'True')
+    pm_qs = _pm_gwo_queryset(request.user, admin, include_done=pm_include_done)
     pm_tasks_total = pm_qs.count()
     pm_tasks = _serialize_pm_tasks(pm_qs[:20], admin)
+
+    # ── 待修工单 tab (managers only): unresolved pending-repair reports ──
+    # These are what paint zones orange on the map (needs_attention). Listed
+    # here so a manager can resolve them without filing a 计划性维修 work order.
+    pending_repairs = []
+    if is_manager:
+        # Unresolved 待修 OR 疑难未处理 — both block a report from being "done"
+        # and both are cleared by the resolve-repair action.
+        pr_qs = ((WorkReport.objects.filter(is_pending_repair=True, resolved_by_pm__isnull=True)
+                  | WorkReport.objects.filter(is_difficult=True, is_difficult_resolved=False))
+                 .distinct().select_related('worker', 'location').order_by('-date', '-id'))
+        for wr in pr_qs:
+            zone_codes = ', '.join(z.code for z in wr.zones.all()[:4])
+            flags = []
+            if wr.is_pending_repair:
+                flags.append('待修')
+            if wr.is_difficult and not wr.is_difficult_resolved:
+                flags.append('疑难未处理')
+            pending_repairs.append({
+                'id': wr.id,
+                'date': wr.date,
+                'worker_name': wr.worker.full_name if wr.worker_id and wr.worker else '—',
+                'location_code': wr.location.code if wr.location_id and wr.location else '',
+                'remark': (wr.remark or '')[:120],
+                'zone_preview': zone_codes,
+                'zone_count': wr.zones.count(),
+                'flags': '、'.join(flags),
+            })
 
     return render(request, 'core/work_reports.html', {
         'reports': reports,
@@ -8167,6 +8329,8 @@ def work_reports_list(request):
         'remark_groups_map': remark_groups_map,
         'pm_tasks': pm_tasks,
         'pm_tasks_total': pm_tasks_total,
+        'pm_include_done': pm_include_done,
+        'pending_repairs': pending_repairs,
         'active_tab': request.GET.get('tab', 'workorders'),
     })
 
@@ -9039,14 +9203,56 @@ def workorder_mobile_v2(request):
                 location = Patch.objects.first()
 
             # Edit vs create: a posted report_id means we update an existing
-            # report in place; otherwise we create a new one.
+            # report in place; otherwise we create a new one. A posted gwo_id
+            # (PM task completion) seeds a new is_pm=True report and links it to
+            # the GeneratedWorkOrder so dispatch needs no WorkReport shell.
             report_id = request.POST.get('report_id')
-            is_edit = report_id and report_id.isdigit()
+            pm_order_id = request.POST.get('pm_order_id')
+            is_edit = (report_id and report_id.isdigit()) or (pm_order_id and pm_order_id.isdigit())
+            pm_gwo_id = request.POST.get('gwo_id')
+            is_pm_completion = bool(pm_gwo_id and pm_gwo_id.isdigit())
             # Wrap all DB writes in a transaction so a failure mid-save doesn't
             # leave a half-written report (the desktop path already does this).
             from django.db import transaction
+            from core.models import PMWorkOrder, GeneratedWorkOrder
             with transaction.atomic():
-                if is_edit:
+                # PM completion uses a separate PMWorkOrder table (own id sequence),
+                # so PM work never occupies a WorkReport #id slot.
+                if is_pm_completion:
+                    if pm_order_id and pm_order_id.isdigit():
+                        report = get_object_or_404(PMWorkOrder, pk=pm_order_id)
+                        report.date = request.POST.get('date') or report.date
+                        report.location = location
+                        report.zone_location = first_zone
+                        report.remark = request.POST.get('remark', '')
+                        report.shift = shift
+                        report.work_start_time = work_start
+                        report.work_end_time = work_end
+                        report.team_size = team_size
+                        report.third_party_count = third_party_count
+                        report.team_hours = team_hours
+                        report.third_party_hours = third_party_hours
+                        report.zone_names = zone_names
+                        report.save()
+                        _record_edit(report, request.user)
+                    else:
+                        report = PMWorkOrder.objects.create(
+                            gwo_id=int(pm_gwo_id),
+                            date=request.POST.get('date') or date.today().isoformat(),
+                            worker=post_worker,
+                            location=location,
+                            zone_location=first_zone,
+                            remark=request.POST.get('remark', ''),
+                            shift=shift,
+                            work_start_time=work_start,
+                            work_end_time=work_end,
+                            team_size=team_size,
+                            third_party_count=third_party_count,
+                            team_hours=team_hours,
+                            third_party_hours=third_party_hours,
+                            zone_names=zone_names,
+                        )
+                elif is_edit:
                     report = get_object_or_404(WorkReport, pk=report_id)
                     report.date = request.POST.get('date') or report.date
                     # 编辑不改处理人：保留原 worker，仅更新内容字段。改派走管理员
@@ -9113,7 +9319,7 @@ def workorder_mobile_v2(request):
                         _resolve_pending_repairs(report, pm_ids)
                 entry_count = report.entries.count()
 
-                if report.is_difficult and not is_edit:
+                if not is_pm_completion and getattr(report, 'is_difficult', False) and not is_edit:
                     note = request.POST.get('remark', '').strip()
                     remark_content = note or (f'疑难工单 · {entry_count} 项' if entry_count else '疑难工单')
                     remark_entry = {
@@ -9151,10 +9357,13 @@ def workorder_mobile_v2(request):
                 # PM 任务完成：如果这条工单关联了一条派发的 GeneratedWorkOrder，
                 # 提交即视为完成（班组全体可见的任务从待办列表消失）。
                 # 逻辑抽取到 workorder_tree_views.mark_pm_completed，两条提交路径共用。
+                # pm_gwo_id 非空时是 PM 完成路径（新建 is_pm 工单）——传给 mark_pm_completed
+                # 让它建立 report↔GWO 链接并标完成。
                 from core.workorder_tree_views import mark_pm_completed
-                mark_pm_completed(report)
+                mark_pm_completed(report, gwo_id=pm_gwo_id if is_pm_completion else None)
 
-            success_msg = f'工作记录已更新 (ID: {report.id})' if is_edit else f'工作记录已提交 (ID: {report.id})'
+            ticket = report.display_number if hasattr(report, 'display_number') else f'#{report.id}'
+            success_msg = f'工作记录已更新 ({ticket})' if is_edit else f'工作记录已提交 ({ticket})'
             if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
                 return JsonResponse({'success': True, 'message': success_msg})
             messages.success(request, success_msg)
@@ -9269,18 +9478,25 @@ def workorder_modal_data(request):
 
     shift_freq = {'早班': 0, '白班': 0, '夜班': 0}
     if worker:
-        recent = WorkReport.objects.filter(worker=worker, shift__in=shift_freq.keys()).values_list('shift', flat=True)
+        recent = (WorkReport.objects
+                  .filter(worker=worker, shift__in=shift_freq.keys(), is_pm=False)
+                  .values_list('shift', flat=True))
         for s in recent:
             if s in shift_freq:
                 shift_freq[s] += 1
     sorted_shifts = sorted(shift_freq.keys(), key=lambda s: -shift_freq[s])
 
-    # Edit mode: when a report_id is supplied, also return the existing report's
-    # header fields, filled tree entries, and photos so the modal can pre-fill.
+    # Edit mode: when a report_id (WorkReport) or pm_order_id (PMWorkOrder) is
+    # supplied, also return the existing record's header fields, filled tree
+    # entries, and photos so the modal can pre-fill.
     report = None
     report_id = request.GET.get('report_id')
+    pm_order_id = request.GET.get('pm_order_id')
     if report_id:
         report = get_object_or_404(WorkReport, pk=report_id)
+    elif pm_order_id:
+        from core.models import PMWorkOrder
+        report = get_object_or_404(PMWorkOrder, pk=pm_order_id)
 
     payload = {
         'work_tree': serialize_workitem_tree(),
@@ -9297,7 +9513,11 @@ def workorder_modal_data(request):
         'inventory_tree': serialize_inventory_tree(),
     }
     if report:
-        payload['report_id'] = report.id
+        from core.models import PMWorkOrder
+        if isinstance(report, PMWorkOrder):
+            payload['pm_order_id'] = report.id
+        else:
+            payload['report_id'] = report.id
         payload['header'] = _report_header_dict(report)
         payload['existing'] = serialize_existing_entries(report)
         payload['report_photos'] = report.photos or []

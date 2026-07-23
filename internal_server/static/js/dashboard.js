@@ -618,6 +618,7 @@
         // Action map — replaces eval()
         var fabActions = {
             workorder: function () { if (typeof window.openV2Modal === 'function') window.openV2Modal('workorder'); },
+            pm: function () { if (typeof window.openPmTaskPanel === 'function') window.openPmTaskPanel(); },
             water_request: function () { if (typeof window.openV2Modal === 'function') window.openV2Modal('water_request'); },
             inventory: function () { if (typeof window.openV2Modal === 'function') window.openV2Modal('inventory'); }
         };
@@ -632,6 +633,7 @@
 
         var menuItems = [
             { icon: '📝', label: '工单提交', key: 'workorder' },
+            { icon: '🔧', label: 'PM安排', key: 'pm' },
             { icon: '💧', label: '浇水需求', key: 'water_request' },
             { icon: '📦', label: '库存管理', key: 'inventory' },
             { icon: '📋', label: '历史记录', url: window.HISTORY_URL || '#' },

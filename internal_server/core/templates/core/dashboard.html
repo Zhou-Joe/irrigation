@@ -413,9 +413,10 @@
 <script>window.MAP_STYLE_CONFIG = {{ map_style_json|safe }} || {};</script>
 <script id="pending-water-requests" type="application/json">{{ pending_water_requests_json|safe }}</script>
 <script id="pending-remarks" type="application/json">{{ pending_remarks_json|safe }}</script>
+<script id="pm-tasks-data" type="application/json">{{ pm_tasks_json|safe }}</script>
 <!-- Custom Map JS -->
 <script src="{% static 'js/map.js' %}?v=20260704"></script>
-<script src="{% static 'js/dashboard-modal.js' %}?v=20260714"></script>
+<script src="{% static 'js/dashboard-modal.js' %}?v=20260724c"></script>
 <script>
 // Override the notification popup's PM-task "填写" handler: on the dashboard we
 // can open the work-order edit modal directly. base.html's default fallback

@@ -1078,6 +1078,12 @@ class WorkReport(models.Model):
     # Human-readable ticket number. PM-dispatched work orders get "PM-{gwo_id}";
     # manually submitted ones stay blank and display as "#{id}".
     ticket_number = models.CharField('工单编号', max_length=30, blank=True, default='')
+    # PM separation flag: True for work orders created when a worker COMPLETES a
+    # PM task. Dispatch no longer pre-creates a WorkReport shell — the GWO carries
+    # the dispatch data, and this flag is set on the WorkReport only at completion.
+    # 维修日志 excludes is_pm=True so PM work never pollutes the normal list, and
+    # dispatch consumes zero #id slots (no gaps in the normal id sequence).
+    is_pm = models.BooleanField('PM生成工单', default=False, db_index=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -1145,8 +1151,12 @@ class WorkReportEditLog(models.Model):
     """
 
     work_report = models.ForeignKey(
-        WorkReport, on_delete=models.CASCADE, related_name='edit_logs',
-        verbose_name='工单',
+        WorkReport, on_delete=models.CASCADE, null=True, blank=True,
+        related_name='edit_logs', verbose_name='工单',
+    )
+    pm_work_order = models.ForeignKey(
+        'PMWorkOrder', on_delete=models.CASCADE, null=True, blank=True,
+        related_name='edit_logs', verbose_name='PM工单',
     )
     editor = models.ForeignKey(
         Worker, on_delete=models.SET_NULL, null=True,
@@ -1339,10 +1349,18 @@ class Project(models.Model):
 
 
 class WorkReportEntry(models.Model):
-    """工单填报明细 - 只为「填了的叶子」存一行。"""
+    """工单填报明细 - 只为「填了的叶子」存一行。
+
+    可归属到普通工单 (work_report) 或 PM完成工单 (pm_work_order)，二选一。
+    """
 
     work_report = models.ForeignKey(
-        WorkReport, on_delete=models.CASCADE, related_name='entries', verbose_name='工单',
+        WorkReport, on_delete=models.CASCADE, null=True, blank=True,
+        related_name='entries', verbose_name='工单',
+    )
+    pm_work_order = models.ForeignKey(
+        'PMWorkOrder', on_delete=models.CASCADE, null=True, blank=True,
+        related_name='entries', verbose_name='PM工单',
     )
     work_item = models.ForeignKey(
         WorkItem, on_delete=models.PROTECT, related_name='entries', verbose_name='节点',
@@ -1359,7 +1377,6 @@ class WorkReportEntry(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        unique_together = ('work_report', 'work_item', 'project')
         verbose_name = '工单明细'
         verbose_name_plural = '工单明细'
 
@@ -1478,6 +1495,10 @@ class InventoryTransaction(models.Model):
         'WorkReport', on_delete=models.SET_NULL, null=True, blank=True,
         related_name='material_consumptions', verbose_name='关联工单',
         help_text='工单内登记的材料消耗会生成此关联的出库单',
+    )
+    pm_work_order = models.ForeignKey(
+        'PMWorkOrder', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='material_consumptions', verbose_name='关联PM工单',
     )
     consumption_mode = models.CharField(
         '消耗类型', max_length=10, choices=CONSUMPTION_MODE_CHOICES, default='actual',
@@ -1964,6 +1985,58 @@ class MaintenancePlan(models.Model):
         return f'{self.pm_number} ({self.job_plan.name})'
 
 
+class PMWorkOrder(models.Model):
+    """PM 完成工单 — 工人完成一项 PM 任务时填报的记录。
+
+    与 WorkReport 完全独立（独立的自增 id 序列），这样 PM 工单不占用普通
+    工单的 #id 序列，也不会出现在维修日志里。复用 WorkReportEntry 和
+    InventoryTransaction 作为子表（通过可选的 pm_work_order FK 关联）。
+    一个 PMWorkOrder 对应一个 GeneratedWorkOrder（OneToOne）。
+    """
+
+    SHIFT_CHOICES = [
+        ('早班', '早班'),
+        ('白班', '白班'),
+        ('夜班', '夜班'),
+    ]
+
+    gwo = models.OneToOneField(
+        'GeneratedWorkOrder', on_delete=models.CASCADE,
+        related_name='+', verbose_name='关联派发工单',
+    )
+    worker = models.ForeignKey(Worker, on_delete=models.PROTECT, related_name='pm_work_orders', verbose_name='处理人')
+    location = models.ForeignKey(Patch, on_delete=models.PROTECT, null=True, blank=True, related_name='pm_work_orders', verbose_name='位置/CCU')
+    zone_location = models.ForeignKey(Zone, on_delete=models.SET_NULL, null=True, blank=True, related_name='pm_work_orders', verbose_name='位置区域')
+    date = models.DateField('日期', db_index=True)
+    remark = models.TextField('备注', blank=True)
+    shift = models.CharField('班次', max_length=10, choices=SHIFT_CHOICES, blank=True)
+    work_start_time = models.TimeField('工作开始时间', null=True, blank=True)
+    work_end_time = models.TimeField('工作完成时间', null=True, blank=True)
+    team_size = models.PositiveIntegerField('灌溉组人数', default=1)
+    third_party_count = models.PositiveIntegerField('第三方人数', default=0)
+    team_hours = models.FloatField('灌溉组工时', default=0)
+    third_party_hours = models.FloatField('第三方工时', default=0)
+    zones = models.ManyToManyField(Zone, blank=True, related_name='pm_workorder_records', verbose_name='区域')
+    zone_names = models.TextField('通称位置', blank=True)
+    photos = models.JSONField(default=list, blank=True, verbose_name='照片列表')
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-date', '-id']
+        verbose_name = 'PM完成工单'
+        verbose_name_plural = 'PM完成工单'
+
+    def __str__(self):
+        return f'PMO-{self.id} ({self.date})'
+
+    @property
+    def display_number(self):
+        """User-facing ticket number. Uses the GWO's PM-<id> for continuity."""
+        return f'PM-{self.gwo_id}'
+
+
 class GeneratedWorkOrder(models.Model):
     """PM 派发记录 — 防重复生成 + 审计。
 
@@ -1982,7 +2055,14 @@ class GeneratedWorkOrder(models.Model):
     plan = models.ForeignKey(MaintenancePlan, on_delete=models.CASCADE, related_name='generated_orders')
     work_report = models.OneToOneField(
         WorkReport, on_delete=models.SET_NULL, null=True, blank=True,
-        related_name='pm_generation', verbose_name='生成的工单',
+        related_name='pm_generation', verbose_name='生成的工单(旧)',
+        help_text='已弃用 — PM 完成数据现在存 PMWorkOrder，经 pm_order 关联。保留仅为迁移兼容。',
+    )
+    # PM completion record (replaces work_report). One PM task → one PMWorkOrder
+    # on completion. Null until the worker fills it in.
+    pm_order = models.OneToOneField(
+        PMWorkOrder, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='+', verbose_name='PM完成工单',
     )
     # Snapshot of plan.crew at dispatch time so a worker's "today's PM tasks"
     # query can match against GeneratedWorkOrder.crew (entire crew visible)
@@ -1992,6 +2072,18 @@ class GeneratedWorkOrder(models.Model):
         related_name='generated_orders', verbose_name='派发班组',
     )
     scheduled_date = models.DateField('计划执行日期')
+    # Dispatch payload: since dispatch no longer creates a WorkReport shell, the
+    # GWO itself carries the data the PM tab + completion form need (worker,
+    # zones, remark). On completion these seed the new is_pm=True WorkReport.
+    worker = models.ForeignKey(
+        Worker, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='pm_orders', verbose_name='指派工人',
+    )
+    zones = models.ManyToManyField(
+        Zone, blank=True, related_name='pm_orders', verbose_name='关联Zone',
+        help_text='派发时快照的目标Zone（完成时用于填充工单区域）。',
+    )
+    remark = models.TextField('备注快照', blank=True, default='')
     status = models.CharField('状态', max_length=20, choices=STATUS_CHOICES, default='dispatched')
     generated_at = models.DateTimeField(auto_now_add=True)
     completed_at = models.DateTimeField('完成时间', null=True, blank=True)
