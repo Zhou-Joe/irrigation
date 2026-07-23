@@ -15,6 +15,7 @@ from functools import lru_cache
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
+from django.views.decorators.cache import never_cache
 from django.views.decorators.http import require_POST
 from django.core.files.storage import default_storage
 from django.db import transaction
@@ -359,6 +360,7 @@ def _project_budget_data(projects):
     return out
 
 
+@never_cache
 @login_required(login_url='core:login')
 def project_management(request):
     """List/create/edit projects grouped by category, with per-project work summary."""
