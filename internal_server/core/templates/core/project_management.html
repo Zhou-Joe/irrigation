@@ -18,7 +18,10 @@
 .pm-t-name { font-weight: 600; color: #333; min-width: 140px; }
 .pm-t-name small { display: block; font-weight: 400; color: #999; font-size: .74rem; margin-top: 1px; }
 .pm-t-date { color: #666; font-size: .8rem; white-space: nowrap; }
-.pm-filter-count { font-size: .8rem; color: #888; margin-bottom: 10px; }
+.pm-filter-count { font-size: .8rem; color: #888; }
+.pm-filter-row { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; margin-bottom: 10px; }
+.pm-sort-bar { display: inline-flex; align-items: center; gap: 6px; font-size: .85rem; color: #666; }
+.pm-sort-bar select { font-size: .85rem; padding: 3px 6px; border: 1px solid #ccc; border-radius: 6px; }
 
 /* completed badge / toggle on a project row */
 .pm-done-tag { font-size: .72rem; background: #e3f2fd; color: #1565c0; padding: 2px 8px; border-radius: 8px; }
@@ -101,7 +104,25 @@
       <button type="button" class="btn-sm btn-primary" onclick="pmOpenCreate()">+ 新建项目</button>
     </form>
   </div>
-  <div class="pm-filter-count">共 {{ total_projects }} 个项目{% if fq or fcat or fcompleted %}（已筛选）{% endif %}</div>
+  <div class="pm-filter-row">
+    <div class="pm-filter-count">共 {{ total_projects }} 个项目{% if fq or fcat or fcompleted %}（已筛选）{% endif %}</div>
+    <div class="pm-sort-bar">
+      <span>排序</span>
+      <select id="pmSort" onchange="pmSortField(this.value)">
+        <option value="default">默认（类别/子类/名称）</option>
+        <option value="name">项目名称</option>
+        <option value="date">开工日期</option>
+        <option value="matbal">材料余额</option>
+        <option value="laborbal">人工余额</option>
+        <option value="mat">材料预算</option>
+        <option value="labor">人工预算</option>
+        <option value="hours">灌溉组工时</option>
+        <option value="reports">工单数</option>
+        <option value="completed">状态</option>
+      </select>
+      <button type="button" id="pmSortDir" class="btn-sm btn-secondary" onclick="pmToggleDir()" title="升序/降序">↑</button>
+    </div>
+  </div>
 
   <!-- project groups (per-category tables) -->
   {% for cat, group in groups.items %}
@@ -127,7 +148,15 @@
         </thead>
         <tbody>
           {% for it in group.items %}
-          <tr>
+          <tr data-name="{{ it.project.name }}"
+              data-date="{{ it.project.start_date|date:'Y-m-d' }}"
+              data-mat="{{ it.material_budget_amount }}"
+              data-labor="{{ it.labor_budget_amount }}"
+              data-matbal="{{ it.material_balance }}"
+              data-laborbal="{{ it.labor_balance }}"
+              data-hours="{{ it.team_hours }}"
+              data-reports="{{ it.report_count }}"
+              data-completed="{{ it.project.is_completed|yesno:'1,0' }}">
             <td class="pm-t-name">
               {{ it.project.name }}
               {% if it.project.symbol or it.project.code or it.project.subcategory or not it.project.active %}
@@ -311,6 +340,68 @@ function pmBudget(pid) {
         try { PM_BUDGET[pid] = JSON.parse(el.getAttribute('data-budget')); } catch (e) { PM_BUDGET[pid] = {material_consumed:[],estimated_consumed:[],consumption_records:[],material_budget_amount:'',labor_budget_amount:'',team_rate:'',third_party_rate:'',material_balance:'',po_amount_total:'',labor_balance:'',labor_cost:'',team_hours:'',third_hours:'',linked_pos:[],work_reports:[]}; }
     }
     return PM_BUDGET[pid];
+}
+
+// ── Client-side sort (within each category table; no page refresh) ──
+// Each project <tr> is immediately followed by its .app-row-detail <tr>, so we
+// move them as a pair to keep detail panels attached to their project.
+var _pmField = 'default', _pmDir = 'asc';
+(function () {
+  // Snapshot the server's original order per table so "默认" can restore it.
+  document.querySelectorAll('table.app-table tbody').forEach(function (tb) {
+    var i = 0;
+    Array.prototype.forEach.call(tb.querySelectorAll('tr:not(.app-row-detail)'), function (r) {
+      r.dataset.origIdx = String(i++);
+    });
+  });
+})();
+function _pmSortVal(tr, field) {
+  var v = tr.dataset[field];
+  if (v === undefined || v === '') return null;
+  if (field === 'mat' || field === 'labor' || field === 'matbal' ||
+      field === 'laborbal' || field === 'hours' || field === 'reports') {
+    var n = parseFloat(v);
+    return isNaN(n) ? null : n;
+  }
+  return v;
+}
+function pmSortField(f) {
+  _pmField = f;
+  _pmDir = (f === 'default' || f === 'name' || f === 'date' || f === 'completed') ? 'asc' : 'desc';
+  var btn = document.getElementById('pmSortDir');
+  if (btn) btn.textContent = (_pmDir === 'desc') ? '↓' : '↑';
+  _pmApplySort();
+}
+function pmToggleDir() {
+  _pmDir = (_pmDir === 'asc') ? 'desc' : 'asc';
+  var btn = document.getElementById('pmSortDir');
+  if (btn) btn.textContent = (_pmDir === 'desc') ? '↓' : '↑';
+  _pmApplySort();
+}
+function _pmApplySort() {
+  document.querySelectorAll('table.app-table tbody').forEach(function (tb) {
+    var projRows = Array.prototype.slice.call(tb.querySelectorAll('tr:not(.app-row-detail)'));
+    var pairs = projRows.map(function (r) { return [r, r.nextElementSibling]; });
+    if (_pmField === 'default') {
+      pairs.sort(function (a, b) { return (+a[0].dataset.origIdx) - (+b[0].dataset.origIdx); });
+    } else {
+      var present = [], missing = [];
+      pairs.forEach(function (pr) {
+        (_pmSortVal(pr[0], _pmField) === null ? missing : present).push(pr);
+      });
+      present.sort(function (a, b) {
+        var va = _pmSortVal(a[0], _pmField), vb = _pmSortVal(b[0], _pmField);
+        if (typeof va === 'number' && typeof vb === 'number') return va - vb;
+        return String(va).localeCompare(String(vb), 'zh');
+      });
+      if (_pmDir === 'desc') present.reverse();
+      pairs = present.concat(missing);   // rows with no value always sink to the bottom
+    }
+    pairs.forEach(function (pr) {
+      tb.appendChild(pr[0]);            // project row
+      if (pr[1]) tb.appendChild(pr[1]);  // its detail row, kept attached
+    });
+  });
 }
 
 function pmToggleDetail(pid) {
