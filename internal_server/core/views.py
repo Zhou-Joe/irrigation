@@ -12,7 +12,7 @@ from django.http import HttpResponse, JsonResponse
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.http import url_has_allowed_host_and_scheme
-from core.models import Zone, Patch
+from core.models import Zone, Patch, WorkItem, WorkReportEntry
 
 def auto_close_boundary_points(boundary_data):
     """
@@ -7907,6 +7907,11 @@ def _work_report_filters(request):
     sort = (request.GET.get('sort') or WORK_REPORTS_DEFAULT_SORT).strip()
     if sort not in WORK_REPORTS_SORT_OPTIONS:
         sort = WORK_REPORTS_DEFAULT_SORT
+    # Workorder type = the 工作类别 (WorkItem section) derived from the report's
+    # entries. Validated against SECTION_CHOICES so bogus values yield '' (all).
+    section = (request.GET.get('section') or '').strip()
+    if section not in dict(WorkItem.SECTION_CHOICES):
+        section = ''
 
     # Default to the most recent N days only when the user hasn't picked any
     # explicit start (neither a preset nor a manual date). This keeps the first
@@ -7915,7 +7920,7 @@ def _work_report_filters(request):
         today = timezone.localdate()
         date_from = (today - timedelta(days=WORK_REPORTS_DEFAULT_DAYS)).isoformat()
 
-    return date_from, date_to, land_id, worker_id, difficult, pending, before_id, sort, q
+    return date_from, date_to, land_id, worker_id, difficult, pending, before_id, sort, q, section
 
 
 def _scoped_work_reports_qs(user, admin, sort=WORK_REPORTS_DEFAULT_SORT):
@@ -8151,6 +8156,7 @@ def work_reports_pm_tasks(request):
     })
 
 
+@never_cache
 @login_required(login_url='core:login')
 def work_reports_list(request):
     """Unified, responsive work-order list (维修日志).
@@ -8169,7 +8175,7 @@ def work_reports_list(request):
     user = request.user
     admin = is_admin(user)
 
-    date_from, date_to, land_id, worker_id, difficult, pending, before_id, sort, q = _work_report_filters(request)
+    date_from, date_to, land_id, worker_id, difficult, pending, before_id, sort, q, section = _work_report_filters(request)
 
     qs = _scoped_work_reports_qs(user, admin, sort=sort)
     qs = qs.annotate(comment_count=Count('comments'))
@@ -8188,6 +8194,10 @@ def work_reports_list(request):
         qs = qs.filter(is_difficult=True)
     if pending:
         qs = qs.filter(is_pending_repair=True)
+    if section:
+        # Subquery (not a JOIN) so the comment_count annotation above isn't
+        # multiplied, and reports with several matching entries aren't duped.
+        qs = qs.filter(entries__in=WorkReportEntry.objects.filter(work_item__section=section))
     # Work-order number search: match the id (or #id) as a prefix so "4" finds
     # #4, #40-49, #400-499, etc. An exact integer narrows to that one report.
     if q:
@@ -8266,6 +8276,7 @@ def work_reports_list(request):
             'worker': int(worker_id) if worker_id else '',
             'is_difficult': bool(difficult),
             'is_pending_repair': bool(pending),
+            'section': section,
             'sort': sort,
             'q': q,
         },
@@ -8317,6 +8328,7 @@ def work_reports_list(request):
         'reports': reports,
         'lands': lands,
         'workers': workers,
+        'sections': WorkItem.SECTION_CHOICES,
         'is_admin': admin,
         'has_more': has_more,
         'last_id': reports[-1].id if reports else '',
@@ -8361,7 +8373,7 @@ def work_report_photos(request):
     if not admin:
         return JsonResponse({'reports': [], 'error': '无权限'}, status=403)
 
-    date_from, date_to, land_id, worker_id, difficult, pending, before_id, sort, q = _work_report_filters(request)
+    date_from, date_to, land_id, worker_id, difficult, pending, before_id, sort, q, section = _work_report_filters(request)
     qs = _scoped_work_reports_qs(user, admin, sort=sort).filter(date__gte=date_from)
     if date_to:
         qs = qs.filter(date__lte=date_to)
@@ -8373,6 +8385,8 @@ def work_report_photos(request):
         qs = qs.filter(is_difficult=True)
     if pending:
         qs = qs.filter(is_pending_repair=True)
+    if section:
+        qs = qs.filter(entries__in=WorkReportEntry.objects.filter(work_item__section=section))
     if q and q.isdigit():
         qs = qs.filter(id__startswith=q)
 

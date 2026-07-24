@@ -303,6 +303,12 @@
             <div class="ff"><label>工单号</label>
                 <input type="text" name="q" value="{{ filters.q|default:'' }}" placeholder="输入工单号">
             </div>
+            <div class="ff"><label>工作类别</label>
+                <select name="section">
+                    <option value="">全部</option>
+                    {% for s, slabel in sections %}<option value="{{ s }}" {% if filters.section == s %}selected{% endif %}>{{ slabel }}</option>{% endfor %}
+                </select>
+            </div>
             {% if is_admin %}
             <div class="ff"><label>处理人</label>
                 <select name="worker">
@@ -1087,6 +1093,7 @@ function loadMore() {
     if (currentFilter.worker) params.set('worker', currentFilter.worker);
     if (currentFilter.is_pending_repair) params.set('is_pending_repair', '1');
     if (currentFilter.is_difficult) params.set('is_difficult', '1');
+    if (currentFilter.section) params.set('section', currentFilter.section);
     if (currentFilter.q) params.set('q', currentFilter.q);
     if (currentFilter.sort) params.set('sort', currentFilter.sort);
 
