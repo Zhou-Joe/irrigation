@@ -637,7 +637,7 @@
       <div class="am-card">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
           <h2 style="margin:0;">班组列表（{{ crews|length }}）</h2>
-          <a href="{% url 'core:crew_new' %}" class="btn btn-primary" target="_blank">+ 新建班组</a>
+          <button class="btn btn-primary" onclick="openCrewModal()">+ 新建班组</button>
         </div>
         {% if crews %}
         <table class="user-table">
@@ -660,7 +660,7 @@
                 {% if not c.lands.all and not c.patches.all %}—{% endif %}
               </td>
               <td>{% if c.active %}<span class="status-active">启用</span>{% else %}<span class="status-inactive">停用</span>{% endif %}</td>
-              <td><a href="{% url 'core:crew_edit' c.id %}" class="btn btn-sm btn-secondary" target="_blank">编辑</a></td>
+              <td><button class="btn btn-sm btn-secondary" onclick="openCrewModal({{ c.id }})">编辑</button></td>
             </tr>
             {% endfor %}
           </tbody>
@@ -668,12 +668,51 @@
         {% else %}
         <div class="empty-state">
           <p>暂无班组</p>
-          <a href="{% url 'core:crew_new' %}" class="btn btn-primary" target="_blank">创建班组</a>
+          <button class="btn btn-primary" onclick="openCrewModal()">创建班组</button>
         </div>
         {% endif %}
       </div>
     </div>
 </div>
+
+<!-- Crew Modal (new/edit 班组, in-page, no tab jump) -->
+<div class="modal-overlay" id="crewModal">
+    <div class="modal" style="max-width:640px;">
+        <h3 id="crewModalTitle">新建班组</h3>
+        <div class="form-group">
+            <label>班组名称 *</label>
+            <input type="text" id="crew_name" class="form-control" required>
+        </div>
+        <div class="form-group">
+            <label>组长</label>
+            <select id="crew_leader" class="form-control"><option value="">— 不指定 —</option></select>
+        </div>
+        <div class="form-group">
+            <label>成员</label>
+            <div id="crew_members" class="crew-chk-group"></div>
+        </div>
+        <div class="form-group">
+            <label>负责区域 (Land)</label>
+            <div id="crew_lands" class="crew-chk-group"></div>
+        </div>
+        <div class="form-group">
+            <label>负责CCU <span style="font-size:.72em;color:#aaa;">（CCU/SAT级PM优先按CCU匹配班组）</span></label>
+            <div id="crew_patches" class="crew-chk-group"></div>
+        </div>
+        <div class="form-group">
+            <label><input type="checkbox" id="crew_active" checked> 启用</label>
+        </div>
+        <div class="modal-actions">
+            <button class="btn btn-secondary" onclick="closeCrewModal()">取消</button>
+            <button class="btn btn-primary" onclick="saveCrew()">保存</button>
+        </div>
+    </div>
+</div>
+<style>
+.crew-chk-group { display:flex; flex-wrap:wrap; gap:6px; max-height:180px; overflow-y:auto; padding:6px; border:1px solid #eee; border-radius:8px; }
+.crew-chk { display:inline-flex; align-items:center; gap:4px; font-size:.82rem; padding:3px 10px; background:#f5f5f5; border-radius:6px; cursor:pointer; }
+.crew-chk input { margin:0; }
+</style>
 
 <!-- Edit User Modal -->
 <div class="modal-overlay" id="editModal">
@@ -887,6 +926,109 @@ function getCSRFToken() {
         if (c.startsWith('csrftoken=')) return c.substring('csrftoken='.length);
     }
     return '';
+}
+
+// --- Crew modal (班组管理, in-page) ---
+var _crewUrlNew = '{% url "core:crew_new" %}';
+function _crewUrlEdit(id) { return '/settings/crew/' + id + '/'; }
+
+function _renderCrewCheckboxes(containerId, options, selectedIds) {
+    var sel = {};
+    (selectedIds || []).forEach(function(id) { sel[id] = true; });
+    var html = '';
+    options.forEach(function(o) {
+        var label = o.label || (o.code ? (o.code + ' ' + (o.name || '')) : o.name);
+        html += '<label class="crew-chk"><input type="checkbox" value="' + o.id + '"'
+              + (sel[o.id] ? ' checked' : '') + '> ' + label + '</label>';
+    });
+    var el = document.getElementById(containerId);
+    el.innerHTML = html || '<span style="color:#aaa;font-size:.82rem;">无可用选项</span>';
+}
+
+function openCrewModal(crewId) {
+    var url = crewId ? _crewUrlEdit(crewId) : _crewUrlNew;
+    document.getElementById('crewModalTitle').textContent = crewId ? '编辑班组' : '新建班组';
+    document.getElementById('crew_name').value = '';
+    document.getElementById('crew_leader').innerHTML = '<option value="">— 不指定 —</option>';
+    document.getElementById('crew_members').innerHTML = '<span style="color:#aaa;font-size:.82rem;">加载中…</span>';
+    document.getElementById('crew_lands').innerHTML = '';
+    document.getElementById('crew_patches').innerHTML = '';
+    document.getElementById('crew_active').checked = true;
+    document.getElementById('crewModal').dataset.crewId = crewId || '';
+    document.getElementById('crewModal').classList.add('show');
+    fetch(url + (url.indexOf('?') >= 0 ? '&' : '?') + 'json=1', {
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+    })
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            document.getElementById('crew_name').value = d.name || '';
+            var leadSel = document.getElementById('crew_leader');
+            var leadHtml = '<option value="">— 不指定 —</option>';
+            d.workers.forEach(function(w) {
+                leadHtml += '<option value="' + w.id + '"' + (d.leader_id == w.id ? ' selected' : '') + '>'
+                          + w.label + '</option>';
+            });
+            leadSel.innerHTML = leadHtml;
+            _renderCrewCheckboxes('crew_members', d.workers, d.members);
+            _renderCrewCheckboxes('crew_lands', d.lands_all, d.lands);
+            _renderCrewCheckboxes('crew_patches', d.patches_all, d.patches);
+            document.getElementById('crew_active').checked = d.active !== false;
+        })
+        .catch(function() { showToast('加载班组信息失败', 'error'); closeCrewModal(); });
+}
+
+function closeCrewModal() {
+    document.getElementById('crewModal').classList.remove('show');
+}
+
+document.getElementById('crewModal').addEventListener('click', function(e) {
+    if (e.target === this) closeCrewModal();
+});
+
+function _refreshCrewTab() {
+    // Non-reloading update: fetch the page HTML and swap just #tab-crews.
+    fetch('/user-management/?tab=crews', { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+        .then(function(r) { return r.text(); })
+        .then(function(html) {
+            var doc = new DOMParser().parseFromString(html, 'text/html');
+            var fresh = doc.getElementById('tab-crews');
+            if (fresh) {
+                var cur = document.getElementById('tab-crews');
+                cur.innerHTML = fresh.innerHTML;
+            }
+        })
+        .catch(function() { /* fall back to full reload */ location.reload(); });
+}
+
+function saveCrew() {
+    var modal = document.getElementById('crewModal');
+    var crewId = modal.dataset.crewId;
+    var url = crewId ? _crewUrlEdit(crewId) : _crewUrlNew;
+    var data = new FormData();
+    data.append('name', document.getElementById('crew_name').value.trim());
+    var leader = document.getElementById('crew_leader').value;
+    if (leader) data.append('leader', leader);
+    if (document.getElementById('crew_active').checked) data.append('active', 'true');
+    document.querySelectorAll('#crew_members input:checked').forEach(function(cb) { data.append('members', cb.value); });
+    document.querySelectorAll('#crew_lands input:checked').forEach(function(cb) { data.append('lands', cb.value); });
+    document.querySelectorAll('#crew_patches input:checked').forEach(function(cb) { data.append('patches', cb.value); });
+
+    fetch(url, {
+        method: 'POST',
+        headers: { 'X-CSRFToken': getCSRFToken(), 'X-Requested-With': 'XMLHttpRequest' },
+        body: data,
+    })
+        .then(function(resp) { return resp.json(); })
+        .then(function(d) {
+            if (d.success) {
+                closeCrewModal();
+                showToast(d.message, 'success');
+                _refreshCrewTab();
+            } else {
+                showToast(d.error || '保存失败', 'error');
+            }
+        })
+        .catch(function() { showToast('请求失败', 'error'); });
 }
 
 function showToast(msg, type) {
