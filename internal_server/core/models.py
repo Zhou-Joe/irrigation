@@ -1062,6 +1062,24 @@ class WorkReport(models.Model):
         related_name='resolved_repairs', verbose_name='处理该待修的计划性维修工单',
         help_text='计划性维修工单处理本待修后自动回填；用于工单管理页展示闭环关系',
     )
+    # 协作子工单：一线在 疑难/待修 tab 下提交的跟进工单指向父工单。
+    # 反向 related_name='followup_children'（按 created_at 升序即时间线）。
+    parent_work_report = models.ForeignKey(
+        'self', on_delete=models.CASCADE, null=True, blank=True,
+        related_name='followup_children', verbose_name='父工单(疑难/待修跟进)',
+        help_text='一线提交的跟进子工单指向原疑难/待修工单；故事线协作',
+    )
+    # 父工单聚合状态：'' (非协作工单) / ongoing (跟进中) /
+    # pending_review (一线标记已修复，待经理确认) / resolved (已完成)。
+    COLLAB_STATUS_CHOICES = [
+        ('ongoing', '跟进中'),
+        ('pending_review', '待确认'),
+        ('resolved', '已完成'),
+    ]
+    collab_status = models.CharField(
+        '协作状态', max_length=20, blank=True, default='',
+        help_text='跟进中(ongoing)/待确认(pending_review)/已完成(resolved)；仅父工单有意义',
+    )
     photos = models.JSONField(default=list, blank=True, verbose_name='照片列表', help_text='照片文件路径列表')
 
     # Mobile workorder fields

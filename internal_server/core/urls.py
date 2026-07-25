@@ -105,6 +105,7 @@ urlpatterns = [
     path('settings/pm/gwo/<int:gwo_id>/detail/', views.pm_gwo_detail, name='pm_gwo_detail'),
     path('work-reports/<int:report_id>/resolve-repair/', views.work_report_resolve_repair, name='work_report_resolve_repair'),
     path('work-reports/resolve-all-repair/', views.work_report_resolve_all_repair, name='work_report_resolve_all_repair'),
+    path('work-reports/<int:parent_id>/followup/', views.work_report_followup, name='work_report_followup'),
     path('settings/landmark/<int:landmark_id>/delete/', views.landmark_delete, name='landmark_delete'),
     path('settings/batch-delete-landmark/', views.batch_delete_landmark, name='batch_delete_landmark'),
     path('api/landmarks/', views.landmarks_api, name='landmarks_api'),

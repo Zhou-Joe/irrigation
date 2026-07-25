@@ -1860,53 +1860,141 @@ def settings_page(request):
 
 
 @login_required(login_url='core:login')
+def _is_crew_ajax(request):
+    """True when the caller wants JSON (in-page modal) instead of a full page.
+
+    Triggered by either the ``X-Requested-With: XMLHttpRequest`` header or a
+    ``?json=1`` query param, so the modal can opt in without relying on a
+    specific fetch header.
+    """
+    return (request.headers.get('X-Requested-With') == 'XMLHttpRequest'
+            or request.GET.get('json') == '1')
+
+
+def _crew_form_payload(crew):
+    """Build the JSON payload describing a Crew for the in-page modal.
+
+    Includes the crew's own state (name/leader/members/lands/patches) plus the
+    full option lists (workers/lands/ccu patches) so the modal can render
+    checkboxes dynamically for both new and edit.
+    """
+    from .models import Worker, Land, Patch
+    ccu_patches = Patch.objects.filter(code__regex=r'^CCU[0-9]+$').order_by('code')
+    if crew is None:
+        return {
+            'crew_id': None,
+            'name': '',
+            'leader_id': None,
+            'members': [],
+            'lands': [],
+            'patches': [],
+            'active': True,
+            'workers': [{'id': w.id, 'label': f'{w.full_name} ({w.employee_id})'}
+                        for w in Worker.objects.filter(active=True).order_by('full_name')],
+            'lands_all': [{'id': l.id, 'name': l.name}
+                          for l in Land.objects.order_by('order', 'name')],
+            'patches_all': [{'id': p.id, 'code': p.code, 'name': p.name}
+                            for p in ccu_patches],
+        }
+    return {
+        'crew_id': crew.id,
+        'name': crew.name,
+        'leader_id': crew.leader_id,
+        'members': list(crew.members.values_list('id', flat=True)),
+        'lands': list(crew.lands.values_list('id', flat=True)),
+        'patches': list(crew.patches.values_list('id', flat=True)),
+        'active': crew.active,
+        'workers': [{'id': w.id, 'label': f'{w.full_name} ({w.employee_id})'}
+                    for w in Worker.objects.filter(active=True).order_by('full_name')],
+        'lands_all': [{'id': l.id, 'name': l.name}
+                      for l in Land.objects.order_by('order', 'name')],
+        'patches_all': [{'id': p.id, 'code': p.code, 'name': p.name}
+                        for p in ccu_patches],
+    }
+
+
 def crew_new(request):
-    """Create a new Crew (班组)."""
+    """Create a new Crew (班组).
+
+    Supports two modes:
+    - AJAX (modal): GET returns JSON form data, POST returns JSON result.
+    - Full page (legacy/crew_form.html): unchanged redirect behaviour.
+    """
     from .role_utils import is_admin
     if not is_admin(request.user):
         messages.error(request, '无权限执行此操作')
         return redirect('/user-management/?tab=crews')
-    from .models import Crew, Land, Patch
-    ccu_patches = Patch.objects.filter(code__regex=r'^CCU[0-9]+$').order_by('code')
+    from .models import Crew
+    ajax = _is_crew_ajax(request)
     if request.method == 'POST':
+        name = request.POST.get('name', '').strip()
+        if not name:
+            if ajax:
+                return JsonResponse({'success': False, 'error': '班组名称不能为空'}, status=400)
+            messages.error(request, '班组名称不能为空')
+            return redirect('/user-management/?tab=crews')
         crew = Crew.objects.create(
-            name=request.POST.get('name', '').strip(),
+            name=name,
             leader_id=request.POST.get('leader') or None,
+            active=bool(request.POST.get('active')),
         )
-        crew.members.set(request.POST.getlist('members'))
-        crew.lands.set(request.POST.getlist('lands'))
-        crew.patches.set(request.POST.getlist('patches'))
-        messages.success(request, f'班组「{crew.name}」已创建')
+        crew.members.set([v for v in request.POST.getlist('members') if v])
+        crew.lands.set([v for v in request.POST.getlist('lands') if v])
+        crew.patches.set([v for v in request.POST.getlist('patches') if v])
+        msg = f'班组「{crew.name}」已创建'
+        if ajax:
+            return JsonResponse({'success': True, 'message': msg, 'crew_id': crew.id})
+        messages.success(request, msg)
         return redirect('/user-management/?tab=crews')
-    from .models import Worker
+    # GET — new crew
+    if ajax:
+        return JsonResponse(_crew_form_payload(None))
+    from .models import Worker, Land, Patch
     context = {'crew': None, 'workers': Worker.objects.filter(active=True).order_by('full_name'),
                'lands': Land.objects.order_by('order', 'name'),
-               'ccu_patches': ccu_patches}
+               'ccu_patches': Patch.objects.filter(code__regex=r'^CCU[0-9]+$').order_by('code')}
     return render(request, 'core/crew_form.html', context)
 
 
 @login_required(login_url='core:login')
 def crew_edit(request, crew_id):
-    """Edit an existing Crew."""
+    """Edit an existing Crew.
+
+    Supports two modes (see ``crew_new``): AJAX JSON or full page.
+    """
     from .role_utils import is_admin
     if not is_admin(request.user):
         messages.error(request, '无权限执行此操作')
         return redirect('/user-management/?tab=crews')
-    from .models import Crew, Worker, Land, Patch
-    ccu_patches = Patch.objects.filter(code__regex=r'^CCU[0-9]+$').order_by('code')
+    from .models import Crew
     crew = get_object_or_404(Crew, pk=crew_id)
+    ajax = _is_crew_ajax(request)
     if request.method == 'POST':
-        crew.name = request.POST.get('name', '').strip()
+        name = request.POST.get('name', '').strip()
+        if not name:
+            if ajax:
+                return JsonResponse({'success': False, 'error': '班组名称不能为空'}, status=400)
+            messages.error(request, '班组名称不能为空')
+            return redirect('/user-management/?tab=crews')
+        crew.name = name
         crew.leader_id = request.POST.get('leader') or None
+        crew.active = bool(request.POST.get('active'))
         crew.save()
-        crew.members.set(request.POST.getlist('members'))
-        crew.lands.set(request.POST.getlist('lands'))
-        crew.patches.set(request.POST.getlist('patches'))
-        messages.success(request, f'班组「{crew.name}」已更新')
+        crew.members.set([v for v in request.POST.getlist('members') if v])
+        crew.lands.set([v for v in request.POST.getlist('lands') if v])
+        crew.patches.set([v for v in request.POST.getlist('patches') if v])
+        msg = f'班组「{crew.name}」已更新'
+        if ajax:
+            return JsonResponse({'success': True, 'message': msg, 'crew_id': crew.id})
+        messages.success(request, msg)
         return redirect('/user-management/?tab=crews')
+    # GET — edit crew
+    if ajax:
+        return JsonResponse(_crew_form_payload(crew))
+    from .models import Worker, Land, Patch
     context = {'crew': crew, 'workers': Worker.objects.filter(active=True).order_by('full_name'),
                'lands': Land.objects.order_by('order', 'name'),
-               'ccu_patches': ccu_patches}
+               'ccu_patches': Patch.objects.filter(code__regex=r'^CCU[0-9]+$').order_by('code')}
     return render(request, 'core/crew_form.html', context)
 
 
@@ -2399,9 +2487,109 @@ def work_report_resolve_repair(request, report_id):
         changes.append('疑难未处理→已处理')
         update_fields.append('is_difficult_resolved')
     note = '；'.join(changes) + f'（由 {request.user.get_username()} 标记）'
+    # Also close the collaborative story loop so the 疑难/待修 tab no longer
+    # shows this as an active item.
+    if wr.collab_status and wr.collab_status != 'resolved':
+        wr.collab_status = 'resolved'
+        update_fields.append('collab_status')
     wr.save(update_fields=update_fields)
     _record_edit(wr, request.user, note)
     return JsonResponse({'success': True, 'message': f'已标记 #{wr.id} 为已解决（{"；".join(changes)}）'})
+
+
+@require_POST
+@login_required(login_url='core:login')
+def work_report_followup(request, parent_id):
+    """Submit a follow-up child work order for a 疑难/待修 parent.
+
+    Any logged-in (field) worker may submit. Creates a child WorkReport linked
+    to the parent via parent_work_report, inheriting the parent's zones, and
+    auto-prefilled as 计划性维修 (routine_maint.1.3). The ``action`` POST field
+    drives the parent's collab_status: ``ongoing`` keeps it open;
+    ``fixed`` flips it to pending_review (awaits manager confirmation).
+
+    Returns JSON {success, status, child_id, message}.
+    """
+    from .models import WorkReport, WorkItem, WorkReportEntry
+    from django.db import transaction
+    from django.utils import timezone
+    from core.role_utils import resolve_or_create_worker
+    from core.workorder_tree_views import _save_photo
+
+    parent = get_object_or_404(WorkReport, pk=parent_id)
+    action = (request.POST.get('action') or '').strip()
+    if action not in ('ongoing', 'fixed'):
+        return JsonResponse({'success': False, 'error': '请选择「继续跟进」或「已修复」'}, status=400)
+    remark = (request.POST.get('remark') or '').strip()
+    if not remark:
+        return JsonResponse({'success': False, 'error': '请填写跟进备注'}, status=400)
+    # Only an active collaborative parent (ongoing/pending_review) accepts new
+    # follow-ups; a resolved parent is locked.
+    if parent.collab_status == 'resolved':
+        return JsonResponse({'success': False, 'error': '该工单已完成，无法继续跟进'}, status=400)
+
+    worker, _ = resolve_or_create_worker(request.user)
+    today = timezone.localdate()
+
+    with transaction.atomic():
+        child = WorkReport.objects.create(
+            date=today,
+            worker=worker,
+            remark=remark,
+            shift='白班',
+            # The child is itself a normal work order, NOT a 疑难/待修 — it is
+            # the *follow-up effort* recorded against the parent.
+            is_pending_repair=False,
+            is_difficult=False,
+            is_difficult_resolved=False,
+            parent_work_report=parent,
+            # Default work-content metadata mirrors the mobile create path.
+            location=parent.location,
+            zone_location=parent.zone_location,
+        )
+        # Inherit all of the parent's zones so the story-line aggregates per
+        # area exactly like the original report.
+        parent_zones = list(parent.zones.all())
+        if parent_zones:
+            child.zones.set(parent_zones)
+            child.zone_names = parent.zone_names
+            child.save(update_fields=['zone_names'])
+
+        # Auto-prefill as 常规维护 → 计划性维修 (WorkItem code '1.3', id 184).
+        # Using the '1.3' group node gives the child a clean category even if
+        # the worker added nothing else; the report's effective section is
+        # derived from this entry's WorkItem.section == routine_maint.
+        plan_item = WorkItem.objects.filter(code='1.3').first()
+        if plan_item is not None:
+            WorkReportEntry.objects.create(
+                work_report=child,
+                work_item=plan_item,
+                count=1,
+                text_value=remark,
+            )
+
+        # Save uploaded photos (same helper the mobile create path uses).
+        photo_paths = [_save_photo(child, f) for f in request.FILES.getlist('photos')]
+        if photo_paths:
+            child.photos = photo_paths
+            child.save(update_fields=['photos'])
+
+        # Update the parent's collaborative status.
+        if action == 'fixed':
+            parent.collab_status = 'pending_review'
+            status_msg = '已修复（待经理确认）'
+        else:
+            parent.collab_status = 'ongoing'
+            status_msg = '继续跟进'
+        parent.save(update_fields=['collab_status'])
+
+    return JsonResponse({
+        'success': True,
+        'status': parent.collab_status,
+        'status_msg': status_msg,
+        'child_id': child.id,
+        'message': f'跟进子工单 #{child.id} 已提交（{status_msg}）',
+    })
 
 
 @require_POST
@@ -3954,18 +4142,25 @@ def zone_remark_move(request, zone_id, index):
         return JsonResponse({'error': '索引无效'}, status=400)
     entry = confirmed_list.pop(index)
     note = {'date': entry.get('date', ''), 'content': entry.get('content', '')}
+    zone.confirmed_remarks = json.dumps(confirmed_list, ensure_ascii=False)
     if target == 'irrigation':
         notes = json.loads(zone.irrigation_management_notes) if zone.irrigation_management_notes else []
         notes.insert(0, note)
         zone.irrigation_management_notes = json.dumps(notes, ensure_ascii=False)
-        zone.save(update_fields=['irrigation_management_notes'])
+        zone.save(update_fields=['irrigation_management_notes', 'confirmed_remarks'])
     else:
         notes = json.loads(zone.equipment_maintenance_notes) if zone.equipment_maintenance_notes else []
         notes.insert(0, note)
         zone.equipment_maintenance_notes = json.dumps(notes, ensure_ascii=False)
-        zone.save(update_fields=['equipment_maintenance_notes'])
-    zone.confirmed_remarks = json.dumps(confirmed_list, ensure_ascii=False)
-    zone.save(update_fields=['confirmed_remarks'])
+        zone.save(update_fields=['equipment_maintenance_notes', 'confirmed_remarks'])
+    # Final disposition: once NO active zone remarks remain for the source
+    # work order (none pending in `remarks`, none un-archived in
+    # `confirmed_remarks`), clear its collab_status so it drops out of the
+    # 疑难/待修 tab. Until then it stays visible so the manager can transfer
+    # the remaining zones.
+    _wid = entry.get('workorder_id')
+    if _wid:
+        _clear_collab_if_fully_disposed(_wid)
     return JsonResponse({'success': True, 'target': target, 'note': note})
 
 
@@ -3993,6 +4188,10 @@ def zone_remark_archive(request, zone_id, index):
     entry['archived_author'] = _get_user_display_name(request)
     zone.confirmed_remarks = json.dumps(confirmed_list, ensure_ascii=False)
     zone.save(update_fields=['confirmed_remarks'])
+    # Final disposition: clear collab_status if no active zone remarks remain.
+    _wid = entry.get('workorder_id')
+    if _wid:
+        _clear_collab_if_fully_disposed(_wid)
     return JsonResponse({'success': True})
 
 
@@ -8244,12 +8443,26 @@ def work_reports_list(request):
     lands = Land.objects.filter(active=True).order_by('order', 'name')
     workers = Worker.objects.all().order_by('full_name') if admin else []
 
-    # Remarks tab (managers only): pending remarks (Step 1: confirm) + confirmed
-    # remarks (Step 2: transfer to 灌溉/设备 records). Grouped by workorder across
-    # the zones each touches. Non-managers get empty lists (tab hidden).
+    # 疑难/待修工单 tab: a SINGLE merged list = the pending_repairs query
+    # (already a union of 待修 OR 疑难未处理). Each row carries:
+    #   - the work-order flags/status (built below)
+    #   - followup_stories (the collaboration timeline)
+    #   - remark_group (the zone-level 疑难备注, folded into the row)
+    # The zone remarks live in Zone.remarks / Zone.confirmed_remarks JSON keyed
+    # by workorder_id; we build a {wo_id: group} map so each repair row can
+    # surface its zone remarks without a separate tab.
     is_manager = admin
-    pending_remark_groups = _group_zone_remarks('remarks') if is_manager else []
-    confirmed_remark_groups = _group_zone_remarks('confirmed_remarks') if is_manager else []
+    show_collab_tabs = True
+    pending_remark_groups = _group_zone_remarks('remarks')
+    confirmed_remark_groups = _group_zone_remarks('confirmed_remarks')
+    # Merge pending + confirmed into one {wo_id: group} map. Confirmed wins
+    # (carries the confirm metadata); per-zone (no wo_id) remarks are dropped
+    # here since the merged tab is work-order-centric.
+    remark_groups_by_wo = {}
+    for g in list(pending_remark_groups) + list(confirmed_remark_groups):
+        _wid = g['remark'].get('workorder_id')
+        if _wid and _wid not in remark_groups_by_wo:
+            remark_groups_by_wo[_wid] = g
     # Per-group data for the JS: a flat [[zone_id, index]] list (for confirm, which
     # still fans out to all zones) AND a Land → 通用名称 → zone tree (for transfer,
     # where the user picks which names/zones to write the record to — avoids duplicate
@@ -8296,33 +8509,42 @@ def work_reports_list(request):
     pm_tasks_total = pm_qs.count()
     pm_tasks = _serialize_pm_tasks(pm_qs[:20], admin)
 
-    # ── 待修工单 tab (managers only): unresolved pending-repair reports ──
-    # These are what paint zones orange on the map (needs_attention). Listed
-    # here so a manager can resolve them without filing a 计划性维修 work order.
+    # ── 疑难/待修工单 tab (merged, ALL users) ──
+    # Unresolved 待修 OR 疑难未处理 — both block a report from being "done"
+    # and are cleared by the resolve-repair action. PLUS any work order still
+    # in an active collaboration state (ongoing / pending_review / resolved):
+    #   - ongoing/pending_review: the crew is still following up
+    #   - resolved: manager closed it but hasn't done the FINAL disposition
+    #     (transfer to 灌溉/设备 records or archive) — must stay visible until
+    #     then. The disposition endpoints clear collab_status to '' which drops
+    #     the row from this list.
     pending_repairs = []
-    if is_manager:
-        # Unresolved 待修 OR 疑难未处理 — both block a report from being "done"
-        # and both are cleared by the resolve-repair action.
-        pr_qs = ((WorkReport.objects.filter(is_pending_repair=True, resolved_by_pm__isnull=True)
-                  | WorkReport.objects.filter(is_difficult=True, is_difficult_resolved=False))
-                 .distinct().select_related('worker', 'location').order_by('-date', '-id'))
-        for wr in pr_qs:
-            zone_codes = ', '.join(z.code for z in wr.zones.all()[:4])
-            flags = []
-            if wr.is_pending_repair:
-                flags.append('待修')
-            if wr.is_difficult and not wr.is_difficult_resolved:
-                flags.append('疑难未处理')
-            pending_repairs.append({
-                'id': wr.id,
-                'date': wr.date,
-                'worker_name': wr.worker.full_name if wr.worker_id and wr.worker else '—',
-                'location_code': wr.location.code if wr.location_id and wr.location else '',
-                'remark': (wr.remark or '')[:120],
-                'zone_preview': zone_codes,
-                'zone_count': wr.zones.count(),
-                'flags': '、'.join(flags),
-            })
+    pr_qs = ((WorkReport.objects.filter(is_pending_repair=True, resolved_by_pm__isnull=True)
+              | WorkReport.objects.filter(is_difficult=True, is_difficult_resolved=False)
+              | WorkReport.objects.filter(collab_status__in=['ongoing', 'pending_review', 'resolved']))
+             .distinct().select_related('worker', 'location').order_by('-date', '-id'))
+    pr_ids = [wr.id for wr in pr_qs]
+    stories = _followup_stories(pr_ids)
+    for wr in pr_qs:
+        zone_codes = ', '.join(z.code for z in wr.zones.all()[:4])
+        flags = []
+        if wr.is_pending_repair:
+            flags.append('待修')
+        if wr.is_difficult and not wr.is_difficult_resolved:
+            flags.append('疑难未处理')
+        pending_repairs.append({
+            'id': wr.id,
+            'date': wr.date,
+            'worker_name': wr.worker.full_name if wr.worker_id and wr.worker else '—',
+            'location_code': wr.location.code if wr.location_id and wr.location else '',
+            'remark': (wr.remark or '')[:120],
+            'zone_preview': zone_codes,
+            'zone_count': wr.zones.count(),
+            'flags': '、'.join(flags),
+            'collab_status': wr.collab_status,
+            'followup_stories': stories.get(wr.id, []),
+            'remark_group': remark_groups_by_wo.get(wr.id),
+        })
 
     return render(request, 'core/work_reports.html', {
         'reports': reports,
@@ -8336,6 +8558,7 @@ def work_reports_list(request):
         'filter_json': filter_json,
         'filters': filter_json['filters'],
         'is_manager': is_manager,
+        'show_collab_tabs': show_collab_tabs,
         'pending_remark_groups': pending_remark_groups,
         'confirmed_remark_groups': confirmed_remark_groups,
         'remark_groups_map': remark_groups_map,
@@ -8584,6 +8807,68 @@ def water_requests_list(request):
         },
     }
     return render(request, 'core/water_requests.html', context)
+
+
+def _clear_collab_if_fully_disposed(workorder_id):
+    """Clear a work order's collab_status once all its zone remarks are gone.
+
+    A 疑难/待修 work order stays in the merged tab while ANY zone still has an
+    active remark for it — pending in ``Zone.remarks`` or un-archived in
+    ``Zone.confirmed_remarks``. The manager transfers/archives per-zone; when
+    the last active remark is disposed, this clears ``collab_status`` so the
+    row finally drops out of the 疑难/待修 tab.
+    """
+    import json as _json
+    from .models import Zone, WorkReport
+    still_active = False
+    for z in (Zone.objects.exclude(remarks='').exclude(remarks__isnull=True)
+              | Zone.objects.exclude(confirmed_remarks='').exclude(confirmed_remarks__isnull=True)):
+        for fld in ('remarks', 'confirmed_remarks'):
+            raw = getattr(z, fld)
+            if not raw:
+                continue
+            try:
+                items = _json.loads(raw)
+            except (ValueError, TypeError):
+                continue
+            for it in items:
+                if isinstance(it, dict) and it.get('workorder_id') == workorder_id and not it.get('archived'):
+                    still_active = True
+                    break
+            if still_active:
+                break
+        if still_active:
+            break
+    if not still_active:
+        WorkReport.objects.filter(id=workorder_id).update(collab_status='')
+
+
+def _followup_stories(parent_ids):
+    """Return {parent_id: [story, ...]} for the 疑难/待修 follow-up timeline.
+
+    Each story is a lightweight dict (id/ticket/date/worker/remark/photos/
+    status_label) for one child WorkReport (parent_work_report_id ∈ parent_ids),
+    ordered oldest-first so the rendered timeline reads like a story.
+    """
+    if not parent_ids:
+        return {}
+    from .models import WorkReport
+    children = (WorkReport.objects
+                .filter(parent_work_report_id__in=parent_ids)
+                .select_related('worker')
+                .order_by('created_at', 'id'))
+    out = {}
+    for c in children:
+        out.setdefault(c.parent_work_report_id, []).append({
+            'id': c.id,
+            'ticket': c.display_number,
+            'date': c.date.isoformat() if c.date else '',
+            'worker_name': c.worker.full_name if c.worker_id and c.worker else '—',
+            'remark': (c.remark or '')[:400],
+            'photos': list(c.photos or [])[:6],
+            'status_label': '已修复' if c.parent_work_report and c.parent_work_report.collab_status == 'pending_review' else '跟进',
+        })
+    return out
 
 
 def _group_zone_remarks(notes_field):
