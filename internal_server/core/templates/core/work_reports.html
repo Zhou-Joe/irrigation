@@ -171,6 +171,49 @@
   .wr-rm-btn.archive { background:#f3f4f6; color:#6b7280; border:1px solid #d1d5db; }
   .wr-rm-btn:disabled { opacity:0.6; cursor:default; }
 
+  /* ── 疑难/待修 协作故事线 ── */
+  .fu-block { margin-top:10px; padding-top:10px; border-top:1px dashed var(--wr-card-border); }
+  .fu-status-row { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+  .fu-chip { font-size:0.74rem; font-weight:700; padding:3px 10px; border-radius:10px; }
+  .fu-chip-ongoing { background:#fff7ed; color:#c2410c; border:1px solid #fb923c; }
+  .fu-chip-review { background:#eff6ff; color:#1d4ed8; border:1px solid #60a5fa; }
+  .fu-chip-done { background:#f0fdf4; color:#15803d; border:1px solid #86efac; }
+  .fu-story-toggle { background:none; border:none; color:var(--wr-accent); font-size:0.78rem; cursor:pointer; padding:2px 6px; }
+  .fu-story { margin-top:8px; border-left:3px solid var(--wr-accent-soft); padding-left:10px; }
+  .fu-story-item { padding:6px 0; border-bottom:1px dashed #f1f5f9; }
+  .fu-story-item:last-child { border-bottom:none; }
+  .fu-story-head { display:flex; flex-wrap:wrap; gap:6px; align-items:baseline; font-size:0.78rem; }
+  .fu-story-date { font-weight:600; color:var(--wr-text); }
+  .fu-story-worker { color:var(--wr-muted); }
+  .fu-story-ticket { color:var(--wr-accent); text-decoration:none; font-weight:600; font-size:0.74rem; }
+  .fu-story-ticket:hover { text-decoration:underline; }
+  .fu-story-mark { font-size:0.7rem; padding:1px 7px; border-radius:8px; }
+  .fu-story-mark.is-follow { background:#fff7ed; color:#c2410c; }
+  .fu-story-mark.is-fixed { background:#eff6ff; color:#1d4ed8; }
+  .fu-story-remark { font-size:0.82rem; color:var(--wr-text); margin:4px 0; }
+  .fu-story-photos { display:flex; flex-wrap:wrap; gap:4px; margin-top:4px; }
+  .fu-story-photos img { width:48px; height:48px; object-fit:cover; border-radius:4px; cursor:pointer; border:1px solid #eee; }
+  .fu-open-btn { margin-top:8px; padding:5px 12px; font-size:0.8rem; border-radius:8px; background:var(--wr-accent-soft); color:var(--wr-accent); border:1px solid var(--wr-accent); cursor:pointer; font-weight:600; }
+  .fu-form { margin-top:8px; padding:10px; background:#fafbfc; border:1px solid var(--wr-card-border); border-radius:8px; }
+  .fu-input { width:100%; border:1px solid #ddd; border-radius:8px; padding:7px 10px; font-size:0.84rem; margin-bottom:8px; box-sizing:border-box; }
+  .fu-file-btn { display:inline-block; font-size:0.8rem; color:var(--wr-muted); cursor:pointer; padding:3px 10px; border:1px dashed #ccc; border-radius:8px; margin-bottom:8px; }
+  .fu-file-count { margin-left:6px; color:var(--wr-accent); font-weight:600; }
+  .fu-action-row { display:flex; gap:14px; margin-bottom:8px; }
+  .fu-radio { font-size:0.84rem; cursor:pointer; display:inline-flex; align-items:center; gap:4px; }
+  .fu-form-actions { display:flex; gap:6px; justify-content:flex-end; }
+  .fu-mgr-final { margin-top:8px; padding:8px 10px; background:#fffbeb; border:1px solid #fcd34d; border-radius:8px; display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+  .fu-mgr-final.is-disposition { background:#f0fdf4; border-color:#86efac; }
+  .fu-mgr-hint { font-size:0.8rem; color:#92400e; flex:1; min-width:160px; }
+  .fu-mgr-final.is-disposition .fu-mgr-hint { color:#15803d; }
+  .fu-mgr-actions { display:flex; flex-wrap:wrap; gap:6px; }
+  /* Zone-level 疑难备注 (folded inside each repair row) */
+  .fu-zone-remarks { margin-top:8px; font-size:0.8rem; }
+  .fu-zone-remarks > summary { cursor:pointer; color:var(--wr-accent); font-weight:600; font-size:0.78rem; padding:2px 0; }
+  .fu-zone-remarks .wr-rm-content { color:var(--wr-text); margin:4px 0; }
+  .fu-zone-remarks .wr-rm-zones { font-size:0.76rem; color:var(--wr-muted); margin-top:4px; line-height:1.5; }
+  .fu-zone-remarks .wr-rm-zones b { color:var(--wr-text); }
+  .fu-zone-remarks .wr-rm-confirm-meta { font-size:0.74rem; color:var(--wr-muted); margin-top:4px; padding-top:4px; border-top:1px dashed var(--wr-card-border); }
+
   /* ── 媒体下载 tab ── */
   .wr-photo-dl-toolbar { display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding:10px 14px; margin-bottom:10px; background:var(--wr-card-bg); border:1px solid var(--wr-card-border); border-radius:12px; }
   .wr-photo-dl-btn { padding:6px 14px; font-size:0.85rem; border-radius:8px; background:#fff; color:var(--wr-text); border:1px solid var(--wr-card-border); cursor:pointer; }
@@ -251,20 +294,18 @@
     {% endif %}
 
     <div class="app-tabs">
-        <button type="button" class="app-tab {% if active_tab != 'remarks' and active_tab != 'photos' and active_tab != 'pm' %}active{% endif %}" data-tab="workorders" onclick="switchTab('workorders')">维修日志</button>
+        <button type="button" class="app-tab {% if active_tab == 'workorders' or not active_tab %}active{% endif %}" data-tab="workorders" onclick="switchTab('workorders')">维修日志</button>
         <button type="button" class="app-tab {% if active_tab == 'pm' %}active{% endif %}" data-tab="pm" onclick="switchTab('pm')">
             PM工单
             {% if pm_tasks_total %}<span class="app-tab-badge">{{ pm_tasks_total }}</span>{% endif %}
         </button>
-        {% if is_manager %}
-        <button type="button" class="app-tab {% if active_tab == 'remarks' %}active{% endif %}" data-tab="remarks" onclick="switchTab('remarks')">
-            待确认备注
-            {% if pending_remark_groups %}<span class="app-tab-badge">{{ pending_remark_groups|length }}</span>{% endif %}
-        </button>
+        {% if show_collab_tabs %}
         <button type="button" class="app-tab {% if active_tab == 'repairs' %}active{% endif %}" data-tab="repairs" onclick="switchTab('repairs')">
-            待修工单
+            疑难/待修工单
             {% if pending_repairs %}<span class="app-tab-badge">{{ pending_repairs|length }}</span>{% endif %}
         </button>
+        {% endif %}
+        {% if is_manager %}
         <button type="button" class="app-tab {% if active_tab == 'photos' %}active{% endif %}" data-tab="photos" onclick="switchTab('photos')">媒体下载</button>
         {% endif %}
     </div>
@@ -325,7 +366,7 @@
     </div>
 
     {# ── Tab 1: workorders list (the existing card list) ──────────────────── #}
-    <div id="tabWorkorders" class="wr-remarks-panel {% if active_tab != 'remarks' and active_tab != 'photos' and active_tab != 'pm' %}active{% endif %}">
+    <div id="tabWorkorders" class="wr-remarks-panel {% if active_tab == 'workorders' or not active_tab %}active{% endif %}">
 
     {# Cards — server-rendered initial batch. Appended to by "加载更多" (loadCards appends markup). #}
     <div id="cardList">
@@ -344,63 +385,12 @@
 
     </div>{# /#tabWorkorders #}
 
-    {# ── Tab 2: 待确认备注 (managers only) ──────────────────────────────── #}
-    {% if is_manager %}
-    <div id="tabRemarks" class="wr-remarks-panel {% if active_tab == 'remarks' %}active{% endif %}">
-        <div class="wr-rm-subhead">待确认 ({{ pending_remark_groups|length }})</div>
-        {% if pending_remark_groups %}
-            {% for g in pending_remark_groups %}
-            <div class="wr-rm-card">
-                <div class="wr-rm-top">
-                    <span class="wr-rm-date">{{ g.remark.date|default:'—' }}</span>
-                    <span class="wr-rm-content">{{ g.remark.content }}</span>
-                    <span class="wr-rm-author">{{ g.remark.author }}</span>
-                    {% if g.remark.workorder_id %}<a class="wr-rm-wo" href="{% url 'core:work_report_detail' g.remark.workorder_id %}">工单#{{ g.remark.workorder_id }}</a>{% endif %}
-                </div>
-                {% if g.section_labels %}<div class="wr-rm-cats">{% for lbl in g.section_labels %}<span class="wr-rm-cat">{{ lbl }}</span>{% endfor %}</div>{% endif %}
-                <div class="wr-rm-zones">{% for h in g.hierarchy %}<b>{{ h.land }}</b>: {% for nm in h.names %}{{ nm.name }}{% if nm.count > 1 %} ({{ nm.count }}){% endif %}{% if not forloop.last %}, {% endif %}{% endfor %}{% if not forloop.last %} · {% endif %}{% endfor %}</div>
-                <div class="wr-rm-actions">
-                    <input type="text" class="wr-rm-input" placeholder="确认回复 (可选)…" data-reply="{{ g.key }}">
-                    <button type="button" class="wr-rm-btn primary" data-key="{{ g.key }}" onclick="confirmRemarkGroup(this)">确认</button>
-                </div>
-            </div>
-            {% endfor %}
-        {% else %}
-            <div class="wr-rm-empty">暂无待确认备注 🎉</div>
-        {% endif %}
-
-        <div class="wr-rm-subhead">已确认 ({{ confirmed_remark_groups|length }})</div>
-        {% if confirmed_remark_groups %}
-            {% for g in confirmed_remark_groups %}
-            <div class="wr-rm-card">
-                <div class="wr-rm-top">
-                    <span class="wr-rm-date">{{ g.remark.date|default:'—' }}</span>
-                    <span class="wr-rm-content">{{ g.remark.content }}</span>
-                    <span class="wr-rm-author">{{ g.remark.author }}</span>
-                    {% if g.remark.workorder_id %}<a class="wr-rm-wo" href="{% url 'core:work_report_detail' g.remark.workorder_id %}">工单#{{ g.remark.workorder_id }}</a>{% endif %}
-                </div>
-                {% if g.section_labels %}<div class="wr-rm-cats">{% for lbl in g.section_labels %}<span class="wr-rm-cat">{{ lbl }}</span>{% endfor %}</div>{% endif %}
-                <div class="wr-rm-confirm-meta">已确认 {{ g.remark.confirm_date|default:'' }} · {{ g.remark.confirm_author|default:'' }}{% if g.remark.confirm_reply %} · {{ g.remark.confirm_reply }}{% endif %}</div>
-                <div class="wr-rm-zones">{% for h in g.hierarchy %}<b>{{ h.land }}</b>: {% for nm in h.names %}{{ nm.name }}{% if nm.count > 1 %} ({{ nm.count }}){% endif %}{% if not forloop.last %}, {% endif %}{% endfor %}{% if not forloop.last %} · {% endif %}{% endfor %}</div>
-                <div class="wr-rm-actions">
-                    <button type="button" class="wr-rm-btn irr" data-key="{{ g.key }}" onclick="moveRemarkGroup(this,'irrigation')">转至灌溉管理记录</button>
-                    <button type="button" class="wr-rm-btn eq" data-key="{{ g.key }}" onclick="moveRemarkGroup(this,'equipment')">转至设备维护记录</button>
-                    <button type="button" class="wr-rm-btn archive" data-key="{{ g.key }}" onclick="archiveRemarkGroup(this)">归档</button>
-                </div>
-            </div>
-            {% endfor %}
-        {% else %}
-            <div class="wr-rm-empty">暂无已确认备注</div>
-        {% endif %}
-    </div>
-    {% endif %}
-
-    {# ── Tab: 待修工单 (managers only) — unresolved pending-repair reports #}
-    {% if is_manager %}
+    {# ── Tab: 疑难/待修工单 (all logged-in users) — merged single list ── #}
+    {% if show_collab_tabs %}
     <div id="tabRepairs" class="wr-remarks-panel {% if active_tab == 'repairs' %}active{% endif %}">
         <div class="wr-rm-subhead" style="display:flex;justify-content:space-between;align-items:center;">
             <span>未解决待修 ({{ pending_repairs|length }})</span>
-            {% if pending_repairs %}
+            {% if pending_repairs and is_manager %}
             <button type="button" class="btn-sm btn-secondary" onclick="resolveAllRepairs(event)" style="font-size:.82rem;">一键全部标记已解决</button>
             {% endif %}
         </div>
@@ -427,7 +417,13 @@
                     <td style="padding:8px 6px;font-size:.82rem;color:#666;">{{ r.zone_count }} zones ({{ r.zone_preview }}{% if r.zone_count > 4 %}…{% endif %})</td>
                     <td style="padding:8px 6px;font-size:.82rem;max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{{ r.remark }}">{{ r.remark }}</td>
                     <td style="padding:8px 6px;">
-                        <button class="btn btn-sm btn-primary" onclick="resolveRepair({{ r.id }})">标记已解决</button>
+                        <span style="color:var(--wr-muted);font-size:.78rem;">见下方跟进</span>
+                    </td>
+                </tr>
+                {# Collaboration story-line + follow-up form (full-width row) #}
+                <tr id="repairCollab-{{ r.id }}" style="border-bottom:1px solid #f1f5f9;">
+                    <td colspan="7" style="padding:0 6px 8px;">
+                        {% include 'core/_followup_collab.html' with parent_id=r.id collab_status=r.collab_status stories=r.followup_stories remark_group=r.remark_group is_manager=is_manager %}
                     </td>
                 </tr>
                 {% endfor %}
@@ -618,8 +614,6 @@ function switchTab(tab) {
     document.getElementById('tabWorkorders').classList.toggle('active', tab === 'workorders');
     var pm = document.getElementById('tabPm');
     if (pm) pm.classList.toggle('active', tab === 'pm');
-    var rm = document.getElementById('tabRemarks');
-    if (rm) rm.classList.toggle('active', tab === 'remarks');
     var rp = document.getElementById('tabRepairs');
     if (rp) rp.classList.toggle('active', tab === 'repairs');
     var ph = document.getElementById('tabPhotos');
@@ -737,6 +731,92 @@ function resolveAllRepairs(e) {
     }).catch(function () { btn.disabled = false; btn.textContent = '一键全部标记已解决'; wrToast('网络错误', true); });
 }
 
+// ── 疑难/待修 协作故事线：跟进表单 ────────────────────────────────────────
+function openFollowup(parentId) {
+    var f = document.getElementById('fuForm-' + parentId);
+    var open = document.getElementById('fuOpen-' + parentId);
+    if (!f) return;
+    f.style.display = 'block';
+    if (open) open.style.display = 'none';
+}
+function closeFollowup(parentId) {
+    var f = document.getElementById('fuForm-' + parentId);
+    var open = document.getElementById('fuOpen-' + parentId);
+    if (!f) return;
+    f.style.display = 'none';
+    // clear inputs
+    var remark = document.getElementById('fuRemark-' + parentId);
+    if (remark) remark.value = '';
+    var photos = document.getElementById('fuPhotos-' + parentId);
+    if (photos) photos.value = '';
+    var cnt = document.getElementById('fuPhotoCount-' + parentId);
+    if (cnt) cnt.textContent = '';
+    var ongoing = document.querySelector('input[name="fuAction-' + parentId + '"][value="ongoing"]');
+    if (ongoing) ongoing.checked = true;
+    if (open) open.style.display = 'inline-block';
+}
+function toggleStory(parentId) {
+    var s = document.getElementById('fuStory-' + parentId);
+    if (!s) return;
+    var open = s.style.display !== 'none';
+    s.style.display = open ? 'none' : 'block';
+    // toggle the label arrow
+    var btn = s.previousElementSibling && s.previousElementSibling.querySelector('.fu-story-toggle');
+    // fall back to searching the block
+    if (!btn) {
+        var block = document.getElementById('fuBlock-' + parentId);
+        if (block) btn = block.querySelector('.fu-story-toggle');
+    }
+    if (btn) btn.textContent = (open ? '▾' : '▴') + ' 历史跟进 (' + (s.children ? s.children.length : 0) + ')';
+}
+// Auto-update the photo-count label when files are picked.
+document.addEventListener('change', function (e) {
+    var t = e.target;
+    if (!t || !t.id || t.id.indexOf('fuPhotos-') !== 0) return;
+    var parentId = t.id.substring('fuPhotos-'.length);
+    var cnt = document.getElementById('fuPhotoCount-' + parentId);
+    if (cnt) cnt.textContent = t.files && t.files.length ? ('(' + t.files.length + ')') : '';
+});
+function submitFollowup(parentId) {
+    var remarkEl = document.getElementById('fuRemark-' + parentId);
+    var remark = remarkEl ? remarkEl.value.trim() : '';
+    if (!remark) { wrToast('请填写跟进备注', true); return; }
+    var actionEl = document.querySelector('input[name="fuAction-' + parentId + '"]:checked');
+    var action = actionEl ? actionEl.value : 'ongoing';
+    var photosEl = document.getElementById('fuPhotos-' + parentId);
+    var fd = new FormData();
+    fd.append('remark', remark);
+    fd.append('action', action);
+    if (photosEl && photosEl.files) {
+        for (var i = 0; i < photosEl.files.length; i++) fd.append('photos', photosEl.files[i]);
+    }
+    fetch('/work-reports/' + parentId + '/followup/', {
+        method: 'POST',
+        headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRFToken': wrCsrf() },
+        body: fd,
+    }).then(function (r) { return r.json(); }).then(function (d) {
+        wrToast(d.message || (d.error || '提交失败'), !d.success);
+        if (d.success) {
+            // Local refresh: swap in the server-rendered #tabRepairs so the new
+            // story entry + status chip render without a full page reload.
+            _refreshRepairsTab(900);
+        }
+    }).catch(function () { wrToast('网络错误', true); });
+}
+// Manager final-step from inside a collab block: delegate to the existing
+// resolve-repair endpoint (which now also sets collab_status=resolved).
+function mgrResolveViaRepair(parentId) {
+    if (!confirm('确认 #' + parentId + ' 已彻底处理完成？\n（标记为已解决，关闭协作）')) return;
+    fetch('/work-reports/' + parentId + '/resolve-repair/', {
+        method: 'POST', headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRFToken': wrCsrf() }
+    }).then(function (r) { return r.json(); }).then(function (d) {
+        wrToast(d.message, !d.success);
+        if (d.success) {
+            _refreshRepairsTab(900);
+        }
+    }).catch(function () { wrToast('网络错误', true); });
+}
+
 // ── 媒体下载 tab: lazy-load report→media list, render, select, download ──
 var photoReportsLoaded = false, photoReportsData = [];
 function loadPhotoReports() {
@@ -847,6 +927,26 @@ function updatePhotoDlHint() {
 // every zone it touches; confirming propagates to all). Transfer (Step 2) instead
 // opens a selector so the user picks WHICH names/zones to write the record to,
 // avoiding duplicate records across zones.
+// Local refresh of the 疑难/待修工单 tab: fetch the page HTML server-side
+// rendered, then swap in just #tabRepairs. Keeps the rest of the page (other
+// tabs, filters, scroll position) intact. Falls back to a full reload on error.
+// NOTE: do NOT send 'X-Requested-With: XMLHttpRequest' — work_reports_list
+// treats that header as a "load more" JSON request and returns JSON, not HTML.
+function _refreshRepairsTab(afterMs) {
+    function doSwap() {
+        fetch('/work-reports/?tab=repairs')
+            .then(function (r) { return r.text(); })
+            .then(function (html) {
+                var doc = new DOMParser().parseFromString(html, 'text/html');
+                var fresh = doc.getElementById('tabRepairs');
+                if (!fresh) { location.href = '/work-reports/?tab=repairs'; return; }
+                var cur = document.getElementById('tabRepairs');
+                if (cur) cur.innerHTML = fresh.innerHTML;
+            })
+            .catch(function () { location.href = '/work-reports/?tab=repairs'; });
+    }
+    if (afterMs) setTimeout(doSwap, afterMs); else doSwap();
+}
 function _postRemark(zoneId, idx, action, extra) {
     var url = '/zone/' + zoneId + '/remark/' + idx + '/' + action + '/';
     var body = new URLSearchParams(extra || {});
@@ -863,7 +963,7 @@ function confirmRemarkGroup(btn) {
     var reply = (document.querySelector('.wr-rm-input[data-reply="' + key + '"]') || {}).value || '';
     btn.disabled = true; btn.textContent = '确认中…';
     Promise.all(pairs.map(function (p) { return _postRemark(p[0], p[1], 'confirm', { confirm_reply: reply }); }))
-        .then(function () { wrToast('已确认'); setTimeout(function () { location.href = '?tab=remarks'; }, 700); })
+        .then(function () { wrToast('已确认'); _refreshRepairsTab(700); })
         .catch(function () { wrToast('部分确认失败，请刷新重试', true); btn.disabled = false; btn.textContent = '确认'; });
 }
 
@@ -877,7 +977,7 @@ function archiveRemarkGroup(btn) {
     if (!confirm('确定归档此备注？归档后不再写入区域记录，仅工单详情可查。')) return;
     btn.disabled = true; btn.textContent = '归档中…';
     Promise.all(pairs.map(function (p) { return _postRemark(p[0], p[1], 'archive', {}); }))
-        .then(function () { wrToast('已归档'); setTimeout(function () { location.href = '?tab=remarks'; }, 700); })
+        .then(function () { wrToast('已归档'); _refreshRepairsTab(700); })
         .catch(function () { wrToast('部分归档失败，请刷新重试', true); btn.disabled = false; btn.textContent = '归档'; });
 }
 
@@ -978,7 +1078,7 @@ function confirmMoveModal() {
     btn.disabled = true; btn.textContent = '转移中…';
     document.getElementById('rmMoveModal').classList.remove('show');
     Promise.all(pairs.map(function (p) { return _postRemark(p[0], p[1], 'move', { target: _pendingTransfer.target }); }))
-        .then(function () { wrToast('已转至' + label); setTimeout(function () { location.href = '?tab=remarks'; }, 700); })
+        .then(function () { wrToast('已转至' + label); _refreshRepairsTab(700); })
         .catch(function () { wrToast('部分转移失败，请刷新重试', true); btn.disabled = false; btn.textContent = '转至' + label; });
     _pendingTransfer = null;
 }

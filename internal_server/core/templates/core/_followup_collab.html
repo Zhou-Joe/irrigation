@@ -1,0 +1,103 @@
+{% comment %}Collaboration block for a 疑难/待修 parent work order.
+Included by both the 疑难工单 (remarks) and 待修工单 (repairs) panels.
+Context vars expected:
+  - parent_id:      the parent WorkReport id
+  - collab_status:  '' | 'ongoing' | 'pending_review' | 'resolved'
+  - stories:        list of follow-up child dicts [{id,ticket,date,worker_name,remark,photos,status_label}]
+  - is_manager:     whether to show manager-only final actions (set to False if absent){% endcomment %}
+{% load static %}
+<div class="fu-block" id="fuBlock-{{ parent_id }}">
+  {# Status chip #}
+  <div class="fu-status-row">
+    <span class="fu-chip
+      {% if collab_status == 'resolved' %}fu-chip-done
+      {% elif collab_status == 'pending_review' %}fu-chip-review
+      {% else %}fu-chip-ongoing{% endif %}">
+      {% if collab_status == 'resolved' %}已完成
+      {% elif collab_status == 'pending_review' %}待确认
+      {% else %}跟进中{% endif %}
+    </span>
+    {% if stories %}
+    <button type="button" class="fu-story-toggle" onclick="toggleStory({{ parent_id }})">
+      ▾ 历史跟进 ({{ stories|length }})
+    </button>
+    {% endif %}
+  </div>
+
+  {# Zone-level 疑难备注 (folded) — only when this parent has a zone remark #}
+  {% if remark_group %}
+  <details class="fu-zone-remarks">
+    <summary>区域备注 ({{ remark_group.zones|length }} zones)</summary>
+    <div class="wr-rm-content">{{ remark_group.remark.content }}</div>
+    {% if remark_group.remark.confirm_date %}
+    <div class="wr-rm-confirm-meta">已确认 {{ remark_group.remark.confirm_date }} · {{ remark_group.remark.confirm_author|default:'' }}{% if remark_group.remark.confirm_reply %} · {{ remark_group.remark.confirm_reply }}{% endif %}</div>
+    {% endif %}
+    <div class="wr-rm-zones">{% for h in remark_group.hierarchy %}<b>{{ h.land }}</b>: {% for nm in h.names %}{{ nm.name }}{% if nm.count > 1 %} ({{ nm.count }}){% endif %}{% if not forloop.last %}, {% endif %}{% endfor %}{% if not forloop.last %} · {% endif %}{% endfor %}</div>
+  </details>
+  {% endif %}
+
+  {# Story timeline (collapsible) #}
+  {% if stories %}
+  <div class="fu-story" id="fuStory-{{ parent_id }}" style="display:none;">
+    {% for s in stories %}
+    <div class="fu-story-item">
+      <div class="fu-story-head">
+        <span class="fu-story-date">{{ s.date }}</span>
+        <span class="fu-story-worker">{{ s.worker_name }}</span>
+        <a class="fu-story-ticket" href="{% url 'core:work_report_detail' s.id %}">{{ s.ticket }}</a>
+        <span class="fu-story-mark {% if s.status_label == '已修复' %}is-fixed{% else %}is-follow{% endif %}">{{ s.status_label }}</span>
+      </div>
+      {% if s.remark %}<div class="fu-story-remark">{{ s.remark }}</div>{% endif %}
+      {% if s.photos %}
+      <div class="fu-story-photos">
+        {% for p in s.photos %}
+        <img src="{{ p }}" alt="跟进照片" loading="lazy"
+             onclick="window.open('{{ p }}','_blank')">
+        {% endfor %}
+      </div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {# Follow-up submit form — visible to all logged-in users; locked when resolved #}
+  {% if collab_status != 'resolved' %}
+  <div class="fu-form" id="fuForm-{{ parent_id }}" style="display:none;">
+    <input type="text" class="fu-input" id="fuRemark-{{ parent_id }}" placeholder="填写跟进备注…">
+    <label class="fu-file-btn">＋ 照片
+      <input type="file" multiple accept="image/*,video/*" id="fuPhotos-{{ parent_id }}" style="display:none;">
+      <span class="fu-file-count" id="fuPhotoCount-{{ parent_id }}"></span>
+    </label>
+    <div class="fu-action-row">
+      <label class="fu-radio"><input type="radio" name="fuAction-{{ parent_id }}" value="ongoing" checked> 继续跟进</label>
+      <label class="fu-radio"><input type="radio" name="fuAction-{{ parent_id }}" value="fixed"> 已修复</label>
+    </div>
+    <div class="fu-form-actions">
+      <button type="button" class="btn-sm btn-secondary" onclick="closeFollowup({{ parent_id }})">取消</button>
+      <button type="button" class="btn-sm btn-primary" onclick="submitFollowup({{ parent_id }})">提交跟进</button>
+    </div>
+  </div>
+  <button type="button" class="fu-open-btn" id="fuOpen-{{ parent_id }}" onclick="openFollowup({{ parent_id }})">＋ 添加跟进</button>
+  {% endif %}
+
+  {# Manager actions: ongoing/pending_review→标记已解决; resolved→final disposition (transfer/archive). #}
+  {% if is_manager %}
+    {% if collab_status != 'resolved' %}
+    <div class="fu-mgr-final">
+      <span class="fu-mgr-hint">经理可直接关闭此工单：</span>
+      <button type="button" class="btn-sm btn-secondary" onclick="mgrResolveViaRepair({{ parent_id }})">标记已解决</button>
+    </div>
+    {% else %}
+    {# Final disposition: transfer buttons use data-key='wo:<id>' so existing JS finds the right zones. #}
+    <div class="fu-mgr-final is-disposition">
+      <span class="fu-mgr-hint">工单已完成，请选择最终处置：</span>
+      <div class="fu-mgr-actions">
+        <button type="button" class="wr-rm-btn irr" data-key="wo:{{ parent_id }}" onclick="moveRemarkGroup(this,'irrigation')">转至灌溉管理记录</button>
+        <button type="button" class="wr-rm-btn eq" data-key="wo:{{ parent_id }}" onclick="moveRemarkGroup(this,'equipment')">转至设备维护记录</button>
+        <button type="button" class="wr-rm-btn archive" data-key="wo:{{ parent_id }}" onclick="archiveRemarkGroup(this)">归档</button>
+      </div>
+    </div>
+    {% endif %}
+  {% endif %}
+</div>
