@@ -5,9 +5,9 @@
 {% block title %}灌溉区域总览{% endblock %}
 {% block nav_dashboard %}active{% endblock %}
 
-{# Mobile: lock page zoom so a stray pinch on the nav/sidebar never zooms the
-   whole page — the pinch lands in Leaflet's touch handler and zooms ONLY the
-   map. Desktop (max-width:768px is false) is unaffected. #}
+{% comment %}Mobile: lock page zoom so a stray pinch on the nav/sidebar never zooms the
+whole page — the pinch lands in Leaflet's touch handler and zooms ONLY the
+map. Desktop (max-width:768px is false) is unaffected.{% endcomment %}
 {% block viewport %}width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no, viewport-fit=cover{% endblock %}
 
 {% block extra_css %}
