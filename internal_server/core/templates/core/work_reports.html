@@ -214,6 +214,88 @@
   .fu-zone-remarks .wr-rm-zones b { color:var(--wr-text); }
   .fu-zone-remarks .wr-rm-confirm-meta { font-size:0.74rem; color:var(--wr-muted); margin-top:4px; padding-top:4px; border-top:1px dashed var(--wr-card-border); }
 
+  /* ── 跟进 modal（全局单实例，点 ＋添加跟进 时弹出） ── */
+  .fu-modal-overlay {
+    position:fixed; inset:0; background:rgba(0,0,0,.5);
+    display:flex; align-items:center; justify-content:center;
+    z-index:10000; padding:16px;
+  }
+  .fu-modal {
+    background:#fff; border-radius:12px; width:100%; max-width:480px;
+    box-shadow:0 10px 40px rgba(0,0,0,.2); overflow:hidden;
+    animation:fu-modal-in .15s ease-out;
+  }
+  @keyframes fu-modal-in { from { transform:translateY(8px); opacity:0; } to { transform:translateY(0); opacity:1; } }
+  .fu-modal-head {
+    display:flex; justify-content:space-between; align-items:center;
+    padding:14px 18px; border-bottom:1px solid var(--wr-card-border);
+    font-weight:700; color:var(--wr-text); font-size:0.95rem;
+  }
+  .fu-modal-close {
+    background:none; border:none; font-size:1.4rem; color:#999;
+    cursor:pointer; line-height:1; padding:0 4px; border-radius:4px;
+  }
+  .fu-modal-close:hover { color:var(--wr-text); background:#f3f4f6; }
+  .fu-modal-body { padding:16px 18px; }
+  .fu-label { display:block; font-size:0.78rem; color:var(--wr-muted); margin:0 0 6px; font-weight:600; }
+  .fu-modal-body .fu-input { width:100%; box-sizing:border-box; margin-bottom:14px; resize:vertical; min-height:72px; }
+  .fu-modal-body .fu-file-btn { display:inline-block; margin-bottom:14px; }
+  /* Photo preview grid (added inside modal after picker) */
+  .fu-photo-grid {
+    display:flex; flex-wrap:wrap; gap:8px; margin-bottom:14px;
+  }
+  .fu-photo-grid:empty { display:none; }
+  .fu-photo-item {
+    position:relative; width:64px; height:64px; border-radius:6px;
+    overflow:hidden; border:1px solid var(--wr-card-border); background:#f0f0f0;
+  }
+  .fu-photo-item img, .fu-photo-item video {
+    width:100%; height:100%; object-fit:cover; display:block;
+  }
+  /* Video badge: show ▶ overlay since <video> with no src attr can't preview */
+  .fu-photo-item.is-video::after {
+    content:'▶'; position:absolute; inset:0; display:flex;
+    align-items:center; justify-content:center;
+    color:#fff; font-size:1.2rem; background:rgba(0,0,0,.45); pointer-events:none;
+  }
+  .fu-photo-item.is-video video { display:none; }
+  .fu-photo-remove {
+    position:absolute; top:-6px; right:-6px; width:20px; height:20px;
+    border-radius:50%; background:#b3261e; color:#fff; border:2px solid #fff;
+    font-size:0.72rem; line-height:1; cursor:pointer; padding:0;
+    display:flex; align-items:center; justify-content:center;
+    box-shadow:0 1px 3px rgba(0,0,0,.3); font-weight:700;
+  }
+  .fu-photo-remove:hover { background:#8c1a14; }
+  /* segmented control: 继续跟进 / 已修复 */
+  .fu-segmented { display:flex; gap:0; background:#f3f4f6; border-radius:8px; padding:3px; }
+  .fu-seg {
+    flex:1; text-align:center; cursor:pointer; padding:8px 12px;
+    border-radius:6px; font-size:0.86rem; font-weight:600;
+    color:var(--wr-muted); transition:background .15s, color .15s, box-shadow .15s;
+    display:block; position:relative; user-select:none;
+  }
+  .fu-seg input { position:absolute; opacity:0; pointer-events:none; }
+  .fu-seg:has(input:checked) { background:#fff; color:var(--wr-accent); box-shadow:0 1px 3px rgba(0,0,0,.1); }
+  .fu-modal-foot {
+    display:flex; gap:8px; justify-content:flex-end;
+    padding:12px 18px; border-top:1px solid var(--wr-card-border); background:#fafbfc;
+  }
+
+  /* ── 经理「标记已解决」选择弹窗（共享单实例 #mgrResolveModal） ── */
+  /* Reuses .fu-modal-overlay/.fu-modal/.fu-modal-head/.fu-modal-foot above. */
+  .mgr-options { display:flex; flex-direction:column; gap:8px; padding:16px 18px; }
+  .mgr-opt {
+    display:flex; align-items:center; gap:0; width:100%;
+    padding:12px 14px; border:1px solid var(--wr-card-border); border-radius:10px;
+    background:#fff; cursor:pointer; text-align:left; font-family:inherit;
+    transition:border-color .15s, background .15s, box-shadow .15s;
+  }
+  .mgr-opt:hover { border-color:var(--wr-accent); background:#f8fbf9; box-shadow:0 1px 4px rgba(0,0,0,.04); }
+  .mgr-opt-body { flex:1; min-width:0; }
+  .mgr-opt-title { font-size:0.92rem; font-weight:700; color:var(--wr-text); margin-bottom:2px; display:block; }
+  .mgr-opt-desc { font-size:0.78rem; color:var(--wr-muted); line-height:1.4; display:block; }
+
   /* ── 媒体下载 tab ── */
   .wr-photo-dl-toolbar { display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding:10px 14px; margin-bottom:10px; background:var(--wr-card-bg); border:1px solid var(--wr-card-border); border-radius:12px; }
   .wr-photo-dl-btn { padding:6px 14px; font-size:0.85rem; border-radius:8px; background:#fff; color:var(--wr-text); border:1px solid var(--wr-card-border); cursor:pointer; }
@@ -306,6 +388,9 @@
         </button>
         {% endif %}
         {% if is_manager %}
+        <button type="button" class="app-tab {% if active_tab == 'history' %}active{% endif %}" data-tab="history" onclick="switchTab('history')">历史疑难/待修</button>
+        {% endif %}
+        {% if is_manager %}
         <button type="button" class="app-tab {% if active_tab == 'photos' %}active{% endif %}" data-tab="photos" onclick="switchTab('photos')">媒体下载</button>
         {% endif %}
     </div>
@@ -395,42 +480,77 @@
             {% endif %}
         </div>
         {% if pending_repairs %}
-        <table class="card-table" style="width:100%;border-collapse:collapse;font-size:.9rem;margin-top:8px;">
-            <thead>
-                <tr style="text-align:left;border-bottom:2px solid #e2e8f0;">
-                    <th style="padding:8px 6px;">工单</th>
-                    <th style="padding:8px 6px;">日期</th>
-                    <th style="padding:8px 6px;">处理人</th>
-                    <th style="padding:8px 6px;">状态</th>
-                    <th style="padding:8px 6px;">区域</th>
-                    <th style="padding:8px 6px;">备注</th>
-                    <th style="padding:8px 6px;">操作</th>
-                </tr>
-            </thead>
-            <tbody id="repairBody">
-                {% for r in pending_repairs %}
-                <tr id="repairRow-{{ r.id }}" style="border-bottom:1px solid #f1f5f9;">
-                    <td style="padding:8px 6px;"><strong>#{{ r.id }}</strong></td>
-                    <td style="padding:8px 6px;">{{ r.date }}</td>
-                    <td style="padding:8px 6px;">{{ r.worker_name }}</td>
-                    <td style="padding:8px 6px;"><span class="wr-flag warn">{{ r.flags }}</span></td>
-                    <td style="padding:8px 6px;font-size:.82rem;color:#666;">{{ r.zone_count }} zones ({{ r.zone_preview }}{% if r.zone_count > 4 %}…{% endif %})</td>
-                    <td style="padding:8px 6px;font-size:.82rem;max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{{ r.remark }}">{{ r.remark }}</td>
-                    <td style="padding:8px 6px;">
-                        <span style="color:var(--wr-muted);font-size:.78rem;">见下方跟进</span>
-                    </td>
-                </tr>
-                {# Collaboration story-line + follow-up form (full-width row) #}
-                <tr id="repairCollab-{{ r.id }}" style="border-bottom:1px solid #f1f5f9;">
-                    <td colspan="7" style="padding:0 6px 8px;">
-                        {% include 'core/_followup_collab.html' with parent_id=r.id collab_status=r.collab_status stories=r.followup_stories remark_group=r.remark_group is_manager=is_manager %}
-                    </td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
+        <div id="repairBody" style="margin-top:8px;">
+            {% for r in pending_repairs %}
+            <div class="wr-card" id="repairRow-{{ r.id }}">
+                <div class="wr-summary" style="cursor:default;">
+                    <div class="wr-card-top">
+                        <span class="wr-card-date">{{ r.date }}</span>
+                        {% if r.worker_name and r.worker_name != '—' %}<span class="wr-meta" style="font-size:.82rem;">{{ r.worker_name }}</span>{% endif %}
+                        <span class="wr-card-id">#{{ r.id }}</span>
+                        <div class="wr-card-flags">
+                            <span class="wr-flag {{ r.flag_class }}">{{ r.flags }}</span>
+                        </div>
+                    </div>
+                    {% if r.zone_count %}
+                    <div class="wr-zone-summary">{{ r.zone_count }} zones ({{ r.zone_preview }}{% if r.zone_count > 4 %}…{% endif %})</div>
+                    {% endif %}
+                    {% if r.remark %}
+                    <div class="wr-meta" style="font-size:.82rem;color:var(--wr-text);max-width:100%;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;" title="{{ r.remark }}">{{ r.remark }}</div>
+                    {% endif %}
+                </div>
+                <div class="wr-detail" style="display:block;border-top:1px solid var(--wr-card-border);padding:12px 14px;background:#fafafa;" id="repairCollab-{{ r.id }}">
+                    {% include 'core/_followup_collab.html' with parent_id=r.id collab_status=r.collab_status stories=r.followup_stories remark_group=r.remark_group is_manager=is_manager %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
         {% else %}
         <div class="wr-rm-empty">✓ 暂无待修工单</div>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    {# ── Tab: 历史疑难/待修 (managers only) — closed tickets for audit ────── #}
+    {% if is_manager %}
+    <div id="tabHistory" class="wr-remarks-panel {% if active_tab == 'history' %}active{% endif %}">
+        <div class="wr-rm-subhead" style="display:flex;justify-content:space-between;align-items:center;">
+            <span>已关闭的疑难/待修工单 ({{ resolved_repairs|length }})</span>
+            <span class="wr-muted" style="font-size:.78rem;">最多显示最近 200 条</span>
+        </div>
+        {% if resolved_repairs %}
+        <div id="historyBody" style="margin-top:8px;">
+            {% for r in resolved_repairs %}
+            <div class="wr-card" id="historyRow-{{ r.id }}">
+                <div class="wr-summary" style="cursor:default;">
+                    <div class="wr-card-top">
+                        <span class="wr-card-date">{{ r.date }}</span>
+                        {% if r.worker_name and r.worker_name != '—' %}<span class="wr-meta" style="font-size:.82rem;">{{ r.worker_name }}</span>{% endif %}
+                        <span class="wr-card-id">#{{ r.id }}</span>
+                        <div class="wr-card-flags">
+                            <span class="wr-flag {{ r.flag_class }}">{{ r.flags }}</span>
+                        </div>
+                    </div>
+                    {% if r.zone_count %}
+                    <div class="wr-zone-summary">{{ r.zone_count }} zones ({{ r.zone_preview }}{% if r.zone_count > 4 %}…{% endif %})</div>
+                    {% endif %}
+                    {% if r.remark %}
+                    <div class="wr-meta" style="font-size:.82rem;color:var(--wr-text);max-width:100%;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;" title="{{ r.remark }}">{{ r.remark }}</div>
+                    {% endif %}
+                    {% if r.closed %}
+                    <div class="wr-meta" style="font-size:.76rem;color:var(--wr-muted);margin-top:4px;padding-top:4px;border-top:1px dashed var(--wr-card-border);">
+                      关闭 · {{ r.closed.at|date:'Y-m-d H:i' }} · {{ r.closed.by }} · {{ r.closed.note }}
+                    </div>
+                    {% endif %}
+                </div>
+                <div class="wr-detail" style="display:block;border-top:1px solid var(--wr-card-border);padding:12px 14px;background:#fafafa;" id="historyCollab-{{ r.id }}">
+                    {% include 'core/_followup_collab.html' with parent_id=r.id collab_status=r.collab_status stories=r.followup_stories remark_group=r.remark_group is_manager=is_manager is_history=1 %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="wr-rm-empty">✓ 暂无已关闭工单</div>
         {% endif %}
     </div>
     {% endif %}
@@ -553,6 +673,69 @@
 
 <div class="wr-toast" id="wrToast"></div>
 
+{# 跟进 modal: 全局单实例，由各 #fuOpen-<id> 按钮触发；当前 parentId 存在 window._fuModalParentId #}
+<div class="fu-modal-overlay" id="fuModal" style="display:none;">
+  <div class="fu-modal" role="dialog" aria-modal="true" aria-labelledby="fuModalTitle">
+    <div class="fu-modal-head">
+      <span id="fuModalTitle">添加跟进 · <span id="fuModalId"></span></span>
+      <button type="button" class="fu-modal-close" onclick="closeFollowupModal()" aria-label="关闭">×</button>
+    </div>
+    <div class="fu-modal-body">
+      <label class="fu-label" for="fuModalRemark">跟进备注</label>
+      <textarea class="fu-input" id="fuModalRemark" rows="3" placeholder="填写跟进备注…"></textarea>
+      <label class="fu-file-btn">添加照片
+        <input type="file" multiple accept="image/*,video/*" id="fuModalPhotos" style="display:none;">
+        <span class="fu-file-count" id="fuModalPhotoCount"></span>
+      </label>
+      <div class="fu-photo-grid" id="fuModalPhotoGrid" aria-live="polite"></div>
+      <label class="fu-label">处理结果</label>
+      <div class="fu-segmented">
+        <label class="fu-seg"><input type="radio" name="fuModalAction" value="ongoing" checked><span>继续跟进</span></label>
+        <label class="fu-seg"><input type="radio" name="fuModalAction" value="fixed"><span>已修复</span></label>
+      </div>
+    </div>
+    <div class="fu-modal-foot">
+      <button type="button" class="btn-sm btn-secondary" onclick="closeFollowupModal()">取消</button>
+      <button type="button" class="btn-sm btn-primary" onclick="submitFollowupModal()">提交跟进</button>
+    </div>
+  </div>
+</div>
+
+{# 经理「标记已解决」选择弹窗：仅经理渲染。共享单实例， parentId 存 window._mgrResolveId。 #}
+{% if is_manager %}
+<div class="fu-modal-overlay" id="mgrResolveModal" style="display:none;">
+  <div class="fu-modal" role="dialog" aria-modal="true" aria-labelledby="mgrResolveTitle">
+    <div class="fu-modal-head">
+      <span id="mgrResolveTitle">标记已解决 · <span id="mgrResolveId"></span></span>
+      <button type="button" class="fu-modal-close" onclick="closeMgrResolveModal()" aria-label="关闭">×</button>
+    </div>
+    <div class="mgr-options">
+      <button type="button" class="mgr-opt" onclick="confirmMgrResolve('move_irrigation')">
+        <span class="mgr-opt-body">
+          <span class="mgr-opt-title">转至灌溉管理记录</span>
+          <span class="mgr-opt-desc">关闭工单并将区域备注转入灌溉管理记录（下一步选择具体区域）</span>
+        </span>
+      </button>
+      <button type="button" class="mgr-opt" onclick="confirmMgrResolve('move_equipment')">
+        <span class="mgr-opt-body">
+          <span class="mgr-opt-title">转至设备维护记录</span>
+          <span class="mgr-opt-desc">关闭工单并将区域备注转入设备维护记录（下一步选择具体区域）</span>
+        </span>
+      </button>
+      <button type="button" class="mgr-opt" onclick="confirmMgrResolve('archive')">
+        <span class="mgr-opt-body">
+          <span class="mgr-opt-title">归档</span>
+          <span class="mgr-opt-desc">关闭工单并归档区域备注（不再写入区域记录，仅工单详情可查）</span>
+        </span>
+      </button>
+    </div>
+    <div class="fu-modal-foot">
+      <button type="button" class="btn-sm btn-secondary" onclick="closeMgrResolveModal()">取消</button>
+    </div>
+  </div>
+</div>
+{% endif %}
+
 {# Filter state for load-more, serialized safely to JS via json_script. #}
 {{ filter_json|json_script:"wr-filter-json" }}
 {# Photo path registry for the lightbox (keyed by report id). to_json avoids Python repr breaking JSON.parse. #}
@@ -616,6 +799,8 @@ function switchTab(tab) {
     if (pm) pm.classList.toggle('active', tab === 'pm');
     var rp = document.getElementById('tabRepairs');
     if (rp) rp.classList.toggle('active', tab === 'repairs');
+    var hi = document.getElementById('tabHistory');
+    if (hi) hi.classList.toggle('active', tab === 'history');
     var ph = document.getElementById('tabPhotos');
     if (ph) ph.classList.toggle('active', tab === 'photos');
     document.querySelectorAll('.app-tab').forEach(function (t) {
@@ -731,30 +916,62 @@ function resolveAllRepairs(e) {
     }).catch(function () { btn.disabled = false; btn.textContent = '一键全部标记已解决'; wrToast('网络错误', true); });
 }
 
-// ── 疑难/待修 协作故事线：跟进表单 ────────────────────────────────────────
+// ── 疑难/待修 协作故事线：跟进 modal（全局单实例） ─────────────────────────
+// 每个 #fuOpen-<id> 按钮点击 → openFollowup(id) → 把 id 记到 window._fuModalParentId
+// 并弹出共享的 #fuModal。submit/close 都读这个全局 id。
 function openFollowup(parentId) {
-    var f = document.getElementById('fuForm-' + parentId);
-    var open = document.getElementById('fuOpen-' + parentId);
-    if (!f) return;
-    f.style.display = 'block';
-    if (open) open.style.display = 'none';
-}
-function closeFollowup(parentId) {
-    var f = document.getElementById('fuForm-' + parentId);
-    var open = document.getElementById('fuOpen-' + parentId);
-    if (!f) return;
-    f.style.display = 'none';
-    // clear inputs
-    var remark = document.getElementById('fuRemark-' + parentId);
-    if (remark) remark.value = '';
-    var photos = document.getElementById('fuPhotos-' + parentId);
-    if (photos) photos.value = '';
-    var cnt = document.getElementById('fuPhotoCount-' + parentId);
-    if (cnt) cnt.textContent = '';
-    var ongoing = document.querySelector('input[name="fuAction-' + parentId + '"][value="ongoing"]');
+    window._fuModalParentId = parentId;
+    // Photo list is a JS array as the single source of truth: the native
+    // input.files (FileList) is read-only per-item, so we keep our own list
+    // to support remove-one + multi-batch add. The input is just a picker.
+    window._fuModalPhotoList = [];
+    var modal = document.getElementById('fuModal');
+    if (!modal) return;
+    document.getElementById('fuModalId').textContent = '#' + parentId;
+    document.getElementById('fuModalRemark').value = '';
+    document.getElementById('fuModalPhotos').value = '';
+    document.getElementById('fuModalPhotoCount').textContent = '';
+    _renderModalPhotoGrid();
+    var ongoing = document.querySelector('input[name="fuModalAction"][value="ongoing"]');
     if (ongoing) ongoing.checked = true;
-    if (open) open.style.display = 'inline-block';
+    modal.style.display = 'flex';
+    setTimeout(function () { var r = document.getElementById('fuModalRemark'); if (r) r.focus(); }, 50);
 }
+function closeFollowupModal() {
+    var modal = document.getElementById('fuModal');
+    if (modal) modal.style.display = 'none';
+    window._fuModalParentId = null;
+    // Revoke any object URLs still held by thumbnails and clear the list,
+    // so the next openFollowup starts fresh (no leftover previews).
+    _clearModalPhotoList();
+}
+function _clearModalPhotoList() {
+    var list = window._fuModalPhotoList || [];
+    // Revoke URLs bound to current <img>/<video> srcs in the grid.
+    var grid = document.getElementById('fuModalPhotoGrid');
+    if (grid) {
+        var media = grid.querySelectorAll('img, video');
+        for (var i = 0; i < media.length; i++) {
+            var u = media[i].src || '';
+            if (u.indexOf('blob:') === 0) {
+                try { (window.URL || window.webkitURL).revokeObjectURL(u); } catch (e) {}
+            }
+        }
+        if (grid) grid.innerHTML = '';
+    }
+    window._fuModalPhotoList = [];
+    var cnt = document.getElementById('fuModalPhotoCount');
+    if (cnt) cnt.textContent = '';
+}
+// ESC closes the modal; click on the overlay backdrop also closes.
+document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && document.getElementById('fuModal').style.display !== 'none') closeFollowupModal();
+});
+document.addEventListener('click', function (e) {
+    var modal = document.getElementById('fuModal');
+    if (!modal || modal.style.display === 'none') return;
+    if (e.target === modal) closeFollowupModal();
+});
 function toggleStory(parentId) {
     var s = document.getElementById('fuStory-' + parentId);
     if (!s) return;
@@ -769,52 +986,141 @@ function toggleStory(parentId) {
     }
     if (btn) btn.textContent = (open ? '▾' : '▴') + ' 历史跟进 (' + (s.children ? s.children.length : 0) + ')';
 }
-// Auto-update the photo-count label when files are picked.
+// Photo list management: append each newly-picked batch to window._fuModalPhotoList
+// (so picking again adds instead of replacing), then re-render thumbnails.
+// We revoke any prior object URL for a removed file to avoid leaks.
+window._fuModalPhotoList = window._fuModalPhotoList || [];
+function _renderModalPhotoGrid() {
+    var grid = document.getElementById('fuModalPhotoGrid');
+    var cnt = document.getElementById('fuModalPhotoCount');
+    var list = window._fuModalPhotoList || [];
+    if (cnt) cnt.textContent = list.length ? ('(' + list.length + ')') : '';
+    if (!grid) return;
+    grid.innerHTML = '';
+    for (var i = 0; i < list.length; i++) {
+        var f = list[i];
+        var isVideo = f.type && f.type.indexOf('video/') === 0;
+        var url = (window.URL || window.webkitURL).createObjectURL(f);
+        var item = document.createElement('div');
+        item.className = 'fu-photo-item' + (isVideo ? ' is-video' : '');
+        if (isVideo) {
+            // Hide raw <video> (can't poster-preview without a src frame) — CSS
+            // shows a ▶ overlay via ::after. Still keep the URL for size only.
+            var v = document.createElement('video');
+            v.src = url; v.muted = true;
+            item.appendChild(v);
+        } else {
+            var img = document.createElement('img');
+            img.src = url; img.alt = f.name || '照片';
+            item.appendChild(img);
+        }
+        var rm = document.createElement('button');
+        rm.type = 'button'; rm.className = 'fu-photo-remove';
+        rm.setAttribute('aria-label', '移除第 ' + (i + 1) + ' 张');
+        rm.textContent = '×';
+        // Capture i and url in closure so removal revokes the right URL.
+        (function (idx, objUrl) {
+            rm.onclick = function () {
+                try { (window.URL || window.webkitURL).revokeObjectURL(objUrl); } catch (e) {}
+                window._fuModalPhotoList.splice(idx, 1);
+                _renderModalPhotoGrid();
+            };
+        })(i, url);
+        item.appendChild(rm);
+        grid.appendChild(item);
+    }
+}
+// Picker change: append new files. The input.value is cleared afterwards so
+// picking the same file again (e.g. after a remove) still fires change.
 document.addEventListener('change', function (e) {
     var t = e.target;
-    if (!t || !t.id || t.id.indexOf('fuPhotos-') !== 0) return;
-    var parentId = t.id.substring('fuPhotos-'.length);
-    var cnt = document.getElementById('fuPhotoCount-' + parentId);
-    if (cnt) cnt.textContent = t.files && t.files.length ? ('(' + t.files.length + ')') : '';
+    if (!t || t.id !== 'fuModalPhotos') return;
+    if (t.files && t.files.length) {
+        for (var i = 0; i < t.files.length; i++) {
+            window._fuModalPhotoList.push(t.files[i]);
+        }
+    }
+    _renderModalPhotoGrid();
+    t.value = '';  // allow re-picking the same filename
 });
-function submitFollowup(parentId) {
-    var remarkEl = document.getElementById('fuRemark-' + parentId);
-    var remark = remarkEl ? remarkEl.value.trim() : '';
+// Follow-up modal submit (single global instance). Reads window._fuModalParentId.
+function submitFollowupModal() {
+    var parentId = window._fuModalParentId;
+    if (!parentId) { wrToast('未选中工单', true); return; }
+    var remark = document.getElementById('fuModalRemark').value.trim();
     if (!remark) { wrToast('请填写跟进备注', true); return; }
-    var actionEl = document.querySelector('input[name="fuAction-' + parentId + '"]:checked');
+    var actionEl = document.querySelector('input[name="fuModalAction"]:checked');
     var action = actionEl ? actionEl.value : 'ongoing';
-    var photosEl = document.getElementById('fuPhotos-' + parentId);
+    var photos = window._fuModalPhotoList || [];
     var fd = new FormData();
     fd.append('remark', remark);
     fd.append('action', action);
-    if (photosEl && photosEl.files) {
-        for (var i = 0; i < photosEl.files.length; i++) fd.append('photos', photosEl.files[i]);
-    }
+    for (var i = 0; i < photos.length; i++) fd.append('photos', photos[i]);
     fetch('/work-reports/' + parentId + '/followup/', {
         method: 'POST',
         headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRFToken': wrCsrf() },
         body: fd,
     }).then(function (r) { return r.json(); }).then(function (d) {
-        wrToast(d.message || (d.error || '提交失败'), !d.success);
+        wrToast(d.message || '提交失败', !d.success);
         if (d.success) {
+            closeFollowupModal();
             // Local refresh: swap in the server-rendered #tabRepairs so the new
             // story entry + status chip render without a full page reload.
             _refreshRepairsTab(900);
         }
     }).catch(function () { wrToast('网络错误', true); });
 }
-// Manager final-step from inside a collab block: delegate to the existing
-// resolve-repair endpoint (which now also sets collab_status=resolved).
+// Manager final-step from inside a collab block: open a chooser modal so the
+// manager picks a final disposition (move to irrigation / move to equipment /
+// archive). The ticket is resolved ONLY after the chosen disposition's POSTs
+// succeed — cancelling the zone-picker or a failed archive leaves it open.
 function mgrResolveViaRepair(parentId) {
-    if (!confirm('确认 #' + parentId + ' 已彻底处理完成？\n（标记为已解决，关闭协作）')) return;
-    fetch('/work-reports/' + parentId + '/resolve-repair/', {
-        method: 'POST', headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRFToken': wrCsrf() }
-    }).then(function (r) { return r.json(); }).then(function (d) {
-        wrToast(d.message, !d.success);
-        if (d.success) {
-            _refreshRepairsTab(900);
-        }
-    }).catch(function () { wrToast('网络错误', true); });
+    window._mgrResolveId = parentId;
+    var modal = document.getElementById('mgrResolveModal');
+    if (!modal) { wrToast('弹窗不可用', true); return; }
+    document.getElementById('mgrResolveId').textContent = '#' + parentId;
+    modal.style.display = 'flex';
+}
+function closeMgrResolveModal() {
+    var modal = document.getElementById('mgrResolveModal');
+    if (modal) modal.style.display = 'none';
+    window._mgrResolveId = null;
+}
+// ESC + backdrop click also close (matches followup modal behavior).
+document.addEventListener('keydown', function (e) {
+    var modal = document.getElementById('mgrResolveModal');
+    if (!modal || modal.style.display === 'none') return;
+    if (e.key === 'Escape') closeMgrResolveModal();
+});
+document.addEventListener('click', function (e) {
+    var modal = document.getElementById('mgrResolveModal');
+    if (!modal || modal.style.display === 'none') return;
+    if (e.target === modal) closeMgrResolveModal();
+});
+function confirmMgrResolve(action) {
+    var parentId = window._mgrResolveId;
+    if (!parentId) { wrToast('未选中工单', true); return; }
+    // Resolve is the LAST step, not the first: the user may still cancel the
+    // zone-picker or the archive POSTs may fail, and in both cases the ticket
+    // must remain unchanged. We chain disposition → resolveWorkOrder via
+    // Promise; resolveWorkOrder only fires if disposition resolves true.
+    var key = 'wo:' + parentId;
+    function resolveWorkOrder() {
+        fetch('/work-reports/' + parentId + '/resolve-repair/', {
+            method: 'POST', headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRFToken': wrCsrf() }
+        }).then(function (r) { return r.json(); }).then(function (d) {
+            wrToast(d.message || '标记已解决失败', !d.success);
+        }).catch(function () { wrToast('标记已解决失败（网络）', true); });
+    }
+    closeMgrResolveModal();
+    if (action === 'archive') {
+        archiveRemarkGroup(key).then(function (ok) { if (ok) resolveWorkOrder(); });
+    } else if (action === 'move_irrigation' || action === 'move_equipment') {
+        var target = action === 'move_irrigation' ? 'irrigation' : 'equipment';
+        moveRemarkGroup(key, target).then(function (ok) { if (ok) resolveWorkOrder(); });
+    } else {
+        wrToast('未知操作', true);
+    }
 }
 
 // ── 媒体下载 tab: lazy-load report→media list, render, select, download ──
@@ -969,32 +1275,50 @@ function confirmRemarkGroup(btn) {
 
 // Archive (已确认阶段的第三个选项): 一次性备注直接结束，不写入灌溉/设备记录，
 // 仅就地打 archived 标记。Fan-out 到该 group 触及的所有 zone。
-function archiveRemarkGroup(btn) {
-    var key = btn.getAttribute('data-key');
+// archiveRemarkGroup now takes a key (string) and returns a Promise<boolean>
+// (resolves true on success, false on bail/error). The legacy btn signature is
+// still accepted via btn.getAttribute('data-key') for the existing detail-page
+// call sites — pass a key string instead to skip the DOM stub hack.
+function archiveRemarkGroup(btnOrKey) {
+    var key = (typeof btnOrKey === 'string') ? btnOrKey :
+              btnOrKey.getAttribute && btnOrKey.getAttribute('data-key');
+    if (!key) return Promise.resolve(false);
     var grp = remarkGroups[key] || {};
     var pairs = grp.pairs || [];
-    if (!pairs.length) { wrToast('无对应区域', true); return; }
-    if (!confirm('确定归档此备注？归档后不再写入区域记录，仅工单详情可查。')) return;
-    btn.disabled = true; btn.textContent = '归档中…';
-    Promise.all(pairs.map(function (p) { return _postRemark(p[0], p[1], 'archive', {}); }))
-        .then(function () { wrToast('已归档'); _refreshRepairsTab(700); })
-        .catch(function () { wrToast('部分归档失败，请刷新重试', true); btn.disabled = false; btn.textContent = '归档'; });
+    if (!pairs.length) {
+        // No zone remark to archive. Caller decides what to do (the mgr-resolve
+        // flow treats this as "nothing left to dispose" and proceeds to close
+        // the ticket; standalone archive from detail just toasts).
+        wrToast('无对应区域', true);
+        return Promise.resolve(false);
+    }
+    return Promise.all(pairs.map(function (p) { return _postRemark(p[0], p[1], 'archive', {}); }))
+        .then(function () { wrToast('已归档'); _refreshRepairsTab(700); return true; })
+        .catch(function () { wrToast('部分归档失败，请刷新重试', true); return false; });
 }
 
 // ── Transfer selector ─────────────────────────────────────────────────────
 // Tracks the pending transfer action so the modal's 确认 button knows what to do.
 var _pendingTransfer = null;  // {key, target, btn}
 
-function moveRemarkGroup(btn, target) {
-    var key = btn.getAttribute('data-key');
+function moveRemarkGroup(btnOrKey, target) {
+    var key = (typeof btnOrKey === 'string') ? btnOrKey :
+              btnOrKey.getAttribute && btnOrKey.getAttribute('data-key');
+    if (!key) return Promise.resolve(false);
     var grp = remarkGroups[key] || {};
     var tree = grp.tree || [];
-    if (!tree.length) { wrToast('无对应区域', true); return; }
-    _pendingTransfer = { key: key, target: target, btn: btn };
-
-    var label = target === 'irrigation' ? '灌溉管理记录' : '设备维护记录';
-    var m = document.getElementById('rmMoveModal');
-    document.getElementById('rmMoveTitle').textContent = '转至' + label + ' · 选择区域';
+    if (!tree.length) {
+        wrToast('无对应区域', true);
+        return Promise.resolve(false);
+    }
+    // Stash target+key for confirmMoveModal; the promise is resolved by the
+    // user's confirm/cancel action. We return a real Promise that the caller
+    // (mgr-resolve flow) can .then(resolveWorkOrder) on.
+    return new Promise(function (resolve) {
+        _pendingTransfer = { key: key, target: target, resolve: resolve };
+        var label = target === 'irrigation' ? '灌溉管理记录' : '设备维护记录';
+        var m = document.getElementById('rmMoveModal');
+        document.getElementById('rmMoveTitle').textContent = '转至' + label + ' · 选择区域';
     // Build a Land → 通用名称 → 区域代码 tree. By default only the 通用名称 rows
     // show (collapsed); click a name to expand its zones. A single-zone name has
     // nothing to expand — its checkbox IS the zone (labeled with the name). The
@@ -1053,7 +1377,8 @@ function moveRemarkGroup(btn, target) {
         });
     });
 
-    m.classList.add('show');
+        m.classList.add('show');
+    });
 }
 
 function _zoneCheck(label, zid, idx, checked, indent) {
@@ -1074,16 +1399,25 @@ function confirmMoveModal() {
     sel.forEach(function (cb) { pairs.push([parseInt(cb.dataset.zid, 10), parseInt(cb.dataset.idx, 10)]); });
     if (!pairs.length) { wrToast('请至少选择一个区域', true); return; }
     var label = _pendingTransfer.target === 'irrigation' ? '灌溉管理记录' : '设备维护记录';
-    var btn = _pendingTransfer.btn;
-    btn.disabled = true; btn.textContent = '转移中…';
+    var resolve = _pendingTransfer.resolve;
     document.getElementById('rmMoveModal').classList.remove('show');
     Promise.all(pairs.map(function (p) { return _postRemark(p[0], p[1], 'move', { target: _pendingTransfer.target }); }))
-        .then(function () { wrToast('已转至' + label); _refreshRepairsTab(700); })
-        .catch(function () { wrToast('部分转移失败，请刷新重试', true); btn.disabled = false; btn.textContent = '转至' + label; });
+        .then(function () {
+            wrToast('已转至' + label);
+            _refreshRepairsTab(700);
+            if (resolve) resolve(true);
+        })
+        .catch(function () {
+            wrToast('部分转移失败，请刷新重试', true);
+            if (resolve) resolve(false);
+        });
     _pendingTransfer = null;
 }
 function closeMoveModal() {
     document.getElementById('rmMoveModal').classList.remove('show');
+    // User cancelled: resolve the pending promise (if any) with false so the
+    // mgr-resolve caller knows not to flip the ticket to resolved.
+    if (_pendingTransfer && _pendingTransfer.resolve) _pendingTransfer.resolve(false);
     _pendingTransfer = null;
 }
 function toggleAllMoveModal(on) {
@@ -1257,7 +1591,7 @@ function renderCard(r) {
         html += '<div class="wr-edit-latest"><span class="wr-edit-icon">✏️</span> 最后修改：<b>' + esc(last.editor) + '</b> 于 ' + esc(last.time) + more + '</div>';
     }
     // zone summary
-    if (r.zone_summary) html += '<div class="wr-zone-summary"><span class="pin">📍</span> ' + esc(r.zone_summary) + '</div>';
+    if (r.zone_summary) html += '<div class="wr-zone-summary">' + esc(r.zone_summary) + '</div>';
     // chips
     var chips = '';
     (r.section_labels || []).forEach(function (l) { chips += '<span class="wr-chip">' + esc(l) + '</span>'; });

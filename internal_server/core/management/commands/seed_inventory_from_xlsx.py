@@ -154,7 +154,7 @@ class Command(BaseCommand):
                 if is_leaf:
                     obj = InventoryCategory.objects.create(
                         code=code, parent=parent, name_zh=seg,
-                        level=i, node_type='part',
+                        node_type='part',
                         is_main_material=r['is_main'],
                         min_stock=r['min_qty'],
                         unit=r['unit'],
@@ -163,11 +163,16 @@ class Command(BaseCommand):
                 else:
                     obj = InventoryCategory.objects.create(
                         code=code, parent=parent, name_zh=seg,
-                        level=i, node_type='category',
+                        node_type='category',
                     )
                 cat_cache[key] = obj
                 parent = obj
                 created += 1
+
+        # Rebuild mptt nested-set columns (lft/rght/tree_id/level) from the
+        # parent_id links we just established. Without this, mptt-based queries
+        # (get_descendants, get_ancestors, .children) would return nothing.
+        InventoryCategory.objects.rebuild()
 
         self.stdout.write(self.style.SUCCESS(
             f'Rebuilt catalog: {created} nodes created from {len(rows)} spreadsheet rows.'

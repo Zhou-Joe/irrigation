@@ -51,8 +51,8 @@ Context vars expected:
       {% if s.photos %}
       <div class="fu-story-photos">
         {% for p in s.photos %}
-        <img src="{{ p }}" alt="跟进照片" loading="lazy"
-             onclick="window.open('{{ p }}','_blank')">
+        <img src="/media/{{ p }}" alt="跟进照片" loading="lazy"
+             onclick="window.open('/media/{{ p }}','_blank')">
         {% endfor %}
       </div>
       {% endif %}
@@ -61,28 +61,18 @@ Context vars expected:
   </div>
   {% endif %}
 
-  {# Follow-up submit form — visible to all logged-in users; locked when resolved #}
-  {% if collab_status != 'resolved' %}
-  <div class="fu-form" id="fuForm-{{ parent_id }}" style="display:none;">
-    <input type="text" class="fu-input" id="fuRemark-{{ parent_id }}" placeholder="填写跟进备注…">
-    <label class="fu-file-btn">＋ 照片
-      <input type="file" multiple accept="image/*,video/*" id="fuPhotos-{{ parent_id }}" style="display:none;">
-      <span class="fu-file-count" id="fuPhotoCount-{{ parent_id }}"></span>
-    </label>
-    <div class="fu-action-row">
-      <label class="fu-radio"><input type="radio" name="fuAction-{{ parent_id }}" value="ongoing" checked> 继续跟进</label>
-      <label class="fu-radio"><input type="radio" name="fuAction-{{ parent_id }}" value="fixed"> 已修复</label>
-    </div>
-    <div class="fu-form-actions">
-      <button type="button" class="btn-sm btn-secondary" onclick="closeFollowup({{ parent_id }})">取消</button>
-      <button type="button" class="btn-sm btn-primary" onclick="submitFollowup({{ parent_id }})">提交跟进</button>
-    </div>
-  </div>
-  <button type="button" class="fu-open-btn" id="fuOpen-{{ parent_id }}" onclick="openFollowup({{ parent_id }})">＋ 添加跟进</button>
+  {% comment %}Follow-up trigger — visible to all logged-in users; locked when resolved.
+  The form itself lives in a shared modal (#fuModal in work_reports.html) so
+  all collab rows reuse one dialog. openFollowup(id) records parent + pops modal.
+  Hidden entirely in history mode — a closed ticket accepts no new followups.{% endcomment %}
+  {% if collab_status != 'resolved' and not is_history %}
+  <button type="button" class="fu-open-btn" id="fuOpen-{{ parent_id }}" onclick="openFollowup({{ parent_id }})">添加跟进</button>
   {% endif %}
 
-  {# Manager actions: ongoing/pending_review→标记已解决; resolved→final disposition (transfer/archive). #}
-  {% if is_manager %}
+  {% comment %}Manager actions: ongoing/pending_review→标记已解决; resolved→final disposition (transfer/archive).
+  Suppressed entirely in history mode — re-disposing a closed ticket would
+  corrupt its already-disposed zone remarks.{% endcomment %}
+  {% if is_manager and not is_history %}
     {% if collab_status != 'resolved' %}
     <div class="fu-mgr-final">
       <span class="fu-mgr-hint">经理可直接关闭此工单：</span>

@@ -13,6 +13,8 @@ from core.api import (
     worker_login, get_weather,
 )
 from core.views import equipment_catalog_autocomplete
+from core import workitem_manage_views
+from core import inventory_tree_views
 from core.workorder_tree_views import (
     workorder_tree_form, project_create_api, planned_maintenance_pending,
     project_management, project_save, project_delete,
@@ -40,6 +42,8 @@ urlpatterns = [
     path('stats/excel/', views.work_reports_excel, name='work_reports_excel'),
     path('irrigation/', views.irrigation_dashboard, name='irrigation_dashboard'),
     path('api/irrigation/zone-heatmap/', views.irrigation_zone_heatmap, name='irrigation_zone_heatmap'),
+    path('api/irrigation/zone/<int:zone_id>/exclude/', views.irrigation_zone_exclude, name='irrigation_zone_exclude'),
+    path('api/irrigation/zone/<int:zone_id>/restore/', views.irrigation_zone_restore, name='irrigation_zone_restore'),
     path('api/stats/zone-heatmap/', views.stats_zone_heatmap, name='stats_zone_heatmap'),
     path('irrigation/report.pdf', views.irrigation_report_pdf, name='irrigation_report_pdf'),
     path('irrigation/report.xlsx', views.irrigation_report_excel, name='irrigation_report_excel'),
@@ -130,11 +134,15 @@ urlpatterns = [
     path('projects/<int:pk>/budget/save/', project_budget_save, name='project_budget_save'),
     path('projects/<int:pk>/pos/save/', project_pos_save, name='project_pos_save'),
     path('inventory/manage/', views.inventory_management, name='inventory_management'),
+    path('inventory/tree.json', inventory_tree_views.inventory_tree_json, name='inventory_tree_json'),
+    path('inventory/node/<int:cat_id>/detail/', inventory_tree_views.inventory_node_detail, name='inventory_node_detail'),
+    path('inventory/node/<int:cat_id>/save/', inventory_tree_views.inventory_node_save, name='inventory_node_save'),
     path('inventory/manage/category/<int:cat_id>/transactions/', views.inventory_category_transactions, name='inventory_category_transactions'),
     path('inventory/save-stock/', views.inventory_save_stock, name='inventory_save_stock'),
     path('inventory/export-excel/', views.inventory_export_excel, name='inventory_export_excel'),
     path('inventory/export-transactions/', views.inventory_transactions_export, name='inventory_transactions_export'),
     path('inventory/category/create/', views.inventory_category_create, name='inventory_category_create'),
+    path('inventory/category/reorder/', views.inventory_category_reorder, name='inventory_category_reorder'),
     path('inventory/category/<int:cat_id>/delete/', views.inventory_category_delete, name='inventory_category_delete'),
     path('inventory/category/<int:cat_id>/edit/', views.inventory_category_edit, name='inventory_category_edit'),
     path('inventory/estimate/<int:txn_id>/confirm/', views.inventory_estimate_confirm, name='inventory_estimate_confirm'),
@@ -149,6 +157,15 @@ urlpatterns = [
     path('api/announcements/<int:pk>/acknowledge/', views.announcement_acknowledge, name='announcement_acknowledge'),
     path('api/announcements/<int:pk>/unacked/', views.announcement_unacked_api, name='announcement_unacked_api'),
     path('work-reports/tree/<int:report_id>/edit/', workorder_tree_form, name='workorder_tree_form_edit'),
+    # WorkItem tree CRUD endpoints (manager-only, consumed by the 工单类型
+    # tab inside the 作业计划 page). The standalone manage-page route was
+    # removed — the tree renders as a tab there now.
+    path('work-items/manage/tree.json', workitem_manage_views.workitem_tree_json, name='workitem_tree_json'),
+    path('work-items/manage/<int:node_id>/detail/', workitem_manage_views.workitem_node_detail, name='workitem_node_detail'),
+    path('work-items/manage/create/', workitem_manage_views.workitem_create, name='workitem_create'),
+    path('work-items/manage/<int:node_id>/edit/', workitem_manage_views.workitem_edit, name='workitem_edit'),
+    path('work-items/manage/<int:node_id>/delete/', workitem_manage_views.workitem_delete, name='workitem_delete'),
+    path('work-items/manage/<int:node_id>/move/', workitem_manage_views.workitem_move, name='workitem_move'),
     path('work-reports/<int:report_id>/', views.work_report_detail, name='work_report_detail'),
     path('work-reports/<int:report_id>/edit/', views.work_report_edit, name='work_report_edit'),
     path('work-reports/<int:report_id>/upload-photo/', views.work_report_upload_photo, name='work_report_upload_photo'),

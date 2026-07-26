@@ -64,7 +64,8 @@ class Command(BaseCommand):
                     'parent': parent,
                     'name_zh': row['name_zh'],
                     'order': row['order'],
-                    'level': row['level'],
+                    # level is auto-managed by MPTT now (removed manual field);
+                    # save() recomputes it from the parent chain.
                     'section': row['section'],
                     'value_type': row['value_type'],
                     'unit': row['unit'],

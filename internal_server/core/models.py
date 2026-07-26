@@ -3,6 +3,7 @@ from django.db import models
 from django.contrib.auth.models import User
 from django.utils import timezone
 from datetime import date
+from mptt.models import MPTTModel, TreeForeignKey
 
 
 # Role constants
@@ -186,6 +187,12 @@ class Zone(models.Model):
     ring_display_modes = models.JSONField(default=dict, blank=True, help_text='Per-ring display mode: {"0":"sublabel"}. Missing keys default to "line".')
     area_sqm = models.FloatField(null=True, blank=True, help_text='Calculated area in square meters')
     drawn_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='drawn_zones', verbose_name='绘制人')
+    # Manager-controlled heatmap visibility. A zone flagged here is hidden from
+    # the /irrigation/ heatmap (and its legend / unmapped / search ranking) but
+    # stays visible everywhere else (stats heatmap, zone lists, work-order
+    # dropdowns). Toggled via the right-click → 排除 action on the map.
+    heatmap_excluded = models.BooleanField('热力图已排除', default=False,
+                                            help_text='经理手动排除：该区域在 /irrigation/ 热力图上不再显示')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -1080,6 +1087,18 @@ class WorkReport(models.Model):
         '协作状态', max_length=20, blank=True, default='',
         help_text='跟进中(ongoing)/待确认(pending_review)/已完成(resolved)；仅父工单有意义',
     )
+    # Per-child action captured at followup submit time. Persisted so the story
+    # timeline can render each entry's true label instead of deriving it from
+    # the parent's *current* collab_status (which would mislabel prior entries
+    # once a later 'fixed' flips the parent, or once the parent is resolved).
+    FOLLOWUP_ACTION_CHOICES = [
+        ('ongoing', '继续跟进'),
+        ('fixed', '已修复'),
+    ]
+    followup_action = models.CharField(
+        '跟进动作', max_length=10, blank=True, default='',
+        help_text='子工单提交时的动作：ongoing(继续跟进)/fixed(已修复)；仅跟进子工单有意义',
+    )
     photos = models.JSONField(default=list, blank=True, verbose_name='照片列表', help_text='照片文件路径列表')
 
     # Mobile workorder fields
@@ -1248,11 +1267,15 @@ class AnnouncementAcknowledgment(models.Model):
 
 
 # (removed: WorkReportFault)
-class WorkItem(models.Model):
+class WorkItem(MPTTModel):
     """工单「工作内容」模板树节点 - 自引用树，承载完整 现场作业记录 层级。
 
     首次由 seed_work_items 命令解析 工单记录格式.md 灌入；之后管理员可在后台增删改。
     叶子节点(value_type != group)才是可填报的；group 仅作容器。
+
+    继承 MPTTModel 后自动维护 lft/rgt/tree_id/level 四个嵌套集字段，使整树
+    查询变成单条 SQL（不再需要 Python 内存里递归建树）。``level`` 由 mptt
+    接管，禁止手动写——seed 命令里的 level 字段会被 save() 时重算覆盖。
     """
 
     SECTION_CHOICES = [
@@ -1279,14 +1302,17 @@ class WorkItem(models.Model):
     ]
 
     code = models.CharField('编码', max_length=100, unique=True, help_text='文档点号路径，幂等灌入与外部引用键')
-    parent = models.ForeignKey(
+    # TreeForeignKey is mptt's FK that auto-maintains lft/rgt/tree_id on save.
+    # Same on_delete/related_name as the old plain FK, so existing queries via
+    # parent / children keep working unchanged.
+    parent = TreeForeignKey(
         'self', null=True, blank=True, on_delete=models.CASCADE,
-        related_name='children', verbose_name='父节点',
+        related_name='children', verbose_name='父节点', db_index=True,
     )
     name_zh = models.CharField('中文名', max_length=255)
     name_en = models.CharField('英文名', max_length=255, blank=True)
     order = models.PositiveIntegerField('同级排序', default=0)
-    level = models.PositiveIntegerField('层级深度', default=0)
+    # NOTE: removed manual `level` field — mptt auto-manages it now.
     section = models.CharField('顶层章节', max_length=30, choices=SECTION_CHOICES, db_index=True)
     value_type = models.CharField('值类型', max_length=20, choices=VALUE_TYPE_CHOICES, default='count')
     status_options = models.JSONField('状态选项', default=list, blank=True, help_text='仅 status 型：可选状态列表')
@@ -1295,6 +1321,10 @@ class WorkItem(models.Model):
     active = models.BooleanField('启用', default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    class MPTTMeta:
+        # Sibling order: explicit `order` first, then `code` for determinism.
+        order_insertion_by = ['order', 'code']
 
     class Meta:
         ordering = ['section', 'order', 'code']
@@ -1407,23 +1437,26 @@ class WorkReportEntry(models.Model):
 # ==========================================================================
 
 
-class InventoryCategory(models.Model):
+class InventoryCategory(MPTTModel):
     """库存物料目录树 - 自引用树，承载 盘点.xlsx 的层级。
 
     由 seed_inventory_from_xlsx 命令从 盘点.xlsx 灌入；之后管理员可在后台增删改。
     叶子节点（无 children）才是可出入库的具体物料；中间节点为分类。
     current_stock 由经理在 /inventory/manage/ 页面设定/调整，每次出入库提交后自动增减。
     min_stock / is_main_material 同样由经理在该页面设定，便于库存预警与主材统计。
+
+    继承 MPTTModel 后自动维护 lft/rgt/tree_id/level（与 WorkItem 同款）。
+    `level` 字段由 mptt 接管，禁止手动写。
     """
 
     code = models.CharField('编码', max_length=200, unique=True, help_text='路径派生的稳定编码，幂等灌入键')
-    parent = models.ForeignKey(
+    parent = TreeForeignKey(
         'self', null=True, blank=True, on_delete=models.CASCADE,
-        related_name='children', verbose_name='父节点',
+        related_name='children', verbose_name='父节点', db_index=True,
     )
     name_zh = models.CharField('中文名', max_length=255)
     order = models.PositiveIntegerField('同级排序', default=0)
-    level = models.PositiveIntegerField('层级深度', default=0)
+    # NOTE: removed manual `level` field — mptt auto-manages it now.
     current_stock = models.IntegerField(
         '现有库存数量', default=0,
         help_text='由经理设定初始值；每次出入库提交后自动增减',
@@ -1452,6 +1485,10 @@ class InventoryCategory(models.Model):
     active = models.BooleanField('启用', default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    class MPTTMeta:
+        # Sibling order: explicit `order` first, then `code` for determinism.
+        order_insertion_by = ['order', 'code']
 
     class Meta:
         ordering = ['order', 'code']

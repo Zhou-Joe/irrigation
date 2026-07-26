@@ -20,19 +20,41 @@
 /* Tree */
 .iv-tree { font-size: .9rem; }
 .iv-branch { margin-left: 4px; }
-.iv-head { display: flex; align-items: center; gap: 6px; padding: 7px 6px; cursor: pointer; border-radius: 6px; user-select: none; }
-.iv-head:hover { background: #f4f7f4; }
-.iv-arrow { display: inline-block; width: 12px; color: #999; transition: transform .15s; font-size: .75rem; }
+/* Branch (category) head — render as a card to match the WorkItem tree's
+   horizontal-card look. Left border color hints category vs the leaf below. */
+.iv-head { display: flex; align-items: center; gap: 6px; padding: 6px 10px;
+           cursor: pointer; border-radius: 6px; user-select: none;
+           background: #fff; border: 1px solid #e5e7eb; border-left: 3px solid #2D6A4F;
+           box-shadow: 0 1px 2px rgba(0,0,0,0.04); margin: 2px 0;
+           transition: border-color .15s, box-shadow .15s; width: fit-content; min-width: 200px; }
+.iv-head:hover { border-color: var(--color-primary-light, #2D6A4F);
+                 box-shadow: 0 2px 6px rgba(45,106,79,0.15); }
+.iv-arrow { display: inline-block; width: 12px; color: #6b7280; transition: transform .15s; font-size: .75rem; }
 .iv-head.open .iv-arrow { transform: rotate(90deg); }
-.iv-name { font-weight: 500; color: #333; }
-.iv-child-count { font-size: .74rem; color: #aaa; }
+.iv-name { font-weight: 600; color: #1f2937; }
+.iv-child-count { font-size: .74rem; color: #9ca3af; }
+.iv-node-actions { margin-left: auto; }
 
-.iv-body { margin-left: 16px; border-left: 1px dashed #e0e0e0; padding-left: 4px; }
+/* Children block: solid vertical guide line + horizontal elbow on each child.
+   This is what makes children branch off visually to the right. */
+.iv-body { margin-left: 10px; padding-left: 14px; position: relative; }
+.iv-body::before { content: ''; position: absolute; left: 4px; top: 0; bottom: 14px;
+                   width: 1px; background: #cbd5e1; }
+.iv-body > .iv-branch, .iv-body > .iv-leaf { position: relative; }
+.iv-body > .iv-branch::before, .iv-body > .iv-leaf::before {
+    content: ''; position: absolute; left: -10px; top: 14px; width: 10px; height: 1px;
+    background: #cbd5e1;
+}
 
 /* Leaf */
 .iv-leaf { margin-left: 4px; }
-.iv-leaf-row { display: flex; align-items: center; gap: 8px; padding: 6px 6px; border-radius: 6px; }
-.iv-leaf-row:hover { background: #f9fbf9; }
+.iv-leaf-row { display: flex; align-items: center; gap: 8px; padding: 6px 10px;
+               border-radius: 6px; background: #fff; border: 1px solid #e5e7eb;
+               border-left: 3px solid #9ca3af; box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+               margin: 2px 0; width: fit-content; min-width: 540px;
+               transition: border-color .15s, box-shadow .15s; }
+.iv-leaf-row:hover { border-color: var(--color-primary-light, #2D6A4F);
+                     box-shadow: 0 2px 6px rgba(45,106,79,0.15); }
 .iv-leaf-name { flex: 1; min-width: 120px; color: #444; }
 .iv-stock-input { width: 80px; padding: 4px 8px; border: 1px solid #d8d8d8; border-radius: 6px; font-size: .88rem; text-align: right; }
 .iv-txn-btn { padding: 4px 10px; border: 1px solid #cfe8d8; border-radius: 6px; background: #f0f7f3; color: var(--color-primary, #2D6A4F); font-size: .78rem; cursor: pointer; white-space: nowrap; }
@@ -58,6 +80,104 @@
 .iv-txn-table .in { color: var(--color-primary, #2D6A4F); font-weight: 600; }
 .iv-txn-table .out { color: #c0392b; font-weight: 600; }
 .iv-txn-loading { font-size: .8rem; color: #aaa; padding: 4px 0; }
+
+/* ── jsTree-based inventory catalog (双面板：左树 + 右详情) ── */
+.iv-manage-grid { display:grid; grid-template-columns: 1fr 380px; gap:14px; align-items:start; }
+@media (max-width: 900px) { .iv-manage-grid { grid-template-columns: 1fr; } }
+.iv-tree-side { min-width: 0; }
+.iv-tree-side .iv-search { width:100%; padding:8px 12px; border:1px solid #d8dde3; border-radius:8px;
+                          font-size:.88rem; margin-bottom:8px; box-sizing:border-box; }
+.iv-tree-side .iv-search:focus { outline:none; border-color: var(--color-primary-light, #2D6A4F); }
+.iv-tree-wrap { background:#fff; border:1px solid #eef0f3; border-radius:12px; padding:14px 18px;
+                box-shadow:0 1px 3px rgba(0,0,0,0.04); }
+#ivTreeV2 { font-size:.9rem; max-height: calc(100vh - 280px); overflow:auto; padding:4px 8px 4px 0; }
+/* node = card */
+#ivTreeV2 .jstree-anchor {
+    display:inline-flex !important; align-items:center; gap:6px;
+    padding:5px 10px !important; margin:2px 0;
+    background:#fff; border:1px solid #e5e7eb; border-radius:6px;
+    box-shadow:0 1px 2px rgba(0,0,0,0.04);
+    transition:border-color .15s, box-shadow .15s, background .15s;
+    line-height:1.3; min-height:28px;
+}
+#ivTreeV2 .jstree-anchor:hover { border-color: var(--color-primary-light, #2D6A4F);
+                                  box-shadow:0 2px 6px rgba(45,106,79,0.15); }
+#ivTreeV2 .jstree-anchor.jstree-clicked { background:#f0fdf4; border-color: var(--color-primary-light, #2D6A4F); }
+#ivTreeV2 .iv-folder > .jstree-anchor { border-left:3px solid #2D6A4F; padding-left:8px !important; }
+#ivTreeV2 .iv-leaf   > .jstree-anchor { border-left:3px solid #9ca3af; padding-left:8px !important; }
+#ivTreeV2 .jstree-anchor .jstree-icon { background-image:none !important; background-position:0 0 !important;
+                                         width:18px !important; height:18px !important;
+                                         font-size:1rem; line-height:18px; }
+#ivTreeV2 .iv-folder > .jstree-anchor .jstree-icon::before { content:'📂'; }
+#ivTreeV2 .iv-leaf   > .jstree-anchor .jstree-icon::before { content:'🏷️'; }
+#ivTreeV2 .jstree-node > .jstree-icon { background-image:none !important;
+                                         width:16px !important; height:16px !important;
+                                         color:#6b7280; font-size:.7rem; line-height:16px;
+                                         text-align:center; cursor:pointer; opacity:.7; }
+#ivTreeV2 .jstree-open   > .jstree-icon::before { content:'▼'; }
+#ivTreeV2 .jstree-closed > .jstree-icon::before { content:'▶'; }
+#ivTreeV2 .jstree-leaf   > .jstree-icon::before { content:'·'; opacity:.3; }
+#ivTreeV2 .jstree-children { margin-left:10px; padding-left:14px; position:relative; list-style:none; }
+#ivTreeV2 .jstree-children::before { content:''; position:absolute; left:4px; top:0; bottom:14px;
+                                      width:1px; background:#cbd5e1; }
+#ivTreeV2 .jstree-children > .jstree-node { position:relative; }
+#ivTreeV2 .jstree-children > .jstree-node::before { content:''; position:absolute; left:-10px; top:16px;
+                                                     width:10px; height:1px; background:#cbd5e1; }
+#ivTreeV2 .jstree-wholerow { background:transparent !important; height:30px !important; }
+#ivTreeV2 .jstree-wholerow-hovered { background:#f9fbf9 !important; }
+#ivTreeV2 .jstree-dnd { background:#fff !important; border:1px solid var(--color-primary-light, #2D6A4F) !important;
+                         border-radius:6px !important; padding:5px 10px !important;
+                         box-shadow:0 4px 14px rgba(0,0,0,.18) !important; }
+
+/* right-side detail panel */
+.iv-detail-side { background:#fff; border:1px solid #eef0f3; border-radius:12px; padding:16px 18px;
+                  box-shadow:0 1px 3px rgba(0,0,0,0.04); position:sticky; top:14px; }
+.iv-detail-empty { color:#9ca3af; font-size:.88rem; text-align:center; padding:40px 0; }
+.iv-detail-head { display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; margin-bottom:12px;
+                  padding-bottom:10px; border-bottom:1px solid #eef0f3; }
+.iv-detail-name { font-size:1.05rem; font-weight:700; color:#1f2937; }
+.iv-detail-code { font-size:.78rem; color:#9ca3af; }
+.iv-detail-main-tag { display:inline-block; padding:1px 8px; border-radius:8px; font-size:.7rem;
+                      font-weight:600; background:#e8f5e9; color:var(--color-primary, #2D6A4F); }
+.iv-field-row { display:flex; align-items:center; gap:8px; margin-bottom:10px; font-size:.88rem; }
+.iv-field-row label { flex:0 0 80px; color:#6b7280; }
+.iv-field-row input { width:90px; padding:6px 8px; border:1px solid #d8dde3; border-radius:6px;
+                       font-size:.88rem; text-align:right; }
+.iv-field-row input:focus { outline:none; border-color: var(--color-primary-light, #2D6A4F); }
+.iv-field-row input[data-low="1"] { border-color:#e6a23c; background:#fdf6ec; }
+.iv-field-row .unit { color:#6b7280; font-size:.82rem; }
+.iv-low-warn { color:#cc7722; font-size:.78rem; margin:-4px 0 10px 88px; }
+.iv-detail-actions { display:flex; gap:8px; margin-top:8px; flex-wrap:wrap; }
+.iv-txn-list { margin-top:14px; }
+.iv-txn-list h4 { font-size:.82rem; color:#6b7280; margin:0 0 6px; font-weight:600; }
+.iv-txn-row { display:grid; grid-template-columns: 50px 60px 1fr auto; gap:6px; align-items:baseline;
+              padding:4px 0; border-bottom:1px solid #f5f5f5; font-size:.8rem; }
+.iv-txn-qty.pos { color:#15803d; font-weight:600; }
+.iv-txn-qty.neg { color:#b3261e; font-weight:600; }
+.iv-txn-date { color:#6b7280; font-size:.74rem; }
+.iv-txn-meta { color:#9ca3af; font-size:.74rem; }
+.iv-txn-empty { color:#9ca3af; font-size:.8rem; padding:8px 0; }
+
+/* node CRUD modal (create/edit category+part) */
+.iv-modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,.5); display:flex;
+                    align-items:center; justify-content:center; z-index:10000; padding:16px; }
+.iv-modal { background:#fff; border-radius:12px; width:100%; max-width:460px;
+            box-shadow:0 10px 40px rgba(0,0,0,.2); overflow:hidden; animation: iv-modal-in .15s ease-out; }
+@keyframes iv-modal-in { from { transform:translateY(8px); opacity:0; } to { transform:translateY(0); opacity:1; } }
+.iv-modal-head { display:flex; justify-content:space-between; align-items:center;
+                 padding:14px 18px; border-bottom:1px solid #eef0f3; font-weight:700; font-size:.95rem; }
+.iv-modal-close { background:none; border:none; font-size:1.4rem; color:#999; cursor:pointer;
+                  line-height:1; padding:0 4px; border-radius:4px; }
+.iv-modal-close:hover { color:#1f2937; background:#f3f4f6; }
+.iv-modal-body { padding:16px 18px; }
+.iv-field { margin-bottom:12px; }
+.iv-field label { display:block; font-size:.78rem; color:#6b7280; font-weight:600; margin-bottom:4px; }
+.iv-field input, .iv-field select { width:100%; box-sizing:border-box; padding:8px 10px;
+                                     border:1px solid #d8dde3; border-radius:8px; font-size:.86rem; font-family:inherit; }
+.iv-field input:focus, .iv-field select:focus { outline:none; border-color: var(--color-primary-light, #2D6A4F); }
+.iv-modal-foot { display:flex; gap:8px; justify-content:flex-end; padding:12px 18px;
+                 border-top:1px solid #eef0f3; background:#fafbfc; }
+.vakata-context { z-index:10001 !important; }
 
 /* Title row: heading on the left, save button on the right. Sticky so both
    stay visible while scrolling through the (very long) category tree. */
@@ -394,39 +514,26 @@ table.iv-ledger .lvl-tag.warn { background: #fdf6ec; color: #cc7722; }
   <div class="app-tab-content" id="ivTabTree">
   <div class="iv-card">
     <div class="iv-card-head">
-      <h2>库存数量与流水</h2>
+      <h2>库存目录</h2>
       <div class="iv-head-actions">
         <span id="ivSaveMsg"></span>
-        <button type="button" class="btn-sm btn-secondary" onclick="ivOpenCreate('', '顶层')">+ 新建目录/部件</button>
+        {% if is_full_access %}
+        <button type="button" class="btn-sm btn-secondary" onclick="ivJstreeOpenCreate(null)">+ 新建根目录</button>
+        {% endif %}
         <a href="{% url 'core:inventory_export_excel' %}" class="btn-sm btn-secondary" style="text-decoration:none;">⬇ 导出Excel</a>
-        <button type="button" class="btn-sm btn-primary" id="ivSaveBtn" onclick="ivSave()">保存库存数量</button>
       </div>
     </div>
-    <p class="iv-hint">点击层级展开 · 叶子节点可编辑库存数量并查看出入库记录 · 每个节点右侧 + 可新建子项、🗑 可删除</p>
+    <p class="iv-hint">右键节点 → 新建/编辑/删除{% if is_full_access %} · 拖动改顺序/改父级{% endif %} · 点部件节点 → 右侧显示库存详情与交易记录</p>
 
-    {# Date-range filter — drives the leaf transaction query #}
-    <div class="iv-range">
-      <label>记录范围:</label>
-      <input type="date" id="ivFrom" value="{{ date_from }}">
-      <span>~</span>
-      <input type="date" id="ivTo" value="{{ date_to }}">
-      <button type="button" class="preset-pill" data-days="30" onclick="ivPreset(30)">最近30天</button>
-      <button type="button" class="preset-pill" data-days="90" onclick="ivPreset(90)">最近90天</button>
-      <button type="button" class="preset-pill" data-days="365" onclick="ivPreset(365)">最近1年</button>
-    </div>
-
-    <input type="text" class="iv-search" id="ivSearch" placeholder="搜索物料名称…" oninput="ivFilter()">
-
-    <form method="post" action="{% url 'core:inventory_save_stock' %}">
-      {% csrf_token %}
-      <div class="iv-tree" id="ivTree">
-        {% for root in roots %}
-          {% include 'core/_inventory_tree_node.html' with node=root %}
-        {% empty %}
-          <div style="color:#aaa;padding:14px 0;font-size:.9rem;">暂无物料，请先运行 <code>python manage.py seed_inventory_from_xlsx</code></div>
-        {% endfor %}
+    <div class="iv-manage-grid">
+      <div class="iv-tree-side">
+        <input type="text" class="iv-search" id="ivSearchV2" placeholder="搜索物料名称…">
+        <div class="iv-tree-wrap"><div id="ivTreeV2"></div></div>
       </div>
-    </form>
+      <div class="iv-detail-side" id="ivDetail">
+        <div class="iv-detail-empty">← 点左侧任意「部件」节点查看库存详情与交易记录</div>
+      </div>
+    </div>
   </div>
   </div>{# /#ivTabTree #}
 
@@ -727,386 +834,6 @@ function ivLedgerPreset(days) {
     document.getElementById('ivLedgerFrom').value = from.toISOString().slice(0, 10);
     document.getElementById('ivLedgerTo').value = to.toISOString().slice(0, 10);
     ivLedgerApply();
-}
-
-// Collapse/expand a branch.
-function ivToggle(head) {
-    var body = head.nextElementSibling;
-    if (!body) return;
-    var open = head.classList.toggle('open');
-    body.style.display = open ? '' : 'none';
-}
-
-// ── Create / delete category (manager) ────────────────────────────────
-// Read the CSRF cookie so the POST fetches are accepted.
-function _ivCsrf() {
-    var m = document.cookie.match(/csrftoken=([^;]+)/);
-    return m ? m[1] : '';
-}
-var _ivCreateParent = { id: '', name: '' };
-var _ivCreateType = 'category';
-function ivOpenCreate(parentId, parentName) {
-    _ivCreateParent = { id: parentId, name: parentName };
-    document.getElementById('ivCreateParentLabel').textContent =
-        parentId ? '新建于：「' + parentName + '」下' : '新建于：顶层（根目录）';
-    document.getElementById('ivCreateTitle').textContent = parentId ? '新建子目录/部件' : '新建目录/部件';
-    document.getElementById('ivCreateName').value = '';
-    document.getElementById('ivCreateStock').value = '0';
-    document.getElementById('ivCreateMin').value = '0';
-    document.getElementById('ivCreateMain').checked = false;
-    ivSetCreateType('category');
-    document.getElementById('ivCreateMask').classList.add('open');
-    setTimeout(function () { document.getElementById('ivCreateName').focus(); }, 50);
-}
-function ivCloseCreate() { document.getElementById('ivCreateMask').classList.remove('open'); }
-function ivSetCreateType(type) {
-    _ivCreateType = type;
-    document.querySelectorAll('.iv-create-type').forEach(function (b) { b.classList.toggle('active', b.dataset.type === type); });
-    document.getElementById('ivCreatePartFields').classList.toggle('show', type === 'part');
-}
-function ivSubmitCreate() {
-    var name = document.getElementById('ivCreateName').value.trim();
-    if (!name) { ivToast('请填写名称', true); return; }
-    var btn = document.getElementById('ivCreateSubmit'); btn.disabled = true; btn.textContent = '创建中…';
-    var fd = new FormData();
-    fd.append('name', name);
-    fd.append('node_type', _ivCreateType);
-    fd.append('parent_id', _ivCreateParent.id);
-    if (_ivCreateType === 'part') {
-        fd.append('current_stock', document.getElementById('ivCreateStock').value || '0');
-        fd.append('min_stock', document.getElementById('ivCreateMin').value || '0');
-        if (document.getElementById('ivCreateMain').checked) fd.append('is_main_material', '1');
-    }
-    fetch('{% url "core:inventory_category_create" %}', { method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRFToken': _ivCsrf() } })
-        .then(function (r) { return r.json(); })
-        .then(function (d) {
-            btn.disabled = false; btn.textContent = '创建';
-            if (d.success) {
-                ivToast(d.message, false);
-                ivCloseCreate();
-                ivInsertNode(d.node);
-            } else { ivToast(d.message || '创建失败', true); }
-        })
-        .catch(function () { btn.disabled = false; btn.textContent = '创建'; ivToast('网络错误，请重试', true); });
-}
-function ivDelete(catId, catName) {
-    if (!confirm('确定删除「' + catName + '」？\n（有子节点或出入库记录的节点无法删除）')) return;
-    var fd = new FormData();
-    fetch('/inventory/category/' + catId + '/delete/', { method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRFToken': _ivCsrf() } })
-        .then(function (r) { return r.json(); })
-        .then(function (d) {
-            if (d.success) { ivToast(d.message, false); ivRemoveNode(catId); }
-            else { ivToast(d.message || '删除失败', true); }
-        })
-        .catch(function () { ivToast('网络错误，请重试', true); });
-}
-
-// ── Edit category/part (rename + part attributes) ─────────────────────
-var _ivEditId = null;
-var _ivEditType = 'category';
-function ivOpenEdit(catId, catName, nodeType, minStock, isMain, unit) {
-    _ivEditId = catId;
-    _ivEditType = nodeType || 'part';
-    document.getElementById('ivEditTitle').textContent = nodeType === 'category' ? '编辑目录' : '编辑部件';
-    document.getElementById('ivEditTypeLabel').textContent = nodeType === 'category' ? '类型：📁 目录' : '类型：🔹 部件';
-    document.getElementById('ivEditName').value = catName;
-    document.getElementById('ivEditMin').value = minStock || 0;
-    document.getElementById('ivEditUnit').value = unit || '';
-    document.getElementById('ivEditMain').checked = !!isMain;
-    document.getElementById('ivEditPartFields').classList.toggle('show', nodeType !== 'category');
-    document.getElementById('ivEditMask').classList.add('open');
-    setTimeout(function () { document.getElementById('ivEditName').focus(); }, 50);
-}
-function ivCloseEdit() { document.getElementById('ivEditMask').classList.remove('open'); }
-function ivSubmitEdit() {
-    var name = document.getElementById('ivEditName').value.trim();
-    if (!name) { ivToast('请填写名称', true); return; }
-    var btn = document.getElementById('ivEditSubmit'); btn.disabled = true; btn.textContent = '保存中…';
-    var fd = new FormData();
-    fd.append('name', name);
-    if (_ivEditType !== 'category') {
-        fd.append('min_stock', document.getElementById('ivEditMin').value || '0');
-        fd.append('unit', document.getElementById('ivEditUnit').value || '');
-        if (document.getElementById('ivEditMain').checked) fd.append('is_main_material', '1');
-    }
-    fetch('/inventory/category/' + _ivEditId + '/edit/', { method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRFToken': _ivCsrf() } })
-        .then(function (r) { return r.json(); })
-        .then(function (d) {
-            btn.disabled = false; btn.textContent = '保存';
-            if (d.success) { ivToast(d.message, false); ivCloseEdit(); ivUpdateNode(d.node); }
-            else { ivToast(d.message || '保存失败', true); }
-        })
-        .catch(function () { btn.disabled = false; btn.textContent = '保存'; ivToast('网络错误，请重试', true); });
-}
-
-// ── Live DOM updates (no page reload) ──────────────────────────────────
-// Build the HTML for a newly-created node, matching the server-rendered
-// _inventory_tree_node.html partial so the live tree stays consistent.
-function ivBuildNodeHTML(nd) {
-    var nm = esc(nd.name);
-    if (nd.node_type === 'category') {
-        return '<div class="iv-branch" data-cat="' + nd.id + '">' +
-            '<div class="iv-head open" onclick="ivToggle(this)">' +
-              '<span class="iv-arrow" style="transform:rotate(90deg);">▶</span>' +
-              '<span class="iv-name">' + nm + '</span>' +
-              '<span class="iv-child-count" style="color:#bbb;">空</span>' +
-              '<span class="iv-node-actions" style="display:inline-flex;">' +
-                '<button type="button" class="iv-add-btn" title="在此目录下新建" onclick="event.stopPropagation();ivOpenCreate(' + nd.id + ', \'' + nm.replace(/'/g,"\\'") + '\')">+</button>' +
-                '<button type="button" class="iv-del-btn" title="删除此目录" onclick="event.stopPropagation();ivDelete(' + nd.id + ', \'' + nm.replace(/'/g,"\\'") + '\')">🗑</button>' +
-              '</span>' +
-            '</div>' +
-            '<div class="iv-body" style="">' +
-              '<div style="color:#bbb;font-size:.8rem;padding:6px 0;">（空目录，点击 + 添加子项）</div>' +
-            '</div>' +
-          '</div>';
-    }
-    // part (leaf)
-    var mainTag = nd.is_main_material ? '<span class="iv-main-tag" title="主材">主材</span>' : '';
-    var lowAttr = (nd.current_stock < nd.min_stock) ? ' data-low="1"' : '';
-    var lowWarn = (nd.current_stock < nd.min_stock) ? '<div class="iv-low-warn">⚠ 库存低于最低量</div>' : '';
-    var nmE = nm.replace(/'/g,"\\'");
-    return '<div class="iv-leaf" data-cat="' + nd.id + '">' +
-        '<div class="iv-leaf-row">' +
-          '<span class="iv-leaf-name">' + nm + mainTag + '</span>' +
-          '<label class="iv-field-label">现有<input type="number" step="1" min="0" class="iv-stock-input" name="stock_' + nd.id + '" value="' + nd.current_stock + '" title="现有库存"></label>' +
-          '<label class="iv-field-label">最低<input type="number" step="1" min="0" class="iv-min-input" name="min_' + nd.id + '" value="' + nd.min_stock + '" title="最小库存量"' + lowAttr + '></label>' +
-          '<label class="iv-main-toggle" title="是否主材"><input type="checkbox" name="main_' + nd.id + '"' + (nd.is_main_material ? ' checked' : '') + '><span>主材</span></label>' +
-          '<button type="button" class="iv-txn-btn" onclick="ivLoadTxn(this, ' + nd.id + ')">记录 ▾</button>' +
-          '<button type="button" class="iv-del-btn" title="删除此部件" onclick="ivDelete(' + nd.id + ', \'' + nmE + '\')">🗑</button>' +
-        '</div>' + lowWarn +
-        '<div class="iv-txn-panel" data-cat="' + nd.id + '" style="display:none;"></div>' +
-      '</div>';
-}
-// Insert a freshly-created node into the tree and expand its parent so it's visible.
-function ivInsertNode(nd) {
-    var tree = document.getElementById('ivTree');
-    if (!tree) return;
-    var html = ivBuildNodeHTML(nd);
-    if (nd.parent_id) {
-        // Find the parent branch, append into its .iv-body, expand it.
-        var parentBranch = tree.querySelector('.iv-branch[data-cat="' + nd.parent_id + '"]');
-        if (parentBranch) {
-            var body = parentBranch.querySelector(':scope > .iv-body');
-            if (body) {
-                // Remove the "空目录" placeholder if present.
-                var empty = body.querySelector('div[style*="color:#bbb"]');
-                if (empty && empty.textContent.indexOf('空目录') !== -1) empty.remove();
-                body.insertAdjacentHTML('beforeend', html);
-                // Expand the parent so the new node is visible.
-                var head = parentBranch.querySelector(':scope > .iv-head');
-                if (head && !head.classList.contains('open')) { head.classList.add('open'); body.style.display = ''; }
-            }
-            ivRefreshChildCount(parentBranch);
-        }
-    } else {
-        // Top-level: append to the tree root.
-        tree.insertAdjacentHTML('beforeend', html);
-    }
-    // Keep the in-memory leaves list (alert tab) in sync for parts.
-    if (nd.node_type === 'part' && typeof IV_LEAVES !== 'undefined') {
-        IV_LEAVES.push({ id: nd.id, name: nd.name, path: '', stock: nd.current_stock, min: nd.min_stock, main: nd.is_main_material });
-    }
-}
-// Remove a deleted node from the tree and refresh its parent's child count.
-function ivRemoveNode(catId) {
-    var tree = document.getElementById('ivTree');
-    if (!tree) return;
-    var node = tree.querySelector('[data-cat="' + catId + '"]');
-    if (!node) return;
-    var parentBranch = node.parentElement ? node.parentElement.closest('.iv-branch') : null;
-    node.remove();
-    if (parentBranch) {
-        ivRefreshChildCount(parentBranch);
-        // If the parent body is now empty, show the placeholder.
-        var body = parentBranch.querySelector(':scope > .iv-body');
-        if (body && !body.children.length) {
-            body.insertAdjacentHTML('beforeend', '<div style="color:#bbb;font-size:.8rem;padding:6px 0;">（空目录，点击 + 添加子项）</div>');
-        }
-    }
-    // Keep the in-memory leaves list (alert tab) in sync.
-    if (typeof IV_LEAVES !== 'undefined') {
-        IV_LEAVES = IV_LEAVES.filter(function (l) { return l.id !== catId; });
-    }
-}
-// Recompute a branch's "N 项" / "空" label from its live children.
-function ivRefreshChildCount(branch) {
-    var head = branch.querySelector(':scope > .iv-head');
-    var countEl = head ? head.querySelector('.iv-child-count') : null;
-    if (!countEl) return;
-    var body = branch.querySelector(':scope > .iv-body');
-    var n = body ? body.querySelectorAll(':scope > .iv-branch, :scope > .iv-leaf').length : 0;
-    if (n > 0) { countEl.textContent = n + ' 项'; countEl.style.color = ''; }
-    else { countEl.textContent = '空'; countEl.style.color = '#bbb'; }
-}
-// Update an edited node's name + part attributes in the live DOM (no reload).
-function ivUpdateNode(nd) {
-    var tree = document.getElementById('ivTree'); if (!tree) return;
-    var node = tree.querySelector('[data-cat="' + nd.id + '"]');
-    if (!node) return;
-    // Update the displayed name.
-    var nameEl = node.querySelector('.iv-name') || node.querySelector('.iv-leaf-name');
-    if (nameEl) {
-        // Preserve the 主材 tag if it exists (leaf rows embed it after the name).
-        var mainTag = nameEl.querySelector('.iv-main-tag');
-        nameEl.textContent = nd.name;
-        if (mainTag) nameEl.appendChild(mainTag);
-    }
-    // For parts: update min-stock input, main-material toggle, low-warn, edit button attrs.
-    if (nd.node_type === 'part') {
-        var minInput = node.querySelector('.iv-min-input');
-        if (minInput) {
-            minInput.value = nd.min_stock;
-            minInput.setAttribute('data-low', (nd.current_stock < nd.min_stock) ? '1' : '0');
-        }
-        var mainToggle = node.querySelector('.iv-main-toggle input');
-        if (mainToggle) mainToggle.checked = nd.is_main_material;
-        // Refresh the 主材 tag on the leaf name.
-        var leafName = node.querySelector('.iv-leaf-name');
-        if (leafName) {
-            var existingTag = leafName.querySelector('.iv-main-tag');
-            if (nd.is_main_material && !existingTag) {
-                var t = document.createElement('span'); t.className = 'iv-main-tag'; t.title = '主材'; t.textContent = '主材';
-                leafName.appendChild(t);
-            } else if (!nd.is_main_material && existingTag) {
-                existingTag.remove();
-            }
-        }
-        // Refresh low-warn.
-        var warn = node.querySelector('.iv-low-warn');
-        if (nd.current_stock < nd.min_stock) {
-            if (!warn) { warn = document.createElement('div'); warn.className = 'iv-low-warn'; warn.textContent = '⚠ 库存低于最低量'; node.querySelector('.iv-leaf-row').insertAdjacentElement('afterend', warn); }
-        } else if (warn) { warn.remove(); }
-    }
-}
-// Close the create/edit modals on backdrop click or Escape.
-document.getElementById('ivCreateMask').addEventListener('click', function (e) { if (e.target === this) ivCloseCreate(); });
-document.getElementById('ivEditMask').addEventListener('click', function (e) { if (e.target === this) ivCloseEdit(); });
-document.addEventListener('keydown', function (e) { if (e.key === 'Escape') { ivCloseCreate(); ivCloseEdit(); } });
-
-// AJAX save: POST the stock inputs as form data so the tree state is preserved
-// (no full-page reload → branches stay expanded). Shows an inline toast.
-function ivSave() {
-    var form = document.querySelector('form[action*="save-stock"]');
-    if (!form) return;
-    var btn = document.getElementById('ivSaveBtn');
-    var msg = document.getElementById('ivSaveMsg');
-    btn.disabled = true; btn.textContent = '保存中…';
-    var fd = new FormData(form);
-    fetch('{% url "core:inventory_save_stock" %}', {
-        method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest' }
-    }).then(function (r) { return r.json(); }).then(function (d) {
-        btn.disabled = false; btn.textContent = '保存库存数量';
-        ivToast(d.message || (d.success ? '已保存' : '保存失败'), !d.success);
-        if (msg) { msg.textContent = d.success ? ('✓ ' + d.message) : ''; msg.style.color = d.success ? '#2D6A4F' : '#c0392b'; }
-    }).catch(function () {
-        btn.disabled = false; btn.textContent = '保存库存数量';
-        ivToast('网络错误，请重试', true);
-    });
-}
-
-function ivToast(text, isErr) {
-    var t = document.getElementById('ivToast');
-    t.textContent = text;
-    t.style.background = isErr ? '#b3261e' : '#333';
-    t.style.opacity = '1';
-    clearTimeout(window._ivToastT);
-    window._ivToastT = setTimeout(function () { t.style.opacity = '0'; }, 2200);
-}
-
-// Lazy-load a leaf's transactions within the current date range.
-function ivLoadTxn(btn, catId) {
-    var panel = btn.parentElement.nextElementSibling;
-    if (!panel) return;
-    var open = panel.style.display !== 'none';
-    if (open) { panel.style.display = 'none'; btn.textContent = '记录 ▾'; return; }
-    panel.style.display = '';
-    btn.textContent = '记录 ▴';
-
-    var from = document.getElementById('ivFrom').value;
-    var to = document.getElementById('ivTo').value;
-    var qs = '?from=' + encodeURIComponent(from) + '&to=' + encodeURIComponent(to);
-
-    // Refresh if not loaded or date range changed since last fetch.
-    if (!_ivLoadedTxn[catId]) {
-        panel.innerHTML = '<div class="iv-txn-loading">加载中…</div>';
-        fetch('/inventory/manage/category/' + catId + '/transactions/' + qs, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
-            .then(function (r) { return r.json(); })
-            .then(function (d) {
-                _ivLoadedTxn[catId] = from + '~' + to;  // cache key includes the range
-                btn.classList.add('loaded');
-                if (d.error) { panel.innerHTML = '<div class="iv-txn-loading">' + esc(d.error) + '</div>'; return; }
-                panel.innerHTML = renderTxn(d.records);
-            })
-            .catch(function () { panel.innerHTML = '<div class="iv-txn-loading">加载失败，请重试。</div>'; });
-    }
-}
-
-function renderTxn(records) {
-    if (!records || !records.length) return '<div class="iv-txn-empty">该范围内无记录</div>';
-    var rows = records.map(function (r) {
-        var cls = r.operation === '入库' ? 'in' : 'out';
-        var sign = r.operation === '入库' ? '+' : '−';
-        var ctx = '';
-        if (r.operation === '入库' && r.subtype === '采购' && r.order_no) ctx = ' · 订单 ' + esc(r.order_no);
-        if (r.operation === '出库' && r.subtype === '项目' && r.project) ctx = ' · ' + esc(r.project);
-        if (r.operation === '出库' && r.subtype === '借用' && r.counterparty) ctx = ' · ' + esc(r.counterparty);
-        return '<tr><td>' + esc(r.date) + '</td>' +
-            '<td class="' + cls + '">' + esc(r.operation) + (r.subtype ? '-' + esc(r.subtype) : '') + '</td>' +
-            '<td class="' + cls + '">' + sign + r.quantity + (r.unit ? ' ' + esc(r.unit) : '') + '</td>' +
-            '<td>' + esc(r.worker) + ctx + '</td></tr>';
-    }).join('');
-    return '<table class="iv-txn-table"><thead><tr><th>日期</th><th>类型</th><th>数量</th><th>经办/去向</th></tr></thead><tbody>' + rows + '</tbody></table>';
-}
-
-function esc(s) {
-    var d = document.createElement('div'); d.textContent = s == null ? '' : s; return d.innerHTML;
-}
-
-// Quick date-range presets.
-function ivPreset(days) {
-    document.querySelectorAll('#ivTabTree .preset-pill').forEach(function (b) { b.classList.remove('on'); });
-    event.target.classList.add('on');
-    var to = new Date(), from = new Date();
-    from.setDate(from.getDate() - days);
-    document.getElementById('ivFrom').value = from.toISOString().slice(0, 10);
-    document.getElementById('ivTo').value = to.toISOString().slice(0, 10);
-    _invalidateTxnCache();
-}
-
-// Any manual date change invalidates the cached leaf panels so they re-fetch on next open.
-document.getElementById('ivFrom').addEventListener('change', _invalidateTxnCache);
-document.getElementById('ivTo').addEventListener('change', _invalidateTxnCache);
-function _invalidateTxnCache() { _ivLoadedTxn = {}; }
-
-// Name search: hide non-matching leaves + auto-expand their ancestor branches.
-function ivFilter() {
-    var q = (document.getElementById('ivSearch').value || '').trim().toLowerCase();
-    var tree = document.getElementById('ivTree');
-    if (!q) {
-        // Reset: collapse everything back to default.
-        tree.querySelectorAll('.iv-body').forEach(function (b) { b.style.display = 'none'; });
-        tree.querySelectorAll('.iv-head').forEach(function (h) { h.classList.remove('open'); });
-        tree.querySelectorAll('.iv-leaf').forEach(function (l) { l.style.display = ''; });
-        return;
-    }
-    // Walk leaves; show matches and reveal their ancestor branches.
-    tree.querySelectorAll('.iv-leaf').forEach(function (leaf) {
-        var name = (leaf.querySelector('.iv-leaf-name') || {}).textContent || '';
-        var match = name.toLowerCase().indexOf(q) !== -1;
-        leaf.style.display = match ? '' : 'none';
-        if (match) {
-            // Expand every ancestor .iv-body + open its sibling .iv-head.
-            var el = leaf.parentElement;
-            while (el && el !== tree) {
-                if (el.classList.contains('iv-body')) {
-                    el.style.display = '';
-                    var head = el.previousElementSibling;
-                    if (head && head.classList.contains('iv-head')) head.classList.add('open');
-                }
-                el = el.parentElement;
-            }
-        }
-    });
 }
 
 // ── 采购订单 tab (ported from the former standalone page) ────────────────
@@ -1497,5 +1224,351 @@ document.addEventListener('keydown', function (e) {
     if (e.key === 'Escape' && document.getElementById('poMask').classList.contains('open')) poCloseModal();
 });
 poRender();
+</script>
+
+{% comment %}jsTree + CRUD modal for the 库存目录 tab. jQuery is loaded ONLY here so
+other pages stay jQuery-free; jsTree depends on it.{% endcomment %}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/jstree@3.3.16/dist/themes/default/style.min.css">
+<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jstree@3.3.16/dist/jstree.min.js"></script>
+
+{# Node CRUD modal (create / edit category+part) #}
+<div class="iv-modal-overlay" id="ivJstreeModal" style="display:none;">
+  <div class="iv-modal" role="dialog" aria-modal="true">
+    <div class="iv-modal-head">
+      <span id="ivJstreeModalTitle">新建节点</span>
+      <button type="button" class="iv-modal-close" onclick="ivJstreeCloseModal()" aria-label="关闭">×</button>
+    </div>
+    <div class="iv-modal-body">
+      <input type="hidden" id="ivJstreeId">
+      <div class="iv-field">
+        <label>父节点</label>
+        <input type="text" id="ivJstreeParentLabel" readonly placeholder="（根节点）">
+      </div>
+      <div class="iv-field">
+        <label>名称 *</label>
+        <input type="text" id="ivJstreeName" placeholder="节点名称">
+      </div>
+      <div class="iv-field">
+        <label>类型</label>
+        <select id="ivJstreeNodeType">
+          <option value="category">目录（可含子项）</option>
+          <option value="part">部件（可出入库）</option>
+        </select>
+      </div>
+      <div class="iv-field" id="ivJstreePartFields" style="display:none;">
+        <label>初始库存 / 最低库存 / 单位</label>
+        <div style="display:flex; gap:6px;">
+          <input type="number" id="ivJstreeCurrent" placeholder="现有" style="flex:1;">
+          <input type="number" id="ivJstreeMin" placeholder="最低" style="flex:1;">
+          <input type="text" id="ivJstreeUnit" placeholder="单位" style="flex:1;">
+        </div>
+      </div>
+      <div class="iv-field" id="ivJstreeMainField" style="display:none;">
+        <label><input type="checkbox" id="ivJstreeMain"> 主材</label>
+      </div>
+    </div>
+    <div class="iv-modal-foot">
+      <button type="button" class="btn-sm btn-secondary" onclick="ivJstreeCloseModal()">取消</button>
+      <button type="button" class="btn-sm btn-primary" id="ivJstreeSaveBtn" onclick="ivJstreeSave()">保存</button>
+    </div>
+  </div>
+</div>
+
+<script>
+var IV_URLS = {
+  tree: "{% url 'core:inventory_tree_json' %}",
+  detail: "/inventory/node/{id}/detail/",
+  save:   "/inventory/node/{id}/save/",
+  create: "{% url 'core:inventory_category_create' %}",
+  edit:   "/inventory/category/{id}/edit/",
+  del:    "/inventory/category/{id}/delete/",
+};
+var IV_CSRF = (document.cookie.split('; ').find(function (c) { return c.indexOf('csrftoken=') === 0; }) || '').split('=')[1] || '';
+var ivJstree = null;
+var ivJstreeCurrentParent = null;
+
+function ivJstreeToast(msg, isErr) {
+  var slot = document.getElementById('ivSaveMsg');
+  if (!slot) return;
+  slot.textContent = msg || '';
+  slot.style.color = isErr ? '#b3261e' : '#2D6A4F';
+  clearTimeout(window._ivToastT);
+  window._ivToastT = setTimeout(function () { slot.textContent = ''; }, 2500);
+}
+
+function ivJstreePost(url, data) {
+  var fd = new FormData();
+  Object.keys(data || {}).forEach(function (k) {
+    if (data[k] !== null && data[k] !== undefined) fd.append(k, data[k]);
+  });
+  return fetch(url, { method:'POST', headers:{'X-CSRFToken': IV_CSRF}, body: fd })
+    .then(function (r) { return r.json(); });
+}
+
+// Lazy-init jsTree the first time the 库存目录 tab opens.
+function ivJstreeInit() {
+  if (ivJstree) return;
+  if (typeof $ === 'undefined' || typeof $.jstree === 'undefined') {
+    setTimeout(ivJstreeInit, 200); return;
+  }
+  ivJstree = $('#ivTreeV2').jstree({
+    core: {
+      data: { url: IV_URLS.tree, dataType: 'json' },
+      check_callback: true,
+      themes: { name:'default', icons:true, dots:false, stripes:false },
+      worker: false,
+    },
+    plugins: ['contextmenu', 'dnd', 'search', 'wholerow', 'types', 'sort'],
+    types: { default:{icon:'iv-folder'}, ivFolder:{icon:'iv-folder'}, ivLeaf:{icon:'iv-leaf'} },
+    sort: function (a, b) { return this.get_text(a).localeCompare(this.get_text(b), 'zh'); },
+    contextmenu: {
+      items: function (node) {
+        var items = {
+          create: { label:'新建子节点', action:function(){ ivJstreeOpenCreate(node); } },
+          edit:   { label:'编辑', action:function(){ ivJstreeOpenEdit(node); } },
+        };
+        items.delete = { label:'删除', separator_before:true, action:function(){ ivJstreeDelete(node); } };
+        return items;
+      },
+    },
+    dnd: { is_draggable: function () { return true; }, check_while_dragging:true,
+           large_drop_target:true, touch:'selected' },
+    search: { show_only_matches:true, show_only_matches_children:true, fuzzy:false },
+  })
+  .on('loaded.jstree', function () {
+    var roots = ivJstree.jstree(true).get_node('#').children;
+    roots.forEach(function (rid) { ivJstree.jstree(true).open_node(rid); });
+  })
+  .on('select_node.jstree', function (e, data) {
+    var node = data.node;
+    if (node.data && node.data.node_type === 'part') {
+      ivJstreeLoadDetail(node.id);
+    }
+  })
+  .on('move_node.jstree', function (e, data) {
+    // jsTree dnd supports cross-parent move. Backend mptt's inventory_category
+    // has no move endpoint yet; for now we just persist sibling order via the
+    // existing reorder endpoint when the parent didn't change, and toast an
+    // informative error for cross-parent (the user can use edit→recreate).
+    var node = data.node;
+    var parent = data.parent;
+    var oldParent = data.old_parent;
+    if (parent === oldParent) {
+      // Same-parent reorder: collect new sibling order and POST to reorder.
+      var siblings = ivJstree.jstree(true).get_node(parent).children;
+      var orderedIds = siblings.slice();
+      var pid = (parent === '#') ? '' : parent;
+      ivJstreePost("{% url 'core:inventory_category_reorder' %}".replace('/category/reorder/', '/category/reorder/'),
+        { parent_id: pid, ordered_ids: orderedIds })
+        .then(function (d) { ivJstreeToast(d.message, !d.success); })
+        .catch(function () { ivJstreeToast('网络错误', true); });
+    } else {
+      ivJstreeToast('跨父级移动暂未实现，请用编辑/重建', true);
+      ivJstree.jstree(true).refresh();
+    }
+  });
+
+  // Search box.
+  var searchT = null;
+  $('#ivSearchV2').on('input', function () {
+    var v = $(this).val();
+    clearTimeout(searchT);
+    searchT = setTimeout(function () { ivJstree.jstree(true).search(v); }, 250);
+  });
+}
+
+// ── Right-side detail panel ──
+function ivJstreeLoadDetail(catId) {
+  fetch(IV_URLS.detail.replace('{id}', catId))
+    .then(function (r) { return r.json(); })
+    .then(function (d) {
+      if (!d.success) { ivJstreeToast(d.message || '加载详情失败', true); return; }
+      ivJstreeRenderDetail(d);
+    })
+    .catch(function () { ivJstreeToast('网络错误', true); });
+}
+
+function ivJstreeRenderDetail(d) {
+  var n = d.node;
+  var txns = d.transactions || [];
+  var panel = document.getElementById('ivDetail');
+  var isMgr = {% if is_full_access %}true{% else %}false{% endif %};
+  var lowAttr = n.is_low ? ' data-low="1"' : '';
+  var lowWarn = n.is_low ? '<div class="iv-low-warn">⚠ 库存低于最低量</div>' : '';
+  var mainTag = n.is_main_material ? '<span class="iv-detail-main-tag">主材</span>' : '';
+  var txnRows = txns.map(function (t) {
+    var cls = t.quantity >= 0 ? 'pos' : 'neg';
+    var sign = t.quantity >= 0 ? '+' : '';
+    var meta = [t.counterparty, t.order_no, t.worker, t.remark].filter(Boolean).join(' · ');
+    return '<div class="iv-txn-row">' +
+             '<span class="iv-txn-qty ' + cls + '">' + sign + t.quantity + '</span>' +
+             '<span class="iv-txn-date">' + (t.date || '') + '</span>' +
+             '<span class="iv-txn-meta">' + esc(meta) + '</span>' +
+             '<span class="iv-txn-meta">' + esc(t.operation_display || '') + '</span>' +
+           '</div>';
+  }).join('');
+  var txnBlock = '<div class="iv-txn-list"><h4>最近交易 (' + d.total_txn_count + ')</h4>' +
+    (txnRows || '<div class="iv-txn-empty">暂无交易记录</div>') + '</div>';
+  var disabledAttr = isMgr ? '' : ' disabled';
+  panel.innerHTML =
+    '<div class="iv-detail-head">' +
+      '<span class="iv-detail-name">' + esc(n.name_zh) + '</span>' +
+      '<span class="iv-detail-code">' + esc(n.code) + '</span>' +
+      mainTag +
+    '</div>' +
+    (n.node_type === 'part'
+      ? '<div class="iv-field-row"><label>现有库存</label>' +
+          '<input type="number" id="ivDetailCurrent" value="' + n.current_stock + '"' + disabledAttr + '>' +
+          '<span class="unit">' + esc(n.unit || '') + '</span></div>' +
+        '<div class="iv-field-row"><label>最低库存</label>' +
+          '<input type="number" id="ivDetailMin" value="' + n.min_stock + '"' + lowAttr + disabledAttr + '>' +
+          '<span class="unit">' + esc(n.unit || '') + '</span></div>' +
+        lowWarn +
+        '<div class="iv-field-row"><label>主材</label>' +
+          '<input type="checkbox" id="ivDetailMain"' + (n.is_main_material ? ' checked' : '') + disabledAttr +
+            ' onchange="ivJstreeToggleMain(' + n.id + ', this.checked)"></div>' +
+        (isMgr ? '<div class="iv-detail-actions">' +
+          '<button class="btn-sm btn-primary" onclick="ivJstreeSaveDetail(' + n.id + ')">保存</button>' +
+        '</div>' : '') +
+        txnBlock
+      : '<div class="iv-detail-empty">这是目录节点，点子节点查看具体部件</div>' + txnBlock);
+}
+
+function esc(s) { var d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; }
+
+function ivJstreeSaveDetail(catId) {
+  var cur = document.getElementById('ivDetailCurrent');
+  var mn = document.getElementById('ivDetailMin');
+  if (!cur || !mn) return;
+  ivJstreePost(IV_URLS.save.replace('{id}', catId), {
+    current_stock: cur.value, min_stock: mn.value,
+  }).then(function (d) {
+    ivJstreeToast(d.message, !d.success);
+    if (d.success) {
+      // Refresh the tree so inline stock display + ⚠ marker stay in sync.
+      ivJstree.jstree(true).refresh();
+      ivJstreeLoadDetail(catId);
+    }
+  }).catch(function () { ivJstreeToast('网络错误', true); });
+}
+
+function ivJstreeToggleMain(catId, checked) {
+  ivJstreePost(IV_URLS.save.replace('{id}', catId), { is_main_material: checked ? '1' : '' })
+    .then(function (d) { ivJstreeToast(d.message, !d.success); });
+}
+
+// ── Create / edit modal ──
+function ivJstreeOpenCreate(parentNode) {
+  document.getElementById('ivJstreeModalTitle').textContent = parentNode ? '新建子节点' : '新建根节点';
+  document.getElementById('ivJstreeId').value = '';
+  document.getElementById('ivJstreeName').value = '';
+  document.getElementById('ivJstreeNodeType').value = 'category';
+  document.getElementById('ivJstreeCurrent').value = '';
+  document.getElementById('ivJstreeMin').value = '';
+  document.getElementById('ivJstreeUnit').value = '';
+  document.getElementById('ivJstreeMain').checked = false;
+  ivJstreeSyncPartFields();
+  if (parentNode) {
+    ivJstreeCurrentParent = { id: parentNode.id, name: parentNode.text };
+    document.getElementById('ivJstreeParentLabel').value = parentNode.text;
+  } else {
+    ivJstreeCurrentParent = null;
+    document.getElementById('ivJstreeParentLabel').value = '';
+  }
+  document.getElementById('ivJstreeModal').style.display = 'flex';
+  setTimeout(function () { document.getElementById('ivJstreeName').focus(); }, 50);
+}
+
+function ivJstreeOpenEdit(node) {
+  var d = node.data || {};
+  document.getElementById('ivJstreeModalTitle').textContent = '编辑节点';
+  document.getElementById('ivJstreeId').value = node.id;
+  document.getElementById('ivJstreeName').value = d.name_zh || node.text;
+  document.getElementById('ivJstreeNodeType').value = d.node_type || 'category';
+  document.getElementById('ivJstreeCurrent').value = d.current_stock || 0;
+  document.getElementById('ivJstreeMin').value = d.min_stock || 0;
+  document.getElementById('ivJstreeUnit').value = d.unit || '';
+  document.getElementById('ivJstreeMain').checked = !!d.is_main_material;
+  ivJstreeSyncPartFields();
+  // For edit: node_type is locked (changing it would invalidate stock semantics).
+  document.getElementById('ivJstreeNodeType').disabled = true;
+  var parent = ivJstree.jstree(true).get_node(node.parent);
+  document.getElementById('ivJstreeParentLabel').value = (parent && parent.id !== '#' ? parent.text : '（根节点）') + '（不可改）';
+  document.getElementById('ivJstreeModal').style.display = 'flex';
+  setTimeout(function () { document.getElementById('ivJstreeName').focus(); }, 50);
+}
+
+function ivJstreeSyncPartFields() {
+  var isPart = document.getElementById('ivJstreeNodeType').value === 'part';
+  document.getElementById('ivJstreePartFields').style.display = isPart ? 'block' : 'none';
+  document.getElementById('ivJstreeMainField').style.display = isPart ? 'block' : 'none';
+  // Re-enable node_type on create (it was disabled during edit).
+  document.getElementById('ivJstreeNodeType').disabled = false;
+}
+document.addEventListener('change', function (e) {
+  if (e.target && e.target.id === 'ivJstreeNodeType') ivJstreeSyncPartFields();
+});
+
+function ivJstreeCloseModal() { document.getElementById('ivJstreeModal').style.display = 'none'; }
+
+function ivJstreeSave() {
+  var id = document.getElementById('ivJstreeId').value;
+  var name = document.getElementById('ivJstreeName').value.trim();
+  if (!name) { ivJstreeToast('请填写名称', true); return; }
+  var nodeType = document.getElementById('ivJstreeNodeType').value;
+  var payload = { name: name, node_type: nodeType };
+  if (nodeType === 'part') {
+    payload.current_stock = document.getElementById('ivJstreeCurrent').value || '0';
+    payload.min_stock = document.getElementById('ivJstreeMin').value || '0';
+    payload.unit = document.getElementById('ivJstreeUnit').value;
+    payload.is_main_material = document.getElementById('ivJstreeMain').checked ? '1' : '';
+  }
+  var url;
+  if (id) {
+    url = IV_URLS.edit.replace('{id}', id);
+  } else {
+    url = IV_URLS.create;
+    payload.parent_id = ivJstreeCurrentParent ? ivJstreeCurrentParent.id : '';
+  }
+  document.getElementById('ivJstreeSaveBtn').disabled = true;
+  ivJstreePost(url, payload).then(function (d) {
+    ivJstreeToast(d.message || (d.error || '操作失败'), !d.success);
+    document.getElementById('ivJstreeSaveBtn').disabled = false;
+    if (d.success) { ivJstreeCloseModal(); ivJstree.jstree(true).refresh(); }
+  }).catch(function () { ivJstreeToast('网络错误', true); document.getElementById('ivJstreeSaveBtn').disabled = false; });
+}
+
+function ivJstreeDelete(node) {
+  if (!confirm('确认删除「' + (node.data && node.data.name_zh || node.text) + '」？\n（有子节点或交易记录会被拒绝）')) return;
+  ivJstreePost(IV_URLS.del.replace('{id}', node.id), {}).then(function (d) {
+    ivJstreeToast(d.message || d.error, !d.success);
+    if (d.success) {
+      ivJstree.jstree(true).refresh();
+      document.getElementById('ivDetail').innerHTML = '<div class="iv-detail-empty">← 点左侧任意「部件」节点查看库存详情与交易记录</div>';
+    }
+  }).catch(function () { ivJstreeToast('网络错误', true); });
+}
+
+document.addEventListener('keydown', function (e) {
+  if (e.key === 'Escape' && document.getElementById('ivJstreeModal').style.display !== 'none') ivJstreeCloseModal();
+});
+document.addEventListener('click', function (e) {
+  var m = document.getElementById('ivJstreeModal');
+  if (m && m.style.display !== 'none' && e.target === m) ivJstreeCloseModal();
+});
+
+// Hook into the existing ivSwitchTab so the tree initializes on first open.
+(function () {
+  var orig = window.ivSwitchTab;
+  if (typeof orig === 'function') {
+    window.ivSwitchTab = function (tab) {
+      orig(tab);
+      if (tab === 'tree' && !ivJstree) { setTimeout(ivJstreeInit, 100); }
+    };
+  }
+})();
+// If landing directly on ?tab=tree, init immediately.
+if (document.querySelector('#ivTabTree.active')) { setTimeout(ivJstreeInit, 200); }
 </script>
 {% endblock %}

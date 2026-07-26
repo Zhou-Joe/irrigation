@@ -2466,34 +2466,43 @@ def work_report_resolve_repair(request, report_id):
 
     Clears is_pending_repair, and if the report is flagged 疑难 (is_difficult)
     also flips is_difficult_resolved=True so the detail page's "已处理" shows
-    "是". Writes an edit-log entry recording the transition.
+    "是". Writes an edit-log entry recording the transition. The state change
+    and the edit-log insert are wrapped in a transaction so a partial failure
+    can never leave the ticket flipped without an audit row (or vice versa).
     """
     from core.role_utils import is_admin
     from .models import WorkReport
     from core.workorder_tree_views import _record_edit
+    from django.db import transaction
     if not is_admin(request.user):
         return JsonResponse({'success': False, 'message': '无权限'}, status=403)
-    wr = get_object_or_404(WorkReport, pk=report_id)
-    if not wr.is_pending_repair and not (wr.is_difficult and not wr.is_difficult_resolved):
-        return JsonResponse({'success': False, 'message': '该工单非待修/疑难未处理状态'})
-    changes = []
-    update_fields = []
-    if wr.is_pending_repair:
-        wr.is_pending_repair = False
-        changes.append('待修→已解决')
-        update_fields.append('is_pending_repair')
-    if wr.is_difficult and not wr.is_difficult_resolved:
-        wr.is_difficult_resolved = True
-        changes.append('疑难未处理→已处理')
-        update_fields.append('is_difficult_resolved')
-    note = '；'.join(changes) + f'（由 {request.user.get_username()} 标记）'
-    # Also close the collaborative story loop so the 疑难/待修 tab no longer
-    # shows this as an active item.
-    if wr.collab_status and wr.collab_status != 'resolved':
-        wr.collab_status = 'resolved'
-        update_fields.append('collab_status')
-    wr.save(update_fields=update_fields)
-    _record_edit(wr, request.user, note)
+    with transaction.atomic():
+        # Lock the row so concurrent resolves can't double-fire.
+        try:
+            wr = WorkReport.objects.select_for_update().get(pk=report_id)
+        except WorkReport.DoesNotExist:
+            return JsonResponse({'success': False, 'message': '工单不存在'}, status=404)
+        if not wr.is_pending_repair and not (wr.is_difficult and not wr.is_difficult_resolved):
+            return JsonResponse({'success': False, 'message': '该工单非待修/疑难未处理状态'})
+        changes = []
+        update_fields = []
+        if wr.is_pending_repair:
+            wr.is_pending_repair = False
+            changes.append('待修→已解决')
+            update_fields.append('is_pending_repair')
+        if wr.is_difficult and not wr.is_difficult_resolved:
+            wr.is_difficult_resolved = True
+            changes.append('疑难未处理→已处理')
+            update_fields.append('is_difficult_resolved')
+        note = '；'.join(changes) + f'（由 {request.user.get_username()} 标记）'
+        # Also close the collaborative story loop so the 疑难/待修 tab no longer
+        # shows this as an active item.
+        if wr.collab_status and wr.collab_status != 'resolved':
+            wr.collab_status = 'resolved'
+            update_fields.append('collab_status')
+        wr.save(update_fields=update_fields)
+        # Inside the same transaction: if this throws, the state change rolls back too.
+        _record_edit(wr, request.user, note)
     return JsonResponse({'success': True, 'message': f'已标记 #{wr.id} 为已解决（{"；".join(changes)}）'})
 
 
@@ -2502,36 +2511,65 @@ def work_report_resolve_repair(request, report_id):
 def work_report_followup(request, parent_id):
     """Submit a follow-up child work order for a 疑难/待修 parent.
 
-    Any logged-in (field) worker may submit. Creates a child WorkReport linked
-    to the parent via parent_work_report, inheriting the parent's zones, and
-    auto-prefilled as 计划性维修 (routine_maint.1.3). The ``action`` POST field
-    drives the parent's collab_status: ``ongoing`` keeps it open;
-    ``fixed`` flips it to pending_review (awaits manager confirmation).
+    Authorization: managers (is_admin) and irrigation field workers
+    (is_field_worker) may submit; department users and anonymous are rejected.
+    The parent must actually be a 疑难/待修 ticket (collab_status non-empty OR
+    is_pending_repair OR unresolved is_difficult) — a random normal work order
+    id is rejected to prevent IDOR.
 
-    Returns JSON {success, status, child_id, message}.
+    Creates a child WorkReport linked to the parent via parent_work_report,
+    inheriting the parent's zones, auto-prefilled as 计划性维修 (routine_maint.1.3).
+    The ``action`` POST field is persisted on the child (followup_action) so the
+    story timeline can render each entry's true label later, and also drives the
+    parent's collab_status: ``ongoing`` keeps it open; ``fixed`` flips it to
+    pending_review (awaits manager confirmation).
+
+    Returns JSON {success, message} (+ status/child_id for back-compat).
     """
     from .models import WorkReport, WorkItem, WorkReportEntry
     from django.db import transaction
     from django.utils import timezone
-    from core.role_utils import resolve_or_create_worker
+    from core.role_utils import (
+        resolve_or_create_worker, is_admin, is_field_worker,
+    )
     from core.workorder_tree_views import _save_photo
 
-    parent = get_object_or_404(WorkReport, pk=parent_id)
+    # Authorization: managers + irrigation field workers only.
+    if not (is_admin(request.user) or is_field_worker(request.user)):
+        return JsonResponse({'success': False, 'message': '无权限'}, status=403)
+
     action = (request.POST.get('action') or '').strip()
     if action not in ('ongoing', 'fixed'):
-        return JsonResponse({'success': False, 'error': '请选择「继续跟进」或「已修复」'}, status=400)
+        return JsonResponse({'success': False, 'message': '请选择「继续跟进」或「已修复」'}, status=400)
     remark = (request.POST.get('remark') or '').strip()
     if not remark:
-        return JsonResponse({'success': False, 'error': '请填写跟进备注'}, status=400)
-    # Only an active collaborative parent (ongoing/pending_review) accepts new
-    # follow-ups; a resolved parent is locked.
-    if parent.collab_status == 'resolved':
-        return JsonResponse({'success': False, 'error': '该工单已完成，无法继续跟进'}, status=400)
+        return JsonResponse({'success': False, 'message': '请填写跟进备注'}, status=400)
 
     worker, _ = resolve_or_create_worker(request.user)
     today = timezone.localdate()
 
     with transaction.atomic():
+        # Lock the parent row so two concurrent submissions can't both pass the
+        # resolved-check and both flip collab_status.
+        try:
+            parent = (WorkReport.objects
+                      .select_for_update()
+                      .get(pk=parent_id))
+        except WorkReport.DoesNotExist:
+            return JsonResponse({'success': False, 'message': '工单不存在'}, status=404)
+
+        # IDOR guard: parent must actually be a 疑难/待修 ticket.
+        is_collab_parent = bool(
+            parent.collab_status
+            or parent.is_pending_repair
+            or (parent.is_difficult and not parent.is_difficult_resolved)
+        )
+        if not is_collab_parent:
+            return JsonResponse({'success': False, 'message': '该工单不是疑难/待修工单'}, status=400)
+        # A resolved parent is locked.
+        if parent.collab_status == 'resolved':
+            return JsonResponse({'success': False, 'message': '该工单已完成，无法继续跟进'}, status=400)
+
         child = WorkReport.objects.create(
             date=today,
             worker=worker,
@@ -2543,6 +2581,10 @@ def work_report_followup(request, parent_id):
             is_difficult=False,
             is_difficult_resolved=False,
             parent_work_report=parent,
+            # Persist the action chosen at submit time so the story timeline
+            # can render the true label per entry instead of deriving it from
+            # the parent's mutable current collab_status.
+            followup_action=action,
             # Default work-content metadata mirrors the mobile create path.
             location=parent.location,
             zone_location=parent.zone_location,
@@ -2598,34 +2640,39 @@ def work_report_resolve_all_repair(request):
     """Mark ALL unresolved pending-repair / difficult work orders as resolved (bulk).
 
     Clears is_pending_repair and (for 疑难 reports) sets is_difficult_resolved.
-    Writes an edit-log entry per report.
+    Writes an edit-log entry per report. The whole batch runs in one transaction
+    with select_for_update so concurrent bulk-resolves can't double-count.
     """
     from core.role_utils import is_admin
     from .models import WorkReport
     from core.workorder_tree_views import _record_edit
+    from django.db import transaction
     if not is_admin(request.user):
         return JsonResponse({'success': False, 'message': '无权限'}, status=403)
-    qs = WorkReport.objects.filter(
-        is_pending_repair=True, resolved_by_pm__isnull=True,
-    ) | WorkReport.objects.filter(is_difficult=True, is_difficult_resolved=False)
     count = 0
-    for wr in qs.distinct():
-        changes = []
-        update_fields = []
-        if wr.is_pending_repair:
-            wr.is_pending_repair = False
-            changes.append('待修→已解决')
-            update_fields.append('is_pending_repair')
-        if wr.is_difficult and not wr.is_difficult_resolved:
-            wr.is_difficult_resolved = True
-            changes.append('疑难未处理→已处理')
-            update_fields.append('is_difficult_resolved')
-        if not changes:
-            continue
-        note = '；'.join(changes) + f'（由 {request.user.get_username()} 批量标记）'
-        wr.save(update_fields=update_fields)
-        _record_edit(wr, request.user, note)
-        count += 1
+    with transaction.atomic():
+        qs = (WorkReport.objects
+              .select_for_update()
+              .filter(is_pending_repair=True, resolved_by_pm__isnull=True)
+              | WorkReport.objects.select_for_update().filter(
+                  is_difficult=True, is_difficult_resolved=False)).distinct()
+        for wr in qs:
+            changes = []
+            update_fields = []
+            if wr.is_pending_repair:
+                wr.is_pending_repair = False
+                changes.append('待修→已解决')
+                update_fields.append('is_pending_repair')
+            if wr.is_difficult and not wr.is_difficult_resolved:
+                wr.is_difficult_resolved = True
+                changes.append('疑难未处理→已处理')
+                update_fields.append('is_difficult_resolved')
+            if not changes:
+                continue
+            note = '；'.join(changes) + f'（由 {request.user.get_username()} 批量标记）'
+            wr.save(update_fields=update_fields)
+            _record_edit(wr, request.user, note)
+            count += 1
     return JsonResponse({'success': True, 'message': f'已批量解决 {count} 条工单'})
 
 
@@ -2856,6 +2903,10 @@ def pm_management(request):
         'completion_stats': completion_stats,
         'overdue_orders': overdue_list,
         'pending_extensions': ext_list,
+        # WorkItem tree tab: pass the choices so the create/edit modal can
+        # render dropdowns without an extra fetch.
+        'workitem_section_choices': WorkItem.SECTION_CHOICES,
+        'workitem_value_type_choices': WorkItem.VALUE_TYPE_CHOICES,
     }
     return render(request, 'core/pm_management.html', context)
 
@@ -4101,67 +4152,76 @@ def zone_remark_add(request, zone_id):
 def zone_remark_confirm(request, zone_id, index):
     import json
     from datetime import date as date_cls
+    from django.db import transaction
     if request.method != 'POST':
-        return JsonResponse({'error': 'POST only'}, status=405)
+        return JsonResponse({'success': False, 'message': 'POST only'}, status=405)
     if not _check_zone_admin(request):
-        return JsonResponse({'error': '无权限'}, status=403)
-    zone = get_object_or_404(Zone, pk=zone_id)
-    remarks = json.loads(zone.remarks) if zone.remarks else []
-    if index < 0 or index >= len(remarks):
-        return JsonResponse({'error': '索引无效'}, status=400)
-    remark = remarks.pop(index)
-    confirm_reply = request.POST.get('confirm_reply', '').strip()
-    confirm_author = _get_user_display_name(request)
-    confirmed = {
-        **remark,
-        'confirm_date': date_cls.today().isoformat(),
-        'confirm_reply': confirm_reply,
-        'confirm_author': confirm_author,
-    }
-    confirmed_list = json.loads(zone.confirmed_remarks) if zone.confirmed_remarks else []
-    confirmed_list.insert(0, confirmed)
-    zone.remarks = json.dumps(remarks, ensure_ascii=False)
-    zone.confirmed_remarks = json.dumps(confirmed_list, ensure_ascii=False)
-    zone.save(update_fields=['remarks', 'confirmed_remarks'])
-    return JsonResponse({'success': True, 'confirmed': confirmed})
+        return JsonResponse({'success': False, 'message': '无权限'}, status=403)
+    with transaction.atomic():
+        # Lock the zone so concurrent confirm/move/archive can't clobber each
+        # other's read-modify-write of the JSON list (lost-update race).
+        try:
+            zone = Zone.objects.select_for_update().get(pk=zone_id)
+        except Zone.DoesNotExist:
+            return JsonResponse({'success': False, 'message': '区域不存在'}, status=404)
+        remarks = json.loads(zone.remarks) if zone.remarks else []
+        if index < 0 or index >= len(remarks):
+            return JsonResponse({'success': False, 'message': '索引无效'}, status=400)
+        remark = remarks.pop(index)
+        confirm_reply = request.POST.get('confirm_reply', '').strip()
+        confirm_author = _get_user_display_name(request)
+        confirmed = {
+            **remark,
+            'confirm_date': date_cls.today().isoformat(),
+            'confirm_reply': confirm_reply,
+            'confirm_author': confirm_author,
+        }
+        confirmed_list = json.loads(zone.confirmed_remarks) if zone.confirmed_remarks else []
+        confirmed_list.insert(0, confirmed)
+        zone.remarks = json.dumps(remarks, ensure_ascii=False)
+        zone.confirmed_remarks = json.dumps(confirmed_list, ensure_ascii=False)
+        zone.save(update_fields=['remarks', 'confirmed_remarks'])
+    return JsonResponse({'success': True, 'message': '已确认', 'confirmed': confirmed})
 
 
 @login_required(login_url='core:login')
 def zone_remark_move(request, zone_id, index):
     import json
+    from django.db import transaction
     if request.method != 'POST':
-        return JsonResponse({'error': 'POST only'}, status=405)
+        return JsonResponse({'success': False, 'message': 'POST only'}, status=405)
     if not _check_zone_admin(request):
-        return JsonResponse({'error': '无权限'}, status=403)
-    zone = get_object_or_404(Zone, pk=zone_id)
+        return JsonResponse({'success': False, 'message': '无权限'}, status=403)
     target = request.POST.get('target', '').strip()
     if target not in ('irrigation', 'equipment'):
-        return JsonResponse({'error': '目标无效'}, status=400)
-    confirmed_list = json.loads(zone.confirmed_remarks) if zone.confirmed_remarks else []
-    if index < 0 or index >= len(confirmed_list):
-        return JsonResponse({'error': '索引无效'}, status=400)
-    entry = confirmed_list.pop(index)
-    note = {'date': entry.get('date', ''), 'content': entry.get('content', '')}
-    zone.confirmed_remarks = json.dumps(confirmed_list, ensure_ascii=False)
-    if target == 'irrigation':
-        notes = json.loads(zone.irrigation_management_notes) if zone.irrigation_management_notes else []
+        return JsonResponse({'success': False, 'message': '目标无效'}, status=400)
+    with transaction.atomic():
+        try:
+            zone = Zone.objects.select_for_update().get(pk=zone_id)
+        except Zone.DoesNotExist:
+            return JsonResponse({'success': False, 'message': '区域不存在'}, status=404)
+        confirmed_list = json.loads(zone.confirmed_remarks) if zone.confirmed_remarks else []
+        if index < 0 or index >= len(confirmed_list):
+            return JsonResponse({'success': False, 'message': '索引无效'}, status=400)
+        entry = confirmed_list.pop(index)
+        note = {'date': entry.get('date', ''), 'content': entry.get('content', '')}
+        zone.confirmed_remarks = json.dumps(confirmed_list, ensure_ascii=False)
+        target_field = 'irrigation_management_notes' if target == 'irrigation' else 'equipment_maintenance_notes'
+        notes = json.loads(getattr(zone, target_field)) or [] if getattr(zone, target_field) else []
         notes.insert(0, note)
-        zone.irrigation_management_notes = json.dumps(notes, ensure_ascii=False)
-        zone.save(update_fields=['irrigation_management_notes', 'confirmed_remarks'])
-    else:
-        notes = json.loads(zone.equipment_maintenance_notes) if zone.equipment_maintenance_notes else []
-        notes.insert(0, note)
-        zone.equipment_maintenance_notes = json.dumps(notes, ensure_ascii=False)
-        zone.save(update_fields=['equipment_maintenance_notes', 'confirmed_remarks'])
-    # Final disposition: once NO active zone remarks remain for the source
-    # work order (none pending in `remarks`, none un-archived in
-    # `confirmed_remarks`), clear its collab_status so it drops out of the
-    # 疑难/待修 tab. Until then it stays visible so the manager can transfer
-    # the remaining zones.
-    _wid = entry.get('workorder_id')
-    if _wid:
-        _clear_collab_if_fully_disposed(_wid)
-    return JsonResponse({'success': True, 'target': target, 'note': note})
+        setattr(zone, target_field, json.dumps(notes, ensure_ascii=False))
+        zone.save(update_fields=[target_field, 'confirmed_remarks'])
+        # Final disposition: once NO active zone remarks remain for the source
+        # work order (none pending in `remarks`, none un-archived in
+        # `confirmed_remarks`), clear its collab_status so it drops out of the
+        # 疑难/待修 tab. Until then it stays visible so the manager can transfer
+        # the remaining zones. Also write an edit log on the WorkReport for audit.
+        _wid = entry.get('workorder_id')
+        if _wid:
+            label = '灌溉管理记录' if target == 'irrigation' else '设备维护记录'
+            _clear_collab_if_fully_disposed(_wid, actor=request.user,
+                                            note=f'区域备注转至{label}（由 {_get_user_display_name(request)} 操作）')
+    return JsonResponse({'success': True, 'message': '已转移', 'target': target, 'note': note})
 
 
 @login_required(login_url='core:login')
@@ -4173,26 +4233,33 @@ def zone_remark_archive(request, zone_id, index):
     """
     import json
     from datetime import date as date_cls
+    from django.db import transaction
     if request.method != 'POST':
-        return JsonResponse({'error': 'POST only'}, status=405)
+        return JsonResponse({'success': False, 'message': 'POST only'}, status=405)
     if not _check_zone_admin(request):
-        return JsonResponse({'error': '无权限'}, status=403)
-    zone = get_object_or_404(Zone, pk=zone_id)
-    confirmed_list = json.loads(zone.confirmed_remarks) if zone.confirmed_remarks else []
-    if index < 0 or index >= len(confirmed_list):
-        return JsonResponse({'error': '索引无效'}, status=400)
-    # 就地打标记，不删除：保留在 confirmed_remarks 里供工单详情页反查。
-    entry = confirmed_list[index]
-    entry['archived'] = True
-    entry['archived_date'] = date_cls.today().isoformat()
-    entry['archived_author'] = _get_user_display_name(request)
-    zone.confirmed_remarks = json.dumps(confirmed_list, ensure_ascii=False)
-    zone.save(update_fields=['confirmed_remarks'])
-    # Final disposition: clear collab_status if no active zone remarks remain.
-    _wid = entry.get('workorder_id')
-    if _wid:
-        _clear_collab_if_fully_disposed(_wid)
-    return JsonResponse({'success': True})
+        return JsonResponse({'success': False, 'message': '无权限'}, status=403)
+    with transaction.atomic():
+        try:
+            zone = Zone.objects.select_for_update().get(pk=zone_id)
+        except Zone.DoesNotExist:
+            return JsonResponse({'success': False, 'message': '区域不存在'}, status=404)
+        confirmed_list = json.loads(zone.confirmed_remarks) if zone.confirmed_remarks else []
+        if index < 0 or index >= len(confirmed_list):
+            return JsonResponse({'success': False, 'message': '索引无效'}, status=400)
+        # 就地打标记，不删除：保留在 confirmed_remarks 里供工单详情页反查。
+        entry = confirmed_list[index]
+        entry['archived'] = True
+        entry['archived_date'] = date_cls.today().isoformat()
+        entry['archived_author'] = _get_user_display_name(request)
+        zone.confirmed_remarks = json.dumps(confirmed_list, ensure_ascii=False)
+        zone.save(update_fields=['confirmed_remarks'])
+        # Final disposition: clear collab_status if no active zone remarks remain,
+        # and write an edit log for audit parity with the resolve-repair path.
+        _wid = entry.get('workorder_id')
+        if _wid:
+            _clear_collab_if_fully_disposed(_wid, actor=request.user,
+                                            note=f'区域备注归档（由 {_get_user_display_name(request)} 操作）')
+    return JsonResponse({'success': True, 'message': '已归档'})
 
 
 @login_required(login_url='core:login')
@@ -6860,7 +6927,11 @@ def irrigation_zone_heatmap(request):
     # Only zones with both a boundary AND a maxicom_runtime mapping are useful
     # for the map. Zones WITH a mapping but NO boundary are surfaced separately
     # as "unmapped" so reviewers know which zones need polygons drawn.
-    all_zones = list(Zone.objects.select_related('land'))
+    #
+    # heatmap_excluded zones are filtered out at the ORM level so they never
+    # reach the map, the unmapped list, or the search ranking. The excluded
+    # list itself is returned separately (managers only) for the restore panel.
+    all_zones = list(Zone.objects.select_related('land').exclude(heatmap_excluded=True))
     zones_out = []
     unmapped_entries = []      # zones with runtime mapping but no boundary
     station_ids = set()
@@ -6890,11 +6961,20 @@ def irrigation_zone_heatmap(request):
 
     out = []
     max_minutes = 0
+    max_volume = 0.0
     for entry in zones_out:
         z = entry['zone']
         minutes = sum(minutes_by_station.get(sid, 0) for sid in entry['station_ids'])
         if minutes > max_minutes:
             max_minutes = minutes
+        # Irrigation depth (mm) = runtime(h) × irrigation_intensity(mm/h).
+        # Only computable when the zone has a configured intensity; zones
+        # without it are surfaced to the client as None so the heatmap can
+        # paint them gray in volume mode.
+        intensity = z.irrigation_intensity
+        depth = round(minutes / 60.0 * intensity, 1) if intensity else None
+        if depth and depth > max_volume:
+            max_volume = depth
         out.append({
             'id': z.id,
             'code': z.code,
@@ -6903,6 +6983,8 @@ def irrigation_zone_heatmap(request):
             'boundary_points': entry['bp'],
             'center': get_zone_center(entry['bp']),
             'runtime_minutes': minutes,
+            'irrigation_intensity': intensity,
+            'irrigation_depth_mm': depth,
         })
 
     # Unmapped zones (runtime mapping exists, but no polygon to draw). Sorted
@@ -6912,22 +6994,88 @@ def irrigation_zone_heatmap(request):
     for entry in unmapped_entries:
         z = entry['zone']
         minutes = sum(minutes_by_station.get(sid, 0) for sid in entry['station_ids'])
+        intensity = z.irrigation_intensity
+        depth = round(minutes / 60.0 * intensity, 1) if intensity else None
+        if depth and depth > max_volume:
+            max_volume = depth
         unmapped_out.append({
             'id': z.id,
             'code': z.code,
             'name': z.name or '',
             'land_name': z.land.name if z.land else '',
             'runtime_minutes': minutes,
+            'irrigation_intensity': intensity,
+            'irrigation_depth_mm': depth,
         })
     unmapped_out.sort(key=lambda r: r['runtime_minutes'], reverse=True)
+
+    # Excluded zones are surfaced separately so the manager-only "已排除区域"
+    # sidebar panel can list them with a restore action. Non-managers get an
+    # empty list (and is_manager=False) so the client hides the panel + the
+    # per-polygon exclude action.
+    from core.role_utils import is_admin as _user_is_admin
+    user_is_manager = _user_is_admin(request.user)
+    excluded_out = []
+    if user_is_manager:
+        excluded_out = [{
+            'id': z.id,
+            'code': z.code,
+            'name': z.name or '',
+            'land_name': z.land.name if z.land else '',
+        } for z in Zone.objects.filter(heatmap_excluded=True)
+                                .select_related('land').order_by('code')]
 
     return JsonResponse({
         'zones': out,
         'max': max_minutes,
+        'max_volume': round(max_volume, 1),
         'unmapped': unmapped_out,
+        'excluded': excluded_out,
+        'is_manager': user_is_manager,
         'date_from': _date_from,
         'date_to': _date_to,
     }, json_dumps_params={'ensure_ascii': False})
+
+
+@require_POST
+@login_required(login_url='core:login')
+def irrigation_zone_exclude(request, zone_id):
+    """Manager-only: hide a zone from the /irrigation/ heatmap permanently.
+
+    Sets ``Zone.heatmap_excluded = True``. The zone stays visible everywhere
+    else (stats heatmap, zone lists, work-order dropdowns) — this flag only
+    affects the irrigation page's heatmap + its unmapped/search panels.
+    """
+    from core.role_utils import is_admin as _user_is_admin
+    if not _user_is_admin(request.user):
+        return JsonResponse({'success': False, 'message': '无权限'}, status=403)
+    zone = get_object_or_404(Zone, pk=zone_id)
+    if zone.heatmap_excluded:
+        return JsonResponse({'success': True, 'message': '该区域已是排除状态'})
+    zone.heatmap_excluded = True
+    zone.save(update_fields=['heatmap_excluded'])
+    return JsonResponse({
+        'success': True,
+        'message': f'已排除「{zone.name or zone.code}」，刷新后生效',
+    })
+
+
+@require_POST
+@login_required(login_url='core:login')
+def irrigation_zone_restore(request, zone_id):
+    """Manager-only: undo a previous exclude. Clears ``heatmap_excluded``."""
+    from core.role_utils import is_admin as _user_is_admin
+    if not _user_is_admin(request.user):
+        return JsonResponse({'success': False, 'message': '无权限'}, status=403)
+    zone = get_object_or_404(Zone, pk=zone_id)
+    if not zone.heatmap_excluded:
+        return JsonResponse({'success': True, 'message': '该区域未处于排除状态'})
+    zone.heatmap_excluded = False
+    zone.save(update_fields=['heatmap_excluded'])
+    return JsonResponse({
+        'success': True,
+        'message': f'已恢复「{zone.name or zone.code}」',
+    })
 
 
 @login_required(login_url='core:login')
@@ -8526,25 +8674,75 @@ def work_reports_list(request):
     pr_ids = [wr.id for wr in pr_qs]
     stories = _followup_stories(pr_ids)
     for wr in pr_qs:
-        zone_codes = ', '.join(z.code for z in wr.zones.all()[:4])
-        flags = []
-        if wr.is_pending_repair:
-            flags.append('待修')
-        if wr.is_difficult and not wr.is_difficult_resolved:
-            flags.append('疑难未处理')
-        pending_repairs.append({
-            'id': wr.id,
-            'date': wr.date,
-            'worker_name': wr.worker.full_name if wr.worker_id and wr.worker else '—',
-            'location_code': wr.location.code if wr.location_id and wr.location else '',
-            'remark': (wr.remark or '')[:120],
-            'zone_preview': zone_codes,
-            'zone_count': wr.zones.count(),
-            'flags': '、'.join(flags),
-            'collab_status': wr.collab_status,
-            'followup_stories': stories.get(wr.id, []),
-            'remark_group': remark_groups_by_wo.get(wr.id),
-        })
+        pending_repairs.append(_serialize_repair_card(wr, stories.get(wr.id, []),
+                                                       remark_groups_by_wo.get(wr.id)))
+
+    # Historical view (manager-only): closed 疑难/待修 tickets — was a 疑难/待修
+    # at some point (is_difficult=True OR resolved_by_pm set OR had followup
+    # children) but no longer active (NOT in pr_qs above). Lets managers audit
+    # what was closed, when, and by whom — without it polluting the active list.
+    resolved_repairs = []
+    if is_manager:
+        hist_qs = (WorkReport.objects
+                   .filter(is_difficult=True)
+                   | WorkReport.objects.filter(resolved_by_pm__isnull=False)
+                   | WorkReport.objects.filter(followup_children__isnull=False)).distinct()
+        # Apply the SAME global filters as the main reports list, so the history
+        # tab responds to date range / land / worker / difficult / pending /
+        # work-order-number search just like 维修日志 does. Without this the
+        # history tab ignored every filter and always showed all 200 rows.
+        hist_qs = hist_qs.filter(date__gte=date_from)
+        if date_to:
+            hist_qs = hist_qs.filter(date__lte=date_to)
+        if land_id:
+            hist_qs = hist_qs.filter(zones__in=Zone.objects.filter(land_id=land_id))
+        if worker_id:
+            hist_qs = hist_qs.filter(worker_id=worker_id)
+        if difficult:
+            hist_qs = hist_qs.filter(is_difficult=True)
+        if pending:
+            # Pending-only doesn't quite apply to a "closed history" list, but
+            # honoring it keeps the filter UI consistent (the user asking for
+            # 待修 + history expects closed tickets that WERE 待修).
+            hist_qs = hist_qs.filter(is_pending_repair=False, is_difficult=True)
+        if q and q.isdigit():
+            hist_qs = hist_qs.filter(id__startswith=q)
+        # Exclude anything still active (in pr_ids). Then prefetch.
+        hist_qs = (hist_qs.exclude(id__in=pr_ids)
+                   .select_related('worker', 'location').order_by('-date', '-id')[:200])
+        hist_ids = [wr.id for wr in hist_qs]
+        hist_stories = _followup_stories(hist_ids)
+        # Batch-fetch the most recent "closing" edit log per ticket so the
+        # history tab can show who closed it and when, without N+1 queries.
+        # Closing notes contain 待修→已解决 / 疑难未处理→已处理 / 区域备注归档 /
+        # 区域备注转至... — match any of those substrings.
+        closing_logs = {}
+        if hist_ids:
+            close_substrs = ('待修→已解决', '疑难未处理→已处理',
+                             '区域备注归档', '区域备注转至')
+            from django.db.models import Q
+            from .models import WorkReportEditLog
+            close_q = Q()
+            for s in close_substrs:
+                close_q |= Q(note__contains=s)
+            for log in (WorkReportEditLog.objects
+                        .filter(work_report_id__in=hist_ids)
+                        .filter(close_q)
+                        .order_by('work_report_id', '-created_at')
+                        .select_related('editor')):
+                # Last per work_report wins (the loop iterates work_report_id
+                # asc, created_at desc, so the first row per group is latest).
+                if log.work_report_id not in closing_logs:
+                    closing_logs[log.work_report_id] = {
+                        'at': log.created_at,
+                        'by': log.editor.full_name if log.editor else '—',
+                        'note': log.note,
+                    }
+        for wr in hist_qs:
+            card = _serialize_repair_card(wr, hist_stories.get(wr.id, []),
+                                          remark_groups_by_wo.get(wr.id))
+            card['closed'] = closing_logs.get(wr.id)
+            resolved_repairs.append(card)
 
     return render(request, 'core/work_reports.html', {
         'reports': reports,
@@ -8566,6 +8764,7 @@ def work_reports_list(request):
         'pm_tasks_total': pm_tasks_total,
         'pm_include_done': pm_include_done,
         'pending_repairs': pending_repairs,
+        'resolved_repairs': resolved_repairs,
         'active_tab': request.GET.get('tab', 'workorders'),
     })
 
@@ -8809,7 +9008,7 @@ def water_requests_list(request):
     return render(request, 'core/water_requests.html', context)
 
 
-def _clear_collab_if_fully_disposed(workorder_id):
+def _clear_collab_if_fully_disposed(workorder_id, actor=None, note=None):
     """Clear a work order's collab_status once all its zone remarks are gone.
 
     A 疑难/待修 work order stays in the merged tab while ANY zone still has an
@@ -8817,12 +9016,25 @@ def _clear_collab_if_fully_disposed(workorder_id):
     ``Zone.confirmed_remarks``. The manager transfers/archives per-zone; when
     the last active remark is disposed, this clears ``collab_status`` so the
     row finally drops out of the 疑难/待修 tab.
+
+    If ``actor`` is provided, also writes a WorkReportEditLog row (audit parity
+    with the resolve-repair path — previously this helper closed the ticket
+    with zero audit trail on the WorkReport side).
+
+    Performance: the candidate zone set is pre-filtered via __contains on the
+    workorder_id substring instead of scanning every non-empty Zone row.
     """
     import json as _json
+    from django.db.models import Q
     from .models import Zone, WorkReport
+    # Pre-filter: only zones whose JSON contains this workorder_id can possibly
+    # hold an active remark for it. __contains on a TextField is a substring
+    # match (no index on SQLite, but prunes the Python-side scan drastically).
+    needle = f'"workorder_id": {workorder_id}'
+    cand_qs = (Zone.objects
+               .filter(Q(remarks__contains=needle) | Q(confirmed_remarks__contains=needle)))
     still_active = False
-    for z in (Zone.objects.exclude(remarks='').exclude(remarks__isnull=True)
-              | Zone.objects.exclude(confirmed_remarks='').exclude(confirmed_remarks__isnull=True)):
+    for z in cand_qs:
         for fld in ('remarks', 'confirmed_remarks'):
             raw = getattr(z, fld)
             if not raw:
@@ -8840,7 +9052,68 @@ def _clear_collab_if_fully_disposed(workorder_id):
         if still_active:
             break
     if not still_active:
-        WorkReport.objects.filter(id=workorder_id).update(collab_status='')
+        # Lock + clear inside a transaction so the collab clear + edit log are atomic.
+        from django.db import transaction
+        with transaction.atomic():
+            wr = (WorkReport.objects.select_for_update().filter(id=workorder_id).first())
+            if wr is None or wr.collab_status == '':
+                return
+            wr.collab_status = ''
+            wr.save(update_fields=['collab_status'])
+            if actor is not None:
+                from core.workorder_tree_views import _record_edit
+                _record_edit(wr, actor, note or '区域备注已全部处置，自动关闭协作')
+
+
+def _serialize_repair_card(wr, stories, remark_group):
+    """Build one card dict for a 疑难/待修 work order (active or historical).
+
+    Shared by the active 疑难/待修 tab and the manager-only history tab so the
+    flag-text/flag-class precedence logic lives in one place. ``stories`` is
+    the parent's follow-up timeline (already fetched), ``remark_group`` is the
+    zone-level remark group (or None).
+    """
+    zone_codes = ', '.join(z.code for z in wr.zones.all()[:4])
+    is_difficult = bool(wr.is_difficult and not wr.is_difficult_resolved)
+    # Flag copy + class. collab_status takes precedence once the worker has
+    # filed an "已修复" follow-up or the manager has closed the ticket.
+    collab_status_display = wr.collab_status  # default: render the true value
+    if wr.collab_status == 'resolved':
+        flag_text, flag_class = '已解决', 'resolved'
+    elif wr.collab_status == 'pending_review':
+        flag_text, flag_class = '已修复·待确认', 'resolved'
+    elif not wr.is_pending_repair and not is_difficult and not wr.collab_status:
+        # Historical/closed: derive the closed-state label. is_difficult=True
+        # means it was a 疑难 (now 已处理); otherwise 待修→已解决.
+        flag_text = '疑难已处理' if wr.is_difficult else '待修已解决'
+        flag_class = 'resolved'
+        # Display-side: collab_status='' would render the fu-chip as 跟进中
+        # (misleading for a closed ticket). Force the chip to 已完成 so the
+        # _followup_collab include shows the right state without DB changes.
+        collab_status_display = 'resolved'
+    else:
+        flags = []
+        if wr.is_pending_repair:
+            flags.append('待修')
+        if is_difficult:
+            flags.append('疑难未处理')
+        flag_text = '、'.join(flags) or '待修'
+        flag_class = 'difficult' if is_difficult else 'pending'
+    return {
+        'id': wr.id,
+        'date': wr.date,
+        'worker_name': wr.worker.full_name if wr.worker_id and wr.worker else '—',
+        'location_code': wr.location.code if wr.location_id and wr.location else '',
+        'remark': (wr.remark or '')[:120],
+        'zone_preview': zone_codes,
+        'zone_count': wr.zones.count(),
+        'flags': flag_text,
+        'flag_class': flag_class,
+        'is_difficult': is_difficult,
+        'collab_status': collab_status_display,
+        'followup_stories': stories,
+        'remark_group': remark_group,
+    }
 
 
 def _followup_stories(parent_ids):
@@ -8859,6 +9132,11 @@ def _followup_stories(parent_ids):
                 .order_by('created_at', 'id'))
     out = {}
     for c in children:
+        # Per-child label from the child's own followup_action (persisted at
+        # submit time) rather than the parent's *current* collab_status — the
+        # latter would mislabel prior 'ongoing' entries once a later 'fixed'
+        # flips the parent, or once the parent is later resolved.
+        action_label = '已修复' if c.followup_action == 'fixed' else '跟进'
         out.setdefault(c.parent_work_report_id, []).append({
             'id': c.id,
             'ticket': c.display_number,
@@ -8866,7 +9144,7 @@ def _followup_stories(parent_ids):
             'worker_name': c.worker.full_name if c.worker_id and c.worker else '—',
             'remark': (c.remark or '')[:400],
             'photos': list(c.photos or [])[:6],
-            'status_label': '已修复' if c.parent_work_report and c.parent_work_report.collab_status == 'pending_review' else '跟进',
+            'status_label': action_label,
         })
     return out
 
@@ -9853,17 +10131,24 @@ def serialize_inventory_tree():
     """Emit the InventoryCategory tree as nested JSON (depth-first).
 
     Each leaf carries ``current_stock``, ``min_stock`` and ``is_main_material``
-    so the mobile form can display them read-only. Mirrors serialize_workitem_tree's algorithm.
+    so the mobile form can display them read-only. Output shape is preserved
+    exactly (consumed by workorder_tree_form.html + inventory_management.html).
+
+    Uses mptt's nested-set ordering (tree_id, lft) so the flat query is
+    already in DFS-preorder — we just need to walk it once with a stack to
+    rebuild the parent → children nesting. O(N), no per-node parent lookup.
     """
     from core.models import InventoryCategory
     qs = (InventoryCategory.objects.filter(active=True)
-          .order_by('order', 'code')
+          .order_by('tree_id', 'lft')
           .values('id', 'code', 'name_zh', 'parent_id', 'current_stock',
-                  'min_stock', 'is_main_material', 'node_type', 'unit'))
-    nodes = {n['id']: {**n, 'name': n['name_zh'], 'children': []} for n in qs}
+                  'min_stock', 'is_main_material', 'node_type', 'unit', 'level'))
+    nodes = {}
     roots = []
+    # Single-pass nesting: each node's parent was emitted before it (preorder).
     for n in qs:
-        node = nodes[n['id']]
+        node = {**n, 'name': n['name_zh'], 'children': []}
+        nodes[n['id']] = node
         pid = n['parent_id']
         if pid in nodes:
             nodes[pid]['children'].append(node)
@@ -10488,12 +10773,7 @@ def inventory_category_create(request):
 
     # Derive a stable, unique code: parent.code + slug(name) + .N suffix if needed.
     base = _iv_slug(name)
-    if parent:
-        prefix = parent.code + '.' + base
-        level = parent.level + 1
-    else:
-        prefix = base
-        level = 0
+    prefix = parent.code + '.' + base if parent else base
     code = prefix
     n = 1
     while InventoryCategory.objects.filter(code=code).exists():
@@ -10504,8 +10784,9 @@ def inventory_category_create(request):
     last_order = (InventoryCategory.objects.filter(parent=parent)
                   .order_by('-order').values_list('order', flat=True).first()) or 0
 
+    # level is auto-managed by mptt (computed from parent on save).
     cat = InventoryCategory.objects.create(
-        code=code, parent=parent, name_zh=name, level=level,
+        code=code, parent=parent, name_zh=name,
         order=last_order + 1, node_type=node_type,
     )
     # Leaf-only attributes (a 'part' starts as a leaf; a 'category' has no stock).
@@ -10597,6 +10878,42 @@ def inventory_category_delete(request, cat_id):
 
 @require_POST
 @login_required(login_url='core:login')
+@require_POST
+@login_required(login_url='core:login')
+def inventory_category_reorder(request):
+    """Reorder siblings within one parent (manager only).
+
+    Receives ``parent_id`` (empty string for top-level roots) and
+    ``ordered_ids`` (repeated POST field, in the new sibling order). Only the
+    ``order`` column is rewritten — parent_id, code, and level are untouched,
+    so this is purely a same-parent sort (no reparenting, no code recalculation).
+    """
+    from core.models import InventoryCategory
+    from core.role_utils import get_user_role, ROLE_MANAGER, ROLE_SUPER_ADMIN
+    from django.db import transaction
+    role = get_user_role(request.user)
+    if role not in (ROLE_MANAGER, ROLE_SUPER_ADMIN):
+        return JsonResponse({'success': False, 'message': '无权限'}, status=403)
+    raw_parent = (request.POST.get('parent_id') or '').strip()
+    parent_id = int(raw_parent) if raw_parent.isdigit() else None
+    ordered_ids = [int(x) for x in request.POST.getlist('ordered_ids') if x.isdigit()]
+    if not ordered_ids:
+        return JsonResponse({'success': False, 'message': '未收到节点顺序'}, status=400)
+    # Verify every id actually belongs to this parent — prevents a client from
+    # silently reordering nodes under a different parent via a forged request.
+    qs = InventoryCategory.objects.filter(id__in=ordered_ids)
+    if parent_id is None:
+        bad = [c.id for c in qs if c.parent_id is not None]
+    else:
+        bad = [c.id for c in qs if c.parent_id != parent_id]
+    if bad:
+        return JsonResponse({'success': False, 'message': '节点不属于同一父级'}, status=400)
+    with transaction.atomic():
+        for i, cid in enumerate(ordered_ids):
+            InventoryCategory.objects.filter(id=cid).update(order=i)
+    return JsonResponse({'success': True, 'message': '排序已更新'})
+
+
 def inventory_category_edit(request, cat_id):
     """Rename / update an inventory category or part (manager only).
 

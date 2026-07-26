@@ -38,7 +38,7 @@ class Command(BaseCommand):
             # Find the 已修复 sibling to mirror its order/code prefix.
             sib = parent.children.filter(active=True, name_zh='已修复').first()
             order = (sib.order + 1) if sib else 0
-            level = (sib.level) if sib else (parent.level + 1)
+            # level is MPTT-managed now; no need to compute or pass it.
             # Build a code: parent code + next index.
             sib_count = parent.children.count()
             code = (parent.code + ('.' if parent.code else '') + str(sib_count + 1)) if parent.code else None
@@ -49,7 +49,6 @@ class Command(BaseCommand):
                 unit='',
                 is_project_scoped=False,
                 order=order,
-                level=level,
                 parent=parent,
                 code=code,
                 status_options=[],
