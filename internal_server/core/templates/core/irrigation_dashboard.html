@@ -366,6 +366,37 @@
     line-height: 1.4;
 }
 
+/* Metric toggle (运行时间 / 灌水量) — mirrors .view-toggle styling so the
+   two segmented controls on the page read as a family. Smaller padding so
+   it fits inside the compact legend panel. */
+.irrig-metric-toggle {
+    display: inline-flex;
+    gap: 3px;
+    background: var(--color-surface-alt);
+    border-radius: 7px;
+    padding: 3px;
+    margin-bottom: 8px;
+}
+.irrig-metric-pill {
+    padding: 4px 10px;
+    border: none;
+    background: transparent;
+    color: var(--color-text-muted);
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 0.8rem;
+    font-weight: 600;
+    transition: background 0.15s, color 0.15s;
+}
+.irrig-metric-pill.active {
+    background: var(--color-primary);
+    color: var(--color-text-inverse);
+}
+.irrig-metric-pill:hover:not(.active) {
+    background: rgba(45, 106, 79, 0.08);
+    color: var(--color-primary);
+}
+
 /* Unmapped zones panel (zones with runtime but no boundary polygon). */
 .irrig-unmapped-panel {
     display: none;          /* shown only in heatmap mode */
@@ -457,6 +488,114 @@
     white-space: nowrap;
 }
 .irrig-unmapped-row a.irrig-unmapped-draw:hover { background: var(--color-primary-light); }
+
+/* Excluded zones panel (manager-only). Same shell as .irrig-unmapped-panel
+   but with an amber/red accent so reviewers can tell "manager deliberately
+   hid this" apart from "missing boundary data". Hidden entirely for non-
+   managers via the is_manager wrapper in the template. */
+.irrig-excluded-panel {
+    display: none;          /* shown only in heatmap mode */
+    background: var(--color-surface);
+    border: 1px solid var(--color-surface-dark);
+    border-radius: 8px;
+    overflow: hidden;
+}
+.irrig-fullscreen.heatmap-mode .irrig-excluded-panel { display: block; }
+.irrig-excluded-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    padding: 10px 12px;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: #b45309;       /* amber-700 — distinct from the green primary */
+    text-align: left;
+}
+.irrig-excluded-header:hover { background: var(--color-surface-alt); }
+.irrig-excluded-badge {
+    display: inline-block;
+    min-width: 22px;
+    padding: 1px 6px;
+    margin-left: 4px;
+    background: #b45309;
+    color: #fff;
+    border-radius: 10px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-align: center;
+}
+.irrig-excluded-badge.zero { background: var(--color-surface-dark); color: var(--color-text-muted); }
+.irrig-excluded-arrow { font-size: 0.72rem; color: var(--color-text-muted); }
+.irrig-excluded-body {
+    display: none;
+    padding: 0 12px 10px;
+    border-top: 1px solid var(--color-surface-alt);
+}
+.irrig-excluded-panel.open .irrig-excluded-body { display: block; }
+.irrig-excluded-note {
+    font-size: 0.74rem;
+    color: var(--color-text-muted);
+    margin: 8px 0 6px;
+    line-height: 1.4;
+}
+.irrig-excluded-list {
+    max-height: 280px;
+    overflow-y: auto;
+}
+.irrig-excluded-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 5px 8px;
+    font-size: 0.8rem;
+    border-bottom: 1px solid var(--color-surface-alt);
+    gap: 8px;
+}
+.irrig-excluded-row:last-child { border-bottom: none; }
+.irrig-excluded-row .irrig-excluded-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.irrig-excluded-row .irrig-excluded-code {
+    font-weight: 600;
+    color: #b45309;
+    margin-right: 6px;
+}
+.irrig-excluded-row button.irrig-excluded-restore {
+    margin-left: 6px;
+    padding: 2px 10px;
+    background: var(--color-primary);
+    color: #fff;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.72rem;
+    font-weight: 600;
+    white-space: nowrap;
+}
+.irrig-excluded-row button.irrig-excluded-restore:hover { background: var(--color-primary-light); }
+
+/* The popup button shown on right-click of a heatmap polygon (manager only). */
+.irrig-exclude-popup-btn {
+    display: block;
+    width: 100%;
+    padding: 8px 14px;
+    background: #b45309;
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.86rem;
+    font-weight: 600;
+}
+.irrig-exclude-popup-btn:hover { background: #92400e; }
+.leaflet-popup-content { margin: 10px 14px; }
+.leaflet-popup-content-wrapper { border-radius: 8px; }
 
 /* ── Heatmap fullscreen layout ───────────────────────────────────────
    When the heatmap view is active, body.irrig-heatmap-active flips the
@@ -687,7 +826,13 @@
 
             <!-- Heatmap legend (heatmap mode only) -->
             <div class="irrig-legend-panel" id="irrigLegendPanel">
-                <div class="irrig-legend-title">区域灌溉运行分钟</div>
+                <div class="irrig-metric-toggle" role="tablist" aria-label="指标切换">
+                    <button class="irrig-metric-pill active" data-metric="time"
+                            onclick="switchIrrigMetric('time')" role="tab">⏱ 运行时间</button>
+                    <button class="irrig-metric-pill" data-metric="volume"
+                            onclick="switchIrrigMetric('volume')" role="tab">💧 灌水量</button>
+                </div>
+                <div class="irrig-legend-title" id="irrigLegendTitle">区域灌溉运行分钟</div>
                 <div class="heat-legend">
                     <span>少</span>
                     <div class="scale" id="irrigHeatLegendBar"></div>
@@ -698,9 +843,9 @@
                     <span>色阶上限</span>
                     <input type="number" id="irrigHeatUserMax" min="0" step="1" placeholder="自动"
                            style="width:60px;padding:2px 4px;border:1px solid #ccc;border-radius:4px;font-size:0.78rem;">
-                    <span>分钟</span>
+                    <span id="irrigHeatUnitLabel">分钟</span>
                 </div>
-                <div class="irrig-legend-note">颜色 = 所选时间窗口内该区域的运行分钟数</div>
+                <div class="irrig-legend-note" id="irrigLegendNote">颜色 = 所选时间窗口内该区域的运行分钟数</div>
             </div>
 
             <!-- Unmapped zones: have runtime data but no boundary polygon.
@@ -718,6 +863,27 @@
                     <div id="irrigUnmappedList" class="irrig-unmapped-list"></div>
                 </div>
             </div>
+
+            {% if is_admin %}
+            <!-- Excluded zones (manager/superuser-only): zones deliberately hidden from
+                 the heatmap via right-click → 排除. Each row has a 「恢复」 button
+                 to undo. Mirrors the unmapped panel structure. Gated on is_admin
+                 to match the backend endpoint's is_admin() check (covers managers
+                 AND superusers; is_manager would lock out superusers). -->
+            <div class="irrig-excluded-panel" id="irrigExcludedPanel">
+                <button type="button" class="irrig-excluded-header"
+                        onclick="toggleIrrigExcluded()" aria-expanded="false">
+                    <span>🚫 已排除区域 <span id="irrigExcludedCount" class="irrig-excluded-badge zero">0</span></span>
+                    <span id="irrigExcludedArrow" class="irrig-excluded-arrow">▶</span>
+                </button>
+                <div class="irrig-excluded-body" id="irrigExcludedBody">
+                    <div class="irrig-excluded-note">
+                        这些区域被手动排除，热力图上不显示。点击「恢复」重新显示。地图上右键区域可排除。
+                    </div>
+                    <div id="irrigExcludedList" class="irrig-excluded-list"></div>
+                </div>
+            </div>
+            {% endif %}
         </div>
     </aside>
 
@@ -728,7 +894,7 @@
 
     <!-- Map area (heatmap mode) -->
     <div class="irrig-map-area">
-        <div id="irrigHeatMap"></div>
+        <div id="irrigHeatMap" data-is-manager="{{ is_admin|yesno:'1,0' }}"></div>
         <!-- Collapsed by default: click 🔍 to expand the search panel -->
         <button id="irrigSearchToggle" class="irrig-search-toggle"
                 onclick="toggleIrrigSearch()" title="搜索区域">🔍</button>
@@ -758,7 +924,7 @@
 
 {% block extra_js %}
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="{% static 'js/irrig-heatmap.js' %}?v=12"></script>
+<script src="{% static 'js/irrig-heatmap.js' %}?v=14"></script>
 <script>
 function toggleExportMenu(event) {
     event.stopPropagation();

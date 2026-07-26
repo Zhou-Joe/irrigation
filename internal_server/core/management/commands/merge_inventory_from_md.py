@@ -169,7 +169,7 @@ class Command(BaseCommand):
                 else:
                     obj = InventoryCategory.objects.create(
                         code=f'n{next_code}', parent=parent, name_zh=node['name'],
-                        level=level, node_type='part' if is_leaf else 'category',
+                        node_type='part' if is_leaf else 'category',
                         is_main_material=node['is_main'],
                         min_stock=node['min'] if is_leaf else 0,
                         unit=node['unit'] if is_leaf else '',
@@ -182,6 +182,12 @@ class Command(BaseCommand):
                     added_parts += 1
                 else:
                     added_cats += 1
+
+        # Rebuild mptt nested-set columns after bulk insert (skip in dry-run
+        # since no DB rows were created). Without this, mptt queries return
+        # nothing for the newly-added subtree.
+        if not options['dry_run']:
+            InventoryCategory.objects.rebuild()
 
         after_count = InventoryCategory.objects.count()
         verb = 'Would add' if options['dry_run'] else 'Added'

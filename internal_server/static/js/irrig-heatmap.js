@@ -21,6 +21,11 @@
     var polygonByZoneId = {};   // zone.id -> L.polygon (for search highlight)
     var highlightLayer = null;  // L.layerGroup holding the yellow outline of matches
     var userMaxOverride = null;  // user color-scale cap (null = auto, use data max)
+    // Manager flag drives whether the right-click → 排除 popup is bound to
+    // each polygon. Read once from #irrigHeatMap[data-is-manager] (set by the
+    // template via the user_role context processor). The backend also returns
+    // heatData.is_manager as a redundant check.
+    var isManager = false;
 
     // ── Boundary format helpers (verbatim from stats-heatmap.js) ───────────
     function toLL(p) {
@@ -80,17 +85,36 @@
         return 'rgb(' + r2 + ',' + g2 + ',' + b2 + ')';
     }
 
-    // ── User color-scale cap (persisted) ─────────────────────────────────
+    // ── Metric value picker ──────────────────────────────────────────────
+    // Returns the numeric value of a zone under the active metric, used by
+    // both the heatmap color decision and the search-result ranking. Zones
+    // without irrigation_intensity report 0 in volume mode (so they sort to
+    // the bottom of search results rather than NaN-ing the comparator).
+    function metricValue(z) {
+        if (currentMetric === 'volume') return z.irrigation_depth_mm || 0;
+        return z.runtime_minutes || 0;
+    }
+
+    // ── User color-scale cap (persisted, per-metric) ────────────────────
     // One outlier zone can pin `max` so high that every other zone paints
     // green (v/max ≈ 0). A user-set cap clamps the high end to red so the
     // mid-range spreads across yellow/green. Empty/0/negative = auto.
-    var USERMAX_KEY = 'irrigHeatUserMax';
+    //
+    // Two separate localStorage keys so a time-mode cap (minutes) and a
+    // volume-mode cap (mm) don't collide — they have different magnitudes.
+    var currentMetric = 'time';   // 'time' | 'volume'
+    var USERMAX_KEYS = {
+        time:   'irrigHeatUserMax',
+        volume: 'irrigHeatUserMaxVolume',
+    };
     function effectiveMax(dataMax) {
         return (userMaxOverride && userMaxOverride > 0) ? userMaxOverride : (dataMax || 0);
     }
     function loadUserMax() {
-        var v = parseInt(localStorage.getItem(USERMAX_KEY) || '', 10);
-        userMaxOverride = (v > 0) ? v : null;
+        var raw = localStorage.getItem(USERMAX_KEYS[currentMetric] || USERMAX_KEYS.time) || '';
+        // volume caps may be fractional (mm), time caps are integer minutes.
+        var v = currentMetric === 'volume' ? parseFloat(raw) : parseInt(raw, 10);
+        userMaxOverride = (!isNaN(v) && v > 0) ? v : null;
     }
     function initUserMaxControl() {
         var input = document.getElementById('irrigHeatUserMax');
@@ -99,11 +123,12 @@
         loadUserMax();
         if (userMaxOverride) input.value = userMaxOverride;
         input.addEventListener('input', function () {
-            var v = parseInt(input.value, 10);
+            var v = currentMetric === 'volume' ? parseFloat(input.value) : parseInt(input.value, 10);
             v = isNaN(v) ? 0 : v;
             userMaxOverride = (v > 0) ? v : null;
-            if (userMaxOverride) localStorage.setItem(USERMAX_KEY, String(v));
-            else localStorage.removeItem(USERMAX_KEY);
+            var key = USERMAX_KEYS[currentMetric] || USERMAX_KEYS.time;
+            if (userMaxOverride) localStorage.setItem(key, String(v));
+            else localStorage.removeItem(key);
             renderHeatZones();
         });
     }
@@ -111,6 +136,11 @@
     // ── Map init ──────────────────────────────────────────────────────────
     function initMap() {
         if (initialized) return;
+        // Read the manager flag from the template-injected data attribute once.
+        // Stashing it module-level lets renderHeatZones decide whether to bind
+        // the exclude popup without re-querying the DOM on every redraw.
+        var mapEl = document.getElementById('irrigHeatMap');
+        if (mapEl) isManager = mapEl.dataset.isManager === '1';
         var cLat = 31.145663, cLng = 121.655407;
         var latOff = 0.027, lngOff = 0.032;
         var bounds = L.latLngBounds([cLat - latOff, cLng - lngOff], [cLat + latOff, cLng + lngOff]);
@@ -151,14 +181,47 @@
         if (highlightLayer) { highlightLayer.clearLayers(); }
 
         var zones = heatData.zones;
-        var dataMax = heatData.max || 0;
+        var isVolume = currentMetric === 'volume';
+        // Each metric has its own data-max (minutes vs mm) so the color scale
+        // spans the right range. max_volume only counts zones WITH intensity,
+        // so gray (no-intensity) zones never get to set the red end.
+        var dataMax = isVolume ? (heatData.max_volume || 0) : (heatData.max || 0);
         var max = effectiveMax(dataMax);
+        var unitLabel = isVolume ? 'mm' : '分钟';
 
         for (var i = 0; i < zones.length; i++) {
             var z = zones[i];
-            var val = z.runtime_minutes || 0;
-            var color = heatColor(val, max);
-            var opacity = val > 0 ? 0.75 : 0.06;
+            // Pick the value + whether this zone has data for the active metric.
+            // Volume mode treats zones without irrigation_intensity as "no data"
+            // (gray) — they can't be ranked on the depth scale at all.
+            var val, hasData, detail;
+            if (isVolume) {
+                var intensity = z.irrigation_intensity;
+                hasData = (intensity != null);
+                val = z.irrigation_depth_mm || 0;
+                if (hasData) {
+                    detail = '深度 ' + val + ' mm' +
+                             '（运行 ' + (z.runtime_minutes || 0) + ' 分钟 × ' + intensity + ' mm/h）';
+                } else {
+                    detail = '未配置灌溉强度，无法计算水量' +
+                             '（运行 ' + (z.runtime_minutes || 0) + ' 分钟）';
+                }
+            } else {
+                val = z.runtime_minutes || 0;
+                hasData = true;
+                detail = '运行 ' + val + ' 分钟';
+            }
+            var color, opacity;
+            if (!hasData) {
+                // Gray for zones the active metric can't score. Distinct from
+                // the green-low-value tint so reviewers see "missing config",
+                // not "low usage".
+                color = 'rgb(140,140,140)';
+                opacity = 0.25;
+            } else {
+                color = heatColor(val, max);
+                opacity = val > 0 ? 0.75 : 0.06;
+            }
             var style = {
                 color: 'transparent',   // no outline
                 weight: 0,
@@ -166,7 +229,6 @@
                 fillOpacity: opacity,
             };
             var label = (z.code || '') + ' ' + (z.name || '');
-            var detail = '运行 ' + val + ' 分钟';
             var rings = extractRings(z.boundary_points);
             if (rings.length > 1) detail += ' · ' + rings.length + ' 个区域';
             // A zone may have multiple rings — group them so search can
@@ -177,23 +239,59 @@
                 if (ring.length < 3) continue;
                 var poly = L.polygon(ring, style);
                 poly.bindTooltip(label + '\n' + detail, { sticky: true });
+                // Manager-only: bind a popup with an "排除" action so the zone
+                // can be hidden from the heatmap. Left-click opens the popup
+                // (Leaflet default); right-click (contextmenu) is wired as a
+                // shortcut. The handler reads z.id + label from this closure.
+                if (isManager) {
+                    poly.bindPopup(
+                        '<div style="min-width:160px;">' +
+                        '<div style="font-size:0.8rem;color:#6b7280;margin-bottom:6px;">' +
+                          _esc(label) + '</div>' +
+                        '<button class="irrig-exclude-popup-btn" type="button" ' +
+                          'data-zone-id="' + z.id + '" data-zone-label="' + _esc(label) + '">' +
+                          '🚫 从热力图排除' +
+                        '</button>' +
+                        '</div>',
+                        { closeButton: true, className: 'irrig-exclude-popup' }
+                    );
+                    poly.on('contextmenu', function (e) {
+                        poly.openPopup(e.latlng);
+                        L.DomEvent.stopPropagation(e);
+                    });
+                }
                 poly.addTo(zoneLayer);
                 polys.push(poly);
             }
             if (polys.length) polygonByZoneId[z.id] = polys;
         }
 
-        // Legend max label + gradient bar.
+        // Legend max label + gradient bar (unit follows the active metric).
         var maxLabel = document.getElementById('irrigHeatMaxLabel');
         if (maxLabel) {
             maxLabel.textContent = (userMaxOverride && userMaxOverride > 0)
-                ? '色阶上限: ' + userMaxOverride + ' 分钟 (最大值 ' + dataMax + ')'
-                : '最大: ' + dataMax + ' 分钟';
+                ? '色阶上限: ' + userMaxOverride + ' ' + unitLabel + ' (最大值 ' + dataMax + ')'
+                : '最大: ' + dataMax + ' ' + unitLabel;
         }
         var bar = document.getElementById('irrigHeatLegendBar');
         if (bar) {
             bar.style.background = 'linear-gradient(to right, rgb(40,180,90), rgb(250,210,40), rgb(200,30,30))';
         }
+        // Sync the legend title / unit suffix / note to the active metric so
+        // the whole panel reads consistently (title, max, cap, explanation).
+        var title = document.getElementById('irrigLegendTitle');
+        if (title) title.textContent = isVolume ? '区域灌溉深度 (mm)' : '区域灌溉运行分钟';
+        var unitSpan = document.getElementById('irrigHeatUnitLabel');
+        if (unitSpan) unitSpan.textContent = unitLabel;
+        var note = document.getElementById('irrigLegendNote');
+        if (note) note.textContent = isVolume
+            ? '深度 = 运行分钟 ÷ 60 × 灌溉强度(mm/h) · 灰色 = 未配置强度'
+            : '颜色 = 所选时间窗口内该区域的运行分钟数';
+        // The user-max input step should allow fractions in volume mode (mm
+        // can be 0.5) but stay integer in time mode.
+        var maxInput = document.getElementById('irrigHeatUserMax');
+        if (maxInput) maxInput.step = isVolume ? '0.1' : '1';
+
         renderWatermarks();
 
         // Re-apply the current search box content after a data refresh so a
@@ -239,9 +337,11 @@
                 matches.push(z);
             }
         }
-        // Rank by runtime descending so the heaviest-irrigated zones surface.
+        // Rank by the active metric's value descending so the heaviest-
+        // irrigated zones surface (time mode: minutes; volume mode: depth mm;
+        // zones without intensity sort last under volume).
         matches.sort(function (a, b) {
-            return (b.runtime_minutes || 0) - (a.runtime_minutes || 0);
+            return metricValue(b) - metricValue(a);
         });
 
         var highlightStyle = {
@@ -275,9 +375,20 @@
         // Render the ranked result list.
         if (resultsEl && matches.length) {
             var html = '';
+            var unitSuffix = currentMetric === 'volume' ? ' mm' : ' 分';
             for (var ri = 0; ri < matches.length; ri++) {
                 var m = matches[ri];
-                var mins = m.runtime_minutes || 0;
+                // Volume mode: zones without intensity show "—" since they have
+                // no depth value to rank on (they still appear because they
+                // matched the name query).
+                var valStr;
+                if (currentMetric === 'volume') {
+                    valStr = (m.irrigation_intensity != null)
+                        ? (metricValue(m) + unitSuffix)
+                        : '—';
+                } else {
+                    valStr = metricValue(m) + unitSuffix;
+                }
                 // data-id drives the click handler; escaping mirrors map.js.
                 var safeCode = _esc(m.code || '');
                 var safeName = _esc(m.name || '');
@@ -286,7 +397,7 @@
                     '<span class="irrig-result-code">' + safeCode + '</span>' +
                     safeName +
                     '</div>' +
-                    '<span class="irrig-result-mins">' + mins + ' 分</span>' +
+                    '<span class="irrig-result-mins">' + valStr + '</span>' +
                     '</div>';
             }
             resultsEl.innerHTML = html;
@@ -443,6 +554,7 @@
                 heatData = d;
                 renderHeatZones();
                 renderUnmappedZones();
+                renderExcludedZones();
             })
             .catch(function (err) {
                 console.error('[irrig-heatmap] load failed', err);
@@ -467,13 +579,24 @@
         var html = '';
         for (var i = 0; i < items.length; i++) {
             var it = items[i];
+            // Value column follows the active metric: minutes (time) or mm
+            // depth (volume). Volume mode shows "—" when intensity is unset so
+            // reviewers see the missing config, not a misleading 0.
+            var valStr;
+            if (currentMetric === 'volume') {
+                valStr = (it.irrigation_intensity != null)
+                    ? ((it.irrigation_depth_mm || 0) + ' mm')
+                    : '—';
+            } else {
+                valStr = (it.runtime_minutes || 0) + ' 分';
+            }
             // Open the mobile-friendly boundary drawing page.
             html += '<div class="irrig-unmapped-row">' +
                 '<div class="irrig-unmapped-label">' +
                 '<span class="irrig-unmapped-code">' + _esc(it.code) + '</span>' +
                 _esc(it.name || '') +
                 '</div>' +
-                '<span class="irrig-unmapped-mins">' + (it.runtime_minutes || 0) + ' 分</span>' +
+                '<span class="irrig-unmapped-mins">' + valStr + '</span>' +
                 '<a class="irrig-unmapped-draw" href="/settings/zone/quick-draw/mobile" '
                 + 'target="_blank" rel="noopener" title="绘制 ' + _esc(it.code) + ' 边界">绘制</a>' +
                 '</div>';
@@ -489,6 +612,90 @@
         var open = panel.classList.toggle('open');
         if (arrow) arrow.textContent = open ? '▼' : '▶';
         if (header) header.setAttribute('aria-expanded', open ? 'true' : 'false');
+    }
+
+    // ── Excluded zones panel (manager-only) ──────────────────────────────
+    // Mirrors renderUnmappedZones but for zones the manager deliberately hid
+    // via the right-click → 排除 popup. Each row carries a 「恢复」 button that
+    // POSTs to the restore endpoint and reloads the heatmap.
+    function renderExcludedZones() {
+        var panel = document.getElementById('irrigExcludedPanel');
+        if (!panel) return;   // non-manager: template doesn't render the panel
+        var countEl = document.getElementById('irrigExcludedCount');
+        var listEl = document.getElementById('irrigExcludedList');
+        if (!countEl || !listEl) return;
+        var items = (heatData && heatData.excluded) || [];
+        countEl.textContent = items.length;
+        countEl.classList.toggle('zero', items.length === 0);
+        if (!items.length) {
+            listEl.innerHTML = '<div class="irrig-excluded-note" style="margin:8px 0;">暂无排除的区域</div>';
+            return;
+        }
+        var html = '';
+        for (var i = 0; i < items.length; i++) {
+            var it = items[i];
+            html += '<div class="irrig-excluded-row">' +
+                '<div class="irrig-excluded-label">' +
+                '<span class="irrig-excluded-code">' + _esc(it.code) + '</span>' +
+                _esc(it.name || '') +
+                '</div>' +
+                '<button class="irrig-excluded-restore" type="button" data-zone-id="' + it.id + '">恢复</button>' +
+                '</div>';
+        }
+        listEl.innerHTML = html;
+    }
+
+    function toggleIrrigExcluded() {
+        var panel = document.getElementById('irrigExcludedPanel');
+        var arrow = document.getElementById('irrigExcludedArrow');
+        var header = panel ? panel.querySelector('.irrig-excluded-header') : null;
+        if (!panel) return;
+        var open = panel.classList.toggle('open');
+        if (arrow) arrow.textContent = open ? '▼' : '▶';
+        if (header) header.setAttribute('aria-expanded', open ? 'true' : 'false');
+    }
+
+    // POST helper for the exclude/restore endpoints. Reads the CSRF token the
+    // same way the rest of the page does (cookie-driven).
+    function _irrigCsrfToken() {
+        var m = document.cookie.match(/(?:^|;\s*)csrftoken=([^;]+)/);
+        return m ? m[1] : '';
+    }
+    function excludeZone(zoneId, label) {
+        if (!confirm('确认将「' + label + '」从热力图排除？\n（排除后该区域不再显示，可在「已排除区域」面板恢复）')) return;
+        fetch('/api/irrigation/zone/' + zoneId + '/exclude/', {
+            method: 'POST',
+            headers: { 'X-CSRFToken': _irrigCsrfToken() },
+        }).then(function (r) { return r.json(); }).then(function (d) {
+            _irrigToast(d.message || '已排除', !d.success);
+            if (d.success) {
+                loadIrrigHeatmap();   // refresh: zone disappears, panel updates
+            }
+        }).catch(function () { _irrigToast('网络错误', true); });
+    }
+    function restoreZone(zoneId) {
+        fetch('/api/irrigation/zone/' + zoneId + '/restore/', {
+            method: 'POST',
+            headers: { 'X-CSRFToken': _irrigCsrfToken() },
+        }).then(function (r) { return r.json(); }).then(function (d) {
+            _irrigToast(d.message || '已恢复', !d.success);
+            if (d.success) {
+                loadIrrigHeatmap();
+            }
+        }).catch(function () { _irrigToast('网络错误', true); });
+    }
+
+    // Minimal toast — the irrigation page has no shared toast helper, so this
+    // writes a transient status line. Kept tiny because excludes are rare.
+    function _irrigToast(msg, isErr) {
+        var t = document.createElement('div');
+        t.textContent = msg;
+        t.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);' +
+            'background:' + (isErr ? '#b3261e' : '#333') + ';color:#fff;padding:8px 18px;' +
+            'border-radius:20px;font-size:.86rem;z-index:9999;opacity:0;transition:opacity .2s;pointer-events:none;';
+        document.body.appendChild(t);
+        requestAnimationFrame(function () { t.style.opacity = '1'; });
+        setTimeout(function () { t.style.opacity = '0'; setTimeout(function () { t.remove(); }, 250); }, 2500);
     }
 
     // ── View switching (chart ↔ heatmap) ──────────────────────────────────
@@ -541,10 +748,39 @@
         }, 320);
     }
 
+    // ── Metric switching (运行时间 ↔ 灌水量) ─────────────────────────────
+    // Toggles which value drives the heatmap color + legend. Data is already
+    // in heatData (backend returns both runtime_minutes and irrigation_depth_mm
+    // for every zone), so switching is a pure re-render — no refetch needed.
+    // The user-set color cap is per-metric (minutes vs mm have very different
+    // magnitudes), so we swap localStorage keys and sync the input on switch.
+    function switchIrrigMetric(metric) {
+        if (metric === currentMetric) return;
+        if (metric !== 'time' && metric !== 'volume') return;
+        currentMetric = metric;
+        document.querySelectorAll('.irrig-metric-pill').forEach(function (p) {
+            p.classList.toggle('active', p.dataset.metric === metric);
+        });
+        // Load this metric's saved cap (may be null) and reflect it in the input.
+        loadUserMax();
+        var input = document.getElementById('irrigHeatUserMax');
+        if (input) input.value = userMaxOverride || '';
+        renderHeatZones();
+        renderUnmappedZones();
+        renderExcludedZones();
+        // Re-run the current query so the result ranking follows the new metric.
+        var s = document.getElementById('irrigZoneSearch');
+        if (s && s.value) searchZone(s.value);
+    }
+
     // ── Public API ────────────────────────────────────────────────────────
     window.switchIrrigView = switchIrrigView;
+    window.switchIrrigMetric = switchIrrigMetric;
     window.loadIrrigHeatmap = loadIrrigHeatmap;
     window.searchIrrigZone = searchZone;
+    window.toggleIrrigExcluded = toggleIrrigExcluded;
+    window.excludeZone = excludeZone;
+    window.restoreZone = restoreZone;
     window.toggleIrrigSearch = toggleIrrigSearch;
     window.toggleIrrigSidebar = toggleIrrigSidebar;
     window.toggleIrrigUnmapped = toggleIrrigUnmapped;
@@ -556,6 +792,25 @@
     // initializes lazily when the user switches over.)
     document.addEventListener('DOMContentLoaded', function () {
         initUserMaxControl();
+        // Delegated clicks for the dynamically-injected exclude/restore
+        // buttons (popup button is inside a Leaflet popup; restore button is
+        // inside the excluded-zones panel). Both are re-rendered on every
+        // heatmap refresh, so a single delegated listener outlives them.
+        document.addEventListener('click', function (e) {
+            var t = e.target.closest ? e.target.closest('.irrig-exclude-popup-btn') : null;
+            if (t) {
+                var zid = t.getAttribute('data-zone-id');
+                var zlabel = t.getAttribute('data-zone-label') || '';
+                if (zid) excludeZone(zid, zlabel);
+                return;
+            }
+            var r = e.target.closest ? e.target.closest('.irrig-excluded-restore') : null;
+            if (r) {
+                var rid = r.getAttribute('data-zone-id');
+                if (rid) restoreZone(rid);
+                return;
+            }
+        });
         var root = document.getElementById('irrigFullscreen');
         if (root && root.classList.contains('heatmap-mode')) {
             initMap();

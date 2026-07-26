@@ -44,11 +44,128 @@
 .pm-subtab-count { display: inline-block; margin-left: 4px; font-size: 0.72rem; opacity: 0.7; }
 .pm-subpanel { display: none; }
 .pm-subpanel.active { display: block; }
+
+/* ── 工单类型 tab: jsTree + horizontal tree visual ── */
+.wj-tab-toolbar { display:flex; align-items:center; gap:10px; margin:8px 0 12px; flex-wrap:wrap; }
+.wj-tab-toolbar .wj-search { flex:1; min-width:200px; padding:7px 12px; border:1px solid #d8dde3;
+                             border-radius:8px; font-size:.88rem; }
+.wj-tab-toolbar .wj-search:focus { outline:none; border-color: var(--color-primary-light, #2D6A4F); }
+.wj-tab-toolbar .wj-hint { color:#9ca3af; font-size:.78rem; }
+
+/* ── 工单类型 tab: 双面板布局 (左树 + 右详情) — 同库存目录 ── */
+.wj-manage-grid { display:grid; grid-template-columns: 1fr 380px; gap:14px; align-items:start; }
+@media (max-width: 900px) { .wj-manage-grid { grid-template-columns: 1fr; } }
+.wj-tree-side { min-width: 0; }
+.wj-tree-wrap { background:#fff; border:1px solid #eef0f3; border-radius:12px; padding:14px 18px;
+                box-shadow:0 1px 3px rgba(0,0,0,0.04); }
+#wiTree { font-size:.9rem; max-height: calc(100vh - 280px); overflow:auto; padding:4px 8px 4px 0; }
+
+/* right-side detail panel (mirrors inventory_management .iv-detail-*) */
+.wj-detail-side { background:#fff; border:1px solid #eef0f3; border-radius:12px; padding:16px 18px;
+                  box-shadow:0 1px 3px rgba(0,0,0,0.04); position:sticky; top:14px; }
+.wj-detail-empty { color:#9ca3af; font-size:.88rem; text-align:center; padding:40px 0; }
+.wj-detail-head { display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; margin-bottom:12px;
+                  padding-bottom:10px; border-bottom:1px solid #eef0f3; }
+.wj-detail-name { font-size:1.05rem; font-weight:700; color:#1f2937; }
+.wj-detail-code { font-size:.78rem; color:#9ca3af; }
+.wj-detail-tag { display:inline-block; padding:1px 8px; border-radius:8px; font-size:.7rem;
+                 font-weight:600; }
+.wj-detail-tag.group { background:#e8f5e9; color:var(--color-primary, #2D6A4F); }
+.wj-detail-tag.leaf  { background:#f3f4f6; color:#6b7280; }
+.wj-detail-tag.scoped { background:#e3f2fd; color:#1565c0; }
+.wj-field-row { display:flex; align-items:center; gap:8px; margin-bottom:10px; font-size:.88rem; }
+.wj-field-row label { flex:0 0 86px; color:#6b7280; }
+.wj-field-row input[type=text], .wj-field-row input[type=number], .wj-field-row select {
+        flex:1; max-width:240px; padding:6px 8px; border:1px solid #d8dde3; border-radius:6px;
+        font-size:.86rem; font-family:inherit; }
+.wj-field-row input:focus, .wj-field-row select:focus { outline:none; border-color: var(--color-primary-light, #2D6A4F); }
+.wj-field-row .wj-field-unit { color:#9ca3af; font-size:.78rem; }
+.wj-detail-actions { display:flex; gap:8px; margin-top:8px; flex-wrap:wrap; }
+.wj-entry-list { margin-top:14px; }
+.wj-entry-list h4 { font-size:.82rem; color:#6b7280; margin:0 0 6px; font-weight:600; }
+.wj-entry-row { display:grid; grid-template-columns: 100px 60px 1fr; gap:6px; align-items:baseline;
+                padding:5px 0; border-bottom:1px solid #f5f5f5; font-size:.8rem; }
+.wj-entry-owner { color:#1f2937; font-weight:600; }
+.wj-entry-count { color:#15803d; font-weight:600; text-align:right; }
+.wj-entry-count.zero { color:#9ca3af; font-weight:400; }
+.wj-entry-meta { color:#9ca3af; font-size:.74rem; }
+.wj-entry-empty { color:#9ca3af; font-size:.8rem; padding:8px 0; }
+/* node = card */
+#wiTree .jstree-anchor {
+    display:inline-flex !important; align-items:center; gap:6px;
+    padding:5px 10px !important; margin:2px 0;
+    background:#fff; border:1px solid #e5e7eb; border-radius:6px;
+    box-shadow:0 1px 2px rgba(0,0,0,0.04);
+    transition:border-color .15s, box-shadow .15s, background .15s;
+    line-height:1.3; min-height:28px;
+}
+#wiTree .jstree-anchor:hover { border-color: var(--color-primary-light, #2D6A4F);
+                                box-shadow:0 2px 6px rgba(45,106,79,0.15); }
+#wiTree .jstree-anchor.jstree-clicked { background:#f0fdf4; border-color: var(--color-primary-light, #2D6A4F); }
+#wiTree .wj-folder > .jstree-anchor { border-left:3px solid #2D6A4F; padding-left:8px !important; }
+#wiTree .wj-leaf   > .jstree-anchor { border-left:3px solid #9ca3af; padding-left:8px !important; }
+/* icons */
+#wiTree .jstree-anchor .jstree-icon { background-image:none !important; background-position:0 0 !important;
+                                       width:18px !important; height:18px !important;
+                                       font-size:1rem; line-height:18px; }
+#wiTree .wj-folder > .jstree-anchor .jstree-icon::before { content:'📂'; }
+#wiTree .wj-leaf   > .jstree-anchor .jstree-icon::before { content:'🏷️'; }
+/* disclosure triangle */
+#wiTree .jstree-node > .jstree-icon { background-image:none !important;
+                                       width:16px !important; height:16px !important;
+                                       color:#6b7280; font-size:.7rem; line-height:16px;
+                                       text-align:center; cursor:pointer; opacity:.7; }
+#wiTree .jstree-open   > .jstree-icon::before { content:'▼'; }
+#wiTree .jstree-closed > .jstree-icon::before { content:'▶'; }
+#wiTree .jstree-leaf   > .jstree-icon::before { content:'·'; opacity:.3; }
+/* tree branch guides */
+#wiTree .jstree-children { margin-left:10px; padding-left:14px; position:relative; list-style:none; }
+#wiTree .jstree-children::before { content:''; position:absolute; left:4px; top:0; bottom:14px;
+                                    width:1px; background:#cbd5e1; }
+#wiTree .jstree-children > .jstree-node { position:relative; }
+#wiTree .jstree-children > .jstree-node::before { content:''; position:absolute; left:-10px; top:16px;
+                                                    width:10px; height:1px; background:#cbd5e1; }
+#wiTree .jstree-wholerow { background:transparent !important; height:30px !important; }
+#wiTree .jstree-wholerow-hovered { background:#f9fbf9 !important; }
+.wj-meta { color:#9ca3af; font-size:.74rem; margin-left:6px; font-weight:400; white-space:nowrap; }
+.wj-meta code { background:#f3f4f6; padding:1px 5px; border-radius:3px; color:#6b7280; font-size:.72rem; }
+#wiTree .jstree-dnd { background:#fff !important; border:1px solid var(--color-primary-light, #2D6A4F) !important;
+                       border-radius:6px !important; padding:5px 10px !important;
+                       box-shadow:0 4px 14px rgba(0,0,0,.18) !important; }
+/* workitem modal */
+.wj-modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,.5); display:flex;
+                    align-items:center; justify-content:center; z-index:10000; padding:16px; }
+.wj-modal { background:#fff; border-radius:12px; width:100%; max-width:460px;
+            box-shadow:0 10px 40px rgba(0,0,0,.2); overflow:hidden;
+            animation: wj-modal-in .15s ease-out; }
+@keyframes wj-modal-in { from { transform:translateY(8px); opacity:0; } to { transform:translateY(0); opacity:1; } }
+.wj-modal-head { display:flex; justify-content:space-between; align-items:center;
+                 padding:14px 18px; border-bottom:1px solid #eef0f3; font-weight:700; font-size:.95rem; }
+.wj-modal-close { background:none; border:none; font-size:1.4rem; color:#999; cursor:pointer;
+                  line-height:1; padding:0 4px; border-radius:4px; }
+.wj-modal-close:hover { color:#1f2937; background:#f3f4f6; }
+.wj-modal-body { padding:16px 18px; }
+.wj-field { margin-bottom:12px; }
+.wj-field label { display:block; font-size:.78rem; color:#6b7280; font-weight:600; margin-bottom:4px; }
+.wj-field input, .wj-field select { width:100%; box-sizing:border-box; padding:8px 10px;
+                                     border:1px solid #d8dde3; border-radius:8px; font-size:.86rem; font-family:inherit; }
+.wj-field input:focus, .wj-field select:focus { outline:none; border-color: var(--color-primary-light, #2D6A4F); }
+.wj-modal-foot { display:flex; gap:8px; justify-content:flex-end; padding:12px 18px;
+                 border-top:1px solid #eef0f3; background:#fafbfc; }
+.wj-toast { position:fixed; bottom:24px; left:50%; transform:translateX(-50%);
+            background:#333; color:#fff; padding:8px 18px; border-radius:20px; font-size:.86rem;
+            z-index:9999; opacity:0; transition:opacity .2s; pointer-events:none; }
+.wj-toast.show { opacity:1; }
+.wj-toast.error { background:#b3261e; }
+.vakata-context { z-index:10001 !important; }
 </style>
 {% endblock %}
 
 {% block extra_js %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/jstree@3.3.16/dist/themes/default/style.min.css">
+<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jstree@3.3.16/dist/jstree.min.js"></script>
 {% endblock %}
 
 {% block content %}
@@ -104,6 +221,10 @@
                 data-tab="completion" onclick="pmSwitchTab('completion')">
             完成情况
             {% if pending_extensions %}<span class="app-tab-badge">{{ pending_extensions|length }}</span>{% endif %}
+        </button>
+        <button type="button" class="app-tab {% if active_tab == 'workitems' %}active{% endif %}"
+                data-tab="workitems" onclick="pmSwitchTab('workitems')">
+            工单类型
         </button>
     </div>
 
@@ -415,6 +536,25 @@
         </div>
     </div>
 
+    {# ── Tab: 工单类型 (WorkItem tree, jsTree + mptt) ───────────────────── #}
+    <div class="app-tab-content {% if active_tab == 'workitems' %}active{% endif %}" id="tabWorkitems">
+        <div class="wj-tab-toolbar">
+            <input type="search" class="wj-search" id="wjSearch" placeholder="搜索节点名称…">
+            <button type="button" class="btn btn-sm btn-primary" onclick="wjOpenCreate(null)">+ 新建根节点</button>
+            <span class="wj-hint">右键节点 → 新建/编辑/删除 · 拖动改父级 · 点节点 → 右侧显示详情与引用工单</span>
+        </div>
+        <div class="wj-manage-grid">
+          <div class="wj-tree-side">
+            <div class="wj-tree-wrap">
+                <div id="wiTree"></div>
+            </div>
+          </div>
+          <div class="wj-detail-side" id="wjDetail">
+            <div class="wj-detail-empty">← 点左侧任意节点查看详情与最近引用工单</div>
+          </div>
+        </div>
+    </div>
+
     <div class="back-link">
         <a href="{% url 'core:dashboard' %}">← 返回总览</a>
     </div>
@@ -436,6 +576,56 @@
 </div>
 <script>var PM_MODAL = document.getElementById('pmCrudMask');</script>
 
+{# ── WorkItem tree modal (create/edit) + toast ── #}
+<div class="wj-modal-overlay" id="wjModal" style="display:none;">
+    <div class="wj-modal" role="dialog" aria-modal="true">
+        <div class="wj-modal-head">
+            <span id="wjModalTitle">新建节点</span>
+            <button type="button" class="wj-modal-close" onclick="wjCloseModal()" aria-label="关闭">×</button>
+        </div>
+        <div class="wj-modal-body">
+            <input type="hidden" id="wjId">
+            <div class="wj-field">
+                <label>父节点</label>
+                <input type="text" id="wjParentLabel" readonly placeholder="（根节点）">
+            </div>
+            <div class="wj-field">
+                <label>中文名 *</label>
+                <input type="text" id="wjName" placeholder="节点名称">
+            </div>
+            <div class="wj-field">
+                <label>值类型</label>
+                <select id="wjValueType">
+                    {% for v, label in workitem_value_type_choices %}
+                    <option value="{{ v }}">{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="wj-field">
+                <label>章节（section）</label>
+                <select id="wjSection">
+                    <option value="">（继承父节点）</option>
+                    {% for s, label in workitem_section_choices %}
+                    <option value="{{ s }}">{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="wj-field">
+                <label>单位</label>
+                <input type="text" id="wjUnit" placeholder="如 m / 个（仅 count 型）">
+            </div>
+            <div class="wj-field">
+                <label><input type="checkbox" id="wjProjectScoped"> 需绑定项目（灌溉项目专用）</label>
+            </div>
+        </div>
+        <div class="wj-modal-foot">
+            <button type="button" class="btn btn-sm btn-secondary" onclick="wjCloseModal()">取消</button>
+            <button type="button" class="btn btn-sm btn-primary" id="wjSaveBtn" onclick="wjSave()">保存</button>
+        </div>
+    </div>
+</div>
+<div class="wj-toast" id="wjToast"></div>
+
 <script>
 // Tab switching — mirrors the settings/work-reports pattern: toggle .active on
 // the panel divs and tab buttons, sync the URL via ?tab= for deep-linking.
@@ -443,18 +633,22 @@ window.pmSwitchTab = function(tab) {
     document.querySelectorAll('.pm-tabs .app-tab').forEach(function(btn) {
         btn.classList.toggle('active', btn.getAttribute('data-tab') === tab);
     });
-    var map = {jobplans: 'tabJobplans', plans: 'tabPlans', assets: 'tabAssets', completion: 'tabCompletion'};
+    var map = {jobplans: 'tabJobplans', plans: 'tabPlans', assets: 'tabAssets', completion: 'tabCompletion', workitems: 'tabWorkitems'};
     document.querySelectorAll('.settings-container .app-tab-content').forEach(function(panel) {
         panel.classList.toggle('active', panel.id === map[tab]);
     });
     try { history.replaceState(null, '', '?tab=' + tab); } catch (e) {}
     // Lazy-load the overdue trend chart when the completion tab becomes active.
     if (tab === 'completion') { loadOverdueChart(); }
+    // Lazy-init jsTree the first time the 工单类型 tab opens (defer the AJAX
+    // load + jQuery init until needed, so the page render stays fast).
+    if (tab === 'workitems' && !window._wjTreeInited) { window._wjTreeInited = true; wjInitTree(); }
 };
 // Restore tab from ?tab= on load.
 (function() {
     var m = /(?:\?|&)tab=([a-z]+)/i.exec(location.search);
-    if (m && (m[1] === 'jobplans' || m[1] === 'plans' || m[1] === 'assets' || m[1] === 'completion')) { pmSwitchTab(m[1]); }
+    var valid = ['jobplans', 'plans', 'assets', 'completion', 'workitems'];
+    if (m && valid.indexOf(m[1]) !== -1) { pmSwitchTab(m[1]); }
     // If landing directly on completion (no ?tab=, default may not fire above),
     // still try to load the chart once.
     if (document.querySelector('#tabCompletion.active')) { loadOverdueChart(); }
@@ -875,6 +1069,10 @@ function _updatePmRow(plan, isEdit) {
 function pmReloadActiveTab() {
     var activeBtn = document.querySelector('.pm-tabs .app-tab.active');
     var tab = activeBtn ? activeBtn.getAttribute('data-tab') : 'plans';
+    // Workitems tab is jsTree-managed — it refreshes itself via jsTree APIs
+    // after CRUD; doing a server-side HTML swap here would wipe the tree's
+    // in-DOM state (open nodes, selection). Skip it.
+    if (tab === 'workitems') return;
     // Remember the active PM sub-tab (by JobPlan) so we can restore it.
     var activeSub = document.querySelector('.pm-subtab.active');
     var activeJp = activeSub ? activeSub.getAttribute('data-jpid') : null;
@@ -1023,5 +1221,305 @@ function skipAllOverdue(e) {
         if (d.success) setTimeout(function(){ pmReloadActiveTab(); }, 800);
     }).catch(function() { btn.disabled = false; btn.textContent = '一键全部跳过'; pmToast('网络错误', true); });
 }
+</script>
+
+{# ── WorkItem tree (工单类型 tab): jsTree init + CRUD helpers ── #}
+<script>
+var WJ_URLS = {
+  tree:   "{% url 'core:workitem_tree_json' %}",
+  detail: "/work-items/manage/{id}/detail/",   // contains {id} placeholder
+  create: "{% url 'core:workitem_create' %}",
+  move:   "/work-items/manage/{id}/move/",   // contains {id} placeholder
+  edit:   "/work-items/manage/{id}/edit/",
+  del:    "/work-items/manage/{id}/delete/",
+};
+var WJ_CSRF = (document.cookie.split('; ').find(function (c) { return c.indexOf('csrftoken=') === 0; }) || '').split('=')[1] || '';
+var wjTree = null;
+var wjCurrentParent = null;
+
+function wjToast(msg, isErr) {
+  var t = document.getElementById('wjToast');
+  if (!t) return;
+  t.textContent = msg || '';
+  t.className = 'wj-toast show' + (isErr ? ' error' : '');
+  clearTimeout(window._wjToastT);
+  window._wjToastT = setTimeout(function () { t.className = 'wj-toast'; }, 2500);
+}
+
+function wjPost(url, data) {
+  var fd = new FormData();
+  Object.keys(data || {}).forEach(function (k) {
+    if (data[k] !== null && data[k] !== undefined) fd.append(k, data[k]);
+  });
+  return fetch(url, { method:'POST', headers:{'X-CSRFToken': WJ_CSRF}, body: fd })
+    .then(function (r) { return r.json(); });
+}
+
+// Append code + value_type as a faint inline <span> after the node name.
+// Done at DOM level so search still matches the plain name; re-injected on
+// open/redraw (jsTree rebuilds anchor DOM).
+function wjInjectMeta() {
+  if (!wjTree) return;
+  var inst = wjTree.jstree(true);
+  $('#wiTree .jstree-anchor').not('.wj-meta-injected').each(function () {
+    var anchor = this;
+    var nodeId = $(anchor).parent('.jstree-node').attr('id');
+    var node = inst.get_node(nodeId);
+    if (!node || !node.data) return;
+    var d = node.data;
+    var html = '<span class="wj-meta"><code>' + (d.code || '') + '</code> · ' +
+               (d.value_type_display || d.value_type || '') +
+               (d.unit ? ' / ' + d.unit : '') + '</span>';
+    $(anchor).append(html).addClass('wj-meta-injected');
+  });
+}
+
+// Lazy-init the tree. Called the first time the 工单类型 tab is opened.
+function wjInitTree() {
+  if (wjTree) return;  // already inited
+  if (typeof $ === 'undefined' || typeof $.jstree === 'undefined') {
+    // jQuery / jsTree still loading — retry in 200ms.
+    setTimeout(wjInitTree, 200); return;
+  }
+  wjTree = $('#wiTree').jstree({
+    core: {
+      data: { url: WJ_URLS.tree, dataType: 'json' },
+      check_callback: true,
+      themes: { name:'default', icons:true, dots:false, stripes:false },
+      worker: false,
+    },
+    plugins: ['contextmenu', 'dnd', 'search', 'wholerow', 'types', 'sort'],
+    types: { default: { icon:'wj-folder' }, wjFolder: { icon:'wj-folder' }, wjLeaf: { icon:'wj-leaf' } },
+    sort: function (a, b) { return this.get_text(a).localeCompare(this.get_text(b), 'zh'); },
+    contextmenu: {
+      items: function (node) {
+        return {
+          create: { label:'新建子节点', action: function () { wjOpenCreate(node); } },
+          edit:   { label:'编辑', action: function () { wjOpenEdit(node); } },
+          delete: { label:'删除', separator_before:true, action: function () { wjDelete(node); } },
+        };
+      },
+    },
+    dnd: { is_draggable: function () { return true; }, check_while_dragging:true,
+           large_drop_target:true, touch:'selected' },
+    search: { show_only_matches:true, show_only_matches_children:true, fuzzy:false },
+  })
+  .on('loaded.jstree', function () {
+    var roots = wjTree.jstree(true).get_node('#').children;
+    roots.forEach(function (rid) { wjTree.jstree(true).open_node(rid); });
+  })
+  .on('loaded.jstree after_open.jstree redraw.jstree', function () { wjInjectMeta(); })
+  .on('select_node.jstree', function (e, data) {
+    // Clicking any node loads its detail into the right-side panel.
+    wjLoadDetail(data.node.id);
+  })
+  .on('move_node.jstree', function (e, data) {
+    var url = WJ_URLS.move.replace('{id}', data.node.id);
+    wjPost(url, { new_parent_id: data.parent === '#' ? '' : data.parent, position: data.position })
+      .then(function (d) { wjToast(d.message, !d.success); if (!d.success) wjTree.jstree(true).refresh(); })
+      .catch(function () { wjToast('网络错误', true); wjTree.jstree(true).refresh(); });
+  });
+
+  // Search box (debounced).
+  var searchT = null;
+  $('#wjSearch').on('input', function () {
+    var v = $(this).val();
+    clearTimeout(searchT);
+    searchT = setTimeout(function () { wjTree.jstree(true).search(v); }, 250);
+  });
+}
+
+// ── Right-side detail panel ── mirrors the inventory page's .iv-detail-side.
+// Renders the WorkItem's editable attributes inline + a list of recent entries
+// (工单 that reference this node). Edits POST to the partial-field edit endpoint.
+function wjEsc(s) { var d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; }
+
+// Build an HTML <option> list string by cloning the <option>s of an existing
+// server-rendered <select> in the modal. Avoids re-rendering Django template
+// loops inside a JS string-concat (which breaks easily).
+function wjCloneOptions(srcSelect) {
+  if (!srcSelect) return '';
+  var html = '';
+  Array.prototype.forEach.call(srcSelect.options, function (o) {
+    var val = (o.value || '').replace(/"/g, '&quot;');
+    var txt = (o.textContent || '').replace(/</g, '&lt;');
+    html += '<option value="' + val + '">' + txt + '</option>';
+  });
+  return html;
+}
+
+function wjLoadDetail(nodeId) {
+  fetch(WJ_URLS.detail.replace('{id}', nodeId))
+    .then(function (r) { return r.json(); })
+    .then(function (d) {
+      if (!d.success) { wjToast(d.message || '加载详情失败', true); return; }
+      wjRenderDetail(d);
+    })
+    .catch(function () { wjToast('网络错误', true); });
+}
+
+function wjRenderDetail(d) {
+  var n = d.node;
+  var entries = d.entries || [];
+  var panel = document.getElementById('wjDetail');
+  if (!panel) return;
+  var isGroup = n.value_type === 'group';
+  var tagGroup = isGroup
+    ? '<span class="wj-detail-tag group">分组</span>'
+    : '<span class="wj-detail-tag leaf">' + wjEsc(n.value_type_display || n.value_type) + '</span>';
+  var scopedTag = n.is_project_scoped ? '<span class="wj-detail-tag scoped">需绑定项目</span>' : '';
+  // Reuse the <option>s already rendered in the modal <select>s (server-rendered
+  // via Django templates) so the panel doesn't have to re-template them inline.
+  // Cloning the option list keeps the two dropdowns in sync if seed adds a new
+  // value_type / section.
+  var vtOpts = wjCloneOptions(document.getElementById('wjValueType'));
+  var secOpts = wjCloneOptions(document.getElementById('wjSection'));
+  // Build field rows: editable inputs for unit/value_type/section + checkbox
+  // for is_project_scoped. name_zh is editable too.
+  var unitField = isGroup ? '' :
+    '<div class="wj-field-row"><label>单位</label>' +
+      '<input type="text" id="wjDetailUnit" value="' + wjEsc(n.unit || '') + '" maxlength="20">' +
+      '<span class="wj-field-unit">（仅 count 型）</span></div>';
+  var entryRows = entries.map(function (e) {
+    var cnt = e.count;
+    var cls = cnt > 0 ? '' : ' zero';
+    var meta = [e.project_name, e.date, e.status, e.text_value, e.has_photos ? '📎' : '']
+                 .filter(Boolean).join(' · ');
+    return '<div class="wj-entry-row">' +
+             '<span class="wj-entry-owner">' + wjEsc(e.owner_label || '—') + '</span>' +
+             '<span class="wj-entry-count' + cls + '">' + cnt + '</span>' +
+             '<span class="wj-entry-meta">' + wjEsc(meta) + '</span>' +
+           '</div>';
+  }).join('');
+  var entryBlock = '<div class="wj-entry-list"><h4>最近引用工单 (' + d.total_entry_count + ')</h4>' +
+    (entryRows || '<div class="wj-entry-empty">暂无工单引用此节点</div>') + '</div>';
+
+  panel.innerHTML =
+    '<div class="wj-detail-head">' +
+      '<span class="wj-detail-name">' + wjEsc(n.name_zh) + '</span>' +
+      '<span class="wj-detail-code">' + wjEsc(n.code) + '</span>' +
+      tagGroup + scopedTag +
+    '</div>' +
+    '<div class="wj-field-row"><label>中文名</label>' +
+      '<input type="text" id="wjDetailName" value="' + wjEsc(n.name_zh) + '" maxlength="255"></div>' +
+    '<div class="wj-field-row"><label>英文名</label>' +
+      '<input type="text" id="wjDetailNameEn" value="' + wjEsc(n.name_en || '') + '" maxlength="255"></div>' +
+    '<div class="wj-field-row"><label>值类型</label>' +
+      '<select id="wjDetailValueType">' + vtOpts + '</select></div>' +
+    '<div class="wj-field-row"><label>章节</label>' +
+      '<select id="wjDetailSection">' + secOpts + '</select></div>' +
+    unitField +
+    '<div class="wj-field-row"><label>项目绑定</label>' +
+      '<label style="display:flex;align-items:center;gap:6px;flex:1;font-size:.86rem;color:#374151;">' +
+      '<input type="checkbox" id="wjDetailScoped"' + (n.is_project_scoped ? ' checked' : '') +
+        ' style="max-width:none;width:auto;">' +
+      '<span>需绑定项目（灌溉项目专用）</span></label></div>' +
+    '<div class="wj-detail-actions">' +
+      '<button class="btn btn-sm btn-primary" onclick="wjSaveDetail(' + n.id + ')">保存修改</button>' +
+      (n.child_count ? '<span style="align-self:center;color:#9ca3af;font-size:.78rem;">' + n.child_count + ' 个子节点</span>' : '') +
+    '</div>' +
+    entryBlock;
+
+  // Set the current value of the dropdowns after injection.
+  var vtEl = document.getElementById('wjDetailValueType');
+  if (vtEl) vtEl.value = n.value_type;
+  var secEl = document.getElementById('wjDetailSection');
+  if (secEl) secEl.value = n.section || '';
+}
+
+function wjSaveDetail(nodeId) {
+  var payload = {
+    name_zh: (document.getElementById('wjDetailName') || {}).value || '',
+    name_en: (document.getElementById('wjDetailNameEn') || {}).value || '',
+    value_type: (document.getElementById('wjDetailValueType') || {}).value || '',
+    section: (document.getElementById('wjDetailSection') || {}).value || '',
+    is_project_scoped: (document.getElementById('wjDetailScoped') || {}).checked ? '1' : '',
+  };
+  // Unit only meaningful for non-group nodes; for group it's empty.
+  var unitEl = document.getElementById('wjDetailUnit');
+  if (unitEl) payload.unit = unitEl.value;
+  if (!payload.name_zh.trim()) { wjToast('请填写中文名', true); return; }
+  wjPost(WJ_URLS.edit.replace('{id}', nodeId), payload).then(function (d) {
+    wjToast(d.message, !d.success);
+    if (d.success) {
+      // Refresh the tree so the inline name / meta span stays in sync, and
+      // reload the detail panel to reflect server-side normalized values.
+      wjTree.jstree(true).refresh();
+      wjLoadDetail(nodeId);
+    }
+  }).catch(function () { wjToast('网络错误', true); });
+}
+
+// ── Modal: create / edit ──
+function wjOpenCreate(parentNode) {
+  document.getElementById('wjModalTitle').textContent = parentNode ? '新建子节点' : '新建根节点';
+  document.getElementById('wjId').value = '';
+  document.getElementById('wjName').value = '';
+  document.getElementById('wjValueType').value = 'count';
+  document.getElementById('wjSection').value = '';
+  document.getElementById('wjUnit').value = '';
+  document.getElementById('wjProjectScoped').checked = false;
+  if (parentNode) {
+    wjCurrentParent = { id: parentNode.id, name: parentNode.text };
+    document.getElementById('wjParentLabel').value = parentNode.text + '（code=' + (parentNode.data && parentNode.data.code || '?') + '）';
+  } else {
+    wjCurrentParent = null;
+    document.getElementById('wjParentLabel').value = '';
+  }
+  document.getElementById('wjModal').style.display = 'flex';
+  setTimeout(function () { document.getElementById('wjName').focus(); }, 50);
+}
+function wjOpenEdit(node) {
+  // Open the modal — but for the inline right-side panel users can edit
+  // individual fields directly. Modal covers the full-form case.
+  var d = node.data || {};
+  document.getElementById('wjModalTitle').textContent = '编辑节点';
+  document.getElementById('wjId').value = node.id;
+  document.getElementById('wjName').value = d.name_zh || node.text;
+  document.getElementById('wjValueType').value = d.value_type || 'count';
+  document.getElementById('wjSection').value = d.section || '';
+  document.getElementById('wjUnit').value = d.unit || '';
+  document.getElementById('wjProjectScoped').checked = !!d.is_project_scoped;
+  var parent = wjTree.jstree(true).get_node(node.parent);
+  document.getElementById('wjParentLabel').value = (parent && parent.id !== '#' ? parent.text : '（根节点）') + '（不可改）';
+  document.getElementById('wjModal').style.display = 'flex';
+  setTimeout(function () { document.getElementById('wjName').focus(); }, 50);
+}
+function wjCloseModal() { document.getElementById('wjModal').style.display = 'none'; }
+function wjSave() {
+  var id = document.getElementById('wjId').value;
+  var payload = {
+    name_zh: document.getElementById('wjName').value.trim(),
+    value_type: document.getElementById('wjValueType').value,
+    section: document.getElementById('wjSection').value,
+    unit: document.getElementById('wjUnit').value,
+    is_project_scoped: document.getElementById('wjProjectScoped').checked ? '1' : '',
+  };
+  if (!payload.name_zh) { wjToast('请填写名称', true); return; }
+  var url = id ? WJ_URLS.edit.replace('{id}', id) : WJ_URLS.create;
+  if (!id) payload.parent_id = wjCurrentParent ? wjCurrentParent.id : '';
+  document.getElementById('wjSaveBtn').disabled = true;
+  wjPost(url, payload).then(function (d) {
+    wjToast(d.message, !d.success);
+    document.getElementById('wjSaveBtn').disabled = false;
+    if (d.success) { wjCloseModal(); wjTree.jstree(true).refresh(); }
+  }).catch(function () { wjToast('网络错误', true); document.getElementById('wjSaveBtn').disabled = false; });
+}
+function wjDelete(node) {
+  if (!confirm('确认删除「' + node.text + '」？\n（如有工单引用会被拒绝）')) return;
+  wjPost(WJ_URLS.del.replace('{id}', node.id), {}).then(function (d) {
+    wjToast(d.message, !d.success);
+    if (d.success) wjTree.jstree(true).refresh();
+  }).catch(function () { wjToast('网络错误', true); });
+}
+document.addEventListener('keydown', function (e) {
+  if (e.key === 'Escape' && document.getElementById('wjModal').style.display !== 'none') wjCloseModal();
+});
+document.addEventListener('click', function (e) {
+  var m = document.getElementById('wjModal');
+  if (m && m.style.display !== 'none' && e.target === m) wjCloseModal();
+});
+// If landed directly on ?tab=workitems, init the tree immediately.
+if (document.querySelector('#tabWorkitems.active')) { wjInitTree(); }
 </script>
 {% endblock %}
