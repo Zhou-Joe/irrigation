@@ -8882,7 +8882,10 @@ def work_report_photos(request):
         qs = qs.filter(id__startswith=q)
 
     # 只取带媒体的工单（排除空 photos / 空 list）。限制条数避免一次拉太多。
-    page = list(qs.exclude(photos=[]).exclude(photos__isnull=True)[:200])
+    # .distinct() collapses the duplicate rows introduced by the zones__in /
+    # entries__in joins above (a report with N matching zones or entries would
+    # otherwise appear N times in the list).
+    page = list(qs.exclude(photos=[]).exclude(photos__isnull=True).distinct()[:200])
     enrich_reports(page, workitem_path_map())
     attach_zone_hierarchy(page)
 

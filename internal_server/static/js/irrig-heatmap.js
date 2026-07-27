@@ -239,27 +239,10 @@
                 if (ring.length < 3) continue;
                 var poly = L.polygon(ring, style);
                 poly.bindTooltip(label + '\n' + detail, { sticky: true });
-                // Manager-only: bind a popup with an "排除" action so the zone
-                // can be hidden from the heatmap. Left-click opens the popup
-                // (Leaflet default); right-click (contextmenu) is wired as a
-                // shortcut. The handler reads z.id + label from this closure.
-                if (isManager) {
-                    poly.bindPopup(
-                        '<div style="min-width:160px;">' +
-                        '<div style="font-size:0.8rem;color:#6b7280;margin-bottom:6px;">' +
-                          _esc(label) + '</div>' +
-                        '<button class="irrig-exclude-popup-btn" type="button" ' +
-                          'data-zone-id="' + z.id + '" data-zone-label="' + _esc(label) + '">' +
-                          '🚫 从热力图排除' +
-                        '</button>' +
-                        '</div>',
-                        { closeButton: true, className: 'irrig-exclude-popup' }
-                    );
-                    poly.on('contextmenu', function (e) {
-                        poly.openPopup(e.latlng);
-                        L.DomEvent.stopPropagation(e);
-                    });
-                }
+                // Map polygons are all valid (drawn, in-use) zones — excluding
+                // is intentionally NOT available here. Managers exclude zones
+                // from the 「未绘制边界区域」 panel instead, where the zones
+                // are not in active use.
                 poly.addTo(zoneLayer);
                 polys.push(poly);
             }
@@ -590,6 +573,15 @@
             } else {
                 valStr = (it.runtime_minutes || 0) + ' 分';
             }
+            // Manager-only: an "排除" button so these undrawn, not-in-use zones
+            // can be hidden from the heatmap without ever appearing on the map.
+            // (Drawn zones on the map are all valid and are never excludable.)
+            var label = (it.code || '') + ' ' + (it.name || '');
+            var excludeBtn = isManager
+                ? '<button class="irrig-unmapped-exclude" type="button" '
+                  + 'data-zone-id="' + it.id + '" data-zone-label="' + _esc(label) + '" '
+                  + 'title="从热力图排除">排除</button>'
+                : '';
             // Open the mobile-friendly boundary drawing page.
             html += '<div class="irrig-unmapped-row">' +
                 '<div class="irrig-unmapped-label">' +
@@ -599,6 +591,7 @@
                 '<span class="irrig-unmapped-mins">' + valStr + '</span>' +
                 '<a class="irrig-unmapped-draw" href="/settings/zone/quick-draw/mobile" '
                 + 'target="_blank" rel="noopener" title="绘制 ' + _esc(it.code) + ' 边界">绘制</a>' +
+                excludeBtn +
                 '</div>';
         }
         listEl.innerHTML = html;
@@ -616,8 +609,8 @@
 
     // ── Excluded zones panel (manager-only) ──────────────────────────────
     // Mirrors renderUnmappedZones but for zones the manager deliberately hid
-    // via the right-click → 排除 popup. Each row carries a 「恢复」 button that
-    // POSTs to the restore endpoint and reloads the heatmap.
+    // via the 「排除」 button in the unmapped panel. Each row carries a 「恢复」
+    // button that POSTs to the restore endpoint and reloads the heatmap.
     function renderExcludedZones() {
         var panel = document.getElementById('irrigExcludedPanel');
         if (!panel) return;   // non-manager: template doesn't render the panel
@@ -793,14 +786,15 @@
     document.addEventListener('DOMContentLoaded', function () {
         initUserMaxControl();
         // Delegated clicks for the dynamically-injected exclude/restore
-        // buttons (popup button is inside a Leaflet popup; restore button is
-        // inside the excluded-zones panel). Both are re-rendered on every
-        // heatmap refresh, so a single delegated listener outlives them.
+        // buttons. The exclude button lives in the 未绘制边界区域 panel rows
+        // (manager-only); the restore button lives in the 已排除区域 panel.
+        // Both panels are re-rendered on every heatmap refresh, so a single
+        // delegated listener outlives them.
         document.addEventListener('click', function (e) {
-            var t = e.target.closest ? e.target.closest('.irrig-exclude-popup-btn') : null;
-            if (t) {
-                var zid = t.getAttribute('data-zone-id');
-                var zlabel = t.getAttribute('data-zone-label') || '';
+            var x = e.target.closest ? e.target.closest('.irrig-unmapped-exclude') : null;
+            if (x) {
+                var zid = x.getAttribute('data-zone-id');
+                var zlabel = x.getAttribute('data-zone-label') || '';
                 if (zid) excludeZone(zid, zlabel);
                 return;
             }
