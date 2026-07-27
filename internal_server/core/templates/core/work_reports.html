@@ -767,14 +767,8 @@
       </button>
       <button type="button" class="mgr-opt" onclick="confirmMgrResolve('archive')">
         <span class="mgr-opt-body">
-          <span class="mgr-opt-title">归档</span>
-          <span class="mgr-opt-desc">关闭工单并归档区域备注（不再写入区域记录，仅工单详情可查）</span>
-        </span>
-      </button>
-      <button type="button" class="mgr-opt" onclick="confirmMgrResolve('direct')">
-        <span class="mgr-opt-body">
-          <span class="mgr-opt-title">直接关闭</span>
-          <span class="mgr-opt-desc">仅关闭工单，不处理区域备注（适用于无区域备注、或备注已由别处处理的工单）</span>
+          <span class="mgr-opt-title">归档并关闭</span>
+          <span class="mgr-opt-desc">关闭工单。若有关联区域备注则就地归档（不写入区域记录，仅工单详情可查）；若无则直接关闭。</span>
         </span>
       </button>
     </div>
@@ -1162,21 +1156,18 @@ function confirmMgrResolve(action) {
         }).catch(function () { wrToast('标记已解决失败（网络）', true); });
     }
     closeMgrResolveModal();
-    // "direct" closes without touching zone remarks — the only option that
-    // works for tickets that have no zone remarks (e.g. created via the
-    // standalone tree form, or a 疑难 ticket without linked zones).
-    if (action === 'direct') { resolveWorkOrder(); return; }
     if (action === 'archive') {
+        // 归档 = 关闭工单 + 归档区域备注。若该工单没有区域备注（例如桌面
+        // tree form 创建、或备注已由别处处理），archiveRemarkGroup 会返回
+        // false —— 此时直接关闭工单即可，对经理而言结果一致（工单已关闭）。
+        // 这是合并后的单一"归档并关闭"入口，不再单独暴露"直接关闭"按钮。
         archiveRemarkGroup(key).then(function (ok) {
-            // If the ticket has no zone remarks, archiveRemarkGroup resolves
-            // false (blocks). Fall through to direct close so the manager is
-            // never stuck — the disposition was a no-op in that case anyway.
-            if (ok) resolveWorkOrder(); else { wrToast('无区域备注可处理，直接关闭工单'); resolveWorkOrder(); }
+            if (ok) resolveWorkOrder(); else { wrToast('无区域备注，直接关闭工单'); resolveWorkOrder(); }
         });
     } else if (action === 'move_irrigation' || action === 'move_equipment') {
         var target = action === 'move_irrigation' ? 'irrigation' : 'equipment';
         moveRemarkGroup(key, target).then(function (ok) {
-            if (ok) resolveWorkOrder(); else { wrToast('无区域备注可处理，直接关闭工单'); resolveWorkOrder(); }
+            if (ok) resolveWorkOrder(); else { wrToast('无区域备注，直接关闭工单'); resolveWorkOrder(); }
         });
     } else {
         wrToast('未知操作', true);
@@ -1401,10 +1392,12 @@ function archiveRemarkGroup(btnOrKey) {
     var grp = remarkGroups[key] || {};
     var pairs = grp.pairs || [];
     if (!pairs.length) {
-        // No zone remark to archive. Caller decides what to do (the mgr-resolve
-        // flow treats this as "nothing left to dispose" and proceeds to close
-        // the ticket; standalone archive from detail just toasts).
-        wrToast('无对应区域', true);
+        // No zone remark to archive. Return false WITHOUT toasting — the
+        // caller decides the message. The merged "归档并关闭" flow treats this
+        // as "nothing to dispose, just close the ticket"; a standalone archive
+        // from the detail page falls back to its own toast. (Previously this
+        // toasted "无对应区域" as an error, which flashed before the caller's
+        // own message when the two were merged into one button.)
         return Promise.resolve(false);
     }
     return _postRemarkSerial(pairs, 'archive', null, _woIdFromKey(key))
