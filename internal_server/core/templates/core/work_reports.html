@@ -771,6 +771,12 @@
           <span class="mgr-opt-desc">关闭工单并归档区域备注（不再写入区域记录，仅工单详情可查）</span>
         </span>
       </button>
+      <button type="button" class="mgr-opt" onclick="confirmMgrResolve('direct')">
+        <span class="mgr-opt-body">
+          <span class="mgr-opt-title">直接关闭</span>
+          <span class="mgr-opt-desc">仅关闭工单，不处理区域备注（适用于无区域备注、或备注已由别处处理的工单）</span>
+        </span>
+      </button>
     </div>
     <div class="fu-modal-foot">
       <button type="button" class="btn-sm btn-secondary" onclick="closeMgrResolveModal()">取消</button>
@@ -1156,11 +1162,22 @@ function confirmMgrResolve(action) {
         }).catch(function () { wrToast('标记已解决失败（网络）', true); });
     }
     closeMgrResolveModal();
+    // "direct" closes without touching zone remarks — the only option that
+    // works for tickets that have no zone remarks (e.g. created via the
+    // standalone tree form, or a 疑难 ticket without linked zones).
+    if (action === 'direct') { resolveWorkOrder(); return; }
     if (action === 'archive') {
-        archiveRemarkGroup(key).then(function (ok) { if (ok) resolveWorkOrder(); });
+        archiveRemarkGroup(key).then(function (ok) {
+            // If the ticket has no zone remarks, archiveRemarkGroup resolves
+            // false (blocks). Fall through to direct close so the manager is
+            // never stuck — the disposition was a no-op in that case anyway.
+            if (ok) resolveWorkOrder(); else { wrToast('无区域备注可处理，直接关闭工单'); resolveWorkOrder(); }
+        });
     } else if (action === 'move_irrigation' || action === 'move_equipment') {
         var target = action === 'move_irrigation' ? 'irrigation' : 'equipment';
-        moveRemarkGroup(key, target).then(function (ok) { if (ok) resolveWorkOrder(); });
+        moveRemarkGroup(key, target).then(function (ok) {
+            if (ok) resolveWorkOrder(); else { wrToast('无区域备注可处理，直接关闭工单'); resolveWorkOrder(); }
+        });
     } else {
         wrToast('未知操作', true);
     }
@@ -1291,6 +1308,11 @@ function _refreshRepairsTab(afterMs) {
                 if (!fresh) { location.href = '/work-reports/?tab=repairs'; return; }
                 var cur = document.getElementById('tabRepairs');
                 if (cur) cur.innerHTML = fresh.innerHTML;
+                // Clear the per-card comment-loaded cache so the freshly-rendered
+                // cards re-fetch their threads. Without this, loadComments() sees
+                // cmtLoaded[loadKey]=true (set on the OLD card) and early-returns,
+                // leaving the new card showing an empty comment list.
+                cmtLoaded = {};
                 // After swapping in fresh cards, auto-load any that already have
                 // comments so the user sees the thread without clicking the chip.
                 autoloadPopulatedCommentThreads(cur);

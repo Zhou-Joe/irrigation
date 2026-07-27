@@ -8592,7 +8592,9 @@ def work_reports_list(request):
     date_from, date_to, land_id, worker_id, difficult, pending, before_id, sort, q, section = _work_report_filters(request)
 
     qs = _scoped_work_reports_qs(user, admin, sort=sort)
-    qs = qs.annotate(comment_count=Count('comments'))
+    # distinct=True so the land/section M2M filters below (which JOIN the
+    # through-table) don't multiply the comment count by the row count.
+    qs = qs.annotate(comment_count=Count('comments', distinct=True))
 
     # Apply filters (shared with the load-more endpoint).
     qs = qs.filter(date__gte=date_from)
@@ -8738,7 +8740,8 @@ def work_reports_list(request):
               | WorkReport.objects.filter(is_difficult=True, is_difficult_resolved=False)
               | WorkReport.objects.filter(collab_status__in=['ongoing', 'pending_review', 'resolved']))
              .distinct().select_related('worker', 'location').order_by('-date', '-id')
-             .annotate(comment_count=Count('comments')))
+             .prefetch_related('zones')
+             .annotate(comment_count=Count('comments', distinct=True)))
     pr_ids = [wr.id for wr in pr_qs]
     stories = _followup_stories(pr_ids)
     for wr in pr_qs:
@@ -8778,7 +8781,8 @@ def work_reports_list(request):
         # Exclude anything still active (in pr_ids). Then prefetch.
         hist_qs = (hist_qs.exclude(id__in=pr_ids)
                    .select_related('worker', 'location').order_by('-date', '-id')
-                   .annotate(comment_count=Count('comments')))[:200]
+                   .prefetch_related('zones')
+                   .annotate(comment_count=Count('comments', distinct=True)))[:200]
         hist_ids = [wr.id for wr in hist_qs]
         hist_stories = _followup_stories(hist_ids)
         # Batch-fetch the most recent "closing" edit log per ticket so the
@@ -9145,7 +9149,12 @@ def _serialize_repair_card(wr, stories, remark_group):
     the parent's follow-up timeline (already fetched), ``remark_group`` is the
     zone-level remark group (or None).
     """
-    zone_codes = ', '.join(z.code for z in wr.zones.all()[:4])
+    # pr_qs / hist_qs prefetch_related('zones'), so .all() reads from cache —
+    # no N+1. Derive zone_count from the cached list length instead of
+    # .count() (which always issues a fresh query).
+    _zones = list(wr.zones.all())
+    zone_count = len(_zones)
+    zone_codes = ', '.join(z.code for z in _zones[:4])
     is_difficult = bool(wr.is_difficult and not wr.is_difficult_resolved)
     # Flag copy + class. collab_status takes precedence once the worker has
     # filed an "已修复" follow-up or the manager has closed the ticket.
@@ -9188,7 +9197,7 @@ def _serialize_repair_card(wr, stories, remark_group):
         'location_code': wr.location.code if wr.location_id and wr.location else '',
         'remark': (wr.remark or '')[:120],
         'zone_preview': zone_codes,
-        'zone_count': wr.zones.count(),
+        'zone_count': zone_count,
         'flags': flag_text,
         'flag_class': flag_class,
         'is_difficult': is_difficult,
@@ -10020,19 +10029,17 @@ def workorder_mobile_v2(request):
                 entry_count = report.entries.count()
 
                 if not is_pm_completion and getattr(report, 'is_difficult', False) and not is_edit:
-                    note = request.POST.get('remark', '').strip()
-                    remark_content = note or (f'疑难工单 · {entry_count} 项' if entry_count else '疑难工单')
-                    remark_entry = {
-                        'date': report.date if isinstance(report.date, str) else report.date.isoformat(),
-                        'content': remark_content,
-                        'author': worker.full_name if worker else str(request.user),
-                        'workorder_id': report.id,
-                    }
-                    for z in selected_zones:
-                        remarks = json.loads(z.remarks) if z.remarks else []
-                        remarks.insert(0, remark_entry)
-                        z.remarks = json.dumps(remarks, ensure_ascii=False)
-                        z.save(update_fields=['remarks'])
+                    # Shared helper: also used by the desktop tree-form path
+                    # (workorder_tree_views._handle_save) so a 疑难 ticket
+                    # created through either form carries the workorder_id-tagged
+                    # zone remark the manager resolve modal needs to dispose.
+                    from core.workorder_tree_views import maybe_create_difficult_zone_remarks
+                    maybe_create_difficult_zone_remarks(
+                        report, selected_zones,
+                        note=request.POST.get('remark', ''),
+                        author_name=(worker.full_name if worker else str(request.user)),
+                        is_pm_completion=is_pm_completion, is_edit=is_edit,
+                    )
 
                 # Report-level photos. On edit, MERGE: keep existing photos except
                 # those the user explicitly removed, then append any new uploads.
