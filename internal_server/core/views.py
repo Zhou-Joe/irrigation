@@ -9302,11 +9302,13 @@ def _group_zone_remarks(notes_field):
 
 @login_required(login_url='core:login')
 def remarks_list(request):
-    """待确认备注 — zones with unconfirmed remarks, with inline confirm for managers.
+    """待确认备注 — read-only list of zones with unconfirmed remarks.
 
     Reads the raw Zone.remarks JSON (not the lossy dashboard payload) so each remark's
-    date/content/author is shown. Confirming a remark POSTs to the existing
-    zone_remark_confirm endpoint (manager-only).
+    date/content/author is shown. Confirmation and follow-up are handled on the
+    work-reports 「疑难/待修」 tab now; this page is a list-only view with a nav
+    button over to that tab. ``is_admin`` is still passed for any future gating,
+    but the template no longer renders confirm/reply controls.
     """
     from core.role_utils import is_admin
 

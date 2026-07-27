@@ -28,15 +28,11 @@
   .rm-name-count { font-size: 0.68rem; color: var(--rm-muted); }
   .rm-wo-badge { font-size: 0.7rem; background: var(--rm-warn-soft); color: var(--rm-warn); padding: 2px 9px; border-radius: 20px; font-weight: 600; }
   .rm-content { font-size:0.92rem; color: var(--rm-text); line-height:1.5; white-space:pre-wrap; margin: 6px 0; }
-  .rm-confirm-row { display:flex; gap:6px; margin-top:10px; flex-wrap:wrap; }
-  .rm-confirm-input { flex:1; min-width:160px; padding:7px 10px; border:1px solid #e5e7eb; border-radius:8px; font-size:0.82rem; }
-  .rm-confirm-input:focus { outline:none; border-color: var(--rm-accent); }
-  .rm-btn { font-size:0.8rem; padding:7px 16px; border-radius:8px; font-weight:600; border:none; cursor:pointer; transition: transform .1s; }
-  .rm-btn:active { transform: scale(0.96); }
-  .rm-btn-confirm { background: var(--rm-accent); color:#fff; }
-  .rm-btn-confirm:hover { background:#245540; }
-  .rm-btn-confirm:disabled { opacity:0.5; cursor:default; }
   .rm-confirmed { color: var(--rm-accent); font-size:0.84rem; font-weight:600; }
+
+  .rm-nav-btn { font-size:0.82rem; padding:7px 16px; border-radius:8px; font-weight:600; border:none; cursor:pointer; background: var(--rm-accent); color:#fff; text-decoration:none; display:inline-block; transition: background .15s, transform .1s; }
+  .rm-nav-btn:hover { background:#245540; }
+  .rm-nav-btn:active { transform: scale(0.96); }
 
   .rm-empty { padding:48px; text-align:center; color:var(--rm-muted); font-size:0.95rem; background:var(--rm-card-bg); border-radius:14px; border:1px solid var(--rm-border); }
 </style>
@@ -45,8 +41,11 @@
 {% block content %}
 <div class="rm-wrap">
   <div class="rm-head">
-    <h1>📝 待确认备注</h1>
-    <span class="rm-total">共 {{ total }} 条待确认</span>
+    <div>
+      <h1>📝 待确认备注</h1>
+      <span class="rm-total">共 {{ total }} 条待确认 · 确认与跟进请在「疑难/待修」处理</span>
+    </div>
+    <a class="rm-nav-btn" href="/work-reports/?tab=repairs">前往 疑难/待修 →</a>
   </div>
 
   {% if groups %}
@@ -64,42 +63,13 @@
         <span class="rm-name-chip">{{ nm.name }}{% if nm.count > 1 %}<span class="rm-name-count">({{ nm.count }})</span>{% endif %}</span>
         {% endfor %}{% if not forloop.last %}<span style="color:var(--rm-muted);">·</span>{% endif %}
         {% endfor %}
-        {% if g.zones|length > 1 %}<span style="font-size:0.72rem;color:var(--rm-muted);">· {{ g.zones|length }} 个区域 · 一次确认</span>{% endif %}
+        {% if g.zones|length > 1 %}<span style="font-size:0.72rem;color:var(--rm-muted);">· {{ g.zones|length }} 个区域</span>{% endif %}
       </div>
       <div class="rm-content">{{ g.remark.content }}</div>
-      {% if is_admin %}
-      <div class="rm-confirm-row">
-        <input type="text" class="rm-confirm-input" id="reply-{{ forloop.counter0 }}" placeholder="确认回复（可选）…">
-        <button class="rm-btn rm-btn-confirm" id="btn-{{ forloop.counter0 }}"
-          data-pairs="{% for land in g.hierarchy %}{% for nm in land.names %}{% for z, idx in nm.pairs %}{{ z.id }},{{ idx }};{% endfor %}{% endfor %}{% endfor %}"
-          onclick="confirmGroup({{ forloop.counter0 }})">确认</button>
-      </div>
-      {% endif %}
     </div>
     {% endfor %}
   {% else %}
     <div class="rm-empty">暂无待确认备注 🎉</div>
   {% endif %}
 </div>
-
-<script>
-// Confirm one remark group: POSTs to every (zone, index) pair it covers so a single
-// workorder's remark is confirmed across all its zones in one click.
-function confirmGroup(n){
-  var btn = document.getElementById('btn-'+n);
-  var reply = (document.getElementById('reply-'+n)||{}).value || '';
-  var pairs = (btn.dataset.pairs || '').split(';').filter(Boolean).map(function(p){ return p.split(','); });
-  btn.disabled = true; btn.textContent = '确认中…';
-  var token = (document.cookie.match(/csrftoken=([^;]+)/)||[])[1] || '';
-  Promise.all(pairs.map(function(pair){
-    var zid = pair[0], idx = pair[1];
-    var fd = new FormData(); fd.append('confirm_reply', reply);
-    return fetch('/zone/'+zid+'/remark/'+idx+'/confirm/', {
-      method:'POST', body:fd, credentials:'same-origin',
-      headers:{'X-Requested-With':'XMLHttpRequest','X-CSRFToken':token}
-    });
-  })).then(function(){ window.location.reload(); })
-    .catch(function(){ alert('部分确认失败，请重试'); btn.disabled=false; btn.textContent='确认'; });
-}
-</script>
 {% endblock %}
