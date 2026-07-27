@@ -9202,26 +9202,53 @@ def _followup_stories(parent_ids):
     if not parent_ids:
         return {}
     from .models import WorkReport
+    out = {}
+
+    def _story(r, label):
+        return {
+            'id': r.id,
+            'ticket': r.display_number,
+            'date': r.date.isoformat() if r.date else '',
+            'worker_name': r.worker.full_name if r.worker_id and r.worker else '—',
+            'remark': (r.remark or '')[:400],
+            'photos': list(r.photos or [])[:6],
+            'status_label': label,
+        }
+
+    # Source 1 — explicit 跟进子工单 (parent_work_report), created via the
+    # 疑难跟进 tab's 添加跟进 button.
     children = (WorkReport.objects
                 .filter(parent_work_report_id__in=parent_ids)
                 .select_related('worker')
                 .order_by('created_at', 'id'))
-    out = {}
     for c in children:
         # Per-child label from the child's own followup_action (persisted at
         # submit time) rather than the parent's *current* collab_status — the
         # latter would mislabel prior 'ongoing' entries once a later 'fixed'
         # flips the parent, or once the parent is later resolved.
         action_label = '已修复' if c.followup_action == 'fixed' else '跟进'
-        out.setdefault(c.parent_work_report_id, []).append({
-            'id': c.id,
-            'ticket': c.display_number,
-            'date': c.date.isoformat() if c.date else '',
-            'worker_name': c.worker.full_name if c.worker_id and c.worker else '—',
-            'remark': (c.remark or '')[:400],
-            'photos': list(c.photos or [])[:6],
-            'status_label': action_label,
-        })
+        out.setdefault(c.parent_work_report_id, []).append(_story(c, action_label))
+
+    # Source 2 — resolved_by_pm: parent.resolved_by_pm is the work order that
+    # handled the parent's 待修 via the tree form's 关联待修 picker. Surfaced
+    # here so that association shows in the 疑难跟进 history too (otherwise it
+    # only lives in the parent's remark note and is invisible in the timeline).
+    resolver_pairs = (WorkReport.objects
+                      .filter(id__in=parent_ids, resolved_by_pm__isnull=False)
+                      .values_list('id', 'resolved_by_pm'))
+    parent_of = {rid: pid for pid, rid in resolver_pairs}
+    resolver_ids = list(parent_of.keys())
+    if resolver_ids:
+        seen = {pid: {s['id'] for s in stories} for pid, stories in out.items()}
+        for r in (WorkReport.objects.filter(id__in=resolver_ids).select_related('worker')):
+            pid = parent_of.get(r.id)
+            if pid is None or r.id in seen.get(pid, ()):
+                continue  # already listed as a follow-up child; don't duplicate
+            out.setdefault(pid, []).append(_story(r, '已处理'))
+
+    # Chronological timeline (date, then id) across both sources.
+    for pid in out:
+        out[pid].sort(key=lambda s: (s['date'] or '', s['id']))
     return out
 
 
