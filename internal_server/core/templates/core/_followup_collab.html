@@ -7,15 +7,15 @@ Context vars expected:
   - is_manager:     whether to show manager-only final actions (set to False if absent){% endcomment %}
 {% load static %}
 <div class="fu-block" id="fuBlock-{{ parent_id }}">
-  {# Status chip #}
+  {% comment %}Status chip — shown only when it carries real signal. The 疑难/待修 list is
+  by-definition unresolved ("跟进中"), so a chip there is noise. Resolved /
+  pending_review states (history tab, manager review) still surface it.{% endcomment %}
+  {% if collab_status == 'resolved' or collab_status == 'pending_review' %}
   <div class="fu-status-row">
     <span class="fu-chip
       {% if collab_status == 'resolved' %}fu-chip-done
-      {% elif collab_status == 'pending_review' %}fu-chip-review
-      {% else %}fu-chip-ongoing{% endif %}">
-      {% if collab_status == 'resolved' %}已完成
-      {% elif collab_status == 'pending_review' %}待确认
-      {% else %}跟进中{% endif %}
+      {% else %}fu-chip-review{% endif %}">
+      {% if collab_status == 'resolved' %}已完成{% else %}待确认{% endif %}
     </span>
     {% if stories %}
     <button type="button" class="fu-story-toggle" onclick="toggleStory({{ parent_id }})">
@@ -23,18 +23,19 @@ Context vars expected:
     </button>
     {% endif %}
   </div>
-
-  {# Zone-level 疑难备注 (folded) — only when this parent has a zone remark #}
-  {% if remark_group %}
-  <details class="fu-zone-remarks">
-    <summary>区域备注 ({{ remark_group.zones|length }} zones)</summary>
-    <div class="wr-rm-content">{{ remark_group.remark.content }}</div>
-    {% if remark_group.remark.confirm_date %}
-    <div class="wr-rm-confirm-meta">已确认 {{ remark_group.remark.confirm_date }} · {{ remark_group.remark.confirm_author|default:'' }}{% if remark_group.remark.confirm_reply %} · {{ remark_group.remark.confirm_reply }}{% endif %}</div>
-    {% endif %}
-    <div class="wr-rm-zones">{% for h in remark_group.hierarchy %}<b>{{ h.land }}</b>: {% for nm in h.names %}{{ nm.name }}{% if nm.count > 1 %} ({{ nm.count }}){% endif %}{% if not forloop.last %}, {% endif %}{% endfor %}{% if not forloop.last %} · {% endif %}{% endfor %}</div>
-  </details>
+  {% else %}
+  {% comment %}Unresolved (repairs list): no status chip — the parent card already shows
+  zones + 备注 above, so the only thing left here is the follow-up history.{% endcomment %}
+  {% if stories %}
+  <button type="button" class="fu-story-toggle" onclick="toggleStory({{ parent_id }})">
+    ▾ 历史跟进 ({{ stories|length }})
+  </button>
   {% endif %}
+  {% endif %}
+
+  {% comment %}Zone-level 疑难备注 was folded here, but the parent card above the collab
+  block already renders zones + 备注, so this section was a pure duplicate.
+  Removed — see the wr-summary block in work_reports.html.{% endcomment %}
 
   {# Story timeline (collapsible) #}
   {% if stories %}
@@ -71,12 +72,16 @@ Context vars expected:
 
   {% comment %}Manager actions: ongoing/pending_review→标记已解决; resolved→final disposition (transfer/archive).
   Suppressed entirely in history mode — re-disposing a closed ticket would
-  corrupt its already-disposed zone remarks.{% endcomment %}
+  corrupt its already-disposed zone remarks.
+
+  The ongoing-state action is rendered as a compact inline button (right-aligned,
+  no full-width banner) so it sits neatly under the 发送 button of the comment
+  box without claiming a whole row. Only the resolved-state disposition block
+  keeps the banner (it carries 3 buttons + a hint that genuinely needs the width).{% endcomment %}
   {% if is_manager and not is_history %}
     {% if collab_status != 'resolved' %}
-    <div class="fu-mgr-final">
-      <span class="fu-mgr-hint">经理可直接关闭此工单：</span>
-      <button type="button" class="btn-sm btn-secondary" onclick="mgrResolveViaRepair({{ parent_id }})">标记已解决</button>
+    <div class="fu-mgr-compact">
+      <button type="button" class="fu-mgr-resolve-btn" onclick="mgrResolveViaRepair({{ parent_id }})" title="经理可直接关闭此工单">标记已解决</button>
     </div>
     {% else %}
     {# Final disposition: transfer buttons use data-key='wo:<id>' so existing JS finds the right zones. #}

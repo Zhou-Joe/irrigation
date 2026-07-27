@@ -644,20 +644,53 @@ def project_save(request):
     return redirect('core:project_management')
 
 
+@require_POST
 @login_required(login_url='core:login')
 def project_delete(request, pk):
-    """Delete a Project (manager / admin only). Entries' project FK is SET_NULL."""
+    """Delete a Project (manager / admin only). Entries' project FK is SET_NULL.
+
+    Hardened against accidental deletes: requires the user to re-enter their
+    own username + password in the confirm dialog. The credentials are checked
+    via ``authenticate()`` so the same backend (DB / LDAP / etc.) that logged
+    them in also authorizes the delete — we do NOT store or compare plaintext.
+
+    Returns JSON for AJAX callers (``X-Requested-With: XMLHttpRequest``) so the
+    modal can show the result inline; non-AJAX falls back to a redirect + Django
+    message (the legacy form-post path).
+    """
     from core.role_utils import get_user_role, ROLE_MANAGER, ROLE_SUPER_ADMIN
+    from django.contrib.auth import authenticate
+    is_ajax = request.headers.get('x-requested-with') == 'XMLHttpRequest'
+
+    def fail(msg):
+        if is_ajax:
+            return JsonResponse({'success': False, 'message': msg}, status=400)
+        messages.error(request, msg)
+        return redirect('core:project_management')
+
+    def ok(msg):
+        if is_ajax:
+            return JsonResponse({'success': True, 'message': msg})
+        messages.success(request, msg)
+        return redirect('core:project_management')
+
     role = get_user_role(request.user)
     if role not in (ROLE_MANAGER, ROLE_SUPER_ADMIN):
-        messages.error(request, '无权限')
-        return redirect('core:dashboard')
-    if request.method == 'POST':
-        proj = get_object_or_404(Project, pk=pk)
-        name = proj.name
-        proj.delete()
-        messages.success(request, f'项目已删除：{name}')
-    return redirect('core:project_management')
+        return fail('无权限')
+    # Re-verify credentials: the user must supply their own username + password
+    # again. authenticate() returns a User on success or None on failure, so a
+    # wrong password / wrong username is rejected the same way.
+    username = (request.POST.get('username') or '').strip()
+    password = request.POST.get('password') or ''
+    if not username or not password:
+        return fail('请输入账号和密码以确认删除')
+    verified = authenticate(request, username=username, password=password)
+    if verified is None or verified.id != request.user.id:
+        return fail('账号或密码不正确，删除已取消')
+    proj = get_object_or_404(Project, pk=pk)
+    name = proj.name
+    proj.delete()
+    return ok(f'项目已删除：{name}')
 
 
 @login_required(login_url='core:login')

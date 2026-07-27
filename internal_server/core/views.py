@@ -4195,22 +4195,48 @@ def zone_remark_move(request, zone_id, index):
     target = request.POST.get('target', '').strip()
     if target not in ('irrigation', 'equipment'):
         return JsonResponse({'success': False, 'message': '目标无效'}, status=400)
+    wo_id_raw = (request.POST.get('workorder_id') or '').strip()
     with transaction.atomic():
         try:
             zone = Zone.objects.select_for_update().get(pk=zone_id)
         except Zone.DoesNotExist:
             return JsonResponse({'success': False, 'message': '区域不存在'}, status=404)
         confirmed_list = json.loads(zone.confirmed_remarks) if zone.confirmed_remarks else []
-        if index < 0 or index >= len(confirmed_list):
-            return JsonResponse({'success': False, 'message': '索引无效'}, status=400)
-        entry = confirmed_list.pop(index)
+        # Locate the entry by workorder_id when provided (avoids moving the
+        # wrong ticket's remark when the index is stale); fall back to index.
+        entry = None
+        if wo_id_raw:
+            try:
+                wo_id = int(wo_id_raw)
+            except ValueError:
+                wo_id = None
+            if wo_id:
+                for i, e in enumerate(confirmed_list):
+                    if e.get('workorder_id') == wo_id and not e.get('archived'):
+                        entry = confirmed_list.pop(i)
+                        break
+                if entry is None:
+                    # Pending remark: confirm-then-move in one step.
+                    pending = json.loads(zone.remarks) if zone.remarks else []
+                    for i, e in enumerate(pending):
+                        if e.get('workorder_id') == wo_id:
+                            entry = {**e, 'confirm_date': __import__('datetime').date.today().isoformat(),
+                                     'confirm_author': _get_user_display_name(request)}
+                            pending.pop(i)
+                            zone.remarks = json.dumps(pending, ensure_ascii=False)
+                            break
+        else:
+            if 0 <= index < len(confirmed_list):
+                entry = confirmed_list.pop(index)
+        if entry is None:
+            return JsonResponse({'success': False, 'message': '未找到该工单的区域备注'}, status=400)
         note = {'date': entry.get('date', ''), 'content': entry.get('content', '')}
         zone.confirmed_remarks = json.dumps(confirmed_list, ensure_ascii=False)
         target_field = 'irrigation_management_notes' if target == 'irrigation' else 'equipment_maintenance_notes'
         notes = json.loads(getattr(zone, target_field)) or [] if getattr(zone, target_field) else []
         notes.insert(0, note)
         setattr(zone, target_field, json.dumps(notes, ensure_ascii=False))
-        zone.save(update_fields=[target_field, 'confirmed_remarks'])
+        zone.save(update_fields=[target_field, 'confirmed_remarks', 'remarks'])
         # Final disposition: once NO active zone remarks remain for the source
         # work order (none pending in `remarks`, none un-archived in
         # `confirmed_remarks`), clear its collab_status so it drops out of the
@@ -4230,6 +4256,10 @@ def zone_remark_archive(request, zone_id, index):
 
     保留在 confirmed_remarks 里（不从列表删除），工单详情页可据此反查展示；
     _group_zone_remarks 过滤掉 archived 条目，使其不再出现在「已确认」列表。
+
+    如果 POST 携带 ``workorder_id``，则按工单号定位备注（先查
+    confirmed_remarks，未命中再查 pending remarks）——避免索引指向的条目
+    属于另一张工单时误归档（#485 的 confirmed[0] 实为 #25 的场景）。
     """
     import json
     from datetime import date as date_cls
@@ -4238,21 +4268,58 @@ def zone_remark_archive(request, zone_id, index):
         return JsonResponse({'success': False, 'message': 'POST only'}, status=405)
     if not _check_zone_admin(request):
         return JsonResponse({'success': False, 'message': '无权限'}, status=403)
+    wo_id_raw = (request.POST.get('workorder_id') or '').strip()
     with transaction.atomic():
         try:
             zone = Zone.objects.select_for_update().get(pk=zone_id)
         except Zone.DoesNotExist:
             return JsonResponse({'success': False, 'message': '区域不存在'}, status=404)
         confirmed_list = json.loads(zone.confirmed_remarks) if zone.confirmed_remarks else []
-        if index < 0 or index >= len(confirmed_list):
-            return JsonResponse({'success': False, 'message': '索引无效'}, status=400)
+        # Locate the entry to archive. With workorder_id we match by ticket so
+        # an out-of-date index (the remark moved between pending↔confirmed, or
+        # the index points at a different ticket's entry) can't archive the
+        # wrong remark. Without it we fall back to the legacy index lookup.
+        entry = None
+        save_fields = []
+        if wo_id_raw:
+            try:
+                wo_id = int(wo_id_raw)
+            except ValueError:
+                wo_id = None
+            if wo_id:
+                for i, e in enumerate(confirmed_list):
+                    if e.get('workorder_id') == wo_id and not e.get('archived'):
+                        entry = e
+                        save_fields = ['confirmed_remarks']
+                        break
+                if entry is None:
+                    # Not in confirmed — try pending remarks (the remark was
+                    # never confirmed but the manager is disposing the ticket
+                    # directly). Archive-in-place isn't meaningful for pending,
+                    # so we move it to confirmed_remarks with archived=True,
+                    # mirroring what confirm+archive would have produced.
+                    pending = json.loads(zone.remarks) if zone.remarks else []
+                    for i, e in enumerate(pending):
+                        if e.get('workorder_id') == wo_id:
+                            entry = {**e, 'confirm_date': date_cls.today().isoformat(),
+                                     'confirm_author': _get_user_display_name(request)}
+                            pending.pop(i)
+                            zone.remarks = json.dumps(pending, ensure_ascii=False)
+                            confirmed_list.insert(0, entry)
+                            save_fields = ['remarks', 'confirmed_remarks']
+                            break
+        else:
+            if 0 <= index < len(confirmed_list):
+                entry = confirmed_list[index]
+                save_fields = ['confirmed_remarks']
+        if entry is None:
+            return JsonResponse({'success': False, 'message': '未找到该工单的区域备注'}, status=400)
         # 就地打标记，不删除：保留在 confirmed_remarks 里供工单详情页反查。
-        entry = confirmed_list[index]
         entry['archived'] = True
         entry['archived_date'] = date_cls.today().isoformat()
         entry['archived_author'] = _get_user_display_name(request)
         zone.confirmed_remarks = json.dumps(confirmed_list, ensure_ascii=False)
-        zone.save(update_fields=['confirmed_remarks'])
+        zone.save(update_fields=save_fields)
         # Final disposition: clear collab_status if no active zone remarks remain,
         # and write an edit log for audit parity with the resolve-repair path.
         _wid = entry.get('workorder_id')
@@ -8670,7 +8737,8 @@ def work_reports_list(request):
     pr_qs = ((WorkReport.objects.filter(is_pending_repair=True, resolved_by_pm__isnull=True)
               | WorkReport.objects.filter(is_difficult=True, is_difficult_resolved=False)
               | WorkReport.objects.filter(collab_status__in=['ongoing', 'pending_review', 'resolved']))
-             .distinct().select_related('worker', 'location').order_by('-date', '-id'))
+             .distinct().select_related('worker', 'location').order_by('-date', '-id')
+             .annotate(comment_count=Count('comments')))
     pr_ids = [wr.id for wr in pr_qs]
     stories = _followup_stories(pr_ids)
     for wr in pr_qs:
@@ -8709,7 +8777,8 @@ def work_reports_list(request):
             hist_qs = hist_qs.filter(id__startswith=q)
         # Exclude anything still active (in pr_ids). Then prefetch.
         hist_qs = (hist_qs.exclude(id__in=pr_ids)
-                   .select_related('worker', 'location').order_by('-date', '-id')[:200])
+                   .select_related('worker', 'location').order_by('-date', '-id')
+                   .annotate(comment_count=Count('comments')))[:200]
         hist_ids = [wr.id for wr in hist_qs]
         hist_stories = _followup_stories(hist_ids)
         # Batch-fetch the most recent "closing" edit log per ticket so the
@@ -9113,6 +9182,10 @@ def _serialize_repair_card(wr, stories, remark_group):
         'collab_status': collab_status_display,
         'followup_stories': stories,
         'remark_group': remark_group,
+        # Comment count drives the 💬 chip. Falls back to 0 if the queryset
+        # wasn't annotated (defensive — the active + history querysets both
+        # annotate comment_count, but other callers may not).
+        'comment_count': getattr(wr, 'comment_count', 0) or 0,
     }
 
 
@@ -10964,15 +11037,16 @@ def inventory_category_edit(request, cat_id):
 def inventory_export_excel(request):
     """Export the inventory catalog (leaves only) as an Excel spreadsheet.
 
-    Columns: 大类别 / 小类别 / 系列 / 品名 / 是否主材 / 最小库存 / 现有库存.
-    The hierarchy depth varies (1–5 levels); the last node is always the 品名
-    (part name), the first is always 大类别. Intermediate levels fill 小类别 /
-    系列 in order; when a path is shorter than 4 levels, the gaps are filled
-    bottom-up by repeating the nearest available ancestor (per the user's spec:
-    "如果只有2级，则系列、品名都可以重复小类别的内容").
+    Multi-row format: each part occupies a **part row** (basic info + current
+    price), followed by one **price-detail row** per historical price record.
+    Columns: 大类别 / 小类别 / 系列 / 品名 / 是否主材 / 单位 / 最小库存 / 现有库存 /
+    当前单价 / 当前供应商 / 当前价格日期 / 记录数 / 采购日期 / 供应商 / 单价 / 单位.
+    The last 4 columns are populated only on price-detail rows (blank on the
+    part row) so each historical record shows its own date/supplier/price/unit.
     """
-    from core.models import InventoryCategory
+    from core.models import InventoryCategory, InventoryPriceRecord
     from core.role_utils import get_user_role, ROLE_MANAGER, ROLE_SUPER_ADMIN
+    from core.inventory_tree_views import current_price_for
     import io
     from openpyxl import Workbook
     from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
@@ -10984,7 +11058,14 @@ def inventory_export_excel(request):
 
     # Build the ancestor chain (root → ... → leaf) for every part leaf.
     cats = {c.id: c for c in InventoryCategory.objects.filter(active=True)}
-    rows = []
+    # Prefetch all price records into a {cat_id: [records]} map so we don't
+    # N+1 query inside the part loop (catalog can be 300+ parts).
+    price_map = {}
+    for rec in (InventoryPriceRecord.objects
+                .select_related('category').order_by('category_id', '-date', '-id')):
+        price_map.setdefault(rec.category_id, []).append(rec)
+
+    parts = []
     for c in cats.values():
         if c.node_type != 'part':
             continue
@@ -10994,17 +11075,28 @@ def inventory_export_excel(request):
             chain.append(node.name_zh)
             node = cats.get(node.parent_id) if node.parent_id else None
         chain.reverse()   # root → leaf
-        rows.append((chain, c))
+        parts.append((chain, c))
 
     wb = Workbook()
     ws = wb.active
     ws.title = '库存目录'
-    headers = ['大类别', '小类别', '系列', '品名', '是否主材', '单位', '最小库存', '现有库存']
+    # First 8 cols = part info; cols 9-11 = current price snapshot (part row only);
+    # col 12 = record count; cols 13-16 = per-record detail (price rows only).
+    headers = ['大类别', '小类别', '系列', '品名', '是否主材', '单位', '最小库存', '现有库存',
+               '当前单价', '当前供应商', '当前价格日期', '记录数',
+               '采购日期', '供应商', '历史单价', '单位',
+               '编码']   # col 17: hidden key for import round-trip (cat.code)
     hdr_font = Font(bold=True, color='FFFFFF', size=11)
     hdr_fill = PatternFill(start_color='1B4332', end_color='1B4332', fill_type='solid')
     hdr_align = Alignment(horizontal='center', vertical='center')
     thin = Side(style='thin', color='CCCCCC')
     border = Border(left=thin, right=thin, top=thin, bottom=thin)
+    # Part-row styling: light green band so it's visually distinct from the
+    # price-detail rows beneath it.
+    part_fill = PatternFill(start_color='E8F5E9', end_color='E8F5E9', fill_type='solid')
+    part_font_bold = Font(bold=True)
+    price_font = Font(color='6B7280', size=10)
+    price_indent = Alignment(horizontal='left', indent=2)   # nudge detail rows right
 
     for ci, h in enumerate(headers, 1):
         cell = ws.cell(row=1, column=ci, value=h)
@@ -11013,37 +11105,69 @@ def inventory_export_excel(request):
         cell.alignment = hdr_align
         cell.border = border
 
-    for ri, (chain, cat) in enumerate(rows, 2):
-        # Map the variable-length chain onto 4 fixed columns.
-        # 品名 = last element; 大类别 = first element.
-        # 小类别 / 系列 = the middle levels; if fewer than 4 levels, fill
-        # bottom-up by repeating the nearest ancestor.
-        name = chain[-1]                      # 品名 (always the leaf)
-        big = chain[0] if chain else ''       # 大类别 (always the root)
-        mid = chain[1:-1] if len(chain) > 2 else []   # levels between root and leaf
-        # Target 2 middle slots: [小类别, 系列]
+    ri = 2
+    for chain, cat in parts:
+        # Map the variable-length chain onto 4 fixed columns (same logic as before).
+        name = chain[-1]
+        big = chain[0] if chain else ''
+        mid = chain[1:-1] if len(chain) > 2 else []
         if len(mid) >= 2:
             small, series = mid[0], mid[1]
         elif len(mid) == 1:
             small = series = mid[0]
         else:
-            # Only 2 levels (root + leaf): repeat root as small + series.
             small = series = big
+        records = price_map.get(cat.id, [])
+        # Resolve current price once per part. current_price_for honors the
+        # is_current flag (else falls back to newest-by-date).
+        cur = current_price_for(cat)
+        cur_price = float(cur.unit_price) if cur else ''
+        cur_supplier = cur.supplier if cur else ''
+        cur_date = cur.date.isoformat() if (cur and cur.date) else ''
+        # Part row
         vals = [big, small, series, name,
                 '是' if cat.is_main_material else '',
                 cat.unit or '',
-                cat.min_stock or 0, cat.current_stock or 0]
+                cat.min_stock or 0, cat.current_stock or 0,
+                cur_price, cur_supplier, cur_date, len(records),
+                '', '', '', '',
+                cat.code]   # col 17: stable key for import (hidden in Excel)
         for ci, v in enumerate(vals, 1):
             cell = ws.cell(row=ri, column=ci, value=v)
             cell.border = border
-            if ci >= 6:
+            cell.fill = part_fill
+            cell.font = part_font_bold
+            if ci in (9, 12):
                 cell.alignment = Alignment(horizontal='right')
-            if cat.is_main_material and ci == 5:
-                cell.font = Font(bold=True, color='2D6A4F')
+        ri += 1
+        # Price-detail rows (one per record) — col 17 intentionally blank so
+        # the importer can tell part rows (code present) from detail rows.
+        for rec in records:
+            dvals = ['', '', '', name, '', rec.unit or cat.unit or '', '', '',
+                     '', '', '', '',
+                     rec.date.isoformat() if rec.date else '',
+                     rec.supplier or '',
+                     float(rec.unit_price),
+                     rec.unit or '',
+                     '']
+            for ci, v in enumerate(dvals, 1):
+                cell = ws.cell(row=ri, column=ci, value=v)
+                cell.border = border
+                cell.font = price_font
+                if ci == 4:
+                    cell.alignment = price_indent   # repeat 品名 indented for context
+                elif ci == 15:
+                    cell.alignment = Alignment(horizontal='right')
+            ri += 1
 
-    # Column widths
-    for ci, w in enumerate([18, 22, 22, 28, 10, 8, 10, 10], 1):
-        ws.column_dimensions[chr(64 + ci)].width = w
+    # Column widths (17 cols). Use get_column_letter for safety beyond Z.
+    from openpyxl.utils import get_column_letter
+    widths = [18, 22, 22, 28, 10, 8, 10, 10, 12, 18, 14, 9, 14, 18, 12, 8, 10]
+    for ci, w in enumerate(widths, 1):
+        ws.column_dimensions[get_column_letter(ci)].width = w
+    # Hide the code column (col 17 = Q) — it's a round-trip key for import,
+    # not meant for human editing. Excel keeps the data but hides the column.
+    ws.column_dimensions[get_column_letter(17)].hidden = True
     ws.freeze_panes = 'A2'
 
     buf = io.BytesIO()
@@ -11053,6 +11177,220 @@ def inventory_export_excel(request):
                         content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
     resp['Content-Disposition'] = 'attachment; filename="inventory_catalog.xlsx"'
     return resp
+
+
+def _parse_inventory_import_workbook(file_obj):
+    """Parse an exported inventory_catalog.xlsx into a list of part-row change dicts.
+
+    Returns ``(changes, errors)`` where each change is:
+      ``{row, code, name, cat_id, fields: {min_stock, current_stock, is_main_material, unit}, price: {date, supplier, unit_price} or None}``
+    and errors is a list of human-readable strings for rows that couldn't be
+    parsed (no code / unknown code / bad value).
+
+    Column contract (must match inventory_export_excel):
+      1=大类别 2=小类别 3=系列 4=品名 5=是否主材 6=单位 7=最小库存 8=现有库存
+      9=当前单价 10=当前供应商 11=当前价格日期 12=记录数
+      13=采购日期 14=供应商 15=历史单价 16=单位 17=编码(hidden key)
+    Part rows carry a value in col 17 (code); price-detail rows leave it blank.
+    """
+    import openpyxl
+    from decimal import Decimal, InvalidOperation
+    from datetime import date as date_cls
+    from core.models import InventoryCategory
+    try:
+        wb = openpyxl.load_workbook(file_obj, read_only=True, data_only=True)
+    except Exception:
+        return [], ['无法读取 Excel 文件，请确认是 .xlsx 格式']
+    ws = wb.active
+    # Build a code → category lookup so we don't N+1 inside the row loop.
+    codes_in_sheet = []
+    rows_iter = ws.iter_rows(min_row=2, values_only=True)
+    raw_rows = list(rows_iter)
+    for r in raw_rows:
+        code = r[16] if len(r) > 16 and r[16] else None
+        if code:
+            codes_in_sheet.append(str(code).strip())
+    cat_by_code = {c.code: c for c in InventoryCategory.objects.filter(code__in=codes_in_sheet)}
+
+    changes = []
+    errors = []
+    for idx, r in enumerate(raw_rows, start=2):   # Excel row number (1-based + header)
+        code = r[16] if len(r) > 16 and r[16] else None
+        if not code:
+            continue   # price-detail row or blank — skip (import ignores history)
+        code = str(code).strip()
+        name = r[3] if len(r) > 3 and r[3] else ''
+        cat = cat_by_code.get(code)
+        if not cat:
+            errors.append(f'第 {idx} 行：编码 {code} 未找到对应部件，已跳过')
+            continue
+        if cat.node_type != 'part':
+            errors.append(f'第 {idx} 行：编码 {code} 不是部件（是目录），已跳过')
+            continue
+        # Parse editable fields defensively; a parse failure on one field
+        # shouldn't abort the whole row — record it and skip that field.
+        fields = {}
+        # is_main_material (col 5)
+        mm_val = r[4] if len(r) > 4 else None
+        new_mm = bool(mm_val and str(mm_val).strip() in ('是', '1', 'True', 'true'))
+        if new_mm != cat.is_main_material:
+            fields['is_main_material'] = new_mm
+        # unit (col 6)
+        new_unit = str(r[5] or '').strip()[:10] if len(r) > 5 else ''
+        if new_unit != (cat.unit or ''):
+            fields['unit'] = new_unit
+        # min_stock (col 7)
+        try:
+            new_min = int(r[6]) if len(r) > 6 and r[6] is not None else cat.min_stock
+            if new_min != cat.min_stock:
+                fields['min_stock'] = new_min
+        except (ValueError, TypeError):
+            errors.append(f'第 {idx} 行：最小库存值无效（{r[6]!r}），该字段忽略')
+        # current_stock (col 8)
+        try:
+            new_cur = int(r[7]) if len(r) > 7 and r[7] is not None else cat.current_stock
+            if new_cur != cat.current_stock:
+                fields['current_stock'] = new_cur
+        except (ValueError, TypeError):
+            errors.append(f'第 {idx} 行：现有库存值无效（{r[7]!r}），该字段忽略')
+        # Price: only when all 3 of col 9/10/11 are filled.
+        price = None
+        p_raw = r[8] if len(r) > 8 else None       # 当前单价
+        s_raw = r[9] if len(r) > 9 else None       # 当前供应商
+        d_raw = r[10] if len(r) > 10 else None     # 当前价格日期
+        if p_raw not in (None, '') and s_raw not in (None, '') and d_raw not in (None, ''):
+            try:
+                unit_price = Decimal(str(p_raw))
+                if unit_price < 0:
+                    raise InvalidOperation()
+            except (InvalidOperation, ValueError):
+                errors.append(f'第 {idx} 行：当前单价无效（{p_raw!r}），价格记录忽略')
+                unit_price = None
+            d_str = str(d_raw).strip()
+            try:
+                # Accept both date objects (openpyxl may parse) and strings.
+                # Normalize to YYYY-MM-DD (strip any time component like
+                # '2026-07-20T00:00:00' that openpyxl's isoformat() emits) so
+                # date.fromisoformat() works at confirm time.
+                if isinstance(d_raw, date_cls):
+                    price_date = d_raw.date().isoformat() if hasattr(d_raw, 'date') else d_raw.isoformat()
+                else:
+                    price_date = d_str[:10]   # keep YYYY-MM-DD only
+                    date_cls.fromisoformat(price_date)   # validate
+            except ValueError:
+                errors.append(f'第 {idx} 行：当前价格日期无效（{d_raw!r}），价格记录忽略')
+                price_date = None
+            if unit_price is not None and price_date is not None:
+                price = {'date': price_date, 'supplier': str(s_raw).strip()[:200],
+                         'unit_price': str(unit_price)}
+        # Only surface rows that actually change something.
+        if fields or price:
+            changes.append({
+                'row': idx, 'code': code, 'name': str(name),
+                'cat_id': cat.id, 'fields': fields, 'price': price,
+            })
+    return changes, errors
+
+
+@require_POST
+@login_required(login_url='core:login')
+def inventory_import_preview(request):
+    """Preview an inventory Excel import: parse, return a change summary.
+
+    Stores the parsed changes in the session so the confirm step doesn't
+    re-read/re-parse the file. Manager/super-admin only.
+    """
+    from core.role_utils import get_user_role, ROLE_MANAGER, ROLE_SUPER_ADMIN
+    role = get_user_role(request.user)
+    if role not in (ROLE_MANAGER, ROLE_SUPER_ADMIN):
+        return JsonResponse({'success': False, 'message': '无权限'}, status=403)
+    uploaded = request.FILES.get('file')
+    if not uploaded:
+        return JsonResponse({'success': False, 'message': '请选择文件'}, status=400)
+    changes, errors = _parse_inventory_import_workbook(uploaded)
+    if not changes and errors and len(errors) == 1 and '无法读取' in errors[0]:
+        return JsonResponse({'success': False, 'message': errors[0]}, status=400)
+    # Stash for the confirm step (session-stored to avoid re-parsing).
+    request.session['_inv_import_changes'] = changes
+    request.session.modified = True
+    stock_changes = sum(1 for c in changes if c['fields'])
+    price_adds = sum(1 for c in changes if c['price'])
+    return JsonResponse({
+        'success': True,
+        'summary': {
+            'total_changes': len(changes),
+            'stock_changes': stock_changes,
+            'price_adds': price_adds,
+            'errors': errors,
+            'error_count': len(errors),
+        },
+        # Cap the visible change list so the modal stays readable; the full
+        # list lives in the session for confirm.
+        'changes_preview': changes[:50],
+    })
+
+
+@require_POST
+@login_required(login_url='core:login')
+def inventory_import_confirm(request):
+    """Apply the previously-previewed inventory import changes."""
+    from core.role_utils import get_user_role, ROLE_MANAGER, ROLE_SUPER_ADMIN
+    from core.models import InventoryCategory, InventoryPriceRecord
+    from django.db import transaction
+    from decimal import Decimal
+    from datetime import date as date_cls
+    role = get_user_role(request.user)
+    if role not in (ROLE_MANAGER, ROLE_SUPER_ADMIN):
+        return JsonResponse({'success': False, 'message': '无权限'}, status=403)
+    changes = request.session.get('_inv_import_changes')
+    if not changes:
+        return JsonResponse({'success': False, 'message': '没有待导入的变更（请先预览）'}, status=400)
+    updated = 0
+    price_added = 0
+    skipped = 0
+    for ch in changes:
+        cat_id = ch.get('cat_id')
+        fields = ch.get('fields') or {}
+        price = ch.get('price')
+        if not fields and not price:
+            skipped += 1
+            continue
+        try:
+            cat = InventoryCategory.objects.get(pk=cat_id)
+        except InventoryCategory.DoesNotExist:
+            skipped += 1
+            continue
+        with transaction.atomic():
+            update_fields = []
+            for k, v in fields.items():
+                setattr(cat, k, v)
+                update_fields.append(k)
+            if update_fields:
+                cat.save(update_fields=update_fields)
+            if price:
+                # Strong form: clear ALL is_current on this category, then add
+                # the imported record as the sole current price.
+                cat.price_records.update(is_current=False)
+                InventoryPriceRecord.objects.create(
+                    category=cat,
+                    date=date_cls.fromisoformat(price['date']),
+                    supplier=price['supplier'],
+                    unit_price=Decimal(price['unit_price']),
+                    is_current=True,
+                )
+                price_added += 1
+            updated += 1
+    # Clear the stashed changes so a stale session can't be re-applied.
+    request.session.pop('_inv_import_changes', None)
+    request.session.modified = True
+    return JsonResponse({
+        'success': True,
+        'message': f'导入完成：更新 {updated} 个部件，新增 {price_added} 条当前价格记录' +
+                   (f'，跳过 {skipped} 个无变更行' if skipped else ''),
+        'updated_count': updated,
+        'price_added_count': price_added,
+        'skipped_count': skipped,
+    })
 
 
 @login_required(login_url='core:login')

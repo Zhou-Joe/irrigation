@@ -65,6 +65,15 @@
 .pb-po-pick { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 .pb-po-opt { font-size: .8rem; padding: 4px 10px; border: 1px solid #d8d8d8; border-radius: 8px; cursor: pointer; color: #555; background: #fff; }
 .pb-po-opt.on { background: var(--color-primary-light, #2D6A4F); color: #fff; border-color: var(--color-primary-light, #2D6A4F); }
+
+/* Delete-confirm modal (requires username + password re-entry). */
+.pd-warn { font-size: .88rem; color: #6b7280; line-height: 1.5; background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 10px 12px; margin-bottom: 12px; }
+.pd-warn b { color: #b3261e; }
+.pd-field { margin-bottom: 12px; }
+.pd-field label { display: block; font-size: .8rem; font-weight: 600; color: #6b7280; margin-bottom: 4px; }
+.pd-field input { width: 100%; box-sizing: border-box; padding: 8px 10px; border: 1px solid #d8dde3; border-radius: 8px; font-size: .9rem; font-family: inherit; }
+.pd-field input:focus { outline: none; border-color: #b3261e; box-shadow: 0 0 0 3px rgba(179,38,30,0.12); }
+.pd-error { color: #b3261e; font-size: .82rem; margin-top: 4px; }
 </style>
 {% endblock %}
 
@@ -185,9 +194,8 @@
               <button type="button" class="btn-sm btn-secondary pm-toggle" onclick="pmToggleDetail({{ it.project.id }})">详情 ▾</button>
               <button type="button" class="btn-sm btn-secondary"
                 onclick='pmOpenEdit({{ it.project.id }}, {{ it.edit_json|default:"null"|safe }})'>编辑</button>
-              <form method="post" action="{% url 'core:project_delete' it.project.id %}" style="display:inline;" onsubmit="return confirm('删除项目 {{ it.project.name }}？关联工单的项目引用将被清空。');">
-                {% csrf_token %}<button type="submit" class="btn-sm btn-danger">删除</button>
-              </form>
+              <button type="button" class="btn-sm btn-danger"
+                onclick='pmOpenDelete({{ it.project.id }}, "{{ it.project.name|escapejs }}")'>删除</button>
             </td>
           </tr>
           <tr class="app-row-detail" id="pmDetailRow-{{ it.project.id }}">
@@ -306,6 +314,33 @@
     <div class="app-foot">
       <button type="button" class="btn-sm btn-secondary" style="flex:1;justify-content:center;" onclick="pbClose()">取消</button>
       <button type="button" class="btn-sm btn-primary" style="flex:1;justify-content:center;" id="pbSubmit" onclick="pbSave()">保存</button>
+    </div>
+  </div>
+</div>
+
+{# ── Delete-confirm modal: requires username + password re-entry. #}
+{# Hardens against accidental deletes — the backend re-checks via authenticate(). #}
+<div class="app-mask" id="pdMask">
+  <div class="app-dialog" style="max-width:420px;">
+    <div class="app-dlg-head">
+      <h3 style="color:#b3261e;">确认删除项目</h3>
+      <button type="button" class="app-close" onclick="pdClose()">×</button>
+    </div>
+    <div class="app-body">
+      <div class="pd-warn">⚠ 此操作不可撤销。项目「<b id="pdName"></b>」及其关联将被删除，相关工单/库存流水的项目引用会被清空。</div>
+      <div class="pd-field">
+        <label>您的账号</label>
+        <input type="text" id="pdUsername" autocomplete="off" placeholder="重新输入登录账号">
+      </div>
+      <div class="pd-field">
+        <label>您的密码</label>
+        <input type="password" id="pdPassword" autocomplete="current-password" placeholder="重新输入登录密码">
+      </div>
+      <div id="pdError" class="pd-error" style="display:none;"></div>
+    </div>
+    <div class="app-foot">
+      <button type="button" class="btn-sm btn-secondary" style="flex:1;justify-content:center;" onclick="pdClose()">取消</button>
+      <button type="button" class="btn-sm btn-danger" style="flex:1;justify-content:center;" id="pdConfirm" onclick="pdSubmit()">确认删除</button>
     </div>
   </div>
 </div>
@@ -733,6 +768,59 @@ function peClose() { document.getElementById('peMask').classList.remove('open');
 document.getElementById('peMask').addEventListener('click', function (e) { if (e.target === this) peClose(); });
 document.addEventListener('keydown', function (e) {
     if (e.key === 'Escape' && document.getElementById('peMask').classList.contains('open')) peClose();
+});
+
+// ── Delete-confirm modal (requires username + password re-entry) ──────
+// The delete button calls pmOpenDelete(id, name) which opens this modal.
+// On 确认删除 we POST to the delete endpoint with the entered credentials;
+// the backend re-checks via authenticate() before deleting.
+var _pdPid = null;
+function pmOpenDelete(pid, name) {
+    _pdPid = pid;
+    document.getElementById('pdName').textContent = name || '';
+    document.getElementById('pdUsername').value = '';
+    document.getElementById('pdPassword').value = '';
+    document.getElementById('pdError').style.display = 'none';
+    document.getElementById('pdMask').classList.add('open');
+    setTimeout(function () { document.getElementById('pdUsername').focus(); }, 50);
+}
+function pdClose() { document.getElementById('pdMask').classList.remove('open'); _pdPid = null; }
+function pdSubmit() {
+    if (!_pdPid) return;
+    var u = document.getElementById('pdUsername').value.trim();
+    var p = document.getElementById('pdPassword').value;
+    var errEl = document.getElementById('pdError');
+    if (!u || !p) { errEl.textContent = '请输入账号和密码'; errEl.style.display = 'block'; return; }
+    var btn = document.getElementById('pdConfirm');
+    btn.disabled = true; btn.textContent = '删除中…';
+    errEl.style.display = 'none';
+    var fd = new FormData();
+    fd.append('username', u);
+    fd.append('password', p);
+    fetch('/projects/' + _pdPid + '/delete/', {
+        method: 'POST', body: fd,
+        headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRFToken': _pmCsrf() }
+    }).then(function (r) { return r.json(); }).then(function (d) {
+        if (d.success) {
+            pdClose();
+            pmToast(d.message || '已删除');
+            // Reload so the row disappears.
+            setTimeout(function () { location.href = '/projects/'; }, 600);
+        } else {
+            // Wrong credentials / no permission — keep modal open, show error inline.
+            errEl.textContent = d.message || '删除失败';
+            errEl.style.display = 'block';
+            btn.disabled = false; btn.textContent = '确认删除';
+        }
+    }).catch(function () {
+        errEl.textContent = '网络错误，请重试';
+        errEl.style.display = 'block';
+        btn.disabled = false; btn.textContent = '确认删除';
+    });
+}
+document.getElementById('pdMask').addEventListener('click', function (e) { if (e.target === this) pdClose(); });
+document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && document.getElementById('pdMask').classList.contains('open')) pdClose();
 });
 
 // Clear all filters.

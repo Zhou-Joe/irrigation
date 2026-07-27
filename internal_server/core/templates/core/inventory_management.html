@@ -158,6 +158,29 @@
 .iv-txn-meta { color:#9ca3af; font-size:.74rem; }
 .iv-txn-empty { color:#9ca3af; font-size:.8rem; padding:8px 0; }
 
+/* Price-history section inside the part detail panel. */
+.iv-price-section { margin-top:14px; border-top:1px solid #eef0f3; padding-top:10px; }
+.iv-price-head { display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; }
+.iv-price-head h4 { font-size:.82rem; color:#6b7280; margin:0; font-weight:600; }
+.iv-price-add-btn { font-size:.74rem; padding:3px 10px; border:1px solid var(--color-primary-light,#2D6A4F);
+                    background:#fff; color:var(--color-primary,#2D6A4F); border-radius:6px; cursor:pointer; font-weight:600; }
+.iv-price-add-btn:hover { background:#f0fdf4; }
+.iv-price-current { font-size:.82rem; background:#fffbeb; border:1px solid #fcd34d; border-radius:6px;
+                    padding:6px 10px; margin-bottom:8px; color:#92400e; }
+.iv-price-current b { color:#78350f; }
+.iv-price-table { width:100%; border-collapse:collapse; font-size:.78rem; }
+.iv-price-table th { text-align:left; color:#9ca3af; font-weight:600; font-size:.72rem; padding:3px 4px; border-bottom:1px solid #e5e7eb; }
+.iv-price-table td { padding:4px; border-bottom:1px solid #f5f5f5; color:#374151; vertical-align:middle; }
+.iv-price-table tr.is-current td { background:#fef3c7; font-weight:600; }
+.iv-price-table tr.is-expired td { color:#9ca3af; }
+.iv-price-actions { white-space:nowrap; }
+.iv-price-actions button { font-size:.7rem; padding:2px 6px; margin-left:3px; border:1px solid #d1d5db;
+                           background:#fff; color:#6b7280; border-radius:4px; cursor:pointer; }
+.iv-price-actions button:hover { background:#f9fafb; }
+.iv-price-actions button.act { color:var(--color-primary,#2D6A4F); border-color:var(--color-primary-light,#2D6A4F); }
+.iv-price-actions button.del { color:#b3261e; border-color:#fecaca; }
+.iv-price-empty { color:#9ca3af; font-size:.78rem; padding:6px 0; }
+
 /* node CRUD modal (create/edit category+part) */
 .iv-modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,.5); display:flex;
                     align-items:center; justify-content:center; z-index:10000; padding:16px; }
@@ -521,6 +544,9 @@ table.iv-ledger .lvl-tag.warn { background: #fdf6ec; color: #cc7722; }
         <button type="button" class="btn-sm btn-secondary" onclick="ivJstreeOpenCreate(null)">+ 新建根目录</button>
         {% endif %}
         <a href="{% url 'core:inventory_export_excel' %}" class="btn-sm btn-secondary" style="text-decoration:none;">⬇ 导出Excel</a>
+        {% if is_full_access %}
+        <button type="button" class="btn-sm btn-secondary" onclick="ivImportOpen()">⬆ 导入Excel</button>
+        {% endif %}
       </div>
     </div>
     <p class="iv-hint">右键节点 → 新建/编辑/删除{% if is_full_access %} · 拖动改顺序/改父级{% endif %} · 点部件节点 → 右侧显示库存详情与交易记录</p>
@@ -1275,11 +1301,86 @@ other pages stay jQuery-free; jsTree depends on it.{% endcomment %}
   </div>
 </div>
 
+{# Price-record add/edit modal (parts only, manager only). #}
+<div class="iv-modal-overlay" id="ivPriceModal" style="display:none;">
+  <div class="iv-modal" role="dialog" aria-modal="true" style="max-width:420px;">
+    <div class="iv-modal-head">
+      <span id="ivPriceTitle">添加采购价格</span>
+      <button type="button" class="iv-modal-close" onclick="ivPriceClose()" aria-label="关闭">×</button>
+    </div>
+    <div class="iv-modal-body">
+      <input type="hidden" id="ivPriceRecordId" value="">
+      <input type="hidden" id="ivPriceCatId" value="">
+      <div class="iv-field">
+        <label>采购日期 *</label>
+        <input type="date" id="ivPriceDate">
+      </div>
+      <div class="iv-field">
+        <label>供应商</label>
+        <input type="text" id="ivPriceSupplier" maxlength="200" placeholder="供应商名称">
+      </div>
+      <div class="iv-field">
+        <label>单价 *</label>
+        <input type="number" id="ivPriceUnitPrice" step="0.01" min="0" placeholder="0.00">
+      </div>
+      <div class="iv-field">
+        <label>单位（留空继承部件）</label>
+        <input type="text" id="ivPriceUnit" maxlength="10" placeholder="如 个 / m / 瓶">
+      </div>
+      <div class="iv-field">
+        <label>备注</label>
+        <input type="text" id="ivPriceNote" maxlength="200" placeholder="可选">
+      </div>
+      <div class="iv-field">
+        <label><input type="checkbox" id="ivPriceIsCurrent"> 设为当前价格</label>
+      </div>
+    </div>
+    <div class="iv-modal-foot">
+      <button type="button" class="btn-sm btn-secondary" onclick="ivPriceClose()">取消</button>
+      <button type="button" class="btn-sm btn-primary" id="ivPriceSaveBtn" onclick="ivPriceSave()">保存</button>
+    </div>
+  </div>
+</div>
+
+{# Excel import modal: upload → preview changes → confirm. Manager only. #}
+<div class="iv-modal-overlay" id="ivImportModal" style="display:none;">
+  <div class="iv-modal" role="dialog" aria-modal="true" style="max-width:560px;">
+    <div class="iv-modal-head">
+      <span>导入库存 Excel</span>
+      <button type="button" class="iv-modal-close" onclick="ivImportClose()" aria-label="关闭">×</button>
+    </div>
+    <div class="iv-modal-body">
+      <div class="iv-import-step" id="ivImportStep1">
+        <p style="font-size:.84rem;color:#6b7280;margin-bottom:10px;">
+          选择导出的 Excel 文件（可编辑 库存/主材/单位/当前价格 列）。系统会按隐藏的编码列匹配部件，忽略历史价格明细行。
+        </p>
+        <input type="file" id="ivImportFile" accept=".xlsx"
+               style="font-size:.84rem;margin-bottom:10px;">
+        <button type="button" class="btn-sm btn-primary" onclick="ivImportUpload()">上传预览</button>
+      </div>
+      <div class="iv-import-step" id="ivImportStep2" style="display:none;">
+        <div id="ivImportSummary" style="font-size:.84rem;margin-bottom:10px;"></div>
+        <div id="ivImportChanges" style="max-height:280px;overflow-y:auto;font-size:.78rem;
+             border:1px solid #e5e7eb;border-radius:6px;padding:8px;"></div>
+      </div>
+    </div>
+    <div class="iv-modal-foot">
+      <button type="button" class="btn-sm btn-secondary" onclick="ivImportClose()">取消</button>
+      <button type="button" class="btn-sm btn-primary" id="ivImportConfirmBtn"
+              onclick="ivImportConfirm()" style="display:none;">确认导入</button>
+    </div>
+  </div>
+</div>
+
 <script>
 var IV_URLS = {
   tree: "{% url 'core:inventory_tree_json' %}",
   detail: "/inventory/node/{id}/detail/",
   save:   "/inventory/node/{id}/save/",
+  priceAdd: "/inventory/node/{id}/price/add/",
+  priceEdit: "/inventory/price/{id}/edit/",
+  priceDel:  "/inventory/price/{id}/delete/",
+  priceSetCurrent: "/inventory/price/{id}/set-current/",
   create: "{% url 'core:inventory_category_create' %}",
   edit:   "/inventory/category/{id}/edit/",
   del:    "/inventory/category/{id}/delete/",
@@ -1384,6 +1485,7 @@ function ivJstreeLoadDetail(catId) {
     .then(function (r) { return r.json(); })
     .then(function (d) {
       if (!d.success) { ivJstreeToast(d.message || '加载详情失败', true); return; }
+      _ivPriceRecords = d.price_records || [];   // cache for the edit modal's prefill
       ivJstreeRenderDetail(d);
     })
     .catch(function () { ivJstreeToast('网络错误', true); });
@@ -1411,6 +1513,49 @@ function ivJstreeRenderDetail(d) {
   var txnBlock = '<div class="iv-txn-list"><h4>最近交易 (' + d.total_txn_count + ')</h4>' +
     (txnRows || '<div class="iv-txn-empty">暂无交易记录</div>') + '</div>';
   var disabledAttr = isMgr ? '' : ' disabled';
+  // Price-history section (parts only). current_price_id marks the resolved
+  // current record; is_current is the manual flag. A record is "expired" when
+  // it's not the current one.
+  var priceBlock = '';
+  if (n.node_type === 'part') {
+    var prices = d.price_records || [];
+    var curId = d.current_price_id;
+    var curRec = null;
+    for (var pi = 0; pi < prices.length; pi++) { if (prices[pi].id === curId) { curRec = prices[pi]; break; } }
+    var curLine = curRec
+      ? '<div class="iv-price-current">当前价格: <b>¥' + esc(curRec.unit_price) + '</b>' +
+        (curRec.unit ? ' / ' + esc(curRec.unit) : '') +
+        ' (' + esc(curRec.date || '') + (curRec.supplier ? ' · ' + esc(curRec.supplier) : '') + ')</div>'
+      : '';
+    var addBtn = isMgr
+      ? '<button class="iv-price-add-btn" onclick="ivPriceOpen(null)">+ 添加价格</button>'
+      : '';
+    var rowsHtml = prices.map(function (r) {
+      var isCur = r.id === curId;
+      var rowCls = isCur ? 'is-current' : 'is-expired';
+      var actions = isMgr
+        ? '<span class="iv-price-actions">' +
+            (isCur ? '' : '<button class="act" onclick="ivPriceSetCurrent(' + r.id + ')">设为当前</button>') +
+            '<button onclick="ivPriceOpen(' + r.id + ')">编辑</button>' +
+            '<button class="del" onclick="ivPriceDelete(' + r.id + ')">删除</button>' +
+          '</span>'
+        : '';
+      return '<tr class="' + rowCls + '">' +
+        '<td>' + esc(r.date || '') + '</td>' +
+        '<td>' + esc(r.supplier || '') + '</td>' +
+        '<td>¥' + esc(r.unit_price) + '</td>' +
+        '<td>' + esc(r.unit || '') + '</td>' +
+        '<td>' + (isCur ? '<b>当前</b>' : '<span style="color:#9ca3af;">已过期</span>') + '</td>' +
+        '<td>' + actions + '</td>' +
+      '</tr>';
+    }).join('');
+    var tableHtml = prices.length
+      ? '<table class="iv-price-table"><thead><tr><th>日期</th><th>供应商</th><th>单价</th><th>单位</th><th>状态</th><th></th></tr></thead><tbody>' + rowsHtml + '</tbody></table>'
+      : '<div class="iv-price-empty">暂无采购价格记录</div>';
+    priceBlock = '<div class="iv-price-section">' +
+      '<div class="iv-price-head"><h4>采购价格记录 (' + prices.length + ')</h4>' + addBtn + '</div>' +
+      curLine + tableHtml + '</div>';
+  }
   panel.innerHTML =
     '<div class="iv-detail-head">' +
       '<span class="iv-detail-name">' + esc(n.name_zh) + '</span>' +
@@ -1431,8 +1576,12 @@ function ivJstreeRenderDetail(d) {
         (isMgr ? '<div class="iv-detail-actions">' +
           '<button class="btn-sm btn-primary" onclick="ivJstreeSaveDetail(' + n.id + ')">保存</button>' +
         '</div>' : '') +
+        priceBlock +
         txnBlock
       : '<div class="iv-detail-empty">这是目录节点，点子节点查看具体部件</div>' + txnBlock);
+  // Stash the current part id + unit so the price modal can read defaults.
+  _ivCurrentPartId = n.id;
+  _ivCurrentPartUnit = n.unit || '';
 }
 
 function esc(s) { var d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; }
@@ -1456,6 +1605,161 @@ function ivJstreeSaveDetail(catId) {
 function ivJstreeToggleMain(catId, checked) {
   ivJstreePost(IV_URLS.save.replace('{id}', catId), { is_main_material: checked ? '1' : '' })
     .then(function (d) { ivJstreeToast(d.message, !d.success); });
+}
+
+// ── Price-record modal + CRUD ──
+// _ivCurrentPartId / _ivCurrentPartUnit are stashed by ivJstreeRenderDetail so
+// the modal knows which part it's editing without re-deriving from the DOM.
+var _ivCurrentPartId = null;
+var _ivCurrentPartUnit = '';
+// _ivPriceRecords holds the latest fetched records so the edit modal can
+// prefill from a record id without a second fetch.
+var _ivPriceRecords = [];
+
+function ivPriceOpen(recordId) {
+  // recordId null → add mode; number → edit mode (prefill from _ivPriceRecords)
+  var isEdit = recordId != null;
+  document.getElementById('ivPriceTitle').textContent = isEdit ? '编辑采购价格' : '添加采购价格';
+  document.getElementById('ivPriceRecordId').value = isEdit ? recordId : '';
+  document.getElementById('ivPriceCatId').value = _ivCurrentPartId || '';
+  document.getElementById('ivPriceUnit').placeholder = _ivCurrentPartUnit ? '继承部件 (' + _ivCurrentPartUnit + ')' : '如 个 / m';
+  if (isEdit) {
+    var rec = null;
+    for (var i = 0; i < _ivPriceRecords.length; i++) { if (_ivPriceRecords[i].id === recordId) { rec = _ivPriceRecords[i]; break; } }
+    document.getElementById('ivPriceDate').value = rec ? rec.date : '';
+    document.getElementById('ivPriceSupplier').value = rec ? rec.supplier : '';
+    document.getElementById('ivPriceUnitPrice').value = rec ? rec.unit_price : '';
+    document.getElementById('ivPriceUnit').value = rec ? rec.unit : '';
+    document.getElementById('ivPriceNote').value = rec ? rec.note : '';
+    document.getElementById('ivPriceIsCurrent').checked = rec ? rec.is_current : false;
+  } else {
+    // default date = today
+    var today = new Date().toISOString().slice(0, 10);
+    document.getElementById('ivPriceDate').value = today;
+    document.getElementById('ivPriceSupplier').value = '';
+    document.getElementById('ivPriceUnitPrice').value = '';
+    document.getElementById('ivPriceUnit').value = '';
+    document.getElementById('ivPriceNote').value = '';
+    // New records default to current (most common case when adding the latest price)
+    document.getElementById('ivPriceIsCurrent').checked = true;
+  }
+  document.getElementById('ivPriceModal').style.display = 'flex';
+  setTimeout(function () { document.getElementById('ivPriceDate').focus(); }, 50);
+}
+function ivPriceClose() { document.getElementById('ivPriceModal').style.display = 'none'; }
+function ivPriceSave() {
+  var recordId = document.getElementById('ivPriceRecordId').value;
+  var catId = document.getElementById('ivPriceCatId').value;
+  if (!catId) { ivJstreeToast('未选中部件', true); return; }
+  var payload = {
+    date: document.getElementById('ivPriceDate').value,
+    supplier: document.getElementById('ivPriceSupplier').value,
+    unit_price: document.getElementById('ivPriceUnitPrice').value,
+    unit: document.getElementById('ivPriceUnit').value,
+    note: document.getElementById('ivPriceNote').value,
+    is_current: document.getElementById('ivPriceIsCurrent').checked ? '1' : '',
+  };
+  if (!payload.date) { ivJstreeToast('请填日期', true); return; }
+  if (!payload.unit_price) { ivJstreeToast('请填单价', true); return; }
+  var url = recordId
+    ? IV_URLS.priceEdit.replace('{id}', recordId)
+    : IV_URLS.priceAdd.replace('{id}', catId);
+  document.getElementById('ivPriceSaveBtn').disabled = true;
+  ivJstreePost(url, payload).then(function (d) {
+    ivJstreeToast(d.message, !d.success);
+    document.getElementById('ivPriceSaveBtn').disabled = false;
+    if (d.success) { ivPriceClose(); ivJstreeLoadDetail(catId); }
+  }).catch(function () { ivJstreeToast('网络错误', true); document.getElementById('ivPriceSaveBtn').disabled = false; });
+}
+function ivPriceDelete(recordId) {
+  if (!confirm('确认删除这条价格记录？')) return;
+  ivJstreePost(IV_URLS.priceDel.replace('{id}', recordId), {}).then(function (d) {
+    ivJstreeToast(d.message, !d.success);
+    if (d.success && _ivCurrentPartId) ivJstreeLoadDetail(_ivCurrentPartId);
+  }).catch(function () { ivJstreeToast('网络错误', true); });
+}
+function ivPriceSetCurrent(recordId) {
+  ivJstreePost(IV_URLS.priceSetCurrent.replace('{id}', recordId), {}).then(function (d) {
+    ivJstreeToast(d.message, !d.success);
+    if (d.success && _ivCurrentPartId) ivJstreeLoadDetail(_ivCurrentPartId);
+  }).catch(function () { ivJstreeToast('网络错误', true); });
+}
+
+// ── Excel import (preview → confirm) ──
+function ivImportOpen() {
+  // Reset to step 1 (file pick) + clear any prior preview.
+  document.getElementById('ivImportStep1').style.display = '';
+  document.getElementById('ivImportStep2').style.display = 'none';
+  document.getElementById('ivImportConfirmBtn').style.display = 'none';
+  document.getElementById('ivImportFile').value = '';
+  document.getElementById('ivImportSummary').textContent = '';
+  document.getElementById('ivImportChanges').textContent = '';
+  document.getElementById('ivImportModal').style.display = 'flex';
+}
+function ivImportClose() { document.getElementById('ivImportModal').style.display = 'none'; }
+function ivImportUpload() {
+  var fileInput = document.getElementById('ivImportFile');
+  if (!fileInput.files || !fileInput.files[0]) { ivJstreeToast('请选择文件', true); return; }
+  var fd = new FormData();
+  fd.append('file', fileInput.files[0]);
+  var btn = event.target; btn.disabled = true; btn.textContent = '解析中…';
+  fetch("{% url 'core:inventory_import_preview' %}", {
+    method: 'POST', body: fd,
+    headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRFToken': IV_CSRF },
+  }).then(function (r) { return r.json(); }).then(function (d) {
+    btn.disabled = false; btn.textContent = '上传预览';
+    if (!d.success) { ivJstreeToast(d.message || '解析失败', true); return; }
+    ivImportRenderPreview(d);
+  }).catch(function () { btn.disabled = false; btn.textContent = '上传预览'; ivJstreeToast('网络错误', true); });
+}
+function ivImportRenderPreview(d) {
+  var s = d.summary;
+  var sumHtml = '<div style="background:#f0fdf4;border:1px solid #86efac;border-radius:6px;padding:8px 10px;">' +
+    '<b>将导入 ' + s.total_changes + ' 个部件</b>：库存/属性变更 ' + s.stock_changes + ' · 新增当前价格 ' + s.price_adds +
+    (s.error_count ? ' · <span style="color:#b3261e;">' + s.error_count + ' 个问题行已跳过</span>' : '') +
+    '</div>';
+  document.getElementById('ivImportSummary').innerHTML = sumHtml;
+  // Render a compact change list (first 50). Each row: 品名 + what changes.
+  var html = d.changes_preview.map(function (c) {
+    var parts = [];
+    if (c.fields) {
+      Object.keys(c.fields).forEach(function (k) {
+        var label = {min_stock:'最低库存', current_stock:'现有库存', is_main_material:'主材', unit:'单位'}[k] || k;
+        parts.push(label + '→' + c.fields[k]);
+      });
+    }
+    if (c.price) parts.push('当前价格 ¥' + c.price.unit_price + ' (' + c.price.supplier + '/' + c.price.date + ')');
+    return '<div style="padding:3px 0;border-bottom:1px solid #f5f5f5;">' +
+      '<span style="color:#374151;font-weight:600;">' + esc(c.name) + '</span>' +
+      '<span style="color:#9ca3af;margin-left:6px;">' + esc(parts.join(' · ')) + '</span></div>';
+  }).join('');
+  var errs = (s.errors || []).map(function (e) {
+    return '<div style="color:#b3261e;padding:2px 0;">⚠ ' + esc(e) + '</div>';
+  }).join('');
+  document.getElementById('ivImportChanges').innerHTML = html + errs || '<div style="color:#9ca3af;">无变更</div>';
+  // Move to step 2 + show confirm button.
+  document.getElementById('ivImportStep1').style.display = 'none';
+  document.getElementById('ivImportStep2').style.display = '';
+  document.getElementById('ivImportConfirmBtn').style.display = '';
+  if (!s.total_changes) document.getElementById('ivImportConfirmBtn').style.display = 'none';
+}
+function ivImportConfirm() {
+  var btn = document.getElementById('ivImportConfirmBtn');
+  btn.disabled = true; btn.textContent = '导入中…';
+  fetch("{% url 'core:inventory_import_confirm' %}", {
+    method: 'POST',
+    headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRFToken': IV_CSRF },
+  }).then(function (r) { return r.json(); }).then(function (d) {
+    btn.disabled = false; btn.textContent = '确认导入';
+    ivJstreeToast(d.message || (d.success ? '导入完成' : '导入失败'), !d.success);
+    if (d.success) {
+      ivImportClose();
+      // Refresh the tree so renamed/reordered parts reflect the import.
+      if (ivJstree) ivJstree.jstree(true).refresh();
+      // If a detail panel is open, reload it too.
+      if (_ivCurrentPartId) ivJstreeLoadDetail(_ivCurrentPartId);
+    }
+  }).catch(function () { btn.disabled = false; btn.textContent = '确认导入'; ivJstreeToast('网络错误', true); });
 }
 
 // ── Create / edit modal ──
@@ -1551,11 +1855,19 @@ function ivJstreeDelete(node) {
 }
 
 document.addEventListener('keydown', function (e) {
-  if (e.key === 'Escape' && document.getElementById('ivJstreeModal').style.display !== 'none') ivJstreeCloseModal();
+  if (e.key === 'Escape') {
+    if (document.getElementById('ivJstreeModal').style.display !== 'none') ivJstreeCloseModal();
+    if (document.getElementById('ivPriceModal').style.display !== 'none') ivPriceClose();
+    if (document.getElementById('ivImportModal').style.display !== 'none') ivImportClose();
+  }
 });
 document.addEventListener('click', function (e) {
   var m = document.getElementById('ivJstreeModal');
   if (m && m.style.display !== 'none' && e.target === m) ivJstreeCloseModal();
+  var pm = document.getElementById('ivPriceModal');
+  if (pm && pm.style.display !== 'none' && e.target === pm) ivPriceClose();
+  var im = document.getElementById('ivImportModal');
+  if (im && im.style.display !== 'none' && e.target === im) ivImportClose();
 });
 
 // Hook into the existing ivSwitchTab so the tree initializes on first open.

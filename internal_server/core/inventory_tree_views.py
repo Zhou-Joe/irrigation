@@ -15,8 +15,34 @@ from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
 from django.views.decorators.http import require_POST
 
-from core.models import InventoryCategory, InventoryTransactionLine
+from core.models import InventoryCategory, InventoryPriceRecord, InventoryTransactionLine
 from core.role_utils import is_admin
+
+
+def _price_record_to_dict(rec):
+    """Serialize one InventoryPriceRecord for the detail panel / export."""
+    return {
+        'id': rec.id,
+        'date': rec.date.isoformat() if rec.date else '',
+        'supplier': rec.supplier or '',
+        'unit_price': str(rec.unit_price),   # Decimal → str for JSON safety
+        'unit': rec.unit or '',
+        'is_current': rec.is_current,
+        'note': rec.note or '',
+    }
+
+
+def current_price_for(category):
+    """Return the current-price record for a part, or None.
+
+    Rule (mirrors the UI contract): if any record has ``is_current=True``, the
+    newest such record wins; otherwise the newest-by-date record wins. The
+    model's Meta ordering (``-date, -id``) makes ``.first()`` return the newest.
+    """
+    marked = category.price_records.filter(is_current=True).first()
+    if marked:
+        return marked
+    return category.price_records.first()
 
 
 def _iv_to_jstree_node(c):
@@ -117,6 +143,13 @@ def inventory_node_detail(request, cat_id):
         },
         'transactions': txns,
         'total_txn_count': InventoryTransactionLine.objects.filter(category=cat).count(),
+        # Price-history records (parts only; categories get an empty list).
+        # `current_price` carries the resolved current record so the panel can
+        # highlight it without recomputing the is_current/fallback rule.
+        'price_records': ([_price_record_to_dict(r) for r in cat.price_records.all()]
+                          if cat.node_type == 'part' else []),
+        'current_price_id': (current_price_for(cat).id
+                             if cat.node_type == 'part' and current_price_for(cat) else None),
     })
 
 
@@ -165,4 +198,152 @@ def inventory_node_save(request, cat_id):
         'success': True,
         'message': f'已更新「{cat.name_zh}」',
         'node': _iv_to_jstree_node(cat),
+    })
+
+
+# ── Price-history CRUD (manager-only, parts only) ──────────────────────
+# Mirrors the inventory_node_save permission/guard pattern. Every write path
+# keeps at most ONE is_current=True record per category so current_price_for()
+# stays unambiguous.
+
+def _require_price_manager(request):
+    """Return (ok, error_response). Manager/super-admin gate for price writes."""
+    from core.role_utils import get_user_role, ROLE_MANAGER, ROLE_SUPER_ADMIN
+    role = get_user_role(request.user)
+    if role not in (ROLE_MANAGER, ROLE_SUPER_ADMIN):
+        return False, JsonResponse({'success': False, 'message': '无权限'}, status=403)
+    return True, None
+
+
+@require_POST
+@login_required(login_url='core:login')
+def inventory_price_add(request, cat_id):
+    """Add a price record to a part. Clears other is_current flags if this one
+    is marked current, so the one-current-price invariant holds."""
+    ok, err = _require_price_manager(request)
+    if not ok:
+        return err
+    cat = get_object_or_404(InventoryCategory, pk=cat_id)
+    if cat.node_type != 'part':
+        return JsonResponse({'success': False, 'message': '只能给部件添加价格记录'}, status=400)
+    from datetime import date as date_cls
+    from decimal import Decimal, InvalidOperation
+    date_str = (request.POST.get('date') or '').strip()
+    try:
+        rec_date = date_cls.fromisoformat(date_str) if date_str else date_cls.today()
+    except ValueError:
+        return JsonResponse({'success': False, 'message': '日期格式无效（需 YYYY-MM-DD）'}, status=400)
+    try:
+        price = Decimal(request.POST.get('unit_price') or '0')
+        if price < 0:
+            raise InvalidOperation()
+    except (InvalidOperation, ValueError):
+        return JsonResponse({'success': False, 'message': '单价必须是非负数字'}, status=400)
+    supplier = (request.POST.get('supplier') or '').strip()[:200]
+    unit = (request.POST.get('unit') or '').strip()[:10]
+    note = (request.POST.get('note') or '').strip()[:200]
+    is_current = request.POST.get('is_current') in ('1', 'true', 'on')
+    with transaction.atomic():
+        if is_current:
+            cat.price_records.exclude(is_current=False).update(is_current=False)
+        rec = InventoryPriceRecord.objects.create(
+            category=cat, date=rec_date, supplier=supplier,
+            unit_price=price, unit=unit, is_current=is_current, note=note,
+        )
+    cur = current_price_for(cat)
+    return JsonResponse({
+        'success': True,
+        'message': '价格记录已添加',
+        'record': _price_record_to_dict(rec),
+        'current_price_id': cur.id if cur else None,
+    })
+
+
+@require_POST
+@login_required(login_url='core:login')
+def inventory_price_edit(request, record_id):
+    """Partial-update a price record. Honors is_current exclusivity."""
+    ok, err = _require_price_manager(request)
+    if not ok:
+        return err
+    rec = get_object_or_404(InventoryPriceRecord, pk=record_id)
+    from datetime import date as date_cls
+    from decimal import Decimal, InvalidOperation
+    update_fields = []
+    if 'date' in request.POST:
+        date_str = (request.POST.get('date') or '').strip()
+        try:
+            rec.date = date_cls.fromisoformat(date_str) if date_str else date_cls.today()
+            update_fields.append('date')
+        except ValueError:
+            return JsonResponse({'success': False, 'message': '日期格式无效'}, status=400)
+    if 'unit_price' in request.POST:
+        try:
+            rec.unit_price = Decimal(request.POST.get('unit_price') or '0')
+            update_fields.append('unit_price')
+        except (InvalidOperation, ValueError):
+            return JsonResponse({'success': False, 'message': '单价必须是非负数字'}, status=400)
+    if 'supplier' in request.POST:
+        rec.supplier = (request.POST.get('supplier') or '').strip()[:200]
+        update_fields.append('supplier')
+    if 'unit' in request.POST:
+        rec.unit = (request.POST.get('unit') or '').strip()[:10]
+        update_fields.append('unit')
+    if 'note' in request.POST:
+        rec.note = (request.POST.get('note') or '').strip()[:200]
+        update_fields.append('note')
+    if 'is_current' in request.POST:
+        rec.is_current = request.POST.get('is_current') in ('1', 'true', 'on')
+        update_fields.append('is_current')
+    if not update_fields:
+        return JsonResponse({'success': False, 'message': '无字段需要更新'}, status=400)
+    with transaction.atomic():
+        # Maintain one-current-per-category invariant.
+        if 'is_current' in update_fields and rec.is_current:
+            rec.category.price_records.exclude(id=rec.id).update(is_current=False)
+        rec.save(update_fields=update_fields)
+    cur = current_price_for(rec.category)
+    return JsonResponse({
+        'success': True,
+        'message': '价格记录已更新',
+        'record': _price_record_to_dict(rec),
+        'current_price_id': cur.id if cur else None,
+    })
+
+
+@require_POST
+@login_required(login_url='core:login')
+def inventory_price_delete(request, record_id):
+    """Delete a price record."""
+    ok, err = _require_price_manager(request)
+    if not ok:
+        return err
+    rec = get_object_or_404(InventoryPriceRecord, pk=record_id)
+    cat = rec.category
+    with transaction.atomic():
+        rec.delete()
+    cur = current_price_for(cat)
+    return JsonResponse({
+        'success': True,
+        'message': '价格记录已删除',
+        'current_price_id': cur.id if cur else None,
+    })
+
+
+@require_POST
+@login_required(login_url='core:login')
+def inventory_price_set_current(request, record_id):
+    """Mark a record as the current price (clears other is_current on its category)."""
+    ok, err = _require_price_manager(request)
+    if not ok:
+        return err
+    rec = get_object_or_404(InventoryPriceRecord, pk=record_id)
+    with transaction.atomic():
+        rec.category.price_records.exclude(id=rec.id).update(is_current=False)
+        rec.is_current = True
+        rec.save(update_fields=['is_current'])
+    return JsonResponse({
+        'success': True,
+        'message': '已设为当前价格',
+        'record': _price_record_to_dict(rec),
     })
