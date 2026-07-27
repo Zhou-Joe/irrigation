@@ -139,9 +139,15 @@
   .wr-cmt-body { font-size:0.86em; color:var(--wr-text); line-height:1.45; white-space:pre-wrap; word-break:break-word; }
   .wr-cmt-empty { font-size:0.8em; color:#aaa; padding:4px 0; }
   .wr-cmt-add { display:flex; gap:6px; margin-top:6px; }
-  /* The 写评论 input + 发送 button are hidden by default and only shown after
-     the user clicks the 💬 chip. Historical comments (auto-loaded when the chip
-     count > 0) stay visible regardless — only the input box is gated. */
+  /* Comment box visibility is two-layered:
+     - .cmt-empty (count == 0): the ENTIRE .wr-dsec comment section is hidden so
+       the card stays compact — no "评论" label, no empty placeholder, nothing but
+       the 💬 chip. Shown once the user clicks the chip (which drops the class).
+     - .cmt-collapsed: only the 写评论 input + 发送 button are hidden. Historical
+       comments (auto-loaded when chip count > 0) still render. Removed on chip
+       click. A card carries both classes by default; count > 0 cards never get
+       cmt-empty (autoload keeps their section visible). */
+  .wr-card.cmt-empty .wr-dsec.wr-cmt-section { display:none; }
   .wr-card.cmt-collapsed .wr-cmt-add { display:none; }
   .wr-cmt-input { flex:1; border:1px solid #ddd; border-radius:8px; padding:7px 10px; font-size:0.86em; resize:none; min-height:38px; max-height:100px; font-family:inherit; }
   .wr-cmt-send { flex:0 0 auto; background: var(--wr-accent); color:#fff; border:none; border-radius:8px; padding:0 14px; font-size:0.86em; font-weight:600; cursor:pointer; }
@@ -489,7 +495,7 @@
         {% if pending_repairs %}
         <div id="repairBody" style="margin-top:8px;">
             {% for r in pending_repairs %}
-            <div class="wr-card cmt-collapsed" id="repairRow-{{ r.id }}" data-rid="{{ r.id }}">
+            <div class="wr-card cmt-collapsed {% if not r.comment_count %}cmt-empty{% endif %}" id="repairRow-{{ r.id }}" data-rid="{{ r.id }}">
                 <div class="wr-summary" style="cursor:default;">
                     <div class="wr-card-top">
                         <span class="wr-card-date">{{ r.date }}</span>
@@ -514,7 +520,7 @@
                 </div>
                 <div class="wr-detail" style="display:block;border-top:1px solid var(--wr-card-border);padding:12px 14px;background:#fafafa;" id="repairCollab-{{ r.id }}">
                     {# Comment thread — placed FIRST so the manager 标记已解决 action (rendered at the end of _followup_collab.html) lands directly below the 发送 button, as requested. #}
-                    <div class="wr-dsec">
+                    <div class="wr-dsec wr-cmt-section">
                         <div class="wr-dlabel">评论</div>
                         <div class="wr-cmt-loading" id="cmtLoading-{{ r.id }}" style="display:none;">加载中…</div>
                         <div class="wr-cmt-list" id="cmtList-{{ r.id }}"></div>
@@ -544,7 +550,7 @@
         {% if resolved_repairs %}
         <div id="historyBody" style="margin-top:8px;">
             {% for r in resolved_repairs %}
-            <div class="wr-card cmt-collapsed" id="historyRow-{{ r.id }}" data-rid="{{ r.id }}">
+            <div class="wr-card cmt-collapsed {% if not r.comment_count %}cmt-empty{% endif %}" id="historyRow-{{ r.id }}" data-rid="{{ r.id }}">
                 <div class="wr-summary" style="cursor:default;">
                     <div class="wr-card-top">
                         <span class="wr-card-date">{{ r.date }}</span>
@@ -573,7 +579,7 @@
                 </div>
                 <div class="wr-detail" style="display:block;border-top:1px solid var(--wr-card-border);padding:12px 14px;background:#fafafa;" id="historyCollab-{{ r.id }}">
                     {% include 'core/_followup_collab.html' with parent_id=r.id collab_status=r.collab_status stories=r.followup_stories remark_group=r.remark_group is_manager=is_manager is_history=1 %}
-                    <div class="wr-dsec">
+                    <div class="wr-dsec wr-cmt-section">
                         <div class="wr-dlabel">评论</div>
                         <div class="wr-cmt-loading" id="cmtLoading-{{ r.id }}" style="display:none;">加载中…</div>
                         <div class="wr-cmt-list" id="cmtList-{{ r.id }}"></div>
@@ -1650,7 +1656,7 @@ function esc(s) { var d = document.createElement('div'); d.textContent = s == nu
 function isVideoPath(p) { return /\.(mp4|mov|m4v|webm|ogg|ogv|avi|mkv)$/i.test(p); }
 function thumbPath(p) { return p.replace(/\.[^.]+$/, '_thumb.jpg'); }
 function renderCard(r) {
-    var html = '<div class="wr-card cmt-collapsed" data-rid="' + r.id + '">';
+    var html = '<div class="wr-card cmt-collapsed' + (r.comment_count ? '' : ' cmt-empty') + '" data-rid="' + r.id + '">';
     html += '<div class="wr-summary" onclick="toggleCard(this)">';
     // top row
     html += '<div class="wr-card-top"><span class="wr-card-date">' + esc(r.date) + '</span>';
@@ -1800,7 +1806,7 @@ function renderCard(r) {
         html += '</div></div>';
     }
     // comments holder
-    html += '<div class="wr-dsec"><div class="wr-dlabel">评论</div><div class="wr-cmt-loading" id="cmtLoading-' + r.id + '" style="display:none;">加载中…</div><div class="wr-cmt-list" id="cmtList-' + r.id + '"></div><div class="wr-cmt-add"><textarea class="wr-cmt-input" id="cmtInput-' + r.id + '" rows="1" placeholder="写评论… (Ctrl+Enter 发送)" onkeydown="if((event.metaKey||event.ctrlKey)&&event.key===\'Enter\'){event.preventDefault();postComment(' + r.id + ', this);}"></textarea><button type="button" class="wr-cmt-send" onclick="postComment(' + r.id + ', this)">发送</button></div></div>';
+    html += '<div class="wr-dsec wr-cmt-section"><div class="wr-dlabel">评论</div><div class="wr-cmt-loading" id="cmtLoading-' + r.id + '" style="display:none;">加载中…</div><div class="wr-cmt-list" id="cmtList-' + r.id + '"></div><div class="wr-cmt-add"><textarea class="wr-cmt-input" id="cmtInput-' + r.id + '" rows="1" placeholder="写评论… (Ctrl+Enter 发送)" onkeydown="if((event.metaKey||event.ctrlKey)&&event.key===\'Enter\'){event.preventDefault();postComment(' + r.id + ', this);}"></textarea><button type="button" class="wr-cmt-send" onclick="postComment(' + r.id + ', this)">发送</button></div></div>';
     html += '</div>';
     // side actions
     html += '<div class="wr-side-actions"><a class="wr-act view" href="' + r.detail_url + '" target="_blank" rel="noopener">查看</a><a class="wr-act edit" href="' + r.edit_url + '" target="_blank" rel="noopener">编辑</a></div>';
@@ -1851,22 +1857,32 @@ function loadComments(rid, scope) {
         .catch(function () { if (ld) ld.style.display = 'none'; });
 }
 function toggleCmt(rid, chip) {
-    // First interaction loads the thread + reveals the 写评论 input; the chip
-    // also scrolls it into view inside the open card. Historical comments (auto-
-    // loaded on page load for chips with count > 0) stay visible regardless of
-    // this toggle — only the input box is gated by the .cmt-collapsed class.
+    // First interaction loads the thread + reveals the comment section + the
+    // 写评论 input; the chip also scrolls it into view inside the open card.
+    // .cmt-empty hides the WHOLE comment section (label/list/input) on cards
+    // with zero comments so they stay compact; dropped on chip click.
+    // .cmt-collapsed hides just the input box; dropped on chip click too.
+    // Historical comments (auto-loaded on page load for chips with count > 0,
+    // which never carry cmt-empty) stay visible regardless of this toggle.
     var card = chip.closest('.wr-card');
-    if (card) { card.classList.add('open'); card.classList.remove('cmt-collapsed'); }
+    if (card) { card.classList.add('open'); card.classList.remove('cmt-collapsed', 'cmt-empty'); }
     loadComments(rid, card);
 }
 function bumpCommentChip(rid) {
     // Bump the count on EVERY chip matching this rid (both the 维修日志 card and
     // the 疑难/待修 card show the same work order's comment count — keep them in sync).
-    var chips = document.querySelectorAll('.wr-card[data-rid="' + rid + '"] .wr-cmt-chip');
-    chips.forEach(function (chip) {
-        var n = (parseInt((chip.textContent || '').replace(/\D/g, ''), 10) || 0) + 1;
-        chip.textContent = '💬 ' + n;
-        chip.classList.remove('zero');
+    // Also drop cmt-empty across all matching cards: the count is now > 0, so the
+    // comment section must be visible (a card that started at count 0 would otherwise
+    // stay hidden after a comment is posted from another tab's card).
+    var cards = document.querySelectorAll('.wr-card[data-rid="' + rid + '"]');
+    cards.forEach(function (card) {
+        card.classList.remove('cmt-empty');
+        var chip = card.querySelector('.wr-cmt-chip');
+        if (chip) {
+            var n = (parseInt((chip.textContent || '').replace(/\D/g, ''), 10) || 0) + 1;
+            chip.textContent = '💬 ' + n;
+            chip.classList.remove('zero');
+        }
     });
 }
 
