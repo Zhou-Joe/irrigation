@@ -18,7 +18,7 @@ Context vars expected:
     <span class="fu-chip fu-chip-review">待确认</span>
     {% if stories %}
     <button type="button" class="fu-story-toggle" onclick="toggleStory({{ parent_id }})">
-      ▾ 历史跟进 ({{ stories|length }})
+      ▴ 历史跟进 ({{ stories|length }})
     </button>
     {% endif %}
   </div>
@@ -28,7 +28,7 @@ Context vars expected:
   follow-up history.{% endcomment %}
   {% if stories %}
   <button type="button" class="fu-story-toggle" onclick="toggleStory({{ parent_id }})">
-    ▾ 历史跟进 ({{ stories|length }})
+    ▴ 历史跟进 ({{ stories|length }})
   </button>
   {% endif %}
   {% endif %}
@@ -39,7 +39,7 @@ Context vars expected:
 
   {# Story timeline (collapsible) #}
   {% if stories %}
-  <div class="fu-story" id="fuStory-{{ parent_id }}" style="display:none;">
+  <div class="fu-story" id="fuStory-{{ parent_id }}" style="display:block;">
     {% for s in stories %}
     <div class="fu-story-item">
       <div class="fu-story-head">
