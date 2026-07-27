@@ -9171,6 +9171,16 @@ def _serialize_repair_card(wr, stories, remark_group):
             flags.append('疑难未处理')
         flag_text = '、'.join(flags) or '待修'
         flag_class = 'difficult' if is_difficult else 'pending'
+    # Total work-hours across the whole story: the parent work order itself
+    # plus every follow-up child (and the resolved_by_pm handler, already
+    # merged into `stories` by _followup_stories). Summed per labor type so
+    # the card can show 灌溉组 / 第三方 totals — mirroring how the 维修日志
+    # card shows its own hours, but rolled up across the 疑难跟进 timeline.
+    total_team = float(wr.team_hours or 0)
+    total_third = float(wr.third_party_hours or 0)
+    for s in stories or []:
+        total_team += float(s.get('team_hours') or 0)
+        total_third += float(s.get('third_party_hours') or 0)
     return {
         'id': wr.id,
         'date': wr.date,
@@ -9189,6 +9199,10 @@ def _serialize_repair_card(wr, stories, remark_group):
         # wasn't annotated (defensive — the active + history querysets both
         # annotate comment_count, but other callers may not).
         'comment_count': getattr(wr, 'comment_count', 0) or 0,
+        # Rolled-up labor hours (parent + all follow-ups), per labor type.
+        # Stored as float; template formats and hides zero values.
+        'total_team_hours': total_team,
+        'total_third_party_hours': total_third,
     }
 
 
@@ -9213,6 +9227,10 @@ def _followup_stories(parent_ids):
             'remark': (r.remark or '')[:400],
             'photos': list(r.photos or [])[:6],
             'status_label': label,
+            # Hours are summed (parent + all follow-ups) in _serialize_repair_card
+            # so the card can show total 灌溉组/第三方 工时 across the whole story.
+            'team_hours': float(r.team_hours or 0),
+            'third_party_hours': float(r.third_party_hours or 0),
         }
 
     # Source 1 — explicit 跟进子工单 (parent_work_report), created via the
