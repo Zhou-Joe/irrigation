@@ -1499,6 +1499,40 @@ class InventoryCategory(MPTTModel):
         return f"{self.code} {self.name_zh}"
 
 
+class InventoryPriceRecord(models.Model):
+    """历史采购价格记录 - 一个部件（InventoryCategory 叶子）可有多条。
+
+    记录每次采购的日期 / 供应商 / 单价。「当前价格」的判定：
+    - 优先取 ``is_current=True`` 的记录（按日期倒序，若多条则取最新）
+    - 都没勾选则取日期最近的一条
+    见 ``core.inventory_tree_views.current_price_for``。
+
+    供应商是 free-text（项目里没有 Supplier 模型，和 InventoryTransaction.counterparty
+    风格一致）。价格记录是手动录入的参考数据，不影响库存流水计算。
+    """
+    category = models.ForeignKey(
+        InventoryCategory, on_delete=models.CASCADE,
+        related_name='price_records', verbose_name='部件',
+    )
+    date = models.DateField('采购日期', default=date.today)
+    supplier = models.CharField('供应商', max_length=200, blank=True)
+    unit_price = models.DecimalField('单价', max_digits=12, decimal_places=2, default=0)
+    unit = models.CharField('单位', max_length=10, blank=True,
+                            help_text='留空则继承部件的 unit')
+    is_current = models.BooleanField('设为当前价格', default=False,
+                                     help_text='勾选后此记录作为该部件的当前价格；同部件仅一条有效')
+    note = models.CharField('备注', max_length=200, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-date', '-id']
+        verbose_name = '采购价格记录'
+        verbose_name_plural = '采购价格记录'
+
+    def __str__(self):
+        return f"{self.category.name_zh} · {self.date} · ¥{self.unit_price}"
+
+
 class InventoryTransaction(models.Model):
     """库存流水单 - 一次提交（一个 cart），含一种操作类型 + 多个物料行。
 
