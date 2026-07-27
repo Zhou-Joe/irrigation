@@ -71,6 +71,45 @@ def mark_pm_completed(report, gwo_id=None):
     gwo.save(update_fields=['status', 'completed_at', 'pm_order'])
 
 
+def maybe_create_difficult_zone_remarks(report, zones, note='', author_name='',
+                                       is_pm_completion=False, is_edit=False):
+    """Auto-create a zone remark on each of a 疑难 (difficult) ticket's zones.
+
+    Called by BOTH submit paths (mobile-v2 and the desktop tree form) so a
+    疑难 ticket created through either form carries the same workorder_id-tagged
+    zone remark — without it, the manager "标记已解决" modal would have nothing
+    to dispose and the ticket could get stuck.
+
+    Skips: PM completion path (no is_difficult flag there), edits (only on
+    create, so re-editing doesn't duplicate the remark), and tickets that
+    aren't flagged is_difficult.
+    """
+    import json as _json
+    if is_pm_completion or is_edit:
+        return
+    if not getattr(report, 'is_difficult', False):
+        return
+    zones = list(zones or [])
+    if not zones:
+        return
+    entry_count = getattr(report, 'entries', None)
+    entry_count = entry_count.count() if entry_count is not None else 0
+    content = (note or '').strip() or (
+        f'疑难工单 · {entry_count} 项' if entry_count else '疑难工单')
+    remark_entry = {
+        'date': report.date if isinstance(report.date, str) else (
+            report.date.isoformat() if report.date else ''),
+        'content': content,
+        'author': author_name or '疑难工单',
+        'workorder_id': report.id,
+    }
+    for z in zones:
+        remarks = _json.loads(z.remarks) if z.remarks else []
+        remarks.insert(0, remark_entry)
+        z.remarks = _json.dumps(remarks, ensure_ascii=False)
+        z.save(update_fields=['remarks'])
+
+
 # ── serialization ──────────────────────────────────────────────────────────
 
 def serialize_workitem_tree():
@@ -1328,6 +1367,17 @@ def _handle_save(request, report):
         # desktop tree form also marks its GeneratedWorkOrder completed. Pass the
         # gwo_id on the PM-completion path so the report↔GWO link is established.
         mark_pm_completed(report, gwo_id=pm_gwo_id if is_pm_completion else None)
+
+        # 疑难 zone-remark auto-create: mirror the mobile-v2 path so a 疑难
+        # ticket created through the desktop tree form also gets the
+        # workorder_id-tagged zone remark the manager resolve modal needs.
+        # Without this the ticket would be unresolvable via the modal (B2 fix).
+        maybe_create_difficult_zone_remarks(
+            report, zones,
+            note=request.POST.get('remark', ''),
+            author_name=(worker.full_name if worker else str(request.user)),
+            is_pm_completion=is_pm_completion, is_edit=not is_new,
+        )
 
     messages.success(request, f'现场作业记录已保存 (ID: {report.id})')
     if request.POST.get('save_and_new'):
