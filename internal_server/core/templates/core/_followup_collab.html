@@ -1,22 +1,21 @@
-{% comment %}Collaboration block for a 疑难/待修 parent work order.
-Included by both the 疑难工单 (remarks) and 待修工单 (repairs) panels.
+{% comment %}Collaboration block for a 疑难跟进 parent work order.
+Included by both the 疑难跟进 (repairs) and 已修复 (history) panels.
 Context vars expected:
   - parent_id:      the parent WorkReport id
   - collab_status:  '' | 'ongoing' | 'pending_review' | 'resolved'
   - stories:        list of follow-up child dicts [{id,ticket,date,worker_name,remark,photos,status_label}]
-  - is_manager:     whether to show manager-only final actions (set to False if absent){% endcomment %}
+  - is_manager:     whether to show manager-only final actions (set to False if absent)
+  - is_history:     set to 1 when rendered inside the 已修复 (history) tab{% endcomment %}
 {% load static %}
 <div class="fu-block" id="fuBlock-{{ parent_id }}">
-  {% comment %}Status chip — shown only when it carries real signal. The 疑难/待修 list is
-  by-definition unresolved ("跟进中"), so a chip there is noise. Resolved /
-  pending_review states (history tab, manager review) still surface it.{% endcomment %}
-  {% if collab_status == 'resolved' or collab_status == 'pending_review' %}
+  {% comment %}Status chip — shown only when it carries real signal. The 疑难跟进 list is
+  by-definition unresolved ("跟进中"), so a chip there is noise. In the 已修复
+  (history) tab the whole list is already filtered to resolved tickets, so the
+  "已完成" chip is redundant there too — suppressed via is_history. Only
+  pending_review (manager review, live list) still surfaces a chip.{% endcomment %}
+  {% if not is_history and collab_status == 'pending_review' %}
   <div class="fu-status-row">
-    <span class="fu-chip
-      {% if collab_status == 'resolved' %}fu-chip-done
-      {% else %}fu-chip-review{% endif %}">
-      {% if collab_status == 'resolved' %}已完成{% else %}待确认{% endif %}
-    </span>
+    <span class="fu-chip fu-chip-review">待确认</span>
     {% if stories %}
     <button type="button" class="fu-story-toggle" onclick="toggleStory({{ parent_id }})">
       ▾ 历史跟进 ({{ stories|length }})
@@ -24,8 +23,9 @@ Context vars expected:
     {% endif %}
   </div>
   {% else %}
-  {% comment %}Unresolved (repairs list): no status chip — the parent card already shows
-  zones + 备注 above, so the only thing left here is the follow-up history.{% endcomment %}
+  {% comment %}Unresolved (repairs list) or history tab: no status chip — the parent
+  card already shows zones + 备注 above, so the only thing left here is the
+  follow-up history.{% endcomment %}
   {% if stories %}
   <button type="button" class="fu-story-toggle" onclick="toggleStory({{ parent_id }})">
     ▾ 历史跟进 ({{ stories|length }})
@@ -62,37 +62,35 @@ Context vars expected:
   </div>
   {% endif %}
 
-  {% comment %}Follow-up trigger — visible to all logged-in users; locked when resolved.
-  The form itself lives in a shared modal (#fuModal in work_reports.html) so
-  all collab rows reuse one dialog. openFollowup(id) records parent + pops modal.
-  Hidden entirely in history mode — a closed ticket accepts no new followups.{% endcomment %}
+  {% comment %}Follow-up trigger + manager resolve action — both sit in ONE row to
+  save vertical space. The 添加跟进 button (all logged-in users) is left-aligned;
+  the 标记已解决 button (manager-only) is right-aligned in the same flex row.
+  Both are suppressed when the ticket is resolved (or in history mode — a closed
+  ticket accepts no new followups). The follow-up form lives in a shared modal
+  (#fuModal in work_reports.html); openFollowup(id) records parent + pops it.
+  Only the resolved-state disposition block (3 buttons + hint) keeps its own
+  full-width banner below.{% endcomment %}
   {% if collab_status != 'resolved' and not is_history %}
-  <button type="button" class="fu-open-btn" id="fuOpen-{{ parent_id }}" onclick="openFollowup({{ parent_id }})">添加跟进</button>
+  <div class="fu-action-line">
+    <button type="button" class="fu-open-btn" id="fuOpen-{{ parent_id }}" onclick="openFollowup({{ parent_id }})">添加跟进</button>
+    {% if is_manager %}
+    <button type="button" class="fu-mgr-resolve-btn" onclick="mgrResolveViaRepair({{ parent_id }})" title="经理可直接关闭此工单">标记已解决</button>
+    {% endif %}
+  </div>
   {% endif %}
 
-  {% comment %}Manager actions: ongoing/pending_review→标记已解决; resolved→final disposition (transfer/archive).
-  Suppressed entirely in history mode — re-disposing a closed ticket would
-  corrupt its already-disposed zone remarks.
-
-  The ongoing-state action is rendered as a compact inline button (right-aligned,
-  no full-width banner) so it sits neatly under the 发送 button of the comment
-  box without claiming a whole row. Only the resolved-state disposition block
-  keeps the banner (it carries 3 buttons + a hint that genuinely needs the width).{% endcomment %}
-  {% if is_manager and not is_history %}
-    {% if collab_status != 'resolved' %}
-    <div class="fu-mgr-compact">
-      <button type="button" class="fu-mgr-resolve-btn" onclick="mgrResolveViaRepair({{ parent_id }})" title="经理可直接关闭此工单">标记已解决</button>
+  {% comment %}Manager final disposition (resolved only, live list): transfer/archive
+  buttons. Suppressed entirely in history mode — re-disposing a closed ticket
+  would corrupt its already-disposed zone remarks. Transfer buttons use
+  data-key='wo:<id>' so existing JS finds the right zones.{% endcomment %}
+  {% if is_manager and not is_history and collab_status == 'resolved' %}
+  <div class="fu-mgr-final is-disposition">
+    <span class="fu-mgr-hint">工单已完成，请选择最终处置：</span>
+    <div class="fu-mgr-actions">
+      <button type="button" class="wr-rm-btn irr" data-key="wo:{{ parent_id }}" onclick="moveRemarkGroup(this,'irrigation')">转至灌溉管理记录</button>
+      <button type="button" class="wr-rm-btn eq" data-key="wo:{{ parent_id }}" onclick="moveRemarkGroup(this,'equipment')">转至设备维护记录</button>
+      <button type="button" class="wr-rm-btn archive" data-key="wo:{{ parent_id }}" onclick="archiveRemarkGroup(this)">归档</button>
     </div>
-    {% else %}
-    {# Final disposition: transfer buttons use data-key='wo:<id>' so existing JS finds the right zones. #}
-    <div class="fu-mgr-final is-disposition">
-      <span class="fu-mgr-hint">工单已完成，请选择最终处置：</span>
-      <div class="fu-mgr-actions">
-        <button type="button" class="wr-rm-btn irr" data-key="wo:{{ parent_id }}" onclick="moveRemarkGroup(this,'irrigation')">转至灌溉管理记录</button>
-        <button type="button" class="wr-rm-btn eq" data-key="wo:{{ parent_id }}" onclick="moveRemarkGroup(this,'equipment')">转至设备维护记录</button>
-        <button type="button" class="wr-rm-btn archive" data-key="wo:{{ parent_id }}" onclick="archiveRemarkGroup(this)">归档</button>
-      </div>
-    </div>
-    {% endif %}
+  </div>
   {% endif %}
 </div>
