@@ -580,20 +580,22 @@
 }
 .irrig-excluded-row button.irrig-excluded-restore:hover { background: var(--color-primary-light); }
 
-/* The popup button shown on right-click of a heatmap polygon (manager only). */
-.irrig-exclude-popup-btn {
-    display: block;
-    width: 100%;
-    padding: 8px 14px;
+/* The "排除" button inside each 未绘制边界区域 row (manager only). Lets a
+   manager hide a not-in-use zone from the heatmap without it ever appearing
+   on the map. */
+.irrig-unmapped-row button.irrig-unmapped-exclude {
+    margin-left: 4px;
+    padding: 2px 8px;
     background: #b45309;
     color: #fff;
     border: none;
-    border-radius: 6px;
+    border-radius: 4px;
     cursor: pointer;
-    font-size: 0.86rem;
+    font-size: 0.72rem;
     font-weight: 600;
+    white-space: nowrap;
 }
-.irrig-exclude-popup-btn:hover { background: #92400e; }
+.irrig-unmapped-row button.irrig-unmapped-exclude:hover { background: #92400e; }
 .leaflet-popup-content { margin: 10px 14px; }
 .leaflet-popup-content-wrapper { border-radius: 8px; }
 
@@ -866,9 +868,9 @@
 
             {% if is_admin %}
             <!-- Excluded zones (manager/superuser-only): zones deliberately hidden from
-                 the heatmap via right-click → 排除. Each row has a 「恢复」 button
-                 to undo. Mirrors the unmapped panel structure. Gated on is_admin
-                 to match the backend endpoint's is_admin() check (covers managers
+                 the heatmap via the 未绘制边界区域 panel's 「排除」 button. Each row has a
+                 「恢复」 button to undo. Mirrors the unmapped panel structure. Gated on
+                 is_admin to match the backend endpoint's is_admin() check (covers managers
                  AND superusers; is_manager would lock out superusers). -->
             <div class="irrig-excluded-panel" id="irrigExcludedPanel">
                 <button type="button" class="irrig-excluded-header"
@@ -878,7 +880,7 @@
                 </button>
                 <div class="irrig-excluded-body" id="irrigExcludedBody">
                     <div class="irrig-excluded-note">
-                        这些区域被手动排除，热力图上不显示。点击「恢复」重新显示。地图上右键区域可排除。
+                        这些区域被手动排除，热力图上不显示。点击「恢复」重新显示。在「未绘制边界区域」面板可排除未使用的区域。
                     </div>
                     <div id="irrigExcludedList" class="irrig-excluded-list"></div>
                 </div>
@@ -924,7 +926,7 @@
 
 {% block extra_js %}
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="{% static 'js/irrig-heatmap.js' %}?v=14"></script>
+<script src="{% static 'js/irrig-heatmap.js' %}?v=15"></script>
 <script>
 function toggleExportMenu(event) {
     event.stopPropagation();

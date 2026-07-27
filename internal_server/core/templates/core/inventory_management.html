@@ -1390,12 +1390,31 @@ var ivJstree = null;
 var ivJstreeCurrentParent = null;
 
 function ivJstreeToast(msg, isErr) {
+  msg = msg || '';
+  // Also write to the in-card #ivSaveMsg so the message persists in the card
+  // header after the floating toast fades — but the floating toast is the
+  // primary feedback channel because it stays visible while a modal is open
+  // (the card header sits behind the modal overlay and is invisible then).
   var slot = document.getElementById('ivSaveMsg');
-  if (!slot) return;
-  slot.textContent = msg || '';
-  slot.style.color = isErr ? '#b3261e' : '#2D6A4F';
+  if (slot) {
+    slot.textContent = msg;
+    slot.style.color = isErr ? '#b3261e' : '#2D6A4F';
+  }
+  // Floating toast — created on demand, fixed-positioned above all modals.
+  var t = document.getElementById('ivFloatToast');
+  if (!t) {
+    t = document.createElement('div');
+    t.id = 'ivFloatToast';
+    t.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);' +
+        'background:#333;color:#fff;padding:9px 20px;border-radius:20px;font-size:.86rem;' +
+        'z-index:10002;opacity:0;transition:opacity .2s;pointer-events:none;max-width:90vw;text-align:center;';
+    document.body.appendChild(t);
+  }
+  t.textContent = msg;
+  t.style.background = isErr ? '#b3261e' : '#333';
+  t.style.opacity = '1';
   clearTimeout(window._ivToastT);
-  window._ivToastT = setTimeout(function () { slot.textContent = ''; }, 2500);
+  window._ivToastT = setTimeout(function () { t.style.opacity = '0'; }, 2500);
 }
 
 function ivJstreePost(url, data) {
