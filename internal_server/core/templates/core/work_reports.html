@@ -139,6 +139,10 @@
   .wr-cmt-body { font-size:0.86em; color:var(--wr-text); line-height:1.45; white-space:pre-wrap; word-break:break-word; }
   .wr-cmt-empty { font-size:0.8em; color:#aaa; padding:4px 0; }
   .wr-cmt-add { display:flex; gap:6px; margin-top:6px; }
+  /* The 写评论 input + 发送 button are hidden by default and only shown after
+     the user clicks the 💬 chip. Historical comments (auto-loaded when the chip
+     count > 0) stay visible regardless — only the input box is gated. */
+  .wr-card.cmt-collapsed .wr-cmt-add { display:none; }
   .wr-cmt-input { flex:1; border:1px solid #ddd; border-radius:8px; padding:7px 10px; font-size:0.86em; resize:none; min-height:38px; max-height:100px; font-family:inherit; }
   .wr-cmt-send { flex:0 0 auto; background: var(--wr-accent); color:#fff; border:none; border-radius:8px; padding:0 14px; font-size:0.86em; font-weight:600; cursor:pointer; }
 
@@ -485,7 +489,7 @@
         {% if pending_repairs %}
         <div id="repairBody" style="margin-top:8px;">
             {% for r in pending_repairs %}
-            <div class="wr-card" id="repairRow-{{ r.id }}" data-rid="{{ r.id }}">
+            <div class="wr-card cmt-collapsed" id="repairRow-{{ r.id }}" data-rid="{{ r.id }}">
                 <div class="wr-summary" style="cursor:default;">
                     <div class="wr-card-top">
                         <span class="wr-card-date">{{ r.date }}</span>
@@ -540,7 +544,7 @@
         {% if resolved_repairs %}
         <div id="historyBody" style="margin-top:8px;">
             {% for r in resolved_repairs %}
-            <div class="wr-card" id="historyRow-{{ r.id }}" data-rid="{{ r.id }}">
+            <div class="wr-card cmt-collapsed" id="historyRow-{{ r.id }}" data-rid="{{ r.id }}">
                 <div class="wr-summary" style="cursor:default;">
                     <div class="wr-card-top">
                         <span class="wr-card-date">{{ r.date }}</span>
@@ -1646,7 +1650,7 @@ function esc(s) { var d = document.createElement('div'); d.textContent = s == nu
 function isVideoPath(p) { return /\.(mp4|mov|m4v|webm|ogg|ogv|avi|mkv)$/i.test(p); }
 function thumbPath(p) { return p.replace(/\.[^.]+$/, '_thumb.jpg'); }
 function renderCard(r) {
-    var html = '<div class="wr-card" data-rid="' + r.id + '">';
+    var html = '<div class="wr-card cmt-collapsed" data-rid="' + r.id + '">';
     html += '<div class="wr-summary" onclick="toggleCard(this)">';
     // top row
     html += '<div class="wr-card-top"><span class="wr-card-date">' + esc(r.date) + '</span>';
@@ -1847,9 +1851,12 @@ function loadComments(rid, scope) {
         .catch(function () { if (ld) ld.style.display = 'none'; });
 }
 function toggleCmt(rid, chip) {
-    // First interaction loads the thread; the chip also scrolls it into view inside the open card.
+    // First interaction loads the thread + reveals the 写评论 input; the chip
+    // also scrolls it into view inside the open card. Historical comments (auto-
+    // loaded on page load for chips with count > 0) stay visible regardless of
+    // this toggle — only the input box is gated by the .cmt-collapsed class.
     var card = chip.closest('.wr-card');
-    if (card) card.classList.add('open');
+    if (card) { card.classList.add('open'); card.classList.remove('cmt-collapsed'); }
     loadComments(rid, card);
 }
 function bumpCommentChip(rid) {
