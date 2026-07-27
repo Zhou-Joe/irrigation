@@ -386,12 +386,12 @@
         </button>
         {% if show_collab_tabs %}
         <button type="button" class="app-tab {% if active_tab == 'repairs' %}active{% endif %}" data-tab="repairs" onclick="switchTab('repairs')">
-            疑难/待修
+            疑难跟进
             {% if pending_repairs %}<span class="app-tab-badge">{{ pending_repairs|length }}</span>{% endif %}
         </button>
         {% endif %}
         {% if is_manager %}
-        <button type="button" class="app-tab {% if active_tab == 'history' %}active{% endif %}" data-tab="history" onclick="switchTab('history')">历史疑难/待修</button>
+        <button type="button" class="app-tab {% if active_tab == 'history' %}active{% endif %}" data-tab="history" onclick="switchTab('history')">已修复</button>
         {% endif %}
         {% if is_manager %}
         <button type="button" class="app-tab {% if active_tab == 'photos' %}active{% endif %}" data-tab="photos" onclick="switchTab('photos')">媒体下载</button>
@@ -530,7 +530,7 @@
     {% if is_manager %}
     <div id="tabHistory" class="wr-remarks-panel {% if active_tab == 'history' %}active{% endif %}">
         <div class="wr-rm-subhead" style="display:flex;justify-content:space-between;align-items:center;">
-            <span>已关闭的疑难/待修工单 ({{ resolved_repairs|length }})</span>
+            <span>已修复的疑难工单 ({{ resolved_repairs|length }})</span>
             <span class="wr-muted" style="font-size:.78rem;">最多显示最近 200 条</span>
         </div>
         {% if resolved_repairs %}
