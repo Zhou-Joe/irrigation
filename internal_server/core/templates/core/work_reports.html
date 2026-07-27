@@ -193,7 +193,7 @@
   .fu-story-remark { font-size:0.82rem; color:var(--wr-text); margin:4px 0; }
   .fu-story-photos { display:flex; flex-wrap:wrap; gap:4px; margin-top:4px; }
   .fu-story-photos img { width:48px; height:48px; object-fit:cover; border-radius:4px; cursor:pointer; border:1px solid #eee; }
-  .fu-open-btn { margin-top:8px; padding:5px 12px; font-size:0.8rem; border-radius:8px; background:var(--wr-accent-soft); color:var(--wr-accent); border:1px solid var(--wr-accent); cursor:pointer; font-weight:600; }
+  .fu-open-btn { padding:5px 12px; font-size:0.8rem; border-radius:8px; background:var(--wr-accent-soft); color:var(--wr-accent); border:1px solid var(--wr-accent); cursor:pointer; font-weight:600; }
   .fu-form { margin-top:8px; padding:10px; background:#fafbfc; border:1px solid var(--wr-card-border); border-radius:8px; }
   .fu-input { width:100%; border:1px solid #ddd; border-radius:8px; padding:7px 10px; font-size:0.84rem; margin-bottom:8px; box-sizing:border-box; }
   .fu-file-btn { display:inline-block; font-size:0.8rem; color:var(--wr-muted); cursor:pointer; padding:3px 10px; border:1px dashed #ccc; border-radius:8px; margin-bottom:8px; }
@@ -206,12 +206,12 @@
   .fu-mgr-hint { font-size:0.8rem; color:#92400e; flex:1; min-width:160px; }
   .fu-mgr-final.is-disposition .fu-mgr-hint { color:#15803d; }
   .fu-mgr-actions { display:flex; flex-wrap:wrap; gap:6px; }
-  /* Compact manager resolve button — replaces the full-width yellow banner for
-     the ongoing state. Sits inline under the comment 发送 button, right-aligned,
-     no banner/background so it doesn't claim a whole row. */
-  .fu-mgr-compact { margin-top:6px; display:flex; justify-content:flex-end; }
-  .fu-mgr-resolve-btn { padding:4px 12px; font-size:.78rem; font-weight:600;
-    color:#92400e; background:#fffbeb; border:1px solid #fcd34d; border-radius:6px;
+  /* Single action row: 添加跟进 (left, all users) + 标记已解决 (right, manager
+     only) share one flex line to save vertical space. Both buttons keep their
+     own styling; the row just spaces them apart. */
+  .fu-action-line { margin-top:8px; display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; }
+  .fu-mgr-resolve-btn { padding:5px 12px; font-size:.78rem; font-weight:600;
+    color:#92400e; background:#fffbeb; border:1px solid #fcd34d; border-radius:8px;
     cursor:pointer; transition:background .15s, border-color .15s; }
   .fu-mgr-resolve-btn:hover { background:#fef3c7; border-color:#f59e0b; }
   /* Zone-level 疑难备注 block removed — the parent card above each collab
