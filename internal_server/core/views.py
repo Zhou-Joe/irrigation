@@ -2663,11 +2663,18 @@ def work_report_resolve_all_repair(request):
         return JsonResponse({'success': False, 'message': '无权限'}, status=403)
     count = 0
     with transaction.atomic():
-        qs = (WorkReport.objects
-              .select_for_update()
+        # Include the same active set the 疑难跟进 tab shows: unresolved 待修 OR
+        # unresolved 疑难 OR any ticket still in an active collaboration state
+        # (ongoing / pending_review / resolved). The last group matters because
+        # a follow-up flips collab_status to 'ongoing' even when the 待修/疑难
+        # flags are already cleared — without it, those tickets would never be
+        # reached by this bulk clear and stay stuck in the active list.
+        qs = (WorkReport.objects.select_for_update()
               .filter(is_pending_repair=True, resolved_by_pm__isnull=True)
               | WorkReport.objects.select_for_update().filter(
-                  is_difficult=True, is_difficult_resolved=False)).distinct()
+                  is_difficult=True, is_difficult_resolved=False)
+              | WorkReport.objects.select_for_update().filter(
+                  collab_status__in=['ongoing', 'pending_review', 'resolved'])).distinct()
         for wr in qs:
             changes = []
             update_fields = []
@@ -2679,6 +2686,19 @@ def work_report_resolve_all_repair(request):
                 wr.is_difficult_resolved = True
                 changes.append('疑难未处理→已处理')
                 update_fields.append('is_difficult_resolved')
+            # Mirror the single resolve-repair endpoint: close the collaborative
+            # story loop too. Without this a ticket that is both 待修 AND
+            # collab_status='ongoing' (the state a follow-up produces) would
+            # keep its is_pending_repair cleared but collab_status still 'ongoing'
+            # → it stays in the 疑难跟进 tab forever with no button to clear it.
+            # Bulk resolve is a terminal close (no disposition step follows),
+            # so clear collab_status to '' — setting it to 'resolved' would
+            # still match the active-tab queryset (collab_status__in includes
+            # 'resolved') and leave the ticket visible.
+            if wr.collab_status:
+                wr.collab_status = ''
+                changes.append('协作状态→已关闭')
+                update_fields.append('collab_status')
             if not changes:
                 continue
             note = '；'.join(changes) + f'（由 {request.user.get_username()} 批量标记）'

@@ -1095,6 +1095,12 @@ function submitFollowupModal() {
     var actionEl = document.querySelector('input[name="fuModalAction"]:checked');
     var action = actionEl ? actionEl.value : 'ongoing';
     var photos = window._fuModalPhotoList || [];
+    // Disable the submit button during the in-flight request so a double-click
+    // or impatient repeat doesn't fire two POSTs (each fans out ~14 crew
+    // notifications, so dedup at the UI as well as the backend throttle).
+    var btn = document.querySelector('#fuModal .btn-primary');
+    var origText = btn ? btn.textContent : '';
+    if (btn) { btn.disabled = true; btn.textContent = '提交中…'; }
     var fd = new FormData();
     fd.append('remark', remark);
     fd.append('action', action);
@@ -1111,7 +1117,8 @@ function submitFollowupModal() {
             // story entry + status chip render without a full page reload.
             _refreshRepairsTab(900);
         }
-    }).catch(function () { wrToast('网络错误', true); });
+    }).catch(function () { wrToast('网络错误', true); })
+      .finally(function () { if (btn) { btn.disabled = false; btn.textContent = origText; } });
 }
 // Manager final-step from inside a collab block: open a chooser modal so the
 // manager picks a final disposition (move to irrigation / move to equipment /
