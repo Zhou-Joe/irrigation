@@ -132,3 +132,63 @@ def pm_tasks_for_field_worker(user):
             'overdue': gwo.scheduled_date < today,
         })
     return result
+
+
+def notify_followup_crew(parent, child, author_worker, action, remark):
+    """Notify all managers + field workers that a 疑难/待修 follow-up was filed.
+
+    Recipients = every active manager (ManagerProfile.user) ∪ every active
+    field worker (Worker.user with a linked account), EXCLUDING the follow-up
+    author so they don't get a notification for their own action.
+
+    The notification carries the story (parent ticket) reference and a short
+    summary so the crew knows "this ticket is being followed up on" without
+    opening the page. ``link`` deep-links to the parent's detail page.
+
+    Returns the count of notifications created (0 if no recipients / author
+    is the only eligible user).
+    """
+    from core.models import ManagerProfile, Worker
+    from django.contrib.auth import get_user_model
+    User = get_user_model()
+
+    # Resolve the author's User so we can exclude them.
+    author_user = getattr(author_worker, 'user', None) if author_worker else None
+
+    # Managers: every active ManagerProfile with a linked User.
+    manager_users = list(
+        ManagerProfile.objects.filter(active=True, user__isnull=False)
+        .values_list('user_id', flat=True))
+    # Field workers: every active Worker with a linked User.
+    worker_users = list(
+        Worker.objects.filter(active=True, user__isnull=False)
+        .values_list('user_id', flat=True))
+
+    recipient_ids = set(manager_users) | set(worker_users)
+    if author_user is not None:
+        recipient_ids.discard(author_user.id)
+    if not recipient_ids:
+        return 0
+
+    # Build the human-readable summary. Truncate the remark the way the story
+    # timeline does (400 chars) so the popup stays readable.
+    ticket = parent.display_number
+    author_name = (author_worker.full_name if author_worker else '未知')
+    action_label = '已修复（待经理确认）' if action == 'fixed' else '继续跟进'
+    short_remark = (remark or '').strip()
+    if len(short_remark) > 120:
+        short_remark = short_remark[:117] + '…'
+
+    title = f'{author_name} 跟进了工单 {ticket}'
+    body_parts = [f'状态：{action_label}']
+    if short_remark:
+        body_parts.append(f'跟进内容：{short_remark}')
+    body = '\n'.join(body_parts)
+    link = f'/work-reports/{parent.id}/'
+
+    created = 0
+    recipients = User.objects.filter(id__in=recipient_ids)
+    for u in recipients:
+        if notify(u, 'followup', title, body, link):
+            created += 1
+    return created

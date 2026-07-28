@@ -2625,6 +2625,18 @@ def work_report_followup(request, parent_id):
             status_msg = '继续跟进'
         parent.save(update_fields=['collab_status'])
 
+    # Notify all managers + field workers that this 疑难/待修 ticket got a
+    # follow-up, so the whole team knows it's being handled. Dispatched AFTER
+    # the transaction commits so a slow/failed notify can't hold the parent's
+    # select_for_update lock. Errors are swallowed — a notification failure
+    # must never block the follow-up submission itself.
+    try:
+        from core.notifications import notify_followup_crew
+        notify_followup_crew(parent, child, worker, action, remark)
+    except Exception:
+        import logging
+        logging.getLogger(__name__).exception('followup crew notify failed')
+
     return JsonResponse({
         'success': True,
         'status': parent.collab_status,
