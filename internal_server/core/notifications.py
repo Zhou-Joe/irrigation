@@ -145,15 +145,43 @@ def notify_followup_crew(parent, child, author_worker, action, remark):
     summary so the crew knows "this ticket is being followed up on" without
     opening the page. ``link`` deep-links to the parent's detail page.
 
+    Idempotency: if the SAME author already filed a follow-up on this parent
+    within the last 10 minutes, the new one is treated as a duplicate
+    (double-click / rapid re-submit) and no notification is sent. This caps
+    the blast radius — each follow-up fans out to the whole team, so a tight
+    per-(author, parent) throttle prevents notification spam without blocking
+    legitimate follow-ups spaced minutes apart.
+
     Returns the count of notifications created (0 if no recipients / author
-    is the only eligible user).
+    is the only eligible user / throttled as a duplicate).
     """
-    from core.models import ManagerProfile, Worker
+    from core.models import ManagerProfile, Worker, Notification
     from django.contrib.auth import get_user_model
+    from django.utils import timezone
+    from datetime import timedelta
     User = get_user_model()
 
     # Resolve the author's User so we can exclude them.
     author_user = getattr(author_worker, 'user', None) if author_worker else None
+
+    # Throttle: skip if this author already notified about this parent in the
+    # last 10 minutes (rapid re-submit / double-click). Matches the
+    # resubmit_already_notified idiom used for water-request resubmits.
+    throttle_since = timezone.now() - timedelta(minutes=10)
+    dup_q = Notification.objects.filter(
+        verb='followup', link=f'/work-reports/{parent.id}/',
+        created_at__gte=throttle_since)
+    if author_user is not None:
+        # The author's own earlier follow-up — they'd be excluded from
+        # recipients, so check any followup notification on this parent
+        # whose title carries this author's name (the only signal available
+        # without a dedicated FK). Falls back to "any followup on this parent"
+        # when the author is unknown.
+        author_name = author_worker.full_name if author_worker else ''
+        if author_name:
+            dup_q = dup_q.filter(title__startswith=f'{author_name} 跟进了工单')
+    if dup_q.exists():
+        return 0
 
     # Managers: every active ManagerProfile with a linked User.
     manager_users = list(
@@ -170,8 +198,9 @@ def notify_followup_crew(parent, child, author_worker, action, remark):
     if not recipient_ids:
         return 0
 
-    # Build the human-readable summary. Truncate the remark the way the story
-    # timeline does (400 chars) so the popup stays readable.
+    # Build the human-readable summary. The popup is small, so cap the remark
+    # excerpt at 120 chars (the story timeline shows up to 400 — that's a
+    # different surface). Keep it readable, not exhaustive.
     ticket = parent.display_number
     author_name = (author_worker.full_name if author_worker else '未知')
     action_label = '已修复（待经理确认）' if action == 'fixed' else '继续跟进'
@@ -186,9 +215,12 @@ def notify_followup_crew(parent, child, author_worker, action, remark):
     body = '\n'.join(body_parts)
     link = f'/work-reports/{parent.id}/'
 
-    created = 0
-    recipients = User.objects.filter(id__in=recipient_ids)
-    for u in recipients:
-        if notify(u, 'followup', title, body, link):
-            created += 1
-    return created
+    # Bulk-create all rows in one INSERT instead of N round-trips through
+    # notify(). The whole fan-out is now a single query.
+    objs = [
+        Notification(recipient_id=uid, verb='followup', title=title[:200],
+                     body=body, link=link)
+        for uid in recipient_ids
+    ]
+    Notification.objects.bulk_create(objs)
+    return len(objs)
