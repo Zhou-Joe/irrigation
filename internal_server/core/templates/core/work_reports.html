@@ -2030,7 +2030,10 @@ function showLb() {
         vid.style.display = ''; vid.src = '/media/' + p;
     } else {
         vid.style.display = ''; vid.pause(); vid.src = ''; vid.style.display = 'none';
-        img.style.display = ''; img.src = '/media/' + p;
+        // Show the thumbnail (not the multi-MB original) for fast preview.
+        // Full-resolution is only needed in the 媒体下载 tab, which has its
+        // own download/quality controls and doesn't use this lightbox.
+        img.style.display = ''; img.src = '/media/' + thumbPath(p);
     }
 }
 function lbKey(e) {
