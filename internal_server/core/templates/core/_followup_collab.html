@@ -7,6 +7,7 @@ Context vars expected:
   - is_manager:     whether to show manager-only final actions (set to False if absent)
   - is_history:     set to 1 when rendered inside the 已修复 (history) tab{% endcomment %}
 {% load static %}
+{% load media_tags %}
 <div class="fu-block" id="fuBlock-{{ parent_id }}">
   {% comment %}Status chip — shown only when it carries real signal. The 疑难跟进 list is
   by-definition unresolved ("跟进中"), so a chip there is noise. In the 已修复
@@ -52,8 +53,8 @@ Context vars expected:
       {% if s.photos %}
       <div class="fu-story-photos">
         {% for p in s.photos %}
-        <img src="/media/{{ p }}" alt="跟进照片" loading="lazy"
-             onclick="window.open('/media/{{ p }}','_blank')">
+        <img src="/media/{{ p|thumb }}" alt="跟进照片" loading="lazy"
+             onclick="openLbPath('{{ p }}')">
         {% endfor %}
       </div>
       {% endif %}
