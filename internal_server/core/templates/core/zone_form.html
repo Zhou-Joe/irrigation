@@ -1856,7 +1856,7 @@ function handleComboSelect(selectEl, customInputId, hiddenId) {
         return {
             addNote: function(date, content) {
                 if (!content.trim()) return;
-                notes.push({date: date || new Date().toISOString().slice(0,10), content: content.trim()});
+                notes.push({date: date || (function(d){var m=('0'+(d.getMonth()+1)).slice(-2),day=('0'+d.getDate()).slice(-2);return d.getFullYear()+'-'+m+'-'+day;})(new Date()), content: content.trim()});
                 render();
             },
             setData: function(d) { notes = Array.isArray(d) ? d : []; render(); }

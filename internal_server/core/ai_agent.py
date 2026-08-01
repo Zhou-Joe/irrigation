@@ -424,13 +424,13 @@ def query_water_requests(start_date: str = "", status: str = "", limit: int = 30
     rows = []
     for req in qs:
         rows.append({
-            '提交时间': req.created_at.strftime('%Y-%m-%d %H:%M'),
+            '提交时间': timezone.localtime(req.created_at).strftime('%Y-%m-%d %H:%M'),
             '提交人': str(req.submitter) if req.submitter else '',
             '用户类型': req.user_type,
             '需求类型': req.request_type,
             '状态': status_map.get(req.status, req.status),
-            '起始时间': req.start_datetime.strftime('%Y-%m-%d %H:%M') if req.start_datetime else '',
-            '结束时间': req.end_datetime.strftime('%Y-%m-%d %H:%M') if req.end_datetime else '',
+            '起始时间': timezone.localtime(req.start_datetime).strftime('%Y-%m-%d %H:%M') if req.start_datetime else '',
+            '结束时间': timezone.localtime(req.end_datetime).strftime('%Y-%m-%d %H:%M') if req.end_datetime else '',
             '涉及区域': ', '.join(z.code for z in req.zones.all()[:8]) or '—',
         })
     return json.dumps({
@@ -535,7 +535,7 @@ def query_irrigation_overview() -> str:
 @tool
 def get_today_date() -> str:
     """获取服务器当前日期和时间。当用户问"今天/最近"而你需要确定日期范围时调用。"""
-    now = timezone.now()
+    now = timezone.localtime(timezone.now())
     return json.dumps({
         'today': now.date().isoformat(),
         'now': now.strftime('%Y-%m-%d %H:%M'),

@@ -704,8 +704,8 @@ def _build_zones_payload(today, week_ago):
             'type': w.get_request_type_display(),
             'status': w.status,
             'status_display': w.get_status_display(),
-            'start': w.start_datetime.strftime('%m-%d %H:%M'),
-            'end': w.end_datetime.strftime('%m-%d %H:%M'),
+            'start': timezone.localtime(w.start_datetime).strftime('%m-%d %H:%M'),
+            'end': timezone.localtime(w.end_datetime).strftime('%m-%d %H:%M'),
         }
         for z in w.zones.all():
             if z.id in zone_ids:
@@ -1057,7 +1057,7 @@ def dashboard(request):
             'type': 'water',
             'type_display': '浇水协调',
             'zone': ', '.join(z.name for z in req.all_zones),
-            'date': req.created_at.strftime('%m-%d %H:%M'),
+            'date': timezone.localtime(req.created_at).strftime('%m-%d %H:%M'),
             'status': req.get_status_display(),
         })
 
@@ -1129,8 +1129,8 @@ def dashboard(request):
                 'center': {'lat': clat, 'lng': clng}, 'type_display': '浇水协调',
                 'request_type': rtype,
                 'user_type': dept,
-                'start': wr.start_datetime.strftime('%m-%d %H:%M'),
-                'end': wr.end_datetime.strftime('%m-%d %H:%M'),
+                'start': timezone.localtime(wr.start_datetime).strftime('%m-%d %H:%M'),
+                'end': timezone.localtime(wr.end_datetime).strftime('%m-%d %H:%M'),
             })
 
     # Pending remarks: collapse all zones with unconfirmed remarks into one group
@@ -1237,7 +1237,7 @@ def _unacked_announcements_for(user):
             'id': a.id,
             'title': a.title,
             'body': a.body,
-            'time': a.created_at.strftime('%Y-%m-%d %H:%M'),
+            'time': timezone.localtime(a.created_at).strftime('%Y-%m-%d %H:%M'),
         }
         for a in qs
     ]
@@ -1315,6 +1315,257 @@ def announcement_delete(request, pk):
     ann.delete()
     messages.success(request, f'通知已删除：{title}')
     return redirect(f"{reverse('core:user_management')}?tab=announcements")
+
+
+# ── 定时邮件报表配置 (EmailReportConfig CRUD) ──
+# Mirrors the announcement_save/delete pattern: manager/super-admin manage rows
+# from the 用户管理 → 邮件报表 tab. The send_report_email management command
+# (cron-driven) reads these configs to dispatch the actual emails.
+
+
+def _email_config_perm(request):
+    """Manager/super-admin gate shared by all email-config actions."""
+    from core.role_utils import get_user_role, ROLE_MANAGER, ROLE_SUPER_ADMIN
+    return get_user_role(request.user) in (ROLE_MANAGER, ROLE_SUPER_ADMIN)
+
+
+def _email_config_json(cfg):
+    """Serialize an EmailReportConfig to a JSON-safe dict for the AJAX list."""
+    return {
+        'id': cfg.id,
+        'name': cfg.name,
+        'recipients': cfg.recipients,
+        'report_type': cfg.report_type,
+        'report_type_display': cfg.get_report_type_display(),
+        'frequency': cfg.frequency,
+        'frequency_display': cfg.get_frequency_display(),
+        'recipient_count': len(cfg.recipient_list),
+        'is_active': cfg.is_active,
+        'data_range_days': cfg.data_range_days,
+        'weekday': cfg.weekday,
+        'month_day': cfg.month_day,
+        'last_sent_at': timezone.localtime(cfg.last_sent_at).strftime('%Y-%m-%d %H:%M') if cfg.last_sent_at else '',
+        'last_status': cfg.last_status,
+    }
+
+
+@require_POST
+@login_required(login_url='core:login')
+def email_config_save(request):
+    """Create or update an EmailReportConfig (manager / super-admin only).
+
+    Returns JSON (AJAX): the modal submits via fetch and re-renders the list
+    on success instead of a full-page reload.
+    """
+    from core.models import EmailReportConfig
+    if not _email_config_perm(request):
+        return JsonResponse({'success': False, 'message': '无权限'}, status=403)
+
+    cid = request.POST.get('id', '').strip()
+    name = (request.POST.get('name') or '').strip()
+    report_type = (request.POST.get('report_type') or '').strip()
+    frequency = (request.POST.get('frequency') or 'daily').strip()
+    recipients = (request.POST.get('recipients') or '').strip()
+    is_active = request.POST.get('is_active') in ('1', 'on', 'true', 'True')
+
+    valid_reports = {c for c, _ in EmailReportConfig.REPORT_CHOICES}
+    valid_freqs = {c for c, _ in EmailReportConfig.FREQUENCY_CHOICES}
+    if not name:
+        return JsonResponse({'success': False, 'message': '配置名称不能为空'}, status=400)
+    if report_type not in valid_reports:
+        return JsonResponse({'success': False, 'message': '请选择有效的报表类型'}, status=400)
+    if frequency not in valid_freqs:
+        frequency = 'daily'
+    if not recipients:
+        return JsonResponse({'success': False, 'message': '请填写至少一个收件人邮箱'}, status=400)
+
+    # Custom data range + trigger-day fields (all optional / nullable).
+    def _opt_int(key):
+        v = (request.POST.get(key) or '').strip()
+        try:
+            return int(v) if v else None
+        except ValueError:
+            return None
+    data_range_days = _opt_int('data_range_days')
+    # weekday only applies to weekly; month_day only to monthly. Clear the
+    # irrelevant one so a frequency change doesn't leave a stale trigger day.
+    weekday = _opt_int('weekday') if frequency == 'weekly' else None
+    if weekday is not None and not (0 <= weekday <= 6):
+        weekday = None
+    month_day = _opt_int('month_day') if frequency == 'monthly' else None
+    if month_day is not None and not (1 <= month_day <= 28):
+        return JsonResponse({'success': False, 'message': '每月几号必须在 1-28 之间'}, status=400)
+
+    if cid:
+        cfg = get_object_or_404(EmailReportConfig, pk=cid)
+        cfg.name = name
+        cfg.report_type = report_type
+        cfg.frequency = frequency
+        cfg.recipients = recipients
+        cfg.is_active = is_active
+        cfg.data_range_days = data_range_days
+        cfg.weekday = weekday
+        cfg.month_day = month_day
+        cfg.save()
+        msg = f'邮件报表配置已更新：{cfg.name}'
+    else:
+        cfg = EmailReportConfig.objects.create(
+            name=name, report_type=report_type, frequency=frequency,
+            recipients=recipients, is_active=is_active, created_by=request.user,
+            data_range_days=data_range_days, weekday=weekday, month_day=month_day,
+        )
+        msg = f'邮件报表配置已创建：{cfg.name}'
+    return JsonResponse({'success': True, 'message': msg, 'config': _email_config_json(cfg)})
+
+
+@require_POST
+@login_required(login_url='core:login')
+def email_config_delete(request, pk):
+    """Delete an EmailReportConfig (manager / super-admin only). Returns JSON."""
+    from core.models import EmailReportConfig
+    if not _email_config_perm(request):
+        return JsonResponse({'success': False, 'message': '无权限'}, status=403)
+
+    cfg = get_object_or_404(EmailReportConfig, pk=pk)
+    name = cfg.name
+    cfg.delete()
+    return JsonResponse({'success': True, 'message': f'邮件报表配置已删除：{name}'})
+
+
+@require_POST
+@login_required(login_url='core:login')
+def email_config_test(request, pk):
+    """Send a test email for one config immediately (ignores frequency/due-date).
+
+    Builds the report for the config's frequency window and sends it now, so the
+    admin can verify SMTP + the attachment end-to-end without waiting for cron.
+    """
+    from core.models import EmailReportConfig
+    from django.core.mail import EmailMessage
+    from core.smtp_utils import is_smtp_configured, get_email_connection, resolve_from_email
+    if not _email_config_perm(request):
+        return JsonResponse({'success': False, 'message': '无权限'}, status=403)
+
+    cfg = get_object_or_404(EmailReportConfig, pk=pk)
+    if not is_smtp_configured():
+        return JsonResponse({
+            'success': False,
+            'message': 'SMTP 未配置，请先在本页「SMTP 设置」卡片填写 SMTP 服务器信息',
+        }, status=400)
+
+    recipients = cfg.recipient_list
+    if not recipients:
+        return JsonResponse({'success': False, 'message': '无收件人邮箱'}, status=400)
+
+    # Reuse the command's builder logic so the test matches a real dispatch.
+    from core.management.commands.send_report_email import (
+        Command as _EmailCmd, XLSX_CT, _resolve_builder,
+    )
+    cmd = _EmailCmd()
+    build_fn, label = _resolve_builder(cfg.report_type)
+    if build_fn is None:
+        return JsonResponse({'success': False, 'message': f'未知报表类型 {cfg.report_type}'}, status=400)
+    try:
+        today = timezone.localdate()
+        fname, buf = cmd._build_report(cfg.report_type, build_fn, cfg.frequency, today, cfg.data_range_days)
+        period = cmd._period_label(cfg.frequency, today, cfg.data_range_days)
+        subject = f'【测试】{label} {period} 报表 — {cfg.name}'
+        body = (f'这是一封测试邮件（来自「邮件报表」配置页的「测试发送」按钮）。\n\n'
+                f'报表类型：{label}\n频率：{cfg.get_frequency_display()}\n数据范围：{period}\n\n请见附件。')
+        msg = EmailMessage(subject=subject, body=body,
+                           from_email=resolve_from_email(), to=recipients,
+                           connection=get_email_connection())
+        msg.attach(fname, buf.getvalue(), XLSX_CT)
+        msg.send(fail_silently=False)
+        cfg.last_sent_at = timezone.now()
+        cfg.last_status = 'success (test)'
+        cfg.save(update_fields=['last_sent_at', 'last_status'])
+        return JsonResponse({'success': True, 'message': f'测试邮件已发送至 {len(recipients)} 个收件人'})
+    except Exception as e:
+        cfg.last_sent_at = timezone.now()
+        cfg.last_status = f'failed (test): {e}'[:200]
+        cfg.save(update_fields=['last_sent_at', 'last_status'])
+        return JsonResponse({'success': False, 'message': f'发送失败：{e}'}, status=500)
+
+
+@login_required(login_url='core:login')
+def email_config_list(request):
+    """Return all EmailReportConfig rows as JSON (manager / super-admin only).
+
+    The AJAX list re-render fetches this after create/edit/delete so the page
+    updates without a full reload.
+    """
+    from core.models import EmailReportConfig
+    if not _email_config_perm(request):
+        return JsonResponse({'success': False, 'message': '无权限'}, status=403)
+    qs = EmailReportConfig.objects.order_by('frequency', 'name')
+    return JsonResponse({
+        'success': True,
+        'configs': [_email_config_json(c) for c in qs],
+    })
+
+
+@login_required(login_url='core:login')
+def email_smtp_get(request):
+    """Return the current SMTP settings as JSON (manager / super-admin only).
+
+    Never returns the password — only a boolean has_password flag, so the modal
+    can show "已设置/未设置" without round-tripping the secret.
+    """
+    from core.models import EmailSmtpSetting
+    if not _email_config_perm(request):
+        return JsonResponse({'success': False, 'message': '无权限'}, status=403)
+    s = EmailSmtpSetting.get_solo()
+    return JsonResponse({
+        'success': True,
+        'host': s.host,
+        'port': s.port,
+        'username': s.username,
+        'from_email': s.from_email,
+        'use_ssl': s.use_ssl,
+        'use_tls': s.use_tls,
+        'has_password': bool(s.password),
+        'is_configured': s.is_configured,
+    })
+
+
+@require_POST
+@login_required(login_url='core:login')
+def email_smtp_save(request):
+    """Save the system-level SMTP settings (singleton EmailSmtpSetting).
+
+    Returns JSON (AJAX). The password field is special: an empty POST value
+    means "keep the existing password" (so the masked form never has to
+    round-trip the secret), while a non-empty value replaces it.
+    """
+    from core.models import EmailSmtpSetting
+    if not _email_config_perm(request):
+        return JsonResponse({'success': False, 'message': '无权限'}, status=403)
+
+    s = EmailSmtpSetting.get_solo()
+    s.host = (request.POST.get('host') or '').strip()
+    port_raw = (request.POST.get('port') or '465').strip()
+    try:
+        s.port = int(port_raw)
+    except ValueError:
+        s.port = 465
+    s.username = (request.POST.get('username') or '').strip()
+    # Password: empty submission = keep existing; non-empty = replace.
+    new_pw = request.POST.get('password') or ''
+    if new_pw != '':
+        s.password = new_pw
+    # Encryption is a single mutually-exclusive radio (ssl / tls / none).
+    encryption = (request.POST.get('encryption') or '').strip()
+    s.use_ssl = encryption == 'ssl'
+    s.use_tls = encryption == 'tls'
+    s.from_email = (request.POST.get('from_email') or '').strip()
+    s.save()
+    return JsonResponse({
+        'success': True,
+        'message': 'SMTP 配置已保存',
+        'is_configured': s.is_configured,
+        'has_password': bool(s.password),
+    })
 
 
 @login_required(login_url='core:login')
@@ -1494,75 +1745,18 @@ def _get_user_display_name(request):
 @login_required(login_url='core:login')
 def zone_export_excel(request):
     """Export all zones to an Excel file matching Zone list V0.xlsx format."""
-    import io
     try:
-        import openpyxl
-        from openpyxl.styles import Alignment
+        import openpyxl  # noqa: F401
     except ImportError:
         return JsonResponse({'error': 'openpyxl not installed'}, status=500)
 
     if not _check_zone_admin(request):
         return JsonResponse({'error': '无权限'}, status=403)
 
-    zones = Zone.objects.select_related('patch').order_by('code')
-    wb = openpyxl.Workbook()
-    ws = wb.active
-    ws.title = 'Zone info 仅色块'
-
-    # Write headers with same styling as V0
-    center_wrap = Alignment(horizontal='center', vertical='center', wrap_text=True)
-    for col_idx, header in enumerate(_ZONE_EXPORT_HEADERS, 1):
-        cell = ws.cell(row=1, column=col_idx, value=header)
-        cell.alignment = center_wrap
-
-    # Set column widths matching V0
-    col_widths = [16, 13, 14, 13, 18, 13, 16, 13, 14, 13, 12, 8, 9, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13]
-    for i, w in enumerate(col_widths):
-        ws.column_dimensions[openpyxl.utils.get_column_letter(i + 1)].width = w
-
-    # Write data rows
-    for zone in zones:
-        row_num = ws.max_row + 1
-        # CCU number from patch code (e.g. "CCU1" → "1")
-        ccu_num = zone.patch.code.replace('CCU', '') if zone.patch else ''
-
-        values = [
-            zone.code,                                          # A: 编号
-            _PRIORITY_EXPORT_MAP.get(zone.priority, ''),         # B: 位置重要程度
-            zone.land.name if zone.land else None,              # C: 所属Land
-            zone.name,                                          # D: 通用名称
-            zone.description,                                   # E: 灌溉管理用的位置
-            zone.current_status or None,                        # F: 当前状态
-            zone.sprinkler_type or None,                        # G: 灌水器类型
-            zone.irrigation_intensity,                          # H: 灌溉强度
-            zone.area_display if zone.area_sqm else None,       # I: 区域面积
-            zone.patch.name if zone.patch else None,            # J: 灌溉分区
-            int(ccu_num) if ccu_num.isdigit() else ccu_num,     # K: CCU编号
-            zone.solenoid_valve_size,                           # L: 电磁阀尺寸
-            zone.landscape_coefficient,                         # M: 景观系数
-            zone.plant_type or None,                            # N: 植物类型
-            zone.irrigation_foreman or None,                    # O: 灌溉领班
-            zone.greenery_zone or None,                         # P: 绿化分区
-            zone.greenery_foreman or None,                      # Q: 绿化领班
-            zone.pest_control_zone or None,                     # R: 植保分区
-            zone.pest_control_foreman or None,                  # S: 植保领班
-            zone.terrain_feature or None,                       # T: 地形特点
-            zone.plant_feature or None,                         # U: 植物特点
-            zone.soil_moisture or None,                         # V: 土壤湿度
-            zone.equipment_maintenance_notes or None,           # W: 灌溉设备维护记录
-            zone.irrigation_management_notes or None,           # X: 灌溉管理以往记录
-        ]
-        for col_idx, val in enumerate(values, 1):
-            ws.cell(row=row_num, column=col_idx, value=val)
-
-    buf = io.BytesIO()
-    wb.save(buf)
-    buf.seek(0)
-
-    from django.utils import timezone
-    filename = f"zones_{timezone.now().strftime('%Y%m%d_%H%M')}.xlsx"
+    from core.excel_exports import build_zone_export_excel
+    fname, buf = build_zone_export_excel()
     resp = HttpResponse(buf.read(), content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-    resp['Content-Disposition'] = f'attachment; filename="{filename}"'
+    resp['Content-Disposition'] = f'attachment; filename="{fname}"'
     return resp
 
 
@@ -2338,7 +2532,7 @@ def pm_plan_orders(request, plan_id):
         zones_src = pmwo if pmwo else gwo
         orders.append({
             'scheduled_date': gwo.scheduled_date.strftime('%Y-%m-%d'),
-            'generated_at': gwo.generated_at.strftime('%Y-%m-%d %H:%M') if gwo.generated_at else '',
+            'generated_at': timezone.localtime(gwo.generated_at).strftime('%Y-%m-%d %H:%M') if gwo.generated_at else '',
             'status': gwo.status,
             'pm_order_id': pmwo.id if pmwo else None,
             'report_number': pmwo.display_number if pmwo else f'PM-{gwo.id}',
@@ -2524,15 +2718,28 @@ def work_report_followup(request, parent_id):
     parent's collab_status: ``ongoing`` keeps it open; ``fixed`` flips it to
     pending_review (awaits manager confirmation).
 
+    Duplicate-submission guard: if the same worker already filed a follow-up on
+    this parent within the last FOLLOWUP_DEDUP_SECONDS, the request is rejected
+    as a duplicate (rapid re-click / double-submit / refresh). select_for_update
+    is a no-op on SQLite (the prod DB), so this time-window check is the real
+    mutual-exclusion gate — it must run BEFORE WorkReport.objects.create.
+
     Returns JSON {success, message} (+ status/child_id for back-compat).
     """
     from .models import WorkReport, WorkItem, WorkReportEntry
     from django.db import transaction
     from django.utils import timezone
+    from datetime import timedelta
     from core.role_utils import (
         resolve_or_create_worker, is_admin, is_field_worker,
     )
     from core.workorder_tree_views import _save_photo
+
+    # Dedup window: two follow-ups from the same worker on the same parent closer
+    # than this are treated as a duplicate submit and rejected. 30s is long enough
+    # to absorb double-clicks / slow-network retries / page-refresh re-submits,
+    # short enough that a legitimate second follow-up minutes later still goes in.
+    FOLLOWUP_DEDUP_SECONDS = 30
 
     # Authorization: managers + irrigation field workers only.
     if not (is_admin(request.user) or is_field_worker(request.user)):
@@ -2549,8 +2756,9 @@ def work_report_followup(request, parent_id):
     today = timezone.localdate()
 
     with transaction.atomic():
-        # Lock the parent row so two concurrent submissions can't both pass the
-        # resolved-check and both flip collab_status.
+        # select_for_update() is a no-op on SQLite (the prod DB), so it does NOT
+        # serialize concurrent submissions here — kept for the Postgres future.
+        # The real mutual-exclusion is the dedup check below.
         try:
             parent = (WorkReport.objects
                       .select_for_update()
@@ -2569,6 +2777,21 @@ def work_report_followup(request, parent_id):
         # A resolved parent is locked.
         if parent.collab_status == 'resolved':
             return JsonResponse({'success': False, 'message': '该工单已完成，无法继续跟进'}, status=400)
+
+        # Duplicate-submission gate. select_for_update can't lock on SQLite, so
+        # this time-window check is what actually prevents two near-simultaneous
+        # submissions (double-click / refresh / retry) from each creating a child.
+        # Mirrors notify_followup_crew's throttle, but as a HARD gate on the
+        # ticket itself — earlier than that, so no child row is ever written.
+        since = timezone.now() - timedelta(seconds=FOLLOWUP_DEDUP_SECONDS)
+        recent_dup = WorkReport.objects.filter(
+            parent_work_report=parent, worker=worker, created_at__gte=since,
+        ).exists()
+        if recent_dup:
+            return JsonResponse({
+                'success': False,
+                'message': f'刚刚已提交过跟进，请勿重复提交（{FOLLOWUP_DEDUP_SECONDS}秒内）',
+            }, status=409)
 
         child = WorkReport.objects.create(
             date=today,
@@ -2627,9 +2850,9 @@ def work_report_followup(request, parent_id):
 
     # Notify all managers + field workers that this 疑难/待修 ticket got a
     # follow-up, so the whole team knows it's being handled. Dispatched AFTER
-    # the transaction commits so a slow/failed notify can't hold the parent's
-    # select_for_update lock. Errors are swallowed — a notification failure
-    # must never block the follow-up submission itself.
+    # the transaction commits so a slow/failed notify can't hold the lock open.
+    # Errors are swallowed — a notification failure must never block the
+    # follow-up submission itself.
     try:
         from core.notifications import notify_followup_crew
         notify_followup_crew(parent, child, worker, action, remark)
@@ -2921,7 +3144,7 @@ def pm_management(request):
         'job_plan_name': e.gwo.plan.job_plan.name if e.gwo.plan.job_plan_id else '',
         'requester_name': e.requester.full_name if e.requester_id else '—',
         'reason': e.reason, 'requested_date': e.requested_date,
-        'created_at': e.created_at.strftime('%Y-%m-%d %H:%M') if e.created_at else '',
+        'created_at': timezone.localtime(e.created_at).strftime('%Y-%m-%d %H:%M') if e.created_at else '',
     } for e in pending_exts]
 
     context = {
@@ -5561,6 +5784,16 @@ def user_management(request):
     from core.models import Crew
     crews = Crew.objects.all().prefetch_related('leader', 'members', 'lands', 'patches').order_by('name')
 
+    # Email-report configs for the 邮件报表 tab (manager-visible under 用户管理).
+    from core.models import EmailReportConfig, EmailSmtpSetting
+    email_configs = EmailReportConfig.objects.all().order_by('frequency', 'name')
+    # System SMTP setting (singleton) — password is never sent to the template.
+    smtp_setting = EmailSmtpSetting.get_solo()
+    email_edit_obj = None
+    email_edit_id = request.GET.get('email_edit')
+    if email_edit_id:
+        email_edit_obj = get_object_or_404(EmailReportConfig, pk=email_edit_id)
+
     context = {
         'active_tab': active_tab,
         'filter': filter_status,
@@ -5574,6 +5807,10 @@ def user_management(request):
         'announcements': announcements,
         'edit_obj': edit_obj,
         'crews': crews,
+        'email_configs': email_configs,
+        'email_edit_obj': email_edit_obj,
+        'report_choices': EmailReportConfig.REPORT_CHOICES,
+        'smtp_setting': smtp_setting,
     }
 
     return render(request, 'core/user_management.html', context)
@@ -5951,165 +6188,10 @@ def work_reports_excel(request):
     nodes (fault matrix), blanks where a node wasn't filled. Admins see all
     reports; others see only their own — same scoping as stats_dashboard.
     """
-    import io
-    from core.models import WorkReport, WorkReportEntry, WorkItem, InventoryTransaction, InventoryTransactionLine
-    from core.role_utils import is_admin
-    from django.db.models import Prefetch
-    from openpyxl import Workbook
-    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from core.excel_exports import build_work_reports_excel
 
-    user = request.user
-    admin = is_admin(user)
     start, end = _resolve_stats_window(request)
-
-    # 1) Fixed fault-matrix columns (deterministic across exports). Each entry
-    # is (work_item_id, [seg, seg, leaf]) — the group hierarchy with the section
-    # root stripped, so we can render a proper multi-row merged header instead
-    # of cramming the whole breadcrumb into one cell.
-    count_nodes = _work_report_count_columns()
-
-    # 2) Work orders in window (role-scoped). _scoped_work_reports_qs already
-    # prefetches 'entries', so fetch the count-only subset into a distinct attr
-    # via to_attr to avoid a duplicate-prefetch conflict.
-    qs = _scoped_work_reports_qs(user, admin).filter(date__gte=start, date__lte=end)
-    reports = list(qs.prefetch_related(
-        Prefetch('entries', queryset=WorkReportEntry.objects.select_related('work_item').filter(work_item__value_type='count'), to_attr='_count_entries'),
-        Prefetch('material_consumptions', queryset=InventoryTransaction.objects.prefetch_related(
-            Prefetch('lines', queryset=InventoryTransactionLine.objects.select_related('category'), to_attr='_lines')
-        ), to_attr='_materials_txn'),
-    ).order_by('date', 'id'))
-
-    # 3) Build workbook with a grouped (merged) multi-row header.
-    wb = Workbook()
-    ws = wb.active
-    ws.title = '维修记录'
-    base_header = ['序号', '日期', '工单号', '处理人', '位置', '工作分类',
-                   '故障/事件位置', '区域', '灌溉组人数', '灌溉组工时',
-                   '第三方人数', '第三方工时', '消耗材料', '备注',
-                   '信息来源', '疑难问题', '疑难已处理']
-    n_base = len(base_header)
-    n_cols = n_base + len(count_nodes)
-    hdr_rows = max((len(segs) for _, segs in count_nodes), default=1)
-
-    # Header styling. Style every header cell up front so merged ranges keep
-    # their borders (openpyxl only draws borders per underlying cell).
-    hfill = PatternFill('solid', fgColor='1B4332')
-    hfont = Font(color='FFFFFF', bold=True, size=10)
-    center = Alignment(horizontal='center', vertical='center', wrap_text=True)
-    thin = Side(style='thin', color='FFFFFF')
-    border = Border(left=thin, right=thin, top=thin, bottom=thin)
-    for rr in range(1, hdr_rows + 1):
-        for cc in range(1, n_cols + 1):
-            cell = ws.cell(row=rr, column=cc)
-            cell.fill = hfill; cell.font = hfont; cell.alignment = center; cell.border = border
-
-    # Base columns span every header row (vertical merge).
-    for ci, label in enumerate(base_header, 1):
-        ws.cell(row=1, column=ci, value=label)
-        if hdr_rows > 1:
-            ws.merge_cells(start_row=1, start_column=ci, end_row=hdr_rows, end_column=ci)
-
-    # Count columns: walk each depth level and merge consecutive siblings that
-    # share the same path prefix. Columns are sorted by path, so siblings are
-    # always contiguous. Shorter paths get merged down to fill remaining rows.
-    for depth in range(hdr_rows):
-        row = depth + 1
-        ci = 0
-        while ci < len(count_nodes):
-            segs = count_nodes[ci][1]
-            if depth >= len(segs):
-                ci += 1          # already merged down at a shallower terminal depth
-                continue
-            prefix = segs[:depth + 1]
-            cj = ci + 1
-            while cj < len(count_nodes) and count_nodes[cj][1][:depth + 1] == prefix:
-                cj += 1
-            col_start = n_base + ci + 1
-            col_end = n_base + cj              # inclusive
-            ws.cell(row=row, column=col_start, value=segs[depth])
-            need_h = col_end > col_start                 # siblings → merge across
-            need_v = depth == len(segs) - 1 and row < hdr_rows   # terminal → merge down
-            if need_h and need_v:              # one rectangular block merge
-                ws.merge_cells(start_row=row, start_column=col_start,
-                               end_row=hdr_rows, end_column=col_end)
-            elif need_h:
-                ws.merge_cells(start_row=row, start_column=col_start,
-                               end_row=row, end_column=col_end)
-            elif need_v:
-                ws.merge_cells(start_row=row, start_column=col_start,
-                               end_row=hdr_rows, end_column=col_start)
-            # else: single cell, value already set — no merge needed
-            ci = cj
-
-    # work_item_id → matrix column index (1-based, offset after the base cols).
-    id_to_col = {wid: n_base + i + 1 for i, (wid, _) in enumerate(count_nodes)}
-
-    for idx, r in enumerate(reports, 1):
-        # Zone codes: show only when the workorder covers ≤5 zones (sum of all
-        # linked zone rows, regardless of duplicate names). Over 5 → blank, since
-        # a sprawling multi-zone ticket's codes would be unreadable in one cell.
-        zone_codes = ''
-        zones = list(r.zones.all())
-        if len(zones) <= 5:
-            zone_codes = ', '.join(z.code for z in zones if z.code)
-        row = [idx, r.date.isoformat() if r.date else '',
-               r.display_number if r.id else '',
-               r.worker.full_name if r.worker_id and r.worker else '',
-               r.location.code if r.location_id and r.location else '',
-               _report_section_label(r),
-               _dedup_zone_names(r.zone_names),
-               zone_codes,
-               r.team_size or '',
-               r.team_hours if r.team_hours else '',
-               r.third_party_count or '',
-               r.third_party_hours if r.third_party_hours else '',
-               _report_materials_summary(r),
-               (r.work_content or r.remark or ''),
-               '',  # 信息来源 (no dedicated field on WorkReport)
-               '是' if r.is_difficult else '',
-               '是' if r.is_difficult_resolved else '']
-        # pad matrix columns so indices line up
-        row += [None] * len(count_nodes)
-        for e in getattr(r, '_count_entries', []):
-            ci = id_to_col.get(e.work_item_id)
-            if ci is not None and e.count:
-                row[ci - 1] = (row[ci - 1] or 0) + e.count
-        ws.append(row)
-
-    # Data cell styling: thin grey borders everywhere, centre numerics, wrap 备注.
-    gside = Side(style='thin', color='D0D0D0')
-    gborder = Border(left=gside, right=gside, top=gside, bottom=gside)
-    dcenter = Alignment(horizontal='center', vertical='center')
-    dwrap = Alignment(horizontal='left', vertical='center', wrap_text=True)
-    last_row = hdr_rows + len(reports)
-    # Wrap the long text columns: 区域 (codes list), 消耗材料, 备注 (free text).
-    wrap_cols = {8, 13, 14}
-    for rr in range(hdr_rows + 1, last_row + 1):
-        for cc in range(1, n_cols + 1):
-            cell = ws.cell(row=rr, column=cc)
-            cell.border = gborder
-            cell.alignment = dwrap if cc in wrap_cols else dcenter
-
-    # Column widths + freeze the header rows and the first five ID columns
-    # (序号/日期/工单号/处理人/位置) so they stay visible while scrolling the matrix.
-    from openpyxl.utils import get_column_letter
-    # Per-column width overrides for the base columns (1-based):
-    # 1序号 2日期 3工单号 4处理人 5位置 6工作分类 7故障位置 8区域
-    # 9灌溉组人数 10灌溉组工时 11第三方人数 12第三方工时 13消耗材料 14备注
-    # 15信息来源 16疑难问题 17疑难已处理
-    base_widths = {3: 10, 4: 11, 5: 12, 6: 14, 7: 18, 8: 20,
-                   13: 18, 14: 28}
-    for ci in range(1, n_cols + 1):
-        if ci <= n_base:
-            width = base_widths.get(ci, 11)
-        else:
-            leaf = count_nodes[ci - n_base - 1][1][-1]
-            width = max(8, min(20, len(leaf) * 1.7 + 2))
-        ws.column_dimensions[get_column_letter(ci)].width = width
-    ws.freeze_panes = ws.cell(row=hdr_rows + 1, column=6)
-
-    buf = io.BytesIO(); wb.save(buf); buf.seek(0)
-    fname = f'workreports_{start}_{end}.xlsx'
+    fname, buf = build_work_reports_excel(start, end, request.user)
     resp = HttpResponse(buf, content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
     resp['Content-Disposition'] = f'attachment; filename="{fname}"'
     return resp
@@ -7588,12 +7670,7 @@ def irrigation_report_excel(request):
     a 24 x N-satellite runtime matrix. Same data as the dashboard / PDF.
     Honors the date-range filter from the query string.
     """
-    from core.models import MaxicomController, MaxicomRuntime
-    from collections import defaultdict
-    from io import BytesIO
-    from openpyxl import Workbook
-    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
-    from openpyxl.utils import get_column_letter
+    from core.excel_exports import build_irrigation_report_excel
 
     # --- date range (same logic as the dashboard) ---
     # Single Min/Max aggregate (P2 fix) instead of three queries.
@@ -7602,135 +7679,8 @@ def irrigation_report_excel(request):
     default_to = last_ts[:12] if len(last_ts) >= 12 else (last_ts[:8] if last_ts else '')
     date_from = request.GET.get('from', default_from).strip()
     date_to = request.GET.get('to', default_to).strip()
-    ts_from = date_from.ljust(14, '0')[:14] if date_from else ''
-    ts_to = date_to.ljust(14, '9')[:14] if date_to else ''
 
-    ctrl_map = {c.mdb_index: c for c in MaxicomController.objects.exclude(name__icontains='CCU')}
-    rt_qs = MaxicomRuntime.objects.select_related('station', 'station__parent', 'site')
-    if ts_from:
-        rt_qs = rt_qs.filter(timestamp__gte=ts_from)
-    if ts_to:
-        rt_qs = rt_qs.filter(timestamp__lte=ts_to)
-    rt_by_site = defaultdict(list)
-    for rt in rt_qs:
-        rt_by_site[rt.site_id].append(rt)
-
-    # Station Patch IDs claimed by at least one Zone — rows whose station is
-    # NOT in this set are flagged red as orphan (no Zone backing = un-attributable).
-    mapped_station_ids = _mapped_station_ids()
-
-    # --- styles ---
-    header_fill = PatternFill('solid', fgColor='1B4332')
-    header_font = Font(color='FFFFFF', bold=True, size=10)
-    side_fill = PatternFill('solid', fgColor='F5F0E8')
-    total_fill = PatternFill('solid', fgColor='EDE8DC')
-    total_font = Font(bold=True)
-    center = Alignment(horizontal='center', vertical='center')
-    thin = Side(style='thin', color='D9D0C0')
-    border = Border(left=thin, right=thin, top=thin, bottom=thin)
-    # Orphan row (station has no Zone backing): light-red wash + red label font.
-    orphan_fill = PatternFill('solid', fgColor='FDECEA')
-    orphan_font = Font(color='C62828', bold=True)
-
-    wb = Workbook()
-    # remove the default sheet (we add per-CCU sheets)
-    default_ws = wb.active
-
-    ccus = _ccu_queryset()
-
-    for idx, ccu in enumerate(ccus):
-        m = _build_ccu_matrix(ccu, rt_by_site.get(ccu.id, []), ctrl_map, mapped_station_ids)
-        controllers = m['controllers']
-        rows = m['rows']
-        col_totals = m['col_totals']
-        grand_total = m['grand_total']
-        ran = sum(1 for r in rows if r['total'] > 0)
-        orphan_count = sum(1 for r in rows if r.get('orphan') and r['total'] > 0)
-
-        # Excel sheet names: max 31 chars, no special chars
-        sheet_name = f"{ccu.code}_{ccu.name}"[:31]
-        ws = wb.create_sheet(title=sheet_name)
-
-        # title row
-        ws.cell(row=1, column=1,
-                value=f"{ccu.code} ({ccu.name}) — 站点 × 卫星控制器 运行时间（分钟）  {date_from}~{date_to}")
-        ws.cell(row=1, column=1).font = Font(bold=True, size=12, color='1B4332')
-        subtitle = f"卫星控制器 {len(controllers)} 个，运行站点 {ran} 个，总运行 {grand_total} 分钟"
-        if orphan_count:
-            subtitle += f"  ·  其中 {orphan_count} 个运行站点无 Zone 对应（红色标记）"
-        ws.cell(row=2, column=1, value=subtitle)
-        ws.cell(row=2, column=1).font = Font(size=9, color='6B7B6E')
-
-        # matrix starts at row 4
-        header_row = 4
-        n_sat = len(controllers)
-        # header
-        ws.cell(row=header_row, column=1, value='站#')
-        for ci, cname in enumerate(controllers):
-            ws.cell(row=header_row, column=2 + ci, value=cname)
-        ws.cell(row=header_row, column=2 + n_sat, value='合计')
-        for col in range(1, 2 + n_sat + 1):
-            c = ws.cell(row=header_row, column=col)
-            c.fill = header_fill
-            c.font = header_font
-            c.alignment = center
-            c.border = border
-
-        # 24 station rows
-        for ri, r in enumerate(rows):
-            rownum = header_row + 1 + ri
-            sc = ws.cell(row=rownum, column=1, value=r['station'])
-            sc.fill = side_fill
-            sc.alignment = center
-            sc.border = border
-            orphan_vals = r.get('orphan_values') or []
-            for ci, v in enumerate(r['values']):
-                is_orphan = ci < len(orphan_vals) and orphan_vals[ci]
-                vc = ws.cell(row=rownum, column=2 + ci, value=v if v else None)
-                vc.alignment = center
-                vc.border = border
-                if is_orphan:
-                    # Orphan valve: flat light-red fill regardless of value
-                    # (no border emphasis — fill alone signals "no Zone backing").
-                    vc.fill = orphan_fill
-                    if v:
-                        vc.font = orphan_font
-                elif v:
-                    vc.font = Font(bold=True)
-            tc = ws.cell(row=rownum, column=2 + n_sat, value=r['total'] if r['total'] else None)
-            tc.fill = total_fill
-            tc.font = total_font
-            tc.alignment = center
-            tc.border = border
-
-        # totals row
-        trow = header_row + 1 + len(rows)
-        ws.cell(row=trow, column=1, value='合计')
-        for ci, t in enumerate(col_totals):
-            ws.cell(row=trow, column=2 + ci, value=t if t else None)
-        ws.cell(row=trow, column=2 + n_sat, value=grand_total)
-        for col in range(1, 2 + n_sat + 1):
-            c = ws.cell(row=trow, column=col)
-            c.fill = total_fill
-            c.font = total_font
-            c.alignment = center
-            c.border = border
-
-        # column widths + freeze
-        ws.column_dimensions['A'].width = 6
-        for ci in range(n_sat):
-            ws.column_dimensions[get_column_letter(2 + ci)].width = 11
-        ws.column_dimensions[get_column_letter(2 + n_sat)].width = 8
-        ws.freeze_panes = 'B5'
-
-    # remove default empty sheet
-    if default_ws is not None and default_ws.title in wb.sheetnames and len(wb.sheetnames) > 1:
-        wb.remove(default_ws)
-
-    buf = BytesIO()
-    wb.save(buf)
-    buf.seek(0)
-    fname = f'irrigation_report_{date_from}_{date_to}.xlsx'
+    fname, buf = build_irrigation_report_excel(date_from, date_to)
     resp = HttpResponse(
         buf, content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
     resp['Content-Disposition'] = f'attachment; filename="{fname}"'
@@ -8446,7 +8396,7 @@ def _serialize_work_reports(reports):
             'edit_logs': [
                 {
                     'editor': log.editor.full_name if log.editor_id and log.editor else '(未知)',
-                    'time': log.created_at.strftime('%Y-%m-%d %H:%M') if log.created_at else '',
+                    'time': timezone.localtime(log.created_at).strftime('%Y-%m-%d %H:%M') if log.created_at else '',
                 }
                 for log in r.edit_logs.all()
             ],
@@ -8554,7 +8504,7 @@ def _serialize_pm_tasks(gwos, is_mgr):
             'overdue': gwo.scheduled_date < today,
             'crew_name': gwo.crew.name if gwo.crew_id else '—',
             'status': gwo.status,
-            'completed_at': gwo.completed_at.strftime('%Y-%m-%d') if gwo.completed_at else '',
+            'completed_at': timezone.localtime(gwo.completed_at).strftime('%Y-%m-%d') if gwo.completed_at else '',
             'worker_name': gwo.worker.full_name if gwo.worker_id and gwo.worker else '',
         })
     return result
@@ -8765,12 +8715,25 @@ def work_reports_list(request):
     #   - ongoing/pending_review: the crew is still following up
     #   - resolved: manager closed it but hasn't done the FINAL disposition
     #     (transfer to 灌溉/设备 records or archive) — must stay visible until
-    #     then. The disposition endpoints clear collab_status to '' which drops
-    #     the row from this list.
+    #     then. The disposition endpoints clear collab_status to ''.
+    # PLUS recently-disposed 疑难/待修 tickets (collab_status='' but was a 疑难 —
+    # is_difficult, resolved_by_pm set, or has followup children) within the last
+    # 90 days, so they show under the 已完成 sub-tab for audit. Without this they
+    # would vanish entirely (the old 已修复/history tab was removed). Older ones
+    # are excluded so the list doesn't grow without bound.
+    from datetime import date as _date_cls
+    from django.db.models import Q as _Q
+    _disposed_since = _date_cls.today() - timedelta(days=90)
     pending_repairs = []
     pr_qs = ((WorkReport.objects.filter(is_pending_repair=True, resolved_by_pm__isnull=True)
               | WorkReport.objects.filter(is_difficult=True, is_difficult_resolved=False)
-              | WorkReport.objects.filter(collab_status__in=['ongoing', 'pending_review', 'resolved']))
+              | WorkReport.objects.filter(collab_status__in=['ongoing', 'pending_review', 'resolved'])
+              # Recently-disposed: was a 疑难/待修 but collab now cleared, recent only.
+              | WorkReport.objects.filter(
+                  collab_status='', date__gte=_disposed_since
+                  ).filter(
+                      _Q(is_difficult=True) | _Q(resolved_by_pm__isnull=False) | _Q(followup_children__isnull=False)
+                  ))
              .distinct().select_related('worker', 'location').order_by('-date', '-id')
              .prefetch_related('zones')
              .annotate(comment_count=Count('comments', distinct=True)))
@@ -9234,6 +9197,18 @@ def _serialize_repair_card(wr, stories, remark_group):
         'flag_class': flag_class,
         'is_difficult': is_difficult,
         'collab_status': collab_status_display,
+        # True ONLY when the ticket is genuinely awaiting final disposition —
+        # i.e. the raw collab_status is 'resolved' (manager closed it but zone
+        # remarks not yet transferred/archived). Already-disposed tickets have
+        # raw collab_status='' (display forced to 'resolved'); they must NOT show
+        # the disposition buttons again. Passed to _followup_collab.html.
+        'needs_disposition': (wr.collab_status == 'resolved'),
+        # Sub-tab bucket for the 疑难跟进 tab: 进行中 / 待确认 / 已完成.
+        # pending_review = field worker filed 已修复, awaiting manager confirm;
+        # resolved = manager closed it; everything else is 进行中 (ongoing/new).
+        'collab_bucket': {
+            'pending_review': 'pending', 'resolved': 'resolved',
+        }.get(collab_status_display, 'ongoing'),
         'followup_stories': stories,
         'remark_group': remark_group,
         # Comment count drives the 💬 chip. Falls back to 0 if the queryset
@@ -9264,6 +9239,9 @@ def _followup_stories(parent_ids):
             'id': r.id,
             'ticket': r.display_number,
             'date': r.date.isoformat() if r.date else '',
+            # 精确到分钟的时间（北京时间），跟进时间线用这个更直观。
+            # created_at 是 UTC DateTimeField，转成本地时区再格式化。
+            'time': timezone.localtime(r.created_at).strftime('%Y-%m-%d %H:%M') if r.created_at else '',
             'worker_name': r.worker.full_name if r.worker_id and r.worker else '—',
             'remark': (r.remark or '')[:400],
             'photos': list(r.photos or [])[:6],
@@ -9484,7 +9462,7 @@ def water_request_resubmit(request, pk):
     if not note:
         return JsonResponse({'success': False, 'message': '请填写补充信息'}, status=400)
 
-    append = f'\n【补充 {timezone.now():%Y-%m-%d %H:%M}】{note}'
+    append = f'\n【补充 {timezone.localtime(timezone.now()):%Y-%m-%d %H:%M}】{note}'
     wr.status_notes = (wr.status_notes + append) if wr.status_notes else append.strip()
     wr.status = 'submitted'
     wr.save()
@@ -9517,6 +9495,20 @@ def notification_read(request, nid):
     from core.notifications import mark_read
     ok = mark_read(nid, request.user)
     return JsonResponse({'success': ok})
+
+
+@login_required(login_url='core:login')
+@require_POST
+def notification_read_all(request):
+    """Mark ALL of the current user's unread notifications as read at once.
+
+    The popup now lists every unread notification in a single card with one
+    "我已知晓（全部）" button — this backs that ack so a user clears the whole
+    queue with one click instead of confirming them one by one.
+    """
+    from core.notifications import mark_all_read
+    count = mark_all_read(request.user)
+    return JsonResponse({'success': True, 'count': count})
 
 
 @login_required(login_url='core:login')
@@ -9637,7 +9629,7 @@ def work_report_comments(request, report_id):
                 'id': comment.id,
                 'author': author.full_name if author else '(未知)',
                 'body': comment.body,
-                'time': comment.created_at.strftime('%Y-%m-%d %H:%M'),
+                'time': timezone.localtime(comment.created_at).strftime('%Y-%m-%d %H:%M'),
             },
         })
 
@@ -9650,7 +9642,7 @@ def work_report_comments(request, report_id):
             'id': c['id'],
             'author': c['author_name'] or '(未知)',
             'body': c['body'],
-            'time': c['created_at'].strftime('%Y-%m-%d %H:%M') if c['created_at'] else '',
+            'time': timezone.localtime(c['created_at']).strftime('%Y-%m-%d %H:%M') if c['created_at'] else '',
         }
         for c in comments
     ]
@@ -10017,8 +10009,26 @@ def workorder_mobile_v2(request):
                     # 编辑历史：edit 分支记录一次，新建工单不记。
                     _record_edit(report, request.user)
                 else:
+                    # Duplicate-submission gate (mirrors work_report_followup).
+                    # select_for_update is a no-op on SQLite (the prod DB), so this
+                    # time-window check is what actually prevents two near-simultaneous
+                    # submissions (double-click / refresh / retry) from each creating a
+                    # report. Keyed on worker + same zone set + same date within 30s —
+                    # narrow enough to avoid blocking two legitimate distinct reports.
+                    WORKORDER_DEDUP_SECONDS = 30
+                    report_date = request.POST.get('date') or date.today().isoformat()
+                    since = timezone.now() - timedelta(seconds=WORKORDER_DEDUP_SECONDS)
+                    recent_dup = WorkReport.objects.filter(
+                        worker=post_worker, date=report_date,
+                        zone_names=zone_names, created_at__gte=since,
+                    ).exists()
+                    if recent_dup:
+                        return JsonResponse({
+                            'success': False,
+                            'message': f'刚刚已提交过相同区域的工单，请勿重复提交（{WORKORDER_DEDUP_SECONDS}秒内）',
+                        }, status=409)
                     report = WorkReport.objects.create(
-                        date=request.POST.get('date') or date.today().isoformat(),
+                        date=report_date,
                         weather='',
                         worker=post_worker,
                         location=location,
@@ -10407,7 +10417,7 @@ def inventory_modal_data(request):
             ],
             'edit_logs': [
                 {'editor': (log.editor.full_name if log.editor else '(未知)'),
-                 'time': log.created_at.strftime('%Y-%m-%d %H:%M')}
+                 'time': timezone.localtime(log.created_at).strftime('%Y-%m-%d %H:%M')}
                 for log in txn.edit_logs.all()
             ],
         }
@@ -11133,138 +11143,18 @@ def inventory_export_excel(request):
     The last 4 columns are populated only on price-detail rows (blank on the
     part row) so each historical record shows its own date/supplier/price/unit.
     """
-    from core.models import InventoryCategory, InventoryPriceRecord
     from core.role_utils import get_user_role, ROLE_MANAGER, ROLE_SUPER_ADMIN
-    from core.inventory_tree_views import current_price_for
-    import io
-    from openpyxl import Workbook
-    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 
     role = get_user_role(request.user)
     if role not in (ROLE_MANAGER, ROLE_SUPER_ADMIN):
         messages.error(request, '无权限')
         return redirect('core:dashboard')
 
-    # Build the ancestor chain (root → ... → leaf) for every part leaf.
-    cats = {c.id: c for c in InventoryCategory.objects.filter(active=True)}
-    # Prefetch all price records into a {cat_id: [records]} map so we don't
-    # N+1 query inside the part loop (catalog can be 300+ parts).
-    price_map = {}
-    for rec in (InventoryPriceRecord.objects
-                .select_related('category').order_by('category_id', '-date', '-id')):
-        price_map.setdefault(rec.category_id, []).append(rec)
-
-    parts = []
-    for c in cats.values():
-        if c.node_type != 'part':
-            continue
-        chain = []
-        node = c
-        while node:
-            chain.append(node.name_zh)
-            node = cats.get(node.parent_id) if node.parent_id else None
-        chain.reverse()   # root → leaf
-        parts.append((chain, c))
-
-    wb = Workbook()
-    ws = wb.active
-    ws.title = '库存目录'
-    # First 8 cols = part info; cols 9-11 = current price snapshot (part row only);
-    # col 12 = record count; cols 13-16 = per-record detail (price rows only).
-    headers = ['大类别', '小类别', '系列', '品名', '是否主材', '单位', '最小库存', '现有库存',
-               '当前单价', '当前供应商', '当前价格日期', '记录数',
-               '采购日期', '供应商', '历史单价', '单位',
-               '编码']   # col 17: hidden key for import round-trip (cat.code)
-    hdr_font = Font(bold=True, color='FFFFFF', size=11)
-    hdr_fill = PatternFill(start_color='1B4332', end_color='1B4332', fill_type='solid')
-    hdr_align = Alignment(horizontal='center', vertical='center')
-    thin = Side(style='thin', color='CCCCCC')
-    border = Border(left=thin, right=thin, top=thin, bottom=thin)
-    # Part-row styling: light green band so it's visually distinct from the
-    # price-detail rows beneath it.
-    part_fill = PatternFill(start_color='E8F5E9', end_color='E8F5E9', fill_type='solid')
-    part_font_bold = Font(bold=True)
-    price_font = Font(color='6B7280', size=10)
-    price_indent = Alignment(horizontal='left', indent=2)   # nudge detail rows right
-
-    for ci, h in enumerate(headers, 1):
-        cell = ws.cell(row=1, column=ci, value=h)
-        cell.font = hdr_font
-        cell.fill = hdr_fill
-        cell.alignment = hdr_align
-        cell.border = border
-
-    ri = 2
-    for chain, cat in parts:
-        # Map the variable-length chain onto 4 fixed columns (same logic as before).
-        name = chain[-1]
-        big = chain[0] if chain else ''
-        mid = chain[1:-1] if len(chain) > 2 else []
-        if len(mid) >= 2:
-            small, series = mid[0], mid[1]
-        elif len(mid) == 1:
-            small = series = mid[0]
-        else:
-            small = series = big
-        records = price_map.get(cat.id, [])
-        # Resolve current price once per part. current_price_for honors the
-        # is_current flag (else falls back to newest-by-date).
-        cur = current_price_for(cat)
-        cur_price = float(cur.unit_price) if cur else ''
-        cur_supplier = cur.supplier if cur else ''
-        cur_date = cur.date.isoformat() if (cur and cur.date) else ''
-        # Part row
-        vals = [big, small, series, name,
-                '是' if cat.is_main_material else '',
-                cat.unit or '',
-                cat.min_stock or 0, cat.current_stock or 0,
-                cur_price, cur_supplier, cur_date, len(records),
-                '', '', '', '',
-                cat.code]   # col 17: stable key for import (hidden in Excel)
-        for ci, v in enumerate(vals, 1):
-            cell = ws.cell(row=ri, column=ci, value=v)
-            cell.border = border
-            cell.fill = part_fill
-            cell.font = part_font_bold
-            if ci in (9, 12):
-                cell.alignment = Alignment(horizontal='right')
-        ri += 1
-        # Price-detail rows (one per record) — col 17 intentionally blank so
-        # the importer can tell part rows (code present) from detail rows.
-        for rec in records:
-            dvals = ['', '', '', name, '', rec.unit or cat.unit or '', '', '',
-                     '', '', '', '',
-                     rec.date.isoformat() if rec.date else '',
-                     rec.supplier or '',
-                     float(rec.unit_price),
-                     rec.unit or '',
-                     '']
-            for ci, v in enumerate(dvals, 1):
-                cell = ws.cell(row=ri, column=ci, value=v)
-                cell.border = border
-                cell.font = price_font
-                if ci == 4:
-                    cell.alignment = price_indent   # repeat 品名 indented for context
-                elif ci == 15:
-                    cell.alignment = Alignment(horizontal='right')
-            ri += 1
-
-    # Column widths (17 cols). Use get_column_letter for safety beyond Z.
-    from openpyxl.utils import get_column_letter
-    widths = [18, 22, 22, 28, 10, 8, 10, 10, 12, 18, 14, 9, 14, 18, 12, 8, 10]
-    for ci, w in enumerate(widths, 1):
-        ws.column_dimensions[get_column_letter(ci)].width = w
-    # Hide the code column (col 17 = Q) — it's a round-trip key for import,
-    # not meant for human editing. Excel keeps the data but hides the column.
-    ws.column_dimensions[get_column_letter(17)].hidden = True
-    ws.freeze_panes = 'A2'
-
-    buf = io.BytesIO()
-    wb.save(buf)
-    buf.seek(0)
+    from core.excel_exports import build_inventory_catalog_excel
+    fname, buf = build_inventory_catalog_excel()
     resp = HttpResponse(buf.getvalue(),
                         content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-    resp['Content-Disposition'] = 'attachment; filename="inventory_catalog.xlsx"'
+    resp['Content-Disposition'] = f'attachment; filename="{fname}"'
     return resp
 
 
@@ -11490,96 +11380,23 @@ def inventory_transactions_export(request):
     Columns: 日期 / 类型 / 物料(full hierarchy path) / 数量 / 单位 / 经办人 /
     去向来源 / 关联 / 备注. Date range from ?from=&to= (defaults to last 30 days).
     """
-    from core.models import InventoryCategory, InventoryTransaction
     from core.role_utils import get_user_role, ROLE_MANAGER, ROLE_SUPER_ADMIN
-    from datetime import date, timedelta
-    import io
-    from openpyxl import Workbook
-    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 
     role = get_user_role(request.user)
     if role not in (ROLE_MANAGER, ROLE_SUPER_ADMIN):
         messages.error(request, '无权限')
         return redirect('core:dashboard')
 
-    today = date.today()
-    date_from = request.GET.get('from') or (today - timedelta(days=30)).isoformat()
-    date_to = request.GET.get('to') or today.isoformat()
+    # date_from/date_to are passed through as ISO strings (None → last-30-days
+    # default, computed inside the builder to match the previous behavior).
+    date_from = request.GET.get('from') or None
+    date_to = request.GET.get('to') or None
 
-    # Build cat_id → full hierarchy path (same as the ledger tab).
-    cats = {c.id: c for c in InventoryCategory.objects.filter(active=True)}
-    cat_paths = {}
-    for c in cats.values():
-        chain = []
-        p = c.parent
-        while p:
-            chain.append(p.name_zh)
-            p = cats.get(p.parent_id) if p.parent_id else None
-        chain.reverse()
-        cat_paths[c.id] = ' › '.join(chain + [c.name_zh]) if chain else c.name_zh
-
-    txns = (InventoryTransaction.objects
-            .filter(date__gte=date_from, date__lte=date_to)
-            .select_related('worker', 'related_project', 'zone', 'work_report')
-            .prefetch_related('lines__category')
-            .order_by('-date', '-id'))
-
-    wb = Workbook()
-    ws = wb.active
-    ws.title = '出入库记录'
-    headers = ['日期', '类型', '物料', '数量', '单位', '经办人', '去向/来源', '关联', '备注']
-    hdr_font = Font(bold=True, color='FFFFFF', size=11)
-    hdr_fill = PatternFill(start_color='1B4332', end_color='1B4332', fill_type='solid')
-    hdr_align = Alignment(horizontal='center', vertical='center')
-    thin = Side(style='thin', color='CCCCCC')
-    border = Border(left=thin, right=thin, top=thin, bottom=thin)
-    for ci, h in enumerate(headers, 1):
-        cell = ws.cell(row=1, column=ci, value=h)
-        cell.font = hdr_font; cell.fill = hdr_fill; cell.alignment = hdr_align; cell.border = border
-
-    ri = 2
-    for t in txns:
-        op = f"{t.operation}-{t.entry_subtype}" if t.entry_subtype else t.operation
-        ctx = ''
-        if t.operation == '出库' and t.entry_subtype == '项目' and t.related_project:
-            ctx = '项目 · ' + t.related_project.name
-        elif t.operation == '出库' and t.entry_subtype == '借用' and t.counterparty:
-            ctx = '借用 · ' + t.counterparty
-        elif t.operation == '入库' and t.entry_subtype == '采购' and t.order_no:
-            ctx = '采购 · 订单 ' + t.order_no
-        else:
-            ctx = t.entry_subtype or ''
-        link = ''
-        if t.work_report_id:
-            link = f'工单 #{t.work_report_id}'
-        elif t.zone:
-            link = t.zone.code or t.zone.name_zh
-        for ln in t.lines.all():
-            vals = [
-                t.date.isoformat() if t.date else '',
-                op,
-                cat_paths.get(ln.category_id, ln.category.name_zh if ln.category_id else ''),
-                ('+' if t.operation == '入库' else '-') + str(ln.quantity),
-                ln.unit or '',
-                t.worker.full_name if t.worker_id and t.worker else '',
-                ctx, link, t.remark or '',
-            ]
-            for ci, v in enumerate(vals, 1):
-                cell = ws.cell(row=ri, column=ci, value=v)
-                cell.border = border
-                if ci == 4:
-                    cell.font = Font(bold=True, color='2D6A4F' if t.operation == '入库' else 'c0392b')
-            ri += 1
-
-    for ci, w in enumerate([12, 14, 36, 10, 8, 12, 22, 14, 24], 1):
-        ws.column_dimensions[chr(64 + ci)].width = w
-    ws.freeze_panes = 'A2'
-
-    buf = io.BytesIO()
-    wb.save(buf); buf.seek(0)
+    from core.excel_exports import build_inventory_transactions_excel
+    fname, buf = build_inventory_transactions_excel(date_from, date_to)
     resp = HttpResponse(buf.getvalue(),
                         content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-    resp['Content-Disposition'] = 'attachment; filename="inventory_transactions.xlsx"'
+    resp['Content-Disposition'] = f'attachment; filename="{fname}"'
     return resp
 
 
@@ -11767,7 +11584,7 @@ def _serialize_purchase_orders(pos):
             'project_code': po.project_code,
             'received_date': po.received_date.isoformat() if po.received_date else '',
             'is_completed': po.is_completed,
-            'created_at': po.created_at.strftime('%Y-%m-%d') if po.created_at else '',
+            'created_at': timezone.localtime(po.created_at).strftime('%Y-%m-%d') if po.created_at else '',
             'txn_count': txn_count,
             'planned_lines': planned.get(po.id, []),
             'parts': parts,
@@ -11967,83 +11784,19 @@ def purchase_order_export_excel(request):
     已入库. Within each cell multiple materials are newline-separated; the two
     columns are aligned by material name so rows correspond.
     """
-    import io
-    from openpyxl import Workbook
-    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
-    from openpyxl.utils import get_column_letter
-    from core.models import PurchaseOrder
     from core.role_utils import get_user_role, ROLE_MANAGER, ROLE_SUPER_ADMIN
 
     role = get_user_role(request.user)
     if role not in (ROLE_MANAGER, ROLE_SUPER_ADMIN):
         return redirect('core:dashboard')
 
-    pos = list(PurchaseOrder.objects.all().order_by('-created_at'))
-    # Batched serialization (2 queries for all POs, not 2 × len(pos)).
-    po_data_list = _serialize_purchase_orders(pos)
-    po_data_by_id = {d['id']: d for d in po_data_list}
-
-    wb = Workbook()
-    ws = wb.active
-    ws.title = '采购订单'
-    headers = ['灌溉订单编号', 'PO号', '项目名称', '项目code', '收货日期',
-               'PO未税金额', '计划采购', '已入库', '入库次数', '状态', '创建日期']
-    ws.append(headers)
-
-    header_fill = PatternFill('solid', fgColor='1B4332')
-    header_font = Font(color='FFFFFF', bold=True, size=10)
-    thin = Side(style='thin', color='D9D0C0')
-    border = Border(left=thin, right=thin, top=thin, bottom=thin)
-    wrap_top = Alignment(wrap_text=True, vertical='top')
-    for ci in range(1, len(headers) + 1):
-        c = ws.cell(row=1, column=ci)
-        c.fill = header_fill; c.font = header_font; c.border = border
-        c.alignment = Alignment(horizontal='center', vertical='center')
-
-    for po in pos:
-        data = po_data_by_id.get(po.id)
-        if data is None:
-            continue
-        # Align planned vs received by category_id, newline-separated.
-        planned = {ln['category_id']: ln for ln in data.get('planned_lines', [])}
-        received = {ln['category_id']: ln for ln in data.get('parts', [])}
-        all_ids = list(planned.keys()) + [k for k in received if k not in planned]
-        planned_lines, received_lines = [], []
-        for cid in all_ids:
-            pl = planned.get(cid); rc = received.get(cid)
-            ref = pl or rc
-            nm = ref['name']; unit = ref.get('unit', '') or ''
-            planned_lines.append('%s ×%d %s' % (nm, pl['qty'] if pl else 0, unit))
-            received_lines.append('%s ×%d %s' % (nm, rc['qty'] if rc else 0, unit))
-
-        row = [
-            po.order_number,
-            po.po_number,
-            po.project_name,
-            po.project_code,
-            po.received_date.isoformat() if po.received_date else '',
-            float(po.po_amount_untaxed) if po.po_amount_untaxed is not None else '',
-            '\n'.join(planned_lines),
-            '\n'.join(received_lines),
-            data.get('txn_count', 0),
-            '已完成' if po.is_completed else '进行中',
-            po.created_at.strftime('%Y-%m-%d') if po.created_at else '',
-        ]
-        ws.append(row)
-        r = ws.max_row
-        for ci in range(1, len(headers) + 1):
-            ws.cell(row=r, column=ci).border = border
-            ws.cell(row=r, column=ci).alignment = wrap_top
-
-    widths = [18, 12, 18, 12, 12, 12, 40, 40, 8, 12]
-    for i, w in enumerate(widths, 1):
-        ws.column_dimensions[get_column_letter(i)].width = w
-
-    buf = io.BytesIO()
-    wb.save(buf); buf.seek(0)
+    from core.excel_exports import build_purchase_order_excel
+    # The legacy export returned every PO unconditionally (no query filters),
+    # so pass no filters here — the builder's defaults reproduce that output.
+    fname, buf = build_purchase_order_excel()
     resp = HttpResponse(buf.getvalue(),
                         content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-    resp['Content-Disposition'] = 'attachment; filename="purchase_orders.xlsx"'
+    resp['Content-Disposition'] = f'attachment; filename="{fname}"'
     return resp
 
 

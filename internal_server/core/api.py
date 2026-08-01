@@ -223,8 +223,8 @@ class ZoneSerializer(serializers.ModelSerializer):
                 'type': 'water',
                 'type_display': '浇水协调',
                 'request_type': req.get_request_type_display(),
-                'start_datetime': req.start_datetime.isoformat() if req.start_datetime else None,
-                'end_datetime': req.end_datetime.isoformat() if req.end_datetime else None,
+                'start_datetime': timezone.localtime(req.start_datetime).strftime('%Y-%m-%dT%H:%M:%S') if req.start_datetime else None,
+                'end_datetime': timezone.localtime(req.end_datetime).strftime('%Y-%m-%dT%H:%M:%S') if req.end_datetime else None,
             })
         return pending
 

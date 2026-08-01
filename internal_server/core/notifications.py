@@ -48,7 +48,7 @@ def unread_notifications_for(user, limit=50):
             'title': n.title,
             'body': n.body,
             'link': n.link,
-            'time': n.created_at.strftime('%Y-%m-%d %H:%M') if n.created_at else '',
+            'time': timezone.localtime(n.created_at).strftime('%Y-%m-%d %H:%M') if n.created_at else '',
         }
         for n in qs
     ]
@@ -66,6 +66,22 @@ def mark_read(notification_id, user):
         pk=notification_id, recipient=user, read_at__isnull=True
     ).update(read_at=timezone.now())
     return updated > 0
+
+
+def mark_all_read(user):
+    """Mark ALL of ``user``'s unread notifications as read in one UPDATE.
+
+    The popup now lists every unread notification in a single card with one
+    "我已知晓（全部）" button — this backs that single ack so the user clears
+    everything with one click instead of N. Returns the number of rows updated.
+    """
+    if user is None or not user.is_authenticated:
+        return 0
+    from .models import Notification
+    updated = Notification.objects.filter(
+        recipient=user, read_at__isnull=True
+    ).update(read_at=timezone.now())
+    return updated
 
 
 def resubmit_already_notified(water_request):

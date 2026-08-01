@@ -18,6 +18,15 @@
     var _rectStartLL = null;
     var _circleCenter = null;
     var _circleStep = 0;
+
+    // Local-date YYYY-MM-DD. toISOString() shifts to UTC first, which yields
+    // yesterday between 00:00 and 08:00 Beijing — use local components instead.
+    function _ymd(d) {
+        var y = d.getFullYear(),
+            m = ('0' + (d.getMonth() + 1)).slice(-2),
+            day = ('0' + d.getDate()).slice(-2);
+        return y + '-' + m + '-' + day;
+    }
     var _shapeColors = ['#e74c3c', '#2980b9', '#8e44ad', '#e67e22', '#16a085', '#c0392b', '#2c3e50'];
 
     var _formDataCache = { workorder: null, water_request: null };
@@ -537,7 +546,7 @@
                 _pmGwoId = h.h_pm_gwo_id;
                 var body = $('woModalBody');
                 if (body && !document.getElementById('pmExtSection')) {
-                    var todayStr = new Date().toISOString().slice(0, 10);
+                    var todayStr = _ymd(new Date());
                     var extDiv = document.createElement('div');
                     extDiv.id = 'pmExtSection';
                     extDiv.style.cssText = 'margin-top:12px;padding:10px;border:1px dashed #d1e7dd;border-radius:8px;background:#f8fdfb;';
@@ -744,6 +753,9 @@
         clearSelection();
         _zoneConfirmed = false;
         _currentModal = null;
+        // Defensive reset of the work-order submit guard: a prior error path
+        // could have left it set, which would silently swallow the next submit.
+        window._woInflight = false;
         // Reset zone summaries
         var woZS = $('woZoneSummary'); if (woZS) woZS.innerHTML = '<h2>工作记录</h2>';
         var wrZS = $('wrZoneSummary'); if (wrZS) wrZS.innerHTML = '<h2>浇水需求</h2>';
@@ -2903,6 +2915,7 @@
     window.submitV2Workorder = function () {
         var codes = Array.from(_selectedZoneCodes);
         if (codes.length === 0) { showToast('请在地图上选择至少一个区域', 'error'); return; }
+        if (window._woInflight) { return; }   // a submit is already in flight — drop the click
         var form = $('woModalForm'); if (!form) return;
         form.querySelectorAll('input[name="zones"]').forEach(function (i) { i.remove(); });
         codes.forEach(function (code) { var input = document.createElement('input'); input.type = 'hidden'; input.name = 'zones'; input.value = code; form.appendChild(input); });
@@ -2944,11 +2957,18 @@
         }
         var isSaving = !!(_editingReportId || _editingPmOrderId);
         var btn = $('woSubmitBtn'); btn.disabled = true; btn.textContent = (isSaving ? '保存' : '提交') + '中...';
+        // A global inflight flag (independent of the live button DOM) gates the
+        // submit: btn.disabled alone is brittle — on success it's re-enabled below
+        // BEFORE the 1500ms closeV2Modal fires, opening a window for a second
+        // submit. The flag survives until the response fully settles, and the
+        // server-side dedup gate is the final backstop for refresh / multi-tab.
+        window._woInflight = true;
         fetch('/mobile/workorder/v2/', { method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest' } })
             .then(function (r) { return r.json(); }).then(function (data) {
                 if (data.success) {
                     showToast(data.message, 'success');
-                    btn.disabled = false; btn.textContent = '提交';
+                    // Keep the button disabled on success — the modal closes shortly,
+                    // so there's nothing to re-enable and a stray click can't re-fire.
                     // PM task completion (create): after closing, navigate to the
                     // work-reports PM tab so the worker sees the task marked done.
                     if (_pmGwoId) {
@@ -2961,7 +2981,8 @@
                     }
                 }
                 else { showToast(data.message, 'error'); btn.disabled = false; btn.textContent = '提交'; }
-            }).catch(function (err) { showToast('提交失败: ' + err, 'error'); btn.disabled = false; btn.textContent = '提交'; });
+            }).catch(function (err) { showToast('提交失败: ' + err, 'error'); btn.disabled = false; btn.textContent = '提交'; })
+              .finally(function () { window._woInflight = false; });
     };
 
     // ── Inventory modal (库存管理) ──
@@ -3258,7 +3279,7 @@
         // Combine the separate start/end date selects with their times into full
         // datetimes for the server. Back-dating lets a user file a 需求 for a
         // span that already started; spans may cross midnight (start_date < end_date).
-        var todayStr = new Date().toISOString().split('T')[0];
+        var todayStr = _ymd(new Date());
         var startDate = fd.get('start_date') || todayStr;
         var endDate = fd.get('end_date') || startDate;
         fd.set('start_datetime', startDate + 'T' + startTime);

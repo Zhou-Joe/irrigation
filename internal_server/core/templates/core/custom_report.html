@@ -627,8 +627,13 @@ function saveDashboards() {
     } catch(e) {}
 }
 
+// toISOString() shifts to UTC before slicing, which yields yesterday's date
+// between 00:00–08:00 Beijing. Read local calendar components instead.
 function formatDate(d) {
-    return d.toISOString().split('T')[0];
+    var y = d.getFullYear(),
+        m = ('0' + (d.getMonth() + 1)).slice(-2),
+        day = ('0' + d.getDate()).slice(-2);
+    return y + '-' + m + '-' + day;
 }
 
 function updateMetrics() {

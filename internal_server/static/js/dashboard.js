@@ -527,7 +527,7 @@
         if (!isoStr) return '-';
         try {
             var d = new Date(isoStr);
-            return d.toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+            return d.toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
         } catch (e) { return isoStr; }
     }
 
@@ -564,7 +564,7 @@
                     detail.textContent = '尚未收到同步数据';
                 }
 
-                refresh.textContent = new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+                refresh.textContent = new Date().toLocaleTimeString('zh-CN', { timeZone: 'Asia/Shanghai', hour: '2-digit', minute: '2-digit' });
 
                 // Update panel if open
                 if (syncPanelOpen) {

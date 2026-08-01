@@ -122,6 +122,7 @@ urlpatterns = [
     path('requests/<int:pk>/update/', views.water_request_update, name='water_request_update'),
     path('requests/<int:pk>/resubmit/', views.water_request_resubmit, name='water_request_resubmit'),
     path('api/notifications/<int:nid>/read/', views.notification_read, name='notification_read'),
+    path('api/notifications/read-all/', views.notification_read_all, name='notification_read_all'),
     path('remarks/', views.remarks_list, name='remarks'),
     path('work-reports/new/', views.work_report_create, name='work_report_create'),
     path('work-reports/tree/new/', workorder_tree_form, name='workorder_tree_form'),
@@ -162,6 +163,12 @@ urlpatterns = [
     path('announcements/<int:pk>/delete/', views.announcement_delete, name='announcement_delete'),
     path('api/announcements/<int:pk>/acknowledge/', views.announcement_acknowledge, name='announcement_acknowledge'),
     path('api/announcements/<int:pk>/unacked/', views.announcement_unacked_api, name='announcement_unacked_api'),
+    path('email-configs/save/', views.email_config_save, name='email_config_save'),
+    path('email-configs/list/', views.email_config_list, name='email_config_list'),
+    path('email-configs/<int:pk>/delete/', views.email_config_delete, name='email_config_delete'),
+    path('email-configs/<int:pk>/test/', views.email_config_test, name='email_config_test'),
+    path('email-configs/smtp/', views.email_smtp_get, name='email_smtp_get'),
+    path('email-configs/smtp/save/', views.email_smtp_save, name='email_smtp_save'),
     path('work-reports/tree/<int:report_id>/edit/', workorder_tree_form, name='workorder_tree_form_edit'),
     # WorkItem tree CRUD endpoints (manager-only, consumed by the 工单类型
     # tab inside the 作业计划 page). The standalone manage-page route was

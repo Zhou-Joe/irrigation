@@ -16,8 +16,9 @@
 .am-card { background: #fff; border-radius: 12px; padding: 16px; margin-bottom: 16px; box-shadow: 0 1px 4px rgba(0,0,0,.06); }
 .am-card h2 { margin: 0 0 12px; font-size: 1.05rem; color: var(--color-primary, #2D6A4F); }
 .am-form label { display: block; font-size: .8rem; color: #555; margin-bottom: 3px; }
-.am-form input[type=text], .am-form textarea {
-    width: 100%; padding: 8px 9px; border: 1px solid #d8d8d8; border-radius: 8px; font-size: .92rem; box-sizing: border-box; font-family: inherit; }
+.am-form input[type=text], .am-form input[type=number], .am-form input[type=password],
+.am-form input[type=email], .am-form select, .am-form textarea {
+    width: 100%; padding: 8px 9px; border: 1px solid #d8d8d8; border-radius: 8px; font-size: .92rem; box-sizing: border-box; font-family: inherit; background: #fff; }
 .am-form textarea { min-height: 90px; resize: vertical; line-height: 1.5; }
 .am-field { margin-bottom: 12px; }
 .am-row { display: flex; align-items: flex-start; gap: 10px; padding: 12px 0; border-bottom: 1px solid #f0f0f0; flex-wrap: wrap; }
@@ -418,6 +419,10 @@
                 data-tab="crews" onclick="switchTab('crews')">
             班组管理 ({{ crews|length }})
         </button>
+        <button class="app-tab {% if active_tab == 'email' %}active{% endif %}"
+                data-tab="email" onclick="switchTab('email')">
+            邮件报表 ({{ email_configs|length }})
+        </button>
     </div>
 
     <!-- Tab 1: User List -->
@@ -616,7 +621,7 @@
             <span class="am-stat">已确认 <b>{{ a.ack_count }}</b></span>
             <div class="am-inline">
               <a href="{% url 'core:user_management' %}?tab=announcements&edit={{ a.id }}" class="btn btn-secondary">编辑</a>
-              <form method="post" action="{% url 'core:announcement_delete' a.id %}" style="display:inline;" onsubmit="return confirm('删除通知「{{ a.title }}」？');">
+              <form method="post" action="{% url 'core:announcement_delete' a.id %}" style="display:inline;" onsubmit="return confirm('删除通知「{{ a.title|escapejs }}」？');">
                 {% csrf_token %}<button type="submit" class="btn btn-secondary" style="color:#c0392b;">删除</button>
               </form>
             </div>
@@ -675,7 +680,137 @@
     </div>
 </div>
 
-<!-- Crew Modal (new/edit 班组, in-page, no tab jump) -->
+    <!-- Tab 5: Email Report Config (邮件报表) -->
+    <div id="tab-email" class="app-tab-content {% if active_tab == 'email' %}active{% endif %}">
+
+      <!-- SMTP status card (summary — click to open modal) -->
+      <div class="am-card">
+        <h2>SMTP 邮件服务器设置
+          <span id="smtpStatusDot" style="font-size:0.75rem;font-weight:600;margin-left:8px;"></span>
+        </h2>
+        <p id="smtpStatusSummary" style="font-size:0.85rem;color:var(--color-text-muted);margin:0 0 12px;">加载中…</p>
+        <button type="button" class="btn btn-primary" onclick="openSmtpModal()">配置 / 修改 SMTP</button>
+      </div>
+
+      <!-- Config list (toolbar + rows rendered by JS) -->
+      <div class="am-card">
+        <h2 style="display:flex;align-items:center;justify-content:space-between;">
+          <span>邮件报表配置（<span id="emailConfigCount">{{ email_configs|length }}</span>）</span>
+          <button type="button" class="btn btn-primary" onclick="openEmailConfigModal()">+ 新建</button>
+        </h2>
+        <p style="font-size:0.8rem;color:var(--color-text-muted);margin:0 0 12px;">
+          定时任务每天早 7:00 运行，按频率自动发送（每日=每天，每周=周一，每月=1号）。配置好 SMTP 后点「测试发送」可立即验证。
+        </p>
+        <div id="emailConfigList"></div>
+      </div>
+    </div>
+
+    <!-- SMTP settings modal -->
+    <div class="modal-overlay" id="smtpModal">
+      <div class="modal" style="max-width:520px;">
+        <h3>SMTP 邮件服务器设置</h3>
+        <p style="font-size:0.78rem;color:var(--color-text-muted);margin:0 0 14px;">
+          常见：QQ邮箱 <code>smtp.qq.com:465</code>（SSL），163邮箱 <code>smtp.163.com:465</code>（SSL），Gmail <code>smtp.gmail.com:587</code>（TLS）。密码框留空表示不修改原密码。
+        </p>
+        <form id="smtpForm" class="am-form" onsubmit="return false;">
+          <div class="am-field">
+            <label>SMTP 服务器</label>
+            <input type="text" id="smtpHost" placeholder="如 smtp.qq.com" maxlength="200">
+          </div>
+          <div class="am-field">
+            <label>端口</label>
+            <input type="number" id="smtpPort" value="465" placeholder="465">
+          </div>
+          <div class="am-field">
+            <label>账号</label>
+            <input type="text" id="smtpUsername" placeholder="发件邮箱地址" maxlength="200">
+          </div>
+          <div class="am-field">
+            <label>密码 / 授权码</label>
+            <input type="password" id="smtpPassword" placeholder="请输入密码或邮箱授权码" autocomplete="new-password">
+          </div>
+          <div class="am-field">
+            <label>加密方式</label>
+            <label style="margin:0;font-weight:normal;"><input type="radio" name="smtpEncryption" value="ssl"> SSL（465 常用）</label>
+            &nbsp;&nbsp;
+            <label style="margin:0;font-weight:normal;"><input type="radio" name="smtpEncryption" value="tls"> TLS（587 常用）</label>
+            &nbsp;&nbsp;
+            <label style="margin:0;font-weight:normal;"><input type="radio" name="smtpEncryption" value="none"> 无加密</label>
+          </div>
+          <div class="am-field">
+            <label>发件人地址（可选）</label>
+            <input type="text" id="smtpFromEmail" placeholder="留空则用账号邮箱" maxlength="200">
+          </div>
+          <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px;">
+            <button type="button" class="btn btn-secondary" onclick="closeModal('smtpModal')">取消</button>
+            <button type="button" class="btn btn-primary" id="smtpSaveBtn" onclick="saveSmtp()">保存</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Email config create/edit modal -->
+    <div class="modal-overlay" id="emailConfigModal">
+      <div class="modal" style="max-width:520px;">
+        <h3 id="emailConfigModalTitle">新建邮件报表配置</h3>
+        <form id="emailConfigForm" class="am-form" onsubmit="return false;">
+          <input type="hidden" id="ecId" value="">
+          <div class="am-field">
+            <label>配置名称 *</label>
+            <input type="text" id="ecName" required maxlength="100" placeholder="如：每日维修工单-发经理">
+          </div>
+          <div class="am-field">
+            <label>报表 *</label>
+            <select id="ecReportType" required>
+              {% for code, label in report_choices %}
+              <option value="{{ code }}">{{ label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="am-field">
+            <label>发送频率 *</label>
+            <select id="ecFrequency" required onchange="toggleEcTriggerFields()">
+              <option value="daily">每日</option>
+              <option value="weekly">每周</option>
+              <option value="monthly">每月</option>
+            </select>
+          </div>
+          <div class="am-field" id="ecWeekdayField" style="display:none;">
+            <label>每周几发送 *</label>
+            <select id="ecWeekday">
+              <option value="0">周一</option>
+              <option value="1">周二</option>
+              <option value="2">周三</option>
+              <option value="3">周四</option>
+              <option value="4">周五</option>
+              <option value="5">周六</option>
+              <option value="6">周日</option>
+            </select>
+          </div>
+          <div class="am-field" id="ecMonthDayField" style="display:none;">
+            <label>每月几号发送 *（1-28）</label>
+            <input type="number" id="ecMonthDay" min="1" max="28" placeholder="如 1、15">
+          </div>
+          <div class="am-field">
+            <label>数据范围（天）— 可选</label>
+            <input type="number" id="ecDataRangeDays" min="1" placeholder="留空用频率默认（每日=昨天，每周=上周，每月=上月）">
+            <div style="font-size:0.74rem;color:var(--color-text-muted);margin-top:3px;">填 N = 发送日往前 N 天到前一天的数据。例如每日填 7 = 过去 7 天。</div>
+          </div>
+          <div class="am-field">
+            <label>收件人邮箱 *（多个邮箱用逗号或换行分隔）</label>
+            <textarea id="ecRecipients" required placeholder="manager@example.com&#10;boss@example.com" style="min-height:70px;"></textarea>
+          </div>
+          <div class="am-check">
+            <label style="margin:0;"><input type="checkbox" id="ecIsActive" value="1" checked> 启用（启用后定时任务会按频率自动发送）</label>
+          </div>
+          <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px;">
+            <button type="button" class="btn btn-secondary" onclick="closeModal('emailConfigModal')">取消</button>
+            <button type="button" class="btn btn-primary" id="ecSaveBtn" onclick="saveEmailConfig()">保存</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
 <div class="modal-overlay" id="crewModal">
     <div class="modal" style="max-width:640px;">
         <h3 id="crewModalTitle">新建班组</h3>
@@ -793,6 +928,191 @@ function switchTab(tab) {
     if (tab === 'approval') params += '&filter=' + currentFilter;
     history.replaceState(null, '', params);
 }
+
+// --- 邮件报表 tab: modal + AJAX, no page reload ---
+function _emailCsrf() {
+    return (document.cookie.split('; ').find(function (c) { return c.indexOf('csrftoken=') === 0; }) || '').split('=')[1] || '';
+}
+function _emailEsc(s) {
+    var d = document.createElement('div'); d.textContent = s == null ? '' : s; return d.innerHTML;
+}
+function closeModal(id) { var m = document.getElementById(id); if (m) m.classList.remove('show'); }
+// Close any modal on backdrop click.
+['smtpModal', 'emailConfigModal'].forEach(function (id) {
+    var m = document.getElementById(id);
+    if (m) m.addEventListener('click', function (e) { if (e.target === m) closeModal(id); });
+});
+
+// ── SMTP ──
+function refreshSmtpStatus() {
+    fetch('/email-configs/smtp/', { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+        .then(function (r) { return r.json(); }).then(function (d) {
+            if (!d.success) return;
+            var dot = document.getElementById('smtpStatusDot');
+            var summary = document.getElementById('smtpStatusSummary');
+            if (d.is_configured) {
+                dot.textContent = '● 已配置'; dot.style.color = '#2e7d32';
+                summary.textContent = d.host + ':' + d.port + ' · ' + d.username +
+                    (d.has_password ? ' · 密码已设置' : ' · 密码未设置');
+            } else {
+                dot.textContent = '○ 未配置'; dot.style.color = '#999';
+                summary.textContent = '尚未配置 SMTP，定时邮件和测试发送将无法工作。';
+            }
+        });
+}
+function openSmtpModal() {
+    fetch('/email-configs/smtp/', { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+        .then(function (r) { return r.json(); }).then(function (d) {
+            if (!d.success) return;
+            document.getElementById('smtpHost').value = d.host || '';
+            document.getElementById('smtpPort').value = d.port || 465;
+            document.getElementById('smtpUsername').value = d.username || '';
+            document.getElementById('smtpFromEmail').value = d.from_email || '';
+            document.getElementById('smtpPassword').value = '';
+            document.getElementById('smtpPassword').placeholder = d.has_password ? '已设置（留空不修改）' : '请输入密码或邮箱授权码';
+            var enc = d.use_ssl ? 'ssl' : d.use_tls ? 'tls' : 'none';
+            var radio = document.querySelector('input[name="smtpEncryption"][value="' + enc + '"]');
+            if (radio) radio.checked = true;
+            document.getElementById('smtpModal').classList.add('show');
+        });
+}
+function saveSmtp() {
+    var btn = document.getElementById('smtpSaveBtn');
+    var enc = (document.querySelector('input[name="smtpEncryption"]:checked') || {}).value || 'none';
+    var fd = new FormData();
+    fd.append('host', document.getElementById('smtpHost').value);
+    fd.append('port', document.getElementById('smtpPort').value);
+    fd.append('username', document.getElementById('smtpUsername').value);
+    fd.append('password', document.getElementById('smtpPassword').value);
+    fd.append('encryption', enc);
+    fd.append('from_email', document.getElementById('smtpFromEmail').value);
+    btn.disabled = true; btn.textContent = '保存中…';
+    fetch('/email-configs/smtp/save/', {
+        method: 'POST', headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRFToken': _emailCsrf() }, body: fd,
+    }).then(function (r) { return r.json(); }).then(function (d) {
+        showToast(d.message, !d.success);
+        if (d.success) { closeModal('smtpModal'); refreshSmtpStatus(); }
+    }).catch(function () { showToast('网络错误', true); })
+      .finally(function () { btn.disabled = false; btn.textContent = '保存'; });
+}
+
+// ── Email config list + create/edit/delete/test ──
+function renderEmailConfigList(configs) {
+    var list = document.getElementById('emailConfigList');
+    document.getElementById('emailConfigCount').textContent = configs.length;
+    if (!configs.length) { list.innerHTML = '<div class="am-empty">暂无邮件报表配置，点击右上「新建」</div>'; return; }
+    list.innerHTML = configs.map(function (c) {
+        var last = c.last_sent_at ? ('最后发送 ' + c.last_sent_at + ' · ' + _emailEsc(c.last_status || ''))
+                                   : '尚未发送';
+        var offBadge = c.is_active ? '' : '<span class="am-off">已停用</span>';
+        return '<div class="am-row">' +
+            '<div class="am-row-main">' +
+                '<div class="am-row-title">' + _emailEsc(c.name) + offBadge + '</div>' +
+                '<div class="am-row-meta">' + _emailEsc(c.report_type_display) + ' · ' + _emailEsc(c.frequency_display) +
+                    ' · 收件人 ' + c.recipient_count + ' 个</div>' +
+                '<div class="am-row-body" style="font-size:0.78rem;color:var(--color-text-muted);">' + last + '</div>' +
+            '</div>' +
+            '<div class="am-inline">' +
+                '<button type="button" class="btn btn-secondary" onclick="testEmailConfig(' + c.id + ', this)">测试发送</button>' +
+                '<button type="button" class="btn btn-secondary" onclick="openEmailConfigModal(' + c.id + ')">编辑</button>' +
+                '<button type="button" class="btn btn-secondary" style="color:#c0392b;" onclick="deleteEmailConfig(' + c.id + ',\'' + _emailEsc(c.name).replace(/'/g, "\\'") + '\')">删除</button>' +
+            '</div>' +
+        '</div>';
+    }).join('');
+}
+function refreshEmailConfigList() {
+    fetch('/email-configs/list/', { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+        .then(function (r) { return r.json(); }).then(function (d) {
+            if (d.success) renderEmailConfigList(d.configs);
+        });
+}
+// Show/hide the trigger-day field based on frequency (weekly→weekday, monthly→month_day).
+function toggleEcTriggerFields() {
+    var freq = document.getElementById('ecFrequency').value;
+    document.getElementById('ecWeekdayField').style.display = freq === 'weekly' ? '' : 'none';
+    document.getElementById('ecMonthDayField').style.display = freq === 'monthly' ? '' : 'none';
+}
+function openEmailConfigModal(id) {
+    document.getElementById('ecId').value = id || '';
+    document.getElementById('emailConfigModalTitle').textContent = id ? '编辑邮件报表配置' : '新建邮件报表配置';
+    document.getElementById('ecSaveBtn').textContent = id ? '保存修改' : '创建';
+    if (id) {
+        fetch('/email-configs/list/', { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+            .then(function (r) { return r.json(); }).then(function (d) {
+                var c = (d.configs || []).find(function (x) { return x.id === id; });
+                if (!c) return;
+                document.getElementById('ecName').value = c.name || '';
+                document.getElementById('ecReportType').value = c.report_type;
+                document.getElementById('ecFrequency').value = c.frequency;
+                document.getElementById('ecRecipients').value = c.recipients || '';
+                document.getElementById('ecIsActive').checked = c.is_active;
+                document.getElementById('ecDataRangeDays').value = c.data_range_days || '';
+                document.getElementById('ecWeekday').value = (c.weekday != null) ? String(c.weekday) : '0';
+                document.getElementById('ecMonthDay').value = (c.month_day != null) ? String(c.month_day) : '';
+                toggleEcTriggerFields();
+                document.getElementById('emailConfigModal').classList.add('show');
+            });
+    } else {
+        document.getElementById('ecName').value = '';
+        document.getElementById('ecReportType').selectedIndex = 0;
+        document.getElementById('ecFrequency').value = 'daily';
+        document.getElementById('ecRecipients').value = '';
+        document.getElementById('ecIsActive').checked = true;
+        document.getElementById('ecDataRangeDays').value = '';
+        document.getElementById('ecWeekday').value = '0';
+        document.getElementById('ecMonthDay').value = '';
+        toggleEcTriggerFields();
+        document.getElementById('emailConfigModal').classList.add('show');
+    }
+}
+function saveEmailConfig() {
+    var btn = document.getElementById('ecSaveBtn');
+    var fd = new FormData();
+    var id = document.getElementById('ecId').value;
+    if (id) fd.append('id', id);
+    fd.append('name', document.getElementById('ecName').value);
+    fd.append('report_type', document.getElementById('ecReportType').value);
+    fd.append('frequency', document.getElementById('ecFrequency').value);
+    fd.append('recipients', document.getElementById('ecRecipients').value);
+    fd.append('is_active', document.getElementById('ecIsActive').checked ? '1' : '');
+    fd.append('data_range_days', document.getElementById('ecDataRangeDays').value);
+    if (document.getElementById('ecFrequency').value === 'weekly')
+        fd.append('weekday', document.getElementById('ecWeekday').value);
+    if (document.getElementById('ecFrequency').value === 'monthly')
+        fd.append('month_day', document.getElementById('ecMonthDay').value);
+    btn.disabled = true; btn.textContent = '保存中…';
+    fetch('/email-configs/save/', {
+        method: 'POST', headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRFToken': _emailCsrf() }, body: fd,
+    }).then(function (r) { return r.json(); }).then(function (d) {
+        showToast(d.message, !d.success);
+        if (d.success) { closeModal('emailConfigModal'); refreshEmailConfigList(); }
+    }).catch(function () { showToast('网络错误', true); })
+      .finally(function () { btn.disabled = false; btn.textContent = id ? '保存修改' : '创建'; });
+}
+function deleteEmailConfig(id, name) {
+    if (!confirm('删除配置「' + name + '」？')) return;
+    fetch('/email-configs/' + id + '/delete/', {
+        method: 'POST', headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRFToken': _emailCsrf() },
+    }).then(function (r) { return r.json(); }).then(function (d) {
+        showToast(d.message, !d.success);
+        if (d.success) refreshEmailConfigList();
+    }).catch(function () { showToast('网络错误', true); });
+}
+function testEmailConfig(id, btn) {
+    if (!confirm('立即发送一封测试邮件？将使用该配置的频率对应的数据范围生成附件。')) return;
+    var orig = btn.textContent;
+    btn.disabled = true; btn.textContent = '发送中…';
+    fetch('/email-configs/' + id + '/test/', {
+        method: 'POST', headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRFToken': _emailCsrf() },
+    }).then(function (r) { return r.json(); }).then(function (d) {
+        showToast(d.message, !d.success);
+        if (d.success) refreshEmailConfigList();   // last_sent_at/last_status update
+    }).catch(function () { showToast('网络错误', true); })
+      .finally(function () { btn.disabled = false; btn.textContent = orig; });
+}
+// Initialize the email tab on first visit.
+refreshSmtpStatus();
+refreshEmailConfigList();
 
 // --- Announcement unacked users lazy-load (通知管理 tab) ---
 var _amLoaded = {};  // aid -> true once fetched
