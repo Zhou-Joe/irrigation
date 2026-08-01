@@ -43,7 +43,7 @@ Context vars expected:
     {% for s in stories %}
     <div class="fu-story-item">
       <div class="fu-story-head">
-        <span class="fu-story-date">{{ s.date }}</span>
+        <span class="fu-story-date">{% if s.time %}{{ s.time }}{% else %}{{ s.date }}{% endif %}</span>
         <span class="fu-story-worker">{{ s.worker_name }}</span>
         <a class="fu-story-ticket" href="{% url 'core:work_report_detail' s.id %}">{{ s.ticket }}</a>
         <span class="fu-story-mark {% if s.status_label == '已修复' %}is-fixed{% else %}is-follow{% endif %}">{{ s.status_label }}</span>
@@ -79,11 +79,12 @@ Context vars expected:
   </div>
   {% endif %}
 
-  {% comment %}Manager final disposition (resolved only, live list): transfer/archive
-  buttons. Suppressed entirely in history mode — re-disposing a closed ticket
-  would corrupt its already-disposed zone remarks. Transfer buttons use
-  data-key='wo:<id>' so existing JS finds the right zones.{% endcomment %}
-  {% if is_manager and not is_history and collab_status == 'resolved' %}
+  {% comment %}Manager final disposition (resolved + NOT yet disposed, live list):
+  transfer/archive buttons. needs_disposition is True only when the raw
+  collab_status is 'resolved' (zone remarks still pending). Already-disposed
+  tickets (raw collab_status='') have needs_disposition False, so the buttons
+  don't reappear in the 已完成 sub-tab. Also suppressed in history mode.{% endcomment %}
+  {% if is_manager and not is_history and needs_disposition %}
   <div class="fu-mgr-final is-disposition">
     <span class="fu-mgr-hint">工单已完成，请选择最终处置：</span>
     <div class="fu-mgr-actions">

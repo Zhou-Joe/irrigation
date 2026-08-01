@@ -163,6 +163,12 @@
   .wr-remarks-panel { display:none; }
   .wr-remarks-panel.active { display:block; }
   .wr-rm-subhead { font-size:0.95rem; font-weight:700; color:var(--wr-text); margin:14px 0 8px; }
+  /* Sub-tabs inside the 疑难跟进 tab (进行中 / 待确认 / 已完成). */
+  .wr-subtab { padding:5px 14px; border:1px solid var(--wr-card-border); border-radius:18px; background:var(--wr-card-bg); color:var(--wr-muted); font-size:0.8rem; font-weight:600; cursor:pointer; transition:all .15s; }
+  .wr-subtab:hover { border-color:var(--wr-warn); color:var(--wr-text); }
+  .wr-subtab.active { background:var(--wr-primary,#2D6A4F); border-color:var(--wr-primary,#2D6A4F); color:#fff; }
+  .wr-subtab-cnt { display:inline-block; margin-left:3px; padding:0 6px; border-radius:10px; background:rgba(255,255,255,0.25); font-size:0.7rem; font-weight:700; min-width:16px; text-align:center; }
+  .wr-subtab:not(.active) .wr-subtab-cnt { background:var(--wr-card-border); color:var(--wr-muted); }
   .wr-rm-card { background:var(--wr-card-bg); border:1px solid var(--wr-card-border); border-radius:12px; padding:12px 14px; margin-bottom:10px; }
   .wr-rm-top { display:flex; flex-wrap:wrap; gap:8px; align-items:baseline; }
   .wr-rm-date { font-weight:600; color:var(--wr-text); font-size:0.85rem; }
@@ -401,9 +407,6 @@
         </button>
         {% endif %}
         {% if is_manager %}
-        <button type="button" class="app-tab {% if active_tab == 'history' %}active{% endif %}" data-tab="history" onclick="switchTab('history')">已修复</button>
-        {% endif %}
-        {% if is_manager %}
         <button type="button" class="app-tab {% if active_tab == 'photos' %}active{% endif %}" data-tab="photos" onclick="switchTab('photos')">媒体下载</button>
         {% endif %}
     </div>
@@ -487,15 +490,24 @@
     {% if show_collab_tabs %}
     <div id="tabRepairs" class="wr-remarks-panel {% if active_tab == 'repairs' %}active{% endif %}">
         <div class="wr-rm-subhead" style="display:flex;justify-content:space-between;align-items:center;">
-            <span>未解决待修 ({{ pending_repairs|length }})</span>
+            <span>疑难/待修工单 ({{ pending_repairs|length }})</span>
             {% if pending_repairs and is_manager %}
             <button type="button" class="btn-sm btn-secondary" onclick="resolveAllRepairs(event)" style="font-size:.82rem;">一键全部标记已解决</button>
             {% endif %}
         </div>
+        {% comment %}Sub-tabs to split the merged list by lifecycle stage so it stays tidy.
+           Always rendered (even when empty) so the feature is discoverable;
+           counts + visibility are toggled client-side by JS (filterRepairsTab);
+           data-collab on each card drives the bucket.{% endcomment %}
+        <div class="wr-subtabs" style="display:flex;gap:4px;margin:10px 0 4px;flex-wrap:wrap;">
+            <button type="button" class="wr-subtab active" data-bucket="ongoing" onclick="filterRepairsTab('ongoing', this)">进行中 <span class="wr-subtab-cnt" data-cnt-bucket="ongoing">0</span></button>
+            <button type="button" class="wr-subtab" data-bucket="pending" onclick="filterRepairsTab('pending', this)">待确认 <span class="wr-subtab-cnt" data-cnt-bucket="pending">0</span></button>
+            <button type="button" class="wr-subtab" data-bucket="resolved" onclick="filterRepairsTab('resolved', this)">已完成 <span class="wr-subtab-cnt" data-cnt-bucket="resolved">0</span></button>
+        </div>
         {% if pending_repairs %}
         <div id="repairBody" style="margin-top:8px;">
             {% for r in pending_repairs %}
-            <div class="wr-card cmt-collapsed {% if not r.comment_count %}cmt-empty{% endif %}" id="repairRow-{{ r.id }}" data-rid="{{ r.id }}">
+            <div class="wr-card cmt-collapsed {% if not r.comment_count %}cmt-empty{% endif %}" id="repairRow-{{ r.id }}" data-rid="{{ r.id }}" data-collab="{{ r.collab_bucket }}">
                 <div class="wr-summary" style="cursor:default;">
                     <div class="wr-card-top">
                         <span class="wr-card-date">{{ r.date }}</span>
@@ -529,72 +541,15 @@
                             <button type="button" class="wr-cmt-send" onclick="postComment({{ r.id }}, this)">发送</button>
                         </div>
                     </div>
-                    {% include 'core/_followup_collab.html' with parent_id=r.id collab_status=r.collab_status stories=r.followup_stories remark_group=r.remark_group is_manager=is_manager %}
+                    {% include 'core/_followup_collab.html' with parent_id=r.id collab_status=r.collab_status needs_disposition=r.needs_disposition stories=r.followup_stories remark_group=r.remark_group is_manager=is_manager %}
                 </div>
             </div>
             {% endfor %}
         </div>
         {% else %}
-        <div class="wr-rm-empty">✓ 暂无待修工单</div>
+        <div id="repairBody" style="margin-top:8px;"></div>
         {% endif %}
-    </div>
-    {% endif %}
-
-    {# ── Tab: 历史疑难/待修 (managers only) — closed tickets for audit ────── #}
-    {% if is_manager %}
-    <div id="tabHistory" class="wr-remarks-panel {% if active_tab == 'history' %}active{% endif %}">
-        <div class="wr-rm-subhead" style="display:flex;justify-content:space-between;align-items:center;">
-            <span>已修复的疑难工单 ({{ resolved_repairs|length }})</span>
-            <span class="wr-muted" style="font-size:.78rem;">最多显示最近 200 条</span>
-        </div>
-        {% if resolved_repairs %}
-        <div id="historyBody" style="margin-top:8px;">
-            {% for r in resolved_repairs %}
-            <div class="wr-card cmt-collapsed {% if not r.comment_count %}cmt-empty{% endif %}" id="historyRow-{{ r.id }}" data-rid="{{ r.id }}">
-                <div class="wr-summary" style="cursor:default;">
-                    <div class="wr-card-top">
-                        <span class="wr-card-date">{{ r.date }}</span>
-                        {% if r.worker_name and r.worker_name != '—' %}<span class="wr-meta" style="font-size:.82rem;">{{ r.worker_name }}</span>{% endif %}
-                        <span class="wr-card-id">#{{ r.id }}</span>
-                        <div class="wr-card-flags">
-                            <span class="wr-flag {{ r.flag_class }}">{{ r.flags }}</span>
-                        </div>
-                        <button type="button" class="wr-cmt-chip {% if not r.comment_count %}zero{% endif %}" onclick="event.stopPropagation();toggleCmt({{ r.id }}, this)">💬 {{ r.comment_count|default:0 }}</button>
-                    </div>
-                    {% if r.zone_count %}
-                    <div class="wr-zone-summary">{{ r.zone_count }} zones ({{ r.zone_preview }}{% if r.zone_count > 4 %}…{% endif %})</div>
-                    {% endif %}
-                    {# Rolled-up labor hours across the whole 疑难跟进 timeline (parent + all follow-ups), per labor type. Hidden entirely when both are zero so cards with no logged hours stay compact. #}
-                    {% if r.total_team_hours or r.total_third_party_hours %}
-                    <div class="wr-meta" style="font-size:.78rem;color:var(--wr-muted);">工时 · 灌溉组 {{ r.total_team_hours|floatformat:1 }}h{% if r.total_third_party_hours %} · 第三方 {{ r.total_third_party_hours|floatformat:1 }}h{% endif %}</div>
-                    {% endif %}
-                    {% if r.remark %}
-                    <div class="wr-meta" style="font-size:.82rem;color:var(--wr-text);max-width:100%;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;" title="{{ r.remark }}">{{ r.remark }}</div>
-                    {% endif %}
-                    {% if r.closed %}
-                    <div class="wr-meta" style="font-size:.76rem;color:var(--wr-muted);margin-top:4px;padding-top:4px;border-top:1px dashed var(--wr-card-border);">
-                      关闭 · {{ r.closed.at|date:'Y-m-d H:i' }} · {{ r.closed.by }} · {{ r.closed.note }}
-                    </div>
-                    {% endif %}
-                </div>
-                <div class="wr-detail" style="display:block;border-top:1px solid var(--wr-card-border);padding:12px 14px;background:#fafafa;" id="historyCollab-{{ r.id }}">
-                    {% include 'core/_followup_collab.html' with parent_id=r.id collab_status=r.collab_status stories=r.followup_stories remark_group=r.remark_group is_manager=is_manager is_history=1 %}
-                    <div class="wr-dsec wr-cmt-section">
-                        <div class="wr-dlabel">评论</div>
-                        <div class="wr-cmt-loading" id="cmtLoading-{{ r.id }}" style="display:none;">加载中…</div>
-                        <div class="wr-cmt-list" id="cmtList-{{ r.id }}"></div>
-                        <div class="wr-cmt-add">
-                            <textarea class="wr-cmt-input" id="cmtInput-{{ r.id }}" rows="1" placeholder="写评论… (Ctrl+Enter 发送)" onkeydown="if((event.metaKey||event.ctrlKey)&&event.key==='Enter'){event.preventDefault();postComment({{ r.id }}, this);}"></textarea>
-                            <button type="button" class="wr-cmt-send" onclick="postComment({{ r.id }}, this)">发送</button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            {% endfor %}
-        </div>
-        {% else %}
-        <div class="wr-rm-empty">✓ 暂无已关闭工单</div>
-        {% endif %}
+        <div class="wr-rm-empty" id="repairEmptyBucket" style="display:none;">该分类下暂无工单</div>
     </div>
     {% endif %}
 
@@ -842,8 +797,6 @@ function switchTab(tab) {
     if (pm) pm.classList.toggle('active', tab === 'pm');
     var rp = document.getElementById('tabRepairs');
     if (rp) rp.classList.toggle('active', tab === 'repairs');
-    var hi = document.getElementById('tabHistory');
-    if (hi) hi.classList.toggle('active', tab === 'history');
     var ph = document.getElementById('tabPhotos');
     if (ph) ph.classList.toggle('active', tab === 'photos');
     document.querySelectorAll('.app-tab').forEach(function (t) {
@@ -854,7 +807,22 @@ function switchTab(tab) {
     var tabInput = document.getElementById('filterTabInput');
     if (tabInput) tabInput.value = tab;
     if (tab === 'photos') loadPhotoReports();
+    // Initialize the 疑难跟进 sub-tab counts + filter whenever that tab opens.
+    if (tab === 'repairs') {
+        refreshRepairSubtabCounts();
+        var def = document.querySelector('.wr-subtab.active') || document.querySelector('.wr-subtab[data-bucket="ongoing"]');
+        if (def) filterRepairsTab(def.getAttribute('data-bucket'), def);
+    }
 }
+// On a deep-link (?tab=repairs) the server renders the tab active but switchTab()
+// never fires — init the sub-tab counts + filter manually so 进行中 shows first.
+(function () {
+    if (document.getElementById('tabRepairs') && document.getElementById('tabRepairs').classList.contains('active')) {
+        refreshRepairSubtabCounts();
+        var def = document.querySelector('.wr-subtab.active') || document.querySelector('.wr-subtab[data-bucket="ongoing"]');
+        if (def) filterRepairsTab(def.getAttribute('data-bucket'), def);
+    }
+})();
 // On a deep-link (?tab=photos) the server renders the tab active but switchTab()
 // never fires — kick the lazy load manually so the placeholder doesn't linger.
 (function () {
@@ -970,6 +938,11 @@ function openFollowup(parentId) {
     window._fuModalPhotoList = [];
     var modal = document.getElementById('fuModal');
     if (!modal) return;
+    // Defensive reset of the submit guard: a prior error path could have left
+    // the inflight flag set, which would silently swallow this submit.
+    window._fuInflight = false;
+    var btn = document.querySelector('#fuModal .btn-primary');
+    if (btn) { btn.disabled = false; }
     document.getElementById('fuModalId').textContent = '#' + parentId;
     document.getElementById('fuModalRemark').value = '';
     document.getElementById('fuModalPhotos').value = '';
@@ -1087,9 +1060,15 @@ document.addEventListener('change', function (e) {
     t.value = '';  // allow re-picking the same filename
 });
 // Follow-up modal submit (single global instance). Reads window._fuModalParentId.
+// A global inflight flag (independent of the live button DOM) gates submission:
+// the button-only disable is brittle — it re-enables the instant the first
+// response lands (before the modal/refresh swaps), and reopening the modal
+// resets it. The flag survives all of those, and the server-side dedup gate is
+// the final backstop for refresh / multi-tab / retry.
 function submitFollowupModal() {
     var parentId = window._fuModalParentId;
     if (!parentId) { wrToast('未选中工单', true); return; }
+    if (window._fuInflight) { return; }   // a submit is already in flight — drop the click
     var remark = document.getElementById('fuModalRemark').value.trim();
     if (!remark) { wrToast('请填写跟进备注', true); return; }
     var actionEl = document.querySelector('input[name="fuModalAction"]:checked');
@@ -1101,6 +1080,7 @@ function submitFollowupModal() {
     var btn = document.querySelector('#fuModal .btn-primary');
     var origText = btn ? btn.textContent : '';
     if (btn) { btn.disabled = true; btn.textContent = '提交中…'; }
+    window._fuInflight = true;
     var fd = new FormData();
     fd.append('remark', remark);
     fd.append('action', action);
@@ -1118,7 +1098,15 @@ function submitFollowupModal() {
             _refreshRepairsTab(900);
         }
     }).catch(function () { wrToast('网络错误', true); })
-      .finally(function () { if (btn) { btn.disabled = false; btn.textContent = origText; } });
+      .finally(function () {
+          window._fuInflight = false;
+          // Only re-enable the button if the modal is still open (i.e. the
+          // submit failed / was a duplicate) — on success the modal closed, so
+          // there's nothing to re-enable and the next openFollowup resets state.
+          if (btn && document.getElementById('fuModal').style.display !== 'none') {
+              btn.disabled = false; btn.textContent = origText;
+          }
+      });
 }
 // Manager final-step from inside a collab block: open a chooser modal so the
 // manager picks a final disposition (move to irrigation / move to equipment /
@@ -1314,10 +1302,47 @@ function _refreshRepairsTab(afterMs) {
                 // After swapping in fresh cards, auto-load any that already have
                 // comments so the user sees the thread without clicking the chip.
                 autoloadPopulatedCommentThreads(cur);
+                // Re-apply the active sub-tab (进行中/待确认/已完成) and refresh
+                // counts — the swap replaced the whole #tabRepairs innerHTML, so
+                // the previously-selected bucket would otherwise reset to 进行中.
+                refreshRepairSubtabCounts();
+                var activeBtn = cur.querySelector('.wr-subtab.active');
+                if (activeBtn) filterRepairsTab(activeBtn.getAttribute('data-bucket'), activeBtn);
             })
             .catch(function () { location.href = '/work-reports/?tab=repairs'; });
     }
     if (afterMs) setTimeout(doSwap, afterMs); else doSwap();
+}
+// ── 疑难跟进 sub-tabs (进行中 / 待确认 / 已完成) ──
+// Cards carry data-collab="ongoing|pending|resolved"; the active sub-tab shows
+// only its bucket. Counts are recomputed from the live DOM so they survive the
+// _refreshRepairsTab innerHTML swap.
+function refreshRepairSubtabCounts() {
+    var counts = { ongoing: 0, pending: 0, resolved: 0 };
+    var cards = document.querySelectorAll('#repairBody .wr-card[data-collab]');
+    cards.forEach(function (c) {
+        var b = c.getAttribute('data-collab');
+        if (counts.hasOwnProperty(b)) counts[b]++;
+    });
+    Object.keys(counts).forEach(function (b) {
+        var el = document.querySelector('.wr-subtab-cnt[data-cnt-bucket="' + b + '"]');
+        if (el) el.textContent = counts[b];
+    });
+}
+function filterRepairsTab(bucket, btn) {
+    // Toggle active styling.
+    var tabs = document.querySelectorAll('.wr-subtab');
+    tabs.forEach(function (t) { t.classList.toggle('active', t === btn || t.getAttribute('data-bucket') === bucket); });
+    // Show/hide cards by data-collab bucket.
+    var any = false;
+    var cards = document.querySelectorAll('#repairBody .wr-card[data-collab]');
+    cards.forEach(function (c) {
+        var show = c.getAttribute('data-collab') === bucket;
+        c.style.display = show ? '' : 'none';
+        if (show) any = true;
+    });
+    var empty = document.getElementById('repairEmptyBucket');
+    if (empty) empty.style.display = any ? 'none' : '';
 }
 // Auto-load comment threads for cards whose 💬 chip shows a non-zero count.
 // Scans a root element (defaults to document) for .wr-cmt-chip elements whose
@@ -1559,7 +1584,7 @@ function toggleAllMoveModal(on) {
             } else if (df) {
                 var expect = new Date();
                 expect.setDate(expect.getDate() - parseInt(days, 10));
-                var iso = expect.toISOString().slice(0, 10);
+                var iso = (function(d){var m=('0'+(d.getMonth()+1)).slice(-2),day=('0'+d.getDate()).slice(-2);return d.getFullYear()+'-'+m+'-'+day;})(expect);
                 if (df === iso) p.classList.add('on');
             }
         });
@@ -1575,7 +1600,7 @@ function toggleAllMoveModal(on) {
             } else {
                 var start = new Date();
                 start.setDate(start.getDate() - parseInt(days, 10));
-                df.value = start.toISOString().slice(0, 10);
+                df.value = (function(d){var m=('0'+(d.getMonth()+1)).slice(-2),day=('0'+d.getDate()).slice(-2);return d.getFullYear()+'-'+m+'-'+day;})(start);
                 dt.value = '';   // preset = open-ended up to today
             }
             // Resubmit the filter form so the initial batch + load-more cursor reset.

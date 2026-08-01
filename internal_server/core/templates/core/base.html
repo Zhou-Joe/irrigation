@@ -196,14 +196,23 @@
         .notif-counter { font-size: 0.78rem; color: #999; margin-left: auto; }
         .notif-x { background: none; border: none; font-size: 1.5rem; color: #aaa; cursor: pointer; line-height: 1; padding: 0 2px; }
         .notif-x:hover { color: #555; }
-        .notif-title { font-size: 1.12rem; font-weight: 700; color: #222; margin: 0 0 4px; }
-        .notif-time { font-size: 0.76rem; color: #aaa; margin: 0 0 12px; }
-        .notif-body { font-size: 0.92rem; color: #333; line-height: 1.6; white-space: pre-wrap; word-break: break-word; margin-bottom: 18px; }
-        .notif-actions { display: flex; gap: 10px; justify-content: flex-end; }
+
+        /* All unread notifications render together in one card. Each is a
+           stacked .notif-item separated by a thin divider — one "我已知晓（全部）"
+           clears the whole list, so the user no longer confirms N popups. */
+        .notif-list { display: flex; flex-direction: column; gap: 0; }
+        .notif-item { padding: 12px 0; }
+        .notif-item + .notif-item { border-top: 1px solid #eef0f3; }
+        .notif-item-title { font-size: 1.0rem; font-weight: 700; color: #222; margin: 0 0 2px; }
+        .notif-item-time { font-size: 0.74rem; color: #aaa; margin: 0 0 6px; }
+        .notif-item-body { font-size: 0.9rem; color: #333; line-height: 1.6; white-space: pre-wrap; word-break: break-word; }
+        .notif-item-goto { display: inline-block; margin-top: 6px; font-size: 0.8rem; color: var(--color-primary, #2D6A4F); text-decoration: none; font-weight: 600; }
+        .notif-item-goto:hover { text-decoration: underline; }
+
+        .notif-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 14px; }
         .notif-btn { border: none; border-radius: 8px; padding: 9px 22px; font-size: 0.9rem; font-weight: 600; cursor: pointer; }
         .notif-btn:active { transform: scale(0.97); }
         .notif-btn:disabled { opacity: 0.6; cursor: default; }
-        .notif-btn.goto { background: #f3f4f6; color: #333; text-decoration: none; display: none; }   /* shown only when link present */
         .notif-btn.ack { background: var(--color-primary, #2D6A4F); color: #fff; }
 
         /* PM task section inside the notification popup. Shown only for field
@@ -314,12 +323,9 @@
             </div>
             <div id="notifEmpty" style="display:none; text-align:center; color:#999; padding:24px 0; font-size:0.9rem;">暂无新通知</div>
             <div id="notifContent">
-                <h3 class="notif-title" id="notifTitle"></h3>
-                <p class="notif-time" id="notifTime"></p>
-                <div class="notif-body" id="notifBody"></div>
+                <div class="notif-list" id="notifList"></div>
                 <div class="notif-actions">
-                    <a class="notif-btn goto" id="notifGoto" href="#" target="_blank" rel="noopener">转到</a>
-                    <button type="button" class="notif-btn ack" id="notifAckBtn" onclick="ackNotif()">我已知晓</button>
+                    <button type="button" class="notif-btn ack" id="notifAckBtn" onclick="ackAllNotif()">我已知晓（全部）</button>
                 </div>
             </div>
             <div id="pmTaskSection" class="notif-pm-section" style="display:none;">
@@ -382,15 +388,18 @@
                     '</div>' + fillBtn + '</div>';
             }).join('');
         }
-        function renderCurrent() {
+        function renderAll() {
             var popup = document.getElementById('notifPopup');
             if (!popup) return;
             var empty = document.getElementById('notifEmpty');
             var content = document.getElementById('notifContent');
+            var ackBtn = document.getElementById('notifAckBtn');
             renderPmTasks();
             if (!queue.length) {
                 // Empty state: bell click still gives feedback — but only when
                 // there are also no PM tasks (otherwise PM section is the content).
+                var list = document.getElementById('notifList');
+                if (list) list.innerHTML = '';
                 if (pmTasks.length) {
                     if (empty) empty.style.display = 'none';
                     if (content) content.style.display = 'none';
@@ -399,25 +408,38 @@
                     if (content) content.style.display = 'none';
                     document.getElementById('notifCounter').textContent = '';
                 }
+                if (ackBtn) ackBtn.style.display = 'none';
                 popup.style.display = 'flex';
                 return;
             }
             if (empty) empty.style.display = 'none';
             if (content) content.style.display = '';
-            var n = queue[0];
-            document.getElementById('notifTitle').textContent = n.title || '';
-            document.getElementById('notifTime').textContent = n.time || '';
-            document.getElementById('notifBody').textContent = n.body || '';
-            document.getElementById('notifCounter').textContent = queue.length > 1 ? (queue.length + ' 条待确认') : '';
-            var goto = document.getElementById('notifGoto');
-            if (n.link) { goto.href = n.link; goto.style.display = 'inline-block'; }
-            else { goto.style.display = 'none'; }
-            document.getElementById('notifAckBtn').disabled = false;
+            if (ackBtn) { ackBtn.style.display = ''; ackBtn.disabled = false; }
+            // Render every unread notification stacked in one card. Each item
+            // shows title / time / body and an inline 转到 link when present.
+            var list = document.getElementById('notifList');
+            var escDiv = document.createElement('div');
+            function esc(s) {
+                escDiv.textContent = s == null ? '' : String(s);
+                return escDiv.innerHTML;
+            }
+            list.innerHTML = queue.map(function (n) {
+                var gotoHtml = n.link
+                    ? '<a class="notif-item-goto" href="' + esc(n.link) + '" target="_blank" rel="noopener">转到 →</a>'
+                    : '';
+                return '<div class="notif-item">' +
+                    '<div class="notif-item-title">' + esc(n.title) + '</div>' +
+                    (n.time ? '<div class="notif-item-time">' + esc(n.time) + '</div>' : '') +
+                    (n.body ? '<div class="notif-item-body">' + esc(n.body) + '</div>' : '') +
+                    gotoHtml +
+                    '</div>';
+            }).join('');
+            document.getElementById('notifCounter').textContent = queue.length + ' 条新通知';
             popup.style.display = 'flex';
         }
         // The bell: TOGGLES the popup open/closed. Always responsive — opens even
         // when the queue is empty (shows the empty state) so a click is never a no-op.
-        function openPopup() { renderCurrent(); }
+        function openPopup() { renderAll(); }
         window.reopenNotifPopup = function () {
             var popup = document.getElementById('notifPopup');
             if (!popup) return;
@@ -433,19 +455,19 @@
         document.addEventListener('keydown', function (e) {
             if (e.key === 'Escape') { window.closeNotifPopup(); }
         });
-        window.ackNotif = function () {
+        window.ackAllNotif = function () {
             if (!queue.length) return;
-            var n = queue[0];
             var btn = document.getElementById('notifAckBtn');
             btn.disabled = true;
             var csrf = (document.cookie.split('; ').find(function (c) { return c.indexOf('csrftoken=') === 0; }) || '').split('=')[1] || '';
-            fetch('/api/notifications/' + n.id + '/read/', {
+            // One POST clears the whole queue at once — no more confirming each
+            // notification in turn.
+            fetch('/api/notifications/read-all/', {
                 method: 'POST', headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRFToken': csrf },
             }).then(function (r) { return r.json(); }).then(function () {
-                queue.shift(); updateBadge();
-                // After acking the last one, show the empty state (don't auto-close)
-                // so the user sees confirmation their queue cleared.
-                renderCurrent();
+                queue = []; updateBadge();
+                // Close the popup directly — the cleared badge confirms the ack.
+                window.closeNotifPopup();
             }).catch(function () { btn.disabled = false; alert('网络错误，请重试'); });
         };
         // PM task "填写" button. Overridden on the dashboard page to open the

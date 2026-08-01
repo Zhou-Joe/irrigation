@@ -857,8 +857,11 @@ function ivLedgerApply() {
 function ivLedgerPreset(days) {
     var to = new Date(), from = new Date();
     from.setDate(from.getDate() - days);
-    document.getElementById('ivLedgerFrom').value = from.toISOString().slice(0, 10);
-    document.getElementById('ivLedgerTo').value = to.toISOString().slice(0, 10);
+    // Use local calendar components; toISOString() shifts to UTC and yields
+    // yesterday's date between 00:00–08:00 Beijing.
+    function ymd(d){var m=('0'+(d.getMonth()+1)).slice(-2),day=('0'+d.getDate()).slice(-2);return d.getFullYear()+'-'+m+'-'+day;}
+    document.getElementById('ivLedgerFrom').value = ymd(from);
+    document.getElementById('ivLedgerTo').value = ymd(to);
     ivLedgerApply();
 }
 
@@ -1652,8 +1655,9 @@ function ivPriceOpen(recordId) {
     document.getElementById('ivPriceNote').value = rec ? rec.note : '';
     document.getElementById('ivPriceIsCurrent').checked = rec ? rec.is_current : false;
   } else {
-    // default date = today
-    var today = new Date().toISOString().slice(0, 10);
+    // default date = today (local components — toISOString() is UTC and off by a day before 08:00)
+    var _td = new Date(),
+        today = _td.getFullYear() + '-' + ('0'+(_td.getMonth()+1)).slice(-2) + '-' + ('0'+_td.getDate()).slice(-2);
     document.getElementById('ivPriceDate').value = today;
     document.getElementById('ivPriceSupplier').value = '';
     document.getElementById('ivPriceUnitPrice').value = '';

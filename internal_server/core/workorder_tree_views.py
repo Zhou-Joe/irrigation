@@ -516,10 +516,6 @@ def project_export_excel(request):
     rows in the two columns correspond by material (budget-only / consumed-only /
     both), so the line-up stays consistent.
     """
-    import io
-    from openpyxl import Workbook
-    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
-    from openpyxl.utils import get_column_letter
     from django.http import HttpResponse
     from core.role_utils import get_user_role, ROLE_MANAGER, ROLE_SUPER_ADMIN
     role = get_user_role(request.user)
@@ -527,94 +523,20 @@ def project_export_excel(request):
         return redirect('core:dashboard')
 
     # Apply the same filters as the management page.
-    from django.db.models import Q
     fq = (request.GET.get('q') or '').strip()
     fcat = (request.GET.get('category') or '').strip()
     fcompleted = (request.GET.get('completed') or '').strip()
     ffrom = _parse_date(request.GET.get('from'))
     fto = _parse_date(request.GET.get('to'))
-    qs = Project.objects.all()
-    if fq:
-        qs = qs.filter(Q(name__icontains=fq) | Q(symbol__icontains=fq)
-                       | Q(code__icontains=fq) | Q(notes__icontains=fq))
-    if fcat in {c for c, _ in Project.CATEGORY_CHOICES}:
-        qs = qs.filter(category=fcat)
-    if fcompleted in ('0', '1'):
-        qs = qs.filter(is_completed=(fcompleted == '1'))
-    if ffrom or fto:
-        qs = qs.exclude(start_date__isnull=True)
-        if ffrom:
-            qs = qs.filter(start_date__gte=ffrom)
-        if fto:
-            qs = qs.filter(start_date__lte=fto)
-    projects = list(qs.order_by('category', 'subcategory', 'name'))
-    summ = _project_summaries(projects)
-    budget_data = _project_budget_data(projects)
+    # ?completed=0/1 → True/False, anything else → no filter.
+    completed = (fcompleted == '1') if fcompleted in ('0', '1') else None
 
-    cat_labels = dict(Project.CATEGORY_CHOICES)
-    sub_labels = dict(Project.SUBCATEGORY_CHOICES)
-
-    wb = Workbook()
-    ws = wb.active
-    ws.title = '项目管理'
-    headers = ['项目', '类别', '子类别', '开工日期', '计划完工日期',
-               '材料预算金额', '人工预算金额', '材料余额', '人工余额',
-               '灌溉组工时', '第三方工时', '工单数', '状态', '备注']
-    ws.append(headers)
-
-    # Styles.
-    header_fill = PatternFill('solid', fgColor='1B4332')
-    header_font = Font(color='FFFFFF', bold=True, size=10)
-    thin = Side(style='thin', color='D9D0C0')
-    border = Border(left=thin, right=thin, top=thin, bottom=thin)
-    wrap_top = Alignment(wrap_text=True, vertical='top')
-    for ci in range(1, len(headers) + 1):
-        c = ws.cell(row=1, column=ci)
-        c.fill = header_fill; c.font = header_font; c.border = border
-        c.alignment = Alignment(horizontal='center', vertical='center')
-
-    for p in projects:
-        s = summ[p.id]
-        b = budget_data.get(p.id, {})
-        # 人工余额 = 人工预算 − 已用工时×费率。Decimal 与 float 不能直接运算，统一转 float。
-        tr = p.team_rate
-        tpr = p.third_party_rate
-        labor_cost = (s['hours'] * float(tr) if tr is not None else 0) + \
-                     (s['third_hours'] * float(tpr) if tpr is not None else 0)
-        labor_bal = (float(p.labor_budget_amount) - labor_cost) \
-            if p.labor_budget_amount is not None else ''
-        row = [
-            p.name,
-            cat_labels.get(p.category, p.category),
-            sub_labels.get(p.subcategory, p.subcategory or ''),
-            p.start_date.isoformat() if p.start_date else '',
-            p.planned_end_date.isoformat() if p.planned_end_date else '',
-            float(p.material_budget_amount) if p.material_budget_amount is not None else '',
-            float(p.labor_budget_amount) if p.labor_budget_amount is not None else '',
-            float(b.get('material_balance') or 0) if b.get('material_balance') != '' else '',
-            labor_bal,
-            round(s['hours'], 1),
-            round(s['third_hours'], 1),
-            len(s['reports']),
-            '已完成' if p.is_completed else '进行中',
-            p.notes,
-        ]
-        ws.append(row)
-        r = ws.max_row
-        for ci in range(1, len(headers) + 1):
-            ws.cell(row=r, column=ci).border = border
-            ws.cell(row=r, column=ci).alignment = wrap_top
-
-    # Column widths.
-    widths = [20, 10, 10, 12, 12, 14, 14, 14, 14, 10, 10, 8, 8, 24]
-    for i, w in enumerate(widths, 1):
-        ws.column_dimensions[get_column_letter(i)].width = w
-
-    buf = io.BytesIO()
-    wb.save(buf); buf.seek(0)
+    from core.excel_exports import build_project_export_excel
+    fname, buf = build_project_export_excel(
+        q=fq, category=fcat, completed=completed, date_from=ffrom, date_to=fto)
     resp = HttpResponse(buf.getvalue(),
                         content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-    resp['Content-Disposition'] = 'attachment; filename="projects.xlsx"'
+    resp['Content-Disposition'] = f'attachment; filename="{fname}"'
     return resp
 
 

@@ -2224,3 +2224,114 @@ class ExtensionRequest(models.Model):
 
     def __str__(self):
         return f'{self.gwo.plan.pm_number} → {self.requested_date} ({self.status})'
+
+
+# ==========================================================================
+# 定时邮件报表 (Scheduled Email Reports)
+# ==========================================================================
+
+
+class EmailReportConfig(models.Model):
+    """定时邮件报表配置 — 管理员在「用户管理 → 邮件报表」tab 配置。
+
+    一条记录 = 一个报表 × 一个频率 × 一组收件人。OS cron 每天 7:00 调用
+    send_report_email 管理命令，按 frequency 判断今天是否该发，生成 Excel
+    附件并通过 SMTP 发送给 recipients。
+
+    recipients 是自由文本（逗号或换行分隔多个邮箱），而非 FK 到 User — 因为
+    收件人可能是不在本系统里的外部邮箱（如甲方、外包经理）。
+    """
+
+    REPORT_CHOICES = [
+        ('work_reports', '维修工单记录'),
+        ('irrigation', '灌溉运行报表'),
+        ('projects', '项目管理'),
+        ('inventory_catalog', '库存目录'),
+        ('inventory_txn', '库存出入库流水'),
+        ('purchase_orders', '采购订单'),
+        ('zones', '区域/地块目录'),
+    ]
+    FREQUENCY_CHOICES = [
+        ('daily', '每日'),
+        ('weekly', '每周'),
+        ('monthly', '每月'),
+    ]
+
+    name = models.CharField('配置名称', max_length=100)
+    report_type = models.CharField('报表', max_length=40, choices=REPORT_CHOICES)
+    frequency = models.CharField(
+        '频率', max_length=10, choices=FREQUENCY_CHOICES, default='daily')
+    recipients = models.TextField(
+        '收件人邮箱', help_text='多个邮箱用逗号或换行分隔')
+    is_active = models.BooleanField('启用', default=True)
+    # 运行时追踪 — 配置页展示「最后发送时间 / 状态」，方便排查。
+    last_sent_at = models.DateTimeField('最后发送时间', null=True, blank=True)
+    last_status = models.CharField('最后状态', max_length=200, blank=True)
+    created_by = models.ForeignKey(
+        'auth.User', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='email_report_configs', verbose_name='创建人')
+    created_at = models.DateTimeField(auto_now_add=True)
+    # 自定义数据范围（可选）：留空=用频率默认（daily=昨天/weekly=上周/monthly=上月）；
+    # 填 N = 发送日往前 N 天到前 1 天的数据。例如 daily + 7 = 过去 7 天。
+    data_range_days = models.IntegerField(
+        '数据范围(天)', null=True, blank=True,
+        help_text='留空用频率默认；填 N = 发送日往前 N 天到前 1 天')
+    # 触发日：weekly 时用（0=周一 … 6=周日）；留空=周一（向后兼容）。
+    weekday = models.IntegerField('周几发送', null=True, blank=True)
+    # 触发日：monthly 时用（1-28，避免短月不存在）；留空=每月1号（向后兼容）。
+    month_day = models.IntegerField('每月几号发送', null=True, blank=True)
+
+    class Meta:
+        ordering = ['frequency', 'name']
+        verbose_name = '邮件报表配置'
+        verbose_name_plural = '邮件报表配置'
+
+    def __str__(self):
+        return f'{self.name} ({self.get_report_type_display()}/{self.get_frequency_display()})'
+
+    @property
+    def recipient_list(self):
+        """Parse the recipients textarea into a clean list of email addresses."""
+        import re
+        return [r.strip() for r in re.split(r'[,\n;]', self.recipients or '') if r.strip()]
+
+
+class EmailSmtpSetting(models.Model):
+    """系统级 SMTP 配置（单例，固定 id=1）。
+
+    管理员在「用户管理 → 邮件报表」tab 填写，替代在服务器环境变量里配置
+    EMAIL_* 的做法。发送邮件时优先使用此记录，回退到 settings.EMAIL_* 环境变量
+    （见 core.smtp_utils.get_email_connection）。密码以明文存储 —— 该面板仅
+    经理/超管可访问，且管理员本就能访问服务器，与同类 CMS 做法一致。
+    """
+
+    host = models.CharField('SMTP 服务器', max_length=200, blank=True,
+                            help_text='如 smtp.qq.com')
+    port = models.IntegerField('端口', default=465)
+    username = models.CharField('账号', max_length=200, blank=True)
+    password = models.TextField('密码', blank=True)
+    use_ssl = models.BooleanField('使用 SSL', default=True)
+    use_tls = models.BooleanField('使用 TLS', default=False)
+    from_email = models.CharField('发件人地址', max_length=200, blank=True,
+                                  help_text='留空则用账号邮箱')
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'SMTP 配置'
+        verbose_name_plural = 'SMTP 配置'
+
+    def __str__(self):
+        return f'SMTP: {self.username}@{self.host}:{self.port}'
+
+    @classmethod
+    def get_solo(cls):
+        """Return the singleton SMTP setting row (creating it if absent)."""
+        obj, _ = cls.objects.get_or_create(pk=1)
+        return obj
+
+    @property
+    def is_configured(self):
+        """A usable SMTP config requires at least a host."""
+        return bool(self.host)
+
+

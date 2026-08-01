@@ -167,3 +167,21 @@ CSRF_TRUSTED_ORIGINS = [
 # Cloud Relay settings
 CLOUD_RELAY_BASE_URL = os.environ.get('CLOUD_RELAY_BASE_URL', 'https://horticulture-relay.your-domain.workers.dev')
 CLOUD_RELAY_POLL_TOKEN = os.environ.get('CLOUD_RELAY_POLL_TOKEN', None)
+
+# ── Email (SMTP) — 定时报表邮件发送 ──
+# All read from env (consistent with SECRET_KEY). Production fills these in
+# .env.production. When EMAIL_HOST is empty, the send_report_email command
+# logs a skip and exits — so local dev / unset SMTP never crashes.
+EMAIL_BACKEND = os.environ.get(
+    'EMAIL_BACKEND', 'django.core.mail.backends.smtp.EmailBackend')
+EMAIL_HOST = os.environ.get('EMAIL_HOST', '')
+EMAIL_PORT = int(os.environ.get('EMAIL_PORT', '465'))
+EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER', '')
+EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', '')
+EMAIL_USE_SSL = os.environ.get('EMAIL_USE_SSL', 'True').lower() in ('true', '1', 'yes', 'on')
+EMAIL_USE_TLS = os.environ.get('EMAIL_USE_TLS', 'False').lower() in ('true', '1', 'yes', 'on')
+# Cap SMTP socket operations so a slow/unreachable host can't hang the
+# interactive test-send button (the cron path is detached, less affected).
+EMAIL_TIMEOUT = int(os.environ.get('EMAIL_TIMEOUT', '30'))
+DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', EMAIL_HOST_USER or 'noreply@maxicom.local')
+
