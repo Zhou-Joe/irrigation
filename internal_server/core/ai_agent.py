@@ -134,6 +134,105 @@ def _populate_workspace_data(ws):
                 z.sprinkler_type or '', z.current_status or '',
             ])
 
+    # ── 跨表关联分析用的扩展表 ──────────────────────────────────────────
+    # 这些 CSV 让 run_python_code 能回答"项目预算消耗""待修×停水关联""天气×工单"
+    # 等跨表问题，而不只是单表查询。数据范围与上面一致（近90天），项目表为全量。
+    from core.models import (
+        Project, WaterRequest, MaxicomWeatherLog, PMWorkOrder,
+        InventoryTransaction,
+    )
+
+    # Projects (all) — 项目主数据 + 预算/费率/日期，配合 work_entries.csv 的项目列
+    # 可算"某项目已用工时 vs 人工预算""哪些项目超预算/快完工"。
+    with open(os.path.join(ws, 'projects.csv'), 'w', newline='', encoding='utf-8-sig') as f:
+        w = csv.writer(f)
+        w.writerow(['项目名称', '类别', '子类别', '代号', 'Code', '是否完工',
+                    '开工日期', '计划完工', '材料预算', '人工预算',
+                    '灌溉组费率', '第三方费率', '备注'])
+        for p in Project.objects.all().order_by('category', 'subcategory', 'name'):
+            w.writerow([
+                p.name, p.get_category_display(),
+                p.get_subcategory_display() if p.subcategory else '',
+                p.symbol or '', p.code or '',
+                '是' if p.is_completed else '否',
+                p.start_date.isoformat() if p.start_date else '',
+                p.planned_end_date.isoformat() if p.planned_end_date else '',
+                float(p.material_budget_amount) if p.material_budget_amount else '',
+                float(p.labor_budget_amount) if p.labor_budget_amount else '',
+                float(p.team_rate) if p.team_rate else '',
+                float(p.third_party_rate) if p.third_party_rate else '',
+                (p.notes or '')[:200],
+            ])
+
+    # Water requests (近90天) — 浇水协调需求，可关联 work_reports 的待修/区域。
+    with open(os.path.join(ws, 'water_requests.csv'), 'w', newline='', encoding='utf-8-sig') as f:
+        w = csv.writer(f)
+        w.writerow(['提交时间', '提交人', '用户类型', '需求类型', '状态',
+                    '起始时间', '结束时间', '涉及区域'])
+        wr_qs = WaterRequest.objects.filter(created_at__date__gte=since).select_related('submitter')
+        status_map = dict(WaterRequest.STATUS_CHOICES)
+        for req in wr_qs.order_by('-created_at'):
+            zones = ', '.join(z.code for z in req.zones.all()[:8]) or '—'
+            w.writerow([
+                timezone.localtime(req.created_at).strftime('%Y-%m-%d %H:%M'),
+                str(req.submitter) if req.submitter else '',
+                req.user_type, req.get_request_type_display(),
+                status_map.get(req.status, req.status),
+                timezone.localtime(req.start_datetime).strftime('%Y-%m-%d %H:%M') if req.start_datetime else '',
+                timezone.localtime(req.end_datetime).strftime('%Y-%m-%d %H:%M') if req.end_datetime else '',
+                zones,
+            ])
+
+    # Weather (近90天) — Maxicom 气象日志，可关联 work_reports 的日期做"天气×工单量"。
+    with open(os.path.join(ws, 'weather.csv'), 'w', newline='', encoding='utf-8-sig') as f:
+        w = csv.writer(f)
+        w.writerow(['日期', '站点', '温度', '最高温', '最低温', '降雨mm', '湿度', '风速', 'ET'])
+        # timestamp is a compact string (YYYYMMDDHHMM); take the date prefix.
+        wlog_qs = MaxicomWeatherLog.objects.filter(timestamp__gte=since.strftime('%Y%m%d'))
+        for log in wlog_qs.order_by('-timestamp')[:2000]:
+            ts = log.timestamp or ''
+            day = f'{ts[:4]}-{ts[4:6]}-{ts[6:8]}' if len(ts) >= 8 else ''
+            w.writerow([
+                day, str(log.weather_station) if log.weather_station_id else '',
+                log.temperature, log.max_temp, log.min_temp,
+                log.rainfall, log.humidity, log.wind_run, log.et,
+            ])
+
+    # Project budget / consumption — 出库-项目的实际消耗（已确认的），按项目汇总。
+    # 材料余额 = 材料预算 − Σ出库消耗（actual）。配合 projects.csv 算余额。
+    with open(os.path.join(ws, 'project_consumption.csv'), 'w', newline='', encoding='utf-8-sig') as f:
+        w = csv.writer(f)
+        w.writerow(['日期', '项目', '操作', '去向', '消耗模式', '物料编码', '物料名称', '数量'])
+        txn_qs = (InventoryTransaction.objects.filter(date__gte=since)
+                  .select_related('related_project').prefetch_related('lines__category'))
+        for txn in txn_qs.order_by('-date'):
+            proj = str(txn.related_project) if txn.related_project_id else ''
+            for line in txn.lines.all():
+                cat = line.category
+                w.writerow([
+                    txn.date.isoformat(), proj, txn.operation,
+                    txn.entry_subtype or '', txn.consumption_mode or '',
+                    getattr(cat, 'code', '') if cat else '',
+                    getattr(cat, 'name_zh', '') if cat else '',
+                    line.quantity or 0,
+                ])
+
+    # PM work orders (近90天) — PM 完成工单，含工时/班次/区域。PM 工单与普通工单
+    # 独立序列，不在 work_reports.csv 里，这里单独导出便于分析计划性维修执行情况。
+    with open(os.path.join(ws, 'pm_workorders.csv'), 'w', newline='', encoding='utf-8-sig') as f:
+        w = csv.writer(f)
+        w.writerow(['日期', '工单号', '处理人', '位置', '班次', '灌溉组工时', '第三方工时', '区域', '备注'])
+        pm_qs = PMWorkOrder.objects.filter(date__gte=since).select_related('worker', 'location')
+        for pm in pm_qs.order_by('-date', '-id'):
+            w.writerow([
+                pm.date.isoformat(), pm.display_number,
+                str(pm.worker) if pm.worker_id else '',
+                str(pm.location) if pm.location_id else '',
+                pm.shift or '', pm.team_hours or 0, pm.third_party_hours or 0,
+                pm.zone_names or '', (pm.remark or '')[:200],
+            ])
+
+
 
 # ── Tool implementations (call ORM directly) ──────────────────────────────
 
