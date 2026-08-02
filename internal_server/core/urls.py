@@ -10,7 +10,7 @@ from core.api import (
     PipelineViewSet,
     PatchViewSet, LocationViewSet, RegionViewSet,
     WorkReportViewSet,
-    worker_login, get_weather,
+    worker_login, get_weather, report_export_api,
 )
 from core.views import equipment_catalog_autocomplete
 from core import workitem_manage_views
@@ -115,6 +115,7 @@ urlpatterns = [
     path('api/landmarks/', views.landmarks_api, name='landmarks_api'),
     path('api/landmarks/recalculate/', views.landmarks_recalculate, name='landmarks_recalculate'),
     path('work-reports/', views.work_reports_list, name='work_reports'),
+    path('api/work-reports/subsections/', views.work_report_subsections_api, name='work_report_subsections_api'),
     path('work-reports/pm-tasks/', views.work_reports_pm_tasks, name='work_reports_pm_tasks'),
     path('work-reports/photos/', views.work_report_photos, name='work_report_photos'),
     path('work-reports/photos/download/', views.work_report_photos_download, name='work_report_photos_download'),
@@ -198,6 +199,7 @@ urlpatterns = [
     path('api/modal/inventory-data/', views.inventory_modal_data, name='inventory_modal_data'),
     path('api/auth/login', worker_login, name='worker_login'),
     path('api/weather', get_weather, name='get_weather'),
+    path('api/report-exports/<str:report_type>/', report_export_api, name='report_export_api'),
     path('api/custom-report', views.custom_report_api, name='custom_report_api'),
     path('custom-report/', views.custom_report, name='custom_report'),
     path('api/equipment-catalog/autocomplete', equipment_catalog_autocomplete, name='equipment_catalog_autocomplete'),

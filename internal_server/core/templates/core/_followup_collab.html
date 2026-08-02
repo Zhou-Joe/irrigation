@@ -49,6 +49,14 @@ Context vars expected:
         <a class="fu-story-ticket" href="{% url 'core:work_report_detail' s.id %}">{{ s.ticket }}</a>
         <span class="fu-story-mark {% if s.status_label == '已修复' %}is-fixed{% else %}is-follow{% endif %}">{{ s.status_label }}</span>
       </div>
+      {# 单条跟进的班次/人数/工时。旧数据（人数 0 且工时 0）整行不显示，避免噪音。 #}
+      {% if s.shift or s.team_size or s.third_party_count or s.team_hours or s.third_party_hours %}
+      <div class="fu-story-labor">
+        {% if s.shift %}<span class="lab lab-shift">{{ s.shift }}</span>{% endif %}
+        {% if s.team_size %}<span class="lab">灌溉组 <b>{{ s.team_size }}人{% if s.team_hours %}·{{ s.team_hours|floatformat:1 }}h{% endif %}</b></span>{% endif %}
+        {% if s.third_party_count %}<span class="lab">第三方 <b>{{ s.third_party_count }}人{% if s.third_party_hours %}·{{ s.third_party_hours|floatformat:1 }}h{% endif %}</b></span>{% endif %}
+      </div>
+      {% endif %}
       {% if s.remark %}<div class="fu-story-remark">{{ s.remark }}</div>{% endif %}
       {% if s.photos %}
       <div class="fu-story-photos">

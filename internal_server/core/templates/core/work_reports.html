@@ -207,6 +207,10 @@
   .fu-story-mark.is-follow { background:#fff7ed; color:#c2410c; }
   .fu-story-mark.is-fixed { background:#eff6ff; color:#1d4ed8; }
   .fu-story-remark { font-size:0.82rem; color:var(--wr-text); margin:4px 0; }
+  .fu-story-labor { font-size:0.74rem; color:#6b7280; margin:3px 0; }
+  .fu-story-labor .lab { display:inline-block; margin-right:10px; }
+  .fu-story-labor .lab b { color:#2D6A4F; font-weight:600; }
+  .fu-story-labor .lab-shift { background:#f3f4f6; border-radius:6px; padding:1px 7px; color:#4b5563; }
   .fu-story-photos { display:flex; flex-wrap:wrap; gap:4px; margin-top:4px; }
   .fu-story-photos img { width:48px; height:48px; object-fit:cover; border-radius:4px; cursor:pointer; border:1px solid #eee; }
   .fu-open-btn { padding:5px 12px; font-size:0.8rem; border-radius:8px; background:var(--wr-accent-soft); color:var(--wr-accent); border:1px solid var(--wr-accent); cursor:pointer; font-weight:600; }
@@ -296,6 +300,17 @@
   }
   .fu-seg input { position:absolute; opacity:0; pointer-events:none; }
   .fu-seg:has(input:checked) { background:#fff; color:var(--wr-accent); box-shadow:0 1px 3px rgba(0,0,0,.1); }
+  /* 班次/人数/工时 行内表单（与 dashboard 建单口径一致） */
+  .fu-labor-row { display:flex; gap:10px; margin-bottom:10px; }
+  .fu-labor-row > div { flex:1; }
+  .fu-labor-row label { display:block; font-size:0.74rem; color:var(--wr-muted); margin:0 0 4px; font-weight:600; }
+  .fu-labor-input { width:100%; box-sizing:border-box; border:1px solid #ddd; border-radius:8px; padding:7px 8px; font-size:0.84rem; text-align:center; }
+  .fu-labor-select { width:100%; box-sizing:border-box; border:1px solid #ddd; border-radius:8px; padding:7px 6px; font-size:0.84rem; background:#fff; }
+  .fu-shift-chips { display:flex; gap:0; background:#f3f4f6; border-radius:8px; padding:3px; }
+  .fu-shift-chip { flex:1; text-align:center; cursor:pointer; padding:7px 6px; border-radius:6px; font-size:0.82rem; font-weight:600; color:var(--wr-muted); display:block; position:relative; user-select:none; transition:background .15s, color .15s, box-shadow .15s; }
+  .fu-shift-chip input { position:absolute; opacity:0; pointer-events:none; }
+  .fu-shift-chip:has(input:checked) { background:#fff; color:var(--wr-accent); box-shadow:0 1px 3px rgba(0,0,0,.1); }
+  .fu-hours-hint { font-size:0.78rem; color:#888; margin:2px 0 12px; }
   .fu-modal-foot {
     display:flex; gap:8px; justify-content:flex-end;
     padding:12px 18px; border-top:1px solid var(--wr-card-border); background:#fafbfc;
@@ -446,9 +461,16 @@
                 <input type="text" name="q" value="{{ filters.q|default:'' }}" placeholder="输入工单号">
             </div>
             <div class="ff"><label>工作类别</label>
-                <select name="section">
+                <select name="section" id="sectionSelect">
                     <option value="">全部</option>
                     {% for s, slabel in sections %}<option value="{{ s }}" {% if filters.section == s %}selected{% endif %}>{{ slabel }}</option>{% endfor %}
+                </select>
+            </div>
+            {# 子类别联动下拉：选了工作类别后才显示，选项由 JS 从 /api/work-reports/subsections/ 拉取。 #}
+            <div class="ff" id="subsectionWrap" style="display:none;">
+                <label>子类别</label>
+                <select name="work_item" id="subsectionSelect">
+                    <option value="">全部</option>
                 </select>
             </div>
             {% if is_admin %}
@@ -686,6 +708,34 @@
         <span class="fu-file-count" id="fuModalPhotoCount"></span>
       </label>
       <div class="fu-photo-grid" id="fuModalPhotoGrid" aria-live="polite"></div>
+      {# 班次 / 人数 / 工时 —— 与 dashboard 建单口径一致：填人数 + 起止时间，工时由后端按 _calc_hours 计算 #}
+      <label class="fu-label">班次</label>
+      <div class="fu-shift-chips" id="fuModalShift">
+        <label class="fu-shift-chip"><input type="radio" name="fuModalShift" value="早班"><span>早班</span></label>
+        <label class="fu-shift-chip"><input type="radio" name="fuModalShift" value="白班" checked><span>白班</span></label>
+        <label class="fu-shift-chip"><input type="radio" name="fuModalShift" value="夜班"><span>夜班</span></label>
+      </div>
+      <div class="fu-labor-row">
+        <div>
+          <label for="fuModalTeamSize">灌溉组人数</label>
+          <input type="number" id="fuModalTeamSize" class="fu-labor-input" value="1" min="0" max="99" inputmode="numeric">
+        </div>
+        <div>
+          <label for="fuModalThirdParty">第三方人数</label>
+          <input type="number" id="fuModalThirdParty" class="fu-labor-input" value="0" min="0" max="99" inputmode="numeric">
+        </div>
+      </div>
+      <div class="fu-labor-row">
+        <div>
+          <label for="fuModalStart">开始时间</label>
+          <select id="fuModalStart" class="fu-labor-select"></select>
+        </div>
+        <div>
+          <label for="fuModalEnd">完成时间</label>
+          <select id="fuModalEnd" class="fu-labor-select"></select>
+        </div>
+      </div>
+      <div class="fu-hours-hint" id="fuModalHours"></div>
       <label class="fu-label">处理结果</label>
       <div class="fu-segmented">
         <label class="fu-seg"><input type="radio" name="fuModalAction" value="ongoing" checked><span>继续跟进</span></label>
@@ -751,6 +801,48 @@ var isAdmin = cfg.is_admin || false;        // show admin-only reassign control
 var allWorkers = cfg.workers || [];         // [{id,name,employee_id}] for reassign dropdown
 var isLoadingMore = false;
 var cmtLoaded = {};   // reportId -> true once its comment thread has been fetched
+
+// ── 子类别联动下拉 ──────────────────────────────────────────────────────
+// 选中「工作类别」后，旁边出现「子类别」下拉，选项 = 该类别的一级子项
+// （WorkItem level==1）。选了子类别 → 筛选出含该子树条目的工单。
+// 数据来自 /api/work-reports/subsections/?section=<code>。
+var _subSelect = document.getElementById('subsectionSelect');
+var _subWrap = document.getElementById('subsectionWrap');
+var _sectionSelect = document.getElementById('sectionSelect');
+
+function _fillSubsections(items, selectedId) {
+    if (!_subSelect) return;
+    // 保留「全部」占位，清掉其余选项。
+    _subSelect.innerHTML = '<option value="">全部</option>';
+    items.forEach(function (it) {
+        var o = document.createElement('option');
+        o.value = it.id; o.textContent = it.name;
+        if (selectedId && String(it.id) === String(selectedId)) o.selected = true;
+        _subSelect.appendChild(o);
+    });
+}
+function loadSubsections(sectionCode, selectedId) {
+    if (!_subSelect || !_subWrap) return;
+    if (!sectionCode) { _subWrap.style.display = 'none'; _fillSubsections([], ''); return; }
+    fetch('/api/work-reports/subsections/?section=' + encodeURIComponent(sectionCode), {
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+    }).then(function (r) { return r.json(); }).then(function (d) {
+        var items = (d && d.subsections) || [];
+        _fillSubsections(items, selectedId);
+        // 该类别没有一级子项 → 隐藏下拉（避免一个只有「全部」的空下拉）。
+        _subWrap.style.display = items.length ? '' : 'none';
+    }).catch(function () { _subWrap.style.display = 'none'; });
+}
+// section 变化 → 重新拉取子类别并清空已选。
+if (_sectionSelect) {
+    _sectionSelect.addEventListener('change', function () {
+        loadSubsections(_sectionSelect.value, '');
+    });
+}
+// 页面加载时，若已选 section（刷新/回显场景），拉取子类别并回显已选 work_item。
+if (_sectionSelect && _sectionSelect.value) {
+    loadSubsections(_sectionSelect.value, (currentFilter.work_item || ''));
+}
 
 var photoData = {};
 (function () {
@@ -930,6 +1022,33 @@ function resolveAllRepairs(e) {
 // ── 疑难/待修 协作故事线：跟进 modal（全局单实例） ─────────────────────────
 // 每个 #fuOpen-<id> 按钮点击 → openFollowup(id) → 把 id 记到 window._fuModalParentId
 // 并弹出共享的 #fuModal。submit/close 都读这个全局 id。
+// ── 班次/人数/工时 辅助：与 dashboard 建单口径一致。起止时间下拉按 15 分钟步进
+// 填充（00:00–23:45），首次打开时构建一次。工时实时预览（0.5h 精度，隔夜自动 +24h）。
+var _fuTimeBuilt = false;
+function _populateFuTime(sel, defVal) {
+    if (!sel) return;
+    if (!_fuTimeBuilt) {
+        for (var h = 0; h < 24; h++) for (var m = 0; m < 60; m += 15) {
+            var v = String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
+            var o = document.createElement('option'); o.value = v; o.textContent = v; sel.appendChild(o);
+        }
+    }
+    if (defVal) sel.value = defVal;
+}
+function _fuCalcHours() {
+    var s = document.getElementById('fuModalStart'), e = document.getElementById('fuModalEnd');
+    var ts = parseInt((document.getElementById('fuModalTeamSize') || {}).value, 10) || 0;
+    var tp = parseInt((document.getElementById('fuModalThirdParty') || {}).value, 10) || 0;
+    var hint = document.getElementById('fuModalHours');
+    if (!s || !e || !hint) return;
+    var sv = s.value, ev = e.value;
+    if (!sv || !ev) { hint.innerHTML = ''; return; }
+    var sh = sv.split(':').map(Number), eh = ev.split(':').map(Number);
+    var dur = (eh[0] * 60 + eh[1]) - (sh[0] * 60 + sh[1]); if (dur < 0) dur += 1440;  // 隔夜班次跨天（与后端 _calc_hours 严格 < 一致：相等=0h）
+    var dh = dur / 60, th = Math.round(dh * ts * 2) / 2, tph = Math.round(dh * tp * 2) / 2;
+    hint.innerHTML = '工时: <span style="color:#2D6A4F;font-weight:600;">' + th + 'h</span>'
+        + (tph > 0 ? ' / 第三方: <span style="color:#2D6A4F;font-weight:600;">' + tph + 'h</span>' : '');
+}
 function openFollowup(parentId) {
     window._fuModalParentId = parentId;
     // Photo list is a JS array as the single source of truth: the native
@@ -950,9 +1069,29 @@ function openFollowup(parentId) {
     _renderModalPhotoGrid();
     var ongoing = document.querySelector('input[name="fuModalAction"][value="ongoing"]');
     if (ongoing) ongoing.checked = true;
+    // 班次默认白班（与后端默认值一致）。
+    var bai = document.querySelector('input[name="fuModalShift"][value="白班"]');
+    if (bai) bai.checked = true;
+    // 人数默认 灌溉组 1 / 第三方 0（与 dashboard 一致）。
+    var ts = document.getElementById('fuModalTeamSize'), tp = document.getElementById('fuModalThirdParty');
+    if (ts) ts.value = '1'; if (tp) tp.value = '0';
+    // 起止时间：首次打开时构建下拉（15 分钟步进），之后复用；默认留空（不计工时），
+    // 由用户主动选择，避免预填当前时刻造成误记。
+    var startSel = document.getElementById('fuModalStart'), endSel = document.getElementById('fuModalEnd');
+    _populateFuTime(startSel, ''); _populateFuTime(endSel, '');
+    _fuTimeBuilt = true;   // 两个 select 都填好了，后续 open 不再重复 append
+    if (startSel) startSel.value = ''; if (endSel) endSel.value = '';
+    _fuCalcHours();
     modal.style.display = 'flex';
     setTimeout(function () { var r = document.getElementById('fuModalRemark'); if (r) r.focus(); }, 50);
 }
+// 实时计算工时：人数或起止时间变化时刷新预览。
+document.addEventListener('change', function (ev) {
+    if (ev.target && (ev.target.id === 'fuModalStart' || ev.target.id === 'fuModalEnd')) _fuCalcHours();
+});
+document.addEventListener('input', function (ev) {
+    if (ev.target && (ev.target.id === 'fuModalTeamSize' || ev.target.id === 'fuModalThirdParty')) _fuCalcHours();
+});
 function closeFollowupModal() {
     var modal = document.getElementById('fuModal');
     if (modal) modal.style.display = 'none';
@@ -1084,6 +1223,17 @@ function submitFollowupModal() {
     var fd = new FormData();
     fd.append('remark', remark);
     fd.append('action', action);
+    // 班次 / 人数 / 起止时间 —— 与 dashboard 一致，工时由后端 _calc_hours 计算。
+    var shiftEl = document.querySelector('input[name="fuModalShift"]:checked');
+    if (shiftEl) fd.append('shift', shiftEl.value);
+    var tsEl = document.getElementById('fuModalTeamSize');
+    if (tsEl) fd.append('team_size', tsEl.value);
+    var tpEl = document.getElementById('fuModalThirdParty');
+    if (tpEl) fd.append('third_party_count', tpEl.value);
+    var startEl = document.getElementById('fuModalStart');
+    if (startEl && startEl.value) fd.append('work_start_time', startEl.value);
+    var endEl = document.getElementById('fuModalEnd');
+    if (endEl && endEl.value) fd.append('work_end_time', endEl.value);
     for (var i = 0; i < photos.length; i++) fd.append('photos', photos[i]);
     fetch('/work-reports/' + parentId + '/followup/', {
         method: 'POST',
@@ -1674,6 +1824,7 @@ function loadMore() {
     if (currentFilter.is_pending_repair) params.set('is_pending_repair', '1');
     if (currentFilter.is_difficult) params.set('is_difficult', '1');
     if (currentFilter.section) params.set('section', currentFilter.section);
+    if (currentFilter.work_item) params.set('work_item', currentFilter.work_item);
     if (currentFilter.q) params.set('q', currentFilter.q);
     if (currentFilter.sort) params.set('sort', currentFilter.sort);
 
