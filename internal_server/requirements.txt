@@ -2,18 +2,19 @@
 django>=4.2,<6.0
 djangorestframework>=3.14
 django-cors-headers>=4.0
+django-mptt>=0.16          # tree-structured WorkItem model (INSTALLED_APPS: 'mptt')
 requests>=2.31
 whitenoise>=6.0
-Pillow>=10.0          # photo thumbnail generation for workorder uploads
-ezdxf>=1.1,<2.0
+Pillow>=10.0               # photo thumbnail generation for workorder uploads
+ezdxf>=1.1,<2.0            # DXF land-plan drawing export
+reportlab>=4.0             # PDF report generation
+shapely>=2.0               # zone/landmark polygon geometry
+python-dateutil>=2.8       # PM scheduling rrule / relativedelta
 
 # ─── AI Data Analyst (LangChain 1.x + OpenAI-compatible LLM) ───
 langchain>=1.0
 langchain-openai>=1.0
 langgraph>=0.5
-pandas>=2.0
-xlsxwriter>=3.0
+pandas>=2.0                # used inside the agent's run_python_code sandbox
+xlsxwriter>=3.0            # used inside the agent's run_python_code sandbox
 openpyxl>=3.1
-
-# ─── Sync Agent (PyQt5 GUI + MDB Reader) ───
-PyQt5>=5.15
