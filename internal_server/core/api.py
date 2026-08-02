@@ -9,6 +9,7 @@ from datetime import timedelta, date
 from .models import Zone, Plant, Worker, WeatherData, WaterRequest, ManagerProfile, DepartmentUserProfile, EquipmentCatalog, ZoneEquipment, Pipeline, Patch, Region, WorkReport
 from .authentication import TokenAuthentication
 from .permissions import IsAdminOrReadOnly, IsOwnerOrAdmin, IsDeptUserWaterOnly, IsFieldWorker
+from .role_utils import get_user_role, ROLE_MANAGER, ROLE_SUPER_ADMIN
 
 
 # Custom permission for token OR session auth
@@ -951,5 +952,83 @@ class WorkReportViewSet(viewsets.ModelViewSet):
 # (removed: DemandCategoryViewSet)
 # (removed: DemandDepartmentViewSet)
 # (removed: DemandRecordViewSet)
+
+
+# ==========================================================================
+# Excel report export API (external platforms / AI agent)
+# ==========================================================================
+
+@api_view(['GET'])
+@authentication_classes([TokenAuthentication, authentication.SessionAuthentication])
+@permission_classes([IsAuthenticatedByTokenOrSession])
+def report_export_api(request, report_type=None):
+    """Build an Excel report for an *explicit* date window and return it as a
+    downloadable .xlsx (no email sent).
+
+    ``GET /api/report-exports/<report_type>/?start=YYYY-MM-DD&end=YYYY-MM-DD``
+
+    * ``report_type`` ∈ the 7 supported types (see ``report_export.REPORT_TYPES``).
+    * ``start`` / ``end`` are optional ``YYYY-MM-DD`` query params. When both are
+      omitted the window defaults to the last 30 days. Dateless reports
+      (zones / inventory_catalog / purchase_orders) ignore the window.
+    * Auth: token (``Authorization: Token <uuid>``) or an admin session. The
+      caller must be a manager or super-admin — same gate as the email-config
+      page. ``work_reports`` exports use a superuser scope for full visibility.
+    * Returns the .xlsx as an attachment on success; JSON error on bad input.
+    """
+    from core.report_export import (
+        REPORT_TYPES, REPORT_TYPE_LABELS, parse_iso_date, build_report, XLSX_CT,
+    )
+    from django.http import HttpResponse
+
+    # Permission gate: mirror the email-config page (manager / super-admin).
+    role = get_user_role(request.user)
+    if role not in (ROLE_MANAGER, ROLE_SUPER_ADMIN):
+        return Response(
+            {'error': '无权限：仅管理员可导出报表'},
+            status=status.HTTP_403_FORBIDDEN)
+
+    # Validate report_type against the supported set (guard against typos /
+    # path-injected values — DRF's <str:report_type> path converter is open).
+    if report_type not in REPORT_TYPES:
+        return Response(
+            {'error': f'未知报表类型: {report_type}',
+             'valid': REPORT_TYPES,
+             'labels': REPORT_TYPE_LABELS},
+            status=status.HTTP_400_BAD_REQUEST)
+
+    start = parse_iso_date(request.query_params.get('start'))
+    end = parse_iso_date(request.query_params.get('end'))
+    # If a date was supplied but didn't parse, that's a client error — tell them
+    # rather than silently defaulting. (Both empty → last-30-days default.)
+    raw_start = (request.query_params.get('start') or '').strip()
+    raw_end = (request.query_params.get('end') or '').strip()
+    if raw_start and start is None:
+        return Response({'error': f'start 日期格式无效: {raw_start}（需 YYYY-MM-DD）'},
+                        status=status.HTTP_400_BAD_REQUEST)
+    if raw_end and end is None:
+        return Response({'error': f'end 日期格式无效: {raw_end}（需 YYYY-MM-DD）'},
+                        status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        fname, buf = build_report(report_type, start=start, end=end)
+    except ValueError as e:
+        return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+    except Exception as e:
+        return Response({'error': f'生成报表失败: {e}'},
+                        status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    # Sanitize the filename into an ASCII-safe Content-Disposition so the
+    # browser accepts it (non-ASCII filenames need RFC 5987 encoding).
+    # urllib.parse.quote is used instead of the old django.utils.http.urlquote,
+    # which was removed in Django 6.0.
+    from urllib.parse import quote as _urlquote
+    ascii_name = fname.encode('ascii', 'ignore').decode('ascii') or 'report.xlsx'
+    resp = HttpResponse(buf.getvalue(), content_type=XLSX_CT)
+    resp['Content-Disposition'] = (
+        f"attachment; filename=\"{ascii_name}\"; "
+        f"filename*=UTF-8''{_urlquote(fname)}")
+    resp['Content-Length'] = str(len(buf.getvalue()))
+    return resp
 # (removed func: demand_stats)
 # (removed func: demand_calendar)

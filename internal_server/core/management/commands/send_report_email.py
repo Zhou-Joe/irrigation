@@ -2,9 +2,9 @@
 
 Run daily via the email_cron.sh wrapper (mirrors pm_dispatch_cron.sh). Each
 active EmailReportConfig is evaluated: if its frequency matches today
-(daily = every day, weekly = Mondays, monthly = 1st of month), the matching
-report's Excel is built via core.excel_exports, attached to an EmailMessage,
-and sent over SMTP to the configured recipients.
+(daily = every day, weekly = the configured weekday, monthly = the configured
+month day), the matching report's Excel is built via core.excel_exports,
+attached to an EmailMessage, and sent over SMTP to the configured recipients.
 
 Frequency → date window mapping:
   daily   → yesterday's data
@@ -22,68 +22,21 @@ Usage:
     python manage.py send_report_email --config-id 3   # force one config (ignores frequency)
 """
 
-from datetime import date, timedelta
-
 from django.core.management.base import BaseCommand
 from django.core.mail import EmailMessage
-from django.conf import settings
 from django.utils import timezone
 
 from core.models import EmailReportConfig
-
-
-# Map report_type → a human label + the build function. Resolved lazily so the
-# command module stays import-light and a broken excel_exports never blocks
-# `manage.py` from booting.
-def _resolve_builder(report_type):
-    """Return (build_fn, label) for a report_type, or (None, None) if unknown."""
-    from core import excel_exports as ex
-    table = {
-        'work_reports': (ex.build_work_reports_excel, '维修工单记录'),
-        'irrigation': (ex.build_irrigation_report_excel, '灌溉运行报表'),
-        'projects': (ex.build_project_export_excel, '项目管理'),
-        'inventory_catalog': (ex.build_inventory_catalog_excel, '库存目录'),
-        'inventory_txn': (ex.build_inventory_transactions_excel, '库存出入库流水'),
-        'purchase_orders': (ex.build_purchase_order_excel, '采购订单'),
-        'zones': (ex.build_zone_export_excel, '区域/地块目录'),
-    }
-    return table.get(report_type, (None, None))
-
-
-def _date_window(frequency, today=None, data_range_days=None):
-    """Resolve the data date window for a frequency (or a custom range).
-
-    Returns (start, end) as date objects, except for 'irrigation' which needs
-    compact timestamp strings (see build_irrigation_report_excel). The caller
-    passes these to the right builder; irrigation is handled specially there.
-
-    If ``data_range_days`` is set, it overrides the frequency default: the
-    window is send-day minus N days → yesterday (send-day itself has no data
-    yet). e.g. N=7 → today-7 .. today-1.
-    """
-    today = today or timezone.localdate()
-    # Custom range wins over the frequency default.
-    if data_range_days:
-        end = today - timedelta(days=1)
-        start = today - timedelta(days=data_range_days)
-        return start, end
-    if frequency == 'daily':
-        # Yesterday's data (run in the morning, covers the prior day).
-        d = today - timedelta(days=1)
-        return d, d
-    if frequency == 'weekly':
-        # Last week Mon–Sun.
-        this_monday = today - timedelta(days=today.weekday())
-        last_monday = this_monday - timedelta(days=7)
-        last_sunday = last_monday + timedelta(days=6)
-        return last_monday, last_sunday
-    if frequency == 'monthly':
-        # Last month, 1st to last day.
-        first_this_month = today.replace(day=1)
-        last_day_prev = first_this_month - timedelta(days=1)
-        first_prev = last_day_prev.replace(day=1)
-        return first_prev, last_day_prev
-    return today, today
+# Shared resolution + date-window logic lives in the service layer so the
+# command, the token-auth API, the AI tool, and the test-send view all use one
+# source of truth. Backward-compat aliases are re-exported at the bottom of
+# this module for callers that imported the underscore-prefixed names directly.
+from core.report_export import (
+    resolve_builder as _resolve_builder,
+    date_window as _date_window,
+    period_label as _period_label,
+    XLSX_CT,
+)
 
 
 def _is_due_today(cfg, today=None):
@@ -103,9 +56,6 @@ def _is_due_today(cfg, today=None):
         md = cfg.month_day if cfg.month_day is not None else 1  # default 1st
         return today.day == md
     return False
-
-
-XLSX_CT = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
 
 
 class Command(BaseCommand):
@@ -244,12 +194,7 @@ class Command(BaseCommand):
         return build_fn()
 
     def _period_label(self, frequency, today, data_range_days=None):
-        start, end = _date_window(frequency, today, data_range_days)
-        if frequency == 'monthly':
-            return f'{start.year}年{start.month}月'
-        if start == end:
-            return start.strftime('%Y-%m-%d')
-        return f'{start.strftime("%Y-%m-%d")} 至 {end.strftime("%Y-%m-%d")}'
+        return _period_label(frequency, today, data_range_days)
 
     def _record(self, cfg, status, dry):
         if dry:
