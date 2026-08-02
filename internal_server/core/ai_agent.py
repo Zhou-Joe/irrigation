@@ -532,17 +532,6 @@ def query_irrigation_overview() -> str:
     }, ensure_ascii=False)
 
 
-@tool
-def get_today_date() -> str:
-    """获取服务器当前日期和时间。当用户问"今天/最近"而你需要确定日期范围时调用。"""
-    now = timezone.localtime(timezone.now())
-    return json.dumps({
-        'today': now.date().isoformat(),
-        'now': now.strftime('%Y-%m-%d %H:%M'),
-        'weekday': ['周一', '周二', '周三', '周四', '周五', '周六', '周日'][now.weekday()],
-    }, ensure_ascii=False)
-
-
 # ── Helpers ───────────────────────────────────────────────────────────────
 
 
@@ -947,7 +936,6 @@ ALL_TOOLS = [
     query_zones,
     query_weather,
     query_irrigation_overview,
-    get_today_date,
     export_work_reports_excel,
     send_report_email,
     run_python_code,
@@ -971,7 +959,7 @@ def build_agent():
     if not (cfg.enabled and cfg.api_base_url and cfg.api_key and cfg.model_name):
         raise RuntimeError('AI 助手未启用或配置不完整，请在管理后台填写 base_url / api_key / model')
 
-    # 当前时间注入：避免每次"今天/最近N天"都得先调一次 get_today_date 工具。
+    # 当前时间注入到系统提示词（get_today_date 工具已移除，时间直接给到模型）。
     # 每个请求重新 build，所以时间总是新的。
     now = timezone.localtime(timezone.now())
     _weekday = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'][now.weekday()]
@@ -979,8 +967,7 @@ def build_agent():
         f'\n## 当前时间（系统注入，无需调用工具查询）\n'
         f'- 今天：{now.date().isoformat()}（{_weekday}）\n'
         f'- 当前时刻：{now.strftime("%Y-%m-%d %H:%M")}（北京时间）\n'
-        f'用户说"今天/昨天/本周/本月/最近N天"时，直接用上面的日期推算，'
-        f'不必调用 get_today_date。\n'
+        f'用户说"今天/昨天/本周/本月/最近N天"时，直接用上面的日期推算。\n'
     )
 
     model = ChatOpenAI(
