@@ -23,7 +23,7 @@ from django.utils import timezone
 from langchain.agents import create_agent
 from langchain.tools import tool, ToolRuntime
 from langchain_openai import ChatOpenAI
-from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.checkpoint.sqlite import SqliteSaver
 
 from core.models import (
     AISettings, WorkReport, WorkReportEntry, WorkItem, Project,
@@ -1129,16 +1129,37 @@ ALL_TOOLS = [
 
 @lru_cache(maxsize=1)
 def _checkpoint_saver():
-    """A single in-memory checkpointer shared across agent builds (conversation memory)."""
-    return InMemorySaver()
+    """A persistent SqliteSaver shared across agent builds (conversation memory).
+
+    Unlike the previous InMemorySaver (RAM only), this writes checkpoints to a
+    dedicated sqlite file so conversation history survives:
+      - server / worker restarts (production deploys)
+      - multiple WSGI workers (each worker reads the same file)
+      - the Django dev server's autoreloader restarting the process on code edits
+
+    The file lives under MEDIA_ROOT (kept out of the app db to avoid write-lock
+    contention with Django's own sqlite). WAL mode lets multiple workers read
+    concurrently while one writes — AI chat is low-concurrency (a handful of
+    managers), so sqlite is plenty here; for higher scale use PostgresSaver.
+    """
+    import sqlite3
+    db_path = os.path.join(settings.MEDIA_ROOT, 'ai_checkpoints.sqlite3')
+    conn = sqlite3.connect(db_path, check_same_thread=False)
+    # WAL: readers don't block the writer, so concurrent workers stay responsive.
+    conn.execute('PRAGMA journal_mode=WAL')
+    conn.execute('PRAGMA busy_timeout=5000')  # wait up to 5s on a locked db
+    saver = SqliteSaver(conn)
+    saver.setup()  # create the checkpoint tables (idempotent)
+    return saver
 
 
 def build_agent():
     """Build a fresh LangChain agent from current AISettings.
 
     Rebuilt per request so config changes (api_key/model) in admin take effect
-    immediately. The in-memory checkpointer is reused so a thread_id keeps
-    conversation history within the running process.
+    immediately. The sqlite checkpointer is reused (file-backed, shared across
+    processes/restarts) so a thread_id keeps conversation history across
+    requests even when the server has multiple workers or restarts.
     """
     cfg = AISettings.get_settings()
     if not (cfg.enabled and cfg.api_base_url and cfg.api_key and cfg.model_name):
