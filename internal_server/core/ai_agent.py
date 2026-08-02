@@ -442,6 +442,82 @@ def query_water_requests(start_date: str = "", status: str = "", limit: int = 30
 
 
 @tool
+def query_projects(
+    q: str = "",
+    category: str = "",
+    include_completed: bool = True,
+    limit: int = 30,
+) -> str:
+    """查询灌溉项目(Project)：项目名称/类别/子类别/代号、是否完工、开工/计划完工日期、
+    材料/人工预算，以及每个项目的已用工时（从关联工单自动汇总）。
+
+    项目是灌溉工程的管理单元（FAM/FES/WDI/绿化等），工单填报时可选关联项目；
+    本工具汇总每个项目的关联工单工时，便于了解项目进度与投入。
+
+    Args:
+        q: 项目名称/代号/Code 模糊匹配（部分匹配即可），留空返回全部
+        category: 类别过滤 IRRIGATION(灌溉)/DRAINAGE(排水)/OTHER(其他)，留空看全部
+        include_completed: True=含已完工，False=只看进行中（未完工）
+        limit: 最多返回条数，默认30
+    """
+    from django.db.models import Q as _Q, Sum
+
+    qs = Project.objects.all()
+    if q:
+        qs = qs.filter(_Q(name__icontains=q) | _Q(symbol__icontains=q)
+                       | _Q(code__icontains=q) | _Q(notes__icontains=q))
+    if category in {c for c, _ in Project.CATEGORY_CHOICES}:
+        qs = qs.filter(category=category)
+    if not include_completed:
+        qs = qs.filter(is_completed=False)
+    projects = list(qs.order_by('category', 'subcategory', 'name')[:limit])
+
+    # 汇总每个项目的关联工单工时：WorkReportEntry.project → WorkReport 的 team_hours/third_party_hours。
+    # 一张工单可能关联多个项目，工时按项目计入（与 _project_summaries 口径一致）。
+    entry_pids = [e['project_id'] for e in WorkReportEntry.objects
+                  .filter(project__in=[p.id for p in projects])
+                  .values('project_id', 'work_report_id')]
+    rep_ids_by_pid = {}
+    for pid in {p.id for p in projects}:
+        rep_ids_by_pid[pid] = set()
+    for e in WorkReportEntry.objects.filter(project__in=[p.id for p in projects]).values('project_id', 'work_report_id'):
+        rep_ids_by_pid[e['project_id']].add(e['work_report_id'])
+    # 每张关联工单的工时
+    all_rep_ids = set().union(*rep_ids_by_pid.values()) if rep_ids_by_pid else set()
+    rep_hours = {r['id']: (r['team_hours'] or 0, r['third_party_hours'] or 0)
+                 for r in WorkReport.objects.filter(id__in=all_rep_ids).values('id', 'team_hours', 'third_party_hours')}
+    # 关联工单数
+    rep_counts = {pid: len(ids) for pid, ids in rep_ids_by_pid.items()}
+
+    rows = []
+    for p in projects:
+        team_h = third_h = 0.0
+        for rid in rep_ids_by_pid.get(p.id, ()):
+            th, tph = rep_hours.get(rid, (0, 0))
+            team_h += th; third_h += tph
+        rows.append({
+            '项目名称': p.name,
+            '类别': p.get_category_display(),
+            '子类别': p.get_subcategory_display() if p.subcategory else '',
+            '代号': p.symbol or '',
+            '是否完工': p.is_completed,
+            '开工日期': p.start_date.isoformat() if p.start_date else '',
+            '计划完工': p.planned_end_date.isoformat() if p.planned_end_date else '',
+            '材料预算': float(p.material_budget_amount) if p.material_budget_amount else None,
+            '人工预算': float(p.labor_budget_amount) if p.labor_budget_amount else None,
+            '关联工单数': rep_counts.get(p.id, 0),
+            '已用灌溉组工时': round(team_h, 1),
+            '已用第三方工时': round(third_h, 1),
+        })
+    return json.dumps({
+        '项目总数': qs.count(),
+        'returned': len(rows),
+        'records': rows,
+        '类别选项': dict(Project.CATEGORY_CHOICES),
+    }, ensure_ascii=False)
+
+
+@tool
 def query_zones(zone_code: str = "", limit: int = 50) -> str:
     """查询区域(Zone)信息：编号、通用名称、所属片区、面积、优先级、灌水器类型等。可按编号模糊查找。
 
@@ -933,6 +1009,7 @@ ALL_TOOLS = [
     query_pending_repairs,
     query_difficult_workorders,
     query_water_requests,
+    query_projects,
     query_zones,
     query_weather,
     query_irrigation_overview,
