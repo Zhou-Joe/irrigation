@@ -15,6 +15,7 @@ from functools import lru_cache
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
+from core.authentication import token_or_session
 from django.views.decorators.cache import never_cache
 from django.views.decorators.http import require_POST
 from django.core.files.storage import default_storage
@@ -732,6 +733,7 @@ def project_pos_save(request, pk):
     return JsonResponse({'success': True, 'message': '关联订单已更新'})
 
 
+@token_or_session(require_manager=True)
 @login_required(login_url='core:login')
 def planned_maintenance_pending(request):
     """Past WorkReports (in the given zones, or all) flagged 待修 — the PM backlog.

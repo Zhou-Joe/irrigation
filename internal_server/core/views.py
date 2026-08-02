@@ -13,6 +13,12 @@ from django.urls import reverse
 from django.utils import timezone
 from django.utils.http import url_has_allowed_host_and_scheme
 from core.models import Zone, Patch, WorkItem, WorkReportEntry
+from rest_framework.decorators import api_view, authentication_classes, permission_classes
+from rest_framework.response import Response
+from rest_framework.authentication import SessionAuthentication
+from rest_framework.permissions import IsAuthenticated
+from core.authentication import TokenAuthentication as _TokenAuth
+from core.authentication import token_or_session
 
 def auto_close_boundary_points(boundary_data):
     """
@@ -861,6 +867,7 @@ def _build_zones_payload(today, week_ago):
     return zones_list
 
 
+@token_or_session(require_manager=True)
 @login_required(login_url='core:login')
 def zones_payload_api(request):
     """Serve the dashboard zone payload as a standalone, cacheable JSON document.
@@ -883,6 +890,7 @@ def zones_payload_api(request):
     return resp
 
 
+@token_or_session(require_manager=True)
 @login_required(login_url='core:login')
 def today_weather_api(request):
     """Return a short weather string for the CURRENT hour (for workorder auto-fill).
@@ -1457,18 +1465,21 @@ def email_config_test(request, pk):
     if not recipients:
         return JsonResponse({'success': False, 'message': '无收件人邮箱'}, status=400)
 
-    # Reuse the command's builder logic so the test matches a real dispatch.
-    from core.management.commands.send_report_email import (
-        Command as _EmailCmd, XLSX_CT, _resolve_builder,
-    )
-    cmd = _EmailCmd()
-    build_fn, label = _resolve_builder(cfg.report_type)
+    # Reuse the command's frequency-driven builder dispatch so the test matches
+    # a real scheduled dispatch. resolve_builder / period_label come from the
+    # shared service layer (the command re-exports the same names for back-compat).
+    from core.report_export import resolve_builder, period_label, XLSX_CT
+    from core.management.commands.send_report_email import Command as _EmailCmd
+    build_fn, label = resolve_builder(cfg.report_type)
     if build_fn is None:
         return JsonResponse({'success': False, 'message': f'未知报表类型 {cfg.report_type}'}, status=400)
     try:
         today = timezone.localdate()
-        fname, buf = cmd._build_report(cfg.report_type, build_fn, cfg.frequency, today, cfg.data_range_days)
-        period = cmd._period_label(cfg.frequency, today, cfg.data_range_days)
+        # _build_report applies the config's frequency/data_range_days window —
+        # exactly what the cron run would send, just without the due-date gate.
+        fname, buf = _EmailCmd()._build_report(
+            cfg.report_type, build_fn, cfg.frequency, today, cfg.data_range_days)
+        period = period_label(cfg.frequency, today, cfg.data_range_days)
         subject = f'【测试】{label} {period} 报表 — {cfg.name}'
         body = (f'这是一封测试邮件（来自「邮件报表」配置页的「测试发送」按钮）。\n\n'
                 f'报表类型：{label}\n频率：{cfg.get_frequency_display()}\n数据范围：{period}\n\n请见附件。')
@@ -2755,6 +2766,44 @@ def work_report_followup(request, parent_id):
     worker, _ = resolve_or_create_worker(request.user)
     today = timezone.localdate()
 
+    # ── 班次 / 人数 / 工时 ── 与 dashboard 建单口径一致：前端填人数 + 起止时间，
+    # 后端用 _calc_hours(start, end, headcount) 算各 party 总工时（0.5h 精度）。
+    # 留空起止时间则不计工时（兼容只登记跟进、不记工时的场景）。
+    from datetime import time as _dt_time
+    from core.workorder_tree_views import _calc_hours as _fu_calc_hours
+    shift = (request.POST.get('shift') or '').strip()
+    if shift and shift not in dict(WorkReport.SHIFT_CHOICES):
+        shift = ''
+    if not shift:
+        shift = '白班'   # 保留旧行为：未填班次默认白班
+    start_str = (request.POST.get('work_start_time') or '').strip()
+    end_str = (request.POST.get('work_end_time') or '').strip()
+    work_start = work_end = None
+    if start_str and ':' in start_str:
+        try:
+            h, m = start_str.split(':')
+            work_start = _dt_time(int(h), int(m))
+        except (ValueError, TypeError):
+            work_start = None
+    if end_str and ':' in end_str:
+        try:
+            h, m = end_str.split(':')
+            work_end = _dt_time(int(h), int(m))
+        except (ValueError, TypeError):
+            work_end = None
+    try:
+        team_size = int(request.POST.get('team_size', 1) or 1)
+    except (ValueError, TypeError):
+        team_size = 1
+    try:
+        third_party_count = int(request.POST.get('third_party_count', 0) or 0)
+    except (ValueError, TypeError):
+        third_party_count = 0
+    team_size = max(0, team_size) or 1
+    third_party_count = max(0, third_party_count)
+    team_hours = _fu_calc_hours(work_start, work_end, team_size)
+    third_party_hours = _fu_calc_hours(work_start, work_end, third_party_count)
+
     with transaction.atomic():
         # select_for_update() is a no-op on SQLite (the prod DB), so it does NOT
         # serialize concurrent submissions here — kept for the Postgres future.
@@ -2797,7 +2846,15 @@ def work_report_followup(request, parent_id):
             date=today,
             worker=worker,
             remark=remark,
-            shift='白班',
+            shift=shift,
+            # 班次 / 人数 / 工时 — 与 dashboard 建单一致，工时由后端按
+            # _calc_hours(start, end, headcount) 计算。留空起止时间 → 工时为 0。
+            work_start_time=work_start,
+            work_end_time=work_end,
+            team_size=team_size,
+            third_party_count=third_party_count,
+            team_hours=team_hours,
+            third_party_hours=third_party_hours,
             # The child is itself a normal work order, NOT a 疑难/待修 — it is
             # the *follow-up effort* recorded against the parent.
             is_pending_repair=False,
@@ -3733,6 +3790,7 @@ def zone_batch_draw(request):
     return render(request, 'core/zone_batch_draw.html', context)
 
 
+@token_or_session(require_manager=True)
 @login_required(login_url='core:login')
 def zone_batch_draw_zones_api(request):
     """API: return zones for a given patch_id."""
@@ -5000,6 +5058,7 @@ def landmark_delete(request, landmark_id):
     return JsonResponse({'success': True})
 
 
+@token_or_session(require_manager=True)
 @login_required(login_url='core:login')
 def landmarks_api(request):
     from .models import Landmark, ZoneLandmarkAssignment
@@ -5315,6 +5374,7 @@ def batch_delete_pipeline(request):
     return JsonResponse({'success': True, 'deleted': count})
 
 
+@token_or_session(require_manager=True)
 @login_required(login_url='core:login')
 def equipment_catalog_autocomplete(request):
     """AJAX autocomplete endpoint for equipment catalog."""
@@ -5857,6 +5917,7 @@ def user_edit(request, profile_type, profile_id):
     return JsonResponse({'success': True, 'message': f'已更新 {profile.full_name}'})
 
 
+@token_or_session(require_manager=True)
 @login_required(login_url='core:login')
 def user_preferences_api(request):
     """GET/PUT user preferences (e.g. zone card field visibility)."""
@@ -5902,6 +5963,7 @@ def user_preferences_api(request):
     return JsonResponse({'error': 'Method not allowed'}, status=405)
 
 
+@token_or_session(require_manager=True)
 @login_required(login_url='core:login')
 def maxicom_dashboard_api(request):
     """API endpoint providing Maxicom2 irrigation data for the dashboard."""
@@ -7697,6 +7759,7 @@ import json
 
 
 @require_POST
+@token_or_session(require_manager=True)
 @login_required(login_url='core:login')
 def custom_report_api(request):
     """Return aggregated data for custom chart configurations."""
@@ -8308,6 +8371,11 @@ def _work_report_filters(request):
     section = (request.GET.get('section') or '').strip()
     if section not in dict(WorkItem.SECTION_CHOICES):
         section = ''
+    # 子类别 = 工作类别下一级 WorkItem 的 id（联动下拉选择）。空=不限子类别；
+    # 非数字（手输/篡改）→ 当作空。section 未选时子类别无意义，调用处忽略。
+    work_item = (request.GET.get('work_item') or '').strip()
+    if work_item and not work_item.isdigit():
+        work_item = ''
 
     # Default to the most recent N days only when the user hasn't picked any
     # explicit start (neither a preset nor a manual date). This keeps the first
@@ -8316,7 +8384,32 @@ def _work_report_filters(request):
         today = timezone.localdate()
         date_from = (today - timedelta(days=WORK_REPORTS_DEFAULT_DAYS)).isoformat()
 
-    return date_from, date_to, land_id, worker_id, difficult, pending, before_id, sort, q, section
+    return date_from, date_to, land_id, worker_id, difficult, pending, before_id, sort, q, section, work_item
+
+
+@api_view(['GET'])
+@authentication_classes([_TokenAuth, SessionAuthentication])
+@permission_classes([IsAuthenticated])
+def work_report_subsections_api(request):
+    """GET ?section=<code> → 该 section 的一级子项 [{id, name, code}, ...]
+
+    给筛选栏的「子类别」联动下拉用，也开放给外部平台 / AI agent 枚举工单类别。
+    认证：token（``Authorization: Token <uuid>``）或登录 session（页面 cookie）。
+    仅返回 level==1、active 的节点（按 order, code 排序）。section 非法或空 → 空
+    列表（前端据此隐藏子下拉）。
+
+    用 DRF 装饰器而非 ``@login_required``，因为 ``@login_required`` 在认证失败时
+    会 302 重定向到登录页（浏览器才好，API 调用者拿到 HTML 会很困惑）；DRF 在未认证
+    时返回规范的 401 JSON。
+    """
+    section = (request.GET.get('section') or '').strip()
+    if section not in dict(WorkItem.SECTION_CHOICES):
+        return Response({'subsections': []})
+    nodes = (WorkItem.objects.filter(section=section, level=1, active=True)
+             .order_by('order', 'code'))
+    return Response({
+        'subsections': [{'id': n.id, 'name': n.name_zh, 'code': n.code} for n in nodes],
+    })
 
 
 def _scoped_work_reports_qs(user, admin, sort=WORK_REPORTS_DEFAULT_SORT):
@@ -8571,7 +8664,7 @@ def work_reports_list(request):
     user = request.user
     admin = is_admin(user)
 
-    date_from, date_to, land_id, worker_id, difficult, pending, before_id, sort, q, section = _work_report_filters(request)
+    date_from, date_to, land_id, worker_id, difficult, pending, before_id, sort, q, section, work_item = _work_report_filters(request)
 
     qs = _scoped_work_reports_qs(user, admin, sort=sort)
     # distinct=True so the land/section M2M filters below (which JOIN the
@@ -8596,6 +8689,19 @@ def work_reports_list(request):
         # Subquery (not a JOIN) so the comment_count annotation above isn't
         # multiplied, and reports with several matching entries aren't duped.
         qs = qs.filter(entries__in=WorkReportEntry.objects.filter(work_item__section=section))
+    if work_item:
+        # 子类别 = 该一级 WorkItem 及其全部后代（MPTT get_descendants，单条 SQL）。
+        # 用子查询（pk__in=...values('work_report_id')）而非 entries__work_item_id__in
+        # 的 JOIN，避免一条工单有多条匹配条目时在分页结果里重复出现（与上面 section
+        # 过滤的子查询口径一致）。
+        node = WorkItem.objects.filter(id=work_item).first()
+        if node:
+            sub_ids = list(node.get_descendants(include_self=True).values_list('id', flat=True))
+            qs = qs.filter(pk__in=WorkReportEntry.objects
+                           .filter(work_item_id__in=sub_ids)
+                           .values('work_report_id'))
+        else:
+            qs = qs.none()   # 非法/已删除的 work_item → 空集
     # Work-order number search: match the id (or #id) as a prefix so "4" finds
     # #4, #40-49, #400-499, etc. An exact integer narrows to that one report.
     if q:
@@ -8689,6 +8795,7 @@ def work_reports_list(request):
             'is_difficult': bool(difficult),
             'is_pending_repair': bool(pending),
             'section': section,
+            'work_item': work_item,
             'sort': sort,
             'q': q,
         },
@@ -8863,7 +8970,7 @@ def work_report_photos(request):
     if not admin:
         return JsonResponse({'reports': [], 'error': '无权限'}, status=403)
 
-    date_from, date_to, land_id, worker_id, difficult, pending, before_id, sort, q, section = _work_report_filters(request)
+    date_from, date_to, land_id, worker_id, difficult, pending, before_id, sort, q, section, work_item = _work_report_filters(request)
     qs = _scoped_work_reports_qs(user, admin, sort=sort).filter(date__gte=date_from)
     if date_to:
         qs = qs.filter(date__lte=date_to)
@@ -8877,6 +8984,16 @@ def work_report_photos(request):
         qs = qs.filter(is_pending_repair=True)
     if section:
         qs = qs.filter(entries__in=WorkReportEntry.objects.filter(work_item__section=section))
+    if work_item:
+        # 子类别筛选：该一级 WorkItem 及其全部后代（与列表页同口径，子查询形式）。
+        node = WorkItem.objects.filter(id=work_item).first()
+        if node:
+            sub_ids = list(node.get_descendants(include_self=True).values_list('id', flat=True))
+            qs = qs.filter(pk__in=WorkReportEntry.objects
+                           .filter(work_item_id__in=sub_ids)
+                           .values('work_report_id'))
+        else:
+            qs = qs.none()
     if q and q.isdigit():
         qs = qs.filter(id__startswith=q)
 
@@ -9246,6 +9363,11 @@ def _followup_stories(parent_ids):
             'remark': (r.remark or '')[:400],
             'photos': list(r.photos or [])[:6],
             'status_label': label,
+            # 班次 / 人数 / 工时 — 每条跟进单独展示，便于核对单次投入。
+            # 班次为空（旧数据）时 display 为空串，模板按 {% if s.shift %} 渲染。
+            'shift': r.shift or '',
+            'team_size': r.team_size or 0,
+            'third_party_count': r.third_party_count or 0,
             # Hours are summed (parent + all follow-ups) in _serialize_repair_card
             # so the card can show total 灌溉组/第三方 工时 across the whole story.
             'team_hours': float(r.team_hours or 0),
@@ -9809,6 +9931,7 @@ def work_report_delete(request, report_id):
     return redirect('core:work_reports')
 
 
+@token_or_session(require_manager=True)
 @login_required(login_url='core:login')
 def zone_geo_api(request):
     from core.models import Zone
@@ -10202,6 +10325,7 @@ def water_request_mobile_v2(request):
     return redirect('core:dashboard')
 
 
+@token_or_session(require_manager=True)
 @login_required(login_url='core:login')
 def workorder_modal_data(request):
     """API: return workorder form metadata as JSON for dashboard modal."""
@@ -10275,6 +10399,7 @@ def workorder_modal_data(request):
     return JsonResponse(payload)
 
 
+@token_or_session(require_manager=True)
 @login_required(login_url='core:login')
 def water_request_modal_data(request):
     """API: return water request form metadata as JSON for dashboard modal."""
@@ -10361,6 +10486,7 @@ def inventory_category_paths():
     return out
 
 
+@token_or_session(require_manager=True)
 @login_required(login_url='core:login')
 def inventory_modal_data(request):
     """API: return inventory form metadata as JSON for the dashboard modal."""
@@ -11800,6 +11926,7 @@ def purchase_order_export_excel(request):
     return resp
 
 
+@token_or_session(require_manager=True)
 @login_required(login_url='core:login')
 def zones_in_area_api(request):
     """API: given a drawn polygon/rect/circle, return zone codes whose centroid falls inside."""
