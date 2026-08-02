@@ -199,22 +199,31 @@ def _populate_workspace_data(ws):
             ])
 
     # Project budget / consumption — 出库-项目的实际消耗（已确认的），按项目汇总。
-    # 材料余额 = 材料预算 − Σ出库消耗（actual）。配合 projects.csv 算余额。
+    # 材料余额 = 材料预算 − Σ(数量×单价)。配合 projects.csv 算余额。
+    # 单价取自 InventoryPriceRecord 的"当前价格"（与库存管理页 current_price_for 同口径）。
     with open(os.path.join(ws, 'project_consumption.csv'), 'w', newline='', encoding='utf-8-sig') as f:
         w = csv.writer(f)
-        w.writerow(['日期', '项目', '操作', '去向', '消耗模式', '物料编码', '物料名称', '数量'])
+        w.writerow(['日期', '项目', '操作', '去向', '消耗模式', '物料编码', '物料名称',
+                    '单位', '数量', '单价', '金额'])
+        from core.inventory_tree_views import current_price_for
         txn_qs = (InventoryTransaction.objects.filter(date__gte=since)
                   .select_related('related_project').prefetch_related('lines__category'))
         for txn in txn_qs.order_by('-date'):
             proj = str(txn.related_project) if txn.related_project_id else ''
             for line in txn.lines.all():
                 cat = line.category
+                # 当前价格：优先 is_current，否则最新一条采购价。无价格记录→空。
+                price_rec = current_price_for(cat) if cat else None
+                unit_price = float(price_rec.unit_price) if price_rec and price_rec.unit_price else ''
+                qty = line.quantity or 0
+                amount = round(unit_price * qty, 2) if unit_price != '' else ''
                 w.writerow([
                     txn.date.isoformat(), proj, txn.operation,
                     txn.entry_subtype or '', txn.consumption_mode or '',
                     getattr(cat, 'code', '') if cat else '',
                     getattr(cat, 'name_zh', '') if cat else '',
-                    line.quantity or 0,
+                    getattr(cat, 'unit', '') if cat else '',
+                    qty, unit_price, amount,
                 ])
 
     # PM work orders (近90天) — PM 完成工单，含工时/班次/区域。PM 工单与普通工单

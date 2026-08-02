@@ -1918,7 +1918,7 @@ class AISettings(models.Model):
         '- **要把报表发邮件** → send_report_email\n'
         '- 查询工具无法表达的分析（跨表关联、自定义计算） → run_python_code + pandas\n'
         '- **跨表关联示例**（用 run_python_code 读多个 CSV 关联）：\n'
-        '    · 项目预算消耗/余额 → projects.csv(预算) + project_consumption.csv(出库消耗) + work_entries.csv(工时)\n'
+        '    · 项目预算消耗/余额 → projects.csv(预算) + project_consumption.csv(出库消耗，含单价×数量=金额) + work_entries.csv(工时)\n'
         '    · 天气×工单量趋势 → weather.csv + work_reports.csv 按日期 join\n'
         '    · 待修区域 vs 近期停水申请 → work_reports.csv(待修) + water_requests.csv(区域)\n'
         '    · PM 工单执行情况 → pm_workorders.csv\n'
