@@ -2181,10 +2181,13 @@ function showLb() {
         vid.style.display = ''; vid.src = '/media/' + p;
     } else {
         vid.style.display = ''; vid.pause(); vid.src = ''; vid.style.display = 'none';
-        // Show the thumbnail (not the multi-MB original) for fast preview.
-        // Full-resolution is only needed in the 媒体下载 tab, which has its
-        // own download/quality controls and doesn't use this lightbox.
-        img.style.display = ''; img.src = '/media/' + thumbPath(p);
+        // Show the full-resolution original in the lightbox. The collapsed
+        // card's thumbnail strip (and the AJAX history photos) still load the
+        // tiny _thumb.jpg for fast page paint; only the clicked lightbox fetches
+        // the multi-MB original so users can read fine detail (part numbers,
+        // damage). The 媒体下载 tab has its own download path and doesn't use
+        // this lightbox.
+        img.style.display = ''; img.src = '/media/' + p;
     }
 }
 function lbKey(e) {
