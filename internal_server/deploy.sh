@@ -4,9 +4,10 @@
 #
 # Deployment model (per project convention):
 #   1. git pull the latest main
-#   2. collectstatic — rebuilds staticfiles/ so WhiteNoise serves fresh assets
-#   3. migrate — apply any new DB migrations
-#   4. restart the app process (see note below)
+#   2. pip install — install/upgrade Python deps from requirements.txt
+#   3. collectstatic — rebuilds staticfiles/ so WhiteNoise serves fresh assets
+#   4. migrate — apply any new DB migrations
+#   5. restart the app process (see note below)
 #
 # Why collectstatic matters:
 #   Production serves static files via WhiteNoise from STATIC_ROOT (staticfiles/).
@@ -43,26 +44,32 @@ for arg in "$@"; do
 done
 
 # Activate the project venv if present (one level up, matching development.md).
-if [ -f "../venv/bin/activate" ]; then
+if [ -f "../.venv/bin/activate" ]; then
     # shellcheck disable=SC1091
-    source ../venv/bin/activate
+    source ../.venv/bin/activate
 fi
 
-echo "==> [1/3] git pull"
+echo "==> [1/4] git pull"
 if [ "$DO_PULL" -eq 1 ]; then
     git -C "$SCRIPT_DIR/.." pull --ff-only
 else
     echo "    (skipped)"
 fi
 
-echo "==> [2/3] collectstatic"
+echo "==> [2/4] install Python dependencies"
+# requirements.txt is the source of truth for runtime deps. New code can add
+# packages (e.g. langgraph-checkpoint-sqlite for the AI agent); install/upgrade
+# them so the app imports cleanly after restart. Runs inside the venv above.
+python -m pip install -r requirements.txt
+
+echo "==> [3/4] collectstatic"
 python manage.py collectstatic --noinput --clear
 
 if [ "$DO_MIGRATE" -eq 1 ]; then
-    echo "==> [3/3] migrate"
+    echo "==> [4/4] migrate"
     python manage.py migrate --noinput
 else
-    echo "==> [3/3] migrate (skipped)"
+    echo "==> [4/4] migrate (skipped)"
 fi
 
 echo ""
