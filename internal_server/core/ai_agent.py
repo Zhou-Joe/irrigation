@@ -771,6 +771,97 @@ def export_work_reports_excel(start_date: str = "", end_date: str = "", runtime:
 
 
 @tool
+def send_report_email(report_type: str, start_date: str, end_date: str,
+                      recipients: str, runtime: ToolRuntime = None) -> str:
+    """生成指定类型的 Excel 报表并通过 SMTP 邮件发送给收件人。
+
+    覆盖全部 7 种报表类型，与 export_work_reports_excel（仅维修工单、仅生成文件）
+    互补：本工具覆盖全部类型并直接发送邮件。
+
+    支持的 report_type：
+      - work_reports      维修工单记录
+      - irrigation        灌溉运行报表
+      - projects          项目管理
+      - inventory_catalog 库存目录
+      - inventory_txn     库存出入库流水
+      - purchase_orders   采购订单
+      - zones             区域/地块目录
+
+    zones / inventory_catalog / purchase_orders 为目录类报表，与日期范围无关
+    （start_date/end_date 仍需传入占位值，会被忽略）。
+
+    Args:
+        report_type: 报表类型（见上）
+        start_date: 起始日期 YYYY-MM-DD
+        end_date: 结束日期 YYYY-MM-DD
+        recipients: 收件人邮箱，多个用逗号或分号分隔
+        runtime: LangChain 运行时（自动注入，保留参数）
+    """
+    import re
+    from core.report_export import REPORT_TYPES, REPORT_TYPE_LABELS, build_report
+    from core.smtp_utils import (
+        is_smtp_configured, get_email_connection, resolve_from_email,
+    )
+    from django.core.mail import EmailMessage
+
+    if report_type not in REPORT_TYPES:
+        return json.dumps({
+            'error': f'未知报表类型: {report_type}',
+            'valid': REPORT_TYPES,
+            'labels': REPORT_TYPE_LABELS,
+        }, ensure_ascii=False)
+
+    start = _parse_date(start_date)
+    end = _parse_date(end_date)
+    if start is None or end is None:
+        return json.dumps({
+            'error': 'start_date/end_date 格式无效，需 YYYY-MM-DD',
+        }, ensure_ascii=False)
+
+    rcpt_list = [r.strip() for r in re.split(r'[,\n;]', recipients or '') if r.strip()]
+    if not rcpt_list:
+        return json.dumps({'error': '未提供收件人邮箱'}, ensure_ascii=False)
+
+    if not is_smtp_configured():
+        return json.dumps({
+            'error': 'SMTP 未配置，无法发送邮件。请先在「用户管理 → 邮件报表」配置 SMTP 服务器。',
+        }, ensure_ascii=False)
+
+    label = REPORT_TYPE_LABELS.get(report_type, report_type)
+    try:
+        fname, buf = build_report(report_type, start=start, end=end)
+    except Exception as e:
+        return json.dumps({'error': f'生成报表失败: {e}'}, ensure_ascii=False)
+
+    period = (start.strftime('%Y-%m-%d') if start == end
+              else f'{start.strftime("%Y-%m-%d")} 至 {end.strftime("%Y-%m-%d")}')
+    subject = f'【{label}】{period} 报表'
+    body = (f'您好，\n\n这是由 AI 助手生成的报表邮件。\n'
+            f'报表类型：{label}\n数据范围：{period}\n\n请见附件。')
+    try:
+        msg = EmailMessage(
+            subject=subject, body=body,
+            from_email=resolve_from_email(), to=rcpt_list,
+            connection=get_email_connection(),
+        )
+        msg.attach(fname, buf.getvalue(),
+                   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        msg.send(fail_silently=False)
+    except Exception as e:
+        return json.dumps({'error': f'邮件发送失败: {e}'}, ensure_ascii=False)
+
+    return json.dumps({
+        'sent': True,
+        'report_type': report_type,
+        'label': label,
+        'filename': fname,
+        'date_range': [start.isoformat(), end.isoformat()],
+        'recipients': rcpt_list,
+        'recipient_count': len(rcpt_list),
+    }, ensure_ascii=False)
+
+
+@tool
 def run_python_code(code: str, description: str = "", runtime: ToolRuntime = None) -> str:
     """运行 Python 代码进行数据分析、计算、并生成报表文件。
 
@@ -858,6 +949,7 @@ ALL_TOOLS = [
     query_irrigation_overview,
     get_today_date,
     export_work_reports_excel,
+    send_report_email,
     run_python_code,
 ]
 
@@ -879,6 +971,18 @@ def build_agent():
     if not (cfg.enabled and cfg.api_base_url and cfg.api_key and cfg.model_name):
         raise RuntimeError('AI 助手未启用或配置不完整，请在管理后台填写 base_url / api_key / model')
 
+    # 当前时间注入：避免每次"今天/最近N天"都得先调一次 get_today_date 工具。
+    # 每个请求重新 build，所以时间总是新的。
+    now = timezone.localtime(timezone.now())
+    _weekday = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'][now.weekday()]
+    time_block = (
+        f'\n## 当前时间（系统注入，无需调用工具查询）\n'
+        f'- 今天：{now.date().isoformat()}（{_weekday}）\n'
+        f'- 当前时刻：{now.strftime("%Y-%m-%d %H:%M")}（北京时间）\n'
+        f'用户说"今天/昨天/本周/本月/最近N天"时，直接用上面的日期推算，'
+        f'不必调用 get_today_date。\n'
+    )
+
     model = ChatOpenAI(
         base_url=cfg.api_base_url,
         api_key=cfg.api_key,
@@ -888,10 +992,12 @@ def build_agent():
         # disable streaming usage metadata to avoid 400 errors.
         stream_usage=False,
     )
+    base_prompt = cfg.get_system_prompt()
+    # 时间块插在系统提示词最前面，保证模型一开始就知道当前日期。
     agent = create_agent(
         model=model,
         tools=ALL_TOOLS,
-        system_prompt=cfg.get_system_prompt(),
+        system_prompt=time_block + base_prompt,
         checkpointer=_checkpoint_saver(),
         # Per-run context (the workspace thread id) declared as a schema so tools
         # read it via ToolRuntime.context instead of a global — LangChain v1 pattern.
