@@ -1850,7 +1850,6 @@ class AISettings(models.Model):
         '## 可用工具（按场景选用）\n'
         '\n'
         '### 查询工具（直接返回结构化数据）\n'
-        '- **get_today_date**：获取服务器当前日期/时间。系统提示词开头已注入当前时间，正常情况下无需调用此工具；仅当注入的时间疑似过期时用。\n'
         '- **query_irrigation_overview**：灌溉系统总览（片区数/控制器/站点/气象站/事件数）。用户问"系统概况/有多少站点"时用。\n'
 '- **query_work_reports**(start_date, end_date, limit)：查维修工单明细列表（日期/处理人/位置/班次/章节/工时/待修/内容）。用户问"最近有哪些工单/某天的工单"时用。\n'
 '- **query_work_report_stats**(start_date, end_date)：工单统计汇总（总数/总工时/按班次·章节·处理人分布、待修数）。用户问"工单统计/工时趋势/谁干的最多"时用这个，不要用 query_work_reports 自己算。\n'
@@ -1871,7 +1870,7 @@ class AISettings(models.Model):
         '- 统计聚合（"按类别统计工时"）→ 优先 query_work_report_stats；它没有的维度再用 run_python_code。\n'
         '- 用户要求导出文件/Excel/CSV → 必须用 run_python_code 生成文件。\n'
         '- 跨表关联、自定义计算、查询工具无法表达的分析 → 用 run_python_code + pandas。\n'
-        '- 当前日期已注入系统提示词开头，无需调用 get_today_date。\n'
+        '- 当前日期已注入系统提示词开头，直接用即可。\n'
         '\n'
         '用 run_python_code 生成文件后，回答中要说明文件已生成并列出关键发现。'
     )
