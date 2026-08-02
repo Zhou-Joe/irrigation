@@ -1,0 +1,234 @@
+{% extends 'core/base.html' %}
+
+{% block title %}API 文档 - 灌溉管理系统{% endblock %}
+
+{% block extra_css %}
+<style>
+  .api-doc-wrap { max-width: 980px; margin: 24px auto; padding: 0 16px 60px; font-size: 0.92rem; color: #1f2937; }
+  .api-doc-wrap h1 { font-size: 1.5rem; margin: 0 0 6px; color: #2d6a4f; }
+  .api-doc-wrap > .lead { color: #6b7280; margin: 0 0 24px; font-size: 0.88rem; }
+  .api-doc-wrap h2 { font-size: 1.15rem; margin: 34px 0 12px; padding-bottom: 8px; border-bottom: 2px solid #e5e7eb; color: #2d6a4f; }
+  .api-doc-wrap h3 { font-size: 0.98rem; margin: 20px 0 8px; color: #374151; }
+  .api-doc-wrap p { line-height: 1.65; margin: 8px 0; }
+  .api-doc-wrap code { background: #f3f4f6; padding: 1px 6px; border-radius: 4px; font-size: 0.84rem; color: #b91c1c; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .api-card { background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 16px 18px; margin: 12px 0; box-shadow: 0 1px 2px rgba(0,0,0,0.03); }
+  .api-card .ep { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+  .method { display: inline-block; padding: 2px 9px; border-radius: 5px; font-size: 0.74rem; font-weight: 700; color: #fff; letter-spacing: 0.5px; }
+  .method.GET { background: #2d6a4f; }
+  .method.POST { background: #2563eb; }
+  .method.DELETE { background: #b91c1c; }
+  .ep .path { font-family: ui-monospace, Menlo, monospace; font-size: 0.86rem; font-weight: 600; color: #1f2937; word-break: break-all; }
+  .auth-tag { font-size: 0.72rem; padding: 2px 8px; border-radius: 10px; margin-left: auto; }
+  .auth-tag.manager { background: #fef3c7; color: #92400e; }
+  .auth-token { background: #dbeafe; color: #1e40af; }
+  .auth-public { background: #dcfce7; color: #166534; }
+  .api-card .desc { color: #4b5563; margin: 4px 0 8px; font-size: 0.84rem; }
+  .params { width: 100%; border-collapse: collapse; margin: 8px 0; font-size: 0.82rem; }
+  .params th, .params td { text-align: left; padding: 6px 10px; border-bottom: 1px solid #f1f5f9; vertical-align: top; }
+  .params th { background: #f9fafb; color: #6b7280; font-weight: 600; }
+  .params td code { background: transparent; color: #374151; padding: 0; }
+  pre.code { background: #1e293b; color: #e2e8f0; padding: 14px 16px; border-radius: 8px; overflow-x: auto; font-size: 0.8rem; line-height: 1.5; margin: 10px 0 4px; position: relative; }
+  pre.code .copy-btn { position: absolute; top: 8px; right: 8px; background: rgba(255,255,255,0.12); color: #cbd5e1; border: 1px solid rgba(255,255,255,0.18); border-radius: 5px; padding: 3px 9px; font-size: 0.72rem; cursor: pointer; }
+  pre.code .copy-btn:hover { background: rgba(255,255,255,0.22); }
+  pre.code .copy-btn.copied { color: #4ade80; }
+  .pill { display: inline-block; background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 10px; font-size: 0.74rem; margin: 2px; font-family: ui-monospace, Menlo, monospace; }
+  .note { background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 10px 14px; font-size: 0.82rem; color: #92400e; margin: 12px 0; }
+  .note b { color: #78350f; }
+  table.rest { width: 100%; border-collapse: collapse; margin: 10px 0; font-size: 0.84rem; }
+  table.rest th, table.rest td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
+  table.rest code { font-size: 0.8rem; }
+  ul.tight { margin: 6px 0; padding-left: 20px; }
+  ul.tight li { margin: 3px 0; line-height: 1.55; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="api-doc-wrap">
+  <h1>API 文档</h1>
+  <p class="lead">灌溉管理系统对外 API 说明 · 所有示例中的 <code>{{ api_base }}</code> 为本服务地址。</p>
+
+  <div class="note">
+    <b>快速开始：</b>① 在 <a href="{% url 'core:profile' %}">个人资料</a> 页查看你的 API 令牌，或调 <code>POST /api/auth/login</code> 换取；
+    ② 每个请求加请求头 <code>Authorization: Token &lt;你的令牌&gt;</code>；
+    ③ 按下方示例调用。报表导出等数据 API 仅限<b>管理员/经理</b>令牌。
+  </div>
+
+  {# ── 认证 ── #}
+  <h2>🔐 认证</h2>
+  <p>系统支持两种认证方式：</p>
+  <div class="api-card">
+    <h3>方式一：Token（外部平台 / AI / 脚本）</h3>
+    <p class="desc">在请求头携带 <code>Authorization: Token &lt;uuid&gt;</code>。令牌每账号一个，在「个人资料」页查看或重新生成。</p>
+    <pre class="code"><button class="copy-btn" onclick="copyCode(this)">复制</button>curl -H "Authorization: Token cab094fa-xxxx-xxxx" \
+  "{{ api_base }}/api/today-weather/"</pre>
+  </div>
+  <div class="api-card">
+    <h3>方式二：登录 Session（浏览器内）</h3>
+    <p class="desc">网页内 AJAX 自动带 cookie，无需额外配置。本页所述的 token 鉴权 API 在浏览器内同样可用（已登录即可）。</p>
+  </div>
+  <div class="note"><b>权限说明：</b>报表导出 + 只读数据 API 的 token 路径<b>仅限管理员/经理令牌</b>（<code>ManagerProfile</code>）。现场工人/部门用户的令牌调用会返回 <code>403</code>。移动 App 走独立的 REST 资源（见下文），不受此限制。</div>
+
+  {# ── 登录换令牌 ── #}
+  <h2>🔑 登录与令牌</h2>
+  <div class="api-card">
+    <div class="ep"><span class="method POST">POST</span><span class="path">/api/auth/login</span><span class="auth-tag auth-public">公开</span></div>
+    <p class="desc">用用户名密码换取 API 令牌。返回 JSON 含 <code>token</code> 及用户角色信息。</p>
+    <pre class="code"><button class="copy-btn" onclick="copyCode(this)">复制</button>curl -X POST "{{ api_base }}/api/auth/login" \
+  -H "Content-Type: application/json" \
+  -d '{"username": "admin", "password": "你的密码"}'</pre>
+    <p class="desc" style="margin-top:8px;color:#6b7280;">响应示例：<code>{"token": "cab094fa-...", "role": "manager", "full_name": "..."}</code></p>
+  </div>
+
+  {# ── 报表导出 ── #}
+  <h2>📊 报表导出（Excel）</h2>
+  <p>按报表类型 + 日期范围生成 <code>.xlsx</code> 并以附件返回。<b>仅限管理员/经理令牌。</b></p>
+  <div class="api-card">
+    <div class="ep"><span class="method GET">GET</span><span class="path">/api/report-exports/&lt;report_type&gt;/</span><span class="auth-tag manager">仅管理员/经理</span></div>
+    <p class="desc">支持的报表类型：</p>
+    <div>
+      <span class="pill">work_reports 维修工单</span>
+      <span class="pill">irrigation 灌溉运行</span>
+      <span class="pill">inventory_txn 库存流水</span>
+      <span class="pill">zones 区域目录</span>
+      <span class="pill">inventory_catalog 库存目录</span>
+      <span class="pill">purchase_orders 采购订单</span>
+      <span class="pill">projects 项目管理</span>
+    </div>
+    <table class="params">
+      <tr><th>参数</th><th>必填</th><th>说明</th></tr>
+      <tr><td><code>report_type</code></td><td>是（路径）</td><td>上表 7 种之一</td></tr>
+      <tr><td><code>start</code></td><td>否</td><td>起始日期 <code>YYYY-MM-DD</code>。留空默认最近 30 天（仅对日期型报表生效）</td></tr>
+      <tr><td><code>end</code></td><td>否</td><td>结束日期 <code>YYYY-MM-DD</code></td></tr>
+    </table>
+    <p class="desc" style="color:#6b7280;">注：<code>zones</code> / <code>inventory_catalog</code> / <code>purchase_orders</code> / <code>projects</code> 为目录类报表，忽略日期参数，导出全量。</p>
+    <pre class="code"><button class="copy-btn" onclick="copyCode(this)">复制</button>curl -H "Authorization: Token &lt;管理员令牌&gt;" \
+  "{{ api_base }}/api/report-exports/work_reports/?start=2026-07-01&end=2026-07-31" \
+  -o 维修工单.xlsx</pre>
+  </div>
+
+  {# ── 只读数据 API ── #}
+  <h2>📡 只读数据 API（管理员/经理令牌）</h2>
+  <p>下列 API 均需 <code>Authorization: Token &lt;管理员/经理令牌&gt;</code>，返回 JSON。</p>
+
+  <div class="api-card">
+    <div class="ep"><span class="method GET">GET</span><span class="path">/api/work-reports/subsections/</span><span class="auth-tag manager">仅管理员/经理</span></div>
+    <p class="desc">按工作类别取一级子项（给筛选联动下拉用，也可枚举工单类别）。</p>
+    <table class="params"><tr><th>参数</th><th>必填</th><th>说明</th></tr>
+      <tr><td><code>section</code></td><td>是</td><td>工作类别 code：<code>routine_maint</code>/<code>irrigation_project</code>/<code>repair_emergency</code> 等</td></tr>
+    </table>
+    <pre class="code"><button class="copy-btn" onclick="copyCode(this)">复制</button>curl -H "Authorization: Token &lt;令牌&gt;" \
+  "{{ api_base }}/api/work-reports/subsections/?section=routine_maint"</pre>
+  </div>
+
+  <div class="api-card">
+    <div class="ep"><span class="method GET">GET</span><span class="path">/api/maxicom-dashboard</span><span class="auth-tag manager">仅管理员/经理</span></div>
+    <p class="desc">系统总览 KPI（片区数 / 控制器 / 站点 / 气象站 / 事件数）。</p>
+  </div>
+
+  <div class="api-card">
+    <div class="ep"><span class="method POST">POST</span><span class="path">/api/custom-report</span><span class="auth-tag manager">仅管理员/经理</span></div>
+    <p class="desc">自定义图表数据聚合。请求体 JSON：<code>{"charts": [{"id":"...", "dataSource":"...", "metric":"...", "dateFrom":"...", "dateTo":"..."}]}</code></p>
+  </div>
+
+  <div class="api-card">
+    <div class="ep"><span class="method GET">GET</span><span class="path">/api/today-weather/</span><span class="auth-tag manager">仅管理员/经理</span></div>
+    <p class="desc">当日天气摘要（温度、天气、降水）。</p>
+  </div>
+
+  <div class="api-card">
+    <div class="ep"><span class="method GET">GET</span><span class="path">/api/zone-geo/</span><span class="auth-tag manager">仅管理员/经理</span></div>
+    <p class="desc">区域地理边界数据（GeoJSON 形式）。</p>
+  </div>
+
+  <div class="api-card">
+    <div class="ep"><span class="method GET">GET</span><span class="path">/api/zones-payload/</span><span class="auth-tag manager">仅管理员/经理</span></div>
+    <p class="desc">区域列表（编号、名称、片区、面积、灌水器类型）。</p>
+  </div>
+
+  <div class="api-card">
+    <div class="ep"><span class="method GET">GET</span><span class="path">/api/modal/workorder-data/</span> 等 3 个</div>
+    <p class="desc">详情弹窗数据：<code>workorder-data</code>（工单）/ <code>water-request-data</code>（需求）/ <code>inventory-data</code>（库存）。传 <code>?id=</code> 指定记录。</p>
+  </div>
+
+  <div class="api-card">
+    <div class="ep"><span class="method GET">GET</span><span class="path">/api/planned-maintenance/pending/</span><span class="auth-tag manager">仅管理员/经理</span></div>
+    <p class="desc">待修 PM 工单列表（计划性维修积压）。</p>
+  </div>
+
+  <div class="api-card">
+    <div class="ep"><span class="method GET">GET</span><span class="path">/api/equipment-catalog/autocomplete</span><span class="auth-tag manager">仅管理员/经理</span></div>
+    <p class="desc">设备目录联想。参数 <code>?q=</code> 关键字。</p>
+  </div>
+
+  {# ── REST 资源 ── #}
+  <h2>🗂️ REST 资源（DRF · 移动端 / 任意令牌）</h2>
+  <p>下列资源走 DRF Router，支持标准 CRUD。所有角色令牌（管理员/经理/工人/部门用户）均可读；写操作受角色权限约束。每个资源提供 list / retrieve / create / update / destroy。</p>
+  <table class="rest">
+    <tr><th>资源</th><th>URL</th><th>说明</th></tr>
+    <tr><td>区域</td><td><code>/api/zones/</code></td><td>灌溉区域（含自定义 <code>/zone-detail/</code> 动作）</td></tr>
+    <tr><td>工人</td><td><code>/api/workers/</code></td><td>现场作业人员</td></tr>
+    <tr><td>工单</td><td><code>/api/work-reports/</code></td><td>维修工单（含 <code>/upload-photos/</code>、<code>/remove-photo/</code> 动作）</td></tr>
+    <tr><td>浇水需求</td><td><code>/api/water-requests/</code></td><td>用水申请</td></tr>
+    <tr><td>设备目录</td><td><code>/api/equipment-catalog/</code></td><td>设备物料台账</td></tr>
+    <tr><td>区域设备</td><td><code>/api/zone-equipment/</code></td><td>区域-设备关联</td></tr>
+    <tr><td>管线</td><td><code>/api/pipelines/</code></td><td>灌溉管线</td></tr>
+    <tr><td>片区</td><td><code>/api/patches/</code></td><td>地块片区</td></tr>
+    <tr><td>区域/位置</td><td><code>/api/regions/</code> <code>/api/locations/</code></td><td>地理层级</td></tr>
+  </table>
+  <h3>用法示例</h3>
+  <pre class="code"><button class="copy-btn" onclick="copyCode(this)">复制</button># 列表（分页）
+curl -H "Authorization: Token &lt;令牌&gt;" "{{ api_base }}/api/zones/?page=1"
+
+# 单条详情
+curl -H "Authorization: Token &lt;令牌&gt;" "{{ api_base }}/api/work-reports/42/"
+
+# 新建工单
+curl -X POST -H "Authorization: Token &lt;令牌&gt;" \
+  -H "Content-Type: application/json" \
+  -d '{"date":"2026-08-02", "remark":"示例"}' \
+  "{{ api_base }}/api/work-reports/"</pre>
+
+  {# ── 公开 API ── #}
+  <h2>🌦️ 公开 API（无需认证）</h2>
+  <div class="api-card">
+    <div class="ep"><span class="method GET">GET</span><span class="path">/api/weather</span><span class="auth-tag auth-public">公开</span></div>
+    <p class="desc">天气数据（当前小时及前后区间）。参数 <code>?lat=</code> <code>&amp;lon=</code> 可选。</p>
+  </div>
+
+  {# ── 错误码 ── #}
+  <h2>⚠️ 响应与错误码</h2>
+  <table class="rest">
+    <tr><th>状态码</th><th>含义</th></tr>
+    <tr><td><code>200</code></td><td>成功（GET / 成功的写操作）</td></tr>
+    <tr><td><code>201</code></td><td>创建成功（POST）</td></tr>
+    <tr><td><code>400</code></td><td>参数错误（日期格式不对、未知 report_type 等），JSON 含 <code>error</code> 字段</td></tr>
+    <tr><td><code>401</code></td><td>未认证（缺令牌或令牌无效）</td></tr>
+    <tr><td><code>403</code></td><td>无权限（如非管理员令牌调用管理员 API）</td></tr>
+    <tr><td><code>404</code></td><td>资源不存在</td></tr>
+  </table>
+
+  <div class="note" style="margin-top:24px;">
+    <b>安全提示：</b>API 令牌等同于账号密码，请妥善保管，不要提交到代码仓库或日志中。如怀疑泄露，前往
+    <a href="{% url 'core:profile' %}">个人资料</a> 页「重新生成令牌」即可让旧令牌立即失效。
+  </div>
+</div>
+
+<script>
+function copyCode(btn) {
+  var pre = btn.parentElement;
+  var text = pre.innerText.replace(/^复制\s*/, '').replace(/\s*复制$/, '');
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(function () {
+      btn.textContent = '已复制 ✓'; btn.classList.add('copied');
+      setTimeout(function () { btn.textContent = '复制'; btn.classList.remove('copied'); }, 1500);
+    });
+  } else {
+    // 退化方案：选中文本
+    var range = document.createRange(); range.selectNode(pre);
+    getSelection().removeAllRanges(); getSelection().addRange(range);
+    btn.textContent = '已选中（Ctrl+C 复制）';
+    setTimeout(function () { btn.textContent = '复制'; }, 1500);
+  }
+}
+</script>
+{% endblock %}
