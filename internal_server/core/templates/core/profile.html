@@ -243,6 +243,7 @@
             <button type="submit" class="btn btn-secondary" onclick="return confirm('确定要重新生成API令牌吗？旧令牌将立即失效。');">
                 重新生成令牌
             </button>
+            <a href="{% url 'core:api_docs' %}" class="btn btn-secondary" style="margin-left: 8px; text-decoration:none;">📋 API 文档</a>
         </form>
     </div>
     {% endif %}

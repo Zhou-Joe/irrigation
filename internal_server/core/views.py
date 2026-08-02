@@ -515,6 +515,18 @@ def profile_page(request):
     })
 
 
+@login_required(login_url='core:login')
+def api_docs_page(request):
+    """API 说明页：列出对外 API 的认证方式 / URL / 参数 / curl 示例。
+
+    登录即可见（不限定管理员），因为页面本身不泄露任何数据——它只描述 API，
+    真正的访问令牌要去 /profile/ 查看。上下文带上当前请求的 host，让页面里的
+    curl 示例用真实地址而非占位符，用户可直接复制。
+    """
+    base = request.build_absolute_uri('/').rstrip('/')
+    return render(request, 'core/api_docs.html', {'api_base': base})
+
+
 def get_zone_center(boundary_points):
     """Calculate the center point of a zone from its boundary points. Supports multi-polygon format."""
     if not boundary_points or len(boundary_points) == 0:
