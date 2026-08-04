@@ -142,10 +142,18 @@ def build_work_reports_excel(start_date, end_date, user):
 
     # 2) Work orders in window (role-scoped). _scoped_work_reports_qs already
     # prefetches 'entries', so fetch the count-only subset into a distinct attr
-    # via to_attr to avoid a duplicate-prefetch conflict.
+    # via to_attr to avoid a duplicate-prefetch conflict. Also prefetch the
+    # FULL entry set (not just count-type) with each entry's work_item parent
+    # chain + linked project, so the 工作类别细分 + 关联项目 columns can be built
+    # without N+1 queries.
     qs = _scoped_work_reports_qs(user, admin).filter(date__gte=start_date, date__lte=end_date)
     reports = list(qs.prefetch_related(
         Prefetch('entries', queryset=WorkReportEntry.objects.select_related('work_item').filter(work_item__value_type='count'), to_attr='_count_entries'),
+        Prefetch('entries', queryset=WorkReportEntry.objects.select_related(
+            'work_item', 'work_item__parent', 'work_item__parent__parent',
+            'work_item__parent__parent__parent', 'work_item__parent__parent__parent__parent',
+            'work_item__parent__parent__parent__parent__parent',
+            'project'), to_attr='_all_entries'),
         Prefetch('material_consumptions', queryset=InventoryTransaction.objects.prefetch_related(
             Prefetch('lines', queryset=InventoryTransactionLine.objects.select_related('category'), to_attr='_lines')
         ), to_attr='_materials_txn'),
@@ -156,6 +164,7 @@ def build_work_reports_excel(start_date, end_date, user):
     ws = wb.active
     ws.title = '维修记录'
     base_header = ['序号', '日期', '工单号', '处理人', '位置', '工作分类',
+                   '工作类别细分', '关联项目',
                    '故障/事件位置', '区域', '灌溉组人数', '灌溉组工时',
                    '第三方人数', '第三方工时', '消耗材料', '备注',
                    '信息来源', '疑难问题', '疑难已处理']
@@ -224,11 +233,50 @@ def build_work_reports_excel(start_date, end_date, user):
         zones = list(r.zones.all())
         if len(zones) <= 5:
             zone_codes = ', '.join(z.code for z in zones if z.code)
+        # 工作类别细分: the full multi-level breadcrumb of each entry's work_item
+        # (e.g. 常规维护 → 维保定期检查 → 喷头 → 喷头盖掉/松/坏). A ticket can have
+        # several entries, so collect the DISTINCT breadcrumbs and join with \n.
+        # Prefetched _all_entries carries the parent chain + project already.
+        seen_paths = []
+        seen_set = set()
+        proj_names = []
+        proj_seen = set()
+        for e in getattr(r, '_all_entries', []):
+            wi = e.work_item
+            if wi is None:
+                continue
+            # Walk the cached parent chain (prefetched 5 levels deep, enough for
+            # the current tree; deeper nodes resolve lazily if ever needed).
+            chain = []
+            node = wi
+            while node is not None:
+                chain.append(node.name_zh)
+                node = node.parent
+            chain.reverse()
+            # Drop the top-level section — it already has its own column
+            # (工作分类), so repeating it here is redundant. Always strip the
+            # first element (the section root); what's left is the level-2+
+            # detail. A level-0-only entry (just the section) becomes empty,
+            # which is correct — nothing more specific to show.
+            chain = chain[1:]
+            breadcrumb = ' → '.join(chain)
+            if breadcrumb and breadcrumb not in seen_set:
+                seen_set.add(breadcrumb)
+                seen_paths.append(breadcrumb)
+            if e.project_id and e.project:
+                pname = e.project.name
+                if pname not in proj_seen:
+                    proj_seen.add(pname)
+                    proj_names.append(pname)
+        section_detail = '\n'.join(seen_paths)
+        linked_project = '、'.join(proj_names)
         row = [idx, r.date.isoformat() if r.date else '',
                r.display_number if r.id else '',
                r.worker.full_name if r.worker_id and r.worker else '',
                r.location.code if r.location_id and r.location else '',
                _report_section_label(r),
+               section_detail,
+               linked_project,
                _dedup_zone_names(r.zone_names),
                zone_codes,
                r.team_size or '',
@@ -254,8 +302,12 @@ def build_work_reports_excel(start_date, end_date, user):
     dcenter = Alignment(horizontal='center', vertical='center')
     dwrap = Alignment(horizontal='left', vertical='center', wrap_text=True)
     last_row = hdr_rows + len(reports)
-    # Wrap the long text columns: 区域 (codes list), 消耗材料, 备注 (free text).
-    wrap_cols = {8, 13, 14}
+    # Wrap the long text columns: 工作类别细分 (multi-line breadcrumb),
+    # 区域 (codes list), 消耗材料, 备注 (free text).
+    # 1序号 2日期 3工单号 4处理人 5位置 6工作分类 7工作类别细分 8关联项目
+    # 9故障位置 10区域 11灌溉组人数 12灌溉组工时 13第三方人数 14第三方工时
+    # 15消耗材料 16备注 17信息来源 18疑难问题 19疑难已处理
+    wrap_cols = {7, 10, 15, 16}
     for rr in range(hdr_rows + 1, last_row + 1):
         for cc in range(1, n_cols + 1):
             cell = ws.cell(row=rr, column=cc)
@@ -264,12 +316,10 @@ def build_work_reports_excel(start_date, end_date, user):
 
     # Column widths + freeze the header rows and the first five ID columns
     # (序号/日期/工单号/处理人/位置) so they stay visible while scrolling the matrix.
-    # Per-column width overrides for the base columns (1-based):
-    # 1序号 2日期 3工单号 4处理人 5位置 6工作分类 7故障位置 8区域
-    # 9灌溉组人数 10灌溉组工时 11第三方人数 12第三方工时 13消耗材料 14备注
-    # 15信息来源 16疑难问题 17疑难已处理
-    base_widths = {3: 10, 4: 11, 5: 12, 6: 14, 7: 18, 8: 20,
-                   13: 18, 14: 28}
+    base_widths = {3: 10, 4: 11, 5: 12, 6: 14,   # 序号/日期/工单号/处理人/位置/工作分类
+                   7: 34, 8: 16,                 # 工作类别细分 (wide, multi-line) / 关联项目
+                   9: 18, 10: 20,                # 故障位置 / 区域
+                   15: 18, 16: 28}               # 消耗材料 / 备注
     for ci in range(1, n_cols + 1):
         if ci <= n_base:
             width = base_widths.get(ci, 11)
@@ -288,15 +338,20 @@ def build_work_reports_excel(start_date, end_date, user):
 # 3) Irrigation report export
 # ===========================================================================
 
-def build_irrigation_report_excel(date_from, date_to):
+def build_irrigation_report_excel(date_from, date_to, ccu_ids=None):
     """Build the per-CCU satellite runtime Excel report.
 
     Mirrors the former inline body of ``views.irrigation_report_excel`` (after
     the request param parsing). ``date_from`` / ``date_to`` are the compact
     Maxicom timestamp strings (``YYYYMMDDHHMM`` / ``YYYYMMDDHH`` etc.) exactly
     as the dashboard uses — they are embedded verbatim in the filename and
-    padded to 14 chars for the timestamp range filter. Returns
-    ``(filename, BytesIO)``.
+    padded to 14 chars for the timestamp range filter.
+
+    ``ccu_ids`` (optional) restricts the export to a subset of CCU Patch ids —
+    used by the scheduled-email feature to distribute specific CCUs to the
+    managers responsible for them. ``None``/empty = all CCUs (default).
+
+    Returns ``(filename, BytesIO)``.
     """
     from core.models import MaxicomController, MaxicomRuntime
     from core.views import (_irrig_data_span, _mapped_station_ids,
@@ -337,6 +392,11 @@ def build_irrigation_report_excel(date_from, date_to):
     default_ws = wb.active
 
     ccus = _ccu_queryset()
+    # Restrict to a CCU subset when an explicit id list is supplied (scheduled
+    # email "distribute specific CCUs" feature). Keeps the natural numeric order.
+    if ccu_ids:
+        wanted = set(int(x) for x in ccu_ids if str(x).strip().lstrip('-').isdigit())
+        ccus = [c for c in ccus if c.id in wanted]
 
     for idx, ccu in enumerate(ccus):
         m = _build_ccu_matrix(ccu, rt_by_site.get(ccu.id, []), ctrl_map, mapped_station_ids)
@@ -364,19 +424,18 @@ def build_irrigation_report_excel(date_from, date_to):
         # matrix starts at row 4
         header_row = 4
         n_sat = len(controllers)
-        # header
+        # header (no 合计 column — totals add no value, see dashboard change)
         ws.cell(row=header_row, column=1, value='站#')
         for ci, cname in enumerate(controllers):
             ws.cell(row=header_row, column=2 + ci, value=cname)
-        ws.cell(row=header_row, column=2 + n_sat, value='合计')
-        for col in range(1, 2 + n_sat + 1):
+        for col in range(1, 2 + n_sat):
             c = ws.cell(row=header_row, column=col)
             c.fill = header_fill
             c.font = header_font
             c.alignment = center
             c.border = border
 
-        # 24 station rows
+        # 24 station rows (no per-row 合计 cell)
         for ri, r in enumerate(rows):
             rownum = header_row + 1 + ri
             sc = ws.cell(row=rownum, column=1, value=r['station'])
@@ -397,30 +456,11 @@ def build_irrigation_report_excel(date_from, date_to):
                         vc.font = orphan_font
                 elif v:
                     vc.font = Font(bold=True)
-            tc = ws.cell(row=rownum, column=2 + n_sat, value=r['total'] if r['total'] else None)
-            tc.fill = total_fill
-            tc.font = total_font
-            tc.alignment = center
-            tc.border = border
 
-        # totals row
-        trow = header_row + 1 + len(rows)
-        ws.cell(row=trow, column=1, value='合计')
-        for ci, t in enumerate(col_totals):
-            ws.cell(row=trow, column=2 + ci, value=t if t else None)
-        ws.cell(row=trow, column=2 + n_sat, value=grand_total)
-        for col in range(1, 2 + n_sat + 1):
-            c = ws.cell(row=trow, column=col)
-            c.fill = total_fill
-            c.font = total_font
-            c.alignment = center
-            c.border = border
-
-        # column widths + freeze
+        # column widths + freeze (no extra width for the removed 合计 column)
         ws.column_dimensions['A'].width = 6
         for ci in range(n_sat):
             ws.column_dimensions[get_column_letter(2 + ci)].width = 11
-        ws.column_dimensions[get_column_letter(2 + n_sat)].width = 8
         ws.freeze_panes = 'B5'
 
     # remove default empty sheet
@@ -445,7 +485,7 @@ def build_inventory_catalog_excel():
     the role check). No params: exports every part leaf with its price history.
     Returns ``(filename, BytesIO)``.
     """
-    from core.models import InventoryCategory, InventoryPriceRecord
+    from core.models import InventoryCategory, InventoryPriceRecord, InventoryTransactionLine
     from core.inventory_tree_views import current_price_for
 
     # Build the ancestor chain (root → ... → leaf) for every part leaf.
@@ -456,6 +496,18 @@ def build_inventory_catalog_excel():
     for rec in (InventoryPriceRecord.objects
                 .select_related('category').order_by('category_id', '-date', '-id')):
         price_map.setdefault(rec.category_id, []).append(rec)
+    # Prefetch stock-in/out history per part (出入库记录) for the new read-only
+    # column. One batched query across all parts (uses the core_invline_cat
+    # index), grouped by category_id — same shape as price_map above. Most
+    # recent first so the cell reads newest→oldest.
+    txn_map = {}
+    part_ids = [cid for c in cats.values() if c.node_type == 'part' for cid in [c.id]]
+    if part_ids:
+        for ln in (InventoryTransactionLine.objects
+                   .filter(category_id__in=part_ids)
+                   .select_related('transaction')
+                   .order_by('-transaction__date', '-id')):
+            txn_map.setdefault(ln.category_id, []).append(ln)
 
     parts = []
     for c in cats.values():
@@ -474,10 +526,30 @@ def build_inventory_catalog_excel():
     ws.title = '库存目录'
     # First 8 cols = part info; cols 9-11 = current price snapshot (part row only);
     # col 12 = record count; cols 13-16 = per-record detail (price rows only).
+    # col 17 (编码) is the hidden round-trip key for import. col 18 (出入库记录)
+    # is appended AFTER it so the importer's hardcoded col-17 lookup is unaffected;
+    # it's a read-only history summary (date + signed qty per line, newest first).
+    def _txn_cell(lines):
+        """Format a part's stock-in/out history into one multi-line cell.
+        e.g. "2026-07-22 出库 -10个\\n2026-07-20 入库 +50个". Newest first."""
+        if not lines:
+            return ''
+        out = []
+        for ln in lines:
+            t = ln.transaction
+            d = t.date.isoformat() if t.date else '?'
+            sign = '+' if t.operation == '入库' else '-'
+            unit = ln.unit or ''
+            # 入库/出库 + optional subtype (采购/项目 etc.) for context.
+            kind = t.operation + ('-' + t.entry_subtype if t.entry_subtype else '')
+            out.append(f'{d} {kind} {sign}{ln.quantity}{unit}')
+        return '\n'.join(out)
+
     headers = ['大类别', '小类别', '系列', '品名', '是否主材', '单位', '最小库存', '现有库存',
                '当前单价', '当前供应商', '当前价格日期', '记录数',
                '采购日期', '供应商', '历史单价', '单位',
-               '编码']   # col 17: hidden key for import round-trip (cat.code)
+               '编码',   # col 17: hidden key for import round-trip (cat.code)
+               '出入库记录']   # col 18: read-only stock history (part row only)
     hdr_font = Font(bold=True, color='FFFFFF', size=11)
     hdr_fill = PatternFill(start_color='1B4332', end_color='1B4332', fill_type='solid')
     hdr_align = Alignment(horizontal='center', vertical='center')
@@ -523,7 +595,8 @@ def build_inventory_catalog_excel():
                 cat.min_stock or 0, cat.current_stock or 0,
                 cur_price, cur_supplier, cur_date, len(records),
                 '', '', '', '',
-                cat.code]   # col 17: stable key for import (hidden in Excel)
+                cat.code,   # col 17: stable key for import (hidden in Excel)
+                _txn_cell(txn_map.get(cat.id, []))]   # col 18: 出入库记录
         for ci, v in enumerate(vals, 1):
             cell = ws.cell(row=ri, column=ci, value=v)
             cell.border = border
@@ -531,6 +604,10 @@ def build_inventory_catalog_excel():
             cell.font = part_font_bold
             if ci in (9, 12):
                 cell.alignment = Alignment(horizontal='right')
+            elif ci == 18:
+                # Multi-line history cell: wrap + top-align so the stacked
+                # date/qty records read cleanly within the row.
+                cell.alignment = Alignment(wrap_text=True, vertical='top')
         ri += 1
         # Price-detail rows (one per record) — col 17 intentionally blank so
         # the importer can tell part rows (code present) from detail rows.
@@ -541,7 +618,8 @@ def build_inventory_catalog_excel():
                      rec.supplier or '',
                      float(rec.unit_price),
                      rec.unit or '',
-                     '']
+                     '',   # col 17 blank (not a part row)
+                     '']   # col 18 blank (history only on the part row)
             for ci, v in enumerate(dvals, 1):
                 cell = ws.cell(row=ri, column=ci, value=v)
                 cell.border = border
@@ -552,8 +630,8 @@ def build_inventory_catalog_excel():
                     cell.alignment = Alignment(horizontal='right')
             ri += 1
 
-    # Column widths (17 cols). Use get_column_letter for safety beyond Z.
-    widths = [18, 22, 22, 28, 10, 8, 10, 10, 12, 18, 14, 9, 14, 18, 12, 8, 10]
+    # Column widths (18 cols). Use get_column_letter for safety beyond Z.
+    widths = [18, 22, 22, 28, 10, 8, 10, 10, 12, 18, 14, 9, 14, 18, 12, 8, 10, 34]
     for ci, w in enumerate(widths, 1):
         ws.column_dimensions[get_column_letter(ci)].width = w
     # Hide the code column (col 17 = Q) — it's a round-trip key for import,

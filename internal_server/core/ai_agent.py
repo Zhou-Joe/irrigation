@@ -825,14 +825,21 @@ def export_work_reports_excel(start_date: str = "", end_date: str = "", runtime:
           .prefetch_related(Prefetch(
               'entries',
               queryset=WorkReportEntry.objects.select_related('work_item').filter(work_item__value_type='count'),
-              to_attr='_count_entries'))
+              to_attr='_count_entries'),
+          Prefetch(
+              'entries',
+              queryset=WorkReportEntry.objects.select_related(
+                  'work_item', 'work_item__parent', 'work_item__parent__parent',
+                  'work_item__parent__parent__parent', 'work_item__parent__parent__parent__parent',
+                  'work_item__parent__parent__parent__parent__parent', 'project'),
+              to_attr='_all_entries'))
           .order_by('date', 'id'))
 
     wb = Workbook()
     sh = wb.active
     sh.title = '维修记录'
-    base_header = ['序号', '日期', '处理人', '位置', '工作分类', '故障/事件位置',
-                   '备注', '信息来源', '疑难问题', '疑难已处理']
+    base_header = ['序号', '日期', '处理人', '位置', '工作分类', '工作类别细分',
+                   '关联项目', '故障/事件位置', '备注', '信息来源', '疑难问题', '疑难已处理']
     n_base = len(base_header)
     n_cols = n_base + len(count_nodes)
     hdr_rows = max((len(segs) for _, segs in count_nodes), default=1)
@@ -889,10 +896,42 @@ def export_work_reports_excel(start_date: str = "", end_date: str = "", runtime:
         for s in secs:
             if s and s != 'routine_maint':
                 cat = _SECTION_LABELS.get(s, s); break
+        # 工作类别细分 = 每条明细的完整多级面包屑（→ 分隔），多条用换行；
+        # 关联项目 = 该工单明细所绑定的项目（去重），无则留空。
+        seen_paths = []
+        seen_set = set()
+        proj_names = []
+        proj_seen = set()
+        for e in getattr(r, '_all_entries', []):
+            wi = e.work_item
+            if wi is None:
+                continue
+            chain = []
+            node = wi
+            while node is not None:
+                chain.append(node.name_zh)
+                node = node.parent
+            chain.reverse()
+            # Drop the top-level section — it already has its own column
+            # (工作分类), so always strip the first element (section root).
+            # A level-0-only entry (just the section) becomes empty.
+            chain = chain[1:]
+            breadcrumb = ' → '.join(chain)
+            if breadcrumb and breadcrumb not in seen_set:
+                seen_set.add(breadcrumb)
+                seen_paths.append(breadcrumb)
+            if e.project_id and e.project:
+                pname = e.project.name
+                if pname not in proj_seen:
+                    proj_seen.add(pname)
+                    proj_names.append(pname)
+        section_detail = '\n'.join(seen_paths)
+        linked_project = '、'.join(proj_names)
         row = [idx, r.date.isoformat() if r.date else '',
                r.worker.full_name if r.worker_id and r.worker else '',
                r.location.code if r.location_id and r.location else '',
-               cat, _dedup_zone_names(r.zone_names),
+               cat, section_detail, linked_project,
+               _dedup_zone_names(r.zone_names),
                (r.work_content or r.remark or ''), '',
                '是' if r.is_difficult else '',
                '是' if r.is_difficult_resolved else '']
@@ -903,7 +942,9 @@ def export_work_reports_excel(start_date: str = "", end_date: str = "", runtime:
                 row[ci - 1] = (row[ci - 1] or 0) + e.count
         sh.append(row)
 
-    # Data cell styling: thin grey borders, centre numerics, wrap 备注.
+    # Data cell styling: thin grey borders, centre numerics, wrap text cols.
+    # Cols: 1序号 2日期 3处理人 4位置 5工作分类 6工作类别细分 7关联项目
+    #       8故障位置 9备注 10信息来源 11疑难问题 12疑难已处理
     gside = Side(style='thin', color='D0D0D0')
     gborder = Border(left=gside, right=gside, top=gside, bottom=gside)
     dcenter = Alignment(horizontal='center', vertical='center')
@@ -913,13 +954,13 @@ def export_work_reports_excel(start_date: str = "", end_date: str = "", runtime:
         for cc in range(1, n_cols + 1):
             cell = sh.cell(row=rr, column=cc)
             cell.border = gborder
-            cell.alignment = dwrap if cc == 7 else dcenter
+            cell.alignment = dwrap if cc in (6, 9) else dcenter
 
     # Column widths + freeze the header rows and first four ID columns.
     from openpyxl.utils import get_column_letter
     for ci in range(1, n_cols + 1):
         if ci <= n_base:
-            width = 28 if ci == 7 else 12
+            width = (34 if ci == 6 else 28 if ci == 9 else 12)
         else:
             leaf = count_nodes[ci - n_base - 1][1][-1]
             width = max(8, min(20, len(leaf) * 1.7 + 2))

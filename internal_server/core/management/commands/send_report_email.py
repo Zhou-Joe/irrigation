@@ -35,6 +35,9 @@ from core.report_export import (
     resolve_builder as _resolve_builder,
     date_window as _date_window,
     period_label as _period_label,
+    build_all_attachments as _build_all_attachments,
+    render_subject_body as _render_subject_body,
+    REPORT_TYPE_LABELS as _REPORT_TYPE_LABELS,
     XLSX_CT,
 )
 
@@ -109,33 +112,44 @@ class Command(BaseCommand):
                 failed += 1
                 continue
 
-            build_fn, label = _resolve_builder(cfg.report_type)
-            if build_fn is None:
-                msg = f'未知报表类型 {cfg.report_type}'
+            # Resolve the effective report-type list (multi-select, with
+            # legacy single-report_type fallback). Each becomes one attachment.
+            report_types = cfg.effective_report_types()
+            if not report_types:
+                msg = '未选择报表类型'
                 self._record(cfg, 'failed: ' + msg, dry)
                 self.stdout.write(self.style.ERROR(f'  [fail] {cfg.name}: {msg}'))
                 failed += 1
                 continue
 
-            try:
-                fname, buf = self._build_report(cfg.report_type, build_fn, cfg.frequency, today, cfg.data_range_days)
-            except Exception as e:
-                msg = f'生成报表失败: {e}'
-                self._record(cfg, 'failed: ' + msg, dry)
+            # Build every selected report (one attachment each). ccu_ids only
+            # applies to the irrigation report — distribute specific CCUs to
+            # the manager responsible for them instead of the whole dataset.
+            attachments = _build_all_attachments(
+                report_types, cfg.frequency, today, cfg.data_range_days,
+                ccu_ids=cfg.ccu_ids or None,
+            )
+            built = [(f, b, lbl) for (f, b, lbl) in attachments
+                     if f is not None and not lbl.startswith('FAILED:')]
+            failures = [lbl for (_, _, lbl) in attachments if lbl.startswith('FAILED:')]
+            if not built:
+                msg = '生成报表失败: ' + '; '.join(failures)
+                self._record(cfg, 'failed: ' + msg[:200], dry)
                 self.stdout.write(self.style.ERROR(f'  [fail] {cfg.name}: {msg}'))
                 failed += 1
                 continue
 
-            period_label = self._period_label(cfg.frequency, today, cfg.data_range_days)
-            subject = f'【{label}】{period_label} 报表 — {cfg.name}'
-            body = (f'您好，\n\n这是系统自动发送的定时报表。\n'
-                    f'报表类型：{label}\n频率：{cfg.get_frequency_display()}\n'
-                    f'数据范围：{period_label}\n\n请见附件。')
+            period = self._period_label(cfg.frequency, today, cfg.data_range_days)
+            report_labels = [lbl for (_, _, lbl) in built]
+            subject, body = _render_subject_body(cfg, report_labels, period)
 
             if dry:
                 self.stdout.write(self.style.WARNING(
-                    f'  [dry] {cfg.name} → {recipients} | {fname} '
-                    f'| subject="{subject}"'))
+                    f'  [dry] {cfg.name} → {recipients} | {len(built)} attachment(s): '
+                    f'{[f for (f, _, _) in built]} | subject="{subject}"'))
+                if failures:
+                    self.stdout.write(self.style.ERROR(
+                        f'        partial failures: {failures}'))
                 continue
 
             try:
@@ -145,11 +159,13 @@ class Command(BaseCommand):
                     from_email=resolve_from_email(), to=recipients,
                     connection=get_email_connection(),
                 )
-                msg.attach(fname, buf.getvalue(), XLSX_CT)
+                for fname, buf, _ in built:
+                    msg.attach(fname, buf.getvalue(), XLSX_CT)
                 msg.send(fail_silently=False)
                 self._record(cfg, 'success', dry)
                 self.stdout.write(self.style.SUCCESS(
-                    f'  [ok] {cfg.name} → {len(recipients)} recipient(s) ({fname})'))
+                    f'  [ok] {cfg.name} → {len(recipients)} recipient(s) '
+                    f'({len(built)} attachment(s))'))
                 sent += 1
             except Exception as e:
                 self._record(cfg, f'failed: 发送失败 {e}', dry)

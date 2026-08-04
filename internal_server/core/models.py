@@ -2308,12 +2308,34 @@ class EmailReportConfig(models.Model):
     ]
 
     name = models.CharField('配置名称', max_length=100)
-    report_type = models.CharField('报表', max_length=40, choices=REPORT_CHOICES)
+    # report_type is kept for backward-compat (single-report configs created
+    # before multi-select). New configs populate report_types (JSON list) and
+    # leave report_type mirroring the first item. effective_report_types()
+    # resolves both into the list actually used at send time.
+    report_type = models.CharField('报表', max_length=40, choices=REPORT_CHOICES, blank=True)
+    # Multi-select report types: a list of REPORT_CHOICES keys. One attachment
+    # per entry is built and attached to a single outgoing email.
+    report_types = models.JSONField(
+        '报表（多选）', default=list, blank=True,
+        help_text='选中的每种报表各生成一个 Excel 附件，随同一封邮件发送')
+    # CCU subset for the irrigation report. Empty = all CCUs. Only consulted
+    # when 'irrigation' is in report_types. Lets an admin scope a config to the
+    # CCUs a given manager is responsible for and route just those to them.
+    ccu_ids = models.JSONField(
+        '灌溉 CCU 范围', default=list, blank=True,
+        help_text='留空=全部 CCU；填 CCU id 列表=仅导出这些 CCU（仅灌溉报表生效）')
     frequency = models.CharField(
         '频率', max_length=10, choices=FREQUENCY_CHOICES, default='daily')
     recipients = models.TextField(
         '收件人邮箱', help_text='多个邮箱用逗号或换行分隔')
     is_active = models.BooleanField('启用', default=True)
+    # Optional custom email subject/body. Blank = the built-in default
+    # ("【报表】…报表 — <配置名>" subject + a templated body listing the types
+    # and window). When set, {name}/{types}/{period} placeholders are filled.
+    email_subject = models.CharField('邮件主题', max_length=200, blank=True,
+                                     help_text='留空用默认主题。可用 {name} {types} {period}')
+    email_body = models.TextField('邮件正文', blank=True,
+                                  help_text='留空用默认正文。可用 {name} {types} {period}')
     # 运行时追踪 — 配置页展示「最后发送时间 / 状态」，方便排查。
     last_sent_at = models.DateTimeField('最后发送时间', null=True, blank=True)
     last_status = models.CharField('最后状态', max_length=200, blank=True)
@@ -2344,6 +2366,25 @@ class EmailReportConfig(models.Model):
         """Parse the recipients textarea into a clean list of email addresses."""
         import re
         return [r.strip() for r in re.split(r'[,\n;]', self.recipients or '') if r.strip()]
+
+    def effective_report_types(self):
+        """The report-type list actually used at send time.
+
+        Prefers the multi-select ``report_types`` JSON list; falls back to the
+        legacy single ``report_type`` CharField for configs created before
+        multi-select. Dedupes and preserves order, dropping any value that
+        isn't a known REPORT_CHOICES key.
+        """
+        valid = {c for c, _ in self.REPORT_CHOICES}
+        out = []
+        seen = set()
+        for rt in (self.report_types or []):
+            if rt in valid and rt not in seen:
+                out.append(rt)
+                seen.add(rt)
+        if not out and (self.report_type or '') in valid:
+            out = [self.report_type]
+        return out
 
 
 class EmailSmtpSetting(models.Model):

@@ -216,6 +216,36 @@
     color: var(--color-primary);
 }
 
+/* Email-config modal grows tall once 灌溉 + CCU picker + subject/body are all
+   shown, pushing the save/cancel buttons off-screen. Cap its height to the
+   viewport and scroll only the form body, so the title stays pinned at top and
+   the action buttons stay pinned at the bottom — always reachable. */
+#emailConfigModal .modal {
+    display: flex;
+    flex-direction: column;
+    max-height: 90vh;
+    max-width: 520px;
+}
+#emailConfigModal h3 { flex: 0 0 auto; }
+#emailConfigForm {
+    flex: 1 1 auto;
+    overflow-y: auto;
+    min-height: 0;   /* allow the flex child to actually shrink + scroll */
+    padding-right: 4px;
+}
+/* The action buttons live inside the scrolling form; pin them to the bottom
+   so save/cancel stay visible no matter how tall the CCU picker + subject/body
+   make the form. A surface-colored band + top border masks the content sliding
+   underneath. */
+#emailConfigForm .ec-actions {
+    position: sticky;
+    bottom: 0;
+    background: var(--color-surface);
+    padding-top: 10px;
+    border-top: 1px solid var(--color-border, #e0e0e0);
+    margin-top: 18px;
+}
+
 .form-group {
     margin-bottom: var(--space-md);
 }
@@ -760,12 +790,26 @@
             <input type="text" id="ecName" required maxlength="100" placeholder="如：每日维修工单-发经理">
           </div>
           <div class="am-field">
-            <label>报表 *</label>
-            <select id="ecReportType" required>
+            <label>报表 *（可多选，每种报表各生成一个附件）</label>
+            <div class="ec-report-checkboxes" id="ecReportTypes" style="display:flex;flex-wrap:wrap;gap:6px 14px;max-height:120px;overflow:auto;border:1px solid var(--color-border,#ddd);border-radius:6px;padding:8px;">
               {% for code, label in report_choices %}
-              <option value="{{ code }}">{{ label }}</option>
+              <label style="display:flex;align-items:center;gap:4px;font-size:0.85rem;font-weight:400;margin:0;">
+                <input type="checkbox" value="{{ code }}" onchange="toggleEcCcuField()"> {{ label }}
+              </label>
               {% endfor %}
-            </select>
+            </div>
+            <div style="font-size:0.74rem;color:var(--color-text-muted);margin-top:3px;">勾选多种报表即可在一封邮件中发送多个 Excel 附件。</div>
+          </div>
+          <div class="am-field" id="ecCcuField" style="display:none;">
+            <label>灌溉 CCU 范围 — 可选（留空=全部）</label>
+            <div class="ec-ccu-checkboxes" id="ecCcuIds" style="display:flex;flex-wrap:wrap;gap:6px 14px;max-height:120px;overflow:auto;border:1px solid var(--color-border,#ddd);border-radius:6px;padding:8px;">
+              {% for ccu in email_ccus %}
+              <label style="display:flex;align-items:center;gap:4px;font-size:0.82rem;font-weight:400;margin:0;">
+                <input type="checkbox" value="{{ ccu.id }}"> {{ ccu.code }}
+              </label>
+              {% endfor %}
+            </div>
+            <div style="font-size:0.74rem;color:var(--color-text-muted);margin-top:3px;">仅对「灌溉运行报表」生效。选择部分 CCU 可只把相关片区数据发给负责该片区的主管。留空=导出全部 CCU。</div>
           </div>
           <div class="am-field">
             <label>发送频率 *</label>
@@ -797,13 +841,22 @@
             <div style="font-size:0.74rem;color:var(--color-text-muted);margin-top:3px;">填 N = 发送日往前 N 天到前一天的数据。例如每日填 7 = 过去 7 天。</div>
           </div>
           <div class="am-field">
+            <label>邮件主题 — 可选</label>
+            <input type="text" id="ecEmailSubject" maxlength="200" placeholder="留空用默认主题。可用占位符：{name} {types} {period}">
+            <div style="font-size:0.74rem;color:var(--color-text-muted);margin-top:3px;">如：<code>【{types}】{period} — {name}</code></div>
+          </div>
+          <div class="am-field">
+            <label>邮件正文 — 可选</label>
+            <textarea id="ecEmailBody" placeholder="留空用默认正文。可用占位符：{name} {types} {period}" style="min-height:90px;"></textarea>
+          </div>
+          <div class="am-field">
             <label>收件人邮箱 *（多个邮箱用逗号或换行分隔）</label>
             <textarea id="ecRecipients" required placeholder="manager@example.com&#10;boss@example.com" style="min-height:70px;"></textarea>
           </div>
           <div class="am-check">
             <label style="margin:0;"><input type="checkbox" id="ecIsActive" value="1" checked> 启用（启用后定时任务会按频率自动发送）</label>
           </div>
-          <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px;">
+          <div class="ec-actions" style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px;">
             <button type="button" class="btn btn-secondary" onclick="closeModal('emailConfigModal')">取消</button>
             <button type="button" class="btn btn-primary" id="ecSaveBtn" onclick="saveEmailConfig()">保存</button>
           </div>
@@ -1008,7 +1061,7 @@ function renderEmailConfigList(configs) {
         return '<div class="am-row">' +
             '<div class="am-row-main">' +
                 '<div class="am-row-title">' + _emailEsc(c.name) + offBadge + '</div>' +
-                '<div class="am-row-meta">' + _emailEsc(c.report_type_display) + ' · ' + _emailEsc(c.frequency_display) +
+                '<div class="am-row-meta">' + _emailEsc(c.report_types_display || c.report_type_display) + ' · ' + _emailEsc(c.frequency_display) +
                     ' · 收件人 ' + c.recipient_count + ' 个</div>' +
                 '<div class="am-row-body" style="font-size:0.78rem;color:var(--color-text-muted);">' + last + '</div>' +
             '</div>' +
@@ -1032,6 +1085,22 @@ function toggleEcTriggerFields() {
     document.getElementById('ecWeekdayField').style.display = freq === 'weekly' ? '' : 'none';
     document.getElementById('ecMonthDayField').style.display = freq === 'monthly' ? '' : 'none';
 }
+// Show the CCU picker only when 灌溉运行报表 (irrigation) is among the checked
+// report types — ccu_ids is meaningless for every other report type.
+function toggleEcCcuField() {
+    var boxes = document.querySelectorAll('#ecReportTypes input[type=checkbox]');
+    var irrigOn = false;
+    boxes.forEach(function (b) { if (b.value === 'irrigation' && b.checked) irrigOn = true; });
+    document.getElementById('ecCcuField').style.display = irrigOn ? '' : 'none';
+}
+// Check the report-type / CCU checkboxes whose value is in `vals`, uncheck others.
+function _setEcCheckboxes(containerId, vals) {
+    var set = {};
+    (vals || []).forEach(function (v) { set[String(v)] = true; });
+    document.querySelectorAll('#' + containerId + ' input[type=checkbox]').forEach(function (b) {
+        b.checked = !!set[String(b.value)];
+    });
+}
 function openEmailConfigModal(id) {
     document.getElementById('ecId').value = id || '';
     document.getElementById('emailConfigModalTitle').textContent = id ? '编辑邮件报表配置' : '新建邮件报表配置';
@@ -1042,7 +1111,13 @@ function openEmailConfigModal(id) {
                 var c = (d.configs || []).find(function (x) { return x.id === id; });
                 if (!c) return;
                 document.getElementById('ecName').value = c.name || '';
-                document.getElementById('ecReportType').value = c.report_type;
+                // Restore multi-select report types (fall back to legacy single
+                // report_type for configs created before multi-select shipped).
+                var rts = (c.report_types && c.report_types.length) ? c.report_types : [c.report_type];
+                _setEcCheckboxes('ecReportTypes', rts);
+                _setEcCheckboxes('ecCcuIds', c.ccu_ids || []);
+                document.getElementById('ecEmailSubject').value = c.email_subject || '';
+                document.getElementById('ecEmailBody').value = c.email_body || '';
                 document.getElementById('ecFrequency').value = c.frequency;
                 document.getElementById('ecRecipients').value = c.recipients || '';
                 document.getElementById('ecIsActive').checked = c.is_active;
@@ -1050,11 +1125,15 @@ function openEmailConfigModal(id) {
                 document.getElementById('ecWeekday').value = (c.weekday != null) ? String(c.weekday) : '0';
                 document.getElementById('ecMonthDay').value = (c.month_day != null) ? String(c.month_day) : '';
                 toggleEcTriggerFields();
+                toggleEcCcuField();
                 document.getElementById('emailConfigModal').classList.add('show');
             });
     } else {
         document.getElementById('ecName').value = '';
-        document.getElementById('ecReportType').selectedIndex = 0;
+        _setEcCheckboxes('ecReportTypes', []);
+        _setEcCheckboxes('ecCcuIds', []);
+        document.getElementById('ecEmailSubject').value = '';
+        document.getElementById('ecEmailBody').value = '';
         document.getElementById('ecFrequency').value = 'daily';
         document.getElementById('ecRecipients').value = '';
         document.getElementById('ecIsActive').checked = true;
@@ -1062,6 +1141,7 @@ function openEmailConfigModal(id) {
         document.getElementById('ecWeekday').value = '0';
         document.getElementById('ecMonthDay').value = '';
         toggleEcTriggerFields();
+        toggleEcCcuField();
         document.getElementById('emailConfigModal').classList.add('show');
     }
 }
@@ -1071,7 +1151,14 @@ function saveEmailConfig() {
     var id = document.getElementById('ecId').value;
     if (id) fd.append('id', id);
     fd.append('name', document.getElementById('ecName').value);
-    fd.append('report_type', document.getElementById('ecReportType').value);
+    // Multi-select report types (one attachment each). getlist on the backend.
+    var rtBoxes = document.querySelectorAll('#ecReportTypes input[type=checkbox]:checked');
+    rtBoxes.forEach(function (b) { fd.append('report_types', b.value); });
+    // CCU subset (irrigation only). Empty = all CCUs.
+    var ccuBoxes = document.querySelectorAll('#ecCcuIds input[type=checkbox]:checked');
+    ccuBoxes.forEach(function (b) { fd.append('ccu_ids', b.value); });
+    fd.append('email_subject', document.getElementById('ecEmailSubject').value);
+    fd.append('email_body', document.getElementById('ecEmailBody').value);
     fd.append('frequency', document.getElementById('ecFrequency').value);
     fd.append('recipients', document.getElementById('ecRecipients').value);
     fd.append('is_active', document.getElementById('ecIsActive').checked ? '1' : '');

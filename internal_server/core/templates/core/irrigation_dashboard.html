@@ -164,6 +164,66 @@
     border-radius: 4px;
     background: linear-gradient(to right, #EDF7F1, #52B788, #1B4332);
 }
+
+/* CCU pager — shown only in 全部 mode (one clean matrix per CCU). */
+.ccu-pager {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+    font-size: 0.85rem;
+}
+.ccu-pager button {
+    padding: 6px 14px;
+    background: var(--color-surface-dark);
+    color: var(--color-primary);
+    border: 1px solid var(--color-surface-dark);
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 0.85rem;
+}
+.ccu-pager button:hover:not(:disabled) {
+    background: var(--color-surface-alt);
+}
+.ccu-pager button:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+.ccu-pager-pills {
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+}
+.ccu-pager .page-pill {
+    padding: 5px 12px;
+    background: white;
+    color: var(--color-text-muted);
+    border: 1px solid var(--color-surface-dark);
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.82rem;
+    font-weight: 600;
+    transition: background 0.1s, color 0.1s;
+}
+.ccu-pager .page-pill:hover { background: var(--color-surface-alt); }
+.ccu-pager .page-pill.active {
+    background: var(--color-primary);
+    color: var(--color-text-inverse);
+    border-color: var(--color-primary);
+}
+.ccu-pager-count { color: var(--color-text-muted); font-size: 0.8rem; margin-left: 4px; }
+
+/* Per-CCU matrix pages — only the .active one is visible. */
+.ccu-table-page { display: none; }
+.ccu-table-page.active { display: block; }
+.ccu-table-title {
+    font-size: 0.98rem;
+    font-weight: 700;
+    color: var(--color-primary);
+    margin-bottom: 8px;
+}
 .chart-empty {
     text-align: center;
     padding: 40px;
@@ -915,6 +975,16 @@
     <!-- Chart view (pivot) — chart mode only -->
     <div class="irrig-chart-view">
         <div class="section-title">站点 × 卫星控制器 运行时间矩阵（分钟）</div>
+        <!-- CCU pager (全部 mode only — one clean matrix per CCU). Hidden by
+             default; renderPivot() shows it when the response carries >1 CCU. -->
+        <div class="ccu-pager" id="ccuPager" style="display:none;">
+            <button type="button" id="ccuPagerPrev" onclick="goToCcuPage(currentCcuPage - 1)"
+                    title="上一页">◀ 上一页</button>
+            <div class="ccu-pager-pills" id="ccuPagerPills"></div>
+            <button type="button" id="ccuPagerNext" onclick="goToCcuPage(currentCcuPage + 1)"
+                    title="下一页">下一页 ▶</button>
+            <span class="ccu-pager-count" id="ccuPagerCount"></span>
+        </div>
         <div class="pivot-wrap">
             <div id="pivotContent">
                 {% include 'core/_irrigation_pivot.html' %}
@@ -1018,32 +1088,25 @@ function heatColor(v, max) {
     }
 }
 
-function renderPivot(d) {
-    // update summary
-    document.getElementById('sumStations').textContent = d.total_stations;
-    document.getElementById('sumControllers').textContent = d.controllers.length;
-    document.getElementById('sumRuntime').textContent = d.grand_total;
-
-    if (!d.rows.length) {
-        document.getElementById('pivotContent').innerHTML = '<div class="chart-empty">所选范围内无运行数据</div>';
-        return;
-    }
-
-    const max = d.max_cell || 1;
+// Build the HTML for ONE matrix table (a single CCU's view). Shared by the
+// single-CCU path and the per-CCU pages of 全部 mode so the heat/orphan
+// rendering stays identical. `t` = {controllers, rows, col_totals, grand_total, max_cell}.
+function _matrixTableHTML(t, showCcuCol) {
+    if (!t.rows.length) return '<div class="chart-empty">所选范围内无运行数据</div>';
+    const max = t.max_cell || 1;
     let html = '<div style="overflow-x:auto;"><table class="matrix-table"><thead><tr>'
         + '<th class="sticky-col">站点 #</th>';
-    if (d.show_ccu_col) html += '<th>CCU</th>';
-    d.controllers.forEach(c => { html += `<th>${c}</th>`; });
-    html += '<th>合计</th></tr></thead><tbody>';
+    if (showCcuCol) html += '<th>CCU</th>';
+    t.controllers.forEach(c => { html += `<th>${c}</th>`; });
+    html += '</tr></thead><tbody>';
 
-    d.rows.forEach(r => {
-        const fg = r.total > max * 0.6 ? '#fff' : 'var(--color-primary)';
+    t.rows.forEach(r => {
         const orphanVals = r.orphan_values || [];
         const labelCls = r.orphan ? 'sticky-col orphan-label' : 'sticky-col';
         const labelTitle = r.orphan ? ' title="该行所有运行单元均无 Zone 对应（未映射到任何景观区域）"' : '';
         const labelSuffix = r.orphan ? ' ⚠' : '';
         html += `<tr><td class="${labelCls}"${labelTitle}>${r.station}${labelSuffix}</td>`;
-        if (d.show_ccu_col) html += `<td class="sticky-col-sub">${r.site}</td>`;
+        if (showCcuCol) html += `<td class="sticky-col-sub">${r.site}</td>`;
         r.values.forEach((v, ci) => {
             const isOrphan = ci < orphanVals.length && orphanVals[ci];
             if (isOrphan) {
@@ -1061,19 +1124,91 @@ function renderPivot(d) {
                 html += '<td class="cell-zero">·</td>';
             }
         });
-        html += `<td class="row-total" style="color:${fg}">${r.total}</td></tr>`;
+        html += `</tr>`;
     });
 
-    html += '</tbody><tfoot><tr><td class="sticky-col" style="text-align:left;">合计</td>';
-    if (d.show_ccu_col) html += '<td></td>';
-    d.col_totals.forEach(v => { html += `<td>${v}</td>`; });
-    html += `<td>${d.grand_total}</td></tr></tfoot></table></div>`;
+    html += '</tbody></table></div>';
+    return html;
+}
 
-    html += '<div class="legend"><span>少</span><div class="scale"></div><span>多</span>'
-        + '<span style="margin-left:12px;">列 = 卫星控制器（如 AI 7-1），每站24通道；单元格 = 运行分钟数</span>'
-        + '<span style="margin-left:12px;color:#C62828;">⚠ 红色行 = 该站点无 Zone 对应（运行数据真实，但未映射到任何景观区域）</span></div>';
+const _matrixLegend = '<div class="legend"><span>少</span><div class="scale"></div><span>多</span>'
+    + '<span style="margin-left:12px;">列 = 卫星控制器（如 AI 7-1），每站24通道；单元格 = 运行分钟数</span>'
+    + '<span style="margin-left:12px;color:#C62828;">⚠ 红色行 = 该站点无 Zone 对应（运行数据真实，但未映射到任何景观区域）</span></div>';
 
-    document.getElementById('pivotContent').innerHTML = html;
+// 全部 mode paging state. -1 = not in 全部 mode (single table).
+let currentCcuPage = -1;
+let ccuTablesCache = [];
+
+// Update summary cards to reflect a single CCU's table (per "current CCU only").
+function _setSummaryForCcu(t) {
+    document.getElementById('sumStations').textContent = t.total_stations;
+    document.getElementById('sumControllers').textContent = t.controllers.length;
+    document.getElementById('sumRuntime').textContent = t.grand_total;
+}
+
+function goToCcuPage(i) {
+    const n = ccuTablesCache.length;
+    if (!n) return;
+    if (i < 0 || i >= n) return;
+    currentCcuPage = i;
+    // Toggle which page div is visible.
+    document.querySelectorAll('#pivotContent .ccu-table-page').forEach((el, idx) => {
+        el.classList.toggle('active', idx === i);
+    });
+    // Update pills + counter + prev/next disabled state.
+    document.querySelectorAll('#ccuPagerPills .page-pill').forEach((el, idx) => {
+        el.classList.toggle('active', idx === i);
+    });
+    document.getElementById('ccuPagerCount').textContent = `${i + 1} / ${n}`;
+    document.getElementById('ccuPagerPrev').disabled = (i === 0);
+    document.getElementById('ccuPagerNext').disabled = (i === n - 1);
+    // Summary cards reflect the visible CCU (user chose "current CCU only").
+    _setSummaryForCcu(ccuTablesCache[i]);
+}
+
+function renderPivot(d) {
+    const pager = document.getElementById('ccuPager');
+
+    // 全部 mode: one clean matrix per CCU, paged client-side.
+    if (d.ccu_tables && d.ccu_tables.length) {
+        ccuTablesCache = d.ccu_tables;
+
+        // Render every CCU's table up front; paging just toggles visibility,
+        // so flipping pages is instant (no extra fetches).
+        let html = '<div class="ccu-table-pages">';
+        d.ccu_tables.forEach((t, idx) => {
+            html += `<div class="ccu-table-page${idx === 0 ? ' active' : ''}" data-ccu="${t.ccu_code}">`
+                + `<div class="ccu-table-title">${t.ccu_code} (${t.ccu_name})</div>`
+                + _matrixTableHTML(t, false)
+                + '</div>';
+        });
+        html += '</div>' + _matrixLegend;
+        document.getElementById('pivotContent').innerHTML = html;
+
+        // Build the pager pills (one per CCU, labelled with the CCU code).
+        const pills = d.ccu_tables.map((t, idx) =>
+            `<button type="button" class="page-pill${idx === 0 ? ' active' : ''}" `
+            + `onclick="goToCcuPage(${idx})" title="${t.ccu_code} (${t.ccu_name})">${t.ccu_code}</button>`
+        ).join('');
+        document.getElementById('ccuPagerPills').innerHTML = pills;
+        pager.style.display = 'flex';
+        // Seed page 1 — also sets the summary cards for that CCU.
+        goToCcuPage(0);
+        return;
+    }
+
+    // Single-CCU / single-table path (specific CCU selected, or 1-CCU system).
+    pager.style.display = 'none';
+    ccuTablesCache = [];
+    currentCcuPage = -1;
+
+    // update summary
+    document.getElementById('sumStations').textContent = d.total_stations;
+    document.getElementById('sumControllers').textContent = d.controllers.length;
+    document.getElementById('sumRuntime').textContent = d.grand_total;
+
+    document.getElementById('pivotContent').innerHTML =
+        _matrixTableHTML(d, !!d.show_ccu_col) + _matrixLegend;
 }
 </script>
 {% endblock %}
