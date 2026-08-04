@@ -512,7 +512,10 @@ function pmRenderDetail(pid) {
             return '<div class="pm-rec pm-wr">' +
                 '<div class="pm-rec-head"><a class="pm-rec-date" href="/work-reports/' + wr.id + '/">工单 #' + wr.id + '</a>' +
                 '<span class="pm-rec-meta">' + _pmEsc(wr.date) +
-                ' · 灌溉组 ' + wr.team_hours + 'h · 第三方 ' + wr.third_hours + 'h</span></div>' +
+                ' · 灌溉组 ' + wr.team_hours + 'h · 第三方 ' + wr.third_hours + 'h' +
+                (wr.worker_name ? ' · 创建人 ' + _pmEsc(wr.worker_name) : '') +
+                (wr.created_at ? ' · 创建 ' + _pmEsc(wr.created_at) : '') +
+                '</span></div>' +
                 matHtml +
             '</div>';
         }).join('');

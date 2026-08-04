@@ -430,6 +430,8 @@
     <div class="filter-card">
         {# Date-range presets. The selected one sets date_from accordingly; near-7-days is the default. #}
         <div class="preset-row" id="presetRow">
+            <button type="button" class="preset-pill" data-days="today">今天</button>
+            <button type="button" class="preset-pill" data-days="1">近一天</button>
             <button type="button" class="preset-pill" data-days="7">近7天</button>
             <button type="button" class="preset-pill" data-days="30">近30天</button>
             <button type="button" class="preset-pill" data-days="90">近90天</button>
@@ -1724,18 +1726,26 @@ function toggleAllMoveModal(on) {
 (function () {
     // Highlight whichever preset matches the active date_from (or "全部" when none).
     var pills = document.querySelectorAll('#presetRow .preset-pill');
+    function isoOf(d) {
+        var m = ('0' + (d.getMonth() + 1)).slice(-2), day = ('0' + d.getDate()).slice(-2);
+        return d.getFullYear() + '-' + m + '-' + day;
+    }
     function refreshPillHighlight() {
         var df = document.getElementById('dateFrom').value;
+        var dt = document.getElementById('dateTo').value;
+        var todayIso = isoOf(new Date());
         pills.forEach(function (p) {
             p.classList.remove('on');
             var days = p.getAttribute('data-days');
             if (days === 'all') {
                 if (!df) p.classList.add('on');
+            } else if (days === 'today') {
+                // 今天 = date_from AND date_to both pinned to today.
+                if (df === todayIso && dt === todayIso) p.classList.add('on');
             } else if (df) {
                 var expect = new Date();
                 expect.setDate(expect.getDate() - parseInt(days, 10));
-                var iso = (function(d){var m=('0'+(d.getMonth()+1)).slice(-2),day=('0'+d.getDate()).slice(-2);return d.getFullYear()+'-'+m+'-'+day;})(expect);
-                if (df === iso) p.classList.add('on');
+                if (df === isoOf(expect) && !dt) p.classList.add('on');
             }
         });
     }
@@ -1747,10 +1757,15 @@ function toggleAllMoveModal(on) {
             if (days === 'all') {
                 df.value = '';
                 dt.value = '';
+            } else if (days === 'today') {
+                // 今天 = calendar today only (both bounds = today).
+                var todayIso = isoOf(new Date());
+                df.value = todayIso;
+                dt.value = todayIso;
             } else {
                 var start = new Date();
                 start.setDate(start.getDate() - parseInt(days, 10));
-                df.value = (function(d){var m=('0'+(d.getMonth()+1)).slice(-2),day=('0'+d.getDate()).slice(-2);return d.getFullYear()+'-'+m+'-'+day;})(start);
+                df.value = isoOf(start);
                 dt.value = '';   // preset = open-ended up to today
             }
             // Resubmit the filter form so the initial batch + load-more cursor reset.

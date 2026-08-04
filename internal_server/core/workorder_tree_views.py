@@ -345,7 +345,8 @@ def _project_budget_data(projects):
         rep_ids_by_proj.setdefault(e['project_id'], set()).add(e['work_report_id'])
     all_rep_ids = set().union(*rep_ids_by_proj.values()) if rep_ids_by_proj else set()
     rep_map = {r['id']: r for r in (WorkReport.objects.filter(id__in=all_rep_ids)
-                .values('id', 'date', 'team_hours', 'third_party_hours'))}
+                .values('id', 'date', 'team_hours', 'third_party_hours',
+                        'worker__full_name', 'created_at'))}
     for pid, rids in rep_ids_by_proj.items():
         for rid in sorted(rids, reverse=True):
             r = rep_map.get(rid)
@@ -356,6 +357,11 @@ def _project_budget_data(projects):
                 'date': r['date'].isoformat() if r['date'] else '',
                 'team_hours': r['team_hours'] or 0,
                 'third_hours': r['third_party_hours'] or 0,
+                # 创建人 + 创建时间（到分钟）— shown in the 关联工单 list so a
+                # manager can see who logged the order and when, alongside the
+                # business date/hours already shown.
+                'worker_name': r.get('worker__full_name') or '',
+                'created_at': r['created_at'].strftime('%Y-%m-%d %H:%M') if r.get('created_at') else '',
             })
 
     # Split consumption records: those from a work order are grouped under that work

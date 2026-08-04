@@ -121,7 +121,7 @@ def period_label(frequency, today, data_range_days=None):
     return f'{start.strftime("%Y-%m-%d")} 至 {end.strftime("%Y-%m-%d")}'
 
 
-def build_report(report_type, start=None, end=None, user=None):
+def build_report(report_type, start=None, end=None, user=None, ccu_ids=None):
     """Build an Excel report for an *explicit* date window.
 
     Unlike the command's frequency-driven path, this takes ``start``/``end``
@@ -131,7 +131,8 @@ def build_report(report_type, start=None, end=None, user=None):
 
     Each report type gets the parameter shape its builder expects:
 
-      * ``irrigation``      → compact ``YYYYMMDDHHMM`` strings (00:00–23:59)
+      * ``irrigation``      → compact ``YYYYMMDDHHMM`` strings (00:00–23:59);
+                              ``ccu_ids`` optionally restricts the CCU subset
       * ``work_reports``    → ``(start, end, user)``; ``user`` defaults to the
                               first superuser so the export has full visibility
       * ``inventory_txn``   → ISO date strings
@@ -161,7 +162,7 @@ def build_report(report_type, start=None, end=None, user=None):
     if report_type == 'irrigation':
         df = start.strftime('%Y%m%d') + '0000'
         dt = end.strftime('%Y%m%d') + '2359'
-        return build_fn(df, dt)
+        return build_fn(df, dt, ccu_ids=ccu_ids)
     if report_type == 'work_reports':
         if user is None:
             from django.contrib.auth import get_user_model
@@ -177,3 +178,66 @@ def build_report(report_type, start=None, end=None, user=None):
     # listed above falls through to dateless behaviour (projects is now in
     # DATELESS_REPORT_TYPES above, so it's handled there, not here).
     return build_fn()
+
+
+def build_all_attachments(report_types, frequency, today, data_range_days=None,
+                          ccu_ids=None):
+    """Build every selected report as an Excel attachment for ONE email.
+
+    Returns a list of ``(filename, BytesIO, label)`` tuples — one per report
+    type — that the caller loops over to ``msg.attach(...)``. Mirrors the
+    Command._build_report date-window dispatch but generalized to a list and
+    to the optional irrigation CCU subset.
+
+    A failure building one report does NOT abort the others: it's skipped and
+    noted in the returned list as a sentinel (label prefixed with 'FAILED:').
+    The caller decides whether to send with partial attachments or fail loud.
+    """
+    from core.management.commands.send_report_email import Command
+    start, end = date_window(frequency, today, data_range_days)
+    cmd = Command()   # stateless helper container for _build_report
+    out = []
+    for rt in report_types:
+        build_fn, label = resolve_builder(rt)
+        if build_fn is None:
+            out.append((None, None, f'FAILED:{rt}:未知报表类型'))
+            continue
+        try:
+            # Reuse the command's frequency-driven dispatch so each report gets
+            # the exact parameter shape its builder expects. Irrigation also
+            # threads the CCU subset through.
+            if rt == 'irrigation':
+                df = start.strftime('%Y%m%d') + '0000'
+                dt = end.strftime('%Y%m%d') + '2359'
+                fname, buf = build_fn(df, dt, ccu_ids=ccu_ids)
+            else:
+                fname, buf = cmd._build_report(rt, build_fn, frequency, today, data_range_days)
+            out.append((fname, buf, label))
+        except Exception as e:
+            out.append((None, None, f'FAILED:{rt}:{e}'))
+    return out
+
+
+def render_subject_body(cfg, report_labels, period):
+    """Resolve the email subject + body for a config, honoring custom text.
+
+    ``cfg.email_subject`` / ``cfg.email_body`` (if non-empty) are used as
+    templates with ``{name}``/``{types}``/``{period}`` placeholders filled;
+    otherwise the built-in default text is used. ``report_labels`` is the
+    joined display string of the selected report types (e.g. "维修工单记录、灌溉").
+    """
+    types_str = '、'.join(report_labels) if report_labels else '报表'
+    name = getattr(cfg, 'name', '') or ''
+    subj_tmpl = (cfg.email_subject or '').strip()
+    body_tmpl = (cfg.email_body or '').strip()
+    if subj_tmpl:
+        subject = subj_tmpl.format(name=name, types=types_str, period=period)
+    else:
+        subject = f'【{types_str}】{period} 报表 — {name}'
+    if body_tmpl:
+        body = body_tmpl.format(name=name, types=types_str, period=period)
+    else:
+        body = (f'您好，\n\n这是系统自动发送的定时报表。\n'
+                f'报表类型：{types_str}\n频率：{cfg.get_frequency_display()}\n'
+                f'数据范围：{period}\n\n请见附件。')
+    return subject, body

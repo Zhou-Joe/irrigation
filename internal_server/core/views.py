@@ -1351,12 +1351,19 @@ def _email_config_perm(request):
 
 def _email_config_json(cfg):
     """Serialize an EmailReportConfig to a JSON-safe dict for the AJAX list."""
+    types = cfg.effective_report_types()
+    type_displays = [dict(cfg.REPORT_CHOICES).get(t, t) for t in types]
     return {
         'id': cfg.id,
         'name': cfg.name,
         'recipients': cfg.recipients,
         'report_type': cfg.report_type,
         'report_type_display': cfg.get_report_type_display(),
+        'report_types': types,
+        'report_types_display': '、'.join(type_displays) if type_displays else cfg.get_report_type_display(),
+        'ccu_ids': cfg.ccu_ids or [],
+        'email_subject': cfg.email_subject or '',
+        'email_body': cfg.email_body or '',
         'frequency': cfg.frequency,
         'frequency_display': cfg.get_frequency_display(),
         'recipient_count': len(cfg.recipient_list),
@@ -1383,17 +1390,36 @@ def email_config_save(request):
 
     cid = request.POST.get('id', '').strip()
     name = (request.POST.get('name') or '').strip()
-    report_type = (request.POST.get('report_type') or '').strip()
     frequency = (request.POST.get('frequency') or 'daily').strip()
     recipients = (request.POST.get('recipients') or '').strip()
     is_active = request.POST.get('is_active') in ('1', 'on', 'true', 'True')
-
+    # Multi-select report types (checkboxes). Also accept the legacy single
+    # report_type for any older submit path. Dedupe + validate against choices.
     valid_reports = {c for c, _ in EmailReportConfig.REPORT_CHOICES}
+    report_types = [r for r in request.POST.getlist('report_types') if r in valid_reports]
+    legacy = (request.POST.get('report_type') or '').strip()
+    if not report_types and legacy in valid_reports:
+        report_types = [legacy]
+    # Preserve order against REPORT_CHOICES so the attachment order is stable.
+    order = {c: i for i, (c, _) in enumerate(EmailReportConfig.REPORT_CHOICES)}
+    report_types = sorted(set(report_types), key=lambda c: order.get(c, 99))
+    # CCU subset (irrigation only). Empty list = all CCUs.
+    raw_ccu = request.POST.getlist('ccu_ids')
+    ccu_ids = []
+    for x in raw_ccu:
+        x = (x or '').strip()
+        if x and x.lstrip('-').isdigit():
+            v = int(x)
+            if v not in ccu_ids:
+                ccu_ids.append(v)
+    email_subject = (request.POST.get('email_subject') or '').strip()[:200]
+    email_body = (request.POST.get('email_body') or '').strip()
+
     valid_freqs = {c for c, _ in EmailReportConfig.FREQUENCY_CHOICES}
     if not name:
         return JsonResponse({'success': False, 'message': '配置名称不能为空'}, status=400)
-    if report_type not in valid_reports:
-        return JsonResponse({'success': False, 'message': '请选择有效的报表类型'}, status=400)
+    if not report_types:
+        return JsonResponse({'success': False, 'message': '请至少选择一种报表'}, status=400)
     if frequency not in valid_freqs:
         frequency = 'daily'
     if not recipients:
@@ -1416,10 +1442,16 @@ def email_config_save(request):
     if month_day is not None and not (1 <= month_day <= 28):
         return JsonResponse({'success': False, 'message': '每月几号必须在 1-28 之间'}, status=400)
 
+    # report_type mirrors the first selection for back-compat display.
+    report_type = report_types[0]
     if cid:
         cfg = get_object_or_404(EmailReportConfig, pk=cid)
         cfg.name = name
         cfg.report_type = report_type
+        cfg.report_types = report_types
+        cfg.ccu_ids = ccu_ids
+        cfg.email_subject = email_subject
+        cfg.email_body = email_body
         cfg.frequency = frequency
         cfg.recipients = recipients
         cfg.is_active = is_active
@@ -1430,7 +1462,9 @@ def email_config_save(request):
         msg = f'邮件报表配置已更新：{cfg.name}'
     else:
         cfg = EmailReportConfig.objects.create(
-            name=name, report_type=report_type, frequency=frequency,
+            name=name, report_type=report_type, report_types=report_types,
+            ccu_ids=ccu_ids, email_subject=email_subject, email_body=email_body,
+            frequency=frequency,
             recipients=recipients, is_active=is_active, created_by=request.user,
             data_range_days=data_range_days, weekday=weekday, month_day=month_day,
         )
@@ -1480,30 +1514,39 @@ def email_config_test(request, pk):
     # Reuse the command's frequency-driven builder dispatch so the test matches
     # a real scheduled dispatch. resolve_builder / period_label come from the
     # shared service layer (the command re-exports the same names for back-compat).
-    from core.report_export import resolve_builder, period_label, XLSX_CT
-    from core.management.commands.send_report_email import Command as _EmailCmd
-    build_fn, label = resolve_builder(cfg.report_type)
-    if build_fn is None:
-        return JsonResponse({'success': False, 'message': f'未知报表类型 {cfg.report_type}'}, status=400)
+    from core.report_export import (period_label, XLSX_CT,
+                                    build_all_attachments, render_subject_body)
     try:
         today = timezone.localdate()
-        # _build_report applies the config's frequency/data_range_days window —
-        # exactly what the cron run would send, just without the due-date gate.
-        fname, buf = _EmailCmd()._build_report(
-            cfg.report_type, build_fn, cfg.frequency, today, cfg.data_range_days)
+        # Multi-select: build one attachment per selected report type. ccu_ids
+        # restricts the irrigation report to the configured CCU subset.
+        report_types = cfg.effective_report_types()
+        if not report_types:
+            return JsonResponse({'success': False, 'message': '未选择报表类型'}, status=400)
+        attachments = build_all_attachments(
+            report_types, cfg.frequency, today, cfg.data_range_days,
+            ccu_ids=cfg.ccu_ids or None)
+        built = [(f, b, lbl) for (f, b, lbl) in attachments
+                 if f is not None and not lbl.startswith('FAILED:')]
+        if not built:
+            fails = [lbl for (_, _, lbl) in attachments if lbl.startswith('FAILED:')]
+            return JsonResponse({'success': False,
+                                 'message': '生成报表失败：' + '; '.join(fails)}, status=500)
         period = period_label(cfg.frequency, today, cfg.data_range_days)
-        subject = f'【测试】{label} {period} 报表 — {cfg.name}'
-        body = (f'这是一封测试邮件（来自「邮件报表」配置页的「测试发送」按钮）。\n\n'
-                f'报表类型：{label}\n频率：{cfg.get_frequency_display()}\n数据范围：{period}\n\n请见附件。')
+        report_labels = [lbl for (_, _, lbl) in built]
+        subject, body = render_subject_body(cfg, report_labels, period)
+        subject = '【测试】' + subject   # prefix so a test is distinguishable
         msg = EmailMessage(subject=subject, body=body,
                            from_email=resolve_from_email(), to=recipients,
                            connection=get_email_connection())
-        msg.attach(fname, buf.getvalue(), XLSX_CT)
+        for fname, buf, _ in built:
+            msg.attach(fname, buf.getvalue(), XLSX_CT)
         msg.send(fail_silently=False)
         cfg.last_sent_at = timezone.now()
         cfg.last_status = 'success (test)'
         cfg.save(update_fields=['last_sent_at', 'last_status'])
-        return JsonResponse({'success': True, 'message': f'测试邮件已发送至 {len(recipients)} 个收件人'})
+        return JsonResponse({'success': True,
+                             'message': f'测试邮件已发送至 {len(recipients)} 个收件人（{len(built)} 个附件）'})
     except Exception as e:
         cfg.last_sent_at = timezone.now()
         cfg.last_status = f'failed (test): {e}'[:200]
@@ -5882,6 +5925,11 @@ def user_management(request):
         'email_configs': email_configs,
         'email_edit_obj': email_edit_obj,
         'report_choices': EmailReportConfig.REPORT_CHOICES,
+        # CCU list for the email-config "灌溉 CCU 范围" picker (only meaningful
+        # when 'irrigation' is among the selected report types). Code + id is
+        # all the template needs; reuse the irrigation dashboard's helper so the
+        # codes/ids match what the export filters on.
+        'email_ccus': _ccu_queryset(),
         'smtp_setting': smtp_setting,
     }
 
@@ -7007,89 +7055,67 @@ def irrigation_dashboard(request):
     # in this set is an "orphan" (no Zone backing) and its row gets flagged.
     mapped_station_ids = _mapped_station_ids()
 
-    # For a specific CCU, build a true 24 x N-satellites matrix: rows are the
-    # Maxicom station numbers 01-24 (always shown, even with no runtime), columns
-    # are the CCU's satellites, and each cell is the runtime of the valve at that
-    # (channel, satellite). For "all CCUs" the valves span many satellites so we
-    # keep the per-valve-row layout (one row per valve that ran).
+    # Build a clean 24 x N-satellites matrix PER CCU (rows = station numbers
+    # 01-24, columns = that CCU's satellites, cell = runtime of the valve at
+    # (channel, satellite)). A specific CCU builds just one matrix; "全部 CCU"
+    # builds one matrix per CCU (mirrors the PDF/Excel exports — one page/sheet
+    # each) and the client pages between them. This replaces the old "all CCUs"
+    # layout that merged every valve into a single giant sparse table.
+    #
+    # Bucket rt_qs by site_id once so each CCU's matrix only sees its own
+    # runtime — same pattern as irrigation_report_pdf (see ~line 7645).
+    rt_by_site = defaultdict(list)
+    for rt in rt_qs:
+        rt_by_site[rt.site_id].append(rt)
+
+    # Per-CCU matrix list. Each entry is self-contained (its own controllers /
+    # col_totals / max_cell) so the template and JS can render each as an
+    # independent table. `ccu_tables` is non-empty only in 全部 mode.
+    ccu_tables = []
+    if ccu_obj is None:
+        for ccu in ccus:
+            m = _build_ccu_matrix(ccu, rt_by_site.get(ccu.id, []), ctrl_map, mapped_station_ids)
+            ccu_tables.append({
+                'ccu_id': ccu.id,
+                'ccu_code': ccu.code,
+                'ccu_name': ccu.name,
+                'controllers': m['controllers'],
+                'rows': m['rows'],
+                'col_totals': m['col_totals'],
+                'grand_total': m['grand_total'],
+                'max_cell': m['max_cell'],
+                'total_stations': sum(1 for r in m['rows'] if r['total'] > 0),
+            })
+
+    # The top-level keys drive the server-rendered partial on first load and
+    # the summary cards. In 全部 mode they mirror the FIRST CCU page (page 1) so
+    # the initial paint is consistent with what the client shows after paging.
     if ccu_obj is not None:
-        m = _build_ccu_matrix(ccu_obj, rt_qs, ctrl_map, mapped_station_ids)
+        m = _build_ccu_matrix(ccu_obj, rt_by_site.get(ccu_obj.id, []), ctrl_map, mapped_station_ids)
         all_controllers = m['controllers']
         rows = m['rows']
         col_totals = defaultdict(int, dict(zip(all_controllers, m['col_totals'])))
         grand_total = m['grand_total']
         max_cell = m['max_cell']
         total_stations_with_runtime = sum(1 for r in rows if r['total'] > 0)
-
+    elif ccu_tables:
+        first = ccu_tables[0]
+        all_controllers = first['controllers']
+        rows = first['rows']
+        col_totals = defaultdict(int, dict(zip(all_controllers, first['col_totals'])))
+        grand_total = first['grand_total']
+        max_cell = first['max_cell']
+        total_stations_with_runtime = first['total_stations']
     else:
-        # "All CCUs" — one row per valve that actually ran (across many satellites).
-        # rt_qs is select_related('station','station__parent','site'), so we
-        # collect everything we need (minutes + station metadata) in a single
-        # pass — no second Patch.objects.filter round-trip (P3 fix).
-        station_minutes = defaultdict(int)   # station_id -> total minutes
-        station_meta = {}                    # station_id -> (channel, site_code, controller_number)
-        for rt in rt_qs:
-            st = rt.station
-            if st is None:
-                continue
-            station_minutes[st.id] += (rt.run_time or 0)
-            station_meta[st.id] = (
-                st.controller_channel,
-                rt.site.code if rt.site else '',
-                st.controller_number,
-            )
-
-        station_rows = []
-        sat_names_seen = set()
-        for sid, total in station_minutes.items():
-            channel, site_code, ctrl_num = station_meta.get(sid, (None, '', None))
-            ctrl = ctrl_map.get(ctrl_num) if ctrl_num is not None else None
-            sat_name = ctrl.name if ctrl else f'SAT {ctrl_num}'
-            sat_names_seen.add(sat_name)
-            station_rows.append({
-                'station': f"{channel:02d}" if channel is not None else "—",
-                'channel': channel,
-                'site': site_code,
-                'satellite': sat_name,
-                'total': total,
-                'orphan': sid not in mapped_station_ids,
-            })
-
-        all_controllers = sorted(sat_names_seen, key=_sat_sort_key)
-        ctrl_index = {c: i for i, c in enumerate(all_controllers)}
-        rows = []
+        # No CCUs configured at all — render an empty table.
+        all_controllers, rows = [], []
         col_totals = defaultdict(int)
-        station_rows.sort(key=lambda r: (r['site'], _sat_sort_key(r['satellite']), r['channel'] or 0))
-        # All-CCU rows are one-valve-per-row, so orphan is per-row here. We
-        # also build orphan_values (a single-element list) so the JS renderer
-        # — which reads orphan_values uniformly — flags these rows too (B2 fix).
-        for meta in station_rows:
-            vals = [0] * len(all_controllers)
-            vals[ctrl_index[meta['satellite']]] = meta['total']
-            meta['values'] = vals
-            meta['orphan_values'] = [meta['orphan']]
-            rows.append(meta)
-            col_totals[meta['satellite']] += meta['total']
-        grand_total = sum(col_totals.values())
-        # All-CCU rows are one-valve-per-row, so orphan is per-row here.
-        # Excluded so un-attributable runtime doesn't wash out the heat scale.
-        max_cell = max((max(r['values'], default=0) for r in rows if not r.get('orphan')), default=0)
-        # Build cell_views with pre-computed alpha (mirrors _build_ccu_matrix's
-        # second pass) for the server-rendered pivot partial.
-        for r in rows:
-            cv = []
-            for i, v in enumerate(r['values']):
-                is_orphan = i < len(r['orphan_values']) and r['orphan_values'][i]
-                alpha = '0.00'
-                if max_cell and v > 0:
-                    alpha = f'{min(v / max_cell, 1.0):.2f}'
-                cv.append((v, is_orphan, alpha))
-            r['cell_views'] = cv
-        total_stations_with_runtime = len(rows)
+        grand_total = max_cell = total_stations_with_runtime = 0
 
     # Note: single-CCU path inherits max_cell from _build_ccu_matrix, which
     # already excludes orphan cells (per-cell, since one row spans multiple
-    # satellites). The all-CCU path computes max_cell just above.
+    # satellites). The all-CCU path does too — each per-CCU matrix is built by
+    # the same helper.
 
     # user role (mirrors other dashboard views)
     is_admin = request.user.is_superuser or request.user.is_staff
@@ -7101,8 +7127,11 @@ def irrigation_dashboard(request):
         except Exception:
             pass
 
-    # The CCU column is only useful when multiple CCUs are in view (no CCU picked)
-    show_ccu_col = ccu_obj is None
+    # The CCU column is only meaningful for the old merged "all CCUs" table,
+    # which we no longer render — 全部 mode now pages through one clean matrix
+    # per CCU (each page already names its CCU in the section title), so there
+    # is no need for a redundant CCU column. Keep it False in both modes.
+    show_ccu_col = False
 
     # ISO datetime forms for the native <input type="datetime-local"> picker
     # (YYYY-MM-DDTHH:MM), which the template binds directly. The compact
@@ -7137,6 +7166,10 @@ def irrigation_dashboard(request):
         'max_cell': max_cell,
         'total_stations': total_stations_with_runtime,
         'show_ccu_col': show_ccu_col,
+        # 全部 mode only: one entry per CCU so the client can page between
+        # per-CCU matrices. Empty for a specific-CCU selection (the top-level
+        # keys above already hold that single CCU's table).
+        'ccu_tables': ccu_tables,
     }
 
     # JSON response for AJAX refresh (filters changed without full reload).
@@ -7154,6 +7187,7 @@ def irrigation_dashboard(request):
             'date_from': date_from,
             'date_to': date_to,
             'show_ccu_col': show_ccu_col,
+            'ccu_tables': ccu_tables,
         })
 
     return render(request, 'core/irrigation_dashboard.html', context)
@@ -8856,6 +8890,21 @@ def work_reports_list(request):
              .distinct().select_related('worker', 'location').order_by('-date', '-id')
              .prefetch_related('zones')
              .annotate(comment_count=Count('comments', distinct=True)))
+    # Apply the SAME date-range / land / worker filters as the main reports list
+    # so the 疑难跟进 tab responds to 今天 / 近一天 / 近7天 … just like 维修日志.
+    # hist_qs below already did this; the active list didn't, so filter pills
+    # silently had no effect here. A 疑难/待修 ticket spans multiple days via
+    # follow-ups, but its root `date` is the work date, which is what we scope on.
+    pr_qs = pr_qs.filter(date__gte=date_from)
+    if date_to:
+        pr_qs = pr_qs.filter(date__lte=date_to)
+    if land_id:
+        pr_qs = pr_qs.filter(zones__in=Zone.objects.filter(land_id=land_id))
+    if worker_id:
+        pr_qs = pr_qs.filter(worker_id=worker_id)
+    if q and q.isdigit():
+        # Work-order-number search, same as the main list + history tab.
+        pr_qs = pr_qs.filter(id__startswith=q)
     pr_ids = [wr.id for wr in pr_qs]
     stories = _followup_stories(pr_ids)
     for wr in pr_qs:
