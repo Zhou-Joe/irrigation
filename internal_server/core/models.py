@@ -1,6 +1,7 @@
 import uuid
 from django.db import models
 from django.contrib.auth.models import User
+from django.core.validators import MinValueValidator, MaxValueValidator
 from django.utils import timezone
 from datetime import date
 from mptt.models import MPTTModel, TreeForeignKey
@@ -2352,6 +2353,37 @@ class EmailReportConfig(models.Model):
     weekday = models.IntegerField('周几发送', null=True, blank=True)
     # 触发日：monthly 时用（1-28，避免短月不存在）；留空=每月1号（向后兼容）。
     month_day = models.IntegerField('每月几号发送', null=True, blank=True)
+    # 发送时间（小时，0-23）。留空=7点（向后兼容旧的 07:00 每日 cron）。
+    # 仅在 cron 改为每小时运行后生效：调度器在每个整点运行，只在当前小时
+    # 等于此值（且频率对应的日期也匹配）时才发送。
+    send_hour = models.IntegerField(
+        '发送时间(小时)', null=True, blank=True,
+        validators=[MinValueValidator(0), MaxValueValidator(23)],
+        help_text='0-23，留空=7点。需要 cron 改为每小时运行才生效')
+    # 每种报表各自的数据范围（天）：{report_type: N}。仅对按日期窗口的报表
+    # 生效（维修工单/灌溉/出入库）；库存目录/采购/区域/项目等无日期报表忽略。
+    # 缺失某报表的键 → 回退到上面的 data_range_days → 再回退到频率默认。
+    report_ranges = models.JSONField(
+        '各报表数据范围', default=dict, blank=True,
+        help_text='{"work_reports": 3, "inventory_txn": 7}；缺省用 data_range_days 或频率默认')
+    # 灌溉运行报表需要精确到小时，而 report_ranges 只能按整天。这里单独存
+    # "过去 N 小时"：发送时刻往前 N 小时到发送时刻。留空 → 走 report_ranges/
+    # data_range_days/频率默认（按整天 00:00-23:59）。仅灌溉报表生效。
+    irrigation_hours = models.IntegerField(
+        '灌溉数据范围(小时)', null=True, blank=True,
+        validators=[MinValueValidator(1), MaxValueValidator(720)],
+        help_text='过去 N 小时（如 6 = 过去6小时）。仅灌溉报表；留空按天默认')
+    # 每个日期类报表各自的起止时间窗口（相对发送时刻）。取代上面的
+    # data_range_days / report_ranges / irrigation_hours —— 那三个字段已废弃
+    # 但保留在表里以免数据迁移；新逻辑只读这里。
+    # 结构: {report_type: {days_start, [hour_start], days_end, [hour_end]}}
+    #   days_start/days_end = 相对发送日的"前 N 天"(0=发送当天, 1=前一天…)
+    #   hour_start/hour_end = 0-23（仅灌溉有；维修工单/出入库数据只到日期，无小时）
+    # 必填：勾选了日期类报表(维修工单/灌溉/出入库)就必须有对应 key。
+    report_windows = models.JSONField(
+        '各报表时间窗口', default=dict, blank=True,
+        help_text='{"irrigation":{"days_start":2,"hour_start":8,"days_end":0,"hour_end":8},'
+                  '"work_reports":{"days_start":3,"days_end":1}}')
 
     class Meta:
         ordering = ['frequency', 'name']

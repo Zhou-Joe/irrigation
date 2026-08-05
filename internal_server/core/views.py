@@ -1369,8 +1369,12 @@ def _email_config_json(cfg):
         'recipient_count': len(cfg.recipient_list),
         'is_active': cfg.is_active,
         'data_range_days': cfg.data_range_days,
+        'report_ranges': cfg.report_ranges or {},
+        'irrigation_hours': cfg.irrigation_hours,
+        'report_windows': cfg.report_windows or {},
         'weekday': cfg.weekday,
         'month_day': cfg.month_day,
+        'send_hour': cfg.send_hour,
         'last_sent_at': timezone.localtime(cfg.last_sent_at).strftime('%Y-%m-%d %H:%M') if cfg.last_sent_at else '',
         'last_status': cfg.last_status,
     }
@@ -1441,6 +1445,39 @@ def email_config_save(request):
     month_day = _opt_int('month_day') if frequency == 'monthly' else None
     if month_day is not None and not (1 <= month_day <= 28):
         return JsonResponse({'success': False, 'message': '每月几号必须在 1-28 之间'}, status=400)
+    # Per-config send hour (0-23); null/blank → treated as 7 at dispatch time.
+    send_hour = _opt_int('send_hour')
+    if send_hour is not None and not (0 <= send_hour <= 23):
+        return JsonResponse({'success': False, 'message': '发送时间必须在 0-23 之间'}, status=400)
+    # Per-report start/end time window. Each date-windowed report a config
+    # selects MUST supply one (required). The UI posts win_<type>_days_start /
+    # _hour_start / _days_end / _hour_end per checked windowed type (irrigation
+    # carries hours; work_reports/inventory_txn are day-only). Dateless types
+    # (zones/inventory_catalog/purchase_orders/projects) have no window.
+    WINDOWED = {'work_reports', 'irrigation', 'inventory_txn'}
+    # Which windowed types are actually selected? Each needs a window entry.
+    selected_windowed = [rt for rt in report_types if rt in WINDOWED]
+    report_windows = {}
+    for rt in selected_windowed:
+        def _wint(field):
+            v = (request.POST.get(f'win_{rt}_{field}') or '').strip()
+            try:
+                return int(v) if v else None
+            except ValueError:
+                return None
+        ds = _wint('days_start'); de = _wint('days_end')
+        if ds is None or de is None or ds < 0 or de < 0:
+            return JsonResponse({'success': False,
+                                 'message': f'请填写「{dict(EmailReportConfig.REPORT_CHOICES).get(rt, rt)}」的时间范围（前N天）'}, status=400)
+        entry = {'days_start': ds, 'days_end': de}
+        if rt == 'irrigation':
+            hs = _wint('hour_start'); he = _wint('hour_end')
+            if hs is None or he is None or not (0 <= hs <= 23) or not (0 <= he <= 23):
+                return JsonResponse({'success': False,
+                                     'message': '请填写灌溉的时间范围小时（0-23）'}, status=400)
+            entry['hour_start'] = hs
+            entry['hour_end'] = he
+        report_windows[rt] = entry
 
     # report_type mirrors the first selection for back-compat display.
     report_type = report_types[0]
@@ -1455,9 +1492,10 @@ def email_config_save(request):
         cfg.frequency = frequency
         cfg.recipients = recipients
         cfg.is_active = is_active
-        cfg.data_range_days = data_range_days
+        cfg.report_windows = report_windows
         cfg.weekday = weekday
         cfg.month_day = month_day
+        cfg.send_hour = send_hour
         cfg.save()
         msg = f'邮件报表配置已更新：{cfg.name}'
     else:
@@ -1466,7 +1504,8 @@ def email_config_save(request):
             ccu_ids=ccu_ids, email_subject=email_subject, email_body=email_body,
             frequency=frequency,
             recipients=recipients, is_active=is_active, created_by=request.user,
-            data_range_days=data_range_days, weekday=weekday, month_day=month_day,
+            report_windows=report_windows,
+            weekday=weekday, month_day=month_day, send_hour=send_hour,
         )
         msg = f'邮件报表配置已创建：{cfg.name}'
     return JsonResponse({'success': True, 'message': msg, 'config': _email_config_json(cfg)})
@@ -1524,7 +1563,8 @@ def email_config_test(request, pk):
         if not report_types:
             return JsonResponse({'success': False, 'message': '未选择报表类型'}, status=400)
         attachments = build_all_attachments(
-            report_types, cfg.frequency, today, cfg.data_range_days,
+            report_types, cfg.frequency, today,
+            report_windows=cfg.report_windows or None,
             ccu_ids=cfg.ccu_ids or None)
         built = [(f, b, lbl) for (f, b, lbl) in attachments
                  if f is not None and not lbl.startswith('FAILED:')]
@@ -5925,6 +5965,12 @@ def user_management(request):
         'email_configs': email_configs,
         'email_edit_obj': email_edit_obj,
         'report_choices': EmailReportConfig.REPORT_CHOICES,
+        # Report types that honour a DAY-based window (the other 4 are dateless;
+        # irrigation is hour-based and gets its own input). Drives which report
+        # checkboxes show a "范围(天)" input in the email-config modal.
+        'windowed_report_types': ['work_reports', 'inventory_txn'],
+        # Hour options 0-23 for the send-time <select>.
+        'send_hour_options': list(range(24)),
         # CCU list for the email-config "灌溉 CCU 范围" picker (only meaningful
         # when 'irrigation' is among the selected report types). Code + id is
         # all the template needs; reuse the irrigation dashboard's helper so the

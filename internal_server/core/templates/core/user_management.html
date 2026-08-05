@@ -792,13 +792,21 @@
           <div class="am-field">
             <label>报表 *（可多选，每种报表各生成一个附件）</label>
             <div class="ec-report-checkboxes" id="ecReportTypes" style="display:flex;flex-wrap:wrap;gap:6px 14px;max-height:120px;overflow:auto;border:1px solid var(--color-border,#ddd);border-radius:6px;padding:8px;">
-              {% for code, label in report_choices %}
+              {% for code, rlabel in report_choices %}
               <label style="display:flex;align-items:center;gap:4px;font-size:0.85rem;font-weight:400;margin:0;">
-                <input type="checkbox" value="{{ code }}" onchange="toggleEcCcuField()"> {{ label }}
+                <input type="checkbox" value="{{ code }}" onchange="ecOnReportToggle()"> {{ rlabel }}
               </label>
               {% endfor %}
             </div>
-            <div style="font-size:0.74rem;color:var(--color-text-muted);margin-top:3px;">勾选多种报表即可在一封邮件中发送多个 Excel 附件。</div>
+            <div style="font-size:0.74rem;color:var(--color-text-muted);margin-top:3px;">勾选日期类报表（维修工单/灌溉/出入库）后，下方会出现各自的时间范围设置。</div>
+          </div>
+          {% comment %}Per-report time windows: rendered dynamically by JS (toggleEcWindows)
+             based on which date-windowed reports are checked. Kept OUT of the
+             for-loop so any comments here use comment-blocks safely.{% endcomment %}
+          <div class="am-field" id="ecWindowsField" style="display:none;">
+            <label>各报表时间范围 *（相对发送时刻）</label>
+            <div id="ecReportWindows" style="display:flex;flex-direction:column;gap:8px;"></div>
+            <div style="font-size:0.74rem;color:var(--color-text-muted);margin-top:3px;">"前N天" = 发送日往前 N 天（0=当天, 1=前一天）。灌溉可精确到小时；维修工单/出入库只到日期。</div>
           </div>
           <div class="am-field" id="ecCcuField" style="display:none;">
             <label>灌溉 CCU 范围 — 可选（留空=全部）</label>
@@ -811,34 +819,40 @@
             </div>
             <div style="font-size:0.74rem;color:var(--color-text-muted);margin-top:3px;">仅对「灌溉运行报表」生效。选择部分 CCU 可只把相关片区数据发给负责该片区的主管。留空=导出全部 CCU。</div>
           </div>
+          {% comment %}Frequency + trigger-day + send-hour on ONE row (flex).
+             The weekday/month-day sub-fields toggle visible via toggleEcTriggerFields().{% endcomment %}
           <div class="am-field">
-            <label>发送频率 *</label>
-            <select id="ecFrequency" required onchange="toggleEcTriggerFields()">
-              <option value="daily">每日</option>
-              <option value="weekly">每周</option>
-              <option value="monthly">每月</option>
-            </select>
-          </div>
-          <div class="am-field" id="ecWeekdayField" style="display:none;">
-            <label>每周几发送 *</label>
-            <select id="ecWeekday">
-              <option value="0">周一</option>
-              <option value="1">周二</option>
-              <option value="2">周三</option>
-              <option value="3">周四</option>
-              <option value="4">周五</option>
-              <option value="5">周六</option>
-              <option value="6">周日</option>
-            </select>
-          </div>
-          <div class="am-field" id="ecMonthDayField" style="display:none;">
-            <label>每月几号发送 *（1-28）</label>
-            <input type="number" id="ecMonthDay" min="1" max="28" placeholder="如 1、15">
-          </div>
-          <div class="am-field">
-            <label>数据范围（天）— 可选</label>
-            <input type="number" id="ecDataRangeDays" min="1" placeholder="留空用频率默认（每日=昨天，每周=上周，每月=上月）">
-            <div style="font-size:0.74rem;color:var(--color-text-muted);margin-top:3px;">填 N = 发送日往前 N 天到前一天的数据。例如每日填 7 = 过去 7 天。</div>
+            <label>发送时间 *</label>
+            <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;">
+              <div style="display:flex;flex-direction:column;gap:3px;">
+                <span style="font-size:0.72rem;color:var(--color-text-muted);">频率</span>
+                <select id="ecFrequency" required onchange="toggleEcTriggerFields()">
+                  <option value="daily">每日</option>
+                  <option value="weekly">每周</option>
+                  <option value="monthly">每月</option>
+                </select>
+              </div>
+              <div id="ecWeekdayField" style="display:none;flex-direction:column;gap:3px;">
+                <span style="font-size:0.72rem;color:var(--color-text-muted);">周几</span>
+                <select id="ecWeekday">
+                  <option value="0">周一</option><option value="1">周二</option>
+                  <option value="2">周三</option><option value="3">周四</option>
+                  <option value="4">周五</option><option value="5">周六</option>
+                  <option value="6">周日</option>
+                </select>
+              </div>
+              <div id="ecMonthDayField" style="display:none;flex-direction:column;gap:3px;">
+                <span style="font-size:0.72rem;color:var(--color-text-muted);">几号(1-28)</span>
+                <input type="number" id="ecMonthDay" min="1" max="28" placeholder="如 1" style="width:64px;">
+              </div>
+              <div style="display:flex;flex-direction:column;gap:3px;">
+                <span style="font-size:0.72rem;color:var(--color-text-muted);">小时</span>
+                <select id="ecSendHour" required>
+                  {% for h in send_hour_options %}<option value="{{ h }}">{{ h }}:00</option>{% endfor %}
+                </select>
+              </div>
+            </div>
+            <div style="font-size:0.74rem;color:var(--color-text-muted);margin-top:3px;">每天/每周/每月的此时整点发送。需要服务器 cron 已设为每小时运行才生效；默认 7:00。</div>
           </div>
           <div class="am-field">
             <label>邮件主题 — 可选</label>
@@ -1082,8 +1096,8 @@ function refreshEmailConfigList() {
 // Show/hide the trigger-day field based on frequency (weekly→weekday, monthly→month_day).
 function toggleEcTriggerFields() {
     var freq = document.getElementById('ecFrequency').value;
-    document.getElementById('ecWeekdayField').style.display = freq === 'weekly' ? '' : 'none';
-    document.getElementById('ecMonthDayField').style.display = freq === 'monthly' ? '' : 'none';
+    document.getElementById('ecWeekdayField').style.display = freq === 'weekly' ? 'flex' : 'none';
+    document.getElementById('ecMonthDayField').style.display = freq === 'monthly' ? 'flex' : 'none';
 }
 // Show the CCU picker only when 灌溉运行报表 (irrigation) is among the checked
 // report types — ccu_ids is meaningless for every other report type.
@@ -1092,6 +1106,61 @@ function toggleEcCcuField() {
     var irrigOn = false;
     boxes.forEach(function (b) { if (b.value === 'irrigation' && b.checked) irrigOn = true; });
     document.getElementById('ecCcuField').style.display = irrigOn ? '' : 'none';
+}
+// Report-type label lookup (code → 中文), for the per-report window headers.
+var _EC_LABELS = {
+    {% for code, rlabel in report_choices %}'{{ code }}': '{{ rlabel }}',{% endfor %}
+};
+var _EC_WINDOWED = ['work_reports', 'irrigation', 'inventory_txn'];   // types that need a time window
+// Called whenever a report checkbox toggles: refresh CCU picker + window inputs.
+function ecOnReportToggle() {
+    toggleEcCcuField();
+    toggleEcWindows();
+}
+// Render one start/end input row per checked date-windowed report. Irrigation
+// gets hour inputs; the other two are day-only. Re-renders on every toggle so
+// the visible set always matches the checkboxes.
+function toggleEcWindows() {
+    var container = document.getElementById('ecReportWindows');
+    var checked = Array.from(document.querySelectorAll('#ecReportTypes input[type=checkbox]:checked'))
+        .map(function (b) { return b.value; })
+        .filter(function (v) { return _EC_WINDOWED.indexOf(v) !== -1; });
+    document.getElementById('ecWindowsField').style.display = checked.length ? '' : 'none';
+    // Preserve any values the user already typed before re-rendering.
+    var prev = {};
+    Array.from(container.querySelectorAll('input')).forEach(function (inp) {
+        prev[inp.name] = inp.value;
+    });
+    container.innerHTML = checked.map(function (code) {
+        var lbl = _EC_LABELS[code] || code;
+        var isIrrig = code === 'irrigation';
+        var ds = prev['win_' + code + '_days_start'] || '';
+        var de = prev['win_' + code + '_days_end'] || '';
+        var numStyle = 'width:48px;padding:2px 4px;font-size:0.78rem;border:1px solid var(--color-border,#ddd);border-radius:4px;';
+        var dayPart = '前 <input type="number" min="0" name="win_' + code + '_days_start" value="' + ds + '" style="' + numStyle + '" placeholder="N"> 天';
+        if (isIrrig) {
+            var hs = prev['win_' + code + '_hour_start'] != null ? prev['win_' + code + '_hour_start'] : '';
+            dayPart += ' <input type="number" min="0" max="23" name="win_' + code + '_hour_start" value="' + hs + '" style="width:40px;' + numStyle.replace('width:48px;', '') + '" placeholder="时">:00';
+        }
+        var endPart = '到 前 <input type="number" min="0" name="win_' + code + '_days_end" value="' + de + '" style="' + numStyle + '" placeholder="N"> 天';
+        if (isIrrig) {
+            var he = prev['win_' + code + '_hour_end'] != null ? prev['win_' + code + '_hour_end'] : '';
+            endPart += ' <input type="number" min="0" max="23" name="win_' + code + '_hour_end" value="' + he + '" style="width:40px;' + numStyle.replace('width:48px;', '') + '" placeholder="时">:59';
+        }
+        return '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:0.82rem;">'
+            + '<span style="font-weight:600;min-width:90px;">' + lbl + '</span>'
+            + dayPart + endPart + '</div>';
+    }).join('');
+}
+// Restore the per-report window inputs from a {code: {days_start,...}} map.
+function _setEcWindows(windows) {
+    windows = windows || {};
+    Object.keys(windows).forEach(function (code) {
+        var w = windows[code] || {};
+        var n = function (k) { var el = document.querySelector('#ecReportWindows [name="win_' + code + '_' + k + '"]'); if (el) el.value = (w[k] != null) ? w[k] : ''; };
+        n('days_start'); n('days_end');
+        if (code === 'irrigation') { n('hour_start'); n('hour_end'); }
+    });
 }
 // Check the report-type / CCU checkboxes whose value is in `vals`, uncheck others.
 function _setEcCheckboxes(containerId, vals) {
@@ -1121,11 +1190,13 @@ function openEmailConfigModal(id) {
                 document.getElementById('ecFrequency').value = c.frequency;
                 document.getElementById('ecRecipients').value = c.recipients || '';
                 document.getElementById('ecIsActive').checked = c.is_active;
-                document.getElementById('ecDataRangeDays').value = c.data_range_days || '';
+                document.getElementById('ecSendHour').value = (c.send_hour != null) ? String(c.send_hour) : '7';
                 document.getElementById('ecWeekday').value = (c.weekday != null) ? String(c.weekday) : '0';
                 document.getElementById('ecMonthDay').value = (c.month_day != null) ? String(c.month_day) : '';
                 toggleEcTriggerFields();
                 toggleEcCcuField();
+                toggleEcWindows();         // render the window rows for checked types…
+                _setEcWindows(c.report_windows || {});   // …then fill their values.
                 document.getElementById('emailConfigModal').classList.add('show');
             });
     } else {
@@ -1137,11 +1208,12 @@ function openEmailConfigModal(id) {
         document.getElementById('ecFrequency').value = 'daily';
         document.getElementById('ecRecipients').value = '';
         document.getElementById('ecIsActive').checked = true;
-        document.getElementById('ecDataRangeDays').value = '';
+        document.getElementById('ecSendHour').value = '7';
         document.getElementById('ecWeekday').value = '0';
         document.getElementById('ecMonthDay').value = '';
         toggleEcTriggerFields();
         toggleEcCcuField();
+        toggleEcWindows();
         document.getElementById('emailConfigModal').classList.add('show');
     }
 }
@@ -1162,7 +1234,11 @@ function saveEmailConfig() {
     fd.append('frequency', document.getElementById('ecFrequency').value);
     fd.append('recipients', document.getElementById('ecRecipients').value);
     fd.append('is_active', document.getElementById('ecIsActive').checked ? '1' : '');
-    fd.append('data_range_days', document.getElementById('ecDataRangeDays').value);
+    fd.append('send_hour', document.getElementById('ecSendHour').value);
+    // Per-report time windows (win_<type>_* inputs, rendered in #ecReportWindows).
+    document.querySelectorAll('#ecReportWindows input[type=number]').forEach(function (inp) {
+        if (inp.value.trim()) fd.append(inp.name, inp.value);
+    });
     if (document.getElementById('ecFrequency').value === 'weekly')
         fd.append('weekday', document.getElementById('ecWeekday').value);
     if (document.getElementById('ecFrequency').value === 'monthly')
