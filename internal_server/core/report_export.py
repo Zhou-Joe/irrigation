@@ -204,7 +204,10 @@ def build_all_attachments(report_types, frequency, today, report_windows=None,
     """
     from core.management.commands.send_report_email import Command
     report_windows = report_windows or {}
-    now = timezone.now()
+    # Beijing time: irrigation's hour window (前N天M点) and the day boundaries for
+    # work_reports/inventory_txn are all expressed in Asia/Shanghai. timezone.now()
+    # is UTC-aware; localtime() converts before the .replace(hour=…) / date math.
+    now = timezone.localtime(timezone.now())
     cmd = Command()   # stateless helper container for _build_report
     out = []
     for rt in report_types:
