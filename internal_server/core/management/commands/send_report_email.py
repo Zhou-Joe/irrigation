@@ -42,23 +42,57 @@ from core.report_export import (
 )
 
 
-def _is_due_today(cfg, today=None):
-    """Should this config fire on `today`?
+def _is_due_now(cfg, now=None):
+    """Should this config fire at this moment?
 
-    Reads cfg.weekday (0=Mon..6=Sun, default 0) for weekly and
-    cfg.month_day (1-28, default 1) for monthly, so the admin can pick the
-    trigger day instead of the hardcoded Monday / 1st.
+    Two conditions must both hold:
+      1. Day-of-cycle matches the frequency (daily=any day, weekly=cfg.weekday,
+         monthly=cfg.month_day) — same as the old _is_due_today.
+      2. The current hour equals cfg.send_hour (null/blank → 7, preserving the
+         pre-hourly-cron default). This only matters once the production cron
+         runs hourly (see email_cron.sh); a daily 07:00 cron still fires every
+         config whose send_hour is null/7, exactly as before.
     """
-    today = today or timezone.localdate()
+    now = now or timezone.now()
+    # --- day-of-cycle gate (unchanged from _is_due_today) ---
     if cfg.frequency == 'daily':
-        return True
-    if cfg.frequency == 'weekly':
+        day_ok = True
+    elif cfg.frequency == 'weekly':
         wd = cfg.weekday if cfg.weekday is not None else 0   # default Monday
-        return today.weekday() == wd
-    if cfg.frequency == 'monthly':
+        day_ok = now.weekday() == wd
+    elif cfg.frequency == 'monthly':
         md = cfg.month_day if cfg.month_day is not None else 1  # default 1st
-        return today.day == md
-    return False
+        day_ok = now.day == md
+    else:
+        day_ok = False
+    if not day_ok:
+        return False
+    # --- hour gate (new) ---
+    hour = cfg.send_hour if cfg.send_hour is not None else 7
+    return now.hour == hour
+
+
+def _is_due_today(cfg, today=None):
+    """Back-compat shim: the day-of-cycle check only (ignores send_hour).
+
+    Kept so any caller/importer that still references _is_due_today keeps
+    working. The dispatch loop uses _is_due_now (hour-aware) instead.
+    """
+    now = timezone.now() if today is None else None
+    base = now or timezone.now()
+    if today is not None:
+        # Caller passed a date; honor the day-of-cycle against that date but
+        # still ignore the hour (legacy semantics).
+        if cfg.frequency == 'daily':
+            return True
+        if cfg.frequency == 'weekly':
+            wd = cfg.weekday if cfg.weekday is not None else 0
+            return today.weekday() == wd
+        if cfg.frequency == 'monthly':
+            md = cfg.month_day if cfg.month_day is not None else 1
+            return today.day == md
+        return False
+    return _is_due_now(cfg, base)
 
 
 class Command(BaseCommand):
@@ -91,16 +125,19 @@ class Command(BaseCommand):
         else:
             qs = qs.filter(is_active=True)
 
-        today = timezone.localdate()
+        now = timezone.now()
+        today = now.date()
         configs = list(qs.order_by('frequency', 'name'))
         self.stdout.write(f'Email report dispatch: {len(configs)} config(s), '
-                          f'today={today.isoformat()}, dry_run={dry}')
+                          f'now={now.strftime("%Y-%m-%d %H:%M")}, dry_run={dry}')
 
         sent, skipped, failed = 0, 0, 0
         for cfg in configs:
-            # Frequency gate (skipped when forcing one config by id).
-            if not force_id and not _is_due_today(cfg, today):
-                self.stdout.write(f'  [skip] {cfg.name} ({cfg.frequency}) — not due today')
+            # Day-of-cycle + send-hour gate (skipped when forcing one config by id).
+            if not force_id and not _is_due_now(cfg, now):
+                hour = cfg.send_hour if cfg.send_hour is not None else 7
+                self.stdout.write(
+                    f'  [skip] {cfg.name} ({cfg.frequency}, hour={hour}) — not due now')
                 skipped += 1
                 continue
 
@@ -122,11 +159,12 @@ class Command(BaseCommand):
                 failed += 1
                 continue
 
-            # Build every selected report (one attachment each). ccu_ids only
-            # applies to the irrigation report — distribute specific CCUs to
-            # the manager responsible for them instead of the whole dataset.
+            # Build every selected report (one attachment each). Each date-
+            # windowed report carries its OWN start/end in report_windows
+            # (relative to the send instant); ccu_ids scopes irrigation.
             attachments = _build_all_attachments(
-                report_types, cfg.frequency, today, cfg.data_range_days,
+                report_types, cfg.frequency, today,
+                report_windows=cfg.report_windows or None,
                 ccu_ids=cfg.ccu_ids or None,
             )
             built = [(f, b, lbl) for (f, b, lbl) in attachments

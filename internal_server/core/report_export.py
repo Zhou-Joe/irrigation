@@ -180,21 +180,31 @@ def build_report(report_type, start=None, end=None, user=None, ccu_ids=None):
     return build_fn()
 
 
-def build_all_attachments(report_types, frequency, today, data_range_days=None,
+def build_all_attachments(report_types, frequency, today, report_windows=None,
                           ccu_ids=None):
     """Build every selected report as an Excel attachment for ONE email.
 
     Returns a list of ``(filename, BytesIO, label)`` tuples — one per report
-    type — that the caller loops over to ``msg.attach(...)``. Mirrors the
-    Command._build_report date-window dispatch but generalized to a list and
-    to the optional irrigation CCU subset.
+    type — that the caller loops over to ``msg.attach(...)``.
+
+    ``report_windows`` is a ``{report_type: {days_start,[hour_start],days_end,
+    [hour_end]}}`` map — each date-windowed report's own start/end, expressed
+    RELATIVE to the send instant:
+      * irrigation       → hour-precise: [send_now - days_start days, hour_start:00]
+                                         to [send_now - days_end days, hour_end:59]
+                           (compact YYYYMMDDHHMM strings)
+      * work_reports     → day-granular (its data has no hour): date objects
+                           [today - days_start, today - days_end]
+      * inventory_txn    → day-granular ISO date strings
+      * dateless types   → no window (zones/inventory_catalog/purchase_orders/projects)
 
     A failure building one report does NOT abort the others: it's skipped and
     noted in the returned list as a sentinel (label prefixed with 'FAILED:').
     The caller decides whether to send with partial attachments or fail loud.
     """
     from core.management.commands.send_report_email import Command
-    start, end = date_window(frequency, today, data_range_days)
+    report_windows = report_windows or {}
+    now = timezone.now()
     cmd = Command()   # stateless helper container for _build_report
     out = []
     for rt in report_types:
@@ -203,19 +213,41 @@ def build_all_attachments(report_types, frequency, today, data_range_days=None,
             out.append((None, None, f'FAILED:{rt}:未知报表类型'))
             continue
         try:
-            # Reuse the command's frequency-driven dispatch so each report gets
-            # the exact parameter shape its builder expects. Irrigation also
-            # threads the CCU subset through.
+            win = report_windows.get(rt) or {}
             if rt == 'irrigation':
-                df = start.strftime('%Y%m%d') + '0000'
-                dt = end.strftime('%Y%m%d') + '2359'
+                # Hour-precise window relative to the send instant.
+                ds = int(win.get('days_start', 1)); hs = int(win.get('hour_start', 0))
+                de = int(win.get('days_end', 0)); he = int(win.get('hour_end', 23))
+                start_dt = (now - timedelta(days=ds)).replace(hour=hs, minute=0, second=0, microsecond=0)
+                end_dt = (now - timedelta(days=de)).replace(hour=he, minute=59, second=0, microsecond=0)
+                df = start_dt.strftime('%Y%m%d%H%M')
+                dt = end_dt.strftime('%Y%m%d%H%M')
                 fname, buf = build_fn(df, dt, ccu_ids=ccu_ids)
+            elif rt == 'work_reports':
+                # Day-granular: WorkReport.date is a DateField, hours are ignored.
+                ds = int(win.get('days_start', 1)); de = int(win.get('days_end', 0))
+                start_d = today - timedelta(days=ds)
+                end_d = today - timedelta(days=de)
+                fname, buf = build_fn(start_d, end_d, _dispatch_user())
+            elif rt == 'inventory_txn':
+                ds = int(win.get('days_start', 7)); de = int(win.get('days_end', 1))
+                start_d = today - timedelta(days=ds)
+                end_d = today - timedelta(days=de)
+                fname, buf = build_fn(start_d.isoformat(), end_d.isoformat())
             else:
-                fname, buf = cmd._build_report(rt, build_fn, frequency, today, data_range_days)
+                # Dateless types (zones/inventory_catalog/purchase_orders/projects).
+                fname, buf = build_fn()
             out.append((fname, buf, label))
         except Exception as e:
             out.append((None, None, f'FAILED:{rt}:{e}'))
     return out
+
+
+def _dispatch_user():
+    """Resolve the user for the work_reports builder (full visibility)."""
+    from django.contrib.auth import get_user_model
+    User = get_user_model()
+    return (User.objects.filter(is_superuser=True).first() or User.objects.first())
 
 
 def render_subject_body(cfg, report_labels, period):

@@ -1,14 +1,16 @@
 #!/bin/bash
-# 定时邮件报表 (Scheduled Email Reports) daily dispatch cron.
+# 定时邮件报表 (Scheduled Email Reports) hourly dispatch cron.
 #
 # Runs the send_report_email management command, which reads every active
-# EmailReportConfig and — if its frequency is due today (daily=every day,
-# weekly=Monday, monthly=1st) — builds that report's Excel via
-# core.excel_exports and emails it as an attachment over SMTP.
+# EmailReportConfig and — if its frequency is due now (daily=every day,
+# weekly=configured weekday, monthly=configured day-of-month) AND the current
+# hour matches the config's send_hour (null/blank → 7) — builds that report's
+# Excel via core.excel_exports and emails it as an attachment over SMTP.
 #
-# Cron entry (runs 7:00 AM Asia/Shanghai — early enough for the morning shift
-# to find yesterday's / last week's / last month's report in their inbox):
-#   0 7 * * * /home/projects/irrigation/internal_server/email_cron.sh
+# Cron entry (runs at the TOP of EVERY HOUR — required so the per-config
+# send_hour actually takes effect; a config with send_hour=8 fires only during
+# the 08:00 run):
+#   0 * * * * /home/projects/irrigation/internal_server/email_cron.sh
 #
 # Logs to /var/log/email_dispatch.log
 set -euo pipefail
