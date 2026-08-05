@@ -52,9 +52,15 @@ def _is_due_now(cfg, now=None):
          pre-hourly-cron default). This only matters once the production cron
          runs hourly (see email_cron.sh); a daily 07:00 cron still fires every
          config whose send_hour is null/7, exactly as before.
+
+    All hour/weekday/day comparisons use Beijing time (TIME_ZONE=Asia/Shanghai).
+    timezone.now() returns a UTC-aware datetime; convert with localtime() before
+    reading .hour/.weekday()/.day so a config set to 23:00 fires at 23:00 Beijing
+    (not 23:00 UTC = 07:00 Beijing).
     """
     now = now or timezone.now()
-    # --- day-of-cycle gate (unchanged from _is_due_today) ---
+    now = timezone.localtime(now)   # → Asia/Shanghai for correct hour/day reads
+    # --- day-of-cycle gate ---
     if cfg.frequency == 'daily':
         day_ok = True
     elif cfg.frequency == 'weekly':
@@ -67,7 +73,7 @@ def _is_due_now(cfg, now=None):
         day_ok = False
     if not day_ok:
         return False
-    # --- hour gate (new) ---
+    # --- hour gate ---
     hour = cfg.send_hour if cfg.send_hour is not None else 7
     return now.hour == hour
 
@@ -125,11 +131,14 @@ class Command(BaseCommand):
         else:
             qs = qs.filter(is_active=True)
 
-        now = timezone.now()
+        # Use Beijing time for the dispatch instant: _is_due_now's hour/weekday/
+        # day gate and the per-report "前N天" windows are all in Asia/Shanghai.
+        # timezone.now() is UTC-aware; localtime() converts before .date()/.hour.
+        now = timezone.localtime(timezone.now())
         today = now.date()
         configs = list(qs.order_by('frequency', 'name'))
         self.stdout.write(f'Email report dispatch: {len(configs)} config(s), '
-                          f'now={now.strftime("%Y-%m-%d %H:%M")}, dry_run={dry}')
+                          f'now={now.strftime("%Y-%m-%d %H:%M")} (Beijing), dry_run={dry}')
 
         sent, skipped, failed = 0, 0, 0
         for cfg in configs:
