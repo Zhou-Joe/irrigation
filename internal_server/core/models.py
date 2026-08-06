@@ -1122,6 +1122,12 @@ class WorkReport(models.Model):
     # 维修日志 excludes is_pm=True so PM work never pollutes the normal list, and
     # dispatch consumes zero #id slots (no gaps in the normal id sequence).
     is_pm = models.BooleanField('PM生成工单', default=False, db_index=True)
+    # 项目关联是否已经经理确认。工人提交带项目关联的工单时设为 False（待确认）；
+    # 经理在项目详情页确认后才设为 True。未确认的工单不计入项目工时/材料消耗
+    # 统计（_project_summaries / _project_budget_data 过滤 confirmed），但仍单独
+    # 展示在「待确认工单」区供经理审核。无项目关联的工单忽略此字段。
+    project_confirmed = models.BooleanField(
+        '项目关联已确认', default=False, db_index=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

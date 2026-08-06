@@ -8531,17 +8531,43 @@ def _scoped_work_reports_qs(user, admin, sort=WORK_REPORTS_DEFAULT_SORT):
     return qs
 
 
-def _serialize_work_reports(reports):
+def _serialize_work_reports(reports, dup_groups=None):
     """Turn enriched WorkReport instances into JSON-serializable dicts.
 
     Mirrors what the template renders per card. Expects ``enrich_reports`` and
     ``attach_zone_hierarchy`` to have already attached ``entry_groups``,
     ``section_labels``, ``entry_count``, ``zone_hierarchy`` and ``zone_summary``.
+
+    ``dup_groups`` (optional) is the ``{report_id: group_key}`` map from
+    ``_detect_dup_groups``; when supplied each report is tagged with its
+    ``dup_group`` and ``dup_siblings`` (id + summary of the other reports in
+    its suspected-duplicate cluster) so the front-end can aggregate them.
     """
     from django.urls import reverse
+    dup_groups = dup_groups or {}
+    # Build sibling summaries once per group.
+    by_group = {}
+    if dup_groups:
+        for r in reports:
+            gk = dup_groups.get(r.id)
+            if not gk:
+                continue
+            by_group.setdefault(gk, []).append(r)
 
     out = []
     for r in reports:
+        gk = dup_groups.get(r.id)
+        siblings = []
+        if gk:
+            for s in by_group.get(gk, []):
+                if s.id != r.id:
+                    siblings.append({
+                        'id': s.id,
+                        'worker_name': s.worker.full_name if s.worker_id and s.worker else '',
+                        'team_hours': float(s.team_hours) if s.team_hours else 0,
+                        'third_party_hours': float(s.third_party_hours) if s.third_party_hours else 0,
+                        'zone_summary': s.zone_summary or '',
+                    })
         out.append({
             'id': r.id,
             'display_number': r.display_number,
@@ -8575,6 +8601,8 @@ def _serialize_work_reports(reports):
             'is_pending_repair': bool(r.is_pending_repair),
             'is_difficult': bool(r.is_difficult),
             'is_difficult_resolved': bool(r.is_difficult_resolved),
+            'dup_group': gk or '',
+            'dup_siblings': siblings,
             'detail_url': reverse('core:work_report_detail', args=[r.id]),
             'edit_url': reverse('core:dashboard') + '?edit_workorder=' + str(r.id),
             # Edit history (oldest→newest). Empty when never edited.
@@ -8586,6 +8614,80 @@ def _serialize_work_reports(reports):
                 for log in r.edit_logs.all()
             ],
         })
+    return out
+
+
+def _detect_dup_groups(reports):
+    """Cluster a batch of WorkReports into suspected-duplicate groups.
+
+    Two reports are "suspected duplicates" when:
+      - same ``date``,
+      - overlapping ``zones`` (≥1 shared zone), and
+      - ≥1 shared work-item category (WorkReportEntry.work_item),
+      - different ``worker`` (same worker is a self-resubmit, handled by the
+        30s submit gate).
+
+    Returns ``{report_id: group_key}`` where group_key is a stable string
+    identifying the cluster (reports in the same cluster share it). Reports
+    that belong to no cluster are absent from the map. Uses union-find so a
+    chain of pairwise-similar reports collapses into one group.
+
+    Cheap (O(n²) over the batch, ≤50 reports). Zones + work_items are prefetched
+    in one pass each to avoid N+1.
+    """
+    from django.db.models import prefetch_related_objects, Prefetch
+    from core.models import WorkReportEntry
+    if len(reports) < 2:
+        return {}
+    prefetch_related_objects(reports, 'zones',
+                             Prefetch('entries', queryset=WorkReportEntry.objects.only('work_item_id', 'work_report')))
+    # Index each report's signature: date, shift, zone-id set, work-item-id set, worker.
+    sig = {}
+    for r in reports:
+        zids = frozenset(z.id for z in r.zones.all())
+        wis = frozenset(e.work_item_id for e in r.entries.all() if e.work_item_id)
+        sig[r.id] = (r.date, r.shift or '', zids, wis, r.worker_id)
+    ids = [r.id for r in reports]
+    # Union-find over report ids.
+    parent = {i: i for i in ids}
+
+    def find(x):
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    def union(a, b):
+        ra, rb = find(a), find(b)
+        if ra != rb:
+            parent[ra] = rb
+
+    for i in range(len(ids)):
+        for j in range(i + 1, len(ids)):
+            a, b = ids[i], ids[j]
+            da, sa, za, wa_, wk = sig[a]
+            db, sb, zb, wb, wk2 = sig[b]
+            if da != db or wk == wk2:
+                continue
+            # Require the SAME shift (早班/白班/夜班) — different shifts doing
+            # the same area+category is more likely a legitimate handoff than a
+            # duplicate. Plus the SAME zone set AND SAME work-item set (exact
+            # signature, not just overlap) to avoid transitive over-grouping.
+            if sa == sb and za and wa_ and za == zb and wa_ == wb:
+                union(a, b)
+    # Build groups, keep only size ≥2.
+    groups = {}
+    for i in ids:
+        groups.setdefault(find(i), []).append(i)
+    out = {}
+    gidx = 0
+    for members in groups.values():
+        if len(members) < 2:
+            continue
+        gidx += 1
+        key = f'dup{gidx}'
+        for mid in members:
+            out[mid] = key
     return out
 
 
@@ -8620,6 +8722,168 @@ def work_report_reassign(request, report_id):
         'worker_name': worker.full_name,
         'worker_employee_id': worker.employee_id or '',
     })
+
+
+@require_POST
+@login_required(login_url='core:login')
+def work_report_merge(request):
+    """Admin-only: merge suspected-duplicate work orders into one survivor.
+
+    Re-points all child records (entries, comments, material transactions,
+    follow-up children) of the dup reports onto the survivor, merges photos,
+    applies the manager-supplied corrected hours, then hard-deletes the dups.
+    Transactional + audit-logged so the merge is recoverable in spirit (the
+    edit log records what was merged and the hour correction).
+
+    POST: survivor_id, dup_ids (comma-sep), team_hours, third_party_hours.
+    """
+    from core.models import (WorkReport, WorkReportEntry, WorkReportComment,
+                             InventoryTransaction, WorkReportEditLog, Zone)
+    from core.role_utils import is_admin
+    from core.workorder_tree_views import _record_edit
+    from django.db import transaction
+
+    if not is_admin(request.user):
+        return JsonResponse({'success': False, 'message': '无权限'}, status=403)
+    try:
+        survivor_id = int(request.POST.get('survivor_id', ''))
+    except (TypeError, ValueError):
+        return JsonResponse({'success': False, 'message': '缺少 survivor_id'}, status=400)
+    raw_dups = request.POST.get('dup_ids', '')
+    dup_ids = [int(x) for x in raw_dups.replace(';', ',').split(',') if x.strip().isdigit()]
+    if not dup_ids or survivor_id in dup_ids:
+        return JsonResponse({'success': False, 'message': '请选择要合并的重复工单（不含保留的那条）'}, status=400)
+
+    # Hours are required and must be valid numbers (don't silently default to 0
+    # — that would wipe the survivor's hours on a typo of an irreversible op).
+    def _req_num(key):
+        v = (request.POST.get(key) or '').strip()
+        if v == '':
+            return None
+        try:
+            return float(v)
+        except ValueError:
+            return False   # sentinel: present but invalid
+    team_hours = _req_num('team_hours')
+    third_hours = _req_num('third_party_hours')
+    if team_hours is False or third_hours is False:
+        return JsonResponse({'success': False, 'message': '工时必须为数字'}, status=400)
+    if team_hours is None:
+        team_hours = 0
+    if third_hours is None:
+        third_hours = 0
+
+    with transaction.atomic():
+        survivor = (WorkReport.objects
+                    .select_for_update().filter(pk=survivor_id).first())
+        dups = list(WorkReport.objects.select_for_update().filter(pk__in=dup_ids))
+        if not survivor or len(dups) != len(dup_ids):
+            return JsonResponse({'success': False, 'message': '工单不存在或已被删除'}, status=404)
+        # Re-point EVERY child record type to the survivor before deletion. Each
+        # is otherwise lost: CASCADE on Entry/Comment/EditLog; SET_NULL on
+        # InventoryTransaction/resolved_by_pm (explicit re-point keeps the link).
+        WorkReportEntry.objects.filter(work_report_id__in=dup_ids).update(work_report=survivor)
+        WorkReportComment.objects.filter(work_report_id__in=dup_ids).update(work_report=survivor)
+        WorkReportEditLog.objects.filter(work_report_id__in=dup_ids).update(work_report=survivor)
+        InventoryTransaction.objects.filter(work_report_id__in=dup_ids).update(work_report=survivor)
+        # Follow-up children (疑难跟进 story) + 待修→PM closure link stay attached.
+        WorkReport.objects.filter(parent_work_report_id__in=dup_ids).update(parent_work_report=survivor)
+        WorkReport.objects.filter(resolved_by_pm_id__in=dup_ids).update(resolved_by_pm=survivor)
+        # Difficult-zone-remarks embed the workorder id in Zone.remarks /
+        # Zone.confirmed_remarks JSON. Rewrite those tags to the survivor so the
+        # manager resolve modal can still find + dispose them.
+        dup_id_set = set(dup_ids)
+        for z in Zone.objects.all():
+            changed = False
+            for field in ('remarks', 'confirmed_remarks'):
+                vals = getattr(z, field, None) or []
+                if not isinstance(vals, list):
+                    continue
+                for entry in vals:
+                    if isinstance(entry, dict) and entry.get('workorder_id') in dup_id_set:
+                        entry['workorder_id'] = survivor_id
+                        changed = True
+                if changed:
+                    setattr(z, field, vals)
+            if changed:
+                z.save(update_fields=['remarks', 'confirmed_remarks'])
+        # Merge photos (dedupe by value).
+        merged_photos = list(dict.fromkeys(
+            list(survivor.photos or []) + [p for d in dups for p in (d.photos or [])]))
+        survivor.photos = merged_photos
+        survivor.team_hours = team_hours
+        survivor.third_party_hours = third_hours
+        survivor.save(update_fields=['photos', 'team_hours', 'third_party_hours'])
+        dup_nums = ', '.join(f'#{d.id}' for d in dups)
+        WorkReport.objects.filter(pk__in=dup_ids).delete()
+        _record_edit(survivor, request.user,
+                     note=f'合并重复工单 {dup_nums}；工时修正为 灌溉组{team_hours}h/第三方{third_hours}h')
+    return JsonResponse({'success': True,
+                         'message': f'已合并 {len(dups)} 条重复工单到 #{survivor_id}'})
+
+
+@require_POST
+@login_required(login_url='core:login')
+def work_report_project_confirm(request):
+    """Admin-only: confirm a work order's project association (batch).
+
+    Flips project_confirmed False→True for the given report ids, so their
+    labor hours and material consumption count toward the linked projects.
+    Mirrors the merge/resolve pattern: admin-gated, transactional, audited.
+    POST: report_ids (comma-sep). Returns JSON.
+    """
+    from core.models import WorkReport
+    from core.role_utils import is_admin
+    from core.workorder_tree_views import _record_edit
+    from django.db import transaction
+
+    if not is_admin(request.user):
+        return JsonResponse({'success': False, 'message': '无权限'}, status=403)
+    raw = request.POST.get('report_ids', '')
+    rids = [int(x) for x in raw.replace(';', ',').split(',') if x.strip().isdigit()]
+    if not rids:
+        return JsonResponse({'success': False, 'message': '请选择要确认的工单'}, status=400)
+    with transaction.atomic():
+        pending = list(WorkReport.objects.select_for_update()
+                       .filter(pk__in=rids, project_confirmed=False))
+        for r in pending:
+            r.project_confirmed = True
+            r.save(update_fields=['project_confirmed'])
+            _record_edit(r, request.user, note='确认项目关联')
+    return JsonResponse({'success': True,
+                         'message': f'已确认 {len(pending)} 条工单的项目关联'})
+
+
+@require_POST
+@login_required(login_url='core:login')
+def work_report_project_remove(request):
+    """Admin-only: remove a work order's association with a project.
+
+    Sets project=None on all the report's WorkReportEntry rows pointing at the
+    given project, so its hours/materials no longer count toward that project.
+    The report itself is NOT deleted — it stays in 维修日志, just unlinked.
+    POST: report_id, project_id. Returns JSON.
+    """
+    from core.models import WorkReport, WorkReportEntry
+    from core.role_utils import is_admin
+    from core.workorder_tree_views import _record_edit
+    from django.db import transaction
+
+    if not is_admin(request.user):
+        return JsonResponse({'success': False, 'message': '无权限'}, status=403)
+    try:
+        report_id = int(request.POST.get('report_id', ''))
+        project_id = int(request.POST.get('project_id', ''))
+    except (TypeError, ValueError):
+        return JsonResponse({'success': False, 'message': '缺少 report_id/project_id'}, status=400)
+    with transaction.atomic():
+        report = WorkReport.objects.select_for_update().filter(pk=report_id).first()
+        if not report:
+            return JsonResponse({'success': False, 'message': '工单不存在'}, status=404)
+        n = WorkReportEntry.objects.filter(work_report_id=report_id, project_id=project_id).update(project=None)
+        _record_edit(report, request.user, note=f'移除项目(#{project_id})关联（{n} 条明细）')
+    return JsonResponse({'success': True,
+                         'message': f'已移除工单 #{report_id} 与该项目的关联'})
 
 
 def _pm_gwo_queryset(user, is_mgr, include_done=False):
@@ -8823,11 +9087,19 @@ def work_reports_list(request):
     ))
     enrich_reports(reports, workitem_path_map())
     attach_zone_hierarchy(reports)
+    # Suspected-duplicate clustering (same day + overlapping zones + shared
+    # work-item category + different worker). Tags each report with a group
+    # key so the front-end can aggregate them and offer a merge action.
+    dup_groups = _detect_dup_groups(reports)
+    # Attach the group key to each report object so the server-rendered
+    # {% for %} can open/close a .wr-dup-group wrapper on group boundaries.
+    for r in reports:
+        r.dup_group = dup_groups.get(r.id, '')
 
     # AJAX "load more": hand the next batch to the client as JSON.
     if request.headers.get('X-Requested-With') == 'XMLHttpRequest' or request.GET.get('ajax'):
         return JsonResponse({
-            'reports': _serialize_work_reports(reports),
+            'reports': _serialize_work_reports(reports, dup_groups),
             'has_more': has_more,
             'last_id': reports[-1].id if reports else None,
             'is_admin': admin,
@@ -9028,6 +9300,7 @@ def work_reports_list(request):
 
     return render(request, 'core/work_reports.html', {
         'reports': reports,
+        'dup_groups': dup_groups,
         'lands': lands,
         'workers': workers,
         'sections': WorkItem.SECTION_CHOICES,
@@ -10257,6 +10530,57 @@ def workorder_mobile_v2(request):
                             'success': False,
                             'message': f'刚刚已提交过相同区域的工单，请勿重复提交（{WORKORDER_DEDUP_SECONDS}秒内）',
                         }, status=409)
+                    # Cross-worker similar-report reminder (soft). Catches the
+                    # common case of two field workers independently logging
+                    # the SAME task in the SAME area on the SAME day, which
+                    # inflates the rolled-up hours. Looks for other workers'
+                    # reports today that overlap this submission's zones AND
+                    # share at least one work-item category. Returns a confirm
+                    # prompt; the worker can override with force=1. Skipped on
+                    # edit/PM and when the submit explicitly carries force=1.
+                    if not (request.POST.get('force') in ('1', 'true', 'True')):
+                        submit_wi_ids = set()
+                        try:
+                            for e in json.loads(request.POST.get('entries', '[]') or '[]'):
+                                wid = e.get('work_item')
+                                if wid:
+                                    submit_wi_ids.add(int(wid))
+                        except (ValueError, TypeError):
+                            pass
+                        zone_ids = [z.id for z in selected_zones] if selected_zones else []
+                        similar = []
+                        if zone_ids and submit_wi_ids:
+                            # Only match the SAME shift — different shifts doing
+                            # the same area+category is a legitimate handoff, not
+                            # a duplicate (mirrors _detect_dup_groups).
+                            cand = (WorkReport.objects
+                                    .filter(date=report_date, shift=shift, zones__in=zone_ids)
+                                    .exclude(worker=post_worker)
+                                    .distinct()
+                                    .select_related('worker')
+                                    .prefetch_related('entries__work_item'))
+                            for r in cand:
+                                # share at least one work-item category?
+                                r_wi = {e.work_item_id for e in r.entries.all()
+                                        if e.work_item_id}
+                                if r_wi & submit_wi_ids:
+                                    shared = [wi.name_zh for e in r.entries.all()
+                                              if e.work_item_id in submit_wi_ids and e.work_item
+                                              for wi in [e.work_item]]
+                                    similar.append({
+                                        'id': r.id,
+                                        'worker': r.worker.full_name if r.worker else '—',
+                                        'zones': r.zone_names or '',
+                                        'hours': (r.team_hours or 0) + (r.third_party_hours or 0),
+                                        'categories': '、'.join(dict.fromkeys(shared))[:60],
+                                    })
+                        if similar:
+                            return JsonResponse({
+                                'success': False,
+                                'confirm': True,
+                                'message': '今天已有其他人在相同区域提交了相同类别的工单，可能是重复工作。是否仍要提交？',
+                                'similar': similar[:5],
+                            }, status=409)
                     report = WorkReport.objects.create(
                         date=report_date,
                         weather='',
@@ -10292,6 +10616,19 @@ def workorder_mobile_v2(request):
                 m_dest, m_proj, m_cp = _resolve_material_dest(request, entries)
                 _save_workorder_materials(report, materials, entry_subtype=m_dest,
                                           related_project_id=m_proj, counterparty=m_cp)
+                # Project-association approval gate: a NEW work order that links
+                # to a project (via entry.project or material related_project)
+                # starts UNconfirmed — it won't count toward project labor/
+                # material stats until a manager confirms it in the project
+                # detail page. Existing confirmed orders stay confirmed on edit;
+                # a confirmed order that gains a NEW project link is reset so
+                # the manager reviews the new association.
+                has_project_link = any(e.get('project') for e in entries) or bool(m_proj)
+                if has_project_link and not is_edit:
+                    report.project_confirmed = False
+                    report.save(update_fields=['project_confirmed'])
+                elif is_edit and has_project_link and not report.project_confirmed:
+                    pass   # already pending; leave as-is until manager confirms
                 # 计划性维修: resolve the checked past 待修 workorders (create only —
                 # re-resolving on edit would double-link).
                 if not is_edit:
@@ -10340,6 +10677,57 @@ def workorder_mobile_v2(request):
                 # 让它建立 report↔GWO 链接并标完成。
                 from core.workorder_tree_views import mark_pm_completed
                 mark_pm_completed(report, gwo_id=pm_gwo_id if is_pm_completion else None)
+
+                # Merge mode: after saving the survivor's edits, delete the dup
+                # reports (re-pointing all their child records first). The user
+                # opened the edit form prefilled with the survivor's data via
+                # openV2ModalForMerge; the submit sends merge_dup_ids alongside
+                # report_id. Reuses the same proven re-point logic as the
+                # standalone work_report_merge endpoint (with all C1/C2/C3 fixes).
+                merge_raw = request.POST.get('merge_dup_ids', '')
+                if merge_raw and report.id:
+                    dup_ids = [int(x) for x in merge_raw.replace(';', ',').split(',')
+                               if x.strip().isdigit() and int(x.strip()) != report.id]
+                    if dup_ids:
+                        from core.models import (WorkReportEntry as _WRE,
+                                                 WorkReportComment as _WRC,
+                                                 InventoryTransaction as _IT,
+                                                 WorkReportEditLog as _WEL, Zone as _Z)
+                        survivor = report
+                        _WRE.objects.filter(work_report_id__in=dup_ids).update(work_report=survivor)
+                        _WRC.objects.filter(work_report_id__in=dup_ids).update(work_report=survivor)
+                        _WEL.objects.filter(work_report_id__in=dup_ids).update(work_report=survivor)
+                        _IT.objects.filter(work_report_id__in=dup_ids).update(work_report=survivor)
+                        WorkReport.objects.filter(parent_work_report_id__in=dup_ids).update(parent_work_report=survivor)
+                        WorkReport.objects.filter(resolved_by_pm_id__in=dup_ids).update(resolved_by_pm=survivor)
+                        # Rewrite workorder_id tags in Zone.remarks JSON.
+                        dup_set = set(dup_ids)
+                        for z in _Z.objects.all():
+                            changed = False
+                            for field in ('remarks', 'confirmed_remarks'):
+                                vals = getattr(z, field, None) or []
+                                if not isinstance(vals, list):
+                                    continue
+                                for entry in vals:
+                                    if isinstance(entry, dict) and entry.get('workorder_id') in dup_set:
+                                        entry['workorder_id'] = survivor.id
+                                        changed = True
+                                if changed:
+                                    setattr(z, field, vals)
+                            if changed:
+                                z.save(update_fields=['remarks', 'confirmed_remarks'])
+                        # Merge photos from dups into the survivor (already has the
+                        # user's edited photos from the save above).
+                        dup_photos = [p for d in WorkReport.objects.filter(pk__in=dup_ids)
+                                      for p in (d.photos or [])]
+                        if dup_photos:
+                            survivor.photos = list(dict.fromkeys(
+                                list(survivor.photos or []) + dup_photos))
+                            survivor.save(update_fields=['photos'])
+                        dup_nums = ', '.join(f'#{d}' for d in dup_ids)
+                        WorkReport.objects.filter(pk__in=dup_ids).delete()
+                        _record_edit(survivor, request.user,
+                                     note=f'合并重复工单 {dup_nums}')
 
             ticket = report.display_number if hasattr(report, 'display_number') else f'#{report.id}'
             success_msg = f'工作记录已更新 ({ticket})' if is_edit else f'工作记录已提交 ({ticket})'
