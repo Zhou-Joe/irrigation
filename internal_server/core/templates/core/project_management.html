@@ -511,16 +511,34 @@ function pmRenderDetail(pid) {
             }
             return '<div class="pm-rec pm-wr">' +
                 '<div class="pm-rec-head"><a class="pm-rec-date" href="/work-reports/' + wr.id + '/">工单 #' + wr.id + '</a>' +
-                '<span class="pm-rec-meta">' + _pmEsc(wr.date) +
+                '<span class="pm-rec-meta">' + _pmEsc(wr.created_at || wr.date) +
                 ' · 灌溉组 ' + wr.team_hours + 'h · 第三方 ' + wr.third_hours + 'h' +
                 (wr.worker_name ? ' · 创建人 ' + _pmEsc(wr.worker_name) : '') +
-                (wr.created_at ? ' · 创建 ' + _pmEsc(wr.created_at) : '') +
-                '</span></div>' +
+                '</span>' +
+                '<button type="button" class="btn btn-secondary" style="font-size:.76rem;padding:3px 10px;margin-left:8px;" onclick="removeProjectReport(' + wr.id + ', ' + pid + ', this)">移除关联</button>' +
+                '</div>' +
                 matHtml +
             '</div>';
         }).join('');
     } else {
         wrHtml = '<div style="color:#aaa;font-size:.82rem;">暂无关联工单</div>';
+    }
+
+    // 待确认工单: project-linked work orders awaiting manager confirmation.
+    // Same card shape as 关联工单 but with a 确认 button each; excluded from
+    // the hours/material stats above until confirmed.
+    var pendingWrHtml = '';
+    if (b.pending_work_reports && b.pending_work_reports.length) {
+        pendingWrHtml = b.pending_work_reports.map(function (wr) {
+            return '<div class="pm-rec pm-wr" style="border-left:3px solid #f0ad4e;">' +
+                '<div class="pm-rec-head"><a class="pm-rec-date" href="/work-reports/' + wr.id + '/">工单 #' + wr.id + '</a>' +
+                '<span class="pm-rec-meta">' + _pmEsc(wr.created_at || wr.date) +
+                ' · 灌溉组 ' + wr.team_hours + 'h · 第三方 ' + wr.third_hours + 'h' +
+                (wr.worker_name ? ' · 创建人 ' + _pmEsc(wr.worker_name) : '') +
+                '</span>' +
+                '<button type="button" class="btn btn-primary" style="font-size:.76rem;padding:3px 10px;margin-left:8px;" onclick="confirmProjectReport(' + wr.id + ', this)">确认</button>' +
+                '</div></div>';
+        }).join('');
     }
 
     // 预估消耗提醒: pending estimated consumption (not yet deducted from budget).
@@ -564,8 +582,49 @@ function pmRenderDetail(pid) {
         estHtml +
         '<div class="pm-sub">关联采购订单（' + (b.linked_pos ? b.linked_pos.length : 0) + '）</div>' + poHtml +
         '<div class="pm-sub">关联工单（' + (b.work_reports ? b.work_reports.length : 0) + '）</div>' + wrHtml +
+        (pendingWrHtml ? '<div class="pm-sub">待确认工单（' + (b.pending_work_reports ? b.pending_work_reports.length : 0) + '）<span style="font-size:.72rem;color:#b0701a;font-weight:400;"> — 确认后才计入工时/材料</span></div>' + pendingWrHtml : '') +
         '<div class="pm-sub">其他出库记录（' + (b.consumption_records ? b.consumption_records.length : 0) + '）</div>' + recHtml +
         '<div style="margin-top:10px;"><button type="button" class="btn btn-primary" style="font-size:.82rem;padding:5px 12px;" onclick="pbOpen(' + pid + ')">编辑预算与关联</button></div>';
+}
+
+// Confirm a pending work order's project association (admin). POSTs to the
+// confirm endpoint, then force-reloads the page so the report moves into 关联工单.
+function confirmProjectReport(rid, btn) {
+    if (!confirm('确认工单 #' + rid + ' 的项目关联？确认后其工时/材料将计入项目。')) return;
+    var orig = btn.textContent;
+    btn.disabled = true; btn.textContent = '确认中…';
+    var fd = new FormData();
+    fd.append('report_ids', String(rid));
+    fetch('/work-reports/project-confirm/', {
+        method: 'POST', headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRFToken': _pmCsrf() }, body: fd,
+    }).then(function (r) { return r.json(); }).then(function (d) {
+        if (d.success) { showToast(d.message, false); _pmForceReload(); }
+        else { showToast(d.message, true); btn.disabled = false; btn.textContent = orig; }
+    }).catch(function () { showToast('网络错误', true); btn.disabled = false; btn.textContent = orig; });
+}
+// Remove a confirmed work order's association with this project (admin).
+// Sets project=null on the report's entries for this project.
+function removeProjectReport(rid, pid, btn) {
+    if (!confirm('移除工单 #' + rid + ' 与该项目的关联？移除后其工时/材料不再计入项目（工单本身保留）。')) return;
+    var orig = btn.textContent;
+    btn.disabled = true; btn.textContent = '移除中…';
+    var fd = new FormData();
+    fd.append('report_id', String(rid));
+    fd.append('project_id', String(pid));
+    fetch('/work-reports/project-remove/', {
+        method: 'POST', headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRFToken': _pmCsrf() }, body: fd,
+    }).then(function (r) { return r.json(); }).then(function (d) {
+        if (d.success) { showToast(d.message, false); _pmForceReload(); }
+        else { showToast(d.message, true); btn.disabled = false; btn.textContent = orig; }
+    }).catch(function () { showToast('网络错误', true); btn.disabled = false; btn.textContent = orig; });
+}
+// Force a full page reload (bypass cache) so the project panel re-fetches.
+function _pmForceReload() {
+    window.location.href = window.location.pathname + window.location.search + (window.location.search ? '&' : '?') + '_t=' + Date.now();
+}
+function _pmCsrf() {
+    var c = document.cookie.match(/csrftoken=([^;]+)/);
+    return c ? c[1] : '';
 }
 
 // Refresh the table row's budget cells after an inline save (no page reload).

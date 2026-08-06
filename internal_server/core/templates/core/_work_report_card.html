@@ -1,6 +1,6 @@
 {% comment %}Partial: one work-report card. Used by the server-rendered initial batch in work_reports.html. The AJAX load-more path builds equivalent markup client-side via renderCard() so server and client cards stay visually identical.{% endcomment %}
 {% load media_tags %}
-<div class="wr-card cmt-collapsed {% if not report.comment_count %}cmt-empty{% endif %}" data-rid="{{ report.id }}">
+<div class="wr-card cmt-collapsed {% if not report.comment_count %}cmt-empty{% endif %}{% if report.dup_group %} in-dup-group{% endif %}" data-rid="{{ report.id }}" {% if report.dup_group %}data-dup-group="{{ report.dup_group }}"{% endif %}>
     <div class="wr-summary" onclick="toggleCard(this)">
         <div class="wr-card-top">
             <span class="wr-card-date">{{ report.date }}</span>

@@ -51,6 +51,9 @@
     // PMWorkOrder edit mode: when set, submit sends pm_order_id (not report_id).
     var _editingPmOrderId = null;
     var _pmGwoId = null;  // PM GeneratedWorkOrder id for extension requests
+    // Merge mode: when set (an array of dup report ids), submit appends
+    // merge_dup_ids so the server saves the survivor's edits then deletes dups.
+    var _mergeDupIds = null;
     // Set BEFORE buildForm during an edit open so initWorkorderBehaviors can skip
     // the create-only default-category selection. _editingReportId is set later
     // (after the fetch resolves), so it can't gate the IIFE directly.
@@ -379,6 +382,22 @@
                 if (sb) sb.disabled = false;
             })
             .catch(function () { showToast('加载工单失败', 'error'); if (sb) { sb.disabled = false; sb.textContent = '保存'; } });
+    };
+
+    // Merge mode: open the survivor's edit form (prefilled with all its data —
+    // entries, materials, photos, hours, etc.) so the manager can adjust any
+    // field before confirming the merge. dupIds are the other reports to delete
+    // after the survivor's edits are saved. Mirrors openV2ModalForEdit but sets
+    // _mergeDupIds and relabels the submit button.
+    window.openV2ModalForMerge = function (survivorId, dupIds) {
+        _mergeDupIds = (dupIds && dupIds.length) ? dupIds.slice() : null;
+        window.openV2ModalForEdit(survivorId);
+        // Override the button label after the edit form opens (openV2ModalForEdit
+        // sets it to "保存"; we want "合并保存"). Defer a tick so the DOM is ready.
+        setTimeout(function () {
+            var sb = $('woSubmitBtn');
+            if (sb) sb.textContent = '合并保存';
+        }, 200);
     };
 
     // Open an existing PMWorkOrder in edit/view mode (mirrors openV2ModalForEdit
@@ -756,6 +775,7 @@
         // Defensive reset of the work-order submit guard: a prior error path
         // could have left it set, which would silently swallow the next submit.
         window._woInflight = false;
+        _mergeDupIds = null;   // cancel merge if user closes the form
         // Reset zone summaries
         var woZS = $('woZoneSummary'); if (woZS) woZS.innerHTML = '<h2>工作记录</h2>';
         var wrZS = $('wrZoneSummary'); if (wrZS) wrZS.innerHTML = '<h2>浇水需求</h2>';
@@ -2944,6 +2964,10 @@
             fd.append('report_id', _editingReportId);
             if (_photoRemove.size) fd.append('report_photos_remove', Array.from(_photoRemove).join(','));
         }
+        // Merge mode: alongside report_id, send the dup ids to delete after save.
+        if (_mergeDupIds && _mergeDupIds.length) {
+            fd.append('merge_dup_ids', _mergeDupIds.join(','));
+        }
         // PMWorkOrder edit mode: send pm_order_id so the server updates the
         // existing PMWorkOrder instead of creating a WorkReport.
         if (_editingPmOrderId) {
@@ -2963,10 +2987,14 @@
         // submit. The flag survives until the response fully settles, and the
         // server-side dedup gate is the final backstop for refresh / multi-tab.
         window._woInflight = true;
+        // If this is the second pass after a similar-report confirmation,
+        // force=1 tells the server to skip the cross-worker check.
+        if (window._woForceSubmit) { fd.append('force', '1'); window._woForceSubmit = false; }
         fetch('/mobile/workorder/v2/', { method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest' } })
             .then(function (r) { return r.json(); }).then(function (data) {
                 if (data.success) {
                     showToast(data.message, 'success');
+                    _mergeDupIds = null;   // merge complete — clear for next open
                     // Keep the button disabled on success — the modal closes shortly,
                     // so there's nothing to re-enable and a stray click can't re-fire.
                     // PM task completion (create): after closing, navigate to the
@@ -2978,6 +3006,24 @@
                         }, 1500);
                     } else {
                         setTimeout(function () { closeV2Modal('workorder'); }, 1500);
+                    }
+                }
+                else if (data.confirm) {
+                    // Cross-worker similar-report reminder: show the existing
+                    // reports and let the worker decide. Confirming re-submits
+                    // with force=1 so the check is skipped on the second pass.
+                    var rows = (data.similar || []).map(function (s) {
+                        return '• #' + s.id + ' ' + s.worker + '｜' + (s.zones || '(无区域)')
+                            + '｜' + (s.categories || '') + (s.hours ? '｜' + s.hours + 'h' : '');
+                    }).join('\n');
+                    btn.disabled = false; btn.textContent = isSaving ? '保存' : '提交';
+                    if (confirm(data.message + '\n\n' + rows + '\n\n确定提交请点「确定」，取消请点「取消」。')) {
+                        // Set a module-level flag so the re-invoked submit picks
+                        // up force=1 (the click() rebuilds FormData from scratch,
+                        // so appending to the closed-over `fd` would be lost).
+                        window._woForceSubmit = true;
+                        window._woInflight = false;
+                        $('woSubmitBtn').click();
                     }
                 }
                 else { showToast(data.message, 'error'); btn.disabled = false; btn.textContent = '提交'; }
@@ -3302,9 +3348,23 @@
             var params = new URLSearchParams(window.location.search);
             var woId = params.get('edit_workorder');
             if (woId && /^\d+$/.test(woId)) {
+                // Merge mode: if merge_dup_ids is present, this edit is a merge —
+                // the survivor's form opens and submit will also delete the dups.
+                var mergeParam = params.get('merge_dup_ids');
+                if (mergeParam) {
+                    _mergeDupIds = mergeParam.split(',').map(function (x) {
+                        return parseInt(x.trim(), 10);
+                    }).filter(function (x) { return x; });
+                }
                 // Small delay lets the map finish initializing so the zone summary
                 // highlights correctly.
-                setTimeout(function () { window.openV2ModalForEdit(woId); }, 600);
+                setTimeout(function () {
+                    window.openV2ModalForEdit(woId);
+                    if (_mergeDupIds) {
+                        var sb = $('woSubmitBtn');
+                        if (sb) sb.textContent = '合并保存';
+                    }
+                }, 600);
                 return;
             }
             // PM task completion (create mode): ?pm_gwo_id=<id> opens the form

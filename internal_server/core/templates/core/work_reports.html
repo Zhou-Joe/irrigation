@@ -34,6 +34,18 @@
   }
   .wr-card:hover { box-shadow: 0 3px 12px rgba(0,0,0,0.06); border-color: #d8dde3; }
 
+  /* Suspected-duplicate group: cards flagged in-dup-group get a left accent;
+     the JS wraps each run of same-group cards in a .wr-dup-group with a
+     header (⚠ 疑似重复) + a merge button (admin-only). */
+  .wr-card.in-dup-group { border-left: 3px solid #f0ad4e; }
+  .wr-dup-group { margin-bottom: 10px; border: 1px dashed #f0ad4e; border-radius: 12px; padding: 0; background: rgba(240,173,78,0.04); }
+  .wr-dup-group > .wr-card { margin-bottom: 0; border-radius: 0; border-left: 3px solid #f0ad4e; }
+  .wr-dup-group > .wr-card:first-of-type { border-top-left-radius: 12px; border-top-right-radius: 12px; }
+  .wr-dup-group > .wr-card:last-of-type { border-bottom-left-radius: 12px; border-bottom-right-radius: 12px; margin-bottom: 0; }
+  .wr-dup-head { display:flex; align-items:center; gap:8px; padding:6px 10px; font-size:0.8rem; color:#b0701a; background:rgba(240,173,78,0.12); border-top-left-radius:12px; border-top-right-radius:12px; }
+  .wr-dup-head .wr-merge-btn { margin-left:auto; padding:3px 12px; background:#1B4332; color:#fff; border:none; border-radius:6px; font-size:0.78rem; cursor:pointer; font-weight:600; }
+  .wr-dup-head .wr-merge-btn:hover { background:#2d6a4f; }
+
   /* Collapsed summary — always visible */
   .wr-summary { padding: 9px 14px; cursor: pointer; }
   .wr-card-top { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom: 3px; }
@@ -781,6 +793,25 @@
     </div>
     <div class="fu-modal-foot">
       <button type="button" class="btn-sm btn-secondary" onclick="closeMgrResolveModal()">取消</button>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{% comment %}Merge-duplicates modal (admin-only; surfaced by the 合并 button on a
+   .wr-dup-group header). Lists the group's reports, lets the admin pick the
+   survivor and enter corrected hours, then POSTs to /work-reports/merge/.{% endcomment %}
+{% if is_admin %}
+<div class="fu-modal-overlay" id="mergeModal" style="display:none;">
+  <div class="fu-modal" role="dialog" aria-modal="true" style="max-width:600px;">
+    <div class="fu-modal-head">
+      <span>合并疑似重复工单</span>
+      <button type="button" class="fu-modal-close" onclick="document.getElementById('mergeModal').style.display='none'" aria-label="关闭">×</button>
+    </div>
+    <div class="fu-modal-body" id="mergeModalBody" style="padding:16px;max-width:560px;"></div>
+    <div class="fu-modal-foot">
+      <button type="button" class="btn-sm btn-secondary" onclick="document.getElementById('mergeModal').style.display='none'">取消</button>
+      <button type="button" class="btn-sm btn-primary" onclick="submitMerge()">打开编辑表单</button>
     </div>
   </div>
 </div>
@@ -1852,6 +1883,7 @@ function loadMore() {
             div.innerHTML = renderCard(rep).trim();
             if (div.firstChild) list.appendChild(div.firstChild);
         });
+        aggregateDupGroups(list);
         lastLoadedId = d.last_id;
         document.getElementById('loadMoreWrap').style.display = d.has_more ? '' : 'none';
         btn.disabled = false;
@@ -1864,12 +1896,112 @@ function loadMore() {
     }).finally(function () { isLoadingMore = false; });
 }
 
+// ── Suspected-duplicate grouping + merge (admin) ─────────────────────────
+// Group ALL cards sharing the same data-dup-group (not just adjacent ones)
+// into a .wr-dup-group container with a header (⚠ 疑似重复) + merge button.
+// Suspected-duplicate cards are moved to the TOP of the list so they sit
+// together regardless of sort order, then wrapped. Idempotent: unwraps any
+// previously-wrapped groups first. Called on DOMContentLoaded and after loadMore.
+function aggregateDupGroups(scope) {
+    var root = scope || document.getElementById('cardList');
+    if (!root) return;
+    // Unwrap existing groups (re-aggregate from scratch).
+    root.querySelectorAll('.wr-dup-group').forEach(function (g) {
+        var head = g.querySelector('.wr-dup-head');
+        if (head) head.remove();
+        while (g.firstChild) root.insertBefore(g.firstChild, g);
+        g.remove();
+    });
+    // Collect all dup-grouped cards, grouped by key.
+    var allCards = Array.from(root.querySelectorAll('.wr-card'));
+    var byGroup = {};   // group_key -> [card, ...]
+    allCards.forEach(function (c) {
+        var gk = c.getAttribute('data-dup-group');
+        if (gk) { (byGroup[gk] = byGroup[gk] || []).push(c); }
+    });
+    // For each group with ≥2 members: move its cards to the top of the list
+    // (contiguous), then wrap them.
+    var groupKeys = Object.keys(byGroup).filter(function (gk) { return byGroup[gk].length >= 2; });
+    groupKeys.forEach(function (gk) {
+        var run = byGroup[gk];
+        // Move each card to just before the first one's current position so
+        // they end up contiguous at the top of the list.
+        var anchor = root.firstChild;
+        run.forEach(function (c) { root.insertBefore(c, anchor); });
+        // Now wrap the contiguous run (they're at the top, in order).
+        var head = document.createElement('div');
+        head.className = 'wr-dup-head';
+        head.innerHTML = '<span>⚠ 疑似重复工单（' + run.length + ' 条）— 同日同班次同区域同类别，不同处理人</span>'
+            + (isAdmin ? '<button type="button" class="wr-merge-btn" onclick="openMergeModal(\'' + gk + '\')">合并</button>' : '');
+        var wrap = document.createElement('div');
+        wrap.className = 'wr-dup-group';
+        wrap.setAttribute('data-dup-group', gk);
+        root.insertBefore(wrap, run[0]);
+        wrap.appendChild(head);
+        run.forEach(function (c) { wrap.appendChild(c); });
+    });
+}
+// Merge modal: lists the group's reports, lets the admin pick the survivor
+// and enter the corrected hours, then POSTs to /work-reports/merge/.
+var _dupGroupCards = {};   // group_key -> [report summary dicts] (latest batch)
+function _refreshDupGroupCards() {
+    _dupGroupCards = {};
+    document.querySelectorAll('.wr-dup-group').forEach(function (g) {
+        var gk = g.getAttribute('data-dup-group');
+        var members = [];
+        g.querySelectorAll('.wr-card[data-rid]').forEach(function (card) {
+            var rid = card.getAttribute('data-rid');
+            members.push({
+                id: parseInt(rid, 10),
+                text: card.querySelector('.wr-card-id') ? card.querySelector('.wr-card-id').textContent : ('#' + rid),
+                worker: card.querySelector('.wr-meta b') ? card.querySelector('.wr-meta b').textContent : '',
+                zones: card.querySelector('.wr-zone-summary') ? card.querySelector('.wr-zone-summary').textContent.trim() : '',
+            });
+        });
+        _dupGroupCards[gk] = members;
+    });
+}
+function openMergeModal(gk) {
+    _refreshDupGroupCards();
+    var members = _dupGroupCards[gk] || [];
+    if (members.length < 2) { showToast('该组不足两条，无法合并', 'error'); return; }
+    // Pick the member with the most total hours as the survivor (base for the edit form).
+    var best = null, bestTotal = -1;
+    members.forEach(function (m) {
+        var card = document.querySelector('.wr-dup-group[data-dup-group="' + gk + '"] .wr-card[data-rid="' + m.id + '"]');
+        var team = 0, third = 0;
+        if (card) {
+            var meta = card.querySelector('.wr-meta');
+            if (meta) {
+                var tm = (meta.textContent.match(/(\d+(?:\.\d+)?)\s*h/) || [])[1];
+                var tp = (meta.textContent.match(/\+\s*(\d+(?:\.\d+)?)\s*h/) || [])[1];
+                if (tm) team = parseFloat(tm);
+                if (tp) third = parseFloat(tp);
+            }
+        }
+        var total = team + third;
+        if (total > bestTotal) { bestTotal = total; best = m; }
+    });
+    if (!best) best = members[0];
+    var dupIds = members.filter(function (x) { return x.id !== best.id; }).map(function (x) { return x.id; });
+    if (!dupIds.length) { showToast('没有可合并的工单', 'error'); return; }
+    if (!confirm('将以工时最长的 #' + best.id + ' 为基础打开编辑表单（预填其全部数据，可修改任意内容）。提交后其余 ' + dupIds.length + ' 条工单将被永久删除（明细/照片/材料转入）。')) return;
+    // Redirect to dashboard edit mode with merge_dup_ids — the edit form lives
+    // on the dashboard page (dashboard-modal.js), not on this work-reports page.
+    window.location.href = '/?edit_workorder=' + best.id + '&merge_dup_ids=' + dupIds.join(',');
+}
+function _mergeCsrf() {
+    var c = document.cookie.match(/csrftoken=([^;]+)/);
+    return c ? c[1] : '';
+}
+
 // ── Card markup builder (used for AJAX-appended cards) ────────────────────
 function esc(s) { var d = document.createElement('div'); d.textContent = s == null ? '' : s; return d.innerHTML; }
 function isVideoPath(p) { return /\.(mp4|mov|m4v|webm|ogg|ogv|avi|mkv)$/i.test(p); }
 function thumbPath(p) { return p.replace(/\.[^.]+$/, '_thumb.jpg'); }
 function renderCard(r) {
-    var html = '<div class="wr-card cmt-collapsed' + (r.comment_count ? '' : ' cmt-empty') + '" data-rid="' + r.id + '">';
+    var grpAttr = r.dup_group ? (' data-dup-group="' + esc(r.dup_group) + '" class="wr-card cmt-collapsed in-dup-group' + (r.comment_count ? '' : ' cmt-empty') + '"') : '';
+    var html = '<div ' + (grpAttr || ('class="wr-card cmt-collapsed' + (r.comment_count ? '' : ' cmt-empty') + '"')) + ' data-rid="' + r.id + '">';
     html += '<div class="wr-summary" onclick="toggleCard(this)">';
     // top row
     html += '<div class="wr-card-top"><span class="wr-card-date">' + esc(r.date) + '</span>';
@@ -2217,6 +2349,7 @@ function lbKey(e) {
 // so freshly-swapped cards behave the same.
 document.addEventListener('DOMContentLoaded', function () {
     autoloadPopulatedCommentThreads(document);
+    aggregateDupGroups();   // wrap server-rendered suspected-duplicate cards
 });
 </script>
 {% endblock %}

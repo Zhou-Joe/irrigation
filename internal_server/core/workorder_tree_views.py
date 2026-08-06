@@ -207,11 +207,24 @@ def _phase_map():
 
 
 def _project_summaries(projects):
-    """Per-project work summary: {project_id: {reports, hours, third_hours, phases}}."""
+    """Per-project work summary: {project_id: {reports, hours, third_hours, phases}}.
+
+    Only CONFIRMED work orders (project_confirmed=True) count toward hours/
+    phases/reports. Pending orders are surfaced separately by
+    _project_budget_data and excluded here so un-reviewed associations don't
+    inflate the rolled-up labor numbers.
+    """
+    from core.models import WorkReport
     pmap = _phase_map()
     summ = {p.id: {'reports': set(), 'hours': 0, 'third_hours': 0, 'phases': {}}
             for p in projects}
-    entries = (WorkReportEntry.objects.filter(project__in=[p.id for p in projects])
+    # Only confirmed reports' entries count.
+    confirmed_ids = set(WorkReport.objects.filter(
+        project_confirmed=True,
+        id__in=WorkReportEntry.objects.filter(project__in=[p.id for p in projects])
+        .values_list('work_report_id', flat=True)).values_list('id', flat=True))
+    entries = (WorkReportEntry.objects.filter(project__in=[p.id for p in projects],
+                                             work_report_id__in=confirmed_ids)
                .select_related('work_item'))
     rep_to_projects = {}
     for e in entries:
@@ -244,7 +257,7 @@ def _project_budget_data(projects):
     材料余额 = material_budget_amount − Σ(linked_pos.po_amount_untaxed) is computed
     here as material_balance and exposed to the table + panel.
     """
-    from core.models import (ProjectPurchaseOrder, InventoryTransaction)
+    from core.models import (ProjectPurchaseOrder, InventoryTransaction, WorkReport)
     from core.views import inventory_category_paths, _po_received_parts_batch
     pids = [p.id for p in projects]
 
@@ -258,9 +271,18 @@ def _project_budget_data(projects):
     # deducted from the budget until confirmed.
     consumed = {}
     records = {}
+    # Exclude material consumption from UNconfirmed work orders — pending
+    # associations don't count toward the project until a manager confirms.
+    # A transaction with work_report=None is a standalone 出库 (not from a work
+    # order) and is unaffected by the gate.
+    pending_rep_ids = set(WorkReport.objects.filter(
+        project_confirmed=False,
+        material_consumptions__related_project_id__in=pids,
+    ).values_list('id', flat=True))
     txns = (InventoryTransaction.objects
             .filter(related_project_id__in=pids, operation='出库', entry_subtype='项目',
                     consumption_mode='actual')
+            .exclude(work_report_id__in=pending_rep_ids)
             .select_related('worker', 'work_report', 'zone')
             .prefetch_related('lines__category')
             .order_by('-date', '-id'))
@@ -337,8 +359,12 @@ def _project_budget_data(projects):
             links_po_total[lk.project_id] = links_po_total.get(lk.project_id, 0) + amt
 
     # Related work reports (工单) — via WorkReportEntry.project, distinct + with hours.
+    # Split by project_confirmed: confirmed reports count toward the project and
+    # appear in 关联工单; unconfirmed (pending manager approval) appear in a
+    # separate 待确认工单 list and are EXCLUDED from labor/material stats.
     from core.models import WorkReport, WorkReportEntry
     reports = {}
+    pending_reports = {}
     rep_ids_by_proj = {}
     for e in (WorkReportEntry.objects.filter(project_id__in=pids)
               .values('project_id', 'work_report_id').distinct()):
@@ -346,13 +372,13 @@ def _project_budget_data(projects):
     all_rep_ids = set().union(*rep_ids_by_proj.values()) if rep_ids_by_proj else set()
     rep_map = {r['id']: r for r in (WorkReport.objects.filter(id__in=all_rep_ids)
                 .values('id', 'date', 'team_hours', 'third_party_hours',
-                        'worker__full_name', 'created_at'))}
+                        'worker__full_name', 'created_at', 'project_confirmed'))}
     for pid, rids in rep_ids_by_proj.items():
         for rid in sorted(rids, reverse=True):
             r = rep_map.get(rid)
             if not r:
                 continue
-            reports.setdefault(pid, []).append({
+            entry = {
                 'id': r['id'],
                 'date': r['date'].isoformat() if r['date'] else '',
                 'team_hours': r['team_hours'] or 0,
@@ -362,7 +388,11 @@ def _project_budget_data(projects):
                 # business date/hours already shown.
                 'worker_name': r.get('worker__full_name') or '',
                 'created_at': r['created_at'].strftime('%Y-%m-%d %H:%M') if r.get('created_at') else '',
-            })
+            }
+            if r.get('project_confirmed'):
+                reports.setdefault(pid, []).append(entry)
+            else:
+                pending_reports.setdefault(pid, []).append(entry)
 
     # Split consumption records: those from a work order are grouped under that work
     # report (shown in 关联工单 with its material lines); the rest (standalone 出库
@@ -405,6 +435,7 @@ def _project_budget_data(projects):
             'po_amount_total': ('' if po_sum is None else f'{po_sum:.2f}'),
             'linked_pos': links.get(p.id, []),
             'work_reports': reports.get(p.id, []),
+            'pending_work_reports': pending_reports.get(p.id, []),
         }
     return out
 
