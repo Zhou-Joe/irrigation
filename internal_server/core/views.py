@@ -8861,8 +8861,54 @@ def work_report_project_remove(request):
 
     Sets project=None on all the report's WorkReportEntry rows pointing at the
     given project, so its hours/materials no longer count toward that project.
-    The report itself is NOT deleted — it stays in 维修日志, just unlinked.
+    The report itself is NOT deleted — it stays in 维修日志, just unlinked, and
+    the removed association is recorded on WorkReport.removed_project so the
+    project page can show it in the collapsed 已移除工单 list and restore it later.
     POST: report_id, project_id. Returns JSON.
+    """
+    from core.models import WorkReport, WorkReportEntry
+    from core.role_utils import is_admin
+    from core.workorder_tree_views import _record_edit
+    from django.db import transaction
+    from django.utils import timezone as _tz
+
+    if not is_admin(request.user):
+        return JsonResponse({'success': False, 'message': '无权限'}, status=403)
+    try:
+        report_id = int(request.POST.get('report_id', ''))
+        project_id = int(request.POST.get('project_id', ''))
+    except (TypeError, ValueError):
+        return JsonResponse({'success': False, 'message': '缺少 report_id/project_id'}, status=400)
+    with transaction.atomic():
+        report = WorkReport.objects.select_for_update().filter(pk=report_id).first()
+        if not report:
+            return JsonResponse({'success': False, 'message': '工单不存在'}, status=404)
+        n = WorkReportEntry.objects.filter(work_report_id=report_id, project_id=project_id).update(project=None)
+        # Record the removed association so the order can be shown in the
+        # project's 已移除工单 list and restored (re-linked) later.
+        rp = dict(report.removed_project or {})
+        rp[str(project_id)] = {
+            'date': report.date.isoformat() if report.date else '',
+            'team_hours': report.team_hours or 0,
+            'third_hours': report.third_party_hours or 0,
+            'worker_name': (report.worker.full_name if report.worker_id and report.worker else ''),
+            'created_at': report.created_at.strftime('%Y-%m-%d %H:%M') if report.created_at else '',
+            'removed_at': _tz.localtime(_tz.now()).strftime('%Y-%m-%d %H:%M'),
+        }
+        report.removed_project = rp
+        report.save(update_fields=['removed_project'])
+        _record_edit(report, request.user, note=f'移除项目(#{project_id})关联（{n} 条明细）')
+    return JsonResponse({'success': True,
+                         'message': f'已移除工单 #{report_id} 与该项目的关联（可在「已移除工单」中恢复）'})
+
+
+def work_report_project_restore(request):
+    """Admin-only: restore a previously-removed project association.
+
+    Inverse of work_report_project_remove: re-points the report's currently
+    null-project WorkReportEntry rows back to the given project, sets
+    project_confirmed=True (so it counts toward the project again), and clears
+    the key from removed_project. POST: report_id, project_id. Returns JSON.
     """
     from core.models import WorkReport, WorkReportEntry
     from core.role_utils import is_admin
@@ -8880,10 +8926,22 @@ def work_report_project_remove(request):
         report = WorkReport.objects.select_for_update().filter(pk=report_id).first()
         if not report:
             return JsonResponse({'success': False, 'message': '工单不存在'}, status=404)
-        n = WorkReportEntry.objects.filter(work_report_id=report_id, project_id=project_id).update(project=None)
-        _record_edit(report, request.user, note=f'移除项目(#{project_id})关联（{n} 条明细）')
+        # Re-link the entries that were unlinked from this project. Only the
+        # null-project entries are touched (the inverse of what remove did) so
+        # entries explicitly tied to OTHER projects are left alone.
+        n = WorkReportEntry.objects.filter(
+            work_report_id=report_id, project__isnull=True
+        ).update(project_id=project_id)
+        # Clear the removed-association record.
+        rp = dict(report.removed_project or {})
+        rp.pop(str(project_id), None)
+        report.removed_project = rp
+        report.project_confirmed = True
+        report.save(update_fields=['removed_project', 'project_confirmed'])
+        _record_edit(report, request.user, note=f'恢复项目(#{project_id})关联（{n} 条明细）')
     return JsonResponse({'success': True,
-                         'message': f'已移除工单 #{report_id} 与该项目的关联'})
+                         'message': f'已恢复工单 #{report_id} 与该项目的关联'})
+
 
 
 def _pm_gwo_queryset(user, is_mgr, include_done=False):

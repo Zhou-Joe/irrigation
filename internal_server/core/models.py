@@ -1128,6 +1128,12 @@ class WorkReport(models.Model):
     # 展示在「待确认工单」区供经理审核。无项目关联的工单忽略此字段。
     project_confirmed = models.BooleanField(
         '项目关联已确认', default=False, db_index=True)
+    # Records project associations removed via 移除关联, keyed by project id, so
+    # the order can still be shown in the project's 已移除工单 list and restored.
+    # remove sets an entry here + nulls WorkReportEntry.project; restore re-points
+    # the null entries and clears the key. Value: {pid: {date,hours,worker,removed_at}}.
+    removed_project = models.JSONField(
+        '已移除项目关联', default=dict, blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

@@ -394,6 +394,52 @@ def _project_budget_data(projects):
             else:
                 pending_reports.setdefault(pid, []).append(entry)
 
+    # 已移除工单: reports whose association with a project was removed via
+    # 移除关联 (entries nulled, association recorded in removed_project). Shown
+    # in a collapsed list per project with a 恢复关联 action; never counted in
+    # stats (their entries carry project=None, so consumption/labor sums exclude
+    # them automatically).
+    removed_reports = {}
+    rp_pids = [str(p) for p in pids]
+    pid_set = set(pids)
+    if rp_pids:
+        # has_key_any is unreliable on this SQLite/JSON combo; OR-chain per-pid
+        # has_key lookups instead so any project id as a JSON key matches.
+        from django.db.models import Q
+        rp_q = Q()
+        for pk in rp_pids:
+            rp_q |= Q(removed_project__has_key=pk)
+        rp_rows = (WorkReport.objects.filter(rp_q)
+        .values('id', 'date', 'team_hours', 'third_party_hours',
+                 'worker__full_name', 'created_at', 'removed_project'))
+        for r in rp_rows:
+            rp = r.get('removed_project') or {}
+            for pid_str, info in rp.items():
+                try:
+                    pid = int(pid_str)
+                except (TypeError, ValueError):
+                    continue
+                if pid not in pid_set:
+                    continue
+                removed_reports.setdefault(pid, []).append({
+                    'id': r['id'],
+                    'date': (info.get('date') if isinstance(info, dict)
+                             else (r['date'].isoformat() if r['date'] else '')),
+                    'team_hours': (info.get('team_hours') if isinstance(info, dict)
+                                   else (r['team_hours'] or 0)),
+                    'third_hours': (info.get('third_hours') if isinstance(info, dict)
+                                    else (r['third_party_hours'] or 0)),
+                    'worker_name': (info.get('worker_name') if isinstance(info, dict)
+                                    else (r.get('worker__full_name') or '')),
+                    'created_at': (info.get('created_at') if isinstance(info, dict)
+                                   else (r['created_at'].strftime('%Y-%m-%d %H:%M')
+                                         if r.get('created_at') else '')),
+                    'removed_at': (info.get('removed_at') if isinstance(info, dict) else ''),
+                })
+        # newest removed first
+        for pid in removed_reports:
+            removed_reports[pid].sort(key=lambda x: (x.get('removed_at') or '', x['id']), reverse=True)
+
     # Split consumption records: those from a work order are grouped under that work
     # report (shown in 关联工单 with its material lines); the rest (standalone 出库
     # form) stay in consumption_records as 「其他出库记录」.
@@ -436,6 +482,7 @@ def _project_budget_data(projects):
             'linked_pos': links.get(p.id, []),
             'work_reports': reports.get(p.id, []),
             'pending_work_reports': pending_reports.get(p.id, []),
+            'removed_work_reports': removed_reports.get(p.id, []),
         }
     return out
 
