@@ -541,6 +541,25 @@ function pmRenderDetail(pid) {
         }).join('');
     }
 
+    // 已移除工单: work orders whose association with this project was removed
+    // via 移除关联. Shown collapsed (default) with a 恢复关联 button; restoring
+    // re-links them as confirmed so they count toward the project again.
+    var removedWrHtml = '';
+    var removedList = b.removed_work_reports || [];
+    if (removedList.length) {
+        removedWrHtml = removedList.map(function (wr) {
+            return '<div class="pm-rec pm-wr" style="border-left:3px solid #bbb;opacity:.85;">' +
+                '<div class="pm-rec-head"><a class="pm-rec-date" href="/work-reports/' + wr.id + '/">工单 #' + wr.id + '</a>' +
+                '<span class="pm-rec-meta">' + _pmEsc(wr.created_at || wr.date) +
+                ' · 灌溉组 ' + wr.team_hours + 'h · 第三方 ' + wr.third_hours + 'h' +
+                (wr.worker_name ? ' · 创建人 ' + _pmEsc(wr.worker_name) : '') +
+                (wr.removed_at ? ' · 移除于 ' + _pmEsc(wr.removed_at) : '') +
+                '</span>' +
+                '<button type="button" class="btn btn-secondary" style="font-size:.76rem;padding:3px 10px;margin-left:8px;" onclick="restoreProjectReport(' + wr.id + ', ' + pid + ', this)">恢复关联</button>' +
+                '</div></div>';
+        }).join('');
+    }
+
     // 预估消耗提醒: pending estimated consumption (not yet deducted from budget).
     var estHtml;
     if (b.estimated_consumed && b.estimated_consumed.length) {
@@ -583,6 +602,7 @@ function pmRenderDetail(pid) {
         '<div class="pm-sub">关联采购订单（' + (b.linked_pos ? b.linked_pos.length : 0) + '）</div>' + poHtml +
         '<div class="pm-sub">关联工单（' + (b.work_reports ? b.work_reports.length : 0) + '）</div>' + wrHtml +
         (pendingWrHtml ? '<div class="pm-sub">待确认工单（' + (b.pending_work_reports ? b.pending_work_reports.length : 0) + '）<span style="font-size:.72rem;color:#b0701a;font-weight:400;"> — 确认后才计入工时/材料</span></div>' + pendingWrHtml : '') +
+        (removedWrHtml ? '<details class="pm-removed-fold" style="margin-top:6px;"><summary class="pm-sub" style="cursor:pointer;list-style:none;display:flex;align-items:center;gap:4px;color:#888;">已移除工单（' + removedList.length + '）<span style="font-size:.72rem;color:#aaa;font-weight:400;"> — 已脱离本项目，不计入统计，可恢复</span></summary><div style="padding-top:4px;">' + removedWrHtml + '</div></details>' : '') +
         '<div class="pm-sub">其他出库记录（' + (b.consumption_records ? b.consumption_records.length : 0) + '）</div>' + recHtml +
         '<div style="margin-top:10px;"><button type="button" class="btn btn-primary" style="font-size:.82rem;padding:5px 12px;" onclick="pbOpen(' + pid + ')">编辑预算与关联</button></div>';
 }
@@ -598,9 +618,9 @@ function confirmProjectReport(rid, btn) {
     fetch('/work-reports/project-confirm/', {
         method: 'POST', headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRFToken': _pmCsrf() }, body: fd,
     }).then(function (r) { return r.json(); }).then(function (d) {
-        if (d.success) { showToast(d.message, false); _pmForceReload(); }
-        else { showToast(d.message, true); btn.disabled = false; btn.textContent = orig; }
-    }).catch(function () { showToast('网络错误', true); btn.disabled = false; btn.textContent = orig; });
+        if (d.success) { pmToast(d.message, false); _pmForceReload(); }
+        else { pmToast(d.message, true); btn.disabled = false; btn.textContent = orig; }
+    }).catch(function () { pmToast('网络错误', true); btn.disabled = false; btn.textContent = orig; });
 }
 // Remove a confirmed work order's association with this project (admin).
 // Sets project=null on the report's entries for this project.
@@ -614,12 +634,42 @@ function removeProjectReport(rid, pid, btn) {
     fetch('/work-reports/project-remove/', {
         method: 'POST', headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRFToken': _pmCsrf() }, body: fd,
     }).then(function (r) { return r.json(); }).then(function (d) {
-        if (d.success) { showToast(d.message, false); _pmForceReload(); }
-        else { showToast(d.message, true); btn.disabled = false; btn.textContent = orig; }
-    }).catch(function () { showToast('网络错误', true); btn.disabled = false; btn.textContent = orig; });
+        if (d.success) { pmToast(d.message, false); _pmForceReload(); }
+        else { pmToast(d.message, true); btn.disabled = false; btn.textContent = orig; }
+    }).catch(function () { pmToast('网络错误', true); btn.disabled = false; btn.textContent = orig; });
+}
+// Restore a previously-removed work order's association with this project (admin).
+// Re-links the unlinked entries and marks the order confirmed so it counts again.
+function restoreProjectReport(rid, pid, btn) {
+    if (!confirm('恢复工单 #' + rid + ' 与该项目的关联？恢复后其工时/材料将重新计入项目。')) return;
+    var orig = btn.textContent;
+    btn.disabled = true; btn.textContent = '恢复中…';
+    var fd = new FormData();
+    fd.append('report_id', String(rid));
+    fd.append('project_id', String(pid));
+    fetch('/work-reports/project-restore/', {
+        method: 'POST', headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRFToken': _pmCsrf() }, body: fd,
+    }).then(function (r) { return r.json(); }).then(function (d) {
+        if (d.success) { pmToast(d.message, false); _pmForceReload(); }
+        else { pmToast(d.message, true); btn.disabled = false; btn.textContent = orig; }
+    }).catch(function () { pmToast('网络错误', true); btn.disabled = false; btn.textContent = orig; });
 }
 // Force a full page reload (bypass cache) so the project panel re-fetches.
+// Saves scroll position + which detail panels are open so the page can restore
+// them after reload — keeps the user where they were instead of jumping to top.
 function _pmForceReload() {
+    try {
+        var openPids = [];
+        document.querySelectorAll('.app-row-detail.open').forEach(function (row) {
+            var m = (row.id || '').match(/^pmDetailRow-(\d+)$/);
+            if (m) openPids.push(m[1]);
+        });
+        sessionStorage.setItem('pmReloadState', JSON.stringify({
+            scrollY: window.scrollY,
+            openPids: openPids,
+            ts: Date.now(),
+        }));
+    } catch (e) {}
     window.location.href = window.location.pathname + window.location.search + (window.location.search ? '&' : '?') + '_t=' + Date.now();
 }
 function _pmCsrf() {
@@ -903,10 +953,36 @@ function pmExport() {
 }
 
 // subcategory toggle + auto-open edit mode via ?edit=<id> (deep-link back-compat).
+// Also restores scroll position + re-opens detail panels after a _pmForceReload
+// (移除关联/添加关联), so the user stays where they were instead of jumping to top.
 (function () {
     peSyncSub();
     var params = new URLSearchParams(window.location.search);
     var editId = params.get('edit');
+
+    // Restore state saved by _pmForceReload (only valid for ~30s after save).
+    var saved = null;
+    try {
+        var raw = sessionStorage.getItem('pmReloadState');
+        if (raw) {
+            var s = JSON.parse(raw);
+            if (s.ts && Date.now() - s.ts < 30000) saved = s;
+            sessionStorage.removeItem('pmReloadState');
+        }
+    } catch (e) {}
+
+    // Re-open the panels that were open before the reload, so their refreshed
+    // content (e.g. one fewer work report after 移除关联) shows in place.
+    if (saved && saved.openPids && saved.openPids.length) {
+        saved.openPids.forEach(function (pid) {
+            var row = document.getElementById('pmDetailRow-' + pid);
+            if (row && !row.classList.contains('open')) {
+                row.classList.add('open');
+                pmRenderDetail(pid);
+            }
+        });
+    }
+
     if (editId) {
         // Find the row's edit_json by scanning the DOM for an onclick referencing this id.
         var btn = document.querySelector('.pm-inline button[onclick*="pmOpenEdit(' + editId + '"]');
@@ -916,6 +992,14 @@ function pmExport() {
                 if (m) pmOpenEdit(parseInt(editId, 10), JSON.parse(m[1]));
             } catch (e) {}
         }
+    }
+
+    // Restore scroll after panels re-open (layout settles), so the user lands
+    // back at the same spot rather than at the top of the page.
+    if (saved && typeof saved.scrollY === 'number') {
+        requestAnimationFrame(function () {
+            requestAnimationFrame(function () { window.scrollTo(0, saved.scrollY); });
+        });
     }
 })();
 </script>

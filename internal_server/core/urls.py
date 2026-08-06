@@ -113,6 +113,7 @@ urlpatterns = [
     path('work-reports/merge/', views.work_report_merge, name='work_report_merge'),
     path('work-reports/project-confirm/', views.work_report_project_confirm, name='work_report_project_confirm'),
     path('work-reports/project-remove/', views.work_report_project_remove, name='work_report_project_remove'),
+    path('work-reports/project-restore/', views.work_report_project_restore, name='work_report_project_restore'),
     path('work-reports/<int:parent_id>/followup/', views.work_report_followup, name='work_report_followup'),
     path('settings/landmark/<int:landmark_id>/delete/', views.landmark_delete, name='landmark_delete'),
     path('settings/batch-delete-landmark/', views.batch_delete_landmark, name='batch_delete_landmark'),
