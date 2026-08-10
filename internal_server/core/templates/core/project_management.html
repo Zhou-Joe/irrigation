@@ -956,15 +956,15 @@ function pdSubmit() {
         headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRFToken': _pmCsrf() }
     }).then(function (r) { return r.json(); }).then(function (d) {
         if (d.success) {
-            pdClose();
             pmToast(d.message || '已删除');
             // Remove the project row pair (summary row + detail row) in place —
-            // no full reload needed.
-            var drow = document.getElementById('pmDetailRow-' + _pdPid);
-            var prow = document.getElementById('pmRow-' + _pdPid);
+            // no full reload needed. Capture pid before pdClose() nulls _pdPid.
+            var delPid = _pdPid;
+            var drow = document.getElementById('pmDetailRow-' + delPid);
+            var prow = document.getElementById('pmRow-' + delPid);
             if (drow) drow.remove();
             if (prow) prow.remove();
-            _pdPid = null;
+            pdClose();
         } else {
             // Wrong credentials / no permission — keep modal open, show error inline.
             errEl.textContent = d.message || '删除失败';
