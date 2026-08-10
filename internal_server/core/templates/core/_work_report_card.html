@@ -14,12 +14,10 @@
         </div>
         <div class="wr-meta">
             {% if report.worker.full_name %}<span><b>{{ report.worker.full_name }}</b></span>{% endif %}
-            {% if report.work_start_time %}<span>{{ report.work_start_time }}–{{ report.work_end_time }}{% if report.team_hours %} · {{ report.team_hours }}h{% endif %}{% if report.third_party_hours %} +{{ report.third_party_hours }}h{% endif %}</span>{% endif %}
-            {% if report.team_size %}<span>{{ report.team_size }}人{% if report.third_party_count %} +{{ report.third_party_count }}三方{% endif %}</span>{% endif %}
+            {% if report.zone_summary %}<span class="wr-zone-summary"><span class="pin">📍</span> {{ report.zone_summary }}</span>{% endif %}
+            {% if report.work_start_time %}<span class="wr-meta-sub">{{ report.work_start_time }}–{{ report.work_end_time }}{% if report.team_hours %} · {{ report.team_hours }}h{% endif %}{% if report.third_party_hours %} +{{ report.third_party_hours }}h{% endif %}</span>{% endif %}
+            {% if report.team_size %}<span class="wr-meta-sub">灌溉组{{ report.team_size }}人{% if report.third_party_count %} · 第三方{{ report.third_party_count }}人{% endif %}</span>{% endif %}
         </div>
-        {% if report.zone_summary %}
-        <div class="wr-zone-summary"><span class="pin">📍</span> {{ report.zone_summary }}</div>
-        {% endif %}
         <div class="wr-chips">
             {% if report.section_labels %}
                 {% for lbl in report.section_labels %}<span class="wr-chip">{{ lbl }}</span>{% endfor %}
@@ -51,8 +49,6 @@
                 {% if report.worker.full_name %}
                 <div class="wr-info"><span class="wr-info-k">填写人</span><span class="wr-info-v" id="wrWorker-{{ report.id }}"><b>{{ report.worker.full_name }}</b>{% if report.worker.employee_id %} ({{ report.worker.employee_id }}){% endif %}</span></div>
                 {% endif %}
-                <div class="wr-info"><span class="wr-info-k">人数</span><span class="wr-info-v">灌溉组 {{ report.team_size }}人{% if report.third_party_count %} +{{ report.third_party_count }}三方{% endif %}</span></div>
-                {% if report.work_start_time %}<div class="wr-info"><span class="wr-info-k">时段</span><span class="wr-info-v">{{ report.work_start_time }}–{{ report.work_end_time }}{% if report.team_hours %} · {{ report.team_hours }}h{% endif %}{% if report.third_party_hours %} +{{ report.third_party_hours }}h{% endif %}</span></div>{% endif %}
             </div>
         </div>
 
@@ -66,7 +62,7 @@
                     <option value="{{ w.id }}" {% if report.worker_id == w.id %}selected{% endif %}>{{ w.full_name }}{% if w.employee_id %} ({{ w.employee_id }}){% endif %}</option>
                     {% endfor %}
                 </select>
-                <button type="button" class="wr-reassign-btn" onclick="reassignWorker({{ report.id }})" style="padding:7px 14px;border:none;border-radius:8px;font-size:0.82rem;font-weight:600;background:#2D6A4F;color:#fff;cursor:pointer;">改派</button>
+                <button type="button" class="wr-reassign-btn" onclick="reassignWorker({{ report.id }})" style="padding:7px 14px;border:none;border-radius:8px;font-size:0.82rem;font-weight:600;background:var(--wr-accent);color:#fff;cursor:pointer;">改派</button>
             </div>
         </div>
         {% endif %}

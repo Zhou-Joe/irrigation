@@ -6,169 +6,213 @@
 {% block nav_work_reports %}active{% endblock %}
 
 {% block extra_css %}
-<link rel="stylesheet" href="{% static 'css/settings.css' %}">
+<link rel="stylesheet" href="{% static 'css/settings.css' %}?v=20260514c">
 <style>
-/* Mobile-first: single column on phones, wider cards on desktop. */
-.wr-detail { max-width: 720px; margin: 0 auto; padding: 12px; }
-.wr-card {
-    background: var(--color-surface, #fff);
-    border-radius: 12px;
-    padding: 14px;
-    margin-bottom: 12px;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
-}
-.wr-card h2 {
-    font-size: 0.95rem; margin: 0 0 10px; color: var(--color-primary, #2D6A4F);
-    display: flex; align-items: center; justify-content: space-between;
-}
-.wr-meta { display: grid; grid-template-columns: 1fr; gap: 6px; font-size: 0.85rem; }
-.wr-meta-row { display: flex; gap: 8px; }
-.wr-meta-label { color: var(--color-text-muted, #999); flex-shrink: 0; width: 4.5em; }
-.wr-meta-val { color: var(--color-text, #333); word-break: break-word; }
-.wr-chips { display: flex; flex-wrap: wrap; gap: 4px; }
-.wr-chip { background: #e8f5e9; color: #2D6A4F; padding: 2px 8px; border-radius: 8px; font-size: 0.78em; font-weight: 500; }
-.wr-flag { font-size: 0.72em; padding: 1px 6px; border-radius: 6px; margin-left: 4px; }
-.wr-flag.warn { background: #fff3cd; color: #856404; }
-.wr-flag.ok { background: #d4edda; color: #155724; }
+/* Match zone_detail_page design language: white cards on beige, green headers,
+   translucent badges, compact scale, mono for codes/dates. */
 
-/* Work-content entries: stack rows on mobile */
-.wr-entry { display: flex; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--color-surface-dark, #f0f0f0); font-size: 0.85rem; }
-.wr-entry:last-child { border-bottom: none; }
-.wr-entry-proj { color: var(--color-text-muted, #999); font-size: 0.78em; flex-shrink: 0; width: 5em; }
-.wr-entry-name { flex: 1; }
-.wr-entry-count { font-weight: 600; flex-shrink: 0; }
-.wr-entry-text { color: var(--color-text-muted, #666); font-size: 0.8em; margin-top: 2px; }
+.zd-wrap { max-width: 860px; margin: 0 auto; padding: 12px 14px 40px; }
 
-/* Material consumption list — multi-column grid to use horizontal space */
-.wr-mat-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 2px 16px; }
-.wr-mat-item { display: flex; justify-content: space-between; align-items: baseline;
-               font-size: 0.85rem; color: var(--color-text, #333); line-height: 1.7; }
-.wr-mat-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-right: 6px; }
-.wr-mat-qty { font-weight: 600; color: #c0392b; flex-shrink: 0; font-variant-numeric: tabular-nums; }
+/* ── Breadcrumb ── */
+.zd-breadcrumb { font-size: 0.8rem; color: var(--color-text-muted, #8B9A8F); margin-bottom: 8px; }
+.zd-breadcrumb a { color: var(--color-primary-light, #2D6A4F); text-decoration: none; }
+.zd-breadcrumb a:hover { text-decoration: underline; }
+.zd-breadcrumb .sep { margin: 0 5px; opacity: 0.4; }
 
-/* Zone hierarchy: Land → name → codes */
-.wr-zone-land { margin-bottom: 8px; }
-.wr-zone-land-name { font-weight: 600; font-size: 0.85rem; color: var(--color-primary, #2D6A4F); }
-.wr-zone-land-count { color: var(--color-text-muted, #999); font-size: 0.75em; font-weight: 400; margin-left: 4px; }
-.wr-zone-names { margin-top: 3px; }
-.wr-zone-name-row { display: flex; flex-wrap: wrap; gap: 4px; align-items: baseline; padding: 2px 0; font-size: 0.8rem; }
-.wr-zone-name { background: #e8f5e9; color: #2D6A4F; padding: 1px 7px; border-radius: 7px; font-size: 0.8em; font-weight: 500; }
-.wr-zone-codes { color: var(--color-text-muted, #999); font-size: 0.74em; }
+/* ── Header ── */
+.zd-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.zd-title { font-size: 1.25rem; font-weight: 700; color: var(--color-primary, #1B4332); margin: 0 0 4px; display: flex; align-items: center; gap: 6px; }
+.zd-desc { font-size: 0.85rem; color: var(--color-text-secondary, #4A6355); margin: 0 0 6px; }
+.zd-badges { display: flex; flex-wrap: wrap; gap: 5px; }
+.zd-badge { display: inline-flex; align-items: center; font-size: 0.74rem; font-weight: 600; padding: 2px 9px; border-radius: 12px; }
+.zd-badge.bs-warn { background: rgba(204,119,34,0.12); color: var(--color-warning, #CC7722); }
+.zd-badge.bs-ok { background: rgba(64,145,108,0.12); color: var(--color-success, #40916C); }
+.zd-badge.bs-danger { background: rgba(155,34,38,0.12); color: var(--color-error, #9B2226); }
 
-/* Photos */
-.wr-photo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)); gap: 8px; }
-.wr-photo-thumb { aspect-ratio: 1; border-radius: 8px; overflow: hidden; cursor: pointer; position: relative; background: var(--color-surface-dark, #f5f5f5); }
-.wr-photo-thumb img, .wr-photo-thumb video { width: 100%; height: 100%; object-fit: cover; display: block; }
-.wr-photo-play { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); background: rgba(0,0,0,0.55); color: #fff; border-radius: 50%; width: 26px; height: 26px; display: flex; align-items: center; justify-content: center; font-size: 0.8em; pointer-events: none; }
-.no-photos { color: var(--color-text-muted, #999); font-size: 0.85rem; padding: 8px 0; }
-@media (min-width: 600px) {
-    .wr-meta { grid-template-columns: 1fr 1fr; }
-}
+/* ── Buttons ── */
+.zd-btn { padding: 6px 14px; border: none; border-radius: 8px; font-size: 0.8rem; font-weight: 600; cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; gap: 5px; transition: opacity .15s; }
+.zd-btn:active { opacity: 0.82; }
+.zd-btn-primary { background: var(--color-primary, #1B4332); color: #fff; }
+.zd-btn-secondary { background: var(--color-surface-dark, #D9D0C0); color: var(--color-primary, #1B4332); border: 1px solid #e5e7eb; }
 
-/* Lightbox */
+/* ── Card ── */
+.zd-card { background: #fff; border: 1px solid #eef0f3; border-radius: 12px; padding: 12px 14px; margin-bottom: 10px; }
+.zd-card h2 { font-size: 0.92rem; color: var(--color-primary-light, #2D6A4F); margin: 0 0 10px; font-weight: 700; display: flex; align-items: center; gap: 6px; }
+.zd-card h2 .count { font-size: 0.72rem; color: var(--color-text-muted, #8B9A8F); font-weight: 500; }
+
+/* ── Stats row ── */
+.zd-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 10px; }
+.zd-stat { background: #fff; border: 1px solid #eef0f3; border-radius: 10px; padding: 10px; text-align: center; }
+.zd-stat .v { font-size: 1.3rem; font-weight: 700; }
+.zd-stat .l { font-size: 0.74rem; color: var(--color-text-muted, #8B9A8F); margin-top: 2px; }
+.zd-stat.hours .v { color: var(--color-primary-light, #2D6A4F); }
+.zd-stat.crew .v { color: var(--color-success, #40916C); }
+.zd-stat.items .v { color: var(--color-info, #52B788); }
+
+/* ── Property grid ── */
+.zd-prop { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 6px 16px; }
+.zd-prop .p { display: flex; flex-direction: column; }
+.zd-prop .k { font-size: 0.74rem; color: var(--color-text-muted, #8B9A8F); }
+.zd-prop .v { font-size: 0.84rem; color: var(--color-primary, #1B4332); font-weight: 500; }
+.zd-prop hr { grid-column: 1 / -1; border: none; border-top: 1px dashed #eef0f3; margin: 4px 0; }
+
+/* ── Two-up row ── */
+.zd-row { display: grid; grid-template-columns: 1fr; gap: 10px; }
+@media (min-width: 640px) { .zd-row { grid-template-columns: 1fr 1fr; } }
+
+/* ── Notes timeline ── */
+.zd-notes { }
+.zd-note { display: flex; gap: 10px; padding: 8px 0; border-bottom: 1px solid #f3f4f6; flex-wrap: wrap; align-items: baseline; }
+.zd-note:last-child { border-bottom: none; }
+.zd-note .nd { font-size: 0.76rem; font-weight: 600; color: var(--color-primary-light, #2D6A4F); font-family: var(--font-mono, monospace); flex-shrink: 0; min-width: 3.5em; }
+.zd-note .nc { font-size: 0.82rem; color: var(--color-primary, #1B4332); flex: 1; min-width: 0; }
+.zd-note .na { font-size: 0.76rem; color: var(--color-text-muted, #8B9A8F); }
+.zd-note a.zd-wo { font-size: 0.74rem; color: var(--color-primary-light, #2D6A4F); text-decoration: none; font-weight: 600; }
+.zd-note a.zd-wo:hover { text-decoration: underline; }
+
+/* ── Work content entries ── */
+.zd-entries { }
+.zd-entry-grp { font-size: 0.8rem; font-weight: 600; color: var(--color-text-muted, #8B9A8F); margin: 8px 0 4px; }
+.zd-entry-grp:first-child { margin-top: 0; }
+.zd-entry { display: flex; gap: 10px; padding: 7px 0; border-bottom: 1px solid #f3f4f6; align-items: baseline; }
+.zd-entry:last-child { border-bottom: none; }
+.zd-entry-proj { font-size: 0.74rem; color: var(--color-text-muted, #8B9A8F); flex-shrink: 0; width: 5em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.zd-entry-name { flex: 1; font-size: 0.84rem; color: var(--color-primary, #1B4332); min-width: 0; }
+.zd-entry-name small { color: var(--color-text-muted, #8B9A8F); font-size: 0.9em; }
+.zd-entry-count { font-size: 0.84rem; font-weight: 700; color: var(--color-primary-light, #2D6A4F); flex-shrink: 0; font-variant-numeric: tabular-nums; }
+.zd-entry-count.zero { color: var(--color-text-muted, #8B9A8F); font-weight: 400; }
+.zd-entry-text { font-size: 0.78rem; color: var(--color-text-muted, #8B9A8F); margin-top: 2px; }
+
+/* ── Material list ── */
+.zd-mat-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 4px 16px; }
+.zd-mat-item { display: flex; justify-content: space-between; align-items: baseline; font-size: 0.82rem; padding: 4px 0; }
+.zd-mat-name { color: var(--color-primary, #1B4332); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-right: 6px; }
+.zd-mat-qty { font-weight: 700; color: var(--color-error, #9B2226); flex-shrink: 0; font-variant-numeric: tabular-nums; }
+
+/* ── Remark block ── */
+.zd-remark { font-size: 0.85rem; line-height: 1.6; color: var(--color-primary, #1B4332); white-space: pre-wrap; margin: 0; }
+
+/* ── Zone hierarchy ── */
+.zd-zone-land { margin-bottom: 8px; }
+.zd-zone-land:last-child { margin-bottom: 0; }
+.zd-zone-land-name { font-weight: 600; font-size: 0.84rem; color: var(--color-primary, #1B4332); }
+.zd-zone-land-count { font-size: 0.76rem; color: var(--color-text-muted, #8B9A8F); margin-left: 5px; }
+.zd-zone-names { margin-top: 4px; }
+.zd-zone-row { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: baseline; padding: 2px 0; }
+.zd-zone-name { background: var(--color-surface-dark, #D9D0C0); color: var(--color-primary, #1B4332); padding: 2px 9px; border-radius: 8px; font-size: 0.78rem; font-weight: 500; }
+.zd-zone-codes { font-size: 0.76rem; color: var(--color-text-muted, #8B9A8F); font-family: var(--font-mono, monospace); }
+.zd-zone-toggle { background: none; border: none; color: var(--color-primary-light, #2D6A4F); font-size: 0.76rem; font-weight: 600; cursor: pointer; padding: 0; }
+.zd-zone-toggle:hover { text-decoration: underline; }
+.zd-zone-codes-full { display: none; }
+.zd-zone-codes-full.show { display: inline; }
+.zd-zone-codes-preview.hide { display: none; }
+
+/* ── Collapsible ── */
+.zd-collapse-toggle { display: flex; align-items: center; gap: 6px; width: 100%; background: none; border: none; cursor: pointer; padding: 0; font-size: 0.92rem; font-weight: 700; color: var(--color-primary-light, #2D6A4F); }
+.zd-collapse-toggle .arrow { transition: transform .2s; font-size: 0.6rem; }
+.zd-collapse-toggle.open .arrow { transform: rotate(90deg); }
+.zd-collapse-toggle .count { font-size: 0.72rem; color: var(--color-text-muted, #8B9A8F); font-weight: 500; }
+.zd-collapse-body { display: none; margin-top: 8px; }
+.zd-collapse-body.show { display: block; }
+
+/* ── Photos ── */
+.zd-photo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 8px; }
+.zd-photo-thumb { aspect-ratio: 1; border-radius: 10px; overflow: hidden; cursor: pointer; position: relative; background: var(--color-surface-dark, #D9D0C0); transition: border-color .15s; border: 2px solid transparent; }
+.zd-photo-thumb:hover { border-color: var(--color-primary-light, #2D6A4F); }
+.zd-photo-thumb img, .zd-photo-thumb video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.zd-photo-play { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); background: rgba(0,0,0,0.55); color: #fff; border-radius: 50%; width: 26px; height: 26px; display: flex; align-items: center; justify-content: center; font-size: 0.8rem; pointer-events: none; }
+
+/* ── Comments ── */
+.zd-cmt-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
+.zd-cmt-item { background: var(--color-surface, #F5F0E8); border-radius: 10px; padding: 8px 12px; }
+.zd-cmt-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 3px; }
+.zd-cmt-author { font-weight: 600; font-size: 0.82rem; color: var(--color-primary-light, #2D6A4F); }
+.zd-cmt-time { font-size: 0.74rem; color: var(--color-text-muted, #8B9A8F); }
+.zd-cmt-body { font-size: 0.84rem; color: var(--color-primary, #1B4332); line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
+.zd-cmt-empty { color: var(--color-text-muted, #8B9A8F); font-size: 0.82rem; padding: 8px 0; text-align: center; }
+.zd-cmt-add { display: flex; gap: 8px; margin-top: 8px; }
+.zd-cmt-input { flex: 1; border: 1px solid #e5e7eb; border-radius: 8px; padding: 8px 12px; font-size: 0.84rem; resize: vertical; min-height: 40px; max-height: 120px; font-family: inherit; background: #fff; color: var(--color-primary, #1B4332); }
+.zd-cmt-input:focus { outline: none; border-color: var(--color-primary-light, #2D6A4F); }
+.zd-cmt-send { flex: 0 0 auto; background: var(--color-primary, #1B4332); color: #fff; border: none; border-radius: 8px; padding: 0 16px; font-size: 0.84rem; font-weight: 600; cursor: pointer; }
+.zd-cmt-send:disabled { opacity: 0.6; cursor: default; }
+
+/* ── Footer ── */
+.zd-foot { display: flex; justify-content: space-between; align-items: center; border-top: 1px solid #eef0f3; padding-top: 10px; margin-top: 10px; font-size: 0.76rem; color: var(--color-text-muted, #8B9A8F); }
+.zd-foot a { color: var(--color-primary-light, #2D6A4F); text-decoration: none; font-weight: 600; }
+.zd-foot a:hover { text-decoration: underline; }
+
+/* ── Lightbox ── */
 .lb-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.9); z-index: 3000; justify-content: center; align-items: center; }
 .lb-overlay.show { display: flex; }
-.lb-img, .lb-video { max-width: 92vw; max-height: 86vh; border-radius: 8px; object-fit: contain; }
+.lb-img, .lb-video { max-width: 92vw; max-height: 86vh; border-radius: 10px; object-fit: contain; }
 .lb-close { position: absolute; top: 12px; right: 20px; color: #fff; font-size: 2rem; cursor: pointer; background: none; border: none; line-height: 1; }
 .lb-nav { position: absolute; top: 50%; transform: translateY(-50%); color: #fff; font-size: 2.2rem; cursor: pointer; background: rgba(0,0,0,0.4); border: none; border-radius: 50%; width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; }
 .lb-prev { left: 12px; }
 .lb-next { right: 12px; }
 .lb-counter { position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%); color: rgba(255,255,255,0.7); font-size: 0.85rem; }
-.wr-btn-row { display: flex; gap: 8px; margin-bottom: 12px; }
-.wr-btn { flex: 1; text-align: center; padding: 10px; border-radius: 8px; font-size: 0.9rem; font-weight: 500; text-decoration: none; }
-.wr-btn-primary { background: var(--color-primary, #2D6A4F); color: #fff; }
-.wr-btn-secondary { background: var(--color-surface-dark, #f0f0f0); color: var(--color-text, #333); }
-
-/* Comments */
-.wr-cmt-list { display: flex; flex-direction: column; gap: 10px; }
-.wr-cmt-item { background: var(--color-surface-dark, #f7f7f7); border-radius: 8px; padding: 10px 12px; }
-.wr-cmt-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 4px; }
-.wr-cmt-author { font-weight: 600; font-size: 0.85rem; color: #1565c0; }
-.wr-cmt-time { font-size: 0.74rem; color: var(--color-text-muted, #999); }
-.wr-cmt-body { font-size: 0.88rem; color: var(--color-text, #222); line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
-.wr-cmt-empty { color: var(--color-text-muted, #999); font-size: 0.85rem; padding: 6px 0; }
-.wr-cmt-add { display: flex; gap: 8px; margin-top: 12px; }
-.wr-cmt-input { flex: 1; border: 1px solid var(--color-surface-dark, #ddd); border-radius: 8px; padding: 9px 12px; font-size: 0.88rem; resize: vertical; min-height: 42px; max-height: 140px; font-family: inherit; }
-.wr-cmt-send { flex: 0 0 auto; background: var(--color-primary, #2D6A4F); color: #fff; border: none; border-radius: 8px; padding: 0 18px; font-size: 0.88rem; font-weight: 600; cursor: pointer; }
-.wr-cmt-send:disabled { opacity: 0.6; cursor: default; }
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="wr-detail">
-    <div class="wr-btn-row">
-        <a href="{% url 'core:dashboard' %}?edit_workorder={{ report.id }}" class="wr-btn wr-btn-primary">编辑</a>
-        <a href="{% url 'core:work_reports' %}" class="wr-btn wr-btn-secondary" onclick="window.close();">← 返回列表</a>
+<div class="zd-wrap">
+
+    {# ── Breadcrumb ── #}
+    <div class="zd-breadcrumb">
+        <a href="{% url 'core:work_reports' %}">维修日志</a>
+        <span class="sep">/</span>
+        <span>{{ report.display_number }}</span>
     </div>
 
-    {# ── 基本信息 (only fields from the v2 submit form) ── #}
-    <div class="wr-card">
-        <h2>基本信息 <span style="font-size:0.72em;color:var(--color-text-muted,#999);">{{ report.display_number }}</span></h2>
-        <div class="wr-meta">
-            <div class="wr-meta-row"><span class="wr-meta-label">日期</span><span class="wr-meta-val">{{ report.date }}</span></div>
-            {% if report.shift %}<div class="wr-meta-row"><span class="wr-meta-label">班次</span><span class="wr-meta-val">{{ report.get_shift_display|default:report.shift }}</span></div>{% endif %}
-            <div class="wr-meta-row"><span class="wr-meta-label">处理人</span><span class="wr-meta-val">{{ report.worker.full_name|default:"-" }}</span></div>
-            {% if report.weather %}<div class="wr-meta-row"><span class="wr-meta-label">天气</span><span class="wr-meta-val">{{ report.weather }}</span></div>{% endif %}
-            {% if report.work_start_time %}<div class="wr-meta-row"><span class="wr-meta-label">工作时间</span><span class="wr-meta-val">{{ report.work_start_time }} - {{ report.work_end_time }}</span></div>{% endif %}
-            <div class="wr-meta-row"><span class="wr-meta-label">人数</span><span class="wr-meta-val">{{ report.team_size }} 人{% if report.third_party_count %}（含三方 {{ report.third_party_count }}）{% endif %}</span></div>
-            <div class="wr-meta-row"><span class="wr-meta-label">工时</span><span class="wr-meta-val">{% if report.team_hours %}{{ report.team_hours }}h{% endif %}{% if report.third_party_hours %} / 三方 {{ report.third_party_hours }}h{% endif %}</span></div>
-            {% if report.is_pending_repair %}<div class="wr-meta-row"><span class="wr-meta-label">状态</span><span class="wr-meta-val"><span class="wr-flag warn">待修</span></span></div>{% endif %}
-            {% if report.is_difficult %}<div class="wr-meta-row"><span class="wr-meta-label">疑难</span><span class="wr-meta-val"><span class="wr-flag {{ report.is_difficult_resolved|yesno:'ok,warn' }}">{{ report.is_difficult_resolved|yesno:'已处理,未处理' }}</span></span></div>{% endif %}
-        </div>
-    </div>
-
-    {# ── 编辑历史 (only shown when the report has been edited) ── #}
-    {% with logs=report.edit_logs.all %}
-    {% if logs %}
-    <div class="wr-card">
-        <h2>编辑历史 <span style="font-size:0.72em;color:var(--color-text-muted,#999);">{{ logs|length }} 次</span></h2>
-        <div class="wr-cmt-list">
-            {% for log in logs %}
-            <div class="wr-cmt-item">
-                <div class="wr-cmt-head">
-                    <span class="wr-cmt-author">{{ log.editor.full_name|default:"(未知)" }}</span>
-                    <span class="wr-cmt-time">{{ log.created_at|date:"Y-m-d H:i" }}</span>
-                </div>
-                {% if log.note %}<div class="wr-cmt-body" style="font-size:.85rem;color:#555;margin-top:2px;">{{ log.note }}</div>{% endif %}
+    {# ── Header ── #}
+    <div class="zd-head">
+        <div style="min-width:0;">
+            <h1 class="zd-title">{{ report.date }} {% if report.shift %}· {{ report.get_shift_display|default:report.shift }}{% endif %}</h1>
+            <p class="zd-desc">{{ report.worker.full_name|default:"-" }} · {{ report.zone_names|default:"-" }}</p>
+            {% if report.is_pending_repair or report.is_difficult %}
+            <div class="zd-badges">
+                {% if report.is_pending_repair %}<span class="zd-badge bs-warn">待修</span>{% endif %}
+                {% if report.is_difficult %}<span class="zd-badge {{ report.is_difficult_resolved|yesno:'bs-ok,bs-danger' }}">{{ report.is_difficult_resolved|yesno:'已处理,疑难' }}</span>{% endif %}
             </div>
-            {% endfor %}
+            {% endif %}
+        </div>
+        <a href="{% url 'core:dashboard' %}?edit_workorder={{ report.id }}" class="zd-btn zd-btn-secondary">编辑</a>
+    </div>
+
+    {# ── Basic info ── #}
+    <div class="zd-card">
+        <h2>基本信息</h2>
+        <div class="zd-prop">
+            <div class="p"><span class="k">工单号</span><span class="v">{{ report.display_number }}</span></div>
+            <div class="p"><span class="k">处理人</span><span class="v">{{ report.worker.full_name|default:"-" }}</span></div>
+            <div class="p"><span class="k">日期</span><span class="v">{{ report.date }}</span></div>
+            {% if report.shift %}<div class="p"><span class="k">班次</span><span class="v">{{ report.get_shift_display|default:report.shift }}</span></div>{% endif %}
+            {% if report.work_start_time %}<div class="p"><span class="k">工作时间</span><span class="v">{{ report.work_start_time }}–{{ report.work_end_time }}</span></div>{% endif %}
+            <div class="p"><span class="k">人数</span><span class="v">灌溉组 {{ report.team_size }} 人{% if report.third_party_count %} · 第三方 {{ report.third_party_count }} 人{% endif %}</span></div>
+            <div class="p"><span class="k">工时</span><span class="v">{% if report.team_hours %}{{ report.team_hours }}h{% endif %}{% if report.third_party_hours %} · 三方 {{ report.third_party_hours }}h{% endif %}</span></div>
+            {% if report.weather %}<div class="p"><span class="k">天气</span><span class="v">{{ report.weather }}</span></div>{% endif %}
+            <hr>
+            <div class="p"><span class="k">区域</span><span class="v">{{ report.zone_names|default:"-" }}</span></div>
         </div>
     </div>
-    {% endif %}
-    {% endwith %}
 
-    {# ── 备注历史 (remarks linked to this workorder: confirmed + archived) ── #}
-    {% if related_remarks %}
-    <div class="wr-card">
-        <h2>备注历史 <span style="font-size:0.72em;color:var(--color-text-muted,#999);">{{ related_remarks|length }} 条</span></h2>
-        <div class="wr-cmt-list">
-            {% for rm in related_remarks %}
-            <div class="wr-cmt-item">
-                <div class="wr-cmt-head">
-                    <span class="wr-cmt-author">{{ rm.author|default:"(未知)" }}</span>
-                    <span class="wr-cmt-time">{{ rm.confirm_date|default:rm.date|default:"" }}</span>
-                    {% if rm.archived %}<span class="wr-flag warn">已归档</span>{% endif %}
-                </div>
-                <div class="wr-cmt-body">{{ rm.content }}</div>
-                {% if rm.confirm_reply %}<div class="wr-cmt-body" style="color:var(--color-text-muted,#999);">确认回复：{{ rm.confirm_reply }}</div>{% endif %}
-            </div>
-            {% endfor %}
-        </div>
-    </div>
-    {% endif %}
-
-    {# ── 区域 (deduplicated Land → name hierarchy) ── #}
+    {# ── Zones ── #}
     {% if zone_hierarchy %}
-    <div class="wr-card">
-        <h2>区域</h2>
+    <div class="zd-card">
+        <h2>作业区域</h2>
         {% for grp in zone_hierarchy %}
-        <div class="wr-zone-land">
-            <span class="wr-zone-land-name">{{ grp.land }}</span><span class="wr-zone-land-count">{{ grp.zone_count }} 个区域</span>
-            <div class="wr-zone-names">
+        <div class="zd-zone-land">
+            <span class="zd-zone-land-name">{{ grp.land }}</span><span class="zd-zone-land-count">{{ grp.zone_count }} 个区域</span>
+            <div class="zd-zone-names">
                 {% for nm in grp.names %}
-                <div class="wr-zone-name-row">
-                    <span class="wr-zone-name">{{ nm.name }}</span>
-                    <span class="wr-zone-codes">{% if nm.count > 1 %}{{ nm.count }} 个 · {% endif %}{{ nm.codes|join:", " }}</span>
+                <div class="zd-zone-row">
+                    <span class="zd-zone-name">{{ nm.name }}</span>
+                    {% if nm.codes|length <= 10 %}
+                    <span class="zd-zone-codes">{% if nm.count > 1 %}{{ nm.count }} 个 · {% endif %}{{ nm.codes|join:", " }}</span>
+                    {% else %}
+                    <span class="zd-zone-codes zd-zone-codes-preview">{{ nm.codes|slice:":5"|join:", " }}…</span>
+                    <span class="zd-zone-codes zd-zone-codes-full">{{ nm.codes|join:", " }}</span>
+                    <button type="button" class="zd-zone-toggle" onclick="zdToggleZone(this)">展开 {{ nm.count }} 个</button>
+                    {% endif %}
                 </div>
                 {% endfor %}
             </div>
@@ -177,60 +221,62 @@
     </div>
     {% endif %}
 
-    {# ── 工作内容 (tree-form entries) ── #}
+    {# ── Work content ── #}
     {% if tree_entry_groups %}
-    <div class="wr-card">
+    <div class="zd-card">
         <h2>工作内容</h2>
-        {% for grp in tree_entry_groups %}
-        <div style="font-size:0.82rem;color:var(--color-text-muted,#999);margin:8px 0 2px;">{{ grp.label }}</div>
-        {% for e in grp.items %}
-        <div class="wr-entry">
-            <div class="wr-entry-proj">{{ e.project|default_if_none:"" }}</div>
-            <div class="wr-entry-name">
-                {{ e.work_item.name_zh }}{% if e.work_item.unit %} <small style="color:#999;">({{ e.work_item.unit }})</small>{% endif %}
-                {% if e.text_value %}<div class="wr-entry-text">{{ e.text_value }}</div>{% endif %}
-                {% if e.status %}<div class="wr-entry-text" style="color:var(--color-primary,#2D6A4F);">[{{ e.status }}]</div>{% endif %}
+        <div class="zd-entries">
+            {% for grp in tree_entry_groups %}
+            <div class="zd-entry-grp">{{ grp.label }}</div>
+            {% for e in grp.items %}
+            <div class="zd-entry">
+                <div class="zd-entry-proj" title="{{ e.project|default:'' }}">{{ e.project|default_if_none:"" }}</div>
+                <div class="zd-entry-name">
+                    {{ e.work_item.name_zh }}{% if e.work_item.unit %} <small>({{ e.work_item.unit }})</small>{% endif %}
+                    {% if e.text_value %}<div class="zd-entry-text">{{ e.text_value }}</div>{% endif %}
+                    {% if e.status %}<div class="zd-entry-text" style="color:var(--color-primary-light);">[{{ e.status }}]</div>{% endif %}
+                </div>
+                {% if e.count %}<div class="zd-entry-count">{{ e.count }}</div>{% else %}<div class="zd-entry-count zero">—</div>{% endif %}
             </div>
-            {% if e.count %}<div class="wr-entry-count">{{ e.count }}</div>{% endif %}
+            {% endfor %}
+            {% endfor %}
         </div>
-        {% endfor %}
-        {% endfor %}
     </div>
     {% endif %}
 
-    {# ── 材料消耗 / 出库 (consumed materials, linked outbound transactions) ── #}
+    {# ── Materials ── #}
     {% if materials %}
-    <div class="wr-card">
-        <h2>材料消耗 <span style="font-size:0.72em;color:var(--color-text-muted,#999);">{{ materials|length }} 项</span></h2>
-        <div class="wr-mat-list">
+    <div class="zd-card">
+        <h2>材料消耗 <span class="count">{{ materials|length }} 项</span></h2>
+        <div class="zd-mat-list">
             {% for m in materials %}
-            <div class="wr-mat-item">
-                <span class="wr-mat-name">{{ m.name }}</span>
-                <span class="wr-mat-qty">×{{ m.quantity }}{% if m.unit %}{{ m.unit }}{% endif %}</span>
+            <div class="zd-mat-item">
+                <span class="zd-mat-name">{{ m.name }}</span>
+                <span class="zd-mat-qty">×{{ m.quantity }}{% if m.unit %}{{ m.unit }}{% endif %}</span>
             </div>
             {% endfor %}
         </div>
     </div>
     {% endif %}
 
-    {# ── 备注 ── #}
+    {# ── Remark ── #}
     {% if report.remark %}
-    <div class="wr-card">
+    <div class="zd-card">
         <h2>备注</h2>
-        <p style="margin:0;font-size:0.85rem;white-space:pre-wrap;line-height:1.5;">{{ report.remark }}</p>
+        <p class="zd-remark">{{ report.remark }}</p>
     </div>
     {% endif %}
 
-    {# ── 现场照片/视频 (thumbnails; tap for full-size lightbox) ── #}
+    {# ── Photos ── #}
     {% if report.photos %}
-    <div class="wr-card">
-        <h2>现场照片 <span style="font-size:0.72em;color:var(--color-text-muted,#999);">{{ report.photos|length }} 个</span></h2>
-        <div class="wr-photo-grid">
+    <div class="zd-card">
+        <h2>现场照片 <span class="count">{{ report.photos|length }} 张</span></h2>
+        <div class="zd-photo-grid">
             {% for photo in report.photos %}
-            <div class="wr-photo-thumb" onclick="openLightbox({{ forloop.counter0 }})">
+            <div class="zd-photo-thumb" onclick="openLightbox({{ forloop.counter0 }})">
                 {% if photo|is_video %}
                 <video src="/media/{{ photo|thumb }}" data-orig="{{ photo }}" muted preload="metadata"></video>
-                <span class="wr-photo-play">▶</span>
+                <span class="zd-photo-play">▶</span>
                 {% else %}
                 <img src="/media/{{ photo|thumb }}" data-orig="{{ photo }}" alt="照片 {{ forloop.counter }}" loading="lazy">
                 {% endif %}
@@ -240,17 +286,66 @@
     </div>
     {% endif %}
 
-    {# ── 评论 (everyone can read & post) ── #}
-    <div class="wr-card" id="comments">
-        <h2>评论 <span style="font-size:0.72em;color:var(--color-text-muted,#999);" id="wrCmtCount"></span></h2>
-        <div class="wr-cmt-list" id="wrCmtList">
-            <div class="wr-cmt-empty">加载中…</div>
-        </div>
-        <div class="wr-cmt-add">
-            <textarea class="wr-cmt-input" id="wrCmtInput" rows="2" placeholder="写评论… (Ctrl+Enter 发送)" onkeydown="if((event.metaKey||event.ctrlKey)&&event.key==='Enter'){event.preventDefault();wrPostComment();}"></textarea>
-            <button type="button" class="wr-cmt-send" onclick="wrPostComment()">发送</button>
+    {# ── Edit history (collapsible) ── #}
+    {% with logs=report.edit_logs.all %}
+    {% if logs %}
+    <div class="zd-card">
+        <button type="button" class="zd-collapse-toggle" onclick="zdToggleCollapse(this)">
+            <span class="arrow">▶</span> 编辑历史 <span class="count">{{ logs|length }} 次</span>
+        </button>
+        <div class="zd-collapse-body">
+            <div class="zd-notes">
+                {% for log in logs %}
+                <div class="zd-note">
+                    <span class="nd">{{ log.created_at|date:"m-d H:i" }}</span>
+                    <span class="nc">{% if log.note %}{{ log.note }}{% else %}—{% endif %}</span>
+                    <span class="na">{{ log.editor.full_name|default:"(未知)" }}</span>
+                </div>
+                {% endfor %}
+            </div>
         </div>
     </div>
+    {% endif %}
+    {% endwith %}
+
+    {# ── Remark history (collapsible) ── #}
+    {% if related_remarks %}
+    <div class="zd-card">
+        <button type="button" class="zd-collapse-toggle" onclick="zdToggleCollapse(this)">
+            <span class="arrow">▶</span> 备注历史 <span class="count">{{ related_remarks|length }} 条</span>
+        </button>
+        <div class="zd-collapse-body">
+            <div class="zd-notes">
+                {% for rm in related_remarks %}
+                <div class="zd-note">
+                    <span class="nd">{{ rm.confirm_date|default:rm.date|default:""|cut:"-"|slice:":10" }}</span>
+                    <span class="nc">{{ rm.content }}{% if rm.confirm_reply %}<br><span style="color:var(--color-text-muted);">确认回复：{{ rm.confirm_reply }}</span>{% endif %}</span>
+                    <span class="na">{{ rm.author|default:"(未知)" }}{% if rm.archived %} · 已归档{% endif %}</span>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    {# ── Comments ── #}
+    <div class="zd-card">
+        <h2>评论 <span class="count" id="wrCmtCount"></span></h2>
+        <div class="zd-cmt-list" id="wrCmtList">
+            <div class="zd-cmt-empty">加载中…</div>
+        </div>
+        <div class="zd-cmt-add">
+            <textarea class="zd-cmt-input" id="wrCmtInput" rows="2" placeholder="写评论… (Ctrl+Enter 发送)" onkeydown="if((event.metaKey||event.ctrlKey)&&event.key==='Enter'){event.preventDefault();wrPostComment();}"></textarea>
+            <button type="button" class="zd-cmt-send" onclick="wrPostComment()">发送</button>
+        </div>
+    </div>
+
+    {# ── Footer ── #}
+    <div class="zd-foot">
+        <span>{{ report.display_number }}</span>
+        <a href="{% url 'core:work_reports' %}" onclick="window.close();">← 返回列表</a>
+    </div>
+
 </div>
 
 <!-- Lightbox -->
@@ -265,26 +360,40 @@
 
 <script>
 var photos = {{ report.photos|to_json|safe }};
-var currentIdx = 0;
 var WR_ID = {{ report.id }};
 
-// Thumbnail fallback — thumb 404 → try original → if that 404s too (0-byte
-// upload or missing file), hide the tile. Videos skip the original-image step.
+function zdToggleZone(btn) {
+    var row = btn.closest('.zd-zone-row');
+    var preview = row.querySelector('.zd-zone-codes-preview');
+    var full = row.querySelector('.zd-zone-codes-full');
+    if (full.classList.contains('show')) {
+        full.classList.remove('show'); preview.classList.remove('hide');
+        btn.textContent = btn.textContent.replace('收起', '展开');
+    } else {
+        full.classList.add('show'); preview.classList.add('hide');
+        btn.textContent = btn.textContent.replace('展开', '收起');
+    }
+}
+
+function zdToggleCollapse(btn) {
+    var body = btn.nextElementSibling;
+    btn.classList.toggle('open'); body.classList.toggle('show');
+}
+
 document.addEventListener('error', function (e) {
     var el = e.target;
     if (el.dataset.fb) return;
     if (el.tagName !== 'IMG' && el.tagName !== 'VIDEO') return;
-    if (!el.closest('.wr-photo-thumb')) return;
+    if (!el.closest('.zd-photo-thumb')) return;
     var orig = el.dataset.orig;
     if (!orig) return;
     el.dataset.fb = '1';
-    if (isVideoPath(orig)) { el.style.visibility = 'hidden'; return; }
+    if (/\.(mp4|mov|m4v|webm|ogg|ogv|avi|mkv)$/i.test(orig)) { el.style.visibility = 'hidden'; return; }
     if (el.tagName === 'VIDEO') { el.style.visibility = 'hidden'; return; }
-    el.onerror = function () { var t = el.closest('.wr-photo-thumb'); if (t) t.style.display = 'none'; };
+    el.onerror = function () { var t = el.closest('.zd-photo-thumb'); if (t) t.style.display = 'none'; };
     el.src = '/media/' + orig;
 }, true);
 
-// ── Comments ──
 function wrCmtCSRF() {
     var c = document.cookie.split('; ').find(function (x) { return x.indexOf('csrftoken=') === 0; });
     return c ? c.split('=')[1] : '';
@@ -295,24 +404,24 @@ function wrEsc(s) {
 function wrRenderComments(comments) {
     var box = document.getElementById('wrCmtList');
     document.getElementById('wrCmtCount').textContent = comments.length ? comments.length + ' 条' : '';
-    if (!comments.length) { box.innerHTML = '<div class="wr-cmt-empty">暂无评论，留下第一条吧。</div>'; return; }
+    if (!comments.length) { box.innerHTML = '<div class="zd-cmt-empty">暂无评论，留下第一条吧。</div>'; return; }
     box.innerHTML = comments.map(function (c) {
-        return '<div class="wr-cmt-item"><div class="wr-cmt-head"><span class="wr-cmt-author">' +
-            wrEsc(c.author) + '</span><span class="wr-cmt-time">' + wrEsc(c.time) + '</span></div>' +
-            '<div class="wr-cmt-body">' + wrEsc(c.body) + '</div></div>';
+        return '<div class="zd-cmt-item"><div class="zd-cmt-head"><span class="zd-cmt-author">' +
+            wrEsc(c.author) + '</span><span class="zd-cmt-time">' + wrEsc(c.time) + '</span></div>' +
+            '<div class="zd-cmt-body">' + wrEsc(c.body) + '</div></div>';
     }).join('');
 }
 function wrLoadComments() {
     fetch('/work-reports/' + WR_ID + '/comments/', { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
         .then(function (r) { return r.json(); })
         .then(function (d) { if (d.success) wrRenderComments(d.comments); })
-        .catch(function () { document.getElementById('wrCmtList').innerHTML = '<div class="wr-cmt-empty">加载失败，请刷新重试。</div>'; });
+        .catch(function () { document.getElementById('wrCmtList').innerHTML = '<div class="zd-cmt-empty">加载失败，请刷新重试。</div>'; });
 }
 function wrPostComment() {
     var inp = document.getElementById('wrCmtInput');
     var body = (inp.value || '').trim();
     if (!body) { return; }
-    var btn = document.querySelector('.wr-cmt-send');
+    var btn = document.querySelector('.zd-cmt-send');
     if (btn) btn.disabled = true;
     fetch('/work-reports/' + WR_ID + '/comments/', {
         method: 'POST',
@@ -324,8 +433,9 @@ function wrPostComment() {
         else { alert(d.message || '发布失败'); }
     }).catch(function () { if (btn) btn.disabled = false; alert('网络错误'); });
 }
-wrLoadComments();  // eager load on page open
+wrLoadComments();
 
+var currentIdx = 0;
 function openLightbox(idx) {
     currentIdx = idx;
     showPhoto();
@@ -334,7 +444,6 @@ function openLightbox(idx) {
 }
 function closeLightbox() {
     document.getElementById('lightbox').classList.remove('show');
-    // Stop video playback when closing
     var v = document.getElementById('lbVideo'); v.pause(); v.src = '';
     document.removeEventListener('keydown', lbKeyHandler);
 }
@@ -342,9 +451,7 @@ function navLightbox(dir) {
     currentIdx = (currentIdx + dir + photos.length) % photos.length;
     showPhoto();
 }
-function isVideoPath(p) {
-    return /\.(mp4|mov|m4v|webm|ogg|ogv|avi|mkv)$/i.test(p);
-}
+function isVideoPath(p) { return /\.(mp4|mov|m4v|webm|ogg|ogv|avi|mkv)$/i.test(p); }
 function showPhoto() {
     var img = document.getElementById('lbImg');
     var vid = document.getElementById('lbVideo');
