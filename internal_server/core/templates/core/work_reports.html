@@ -1048,7 +1048,7 @@ function resolveAllRepairs(e) {
     }).then(function (r) { return r.json(); }).then(function (d) {
         btn.disabled = false; btn.textContent = '一键全部标记已解决';
         wrToast(d.message, !d.success);
-        if (d.success) setTimeout(function () { location.href = '/work-reports/?tab=repairs'; }, 1200);
+        if (d.success) _refreshRepairsTab(1200);
     }).catch(function () { btn.disabled = false; btn.textContent = '一键全部标记已解决'; wrToast('网络错误', true); });
 }
 

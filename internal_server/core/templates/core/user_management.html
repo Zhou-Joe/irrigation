@@ -523,7 +523,7 @@
     </div>
 
     <!-- Tab 2: Registration Approval -->
-    <div id="tab-approval" class="app-tab-content {% if active_tab == 'approval' %}active{% endif %}">
+    <div id="tab-approval" class="app-tab-content {% if active_tab == 'approval' %}active{% endif %}" data-filter="{{ filter }}">
         <div class="stats-bar">
             <div class="stat-card pending">
                 <div class="stat-number">{{ stats.pending }}</div>
@@ -1314,14 +1314,36 @@ function setFilter(filter) {
     window.location.href = '/user-management/?tab=approval&filter=' + filter;
 }
 
+// Non-reloading update: fetch the page HTML and swap just #tab-approval.
+function _refreshApprovalTab() {
+    var cur = document.getElementById('tab-approval');
+    var qs = cur && cur.dataset.filter ? ('&filter=' + cur.dataset.filter) : '';
+    fetch('/user-management/?tab=approval' + qs, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+        .then(function(r) { return r.text(); })
+        .then(function(html) {
+            var doc = new DOMParser().parseFromString(html, 'text/html');
+            var fresh = doc.getElementById('tab-approval');
+            if (fresh) {
+                cur.innerHTML = fresh.innerHTML;
+            }
+        })
+        .catch(function() { /* fall back to full reload */ location.reload(); });
+}
+
 var currentRequestId = null;
 
 function approveRequest(id) {
-    if (confirm('确定要批准此注册申请吗？')) {
-        document.getElementById('request_id').value = id;
-        document.getElementById('action_type').value = 'approve';
-        document.getElementById('actionForm').submit();
-    }
+    if (!confirm('确定要批准此注册申请吗？')) return;
+    var fd = new FormData();
+    fd.append('request_id', id);
+    fd.append('action', 'approve');
+    fetch('/user-management/?tab=approval', {
+        method: 'POST', body: fd,
+        headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRFToken': getCSRFToken() }
+    }).then(function(r) { return r.json(); }).then(function(d) {
+        if (d.success) { showToast(d.message, 'success'); _refreshApprovalTab(); }
+        else { showToast(d.message || '操作失败', 'error'); }
+    }).catch(function() { showToast('网络错误', 'error'); });
 }
 
 function showRejectModal(id) {
@@ -1336,10 +1358,18 @@ function closeRejectModal() {
 }
 
 function confirmReject() {
-    document.getElementById('request_id').value = currentRequestId;
-    document.getElementById('action_type').value = 'reject';
-    document.getElementById('reject_reason').value = document.getElementById('rejectReason').value;
-    document.getElementById('actionForm').submit();
+    var reason = document.getElementById('rejectReason').value;
+    var fd = new FormData();
+    fd.append('request_id', currentRequestId);
+    fd.append('action', 'reject');
+    fd.append('reason', reason);
+    fetch('/user-management/?tab=approval', {
+        method: 'POST', body: fd,
+        headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRFToken': getCSRFToken() }
+    }).then(function(r) { return r.json(); }).then(function(d) {
+        if (d.success) { closeRejectModal(); showToast(d.message, 'success'); _refreshApprovalTab(); }
+        else { showToast(d.message || '操作失败', 'error'); }
+    }).catch(function() { showToast('网络错误', 'error'); });
 }
 
 document.getElementById('rejectModal').addEventListener('click', function(e) {
@@ -1482,6 +1512,20 @@ function _refreshCrewTab() {
         })
         .catch(function() { /* fall back to full reload */ location.reload(); });
 }
+function _refreshUsersTab() {
+    // Non-reloading update: fetch the page HTML and swap just #tab-users.
+    fetch('/user-management/?tab=users', { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+        .then(function(r) { return r.text(); })
+        .then(function(html) {
+            var doc = new DOMParser().parseFromString(html, 'text/html');
+            var fresh = doc.getElementById('tab-users');
+            if (fresh) {
+                var cur = document.getElementById('tab-users');
+                cur.innerHTML = fresh.innerHTML;
+            }
+        })
+        .catch(function() { /* fall back to full reload */ location.reload(); });
+}
 
 function saveCrew() {
     var modal = document.getElementById('crewModal');
@@ -1543,7 +1587,7 @@ function saveEdit() {
         if (data.success) {
             closeEditModal();
             showToast(data.message, 'success');
-            setTimeout(function() { location.reload(); }, 800);
+            _refreshUsersTab();
         } else {
             showToast(data.error || '更新失败', 'error');
         }
