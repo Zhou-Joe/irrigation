@@ -157,7 +157,7 @@
         </thead>
         <tbody>
           {% for it in group.items %}
-          <tr data-name="{{ it.project.name }}"
+          <tr id="pmRow-{{ it.project.id }}" data-name="{{ it.project.name }}"
               data-date="{{ it.project.start_date|date:'Y-m-d' }}"
               data-mat="{{ it.material_budget_amount }}"
               data-labor="{{ it.labor_budget_amount }}"
@@ -536,7 +536,7 @@ function pmRenderDetail(pid) {
                 ' · 灌溉组 ' + wr.team_hours + 'h · 第三方 ' + wr.third_hours + 'h' +
                 (wr.worker_name ? ' · 创建人 ' + _pmEsc(wr.worker_name) : '') +
                 '</span>' +
-                '<button type="button" class="btn btn-primary" style="font-size:.76rem;padding:3px 10px;margin-left:8px;" onclick="confirmProjectReport(' + wr.id + ', this)">确认</button>' +
+                '<button type="button" class="btn btn-primary" style="font-size:.76rem;padding:3px 10px;margin-left:8px;" onclick="confirmProjectReport(' + wr.id + ', ' + pid + ', this)">确认</button>' +
                 '</div></div>';
         }).join('');
     }
@@ -608,8 +608,9 @@ function pmRenderDetail(pid) {
 }
 
 // Confirm a pending work order's project association (admin). POSTs to the
-// confirm endpoint, then force-reloads the page so the report moves into 关联工单.
-function confirmProjectReport(rid, btn) {
+// confirm endpoint, then AJAX-refreshes the project panel so the report moves
+// into 关联工单 without a full page reload.
+function confirmProjectReport(rid, pid, btn) {
     if (!confirm('确认工单 #' + rid + ' 的项目关联？确认后其工时/材料将计入项目。')) return;
     var orig = btn.textContent;
     btn.disabled = true; btn.textContent = '确认中…';
@@ -618,7 +619,7 @@ function confirmProjectReport(rid, btn) {
     fetch('/work-reports/project-confirm/', {
         method: 'POST', headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRFToken': _pmCsrf() }, body: fd,
     }).then(function (r) { return r.json(); }).then(function (d) {
-        if (d.success) { pmToast(d.message, false); _pmForceReload(); }
+        if (d.success) { pmToast(d.message, false); _pmRefreshProject(pid); }
         else { pmToast(d.message, true); btn.disabled = false; btn.textContent = orig; }
     }).catch(function () { pmToast('网络错误', true); btn.disabled = false; btn.textContent = orig; });
 }
@@ -634,7 +635,7 @@ function removeProjectReport(rid, pid, btn) {
     fetch('/work-reports/project-remove/', {
         method: 'POST', headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRFToken': _pmCsrf() }, body: fd,
     }).then(function (r) { return r.json(); }).then(function (d) {
-        if (d.success) { pmToast(d.message, false); _pmForceReload(); }
+        if (d.success) { pmToast(d.message, false); _pmRefreshProject(pid); }
         else { pmToast(d.message, true); btn.disabled = false; btn.textContent = orig; }
     }).catch(function () { pmToast('网络错误', true); btn.disabled = false; btn.textContent = orig; });
 }
@@ -650,9 +651,49 @@ function restoreProjectReport(rid, pid, btn) {
     fetch('/work-reports/project-restore/', {
         method: 'POST', headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRFToken': _pmCsrf() }, body: fd,
     }).then(function (r) { return r.json(); }).then(function (d) {
-        if (d.success) { pmToast(d.message, false); _pmForceReload(); }
+        if (d.success) { pmToast(d.message, false); _pmRefreshProject(pid); }
         else { pmToast(d.message, true); btn.disabled = false; btn.textContent = orig; }
     }).catch(function () { pmToast('网络错误', true); btn.disabled = false; btn.textContent = orig; });
+}
+// AJAX partial refresh of ONE project's row + detail panel. Fetches the page
+// fresh, lifts the summary cells + #pmDetail-<pid> (+ its data-budget), and
+// swaps them in place — no full reload, scroll/panel state untouched. Used by
+// confirm/remove/restore/budget-save. Falls back to _pmForceReload on failure.
+function _pmRefreshProject(pid) {
+    fetch('/projects/?_=' + Date.now())
+        .then(function (r) { return r.text(); })
+        .then(function (html) {
+            var doc = new DOMParser().parseFromString(html, 'text/html');
+            // Swap the detail panel inner + data-budget, then invalidate the
+            // PM_BUDGET cache so pmBudget re-reads the fresh data-budget.
+            var freshDetail = doc.getElementById('pmDetail-' + pid);
+            var curDetail = document.getElementById('pmDetail-' + pid);
+            if (!freshDetail || !curDetail) { _pmForceReload(); return; }
+            curDetail.innerHTML = freshDetail.innerHTML;
+            curDetail.setAttribute('data-budget', freshDetail.getAttribute('data-budget'));
+            delete PM_BUDGET[pid];
+            // Re-render the panel if it's currently open so the user sees the
+            // updated 关联工单 / 已移除工单 / 待确认工单 immediately.
+            var row = document.getElementById('pmDetailRow-' + pid);
+            if (row && row.classList.contains('open')) pmRenderDetail(pid);
+            // Refresh the summary row cells from the fresh row.
+            var freshRow = doc.getElementById('pmRow-' + pid);
+            if (freshRow) {
+                ['pmCellMat', 'pmCellLabor', 'pmCellBal', 'pmCellLaborBal'].forEach(function (pfx) {
+                    var f = freshRow.querySelector('#' + pfx + '-' + pid);
+                    var c = document.getElementById(pfx + '-' + pid);
+                    if (f && c) c.innerHTML = f.innerHTML;
+                });
+                // hours / report-count cells (no id) — sync by column position.
+                var curNums = row.previousElementSibling ?
+                    row.previousElementSibling.querySelectorAll('td.num') : [];
+                var freshNums = freshRow.querySelectorAll('td.num');
+                if (curNums.length && freshNums.length === curNums.length) {
+                    for (var i = 0; i < curNums.length; i++) curNums[i].innerHTML = freshNums[i].innerHTML;
+                }
+            }
+        })
+        .catch(function () { _pmForceReload(); });
 }
 // Force a full page reload (bypass cache) so the project panel re-fetches.
 // Saves scroll position + which detail panels are open so the page can restore
@@ -825,8 +866,9 @@ function pbSave() {
                     btn.disabled = false; btn.textContent = '保存';
                     if (d2.success) {
                         pmToast('已保存', false); pbClose();
-                        // Reload so 材料余额 / 关联PO金额合计 are recomputed server-side.
-                        window.location.reload();
+                        // AJAX-refresh this project's row + panel (材料余额 / 关联PO
+                        // 金额合计 recomputed server-side) instead of a full reload.
+                        _pmRefreshProject(_pbPid);
                     } else { pmToast(d2.message || '关联订单保存失败', true); }
                 });
         })
@@ -916,8 +958,13 @@ function pdSubmit() {
         if (d.success) {
             pdClose();
             pmToast(d.message || '已删除');
-            // Reload so the row disappears.
-            setTimeout(function () { location.href = '/projects/'; }, 600);
+            // Remove the project row pair (summary row + detail row) in place —
+            // no full reload needed.
+            var drow = document.getElementById('pmDetailRow-' + _pdPid);
+            var prow = document.getElementById('pmRow-' + _pdPid);
+            if (drow) drow.remove();
+            if (prow) prow.remove();
+            _pdPid = null;
         } else {
             // Wrong credentials / no permission — keep modal open, show error inline.
             errEl.textContent = d.message || '删除失败';
