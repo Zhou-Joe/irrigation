@@ -750,7 +750,9 @@ window.batchDeletePipelines = function() {
     deleteItems('/settings/batch-delete-pipeline/', ids, 'pipeline');
 };
 
-// Generic batch delete
+// Generic batch delete — removes the affected rows in place (by data-id), no
+// full reload. Each section's rows share a container tbody and a row class;
+// counts/badges are recomputed from the surviving rows.
 function deleteItems(url, ids, label) {
     fetch(url, {
         method: 'POST',
@@ -761,7 +763,11 @@ function deleteItems(url, ids, label) {
         body: JSON.stringify({ ids: ids }),
     }).then(r => r.json()).then(data => {
         if (data.success) {
-            location.reload();
+            (ids || []).forEach(function (id) {
+                // Match any row carrying this data-id (zone/patch/region/pipeline/landmark).
+                document.querySelectorAll('tr[data-id="' + id + '"]').forEach(function (tr) { tr.remove(); });
+            });
+            showToast((label || '选中项') + '已删除', 'success');
         } else {
             showToast('删除失败: ' + (data.error || '未知错误'), 'error');
         }
@@ -949,7 +955,11 @@ function deleteLandmark(id) {
         method: 'POST',
         headers: { 'X-CSRFToken': getCsrfToken() }
     }).then(r => r.json()).then(data => {
-        if (data.success) location.reload();
+        if (data.success) {
+            document.querySelectorAll('tr.landmark-row[data-id="' + id + '"]').forEach(function (tr) { tr.remove(); });
+            updateLmBatchActions();
+            showToast('地标已删除', 'success');
+        }
         else showToast('删除失败', 'error');
     });
 }
