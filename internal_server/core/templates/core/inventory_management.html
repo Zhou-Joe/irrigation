@@ -814,6 +814,25 @@ function _ivGetCsrf() {
     return m ? m[1] : '';
 }
 // Confirm: collect the (possibly edited) actual quantities per line, POST them.
+// Remove an estimate row in place + show the empty state + decrement the tab
+// badge, without a full page reload.
+function _ivRemoveEstimateRow(txnId) {
+    var tr = document.querySelector('tr[data-txn="' + txnId + '"]');
+    if (!tr) return;
+    var tbody = tr.closest('tbody') || tr.parentElement;
+    tr.remove();
+    // If no estimate rows remain, swap to the empty state.
+    var panel = document.getElementById('ivTabEstimate');
+    if (panel && !panel.querySelector('tr[data-txn]')) {
+        panel.innerHTML = '<div class="iv-ledger-empty">暂无待确认的预估消耗</div>';
+    }
+    // Decrement / hide the tab badge.
+    var badge = document.querySelector('button.app-tab[data-tab="estimate"] .app-tab-badge');
+    if (badge) {
+        var n = parseInt(badge.textContent, 10) - 1;
+        if (n > 0) badge.textContent = n; else badge.remove();
+    }
+}
 function confirmEstimate(txnId) {
     var tr = document.querySelector('tr[data-txn="' + txnId + '"]');
     if (!tr) return;
@@ -828,7 +847,7 @@ function confirmEstimate(txnId) {
         method: 'POST', body: fd,
         headers: {'X-CSRFToken': _ivGetCsrf(), 'X-Requested-With': 'XMLHttpRequest'}
     }).then(function (r) { return r.json(); }).then(function (data) {
-        if (data.success) { location.reload(); }
+        if (data.success) { _ivRemoveEstimateRow(txnId); }
         else { alert(data.error || '确认失败'); }
     }).catch(function () { alert('网络错误，请重试'); });
 }
@@ -840,7 +859,7 @@ function voidEstimate(txnId) {
         method: 'POST', body: fd,
         headers: {'X-CSRFToken': _ivGetCsrf(), 'X-Requested-With': 'XMLHttpRequest'}
     }).then(function (r) { return r.json(); }).then(function (data) {
-        if (data.success) { location.reload(); }
+        if (data.success) { _ivRemoveEstimateRow(txnId); }
         else { alert(data.error || '作废失败'); }
     }).catch(function () { alert('网络错误，请重试'); });
 }

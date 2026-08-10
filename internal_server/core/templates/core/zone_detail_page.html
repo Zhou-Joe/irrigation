@@ -318,7 +318,7 @@
         <div class="zd-card">
             <h2>灌溉设备维护记录</h2>
             {% if equip_notes %}
-            <div class="zd-notes">
+            <div class="zd-notes" id="equip-notes-list">
                 {% for note in equip_notes %}
                 <div class="zd-note"><span class="nd">{{ note.date }}</span><span class="nc">{{ note.content }}</span></div>
                 {% endfor %}
@@ -329,7 +329,7 @@
         <div class="zd-card">
             <h2>灌溉管理记录</h2>
             {% if irrig_notes %}
-            <div class="zd-notes">
+            <div class="zd-notes" id="irrig-notes-list">
                 {% for note in irrig_notes %}
                 <div class="zd-note"><span class="nd">{{ note.date }}</span><span class="nc">{{ note.content }}</span></div>
                 {% endfor %}
@@ -399,13 +399,31 @@
         }).then(r => r.json());
     }
 
+    // AJAX partial refresh: fetch the zone detail page fresh and swap the four
+    // remark/notes containers in place — no full reload. Used by add/confirm/move.
+    function _refreshRemarkLists() {
+        fetch('/zone/' + zoneId + '/detail/?_=' + Date.now())
+            .then(function(r) { return r.text(); })
+            .then(function(html) {
+                var doc = new DOMParser().parseFromString(html, 'text/html');
+                ['remarks-list', 'confirmed-list', 'equip-notes-list', 'irrig-notes-list'].forEach(function(cid) {
+                    var fresh = doc.getElementById(cid);
+                    var cur = document.getElementById(cid);
+                    if (fresh && cur) cur.innerHTML = fresh.innerHTML;
+                });
+            })
+            .catch(function() { location.reload(); });
+    }
+
     window.addRemark = function() {
         const date = document.getElementById('remark-date').value;
         const content = document.getElementById('remark-content').value.trim();
         if (!content) { alert('请输入备注内容'); return; }
         postAction(remarkAddUrl, {date: date, content: content}).then(function(data) {
-            if (data.success) location.reload();
-            else alert(data.error || '添加失败');
+            if (data.success) {
+                document.getElementById('remark-content').value = '';
+                _refreshRemarkLists();
+            } else alert(data.error || '添加失败');
         });
     };
 
@@ -422,7 +440,7 @@
         var form = btn.parentElement;
         var reply = form.querySelector('.confirm-reply').value.trim();
         postAction(remarkConfirmUrl(index), {confirm_reply: reply}).then(function(data) {
-            if (data.success) location.reload();
+            if (data.success) _refreshRemarkLists();
             else alert(data.error || '确认失败');
         });
     };
@@ -431,7 +449,7 @@
         var label = target === 'irrigation' ? '灌溉管理记录' : '设备维护记录';
         if (!confirm('确认转至' + label + '？')) return;
         postAction(remarkMoveUrl(index), {target: target}).then(function(data) {
-            if (data.success) location.reload();
+            if (data.success) _refreshRemarkLists();
             else alert(data.error || '转移失败');
         });
     };
