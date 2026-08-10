@@ -5761,6 +5761,7 @@ def user_management(request):
 
     # Handle POST actions (registration approval/rejection)
     if request.method == 'POST':
+        is_ajax = request.headers.get('x-requested-with') == 'XMLHttpRequest'
         request_id = request.POST.get('request_id')
         action = request.POST.get('action')
         reason = request.POST.get('reason', '')
@@ -5832,17 +5833,26 @@ def user_management(request):
                 reg.processed_at = timezone.now()
                 reg.created_user = user
                 reg.save()
-                messages.success(request, f'已批准 {reg.full_name} 的注册申请，用户名：{username}，工号：{employee_id}')
+                msg = f'已批准 {reg.full_name} 的注册申请，用户名：{username}，工号：{employee_id}'
+                if is_ajax:
+                    return JsonResponse({'success': True, 'message': msg})
+                messages.success(request, msg)
 
             elif action == 'reject':
                 reg.status = 'rejected'
                 reg.status_notes = reason
                 reg.processed_at = timezone.now()
                 reg.save()
-                messages.success(request, f'已拒绝 {reg.full_name} 的注册申请')
+                msg = f'已拒绝 {reg.full_name} 的注册申请'
+                if is_ajax:
+                    return JsonResponse({'success': True, 'message': msg})
+                messages.success(request, msg)
 
         except RegistrationRequest.DoesNotExist:
-            messages.error(request, '注册申请不存在')
+            msg = '注册申请不存在'
+            if is_ajax:
+                return JsonResponse({'success': False, 'message': msg}, status=404)
+            messages.error(request, msg)
 
         return redirect('/user-management/?tab=approval')
 
