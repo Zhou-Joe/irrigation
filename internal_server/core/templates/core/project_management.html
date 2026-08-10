@@ -74,6 +74,152 @@
 .pd-field input { width: 100%; box-sizing: border-box; padding: 8px 10px; border: 1px solid #d8dde3; border-radius: 8px; font-size: .9rem; font-family: inherit; }
 .pd-field input:focus { outline: none; border-color: #b3261e; box-shadow: 0 0 0 3px rgba(179,38,30,0.12); }
 .pd-error { color: #b3261e; font-size: .82rem; margin-top: 4px; }
+
+/* Filter toggle + extras wrapper — desktop: contents (inline in flex row).
+   Placed BEFORE the @media blocks so mobile overrides win the cascade. */
+.pm-filter-toggle {
+    display: none;  /* hidden on desktop; shown in mobile @media */
+    align-items: center;
+    gap: 4px;
+    font-size: .85rem;
+    color: var(--color-primary-light, #2D6A4F);
+    background: none;
+    border: 1px solid #d8dde3;
+    border-radius: 8px;
+    padding: 6px 12px;
+    cursor: pointer;
+    font-weight: 600;
+}
+.pm-filter-extras { display: contents; }  /* transparent wrapper on desktop */
+
+/* ================================================================
+   RESPONSIVE — mobile-friendly layout
+   Table → stacked cards on phones; filter collapses; modals stack.
+   All scoped to .pm-card so it never leaks to other pages' app-table.
+   ================================================================ */
+
+/* ── Tablet / large phone (≤768px): project table → cards ── */
+@media (max-width: 768px) {
+    .pm-card .app-table-wrap { overflow-x: visible; }
+    .pm-card table.app-table { font-size: .86rem; }
+    .pm-card table.app-table thead { display: none; }
+    .pm-card table.app-table tbody tr:not(.app-row-detail) {
+        display: block;
+        background: #fff;
+        border: 1px solid #e8ece8;
+        border-radius: 12px;
+        margin-bottom: 10px;
+        padding: 4px 0;
+        box-shadow: 0 1px 3px rgba(0,0,0,.05);
+    }
+    .pm-card table.app-table tbody tr:not(.app-row-detail) td {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        gap: 10px;
+        padding: 5px 14px;
+        border-bottom: none;
+        text-align: right;
+        white-space: nowrap;
+    }
+    .pm-card table.app-table tbody tr:not(.app-row-detail) td::before {
+        content: attr(data-label);
+        font-size: .76rem;
+        color: #888;
+        font-weight: 600;
+        white-space: nowrap;
+        flex-shrink: 0;
+    }
+    /* The project name cell — header of each card, full width, no label. */
+    .pm-card .pm-t-name {
+        font-size: 1.02rem;
+        font-weight: 700;
+        color: var(--color-primary, #1B4332);
+        flex-direction: column;
+        align-items: flex-start;
+        border-bottom: 2px solid #f0f4f0;
+        padding-bottom: 7px;
+        margin-bottom: 3px;
+        text-align: left;
+    }
+    .pm-card .pm-t-name::before { display: none; }
+    .pm-card .pm-t-name small { margin-top: 3px; }
+    /* Date cell — allow wrapping for the date range. */
+    .pm-card .pm-t-date { white-space: normal; }
+    /* Actions cell — full-width flex row of buttons, easy to tap. */
+    .pm-card .pm-actions {
+        justify-content: stretch;
+        padding-top: 6px;
+        border-top: 1px solid #f0f4f0;
+    }
+    .pm-card .pm-actions::before { display: none; }
+    .pm-card .pm-actions .btn-sm {
+        flex: 1;
+        min-height: 38px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: .82rem;
+    }
+    .pm-card .pm-actions .pm-toggle { width: 100%; margin-bottom: 5px; }
+
+    /* Detail row: full-width block below the card, rounded to match. */
+    .pm-card .app-row-detail { display: none; margin: -4px 0 10px; }
+    .pm-card .app-row-detail.open { display: block; }
+    .pm-card .app-row-detail > td { display: block; width: auto; }
+    .pm-card .app-detail-inner {
+        border-radius: 0 0 12px 12px;
+        border: 1px solid #e8ece8;
+        border-top: none;
+    }
+}
+
+/* ── Phone (≤560px): filter collapse, modals single-col, touch sizing ── */
+@media (max-width: 560px) {
+    /* Filter bar: search always visible, rest collapses behind a toggle. */
+    .pm-filter-toggle { display: inline-flex !important; }
+    .pm-filter-extras { display: none; }
+    .pm-filter-extras.open { display: flex; }
+    #pmFilterForm .ff { min-width: 0; flex: 1 1 100%; }
+    #pmFilterForm .ff:first-child { flex-basis: 100%; }
+    .pm-filter-row { flex-direction: column; align-items: stretch; gap: 6px; }
+    .pm-sort-bar { width: 100%; justify-content: space-between; }
+    .pm-sort-bar select { flex: 1; }
+
+    /* Modal grids → single column. Override the inline grid-template. */
+    .app-dialog .app-grid,
+    .app-dialog .app-grid[style*="grid-template-columns"] {
+        grid-template-columns: 1fr !important;
+    }
+    /* Modals: almost full-screen on phones, with safe-area padding. */
+    .app-mask { padding: 0; align-items: stretch; }
+    .app-dialog {
+        max-width: none;
+        max-height: 100vh;
+        max-height: 100dvh;
+        border-radius: 0;
+        min-height: 100vh;
+        min-height: 100dvh;
+        padding-bottom: env(safe-area-inset-bottom, 0);
+    }
+    .app-body { padding: 14px; }
+
+    /* Budget overview table: stack label above value. */
+    .pm-mat-table td { display: block; width: 100% !important; padding: 3px 8px; box-sizing: border-box; }
+    .pm-mat-table tr { display: block; margin-bottom: 6px; }
+
+    /* Remove/restore/confirm buttons in detail cards: bigger touch target. */
+    .app-detail-inner .btn-sm { min-height: 36px; padding: 6px 12px; }
+
+    /* Card gap slightly tighter. */
+    .pm-card { padding: 12px; }
+    .pm-card h2 { font-size: .98rem; }
+}
+
+/* ── Very small phone (≤400px): hide low-value cells ── */
+@media (max-width: 400px) {
+    .pm-cell-hours { display: none !important; }
+}
 </style>
 {% endblock %}
 
@@ -94,23 +240,26 @@
     <form method="get" class="filter-row" id="pmFilterForm">
       <div class="ff" style="flex:1;min-width:180px;"><label>搜索</label>
         <input type="text" name="q" placeholder="项目名称 / 代号 / Code / 备注" value="{{ fq }}"></div>
-      <div class="ff"><label>开工起</label><input type="date" name="from" value="{{ ffrom }}"></div>
-      <div class="ff"><label>开工止</label><input type="date" name="to" value="{{ fto }}"></div>
-      <div class="ff"><label>类别</label>
-        <select name="category">
-          <option value="">全部</option>
-          {% for c, label in categories %}<option value="{{ c }}" {% if fcat == c %}selected{% endif %}>{{ label }}</option>{% endfor %}
-        </select></div>
-      <div class="ff"><label>状态</label>
-        <select name="completed">
-          <option value="">全部</option>
-          <option value="0" {% if fcompleted == '0' %}selected{% endif %}>未完成</option>
-          <option value="1" {% if fcompleted == '1' %}selected{% endif %}>已完成</option>
-        </select></div>
-      <button type="submit" class="btn-sm btn-primary">筛选</button>
-      <button type="button" class="btn-sm btn-secondary" onclick="pmClearFilter()">清除</button>
-      <button type="button" class="btn-sm btn-secondary" onclick="pmExport()">⬇ 导出Excel</button>
-      <button type="button" class="btn-sm btn-primary" onclick="pmOpenCreate()">+ 新建项目</button>
+      <button type="button" class="pm-filter-toggle" onclick="pmToggleFilters(this)">更多筛选 ▾</button>
+      <div class="pm-filter-extras">
+        <div class="ff"><label>开工起</label><input type="date" name="from" value="{{ ffrom }}"></div>
+        <div class="ff"><label>开工止</label><input type="date" name="to" value="{{ fto }}"></div>
+        <div class="ff"><label>类别</label>
+          <select name="category">
+            <option value="">全部</option>
+            {% for c, label in categories %}<option value="{{ c }}" {% if fcat == c %}selected{% endif %}>{{ label }}</option>{% endfor %}
+          </select></div>
+        <div class="ff"><label>状态</label>
+          <select name="completed">
+            <option value="">全部</option>
+            <option value="0" {% if fcompleted == '0' %}selected{% endif %}>未完成</option>
+            <option value="1" {% if fcompleted == '1' %}selected{% endif %}>已完成</option>
+          </select></div>
+        <button type="submit" class="btn-sm btn-primary">筛选</button>
+        <button type="button" class="btn-sm btn-secondary" onclick="pmClearFilter()">清除</button>
+        <button type="button" class="btn-sm btn-secondary" onclick="pmExport()">⬇ 导出Excel</button>
+        <button type="button" class="btn-sm btn-primary" onclick="pmOpenCreate()">+ 新建项目</button>
+      </div>
     </form>
   </div>
   <div class="pm-filter-row">
@@ -166,7 +315,7 @@
               data-hours="{{ it.team_hours }}"
               data-reports="{{ it.report_count }}"
               data-completed="{{ it.project.is_completed|yesno:'1,0' }}">
-            <td class="pm-t-name">
+            <td class="pm-t-name" data-label="项目">
               {{ it.project.name }}
               {% if it.project.symbol or it.project.code or it.project.subcategory or not it.project.active %}
               <small>
@@ -177,20 +326,20 @@
               </small>
               {% endif %}
             </td>
-            <td class="pm-t-date">
+            <td class="pm-t-date" data-label="工期">
               {% if it.project.start_date or it.project.planned_end_date %}
                 {{ it.project.start_date|date:"Y-m-d"|default:"—" }} ~ {{ it.project.planned_end_date|date:"Y-m-d"|default:"—" }}
               {% else %}—{% endif %}
             </td>
-            <td class="num" id="pmCellMat-{{ it.project.id }}">{% if it.material_budget_amount %}¥{{ it.material_budget_amount }}{% else %}—{% endif %}</td>
-            <td class="num" id="pmCellLabor-{{ it.project.id }}">{% if it.labor_budget_amount %}¥{{ it.labor_budget_amount }}{% else %}—{% endif %}</td>
-            <td class="num" id="pmCellBal-{{ it.project.id }}">{% if it.material_balance %}{% if it.material_balance|slice:":1" == "-" %}<span style="color:#c0392b;font-weight:600;">¥{{ it.material_balance }}</span>{% else %}¥{{ it.material_balance }}{% endif %}{% else %}—{% endif %}</td>
-            <td class="num" id="pmCellLaborBal-{{ it.project.id }}">{% if it.labor_balance %}{% if it.labor_balance|slice:":1" == "-" %}<span style="color:#c0392b;font-weight:600;">¥{{ it.labor_balance }}</span>{% else %}¥{{ it.labor_balance }}{% endif %}{% else %}—{% endif %}</td>
-            <td class="num">{{ it.team_hours|floatformat:1 }}h</td>
-            <td class="num">{{ it.third_hours|floatformat:1 }}h</td>
-            <td class="num">{{ it.report_count }}</td>
-            <td>{% if it.project.is_completed %}<span class="pm-done-tag">已完成</span>{% else %}<span style="color:#999;font-size:.8rem;">进行中</span>{% endif %}</td>
-            <td style="text-align:right;white-space:nowrap;">
+            <td class="num" data-label="材料预算" id="pmCellMat-{{ it.project.id }}">{% if it.material_budget_amount %}¥{{ it.material_budget_amount }}{% else %}—{% endif %}</td>
+            <td class="num" data-label="人工预算" id="pmCellLabor-{{ it.project.id }}">{% if it.labor_budget_amount %}¥{{ it.labor_budget_amount }}{% else %}—{% endif %}</td>
+            <td class="num" data-label="材料余额" id="pmCellBal-{{ it.project.id }}">{% if it.material_balance %}{% if it.material_balance|slice:":1" == "-" %}<span style="color:#c0392b;font-weight:600;">¥{{ it.material_balance }}</span>{% else %}¥{{ it.material_balance }}</span>{% endif %}{% else %}—{% endif %}</td>
+            <td class="num" data-label="人工余额" id="pmCellLaborBal-{{ it.project.id }}">{% if it.labor_balance %}{% if it.labor_balance|slice:":1" == "-" %}<span style="color:#c0392b;font-weight:600;">¥{{ it.labor_balance }}</span>{% else %}¥{{ it.labor_balance }}{% endif %}{% else %}—{% endif %}</td>
+            <td class="num pm-cell-hours" data-label="灌溉组工时">{{ it.team_hours|floatformat:1 }}h</td>
+            <td class="num pm-cell-hours" data-label="第三方工时">{{ it.third_hours|floatformat:1 }}h</td>
+            <td class="num" data-label="工单">{{ it.report_count }}</td>
+            <td data-label="状态">{% if it.project.is_completed %}<span class="pm-done-tag">已完成</span>{% else %}<span style="color:#999;font-size:.8rem;">进行中</span>{% endif %}</td>
+            <td class="pm-actions" data-label="" style="text-align:right;white-space:nowrap;">
               <button type="button" class="btn-sm btn-secondary pm-toggle" onclick="pmToggleDetail({{ it.project.id }})">详情 ▾</button>
               <button type="button" class="btn-sm btn-secondary"
                 onclick='pmOpenEdit({{ it.project.id }}, {{ it.edit_json|default:"null"|safe }})'>编辑</button>
@@ -985,6 +1134,14 @@ document.addEventListener('keydown', function (e) {
 // Clear all filters.
 function pmClearFilter() {
     window.location.href = '{% url "core:project_management" %}';
+}
+
+// Mobile filter collapse: toggle the extra filter fields + buttons.
+function pmToggleFilters(btn) {
+    var extras = document.querySelector('.pm-filter-extras');
+    if (!extras) return;
+    var open = extras.classList.toggle('open');
+    btn.textContent = open ? '收起筛选 ▴' : '更多筛选 ▾';
 }
 
 // Export to Excel, carrying the current filter values.
