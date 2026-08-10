@@ -2,595 +2,454 @@
 
 {% load static %}
 
-{% block title %}登录 - 灌溉管理系统{% endblock %}
+{% block title %}登录 - 园艺管理系统{% endblock %}
 
 {% block extra_css %}
 <style>
-/* ===== Modern Login Page Design ===== */
+/* ============================================================
+   ORGANIC anchor — earth tones · grain · humanist serif
+   Palette: sand #E8DCC7 · moss #606C38 · sage #8B9D83 ·
+            terracotta #C66B3D · deep olive #3A4128
+   No pure white, no pure black, no hard rectangles, no cream.
+   ============================================================ */
 
-.login-container {
-    min-height: 100vh;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    position: relative;
-    overflow: hidden;
-    /* Magical gradient background */
-    background: linear-gradient(135deg,
-        #0a1628 0%,
-        #1B4332 25%,
-        #2D6A4F 50%,
-        #1a3a4a 75%,
-        #0d1f2d 100%);
+/* ---------- Reset + base ---------- */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --sand:        #E8DCC7;
+  --sand-deep:   #DDD0B5;
+  --moss:        #606C38;
+  --moss-dark:   #3A4128;
+  --sage:        #8B9D83;
+  --sage-light:  #A7B5A0;
+  --terracotta:  #C66B3D;
+  --clay:        #B08B6E;
+  --ink:         #3A4128;       /* deep olive "black" — never pure black */
+  --ink-soft:    #6B6553;       /* warm grey secondary text */
+  --hairline:    rgba(58, 65, 40, 0.14);
+  --serif:       Georgia, 'Charter', 'Cambria', 'Times New Roman', serif;
+  --sans:        -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
+                 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  --grain:       url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='220' height='220'><filter id='g'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.23  0 0 0 0 0.25  0 0 0 0 0.16  0 0 0 0.04 0'/></filter><rect width='100%25' height='100%25' filter='url(%23g)'/></svg>");
 }
 
-/* Sparkle particles animation */
-.sparkle-container {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    overflow: hidden;
-    pointer-events: none;
+/* ---------- Full-bleed organic background ---------- */
+.organic-shell {
+  min-height: 100vh;
+  min-height: 100dvh;             /* mobile address-bar aware */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  overflow: hidden;
+  /* Layered earth-tone wash — moss to sage, deep at the edges for focus */
+  background:
+    radial-gradient(120% 90% at 50% 8%, #6E7A48 0%, #606C38 38%, #4A5230 72%, #3A4128 100%);
+  font-family: var(--sans);
 }
 
-.sparkle {
-    position: absolute;
-    width: 4px;
-    height: 4px;
-    background: radial-gradient(circle, #fff 0%, rgba(255,255,255,0) 70%);
-    border-radius: 50%;
-    animation: sparkle-float 8s ease-in-out infinite;
-    opacity: 0;
+/* Grain overlay — the anchor's texture signature. ~2% noise on the whole field. */
+.organic-shell::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: var(--grain);
+  background-size: 220px 220px;
+  opacity: 0.55;
+  mix-blend-mode: overlay;
+  pointer-events: none;
+  z-index: 0;
 }
 
-.sparkle:nth-child(1) { left: 10%; animation-delay: 0s; animation-duration: 6s; }
-.sparkle:nth-child(2) { left: 20%; animation-delay: 1s; animation-duration: 8s; }
-.sparkle:nth-child(3) { left: 30%; animation-delay: 2s; animation-duration: 7s; }
-.sparkle:nth-child(4) { left: 40%; animation-delay: 0.5s; animation-duration: 9s; }
-.sparkle:nth-child(5) { left: 50%; animation-delay: 3s; animation-duration: 6s; }
-.sparkle:nth-child(6) { left: 60%; animation-delay: 1.5s; animation-duration: 8s; }
-.sparkle:nth-child(7) { left: 70%; animation-delay: 2.5s; animation-duration: 7s; }
-.sparkle:nth-child(8) { left: 80%; animation-delay: 4s; animation-duration: 9s; }
-.sparkle:nth-child(9) { left: 90%; animation-delay: 0.8s; animation-duration: 6s; }
-.sparkle:nth-child(10) { left: 15%; animation-delay: 3.5s; animation-duration: 8s; }
-.sparkle:nth-child(11) { left: 85%; animation-delay: 1.8s; animation-duration: 7s; }
-.sparkle:nth-child(12) { left: 5%; animation-delay: 2.8s; animation-duration: 9s; }
-
-@keyframes sparkle-float {
-    0%, 100% {
-        transform: translateY(100vh) scale(0);
-        opacity: 0;
-    }
-    10% {
-        opacity: 0.8;
-        transform: translateY(90vh) scale(1);
-    }
-    90% {
-        opacity: 0.6;
-        transform: translateY(10vh) scale(0.8);
-    }
-    100% {
-        opacity: 0;
-        transform: translateY(0vh) scale(0);
-    }
+/* Soft drifting light blobs — suggest water/light through foliage, not tech glow */
+.organic-shell::after {
+  content: '';
+  position: absolute;
+  width: 60vw;
+  height: 60vw;
+  max-width: 720px;
+  max-height: 720px;
+  top: -12%;
+  right: -10%;
+  background: radial-gradient(circle, rgba(167, 181, 160, 0.28) 0%, rgba(167, 181, 160, 0) 68%);
+  border-radius: 50%;
+  animation: drift 14s ease-in-out infinite alternate;
+  pointer-events: none;
+  z-index: 0;
+}
+@keyframes drift {
+  from { transform: translate(0, 0) scale(1); }
+  to   { transform: translate(-4%, 5%) scale(1.08); }
 }
 
-/* Hidden Mickey - subtle shape in background */
-.hidden-mickey {
-    position: absolute;
-    bottom: -120px;
-    right: -80px;
-    width: 200px;
-    height: 200px;
-    opacity: 0.03;
-    pointer-events: none;
+/* ---------- The card ---------- */
+.organic-card {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 420px;
+  margin: 20px;
+  padding: 44px 38px 32px;
+  /* Sand surface — warm, not cream, not white */
+  background: var(--sand);
+  background-image: var(--grain), linear-gradient(165deg, #ECE0CB 0%, #E2D5BE 100%);
+  background-size: 220px 220px, 100% 100%;
+  border-radius: 28px;
+  border: 1px solid rgba(58, 65, 40, 0.10);
+  box-shadow:
+    0 30px 60px -22px rgba(28, 33, 18, 0.55),
+    0 8px 18px -10px rgba(28, 33, 18, 0.35),
+    inset 0 1px 0 rgba(255, 252, 240, 0.5);
+  animation: rise 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@keyframes rise {
+  from { opacity: 0; transform: translateY(26px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 
-.hidden-mickey::before,
-.hidden-mickey::after,
-.hidden-mickey-main {
-    content: '';
-    position: absolute;
-    border-radius: 50%;
-    background: #fff;
+/* ---------- Organic brand mark — a leaf + water drop (CSS/SVG, no emoji) ---------- */
+.organic-mark {
+  width: 58px;
+  height: 58px;
+  margin: 0 auto 22px;
+  border-radius: 50% 42% 50% 42%;
+  background: radial-gradient(circle at 35% 30%, var(--sage-light), var(--moss) 78%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow:
+    0 8px 20px -6px rgba(58, 65, 40, 0.45),
+    inset 0 -3px 6px rgba(58, 65, 40, 0.2);
+  animation: breathe 5s ease-in-out infinite;
+}
+@keyframes breathe {
+  0%, 100% { transform: scale(1); border-radius: 50% 42% 50% 42%; }
+  50%      { transform: scale(1.05); border-radius: 46% 50% 46% 50%; }
+}
+.organic-mark svg { width: 30px; height: 30px; display: block; }
+
+/* ---------- Heading ---------- */
+.organic-heading {
+  text-align: center;
+  margin-bottom: 30px;
+}
+.organic-heading h1 {
+  font-family: var(--serif);
+  font-size: 1.7rem;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  color: var(--ink);
+  line-height: 1.2;
+}
+.organic-heading p {
+  margin-top: 6px;
+  font-size: 0.86rem;
+  color: var(--ink-soft);
+  letter-spacing: 1.5px;
 }
 
-.hidden-mickey-main {
-    width: 80px;
-    height: 80px;
-    bottom: 60px;
-    right: 80px;
+/* ---------- Django messages ---------- */
+.organic-messages { margin-bottom: 22px; }
+.organic-messages .message {
+  padding: 12px 16px;
+  border-radius: 16px;
+  margin-bottom: 10px;
+  font-size: 0.86rem;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--hairline);
+}
+.organic-messages .message.error {
+  background: rgba(198, 107, 61, 0.10);
+  color: #9E4A22;
+  border-color: rgba(198, 107, 61, 0.28);
+}
+.organic-messages .message.success {
+  background: rgba(96, 108, 56, 0.10);
+  color: var(--moss);
+  border-color: rgba(96, 108, 56, 0.25);
 }
 
-.hidden-mickey::before {
-    width: 50px;
-    height: 50px;
-    bottom: 80px;
-    right: 60px;
+/* ---------- Form ---------- */
+.organic-field { margin-bottom: 20px; }
+.organic-field label {
+  display: block;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--ink);
+  margin-bottom: 7px;
+  letter-spacing: 0.4px;
+}
+.organic-field .ctrl {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.organic-field .ctrl svg {
+  position: absolute;
+  left: 16px;
+  width: 18px;
+  height: 18px;
+  color: var(--clay);
+  pointer-events: none;
+  transition: color 0.3s ease;
+}
+.organic-field input {
+  width: 100%;
+  height: 52px;             /* touch-friendly */
+  padding: 0 16px 0 46px;
+  font-family: var(--sans);
+  font-size: 1rem;
+  color: var(--ink);
+  background: rgba(255, 252, 240, 0.55);
+  border: 1.5px solid var(--hairline);
+  border-radius: 18px;
+  transition: border-color 0.3s ease, box-shadow 0.3s ease, background 0.3s ease;
+  -webkit-appearance: none;
+  appearance: none;
+}
+.organic-field input::placeholder { color: rgba(107, 101, 83, 0.6); }
+.organic-field input:focus {
+  outline: none;
+  border-color: var(--terracotta);
+  background: rgba(255, 252, 240, 0.85);
+  box-shadow: 0 0 0 4px rgba(198, 107, 61, 0.14);
+}
+.organic-field .ctrl:focus-within svg { color: var(--terracotta); }
+
+/* password visibility toggle */
+.organic-field .toggle-eye {
+  position: absolute;
+  right: 14px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 8px;
+  color: var(--ink-soft);
+  border-radius: 50%;
+  display: flex;
+  transition: color 0.2s ease, background 0.2s ease;
+}
+.organic-field .toggle-eye:hover { color: var(--terracotta); background: rgba(198, 107, 61, 0.08); }
+.organic-field .toggle-eye svg { position: static; width: 18px; height: 18px; }
+
+/* ---------- Submit button ---------- */
+.organic-submit {
+  width: 100%;
+  height: 54px;
+  margin-top: 8px;
+  font-family: var(--sans);
+  font-size: 1.02rem;
+  font-weight: 600;
+  letter-spacing: 4px;
+  color: #F4EEDF;
+  background: linear-gradient(135deg, var(--moss) 0%, #4F5A30 100%);
+  border: none;
+  border-radius: 18px;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+  transition: transform 0.25s ease, box-shadow 0.25s ease;
+  box-shadow: 0 10px 22px -10px rgba(58, 65, 40, 0.6);
+}
+.organic-submit::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(120deg, transparent 30%, rgba(255, 255, 255, 0.18) 50%, transparent 70%);
+  transform: translateX(-100%);
+  transition: transform 0.6s ease;
+}
+.organic-submit:hover { transform: translateY(-2px); box-shadow: 0 14px 26px -10px rgba(58, 65, 40, 0.7); }
+.organic-submit:hover::after { transform: translateX(100%); }
+.organic-submit:active { transform: translateY(0); }
+.organic-submit:disabled { opacity: 0.65; cursor: progress; transform: none; }
+
+/* ---------- Footer ---------- */
+.organic-foot {
+  margin-top: 28px;
+  padding-top: 20px;
+  border-top: 1px solid var(--hairline);
+  text-align: center;
+}
+.organic-foot a {
+  color: var(--terracotta);
+  text-decoration: none;
+  font-size: 0.86rem;
+  font-weight: 500;
+  transition: color 0.2s ease;
+}
+.organic-foot a:hover { color: #9E4A22; text-decoration: underline; text-underline-offset: 3px; }
+.organic-version {
+  margin-top: 14px;
+  font-size: 0.72rem;
+  color: var(--ink-soft);
+  letter-spacing: 1px;
+  opacity: 0.75;
 }
 
-.hidden-mickey::after {
-    width: 50px;
-    height: 50px;
-    bottom: 80px;
-    right: 120px;
-}
+/* ============================================================
+   RESPONSIVE — mobile-first refinements
+   ============================================================ */
 
-/* Login card with magical styling */
-.login-card {
-    background: rgba(255, 255, 255, 0.95);
-    border-radius: 24px;
-    box-shadow:
-        0 25px 50px rgba(0, 0, 0, 0.25),
-        0 0 100px rgba(64, 145, 108, 0.1),
-        inset 0 1px 0 rgba(255, 255, 255, 0.8);
-    width: 100%;
-    max-width: 440px;
-    padding: 48px 40px;
-    position: relative;
-    animation: card-entrance 0.8s ease-out;
-    backdrop-filter: blur(10px);
-}
-
-/* Subtle castle silhouette - insiders recognize, outsiders see as garden structure */
-.castle-logo {
-    position: relative;
-    width: 120px;
-    height: 100px;
-    margin: 0 auto 24px;
-    animation: logo-glow 3s ease-in-out infinite;
-}
-
-.castle-logo svg {
-    width: 100%;
-    height: 100%;
-    filter: drop-shadow(0 4px 8px rgba(27, 67, 50, 0.3));
-}
-
-@keyframes logo-glow {
-    0%, 100% { filter: drop-shadow(0 4px 8px rgba(27, 67, 50, 0.3)); }
-    50% { filter: drop-shadow(0 4px 12px rgba(64, 145, 108, 0.5)); }
-}
-
-@keyframes card-entrance {
-    from {
-        opacity: 0;
-        transform: translateY(30px) scale(0.95);
-    }
-    to {
-        opacity: 1;
-        transform: translateY(0) scale(1);
-    }
-}
-
-.login-header {
-    text-align: center;
-    margin-bottom: 36px;
-}
-
-.login-header h1 {
-    font-family: 'Georgia', serif;
-    font-size: 1.85rem;
-    color: #1B4332;
-    margin-bottom: 8px;
-    letter-spacing: 2px;
-    font-weight: 600;
-}
-
-.login-header .subtitle {
-    color: #6b7280;
-    font-size: 0.9rem;
-    font-weight: 400;
-    margin-bottom: 16px;
-}
-
-/* Messages styling */
-.messages {
-    margin-bottom: 24px;
-}
-
-.message {
-    padding: 14px 16px;
-    border-radius: 12px;
-    margin-bottom: 12px;
-    font-size: 0.875rem;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-}
-
-.message.error {
-    background: linear-gradient(135deg, rgba(155, 34, 38, 0.1), rgba(155, 34, 38, 0.05));
-    color: #9b2226;
-    border: 1px solid rgba(155, 34, 38, 0.2);
-}
-
-.message.success {
-    background: linear-gradient(135deg, rgba(64, 145, 108, 0.1), rgba(64, 145, 108, 0.05));
-    color: #40916C;
-    border: 1px solid rgba(64, 145, 108, 0.2);
-}
-
-/* Modern form styling */
-.form-group {
-    margin-bottom: 24px;
-    position: relative;
-}
-
-.form-group label {
-    display: block;
-    font-weight: 500;
-    color: #374151;
-    margin-bottom: 8px;
-    font-size: 0.875rem;
-    letter-spacing: 0.5px;
-}
-
-.form-group .input-wrapper {
-    position: relative;
-}
-
-.form-group .input-icon {
-    position: absolute;
-    left: 16px;
-    top: 50%;
-    transform: translateY(-50%);
-    color: #9ca3af;
-    font-size: 1.1rem;
-    transition: color 0.3s ease;
-}
-
-.form-group input {
-    width: 100%;
-    padding: 14px 16px 14px 48px;
-    border: 2px solid #e5e7eb;
-    border-radius: 12px;
-    font-size: 1rem;
-    transition: all 0.3s ease;
-    background: #fff;
-    color: #1f2937;
-}
-
-.form-group input:focus {
-    outline: none;
-    border-color: #40916C;
-    box-shadow: 0 0 0 4px rgba(64, 145, 108, 0.1);
-}
-
-.form-group input:focus + .input-icon,
-.form-group .input-wrapper:focus-within .input-icon {
-    color: #40916C;
-}
-
-.form-group input::placeholder {
-    color: #9ca3af;
-}
-
-/* Login button with magical styling */
-.btn-login {
-    width: 100%;
-    padding: 16px 24px;
-    background: linear-gradient(135deg, #1B4332 0%, #2D6A4F 50%, #40916C 100%);
-    color: white;
-    border: none;
-    border-radius: 12px;
-    font-size: 1.05rem;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.3s ease;
-    position: relative;
-    overflow: hidden;
-    letter-spacing: 2px;
-}
-
-.btn-login::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: -100%;
-    width: 100%;
-    height: 100%;
-    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
-    transition: left 0.5s ease;
-}
-
-.btn-login:hover::before {
-    left: 100%;
-}
-
-.btn-login:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 8px 25px rgba(27, 67, 50, 0.3);
-}
-
-.btn-login:disabled {
-    opacity: 0.7;
-    cursor: not-allowed;
-    transform: none;
-}
-
-.btn-login .spinner {
-    display: none;
-    width: 18px;
-    height: 18px;
-    border: 2px solid #fff;
-    border-top-color: transparent;
-    border-radius: 50%;
-    animation: spin 0.8s linear infinite;
-    margin-right: 10px;
-    vertical-align: middle;
-}
-
-.btn-login.loading .spinner {
-    display: inline-block;
-}
-
-.btn-login.loading .btn-text {
-    opacity: 0.7;
-}
-
-@keyframes spin {
-    to { transform: rotate(360deg); }
-}
-
-/* Footer links with subtle FOS reference */
-.footer-links {
-    margin-top: 32px;
-    text-align: center;
-    padding-top: 24px;
-    border-top: 1px solid #e5e7eb;
-    display: flex;
-    justify-content: center;
-    gap: 24px;
-}
-
-.footer-links a {
-    color: #6b7280;
-    text-decoration: none;
-    font-size: 0.875rem;
-    transition: all 0.3s ease;
-    position: relative;
-}
-
-.footer-links a:hover {
-    color: #1B4332;
-}
-
-.footer-links a::after {
-    content: '';
-    position: absolute;
-    bottom: -2px;
-    left: 0;
-    width: 0;
-    height: 2px;
-    background: linear-gradient(90deg, #1B4332, #40916C);
-    transition: width 0.3s ease;
-}
-
-.footer-links a:hover::after {
-    width: 100%;
-}
-
-/* Version info with subtle FOS hint */
-.version-info {
-    text-align: center;
-    margin-top: 24px;
-    font-size: 0.7rem;
-    color: #9ca3af;
-    letter-spacing: 1px;
-}
-
-.version-info .fos-hint {
-    opacity: 0.5;
-    font-weight: 500;
-}
-
-/* Responsive adjustments */
+/* Large phones / small tablets */
 @media (max-width: 480px) {
-    .login-card {
-        padding: 36px 24px;
-        border-radius: 20px;
-        margin: 16px;
-    }
-
-    .login-header h1 {
-        font-size: 1.5rem;
-    }
-
-    .castle-logo {
-        width: 100px;
-        height: 80px;
-    }
+  .organic-shell { padding: 0; }
+  .organic-card {
+    margin: 0;
+    max-width: none;
+    min-height: 100vh;
+    min-height: 100dvh;
+    border-radius: 0;
+    border: none;
+    padding: 0 24px;
+    /* center content vertically in the full-height card */
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    box-shadow: none;
+    background-image: var(--grain), linear-gradient(170deg, #ECE0CB 0%, #E0D3BB 100%);
+  }
+  .organic-heading h1 { font-size: 1.5rem; }
+  .organic-mark { width: 50px; height: 50px; margin-bottom: 18px; }
 }
 
-/* Night sky stars effect */
-.stars {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    pointer-events: none;
+/* Very small phones */
+@media (max-width: 360px) {
+  .organic-card { padding: 0 18px; }
+  .organic-heading h1 { font-size: 1.35rem; }
+  .organic-heading p { font-size: 0.78rem; }
+  .organic-submit { letter-spacing: 2px; }
 }
 
-.star {
-    position: absolute;
-    width: 2px;
-    height: 2px;
-    background: #fff;
-    border-radius: 50%;
-    opacity: 0.3;
-    animation: star-blink 3s ease-in-out infinite;
+/* Landscape phones — keep content above the fold, less vertical centering */
+@media (max-width: 820px) and (orientation: landscape) and (max-height: 500px) {
+  .organic-card {
+    min-height: auto;
+    margin: 12px;
+    border-radius: 22px;
+    padding: 26px 30px 22px;
+    justify-content: flex-start;
+  }
+  .organic-mark { width: 40px; height: 40px; margin-bottom: 12px; }
+  .organic-heading { margin-bottom: 18px; }
+  .organic-field { margin-bottom: 14px; }
+  .organic-field input { height: 46px; }
+  .organic-submit { height: 48px; }
+  .organic-foot { margin-top: 16px; padding-top: 14px; }
 }
 
-.star:nth-child(1) { top: 10%; left: 5%; animation-delay: 0s; }
-.star:nth-child(2) { top: 15%; left: 15%; animation-delay: 0.5s; }
-.star:nth-child(3) { top: 8%; left: 25%; animation-delay: 1s; }
-.star:nth-child(4) { top: 20%; left: 35%; animation-delay: 1.5s; }
-.star:nth-child(5) { top: 12%; left: 45%; animation-delay: 2s; }
-.star:nth-child(6) { top: 25%; left: 55%; animation-delay: 0.3s; }
-.star:nth-child(7) { top: 18%; left: 65%; animation-delay: 0.8s; }
-.star:nth-child(8) { top: 30%; left: 75%; animation-delay: 1.3s; }
-.star:nth-child(9) { top: 22%; left: 85%; animation-delay: 1.8s; }
-.star:nth-child(10) { top: 35%; left: 95%; animation-delay: 0.2s; }
-.star:nth-child(11) { top: 5%; left: 70%; animation-delay: 2.2s; }
-.star:nth-child(12) { top: 40%; left: 10%; animation-delay: 0.7s; }
+/* Desktop — add breathing room, never let the card get too wide */
+@media (min-width: 768px) {
+  .organic-card { padding: 52px 46px 38px; }
+  .organic-heading h1 { font-size: 1.85rem; }
+}
 
-@keyframes star-blink {
-    0%, 100% { opacity: 0.2; transform: scale(1); }
-    50% { opacity: 0.6; transform: scale(1.5); }
+/* Respect reduced-motion users */
+@media (prefers-reduced-motion: reduce) {
+  .organic-mark, .organic-shell::after { animation: none; }
+  .organic-card { animation: none; }
+  .organic-submit::after { display: none; }
 }
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="login-container">
-    <!-- Stars background -->
-    <div class="stars">
-        <div class="star"></div>
-        <div class="star"></div>
-        <div class="star"></div>
-        <div class="star"></div>
-        <div class="star"></div>
-        <div class="star"></div>
-        <div class="star"></div>
-        <div class="star"></div>
-        <div class="star"></div>
-        <div class="star"></div>
-        <div class="star"></div>
-        <div class="star"></div>
+<div class="organic-shell">
+  <div class="organic-card">
+    <!-- Brand mark: leaf + droplet, drawn in SVG (no emoji, organic form) -->
+    <div class="organic-mark" aria-hidden="true">
+      <svg viewBox="0 0 32 32" fill="none">
+        <!-- leaf vein -->
+        <path d="M16 4C9 8 6 14 6 20c0 0 4-1 7-4" stroke="#E8DCC7" stroke-width="1.8" stroke-linecap="round" opacity="0.85"/>
+        <!-- leaf body -->
+        <path d="M16 5C12 10 10 15 11 21c4-1 8-5 9-12 0 0-2-3-4-4z" fill="#E8DCC7" opacity="0.92"/>
+        <!-- water drop -->
+        <path d="M20 16c2 2.5 3 4.5 3 6.5a3.5 3.5 0 0 1-7 0c0-2 1-4 3-6.5z" fill="#A7B5A0"/>
+      </svg>
     </div>
 
-    <!-- Sparkle particles -->
-    <div class="sparkle-container">
-        <div class="sparkle"></div>
-        <div class="sparkle"></div>
-        <div class="sparkle"></div>
-        <div class="sparkle"></div>
-        <div class="sparkle"></div>
-        <div class="sparkle"></div>
-        <div class="sparkle"></div>
-        <div class="sparkle"></div>
-        <div class="sparkle"></div>
-        <div class="sparkle"></div>
-        <div class="sparkle"></div>
-        <div class="sparkle"></div>
+    <div class="organic-heading">
+      <h1>园艺管理系统</h1>
+      <p>智能灌溉 · 精准管理</p>
     </div>
 
-    <!-- Hidden Mickey shape (very subtle) -->
-    <div class="hidden-mickey">
-        <div class="hidden-mickey-main"></div>
+    {% if messages %}
+    <div class="organic-messages">
+      {% for message in messages %}
+      <div class="message {{ message.tags }}">
+        {% if message.tags == 'error' %}<span>⚠</span>{% else %}<span>✓</span>{% endif %}
+        {{ message }}
+      </div>
+      {% endfor %}
     </div>
+    {% endif %}
 
-    <div class="login-card">
-        <!-- Castle silhouette logo - subtle Disney reference -->
-        <div class="castle-logo">
-            <svg viewBox="0 0 120 100" fill="none">
-                <!-- Subtle castle silhouette that also looks like a greenhouse/garden structure -->
-                <!-- Main towers -->
-                <rect x="35" y="40" width="50" height="60" fill="#1B4332" rx="2"/>
-                <!-- Tower roof peaks -->
-                <polygon points="60,10 45,40 75,40" fill="#2D6A4F"/>
-                <polygon points="40,25 30,40 50,40" fill="#40916C"/>
-                <polygon points="80,25 70,40 90,40" fill="#40916C"/>
-                <!-- Small spires -->
-                <rect x="25" y="20" width="8" height="25" fill="#1B4332"/>
-                <polygon points="29,5 22,20 36,20" fill="#2D6A4F"/>
-                <rect x="87" y="20" width="8" height="25" fill="#1B4332"/>
-                <polygon points="91,5 84,20 98,20" fill="#2D6A4F"/>
-                <!-- Window/door hints -->
-                <rect x="50" y="55" width="20" height="30" fill="#0a1628" rx="10" ry="10"/>
-                <!-- Decorative top -->
-                <rect x="55" y="15" width="10" height="8" fill="#40916C"/>
-                <circle cx="60" cy="12" r="4" fill="#52B788"/>
+    <form method="post" id="loginForm" autocomplete="on">
+      {% csrf_token %}
+      <div class="organic-field">
+        <label for="username">用户名</label>
+        <div class="ctrl">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="8" r="4"/>
+            <path d="M4 21c0-4 4-7 8-7s8 3 8 7"/>
+          </svg>
+          <input type="text" id="username" name="username" placeholder="请输入用户名"
+                 autocapitalize="none" autocorrect="off" spellcheck="false" required autofocus>
+        </div>
+      </div>
+
+      <div class="organic-field">
+        <label for="password">密码</label>
+        <div class="ctrl">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="4" y="11" width="16" height="10" rx="2"/>
+            <path d="M8 11V7a4 4 0 0 1 8 0v4"/>
+          </svg>
+          <input type="password" id="password" name="password" placeholder="请输入密码" required>
+          <button type="button" class="toggle-eye" id="togglePw" aria-label="显示密码" tabindex="-1">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/>
+              <circle cx="12" cy="12" r="3"/>
             </svg>
+          </button>
         </div>
+      </div>
 
-        <div class="login-header">
-            <h1>园艺管理系统</h1>
-            <p class="subtitle">智能灌溉 · 精准管理</p>
-        </div>
+      <button type="submit" class="organic-submit" id="loginBtn">登 录</button>
+    </form>
 
-        {% if messages %}
-        <div class="messages">
-            {% for message in messages %}
-            <div class="message {{ message.tags }}">
-                {% if message.tags == 'error' %}
-                <span>⚠</span>
-                {% else %}
-                <span>✓</span>
-                {% endif %}
-                {{ message }}
-            </div>
-            {% endfor %}
-        </div>
-        {% endif %}
-
-        <form method="post">
-            {% csrf_token %}
-            <div class="form-group">
-                <label for="username">用户名</label>
-                <div class="input-wrapper">
-                    <input type="text" id="username" name="username" placeholder="请输入用户名" required autofocus>
-                    <span class="input-icon">👤</span>
-                </div>
-            </div>
-
-            <div class="form-group">
-                <label for="password">密码</label>
-                <div class="input-wrapper">
-                    <input type="password" id="password" name="password" placeholder="请输入密码" required>
-                    <span class="input-icon">🔒</span>
-                </div>
-            </div>
-
-            <button type="submit" class="btn-login" id="loginBtn">
-                <span class="spinner"></span>
-                <span class="btn-text">登 录</span>
-            </button>
-        </form>
-
-        <div class="footer-links">
-            <a href="{% url 'core:register' %}">注册申请</a>
-        </div>
-
-        <!-- Version info with subtle FOS hint -->
-        <div class="version-info">
-            <span class="fos-hint">FOS - Horticulture</span> · v1.0
-        </div>
+    <div class="organic-foot">
+      <a href="{% url 'core:register' %}">注册申请</a>
+      <div class="organic-version">FOS · Horticulture · v1.0</div>
     </div>
+  </div>
 </div>
 {% endblock %}
 
 {% block extra_js %}
 <script>
-// Disable submit button on click to prevent CSRF errors from double-click
-document.querySelector('form').addEventListener('submit', function(e) {
-    var btn = document.getElementById('loginBtn');
-    if (btn.disabled) {
-        e.preventDefault();
-        return false;
-    }
-    btn.disabled = true;
-    btn.classList.add('loading');
+// Prevent double-submit (CSRF errors) by disabling the button after first click.
+document.getElementById('loginForm').addEventListener('submit', function () {
+  var btn = document.getElementById('loginBtn');
+  if (btn.disabled) return false;
+  btn.disabled = true;
+  // Keep the label legible while disabled so the user sees it's working.
+  setTimeout(function () { if (btn.disabled) { btn.textContent = '登录中…'; } }, 200);
 });
 
-// Add subtle parallax effect on mouse move
-document.querySelector('.login-container').addEventListener('mousemove', function(e) {
-    var card = document.querySelector('.login-card');
-    var rect = card.getBoundingClientRect();
-    var x = e.clientX - rect.left - rect.width / 2;
-    var y = e.clientY - rect.top - rect.height / 2;
-
-    // Very subtle movement
-    card.style.transform = 'translateY(' + (y * 0.02) + 'px) rotateX(' + (-y * 0.02) + 'deg) rotateY(' + (x * 0.02) + 'deg)';
-});
-
-document.querySelector('.login-container').addEventListener('mouseleave', function() {
-    var card = document.querySelector('.login-card');
-    card.style.transform = '';
-});
+// Password visibility toggle.
+(function () {
+  var toggle = document.getElementById('togglePw');
+  var pw = document.getElementById('password');
+  if (!toggle || !pw) return;
+  toggle.addEventListener('click', function () {
+    var show = pw.type === 'password';
+    pw.type = show ? 'text' : 'password';
+    toggle.setAttribute('aria-label', show ? '隐藏密码' : '显示密码');
+  });
+})();
 </script>
 {% endblock %}
