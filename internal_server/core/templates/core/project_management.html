@@ -208,9 +208,6 @@
     .pm-mat-table td { display: block; width: 100% !important; padding: 3px 8px; box-sizing: border-box; }
     .pm-mat-table tr { display: block; margin-bottom: 6px; }
 
-    /* Remove/restore/confirm buttons in detail cards: bigger touch target. */
-    .app-detail-inner .btn-sm { min-height: 36px; padding: 6px 12px; }
-
     /* Card gap slightly tighter. */
     .pm-card { padding: 12px; }
     .pm-card h2 { font-size: .98rem; }
@@ -664,7 +661,7 @@ function pmRenderDetail(pid) {
                 ' · 灌溉组 ' + wr.team_hours + 'h · 第三方 ' + wr.third_hours + 'h' +
                 (wr.worker_name ? ' · 创建人 ' + _pmEsc(wr.worker_name) : '') +
                 '</span>' +
-                '<button type="button" class="btn btn-secondary" style="font-size:.76rem;padding:3px 10px;margin-left:8px;" onclick="removeProjectReport(' + wr.id + ', ' + pid + ', this)">移除关联</button>' +
+                '<button type="button" class="btn-sm btn-secondary" style="font-size:.76rem;padding:3px 10px;margin-left:8px;" onclick="removeProjectReport(' + wr.id + ', ' + pid + ', this)">移除关联</button>' +
                 '</div>' +
                 matHtml +
             '</div>';
@@ -685,7 +682,7 @@ function pmRenderDetail(pid) {
                 ' · 灌溉组 ' + wr.team_hours + 'h · 第三方 ' + wr.third_hours + 'h' +
                 (wr.worker_name ? ' · 创建人 ' + _pmEsc(wr.worker_name) : '') +
                 '</span>' +
-                '<button type="button" class="btn btn-primary" style="font-size:.76rem;padding:3px 10px;margin-left:8px;" onclick="confirmProjectReport(' + wr.id + ', ' + pid + ', this)">确认</button>' +
+                '<button type="button" class="btn-sm btn-primary" style="font-size:.76rem;padding:3px 10px;margin-left:8px;" onclick="confirmProjectReport(' + wr.id + ', ' + pid + ', this)">确认</button>' +
                 '</div></div>';
         }).join('');
     }
@@ -704,7 +701,7 @@ function pmRenderDetail(pid) {
                 (wr.worker_name ? ' · 创建人 ' + _pmEsc(wr.worker_name) : '') +
                 (wr.removed_at ? ' · 移除于 ' + _pmEsc(wr.removed_at) : '') +
                 '</span>' +
-                '<button type="button" class="btn btn-secondary" style="font-size:.76rem;padding:3px 10px;margin-left:8px;" onclick="restoreProjectReport(' + wr.id + ', ' + pid + ', this)">恢复关联</button>' +
+                '<button type="button" class="btn-sm btn-secondary" style="font-size:.76rem;padding:3px 10px;margin-left:8px;" onclick="restoreProjectReport(' + wr.id + ', ' + pid + ', this)">恢复关联</button>' +
                 '</div></div>';
         }).join('');
     }
