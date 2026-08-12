@@ -8837,10 +8837,12 @@ def work_report_merge(request):
 def work_report_project_confirm(request):
     """Admin-only: confirm a work order's project association (batch).
 
-    Flips project_confirmed False→True for the given report ids, so their
-    labor hours and material consumption count toward the linked projects.
+    Flips hours_confirmed and/or materials_confirmed False→True for the given
+    report ids, so the corresponding labor hours / material consumption count
+    toward the linked projects. The two items are independent — confirm_type
+    selects which: 'hours', 'materials', or 'both' (default).
     Mirrors the merge/resolve pattern: admin-gated, transactional, audited.
-    POST: report_ids (comma-sep). Returns JSON.
+    POST: report_ids (comma-sep), confirm_type. Returns JSON.
     """
     from core.models import WorkReport
     from core.role_utils import is_admin
@@ -8853,15 +8855,71 @@ def work_report_project_confirm(request):
     rids = [int(x) for x in raw.replace(';', ',').split(',') if x.strip().isdigit()]
     if not rids:
         return JsonResponse({'success': False, 'message': '请选择要确认的工单'}, status=400)
+    ctype = (request.POST.get('confirm_type') or 'both').strip()
+    if ctype not in ('hours', 'materials', 'both'):
+        ctype = 'both'
+    type_label = {'hours': '工时', 'materials': '物料', 'both': '工时+物料'}[ctype]
+    update_fields = []
+    if ctype in ('hours', 'both'):
+        update_fields.append('hours_confirmed')
+    if ctype in ('materials', 'both'):
+        update_fields.append('materials_confirmed')
     with transaction.atomic():
-        pending = list(WorkReport.objects.select_for_update()
-                       .filter(pk__in=rids, project_confirmed=False))
+        qs = WorkReport.objects.select_for_update().filter(pk__in=rids)
+        # Only rows where the relevant flag(s) are still False need flipping.
+        if ctype == 'hours':
+            qs = qs.filter(hours_confirmed=False)
+        elif ctype == 'materials':
+            qs = qs.filter(materials_confirmed=False)
+        else:
+            qs = qs.filter(hours_confirmed=False) | qs.filter(materials_confirmed=False)
+        pending = list(qs)
         for r in pending:
-            r.project_confirmed = True
-            r.save(update_fields=['project_confirmed'])
-            _record_edit(r, request.user, note='确认项目关联')
+            if ctype in ('hours', 'both'):
+                r.hours_confirmed = True
+            if ctype in ('materials', 'both'):
+                r.materials_confirmed = True
+            r.save(update_fields=update_fields)
+            _record_edit(r, request.user, note=f'确认项目关联（{type_label}）')
     return JsonResponse({'success': True,
-                         'message': f'已确认 {len(pending)} 条工单的项目关联'})
+                         'message': f'已确认 {len(pending)} 条工单的{type_label}项目关联'})
+
+
+@require_POST
+@login_required(login_url='core:login')
+def work_report_project_unconfirm(request):
+    """Admin-only: unconfirm (toggle off) a work order's hours/materials link.
+
+    Inverse of work_report_project_confirm for one item at a time. Sets the
+    selected flag back to False so that item stops counting toward the project
+    (the project link itself stays — use 移除关联 for a hard unlink).
+    POST: report_ids (comma-sep), confirm_type ('hours'|'materials'). Returns JSON.
+    """
+    from core.models import WorkReport
+    from core.role_utils import is_admin
+    from core.workorder_tree_views import _record_edit
+    from django.db import transaction
+
+    if not is_admin(request.user):
+        return JsonResponse({'success': False, 'message': '无权限'}, status=403)
+    raw = request.POST.get('report_ids', '')
+    rids = [int(x) for x in raw.replace(';', ',').split(',') if x.strip().isdigit()]
+    if not rids:
+        return JsonResponse({'success': False, 'message': '请选择工单'}, status=400)
+    ctype = (request.POST.get('confirm_type') or '').strip()
+    if ctype not in ('hours', 'materials'):
+        return JsonResponse({'success': False, 'message': 'confirm_type 需为 hours 或 materials'}, status=400)
+    field = 'hours_confirmed' if ctype == 'hours' else 'materials_confirmed'
+    type_label = '工时' if ctype == 'hours' else '物料'
+    with transaction.atomic():
+        rows = list(WorkReport.objects.select_for_update()
+                    .filter(pk__in=rids, **{field: True}))
+        for r in rows:
+            setattr(r, field, False)
+            r.save(update_fields=[field])
+            _record_edit(r, request.user, note=f'取消项目关联（{type_label}）')
+    return JsonResponse({'success': True,
+                         'message': f'已取消 {len(rows)} 条工单的{type_label}项目关联'})
 
 
 @require_POST
@@ -8912,13 +8970,16 @@ def work_report_project_remove(request):
                          'message': f'已移除工单 #{report_id} 与该项目的关联（可在「已移除工单」中恢复）'})
 
 
+@require_POST
+@login_required(login_url='core:login')
 def work_report_project_restore(request):
     """Admin-only: restore a previously-removed project association.
 
     Inverse of work_report_project_remove: re-points the report's currently
-    null-project WorkReportEntry rows back to the given project, sets
-    project_confirmed=True (so it counts toward the project again), and clears
-    the key from removed_project. POST: report_id, project_id. Returns JSON.
+    null-project WorkReportEntry rows back to the given project, sets both
+    hours_confirmed and materials_confirmed True (so it counts toward the
+    project again), and clears the key from removed_project. POST: report_id,
+    project_id. Returns JSON.
     """
     from core.models import WorkReport, WorkReportEntry
     from core.role_utils import is_admin
@@ -8946,8 +9007,9 @@ def work_report_project_restore(request):
         rp = dict(report.removed_project or {})
         rp.pop(str(project_id), None)
         report.removed_project = rp
-        report.project_confirmed = True
-        report.save(update_fields=['removed_project', 'project_confirmed'])
+        report.hours_confirmed = True
+        report.materials_confirmed = True
+        report.save(update_fields=['removed_project', 'hours_confirmed', 'materials_confirmed'])
         _record_edit(report, request.user, note=f'恢复项目(#{project_id})关联（{n} 条明细）')
     return JsonResponse({'success': True,
                          'message': f'已恢复工单 #{report_id} 与该项目的关联'})
@@ -9369,6 +9431,7 @@ def work_reports_list(request):
     return render(request, 'core/work_reports.html', {
         'reports': reports,
         'dup_groups': dup_groups,
+        'dup_reports': [r for r in reports if r.id in dup_groups],
         'lands': lands,
         'workers': workers,
         'sections': WorkItem.SECTION_CHOICES,
@@ -10085,6 +10148,7 @@ def notification_read_all(request):
 def work_report_detail(request, report_id):
     from core.models import WorkReport, WorkItem
     from core.role_utils import is_admin, is_field_worker
+    from core.workorder_tree_views import _PROJECT_SECTIONS
     from collections import OrderedDict
 
     report = get_object_or_404(
@@ -10096,17 +10160,36 @@ def work_report_detail(request, report_id):
 
     # Both 灌溉一线 (field workers) and managers/admins can view any workorder
     # (so they can read/post comments on it). Other account types are denied.
-    if not is_admin(request.user) and not is_field_worker(request.user):
+    is_manager = is_admin(request.user)
+    if not is_manager and not is_field_worker(request.user):
         messages.error(request, '无权查看此记录')
         return redirect('core:work_reports')
 
     # Group tree-form entries (WorkReportEntry) by section for display.
     section_labels = dict(WorkItem.SECTION_CHOICES)
     grouped = OrderedDict()
+    all_entries = []  # collected for project-link analysis below
     for e in report.entries.select_related('work_item', 'project'):
         sec = e.work_item.section
         grouped.setdefault(sec, {'label': section_labels.get(sec, sec), 'items': []})
         grouped[sec]['items'].append(e)
+        all_entries.append(e)
+
+    # Project-association analysis for the 关联工时/物料 toggle buttons:
+    # - linked_projects: distinct projects this report's entries point at.
+    # - is_project_report: any entry's WorkItem.section is a project section
+    #   (only project-type work orders get the per-item linking buttons).
+    # - material_project: the project the report's material transactions are
+    #   tied to (via InventoryTransaction.related_project), if any.
+    linked_projects = list({e.project for e in all_entries if e.project_id})
+    is_project_report = any(
+        e.work_item_id and e.work_item.section in _PROJECT_SECTIONS
+        for e in all_entries
+    )
+    material_project = None
+    first_mat_txn = report.material_consumptions.select_related('related_project').first()
+    if first_mat_txn and first_mat_txn.related_project_id:
+        material_project = first_mat_txn.related_project
 
     # Deduplicated Land → name hierarchy (shared helper).
     from core.workorder_tree_views import attach_zone_hierarchy
@@ -10145,6 +10228,12 @@ def work_report_detail(request, report_id):
             for txn in report.material_consumptions.all()
             for ln in txn.lines.select_related('category')
         ],
+        # Project-link controls (关联工时/物料 toggle): only project-type reports
+        # with a project link shown to a manager get the buttons.
+        'is_manager': is_manager,
+        'is_project_report': is_project_report,
+        'linked_projects': linked_projects,
+        'material_project': material_project,
     })
 
 
@@ -10606,7 +10695,7 @@ def workorder_mobile_v2(request):
                     # share at least one work-item category. Returns a confirm
                     # prompt; the worker can override with force=1. Skipped on
                     # edit/PM and when the submit explicitly carries force=1.
-                    if not (request.POST.get('force') in ('1', 'true', 'True')):
+                    if False and not (request.POST.get('force') in ('1', 'true', 'True')):  # TEMP: cross-worker similar-report reminder disabled
                         submit_wi_ids = set()
                         try:
                             for e in json.loads(request.POST.get('entries', '[]') or '[]'):
@@ -10686,16 +10775,17 @@ def workorder_mobile_v2(request):
                                           related_project_id=m_proj, counterparty=m_cp)
                 # Project-association approval gate: a NEW work order that links
                 # to a project (via entry.project or material related_project)
-                # starts UNconfirmed — it won't count toward project labor/
-                # material stats until a manager confirms it in the project
-                # detail page. Existing confirmed orders stay confirmed on edit;
-                # a confirmed order that gains a NEW project link is reset so
-                # the manager reviews the new association.
+                # starts with BOTH hours_confirmed and materials_confirmed False —
+                # neither counts toward project stats until a manager confirms
+                # them (independently) in the project detail page or the work
+                # order detail page. Existing orders keep their per-flag state on
+                # edit.
                 has_project_link = any(e.get('project') for e in entries) or bool(m_proj)
                 if has_project_link and not is_edit:
-                    report.project_confirmed = False
-                    report.save(update_fields=['project_confirmed'])
-                elif is_edit and has_project_link and not report.project_confirmed:
+                    report.hours_confirmed = False
+                    report.materials_confirmed = False
+                    report.save(update_fields=['hours_confirmed', 'materials_confirmed'])
+                elif is_edit and has_project_link and not (report.hours_confirmed or report.materials_confirmed):
                     pass   # already pending; leave as-is until manager confirms
                 # 计划性维修: resolve the checked past 待修 workorders (create only —
                 # re-resolving on edit would double-link).

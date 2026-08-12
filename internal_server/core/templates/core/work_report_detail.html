@@ -35,6 +35,17 @@
 .zd-btn-primary { background: var(--color-primary, #1B4332); color: #fff; }
 .zd-btn-secondary { background: var(--color-surface-dark, #D9D0C0); color: var(--color-primary, #1B4332); border: 1px solid #e5e7eb; }
 
+/* ── Project-link switch (关联工时/物料) ── binary toggle: on=关联, off=不关联 */
+.zd-switch { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; user-select: none; vertical-align: middle; }
+.zd-switch-track { position: relative; width: 34px; height: 18px; border-radius: 10px; background: #d6d6d6; transition: background .15s; flex-shrink: 0; }
+.zd-switch-track.on { background: var(--color-primary-light, #2D6A4F); }
+.zd-switch-knob { position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fff; transition: left .15s; box-shadow: 0 1px 2px rgba(0,0,0,.25); }
+.zd-switch-track.on .zd-switch-knob { left: 18px; }
+.zd-switch-name { font-size: .74rem; font-weight: 600; color: #888; white-space: nowrap; }
+.zd-switch.disabled { opacity: .45; pointer-events: none; }
+.zd-switch + .zd-switch { margin-left: 4px; }
+.zd-prop .p .v .zd-switch, .zd-card h2 .zd-switch { margin-left: 8px; }
+
 /* ── Card ── */
 .zd-card { background: #fff; border: 1px solid #eef0f3; border-radius: 12px; padding: 12px 14px; margin-bottom: 10px; }
 .zd-card h2 { font-size: 0.92rem; color: var(--color-primary-light, #2D6A4F); margin: 0 0 10px; font-weight: 700; display: flex; align-items: center; gap: 6px; }
@@ -167,7 +178,7 @@
     <div class="zd-head">
         <div style="min-width:0;">
             <h1 class="zd-title">{{ report.date }} {% if report.shift %}· {{ report.get_shift_display|default:report.shift }}{% endif %}</h1>
-            <p class="zd-desc">{{ report.worker.full_name|default:"-" }} · {{ report.zone_names|default:"-" }}</p>
+            <p class="zd-desc">{{ report.worker.full_name|default:"-" }} · {{ report.zone_names|default:"-" }} · 创建于 {{ report.created_at|date:"Y-m-d H:i" }}</p>
             {% if report.is_pending_repair or report.is_difficult %}
             <div class="zd-badges">
                 {% if report.is_pending_repair %}<span class="zd-badge bs-warn">待修</span>{% endif %}
@@ -188,7 +199,13 @@
             {% if report.shift %}<div class="p"><span class="k">班次</span><span class="v">{{ report.get_shift_display|default:report.shift }}</span></div>{% endif %}
             {% if report.work_start_time %}<div class="p"><span class="k">工作时间</span><span class="v">{{ report.work_start_time }}–{{ report.work_end_time }}</span></div>{% endif %}
             <div class="p"><span class="k">人数</span><span class="v">灌溉组 {{ report.team_size }} 人{% if report.third_party_count %} · 第三方 {{ report.third_party_count }} 人{% endif %}</span></div>
+            {% if is_project_report and linked_projects %}
+            <div class="p"><span class="k">项目</span><span class="v">{% for p in linked_projects %}{{ p.name }}{% if not forloop.last %}、{% endif %}{% endfor %}</span></div>
+            {% endif %}
             <div class="p"><span class="k">工时</span><span class="v">{% if report.team_hours %}{{ report.team_hours }}h{% endif %}{% if report.third_party_hours %} · 三方 {{ report.third_party_hours }}h{% endif %}</span></div>
+            {% if is_project_report and is_manager and linked_projects %}
+            <div class="p"><span class="k">项目关联</span><span class="v"><span class="zd-switch" data-type="hours" onclick="wrToggleLink(this)"><span class="zd-switch-name">工时</span><span class="zd-switch-track {% if report.hours_confirmed %}on{% endif %}"><span class="zd-switch-knob"></span></span></span><span class="zd-switch {% if not material_project %}disabled{% endif %}" data-type="materials" onclick="wrToggleLink(this)"><span class="zd-switch-name">物料</span><span class="zd-switch-track {% if report.materials_confirmed and material_project %}on{% endif %}"><span class="zd-switch-knob"></span></span></span></span></div>
+            {% endif %}
             {% if report.weather %}<div class="p"><span class="k">天气</span><span class="v">{{ report.weather }}</span></div>{% endif %}
             <hr>
             <div class="p"><span class="k">区域</span><span class="v">{{ report.zone_names|default:"-" }}</span></div>
@@ -397,6 +414,28 @@ document.addEventListener('error', function (e) {
 function wrCmtCSRF() {
     var c = document.cookie.split('; ').find(function (x) { return x.indexOf('csrftoken=') === 0; });
     return c ? c.split('=')[1] : '';
+}
+
+// Binary project-link switch (关联 / 不关联) for hours or materials. Toggling
+// POSTs confirm/unconfirm and flips the track in place; no confirm dialog. A
+// disabled switch (e.g. 物料 when the order has no materials) is a no-op.
+function wrToggleLink(el) {
+    if (!el || el.classList.contains('disabled')) return;
+    var type = el.getAttribute('data-type');
+    var track = el.querySelector('.zd-switch-track');
+    var isOn = track.classList.contains('on');
+    var url = isOn ? '/work-reports/project-unconfirm/' : '/work-reports/project-confirm/';
+    el.classList.add('disabled');
+    var fd = new FormData();
+    fd.append('report_ids', String(WR_ID));
+    fd.append('confirm_type', type);
+    fetch(url, {
+        method: 'POST', headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRFToken': wrCmtCSRF() }, body: fd,
+    }).then(function (r) { return r.json(); }).then(function (d) {
+        el.classList.remove('disabled');
+        if (d.success) { track.classList.toggle('on', !isOn); }
+        else { alert(d.message || '操作失败'); }
+    }).catch(function () { el.classList.remove('disabled'); alert('网络错误'); });
 }
 function wrEsc(s) {
     var d = document.createElement('div'); d.textContent = s == null ? '' : s; return d.innerHTML;

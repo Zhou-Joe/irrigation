@@ -58,6 +58,16 @@
 .pm-rec-line-path { display: block; font-size: .68rem; color: #aaa; margin-top: 1px; }
 .pm-rec-sub { font-size: .74rem; color: #888; margin-top: 4px; }
 .pm-out-tag { display: inline-block; font-size: .68rem; color: #c0392b; background: #fdecea; padding: 1px 7px; border-radius: 6px; font-weight: 600; }
+/* Per-item project-link switch (工时/物料): binary toggle, on=关联 (counts),
+   off=不关联. Shown on each 关联工单 / 未关联工单 card. */
+.pm-switch { display: inline-flex; align-items: center; gap: 3px; cursor: pointer; user-select: none; }
+.pm-switch.disabled { opacity: .5; pointer-events: none; }
+.pm-switch-name { font-size: .68rem; color: #888; }
+.pm-switch-track { position: relative; width: 30px; height: 16px; border-radius: 9px; background: #d6d6d6; transition: background .15s; flex-shrink: 0; }
+.pm-switch-track.on { background: var(--color-primary-light, #2D6A4F); }
+.pm-switch-knob { position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%; background: #fff; transition: left .15s; box-shadow: 0 1px 2px rgba(0,0,0,.25); }
+.pm-switch-track.on .pm-switch-knob { left: 16px; }
+.pm-switch-wrap { display: inline-flex; gap: 10px; align-items: center; }
 .pm-est-warn { font-size: .8rem; background: rgba(204,119,34,0.08); border: 1px solid rgba(204,119,34,0.25); border-radius: 8px; padding: 7px 10px; margin: 6px 0; color: #CC7722; }
 .pm-wr .pm-rec-date { color: #1565c0; text-decoration: none; }
 
@@ -634,6 +644,41 @@ function pmRenderDetail(pid) {
         poHtml = '<div style="color:#aaa;font-size:.82rem;">暂未关联采购订单</div>';
     }
 
+    // Build the work-order meta line: shift + work date/time + hours + creator + created-at.
+    // The work date (when the job happened) is primary; created_at (when it was
+    // logged) is secondary — they differ for backfilled orders.
+    function _pmWrMeta(wr) {
+        var parts = [];
+        var shiftMap = { early: '早班', day: '白班', night: '夜班' };
+        if (wr.shift && shiftMap[wr.shift]) parts.push(shiftMap[wr.shift]);
+        if (wr.date) {
+            var dt = wr.date + (wr.start_time ? ' ' + wr.start_time + '–' + (wr.end_time || wr.start_time) : '');
+            parts.push(dt);
+        }
+        parts.push('灌溉组 ' + wr.team_hours + 'h · 第三方 ' + wr.third_hours + 'h');
+        if (wr.worker_name) parts.push('创建人 ' + _pmEsc(wr.worker_name) + (wr.created_at ? ' 创建于' + wr.created_at : ''));
+        else if (wr.created_at) parts.push('创建于' + wr.created_at);
+        return parts.join(' · ');
+    }
+
+    // Per-item binary switch (关联 / 不关联) for one item. on = counts toward
+    // the project. Used in both 关联工单 and 未关联工单.
+    function _pmSwitch(wr, pid, type) {
+        var name = type === 'hours' ? '工时' : '物料';
+        var hasMat = !!wr.has_materials;
+        // 物料 only "on" if confirmed AND it actually has materials to link.
+        var on = type === 'hours' ? !!wr.hours_confirmed : (!!wr.materials_confirmed && hasMat);
+        // No project-bound materials → the 物料 switch has nothing to link; disable it.
+        var disabled = (type === 'materials' && !hasMat) ? ' disabled' : '';
+        return '<span class="pm-switch' + disabled + '" onclick="toggleProjectLink(' + wr.id + ', ' + pid + ', \'' + type + '\', this)">' +
+            '<span class="pm-switch-name">' + name + '</span>' +
+            '<span class="pm-switch-track ' + (on ? 'on' : '') + '"><span class="pm-switch-knob"></span></span>' +
+            '</span>';
+    }
+    function _pmAllSwitches(wr, pid) {
+        return '<span class="pm-switch-wrap">' + _pmSwitch(wr, pid, 'hours') + _pmSwitch(wr, pid, 'materials') + '</span>';
+    }
+
     // 工单列表: related work reports (date + hours + link + material out lines).
     var wrHtml;
     if (b.work_reports && b.work_reports.length) {
@@ -657,11 +702,11 @@ function pmRenderDetail(pid) {
             }
             return '<div class="pm-rec pm-wr">' +
                 '<div class="pm-rec-head"><a class="pm-rec-date" href="/work-reports/' + wr.id + '/">工单 #' + wr.id + '</a>' +
-                '<span class="pm-rec-meta">' + _pmEsc(wr.created_at || wr.date) +
-                ' · 灌溉组 ' + wr.team_hours + 'h · 第三方 ' + wr.third_hours + 'h' +
-                (wr.worker_name ? ' · 创建人 ' + _pmEsc(wr.worker_name) : '') +
+                '<span class="pm-rec-meta">' + _pmWrMeta(wr) + '</span>' +
+                '<span style="margin-left:auto;display:inline-flex;align-items:center;gap:8px;">' +
+                    _pmAllSwitches(wr, pid) +
+                    '<button type="button" class="btn-sm btn-secondary" style="font-size:.76rem;padding:3px 10px;" onclick="removeProjectReport(' + wr.id + ', ' + pid + ', this)">移除关联</button>' +
                 '</span>' +
-                '<button type="button" class="btn-sm btn-secondary" style="font-size:.76rem;padding:3px 10px;margin-left:8px;" onclick="removeProjectReport(' + wr.id + ', ' + pid + ', this)">移除关联</button>' +
                 '</div>' +
                 matHtml +
             '</div>';
@@ -670,19 +715,18 @@ function pmRenderDetail(pid) {
         wrHtml = '<div style="color:#aaa;font-size:.82rem;">暂无关联工单</div>';
     }
 
-    // 待确认工单: project-linked work orders awaiting manager confirmation.
-    // Same card shape as 关联工单 but with a 确认 button each; excluded from
-    // the hours/material stats above until confirmed.
+    // 未关联工单: project-linked work orders where neither hours nor materials
+    // is confirmed yet. Each item has a binary switch; 全部确认 is a one-click shortcut.
     var pendingWrHtml = '';
     if (b.pending_work_reports && b.pending_work_reports.length) {
         pendingWrHtml = b.pending_work_reports.map(function (wr) {
             return '<div class="pm-rec pm-wr" style="border-left:3px solid #f0ad4e;">' +
                 '<div class="pm-rec-head"><a class="pm-rec-date" href="/work-reports/' + wr.id + '/">工单 #' + wr.id + '</a>' +
-                '<span class="pm-rec-meta">' + _pmEsc(wr.created_at || wr.date) +
-                ' · 灌溉组 ' + wr.team_hours + 'h · 第三方 ' + wr.third_hours + 'h' +
-                (wr.worker_name ? ' · 创建人 ' + _pmEsc(wr.worker_name) : '') +
+                '<span class="pm-rec-meta">' + _pmWrMeta(wr) + '</span>' +
+                '<span style="margin-left:auto;display:inline-flex;align-items:center;gap:8px;">' +
+                    _pmAllSwitches(wr, pid) +
+                    '<button type="button" class="btn-sm btn-secondary" style="font-size:.74rem;padding:3px 9px;" onclick="confirmProjectReport(' + wr.id + ', ' + pid + ', this, \'both\')">全部确认</button>' +
                 '</span>' +
-                '<button type="button" class="btn-sm btn-primary" style="font-size:.76rem;padding:3px 10px;margin-left:8px;" onclick="confirmProjectReport(' + wr.id + ', ' + pid + ', this)">确认</button>' +
                 '</div></div>';
         }).join('');
     }
@@ -696,11 +740,7 @@ function pmRenderDetail(pid) {
         removedWrHtml = removedList.map(function (wr) {
             return '<div class="pm-rec pm-wr" style="border-left:3px solid #bbb;opacity:.85;">' +
                 '<div class="pm-rec-head"><a class="pm-rec-date" href="/work-reports/' + wr.id + '/">工单 #' + wr.id + '</a>' +
-                '<span class="pm-rec-meta">' + _pmEsc(wr.created_at || wr.date) +
-                ' · 灌溉组 ' + wr.team_hours + 'h · 第三方 ' + wr.third_hours + 'h' +
-                (wr.worker_name ? ' · 创建人 ' + _pmEsc(wr.worker_name) : '') +
-                (wr.removed_at ? ' · 移除于 ' + _pmEsc(wr.removed_at) : '') +
-                '</span>' +
+                '<span class="pm-rec-meta">' + _pmWrMeta(wr) + (wr.removed_at ? ' · 移除于 ' + _pmEsc(wr.removed_at) : '') + '</span>' +
                 '<button type="button" class="btn-sm btn-secondary" style="font-size:.76rem;padding:3px 10px;margin-left:8px;" onclick="restoreProjectReport(' + wr.id + ', ' + pid + ', this)">恢复关联</button>' +
                 '</div></div>';
         }).join('');
@@ -747,27 +787,47 @@ function pmRenderDetail(pid) {
         estHtml +
         '<div class="pm-sub">关联采购订单（' + (b.linked_pos ? b.linked_pos.length : 0) + '）</div>' + poHtml +
         '<div class="pm-sub">关联工单（' + (b.work_reports ? b.work_reports.length : 0) + '）</div>' + wrHtml +
-        (pendingWrHtml ? '<div class="pm-sub">待确认工单（' + (b.pending_work_reports ? b.pending_work_reports.length : 0) + '）<span style="font-size:.72rem;color:#b0701a;font-weight:400;"> — 确认后才计入工时/材料</span></div>' + pendingWrHtml : '') +
+        (pendingWrHtml ? '<div class="pm-sub">未关联工单（' + (b.pending_work_reports ? b.pending_work_reports.length : 0) + '）<span style="font-size:.72rem;color:#b0701a;font-weight:400;"> — 打开工时/物料开关后计入项目</span></div>' + pendingWrHtml : '') +
         (removedWrHtml ? '<details class="pm-removed-fold" style="margin-top:6px;"><summary class="pm-sub" style="cursor:pointer;list-style:none;display:flex;align-items:center;gap:4px;color:#888;">已移除工单（' + removedList.length + '）<span style="font-size:.72rem;color:#aaa;font-weight:400;"> — 已脱离本项目，不计入统计，可恢复</span></summary><div style="padding-top:4px;">' + removedWrHtml + '</div></details>' : '') +
         '<div class="pm-sub">其他出库记录（' + (b.consumption_records ? b.consumption_records.length : 0) + '）</div>' + recHtml +
         '<div style="margin-top:10px;"><button type="button" class="btn btn-primary" style="font-size:.82rem;padding:5px 12px;" onclick="pbOpen(' + pid + ')">编辑预算与关联</button></div>';
 }
 
-// Confirm a pending work order's project association (admin). POSTs to the
-// confirm endpoint, then AJAX-refreshes the project panel so the report moves
-// into 关联工单 without a full page reload.
-function confirmProjectReport(rid, pid, btn) {
-    if (!confirm('确认工单 #' + rid + ' 的项目关联？确认后其工时/材料将计入项目。')) return;
+// Confirm a pending work order's project association (admin). type selects
+// which item to confirm: 'hours', 'materials', or 'both' (default). POSTs to
+// the confirm endpoint with confirm_type, then AJAX-refreshes the project panel
+// so the report moves into 关联工单 (with the right badge lit) without a reload.
+function confirmProjectReport(rid, pid, btn, type) {
+    type = type || 'both';
     var orig = btn.textContent;
     btn.disabled = true; btn.textContent = '确认中…';
     var fd = new FormData();
     fd.append('report_ids', String(rid));
+    fd.append('confirm_type', type);
     fetch('/work-reports/project-confirm/', {
         method: 'POST', headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRFToken': _pmCsrf() }, body: fd,
     }).then(function (r) { return r.json(); }).then(function (d) {
         if (d.success) { pmToast(d.message, false); _pmRefreshProject(pid); }
         else { pmToast(d.message, true); btn.disabled = false; btn.textContent = orig; }
     }).catch(function () { pmToast('网络错误', true); btn.disabled = false; btn.textContent = orig; });
+}
+// Toggle a work order's hours/materials link switch on or off (admin). The
+// switch track's on/off class decides direction: on→unconfirm, off→confirm.
+function toggleProjectLink(rid, pid, type, el) {
+    if (!el || el.classList.contains('disabled')) return;
+    var track = el.querySelector('.pm-switch-track');
+    var isOn = track.classList.contains('on');
+    var url = isOn ? '/work-reports/project-unconfirm/' : '/work-reports/project-confirm/';
+    el.classList.add('disabled');
+    var fd = new FormData();
+    fd.append('report_ids', String(rid));
+    fd.append('confirm_type', type);
+    fetch(url, {
+        method: 'POST', headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRFToken': _pmCsrf() }, body: fd,
+    }).then(function (r) { return r.json(); }).then(function (d) {
+        if (d.success) { pmToast(d.message, false); _pmRefreshProject(pid); }
+        else { pmToast(d.message, true); el.classList.remove('disabled'); }
+    }).catch(function () { pmToast('网络错误', true); el.classList.remove('disabled'); });
 }
 // Remove a confirmed work order's association with this project (admin).
 // Sets project=null on the report's entries for this project.
@@ -819,7 +879,7 @@ function _pmRefreshProject(pid) {
             curDetail.setAttribute('data-budget', freshDetail.getAttribute('data-budget'));
             delete PM_BUDGET[pid];
             // Re-render the panel if it's currently open so the user sees the
-            // updated 关联工单 / 已移除工单 / 待确认工单 immediately.
+            // updated 关联工单 / 已移除工单 / 未关联工单 immediately.
             var row = document.getElementById('pmDetailRow-' + pid);
             if (row && row.classList.contains('open')) pmRenderDetail(pid);
             // Refresh the summary row cells from the fresh row.

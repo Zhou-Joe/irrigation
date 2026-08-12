@@ -112,6 +112,7 @@ urlpatterns = [
     path('work-reports/resolve-all-repair/', views.work_report_resolve_all_repair, name='work_report_resolve_all_repair'),
     path('work-reports/merge/', views.work_report_merge, name='work_report_merge'),
     path('work-reports/project-confirm/', views.work_report_project_confirm, name='work_report_project_confirm'),
+    path('work-reports/project-unconfirm/', views.work_report_project_unconfirm, name='work_report_project_unconfirm'),
     path('work-reports/project-remove/', views.work_report_project_remove, name='work_report_project_remove'),
     path('work-reports/project-restore/', views.work_report_project_restore, name='work_report_project_restore'),
     path('work-reports/<int:parent_id>/followup/', views.work_report_followup, name='work_report_followup'),

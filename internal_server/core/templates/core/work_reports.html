@@ -46,6 +46,9 @@
      the JS wraps each run of same-group cards in a .wr-dup-group with a
      header (⚠ 疑似重复) + a merge button (admin-only). */
   .wr-card.in-dup-group { border-left: 3px solid #f0ad4e; }
+  /* In the 维修日志 list, dup cards blend in (no amber accent); the grouping
+     lives in the dedicated 疑似重复 tab where the accent is meaningful. */
+  #cardList .wr-card.in-dup-group { border-left: 1px solid var(--wr-card-border); }
   .wr-dup-group { margin-bottom: 10px; border: 1px dashed #f0ad4e; border-radius: 12px; padding: 0; background: rgba(240,173,78,0.04); }
   .wr-dup-group > .wr-card { margin-bottom: 0; border-radius: 0; border-left: 3px solid #f0ad4e; }
   .wr-dup-group > .wr-card:first-of-type { border-top-left-radius: 12px; border-top-right-radius: 12px; }
@@ -452,6 +455,7 @@
         </button>
         {% endif %}
         {% if is_manager %}
+        <button type="button" class="app-tab {% if active_tab == 'dups' %}active{% endif %}" data-tab="dups" onclick="switchTab('dups')">疑似重复{% if dup_reports %}<span class="app-tab-badge">{{ dup_reports|length }}</span>{% endif %}</button>
         <button type="button" class="app-tab {% if active_tab == 'photos' %}active{% endif %}" data-tab="photos" onclick="switchTab('photos')">媒体下载</button>
         {% endif %}
     </div>
@@ -539,6 +543,25 @@
     </div>
 
     </div>{# /#tabWorkorders #}
+
+    {# ── Tab: 疑似重复工单 (manager/admin only) ── #}
+    {% if is_manager %}
+    <div id="tabDups" class="wr-remarks-panel {% if active_tab == 'dups' %}active{% endif %}">
+        {% if dup_reports %}
+        <div id="dupList">
+        {% for report in dup_reports %}
+            {% include 'core/_work_report_card.html' %}
+        {% endfor %}
+        </div>
+        <div class="app-loadmore-wrap" id="dupLoadMoreWrap" {% if not has_more %}style="display:none;"{% endif %}>
+            <button type="button" class="app-loadmore" id="dupLoadMoreBtn" onclick="loadMoreDups()">加载更多</button>
+            <div class="wr-loadmore-err" id="dupLoadMoreErr" style="display:none;"></div>
+        </div>
+        {% else %}
+        <div class="app-empty">当前筛选范围内未发现疑似重复工单</div>
+        {% endif %}
+    </div>
+    {% endif %}
 
     {# ── Tab: 疑难/待修工单 (all logged-in users) — merged single list ── #}
     {% if show_collab_tabs %}
@@ -942,6 +965,8 @@ function switchTab(tab) {
     if (rp) rp.classList.toggle('active', tab === 'repairs');
     var ph = document.getElementById('tabPhotos');
     if (ph) ph.classList.toggle('active', tab === 'photos');
+    var dp = document.getElementById('tabDups');
+    if (dp) dp.classList.toggle('active', tab === 'dups');
     document.querySelectorAll('.app-tab').forEach(function (t) {
         t.classList.toggle('active', t.getAttribute('data-tab') === tab);
     });
@@ -950,6 +975,8 @@ function switchTab(tab) {
     var tabInput = document.getElementById('filterTabInput');
     if (tabInput) tabInput.value = tab;
     if (tab === 'photos') loadPhotoReports();
+    // Initialize the 疑似重复 tab: group dup cards within #dupList.
+    if (tab === 'dups') aggregateDupGroups(document.getElementById('dupList'));
     // Initialize the 疑难跟进 sub-tab counts + filter whenever that tab opens.
     if (tab === 'repairs') {
         refreshRepairSubtabCounts();
@@ -1900,7 +1927,6 @@ function loadMore() {
             div.innerHTML = renderCard(rep).trim();
             if (div.firstChild) list.appendChild(div.firstChild);
         });
-        aggregateDupGroups(list);
         lastLoadedId = d.last_id;
         document.getElementById('loadMoreWrap').style.display = d.has_more ? '' : 'none';
         btn.disabled = false;
@@ -1913,7 +1939,54 @@ function loadMore() {
     }).finally(function () { isLoadingMore = false; });
 }
 
-// ── Suspected-duplicate grouping + merge (admin) ─────────────────────────
+// ── Load more for the 疑似重复 tab (appends only dup'd cards to #dupList) ──
+var isLoadingMoreDups = false;
+var lastLoadedIdDups = lastLoadedId;
+function loadMoreDups() {
+    if (isLoadingMoreDups || lastLoadedIdDups == null) return;
+    var btn = document.getElementById('dupLoadMoreBtn');
+    var err = document.getElementById('dupLoadMoreErr');
+    if (err) err.style.display = 'none';
+    btn.disabled = true;
+    btn.textContent = '加载中…';
+    isLoadingMoreDups = true;
+
+    var params = new URLSearchParams();
+    params.set('before_id', lastLoadedIdDups);
+    if (currentFilter.date_from) params.set('date_from', currentFilter.date_from);
+    if (currentFilter.date_to) params.set('date_to', currentFilter.date_to);
+    if (currentFilter.land) params.set('land', currentFilter.land);
+    if (currentFilter.worker) params.set('worker', currentFilter.worker);
+    if (currentFilter.is_pending_repair) params.set('is_pending_repair', '1');
+    if (currentFilter.is_difficult) params.set('is_difficult', '1');
+    if (currentFilter.section) params.set('section', currentFilter.section);
+    if (currentFilter.work_item) params.set('work_item', currentFilter.work_item);
+    if (currentFilter.q) params.set('q', currentFilter.q);
+    if (currentFilter.sort) params.set('sort', currentFilter.sort);
+
+    fetch('{% url "core:work_reports" %}?' + params.toString(), {
+        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+    }).then(function (r) { return r.json(); }).then(function (d) {
+        var list = document.getElementById('dupList');
+        // Only append cards that are part of a dup group; skip non-dup reports.
+        (d.reports || []).forEach(function (rep) {
+            if (!rep.dup_group) return;
+            var div = document.createElement('div');
+            div.innerHTML = renderCard(rep).trim();
+            if (div.firstChild) list.appendChild(div.firstChild);
+        });
+        aggregateDupGroups(list);
+        lastLoadedIdDups = d.last_id;
+        var wrap = document.getElementById('dupLoadMoreWrap');
+        if (wrap) wrap.style.display = d.has_more ? '' : 'none';
+        btn.disabled = false;
+        btn.textContent = '加载更多';
+    }).catch(function () {
+        if (err) { err.style.display = ''; err.textContent = '加载失败，请重试'; }
+        btn.disabled = false;
+        btn.textContent = '加载更多';
+    }).finally(function () { isLoadingMoreDups = false; });
+}
 // Group ALL cards sharing the same data-dup-group (not just adjacent ones)
 // into a .wr-dup-group container with a header (⚠ 疑似重复) + merge button.
 // Suspected-duplicate cards are moved to the TOP of the list so they sit
@@ -2356,7 +2429,13 @@ function lbKey(e) {
 // so freshly-swapped cards behave the same.
 document.addEventListener('DOMContentLoaded', function () {
     autoloadPopulatedCommentThreads(document);
-    aggregateDupGroups();   // wrap server-rendered suspected-duplicate cards
 });
+// On a deep-link (?tab=dups) the server renders the tab active but switchTab()
+// never fires — group the dup cards manually so they show in clusters.
+(function () {
+    if (document.getElementById('tabDups') && document.getElementById('tabDups').classList.contains('active')) {
+        aggregateDupGroups(document.getElementById('dupList'));
+    }
+})();
 </script>
 {% endblock %}
