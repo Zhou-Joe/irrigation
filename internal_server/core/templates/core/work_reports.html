@@ -588,20 +588,37 @@
                 <div class="wr-summary" style="cursor:default;">
                     <div class="wr-card-top">
                         <span class="wr-card-date">{{ r.date }}</span>
-                        {% if r.worker_name and r.worker_name != '—' %}<span class="wr-meta" style="font-size:.82rem;">{{ r.worker_name }}</span>{% endif %}
-                        <span class="wr-card-id">#{{ r.id }}</span>
+                        {% if r.shift_display %}<span class="wr-card-shift">{{ r.shift_display }}</span>{% endif %}
+                        <a class="wr-card-id" href="{% url 'core:work_report_detail' r.id %}" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="工单详情（新标签页）" style="text-decoration:none;">{{ r.display_number }}</a>
                         <div class="wr-card-flags">
                             <span class="wr-flag {{ r.flag_class }}">{{ r.flags }}</span>
                         </div>
                         {# Comment chip — same class/contract as the 维修日志 card so the existing toggleCmt/loadComments/postComment JS works unchanged. data-rid on the .wr-card lets bumpCommentChip find the chip after a post. #}
                         <button type="button" class="wr-cmt-chip {% if not r.comment_count %}zero{% endif %}" onclick="event.stopPropagation();toggleCmt({{ r.id }}, this)">💬 {{ r.comment_count|default:0 }}</button>
                     </div>
-                    {% if r.zone_count %}
-                    <div class="wr-zone-summary">{{ r.zone_count }} zones ({{ r.zone_preview }}{% if r.zone_count > 4 %}…{% endif %})</div>
-                    {% endif %}
-                    {# Rolled-up labor hours across the whole 疑难跟进 timeline (parent + all follow-ups), per labor type. Hidden entirely when both are zero so cards with no logged hours stay compact. #}
-                    {% if r.total_team_hours or r.total_third_party_hours %}
-                    <div class="wr-meta" style="font-size:.78rem;color:var(--wr-muted);">工时 · 灌溉组 {{ r.total_team_hours|floatformat:1 }}h{% if r.total_third_party_hours %} · 第三方 {{ r.total_third_party_hours|floatformat:1 }}h{% endif %}</div>
+                    <div class="wr-meta">
+                        {% if r.worker_name and r.worker_name != '—' %}<span><b>{{ r.worker_name }}</b></span>{% endif %}
+                        {% if r.zone_summary %}<span class="wr-zone-summary"><span class="pin">📍</span> {{ r.zone_summary }}</span>{% elif r.zone_count %}<span class="wr-zone-summary"><span class="pin">📍</span> {{ r.zone_count }} zones ({{ r.zone_preview }}{% if r.zone_count > 4 %}…{% endif %})</span>{% endif %}
+                        {% if r.work_start_time %}<span class="wr-meta-sub">{{ r.work_start_time }}–{{ r.work_end_time }}{% if r.total_team_hours %} · {{ r.total_team_hours|floatformat:1 }}h{% endif %}{% if r.total_third_party_hours %} +{{ r.total_third_party_hours|floatformat:1 }}h{% endif %}</span>{% elif r.total_team_hours or r.total_third_party_hours %}<span class="wr-meta-sub">工时 · 灌溉组 {{ r.total_team_hours|floatformat:1 }}h{% if r.total_third_party_hours %} · 第三方 {{ r.total_third_party_hours|floatformat:1 }}h{% endif %}</span>{% endif %}
+                        {% if r.team_size %}<span class="wr-meta-sub">灌溉组{{ r.team_size }}人{% if r.third_party_count %} · 第三方{{ r.third_party_count }}人{% endif %}</span>{% endif %}
+                    </div>
+                    <div class="wr-chips">
+                        {% if r.section_labels %}
+                            {% for lbl in r.section_labels %}<span class="wr-chip">{{ lbl }}</span>{% endfor %}
+                            {% if r.entry_count %}<span class="wr-chip count">{{ r.entry_count }}项</span>{% endif %}
+                        {% endif %}
+                    </div>
+                    {% if r.photos %}
+                    <div class="wr-thumb-strip" onclick="event.stopPropagation()">
+                        {% for p in r.photos %}
+                        {% if forloop.counter <= 4 %}
+                        <div class="wr-thumb-wrap" onclick="openLb(photoData[{{ r.id }}] || ['{{ p|addslashes }}'], {{ forloop.counter0 }})">
+                            <img class="wr-thumb" src="/media/{{ p|thumb }}" data-orig="{{ p }}" loading="lazy" alt="照片">
+                            {% if forloop.counter == 4 and r.photos|length > 4 %}<span class="wr-thumb-more">+{{ r.photos|length|add:'-4' }}</span>{% endif %}
+                        </div>
+                        {% endif %}
+                        {% endfor %}
+                    </div>
                     {% endif %}
                     {% if r.remark %}
                     <div class="wr-meta" style="font-size:.82rem;color:var(--wr-text);max-width:100%;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;" title="{{ r.remark }}">{{ r.remark }}</div>

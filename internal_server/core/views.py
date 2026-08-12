@@ -9609,9 +9609,23 @@ def work_reports_list(request):
     if q and q.isdigit():
         # Work-order-number search, same as the main list + history tab.
         pr_qs = pr_qs.filter(id__startswith=q)
-    pr_ids = [wr.id for wr in pr_qs]
+    # Materialize + enrich with the SAME data the 维修日志 cards get (entries →
+    # section labels, zone hierarchy/summary, materials) so the 疑难/待修 cards
+    # show the same granularity. pr_qs is small (active tickets), cost is fine.
+    pr_list = list(pr_qs)
+    from django.db.models import Prefetch
+    from django.db.models.query import prefetch_related_objects
+    from .models import InventoryTransaction, InventoryTransactionLine
+    from .workorder_tree_views import enrich_reports, attach_zone_hierarchy, workitem_path_map
+    prefetch_related_objects(pr_list,
+        Prefetch('entries', queryset=WorkReportEntry.objects.select_related('work_item', 'project')),
+        Prefetch('material_consumptions', queryset=InventoryTransaction.objects.prefetch_related('lines__category')),
+    )
+    enrich_reports(pr_list, workitem_path_map())
+    attach_zone_hierarchy(pr_list)
+    pr_ids = [wr.id for wr in pr_list]
     stories = _followup_stories(pr_ids)
-    for wr in pr_qs:
+    for wr in pr_list:
         pending_repairs.append(_serialize_repair_card(wr, stories.get(wr.id, []),
                                                        remark_groups_by_wo.get(wr.id)))
 
@@ -10103,6 +10117,18 @@ def _serialize_repair_card(wr, stories, remark_group):
         # Stored as float; template formats and hides zero values.
         'total_team_hours': total_team,
         'total_third_party_hours': total_third,
+        # ── 维修日志-parity fields (so the 疑难 card matches its granularity) ──
+        'display_number': wr.display_number,
+        'shift': wr.shift or '',
+        'shift_display': wr.get_shift_display() if wr.shift else '',
+        'work_start_time': wr.work_start_time.strftime('%H:%M') if wr.work_start_time else '',
+        'work_end_time': wr.work_end_time.strftime('%H:%M') if wr.work_end_time else '',
+        'team_size': wr.team_size or 0,
+        'third_party_count': wr.third_party_count or 0,
+        'photos': wr.photos or [],
+        'section_labels': getattr(wr, 'section_labels', []) or [],
+        'entry_count': getattr(wr, 'entry_count', 0) or 0,
+        'zone_summary': getattr(wr, 'zone_summary', '') or '',
     }
 
 
