@@ -397,7 +397,15 @@ class ZoneLandmarkAssignment(models.Model):
 
 
 class Pipeline(models.Model):
-    """Represents a water pipeline (irrigation or flush)."""
+    """Represents a water pipeline (irrigation or flush).
+
+    Geometry lives in ``line_points`` (a polyline of {lat,lng}). ``zones`` is
+    auto-populated from geometry by ``pipe_utils.detect_crossed_zones`` on save
+    (manually selected zones are merged in as extras). Pipe attributes (diameter,
+    flow direction, source) describe the main run; per-valve attributes live on
+    the related ``PipeValve`` rows. Irrigation runtime is pulled per-valve via
+    ``PipeValve.station`` → ``MaxicomRuntime`` (T+1 daily batch).
+    """
 
     TYPE_IRRIGATION = 'irrigation'
     TYPE_FLUSH = 'flush'
@@ -405,6 +413,15 @@ class Pipeline(models.Model):
     TYPE_CHOICES = [
         (TYPE_IRRIGATION, '灌溉水管'),
         (TYPE_FLUSH, '冲洗水管'),
+    ]
+
+    FLOW_FORWARD = 'fwd'
+    FLOW_REVERSE = 'rev'
+    FLOW_NONE = 'none'
+    FLOW_CHOICES = [
+        (FLOW_FORWARD, '正向(点序)'),
+        (FLOW_REVERSE, '反向'),
+        (FLOW_NONE, '未定'),
     ]
 
     name = models.CharField(max_length=255, unique=True)
@@ -421,6 +438,18 @@ class Pipeline(models.Model):
         help_text='Array of {lat, lng} points defining the pipeline polyline'
     )
     line_weight = models.IntegerField(default=3, help_text='Line thickness in pixels')
+    main_diameter = models.FloatField(
+        '主管径(mm)', null=True, blank=True,
+        help_text='整条主管的公称直径，用于地图线宽映射。支管变径在阀门上记口径。'
+    )
+    flow_direction = models.CharField(
+        '水流方向', max_length=4, choices=FLOW_CHOICES, default=FLOW_FORWARD,
+        help_text='相对 line_points[0]→[N] 的方向，决定地图箭头朝向'
+    )
+    source_label = models.CharField(
+        '水源/起点', max_length=100, blank=True,
+        help_text='如：接市政水 DN80 / 接 CCU1 主泵'
+    )
     zones = models.ManyToManyField(Zone, blank=True, related_name='pipelines')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -433,6 +462,56 @@ class Pipeline(models.Model):
 
     def __str__(self):
         return f"{self.name} ({self.get_pipeline_type_display()})"
+
+
+class PipeValve(models.Model):
+    """管道上的一个阀门节点。
+
+    桥接四件事：所属管道、控制的 zone、对应的 Maxicom 物理 station Patch
+    (用于反查 MaxicomRuntime 灌溉时长)、地理坐标。这是把"管道几何"和
+    "灌溉运行数据"接起来的关键一跳——点击地图上的阀门能看到该阀门控制的
+    zone 最近一个灌溉日浇了多久。
+    """
+
+    VALVE_SOLENOID = 'solenoid'
+    VALVE_ISOLATION = 'isolation'
+    VALVE_FLUSH = 'flush'
+    VALVE_TYPE_CHOICES = [
+        (VALVE_SOLENOID, '电磁阀'),
+        (VALVE_ISOLATION, '隔离阀'),
+        (VALVE_FLUSH, '冲洗阀'),
+    ]
+
+    pipeline = models.ForeignKey(
+        Pipeline, on_delete=models.CASCADE, related_name='valves',
+        verbose_name='所属管道')
+    zone = models.ForeignKey(
+        Zone, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='pipe_valves', verbose_name='控制区域',
+        help_text='该阀门浇水/控制的灌溉区域')
+    station = models.ForeignKey(
+        Patch, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='pipe_valves', verbose_name='Maxicom station',
+        help_text='对应的 Maxicom station Patch(物理电磁阀)，用于反查灌溉时长')
+    name = models.CharField('阀门编号/名称', max_length=50, blank=True)
+    point = models.JSONField(
+        default=list, blank=True,
+        help_text='[{lat,lng}] 在管道上的位置(单点)')
+    valve_type = models.CharField(
+        '阀门类型', max_length=20, choices=VALVE_TYPE_CHOICES, default=VALVE_SOLENOID)
+    diameter = models.FloatField('口径(mm)', null=True, blank=True)
+    order = models.IntegerField(
+        '沿线顺序', default=0, help_text='从水源起的序号，用于沿线排序')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['order', 'id']
+        verbose_name = '管道阀门'
+        verbose_name_plural = '管道阀门'
+
+    def __str__(self):
+        return f"{self.name or '阀门'} #{self.order} @ {self.pipeline.code if self.pipeline_id else '?'}"
 
 
 class Plant(models.Model):

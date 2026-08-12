@@ -662,7 +662,9 @@ def get_weather(request):
 class PipelineSerializer(serializers.ModelSerializer):
     line_color = serializers.ReadOnlyField()
     pipeline_type_display = serializers.CharField(source='get_pipeline_type_display', read_only=True)
+    flow_direction_display = serializers.CharField(source='get_flow_direction_display', read_only=True)
     zone_names = serializers.SerializerMethodField()
+    valves = serializers.SerializerMethodField()
 
     class Meta:
         model = Pipeline
@@ -670,13 +672,26 @@ class PipelineSerializer(serializers.ModelSerializer):
             'id', 'name', 'code', 'description',
             'pipeline_type', 'pipeline_type_display',
             'line_points', 'line_color', 'line_weight',
-            'zones', 'zone_names',
+            'main_diameter', 'flow_direction', 'flow_direction_display', 'source_label',
+            'zones', 'zone_names', 'valves',
             'created_at', 'updated_at'
         ]
         read_only_fields = ['created_at', 'updated_at']
 
     def get_zone_names(self, obj):
         return list(obj.zones.values_list('name', flat=True))
+
+    def get_valves(self, obj):
+        return [
+            {
+                'id': v.id, 'name': v.name, 'order': v.order,
+                'valve_type': v.valve_type, 'valve_type_display': v.get_valve_type_display(),
+                'diameter': v.diameter, 'point': v.point,
+                'zone_id': v.zone_id, 'zone_name': v.zone.name if v.zone_id else None,
+                'station_id': v.station_id,
+            }
+            for v in obj.valves.all().select_related('zone')
+        ]
 
 
 class PipelineViewSet(viewsets.ModelViewSet):

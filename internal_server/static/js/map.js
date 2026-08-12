@@ -39,6 +39,9 @@
 
     // Pipeline layers group
     let pipelinesLayerGroup;
+    // Rendered valve markers + their tooltip content, so a zoomend handler can
+    // flip labels to permanent (auto-show) at max zoom, hover-only otherwise.
+    let valveMarkersForLabels = [];
 
     // Zone label layers group (separate from boundaries for independent toggle)
     let labelsLayerGroup;
@@ -300,6 +303,7 @@
         // correct per-element display, then clears the zooming class so labels
         // reappear with the right layout (see _updateLabelSizesAndClearZoom wrapper).
         map.on('zoomend', updateLabelSizesDebounced);
+        map.on('zoomend', applyValveLabelMode);   // valve labels: auto at max zoom, hover below
         // Re-cull labels to the viewport after panning so only on-screen labels render.
         map.on('moveend', _cullLabelsToViewportDebounced);
 
@@ -1661,16 +1665,35 @@
             const pipelines = JSON.parse(pipelinesDataElement.textContent);
             console.log('Loaded pipelines:', pipelines.length);
             renderPipelines(pipelines);
+            applyValveLabelMode();   // pick hover-vs-permanent for the current zoom
         } catch (error) {
             console.error('Error parsing pipelines data:', error);
         }
     }
 
+    // Valve labels: permanent (auto-shown) at the max zoom level, hover-only
+    // below it — matches the zoom-tiered display used for zone watermarks and
+    // boundaries so valves don't clutter the map when zoomed out.
+    function applyValveLabelMode() {
+        if (!map) return;
+        const isMax = map.getZoom() >= map.getMaxZoom();
+        valveMarkersForLabels.forEach(vm => {
+            if (!vm || vm._tipContent === undefined) return;
+            if (vm.getTooltip()) vm.unbindTooltip();
+            vm.bindTooltip(vm._tipContent, {
+                sticky: true, className: 'ref-tooltip', permanent: isMax
+            });
+        });
+    }
+
     /**
-     * Render pipelines as polylines on the map
+     * Render pipelines as polylines on the map, with diameter-scaled weight,
+     * flow-direction arrows, and per-valve markers (colored by whether the
+     * valve's Maxicom station watered on the latest irrigation day).
      */
     function renderPipelines(pipelines) {
         pipelinesLayerGroup.clearLayers();
+        valveMarkersForLabels = [];   // rebuilt as valve markers are created below
 
         pipelines.forEach(pipeline => {
             if (!pipeline.line_points || pipeline.line_points.length < 2) {
@@ -1688,13 +1711,22 @@
 
             if (latLngs.length < 2) return;
 
+            // Weight: map main_diameter (mm) to pixel weight; fall back to line_weight.
+            let baseWeight = pipeline.line_weight || 3;
+            if (pipeline.main_diameter) {
+                baseWeight = Math.max(3, Math.min(10, 2 + pipeline.main_diameter / 15));
+            }
+
             const lineStyle = {
                 color: pipeline.line_color,
-                weight: pipeline.line_weight || 3,
+                weight: baseWeight,
                 opacity: 0.9,
             };
 
             const polyline = L.polyline(latLngs, lineStyle);
+            const valves = pipeline.valves || [];
+            const wateredCount = valves.filter(v => v.watered_today).length;
+
             polyline.pipelineData = {
                 id: pipeline.id,
                 code: pipeline.code,
@@ -1708,29 +1740,135 @@
                 ? pipeline.zone_names.join(', ')
                 : '无关联区域';
 
+            const diaLabel = pipeline.main_diameter
+                ? `主管径 ${pipeline.main_diameter} mm`
+                : '主管径未填';
+            const flowLabel = pipeline.flow_direction_display || '未定方向';
+            const valveLabel = valves.length
+                ? `阀门 ${valves.length} 个（最近灌溉日浇水 ${wateredCount}）`
+                : '无阀门节点';
+            const srcLabel = pipeline.source_label
+                ? `<div>水源: ${escapeHtml(pipeline.source_label)}</div>`
+                : '';
+
             const popupContent = `
                 <div class="popup-content">
-                    <h3>${pipeline.name}</h3>
-                    <div>编号: ${pipeline.code}</div>
+                    <h3>${escapeHtml(pipeline.name)}</h3>
+                    <div>编号: ${escapeHtml(pipeline.code)}</div>
                     <div>
                         <span style="background: ${pipeline.line_color}20; color: ${pipeline.line_color}; padding: 2px 8px; border-radius: 8px; font-size: 0.9em;">
-                            ${pipeline.pipeline_type_display}
+                            ${escapeHtml(pipeline.pipeline_type_display)}
                         </span>
                     </div>
-                    <div style="margin-top: 6px;">关联区域: ${zoneList}</div>
+                    <div style="margin-top: 6px;">${diaLabel} · ${escapeHtml(flowLabel)}</div>
+                    ${srcLabel}
+                    <div style="margin-top: 4px;">${valveLabel}</div>
+                    <div style="margin-top: 4px;">关联区域: ${escapeHtml(zoneList)}</div>
                 </div>
             `;
             polyline.bindPopup(popupContent);
 
             polyline.on('mouseover', function(e) {
-                this.setStyle({ weight: (pipeline.line_weight || 3) + 2, opacity: 1 });
+                this.setStyle({ weight: baseWeight + 2, opacity: 1 });
             });
             polyline.on('mouseout', function(e) {
-                this.setStyle({ weight: pipeline.line_weight || 3, opacity: 0.9 });
+                this.setStyle({ weight: baseWeight, opacity: 0.9 });
             });
 
             pipelinesLayerGroup.addLayer(polyline);
+
+            // ── Flow-direction arrows (dart shape, rotated to pipe bearing) ──
+            // ▶ points east (bearing 90°) at rotate(0), so we rotate by (bearing - 90).
+            if (pipeline.flow_direction === 'fwd' || pipeline.flow_direction === 'rev') {
+                for (let i = 0; i < latLngs.length - 1; i++) {
+                    if (i % 3 !== 1 && latLngs.length > 4) continue;
+                    const [lat1, lng1] = latLngs[i];
+                    const [lat2, lng2] = latLngs[i + 1];
+                    let b = _bearing(lat1, lng1, lat2, lng2);
+                    if (pipeline.flow_direction === 'rev') b += 180;
+                    const rot = b - 90;   // SVG dart points east at 0° → align to bearing
+                    const midLat = (lat1 + lat2) / 2;
+                    const midLng = (lng1 + lng2) / 2;
+                    const arrow = L.marker([midLat, midLng], {
+                        interactive: false,
+                        keyboard: false,
+                        icon: L.divIcon({
+                            className: 'pipe-arrow',
+                            // Dart: tip at right (15,6), notch back at (4,6) — clearly directional.
+                            html: `<div style="transform: rotate(${rot}deg); line-height:0; filter: drop-shadow(0 0 1.5px #fff) drop-shadow(0 0 1.5px #fff);"><svg width="18" height="12" viewBox="0 0 18 12"><path d="M1 1 L15 6 L1 11 L4.5 6 Z" fill="${pipeline.line_color}" stroke="#fff" stroke-width="1" stroke-linejoin="round"/></svg></div>`,
+                            iconSize: [18, 12], iconAnchor: [9, 6]
+                        })
+                    });
+                    pipelinesLayerGroup.addLayer(arrow);
+                }
+            }
+
+            // ── Valve markers (DOM divIcon squares — always render above canvas,
+            //    clearly visible against zone fills. Green=filled=watered, gray
+            //    outline=not watered.) ──
+            valves.forEach(v => {
+                const pt = Array.isArray(v.point) && v.point[0]
+                    ? (v.point[0].lat !== undefined ? [v.point[0].lat, v.point[0].lng] : [v.point[0][0], v.point[0][1]])
+                    : null;
+                if (!pt) return;
+                const dia = v.diameter || 20;
+                const size = Math.max(13, Math.min(18, 9 + dia / 10));
+                const watered = !!v.watered_today;
+                // Watered: solid green diamond. Not watered: hollow gray (white fill, gray border).
+                const fill = watered ? '#2D6A4F' : '#ffffff';
+                const border = watered ? '#ffffff' : '#5a5a5a';
+                const ring = watered ? '#52B788' : '#8a8a8a';
+                const vm = L.marker(pt, {
+                    icon: L.divIcon({
+                        className: 'pipe-valve-marker',
+                        html: `<div style="width:${size}px;height:${size}px;background:${fill};border:2.5px solid ${ring};transform:rotate(45deg);box-shadow:0 0 0 1.5px ${border},0 1px 4px rgba(0,0,0,0.5);"></div>`,
+                        iconSize: [size, size], iconAnchor: [size / 2, size / 2]
+                    })
+                });
+                // Zone label: "名称 代号" (e.g. "BOH 1-1-1"); fall back to whichever exists.
+                const zLabel = [v.zone_name, v.zone_code].filter(x => x).join(' ') || '查看区域';
+                const zLink = v.zone_id ? `<a href="/zone/${v.zone_id}/detail/" style="color:#1B4332;">${escapeHtml(zLabel)} ↗</a>` : '无';
+                const stLink = v.station_id ? `SAT 阀 #${v.station_id}` : '未关联 station';
+                // 最近灌溉: date(to minute) · minutes · depth(mm), each only if present.
+                const rtParts = [];
+                if (v.runtime_date) rtParts.push(escapeHtml(v.runtime_date));
+                if (v.runtime_minutes != null && v.runtime_minutes > 0) rtParts.push(v.runtime_minutes + ' 分钟');
+                if (v.depth_mm != null) rtParts.push(v.depth_mm + ' mm');
+                const runtime = rtParts.length ? rtParts.join(' · ') : '无记录';
+                vm.bindPopup(`
+                    <div class="popup-content">
+                        <h3>${escapeHtml(v.name || '阀门 #' + (v.order + 1))}</h3>
+                        <div>${escapeHtml(v.valve_type_display || v.valve_type || '阀门')}${v.diameter ? ' · ' + v.diameter + 'mm' : ''}</div>
+                        <div style="margin-top:6px;">控制区域: ${zLink}</div>
+                        <div>${stLink}</div>
+                        <div>最近灌溉: <b>${runtime}</b></div>
+                    </div>
+                `);
+                const tipContent = escapeHtml((v.zone_name || '') + (v.zone_code ? ' ' + v.zone_code : '') || ('阀门 #' + (v.order + 1))) + (watered ? ' · 已浇水' : ' · 未浇水');
+                vm.bindTooltip(tipContent, { sticky: true, className: 'ref-tooltip' });
+                vm._tipContent = tipContent;   // for zoom-driven permanent toggle
+                valveMarkersForLabels.push(vm);
+                pipelinesLayerGroup.addLayer(vm);
+            });
         });
+    }
+
+    // Bearing (degrees, 0=N, 90=E) between two lat/lng points — for arrow rotation.
+    function _bearing(lat1, lng1, lat2, lng2) {
+        const toRad = d => d * Math.PI / 180, toDeg = r => r * 180 / Math.PI;
+        const dLng = toRad(lng2 - lng1);
+        const y = Math.sin(dLng) * Math.cos(toRad(lat2));
+        const x = Math.cos(toRad(lat1)) * Math.sin(toRad(lat2))
+                - Math.sin(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.cos(dLng);
+        return (toDeg(Math.atan2(y, x)) + 360) % 360;
+    }
+
+    // Minimal HTML-escape for user-entered strings placed into popups/tooltips.
+    function escapeHtml(s) {
+        if (s == null) return '';
+        return String(s).replace(/[&<>"']/g, ch => ({
+            '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+        }[ch]));
     }
 
     /**

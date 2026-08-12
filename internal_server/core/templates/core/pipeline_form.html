@@ -9,6 +9,21 @@
 <link rel="stylesheet" href="{% static 'css/settings.css' %}">
 <!-- Leaflet CSS -->
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<style>
+/* Valve editor table — wider than the coord list (7 cols). */
+.valve-section .coord-list-header,
+.valve-row.valve-row {
+    grid-template-columns: 32px 1.1fr 1fr 0.7fr 1.5fr 1.7fr 40px;
+}
+.valve-row { gap: 6px; align-items: center; }
+.valve-row .coord-index { display: flex; align-items: center; justify-content: center; }
+.valve-row .coord-input,
+.valve-row select.coord-input {
+    width: 100%; min-width: 0; padding: 4px 6px; font-size: 0.8rem;
+    border: 1px solid var(--color-surface-dark); border-radius: 4px;
+}
+#toggleValveMode.btn-primary { background: var(--color-primary); color: #fff; border-color: var(--color-primary); }
+</style>
 {% endblock %}
 
 {% block content %}
@@ -47,13 +62,37 @@
                 <div class="form-group">
                     <label for="line_weight">线条粗细</label>
                     <input type="number" id="line_weight" name="line_weight" min="1" max="10" value="{% if pipeline %}{{ pipeline.line_weight }}{% else %}3{% endif %}">
-                    <small>像素值，1-10</small>
+                    <small>像素值，1-10。设了主管径后会自动覆盖。</small>
+                </div>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="main_diameter">主管径 (mm)</label>
+                    <input type="number" id="main_diameter" name="main_diameter" step="5" min="0" placeholder="如 90" value="{% if pipeline and pipeline.main_diameter %}{{ pipeline.main_diameter }}{% endif %}">
+                    <small>整条主管公称直径；决定地图线宽。支管变径记到各阀门上。</small>
+                </div>
+
+                <div class="form-group">
+                    <label for="flow_direction">水流方向</label>
+                    <select id="flow_direction" name="flow_direction">
+                        <option value="fwd" {% if pipeline and pipeline.flow_direction == 'fwd' %}selected{% endif %}>正向(点序)</option>
+                        <option value="rev" {% if pipeline and pipeline.flow_direction == 'rev' %}selected{% endif %}>反向</option>
+                        <option value="none" {% if pipeline and pipeline.flow_direction == 'none' %}selected{% endif %}>未定</option>
+                    </select>
+                    <small>相对第一个点 → 最后一个点，决定地图箭头朝向</small>
+                </div>
+
+                <div class="form-group">
+                    <label for="source_label">水源 / 起点</label>
+                    <input type="text" id="source_label" name="source_label" maxlength="100" placeholder="如：接市政水 DN80" value="{% if pipeline %}{{ pipeline.source_label }}{% endif %}">
+                    <small>管道取水来源，可留空</small>
                 </div>
             </div>
 
             <div class="form-group">
-                <label>关联区域 *</label>
-                <p class="help-text">选择此水管覆盖的灌溉区域，名称和编号将自动生成。</p>
+                <label>额外关联区域</label>
+                <p class="help-text">保存时会按管线走向<b>自动判定</b>穿过的区域并关联。这里可手动补加几何判定漏掉的区域（名称/编号据此生成）。</p>
                 <div id="zoneSearchWrap" style="margin-bottom: var(--space-md);">
                     <input type="text" id="zoneSearchInput" placeholder="搜索区域..." style="width: 100%; max-width: 320px; padding: 8px 14px; border: 2px solid var(--color-surface-dark); border-radius: var(--radius-md); font-size: 0.9rem; background: var(--color-surface); color: var(--color-text-primary);">
                     <span id="zoneSearchCount" style="margin-left: 8px; font-size: 0.8rem; color: var(--color-text-secondary);"></span>
@@ -222,20 +261,39 @@
         </div>
 
         <div class="form-section boundary-section">
-            <h2>管线走向</h2>
-            <p class="help-text">在地图上绘制水管走向。点击地图添加节点，拖动已有节点调整位置，右键点击节点可删除。</p>
+            <h2>管线走向与阀门</h2>
+            <p class="help-text">画管道走向：点击地图加点，拖动调位，右键删点。阀门控件和列表在地图<b>上方</b>，画完管线后点「自动生成阀门」即可。</p>
 
-            <div class="map-toolbar">
+            <div class="map-toolbar" style="flex-wrap:wrap;gap:6px;">
                 <button type="button" id="clearLine" class="btn btn-sm btn-danger">清除所有点</button>
                 <button type="button" id="undoAction" class="btn btn-sm btn-secondary" disabled>撤销</button>
                 <button type="button" id="locateMe" class="btn btn-sm btn-primary">定位我</button>
                 <span class="point-count">节点数: <strong id="pointCount">0</strong></span>
+                <span style="flex:1 0 24px;"></span>
+                <button type="button" id="autoValves" class="btn btn-sm btn-primary">🔄 自动生成阀门</button>
+                <button type="button" id="toggleValveMode" class="btn btn-sm btn-secondary">＋ 点选阀门</button>
+                <button type="button" id="addValveManual" class="btn btn-sm btn-secondary">手动加一行</button>
+                <span class="point-count">阀门数: <strong id="valveCount">0</strong></span>
+            </div>
+
+            <div class="coordinates-section">
+                <h3>阀门节点 <small style="font-weight:400;color:var(--color-text-secondary);">— 每行可关联 zone + Maxicom station；地图上方形=阀门、圆形=管线节点，拖动沿线微调</small></h3>
+                <div class="coord-list-header">
+                    <span style="width:32px;">序号</span>
+                    <span>编号</span>
+                    <span>类型</span>
+                    <span>口径(mm)</span>
+                    <span>关联 zone</span>
+                    <span>关联 station</span>
+                    <span style="width:40px;">操作</span>
+                </div>
+                <div id="valveList" class="coord-list"></div>
             </div>
 
             <div id="editMap"></div>
 
             <div class="coordinates-section">
-                <h3>坐标列表</h3>
+                <h3>管线节点坐标</h3>
                 <div class="coord-list-header">
                     <span>序号</span>
                     <span>纬度</span>
@@ -246,6 +304,7 @@
             </div>
 
             <input type="hidden" id="line_points" name="line_points" value="">
+            <input type="hidden" id="valves_json" name="valves_json" value="">
         </div>
 
         <div class="form-actions">
@@ -264,6 +323,8 @@
 <script id="line-data" type="application/json">{{ line_json|safe }}</script>
 <script id="ref-zones-data" type="application/json">{{ ref_zones_json|safe }}</script>
 <script id="ref-pipelines-data" type="application/json">{{ ref_pipelines_json|safe }}</script>
+<script id="stations-data" type="application/json">{{ stations_json|default:'[]'|safe }}</script>
+<script id="valves-data" type="application/json">{{ valves_json|default:'[]'|safe }}</script>
 <script>
 // Pipeline line editor
 (function() {
@@ -275,6 +336,16 @@
     let history = [];
     let userLocationMarker = null;
     let userAccuracyCircle = null;
+
+    // ── Valve editor state ──
+    let valves = [];            // [{id,name,valve_type,diameter,order,zone_id,station_id,point,_markerIdx}]
+    let valveMarkers = [];      // parallel L.marker instances (or null for manual rows)
+    let valveAddMode = false;   // when true, map clicks drop valves instead of line points
+    let stations = [];
+    try {
+        const sEl = document.getElementById('stations-data');
+        stations = sEl && sEl.textContent ? JSON.parse(sEl.textContent) : [];
+    } catch (e) { console.warn('stations-data parse failed', e); }
 
     function getLineStyle() {
         const typeSelect = document.getElementById('pipeline_type');
@@ -402,6 +473,10 @@
         }
 
         editMap.on('click', function(e) {
+            if (valveAddMode) {
+                addValveAt(e.latlng);
+                return;
+            }
             saveHistory();
             createMarker(e.latlng);
             updatePolyline();
@@ -533,6 +608,303 @@
         updateUI();
     }
 
+    // ── Valve editing ───────────────────────────────────────────────
+    function valveIcon() {
+        const color = '#1B4332';
+        return L.divIcon({
+            className: 'valve-marker',
+            html: '<div style="width:14px;height:14px;background:' + color + ';border:2px solid #fff;border-radius:3px;cursor:grab;transform:rotate(45deg);box-shadow:0 1px 3px rgba(0,0,0,0.4);"></div>',
+            iconSize: [16, 16], iconAnchor: [8, 8]
+        });
+    }
+
+    // Snap a (lat,lng) to the nearest point on the current pipe polyline.
+    // Returns [lat,lng] or null when fewer than 2 line vertices exist. Keeps
+    // valves glued to the pipe instead of floating beside it.
+    function _snapToLine(lat, lng) {
+        if (!markers || markers.length < 2) return null;
+        const line = markers.map(mk => [mk.getLatLng().lat, mk.getLatLng().lng]);
+        let best = null, bestD = Infinity;
+        for (let i = 0; i < line.length - 1; i++) {
+            const aLat = line[i][0], aLng = line[i][1], bLat = line[i+1][0], bLng = line[i+1][1];
+            const dx = bLat - aLat, dy = bLng - aLng;
+            const len2 = dx * dx + dy * dy;
+            let t = len2 > 0 ? ((lat - aLat) * dx + (lng - aLng) * dy) / len2 : 0;
+            t = Math.max(0, Math.min(1, t));
+            const sx = aLat + t * dx, sy = aLng + t * dy;
+            const d = (sx - lat) * (sx - lat) + (sy - lng) * (sy - lng);
+            if (d < bestD) { bestD = d; best = [sx, sy]; }
+        }
+        return best;
+    }
+
+    function addValveAt(latlng) {
+        const snapped = _snapToLine(latlng.lat, latlng.lng);
+        const lat = snapped ? snapped[0] : latlng.lat;
+        const lng = snapped ? snapped[1] : latlng.lng;
+        const idx = valves.length;
+        const v = {
+            id: null, name: '', valve_type: 'solenoid', diameter: null,
+            order: idx, zone_id: null, station_id: null,
+            point: [{lat: +lat.toFixed(6), lng: +lng.toFixed(6)}]
+        };
+        valves.push(v);
+        const m = L.marker(L.latLng(lat, lng), {draggable: true, icon: valveIcon()}).addTo(editMap);
+        m.on('drag', function () {
+            const ll = m.getLatLng();
+            v.point = [{lat: +ll.lat.toFixed(6), lng: +ll.lng.toFixed(6)}];
+            renderValveList();
+        });
+        m.on('dragend', function () {
+            // Snap back onto the pipe after a free drag so valves stay on the line.
+            const ll = m.getLatLng();
+            const sn = _snapToLine(ll.lat, ll.lng);
+            if (sn) {
+                m.setLatLng(L.latLng(sn[0], sn[1]));
+                v.point = [{lat: +sn[0].toFixed(6), lng: +sn[1].toFixed(6)}];
+                renderValveList();
+            }
+        });
+        m.on('contextmenu', function (e) {
+            L.DomEvent.stopPropagation(e);
+            removeValve(valves.indexOf(v));
+        });
+        valveMarkers.push(m);
+        renderValveList();
+    }
+
+    function addValveManual() {
+        // A row with no map point yet (user fills coords or drops a marker later).
+        const idx = valves.length;
+        valves.push({
+            id: null, name: '', valve_type: 'solenoid', diameter: null,
+            order: idx, zone_id: null, station_id: null, point: []
+        });
+        valveMarkers.push(null);
+        renderValveList();
+    }
+
+    function removeValve(idx) {
+        if (idx < 0 || idx >= valves.length) return;
+        if (valveMarkers[idx]) editMap.removeLayer(valveMarkers[idx]);
+        valves.splice(idx, 1);
+        valveMarkers.splice(idx, 1);
+        // re-index order
+        valves.forEach((v, i) => { v.order = i; });
+        renderValveList();
+    }
+
+    function buildZoneOptions(selectedId) {
+        let html = '<option value="">— 不关联 —</option>';
+        document.querySelectorAll('input[name="zones"]').forEach(cb => {
+            const id = cb.value, name = cb.dataset.zoneName, code = cb.dataset.zoneCode;
+            html += '<option value="' + id + '"' + (String(selectedId) === String(id) ? ' selected' : '') + '>'
+                  + name + ' (' + code + ')</option>';
+        });
+        return html;
+    }
+
+    function buildStationOptions(selectedId) {
+        let html = '<option value="">— 不关联 —</option>';
+        stations.forEach(s => {
+            const label = s.code + (s.name ? ' · ' + s.name : '')
+                        + ' (SAT' + (s.controller_number || '?') + '-CH' + (s.controller_channel || '?') + ')';
+            html += '<option value="' + s.id + '"' + (String(selectedId) === String(s.id) ? ' selected' : '') + '>'
+                  + label + '</option>';
+        });
+        return html;
+    }
+
+    function renderValveList() {
+        document.getElementById('valveCount').textContent = valves.length;
+        const list = document.getElementById('valveList');
+        list.innerHTML = valves.map((v, i) => {
+            const pt = v.point && v.point[0];
+            return '<div class="coord-row valve-row">'
+                + '<span class="coord-index">' + (i + 1) + '</span>'
+                + '<input type="text" class="coord-input valve-name" value="' + (v.name || '').replace(/"/g, '&quot;') + '" placeholder="如 V' + (i + 1) + '" data-idx="' + i + '">'
+                + '<select class="coord-input valve-type" data-idx="' + i + '">'
+                    + '<option value="solenoid"' + (v.valve_type === 'solenoid' ? ' selected' : '') + '>电磁阀</option>'
+                    + '<option value="isolation"' + (v.valve_type === 'isolation' ? ' selected' : '') + '>隔离阀</option>'
+                    + '<option value="flush"' + (v.valve_type === 'flush' ? ' selected' : '') + '>冲洗阀</option>'
+                + '</select>'
+                + '<input type="number" class="coord-input valve-diameter" step="1" min="0" placeholder="如 25" value="' + (v.diameter || '') + '" data-idx="' + i + '">'
+                + '<select class="coord-input valve-zone" data-idx="' + i + '">' + buildZoneOptions(v.zone_id) + '</select>'
+                + '<select class="coord-input valve-station" data-idx="' + i + '">' + buildStationOptions(v.station_id) + '</select>'
+                + '<button type="button" class="coord-delete" data-idx="' + i + '" title="' + (pt ? pt.lat.toFixed(6) + ',' + pt.lng.toFixed(6) : '无坐标') + '">×</button>'
+                + '</div>';
+        }).join('');
+
+        // wire inputs → valveData
+        list.querySelectorAll('.valve-name').forEach(inp => {
+            inp.addEventListener('input', function () { valves[+this.dataset.idx].name = this.value; });
+        });
+        list.querySelectorAll('.valve-type').forEach(sel => {
+            sel.addEventListener('change', function () { valves[+this.dataset.idx].valve_type = this.value; });
+        });
+        list.querySelectorAll('.valve-diameter').forEach(inp => {
+            inp.addEventListener('input', function () {
+                const v = this.value; valves[+this.dataset.idx].diameter = v ? parseFloat(v) : null;
+            });
+        });
+        list.querySelectorAll('.valve-zone').forEach(sel => {
+            sel.addEventListener('change', function () { valves[+this.dataset.idx].zone_id = this.value ? parseInt(this.value) : null; });
+        });
+        list.querySelectorAll('.valve-station').forEach(sel => {
+            sel.addEventListener('change', function () { valves[+this.dataset.idx].station_id = this.value ? parseInt(this.value) : null; });
+        });
+        list.querySelectorAll('.coord-delete').forEach(btn => {
+            btn.addEventListener('click', function () { removeValve(+this.dataset.idx); });
+        });
+        serializeValves();
+    }
+
+    function serializeValves() {
+        const clean = valves.map((v, i) => ({
+            id: v.id || null,
+            name: v.name || '',
+            valve_type: v.valve_type || 'solenoid',
+            diameter: v.diameter || null,
+            order: i,
+            zone_id: v.zone_id || null,
+            station_id: v.station_id || null,
+            point: v.point || []
+        }));
+        document.getElementById('valves_json').value = JSON.stringify(clean);
+    }
+
+    function loadExistingValves() {
+        let existing = [];
+        try {
+            const el = document.getElementById('valves-data');
+            existing = el && el.textContent ? JSON.parse(el.textContent) : [];
+        } catch (e) { console.warn('valves-data parse failed', e); }
+        if (!Array.isArray(existing) || !existing.length) return;
+        existing.forEach(v => {
+            const idx = valves.length;
+            valves.push({
+                id: v.id || null, name: v.name || '',
+                valve_type: v.valve_type || 'solenoid', diameter: v.diameter || null,
+                order: v.order != null ? v.order : idx,
+                zone_id: v.zone_id || null, station_id: v.station_id || null,
+                point: v.point || []
+            });
+            let m = null;
+            if (v.point && v.point[0]) {
+                const p = v.point[0];
+                const latlng = L.latLng(p.lat, p.lng);
+                m = L.marker(latlng, {draggable: true, icon: valveIcon()}).addTo(editMap);
+                const ref = valves[valves.length - 1];
+                m.on('drag', function () {
+                    const ll = m.getLatLng();
+                    ref.point = [{lat: +ll.lat.toFixed(6), lng: +ll.lng.toFixed(6)}];
+                });
+                m.on('dragend', function () {
+                    const ll = m.getLatLng();
+                    const sn = _snapToLine(ll.lat, ll.lng);
+                    if (sn) {
+                        m.setLatLng(L.latLng(sn[0], sn[1]));
+                        ref.point = [{lat: +sn[0].toFixed(6), lng: +sn[1].toFixed(6)}];
+                    }
+                });
+                m.on('contextmenu', function (e) {
+                    L.DomEvent.stopPropagation(e);
+                    removeValve(valves.indexOf(ref));
+                });
+            }
+            valveMarkers.push(m);
+        });
+        renderValveList();
+    }
+
+    function toggleValveMode() {
+        valveAddMode = !valveAddMode;
+        const btn = document.getElementById('toggleValveMode');
+        if (valveAddMode) {
+            btn.textContent = '✓ 阀门模式(再点退出)';
+            btn.classList.add('btn-primary');
+            btn.classList.remove('btn-secondary');
+            if (editMap) editMap.getContainer().style.cursor = 'crosshair';
+        } else {
+            btn.textContent = '＋ 在地图上点选阀门';
+            btn.classList.remove('btn-primary');
+            btn.classList.add('btn-secondary');
+            if (editMap) editMap.getContainer().style.cursor = '';
+        }
+    }
+
+    function _pipeCsrf() {
+        const m = document.cookie.match(/csrftoken=([^;]+)/);
+        return m ? m[1] : '';
+    }
+
+    // Auto-generate one valve per zone the current pipe crosses: POST the drawn
+    // line, get back zone-anchored points (already on the line, zone + Maxicom
+    // station pre-linked), and add valves — skipping zones that already have one.
+    // After this the user just drags valves along the line to fine-tune.
+    function autoGenerateValves() {
+        if (markers.length < 2) {
+            console.warn('auto-valves: 先画好管道走向');
+            return;
+        }
+        const btn = document.getElementById('autoValves');
+        const orig = btn.textContent;
+        btn.disabled = true; btn.textContent = '识别中…';
+        const line = markers.map(m => ({lat: +m.getLatLng().lat.toFixed(6), lng: +m.getLatLng().lng.toFixed(6)}));
+        const fd = new FormData();
+        fd.append('line_points', JSON.stringify(line));
+        fetch('/settings/pipeline/auto-valves/', {
+            method: 'POST',
+            headers: { 'X-CSRFToken': _pipeCsrf() },
+            body: fd,
+        }).then(r => r.json()).then(d => {
+            btn.disabled = false; btn.textContent = orig;
+            if (d.error) { console.warn('auto-valves:', d.error); return; }
+            const anchors = d.anchors || [];
+            const existingZones = new Set(valves.map(v => v.zone_id));
+            anchors.forEach(a => {
+                if (a.zone_id && existingZones.has(a.zone_id)) return;
+                const idx = valves.length;
+                const p = (a.point && a.point[0]) || {};
+                valves.push({
+                    id: null,
+                    name: a.zone_code ? (a.zone_code + ' 阀') : ('V' + (idx + 1)),
+                    valve_type: 'solenoid', diameter: a.diameter || null,
+                    order: idx,
+                    zone_id: a.zone_id || null,
+                    station_id: a.station_id || null,
+                    point: (p.lat !== undefined) ? [{lat: p.lat, lng: p.lng}] : []
+                });
+                let m = null;
+                if (p.lat !== undefined) {
+                    const ref = valves[valves.length - 1];
+                    m = L.marker(L.latLng(p.lat, p.lng), {draggable: true, icon: valveIcon()}).addTo(editMap);
+                    m.on('drag', function () {
+                        const ll = m.getLatLng();
+                        ref.point = [{lat: +ll.lat.toFixed(6), lng: +ll.lng.toFixed(6)}];
+                    });
+                    m.on('dragend', function () {
+                        const ll = m.getLatLng();
+                        const sn = _snapToLine(ll.lat, ll.lng);
+                        if (sn) {
+                            m.setLatLng(L.latLng(sn[0], sn[1]));
+                            ref.point = [{lat: +sn[0].toFixed(6), lng: +sn[1].toFixed(6)}];
+                        }
+                    });
+                    m.on('contextmenu', function (e) {
+                        L.DomEvent.stopPropagation(e);
+                        removeValve(valves.indexOf(ref));
+                    });
+                }
+                valveMarkers.push(m);
+            });
+            renderValveList();
+        }).catch((e) => {
+            btn.disabled = false; btn.textContent = orig;
+            console.warn('auto-valves: 网络错误', e);
+        });
+    }
+
     function locateUser() {
         const btn = document.getElementById('locateMe');
         if (!navigator.geolocation) {
@@ -634,6 +1006,15 @@
         document.getElementById('clearLine').addEventListener('click', clearAll);
         document.getElementById('undoAction').addEventListener('click', undo);
         document.getElementById('locateMe').addEventListener('click', locateUser);
+
+        // Valve editor wiring
+        loadExistingValves();
+        document.getElementById('toggleValveMode').addEventListener('click', toggleValveMode);
+        document.getElementById('addValveManual').addEventListener('click', addValveManual);
+        document.getElementById('autoValves').addEventListener('click', autoGenerateValves);
+        // Ensure valves_json is fresh right before submit
+        const pf = document.getElementById('pipelineForm');
+        if (pf) pf.addEventListener('submit', serializeValves);
 
         // Type change updates line color and marker colors
         document.getElementById('pipeline_type').addEventListener('change', function() {

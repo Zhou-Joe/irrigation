@@ -84,6 +84,7 @@ urlpatterns = [
     path('settings/batch-delete-patch/', views.batch_delete_patch, name='batch_delete_patch'),
     path('settings/batch-delete-zone/', views.batch_delete_zone, name='batch_delete_zone'),
     path('settings/batch-delete-pipeline/', views.batch_delete_pipeline, name='batch_delete_pipeline'),
+    path('settings/pipeline/auto-valves/', views.pipeline_auto_valves, name='pipeline_auto_valves'),
     path('settings/region/new/', views.region_new, name='region_new'),
     path('settings/region/<int:region_id>/', views.region_edit, name='region_edit'),
     path('settings/region/<int:region_id>/delete/', views.region_delete, name='region_delete'),
