@@ -656,7 +656,7 @@ function pmRenderDetail(pid) {
             parts.push(dt);
         }
         parts.push('灌溉组 ' + wr.team_hours + 'h · 第三方 ' + wr.third_hours + 'h');
-        if (wr.worker_name) parts.push('创建人 ' + _pmEsc(wr.worker_name) + (wr.created_at ? ' 创建于' + wr.created_at : ''));
+        if (wr.worker_name) parts.push(_pmEsc(wr.worker_name) + (wr.created_at ? ' 创建于' + wr.created_at : ''));
         else if (wr.created_at) parts.push('创建于' + wr.created_at);
         return parts.join(' · ');
     }
@@ -716,17 +716,22 @@ function pmRenderDetail(pid) {
     }
 
     // 未关联工单: project-linked work orders where neither hours nor materials
-    // is confirmed yet. Each item has a binary switch; 全部确认 is a one-click shortcut.
+    // is confirmed yet. Each card carries a checkbox (for batch 不关联) + a per-card
+    // 不关联 button + the switches. 不关联 = 移除关联 → 折叠的已移除工单（可恢复），
+    // 让经理把"看过、决定不关联"的工单清出活跃队列，避免反复重判。
     var pendingWrHtml = '';
     if (b.pending_work_reports && b.pending_work_reports.length) {
         pendingWrHtml = b.pending_work_reports.map(function (wr) {
             return '<div class="pm-rec pm-wr" style="border-left:3px solid #f0ad4e;">' +
-                '<div class="pm-rec-head"><a class="pm-rec-date" href="/work-reports/' + wr.id + '/">工单 #' + wr.id + '</a>' +
-                '<span class="pm-rec-meta">' + _pmWrMeta(wr) + '</span>' +
-                '<span style="margin-left:auto;display:inline-flex;align-items:center;gap:8px;">' +
-                    _pmAllSwitches(wr, pid) +
-                    '<button type="button" class="btn-sm btn-secondary" style="font-size:.74rem;padding:3px 9px;" onclick="confirmProjectReport(' + wr.id + ', ' + pid + ', this, \'both\')">全部确认</button>' +
-                '</span>' +
+                '<div class="pm-rec-head">' +
+                    '<input type="checkbox" class="pm-pending-check" value="' + wr.id + '" onclick="pmPendingUpdateCount(' + pid + ')" style="margin:0 6px 0 0;flex:0 0 auto;">' +
+                    '<a class="pm-rec-date" href="/work-reports/' + wr.id + '/">工单 #' + wr.id + '</a>' +
+                    '<span class="pm-rec-meta">' + _pmWrMeta(wr) + '</span>' +
+                    '<span style="margin-left:auto;display:inline-flex;align-items:center;gap:8px;">' +
+                        _pmAllSwitches(wr, pid) +
+                        '<button type="button" class="btn-sm btn-secondary" style="font-size:.74rem;padding:3px 9px;" onclick="confirmProjectReport(' + wr.id + ', ' + pid + ', this, \'both\')">全部确认</button>' +
+                        '<button type="button" class="btn-sm btn-secondary" style="font-size:.74rem;padding:3px 9px;" onclick="removeProjectReport(' + wr.id + ', ' + pid + ', this)">不关联</button>' +
+                    '</span>' +
                 '</div></div>';
         }).join('');
     }
@@ -787,7 +792,12 @@ function pmRenderDetail(pid) {
         estHtml +
         '<div class="pm-sub">关联采购订单（' + (b.linked_pos ? b.linked_pos.length : 0) + '）</div>' + poHtml +
         '<div class="pm-sub">关联工单（' + (b.work_reports ? b.work_reports.length : 0) + '）</div>' + wrHtml +
-        (pendingWrHtml ? '<div class="pm-sub">未关联工单（' + (b.pending_work_reports ? b.pending_work_reports.length : 0) + '）<span style="font-size:.72rem;color:#b0701a;font-weight:400;"> — 打开工时/物料开关后计入项目</span></div>' + pendingWrHtml : '') +
+        (pendingWrHtml ? '<div class="pm-sub">未关联工单（' + (b.pending_work_reports ? b.pending_work_reports.length : 0) + '）<span style="font-size:.72rem;color:#b0701a;font-weight:400;"> — 打开开关计入项目，或"不关联"移出</span></div>' +
+            '<div class="pm-pending-batch" style="display:flex;align-items:center;gap:10px;margin:2px 0 6px;font-size:.76rem;color:#666;">' +
+                '<label style="cursor:pointer;"><input type="checkbox" onclick="pmPendingToggleAll(' + pid + ', this)" style="margin-right:4px;">全选</label>' +
+                '<button type="button" class="btn-sm btn-secondary" style="font-size:.74rem;padding:3px 10px;" onclick="batchRemovePending(' + pid + ', this)">批量不关联</button>' +
+                '<span id="pmPendingSel-' + pid + '" style="color:#999;">未选中</span>' +
+            '</div>' + pendingWrHtml : '') +
         (removedWrHtml ? '<details class="pm-removed-fold" style="margin-top:6px;"><summary class="pm-sub" style="cursor:pointer;list-style:none;display:flex;align-items:center;gap:4px;color:#888;">已移除工单（' + removedList.length + '）<span style="font-size:.72rem;color:#aaa;font-weight:400;"> — 已脱离本项目，不计入统计，可恢复</span></summary><div style="padding-top:4px;">' + removedWrHtml + '</div></details>' : '') +
         '<div class="pm-sub">其他出库记录（' + (b.consumption_records ? b.consumption_records.length : 0) + '）</div>' + recHtml +
         '<div style="margin-top:10px;"><button type="button" class="btn btn-primary" style="font-size:.82rem;padding:5px 12px;" onclick="pbOpen(' + pid + ')">编辑预算与关联</button></div>';
@@ -859,6 +869,38 @@ function restoreProjectReport(rid, pid, btn) {
     }).then(function (r) { return r.json(); }).then(function (d) {
         if (d.success) { pmToast(d.message, false); _pmRefreshProject(pid); }
         else { pmToast(d.message, true); btn.disabled = false; btn.textContent = orig; }
+    }).catch(function () { pmToast('网络错误', true); btn.disabled = false; btn.textContent = orig; });
+}
+// ── 未关联工单 batch-dismiss helpers ──. 不关联 = 移除关联（null entries.project
+// → 已移除工单，可恢复）。Checkboxes live inside the project's detail panel.
+function _pmPendingChecks(pid) {
+    var panel = document.getElementById('pmDetail-' + pid);
+    return panel ? Array.prototype.slice.call(panel.querySelectorAll('.pm-pending-check')) : [];
+}
+function pmPendingUpdateCount(pid) {
+    var n = _pmPendingChecks(pid).filter(function (c) { return c.checked; }).length;
+    var el = document.getElementById('pmPendingSel-' + pid);
+    if (el) el.textContent = n ? '已选 ' + n + ' 条' : '未选中';
+}
+function pmPendingToggleAll(pid, cb) {
+    _pmPendingChecks(pid).forEach(function (c) { c.checked = cb.checked; });
+    pmPendingUpdateCount(pid);
+}
+function batchRemovePending(pid, btn) {
+    var rids = _pmPendingChecks(pid).filter(function (c) { return c.checked; }).map(function (c) { return c.value; });
+    if (!rids.length) { pmToast('请先勾选要移出的工单', true); return; }
+    if (!confirm('将 ' + rids.length + ' 条未关联工单移出本项目（进入"已移除工单"，可恢复）？')) return;
+    btn.disabled = true; var orig = btn.textContent; btn.textContent = '移出中…';
+    Promise.all(rids.map(function (rid) {
+        var fd = new FormData();
+        fd.append('report_id', rid);
+        fd.append('project_id', String(pid));
+        return fetch('/work-reports/project-remove/', {
+            method: 'POST', headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRFToken': _pmCsrf() }, body: fd,
+        }).then(function (r) { return r.json(); });
+    })).then(function () {
+        pmToast('已将 ' + rids.length + ' 条工单移出（可在"已移除工单"恢复）', false);
+        _pmRefreshProject(pid);
     }).catch(function () { pmToast('网络错误', true); btn.disabled = false; btn.textContent = orig; });
 }
 // AJAX partial refresh of ONE project's row + detail panel. Fetches the page
