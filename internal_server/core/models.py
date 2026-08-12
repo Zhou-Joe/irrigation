@@ -1122,12 +1122,20 @@ class WorkReport(models.Model):
     # 维修日志 excludes is_pm=True so PM work never pollutes the normal list, and
     # dispatch consumes zero #id slots (no gaps in the normal id sequence).
     is_pm = models.BooleanField('PM生成工单', default=False, db_index=True)
-    # 项目关联是否已经经理确认。工人提交带项目关联的工单时设为 False（待确认）；
-    # 经理在项目详情页确认后才设为 True。未确认的工单不计入项目工时/材料消耗
-    # 统计（_project_summaries / _project_budget_data 过滤 confirmed），但仍单独
-    # 展示在「待确认工单」区供经理审核。无项目关联的工单忽略此字段。
+    # 项目关联的两个独立确认开关。工人提交带项目关联的工单时两者都设为 False
+    # （待确认）；经理可分别确认工时 / 物料：hours_confirmed 控制工时是否计入
+    # _project_summaries，materials_confirmed 控制物料消耗是否计入
+    # _project_budget_data。任一为 True 即进「关联工单」（带角标标明哪些已关联），
+    # 两者都为 False 才停留在「待确认工单」。无项目关联的工单忽略这两个字段。
+    hours_confirmed = models.BooleanField(
+        '工时关联已确认', default=False, db_index=True)
+    materials_confirmed = models.BooleanField(
+        '物料关联已确认', default=False, db_index=True)
+    # DEPRECATED: 旧的单一项目关联确认开关，已被上面的 hours_confirmed /
+    # materials_confirmed 取代。列保留（不删除以避免 SQLite 列删除风险），
+    # 新代码不应再读取或写它；数据迁移已把 True 值复制到上面两个新字段。
     project_confirmed = models.BooleanField(
-        '项目关联已确认', default=False, db_index=True)
+        '项目关联已确认(已弃用)', default=False, db_index=True)
     # Records project associations removed via 移除关联, keyed by project id, so
     # the order can still be shown in the project's 已移除工单 list and restored.
     # remove sets an entry here + nulls WorkReportEntry.project; restore re-points

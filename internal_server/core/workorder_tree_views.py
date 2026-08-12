@@ -209,8 +209,8 @@ def _phase_map():
 def _project_summaries(projects):
     """Per-project work summary: {project_id: {reports, hours, third_hours, phases}}.
 
-    Only CONFIRMED work orders (project_confirmed=True) count toward hours/
-    phases/reports. Pending orders are surfaced separately by
+    Only work orders whose hours_confirmed=True count toward hours/phases/reports.
+    Pending (or hours-unconfirmed) orders are surfaced separately by
     _project_budget_data and excluded here so un-reviewed associations don't
     inflate the rolled-up labor numbers.
     """
@@ -218,9 +218,9 @@ def _project_summaries(projects):
     pmap = _phase_map()
     summ = {p.id: {'reports': set(), 'hours': 0, 'third_hours': 0, 'phases': {}}
             for p in projects}
-    # Only confirmed reports' entries count.
+    # Only hours-confirmed reports' entries count.
     confirmed_ids = set(WorkReport.objects.filter(
-        project_confirmed=True,
+        hours_confirmed=True,
         id__in=WorkReportEntry.objects.filter(project__in=[p.id for p in projects])
         .values_list('work_report_id', flat=True)).values_list('id', flat=True))
     entries = (WorkReportEntry.objects.filter(project__in=[p.id for p in projects],
@@ -258,6 +258,7 @@ def _project_budget_data(projects):
     here as material_balance and exposed to the table + panel.
     """
     from core.models import (ProjectPurchaseOrder, InventoryTransaction, WorkReport)
+    from django.utils import timezone as _tz
     from core.views import inventory_category_paths, _po_received_parts_batch
     pids = [p.id for p in projects]
 
@@ -271,12 +272,12 @@ def _project_budget_data(projects):
     # deducted from the budget until confirmed.
     consumed = {}
     records = {}
-    # Exclude material consumption from UNconfirmed work orders — pending
-    # associations don't count toward the project until a manager confirms.
-    # A transaction with work_report=None is a standalone 出库 (not from a work
-    # order) and is unaffected by the gate.
+    # Exclude material consumption from work orders whose materials_confirmed is
+    # still False — unconfirmed material associations don't count toward the
+    # project until a manager confirms them. A transaction with work_report=None
+    # is a standalone 出库 (not from a work order) and is unaffected by the gate.
     pending_rep_ids = set(WorkReport.objects.filter(
-        project_confirmed=False,
+        materials_confirmed=False,
         material_consumptions__related_project_id__in=pids,
     ).values_list('id', flat=True))
     txns = (InventoryTransaction.objects
@@ -359,9 +360,11 @@ def _project_budget_data(projects):
             links_po_total[lk.project_id] = links_po_total.get(lk.project_id, 0) + amt
 
     # Related work reports (工单) — via WorkReportEntry.project, distinct + with hours.
-    # Split by project_confirmed: confirmed reports count toward the project and
-    # appear in 关联工单; unconfirmed (pending manager approval) appear in a
-    # separate 待确认工单 list and are EXCLUDED from labor/material stats.
+    # Split by the two independent confirmation flags: a report goes into 关联工单
+    # if EITHER hours_confirmed OR materials_confirmed is True (with badges showing
+    # which is linked); only reports where BOTH are still False appear in 待确认工单.
+    # Labor stats are gated separately by _project_summaries (hours_confirmed);
+    # material consumption is gated by materials_confirmed above.
     from core.models import WorkReport, WorkReportEntry
     reports = {}
     pending_reports = {}
@@ -370,9 +373,16 @@ def _project_budget_data(projects):
               .values('project_id', 'work_report_id').distinct()):
         rep_ids_by_proj.setdefault(e['project_id'], set()).add(e['work_report_id'])
     all_rep_ids = set().union(*rep_ids_by_proj.values()) if rep_ids_by_proj else set()
+    # Which reports carry project-bound material consumption? The 物料 switch is
+    # only meaningful for these — others show it disabled (nothing to link).
+    has_mat_ids = set(InventoryTransaction.objects
+                      .filter(work_report_id__in=all_rep_ids, related_project__isnull=False)
+                      .values_list('work_report_id', flat=True))
     rep_map = {r['id']: r for r in (WorkReport.objects.filter(id__in=all_rep_ids)
-                .values('id', 'date', 'team_hours', 'third_party_hours',
-                        'worker__full_name', 'created_at', 'project_confirmed'))}
+                .values('id', 'date', 'shift', 'work_start_time', 'work_end_time',
+                        'team_hours', 'third_party_hours',
+                        'worker__full_name', 'created_at',
+                        'hours_confirmed', 'materials_confirmed'))}
     for pid, rids in rep_ids_by_proj.items():
         for rid in sorted(rids, reverse=True):
             r = rep_map.get(rid)
@@ -381,15 +391,18 @@ def _project_budget_data(projects):
             entry = {
                 'id': r['id'],
                 'date': r['date'].isoformat() if r['date'] else '',
+                'shift': r.get('shift') or '',
+                'start_time': r['work_start_time'].strftime('%H:%M') if r.get('work_start_time') else '',
+                'end_time': r['work_end_time'].strftime('%H:%M') if r.get('work_end_time') else '',
                 'team_hours': r['team_hours'] or 0,
                 'third_hours': r['third_party_hours'] or 0,
-                # 创建人 + 创建时间（到分钟）— shown in the 关联工单 list so a
-                # manager can see who logged the order and when, alongside the
-                # business date/hours already shown.
                 'worker_name': r.get('worker__full_name') or '',
-                'created_at': r['created_at'].strftime('%Y-%m-%d %H:%M') if r.get('created_at') else '',
+                'created_at': _tz.localtime(r['created_at']).strftime('%Y-%m-%d %H:%M') if r.get('created_at') else '',
+                'hours_confirmed': bool(r.get('hours_confirmed')),
+                'materials_confirmed': bool(r.get('materials_confirmed')),
+                'has_materials': rid in has_mat_ids,
             }
-            if r.get('project_confirmed'):
+            if r.get('hours_confirmed') or r.get('materials_confirmed'):
                 reports.setdefault(pid, []).append(entry)
             else:
                 pending_reports.setdefault(pid, []).append(entry)
@@ -410,7 +423,8 @@ def _project_budget_data(projects):
         for pk in rp_pids:
             rp_q |= Q(removed_project__has_key=pk)
         rp_rows = (WorkReport.objects.filter(rp_q)
-        .values('id', 'date', 'team_hours', 'third_party_hours',
+        .values('id', 'date', 'shift', 'work_start_time', 'work_end_time',
+                 'team_hours', 'third_party_hours',
                  'worker__full_name', 'created_at', 'removed_project'))
         for r in rp_rows:
             rp = r.get('removed_project') or {}
@@ -425,6 +439,14 @@ def _project_budget_data(projects):
                     'id': r['id'],
                     'date': (info.get('date') if isinstance(info, dict)
                              else (r['date'].isoformat() if r['date'] else '')),
+                    'shift': (info.get('shift') if isinstance(info, dict)
+                              else (r.get('shift') or '')),
+                    'start_time': (info.get('start_time') if isinstance(info, dict)
+                                   else (r['work_start_time'].strftime('%H:%M')
+                                         if r.get('work_start_time') else '')),
+                    'end_time': (info.get('end_time') if isinstance(info, dict)
+                                 else (r['work_end_time'].strftime('%H:%M')
+                                       if r.get('work_end_time') else '')),
                     'team_hours': (info.get('team_hours') if isinstance(info, dict)
                                    else (r['team_hours'] or 0)),
                     'third_hours': (info.get('third_hours') if isinstance(info, dict)
@@ -432,7 +454,7 @@ def _project_budget_data(projects):
                     'worker_name': (info.get('worker_name') if isinstance(info, dict)
                                     else (r.get('worker__full_name') or '')),
                     'created_at': (info.get('created_at') if isinstance(info, dict)
-                                   else (r['created_at'].strftime('%Y-%m-%d %H:%M')
+                                   else (_tz.localtime(r['created_at']).strftime('%Y-%m-%d %H:%M')
                                          if r.get('created_at') else '')),
                     'removed_at': (info.get('removed_at') if isinstance(info, dict) else ''),
                 })
