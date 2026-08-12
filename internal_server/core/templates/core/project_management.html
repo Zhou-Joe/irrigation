@@ -59,7 +59,7 @@
 .pm-rec-sub { font-size: .74rem; color: #888; margin-top: 4px; }
 .pm-out-tag { display: inline-block; font-size: .68rem; color: #c0392b; background: #fdecea; padding: 1px 7px; border-radius: 6px; font-weight: 600; }
 /* Per-item project-link switch (工时/物料): binary toggle, on=关联 (counts),
-   off=不关联. Shown on each 关联工单 / 未关联工单 card. */
+   off=不关联. Shown on each 关联工单 / 待确认工单 card. */
 .pm-switch { display: inline-flex; align-items: center; gap: 3px; cursor: pointer; user-select: none; }
 .pm-switch.disabled { opacity: .5; pointer-events: none; }
 .pm-switch-name { font-size: .68rem; color: #888; }
@@ -662,7 +662,7 @@ function pmRenderDetail(pid) {
     }
 
     // Per-item binary switch (关联 / 不关联) for one item. on = counts toward
-    // the project. Used in both 关联工单 and 未关联工单.
+    // the project. Used in both 关联工单 and 待确认工单.
     function _pmSwitch(wr, pid, type) {
         var name = type === 'hours' ? '工时' : '物料';
         var hasMat = !!wr.has_materials;
@@ -715,7 +715,7 @@ function pmRenderDetail(pid) {
         wrHtml = '<div style="color:#aaa;font-size:.82rem;">暂无关联工单</div>';
     }
 
-    // 未关联工单: project-linked work orders where neither hours nor materials
+    // 待确认工单: project-linked work orders where neither hours nor materials
     // is confirmed yet. Each card carries a checkbox (for batch 不关联) + a per-card
     // 不关联 button + the switches. 不关联 = 移除关联 → 折叠的已移除工单（可恢复），
     // 让经理把"看过、决定不关联"的工单清出活跃队列，避免反复重判。
@@ -791,7 +791,7 @@ function pmRenderDetail(pid) {
         estHtml +
         '<div class="pm-sub">关联采购订单（' + (b.linked_pos ? b.linked_pos.length : 0) + '）</div>' + poHtml +
         '<div class="pm-sub">关联工单（' + (b.work_reports ? b.work_reports.length : 0) + '）</div>' + wrHtml +
-        (pendingWrHtml ? '<div class="pm-sub">未关联工单（' + (b.pending_work_reports ? b.pending_work_reports.length : 0) + '）<span style="font-size:.72rem;color:#b0701a;font-weight:400;"> — 打开开关计入项目，或"不关联"移出</span></div>' +
+        (pendingWrHtml ? '<div class="pm-sub">待确认工单（' + (b.pending_work_reports ? b.pending_work_reports.length : 0) + '）<span style="font-size:.72rem;color:#b0701a;font-weight:400;"> — 打开开关计入项目，或"不关联"移出</span></div>' +
             '<div class="pm-pending-batch" style="display:flex;align-items:center;gap:10px;margin:2px 0 6px;font-size:.76rem;color:#666;">' +
                 '<label style="cursor:pointer;"><input type="checkbox" onclick="pmPendingToggleAll(' + pid + ', this)" style="margin-right:4px;">全选</label>' +
                 '<button type="button" class="btn-sm btn-secondary" style="font-size:.74rem;padding:3px 10px;" onclick="batchRemovePending(' + pid + ', this)">批量不关联</button>' +
@@ -852,7 +852,7 @@ function restoreProjectReport(rid, pid, btn) {
         else { pmToast(d.message, true); btn.disabled = false; btn.textContent = orig; }
     }).catch(function () { pmToast('网络错误', true); btn.disabled = false; btn.textContent = orig; });
 }
-// ── 未关联工单 batch-dismiss helpers ──. 不关联 = 移除关联（null entries.project
+// ── 待确认工单 batch-dismiss helpers ──. 不关联 = 移除关联（null entries.project
 // → 已移除工单，可恢复）。Checkboxes live inside the project's detail panel.
 function _pmPendingChecks(pid) {
     var panel = document.getElementById('pmDetail-' + pid);
@@ -870,7 +870,7 @@ function pmPendingToggleAll(pid, cb) {
 function batchRemovePending(pid, btn) {
     var rids = _pmPendingChecks(pid).filter(function (c) { return c.checked; }).map(function (c) { return c.value; });
     if (!rids.length) { pmToast('请先勾选要移出的工单', true); return; }
-    if (!confirm('将 ' + rids.length + ' 条未关联工单移出本项目（进入"已移除工单"，可恢复）？')) return;
+    if (!confirm('将 ' + rids.length + ' 条待确认工单移出本项目（进入"已移除工单"，可恢复）？')) return;
     btn.disabled = true; var orig = btn.textContent; btn.textContent = '移出中…';
     Promise.all(rids.map(function (rid) {
         var fd = new FormData();
@@ -902,7 +902,7 @@ function _pmRefreshProject(pid) {
             curDetail.setAttribute('data-budget', freshDetail.getAttribute('data-budget'));
             delete PM_BUDGET[pid];
             // Re-render the panel if it's currently open so the user sees the
-            // updated 关联工单 / 已移除工单 / 未关联工单 immediately.
+            // updated 关联工单 / 已移除工单 / 待确认工单 immediately.
             var row = document.getElementById('pmDetailRow-' + pid);
             if (row && row.classList.contains('open')) pmRenderDetail(pid);
             // Refresh the summary row cells from the fresh row.
