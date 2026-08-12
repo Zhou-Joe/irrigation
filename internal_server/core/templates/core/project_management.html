@@ -729,7 +729,6 @@ function pmRenderDetail(pid) {
                     '<span class="pm-rec-meta">' + _pmWrMeta(wr) + '</span>' +
                     '<span style="margin-left:auto;display:inline-flex;align-items:center;gap:8px;">' +
                         _pmAllSwitches(wr, pid) +
-                        '<button type="button" class="btn-sm btn-secondary" style="font-size:.74rem;padding:3px 9px;" onclick="confirmProjectReport(' + wr.id + ', ' + pid + ', this, \'both\')">全部确认</button>' +
                         '<button type="button" class="btn-sm btn-secondary" style="font-size:.74rem;padding:3px 9px;" onclick="removeProjectReport(' + wr.id + ', ' + pid + ', this)">不关联</button>' +
                     '</span>' +
                 '</div></div>';
@@ -803,24 +802,6 @@ function pmRenderDetail(pid) {
         '<div style="margin-top:10px;"><button type="button" class="btn btn-primary" style="font-size:.82rem;padding:5px 12px;" onclick="pbOpen(' + pid + ')">编辑预算与关联</button></div>';
 }
 
-// Confirm a pending work order's project association (admin). type selects
-// which item to confirm: 'hours', 'materials', or 'both' (default). POSTs to
-// the confirm endpoint with confirm_type, then AJAX-refreshes the project panel
-// so the report moves into 关联工单 (with the right badge lit) without a reload.
-function confirmProjectReport(rid, pid, btn, type) {
-    type = type || 'both';
-    var orig = btn.textContent;
-    btn.disabled = true; btn.textContent = '确认中…';
-    var fd = new FormData();
-    fd.append('report_ids', String(rid));
-    fd.append('confirm_type', type);
-    fetch('/work-reports/project-confirm/', {
-        method: 'POST', headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRFToken': _pmCsrf() }, body: fd,
-    }).then(function (r) { return r.json(); }).then(function (d) {
-        if (d.success) { pmToast(d.message, false); _pmRefreshProject(pid); }
-        else { pmToast(d.message, true); btn.disabled = false; btn.textContent = orig; }
-    }).catch(function () { pmToast('网络错误', true); btn.disabled = false; btn.textContent = orig; });
-}
 // Toggle a work order's hours/materials link switch on or off (admin). The
 // switch track's on/off class decides direction: on→unconfirm, off→confirm.
 function toggleProjectLink(rid, pid, type, el) {
