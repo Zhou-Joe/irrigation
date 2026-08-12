@@ -10,7 +10,7 @@ from .models import (
     MaxicomEvent, MaxicomFlowReading, MaxicomSignalLog,
     MaxicomETCheckbook, MaxicomRuntime,
     EquipmentCatalog, ZoneEquipment,
-    Pipeline, Patch,
+    Pipeline, PipeValve, Patch,
     WorkReport,
     WorkItem, Project, WorkReportEntry,
     InventoryTransaction, InventoryTransactionLine,
@@ -405,13 +405,20 @@ class ZoneEquipmentAdmin(admin.ModelAdmin):
     readonly_fields = ('created_at', 'updated_at')
 
 
+class PipeValveInline(admin.TabularInline):
+    model = PipeValve
+    extra = 1
+    fields = ('order', 'name', 'valve_type', 'zone', 'station', 'diameter', 'point')
+
+
 @admin.register(Pipeline)
 class PipelineAdmin(admin.ModelAdmin):
-    list_display = ('name', 'code', 'pipeline_type', 'line_color_display', 'point_count', 'zone_count', 'created_at')
-    list_filter = ('pipeline_type', 'created_at')
-    search_fields = ('name', 'code', 'description')
+    list_display = ('name', 'code', 'pipeline_type', 'main_diameter', 'flow_direction', 'line_color_display', 'point_count', 'valve_count', 'zone_count', 'created_at')
+    list_filter = ('pipeline_type', 'flow_direction', 'created_at')
+    search_fields = ('name', 'code', 'description', 'source_label')
     readonly_fields = ('created_at', 'updated_at', 'display_line_points')
     filter_horizontal = ('zones',)
+    inlines = [PipeValveInline]
 
     def point_count(self, obj):
         return len(obj.line_points) if obj.line_points else 0
@@ -420,6 +427,10 @@ class PipelineAdmin(admin.ModelAdmin):
     def zone_count(self, obj):
         return obj.zones.count()
     zone_count.short_description = '关联区域数'
+
+    def valve_count(self, obj):
+        return obj.valves.count()
+    valve_count.short_description = '阀门数'
 
     def line_color_display(self, obj):
         from django.utils.html import format_html

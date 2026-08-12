@@ -75,6 +75,12 @@ cd "$PROJECT/internal_server"
     echo "$(ts)   $line"
 done
 
+# Re-derive Zone.maxicom_runtime (station Patch ids per zone) so the heatmap
+# and pipeline-valve runtime joins stay aligned after stations may have moved.
+"$PY" "$MANAGE" populate_zone_maxicom_runtime 2>&1 | while read -r line; do
+    echo "$(ts)   $line"
+done
+
 # ── 4. Cleanup (trap rm -rf handles it, but be explicit) ───────────────────
 echo "$(ts) cleanup tmp dir"
 # trap on EXIT removes $TMP_DIR

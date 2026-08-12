@@ -5,7 +5,7 @@ from django.contrib import messages
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.decorators import login_required
 from django.views.decorators.cache import never_cache
-from django.db.models import Count, Q, Avg, Sum, F
+from django.db.models import Count, Q, Avg, Sum, F, Max
 from django.db.models.functions import Coalesce
 from django.views.decorators.http import require_POST
 from django.http import HttpResponse, JsonResponse
@@ -633,6 +633,165 @@ def _cached(key, ttl, builder):
     return val
 
 
+def _invalidate_cached(key):
+    """Drop a ``_cached`` entry by key (best-effort; no-op on dummy backends)."""
+    from django.core.cache.backends.dummy import DummyCache
+    try:
+        from django.core.cache import caches
+        if isinstance(caches['default'], DummyCache):
+            return
+    except Exception:
+        return
+    from django.core.cache import cache
+    try:
+        cache.delete(key)
+    except Exception:
+        pass
+
+
+def _save_pipeline_valves(pipeline, valves_json):
+    """Replace a pipeline's valve rows from a JSON array.
+
+    Each element: ``{point, zone_id, station_id, name, valve_type, diameter,
+    order}``. Empty/invalid elements are skipped. Existing valves are deleted
+    first (edit semantics). Returns the count saved.
+    """
+    from .models import PipeValve
+    try:
+        items = json.loads(valves_json) if valves_json else []
+    except (json.JSONDecodeError, TypeError):
+        items = []
+    pipeline.valves.all().delete()
+    to_create = []
+    for idx, item in enumerate(items):
+        if not isinstance(item, dict):
+            continue
+        point = item.get('point') or []
+        # point may be a single {lat,lng} or a 1-element array; normalize to list
+        if isinstance(point, dict):
+            point = [point]
+        name = (item.get('name') or '').strip()
+        valve_type = item.get('valve_type') or PipeValve.VALVE_SOLENOID
+        if valve_type not in dict(PipeValve.VALVE_TYPE_CHOICES):
+            valve_type = PipeValve.VALVE_SOLENOID
+        diameter_raw = item.get('diameter')
+        try:
+            diameter = float(diameter_raw) if diameter_raw not in (None, '', 'null') else None
+        except (TypeError, ValueError):
+            diameter = None
+        order_raw = item.get('order', idx)
+        try:
+            order = int(order_raw)
+        except (TypeError, ValueError):
+            order = idx
+        zone_id = item.get('zone_id')
+        station_id = item.get('station_id')
+        to_create.append(PipeValve(
+            pipeline=pipeline,
+            zone_id=int(zone_id) if zone_id else None,
+            station_id=int(station_id) if station_id else None,
+            name=name, point=point, valve_type=valve_type,
+            diameter=diameter, order=order,
+        ))
+    if to_create:
+        PipeValve.objects.bulk_create(to_create)
+    return len(to_create)
+
+
+def _merged_zone_ids(line_points, manual_zone_ids):
+    """Merge auto-detected crossed zones with manually-selected ones.
+
+    Auto-detection runs over ``line_points`` (raw list, no Pipeline instance
+    needed so name/code can be generated from the merged set BEFORE the
+    Pipeline is created); manual ids cover any zones the geometry missed.
+    Returns the combined list of existing zone ids.
+    """
+    from .pipe_utils import detect_crossed_zones
+    from .models import Zone
+    auto_ids = detect_crossed_zones(line_points)
+    manual = [int(z) for z in (manual_zone_ids or []) if z]
+    combined = list(dict.fromkeys(auto_ids + manual))  # dedupe, preserve order
+    existing = set(Zone.objects.filter(id__in=combined).values_list('id', flat=True))
+    return [z for z in combined if z in existing]
+
+
+def _pipeline_zone_ids(pipeline, manual_zone_ids):
+    """Backwards-compatible wrapper around _merged_zone_ids for a Pipeline row."""
+    return _merged_zone_ids(pipeline.line_points, manual_zone_ids)
+
+
+def _parse_float(raw):
+    """Parse a POST value into a float or None (empty/invalid → None)."""
+    if raw in (None, '', 'null'):
+        return None
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        return None
+
+
+def _station_choices_json():
+    """JSON array of Maxicom station Patches for the valve station dropdown.
+
+    Each entry: ``{id, name, code, controller_number, controller_channel}``.
+    Stations are Patch rows whose code starts with ``station-`` (the physical
+    solenoid valves that MaxicomRuntime.station FK points at).
+    """
+    stations = Patch.objects.filter(code__startswith='station-').order_by('code')
+    return json.dumps([
+        {
+            'id': s.id, 'name': s.name, 'code': s.code,
+            'controller_number': s.controller_number,
+            'controller_channel': s.controller_channel,
+        } for s in stations
+    ])
+
+
+def _format_irrig_ts(ts):
+    """Format a Maxicom timestamp ``YYYYMMDD[HHMM]`` string for display.
+
+    8-char → ``YYYY-MM-DD``; 12+ char → ``YYYY-MM-DD HH:MM``. None/garbage → None.
+    """
+    if not ts or not isinstance(ts, str):
+        return None
+    s = ts.strip()
+    if len(s) >= 12 and s[:12].isdigit():
+        return f"{s[0:4]}-{s[4:6]}-{s[6:8]} {s[8:10]}:{s[10:12]}"
+    if len(s) >= 8 and s[:8].isdigit():
+        return f"{s[0:4]}-{s[4:6]}-{s[6:8]}"
+    return None
+
+
+def _latest_runtime_by_station(station_ids):
+    """Per-station latest watering info: ``{station_id: {'minutes': int, 'ts': str|None}}``.
+
+    For each station, finds ITS OWN most recent runtime row with run_time>0
+    (so a valve that last watered Tuesday isn't shown as "0 on today's global-
+    latest day"). ``minutes`` = total run_time on that station's latest
+    irrigation day (8-char YYYYMMDD prefix, irrigation-day flip already baked
+    into the stored timestamp). ``ts`` = that latest row's full timestamp
+    (for display to the minute). Returns {} when there's no data.
+    """
+    from .models import MaxicomRuntime
+    if not station_ids:
+        return {}
+    # Per-station latest timestamp that actually recorded runtime > 0.
+    latest_rows = (MaxicomRuntime.objects
+                   .filter(station_id__in=station_ids, run_time__gt=0)
+                   .values('station_id')
+                   .annotate(latest=Max('timestamp')))
+    result = {}
+    for row in latest_rows:
+        sid = row['station_id']
+        ts = row['latest'] or ''
+        day_prefix = ts[:8]
+        total = (MaxicomRuntime.objects
+                 .filter(station_id=sid, timestamp__startswith=day_prefix)
+                 .aggregate(s=Sum('run_time'))['s']) or 0
+        result[sid] = {'minutes': total, 'ts': ts or None}
+    return result
+
+
 def _build_zones_payload(today, week_ago):
     """Build the per-zone JSON payload used by the dashboard map + zone-detail cards.
 
@@ -1085,18 +1244,59 @@ def dashboard(request):
     recent_activity.sort(key=lambda x: x['date'], reverse=True)
     recent_activity = recent_activity[:10]
 
-    # Prepare pipelines data for map (prefetch zones to avoid N+1 per pipeline).
-    # Pipelines rarely change — cache the built list for 5 min.
-    pipelines_list = _cached('dashboard:pipelines', 300, lambda: [
-        {
-            'id': p.id, 'code': p.code, 'name': p.name,
-            'pipeline_type': p.pipeline_type,
-            'pipeline_type_display': p.get_pipeline_type_display(),
-            'line_points': p.line_points, 'line_color': p.line_color,
-            'line_weight': p.line_weight,
-            'zone_names': [z.name for z in p.zones.all()],
-        } for p in Pipeline.objects.prefetch_related('zones')
-    ])
+    # Prepare pipelines data for map (prefetch zones+valves to avoid N+1).
+    # Pipelines rarely change — cache the built list for 5 min. Valve runtime
+    # minutes are joined in one aggregate query per cache build (not per valve).
+    def _build_pipelines_list():
+        qs = Pipeline.objects.prefetch_related('zones', 'valves__zone')
+        pipelines = list(qs)
+        # Latest irrigation-day runtime per station across all valves (1 query).
+        station_ids = {v.station_id for p in pipelines for v in p.valves.all() if v.station_id}
+        runtime_by_station = _latest_runtime_by_station(station_ids)
+        out = []
+        for p in pipelines:
+            valves = []
+            for v in p.valves.all():
+                rt = runtime_by_station.get(v.station_id) if v.station_id else None
+                rt = rt or {}
+                mins = rt.get('minutes', 0) or 0
+                rt_ts = rt.get('ts')
+                rt_display = _format_irrig_ts(rt_ts)
+                # Water depth (mm) = runtime hours × zone irrigation intensity (mm/h).
+                intensity = (v.zone.irrigation_intensity if (v.zone_id and v.zone.irrigation_intensity) else None)
+                depth_mm = round((mins / 60.0) * intensity, 1) if (intensity and mins) else None
+                valves.append({
+                    'id': v.id, 'order': v.order, 'name': v.name,
+                    'valve_type': v.valve_type,
+                    'valve_type_display': v.get_valve_type_display(),
+                    'diameter': v.diameter,
+                    'point': v.point,
+                    'zone_id': v.zone_id,
+                    'zone_name': v.zone.name if v.zone_id else None,
+                    'zone_code': v.zone.code if v.zone_id else None,
+                    'station_id': v.station_id,
+                    'runtime_minutes': mins,
+                    'runtime_date': rt_display,
+                    'depth_mm': depth_mm,
+                    'watered_today': bool(mins and mins > 0),
+                })
+            valves.sort(key=lambda x: (x['order'], x['id']))
+            out.append({
+                'id': p.id, 'code': p.code, 'name': p.name,
+                'pipeline_type': p.pipeline_type,
+                'pipeline_type_display': p.get_pipeline_type_display(),
+                'line_points': p.line_points, 'line_color': p.line_color,
+                'line_weight': p.line_weight,
+                'main_diameter': p.main_diameter,
+                'flow_direction': p.flow_direction,
+                'flow_direction_display': p.get_flow_direction_display(),
+                'source_label': p.source_label,
+                'zone_names': [z.name for z in p.zones.all()],
+                'valves': valves,
+            })
+        return out
+
+    pipelines_list = _cached('dashboard:pipelines', 300, _build_pipelines_list)
 
     all_plant_names = _cached('dashboard:plant_names', 300,
                               lambda: list(Plant.objects.values_list('name', flat=True).distinct().order_by('name')))
@@ -4755,8 +4955,31 @@ def pipeline_new(request):
 
     if request.method == 'POST':
         pipeline_type = request.POST.get('pipeline_type', Pipeline.TYPE_IRRIGATION)
-        zone_ids = request.POST.getlist('zones')
-        name, code = _auto_pipeline_name_code(zone_ids, pipeline_type)
+        manual_zone_ids = request.POST.getlist('zones')
+
+        line_json = request.POST.get('line_points', '[]')
+        try:
+            line_points = json.loads(line_json)
+        except json.JSONDecodeError:
+            messages.error(request, '坐标数据格式无效')
+            rz, rp = _get_reference_map_data()
+            zones_qs = Zone.objects.all().order_by('code')
+            return render(request, 'core/pipeline_form.html', {
+                'pipeline': None,
+                'line_json': line_json,
+                'zones': zones_qs,
+                'grouped_zones': _build_grouped_zones(zones_qs),
+                'stations_json': _station_choices_json(),
+                'valves_json': request.POST.get('valves_json', '[]'),
+                'ref_zones_json': rz,
+                'ref_pipelines_json': rp,
+            })
+
+        # Auto-detect crossed zones + merge manual → use the merged set for
+        # name/code generation too (so a drawn-but-unchecked pipeline still
+        # gets a meaningful name from the zones it crosses).
+        merged_zone_ids = _merged_zone_ids(line_points, manual_zone_ids)
+        name, code = _auto_pipeline_name_code(merged_zone_ids, pipeline_type)
 
         pipeline = Pipeline(
             name=name,
@@ -4764,28 +4987,18 @@ def pipeline_new(request):
             description=request.POST.get('description', ''),
             pipeline_type=pipeline_type,
             line_weight=int(request.POST.get('line_weight', 3)),
+            flow_direction=request.POST.get('flow_direction', Pipeline.FLOW_FORWARD),
+            source_label=request.POST.get('source_label', ''),
+            line_points=line_points,
         )
-
-        line_json = request.POST.get('line_points', '[]')
-        try:
-            pipeline.line_points = json.loads(line_json)
-        except json.JSONDecodeError:
-            messages.error(request, '坐标数据格式无效')
-            rz, rp = _get_reference_map_data()
-            return render(request, 'core/pipeline_form.html', {
-                'pipeline': pipeline,
-                'line_json': line_json,
-                'zones': Zone.objects.all().order_by('code'),
-                'ref_zones_json': rz,
-                'ref_pipelines_json': rp,
-            })
-
+        pipeline.main_diameter = _parse_float(request.POST.get('main_diameter'))
         pipeline.save()
 
-        if zone_ids:
-            pipeline.zones.set(Zone.objects.filter(id__in=zone_ids))
+        pipeline.zones.set(merged_zone_ids)
+        valves_count = _save_pipeline_valves(pipeline, request.POST.get('valves_json', '[]'))
+        _invalidate_cached('dashboard:pipelines')
 
-        messages.success(request, f'水管 "{pipeline.name}" 创建成功')
+        messages.success(request, f'水管 "{pipeline.name}" 创建成功（关联 {len(merged_zone_ids)} 个区域，{valves_count} 个阀门）')
         return redirect('core:settings')
 
     ref_zones_json, ref_pipelines_json = _get_reference_map_data()
@@ -4796,6 +5009,8 @@ def pipeline_new(request):
         'line_json': '[]',
         'zones': zones,
         'grouped_zones': _build_grouped_zones(zones),
+        'stations_json': _station_choices_json(),
+        'valves_json': '[]',
         'ref_zones_json': ref_zones_json,
         'ref_pipelines_json': ref_pipelines_json,
     }
@@ -4822,38 +5037,53 @@ def pipeline_edit(request, pipeline_id):
 
     if request.method == 'POST':
         pipeline_type = request.POST.get('pipeline_type', pipeline.pipeline_type)
-        zone_ids = request.POST.getlist('zones')
-        name, code = _auto_pipeline_name_code(zone_ids, pipeline_type)
+        manual_zone_ids = request.POST.getlist('zones')
+
+        line_json = request.POST.get('line_points', '[]')
+        try:
+            line_points = json.loads(line_json)
+        except json.JSONDecodeError:
+            messages.error(request, '坐标数据格式无效')
+            return redirect('core:pipeline_edit', pipeline_id=pipeline.id)
+
+        merged_zone_ids = _merged_zone_ids(line_points, manual_zone_ids)
+        name, code = _auto_pipeline_name_code(merged_zone_ids, pipeline_type)
 
         pipeline.name = name
         pipeline.code = code
         pipeline.pipeline_type = pipeline_type
         pipeline.line_weight = int(request.POST.get('line_weight', pipeline.line_weight))
-
-        line_json = request.POST.get('line_points', '[]')
-        try:
-            pipeline.line_points = json.loads(line_json)
-        except json.JSONDecodeError:
-            messages.error(request, '坐标数据格式无效')
-            return redirect('core:pipeline_edit', pipeline_id=pipeline.id)
-
+        pipeline.flow_direction = request.POST.get('flow_direction', pipeline.flow_direction)
+        pipeline.source_label = request.POST.get('source_label', '')
+        pipeline.main_diameter = _parse_float(request.POST.get('main_diameter'))
+        pipeline.line_points = line_points
         pipeline.save()
 
-        pipeline.zones.set(Zone.objects.filter(id__in=zone_ids))
-        pipeline.zones.set(Zone.objects.filter(id__in=zone_ids))
+        pipeline.zones.set(merged_zone_ids)
+        valves_count = _save_pipeline_valves(pipeline, request.POST.get('valves_json', '[]'))
+        _invalidate_cached('dashboard:pipelines')
 
-        messages.success(request, f'水管 "{pipeline.name}" 更新成功')
+        messages.success(request, f'水管 "{pipeline.name}" 更新成功（关联 {len(merged_zone_ids)} 个区域，{valves_count} 个阀门）')
         return redirect('core:settings')
 
     ref_zones_json, ref_pipelines_json = _get_reference_map_data(exclude_pipeline_id=pipeline.id)
 
     zones = Zone.objects.all().order_by('code')
+    valves_json = json.dumps([
+        {
+            'id': v.id, 'point': v.point, 'name': v.name,
+            'valve_type': v.valve_type, 'diameter': v.diameter, 'order': v.order,
+            'zone_id': v.zone_id, 'station_id': v.station_id,
+        } for v in pipeline.valves.all().order_by('order', 'id')
+    ])
     context = {
         'pipeline': pipeline,
         'line_json': json.dumps(pipeline.line_points),
         'zones': zones,
         'grouped_zones': _build_grouped_zones(zones),
         'selected_zone_ids': list(pipeline.zones.values_list('id', flat=True)),
+        'stations_json': _station_choices_json(),
+        'valves_json': valves_json,
         'ref_zones_json': ref_zones_json,
         'ref_pipelines_json': ref_pipelines_json,
     }
@@ -4882,6 +5112,37 @@ def pipeline_delete(request, pipeline_id):
     pipeline.delete()
     messages.success(request, f'水管 "{pipeline_name}" 删除成功')
     return redirect('core:settings')
+
+
+@require_POST
+@login_required(login_url='core:login')
+def pipeline_auto_valves(request):
+    """Auto-generate valve anchors from a drawn polyline.
+
+    POST ``line_points`` (JSON) → returns ``{anchors: [...]}``, one valve
+    anchor per zone the line crosses (point on the line + zone + that zone's
+    Maxicom station pre-linked). Used by the pipeline editor's "auto-generate
+    valves" button so the user only has to drag to fine-tune.
+    """
+    from .models import ManagerProfile
+    from .pipe_utils import detect_valve_anchors
+
+    is_admin = request.user.is_superuser or request.user.is_staff
+    if not is_admin:
+        try:
+            ManagerProfile.objects.get(user=request.user, active=True)
+            is_admin = True
+        except ManagerProfile.DoesNotExist:
+            pass
+    if not is_admin:
+        return JsonResponse({'error': '无权限'}, status=403)
+
+    try:
+        line_points = json.loads(request.POST.get('line_points', '[]'))
+    except (json.JSONDecodeError, TypeError):
+        return JsonResponse({'error': '坐标数据无效'}, status=400)
+    anchors = detect_valve_anchors(line_points)
+    return JsonResponse({'anchors': anchors, 'count': len(anchors)})
 
 
 # ─── Region CRUD ───
@@ -7713,7 +7974,7 @@ def irrigation_report_pdf(request):
     frame_h = page_size[1] - 16 * mm              # page minus top/bottom margins
     title_block_h = 28 * mm
     avail_for_table = frame_h - title_block_h
-    ROW_H = avail_for_table / 26.5                # 1.4 + 24 + 1.1 = 26.5 row-units
+    ROW_H = avail_for_table / 25.4                # 1.4 + 24 = 25.4 row-units (no 合计 row/col)
     FS = 6.0                                       # cell font size
 
     doc = SimpleDocTemplate(
@@ -7750,21 +8011,19 @@ def irrigation_report_pdf(request):
         elements.append(Paragraph(subtitle, sub_style))
         elements.append(Spacer(1, 2 * mm))
 
-        # table data
-        header = ['站#'] + list(controllers) + ['合计']
+        # table data (no 合计 row/column — totals add no value, see dashboard change)
+        header = ['站#'] + list(controllers)
         data = [header]
         for r in rows:
-            data.append([r['station']] + [str(v) if v else '·' for v in r['values']]
-                        + [str(r['total']) if r['total'] else '·'])
-        data.append(['合计'] + [str(t) if t else '·' for t in col_totals] + [str(grand_total)])
+            data.append([r['station']] + [str(v) if v else '·' for v in r['values']])
 
         # column widths
         n_sat = len(controllers)
         side_w = 11 * mm
-        sat_col_w = max(7 * mm, (avail_w - 2 * side_w) / n_sat) if n_sat else (avail_w - 2 * side_w)
-        col_widths = [side_w] + [sat_col_w] * n_sat + [side_w]
+        sat_col_w = max(7 * mm, (avail_w - side_w) / n_sat) if n_sat else (avail_w - side_w)
+        col_widths = [side_w] + [sat_col_w] * n_sat
         # row heights: header slightly taller
-        row_heights = [ROW_H * 1.4] + [ROW_H] * 24 + [ROW_H * 1.1]
+        row_heights = [ROW_H * 1.4] + [ROW_H] * 24
 
         tbl = Table(data, colWidths=col_widths, rowHeights=row_heights, repeatRows=1)
         ts = [
@@ -7780,10 +8039,7 @@ def irrigation_report_pdf(request):
             ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
             ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
             ('GRID', (0, 0), (-1, -1), 0.25, colors.HexColor('#D9D0C0')),
-            ('BACKGROUND', (0, 1), (0, -2), colors.HexColor('#F5F0E8')),
-            ('BACKGROUND', (-1, 1), (-1, -2), colors.HexColor('#EDE8DC')),
-            ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#EDE8DC')),
-            ('LINEABOVE', (0, -1), (-1, -1), 1, colors.HexColor('#1B4332')),
+            ('BACKGROUND', (0, 1), (0, -1), colors.HexColor('#F5F0E8')),
         ]
         # heatmap shading on non-zero VALID cells (interpolate light->dark green)
         gl = (0.929, 0.969, 0.847)   # #EDF7F1
