@@ -799,7 +799,10 @@ function pmRenderDetail(pid) {
             '</div>' + pendingWrHtml : '') +
         (removedWrHtml ? '<details class="pm-removed-fold" style="margin-top:6px;"><summary class="pm-sub" style="cursor:pointer;list-style:none;display:flex;align-items:center;gap:4px;color:#888;">已移除工单（' + removedList.length + '）<span style="font-size:.72rem;color:#aaa;font-weight:400;"> — 已脱离本项目，不计入统计，可恢复</span></summary><div style="padding-top:4px;">' + removedWrHtml + '</div></details>' : '') +
         '<div class="pm-sub">其他出库记录（' + (b.consumption_records ? b.consumption_records.length : 0) + '）</div>' + recHtml +
-        '<div style="margin-top:10px;"><button type="button" class="btn btn-primary" style="font-size:.82rem;padding:5px 12px;" onclick="pbOpen(' + pid + ')">编辑预算与关联</button></div>';
+        '<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;">' +
+            '<button type="button" class="btn btn-primary" style="font-size:.82rem;padding:5px 12px;" onclick="pbOpen(' + pid + ')">编辑预算与关联</button>' +
+            '<a class="btn btn-secondary" href="/projects/' + pid + '/export/" style="font-size:.82rem;padding:5px 12px;text-decoration:none;">⬇ 导出Excel</a>' +
+        '</div>';
 }
 
 // Toggle a work order's hours/materials link switch on or off (admin). The
