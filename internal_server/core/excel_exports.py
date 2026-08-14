@@ -503,8 +503,11 @@ def build_inventory_catalog_excel():
     txn_map = {}
     part_ids = [cid for c in cats.values() if c.node_type == 'part' for cid in [c.id]]
     if part_ids:
+        # Only ledger-CONFIRMED transactions count in the per-item 出入库记录
+        # column — pending (awaiting manager) and removed stay out of stats.
         for ln in (InventoryTransactionLine.objects
-                   .filter(category_id__in=part_ids)
+                   .filter(category_id__in=part_ids,
+                           transaction__confirm_status='confirmed')
                    .select_related('transaction')
                    .order_by('-transaction__date', '-id')):
             txn_map.setdefault(ln.category_id, []).append(ln)
@@ -679,14 +682,16 @@ def build_inventory_transactions_excel(date_from=None, date_to=None):
 
     txns = (InventoryTransaction.objects
             .filter(date__gte=date_from, date__lte=date_to)
+            .exclude(confirm_status='removed')   # removed stays out of exports too
             .select_related('worker', 'related_project', 'zone', 'work_report')
             .prefetch_related('lines__category')
             .order_by('-date', '-id'))
 
+    confirm_labels = dict(InventoryTransaction.CONFIRM_STATUS_CHOICES)
     wb = Workbook()
     ws = wb.active
     ws.title = '出入库记录'
-    headers = ['日期', '类型', '物料', '数量', '单位', '经办人', '去向/来源', '关联', '备注']
+    headers = ['日期', '类型', '物料', '数量', '单位', '经办人', '去向/来源', '关联', '备注', '确认状态']
     hdr_font = Font(bold=True, color='FFFFFF', size=11)
     hdr_fill = PatternFill(start_color='1B4332', end_color='1B4332', fill_type='solid')
     hdr_align = Alignment(horizontal='center', vertical='center')
@@ -722,6 +727,7 @@ def build_inventory_transactions_excel(date_from=None, date_to=None):
                 ln.unit or '',
                 t.worker.full_name if t.worker_id and t.worker else '',
                 ctx, link, t.remark or '',
+                confirm_labels.get(t.confirm_status, t.confirm_status),
             ]
             for ci, v in enumerate(vals, 1):
                 cell = ws.cell(row=ri, column=ci, value=v)
@@ -730,7 +736,7 @@ def build_inventory_transactions_excel(date_from=None, date_to=None):
                     cell.font = Font(bold=True, color='2D6A4F' if t.operation == '入库' else 'c0392b')
             ri += 1
 
-    for ci, w in enumerate([12, 14, 36, 10, 8, 12, 22, 14, 24], 1):
+    for ci, w in enumerate([12, 14, 36, 10, 8, 12, 22, 14, 24, 10], 1):
         ws.column_dimensions[chr(64 + ci)].width = w
     ws.freeze_panes = 'A2'
 
@@ -941,4 +947,184 @@ def build_project_export_excel(q='', category='', completed=None,
     buf = io.BytesIO()
     wb.save(buf); buf.seek(0)
     fname = 'projects.xlsx'
+    return fname, buf
+
+# ===========================================================================
+# 8) Single-project detail export — three sheets: 项目信息汇总 (one header row
+#    + one value row), 关联工单 (confirmed work orders with their material
+#    consumption), 采购订单 (linked POs).
+# ===========================================================================
+
+def build_project_detail_excel(project):
+    """Build the single-project detail Excel export (3 sheets).
+
+    1. 项目信息汇总 — the project's header fields laid out horizontally
+       (headers in row 1, the project's values in row 2).
+    2. 关联工单 — confirmed work orders (hours/materials switches), one row per
+       order, with its material consumption lines newline-joined in one cell.
+    3. 采购订单 — POs linked to the project.
+
+    Aggregates reuse ``_project_summaries`` / ``_project_budget_data`` so
+    numbers match the on-screen panel. Returns ``(filename, BytesIO)``.
+    """
+    from core.models import InventoryTransaction
+    from core.workorder_tree_views import _project_summaries, _project_budget_data
+
+    summ = _project_summaries([project])[project.id]
+    b = _project_budget_data([project]).get(project.id, {})
+    cat_labels = dict(project.CATEGORY_CHOICES)
+    sub_labels = dict(project.SUBCATEGORY_CHOICES)
+
+    wb = Workbook()
+    header_fill = PatternFill('solid', fgColor='1B4332')
+    header_font = Font(color='FFFFFF', bold=True, size=10)
+    thin = Side(style='thin', color='D9D0C0')
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+    wrap_top = Alignment(wrap_text=True, vertical='top')
+
+    def styled_sheet(title, headers, rows, widths):
+        ws = wb.create_sheet(title)
+        ws.append(headers)
+        for ci in range(1, len(headers) + 1):
+            c = ws.cell(row=1, column=ci)
+            c.fill = header_fill; c.font = header_font; c.border = border
+            c.alignment = Alignment(horizontal='center', vertical='center')
+        for row in rows:
+            ws.append(row)
+            for ci in range(1, len(headers) + 1):
+                ws.cell(row=ws.max_row, column=ci).border = border
+                ws.cell(row=ws.max_row, column=ci).alignment = wrap_top
+        for i, w in enumerate(widths, 1):
+            ws.column_dimensions[get_column_letter(i)].width = w
+        return ws
+
+    # ── Sheet 1: 项目信息汇总 — headers in one row, values in the next ────
+    ws = wb.active
+    ws.title = '项目信息汇总'
+    info_headers = ['项目名称', '项目代号', '项目Code', '类别', '子类别', '状态',
+                    '开工日期', '计划完工日期', '材料预算金额', '人工预算金额',
+                    '灌溉组费率', '第三方费率', '材料余额', '关联采购金额合计',
+                    '灌溉组工时(已确认)', '第三方工时(已确认)']
+    info_values = [
+        project.name, project.symbol or '', project.code or '',
+        cat_labels.get(project.category, project.category),
+        sub_labels.get(project.subcategory, project.subcategory or ''),
+        '已完成' if project.is_completed else '进行中',
+        project.start_date.isoformat() if project.start_date else '',
+        project.planned_end_date.isoformat() if project.planned_end_date else '',
+        b.get('material_budget_amount', ''), b.get('labor_budget_amount', ''),
+        b.get('team_rate', ''), b.get('third_party_rate', ''),
+        b.get('material_balance', ''), b.get('po_amount_total', ''),
+        round(summ['hours'], 1), round(summ['third_hours'], 1),
+    ]
+    ws.append(info_headers)
+    ws.append(info_values)
+    for ci in range(1, len(info_headers) + 1):
+        h = ws.cell(row=1, column=ci)
+        h.fill = header_fill; h.font = header_font; h.border = border
+        h.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+        v = ws.cell(row=2, column=ci)
+        v.border = border; v.alignment = wrap_top
+    for i, w in enumerate([24, 12, 14, 10, 10, 8, 12, 12, 13, 13, 10, 10, 12, 14, 13, 13], 1):
+        ws.column_dimensions[get_column_letter(i)].width = w
+    ws.row_dimensions[1].height = 28
+
+    # ── Sheet 2: 关联工单 — confirmed orders with material consumption ───
+    reports = b.get('work_reports', [])
+    # Per-work-order material lines for THIS project: actual, ledger-confirmed
+    # or pending (removed excluded — dismissed from stats). One query, grouped
+    # by work_report_id; rendered newline-joined inside one cell.
+    wr_ids = [wr['id'] for wr in reports]
+    mat_by_wr = {}
+    sec_by_wr = {}      # 工作类别: SECTION_CHOICES labels, deduped
+    subpath_by_wr = {}  # 子类别(所有层级): WorkItem path minus the section root
+    remark_by_wr = {}
+    if wr_ids:
+        txns = (InventoryTransaction.objects
+                .filter(work_report_id__in=wr_ids, related_project=project,
+                        operation='出库', entry_subtype='项目',
+                        consumption_mode='actual')
+                .exclude(confirm_status='removed')
+                .prefetch_related('lines__category'))
+        for t in txns:
+            cell = mat_by_wr.setdefault(t.work_report_id, [])
+            for ln in t.lines.all():
+                cell.append('%s ×%s%s' % (ln.category.name_zh, ln.quantity,
+                                          ln.unit or (ln.category.unit or '')))
+
+        # Work-content columns. Prefer entries bound to THIS project (that's why
+        # the report appears in this sheet); fall back to all its entries when
+        # the binding was recorded only at report level.
+        from core.models import WorkItem, WorkReport, WorkReportEntry
+        from core.workorder_tree_views import workitem_path_map
+        path_lookup = workitem_path_map()
+        sec_labels = dict(WorkItem.SECTION_CHOICES)
+        entries = (WorkReportEntry.objects.filter(work_report_id__in=wr_ids)
+                   .select_related('work_item'))
+        by_wr_proj, by_wr_all = {}, {}
+        for e in entries:
+            by_wr_all.setdefault(e.work_report_id, []).append(e)
+            if e.project_id == project.id:
+                by_wr_proj.setdefault(e.work_report_id, []).append(e)
+        for rid in wr_ids:
+            for e in (by_wr_proj.get(rid) or by_wr_all.get(rid) or []):
+                wi = e.work_item
+                if not wi:
+                    continue
+                if wi.section:
+                    lbl = sec_labels.get(wi.section, wi.section)
+                    if lbl not in sec_by_wr.setdefault(rid, []):
+                        sec_by_wr[rid].append(lbl)
+                # Full path starts with the section-root name (duplicates
+                # 工作类别) — strip that first segment for the 子类别 column.
+                full = path_lookup.get(wi.id, wi.name_zh)
+                segs = [x.strip() for x in full.split('›')]
+                sub = '›'.join(segs[1:]) if len(segs) > 1 else full
+                if sub and sub not in subpath_by_wr.setdefault(rid, []):
+                    subpath_by_wr[rid].append(sub)
+        for row_ in WorkReport.objects.filter(id__in=wr_ids).values('id', 'remark'):
+            remark_by_wr[row_['id']] = row_['remark'] or ''
+    wo_rows = [
+        ['#%d' % wr['id'], wr['date'],
+         {'early': '早班', 'day': '白班', 'night': '夜班'}.get(wr.get('shift'), wr.get('shift') or ''),
+         (wr.get('start_time') + '-' + wr.get('end_time')) if wr.get('start_time') else '',
+         wr.get('worker_name') or '',
+         wr.get('team_hours') or 0, wr.get('third_hours') or 0,
+         '、'.join(sec_by_wr.get(wr['id'], [])) or '—',
+         '\n'.join(subpath_by_wr.get(wr['id'], [])) or '—',
+         remark_by_wr.get(wr['id'], ''),
+         wr.get('created_at') or '',
+         '\n'.join(mat_by_wr.get(wr['id'], [])) or '—']
+        for wr in reports
+    ]
+    styled_sheet('关联工单',
+                 ['工单号', '日期', '班次', '起止时间', '处理人', '灌溉组工时',
+                  '第三方工时', '工作类别', '子类别(所有层级)', '备注', '创建时间',
+                  '物料消耗明细'],
+                 wo_rows,
+                 [10, 12, 8, 13, 10, 11, 11, 13, 26, 22, 17, 40])
+
+    # ── Sheet 3: 采购订单 — POs linked to this project ───────────────────
+    from core.models import PurchaseOrder
+    po_ids = [po['id'] for po in b.get('linked_pos', [])]
+    po_objs = {p.id: p for p in PurchaseOrder.objects.filter(id__in=po_ids)}
+    po_rows = [[po['order_number'], po['po_number'] or '',
+                po['po_amount_untaxed'],
+                po_objs[po['id']].received_date.isoformat()
+                    if po_objs[po['id']].received_date else '',
+                po_objs[po['id']].project_name or '',
+                po_objs[po['id']].project_code or '',
+                '已完成' if po_objs[po['id']].is_completed else '进行中']
+               for po in b.get('linked_pos', [])]
+    styled_sheet('采购订单',
+                 ['灌溉订单编号', 'PO号', 'PO未税金额', '收货日期', '项目名称',
+                  '项目Code', '状态'],
+                 po_rows,
+                 [20, 16, 13, 12, 20, 14, 8])
+
+    buf = io.BytesIO()
+    wb.save(buf); buf.seek(0)
+    import re as _re
+    safe_name = _re.sub(r'[^\w\u4e00-\u9fff-]', '', project.name)[:40] or 'project'
+    fname = 'project_%d_%s.xlsx' % (project.id, safe_name)
     return fname, buf

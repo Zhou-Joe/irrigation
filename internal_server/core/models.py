@@ -1638,6 +1638,13 @@ class InventoryTransaction(models.Model):
 
     operation 决定库存增减方向：入库（含采购/借用归还/拆回利旧）→ +，
     出库（含日常维护/项目/借用）→ -。
+
+    ``confirm_status`` 是经理台账确认（待确认/已确认/已移除），与
+    ``consumption_mode`` 正交：mode 区分实际/预估消耗，本字段是台账确认。
+    **库存只在 confirmed 时动**（与台账/统计/导出同一口径，账实闭环）：
+    pending 提交不扣库存，经理确认时扣；取消确认/从已确认移除时回滚；
+    已移除可恢复（恢复即重扣）。经理自己提交的流水直接 confirmed（提交即
+    扣）；一线提交默认 pending 待经理确认。
     """
 
     OPERATION_CHOICES = [
@@ -1651,6 +1658,12 @@ class InventoryTransaction(models.Model):
     # 出库-项目时可选预估/实际消耗。预估消耗提交后不扣库存、不计入项目实际
     # 消耗，待在库存管理页确认（可调整实际数量）后才扣库存并计入项目。
     CONSUMPTION_MODE_CHOICES = [('actual', '实际'), ('estimated', '预估')]
+    # 经理台账确认（见类 docstring —— 与 consumption_mode 正交）。
+    CONFIRM_STATUS_CHOICES = [
+        ('pending', '待确认'),
+        ('confirmed', '已确认'),
+        ('removed', '已移除'),
+    ]
     date = models.DateField('日期', default=date.today)
     worker = models.ForeignKey(
         Worker, on_delete=models.PROTECT, related_name='inventory_transactions',
@@ -1693,6 +1706,13 @@ class InventoryTransaction(models.Model):
         '消耗类型', max_length=10, choices=CONSUMPTION_MODE_CHOICES, default='actual',
         help_text='出库-项目时可选预估消耗，确认前不扣库存、不计入项目实际消耗',
     )
+    # Manager ledger confirmation (orthogonal to consumption_mode — see class
+    # docstring). Gates BOTH stock movement and ledger/stats/export inclusion:
+    # only confirmed actual transactions have ever moved stock.
+    confirm_status = models.CharField(
+        '确认状态', max_length=10, choices=CONFIRM_STATUS_CHOICES, default='pending', db_index=True,
+        help_text='经理台账确认：确认后才扣减库存并计入物料出入库统计',
+    )
     remark = models.TextField('备注', blank=True)
     photos = models.JSONField('照片', default=list, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -1726,6 +1746,33 @@ class InventoryTransaction(models.Model):
         """
         logs = list(self.edit_logs.all())   # prefetched → no extra query
         return logs[-1] if logs else None
+
+
+def txn_stock_applied(txn):
+    """Whether this txn's stock delta is currently reflected in current_stock.
+
+    The single invariant under confirm-gated stock: only an actual txn whose
+    confirm_status is 'confirmed' has moved stock. Everything that touches
+    current_stock must consult this first.
+    """
+    return txn.consumption_mode == 'actual' and txn.confirm_status == 'confirmed'
+
+
+def move_stock_for_txn(txn, sign):
+    """Apply (+1) or reverse (-1) a transaction's stock delta, atomically per line.
+
+    Caller gates on :func:`txn_stock_applied` (e.g. confirm → apply only when
+    flipping into confirmed; unconfirm/remove-from-confirmed → reverse; a
+    pending→removed flip touches nothing because nothing was ever applied).
+    """
+    from django.db.models import F
+    if txn.consumption_mode != 'actual':
+        return
+    direction = 1 if txn.operation == '入库' else -1
+    for ln in txn.lines.all():
+        InventoryCategory.objects.filter(pk=ln.category_id).update(
+            current_stock=F('current_stock') + sign * direction * ln.quantity,
+        )
 
 
 class InventoryTransactionLine(models.Model):

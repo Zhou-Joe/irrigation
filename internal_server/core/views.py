@@ -11054,7 +11054,8 @@ def workorder_mobile_v2(request):
                 materials = json.loads(request.POST.get('materials', '[]') or '[]')
                 m_dest, m_proj, m_cp = _resolve_material_dest(request, entries)
                 _save_workorder_materials(report, materials, entry_subtype=m_dest,
-                                          related_project_id=m_proj, counterparty=m_cp)
+                                          related_project_id=m_proj, counterparty=m_cp,
+                                          submitter_is_manager=role in (ROLE_MANAGER, ROLE_SUPER_ADMIN))
                 # Project-association approval gate: a NEW work order that links
                 # to a project (via entry.project or material related_project)
                 # starts with BOTH hours_confirmed and materials_confirmed False —
@@ -11573,9 +11574,11 @@ def inventory_mobile_v2(request):
                 txn = get_object_or_404(InventoryTransaction, pk=edit_txn_id)
                 # Reverse the OLD delta so stock reflects only what the new lines
                 # will apply below. Old direction may differ from the new one.
-                # Skip reversal for the OLD txn's estimated lines — they never
-                # deducted stock, so reversing them would corrupt the balance.
-                if txn.consumption_mode != 'estimated':
+                # Skip reversal unless the old delta was actually applied:
+                # estimated lines never deducted stock, and neither did a txn
+                # still awaiting ledger confirmation (confirm-gated stock) —
+                # reversing either would corrupt the balance.
+                if txn.consumption_mode != 'estimated' and txn.confirm_status == 'confirmed':
                     old_sign = 1 if txn.operation == '入库' else -1
                     for old_ln in txn.lines.all():
                         InventoryCategory.objects.filter(pk=old_ln.category_id).update(
@@ -11606,6 +11609,9 @@ def inventory_mobile_v2(request):
                     consumption_mode=consumption_mode,
                     remark=(request.POST.get('remark') or '').strip(),
                     zone=zone,
+                    # Manager/super-admin submitting → already confirmed (no need
+                    # to self-approve). Frontline → pending, awaiting manager.
+                    confirm_status='confirmed' if role in (ROLE_MANAGER, ROLE_SUPER_ADMIN) else 'pending',
                 )
 
             # 入库-采购时，若订单号命中某张采购订单，则自动关联该流水到订单。
@@ -11616,11 +11622,13 @@ def inventory_mobile_v2(request):
                     txn.purchase_order = po
                     txn.save(update_fields=['purchase_order'])
 
-            # Direction: 入库 adds stock; 出库 subtracts. Estimated consumption
-            # (预估消耗) records the line but defers the stock deduction until the
-            # transaction is confirmed from the inventory manage page.
+            # Direction: 入库 adds stock; 出库 subtracts. Confirm-gated stock:
+            # only a CONFIRMED actual txn moves stock at (re)submit time — a
+            # pending submission waits for the manager's ledger confirm (the
+            # confirm endpoint applies the deduction), and estimated consumption
+            # defers to its own estimate-confirm tab.
             sign = 1 if operation == '入库' else -1
-            deduct_stock = consumption_mode != 'estimated'
+            deduct_stock = consumption_mode != 'estimated' and txn.confirm_status == 'confirmed'
             created_lines = 0
             for ln in lines:
                 cat_id = ln.get('category')
@@ -11717,8 +11725,9 @@ def inventory_management(request):
     # with its lines expanded, newest first. Prefetch lines + related objects so
     # the template renders without N+1 queries.
     from core.models import InventoryTransaction
-    # 出入库记录只显示已确认的实际流水——预估消耗(estimated)尚未扣库存，
-    # 只出现在「预估消耗确认」标签页，确认后才进入出入库记录。
+    # 出入库记录只显示实际流水（预估消耗 estimated 尚未扣库存，只在「预估消耗
+    # 确认」tab）。经理看到三段（已确认主列表 / 待确认 / 已移除）；一线看自己
+    # 全部（含刚提交的待确认，免得提交后"消失"——他们不能确认/移除，只能看）。
     txn_filter = {'date__gte': date_from, 'date__lte': date_to,
                   'consumption_mode': 'actual'}
     # 灌溉一线只看到本人提交的出入库记录；管理員看到全部。
@@ -11729,11 +11738,27 @@ def inventory_management(request):
             txn_filter['worker_id'] = worker.id
         else:
             txn_filter['worker_id'] = -1   # no linked worker → show nothing
-    txns = (InventoryTransaction.objects
-            .filter(**txn_filter)
-            .select_related('worker', 'related_project', 'zone', 'work_report')
-            .prefetch_related('lines__category', 'edit_logs__editor')
-            .order_by('-date', '-id'))
+
+    def _ledger_qs(status):
+        return (InventoryTransaction.objects
+                .filter(**txn_filter, confirm_status=status)
+                .select_related('worker', 'related_project', 'zone', 'work_report')
+                .prefetch_related('lines__category', 'edit_logs__editor')
+                .order_by('-date', '-id'))
+
+    if is_full_access:
+        txns = _ledger_qs('confirmed')
+        pending_txns = _ledger_qs('pending')
+        removed_txns = _ledger_qs('removed')
+    else:
+        # 一线：自己的流水一列（含待确认；已移除的被经理驳回，不再展示）
+        txns = (InventoryTransaction.objects
+                .filter(**txn_filter)
+                .exclude(confirm_status='removed')
+                .select_related('worker', 'related_project', 'zone', 'work_report')
+                .prefetch_related('lines__category', 'edit_logs__editor')
+                .order_by('-date', '-id'))
+        pending_txns = removed_txns = []
 
     # Stockable leaves for the alert tab — {id, name, path, stock, min}. The
     # threshold filtering is done client-side so the slider updates instantly.
@@ -11771,6 +11796,8 @@ def inventory_management(request):
         'date_from': date_from,
         'date_to': date_to,
         'txns': txns,
+        'pending_txns': pending_txns,
+        'removed_txns': removed_txns,
         'pending_estimates': pending_estimates,
         'is_full_access': is_full_access,
         'cat_paths_json': json.dumps(cat_paths, ensure_ascii=False),
@@ -11787,13 +11814,14 @@ def inventory_estimate_confirm(request, txn_id):
 
     Manager + field-worker. Field workers can submit estimated consumption and
     also need to confirm it. Updates each line to the (possibly revised) actual
-    quantity, flips consumption_mode 'estimated' → 'actual', and only NOW deducts
-    stock — this is the deferred deduction the original submission skipped.
-    Writes an InventoryTransactionEditLog entry as an audit trail.
+    quantity and flips consumption_mode 'estimated' → 'actual'. Stock follows
+    the confirm gate: a manager promotion is ledger-confirmed and deducts stock
+    here; a field-worker promotion stays pending and deducts when the manager
+    confirms it in the ledger. Writes an InventoryTransactionEditLog audit entry.
 
     POST params: ``quantities`` = JSON ``{line_id: qty}``.
     """
-    from core.models import InventoryTransaction, InventoryTransactionEditLog, InventoryCategory
+    from core.models import InventoryTransaction, InventoryTransactionEditLog
     from core.role_utils import get_user_role, ROLE_MANAGER, ROLE_SUPER_ADMIN, ROLE_FIELD_WORKER
     from django.db import transaction as _db_txn
     import json as _json
@@ -11815,6 +11843,7 @@ def inventory_estimate_confirm(request, txn_id):
         quantities = {}
 
     try:
+        promoted_status = 'confirmed' if role in (ROLE_MANAGER, ROLE_SUPER_ADMIN) else 'pending'
         with _db_txn.atomic():
             for ln in txn.lines.select_related('category'):
                 new_qty = quantities.get(str(ln.id))
@@ -11825,22 +11854,163 @@ def inventory_estimate_confirm(request, txn_id):
                         continue
                     ln.quantity = new_qty
                     ln.save(update_fields=['quantity'])
-                # Apply the (possibly revised) stock deduction NOW — the original
-                # estimated submission recorded the line but skipped this step.
-                InventoryCategory.objects.filter(pk=ln.category_id).update(
-                    current_stock=F('current_stock') - ln.quantity,
-                )
             txn.consumption_mode = 'actual'
-            txn.save(update_fields=['consumption_mode'])
+            # Crossing point with the ledger-confirmation feature: promoting an
+            # estimate to actual also settles its ledger status by who did it.
+            # Confirm-gated stock: only a manager promotion (→ confirmed) moves
+            # stock now; a field-worker promotion stays pending and the stock is
+            # deducted later by the manager's ledger-confirm endpoint.
+            txn.confirm_status = promoted_status
+            txn.save(update_fields=['consumption_mode', 'confirm_status'])
+            if promoted_status == 'confirmed':
+                from core.models import move_stock_for_txn
+                move_stock_for_txn(txn, +1)
             worker = getattr(request.user, 'worker_profile', None)
             InventoryTransactionEditLog.objects.create(
                 transaction=txn, editor=worker,
-                note='预估消耗确认（确认前未扣库存，确认后按实际量扣减）',
+                note='预估消耗确认（经理确认，已按实际量扣减库存）' if promoted_status == 'confirmed'
+                     else '预估消耗确认（一线确认，待经理台账确认后扣减库存）',
             )
     except Exception as exc:
         return JsonResponse({'success': False, 'error': str(exc)}, status=500)
 
     return JsonResponse({'success': True})
+
+
+def _inventory_txn_perm(request):
+    """Manager/super-admin gate for ledger confirmation actions."""
+    from core.role_utils import get_user_role, ROLE_MANAGER, ROLE_SUPER_ADMIN
+    return get_user_role(request.user) in (ROLE_MANAGER, ROLE_SUPER_ADMIN)
+
+
+def _inventory_txn_ids(request):
+    """Parse POST txn_ids into a clean int list (bad values dropped)."""
+    ids = []
+    for raw in request.POST.getlist('txn_ids'):
+        try:
+            ids.append(int(raw))
+        except (TypeError, ValueError):
+            continue
+    return ids
+
+
+@require_POST
+@login_required(login_url='core:login')
+def inventory_txn_confirm(request):
+    """Manager batch-confirms pending ledger transactions → confirmed.
+
+    POST ``txn_ids`` (list). Only rows currently 'pending' flip; each gets an
+    InventoryTransactionEditLog audit entry. Confirming is what actually moves
+    stock (out → deduct, in → add) — pending submissions never touched it.
+    """
+    from core.models import InventoryTransaction, InventoryTransactionEditLog, move_stock_for_txn
+    from django.db import transaction as _db_txn
+    if not _inventory_txn_perm(request):
+        return JsonResponse({'success': False, 'error': '无权限'}, status=403)
+    ids = _inventory_txn_ids(request)
+    editor = getattr(request.user, 'worker_profile', None)
+    count = 0
+    # consumption_mode='actual' guard: a pending ESTIMATED txn lives in the
+    # 预估消耗确认 tab until promoted; it must not be ledger-confirmed while
+    # still estimated (the UI never shows those ids, this is the server guard).
+    for t in InventoryTransaction.objects.filter(id__in=ids, confirm_status='pending',
+                                                  consumption_mode='actual'):
+        with _db_txn.atomic():
+            t.confirm_status = 'confirmed'
+            t.save(update_fields=['confirm_status'])
+            move_stock_for_txn(t, +1)
+            InventoryTransactionEditLog.objects.create(
+                transaction=t, editor=editor, note='流水确认（扣减库存并计入台账统计）',
+            )
+            count += 1
+    return JsonResponse({'success': True, 'count': count})
+
+
+@require_POST
+@login_required(login_url='core:login')
+def inventory_txn_unconfirm(request):
+    """Manager flips a confirmed transaction back to pending (ledger switch off).
+
+    Mirrors work-report project-unconfirm: the row leaves the stats until
+    re-confirmed, and its stock delta is rolled back (confirm-gated stock).
+    """
+    from core.models import InventoryTransaction, InventoryTransactionEditLog, move_stock_for_txn
+    from django.db import transaction as _db_txn
+    if not _inventory_txn_perm(request):
+        return JsonResponse({'success': False, 'error': '无权限'}, status=403)
+    ids = _inventory_txn_ids(request)
+    editor = getattr(request.user, 'worker_profile', None)
+    count = 0
+    for t in InventoryTransaction.objects.filter(id__in=ids, confirm_status='confirmed',
+                                                  consumption_mode='actual'):
+        with _db_txn.atomic():
+            move_stock_for_txn(t, -1)
+            t.confirm_status = 'pending'
+            t.save(update_fields=['confirm_status'])
+            InventoryTransactionEditLog.objects.create(
+                transaction=t, editor=editor, note='流水取消确认（开关关闭，回滚库存退回待确认）',
+            )
+            count += 1
+    return JsonResponse({'success': True, 'count': count})
+
+
+@require_POST
+@login_required(login_url='core:login')
+def inventory_txn_remove(request):
+    """Manager dismisses a transaction (pending or confirmed) → removed.
+
+    Removed stays out of stats and is restorable. Stock: a confirmed txn had
+    its delta applied, so removal reverses it; a pending txn never moved stock,
+    so nothing to reverse. 库存纠错仍走编辑表单/手工调库存。
+    """
+    from core.models import (
+        InventoryTransaction, InventoryTransactionEditLog, move_stock_for_txn, txn_stock_applied,
+    )
+    from django.db import transaction as _db_txn
+    if not _inventory_txn_perm(request):
+        return JsonResponse({'success': False, 'error': '无权限'}, status=403)
+    ids = _inventory_txn_ids(request)
+    editor = getattr(request.user, 'worker_profile', None)
+    count = 0
+    for t in InventoryTransaction.objects.filter(id__in=ids, consumption_mode='actual') \
+            .exclude(confirm_status='removed'):
+        with _db_txn.atomic():
+            was_applied = txn_stock_applied(t)
+            if was_applied:
+                move_stock_for_txn(t, -1)
+            t.confirm_status = 'removed'
+            t.save(update_fields=['confirm_status'])
+            InventoryTransactionEditLog.objects.create(
+                transaction=t, editor=editor,
+                note='流水移除（已回滚库存，不计入统计，可恢复）' if was_applied
+                     else '流水移除（未扣过库存，不计入统计，可恢复）',
+            )
+            count += 1
+    return JsonResponse({'success': True, 'count': count})
+
+
+@require_POST
+@login_required(login_url='core:login')
+def inventory_txn_restore(request):
+    """Manager restores a removed transaction → confirmed (back in stats)."""
+    from core.models import InventoryTransaction, InventoryTransactionEditLog, move_stock_for_txn
+    from django.db import transaction as _db_txn
+    if not _inventory_txn_perm(request):
+        return JsonResponse({'success': False, 'error': '无权限'}, status=403)
+    ids = _inventory_txn_ids(request)
+    editor = getattr(request.user, 'worker_profile', None)
+    count = 0
+    for t in InventoryTransaction.objects.filter(id__in=ids, confirm_status='removed',
+                                                  consumption_mode='actual'):
+        with _db_txn.atomic():
+            t.confirm_status = 'confirmed'
+            t.save(update_fields=['confirm_status'])
+            move_stock_for_txn(t, +1)
+            InventoryTransactionEditLog.objects.create(
+                transaction=t, editor=editor, note='流水恢复（重扣库存并重新计入统计）',
+            )
+            count += 1
+    return JsonResponse({'success': True, 'count': count})
 
 
 @login_required(login_url='core:login')

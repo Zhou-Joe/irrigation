@@ -19,6 +19,7 @@ from core.workorder_tree_views import (
     workorder_tree_form, project_create_api, planned_maintenance_pending,
     project_management, project_save, project_delete,
     project_budget_save, project_pos_save, project_export_excel,
+    project_detail_export_excel,
 )
 
 app_name = 'core'
@@ -138,6 +139,7 @@ urlpatterns = [
     path('api/planned-maintenance/pending/', planned_maintenance_pending, name='planned_maintenance_pending'),
     path('projects/', project_management, name='project_management'),
     path('projects/export/', project_export_excel, name='project_export_excel'),
+    path('projects/<int:project_id>/export/', project_detail_export_excel, name='project_detail_export_excel'),
     path('projects/save/', project_save, name='project_save'),
     path('projects/<int:pk>/delete/', project_delete, name='project_delete'),
     path('projects/<int:pk>/budget/save/', project_budget_save, name='project_budget_save'),
@@ -156,6 +158,10 @@ urlpatterns = [
     path('inventory/save-stock/', views.inventory_save_stock, name='inventory_save_stock'),
     path('inventory/export-excel/', views.inventory_export_excel, name='inventory_export_excel'),
     path('inventory/export-transactions/', views.inventory_transactions_export, name='inventory_transactions_export'),
+    path('inventory/txn/confirm/', views.inventory_txn_confirm, name='inventory_txn_confirm'),
+    path('inventory/txn/unconfirm/', views.inventory_txn_unconfirm, name='inventory_txn_unconfirm'),
+    path('inventory/txn/remove/', views.inventory_txn_remove, name='inventory_txn_remove'),
+    path('inventory/txn/restore/', views.inventory_txn_restore, name='inventory_txn_restore'),
     path('inventory/category/create/', views.inventory_category_create, name='inventory_category_create'),
     path('inventory/category/reorder/', views.inventory_category_reorder, name='inventory_category_reorder'),
     path('inventory/category/<int:cat_id>/delete/', views.inventory_category_delete, name='inventory_category_delete'),
