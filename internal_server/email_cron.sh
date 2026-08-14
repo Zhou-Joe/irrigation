@@ -33,6 +33,31 @@ fi
 
 cd "$PROJECT/internal_server"
 
+# ── Ensure Maxicom runtime data is as fresh as the share allows ────────────
+# Reports cover windows ending yesterday (daily/weekly/monthly); the newest
+# data lives in the MC2Backup zip the Win7 box writes daily ~16:01. Fixed
+# import crons (08:00 / 16:30) usually cover it, but a missed run or a late
+# zip would make an email stale. Compare the newest zip on the share with the
+# marker maxicom_nightly.sh writes; import first when a newer one exists.
+# Never blocks dispatch: any failure here just sends with current data.
+if [ -f "$ENV_FILE" ]; then
+    SMB_LATEST=$(smbclient "//$MAXICOM_SMB_HOST/$MAXICOM_SMB_SHARE" \
+        -U "${MAXICOM_SMB_USER}%${MAXICOM_SMB_PASS}" \
+        --option='client min protocol=SMB2' -c 'ls' 2>/dev/null \
+        | grep -oE 'MC2Backup[0-9]{8}\.zip' \
+        | awk '{
+            mm = substr($0, 10, 2); dd = substr($0, 12, 2); yyyy = substr($0, 14, 4);
+            print yyyy mm dd, $0;
+          }' \
+        | sort | tail -1 | awk '{print $2}') || true
+    SMB_LAST_IMPORT=$(cat "$PROJECT/db_backups/.maxicom_last_zip" 2>/dev/null) || true
+    if [ -n "$SMB_LATEST" ] && [ "$SMB_LATEST" != "$SMB_LAST_IMPORT" ]; then
+        echo "$(ts) newer Maxicom zip on share ($SMB_LATEST, last imported: ${SMB_LAST_IMPORT:-none}) — importing before dispatch" >> "$LOG"
+        bash "$PROJECT/maxicom_nightly.sh" >> "$PROJECT/db_backups/maxicom_import.log" 2>&1 || \
+            echo "$(ts) WARNING: pre-dispatch import failed — sending with current data" >> "$LOG"
+    fi
+fi
+
 echo "$(ts) sending due email reports..." >> "$LOG"
 "$PY" "$MANAGE" send_report_email >> "$LOG" 2>&1 || true
 

@@ -81,7 +81,13 @@ done
     echo "$(ts)   $line"
 done
 
-# ── 4. Cleanup (trap rm -rf handles it, but be explicit) ───────────────────
+# ── 4. Record what was imported ────────────────────────────────────────────
+# email_cron.sh compares this marker against the newest zip on the share and
+# re-runs this script before dispatching if a newer backup appeared, so
+# scheduled emails always carry the freshest importable runtime data.
+echo "$LATEST_ZIP" > "$PROJECT/db_backups/.maxicom_last_zip"
+
+# ── 5. Cleanup (trap rm -rf handles it, but be explicit) ───────────────────
 echo "$(ts) cleanup tmp dir"
 # trap on EXIT removes $TMP_DIR
 
