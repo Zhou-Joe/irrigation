@@ -284,6 +284,9 @@ def _project_budget_data(projects):
             .filter(related_project_id__in=pids, operation='出库', entry_subtype='项目',
                     consumption_mode='actual')
             .exclude(work_report_id__in=pending_rep_ids)
+            # Ledger-dismissed txns (经理在台账移除) must not count here either —
+            # removal is an explicit dismissal, orthogonal to materials_confirmed.
+            .exclude(confirm_status='removed')
             .select_related('worker', 'work_report', 'zone')
             .prefetch_related('lines__category')
             .order_by('-date', '-id'))
@@ -644,6 +647,33 @@ def project_export_excel(request):
     resp = HttpResponse(buf.getvalue(),
                         content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
     resp['Content-Disposition'] = f'attachment; filename="{fname}"'
+    return resp
+
+
+@login_required(login_url='core:login')
+def project_detail_export_excel(request, project_id):
+    """Export ONE project's full detail (info / work orders / consumption / POs)
+    as a multi-sheet Excel workbook — the Excel counterpart of the management
+    page's project detail panel. Same manager-tier gate as the list export."""
+    from django.http import HttpResponse
+    from django.shortcuts import get_object_or_404
+    from core.models import Project
+    from core.role_utils import get_user_role, ROLE_MANAGER, ROLE_SUPER_ADMIN
+    role = get_user_role(request.user)
+    if role not in (ROLE_MANAGER, ROLE_SUPER_ADMIN):
+        return redirect('core:dashboard')
+    project = get_object_or_404(Project, pk=project_id)
+
+    from core.excel_exports import build_project_detail_excel
+    fname, buf = build_project_detail_excel(project)
+    # Filename carries Chinese project names — RFC 5987 encode it, with an
+    # ASCII fallback for old clients.
+    from urllib.parse import quote
+    ascii_name = fname.encode('ascii', 'ignore').decode() or 'project.xlsx'
+    resp = HttpResponse(buf.getvalue(),
+                        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    resp['Content-Disposition'] = (
+        f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{quote(fname)}")
     return resp
 
 
@@ -1390,8 +1420,11 @@ def _handle_save(request, report):
         # project sections→项目) unless the user picked one for 'other' categories.
         materials = json.loads(request.POST.get('materials', '[]') or '[]')
         m_dest, m_proj, m_cp = _resolve_material_dest(request, entries)
+        from core.role_utils import get_user_role, ROLE_MANAGER, ROLE_SUPER_ADMIN
+        _sub_role = get_user_role(request.user)
         _save_workorder_materials(report, materials, entry_subtype=m_dest,
-                                  related_project_id=m_proj, counterparty=m_cp)
+                                  related_project_id=m_proj, counterparty=m_cp,
+                                  submitter_is_manager=_sub_role in (ROLE_MANAGER, ROLE_SUPER_ADMIN))
 
         # PM completion: mirror the mobile path so a PM task submitted via the
         # desktop tree form also marks its GeneratedWorkOrder completed. Pass the
@@ -1520,8 +1553,13 @@ def _resolve_material_dest(request, entries):
 
 
 def _save_workorder_materials(report, lines, entry_subtype='日常维护',
-                              related_project_id=None, counterparty=''):
-    """工单材料消耗：先回滚该工单旧的关联出库单，再按新的 lines 建出库单并扣减库存。
+                              related_project_id=None, counterparty='',
+                              submitter_is_manager=False):
+    """工单材料消耗：先回滚该工单旧的关联出库单，再按新的 lines 建出库单。
+
+    Confirm-gated stock: 库存只在出库单为 confirmed 时动——旧单仅 confirmed
+    才回滚退库，新单仅 carry_status=confirmed 才扣减；pending 的新单等经理
+    台账确认后再扣。
 
     Must run inside the caller's ``transaction.atomic()`` block. Idempotent —
     every save rebuilds the report's material-consumption transaction so the
@@ -1535,6 +1573,11 @@ def _save_workorder_materials(report, lines, entry_subtype='日常维护',
     项目 and ``counterparty`` for 借用. Callers derive the default from the work
     category (routine→日常维护, project sections→项目) and let the user override
     for other categories.
+
+    ``submitter_is_manager``: a BRAND-NEW cart from a manager/super-admin starts
+    ledger-confirmed (same rule as the standalone inventory form — a manager
+    filing on behalf of a worker is an implicit confirmation). Rebuilds of an
+    existing cart instead carry the prior status (all-confirmed → confirmed).
     """
     from django.db.models import F
     from core.models import (
@@ -1543,8 +1586,22 @@ def _save_workorder_materials(report, lines, entry_subtype='日常维护',
 
     # 1) Roll back any prior outbound transaction linked to this report: refund
     #    each line's quantity back to current_stock, then drop txn + lines.
+    #    Confirm-gated stock: only a confirmed txn ever moved stock, so refund
+    #    only those (a pending/removed one has nothing in the balance to undo).
     old_txns = InventoryTransaction.objects.filter(**_owner_kwargs(report))
+    # Snapshot prior confirm_status so editing the workorder (which rebuilds the
+    # txn) doesn't wipe a manager's confirmation. All-confirmed → carry confirmed;
+    # brand-new cart → submitter rule; anything else (mixed/pending/removed) → pending.
+    prior_statuses = set(old_txns.values_list('confirm_status', flat=True))
+    if prior_statuses == {'confirmed'}:
+        carry_status = 'confirmed'
+    elif not prior_statuses and submitter_is_manager:
+        carry_status = 'confirmed'
+    else:
+        carry_status = 'pending'
     for txn in old_txns:
+        if txn.confirm_status != 'confirmed':
+            continue
         for ln in txn.lines.all():
             InventoryCategory.objects.filter(pk=ln.category_id).update(
                 current_stock=F('current_stock') + ln.quantity,
@@ -1568,10 +1625,14 @@ def _save_workorder_materials(report, lines, entry_subtype='日常维护',
         counterparty=(counterparty or '').strip(),
         zone=first_zone,
         remark=f'工单 #{report.id} 材料消耗',
+        confirm_status=carry_status,
         **_owner_kwargs(report),
     )
 
     # 3) One line per material; subtract stock atomically (F avoids races).
+    #    Confirm-gated stock: the deduction happens now only when the rebuilt
+    #    txn is confirmed (manager-submitted / carried-over confirmation); a
+    #    pending rebuild waits for the manager's ledger confirm to move stock.
     created = 0
     for ln in lines:
         cat_id = ln.get('category')
@@ -1587,9 +1648,10 @@ def _save_workorder_materials(report, lines, entry_subtype='日常维护',
             transaction=txn, category=cat,
             quantity=qty, unit=(ln.get('unit') or '').strip(),
         )
-        InventoryCategory.objects.filter(pk=cat_id).update(
-            current_stock=F('current_stock') - qty,
-        )
+        if carry_status == 'confirmed':
+            InventoryCategory.objects.filter(pk=cat_id).update(
+                current_stock=F('current_stock') - qty,
+            )
         created += 1
 
     # If nothing survived validation, drop the empty txn (no stock moved).

@@ -263,9 +263,9 @@
     <p class="wo-empty" id="wo-empty" hidden>未找到匹配项</p>
   </div>
 
-  <!-- 材料消耗 / 出库：工单内直接登记消耗的库存物料，提交时自动生成出库单并扣减库存 -->
+  <!-- 材料消耗 / 出库：工单内直接登记消耗的库存物料，提交自动生成出库单；库存只在台账确认后扣减（经理提交即已确认） -->
   <div class="wo-card">
-    <h2>材料消耗 / 出库 <span class="badge" id="wo-mat-count">0</span> <span class="wo-hint">(可选，提交时自动扣减库存)</span></h2>
+    <h2>材料消耗 / 出库 <span class="badge" id="wo-mat-count">0</span> <span class="wo-hint">(可选，经理确认后扣库存)</span></h2>
     <div id="wo-mat-dest-row" class="wo-mat-dest-row" hidden>
       <div class="wo-mat-dest-label">出库去向 <span id="wo-mat-dest-auto" class="wo-hint"></span></div>
       <div class="wo-mat-dest-chips" id="wo-mat-dest-chips"></div>

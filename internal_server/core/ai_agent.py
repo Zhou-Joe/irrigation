@@ -206,7 +206,10 @@ def _populate_workspace_data(ws):
         w.writerow(['日期', '项目', '操作', '去向', '消耗模式', '物料编码', '物料名称',
                     '单位', '数量', '单价', '金额'])
         from core.inventory_tree_views import current_price_for
-        txn_qs = (InventoryTransaction.objects.filter(date__gte=since)
+        # Ledger-confirmed only: pending (awaiting manager) and removed stay
+        # out of the consumption stats the AI analyzes.
+        txn_qs = (InventoryTransaction.objects.filter(date__gte=since,
+                                                      confirm_status='confirmed')
                   .select_related('related_project').prefetch_related('lines__category'))
         for txn in txn_qs.order_by('-date'):
             proj = str(txn.related_project) if txn.related_project_id else ''
