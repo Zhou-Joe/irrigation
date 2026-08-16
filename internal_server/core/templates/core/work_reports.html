@@ -72,6 +72,14 @@
   .wr-flag.difficult { background: rgba(155,34,38,0.10); color: var(--wr-danger); }
   .wr-flag.resolved { background: rgba(64,145,108,0.12); color: var(--wr-success); }
 
+  /* PM tab: JP (作业计划) sub-tabs. */
+  .pm-subtabs { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px; }
+  .pm-subtab { display:inline-flex; align-items:center; gap:6px; padding:4px 12px; border-radius:16px; border:1px solid rgba(0,0,0,0.10); font-size:0.8rem; color:var(--wr-muted); text-decoration:none; background:var(--wr-card-bg, #fff); }
+  .pm-subtab:hover { border-color:var(--wr-accent); color:var(--wr-accent); }
+  .pm-subtab.active { background:var(--wr-accent-soft); border-color:var(--wr-accent); color:var(--wr-accent); font-weight:600; }
+  .pm-subtab-count { background:rgba(204,119,34,0.12); color:var(--wr-warn); border-radius:10px; padding:0 7px; font-size:0.7rem; font-weight:600; }
+  .pm-subtab.active .pm-subtab-count { background:var(--wr-accent); color:#fff; }
+
   /* L2: worker (bold dark) + zone (muted) — the "who/where" line. */
   .wr-meta { display:flex; flex-wrap:wrap; align-items:baseline; gap: 4px 10px; font-size: 0.88rem; color: var(--wr-muted); margin-bottom: 0; }
   .wr-meta b { color: var(--wr-text); font-weight: 600; }
@@ -667,17 +675,23 @@
     {# ── PM工单 tab: dispatched/overdue PM work orders with quick-complete link ── #}
     <div id="tabPm" class="wr-remarks-panel {% if active_tab == 'pm' %}active{% endif %}">
         <div style="display:flex;justify-content:flex-end;margin-bottom:8px;">
-            <a href="?tab=pm{% if not pm_include_done %}&pm_done=1{% endif %}" class="btn-sm {% if pm_include_done %}btn-secondary{% else %}btn-primary{% endif %}" style="text-decoration:none;padding:5px 12px;font-size:.82rem;">
+            <a href="?tab=pm{% if not pm_include_done %}&pm_done=1{% endif %}{% if pm_jp_selected %}&jp={{ pm_jp_selected }}{% endif %}" class="btn-sm {% if pm_include_done %}btn-secondary{% else %}btn-primary{% endif %}" style="text-decoration:none;padding:5px 12px;font-size:.82rem;">
                 {% if pm_include_done %}仅看待完成{% else %}显示历史（含已完成）{% endif %}
             </a>
         </div>
-        {% if pm_tasks %}
+        {% if pm_jp_groups %}
+        <div class="pm-subtabs">
+            <a class="pm-subtab {% if not pm_jp_selected %}active{% endif %}" href="?tab=pm{% if pm_include_done %}&pm_done=1{% endif %}">全部 <span class="pm-subtab-count">{{ pm_tasks_total }}</span></a>
+            {% for g in pm_jp_groups %}
+            <a class="pm-subtab {% if pm_jp_selected == g.id %}active{% endif %}" href="?tab=pm{% if pm_include_done %}&pm_done=1{% endif %}&jp={{ g.id }}">{{ g.name }} <span class="pm-subtab-count">{{ g.total }}</span></a>
+            {% endfor %}
+        </div>
         <div class="app-table-wrap">
         <table class="app-table">
             <thead>
                 <tr>
                     <th>PM编号</th>
-                    <th>作业计划</th>
+                    {% if not pm_jp_selected %}<th>作业计划</th>{% endif %}
                     <th>计划日期</th>
                     <th>状态</th>
                     {% if pm_include_done %}<th>完成时间</th><th>执行人</th>{% endif %}
@@ -690,7 +704,7 @@
                 {% for t in pm_tasks %}
                 <tr data-gwo-id="{{ t.gwo_id }}">
                     <td><strong>{{ t.pm_number }}</strong><br><span style="font-size:.72em;color:var(--wr-muted);">{{ t.ticket }}</span></td>
-                    <td>{{ t.job_plan_name }}</td>
+                    {% if not pm_jp_selected %}<td>{{ t.job_plan_name }}</td>{% endif %}
                     <td>{{ t.scheduled_date }}</td>
                     <td>
                         {% if t.status == 'completed' %}<span class="wr-flag resolved">已完成</span>
@@ -719,10 +733,10 @@
             </tbody>
         </table>
         </div>
-        {% if pm_tasks_total > pm_tasks|length %}
+        {% if pm_list_total > pm_tasks|length %}
         <div id="pmLoadMoreWrap" style="text-align:center;padding:12px;">
             <button type="button" class="btn-sm btn-secondary" id="pmLoadMoreBtn" onclick="loadMorePmTasks()">加载更多</button>
-            <span class="wr-muted" style="margin-left:8px;font-size:.78rem;">已加载 {{ pm_tasks|length }}/{{ pm_tasks_total }}</span>
+            <span class="wr-muted" style="margin-left:8px;font-size:.78rem;">已加载 {{ pm_tasks|length }}/{{ pm_list_total }}</span>
         </div>
         {% endif %}
         {% else %}
@@ -1020,6 +1034,7 @@ function switchTab(tab) {
 
 // ── PM工单 tab: cursor-paginated "load more" via AJAX ─────────────────────
 var _pmIsManager = {{ is_manager|yesno:'true,false' }};
+var _pmShowJpCol = {{ pm_jp_selected|yesno:'false,true' }};
 var _pmLoading = false;
 function loadMorePmTasks() {
     if (_pmLoading) return;
@@ -1033,8 +1048,12 @@ function loadMorePmTasks() {
     btn.disabled = true; btn.textContent = '加载中…';
     var params = new URLSearchParams();
     if (lastGwoId) params.set('before_id', lastGwoId);
-    // Mirror the page's history-mode toggle so load-more fetches the same set.
-    if (new URLSearchParams(location.search).get('pm_done') === '1') params.set('done', '1');
+    // Mirror the page's history-mode toggle AND the JP sub-tab filter so
+    // load-more fetches the same set.
+    var _pageParams = new URLSearchParams(location.search);
+    if (_pageParams.get('pm_done') === '1') params.set('done', '1');
+    var _jpSel = _pageParams.get('jp');
+    if (_jpSel) params.set('jp', _jpSel);
     fetch('{% url "core:work_reports_pm_tasks" %}?' + params.toString(), {
         headers: { 'X-Requested-With': 'XMLHttpRequest' }
     }).then(function (r) { return r.json(); }).then(function (d) {
@@ -1076,7 +1095,7 @@ function _buildPmRow(t) {
     else actionHtml = '<a href="/?pm_gwo_id=' + t.gwo_id + '" class="btn-sm btn-primary">去完成</a>';
     tr.innerHTML =
         '<td><strong>' + esc(t.pm_number) + '</strong><br><span style="font-size:.72em;color:var(--wr-muted);">' + esc(t.ticket || '') + '</span></td>' +
-        '<td>' + esc(t.job_plan_name) + '</td>' +
+        (_pmShowJpCol ? '<td>' + esc(t.job_plan_name) + '</td>' : '') +
         '<td>' + esc(t.scheduled_date) + '</td>' +
         '<td>' + statusHtml + '</td>' +
         historyCols +
