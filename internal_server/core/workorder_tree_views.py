@@ -29,6 +29,61 @@ from core.models import (
 )
 
 
+# ── Weather snapshot helpers ────────────────────────────────────────────────
+
+def weather_snapshot_at(dt=None):
+    """提交时刻的天气快照字符串，如「阴天, 22.5°C」。无数据返回 ''。
+
+    只用 dt（本地时间）当天的 WeatherData 记录（按小时就近匹配）；
+    当天没有记录时宁可留空也不用陈旧数据冒充 — 数据由 fetch_weather
+    定时任务维持。工单 weather 字段在创建时由此写入，之后不可编辑。
+    """
+    from django.utils import timezone as _tz
+    from core.models import WeatherData
+    if dt is None:
+        dt = _tz.localtime()
+    elif _tz.is_naive(dt):
+        dt = _tz.make_aware(dt)
+    else:
+        dt = _tz.localtime(dt)
+    wd = WeatherData.objects.filter(date=dt.date()).first()
+    if not wd or not wd.hourly_data:
+        return ''
+    hours = wd.hourly_data
+    exact = next((h for h in hours if h.get('hour') == dt.hour), None)
+    if exact is None:
+        exact = min(hours, key=lambda h: abs((h.get('hour') or 0) - dt.hour))
+    desc = wd.get_weather_description(exact.get('code'))
+    temp = exact.get('temp')
+    if temp is not None:
+        return f"{desc}, {temp:g}°C" if desc else f"{temp:g}°C"
+    return desc or ''
+
+
+# 天气描述 → emoji 图标（详情页头部天气卡片用）。键为 get_weather_description
+# 的输出词；匹配不到时按关键词兜底，最后退 🌡️。
+_WEATHER_ICONS = {
+    '晴朗': '☀️', '基本晴朗': '🌤️', '部分多云': '⛅', '阴天': '☁️',
+    '雾': '🌫️', '冻雾': '🌫️',
+    '微细雨': '🌦️', '细雨': '🌦️', '密细雨': '🌦️', '微冻细雨': '🌦️', '密冻细雨': '🌦️',
+    '小雨': '🌦️', '小冻雨': '🌦️', '小阵雨': '🌦️', '小阵雪': '🌨️',
+    '中雨': '🌧️', '大雨': '🌧️', '大冻雨': '🌧️', '中阵雨': '🌧️', '大阵雨': '🌧️',
+    '小雪': '🌨️', '中雪': '🌨️', '大雪': '🌨️', '雪粒': '❄️',
+    '雷暴': '⛈️', '雷暴伴小冰雹': '⛈️', '雷暴伴大冰雹': '⛈️',
+}
+
+
+def weather_icon_for(text):
+    """把天气快照字符串（或描述词）映射成 emoji 图标。"""
+    desc = (text or '').split(',')[0].strip()
+    if desc in _WEATHER_ICONS:
+        return _WEATHER_ICONS[desc]
+    for kw in ('雷暴', '雪', '雨', '雾', '云', '晴'):
+        if kw in desc:
+            return {'雷暴': '⛈️', '雪': '🌨️', '雨': '🌧️', '雾': '🌫️', '云': '☁️', '晴': '☀️'}[kw]
+    return '🌡️'
+
+
 # ── PM (preventive maintenance) helpers ─────────────────────────────────────
 
 @lru_cache(maxsize=1)
@@ -1316,7 +1371,8 @@ def _handle_save(request, report):
         elif is_new:
             report = WorkReport(worker=worker)
             report.date = request.POST.get('date') or date.today()
-            report.weather = request.POST.get('weather', '')
+            # 天气为提交时刻的自动快照，不接受表单值（表单已无该输入）。
+            report.weather = weather_snapshot_at()
             report.shift = request.POST.get('shift', '')
             # 位置/CCU: explicit selection wins; otherwise auto-derive from the first
             # selected zone's 所属位置 (patch). Leaves None when neither is available,
@@ -1345,7 +1401,7 @@ def _handle_save(request, report):
         else:
             # Edit existing (WorkReport or PMWorkOrder).
             report.date = request.POST.get('date') or report.date
-            report.weather = request.POST.get('weather', getattr(report, 'weather', ''))
+            # weather 是创建时的快照，编辑不可更改（忽略表单里的任何值）。
             report.shift = request.POST.get('shift', '')
             loc_id = request.POST.get('location') or None
             if not loc_id and zones:

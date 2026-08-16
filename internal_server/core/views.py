@@ -10772,7 +10772,7 @@ def notification_read_all(request):
 def work_report_detail(request, report_id):
     from core.models import WorkReport, WorkItem
     from core.role_utils import is_admin, is_field_worker
-    from core.workorder_tree_views import _PROJECT_SECTIONS
+    from core.workorder_tree_views import _PROJECT_SECTIONS, weather_snapshot_at, weather_icon_for
     from collections import OrderedDict
 
     report = get_object_or_404(
@@ -10840,8 +10840,22 @@ def work_report_detail(request, report_id):
             seen_keys.add(dedup)
             related_remarks.append(it)
 
+    # 天气展示：优先工单创建时存的快照；历史空值工单按提交时刻
+    # （created_at）从 WeatherData 回查补显。头部天气卡片分图标/描述/温度渲染。
+    weather_display = report.weather or weather_snapshot_at(report.created_at)
+    if ',' in weather_display:
+        _wx_desc, _wx_temp = weather_display.split(',', 1)
+        weather_desc, weather_temp = _wx_desc.strip(), _wx_temp.strip()
+    else:
+        weather_desc, weather_temp = weather_display, ''
+    weather_icon = weather_icon_for(weather_desc)
+
     return render(request, 'core/work_report_detail.html', {
         'report': report,
+        'weather_display': weather_display,
+        'weather_desc': weather_desc,
+        'weather_temp': weather_temp,
+        'weather_icon': weather_icon,
         'tree_entry_groups': list(grouped.values()),
         'zone_hierarchy': report.zone_hierarchy,
         'related_remarks': related_remarks,
@@ -10936,6 +10950,7 @@ def work_report_comments(request, report_id):
 def work_report_create(request):
     from core.models import WorkReport, Patch, Worker, Zone, ZoneEquipment
     from core.role_utils import is_admin
+    from core.workorder_tree_views import weather_snapshot_at
 
     if request.method == 'POST':
         try:
@@ -10949,7 +10964,8 @@ def work_report_create(request):
 
         report = WorkReport.objects.create(
             date=request.POST.get('date'),
-            weather=request.POST.get('weather', ''),
+            # 天气为提交时刻的自动快照，不接受表单值（表单已无该输入）。
+            weather=weather_snapshot_at(),
             worker=worker,
             location_id=request.POST.get('location'),
             zone_location=zone,
