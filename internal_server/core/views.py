@@ -248,7 +248,16 @@ def _build_grouped_zones(zones_qs=None, group_by='patch'):
 
 
 def _get_reference_map_data(exclude_zone_id=None, exclude_pipeline_id=None):
-    """Build JSON data for rendering existing zones and pipelines as reference layers on edit maps."""
+    """Build JSON data for rendering existing zones and pipelines as reference layers on edit maps.
+
+    全量 zone 边界（~2.3MB JSON）序列化成本高，而边界极少变化——按排除参数
+    分键缓存 120 秒（参照层是视觉辅助，两分钟内的陈旧可接受；管线相关的
+    失效点不必逐一维护这组键）。
+    """
+    cache_key = 'ref_map:%s:%s' % (exclude_zone_id or 0, exclude_pipeline_id or 0)
+    hit = _cached(cache_key, 120, lambda: None)
+    if hit is not None:
+        return hit
     from core.models import Pipeline
 
     ref_zones = []
@@ -275,17 +284,58 @@ def _get_reference_map_data(exclude_zone_id=None, exclude_pipeline_id=None):
                 'line_points': p.line_points,
                 'line_color': p.line_color,
                 'line_weight': p.line_weight,
+                'main_diameter': p.main_diameter,
             })
 
-    return json.dumps(ref_zones), json.dumps(ref_pipelines)
+    result = (json_html_safe(ref_zones), json_html_safe(ref_pipelines))
+    from django.core.cache import cache as _dj_cache
+    _dj_cache.set(cache_key, result, 120)
+    return result
 
 
-def _auto_pipeline_name_code(zone_ids, pipeline_type):
-    """Generate unique pipeline name and code from zone IDs and type."""
+def _safe_int(raw, default=0):
+    """POST 数字清洗：非法值回退默认，避免伪造请求 500。"""
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return default
+
+
+def json_html_safe(obj):
+    """JSON for embedding inside <script> tags: escapes <, >, &, and U+2028/29.
+
+    ``json.dumps`` leaves those raw, so any string containing ``</script>``
+    (e.g. a valve name imported from a third-party DXF label, a zone name)
+    would break out of the script element — stored XSS. Apply at every
+    ``..._json`` context variable that templates emit with ``|safe``.
+    """
+    return (json.dumps(obj, ensure_ascii=False)
+            .replace('<', '\\u003c')
+            .replace('>', '\\u003e')
+            .replace('&', '\\u0026')
+            .replace('\u2028', '\\u2028')
+            .replace('\u2029', '\\u2029'))
+
+
+def _auto_pipeline_name_code(zone_ids, pipeline_type, exclude_pk=None):
+    """Generate unique pipeline name and code from zone IDs and type.
+
+    ``exclude_pk`` keeps the uniqueness check from colliding with the row
+    being edited (its own current code would otherwise match and force a
+    pointless " (2)" suffix on every re-save).
+    """
     from .models import Pipeline
+    _excl = ~Q(pk=exclude_pk) if exclude_pk else Q()
 
-    type_label = '灌溉水管' if pipeline_type == 'irrigation' else '冲洗水管'
-    type_prefix = 'IRR' if pipeline_type == 'irrigation' else 'FLU'
+    type_meta = {
+        'irrigation': ('灌溉主管', 'IRR'),
+        'flush': ('冲洗主管', 'FLU'),
+        'toilet': ('冲厕主管', 'TOL'),
+        'casing': ('过路套管', 'CAS'),
+        'control': ('控制线', 'CTL'),
+        'comm': ('通讯线', 'COM'),
+    }
+    type_label, type_prefix = type_meta.get(pipeline_type, ('灌溉主管', 'IRR'))
 
     zones = Zone.objects.filter(id__in=zone_ids).order_by('code')
     zone_names = list(zones.values_list('name', flat=True))
@@ -300,7 +350,7 @@ def _auto_pipeline_name_code(zone_ids, pipeline_type):
     # Ensure uniqueness
     name, code = base_name, base_code
     suffix = 2
-    while Pipeline.objects.filter(code=code).exists():
+    while Pipeline.objects.filter(_excl, code=code).exists():
         name = f"{base_name} ({suffix})"
         code = f"{base_code}-{suffix}"
         suffix += 1
@@ -650,19 +700,23 @@ def _invalidate_cached(key):
 
 
 def _save_pipeline_valves(pipeline, valves_json):
-    """Replace a pipeline's valve rows from a JSON array.
+    """Sync a pipeline's valve rows from a JSON array (diff upsert).
 
-    Each element: ``{point, zone_id, station_id, name, valve_type, diameter,
-    order}``. Empty/invalid elements are skipped. Existing valves are deleted
-    first (edit semantics). Returns the count saved.
+    Each element: ``{id?, point, zone_id, station_id, name, valve_type,
+    diameter, order}``. Elements carrying this pipeline's valve ``id`` are
+    UPDATED in place (keeps ids/created_at stable — the fine-edit page and
+    audit trail reference valves by id); elements without ``id`` are created;
+    valves absent from the payload are deleted. Returns the count saved.
     """
     from .models import PipeValve
     try:
         items = json.loads(valves_json) if valves_json else []
     except (json.JSONDecodeError, TypeError):
         items = []
-    pipeline.valves.all().delete()
+    existing = {v.id: v for v in pipeline.valves.all()}
+    keep_ids = set()
     to_create = []
+    to_update = []
     for idx, item in enumerate(items):
         if not isinstance(item, dict):
             continue
@@ -686,13 +740,37 @@ def _save_pipeline_valves(pipeline, valves_json):
             order = idx
         zone_id = item.get('zone_id')
         station_id = item.get('station_id')
-        to_create.append(PipeValve(
-            pipeline=pipeline,
-            zone_id=int(zone_id) if zone_id else None,
-            station_id=int(station_id) if station_id else None,
-            name=name, point=point, valve_type=valve_type,
-            diameter=diameter, order=order,
-        ))
+        zid = _safe_int(zone_id, None) if zone_id else None
+        sid = _safe_int(station_id, None) if station_id else None
+        vid = _safe_int(item.get('id'), None) if item.get('id') else None
+        if vid and vid in existing:
+            # 已有阀门：原地更新（保 id 与 created_at）
+            v = existing[vid]
+            v.name = name
+            v.point = point
+            v.valve_type = valve_type
+            v.diameter = diameter
+            v.order = order
+            v.zone_id = zid
+            v.station_id = sid
+            keep_ids.add(vid)
+            to_update.append(v)
+        else:
+            to_create.append(PipeValve(
+                pipeline=pipeline,
+                zone_id=zid,
+                station_id=sid,
+                name=name, point=point, valve_type=valve_type,
+                diameter=diameter, order=order,
+            ))
+    # 不在提交清单里的旧阀门删除；更新与新建批量落库
+    stale = [vid for vid in existing if vid not in keep_ids]
+    if stale:
+        PipeValve.objects.filter(id__in=stale).delete()
+    if to_update:
+        PipeValve.objects.bulk_update(
+            to_update, ['name', 'point', 'valve_type', 'diameter', 'order',
+                        'zone_id', 'station_id'])
     if to_create:
         PipeValve.objects.bulk_create(to_create)
     return len(to_create)
@@ -738,7 +816,7 @@ def _station_choices_json():
     solenoid valves that MaxicomRuntime.station FK points at).
     """
     stations = Patch.objects.filter(code__startswith='station-').order_by('code')
-    return json.dumps([
+    return json_html_safe([
         {
             'id': s.id, 'name': s.name, 'code': s.code,
             'controller_number': s.controller_number,
@@ -780,16 +858,89 @@ def _latest_runtime_by_station(station_ids):
                    .filter(station_id__in=station_ids, run_time__gt=0)
                    .values('station_id')
                    .annotate(latest=Max('timestamp')))
+    # 每站点最近日的合计：一次查询按 (station, 日前缀) 聚合再取各自最新日。
+    from django.db.models.functions import Substr
+    day_totals = (MaxicomRuntime.objects
+                  .filter(station_id__in=station_ids)
+                  .annotate(day=Substr('timestamp', 1, 8))
+                  .values('station_id', 'day')
+                  .annotate(total=Sum('run_time')))
+    totals = {}
+    for row in day_totals:
+        totals[(row['station_id'], row['day'])] = row['total'] or 0
     result = {}
     for row in latest_rows:
         sid = row['station_id']
         ts = row['latest'] or ''
         day_prefix = ts[:8]
-        total = (MaxicomRuntime.objects
-                 .filter(station_id=sid, timestamp__startswith=day_prefix)
-                 .aggregate(s=Sum('run_time'))['s']) or 0
-        result[sid] = {'minutes': total, 'ts': ts or None}
+        result[sid] = {'minutes': totals.get((sid, day_prefix), 0),
+                       'ts': ts or None}
     return result
+
+
+def _build_pipelines_list_module():
+    from .models import PipeValve, Pipeline
+    from django.db.models import Prefetch
+    # 只取实际用到的列：valves__zone 全行会把每个 zone 的边界 JSON
+    # （KB 级）整份拉出来，而这里只需要 name/code/irrigation_intensity。
+    valves_qs = (PipeValve.objects
+                 .select_related('zone', 'station')
+                 .only('id', 'pipeline_id', 'order', 'name', 'valve_type',
+                       'diameter', 'point', 'zone_id', 'station_id',
+                       'zone__id', 'zone__name', 'zone__code',
+                       'zone__irrigation_intensity'))
+    qs = (Pipeline.objects
+          .prefetch_related(
+              Prefetch('zones', queryset=Zone.objects.only('id', 'name')),
+              Prefetch('valves', queryset=valves_qs))
+          .order_by('id'))
+    pipelines = list(qs)
+    # Latest irrigation-day runtime per station across all valves (1 query).
+    station_ids = {v.station_id for p in pipelines for v in p.valves.all() if v.station_id}
+    runtime_by_station = _latest_runtime_by_station(station_ids)
+    out = []
+    for p in pipelines:
+        valves = []
+        for v in p.valves.all():
+            rt = runtime_by_station.get(v.station_id) if v.station_id else None
+            rt = rt or {}
+            mins = rt.get('minutes', 0) or 0
+            rt_ts = rt.get('ts')
+            rt_display = _format_irrig_ts(rt_ts)
+            # Water depth (mm) = runtime hours × zone irrigation intensity (mm/h).
+            intensity = (v.zone.irrigation_intensity if (v.zone_id and v.zone.irrigation_intensity) else None)
+            depth_mm = round((mins / 60.0) * intensity, 1) if (intensity and mins) else None
+            valves.append({
+                'id': v.id, 'order': v.order, 'name': v.name,
+                'valve_type': v.valve_type,
+                'valve_type_display': v.get_valve_type_display(),
+                'diameter': v.diameter,
+                'point': v.point,
+                'zone_id': v.zone_id,
+                'zone_name': v.zone.name if v.zone_id else None,
+                'zone_code': v.zone.code if v.zone_id else None,
+                'station_id': v.station_id,
+                'runtime_minutes': mins,
+                'runtime_date': rt_display,
+                'depth_mm': depth_mm,
+                'watered_today': bool(mins and mins > 0),
+            })
+        valves.sort(key=lambda x: (x['order'], x['id']))
+        out.append({
+            'id': p.id, 'code': p.code, 'name': p.name,
+            'pipeline_type': p.pipeline_type,
+            'pipeline_type_display': p.get_pipeline_type_display(),
+            'line_points': p.line_points, 'line_color': p.line_color,
+            'line_weight': p.line_weight,
+            'main_diameter': p.main_diameter,
+            'flow_direction': p.flow_direction,
+            'flow_direction_display': p.get_flow_direction_display(),
+            'source_label': p.source_label,
+            'zone_names': [z.name for z in p.zones.all()],
+            'valves': valves,
+        })
+    return out
+
 
 
 def _build_zones_payload(today, week_ago):
@@ -1244,59 +1395,8 @@ def dashboard(request):
     recent_activity.sort(key=lambda x: x['date'], reverse=True)
     recent_activity = recent_activity[:10]
 
-    # Prepare pipelines data for map (prefetch zones+valves to avoid N+1).
-    # Pipelines rarely change — cache the built list for 5 min. Valve runtime
-    # minutes are joined in one aggregate query per cache build (not per valve).
-    def _build_pipelines_list():
-        qs = Pipeline.objects.prefetch_related('zones', 'valves__zone')
-        pipelines = list(qs)
-        # Latest irrigation-day runtime per station across all valves (1 query).
-        station_ids = {v.station_id for p in pipelines for v in p.valves.all() if v.station_id}
-        runtime_by_station = _latest_runtime_by_station(station_ids)
-        out = []
-        for p in pipelines:
-            valves = []
-            for v in p.valves.all():
-                rt = runtime_by_station.get(v.station_id) if v.station_id else None
-                rt = rt or {}
-                mins = rt.get('minutes', 0) or 0
-                rt_ts = rt.get('ts')
-                rt_display = _format_irrig_ts(rt_ts)
-                # Water depth (mm) = runtime hours × zone irrigation intensity (mm/h).
-                intensity = (v.zone.irrigation_intensity if (v.zone_id and v.zone.irrigation_intensity) else None)
-                depth_mm = round((mins / 60.0) * intensity, 1) if (intensity and mins) else None
-                valves.append({
-                    'id': v.id, 'order': v.order, 'name': v.name,
-                    'valve_type': v.valve_type,
-                    'valve_type_display': v.get_valve_type_display(),
-                    'diameter': v.diameter,
-                    'point': v.point,
-                    'zone_id': v.zone_id,
-                    'zone_name': v.zone.name if v.zone_id else None,
-                    'zone_code': v.zone.code if v.zone_id else None,
-                    'station_id': v.station_id,
-                    'runtime_minutes': mins,
-                    'runtime_date': rt_display,
-                    'depth_mm': depth_mm,
-                    'watered_today': bool(mins and mins > 0),
-                })
-            valves.sort(key=lambda x: (x['order'], x['id']))
-            out.append({
-                'id': p.id, 'code': p.code, 'name': p.name,
-                'pipeline_type': p.pipeline_type,
-                'pipeline_type_display': p.get_pipeline_type_display(),
-                'line_points': p.line_points, 'line_color': p.line_color,
-                'line_weight': p.line_weight,
-                'main_diameter': p.main_diameter,
-                'flow_direction': p.flow_direction,
-                'flow_direction_display': p.get_flow_direction_display(),
-                'source_label': p.source_label,
-                'zone_names': [z.name for z in p.zones.all()],
-                'valves': valves,
-            })
-        return out
-
-    pipelines_list = _cached('dashboard:pipelines', 300, _build_pipelines_list)
+    # Pipelines data moved to /api/pipelines-payload/ (same pattern as zones):
+    # built on demand + cached under 'dashboard:pipelines'.
 
     all_plant_names = _cached('dashboard:plant_names', 300,
                               lambda: list(Plant.objects.values_list('name', flat=True).distinct().order_by('name')))
@@ -1391,12 +1491,12 @@ def dashboard(request):
         'grouped_zones': grouped_zones,  # For hierarchical sidebar display
         'pending_water_requests_json': json.dumps(pending_water_requests, ensure_ascii=False),
         'pending_remarks_json': json.dumps(pending_remarks_data),
-        'pipelines_json': json.dumps(pipelines_list),
+
         'all_plant_names': all_plant_names,
-        'landmarks_json': json.dumps(landmarks_data),
+        'landmarks_json': json_html_safe(landmarks_data),
         'landmark_names': [lm['name'] for lm in landmarks_data],
-        'zone_landmark_map_json': json.dumps(zone_landmark_map),
-        'patches_json': json.dumps(patches_list),
+        'zone_landmark_map_json': json_html_safe(zone_landmark_map),
+        'patches_json': json_html_safe(patches_list),
         'lands_json': json.dumps(lands_list),
         'is_admin': is_admin,
         'is_manager': is_manager,
@@ -1408,7 +1508,7 @@ def dashboard(request):
         'total_zones': len(zones_list),
         'total_plants': sum(z['plant_count'] for z in zones_list),
         'map_style_json': json.dumps(_cached('dashboard:map_style', 300, lambda: MapStyleSettings.get_style())),
-        'announcements_json': json.dumps(_unacked_announcements_for(request.user), ensure_ascii=False),
+        'announcements_json': json_html_safe(_unacked_announcements_for(request.user)),
     }
 
     # PM tasks for the dashboard FAB "PM安排" panel: the logged-in worker's
@@ -4938,6 +5038,213 @@ def zone_remark_archive(request, zone_id, index):
 
 
 @login_required(login_url='core:login')
+def pipelines_payload(request):
+    """Dashboard 管道+阀门 JSON 载荷（与 /api/zones-payload/ 同模式）。
+
+    独立端点让浏览器跨页面导航复用缓存、服务端走 _cached——之前这段
+    数据每次访问 dashboard 都完整内嵌 HTML（400+ 管线 ≈156KB 且随导入
+    线性增长）。登录即可读（一线也要看管道）。缓存键与 dashboard 共用，
+    管线增删改的失效点自动覆盖两边。
+    """
+    pipelines_list = _cached('dashboard:pipelines', 300, _build_pipelines_list_module)
+    return JsonResponse({'pipelines': pipelines_list})
+
+
+def _pipeline_dxf_gate(user):
+    """Manager-tier gate shared by the DXF pipeline import page + endpoints."""
+    from .models import ManagerProfile
+    if user.is_superuser or user.is_staff:
+        return True
+    return ManagerProfile.objects.filter(user=user, active=True).exists()
+
+
+@login_required(login_url='core:login')
+def pipeline_dxf_import(request):
+    """Dedicated page: import a CAD (DXF) irrigation drawing into Pipeline/PipeValve.
+
+    Flow (all client-orchestrated): upload → ``pipeline_dxf_analyze`` returns
+    layer/block/label census + preview geometry → the user maps layers to
+    diameters and blocks to valve types on a Leaflet preview →
+    ``pipeline_dxf_import_submit`` creates the rows.
+    """
+    if not _pipeline_dxf_gate(request.user):
+        messages.error(request, '无权限')
+        return redirect('core:dashboard')
+    ref_zones_json, ref_pipelines_json = _get_reference_map_data()
+    return render(request, 'core/pipeline_dxf_import.html', {
+        'ref_zones_json': ref_zones_json,
+        'ref_pipelines_json': ref_pipelines_json,
+    })
+
+
+@require_POST
+@login_required(login_url='core:login')
+def pipeline_dxf_analyze(request):
+    """AJAX: parse an uploaded DXF, return layer/block/label overview + preview."""
+    import json as _json
+    from core.dxf_pipeline_utils import analyze_dxf_pipelines
+    if not _pipeline_dxf_gate(request.user):
+        return JsonResponse({'success': False, 'error': '无权限'}, status=403)
+    f = request.FILES.get('file')
+    if not f or not f.name.lower().endswith('.dxf'):
+        return JsonResponse({'success': False, 'error': '请上传 .dxf 文件'}, status=400)
+    try:
+        return JsonResponse(analyze_dxf_pipelines(f))
+    except Exception:
+        import logging
+        logging.getLogger(__name__).exception('DXF analyze failed')
+        return JsonResponse({'success': False, 'error': 'DXF 解析失败，请确认文件是标准 DXF 格式'}, status=400)
+
+
+@require_POST
+@login_required(login_url='core:login')
+def pipeline_dxf_import_submit(request):
+    """AJAX: create Pipeline + PipeValve rows from the DXF per the user's mapping.
+
+    POST: ``file`` (re-uploaded), ``layers_json`` {layer: {include, diameter,
+    type}}, ``blocks_json`` {block: {include, valve_type}}, ``label_layers``
+    (JSON list — which text layers may name valves).
+    """
+    import json as _json
+    from core.dxf_pipeline_utils import import_dxf_pipelines
+    if not _pipeline_dxf_gate(request.user):
+        return JsonResponse({'success': False, 'error': '无权限'}, status=403)
+    f = request.FILES.get('file')   # 可选：有解析缓存 token 时不需重传文件
+    token = (request.POST.get('token') or '').strip() or None
+    if not f and not token:
+        return JsonResponse({'success': False, 'error': '缺少文件'}, status=400)
+    try:
+        layer_specs = _json.loads(request.POST.get('layers_json') or '{}')
+        block_specs = _json.loads(request.POST.get('blocks_json') or '{}')
+        label_layers = _json.loads(request.POST.get('label_layers') or '[]')
+    except (json.JSONDecodeError, TypeError):
+        return JsonResponse({'success': False, 'error': '映射参数格式无效'}, status=400)
+    if not layer_specs:
+        return JsonResponse({'success': False, 'error': '请至少选择一个管道图层'}, status=400)
+    # 整体微调偏移（度）：预览阶段用户拖动校准的结果，导入时叠加到最终坐标
+    try:
+        offset = (float(request.POST.get('offset_lat') or 0),
+                  float(request.POST.get('offset_lng') or 0))
+    except (TypeError, ValueError):
+        offset = (0.0, 0.0)
+    try:
+        result = import_dxf_pipelines(layer_specs, block_specs, uploaded_file=f,
+                                      label_layers=label_layers, offset=offset,
+                                      token=token)
+    except ValueError as exc:
+        return JsonResponse({'success': False, 'error': str(exc)}, status=400)
+    except Exception:
+        # 具体异常记日志排查；对外统一话术，避免泄露服务器路径等信息
+        import logging
+        logging.getLogger(__name__).exception('DXF pipeline import failed')
+        return JsonResponse({'success': False, 'error': '导入失败，请检查图纸格式后重试'}, status=400)
+    _invalidate_cached('dashboard:pipelines')
+    return JsonResponse({'success': True, **result})
+
+
+# ── 管网精细编辑（DXF 导入后的单项修正：删管道/阀门、清标注、阀门配 zone）──
+
+@login_required(login_url='core:login')
+def pipeline_edit_data(request):
+    """编辑模式的地图数据：全部管线 + 阀门 + zone 清单（用于指派下拉）。"""
+    from .models import Pipeline, PipeValve, Zone
+    if not _pipeline_dxf_gate(request.user):
+        return JsonResponse({'success': False, 'error': '无权限'}, status=403)
+    pipes = []
+    for p in (Pipeline.objects.all().order_by('id')):
+        pipes.append({
+            'id': p.id, 'name': p.name, 'code': p.code,
+            'type': p.pipeline_type, 'type_display': p.get_pipeline_type_display(),
+            'diameter': p.main_diameter, 'color': p.line_color,
+            'line_points': p.line_points, 'source': p.source_label or '',
+        })
+    valves = []
+    for v in (PipeValve.objects.select_related('zone', 'station').order_by('id')):
+        valves.append({
+            'id': v.id, 'pipeline_id': v.pipeline_id,
+            'name': v.name or '', 'type': v.valve_type,
+            'type_display': v.get_valve_type_display(),
+            'diameter': v.diameter, 'point': v.point,
+            'zone_id': v.zone_id, 'zone_label': (v.zone.code + ' ' + v.zone.name) if v.zone else '',
+            'station_id': v.station_id,
+        })
+    zones = [{'id': z.id, 'label': f'{z.code} {z.name}'}
+             for z in Zone.objects.order_by('code')]
+    return JsonResponse({'success': True, 'pipelines': pipes,
+                         'valves': valves, 'zones': zones})
+
+
+@require_POST
+@login_required(login_url='core:login')
+def pipeline_edit_pipeline_delete(request, pipeline_id):
+    """删除单条管道（阀门级联删除）。"""
+    from .models import Pipeline, ManagerProfile
+    if not _pipeline_dxf_gate(request.user):
+        return JsonResponse({'success': False, 'error': '无权限'}, status=403)
+    p = Pipeline.objects.filter(pk=pipeline_id).first()
+    if not p:
+        return JsonResponse({'success': False, 'error': '管道不存在'}, status=404)
+    name = p.name
+    p.delete()
+    _invalidate_cached('dashboard:pipelines')
+    return JsonResponse({'success': True, 'message': f'已删除管道「{name}」'})
+
+
+@require_POST
+@login_required(login_url='core:login')
+def pipeline_edit_valve_delete(request, valve_id):
+    """删除单个阀门。"""
+    from .models import PipeValve
+    if not _pipeline_dxf_gate(request.user):
+        return JsonResponse({'success': False, 'error': '无权限'}, status=403)
+    v = PipeValve.objects.filter(pk=valve_id).first()
+    if not v:
+        return JsonResponse({'success': False, 'error': '阀门不存在'}, status=404)
+    label = v.name or f'#{v.id}'
+    v.delete()
+    _invalidate_cached('dashboard:pipelines')
+    return JsonResponse({'success': True, 'message': f'已删除阀门「{label}」'})
+
+
+@require_POST
+@login_required(login_url='core:login')
+def pipeline_edit_valve_update(request, valve_id):
+    """更新单个阀门：name（文字标注，空=清除）、zone_id（指派区域）。
+
+    指派 zone 时按导入同款规则自动补全配对：Maxicom station 取
+    ``zone.maxicom_runtime[0]``，电磁阀口径取 zone 电磁阀尺寸（英寸×25.4），
+    首页即可显示灌溉数据。"""
+    from .models import PipeValve, Zone
+    if not _pipeline_dxf_gate(request.user):
+        return JsonResponse({'success': False, 'error': '无权限'}, status=403)
+    v = PipeValve.objects.filter(pk=valve_id).first()
+    if not v:
+        return JsonResponse({'success': False, 'error': '阀门不存在'}, status=404)
+
+    if 'name' in request.POST:
+        v.name = (request.POST.get('name') or '').strip()[:50]
+    if 'zone_id' in request.POST:
+        zid = (request.POST.get('zone_id') or '').strip()
+        if zid:
+            z = Zone.objects.filter(pk=zid).only(
+                'id', 'maxicom_runtime', 'solenoid_valve_size').first()
+            if not z:
+                return JsonResponse({'success': False, 'error': 'zone 不存在'}, status=400)
+            v.zone = z
+            mr = z.maxicom_runtime
+            v.station_id = mr[0] if isinstance(mr, list) and mr else None
+            if v.valve_type == PipeValve.VALVE_SOLENOID and z.solenoid_valve_size:
+                v.diameter = round(z.solenoid_valve_size * 25.4, 1)
+        else:
+            v.zone = None
+            v.station = None
+    v.save()
+    _invalidate_cached('dashboard:pipelines')
+    return JsonResponse({'success': True,
+                         'message': f'阀门「{v.name or "#" + str(v.id)}」已更新'})
+
+
+@login_required(login_url='core:login')
 def pipeline_new(request):
     from .models import ManagerProfile, Pipeline
 
@@ -4955,6 +5262,8 @@ def pipeline_new(request):
 
     if request.method == 'POST':
         pipeline_type = request.POST.get('pipeline_type', Pipeline.TYPE_IRRIGATION)
+        if pipeline_type not in dict(Pipeline.TYPE_CHOICES):
+            pipeline_type = Pipeline.TYPE_IRRIGATION
         manual_zone_ids = request.POST.getlist('zones')
 
         line_json = request.POST.get('line_points', '[]')
@@ -4986,8 +5295,10 @@ def pipeline_new(request):
             code=code,
             description=request.POST.get('description', ''),
             pipeline_type=pipeline_type,
-            line_weight=int(request.POST.get('line_weight', 3)),
-            flow_direction=request.POST.get('flow_direction', Pipeline.FLOW_FORWARD),
+            line_weight=_safe_int(request.POST.get('line_weight'), 3),
+            flow_direction=(request.POST.get('flow_direction')
+                            if request.POST.get('flow_direction') in dict(Pipeline.FLOW_CHOICES)
+                            else Pipeline.FLOW_FORWARD),
             source_label=request.POST.get('source_label', ''),
             line_points=line_points,
         )
@@ -5047,10 +5358,13 @@ def pipeline_edit(request, pipeline_id):
             return redirect('core:pipeline_edit', pipeline_id=pipeline.id)
 
         merged_zone_ids = _merged_zone_ids(line_points, manual_zone_ids)
-        name, code = _auto_pipeline_name_code(merged_zone_ids, pipeline_type)
-
-        pipeline.name = name
-        pipeline.code = code
+        # 名称只在能生成时重算：排除自身防 "(2)" 震荡；DXF 导入的无 zone
+        # 管道生成结果为空 —— 保留原 name/code，避免清空后撞唯一约束 500。
+        name, code = _auto_pipeline_name_code(merged_zone_ids, pipeline_type,
+                                              exclude_pk=pipeline.pk)
+        if name:
+            pipeline.name = name
+            pipeline.code = code
         pipeline.pipeline_type = pipeline_type
         pipeline.line_weight = int(request.POST.get('line_weight', pipeline.line_weight))
         pipeline.flow_direction = request.POST.get('flow_direction', pipeline.flow_direction)
@@ -5069,7 +5383,7 @@ def pipeline_edit(request, pipeline_id):
     ref_zones_json, ref_pipelines_json = _get_reference_map_data(exclude_pipeline_id=pipeline.id)
 
     zones = Zone.objects.all().order_by('code')
-    valves_json = json.dumps([
+    valves_json = json_html_safe([
         {
             'id': v.id, 'point': v.point, 'name': v.name,
             'valve_type': v.valve_type, 'diameter': v.diameter, 'order': v.order,
@@ -5078,7 +5392,7 @@ def pipeline_edit(request, pipeline_id):
     ])
     context = {
         'pipeline': pipeline,
-        'line_json': json.dumps(pipeline.line_points),
+        'line_json': json_html_safe(pipeline.line_points),
         'zones': zones,
         'grouped_zones': _build_grouped_zones(zones),
         'selected_zone_ids': list(pipeline.zones.values_list('id', flat=True)),
@@ -5110,6 +5424,7 @@ def pipeline_delete(request, pipeline_id):
     pipeline = get_object_or_404(Pipeline, pk=pipeline_id)
     pipeline_name = pipeline.name
     pipeline.delete()
+    _invalidate_cached('dashboard:pipelines')
     messages.success(request, f'水管 "{pipeline_name}" 删除成功')
     return redirect('core:settings')
 
@@ -5726,6 +6041,8 @@ def batch_delete_pipeline(request):
         return JsonResponse({'error': '无权限'}, status=403)
 
     count, _ = Pipeline.objects.filter(pk__in=ids).delete()
+    if count:
+        _invalidate_cached('dashboard:pipelines')
     messages.success(request, f'已删除 {count} 条水管')
     return JsonResponse({'success': True, 'deleted': count})
 

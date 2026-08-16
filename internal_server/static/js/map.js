@@ -42,6 +42,8 @@
     // Rendered valve markers + their tooltip content, so a zoomend handler can
     // flip labels to permanent (auto-show) at max zoom, hover-only otherwise.
     let valveMarkersForLabels = [];
+    // {marker, latLngs} per pipeline arrow — zoomend 按屏幕长度过滤显示
+    let pipelineArrowRegistry = [];
 
     // Zone label layers group (separate from boundaries for independent toggle)
     let labelsLayerGroup;
@@ -304,6 +306,20 @@
         // reappear with the right layout (see _updateLabelSizesAndClearZoom wrapper).
         map.on('zoomend', updateLabelSizesDebounced);
         map.on('zoomend', applyValveLabelMode);   // valve labels: auto at max zoom, hover below
+        map.on('zoomend', updateArrowVisibility); // pipe arrows: only when zoomed in
+        // 最大层级平移后重排阀门常显 label（碰撞结果是视口相关的）；
+        // resize 后箭头屏幕长度过滤需重算。均防抖。
+        let _valveRelayoutT = null;
+        map.on('moveend', function () {
+            if (map.getZoom() < map.getMaxZoom()) return;
+            clearTimeout(_valveRelayoutT);
+            _valveRelayoutT = setTimeout(layoutValveLabels, 250);
+        });
+        let _resizeT = null;
+        window.addEventListener('resize', function () {
+            clearTimeout(_resizeT);
+            _resizeT = setTimeout(updateArrowVisibility, 250);
+        });
         // Re-cull labels to the viewport after panning so only on-screen labels render.
         map.on('moveend', _cullLabelsToViewportDebounced);
 
@@ -1652,37 +1668,105 @@
     }
 
     /**
-     * Load pipelines from embedded JSON data
+     * Load pipelines from the payload endpoint (was: inline JSON in the
+     * dashboard HTML — re-downloaded on every visit and uncached by the
+     * browser). Empty #pipelines-data element is the fetch trigger, same
+     * pattern as zones. Falls back to inline content if the element carries
+     * data (kept for any page still embedding it).
      */
     function loadPipelines() {
-        const pipelinesDataElement = document.getElementById('pipelines-data');
-        if (!pipelinesDataElement) {
-            console.log('No pipelines data element found');
+        const el = document.getElementById('pipelines-data');
+        if (!el) return;
+        if (el.textContent && el.textContent.trim().length > 2) {
+            try {
+                renderPipelines(JSON.parse(el.textContent));
+                applyValveLabelMode(true);
+                updateArrowVisibility();
+            } catch (e) { console.error('pipelines inline parse failed', e); }
             return;
         }
-
-        try {
-            const pipelines = JSON.parse(pipelinesDataElement.textContent);
-            console.log('Loaded pipelines:', pipelines.length);
-            renderPipelines(pipelines);
-            applyValveLabelMode();   // pick hover-vs-permanent for the current zoom
-        } catch (error) {
-            console.error('Error parsing pipelines data:', error);
-        }
+        fetch('/api/pipelines-payload/', { credentials: 'same-origin' })
+            .then(r => r.ok ? r.json() : Promise.reject(r.status))
+            .then(d => {
+                renderPipelines(d.pipelines || []);
+                applyValveLabelMode(true);   // fresh markers — force rebind
+                updateArrowVisibility();     // arrows follow the current zoom
+            })
+            .catch(err => console.error('pipelines payload fetch failed', err));
     }
 
     // Valve labels: permanent (auto-shown) at the max zoom level, hover-only
     // below it — matches the zoom-tiered display used for zone watermarks and
     // boundaries so valves don't clutter the map when zoomed out.
-    function applyValveLabelMode() {
+    // Pipeline overlays follow the map's three zoom tiers:
+    //   tier 1 (<17): park overview — valves AND arrows hidden
+    //   tier 2 (>=17): pipe level — valve dots + arrows appear
+    //   tier 3 (max zoom): valve labels become permanent (applyValveLabelMode)
+    // CSS class toggles only — no per-marker work on zoom.
+    function updateArrowVisibility() {
+        if (!map) return;
+        const z = map.getZoom();
+        const c = map.getContainer();
+        c.classList.toggle('hide-pipe-arrows', z < 17);   // 箭头与阀门同层级（第二层级起）
+        c.classList.toggle('hide-pipe-valves', z < 17);
+        updateArrowDensity();
+    }
+
+    // 管段在当前缩放下的屏幕长度不足阈值就不显示箭头——DXF 会把管网切出
+    // 数百条短管段，每段一个箭头等于箭头地毯。拉长（缩放靠近）后自然出现。
+    function updateArrowDensity() {
+        if (!map) return;
+        pipelineArrowRegistry.forEach(({ marker, latLngs }) => {
+            const el = marker.getElement();
+            if (!el) return;
+            let px = 0;
+            for (let i = 1; i < latLngs.length; i++) {
+                px += map.latLngToLayerPoint(latLngs[i - 1]).distanceTo(map.latLngToLayerPoint(latLngs[i]));
+            }
+            el.style.display = px >= 140 ? '' : 'none';
+        });
+    }
+
+    let _valveLabelMode = null;   // 'hover' | 'permanent' — 跨 zoom 不变则不重建
+    function applyValveLabelMode(force) {
         if (!map) return;
         const isMax = map.getZoom() >= map.getMaxZoom();
+        const mode = isMax ? 'permanent' : 'hover';
+        if (!force && mode === _valveLabelMode) {
+            // 模式没变：只做廉价的碰撞重排（平移后视口变化）
+            if (isMax) layoutValveLabels();
+            return;
+        }
+        _valveLabelMode = mode;
         valveMarkersForLabels.forEach(vm => {
             if (!vm || vm._tipContent === undefined) return;
             if (vm.getTooltip()) vm.unbindTooltip();
             vm.bindTooltip(vm._tipContent, {
                 sticky: true, className: 'ref-tooltip', permanent: isMax
             });
+        });
+        if (isMax) layoutValveLabels();
+    }
+
+    // 最大层级常显的阀门 label 防重叠：贪心放置——按顺序把每个 label 的
+    // 包围盒（点上方、实测尺寸 + 边距）与已放置的比较，撞了就隐藏本次缩放。
+    // 缩放离开最大层级后 applyValveLabelMode 重建 tooltip，隐藏自动复原。
+    function layoutValveLabels() {
+        const placed = [];
+        valveMarkersForLabels.forEach(vm => {
+            if (!vm) return;
+            const tip = vm.getTooltip();
+            if (!tip || !tip.options.permanent) return;
+            const el = tip.getElement();
+            if (!el) return;
+            const pos = map.latLngToContainerPoint(vm.getLatLng());
+            const w = el.offsetWidth, h = el.offsetHeight;
+            const rect = { x: pos.x - w / 2 - 3, y: pos.y - h - 12, w: w + 6, h: h + 6 };
+            const clash = placed.some(r =>
+                rect.x < r.x + r.w && rect.x + rect.w > r.x &&
+                rect.y < r.y + r.h && rect.y + rect.h > r.y);
+            el.style.display = clash ? 'none' : '';
+            if (!clash) placed.push(rect);
         });
     }
 
@@ -1694,6 +1778,7 @@
     function renderPipelines(pipelines) {
         pipelinesLayerGroup.clearLayers();
         valveMarkersForLabels = [];   // rebuilt as valve markers are created below
+        pipelineArrowRegistry = [];   // rebuilt as arrows are created below
 
         pipelines.forEach(pipeline => {
             if (!pipeline.line_points || pipeline.line_points.length < 2) {
@@ -1780,8 +1865,11 @@
             // ── Flow-direction arrows (dart shape, rotated to pipe bearing) ──
             // ▶ points east (bearing 90°) at rotate(0), so we rotate by (bearing - 90).
             if (pipeline.flow_direction === 'fwd' || pipeline.flow_direction === 'rev') {
-                for (let i = 0; i < latLngs.length - 1; i++) {
-                    if (i % 3 !== 1 && latLngs.length > 4) continue;
+                // 每条管线只放 1 个箭头（中段）——管线数上千，多点箭头必然铺满
+                // 地图；单条方向读 1 个箭头足够。
+                const nSeg = latLngs.length - 1;
+                const i = Math.floor(nSeg / 2);
+                {
                     const [lat1, lng1] = latLngs[i];
                     const [lat2, lng2] = latLngs[i + 1];
                     let b = _bearing(lat1, lng1, lat2, lng2);
@@ -1800,6 +1888,7 @@
                         })
                     });
                     pipelinesLayerGroup.addLayer(arrow);
+                    pipelineArrowRegistry.push({ marker: arrow, latLngs });
                 }
             }
 
@@ -1821,7 +1910,7 @@
                 const vm = L.marker(pt, {
                     icon: L.divIcon({
                         className: 'pipe-valve-marker',
-                        html: `<div style="width:${size}px;height:${size}px;background:${fill};border:2.5px solid ${ring};transform:rotate(45deg);box-shadow:0 0 0 1.5px ${border},0 1px 4px rgba(0,0,0,0.5);"></div>`,
+                        html: `<div style="width:${size}px;height:${size}px;background:${fill};border:2.5px solid ${ring};border-radius:50%;box-shadow:0 0 0 1.5px ${border},0 1px 4px rgba(0,0,0,0.5);"></div>`,
                         iconSize: [size, size], iconAnchor: [size / 2, size / 2]
                     })
                 });

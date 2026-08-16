@@ -53,8 +53,12 @@
                 <div class="form-group">
                     <label for="pipeline_type">水管类型 *</label>
                     <select id="pipeline_type" name="pipeline_type">
-                        <option value="irrigation" {% if pipeline and pipeline.pipeline_type == 'irrigation' %}selected{% endif %}>灌溉水管</option>
-                        <option value="flush" {% if pipeline and pipeline.pipeline_type == 'flush' %}selected{% endif %}>冲洗水管</option>
+                        <option value="irrigation" {% if pipeline and pipeline.pipeline_type == 'irrigation' %}selected{% endif %}>灌溉主管</option>
+                        <option value="flush" {% if pipeline and pipeline.pipeline_type == 'flush' %}selected{% endif %}>冲洗主管</option>
+                        <option value="toilet" {% if pipeline and pipeline.pipeline_type == 'toilet' %}selected{% endif %}>冲厕主管</option>
+                        <option value="casing" {% if pipeline and pipeline.pipeline_type == 'casing' %}selected{% endif %}>过路套管</option>
+                        <option value="control" {% if pipeline and pipeline.pipeline_type == 'control' %}selected{% endif %}>控制线</option>
+                        <option value="comm" {% if pipeline and pipeline.pipeline_type == 'comm' %}selected{% endif %}>通讯线</option>
                     </select>
                     <small>灌溉水管显示为红色，冲洗水管显示为蓝色</small>
                 </div>
@@ -347,13 +351,23 @@
         stations = sEl && sEl.textContent ? JSON.parse(sEl.textContent) : [];
     } catch (e) { console.warn('stations-data parse failed', e); }
 
+    // 与服务端 Pipeline.line_color 同一套六类配色，预览所见即保存所得
+    const TYPE_COLORS = {
+        irrigation: '#CC3333', flush: '#3366CC', toilet: '#9B59B6',
+        casing: '#95A5A6', control: '#E67E22', comm: '#1ABC9C',
+    };
+    const TYPE_META = {
+        irrigation: ['灌溉主管', 'IRR'], flush: ['冲洗主管', 'FLU'],
+        toilet: ['冲厕主管', 'TOL'], casing: ['过路套管', 'CAS'],
+        control: ['控制线', 'CTL'], comm: ['通讯线', 'COM'],
+    };
     function getLineStyle() {
         const typeSelect = document.getElementById('pipeline_type');
-        const isIrrigation = typeSelect ? typeSelect.value === 'irrigation' : true;
+        const t = typeSelect ? typeSelect.value : 'irrigation';
         const weightInput = document.getElementById('line_weight');
         const weight = weightInput ? parseInt(weightInput.value) || 3 : 3;
         return {
-            color: isIrrigation ? '#CC3333' : '#3366CC',
+            color: TYPE_COLORS[t] || '#CC3333',
             weight: weight,
             opacity: 0.9
         };
@@ -489,7 +503,8 @@
 
     function getMarkerColor() {
         const typeSelect = document.getElementById('pipeline_type');
-        return typeSelect && typeSelect.value === 'flush' ? '#3366CC' : '#CC3333';
+        var colors = { irrigation: '#CC3333', flush: '#3366CC', toilet: '#9B59B6', casing: '#95A5A6', control: '#E67E22', comm: '#1ABC9C' };
+        return colors[typeSelect && typeSelect.value] || '#CC3333';
     }
 
     function createMarker(latlng) {
@@ -694,12 +709,16 @@
         renderValveList();
     }
 
+    function woEsc(t) {
+        return String(t == null ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
     function buildZoneOptions(selectedId) {
         let html = '<option value="">— 不关联 —</option>';
         document.querySelectorAll('input[name="zones"]').forEach(cb => {
             const id = cb.value, name = cb.dataset.zoneName, code = cb.dataset.zoneCode;
             html += '<option value="' + id + '"' + (String(selectedId) === String(id) ? ' selected' : '') + '>'
-                  + name + ' (' + code + ')</option>';
+                  + woEsc(name) + ' (' + woEsc(code) + ')</option>';
         });
         return html;
     }
@@ -710,7 +729,7 @@
             const label = s.code + (s.name ? ' · ' + s.name : '')
                         + ' (SAT' + (s.controller_number || '?') + '-CH' + (s.controller_channel || '?') + ')';
             html += '<option value="' + s.id + '"' + (String(selectedId) === String(s.id) ? ' selected' : '') + '>'
-                  + label + '</option>';
+                  + woEsc(label) + '</option>';
         });
         return html;
     }
@@ -725,8 +744,11 @@
                 + '<input type="text" class="coord-input valve-name" value="' + (v.name || '').replace(/"/g, '&quot;') + '" placeholder="如 V' + (i + 1) + '" data-idx="' + i + '">'
                 + '<select class="coord-input valve-type" data-idx="' + i + '">'
                     + '<option value="solenoid"' + (v.valve_type === 'solenoid' ? ' selected' : '') + '>电磁阀</option>'
-                    + '<option value="isolation"' + (v.valve_type === 'isolation' ? ' selected' : '') + '>隔离阀</option>'
-                    + '<option value="flush"' + (v.valve_type === 'flush' ? ' selected' : '') + '>冲洗阀</option>'
+                    + '<option value="gate"' + (v.valve_type === 'gate' ? ' selected' : '') + '>闸阀(手动)</option>'
+                    + '<option value="angle"' + (v.valve_type === 'angle' ? ' selected' : '') + '>角阀(手动)</option>'
+                    + '<option value="washdown"' + (v.valve_type === 'washdown' ? ' selected' : '') + '>冲洗阀(WD)</option>'
+                    + '<option value="qcv"' + (v.valve_type === 'qcv' ? ' selected' : '') + '>取水阀(QCV)</option>'
+                    + '<option value="pullbox"' + (v.valve_type === 'pullbox' ? ' selected' : '') + '>拉线箱</option>'
                 + '</select>'
                 + '<input type="number" class="coord-input valve-diameter" step="1" min="0" placeholder="如 25" value="' + (v.diameter || '') + '" data-idx="' + i + '">'
                 + '<select class="coord-input valve-zone" data-idx="' + i + '">' + buildZoneOptions(v.zone_id) + '</select>'
@@ -1070,8 +1092,7 @@
     // Auto-generate pipeline name and code from selected zones + type
     function updateAutoInfo() {
         const typeSelect = document.getElementById('pipeline_type');
-        const typeLabel = typeSelect.value === 'irrigation' ? '灌溉水管' : '冲洗水管';
-        const typePrefix = typeSelect.value === 'irrigation' ? 'IRR' : 'FLU';
+        const [typeLabel, typePrefix] = TYPE_META[typeSelect.value] || TYPE_META.irrigation;
 
         const checkedBoxes = document.querySelectorAll('input[name="zones"]:checked');
         const zoneNames = Array.from(checkedBoxes).map(cb => cb.dataset.zoneName);

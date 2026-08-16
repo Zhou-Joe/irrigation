@@ -1,0 +1,708 @@
+{% extends 'core/base.html' %}
+{% load static %}
+{% comment %}DXF 管线导入：全屏地图 + 右侧可折叠流程面板（上传→映射→预览→导入）。{% endcomment %}
+
+{% block title %}DXF 管线导入 - 灌溉管理系统{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<style>
+  /* 全屏布局：地图占满导航以下的剩余空间，流程面板固定在右侧 */
+  .pdxf-app { display: flex; height: calc(100vh - 52px); background: #f4f7f5; }
+  .pdxf-mapwrap { position: relative; flex: 1; min-width: 0; }
+  #pdxfMap { position: absolute; inset: 0; background: #e8ecef; }
+  .pdxf-side { width: 470px; flex: 0 0 470px; overflow-y: auto; background: #fff;
+               border-left: 1px solid #e2e8e4; padding: 12px 14px 40px; }
+  .pdxf-side h1 { font-size: 1.1rem; margin: 2px 0 4px; color: var(--color-primary, #2D6A4F); }
+  .pdxf-intro { font-size: .76rem; color: #888; margin: 0 0 8px; line-height: 1.5; }
+  .pdxf-steps { display: flex; gap: 4px; margin-bottom: 10px; flex-wrap: wrap; }
+  .pdxf-step { font-size: .72rem; padding: 3px 10px; border-radius: 12px; background: #eef3ef; color: #888; }
+  .pdxf-step.on { background: var(--color-primary, #2D6A4F); color: #fff; font-weight: 600; }
+  /* 可折叠卡片 */
+  .pdxf-card { border: 1px solid #e2e8e4; border-radius: 10px; margin-bottom: 10px; background: #fff; }
+  .pdxf-card-head { display: flex; align-items: center; gap: 8px; padding: 9px 12px; cursor: pointer;
+                    user-select: none; background: #f7faf8; border-radius: 10px; }
+  .pdxf-card-head:hover { background: #eef4f0; }
+  .pdxf-card-head h2 { margin: 0; font-size: .9rem; color: var(--color-primary, #2D6A4F); flex: 1; }
+  .pdxf-card-head .pdxf-fold { color: #97a79d; font-size: .8rem; transition: transform .15s; }
+  .pdxf-card.open .pdxf-fold { transform: rotate(90deg); }
+  .pdxf-card-body { display: none; padding: 10px 12px; border-top: 1px solid #edf2ee; }
+  .pdxf-card.open .pdxf-card-body { display: block; }
+  .pdxf-card .pdxf-badge { font-size: .7rem; background: #eef3ef; color: #666; border-radius: 10px; padding: 2px 8px; }
+  .pdxf-hint { font-size: .74rem; color: #999; margin: 0 0 8px; line-height: 1.5; }
+  table.pdxf-table { width: 100%; border-collapse: collapse; font-size: .76rem; }
+  table.pdxf-table th { background: #1B4332; color: #fff; font-size: .7rem; padding: 5px 6px; border: 1px solid #fff; text-align: center; }
+  table.pdxf-table td { padding: 4px 6px; border-bottom: 1px solid #f0f0f0; text-align: center; }
+  table.pdxf-table tr:hover td { background: #e8f5e9; }
+  .pdxf-btn { padding: 7px 16px; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: .84rem; }
+  .pdxf-btn-primary { background: var(--color-primary, #2D6A4F); color: #fff; }
+  .pdxf-btn-secondary { background: #eef3ef; color: #2D6A4F; }
+  .pdxf-btn:disabled { opacity: .5; cursor: not-allowed; }
+  .pdxf-input, .pdxf-select { padding: 4px 8px; border: 1px solid #ddd; border-radius: 6px; font-size: .78rem; }
+  .pdxf-chip { display: inline-block; padding: 2px 10px; border-radius: 12px; background: #eef3ef; color: #555; font-size: .74rem; margin: 2px; }
+  .pdxf-result { background: #e8f5e9; border: 1px solid #b7dfc1; border-radius: 10px; padding: 12px; font-size: .84rem; line-height: 1.7; }
+  .pdxf-layer-legend-color { cursor: pointer; text-decoration: underline dotted; }
+  .pdxf-adjust.leaflet-control a, .pdxf-adjust button { cursor: pointer; }
+  .pdxf-adjust button { display: block; width: 100%; padding: 5px 8px; font-size: .74rem;
+    background: #fff; color: #333; border: none; border-bottom: 1px solid #e8e8e8; }
+  .pdxf-adjust button:hover { background: #f0f6f2; }
+  /* 地图上的图例（Leaflet control，左下角） */
+  .pdxf-legend.leaflet-control { background: #fff; padding: 8px 10px; border-radius: 8px;
+    box-shadow: 0 1px 4px rgba(0,0,0,.2); font-size: .74rem; line-height: 1.7; max-height: 42vh; overflow-y: auto; min-width: 130px; }
+  .pdxf-legend .sw { display: inline-block; width: 18px; height: 4px; border-radius: 2px; vertical-align: middle; margin-right: 5px; }
+  /* 窄屏退化为上下布局 */
+  @media (max-width: 900px) {
+    .pdxf-app { flex-direction: column; height: auto; }
+    .pdxf-mapwrap { flex: none; height: 55vh; }
+    .pdxf-side { width: auto; flex: none; border-left: none; border-top: 1px solid #e2e8e4; }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="pdxf-app">
+  <div class="pdxf-mapwrap"><div id="pdxfMap"></div></div>
+
+  <div class="pdxf-side">
+    <h1>DXF 管线导入</h1>
+    <p class="pdxf-intro">上传 CAD 管网图 → 识别图层（管径）/ 阀门块 / 文字标注 → 地图预览确认 → 创建水管与阀门。坐标按站点标定自动叠加。</p>
+    <div class="pdxf-steps">
+      <span class="pdxf-step on" id="pdxfStep1">① 上传</span>
+      <span class="pdxf-step" id="pdxfStep2">② 映射</span>
+      <span class="pdxf-step" id="pdxfStep3">③ 预览</span>
+      <span class="pdxf-step" id="pdxfStep4">④ 导入</span>
+    </div>
+
+    <div class="pdxf-card open" id="pdxfUploadCard">
+      <div class="pdxf-card-head" onclick="pdxfToggle('pdxfUploadCard')">
+        <h2>① 上传解析</h2><span class="pdxf-badge" id="pdxfUploadBadge"></span><span class="pdxf-fold">▶</span>
+      </div>
+      <div class="pdxf-card-body">
+        <p class="pdxf-hint">支持按图层分管径的管网图（图层名含管径数字最佳）；阀门块 <code>WID_Val-*</code>、文字标注（设备编号等）自动识别。</p>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <input type="file" id="pdxfFile" accept=".dxf" class="pdxf-input" style="flex:1;min-width:180px;">
+          <button type="button" class="pdxf-btn pdxf-btn-primary" id="pdxfAnalyzeBtn" onclick="pdxfAnalyze()">解析图纸</button>
+        </div>
+        <div id="pdxfAnalyzeStatus" style="margin-top:8px;font-size:.8rem;"></div>
+      </div>
+    </div>
+
+    <div class="pdxf-card" id="pdxfMapCard">
+      <div class="pdxf-card-head" onclick="pdxfToggle('pdxfMapCard')">
+        <h2>② 图层 / 阀门块 / 标注映射</h2><span class="pdxf-badge" id="pdxfMapBadge"></span><span class="pdxf-fold">▶</span>
+      </div>
+      <div class="pdxf-card-body">
+        <p class="pdxf-hint" id="pdxfCoordInfo"></p>
+        <div style="font-weight:600;font-size:.8rem;margin-bottom:4px;">管道图层 → 管径 / 类型</div>
+        <table class="pdxf-table">
+          <thead><tr><th>导入</th><th>图层</th><th>段数</th><th>总长(m)</th><th>管径(mm)</th><th>类型</th></tr></thead>
+          <tbody id="pdxfLayerBody"></tbody>
+        </table>
+        <div style="font-weight:600;font-size:.8rem;margin:10px 0 4px;">阀门块 → 阀门类型</div>
+        <table class="pdxf-table">
+          <thead><tr><th>导入</th><th>块名</th><th>数量</th><th>属性样本</th><th>类型</th></tr></thead>
+          <tbody id="pdxfBlockBody"></tbody>
+        </table>
+        <div style="font-weight:600;font-size:.8rem;margin:10px 0 4px;">文字标注层（用于阀门命名）</div>
+        <div id="pdxfLabelBox" style="font-size:.78rem;"></div>
+      </div>
+    </div>
+
+    <div class="pdxf-card" id="pdxfImportCard">
+      <div class="pdxf-card-head" onclick="pdxfToggle('pdxfImportCard')">
+        <h2>③④ 预览确认并导入</h2><span class="pdxf-badge" id="pdxfImportBadge"></span><span class="pdxf-fold">▶</span>
+      </div>
+      <div class="pdxf-card-body">
+        <p class="pdxf-hint">预览无误后导入：管道按连通性分解为简单路径（交叉点断开），每条路径一条水管；阀门吸附到 1.5m 内最近管段并继承管径；所选标注层 2.5m 内最近的文字写入阀门名。重复导入同一图纸会产生重复数据。</p>
+        <button type="button" class="pdxf-btn pdxf-btn-primary" id="pdxfImportBtn" onclick="pdxfImport()">确认导入</button>
+        <span id="pdxfImportStatus" style="font-size:.8rem;margin-left:8px;"></span>
+        <div id="pdxfResultBox" style="margin-top:10px;"></div>
+      </div>
+    </div>
+    <div class="pdxf-card" id="pdxfEditCard" style="display:none;">
+      <div class="pdxf-card-head" onclick="pdxfToggle('pdxfEditCard')">
+        <h2>🔧 编辑选中元素</h2><span class="pdxf-fold">▶</span>
+      </div>
+      <div class="pdxf-card-body" id="pdxfEditBody">
+        <p class="pdxf-hint">在地图上点击一条管道或一个阀门进行编辑。</p>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+// ── state ────────────────────────────────────────────────────────────
+var pdxfData = null;          // analyze result
+var pdxfToken = null;         // analyze 返回的内容 hash（解析缓存）
+var pdxfMap = null;
+var pdxfLayers = {};          // Leaflet layer groups: preview id → group
+var pdxfLegendCtl = null;
+var pdxfPreviewPane = null;   // 独立 pane：整组预览元素可一起拖动微调
+var pdxfPreviewRenderer = null;
+var pdxfOffset = { dLat: 0, dLng: 0 };   // 微调偏移（度），导入时叠加
+var pdxfAdjustOn = false;
+var pdxfEditMode = false;
+var pdxfEdit = null;        // {pipelines, valves, zones} from edit-data endpoint
+var pdxfEditLayers = null;  // L.featureGroup of interactive edit layers
+var pdxfSelected = null;    // {kind:'pipeline'|'valve', id}
+var pdxfDrag = null;
+var pdxfColorOf = {};         // layer name → css color (legend + map)
+var LAYER_COLORS = ['#1f77b4', '#d62728', '#2ca02c', '#9467bd', '#ff7f0e', '#8c564b', '#e377c2', '#17becf', '#bcbd22', '#7f7f7f', '#c49c94', '#98df8a'];
+function pdxfEsc(t) {
+  return String(t == null ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+var VALVE_LABELS = { solenoid: '电磁阀(Zone自控)', gate: '闸阀(手动)', angle: '角阀(手动)', washdown: '冲洗阀(WD)', qcv: '取水阀(QCV)', pullbox: '拉线箱' };
+var LINE_TYPE_LABELS = { irrigation: '灌溉主管', flush: '冲洗主管', toilet: '冲厕主管', casing: '过路套管', control: '控制线', comm: '通讯线' };
+
+function pdxfCsrf() {
+  var m = document.cookie.match(/csrftoken=([^;]+)/);
+  return m ? m[1] : '';
+}
+function pdxfSetStep(n) {
+  for (var i = 1; i <= 4; i++)
+    document.getElementById('pdxfStep' + i).classList.toggle('on', i <= n);
+}
+function pdxfToggle(id) {
+  document.getElementById(id).classList.toggle('open');
+  if (pdxfMap) setTimeout(function () { pdxfMap.invalidateSize(); }, 50);
+}
+
+// 地图常驻：页面加载即初始化，底图 + 淡色参照（现有 zone / 水管）。
+// boundary_points 支持平面点/多环/嵌套组格式，递归展开成环列表再画
+// （直接按平面点画嵌套格式会喂出 undefined，Leaflet 抛 Polyline 错误）。
+function pdxfRings(bp) {
+  if (!bp || !bp.length) return [];
+  if (!Array.isArray(bp[0])) {
+    return [bp.filter(function (p) { return p && p.lat !== undefined; })
+               .map(function (p) { return [p.lat, p.lng]; })];
+  }
+  return bp.reduce(function (acc, r) { return acc.concat(pdxfRings(r)); }, []);
+}
+function pdxfInitMap() {
+  pdxfMap = L.map('pdxfMap', { preferCanvas: true });
+  // 与首页/管线表单同一套瓦片：Esri 卫星 + GeoQ 高层级补底（OSM 国内不可达）
+  var satTile = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+    attribution: '&copy; Esri', maxNativeZoom: 19, maxZoom: 22,
+  });
+  var fallbackTile = L.tileLayer('https://map.geoq.cn/ArcGIS/rest/services/ChinaOnlineCommunity/MapServer/tile/{z}/{y}/{x}', {
+    attribution: '&copy; GeoQ', minZoom: 19, maxZoom: 22, opacity: 0.7,
+  });
+  L.layerGroup([satTile, fallbackTile]).addTo(pdxfMap);
+  // 预览专用 pane（管线 canvas + 阀门 + 标注都挂进来），微调拖动只动这个 pane
+  pdxfPreviewPane = pdxfMap.createPane('pdxfPreview');
+  pdxfPreviewPane.style.zIndex = 450;
+  pdxfPreviewPane.style.pointerEvents = 'none';
+  pdxfPreviewRenderer = L.canvas({ pane: 'pdxfPreview' });
+  pdxfInitAdjust();
+  try {
+    var rz = {{ ref_zones_json|safe }};
+    var zb = [];
+    rz.forEach(function (z) {
+      pdxfRings(z.boundary_points).forEach(function (ring) {
+        if (ring.length < 3) return;
+        zb = zb.concat(ring);
+        L.polygon(ring,
+          { color: z.boundary_color || '#52B788', weight: 1, opacity: .35, fillOpacity: .05, interactive: false })
+          .addTo(pdxfMap);
+      });
+    });
+    var rp = {{ ref_pipelines_json|safe }};
+    rp.forEach(function (p) {
+      var ll = (p.line_points || [])
+        .filter(function (pt) { return pt && pt.lat !== undefined; })
+        .map(function (pt) { return [pt.lat, pt.lng]; });
+      if (ll.length < 2) return;
+      zb = zb.concat(ll);
+      // 与首页同款可见度：类型配色实线 + 管径映射线宽（卫星底图上淡虚线看不见）
+      var dia = parseFloat(p.main_diameter) || 0;
+      L.polyline(ll, {
+        color: p.line_color || '#CC3333',
+        weight: dia ? Math.max(3, Math.min(9, 2 + dia / 15)) : 3,
+        opacity: .85, interactive: false,
+      }).addTo(pdxfMap);
+    });
+    if (zb.length) pdxfMap.fitBounds(L.latLngBounds(zb).pad(0.05));
+  } catch (e) { /* 参照层可选 */ }
+  window.addEventListener('resize', function () { pdxfMap.invalidateSize(); });
+}
+
+// ── ① analyze ────────────────────────────────────────────────────────
+function pdxfAnalyze() {
+  var f = document.getElementById('pdxfFile').files[0];
+  var st = document.getElementById('pdxfAnalyzeStatus');
+  if (!f) { st.innerHTML = '<span style="color:#c0392b;">请先选择 .dxf 文件</span>'; return; }
+  var btn = document.getElementById('pdxfAnalyzeBtn');
+  btn.disabled = true; btn.textContent = '解析中…';
+  st.innerHTML = '正在解析（大图约需几秒）…';
+  var fd = new FormData();
+  fd.append('file', f);
+  fetch("{% url 'core:pipeline_dxf_analyze' %}", {
+    method: 'POST',
+    headers: { 'X-CSRFToken': pdxfCsrf(), 'X-Requested-With': 'XMLHttpRequest' },
+    body: fd,
+  }).then(function (r) { return r.json(); }).then(function (d) {
+    btn.disabled = false; btn.textContent = '解析图纸';
+    if (!d.success) { st.innerHTML = '<span style="color:#c0392b;">' + (d.error || '解析失败') + '</span>'; return; }
+    pdxfData = d;
+    pdxfToken = d.token || null;         // 解析缓存 token：导入免重传/免重解析
+    pdxfOffset = { dLat: 0, dLng: 0 };   // 新图纸从零偏移开始
+    var totalBlocks = d.blocks.reduce(function (s, b) { return s + b.count; }, 0);
+    var totalLabels = d.labels.reduce(function (s, l) { return s + l.count; }, 0);
+    st.innerHTML = '解析完成：<span class="pdxf-chip">' + d.layers.length + ' 个线图层</span>' +
+      '<span class="pdxf-chip">' + totalBlocks + ' 个块实例</span>' +
+      '<span class="pdxf-chip">' + totalLabels + ' 条文字标注</span>';
+    document.getElementById('pdxfUploadBadge').textContent = '已解析';
+    document.getElementById('pdxfMapBadge').textContent = d.layers.length + ' 图层';
+    document.getElementById('pdxfCoordInfo').textContent = d.coord_info || '';
+    pdxfRenderTables();
+    pdxfRefreshMap();
+    document.getElementById('pdxfMapCard').classList.add('open');
+    document.getElementById('pdxfImportCard').classList.add('open');
+    document.getElementById('pdxfUploadCard').classList.remove('open');
+    pdxfSetStep(3);
+  }).catch(function () {
+    btn.disabled = false; btn.textContent = '解析图纸';
+    st.innerHTML = '<span style="color:#c0392b;">网络错误</span>';
+  });
+}
+
+// ── ② mapping tables ─────────────────────────────────────────────────
+function pdxfRenderTables() {
+  var lb = document.getElementById('pdxfLayerBody');
+  lb.innerHTML = pdxfData.layers.map(function (l, i) {
+    pdxfColorOf[l.layer] = LAYER_COLORS[i % LAYER_COLORS.length];
+    var dia = l.diameter_guess != null ? l.diameter_guess : '';
+    var lname = pdxfEsc(l.layer);
+    return '<tr>' +
+      '<td><input type="checkbox" class="pdxf-layer-include" data-layer="' + lname + '"' + (l.include_guess ? ' checked' : '') + ' onchange="pdxfRefreshMap()"></td>' +
+      '<td class="l-left"><span class="pdxf-layer-legend-color" data-zoom-layer="' + lname + '"><span class="sw" style="background:' + pdxfColorOf[l.layer] + '"></span>' + lname + '</span></td>' +
+      '<td>' + l.segments + '</td><td>' + l.total_len + '</td>' +
+      '<td><input type="number" min="0" step="1" class="pdxf-input pdxf-layer-dia" data-layer="' + lname + '" value="' + dia + '" style="width:72px;"></td>' +
+      '<td><select class="pdxf-select pdxf-layer-type" data-layer="' + lname + '">' +
+        Object.keys(LINE_TYPE_LABELS).map(function (t) {
+          return '<option value="' + t + '"' + (l.type_guess === t ? ' selected' : '') + '>' + LINE_TYPE_LABELS[t] + '</option>';
+        }).join('') + '</select></td>' +
+      '</tr>';
+  }).join('');
+
+  document.getElementById('pdxfBlockBody').innerHTML = pdxfData.blocks.map(function (b) {
+    var bname = pdxfEsc(b.block);
+    return '<tr>' +
+      '<td><input type="checkbox" class="pdxf-block-include" data-block="' + bname + '"' + (b.include_guess ? ' checked' : '') + ' onchange="pdxfRefreshMap()"></td>' +
+      '<td>' + bname + '</td><td>' + b.count + '</td>' +
+      '<td class="l-left" style="font-size:.7rem;color:#888;">' + (b.attrs.length ? pdxfEsc(b.attrs.join(', ')) : '—') + '</td>' +
+      '<td><select class="pdxf-select pdxf-block-type" data-block="' + bname + '">' +
+        Object.keys(VALVE_LABELS).map(function (t) {
+          return '<option value="' + t + '"' + (b.valve_type_guess === t ? ' selected' : '') + '>' + VALVE_LABELS[t] + '</option>';
+        }).join('') + '</select></td>' +
+      '</tr>';
+  }).join('');
+
+  // 图层名点击缩放走 data 属性委托（拼 onclick 字符串会被引号逃逸）
+  document.getElementById('pdxfLayerBody').addEventListener('click', function (e) {
+    var el = e.target.closest('[data-zoom-layer]');
+    if (el) pdxfZoomLayer(el.getAttribute('data-zoom-layer'));
+  });
+  document.getElementById('pdxfLabelBox').innerHTML = pdxfData.labels.map(function (l, i) {
+    var checked = l.layer === '设备编号' || i === 0 ? ' checked' : '';
+    var lname = pdxfEsc(l.layer);
+    return '<label class="pdxf-chip" style="cursor:pointer;"><input type="checkbox" class="pdxf-label-use" data-layer="' + lname + '"' + checked + ' onchange="pdxfRefreshMap()"> ' + lname + '（' + l.count + '，如 ' + pdxfEsc(l.samples[0] || '') + '）</label>';
+  }).join('');
+}
+
+// ── ③ preview overlays（在常驻底图上叠加/刷新） ─────────────────────
+function pdxfRefreshMap() {
+  if (!pdxfMap || !pdxfData) return;
+  Object.values(pdxfLayers).forEach(function (g) { if (pdxfMap.hasLayer(g)) pdxfMap.removeLayer(g); });
+  pdxfLayers = {};
+  var all = [];
+  var included = {};
+  document.querySelectorAll('.pdxf-layer-include').forEach(function (cb) {
+    included[cb.dataset.layer] = cb.checked;
+  });
+  var blocksOn = {};
+  document.querySelectorAll('.pdxf-block-include').forEach(function (cb) {
+    blocksOn[cb.dataset.block] = cb.checked;
+  });
+
+  var labelsOn = {};
+  document.querySelectorAll('.pdxf-label-use').forEach(function (cb) {
+    labelsOn[cb.dataset.layer] = cb.checked;
+  });
+
+  pdxfData.preview.layers.forEach(function (pl) {
+    var on = included[pl.layer];
+    var g = L.layerGroup([], { pane: 'pdxfPreview' });
+    var color = pdxfColorOf[pl.layer] || '#666';
+    pl.paths.forEach(function (path) {
+      var ll = path.map(function (p) { return [p.lat + pdxfOffset.dLat, p.lng + pdxfOffset.dLng]; });
+      all = all.concat(ll);
+      L.polyline(ll, { color: on ? color : '#bbb', weight: on ? 3 : 1.5, opacity: on ? .9 : .35,
+                       interactive: false, pane: 'pdxfPreview', renderer: pdxfPreviewRenderer }).addTo(g);
+    });
+    g.addTo(pdxfMap);
+    pdxfLayers['layer:' + pl.layer] = g;
+  });
+
+  var vg = L.layerGroup([], { pane: 'pdxfPreview' });
+  pdxfData.preview.valves.forEach(function (v) {
+    if (!blocksOn[v.block]) return;
+    L.circleMarker([v.lat + pdxfOffset.dLat, v.lng + pdxfOffset.dLng], {
+      radius: 3.5, color: '#c0392b', weight: 1.5, fillColor: '#fff', fillOpacity: 1,
+      pane: 'pdxfPreview', renderer: pdxfPreviewRenderer,
+    }).bindTooltip(pdxfEsc(v.block), { direction: 'top' }).addTo(vg);
+  });
+  vg.addTo(pdxfMap);
+  pdxfLayers['valves'] = vg;
+
+  pdxfData.labels.forEach(function (lb) {
+    if (!labelsOn[lb.layer]) return;   // 取消勾选的标注层不画（此前漏读勾选状态的 bug）
+    var g = L.layerGroup([], { pane: 'pdxfPreview' });
+    lb.points.slice(0, 200).forEach(function (p) {
+      L.marker([p.lat + pdxfOffset.dLat, p.lng + pdxfOffset.dLng], {
+        icon: L.divIcon({ className: '', html: '<span style="font-size:10px;color:#333;background:rgba(255,255,255,.75);padding:0 2px;border-radius:3px;white-space:nowrap;">' + pdxfEsc(p.text) + '</span>' }),
+        interactive: false, pane: 'pdxfPreview',
+      }).addTo(g);
+    });
+    g.addTo(pdxfMap);
+    pdxfLayers['labels:' + lb.layer] = g;
+  });
+
+  pdxfRenderLegend(included, blocksOn);
+}
+
+function pdxfRenderLegend(included, blocksOn) {
+  var html = pdxfData.layers.map(function (l) {
+    return '<div><span class="sw" style="background:' + (pdxfColorOf[l.layer] || '#666') + '"></span>' +
+      (included[l.layer] ? '' : '<s style="color:#aaa;">') + pdxfEsc(l.layer) +
+      (included[l.layer] ? '' : '</s>') + '</div>';
+  }).join('');
+  var totalV = pdxfData.blocks.reduce(function (s, b) { return s + (blocksOn[b.block] ? b.count : 0); }, 0);
+  html += '<div style="border-top:1px solid #eee;margin-top:4px;padding-top:4px;">🔴 阀门 ' + totalV + ' 个</div>';
+  if (!pdxfLegendCtl) {
+    pdxfLegendCtl = L.control({ position: 'bottomleft' });
+    pdxfLegendCtl.onAdd = function () {
+      var d = L.DomUtil.create('div', 'pdxf-legend');
+      d.id = 'pdxfLegend';
+      return d;
+    };
+    pdxfLegendCtl.addTo(pdxfMap);
+  }
+  var el = document.getElementById('pdxfLegend');
+  if (el) el.innerHTML = html;
+}
+
+function pdxfZoomLayer(layer) {
+  var g = pdxfLayers['layer:' + layer];
+  if (g && pdxfMap) pdxfMap.fitBounds(g.getBounds().pad(0.15));
+}
+
+// ── ④ import ────────────────────────────────────────────────────────
+function pdxfCollectSpecs() {
+  var layers = {}, blocks = {};
+  document.querySelectorAll('.pdxf-layer-include').forEach(function (cb) {
+    layers[cb.dataset.layer] = { include: cb.checked };
+  });
+  document.querySelectorAll('.pdxf-layer-dia').forEach(function (inp) {
+    if (layers[inp.dataset.layer]) layers[inp.dataset.layer].diameter = inp.value;
+  });
+  document.querySelectorAll('.pdxf-layer-type').forEach(function (sel) {
+    if (layers[sel.dataset.layer]) layers[sel.dataset.layer].type = sel.value;
+  });
+  document.querySelectorAll('.pdxf-block-include').forEach(function (cb) {
+    blocks[cb.dataset.block] = { include: cb.checked };
+  });
+  document.querySelectorAll('.pdxf-block-type').forEach(function (sel) {
+    if (blocks[sel.dataset.block]) blocks[sel.dataset.block].valve_type = sel.value;
+  });
+  var labelLayers = Array.prototype.map.call(
+    document.querySelectorAll('.pdxf-label-use:checked'), function (cb) { return cb.dataset.layer; });
+  return { layers: layers, blocks: blocks, labelLayers: labelLayers };
+}
+
+function pdxfImport() {
+  var f = document.getElementById('pdxfFile').files[0];
+  var st = document.getElementById('pdxfImportStatus');
+  if (!pdxfData) { st.innerHTML = '<span style="color:#c0392b;">请先解析图纸</span>'; return; }
+  var specs = pdxfCollectSpecs();
+  var anyLayer = Object.values(specs.layers).some(function (s) { return s.include; });
+  if (!anyLayer) { st.innerHTML = '<span style="color:#c0392b;">请至少勾选一个管道图层</span>'; return; }
+  var btn = document.getElementById('pdxfImportBtn');
+  btn.disabled = true; btn.textContent = '导入中…'; st.textContent = '正在创建水管与阀门…';
+  var fd = new FormData();
+  if (f) fd.append('file', f);                 // 优先走 token 缓存，文件仅兜底
+  if (pdxfToken) fd.append('token', pdxfToken);
+  fd.append('layers_json', JSON.stringify(specs.layers));
+  fd.append('blocks_json', JSON.stringify(specs.blocks));
+  fd.append('label_layers', JSON.stringify(specs.labelLayers));
+  fd.append('offset_lat', String(pdxfOffset.dLat));
+  fd.append('offset_lng', String(pdxfOffset.dLng));
+  fetch("{% url 'core:pipeline_dxf_import_submit' %}", {
+    method: 'POST',
+    headers: { 'X-CSRFToken': pdxfCsrf(), 'X-Requested-With': 'XMLHttpRequest' },
+    body: fd,
+  }).then(function (r) { return r.json(); }).then(function (d) {
+    btn.disabled = false; btn.textContent = '确认导入';
+    if (!d.success) { st.innerHTML = '<span style="color:#c0392b;">' + (d.error || '导入失败') + '</span>'; return; }
+    pdxfSetStep(4);
+    document.getElementById('pdxfImportBadge').textContent = '已完成';
+    var stats = (d.layer_stats || []).map(function (s) {
+      return '<span class="pdxf-chip">' + s.layer + '：' + s.segments + ' 段 → ' + s.paths + ' 条</span>';
+    }).join('');
+    document.getElementById('pdxfResultBox').innerHTML =
+      '<div class="pdxf-result"><b>导入完成</b>：创建水管 <b>' + d.pipelines + '</b> 条、阀门 <b>' + d.valves + '</b> 个' +
+      '（' + d.labeled_valves + ' 个带标注名，' + d.skipped_valves + ' 个距管线过远未挂接）<div style="margin-top:6px;">' + stats + '</div>' +
+      '<div style="margin-top:8px;"><a href="{% url 'core:dashboard' %}" target="_blank">→ 查看地图</a>　' +
+      '<a href="{% url 'core:settings' %}" target="_blank">→ 水管管理列表</a></div></div>';
+    st.textContent = '';
+  }).catch(function () {
+    btn.disabled = false; btn.textContent = '确认导入';
+    st.innerHTML = '<span style="color:#c0392b;">网络错误</span>';
+  });
+}
+
+// ── 整体微调：开启后拖动地图 = 平移整组预览元素（不动画地图本体） ────
+// 拖动过程用 CSS transform 移动预览 pane（顺滑），松手换算成经纬度偏移
+// 并按偏移重绘；偏移会随导入一起提交，最终落库坐标即所见。
+function pdxfInitAdjust() {
+  var ctl = L.control({ position: 'topright' });
+  ctl.onAdd = function () {
+    var d = L.DomUtil.create('div', 'pdxf-adjust leaflet-bar leaflet-control');
+    d.innerHTML =
+      '<button type="button" id="pdxfEditBtn" title="精细编辑：点击地图上的管道/阀门进行删除、清标注、指派 zone">🔧 精细编辑</button>' +
+      '<button type="button" id="pdxfAdjustBtn" title="开启后按住地图拖动，整体平移管线/阀门/标注">✥ 整体微调</button>' +
+      '<button type="button" id="pdxfAdjustReset" title="清除微调偏移">↺</button>';
+    L.DomEvent.disableClickPropagation(d);
+    d.querySelector('#pdxfEditBtn').addEventListener('click', pdxfToggleEditMode);
+    d.querySelector('#pdxfAdjustBtn').addEventListener('click', pdxfToggleAdjust);
+    d.querySelector('#pdxfAdjustReset').addEventListener('click', function () {
+      pdxfOffset = { dLat: 0, dLng: 0 };
+      pdxfUpdateAdjustHint();
+      pdxfRefreshMap();
+    });
+    return d;
+  };
+  ctl.addTo(pdxfMap);
+
+  var container = pdxfMap.getContainer();
+  container.addEventListener('mousedown', function (e) {
+    if (!pdxfAdjustOn || e.button !== 0) return;
+    e.preventDefault();
+    pdxfDrag = { x: e.clientX, y: e.clientY };
+  });
+  window.addEventListener('mousemove', function (e) {
+    if (!pdxfDrag) return;
+    var dx = e.clientX - pdxfDrag.x, dy = e.clientY - pdxfDrag.y;
+    pdxfPreviewPane.style.transform = 'translate(' + dx + 'px,' + dy + 'px)';
+  });
+  window.addEventListener('mouseup', function (e) {
+    if (!pdxfDrag) return;
+    var dx = e.clientX - pdxfDrag.x, dy = e.clientY - pdxfDrag.y;
+    pdxfDrag = null;
+    pdxfPreviewPane.style.transform = '';
+    if (Math.abs(dx) < 1 && Math.abs(dy) < 1) return;
+    var a = pdxfMap.containerPointToLatLng([0, 0]);
+    var b = pdxfMap.containerPointToLatLng([dx, dy]);
+    pdxfOffset.dLat += b.lat - a.lat;
+    pdxfOffset.dLng += b.lng - a.lng;
+    pdxfUpdateAdjustHint();
+    pdxfRefreshMap();   // 按新偏移重绘（提交这次拖动）
+  });
+}
+function pdxfToggleAdjust() {
+  pdxfAdjustOn = !pdxfAdjustOn;
+  var btn = document.getElementById('pdxfAdjustBtn');
+  if (pdxfAdjustOn) {
+    btn.style.background = 'var(--color-primary, #2D6A4F)';
+    btn.style.color = '#fff';
+    pdxfMap.dragging.disable();
+    pdxfMap.getContainer().style.cursor = 'move';
+  } else {
+    btn.style.background = '';
+    btn.style.color = '';
+    pdxfMap.dragging.enable();
+    pdxfMap.getContainer().style.cursor = '';
+  }
+  pdxfUpdateAdjustHint();
+}
+function pdxfUpdateAdjustHint() {
+  var btn = document.getElementById('pdxfAdjustBtn');
+  if (!btn) return;
+  var mLat = pdxfOffset.dLat * 111320,
+      mLng = pdxfOffset.dLng * 111320 * Math.cos(31.14 / 180 * Math.PI);
+  btn.title = (pdxfAdjustOn ? '微调中：按住地图拖动整体平移；再点关闭' : '开启后按住地图拖动，整体平移管线/阀门/标注') +
+    (Math.abs(mLat) > 0.05 || Math.abs(mLng) > 0.05 ? '（当前偏移 ↑%.1fm →%.1fm，导入时生效）'.replace('%.1f', mLat.toFixed(1)).replace('%.1f', mLng.toFixed(1)) : '');
+}
+
+// ── 精细编辑模式：加载已入库的管线/阀门，点击单个元素在侧栏编辑 ──────
+function pdxfToggleEditMode() {
+  pdxfEditMode = !pdxfEditMode;
+  var btn = document.getElementById('pdxfEditBtn');
+  var card = document.getElementById('pdxfEditCard');
+  if (pdxfEditMode) {
+    btn.style.background = 'var(--color-primary, #2D6A4F)'; btn.style.color = '#fff';
+    card.style.display = '';
+    if (pdxfAdjustOn) pdxfToggleAdjust();   // 互斥：微调与编辑不同时开
+    // 预览 pane 默认 pointer-events:none（微调拖动用）；编辑模式必须打开，
+    // 否则 canvas 里的管线/阀门收不到点击事件。
+    pdxfPreviewPane.style.pointerEvents = '';
+    pdxfLoadEditData();
+  } else {
+    btn.style.background = ''; btn.style.color = '';
+    card.style.display = 'none';
+    pdxfPreviewPane.style.pointerEvents = 'none';
+    pdxfClearEditLayers();
+    pdxfSelected = null;
+  }
+}
+function pdxfClearEditLayers() {
+  if (pdxfEditLayers && pdxfMap.hasLayer(pdxfEditLayers)) pdxfMap.removeLayer(pdxfEditLayers);
+  pdxfEditLayers = null;
+}
+function pdxfLoadEditData() {
+  document.getElementById('pdxfEditBody').innerHTML =
+    '<p class="pdxf-hint">加载中…</p>';
+  fetch("{% url 'core:pipeline_edit_data' %}", { credentials: 'same-origin' })
+    .then(function (r) { return r.json(); })
+    .then(function (d) {
+      if (!d.success) throw new Error(d.error);
+      pdxfEdit = d;
+      pdxfRenderEditLayers();
+      document.getElementById('pdxfEditBody').innerHTML =
+        '<p class="pdxf-hint">共 ' + d.pipelines.length + ' 条管道、' + d.valves.length +
+        ' 个阀门。点击地图上的元素编辑；删除即从数据库移除。</p>';
+    })
+    .catch(function () {
+      document.getElementById('pdxfEditBody').innerHTML =
+        '<p class="pdxf-hint" style="color:#c0392b;">加载失败，请重试。</p>';
+      pdxfToggleEditMode();
+    });
+}
+function pdxfHoverCursor(on) {
+  pdxfMap.getContainer().style.cursor = on ? 'pointer' : '';
+}
+function pdxfRenderEditLayers() {
+  pdxfClearEditLayers();
+  pdxfEditLayers = L.featureGroup();
+  pdxfEdit.pipelines.forEach(function (p) {
+    var ll = (p.line_points || [])
+      .filter(function (pt) { return pt && pt.lat !== undefined; })
+      .map(function (pt) { return [pt.lat, pt.lng]; });
+    if (ll.length < 2) return;
+    var line = L.polyline(ll, {
+      color: p.color, weight: p.diameter ? Math.max(4, Math.min(8, 2 + p.diameter / 15)) : 4,
+      opacity: .8, interactive: true, pane: 'pdxfPreview', renderer: pdxfPreviewRenderer,
+    }).on('click', function () { pdxfSelect({ kind: 'pipeline', id: p.id }); })
+      .on('mouseover', function () { pdxfHoverCursor(true); })
+      .on('mouseout', function () { pdxfHoverCursor(false); });
+    line.addTo(pdxfEditLayers);
+  });
+  pdxfEdit.valves.forEach(function (v) {
+    var pt = Array.isArray(v.point) && v.point[0]
+      ? [v.point[0].lat, v.point[0].lng] : null;
+    if (!pt) return;
+    L.circleMarker(pt, {
+      radius: 6, color: '#333', weight: 2, fillColor: '#ffd166', fillOpacity: 1,
+      interactive: true, pane: 'pdxfPreview', renderer: pdxfPreviewRenderer,
+    }).on('click', function () { pdxfSelect({ kind: 'valve', id: v.id }); })
+      .on('mouseover', function () { pdxfHoverCursor(true); })
+      .on('mouseout', function () { pdxfHoverCursor(false); })
+      .bindTooltip(pdxfEsc((v.name || '#' + v.id) + ' · ' + v.type_display), { direction: 'top' })
+      .addTo(pdxfEditLayers);
+  });
+  pdxfEditLayers.addTo(pdxfMap);
+}
+function pdxfSelect(sel) {
+  pdxfSelected = sel;
+  var body = document.getElementById('pdxfEditBody');
+  var card = document.getElementById('pdxfEditCard');
+  card.classList.add('open');
+  if (sel.kind === 'pipeline') {
+    var p = pdxfEdit.pipelines.find(function (x) { return x.id === sel.id; });
+    if (!p) return;
+    body.innerHTML =
+      '<div style="font-size:.84rem;line-height:1.7;">' +
+      '<b>' + pdxfEsc(p.name) + '</b><br>' +
+      '类型: ' + pdxfEsc(p.type_display) + (p.diameter ? ' · DN' + p.diameter : '') + '<br>' +
+      '编号: ' + pdxfEsc(p.code) + '<br>' +
+      '<span style="color:#888;">' + pdxfEsc(p.source || '') + '</span></div>' +
+      '<div style="margin-top:8px;"><button type="button" class="pdxf-btn pdxf-btn-primary" style="background:#c0392b;" onclick="pdxfDeleteSelected()">删除这条管道</button></div>';
+  } else {
+    var v = pdxfEdit.valves.find(function (x) { return x.id === sel.id; });
+    if (!v) return;
+    var pipe = pdxfEdit.pipelines.find(function (x) { return x.id === v.pipeline_id; });
+    var zoneOpts = '<option value="">— 未指派 —</option>' + pdxfEdit.zones.map(function (z) {
+      return '<option value="' + z.id + '"' + (z.id === v.zone_id ? ' selected' : '') + '>' + pdxfEsc(z.label) + '</option>';
+    }).join('');
+    body.innerHTML =
+      '<div style="font-size:.84rem;line-height:1.7;">' +
+      '<b>阀门 ' + (v.name ? pdxfEsc(v.name) : '#' + v.id) + '</b><br>' +
+      '类型: ' + pdxfEsc(v.type_display) + (v.diameter ? ' · ' + v.diameter + 'mm' : '') + '<br>' +
+      '所属管道: ' + (pipe ? pdxfEsc(pipe.name) : '—') + '<br>' +
+      'Maxicom station: ' + (v.station_id || '无') + '</div>' +
+      '<div style="margin-top:8px;">' +
+      '<div class="pdxf-hint" style="margin:0 0 2px;">文字标注（清空即去除标注）</div>' +
+      '<input type="text" id="pdxfValveName" class="pdxf-input" style="width:100%;" value="' + pdxfEsc(v.name) + '" data-orig="' + pdxfEsc(v.name) + '">' +
+      '<div class="pdxf-hint" style="margin:8px 0 2px;">指派区域（自动挂接该 zone 的 Maxicom station，电磁阀同步口径）</div>' +
+      '<input type="text" id="pdxfZoneFilter" class="pdxf-input" style="width:100%;margin-bottom:4px;" placeholder="输入编号过滤…（如 9-5）" oninput="pdxfFilterZoneOptions()">' +
+      '<select id="pdxfValveZone" class="pdxf-select" style="width:100%;" data-cur="' + (v.zone_id || '') + '" data-orig="' + (v.zone_id || '') + '">' + zoneOpts + '</select>' +
+      '<div style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap;">' +
+      '<button type="button" class="pdxf-btn pdxf-btn-primary" onclick="pdxfSaveValve(' + v.id + ')">保存</button>' +
+      '<button type="button" class="pdxf-btn pdxf-btn-primary" style="background:#c0392b;" onclick="pdxfDeleteSelected()">删除这个阀门</button></div></div>';
+  }
+}
+function pdxfFilterZoneOptions() {
+  var q = (document.getElementById('pdxfZoneFilter').value || '').trim().toLowerCase();
+  var sel = document.getElementById('pdxfValveZone');
+  Array.prototype.forEach.call(sel.options, function (o) {
+    if (!o.value) { o.style.display = ''; return; }
+    o.style.display = (!q || o.textContent.toLowerCase().indexOf(q) >= 0) ? '' : 'none';
+  });
+  // 选回当前值（若被过滤隐藏则临时可见）
+  var cur = sel.getAttribute('data-cur');
+  if (cur && sel.value !== cur) sel.value = cur;
+}
+function pdxfPost(url, fd, done) {
+  fetch(url, {
+    method: 'POST',
+    headers: { 'X-CSRFToken': pdxfCsrf(), 'X-Requested-With': 'XMLHttpRequest' },
+    body: fd,
+  }).then(function (r) { return r.json(); }).then(function (d) {
+    if (!d.success) { alert(d.error || '操作失败'); return; }
+    done(d);
+  }).catch(function () { alert('网络错误'); });
+}
+function pdxfDeleteSelected() {
+  if (!pdxfSelected) return;
+  var isPipe = pdxfSelected.kind === 'pipeline';
+  var msg = isPipe ? '删除这条管道？（其上的阀门会一并删除）' : '删除这个阀门？';
+  if (!confirm(msg)) return;
+  var url = isPipe
+    ? "/pipelines/edit/pipeline/" + pdxfSelected.id + "/delete/"
+    : "/pipelines/edit/valve/" + pdxfSelected.id + "/delete/";
+  pdxfPost(url, new FormData(), function () {
+    pdxfSelected = null;
+    pdxfLoadEditData();
+  });
+}
+function pdxfSaveValve(id) {
+  // 只提交实际变更的字段——全量提交会把误置空的 zone 连带清掉 station 配对
+  var fd = new FormData();
+  var nameEl = document.getElementById('pdxfValveName');
+  var sel = document.getElementById('pdxfValveZone');
+  if (nameEl.dataset.orig !== undefined && nameEl.value !== nameEl.dataset.orig)
+    fd.append('name', nameEl.value);
+  if (sel.dataset.orig !== undefined && sel.value !== sel.dataset.orig)
+    fd.append('zone_id', sel.value);
+  if (!fd.has('name') && !fd.has('zone_id')) return;
+  pdxfPost("/pipelines/edit/valve/" + id + "/update/", fd, function () {
+    pdxfLoadEditData();
+  });
+}
+
+pdxfInitMap();
+</script>
+{% endblock %}
