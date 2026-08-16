@@ -9645,6 +9645,7 @@ def _serialize_pm_tasks(gwos, is_mgr):
             'ticket': f'PM-{gwo.id}',
             'pm_order_id': pmwo.id if pmwo else None,
             'pm_number': plan.pm_number,
+            'job_plan_id': plan.job_plan_id,
             'job_plan_name': plan.job_plan.name if plan.job_plan_id else '',
             'scheduled_date': gwo.scheduled_date.strftime('%Y-%m-%d'),
             'area_desc': area_desc,
@@ -9688,19 +9689,24 @@ def pm_gwo_detail(request, gwo_id):
 def work_reports_pm_tasks(request):
     """AJAX endpoint: return the next batch of PM tasks (cursor-paginated by GWO id).
 
-    GET params: ``before_id`` — only return GWOs with id < before_id.
+    GET params: ``before_id`` — only return GWOs with id < before_id; ``jp`` —
+    JobPlanTemplate id to filter one JP sub-tab; ``done`` — include history.
     """
     from core.role_utils import is_admin
     admin = is_admin(request.user)
     include_done = request.GET.get('done') in ('1', 'true', 'True')
     qs = _pm_gwo_queryset(request.user, admin, include_done=include_done)
+    jp = request.GET.get('jp', '').strip()
+    if jp and jp.isdigit():
+        qs = qs.filter(plan__job_plan_id=int(jp))
+    total = qs.count()   # 全量数（不含 before_id 游标），驱动「已加载 x/y」
     before_id = request.GET.get('before_id', '').strip()
     if before_id and before_id.isdigit():
         qs = qs.filter(id__lt=int(before_id))
     batch = list(qs[:20])
     return JsonResponse({
         'tasks': _serialize_pm_tasks(batch, admin),
-        'total': _pm_gwo_queryset(request.user, admin, include_done=include_done).count(),
+        'total': total,
     })
 
 
@@ -9879,7 +9885,23 @@ def work_reports_list(request):
     from core.role_utils import is_field_worker
     pm_include_done = request.GET.get('pm_done') in ('1', 'true', 'True')
     pm_qs = _pm_gwo_queryset(request.user, admin, include_done=pm_include_done)
+    # 主 tab 徽章用的大总数（不受 JP sub-tab 过滤影响）。
     pm_tasks_total = pm_qs.count()
+    # PM列表按JP（作业计划模板）sub-tab 展示：聚合当前模式下各分类任务数（降序），
+    # 点选 ?jp=<id> 后列表仅显示该类任务。
+    pm_jp_groups = [{
+        'id': g['plan__job_plan_id'],
+        'name': g['plan__job_plan__name'] or '（无作业计划）',
+        'total': g['total'],
+    } for g in pm_qs.values('plan__job_plan_id', 'plan__job_plan__name')
+        .annotate(total=Count('id')).order_by('-total')]
+    pm_jp_selected = None
+    _jp_raw = request.GET.get('jp', '').strip()
+    if _jp_raw.isdigit() and any(g['id'] == int(_jp_raw) for g in pm_jp_groups):
+        pm_jp_selected = int(_jp_raw)
+    if pm_jp_selected:
+        pm_qs = pm_qs.filter(plan__job_plan_id=pm_jp_selected)
+    pm_list_total = pm_qs.count()
     pm_tasks = _serialize_pm_tasks(pm_qs[:20], admin)
 
     # ── 疑难/待修工单 tab (merged, ALL users) ──
@@ -10034,6 +10056,9 @@ def work_reports_list(request):
         'confirmed_remark_groups': confirmed_remark_groups,
         'remark_groups_map': remark_groups_map,
         'pm_tasks': pm_tasks,
+        'pm_jp_groups': pm_jp_groups,
+        'pm_jp_selected': pm_jp_selected,
+        'pm_list_total': pm_list_total,
         'pm_tasks_total': pm_tasks_total,
         'pm_include_done': pm_include_done,
         'pending_repairs': pending_repairs,
