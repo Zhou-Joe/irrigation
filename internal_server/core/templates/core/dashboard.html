@@ -45,6 +45,10 @@ map. Desktop (max-width:768px is false) is unaffected.{% endcomment %}
     /* Map: full pan + pinch-zoom handed to Leaflet. */
     .map-container, #map, .leaflet-container { touch-action: none; }
 }
+    /* 水管覆盖物的三级缩放显示：箭头与阀门圆点都在第二层级（z17+）出现；
+       阀门 label 在最大层级由 applyValveLabelMode 常显 */
+    .hide-pipe-arrows .pipe-arrow { display: none; }
+    .hide-pipe-valves .pipe-valve-marker { display: none; }
 </style>
 {% endblock %}
 
@@ -386,10 +390,10 @@ map. Desktop (max-width:768px is false) is unaffected.{% endcomment %}
      path can detect "no inline data" and trigger the fetch. -->
 <script id="zones-data" type="application/json"></script>
 
-<!-- Pipeline data for JavaScript -->
-<script id="pipelines-data" type="application/json">
-    {{ pipelines_json|safe }}
-</script>
+<!-- Pipeline data is now loaded async from /api/pipelines-payload/ (same
+     pattern as zones) instead of inlined — the payload no longer re-renders
+     into every dashboard HTML. Empty element kept as the fetch trigger. -->
+<script id="pipelines-data" type="application/json"></script>
 <!-- Landmark data for JavaScript -->
 <script id="landmarks-data" type="application/json">
     {{ landmarks_json|safe }}
@@ -415,7 +419,7 @@ map. Desktop (max-width:768px is false) is unaffected.{% endcomment %}
 <script id="pending-remarks" type="application/json">{{ pending_remarks_json|safe }}</script>
 <script id="pm-tasks-data" type="application/json">{{ pm_tasks_json|safe }}</script>
 <!-- Custom Map JS -->
-<script src="{% static 'js/map.js' %}?v=20260813a"></script>
+<script src="{% static 'js/map.js' %}?v=20260816c"></script>
 <script src="{% static 'js/dashboard-modal.js' %}?v=20260814a"></script>
 <script>
 // Override the notification popup's PM-task "填写" handler: on the dashboard we

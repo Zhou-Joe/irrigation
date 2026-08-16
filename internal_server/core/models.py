@@ -407,12 +407,21 @@ class Pipeline(models.Model):
     ``PipeValve.station`` → ``MaxicomRuntime`` (T+1 daily batch).
     """
 
+    # 管道/线类型 —— 对齐甲方 CAD 标准的六类线
     TYPE_IRRIGATION = 'irrigation'
     TYPE_FLUSH = 'flush'
+    TYPE_TOILET = 'toilet'
+    TYPE_CASING = 'casing'
+    TYPE_CONTROL = 'control'
+    TYPE_COMM = 'comm'
 
     TYPE_CHOICES = [
-        (TYPE_IRRIGATION, '灌溉水管'),
-        (TYPE_FLUSH, '冲洗水管'),
+        (TYPE_IRRIGATION, '灌溉主管'),
+        (TYPE_FLUSH, '冲洗主管'),
+        (TYPE_TOILET, '冲厕主管'),
+        (TYPE_CASING, '过路套管'),
+        (TYPE_CONTROL, '控制线'),
+        (TYPE_COMM, '通讯线'),
     ]
 
     FLOW_FORWARD = 'fwd'
@@ -431,7 +440,7 @@ class Pipeline(models.Model):
         max_length=20,
         choices=TYPE_CHOICES,
         default=TYPE_IRRIGATION,
-        help_text='水管类型：灌溉水管或冲洗水管'
+        help_text='线类型：灌溉主管/冲洗主管/冲厕主管/过路套管/控制线/通讯线'
     )
     line_points = models.JSONField(
         default=list,
@@ -456,9 +465,14 @@ class Pipeline(models.Model):
 
     @property
     def line_color(self):
-        if self.pipeline_type == self.TYPE_IRRIGATION:
-            return '#CC3333'
-        return '#3366CC'
+        return {
+            self.TYPE_IRRIGATION: '#CC3333',
+            self.TYPE_FLUSH: '#3366CC',
+            self.TYPE_TOILET: '#9B59B6',
+            self.TYPE_CASING: '#95A5A6',
+            self.TYPE_CONTROL: '#E67E22',
+            self.TYPE_COMM: '#1ABC9C',
+        }.get(self.pipeline_type, '#CC3333')
 
     def __str__(self):
         return f"{self.name} ({self.get_pipeline_type_display()})"
@@ -473,13 +487,20 @@ class PipeValve(models.Model):
     zone 最近一个灌溉日浇了多久。
     """
 
+    # 阀门/设备类型 —— 对齐甲方 CAD 标准的六类块
     VALVE_SOLENOID = 'solenoid'
-    VALVE_ISOLATION = 'isolation'
-    VALVE_FLUSH = 'flush'
+    VALVE_GATE = 'gate'
+    VALVE_ANGLE = 'angle'
+    VALVE_WASHDOWN = 'washdown'
+    VALVE_QCV = 'qcv'
+    VALVE_PULLBOX = 'pullbox'
     VALVE_TYPE_CHOICES = [
-        (VALVE_SOLENOID, '电磁阀'),
-        (VALVE_ISOLATION, '隔离阀'),
-        (VALVE_FLUSH, '冲洗阀'),
+        (VALVE_SOLENOID, '电磁阀(Zone自控)'),
+        (VALVE_GATE, '闸阀(手动)'),
+        (VALVE_ANGLE, '角阀(手动)'),
+        (VALVE_WASHDOWN, '冲洗阀(WD)'),
+        (VALVE_QCV, '取水阀(QCV)'),
+        (VALVE_PULLBOX, '拉线箱'),
     ]
 
     pipeline = models.ForeignKey(

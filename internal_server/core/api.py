@@ -700,6 +700,22 @@ class PipelineViewSet(viewsets.ModelViewSet):
     authentication_classes = [TokenAuthentication, authentication.SessionAuthentication]
     permission_classes = [IsAdminOrReadOnly]
 
+    def _bust_dash_cache(self):
+        from core.views import _invalidate_cached
+        _invalidate_cached('dashboard:pipelines')
+
+    def perform_create(self, serializer):
+        super().perform_create(serializer)
+        self._bust_dash_cache()
+
+    def perform_update(self, serializer):
+        super().perform_update(serializer)
+        self._bust_dash_cache()
+
+    def perform_destroy(self, instance):
+        super().perform_destroy(instance)
+        self._bust_dash_cache()
+
 
 # ==========================================================================
 # 维修工单系统 API

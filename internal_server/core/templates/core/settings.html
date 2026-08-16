@@ -310,6 +310,7 @@
                 <h2><span class="collapse-indicator" id="pipelineIndicator">▼</span> 水管管理</h2>
                 <div class="header-actions" onclick="event.stopPropagation()">
                     <a href="{% url 'core:pipeline_new' %}" class="btn btn-sm btn-primary" target="_blank">+ 新建</a>
+                    <a href="{% url 'core:pipeline_dxf_import' %}" class="btn btn-sm btn-secondary" target="_blank">⬆ DXF导入</a>
                 </div>
             </div>
             {% if pipelines %}
