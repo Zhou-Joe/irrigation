@@ -82,10 +82,6 @@
                     <label for="date">日期 *</label>
                     <input type="date" id="date" name="date" value="{% if report %}{{ report.date.isoformat }}{% else %}{{ today }}{% endif %}" required>
                 </div>
-                <div class="form-group">
-                    <label for="weather">天气</label>
-                    <input type="text" id="weather" name="weather" value="{% if report %}{{ report.weather }}{% endif %}" maxlength="50">
-                </div>
             </div>
             <div class="form-row">
                 <div class="form-group">

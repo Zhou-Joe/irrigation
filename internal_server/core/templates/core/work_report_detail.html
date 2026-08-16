@@ -29,6 +29,15 @@
 .zd-badge.bs-ok { background: rgba(64,145,108,0.12); color: var(--color-success, #40916C); }
 .zd-badge.bs-danger { background: rgba(155,34,38,0.12); color: var(--color-error, #9B2226); }
 
+/* ── Header right: weather card + actions ── */
+.zd-head-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.zd-weather { display: flex; align-items: center; gap: 8px; background: #fff; border: 1px solid #eef0f3; border-radius: 12px; padding: 6px 12px 6px 10px; }
+.zd-wx-icon { font-size: 1.55rem; line-height: 1; }
+.zd-wx-txt { display: flex; flex-direction: column; line-height: 1.2; }
+.zd-wx-desc { font-size: 0.74rem; font-weight: 600; color: var(--color-text-muted, #8B9A8F); }
+.zd-wx-temp { font-size: 0.92rem; font-weight: 700; color: var(--color-primary-light, #2D6A4F); }
+@media (max-width: 480px) { .zd-wx-icon { font-size: 1.3rem; } .zd-weather { padding: 5px 10px 5px 8px; } }
+
 /* ── Buttons ── */
 .zd-btn { padding: 6px 14px; border: none; border-radius: 8px; font-size: 0.8rem; font-weight: 600; cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; gap: 5px; transition: opacity .15s; }
 .zd-btn:active { opacity: 0.82; }
@@ -186,7 +195,18 @@
             </div>
             {% endif %}
         </div>
-        <a href="{% url 'core:dashboard' %}?edit_workorder={{ report.id }}" class="zd-btn zd-btn-secondary">编辑</a>
+        <div class="zd-head-right">
+            {% if weather_display %}
+            <div class="zd-weather" title="提交时天气">
+                <span class="zd-wx-icon">{{ weather_icon }}</span>
+                <div class="zd-wx-txt">
+                    <span class="zd-wx-desc">{{ weather_desc }}</span>
+                    {% if weather_temp %}<span class="zd-wx-temp">{{ weather_temp }}</span>{% endif %}
+                </div>
+            </div>
+            {% endif %}
+            <a href="{% url 'core:dashboard' %}?edit_workorder={{ report.id }}" class="zd-btn zd-btn-secondary">编辑</a>
+        </div>
     </div>
 
     {# ── Basic info ── #}
@@ -206,7 +226,6 @@
             {% if is_project_report and is_manager and linked_projects %}
             <div class="p"><span class="k">项目关联</span><span class="v"><span class="zd-switch" data-type="hours" onclick="wrToggleLink(this)"><span class="zd-switch-name">工时</span><span class="zd-switch-track {% if report.hours_confirmed %}on{% endif %}"><span class="zd-switch-knob"></span></span></span><span class="zd-switch {% if not material_project %}disabled{% endif %}" data-type="materials" onclick="wrToggleLink(this)"><span class="zd-switch-name">物料</span><span class="zd-switch-track {% if report.materials_confirmed and material_project %}on{% endif %}"><span class="zd-switch-knob"></span></span></span></span></div>
             {% endif %}
-            {% if report.weather %}<div class="p"><span class="k">天气</span><span class="v">{{ report.weather }}</span></div>{% endif %}
             <hr>
             <div class="p"><span class="k">区域</span><span class="v">{{ report.zone_names|default:"-" }}</span></div>
         </div>

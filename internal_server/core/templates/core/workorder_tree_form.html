@@ -193,8 +193,6 @@
           <option value="">--</option>
           <option>早班</option><option>白班</option><option>夜班</option>
         </select></div>
-      <div class="wo-field"><label>天气</label>
-        <input type="text" id="f-weather" name="weather" placeholder="晴/阴/雨…"></div>
       <div class="wo-field"><label>位置/CCU</label>
         <select id="f-location" name="location">
           <option value="">-- (按所选区域自动) --</option>
@@ -515,7 +513,7 @@ function applyExisting(){
 function applyHeader(){
   if (!HEADER || !HEADER.h_date) return;
   const set = (id, v) => { const el = document.getElementById(id); if (el && v != null) el.value = v; };
-  set('f-date', HEADER.h_date); set('f-weather', HEADER.h_weather); set('f-shift', HEADER.h_shift);
+  set('f-date', HEADER.h_date); set('f-shift', HEADER.h_shift);
   set('f-location', HEADER.h_location); set('f-zone_names', HEADER.h_zone_names);
   set('f-remark', HEADER.h_remark); set('f-team_size', HEADER.h_team_size);
   set('f-third_party_count', HEADER.h_third_party_count);
@@ -705,15 +703,6 @@ document.addEventListener('DOMContentLoaded', ()=>{
   // Material destination tracks the work-content sections too.
   document.getElementById('wo-tree').addEventListener('input', () => setTimeout(updateMatDest, 260));
   document.getElementById('wo-tree').addEventListener('change', () => setTimeout(updateMatDest, 260));
-  // Auto-fill 天气 with the current-hour snapshot (only when empty, i.e. new report
-  // or an old one with no weather set — never overwrite an existing value).
-  const wEl = document.getElementById('f-weather');
-  if (wEl && !wEl.value.trim()) {
-    fetch('/api/today-weather/', { credentials: 'same-origin' })
-      .then(r => r.ok ? r.json() : null)
-      .then(d => { if (d && d.summary) wEl.value = d.summary; })
-      .catch(() => {});
-  }
 });
 
 // ── Material consumption widget (材料消耗 / 出库) ──────────────────────────
