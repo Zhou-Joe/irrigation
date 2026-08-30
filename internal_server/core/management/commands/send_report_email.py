@@ -239,9 +239,11 @@ class Command(BaseCommand):
         """
         start, end = _date_window(frequency, today, data_range_days)
         if report_type == 'irrigation':
-            # Compact YYYYMMDDHHMM strings — full-day window (00:00–23:59).
-            df = start.strftime('%Y%m%d') + '0000'
-            dt = end.strftime('%Y%m%d') + '2359'
+            # Compact YYYYMMDDHHMM strings — irrigation-day window (D-1 22:00
+            # -> D 21:59, see core.irrig_time); calendar days would split
+            # overnight runs across two report days.
+            from core.irrig_time import irrigation_day_bounds
+            df, dt = irrigation_day_bounds(start, end)
             return build_fn(df, dt)
         if report_type == 'work_reports':
             from django.contrib.auth import get_user_model

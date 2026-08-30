@@ -7466,16 +7466,20 @@ def _irrig_window(request):
 
     Returns (date_from_compact, date_to_compact, ts_from_14, ts_to_14) where
     the compact form is the raw YYYYMMDDHHMM the user passed (or yesterday's
-    full day by default) and the ts_* forms are padded to 14-char strings
+    irrigation day by default) and the ts_* forms are padded to 14-char strings
     suitable for string-range matching against MaxicomRuntime.timestamp.
+
+    Default = yesterday's IRRIGATION DAY (D-1 22:00 -> D 21:59), matching the
+    Maxicom UI's daily totals — runtime rows keep raw timestamps, so a plain
+    calendar 00:00-23:59 window would split each overnight run across two
+    days (see core.irrig_time).
 
     Shared by the irrigation dashboard view and the zone-heatmap API so both
     honour the exact same date-window semantics.
     """
+    from core.irrig_time import irrigation_day_bounds
     yesterday = timezone.localdate() - timedelta(days=1)
-    ys = yesterday.strftime('%Y%m%d')
-    default_from = ys + '0000'
-    default_to = ys + '2359'
+    default_from, default_to = irrigation_day_bounds(yesterday, yesterday)
     date_from = request.GET.get('from', default_from).strip()
     date_to = request.GET.get('to', default_to).strip()
     ts_from = date_from.ljust(14, '0')[:14] if date_from else ''
