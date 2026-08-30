@@ -448,6 +448,73 @@ def _similarity_transform(pairs):
     return transform
 
 
+def similarity_transform_ls(pairs):
+    """N点(≥2)相似变换最小二乘：lat = a*x + b*y + c；lng = -b*x + a*y + d。
+
+    与 ``_similarity_transform`` 同一变换形式；N≥3 时存在多余约束，可给出
+    每点残差（米）与 RMS，用于标定质量评估。传入的 pairs 需与现有调用方
+    一致（DXF y 已取反）。返回 ``(transform_fn, stats)``；退化输入返回
+    ``(None, 错误消息)``。
+    """
+    import math
+    n = len(pairs)
+    if n < 2:
+        return None, '标定点至少需要 2 个'
+    mx = sum(p['dxf_x'] for p in pairs) / n
+    my = sum(p['dxf_y'] for p in pairs) / n
+    mlat = sum(p['lat'] for p in pairs) / n
+    mlng = sum(p['lng'] for p in pairs) / n
+    nr = ni = denom = 0.0
+    for p in pairs:
+        x, y = p['dxf_x'] - mx, p['dxf_y'] - my
+        la, ln = p['lat'] - mlat, p['lng'] - mlng
+        nr += x * la + y * ln
+        ni += y * la - x * ln
+        denom += x * x + y * y
+    if denom < 1e-12:
+        return None, '标定用的 DXF 点不能全部重合'
+    a = nr / denom
+    b = ni / denom
+    c = mlat - a * mx - b * my
+    d = mlng + b * mx - a * my
+
+    def transform(x, y):
+        return (a * x + b * y + c, -b * x + a * y + d)
+
+    # 残差（米）：等距圆柱近似换算经纬度差
+    residuals = []
+    for p in pairs:
+        plat, plng = transform(p['dxf_x'], p['dxf_y'])
+        dlatm = (p['lat'] - plat) * 111320.0
+        dlngm = (p['lng'] - plng) * 111320.0 * math.cos(math.radians(p['lat']))
+        residuals.append(math.hypot(dlatm, dlngm))
+    rms = math.sqrt(sum(r * r for r in residuals) / n)
+    stats = {
+        'a': a, 'b': b, 'c': c, 'd': d,
+        'scale': math.hypot(a, b),
+        'rotation_deg': math.degrees(math.atan2(-b, a)),
+        'rms_m': rms,
+        'residuals_m': [round(r, 2) for r in residuals],
+        'n': n,
+    }
+    return transform, stats
+
+
+def similarity_inverse(a, b, c, d):
+    """``similarity_transform_ls`` 系数的逆变换：x = ia*lat + ib*lng + ic；
+    y = -ib*lat + ia*lng + id。用于把已存的 lat/lng 还原回本地坐标
+    （重新校准 = old⁻¹ ∘ new）。退化返回 None。
+    """
+    s = a * a + b * b
+    if s < 1e-18:
+        return None
+    return {
+        'ia': a / s, 'ib': -b / s,
+        'ic': (b * d - a * c) / s,
+        'id': -(b * c + a * d) / s,
+    }
+
+
 def _affine_transform_ls(pairs):
     """
     N-point full affine transform via least-squares (no numpy).

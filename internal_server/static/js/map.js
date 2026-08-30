@@ -42,8 +42,6 @@
     // Rendered valve markers + their tooltip content, so a zoomend handler can
     // flip labels to permanent (auto-show) at max zoom, hover-only otherwise.
     let valveMarkersForLabels = [];
-    // {marker, latLngs} per pipeline arrow — zoomend 按屏幕长度过滤显示
-    let pipelineArrowRegistry = [];
 
     // Zone label layers group (separate from boundaries for independent toggle)
     let labelsLayerGroup;
@@ -306,19 +304,13 @@
         // reappear with the right layout (see _updateLabelSizesAndClearZoom wrapper).
         map.on('zoomend', updateLabelSizesDebounced);
         map.on('zoomend', applyValveLabelMode);   // valve labels: auto at max zoom, hover below
-        map.on('zoomend', updateArrowVisibility); // pipe arrows: only when zoomed in
-        // 最大层级平移后重排阀门常显 label（碰撞结果是视口相关的）；
-        // resize 后箭头屏幕长度过滤需重算。均防抖。
+        map.on('zoomend', updatePipeOverlayTiers); // pipe overlays: valve dots from z17
+        // 最大层级平移后重排阀门常显 label（碰撞结果是视口相关的）；均防抖。
         let _valveRelayoutT = null;
         map.on('moveend', function () {
             if (map.getZoom() < map.getMaxZoom()) return;
             clearTimeout(_valveRelayoutT);
             _valveRelayoutT = setTimeout(layoutValveLabels, 250);
-        });
-        let _resizeT = null;
-        window.addEventListener('resize', function () {
-            clearTimeout(_resizeT);
-            _resizeT = setTimeout(updateArrowVisibility, 250);
         });
         // Re-cull labels to the viewport after panning so only on-screen labels render.
         map.on('moveend', _cullLabelsToViewportDebounced);
@@ -1681,7 +1673,7 @@
             try {
                 renderPipelines(JSON.parse(el.textContent));
                 applyValveLabelMode(true);
-                updateArrowVisibility();
+                updatePipeOverlayTiers();
             } catch (e) { console.error('pipelines inline parse failed', e); }
             return;
         }
@@ -1690,7 +1682,7 @@
             .then(d => {
                 renderPipelines(d.pipelines || []);
                 applyValveLabelMode(true);   // fresh markers — force rebind
-                updateArrowVisibility();     // arrows follow the current zoom
+                updatePipeOverlayTiers();    // valve dots follow the current zoom
             })
             .catch(err => console.error('pipelines payload fetch failed', err));
     }
@@ -1698,33 +1690,16 @@
     // Valve labels: permanent (auto-shown) at the max zoom level, hover-only
     // below it — matches the zoom-tiered display used for zone watermarks and
     // boundaries so valves don't clutter the map when zoomed out.
-    // Pipeline overlays follow the map's three zoom tiers:
-    //   tier 1 (<17): park overview — valves AND arrows hidden
-    //   tier 2 (>=17): pipe level — valve dots + arrows appear
+    // Pipeline overlays follow the map's zoom tiers:
+    //   tier 1 (<17): park overview — valve dots hidden
+    //   tier 2 (>=17): pipe level — valve dots appear
     //   tier 3 (max zoom): valve labels become permanent (applyValveLabelMode)
     // CSS class toggles only — no per-marker work on zoom.
-    function updateArrowVisibility() {
+    function updatePipeOverlayTiers() {
         if (!map) return;
         const z = map.getZoom();
         const c = map.getContainer();
-        c.classList.toggle('hide-pipe-arrows', z < 17);   // 箭头与阀门同层级（第二层级起）
         c.classList.toggle('hide-pipe-valves', z < 17);
-        updateArrowDensity();
-    }
-
-    // 管段在当前缩放下的屏幕长度不足阈值就不显示箭头——DXF 会把管网切出
-    // 数百条短管段，每段一个箭头等于箭头地毯。拉长（缩放靠近）后自然出现。
-    function updateArrowDensity() {
-        if (!map) return;
-        pipelineArrowRegistry.forEach(({ marker, latLngs }) => {
-            const el = marker.getElement();
-            if (!el) return;
-            let px = 0;
-            for (let i = 1; i < latLngs.length; i++) {
-                px += map.latLngToLayerPoint(latLngs[i - 1]).distanceTo(map.latLngToLayerPoint(latLngs[i]));
-            }
-            el.style.display = px >= 140 ? '' : 'none';
-        });
     }
 
     let _valveLabelMode = null;   // 'hover' | 'permanent' — 跨 zoom 不变则不重建
@@ -1742,7 +1717,10 @@
             if (!vm || vm._tipContent === undefined) return;
             if (vm.getTooltip()) vm.unbindTooltip();
             vm.bindTooltip(vm._tipContent, {
-                sticky: true, className: 'ref-tooltip', permanent: isMax
+                sticky: true, className: 'ref-tooltip',
+                // 最大层级只常显已浇水阀门；未浇水的保持悬停显示，避免满屏
+                // 未浇水 label 盖住还没读到的状态点。
+                permanent: isMax && vm._watered === true
             });
         });
         if (isMax) layoutValveLabels();
@@ -1772,13 +1750,12 @@
 
     /**
      * Render pipelines as polylines on the map, with diameter-scaled weight,
-     * flow-direction arrows, and per-valve markers (colored by whether the
-     * valve's Maxicom station watered on the latest irrigation day).
+     * per-valve markers (colored by whether the valve's Maxicom station watered
+     * on the latest irrigation day).
      */
     function renderPipelines(pipelines) {
         pipelinesLayerGroup.clearLayers();
         valveMarkersForLabels = [];   // rebuilt as valve markers are created below
-        pipelineArrowRegistry = [];   // rebuilt as arrows are created below
 
         pipelines.forEach(pipeline => {
             if (!pipeline.line_points || pipeline.line_points.length < 2) {
@@ -1828,7 +1805,6 @@
             const diaLabel = pipeline.main_diameter
                 ? `主管径 ${pipeline.main_diameter} mm`
                 : '主管径未填';
-            const flowLabel = pipeline.flow_direction_display || '未定方向';
             const valveLabel = valves.length
                 ? `阀门 ${valves.length} 个（最近灌溉日浇水 ${wateredCount}）`
                 : '无阀门节点';
@@ -1845,7 +1821,7 @@
                             ${escapeHtml(pipeline.pipeline_type_display)}
                         </span>
                     </div>
-                    <div style="margin-top: 6px;">${diaLabel} · ${escapeHtml(flowLabel)}</div>
+                    <div style="margin-top: 6px;">${diaLabel}</div>
                     ${srcLabel}
                     <div style="margin-top: 4px;">${valveLabel}</div>
                     <div style="margin-top: 4px;">关联区域: ${escapeHtml(zoneList)}</div>
@@ -1861,36 +1837,6 @@
             });
 
             pipelinesLayerGroup.addLayer(polyline);
-
-            // ── Flow-direction arrows (dart shape, rotated to pipe bearing) ──
-            // ▶ points east (bearing 90°) at rotate(0), so we rotate by (bearing - 90).
-            if (pipeline.flow_direction === 'fwd' || pipeline.flow_direction === 'rev') {
-                // 每条管线只放 1 个箭头（中段）——管线数上千，多点箭头必然铺满
-                // 地图；单条方向读 1 个箭头足够。
-                const nSeg = latLngs.length - 1;
-                const i = Math.floor(nSeg / 2);
-                {
-                    const [lat1, lng1] = latLngs[i];
-                    const [lat2, lng2] = latLngs[i + 1];
-                    let b = _bearing(lat1, lng1, lat2, lng2);
-                    if (pipeline.flow_direction === 'rev') b += 180;
-                    const rot = b - 90;   // SVG dart points east at 0° → align to bearing
-                    const midLat = (lat1 + lat2) / 2;
-                    const midLng = (lng1 + lng2) / 2;
-                    const arrow = L.marker([midLat, midLng], {
-                        interactive: false,
-                        keyboard: false,
-                        icon: L.divIcon({
-                            className: 'pipe-arrow',
-                            // Dart: tip at right (15,6), notch back at (4,6) — clearly directional.
-                            html: `<div style="transform: rotate(${rot}deg); line-height:0; filter: drop-shadow(0 0 1.5px #fff) drop-shadow(0 0 1.5px #fff);"><svg width="18" height="12" viewBox="0 0 18 12"><path d="M1 1 L15 6 L1 11 L4.5 6 Z" fill="${pipeline.line_color}" stroke="#fff" stroke-width="1" stroke-linejoin="round"/></svg></div>`,
-                            iconSize: [18, 12], iconAnchor: [9, 6]
-                        })
-                    });
-                    pipelinesLayerGroup.addLayer(arrow);
-                    pipelineArrowRegistry.push({ marker: arrow, latLngs });
-                }
-            }
 
             // ── Valve markers (DOM divIcon squares — always render above canvas,
             //    clearly visible against zone fills. Green=filled=watered, gray
@@ -1936,20 +1882,11 @@
                 const tipContent = escapeHtml((v.zone_name || '') + (v.zone_code ? ' ' + v.zone_code : '') || ('阀门 #' + (v.order + 1))) + (watered ? ' · 已浇水' : ' · 未浇水');
                 vm.bindTooltip(tipContent, { sticky: true, className: 'ref-tooltip' });
                 vm._tipContent = tipContent;   // for zoom-driven permanent toggle
+                vm._watered = watered;          // 未浇水阀门最大层级不常显 label（仍可悬停查看）
                 valveMarkersForLabels.push(vm);
                 pipelinesLayerGroup.addLayer(vm);
             });
         });
-    }
-
-    // Bearing (degrees, 0=N, 90=E) between two lat/lng points — for arrow rotation.
-    function _bearing(lat1, lng1, lat2, lng2) {
-        const toRad = d => d * Math.PI / 180, toDeg = r => r * 180 / Math.PI;
-        const dLng = toRad(lng2 - lng1);
-        const y = Math.sin(dLng) * Math.cos(toRad(lat2));
-        const x = Math.cos(toRad(lat1)) * Math.sin(toRad(lat2))
-                - Math.sin(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.cos(dLng);
-        return (toDeg(Math.atan2(y, x)) + 360) % 360;
     }
 
     // Minimal HTML-escape for user-entered strings placed into popups/tooltips.

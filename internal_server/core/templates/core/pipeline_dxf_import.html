@@ -87,6 +87,32 @@
       </div>
     </div>
 
+    <div class="pdxf-card" id="pdxfCalCard">
+      <div class="pdxf-card-head" onclick="pdxfToggle('pdxfCalCard')">
+        <h2>📍 比例校准（三点）</h2><span class="pdxf-badge" id="pdxfCalBadge"></span><span class="pdxf-fold">▶</span>
+      </div>
+      <div class="pdxf-card-body">
+        <div id="pdxfCalCurrent" style="font-size:.78rem;color:#666;margin-bottom:6px;"></div>
+        <p class="pdxf-hint" id="pdxfCalIntro">DXF 图层与卫星图有比例/角度偏差时用三点校准：每组先点 <b>DXF 图上的点</b>（自动吸附最近的管点/阀门），再点 <b>卫星图上的同一位置</b>，共三组。点选得越远越准（建议基线 200m+，用路牙、建筑角等清晰地物）；三组点拟合后显示比例/旋转修正量和每点残差，可据此删掉误差大的点重选。</p>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button type="button" class="pdxf-btn pdxf-btn-primary" id="pdxfCalStartBtn" onclick="pdxfCalStart()">开始三点校准</button>
+          <button type="button" class="pdxf-btn" id="pdxfCalStopBtn" style="display:none;" onclick="pdxfCalStop()">退出校准</button>
+        </div>
+        <div id="pdxfCalStep" style="margin-top:8px;font-size:.84rem;font-weight:600;"></div>
+        <table class="pdxf-table" id="pdxfCalTable" style="display:none;margin-top:6px;">
+          <thead><tr><th>#</th><th>DXF 点（局部坐标）</th><th>卫星点（经纬度）</th><th>残差</th><th></th></tr></thead>
+          <tbody id="pdxfCalPairBody"></tbody>
+        </table>
+        <div id="pdxfCalFit" style="margin-top:8px;font-size:.82rem;"></div>
+        <div id="pdxfCalActions" style="display:none;gap:8px;flex-wrap:wrap;margin-top:8px;">
+          <button type="button" class="pdxf-btn pdxf-btn-primary" id="pdxfCalSaveBtn" onclick="pdxfCalSave()">保存并刷新预览</button>
+          <button type="button" class="pdxf-btn" id="pdxfCalRevertBtn" style="display:none;" onclick="pdxfCalRevert()">恢复上次标定</button>
+          <button type="button" class="pdxf-btn" id="pdxfCalApplyBtn" style="display:none;" onclick="pdxfCalApplySaved()">应用到已保存的管道…</button>
+        </div>
+        <div id="pdxfCalStatus" style="margin-top:8px;font-size:.8rem;"></div>
+      </div>
+    </div>
+
     <div class="pdxf-card" id="pdxfMapCard">
       <div class="pdxf-card-head" onclick="pdxfToggle('pdxfMapCard')">
         <h2>② 图层 / 阀门块 / 标注映射</h2><span class="pdxf-badge" id="pdxfMapBadge"></span><span class="pdxf-fold">▶</span>
@@ -144,6 +170,9 @@ var pdxfPreviewPane = null;   // 独立 pane：整组预览元素可一起拖动
 var pdxfPreviewRenderer = null;
 var pdxfOffset = { dLat: 0, dLng: 0 };   // 微调偏移（度），导入时叠加
 var pdxfAdjustOn = false;
+var pdxfCalInfo = {{ dxf_calibration_json|safe }};   // 当前生效标定（服务端注入）
+var pdxfCal = { on: false, phase: 'dxf', idx: 0, pairs: [], pending: null,
+                markers: null, prevPoints: null, snapPts: null };
 var pdxfEditMode = false;
 var pdxfEdit = null;        // {pipelines, valves, zones} from edit-data endpoint
 var pdxfEditLayers = null;  // L.featureGroup of interactive edit layers
@@ -435,6 +464,7 @@ function pdxfImport() {
   var fd = new FormData();
   if (f) fd.append('file', f);                 // 优先走 token 缓存，文件仅兜底
   if (pdxfToken) fd.append('token', pdxfToken);
+  if (f) fd.append('filename', f.name);        // 批次名（token 导入时无文件对象）
   fd.append('layers_json', JSON.stringify(specs.layers));
   fd.append('blocks_json', JSON.stringify(specs.blocks));
   fd.append('label_layers', JSON.stringify(specs.labelLayers));
@@ -516,6 +546,7 @@ function pdxfToggleAdjust() {
   pdxfAdjustOn = !pdxfAdjustOn;
   var btn = document.getElementById('pdxfAdjustBtn');
   if (pdxfAdjustOn) {
+    if (pdxfCal.on) pdxfCalStop();   // 互斥：校准中不开微调（点击会串台）
     btn.style.background = 'var(--color-primary, #2D6A4F)';
     btn.style.color = '#fff';
     pdxfMap.dragging.disable();
@@ -527,6 +558,307 @@ function pdxfToggleAdjust() {
     pdxfMap.getContainer().style.cursor = '';
   }
   pdxfUpdateAdjustHint();
+}
+
+// ── 📍 三点比例校准：DXF 管点 ↔ 卫星图对应点，最小二乘拟合相似变换 ──
+function pdxfCalRenderCurrent() {
+  var el = document.getElementById('pdxfCalCurrent');
+  var i = pdxfCalInfo || {};
+  if (!i.n) { el.textContent = '当前无生效标定（导入将不可用）。'; return; }
+  var src = i.source === 'db' ? '用户三点校准' : '系统默认两点';
+  el.innerHTML = '当前标定：<b>' + src + ' · ' + i.n + ' 点</b>' +
+    (i.rotation_deg != null ? ' · 旋转 ' + i.rotation_deg.toFixed(3) + '°' : '') +
+    (i.rms_m != null ? ' · RMS ' + i.rms_m.toFixed(2) + 'm' : '');
+  document.getElementById('pdxfCalBadge').textContent = src;
+}
+pdxfCalRenderCurrent();
+
+function pdxfCalStatusMsg(msg, isErr) {
+  var el = document.getElementById('pdxfCalStatus');
+  el.innerHTML = isErr ? '<span style="color:#c0392b;">' + pdxfEsc(msg) + '</span>' : pdxfEsc(msg);
+}
+
+// DXF 侧吸附候选：预览里的全部顶点 + 阀门点（lat/lng），首次使用时收集。
+function pdxfCalSnapCandidates() {
+  if (pdxfCal.snapPts) return pdxfCal.snapPts;
+  var pts = [];
+  var pv = (pdxfData && pdxfData.preview) || {};
+  (pv.layers || []).forEach(function (l) {
+    (l.paths || []).forEach(function (path) {
+      for (var k = 0; k < path.length && pts.length < 30000; k++) pts.push(path[k]);
+    });
+  });
+  (pv.valves || []).forEach(function (v) { if (pts.length < 30000) pts.push(v); });
+  pdxfCal.snapPts = pts;
+  return pts;
+}
+
+// 地图点击 → 25px 内最近的 DXF 预览点，附带其本地（原始 DXF）坐标。
+function pdxfCalSnapDxf(ll) {
+  var inv = pdxfCalInfo && pdxfCalInfo.inverse;
+  if (!inv) { pdxfCalStatusMsg('当前标定不可逆（退化），无法吸附 DXF 点', true); return null; }
+  var cand = pdxfCalSnapCandidates();
+  var clickPt = pdxfMap.latLngToLayerPoint(ll);
+  var best = null, bestDist = 25;   // px
+  for (var i = 0; i < cand.length; i++) {
+    var p = cand[i];
+    var d = pdxfMap.latLngToLayerPoint([p.lat, p.lng]).distanceTo(clickPt);
+    if (d < bestDist) { bestDist = d; best = p; }
+  }
+  if (!best) return null;
+  // 逆变换回本地坐标（negY 空间）→ 原始 DXF（y 取反）
+  var x = inv.ia * best.lat + inv.ib * best.lng + inv.ic;
+  var yNeg = -inv.ib * best.lat + inv.ia * best.lng + inv.id;
+  return { lat: best.lat, lng: best.lng, dxfX: x, dxfY: -yNeg };
+}
+
+function pdxfCalStart() {
+  if (!pdxfData || !pdxfToken) { pdxfCalStatusMsg('请先在①上传解析 DXF 图纸', true); return; }
+  // 整体微调的平移偏移会叠加在预览坐标上，而校准吸附/标记用原始坐标——
+  // 进入校准前归零并重绘，两边才对得上（校准的最小二乘本身含平移，不损失）。
+  if (pdxfOffset.dLat !== 0 || pdxfOffset.dLng !== 0) {
+    pdxfOffset = { dLat: 0, dLng: 0 };
+    pdxfUpdateAdjustHint();
+    pdxfRefreshMap();
+    pdxfCal.snapPts = null;   // 吸附候选按无偏移预览重建
+  }
+  pdxfCal.on = true; pdxfCal.phase = 'dxf'; pdxfCal.idx = 0; pdxfCal.pairs = []; pdxfCal.pending = null;
+  pdxfCal._fit = null;        // 清掉上一轮拟合残差，避免表格显示陈旧数值
+  pdxfCal.snapPts = null;     // 吸附候选总是按当前预览重建
+  if (pdxfCal.markers && pdxfMap.hasLayer(pdxfCal.markers)) pdxfMap.removeLayer(pdxfCal.markers);
+  pdxfCal.markers = L.layerGroup().addTo(pdxfMap);
+  pdxfCal.prevPoints = (pdxfCalInfo && pdxfCalInfo.points) ? JSON.parse(JSON.stringify(pdxfCalInfo.points)) : null;
+  if (pdxfEditMode) pdxfToggleEditMode();   // 互斥
+  if (pdxfAdjustOn) pdxfToggleAdjust();     // 互斥
+  pdxfMap.getContainer().style.cursor = 'crosshair';
+  pdxfMap.on('click', pdxfCalOnClick);
+  document.getElementById('pdxfCalStartBtn').style.display = 'none';
+  document.getElementById('pdxfCalStopBtn').style.display = '';
+  document.getElementById('pdxfCalTable').style.display = '';
+  document.getElementById('pdxfCalActions').style.display = 'none';
+  pdxfCalStepMsg();
+  pdxfCalRenderPairs();
+  pdxfCalStatusMsg('');
+}
+function pdxfCalStop() {
+  pdxfCal.on = false;
+  pdxfMap.off('click', pdxfCalOnClick);
+  pdxfMap.getContainer().style.cursor = '';
+  if (pdxfCal.markers && pdxfMap.hasLayer(pdxfCal.markers)) pdxfMap.removeLayer(pdxfCal.markers);
+  pdxfCal.markers = null;
+  document.getElementById('pdxfCalStartBtn').style.display = '';
+  document.getElementById('pdxfCalStopBtn').style.display = 'none';
+  document.getElementById('pdxfCalStep').textContent = '';
+  if (!pdxfCal.pairs.length) {
+    document.getElementById('pdxfCalTable').style.display = 'none';
+    document.getElementById('pdxfCalFit').innerHTML = '';
+  }
+}
+function pdxfCalStepMsg() {
+  var el = document.getElementById('pdxfCalStep');
+  if (!pdxfCal.on) { el.textContent = ''; return; }
+  if (pdxfCal.phase === 'dxf') el.textContent = '第 ' + (pdxfCal.idx + 1) + ' 组：点击 DXF 图上的一个管点（附近自动吸附）';
+  else if (pdxfCal.phase === 'sat') el.textContent = '第 ' + (pdxfCal.idx + 1) + ' 组：点击卫星图上的对应位置';
+  else el.textContent = '';
+}
+
+function pdxfCalOnClick(e) {
+  if (!pdxfCal.on) return;
+  if (pdxfCal.phase === 'dxf') {
+    var snap = pdxfCalSnapDxf(e.latlng);
+    if (!snap) { pdxfCalStatusMsg('点击位置 25px 内没有 DXF 管点，请靠近管道线/阀门再点', true); return; }
+    pdxfCal.pending = snap;
+    L.circleMarker([snap.lat, snap.lng], { radius: 8, color: '#1d4ed8', weight: 2, fillOpacity: 0.9 })
+      .addTo(pdxfCal.markers).bindTooltip('DXF ' + (pdxfCal.idx + 1));
+    pdxfCal.phase = 'sat';
+  } else if (pdxfCal.phase === 'sat') {
+    var p = pdxfCal.pending;
+    if (!p) { pdxfCal.phase = 'dxf'; pdxfCalStepMsg(); return; }
+    pdxfCal.pairs.push({ dxfX: p.dxfX, dxfY: p.dxfY, dxfLat: p.lat, dxfLng: p.lng,
+                         satLat: e.latlng.lat, satLng: e.latlng.lng });
+    L.circleMarker([e.latlng.lat, e.latlng.lng], { radius: 6, color: '#dc2626', weight: 2, fillOpacity: 0.9 })
+      .addTo(pdxfCal.markers).bindTooltip('卫星 ' + (pdxfCal.idx + 1));
+    L.polyline([[p.lat, p.lng], [e.latlng.lat, e.latlng.lng]],
+               { color: '#dc2626', weight: 1.5, dashArray: '4 4', opacity: 0.7 }).addTo(pdxfCal.markers);
+    pdxfCal.idx += 1;
+    pdxfCal.pending = null;
+    pdxfCal.phase = pdxfCal.idx < 3 ? 'dxf' : 'done';
+    if (pdxfCal.phase === 'done') { pdxfMap.off('click', pdxfCalOnClick); pdxfCalFitShow(); }
+  }
+  pdxfCalStepMsg();
+  pdxfCalRenderPairs();
+}
+
+function pdxfCalDropPair(i) {
+  pdxfCal.pairs.splice(i, 1);
+  pdxfCal.idx = pdxfCal.pairs.length;
+  pdxfCal.phase = pdxfCal.idx < 3 ? 'dxf' : 'done';
+  if (pdxfCal.phase !== 'done' && pdxfCal.on) pdxfMap.on('click', pdxfCalOnClick);
+  if (!pdxfCal.on) { pdxfCalRenderPairs(); return; }   // 已退出校准：不再重建标记（避免复活的点）
+  // 标记重建（比按索引删 marker 简单且不易错位）
+  if (pdxfCal.markers && pdxfMap.hasLayer(pdxfCal.markers)) pdxfMap.removeLayer(pdxfCal.markers);
+  pdxfCal.markers = L.layerGroup().addTo(pdxfMap);
+  pdxfCal.pairs.forEach(function (p, k) {
+    L.circleMarker([p.dxfLat, p.dxfLng], { radius: 8, color: '#1d4ed8', weight: 2, fillOpacity: 0.9 })
+      .addTo(pdxfCal.markers).bindTooltip('DXF ' + (k + 1));
+    L.circleMarker([p.satLat, p.satLng], { radius: 6, color: '#dc2626', weight: 2, fillOpacity: 0.9 })
+      .addTo(pdxfCal.markers).bindTooltip('卫星 ' + (k + 1));
+    L.polyline([[p.dxfLat, p.dxfLng], [p.satLat, p.satLng]],
+               { color: '#dc2626', weight: 1.5, dashArray: '4 4', opacity: 0.7 }).addTo(pdxfCal.markers);
+  });
+  pdxfCalRenderPairs();
+  if (pdxfCal.phase === 'done') pdxfCalFitShow(); else { pdxfCal._fit = null; document.getElementById('pdxfCalFit').innerHTML = ''; }
+}
+
+function pdxfCalRenderPairs() {
+  var tb = document.getElementById('pdxfCalPairBody');
+  tb.innerHTML = pdxfCal.pairs.map(function (p, i) {
+    var fit = pdxfCal._fit;
+    var res = (fit && fit.residuals_m[i] != null) ? fit.residuals_m[i].toFixed(2) + ' m' : '—';
+    return '<tr><td>' + (i + 1) + '</td>' +
+      '<td style="font-family:monospace;font-size:.72rem;">(' + p.dxfX.toFixed(1) + ', ' + p.dxfY.toFixed(1) + ')</td>' +
+      '<td style="font-family:monospace;font-size:.72rem;">(' + p.satLat.toFixed(6) + ', ' + p.satLng.toFixed(6) + ')</td>' +
+      '<td>' + res + '</td>' +
+      '<td><button type="button" class="pdxf-btn" style="padding:2px 8px;font-size:.72rem;" onclick="pdxfCalDropPair(' + i + ')">删除</button></td></tr>';
+  }).join('');
+}
+
+// 与服务端 similarity_transform_ls 相同的最小二乘（negY 空间拟合）。
+function pdxfCalFitPairs(pairs) {
+  var n = pairs.length;
+  if (n < 2) return null;
+  var mx = 0, my = 0, mla = 0, mln = 0;
+  pairs.forEach(function (p) { mx += p.dxfX; my += -p.dxfY; mla += p.satLat; mln += p.satLng; });
+  mx /= n; my /= n; mla /= n; mln /= n;
+  var nr = 0, ni = 0, den = 0;
+  pairs.forEach(function (p) {
+    var x = p.dxfX - mx, y = -p.dxfY - my, la = p.satLat - mla, ln = p.satLng - mln;
+    nr += x * la + y * ln; ni += y * la - x * ln; den += x * x + y * y;
+  });
+  if (den < 1e-12) return null;
+  var a = nr / den, b = ni / den;
+  var c = mla - a * mx - b * my, d = mln + b * mx - a * my;
+  var residuals = pairs.map(function (p) {
+    var pla = a * p.dxfX + b * (-p.dxfY) + c;
+    var pln = -b * p.dxfX + a * (-p.dxfY) + d;
+    var dlatm = (p.satLat - pla) * 111320;
+    var dlngm = (p.satLng - pln) * 111320 * Math.cos(p.satLat / 180 * Math.PI);
+    return Math.hypot(dlatm, dlngm);
+  });
+  var rms = Math.sqrt(residuals.reduce(function (s, r) { return s + r * r; }, 0) / n);
+  return { a: a, b: b, c: c, d: d,
+           scale: Math.hypot(a, b),
+           rotation_deg: Math.atan2(-b, a) * 180 / Math.PI,
+           residuals_m: residuals, rms_m: rms, n: n };
+}
+
+function pdxfCalFitShow() {
+  var fit = pdxfCalFitPairs(pdxfCal.pairs);
+  pdxfCal._fit = fit;
+  var el = document.getElementById('pdxfCalFit');
+  var actions = document.getElementById('pdxfCalActions');
+  if (!fit) { el.innerHTML = '<span style="color:#c0392b;">点数不足或退化，无法拟合</span>'; actions.style.display = 'none'; return; }
+  var oldScale = (pdxfCalInfo && pdxfCalInfo.scale) || null;
+  var scalePct = oldScale ? ((fit.scale / oldScale - 1) * 100) : null;
+  var oldRot = (pdxfCalInfo && pdxfCalInfo.rotation_deg != null) ? pdxfCalInfo.rotation_deg : null;
+  var rotDiff = oldRot != null ? fit.rotation_deg - oldRot : null;
+  el.innerHTML = '<b>拟合结果：</b> 比例' + (scalePct != null ?
+      ' <b style="color:' + (Math.abs(scalePct) > 0.5 ? '#c0392b' : '#2D6A4F') + '">' +
+      (scalePct >= 0 ? '+' : '') + scalePct.toFixed(2) + '%</b>' : ' —') +
+    ' · 旋转' + (rotDiff != null ? ' <b>' + (rotDiff >= 0 ? '+' : '') + rotDiff.toFixed(3) + '°</b>' : ' —') +
+    ' · RMS <b>' + fit.rms_m.toFixed(2) + ' m</b>' +
+    (fit.rms_m > 1 ? '<span style="color:#c0392b;">（偏大，建议删除残差最大的点重选）</span>' : '');
+  actions.style.display = 'flex';
+  document.getElementById('pdxfCalRevertBtn').style.display = 'none';   // 保存后才可恢复
+  pdxfCalRenderPairs();
+}
+
+function pdxfCalSave(pairsOverride) {
+  var pairs = pairsOverride || pdxfCal.pairs;
+  if (!pairs || pairs.length < 2) { pdxfCalStatusMsg('至少需要 2 组点', true); return; }
+  var btn = document.getElementById('pdxfCalSaveBtn');
+  btn.disabled = true; btn.textContent = '保存中…';
+  var fd = new FormData();
+  fd.append('pairs', JSON.stringify(pairs.map(function (p) {
+    return { dxf_x: p.dxfX, dxf_y: p.dxfY, lat: p.satLat, lng: p.satLng };
+  })));
+  fd.append('note', '三点校准 ' + new Date().toLocaleString());
+  fetch("{% url 'core:pipeline_dxf_calibration_save' %}", {
+    method: 'POST',
+    headers: { 'X-CSRFToken': pdxfCsrf(), 'X-Requested-With': 'XMLHttpRequest' },
+    body: fd,
+  }).then(function (r) { return r.json(); }).then(function (d) {
+    btn.disabled = false; btn.textContent = '保存并刷新预览';
+    if (!d.success) { pdxfCalStatusMsg(d.error || '保存失败', true); return; }
+    // token 重建预览（免重传）；成功后才替换 pdxfCalInfo——否则会出现
+    // 新系数配旧预览，下轮校准的逆映射悄悄算错。
+    var fd2 = new FormData();
+    fd2.append('token', pdxfToken);
+    return fetch("{% url 'core:pipeline_dxf_analyze' %}", {
+      method: 'POST',
+      headers: { 'X-CSRFToken': pdxfCsrf(), 'X-Requested-With': 'XMLHttpRequest' },
+      body: fd2,
+    }).then(function (r) { return r.json(); }).then(function (d2) {
+      if (d2.success) {
+        pdxfCalInfo = d.calibration;
+        pdxfCalRenderCurrent();
+        pdxfData = d2;
+        pdxfOffset = { dLat: 0, dLng: 0 };   // 重新校准后从零偏移开始
+        pdxfCal.snapPts = null;              // 吸附候选按新预览重建
+        pdxfRefreshMap();
+        pdxfCalStatusMsg('新标定已保存，预览已按新比例/角度重绘。请对照卫星图确认，不满意可「恢复上次标定」。');
+      } else {
+        pdxfCalStatusMsg('标定已保存，但预览刷新失败：' + (d2.error || '') +
+                         '（请重新上传图纸后再校准）', true);
+      }
+      document.getElementById('pdxfCalRevertBtn').style.display =
+        (pdxfCal.prevPoints && pdxfCal.prevPoints.length >= 2) ? '' : 'none';
+      document.getElementById('pdxfCalApplyBtn').style.display = '';
+    });
+  }).catch(function () {
+    btn.disabled = false; btn.textContent = '保存并刷新预览';
+    pdxfCalStatusMsg('网络错误', true);
+  });
+}
+
+function pdxfCalRevert() {
+  if (!pdxfCal.prevPoints || pdxfCal.prevPoints.length < 2) return;
+  if (!confirm('恢复到本次校准前的标定（' + pdxfCal.prevPoints.length + ' 点）？预览会重新绘制。')) return;
+  pdxfCalSave(pdxfCal.prevPoints.map(function (p) {
+    return { dxfX: p.dxf_x, dxfY: p.dxf_y, satLat: p.lat, satLng: p.lng };
+  }));
+}
+
+function pdxfCalApplySaved(force) {
+  if (!force && !confirm('把新标定追溯应用到数据库里全部已保存的管道/阀门坐标？\n' +
+               '· 按上一生效标定还原回本地坐标，再按新标定重新换算\n' +
+               '· 执行前自动备份全部坐标到服务器 JSON 文件（可回滚）\n' +
+               '· 最近导入的图纸若已按新标定导入，请勿重复应用')) return;
+  var btn = document.getElementById('pdxfCalApplyBtn');
+  btn.disabled = true; btn.textContent = '应用中…';
+  var fd = new FormData();
+  fd.append('confirm', '1');
+  if (force) fd.append('force', '1');
+  fetch("{% url 'core:pipeline_dxf_calibration_apply' %}", {
+    method: 'POST',
+    headers: { 'X-CSRFToken': pdxfCsrf(), 'X-Requested-With': 'XMLHttpRequest' },
+    body: fd,
+  }).then(function (r) { return r.json(); }).then(function (d) {
+    btn.disabled = false; btn.textContent = '应用到已保存的管道…';
+    if (!d.success && d.need_force) {
+      if (confirm(d.error + '\n\n强制应用将移动全部已存坐标（有备份）。确定继续？')) pdxfCalApplySaved(true);
+      return;
+    }
+    if (!d.success) { pdxfCalStatusMsg(d.error || '应用失败', true); return; }
+    pdxfCalStatusMsg('已重算 ' + d.pipelines + ' 条管道 / ' + d.valves + ' 个阀门' +
+      '（比例 ' + (d.scale_change_pct >= 0 ? '+' : '') + d.scale_change_pct + '%，' +
+      '旋转 ' + (d.rotation_change_deg >= 0 ? '+' : '') + d.rotation_change_deg + '°）。' +
+      '坐标备份：' + d.backup + '。刷新首页地图即可看到修正后的管线。');
+    if (pdxfEditMode) { pdxfToggleEditMode(); pdxfToggleEditMode(); }   // 重载编辑层
+  }).catch(function () {
+    btn.disabled = false; btn.textContent = '应用到已保存的管道…';
+    pdxfCalStatusMsg('网络错误', true);
+  });
 }
 function pdxfUpdateAdjustHint() {
   var btn = document.getElementById('pdxfAdjustBtn');
@@ -545,6 +877,7 @@ function pdxfToggleEditMode() {
   if (pdxfEditMode) {
     btn.style.background = 'var(--color-primary, #2D6A4F)'; btn.style.color = '#fff';
     card.style.display = '';
+    if (pdxfCal.on) pdxfCalStop();           // 互斥：校准中不开编辑（点击会串台）
     if (pdxfAdjustOn) pdxfToggleAdjust();   // 互斥：微调与编辑不同时开
     // 预览 pane 默认 pointer-events:none（微调拖动用）；编辑模式必须打开，
     // 否则 canvas 里的管线/阀门收不到点击事件。

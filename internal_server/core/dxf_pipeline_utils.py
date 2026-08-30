@@ -101,20 +101,84 @@ def _polyline_len(pts):
     return sum(math.hypot(b[0] - a[0], b[1] - a[1]) for a, b in zip(pts, pts[1:]))
 
 
-# ── 坐标变换：本地绘图坐标 → WGS84，与区域导入同一套站点标定 ──────────
+# ── 坐标变换：本地绘图坐标 → WGS84，用户三点校准（库）优先 ────────────
+
+CALIBRATION_CACHE_KEY = 'dxf:calib'
+
+
+def _active_calibration_points():
+    """→ (points, source)。source: 'db'=用户标定最新行 / 'default'=硬编码两点。
+
+    结果缓存 5 分钟，保存新标定时调用 ``_bust_calibration_cache()`` 失效。
+    """
+    from django.core.cache import cache
+    from core.models import SiteCalibration
+    from core.dxf_utils import SITE_CALIBRATION_POINTS
+    try:
+        hit = cache.get(CALIBRATION_CACHE_KEY)
+    except Exception:
+        hit = None   # 缓存后端故障时直接走 DB，不让校准链路 500
+    if hit is None:
+        row = SiteCalibration.objects.order_by('-id').values_list('points', flat=True).first()
+        if row and len(row) >= 2:
+            hit = (list(row), 'db')
+        else:
+            hit = (list(SITE_CALIBRATION_POINTS), 'default')
+        try:
+            cache.set(CALIBRATION_CACHE_KEY, hit, 300)
+        except Exception:
+            pass
+    return hit
+
+
+def _bust_calibration_cache():
+    from django.core.cache import cache
+    try:
+        cache.delete(CALIBRATION_CACHE_KEY)
+    except Exception:
+        pass
+
+
+def active_calibration_info():
+    """当前生效标定的展示/客户端信息：来源、点数、拟合统计、逆变换系数。
+
+    页面初始渲染用它给 JS 提供逆变换（地图点击 → 本地坐标，三点校准的
+    DXF 侧取点用），以及拟合参数（比例/旋转）供新拟合对比显示。
+    """
+    from core.dxf_utils import similarity_transform_ls, similarity_inverse
+    pts, source = _active_calibration_points()
+    cal = [{'dxf_x': float(p['dxf_x']), 'dxf_y': -float(p['dxf_y']),
+            'lat': float(p['lat']), 'lng': float(p['lng'])} for p in pts]
+    fn, stats = similarity_transform_ls(cal)
+    if not callable(fn):
+        return {'source': source, 'n': 0, 'scale': None, 'rotation_deg': None,
+                'rms_m': None, 'residuals_m': [], 'inverse': None, 'points': pts}
+    inv = similarity_inverse(stats['a'], stats['b'], stats['c'], stats['d'])
+    return {
+        'source': source, 'n': stats['n'],
+        'scale': round(stats['scale'], 8),
+        'rotation_deg': round(stats['rotation_deg'], 4),
+        'rms_m': round(stats['rms_m'], 2),
+        'residuals_m': stats['residuals_m'],
+        'inverse': inv,
+        'points': pts,
+    }
+
 
 def _local_to_latlng_fn():
     """返回 (to_latlng, meters_per_unit)。米/单位比例用于把米制容差换算
-    成绘图单位——图纸以 mm/寸绘制时吸附距离依然按米判定。"""
-    from core.dxf_utils import SITE_CALIBRATION_POINTS, _similarity_transform
-    cal_pts = SITE_CALIBRATION_POINTS
+    成绘图单位——图纸以 mm/寸绘制时吸附距离依然按米判定。
+    标定点来源：用户三点校准（SiteCalibration 最新行）优先，退回
+    dxf_utils.SITE_CALIBRATION_POINTS 硬编码两点。"""
+    from core.dxf_utils import similarity_transform_ls
+    cal_pts, _source = _active_calibration_points()
     if not cal_pts or len(cal_pts) < 2:
         return None, None
     cal = [
         {'dxf_x': p['dxf_x'], 'dxf_y': -p['dxf_y'], 'lat': p['lat'], 'lng': p['lng']}
         for p in cal_pts
     ]
-    fn = _similarity_transform(cal)
+    fn, _stats = similarity_transform_ls(cal)
     if not callable(fn):
         return None, None
 
@@ -444,19 +508,30 @@ def _crossed_zone_ids(line, zone_rings):
 
 # ── analyze：图纸概览 + 预览几何 ───────────────────────────────────────
 
-def analyze_dxf_pipelines(uploaded_file):
+def analyze_dxf_pipelines(uploaded_file=None, token=None):
     """解析上传的 DXF，返回页面所需的概览 + 预览几何（全部已转 lat/lng）。
 
     额外返回 ``token``（内容 hash）——导入阶段凭它复用本次解析结果。
+    ``uploaded_file`` 为空且给了 ``token`` 时直接读解析缓存重建预览
+    （三点校准保存后免重传刷新预览用）。
     """
     to_latlng, meters_per_unit = _local_to_latlng_fn()
     if to_latlng is None:
-        return {'success': False, 'error': '缺少站点标定点（SITE_CALIBRATION_POINTS），无法转换坐标'}
+        return {'success': False, 'error': '缺少站点标定点，无法转换坐标'}
 
-    content = uploaded_file.read()
-    if isinstance(content, str):
-        content = content.encode('utf-8', errors='ignore')
-    token, layers, valves, labels = _parsed_from_cache_or_file(content)
+    if uploaded_file is not None:
+        content = uploaded_file.read()
+        if isinstance(content, str):
+            content = content.encode('utf-8', errors='ignore')
+        token, layers, valves, labels = _parsed_from_cache_or_file(content)
+    elif token:
+        from django.core.cache import cache
+        hit = cache.get('dxf:parse:' + token)
+        if hit is None:
+            return {'success': False, 'error': '解析缓存已过期（15 分钟），请重新上传 DXF 文件'}
+        layers, valves, labels = hit[0], hit[1], hit[2]
+    else:
+        return {'success': False, 'error': '请上传 .dxf 文件或提供解析 token'}
 
     layer_infos = []
     for name, bucket in sorted(layers.items(),
@@ -548,17 +623,20 @@ def analyze_dxf_pipelines(uploaded_file):
 
 def import_dxf_pipelines(layer_specs, block_specs, uploaded_file=None,
                          label_layers=None, valve_name_from_label=True,
-                         offset=(0.0, 0.0), token=None, content=None):
+                         offset=(0.0, 0.0), token=None, content=None,
+                         batch_name=None, imported_by=None):
     """按映射创建 Pipeline + PipeValve。
 
     ``layer_specs``: {layer: {'include', 'diameter', 'type'}}
     ``block_specs``: {block: {'include', 'valve_type'}}
     几何来源优先级：``token`` 解析缓存 → ``uploaded_file``/``content``。
-    返回 {pipelines, valves, labeled_valves, skipped_valves, layer_stats}。
+    ``batch_name``/``imported_by``：创建导入批次并把本批管道全部挂上
+    （水管管理页按批次整批删除用）。
+    返回 {pipelines, valves, labeled_valves, skipped_valves, layer_stats, batch_id}。
     整个落库过程包在一个事务里——失败不留下半截数据。
     """
     from django.db import transaction as _db_txn
-    from core.models import Pipeline, PipeValve
+    from core.models import Pipeline, PipeValve, PipelineImportBatch
     from core.views import _auto_pipeline_name_code
 
     to_latlng, meters_per_unit = _local_to_latlng_fn()
@@ -611,6 +689,11 @@ def import_dxf_pipelines(layer_specs, block_specs, uploaded_file=None,
     all_paths = []   # (local_pts, diameter, pipeline)
 
     with _db_txn.atomic():
+        # 批次在事务内创建：导入失败整体回滚，不留 0 管道的孤儿批次行
+        batch = PipelineImportBatch.objects.create(
+            name=(batch_name or 'DXF导入')[:200],
+            imported_by=imported_by,
+        )
         for layer, spec in layer_specs.items():
             if not spec.get('include'):
                 continue
@@ -649,6 +732,7 @@ def import_dxf_pipelines(layer_specs, block_specs, uploaded_file=None,
                     flow_direction=Pipeline.FLOW_FORWARD,
                     source_label=f'DXF导入 · 图层 {layer}',
                     line_points=ll,
+                    import_batch=batch,
                 )
                 used_names.add(name)
                 used_codes.add(code)
@@ -721,8 +805,9 @@ def import_dxf_pipelines(layer_specs, block_specs, uploaded_file=None,
 
     return {
         'pipelines': created_pipes,
-        'valves': created_valves,
+        'valves': len(valve_rows),
         'labeled_valves': labeled_valves,
         'skipped_valves': skipped_valves,
         'layer_stats': layer_stats,
+        'batch_id': batch.id,
     }

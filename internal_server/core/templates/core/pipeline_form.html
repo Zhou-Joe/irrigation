@@ -78,16 +78,6 @@
                 </div>
 
                 <div class="form-group">
-                    <label for="flow_direction">水流方向</label>
-                    <select id="flow_direction" name="flow_direction">
-                        <option value="fwd" {% if pipeline and pipeline.flow_direction == 'fwd' %}selected{% endif %}>正向(点序)</option>
-                        <option value="rev" {% if pipeline and pipeline.flow_direction == 'rev' %}selected{% endif %}>反向</option>
-                        <option value="none" {% if pipeline and pipeline.flow_direction == 'none' %}selected{% endif %}>未定</option>
-                    </select>
-                    <small>相对第一个点 → 最后一个点，决定地图箭头朝向</small>
-                </div>
-
-                <div class="form-group">
                     <label for="source_label">水源 / 起点</label>
                     <input type="text" id="source_label" name="source_label" maxlength="100" placeholder="如：接市政水 DN80" value="{% if pipeline %}{{ pipeline.source_label }}{% endif %}">
                     <small>管道取水来源，可留空</small>

@@ -313,8 +313,37 @@
                     <a href="{% url 'core:pipeline_dxf_import' %}" class="btn btn-sm btn-secondary" target="_blank">⬆ DXF导入</a>
                 </div>
             </div>
-            {% if pipelines %}
+            {% if pipelines or pipeline_batches %}
             <div class="settings-card-body" id="pipelineBody">
+                {% if pipeline_batches %}
+                <div style="margin-bottom:10px;">
+                    <div style="font-size:.82rem;font-weight:600;color:var(--color-primary,#1B4332);margin-bottom:6px;">DXF 导入批次</div>
+                    <table class="card-table">
+                        <thead>
+                            <tr><th>批次/文件名</th><th>导入时间</th><th>操作人</th><th>管道</th><th>阀门</th><th>操作</th></tr>
+                        </thead>
+                        <tbody>
+                            {% for b in pipeline_batches %}
+                            <tr>
+                                <td><strong>{{ b.name }}</strong></td>
+                                <td style="font-size:.78rem;color:#6b7280;">{{ b.imported_at|date:"m-d H:i" }}</td>
+                                <td style="font-size:.78rem;">{{ b.imported_by.username|default:"—" }}</td>
+                                <td>{{ b.pipe_count }}</td>
+                                <td>{{ b.valve_count }}</td>
+                                <td>
+                                    <button type="button" class="btn btn-sm btn-danger"
+                                            onclick="deletePipelineBatch({{ b.id }}, '{{ b.name|escapejs }}', {{ b.pipe_count }}, {{ b.valve_count }})">
+                                        整批删除
+                                    </button>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                    <div style="font-size:.72rem;color:#8B9A8F;margin-top:4px;">整批删除前会自动备份全部坐标到服务器 JSON 文件（internal_server/pipeline_backups/），删错可找管理员回滚。</div>
+                </div>
+                {% endif %}
+                {% if pipelines %}
                 <table class="card-table" id="pipelineTable">
                     <thead>
                         <tr>
@@ -322,6 +351,7 @@
                             <th>编号</th>
                             <th>名称</th>
                             <th>类型</th>
+                            <th>来源</th>
                             <th>操作</th>
                         </tr>
                     </thead>
@@ -336,6 +366,13 @@
                                     {{ pipeline.get_pipeline_type_display }}
                                 </span>
                             </td>
+                            <td style="font-size:.76rem;color:#6b7280;">
+                                {% if pipeline.import_batch %}
+                                <span class="type-badge" style="background:#eef3ef;color:#4a6355;">DXF · {{ pipeline.import_batch.name }}</span>
+                                {% else %}
+                                <span class="type-badge" style="background:#f3f0e8;color:#8a7a55;">手动</span>
+                                {% endif %}
+                            </td>
                             <td class="actions-cell">
                                 <a href="{% url 'core:pipeline_edit' pipeline.id %}" class="btn btn-sm btn-secondary" target="_blank">编辑</a>
                             </td>
@@ -346,6 +383,9 @@
                 <div class="batch-actions" id="pipelineBatchActions" style="display:none;">
                     <button type="button" class="btn btn-sm btn-danger" onclick="batchDeletePipelines()">批量删除 (<span id="pipelineSelectedCount">0</span>)</button>
                 </div>
+                {% else %}
+                <div class="card-empty"><p>暂无水管（上方批次里的已整批删除）</p></div>
+                {% endif %}
             </div>
             {% else %}
             <div class="card-empty">
@@ -749,6 +789,23 @@ window.batchDeletePipelines = function() {
     const ids = Array.from(document.querySelectorAll('.pipeline-checkbox:checked')).map(cb => cb.dataset.id);
     if (!confirm('确定删除选中的 ' + ids.length + ' 条水管?')) return;
     deleteItems('/settings/batch-delete-pipeline/', ids, 'pipeline');
+};
+
+// 整批删除一个 DXF 导入批次（服务端先备份坐标再删；成功后刷新页面重建表格/批次区）
+window.deletePipelineBatch = function(batchId, name, pipeCount, valveCount) {
+    if (!confirm('整批删除「' + name + '」？\n· 将删除该批次全部 ' + pipeCount + ' 条管道 / ' + valveCount + ' 个阀门\n· 删除前自动备份坐标到服务器 JSON（可回滚）')) return;
+    fetch('/settings/pipeline-batch/' + batchId + '/delete/', {
+        method: 'POST',
+        headers: { 'X-CSRFToken': getCsrfToken(), 'X-Requested-With': 'XMLHttpRequest' },
+    }).then(r => r.json()).then(data => {
+        if (data.success) {
+            showToast('已删除批次「' + name + '」：' + data.pipelines + ' 条管道 / ' + data.valves + ' 个阀门' +
+                      (data.backup ? '（备份 ' + data.backup + '）' : ''), 'success');
+            setTimeout(() => location.reload(), 900);
+        } else {
+            showToast('删除失败: ' + (data.error || '未知错误'), 'error');
+        }
+    }).catch(err => showToast('网络错误: ' + err, 'error'));
 };
 
 // Generic batch delete — removes the affected rows in place (by data-id), no
