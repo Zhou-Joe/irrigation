@@ -160,8 +160,10 @@ def build_report(report_type, start=None, end=None, user=None, ccu_ids=None):
         end = start
 
     if report_type == 'irrigation':
-        df = start.strftime('%Y%m%d') + '0000'
-        dt = end.strftime('%Y%m%d') + '2359'
+        # Irrigation days run D-1 22:00 -> D 21:59 (core.irrig_time) — a
+        # calendar 00:00-23:59 window would split overnight runs.
+        from core.irrig_time import irrigation_day_bounds
+        df, dt = irrigation_day_bounds(start, end)
         return build_fn(df, dt, ccu_ids=ccu_ids)
     if report_type == 'work_reports':
         if user is None:

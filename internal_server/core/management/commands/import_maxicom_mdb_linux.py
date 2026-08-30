@@ -8,13 +8,35 @@ while the satellite names are stable. This map is re-derived from CTROL_CF every
 run and re-applied to controllers/stations/runtime, so a future renumbering
 self-heals on the next import.
 
-Runtime: read from XA_LOG (SignalType 'M') — the authoritative raw controller
-poll log, NOT XA_RuntimeProject (an incomplete derivative that drops long runs).
-Each 'M' reading (XactIndex = station, SignalValue = minutes) is stored with an
-"irrigation day" timestamp: a poll at >= 22:00 is attributed to the next date
-(overnight irrigation runs into the following day), so daily totals match the
-Maxicom UI. MaxicomRuntime is fully rebuilt from XA_LOG each run (XA_LOG is the
-cumulative source), which also clears any stale XA_RuntimeProject data.
+Runtime: merged from TWO mdb sources, because each is lossy in a different way
+(verified against the Maxicom UI on 6 stations in CCU2, 2026-08-30):
+
+  * XA_LOG (SignalType 'M') — the raw controller poll log. Each 'M' reading
+    (XactIndex = station, SignalValue = minutes) is the runtime accumulated
+    SINCE THE PREVIOUS POLL, stamped at poll time. Complete (no dropped runs)
+    but cannot localize runs: a poll's minutes actually happened anywhere in
+    the poll interval, so custom windows misplace boundary runs.
+  * XA_RuntimeProject — minute-level runs (one row per active minute), exact
+    timing, but it silently DROPS long runs (a 538-min cycle absent entirely)
+    and whole stations (SAT 2-5 ch23 had zero rows), and only keeps ~1 month.
+
+Merge rule per station, per poll interval (prev_poll, this_poll]:
+  - sum the minute-level runs that START inside the interval;
+  - if that sum >= the poll's reported minutes, store the minute-level runs
+    (true start timestamps, NO 22:00 roll) — timing-exact, matches the Maxicom
+    UI for custom windows;
+  - else store the poll row (with the irrigation-day roll below) — preserves
+    long runs / whole days the minute table dropped.
+Minute-level runs after the last poll (or with no polls at all) are stored
+directly.
+
+All rows (poll and minute-run) are stored at RAW timestamps — no 22:00 roll.
+Day-scoped views (dashboard default, email/PDF/Excel irrigation reports) build
+irrigation-day windows [D-1 22:00, D 21:59] via core.irrig_time so daily totals
+still match the Maxicom UI's day view, while custom windows stay exact (verified
+2026-08-30: SAT 2-6 st15=84, st19=25, SAT 2-2 st21=20, SAT 2-5 st02=20, and
+SAT 2-6 st11 irrigation-day 8/27=168). MaxicomRuntime is fully rebuilt each
+run (XA_LOG is the cumulative source), which also clears stale data.
 
 CCU safety: snapshots every CCU patch's (code, name, parent_id, mdb_index)
 before writing, verifies them unchanged after. If anything drifts, restores
@@ -56,7 +78,7 @@ def _mdb_rows(mdb_path, table):
 
 
 class Command(BaseCommand):
-    help = 'Import CTROL_CF controllers + STATN_CF stations + XA_LOG runtime (SignalType M, irrigation-day rolled @22:00) from a Maxicom2.mdb (Linux/mdbtools, CCU-safe)'
+    help = 'Import CTROL_CF controllers + STATN_CF stations + runtime (XA_LOG M polls merged with XA_RuntimeProject minute runs, raw timestamps) from a Maxicom2.mdb (Linux/mdbtools, CCU-safe)'
 
     def add_arguments(self, parser):
         parser.add_argument('--mdb', type=str, required=True,
@@ -238,43 +260,112 @@ class Command(BaseCommand):
         stn_map = {p.mdb_index: p for p in
                    Patch.objects.filter(code__startswith='station-').exclude(mdb_index__isnull=True)}
 
-        def _irrig_ts(xactstamp):
-            s = (xactstamp or '').strip()
-            d = s[:8]
-            if len(d) != 8:
-                return s
-            hh = int(s[8:10]) if len(s) >= 10 and s[8:10].isdigit() else 0
-            if hh >= 22:
-                d = (datetime.datetime.strptime(d, '%Y%m%d')
-                     + datetime.timedelta(days=1)).strftime('%Y%m%d')
-            return d + s[8:]
+        # NOTE: poll rows are stored at their RAW poll timestamp (no 22:00
+        # roll). Day-scoped views build irrigation-day windows [D-1 22:00,
+        # D 21:59] via core.irrig_time instead — rolling the timestamp itself
+        # misplaces boundary runs in custom windows (verified 2026-08-30:
+        # SAT 2-6 st15 showed 105 instead of 84 with the roll).
 
-        # Atomic full rebuild — XA_LOG is the cumulative source, so re-derive
-        # every run (also clears the old XA_RuntimeProject data). Streamed in
-        # batches so memory stays bounded; the transaction makes a failure leave
-        # the previous data intact.
+        # ── 3a. XA_RuntimeProject → minute-level runs per station ─────────
+        # One row per active minute. Group consecutive minutes into runs:
+        # [start_dt, minutes, last_minute_dt]. StationID shares XA_LOG's
+        # XactIndex space. Note: mdb-export emits rows in arbitrary order —
+        # sort per station before grouping.
+        stamps_by_station = defaultdict(list)
+        for r in _mdb_rows(mdb_path, 'XA_RuntimeProject'):
+            try:
+                xi = int((r.get('StationID') or '0') or 0)
+                rt = int((r.get('RunTime') or '0') or 0)
+                dt = datetime.datetime.strptime(_sq(r.get('TimeStamps'))[:14],
+                                                '%Y%m%d%H%M%S')
+            except (TypeError, ValueError):
+                continue
+            if xi and rt > 0:
+                stamps_by_station[xi].append(dt)
+        rp_runs = defaultdict(list)
+        for xi, stamps in stamps_by_station.items():
+            stamps.sort()
+            for dt in stamps:
+                if rp_runs[xi] and dt - rp_runs[xi][-1][2] <= datetime.timedelta(minutes=1):
+                    rp_runs[xi][-1][1] += 1
+                    rp_runs[xi][-1][2] = dt
+                else:
+                    rp_runs[xi].append([dt, 1, dt])
+        del stamps_by_station
+
+        # ── 3b. XA_LOG (SignalType 'M') → polls per station ────────────────
+        polls_by_station = defaultdict(list)   # xi -> [(poll_dt, raw_stamp, minutes)]
+        for r in _mdb_rows(mdb_path, 'XA_LOG'):
+            if (r.get('SignalType') or '').strip() != 'M':
+                continue
+            try:
+                xi = int((r.get('XactIndex') or '0') or 0)
+                val = int((r.get('SignalValue') or '0') or 0)
+                dt = datetime.datetime.strptime(_sq(r.get('XactStamp'))[:14],
+                                                '%Y%m%d%H%M%S')
+            except (TypeError, ValueError):
+                continue
+            if xi:
+                polls_by_station[xi].append((dt, _sq(r.get('XactStamp')), val))
+        for lst in polls_by_station.values():
+            lst.sort(key=lambda t: t[0])
+
+        # ── 3c. Merge (see module docstring for the rationale) ─────────────
+        # Per poll interval (prev_poll, this_poll]: minute-runs starting inside
+        # it replace the poll row when their sum >= the poll's minutes (timing
+        # wins); otherwise the poll row (22:00-rolled) wins (long-run safety).
+        # Runs after the last poll — or stations with runs but no polls — are
+        # stored directly at their true timestamps.
         to_create = []
         skipped_no_site = 0
+
+        def _flush():
+            if len(to_create) >= BATCH:
+                MaxicomRuntime.objects.bulk_create(to_create)
+                to_create.clear()
+
         with transaction.atomic():
             MaxicomRuntime.objects.all().delete()
-            for r in _mdb_rows(mdb_path, 'XA_LOG'):
-                if (r.get('SignalType') or '').strip() != 'M':
-                    continue
-                xi = int((r.get('XactIndex') or '0') or 0)
+
+            def _mk(st, ts14, minutes, xi):
+                to_create.append(MaxicomRuntime(
+                    timestamp=ts14, site_id=st.parent_id,
+                    station_id=st.id, station_id_raw=xi, run_time=minutes))
+                _flush()
+
+            for xi, polls in polls_by_station.items():
                 st = stn_map.get(xi)
                 if st is None or st.parent_id is None:
-                    skipped_no_site += 1
+                    skipped_no_site += len(polls)
                     continue
-                to_create.append(MaxicomRuntime(
-                    timestamp=_irrig_ts(_sq(r.get('XactStamp'))),
-                    site_id=st.parent_id,
-                    station_id=st.id,
-                    station_id_raw=xi,
-                    run_time=int((r.get('SignalValue') or '0') or 0),
-                ))
-                if len(to_create) >= BATCH:
-                    MaxicomRuntime.objects.bulk_create(to_create)
-                    to_create = []
+                runs = rp_runs.pop(xi, [])   # pop: what's left has no polls
+                ri = 0
+                for poll_dt, raw_stamp, val in polls:
+                    first_ri = ri
+                    interval_minutes = 0
+                    while ri < len(runs) and runs[ri][0] <= poll_dt:
+                        interval_minutes += runs[ri][1]
+                        ri += 1
+                    if interval_minutes >= val:
+                        for k in range(first_ri, ri):
+                            s, mins, _ = runs[k]
+                            _mk(st, s.strftime('%Y%m%d%H%M%S'), mins, xi)
+                    else:
+                        _mk(st, raw_stamp, val, xi)
+                # minute-runs after the station's last poll
+                for k in range(ri, len(runs)):
+                    s, mins, _ = runs[k]
+                    _mk(st, s.strftime('%Y%m%d%H%M%S'), mins, xi)
+
+            # stations with minute-runs but zero polls (poll log gaps)
+            for xi, runs in rp_runs.items():
+                st = stn_map.get(xi)
+                if st is None or st.parent_id is None:
+                    skipped_no_site += len(runs)
+                    continue
+                for s, mins, _ in runs:
+                    _mk(st, s.strftime('%Y%m%d%H%M%S'), mins, xi)
+
             if to_create:
                 MaxicomRuntime.objects.bulk_create(to_create)
         created_rt = MaxicomRuntime.objects.count()
@@ -287,7 +378,7 @@ class Command(BaseCommand):
             return
 
         self.stdout.write(self.style.SUCCESS(
-            f'Runtime (XA_LOG M, irrigation-day rolled @22:00): {created_rt} rows, '
+            f'Runtime (XA_LOG M + XA_RuntimeProject merged, raw ts): {created_rt} rows, '
             f'{skipped_no_site} no-CCU-skipped'
         ))
         self.stdout.write(self.style.SUCCESS(
