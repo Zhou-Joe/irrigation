@@ -94,6 +94,7 @@ urlpatterns = [
     path('pipelines/dxf/import/', views.pipeline_dxf_import_submit, name='pipeline_dxf_import_submit'),
     path('pipelines/edit/data/', views.pipeline_edit_data, name='pipeline_edit_data'),
     path('pipelines/edit/pipeline/<int:pipeline_id>/delete/', views.pipeline_edit_pipeline_delete, name='pipeline_edit_pipeline_delete'),
+    path('pipelines/edit/pipeline/<int:pipeline_id>/geometry/', views.pipeline_edit_geometry, name='pipeline_edit_geometry'),
     path('pipelines/edit/valve/<int:valve_id>/delete/', views.pipeline_edit_valve_delete, name='pipeline_edit_valve_delete'),
     path('pipelines/edit/valve/<int:valve_id>/update/', views.pipeline_edit_valve_update, name='pipeline_edit_valve_update'),
     path('settings/region/new/', views.region_new, name='region_new'),
