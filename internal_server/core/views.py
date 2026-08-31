@@ -5429,6 +5429,75 @@ def pipeline_edit_valve_delete(request, valve_id):
 
 @require_POST
 @login_required(login_url='core:login')
+def pipeline_edit_geometry(request, pipeline_id):
+    """逐线精调：保存一条管道的几何（line_points + 线上阀门位置）。
+
+    POST: ``line_points``（JSON [{lat,lng}]，2..2000 点）、可选 ``valves``
+    （JSON [{id, point:{lat,lng}}]，只允许该管道自己的阀门）。坐标做
+    有限性/范围校验；管道穿越 zones 按新几何重算。
+    """
+    import json as _json
+    import math as _math
+    from django.db import transaction as _db_txn
+    from .models import Pipeline, PipeValve
+    if not _pipeline_dxf_gate(request.user):
+        return JsonResponse({'success': False, 'error': '无权限'}, status=403)
+    p = Pipeline.objects.filter(pk=pipeline_id).first()
+    if not p:
+        return JsonResponse({'success': False, 'error': '管道不存在'}, status=404)
+
+    def _ok_pt(pt):
+        try:
+            lat, lng = float(pt['lat']), float(pt['lng'])
+        except (KeyError, TypeError, ValueError):
+            return None
+        if not (_math.isfinite(lat) and _math.isfinite(lng)):
+            return None
+        if not (-90 <= lat <= 90 and -180 <= lng <= 180):
+            return None
+        return {'lat': round(lat, 7), 'lng': round(lng, 7)}
+
+    try:
+        raw_pts = _json.loads(request.POST.get('line_points') or '[]')
+        raw_valves = _json.loads(request.POST.get('valves') or '[]')
+    except (ValueError, TypeError):
+        return JsonResponse({'success': False, 'error': '坐标参数不是合法 JSON'}, status=400)
+    if not isinstance(raw_pts, list) or not (2 <= len(raw_pts) <= 2000):
+        return JsonResponse({'success': False, 'error': 'line_points 需为 2..2000 个点'}, status=400)
+    pts = [_ok_pt(pt) for pt in raw_pts]
+    if any(pt is None for pt in pts):
+        return JsonResponse({'success': False, 'error': '坐标点缺失或超界（lat ±90 / lng ±180）'}, status=400)
+    valve_updates = []
+    if isinstance(raw_valves, list):
+        for it in raw_valves:
+            try:
+                vid = int(it['id'])
+            except (KeyError, TypeError, ValueError):
+                return JsonResponse({'success': False, 'error': 'valves.id 非法'}, status=400)
+            if not isinstance(it.get('point'), dict):
+                continue
+            npt = _ok_pt(it['point'])
+            if npt is None:
+                return JsonResponse({'success': False, 'error': '阀门坐标超界'}, status=400)
+            valve_updates.append((vid, npt))
+
+    from .pipe_utils import detect_crossed_zones
+    with _db_txn.atomic():
+        p.line_points = pts
+        p.save(update_fields=['line_points'])
+        zids = detect_crossed_zones(pts)
+        if zids is not None:
+            p.zones.set(zids)
+        for vid, npt in valve_updates:
+            # 只动本管道的阀门，防跨线篡改
+            PipeValve.objects.filter(pk=vid, pipeline=p).update(point=[npt])
+    _invalidate_cached('dashboard:pipelines')
+    return JsonResponse({'success': True, 'message': f'已保存「{p.name}」几何'})
+
+
+
+@require_POST
+@login_required(login_url='core:login')
 def pipeline_edit_valve_update(request, valve_id):
     """更新单个阀门：name（文字标注，空=清除）、zone_id（指派区域）。
 
