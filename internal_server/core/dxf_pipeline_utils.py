@@ -107,7 +107,8 @@ CALIBRATION_CACHE_KEY = 'dxf:calib'
 
 
 def _active_calibration_points():
-    """→ (points, source)。source: 'db'=用户标定最新行 / 'default'=硬编码两点。
+    """→ (points, source, method)。source: 'db'=用户标定最新行 / 'default'=
+    硬编码两点；method: 行上存的拟合方法（''=按点数自动 / 'tps' / 'mls'）。
 
     结果缓存 5 分钟，保存新标定时调用 ``_bust_calibration_cache()`` 失效。
     """
@@ -119,11 +120,12 @@ def _active_calibration_points():
     except Exception:
         hit = None   # 缓存后端故障时直接走 DB，不让校准链路 500
     if hit is None:
-        row = SiteCalibration.objects.order_by('-id').values_list('points', flat=True).first()
-        if row and len(row) >= 2:
-            hit = (list(row), 'db')
+        row = (SiteCalibration.objects.order_by('-id')
+               .values_list('points', 'method').first())
+        if row and row[0] and len(row[0]) >= 2:
+            hit = (list(row[0]), 'db', row[1] or '')
         else:
-            hit = (list(SITE_CALIBRATION_POINTS), 'default')
+            hit = (list(SITE_CALIBRATION_POINTS), 'default', '')
         try:
             cache.set(CALIBRATION_CACHE_KEY, hit, 300)
         except Exception:
@@ -140,25 +142,44 @@ def _bust_calibration_cache():
 
 
 def active_calibration_info():
-    """当前生效标定的展示/客户端信息：来源、点数、拟合统计、逆变换系数。
+    """当前生效标定的展示/客户端信息：来源、点数、方法、拟合统计、逆变换。
 
-    页面初始渲染用它给 JS 提供逆变换（地图点击 → 本地坐标，三点校准的
-    DXF 侧取点用），以及拟合参数（比例/旋转）供新拟合对比显示。
+    页面初始渲染用它给 JS 提供逆变换（地图点击 → 本地坐标，校准取点用），
+    以及拟合参数（比例/旋转）供新拟合对比显示。≥4 点时 method='tps'：
+    比例/旋转取同样点数下相似变换的拟合值（仅作对照显示——TPS 没有单一
+    比例/旋转），rms_m 为 LOO 泛化误差；inverse 为反向 TPS 的可序列化
+    系数（{'type':'tps', ...}），JS 端用核函数求值。
     """
-    from core.dxf_utils import similarity_transform_ls, similarity_inverse
-    pts, source = _active_calibration_points()
+    from core.dxf_utils import fit_calibration_transform
+    pts, source, stored_method = _active_calibration_points()
     cal = [{'dxf_x': float(p['dxf_x']), 'dxf_y': -float(p['dxf_y']),
             'lat': float(p['lat']), 'lng': float(p['lng'])} for p in pts]
-    fn, stats = similarity_transform_ls(cal)
+    fn, stats = fit_calibration_transform(cal, stored_method or None)
     if not callable(fn):
-        return {'source': source, 'n': 0, 'scale': None, 'rotation_deg': None,
-                'rms_m': None, 'residuals_m': [], 'inverse': None, 'points': pts}
-    inv = similarity_inverse(stats['a'], stats['b'], stats['c'], stats['d'])
+        return {'source': source, 'n': 0, 'method': 'similarity', 'scale': None,
+                'rotation_deg': None, 'rms_m': None, 'residuals_m': [],
+                'inverse': None, 'points': pts}
+    method = stats.get('method', 'similarity')
+    inv = None
+    if method == 'mls':
+        # MLS 无拟合系数——逆变换直接携带点对，JS 端加权相似 LS 求值
+        inv = {'type': 'mls',
+               'points': [[p['lat'], p['lng'], p['dxf_x'], p['dxf_y']] for p in cal]}
+    elif method == 'tps':
+        # 反向 TPS 系数 ((lat,lng)→(x,-y))，JS 用核函数求值（地图取点用）
+        from core.dxf_utils import _tps_fit_core
+        rc = _tps_fit_core([(p['lat'], p['lng']) for p in cal],
+                           [(p['dxf_x'], p['dxf_y']) for p in cal])
+        inv = {'type': 'tps', 'coeffs': rc} if rc else None
+    else:
+        from core.dxf_utils import similarity_inverse
+        inv = similarity_inverse(stats['a'], stats['b'], stats['c'], stats['d'])
     return {
-        'source': source, 'n': stats['n'],
-        'scale': round(stats['scale'], 8),
-        'rotation_deg': round(stats['rotation_deg'], 4),
-        'rms_m': round(stats['rms_m'], 2),
+        'source': source, 'n': stats['n'], 'method': method,
+        'scale': round(stats['scale'], 8) if stats.get('scale') else None,
+        'rotation_deg': round(stats['rotation_deg'], 4) if stats.get('rotation_deg') is not None else None,
+        'rms_m': round(stats['rms_m'], 2) if stats.get('rms_m') is not None else None,
+        'sim_rms_m': round(stats['sim_rms_m'], 2) if stats.get('sim_rms_m') is not None else None,
         'residuals_m': stats['residuals_m'],
         'inverse': inv,
         'points': pts,
@@ -168,17 +189,18 @@ def active_calibration_info():
 def _local_to_latlng_fn():
     """返回 (to_latlng, meters_per_unit)。米/单位比例用于把米制容差换算
     成绘图单位——图纸以 mm/寸绘制时吸附距离依然按米判定。
-    标定点来源：用户三点校准（SiteCalibration 最新行）优先，退回
-    dxf_utils.SITE_CALIBRATION_POINTS 硬编码两点。"""
-    from core.dxf_utils import similarity_transform_ls
-    cal_pts, _source = _active_calibration_points()
+    标定点来源：用户校准（SiteCalibration 最新行，含 method）优先，退回
+    dxf_utils.SITE_CALIBRATION_POINTS 硬编码两点。method='mls' 用 MLS，
+    其余按点数自动（≥4 TPS / 2-3 相似）。"""
+    from core.dxf_utils import fit_calibration_transform
+    cal_pts, _source, _method = _active_calibration_points()
     if not cal_pts or len(cal_pts) < 2:
         return None, None
     cal = [
         {'dxf_x': p['dxf_x'], 'dxf_y': -p['dxf_y'], 'lat': p['lat'], 'lng': p['lng']}
         for p in cal_pts
     ]
-    fn, _stats = similarity_transform_ls(cal)
+    fn, _stats = fit_calibration_transform(cal, _method or None)
     if not callable(fn):
         return None, None
 

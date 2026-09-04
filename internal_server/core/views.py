@@ -5139,8 +5139,8 @@ def _cal_pairs_from_post(request):
         raw = _json.loads(request.POST.get('pairs') or '[]')
     except (ValueError, TypeError):
         return None, 'pairs 不是合法 JSON'
-    if not isinstance(raw, list) or not (2 <= len(raw) <= 10):
-        return None, '标定点数量需在 2 到 10 之间（建议 3 点）'
+    if not isinstance(raw, list) or not (2 <= len(raw) <= 300):
+        return None, '标定点数量需在 2 到 300 之间（TPS 建议 ≥6 点且撒满园区）'
     pairs = []
     for p in raw:
         try:
@@ -5163,7 +5163,7 @@ def pipeline_dxf_calibration_save(request):
     服务端重新做最小二乘拟合（不信客户端算的参数），返回拟合统计 +
     逆变换系数（客户端地图点击→本地坐标用）。历史行保留，可重复保存。
     """
-    from core.dxf_utils import similarity_transform_ls, similarity_inverse
+    from core.dxf_utils import fit_calibration_transform
     from core.models import SiteCalibration
     from core.dxf_pipeline_utils import _bust_calibration_cache, active_calibration_info
     if not _pipeline_dxf_gate(request.user):
@@ -5171,13 +5171,17 @@ def pipeline_dxf_calibration_save(request):
     pairs, err = _cal_pairs_from_post(request)
     if err:
         return JsonResponse({'success': False, 'error': err}, status=400)
+    method = (request.POST.get('method') or '').strip()
+    if method not in ('', 'tps', 'mls'):
+        return JsonResponse({'success': False, 'error': '未知的拟合方法'}, status=400)
     cal = [{'dxf_x': p['dxf_x'], 'dxf_y': -p['dxf_y'], 'lat': p['lat'], 'lng': p['lng']}
            for p in pairs]
-    fn, stats = similarity_transform_ls(cal)
+    fn, stats = fit_calibration_transform(cal, method or None)
     if not callable(fn):
         return JsonResponse({'success': False, 'error': stats or '标定点退化'}, status=400)
     SiteCalibration.objects.create(
         points=pairs,
+        method=method,
         note=(request.POST.get('note') or '').strip()[:200],
         created_by=request.user if request.user.is_authenticated else None,
     )
@@ -5198,7 +5202,8 @@ def pipeline_dxf_calibration_apply(request):
     import json as _json
     from django.db import transaction
     from django.utils import timezone as _tz
-    from core.dxf_utils import SITE_CALIBRATION_POINTS, similarity_transform_ls, similarity_inverse
+    from core.dxf_utils import (SITE_CALIBRATION_POINTS, similarity_transform_ls,
+                                fit_calibration_transform, fit_calibration_inverse)
     from core.models import SiteCalibration, Pipeline, PipeValve
     from core.dxf_pipeline_utils import _bust_calibration_cache
     if not _pipeline_dxf_gate(request.user):
@@ -5220,20 +5225,26 @@ def pipeline_dxf_calibration_apply(request):
     old_row = next((r for r in rows[1:] if r.applied_at), None)
     new_pts = new_row.points
     old_pts = old_row.points if old_row else SITE_CALIBRATION_POINTS
+    old_method = (old_row.method if old_row else '') or ''
+    new_method = new_row.method or ''
     if not old_pts or len(old_pts) < 2:
         return JsonResponse({'success': False, 'error': '上一标定点数不足'}, status=400)
 
-    def _fit(pts):
+    def _fit(pts, method):
         cal = [{'dxf_x': float(p['dxf_x']), 'dxf_y': -float(p['dxf_y']),
                 'lat': float(p['lat']), 'lng': float(p['lng'])} for p in pts]
-        return similarity_transform_ls(cal)
+        return fit_calibration_transform(cal, method or None)
 
-    old_fn, old_stats = _fit(old_pts)
-    new_fn, new_stats = _fit(new_pts)
+    old_fn, old_stats = _fit(old_pts, old_method)
+    new_fn, new_stats = _fit(new_pts, new_method)
     if not callable(old_fn) or not callable(new_fn):
         return JsonResponse({'success': False, 'error': '标定拟合失败'}, status=400)
-    inv = similarity_inverse(old_stats['a'], old_stats['b'], old_stats['c'], old_stats['d'])
-    if not inv:
+    # 反向变换：TPS/MLS 无解析逆，反向重拟合；相似变换走 similarity_inverse
+    old_inv = fit_calibration_inverse(
+        [{'dxf_x': float(p['dxf_x']), 'dxf_y': -float(p['dxf_y']),
+          'lat': float(p['lat']), 'lng': float(p['lng'])} for p in old_pts],
+        old_method)
+    if old_inv is None:
         return JsonResponse({'success': False, 'error': '旧标定不可逆'}, status=400)
 
     from core.pipe_utils import _to_latlng
@@ -5244,15 +5255,16 @@ def pipeline_dxf_calibration_apply(request):
         if ll is None:
             return pt   # 无法解析的行原样保留（不因个别脏数据中断整批重算）
         lat, lng = ll
-        x = inv['ia'] * lat + inv['ib'] * lng + inv['ic']
-        y = -inv['ib'] * lat + inv['ia'] * lng + inv['id']
+        x, y = old_inv(lat, lng)
         la, ln = new_fn(x, y)
         return {'lat': round(float(la), 7), 'lng': round(float(ln), 7)}
 
     # 注：此前带「整体微调」偏移导入的批次，其偏移会随组合变换近似映射，
     # 不做逐批偏移簿记（偏差在亚米级，记录成本不值）。
+    # 安全闸的比例/旋转取相似变换对照值（TPS stats 里同样带，退化时为 None
+    # → 视作 0，不拦）。TPS 的"比例"本身只是参考量级。
     drift = ((new_stats['scale'] / old_stats['scale']) - 1) * 100 if old_stats['scale'] else 0
-    rot_change = new_stats['rotation_deg'] - old_stats['rotation_deg']
+    rot_change = (new_stats['rotation_deg'] or 0) - (old_stats['rotation_deg'] or 0)
     rot_change = ((rot_change + 180.0) % 360.0) - 180.0   # ±180° 环绕归一
     # 安全闸：比例/旋转剧变几乎总是选点错误（正常土建/卫星偏差在个位数百分比和
     # 小角度内）。需显式 force=1 才放行，防止误操作大规模移动已存坐标。
@@ -5305,12 +5317,32 @@ def pipeline_dxf_calibration_apply(request):
         SiteCalibration.objects.filter(pk=new_row.pk).update(applied_at=_tz.now())
     _invalidate_cached('dashboard:pipelines')
     _bust_calibration_cache()
+
+    # 事后核验：应用后每个控制点的卫星位置距最近管线顶点应≈0。>0.5m
+    # 说明这一轮换算有残差（逆推近似的累积），提示用户但不算失败——
+    # 再保存应用一轮或喊管理员重锚定即可收敛。
+    import math as _math
+    verts = []
+    for p in Pipeline.objects.all().only('line_points').iterator():
+        for pt in (p.line_points or []):
+            ll = _to_latlng(pt)
+            if ll:
+                verts.append(ll)
+    ctrl_max = 0.0
+    if verts:
+        for cp in new_pts:
+            la, ln = float(cp['lat']), float(cp['lng'])
+            d = min(_math.hypot((v[0] - la) * 111320.0,
+                                (v[1] - ln) * 111320.0 * _math.cos(_math.radians(la)))
+                    for v in verts)
+            ctrl_max = max(ctrl_max, d)
     return JsonResponse({
         'success': True,
         'pipelines': n_pipes, 'valves': n_valves,
         'scale_change_pct': round(drift, 3),
         'rotation_change_deg': round(rot_change, 3),
         'backup': os.path.basename(backup_path),
+        'ctrl_max_m': round(ctrl_max, 3),
     })
 
 

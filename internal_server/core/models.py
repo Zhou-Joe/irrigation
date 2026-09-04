@@ -1081,8 +1081,10 @@ class MaxicomRuntime(models.Model):
         verbose_name = 'Maxicom运行时间'
         verbose_name_plural = 'Maxicom运行时间'
         # (site, timestamp) backs the dashboard/PDF/Excel pivot queries that filter
-        # `site=<ccu> AND timestamp__gte/lte`; timestamp alone is already indexed.
-        indexes = [models.Index(fields=['site', 'timestamp'])]
+        # `site=<ccu> AND timestamp__gte/lte`; (station, timestamp) backs the
+        # zone-heatmap / per-station window queries (station_id__in + range).
+        indexes = [models.Index(fields=['site', 'timestamp']),
+                   models.Index(fields=['station', 'timestamp'])]
 
     def __str__(self):
         return f"Runtime {self.site.name} @ {self.timestamp}"
@@ -2641,6 +2643,9 @@ class SiteCalibration(models.Model):
     """
     points = models.JSONField(
         help_text='[{dxf_x, dxf_y(原始DXF), lat, lng}]，至少 2 点、建议 3 点')
+    method = models.CharField(
+        '拟合方法', max_length=12, blank=True, default='',
+        help_text="''=按点数自动(tps/similarity) / 'tps'=薄板样条 / 'mls'=移动最小二乘(边界稳定)")
     applied_at = models.DateTimeField(
         '应用到已存管道的时间', null=True, blank=True,
         help_text='非空表示该标定已重算过库里全部坐标；重复应用会被拒绝（幂等保护）')
