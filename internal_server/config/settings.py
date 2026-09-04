@@ -93,6 +93,20 @@ AUTH_PASSWORD_VALIDATORS = [
     {'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator'},
 ]
 
+# DXF parse cache — MUST be shared across gunicorn workers. The default
+# LocMemCache is per-process: with 4 workers, an analyze request caches in
+# one worker and the token-based "保存并预览"/import request lands on another
+# worker ~75% of the time, producing a spurious "解析缓存已过期（15 分钟）"
+# error seconds after parsing. FileBasedCache is shared and needs no extra
+# infrastructure. /tmp is wiped on reboot, which is fine for a 15-min TTL.
+CACHES = {
+    'default': {'BACKEND': 'django.core.cache.backends.locmem.LocMemCache'},
+    'dxffile': {
+        'BACKEND': 'django.core.cache.backends.filebased.FileBasedCache',
+        'LOCATION': '/tmp/django_dxf_cache',
+    },
+}
+
 LANGUAGE_CODE = 'en-us'
 TIME_ZONE = 'Asia/Shanghai'
 USE_I18N = True
