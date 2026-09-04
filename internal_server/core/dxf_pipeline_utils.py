@@ -214,13 +214,24 @@ def _parse_dxf_geometry(content_bytes):
     return _collect_geometry(doc.modelspace())
 
 
+def _parse_cache():
+    """``dxf:parse:*`` 缓存句柄 —— FileBasedCache，跨 gunicorn worker 共享。
+
+    不能用默认 LocMemCache（每 worker 一份内存）：analyze 落在哪个 worker，
+    缓存就只在那个 worker 里；token 免重传的「保存并预览」/导入请求再落到
+    别的 worker 时会误报「解析缓存已过期（15 分钟）」。见 settings.CACHES。
+    """
+    from django.core.cache import caches
+    return caches['dxffile']
+
+
 def _parsed_from_cache_or_file(content_bytes):
     """hash 命中缓存则复用解析结果，否则解析并写缓存。
 
-    返回 (token, layers, valves, labels)。LocMemCache 单进程——多 worker
-    部署时各进程各自解析，仅损失缓存收益，功能不受影响。
+    返回 (token, layers, valves, labels)。缓存走 FileBasedCache（跨 worker
+    共享），单 worker 各自解析的问题不再存在。
     """
-    from django.core.cache import cache
+    cache = _parse_cache()
     token = hashlib.sha256(content_bytes).hexdigest()[:32]
     key = 'dxf:parse:' + token
     hit = cache.get(key)
@@ -525,8 +536,7 @@ def analyze_dxf_pipelines(uploaded_file=None, token=None):
             content = content.encode('utf-8', errors='ignore')
         token, layers, valves, labels = _parsed_from_cache_or_file(content)
     elif token:
-        from django.core.cache import cache
-        hit = cache.get('dxf:parse:' + token)
+        hit = _parse_cache().get('dxf:parse:' + token)
         if hit is None:
             return {'success': False, 'error': '解析缓存已过期（15 分钟），请重新上传 DXF 文件'}
         layers, valves, labels = hit[0], hit[1], hit[2]
@@ -644,8 +654,7 @@ def import_dxf_pipelines(layer_specs, block_specs, uploaded_file=None,
         raise ValueError('缺少站点标定点，无法转换坐标')
 
     if token:
-        from django.core.cache import cache
-        hit = cache.get('dxf:parse:' + token)
+        hit = _parse_cache().get('dxf:parse:' + token)
         if hit is not None:
             layers, valves, labels = hit
         else:
