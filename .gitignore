@@ -78,3 +78,4 @@ db.sqlite3.bak.*
 internal_server/media/workorder_photos/
 internal_server/media/ai_workspaces/
 internal_server/media/workreport/
+internal_server/pipeline_backups/
