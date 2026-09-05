@@ -727,6 +727,110 @@ def analyze_dxf_pipelines(uploaded_file=None, token=None):
 
 # ── import：按用户映射落库 ────────────────────────────────────────────
 
+def _resolve_parsed_geometry(uploaded_file, token, content):
+    """导入几何来源：``token`` 解析缓存优先，过期/缺失退回文件/字节内容。"""
+    if token:
+        hit = _parse_cache().get('dxf:parse:' + token)
+        if hit is not None:
+            return hit
+        # 缓存过期，退回文件解析
+    if content is None:
+        if uploaded_file is None:
+            raise ValueError('缺少文件且解析缓存已过期，请重新上传解析')
+        content = uploaded_file.read()
+        if isinstance(content, str):
+            content = content.encode('utf-8', errors='ignore')
+    _, layers, valves, labels = _parsed_from_cache_or_file(content)
+    return layers, valves, labels
+
+
+def _unique_name_code(name, code, used_names, used_codes):
+    """名称/编号唯一化（内存判重 + 截断到字段上限，超长在 PostgreSQL 会炸）。
+    就地登记到 used 集合，DB 唯一约束兜底并发。"""
+    base_name, base_code, n = name[:255], code[:50], 2
+    while name in used_names or code in used_codes:
+        name = f'{base_name} ({n})'[:255]
+        code = f'{base_code}-{n}'[:50]
+        n += 1
+    used_names.add(name)
+    used_codes.add(code)
+    return name, code
+
+
+def _attach_valves(valves, block_specs, all_paths, to_latlng,
+                   off_lat, off_lng, meters_per_unit, usable_labels,
+                   zone_rings, zone_info):
+    """阀门吸附：INSERT 块 → 1.5m 内最近管段（网格空间索引），就近标注命名，
+    电磁阀配 zone/station/口径。→ (valve_rows, labeled_valves, skipped_valves)。"""
+    from core.models import PipeValve
+    from core.pipe_utils import _point_in_ring
+
+    def zone_of(lat, lng):
+        for zid, ring, bb in zone_rings:
+            if bb[0] <= lat <= bb[1] and bb[2] <= lng <= bb[3]:
+                if _point_in_ring(lat, lng, ring):
+                    return zid
+        return None
+
+    snap_units = SNAP_TOL_M / (meters_per_unit or 1.0)
+    grid = _SegmentGrid(snap_units)
+    for pi, (pts, _dia, _p) in enumerate(all_paths):
+        for i in range(len(pts) - 1):
+            grid.add((pi, i), pts[i], pts[i + 1])
+    label_units = LABEL_RADIUS_M / (meters_per_unit or 1.0)
+    label_idx = _LabelIndex(usable_labels) if usable_labels else None
+
+    valve_rows, labeled_valves, skipped_valves = [], 0, 0
+    order_by_pipe = defaultdict(int)
+    for v in valves:
+        spec = (block_specs or {}).get(v['block'])
+        if not spec or not spec.get('include'):
+            continue
+        best = None
+        for (pi, si), a, b in grid.candidates(v['x'], v['y']):
+            d = _dist_to_seg(v['x'], v['y'], a[0], a[1], b[0], b[1])
+            if d <= snap_units and (best is None or d < best[0]):
+                best = (d, pi)
+        if best is None:
+            skipped_valves += 1
+            continue
+        _, pi = best
+        pts, diameter, pipe = all_paths[pi]
+        lat, lng = to_latlng(v['x'], v['y'])
+        lat += off_lat; lng += off_lng
+        name = ''
+        if label_idx:
+            hit = label_idx.nearest_within(v['x'], v['y'], label_units)
+            if hit:
+                name = hit[1][:50]   # PipeValve.name 上限 50
+                labeled_valves += 1
+        vtype = spec.get('valve_type') if spec.get('valve_type') in \
+            dict(PipeValve.VALVE_TYPE_CHOICES) else PipeValve.VALVE_SOLENOID
+        zid = zone_of(lat, lng)
+        station_id = None
+        vdia = diameter   # 默认继承所在管线的管径
+        # 电磁阀(Zone自控) 落在 zone 内：自动配对该 zone 的 Maxicom
+        # station（首页即可显示灌溉运行数据）并用 zone 的电磁阀尺寸
+        # 换算口径（比图层管径更准确）。
+        if vtype == PipeValve.VALVE_SOLENOID and zid:
+            zi = zone_info.get(zid) or {}
+            station_id = zi.get('station_id')
+            if zi.get('valve_dia'):
+                vdia = zi['valve_dia']
+        order_by_pipe[pipe.id] += 1
+        valve_rows.append(PipeValve(
+            pipeline=pipe,
+            zone_id=zid,
+            station_id=station_id,
+            name=name[:50] or f"{v['block'].rsplit('-', 1)[-1].upper()}·{v['x']:.0f},{v['y']:.0f}"[:50],
+            point=[{'lat': round(lat, 6), 'lng': round(lng, 6)}],
+            valve_type=vtype,
+            diameter=vdia,
+            order=order_by_pipe[pipe.id],
+        ))
+    return valve_rows, labeled_valves, skipped_valves
+
+
 def import_dxf_pipelines(layer_specs, block_specs, uploaded_file=None,
                          label_layers=None, valve_name_from_label=True,
                          offset=(0.0, 0.0), token=None, content=None,
@@ -749,34 +853,12 @@ def import_dxf_pipelines(layer_specs, block_specs, uploaded_file=None,
     if to_latlng is None:
         raise ValueError('缺少站点标定点，无法转换坐标')
 
-    if token:
-        hit = _parse_cache().get('dxf:parse:' + token)
-        if hit is not None:
-            layers, valves, labels = hit
-        else:
-            token = None   # 缓存过期，退回文件解析
-    if not token:
-        if content is None:
-            if uploaded_file is None:
-                raise ValueError('缺少文件且解析缓存已过期，请重新上传解析')
-            content = uploaded_file.read()
-            if isinstance(content, str):
-                content = content.encode('utf-8', errors='ignore')
-        _, layers, valves, labels = _parsed_from_cache_or_file(content)
+    layers, valves, labels = _resolve_parsed_geometry(uploaded_file, token, content)
 
     usable_labels = [lb for lb in labels
                      if label_layers is None or lb['layer'] in label_layers]
 
     zone_rings, zone_info = _load_zone_data()
-
-    from core.pipe_utils import _point_in_ring
-
-    def zone_of(lat, lng):
-        for zid, ring, bb in zone_rings:
-            if bb[0] <= lat <= bb[1] and bb[2] <= lng <= bb[3]:
-                if _point_in_ring(lat, lng, ring):
-                    return zid
-        return None
 
     off_lat, off_lng = float(offset[0] or 0), float(offset[1] or 0)
 
@@ -785,12 +867,7 @@ def import_dxf_pipelines(layer_specs, block_specs, uploaded_file=None,
     used_codes = set(Pipeline.objects.values_list('code', flat=True))
 
     created_pipes = 0
-    created_valves = 0
-    labeled_valves = 0
-    skipped_valves = 0
     layer_stats = []
-    valve_rows = []
-    order_by_pipe = defaultdict(int)
     all_paths = []   # (local_pts, diameter, pipeline)
 
     with _db_txn.atomic():
@@ -824,12 +901,7 @@ def import_dxf_pipelines(layer_specs, block_specs, uploaded_file=None,
                     dl = f'DN{diameter:.0f}' if diameter else layer
                     name = f'{dl} 管段（DXF）'
                     code = f"{'IRR' if ptype == 'irrigation' else 'FLU'}-DXF"
-                # 唯一性内存判重 + 截断到字段上限（超长在 PostgreSQL 会炸）
-                base_name, base_code, n = name[:255], code[:50], 2
-                while name in used_names or code in used_codes:
-                    name = f'{base_name} ({n})'[:255]
-                    code = f'{base_code}-{n}'[:50]
-                    n += 1
+                name, code = _unique_name_code(name, code, used_names, used_codes)
                 p = Pipeline.objects.create(
                     name=name, code=code,
                     pipeline_type=ptype,
@@ -839,8 +911,6 @@ def import_dxf_pipelines(layer_specs, block_specs, uploaded_file=None,
                     line_points=ll,
                     import_batch=batch,
                 )
-                used_names.add(name)
-                used_codes.add(code)
                 if zids:
                     p.zones.set(zids)
                 all_paths.append((pts, diameter, p))
@@ -849,62 +919,10 @@ def import_dxf_pipelines(layer_specs, block_specs, uploaded_file=None,
             layer_stats.append({'layer': layer, 'paths': n_paths,
                                 'segments': len(bucket['polys'])})
 
-        # 阀门吸附：网格空间索引 + 米制容差换算
-        snap_units = SNAP_TOL_M / (meters_per_unit or 1.0)
-        grid = _SegmentGrid(snap_units)
-        for pi, (pts, _dia, _p) in enumerate(all_paths):
-            for i in range(len(pts) - 1):
-                grid.add((pi, i), pts[i], pts[i + 1])
-        label_units = LABEL_RADIUS_M / (meters_per_unit or 1.0)
-        label_idx = _LabelIndex(usable_labels) if usable_labels else None
-
-        for v in valves:
-            spec = (block_specs or {}).get(v['block'])
-            if not spec or not spec.get('include'):
-                continue
-            best = None
-            for (pi, si), a, b in grid.candidates(v['x'], v['y']):
-                d = _dist_to_seg(v['x'], v['y'], a[0], a[1], b[0], b[1])
-                if d <= snap_units and (best is None or d < best[0]):
-                    best = (d, pi)
-            if best is None:
-                skipped_valves += 1
-                continue
-            _, pi = best
-            pts, diameter, pipe = all_paths[pi]
-            lat, lng = to_latlng(v['x'], v['y'])
-            lat += off_lat; lng += off_lng
-            name = ''
-            if label_idx:
-                hit = label_idx.nearest_within(v['x'], v['y'], label_units)
-                if hit:
-                    name = hit[1][:50]   # PipeValve.name 上限 50
-                    labeled_valves += 1
-            vtype = spec.get('valve_type') if spec.get('valve_type') in \
-                dict(PipeValve.VALVE_TYPE_CHOICES) else PipeValve.VALVE_SOLENOID
-            zid = zone_of(lat, lng)
-            station_id = None
-            vdia = diameter   # 默认继承所在管线的管径
-            # 电磁阀(Zone自控) 落在 zone 内：自动配对该 zone 的 Maxicom
-            # station（首页即可显示灌溉运行数据）并用 zone 的电磁阀尺寸
-            # 换算口径（比图层管径更准确）。
-            if vtype == PipeValve.VALVE_SOLENOID and zid:
-                zi = zone_info.get(zid) or {}
-                station_id = zi.get('station_id')
-                if zi.get('valve_dia'):
-                    vdia = zi['valve_dia']
-            order_by_pipe[pipe.id] += 1
-            valve_rows.append(PipeValve(
-                pipeline=pipe,
-                zone_id=zid,
-                station_id=station_id,
-                name=name[:50] or f"{v['block'].rsplit('-', 1)[-1].upper()}·{v['x']:.0f},{v['y']:.0f}"[:50],
-                point=[{'lat': round(lat, 6), 'lng': round(lng, 6)}],
-                valve_type=vtype,
-                diameter=vdia,
-                order=order_by_pipe[pipe.id],
-            ))
-            created_valves += 1
+        valve_rows, labeled_valves, skipped_valves = _attach_valves(
+            valves, block_specs, all_paths, to_latlng, off_lat, off_lng,
+            meters_per_unit, usable_labels, zone_rings, zone_info)
+        created_valves = len(valve_rows)
         if valve_rows:
             PipeValve.objects.bulk_create(valve_rows)
 
