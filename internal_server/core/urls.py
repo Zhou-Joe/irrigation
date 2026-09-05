@@ -1,6 +1,6 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from core import views
+from core import dxf_views, views
 from core.sync_views import sync_status, agent_status
 from core.ai_views import ai_chat, ai_status
 from core.api import (
@@ -87,16 +87,16 @@ urlpatterns = [
     path('settings/batch-delete-zone/', views.batch_delete_zone, name='batch_delete_zone'),
     path('settings/batch-delete-pipeline/', views.batch_delete_pipeline, name='batch_delete_pipeline'),
     path('settings/pipeline/auto-valves/', views.pipeline_auto_valves, name='pipeline_auto_valves'),
-    path('pipelines/dxf/', views.pipeline_dxf_import, name='pipeline_dxf_import'),
-    path('pipelines/dxf/analyze/', views.pipeline_dxf_analyze, name='pipeline_dxf_analyze'),
-    path('pipelines/dxf/calibration/save/', views.pipeline_dxf_calibration_save, name='pipeline_dxf_calibration_save'),
-    path('pipelines/dxf/calibration/apply/', views.pipeline_dxf_calibration_apply, name='pipeline_dxf_calibration_apply'),
-    path('pipelines/dxf/import/', views.pipeline_dxf_import_submit, name='pipeline_dxf_import_submit'),
-    path('pipelines/edit/data/', views.pipeline_edit_data, name='pipeline_edit_data'),
-    path('pipelines/edit/pipeline/<int:pipeline_id>/delete/', views.pipeline_edit_pipeline_delete, name='pipeline_edit_pipeline_delete'),
-    path('pipelines/edit/pipeline/<int:pipeline_id>/geometry/', views.pipeline_edit_geometry, name='pipeline_edit_geometry'),
-    path('pipelines/edit/valve/<int:valve_id>/delete/', views.pipeline_edit_valve_delete, name='pipeline_edit_valve_delete'),
-    path('pipelines/edit/valve/<int:valve_id>/update/', views.pipeline_edit_valve_update, name='pipeline_edit_valve_update'),
+    path('pipelines/dxf/', dxf_views.pipeline_dxf_import, name='pipeline_dxf_import'),
+    path('pipelines/dxf/analyze/', dxf_views.pipeline_dxf_analyze, name='pipeline_dxf_analyze'),
+    path('pipelines/dxf/calibration/save/', dxf_views.pipeline_dxf_calibration_save, name='pipeline_dxf_calibration_save'),
+    path('pipelines/dxf/calibration/apply/', dxf_views.pipeline_dxf_calibration_apply, name='pipeline_dxf_calibration_apply'),
+    path('pipelines/dxf/import/', dxf_views.pipeline_dxf_import_submit, name='pipeline_dxf_import_submit'),
+    path('pipelines/edit/data/', dxf_views.pipeline_edit_data, name='pipeline_edit_data'),
+    path('pipelines/edit/pipeline/<int:pipeline_id>/delete/', dxf_views.pipeline_edit_pipeline_delete, name='pipeline_edit_pipeline_delete'),
+    path('pipelines/edit/pipeline/<int:pipeline_id>/geometry/', dxf_views.pipeline_edit_geometry, name='pipeline_edit_geometry'),
+    path('pipelines/edit/valve/<int:valve_id>/delete/', dxf_views.pipeline_edit_valve_delete, name='pipeline_edit_valve_delete'),
+    path('pipelines/edit/valve/<int:valve_id>/update/', dxf_views.pipeline_edit_valve_update, name='pipeline_edit_valve_update'),
     path('settings/region/new/', views.region_new, name='region_new'),
     path('settings/region/<int:region_id>/', views.region_edit, name='region_edit'),
     path('settings/region/<int:region_id>/delete/', views.region_delete, name='region_delete'),
