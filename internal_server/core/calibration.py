@@ -348,7 +348,9 @@ def fit_calibration_transform(pairs, method=None):
     不能被自动选型静默升级成 TPS。
     """
     if method == 'sim' and len(pairs) >= 2:
-        return similarity_transform_ls(pairs)
+        fn, stats = similarity_transform_ls(pairs)
+        stats['method'] = 'similarity'
+        return fn, stats
     if method == 'mls' and len(pairs) >= 2:
         return mls_fit(pairs)
     if len(pairs) >= 4:
