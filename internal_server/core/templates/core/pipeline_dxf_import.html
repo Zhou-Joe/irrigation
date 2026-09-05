@@ -732,18 +732,32 @@ function pdxfCalStartBody() {
     }
   });
   pdxfCal.prevPoints = (pdxfCalInfo && pdxfCalInfo.points) ? JSON.parse(JSON.stringify(pdxfCalInfo.points)) : null;
+  // 恢复上次标定时要沿用当时的引擎——否则当前单选若停在别的模式，
+  // 会把旧 TPS/MLS 点集按 'sim' 存库、悄悄换了拟合方法
+  pdxfCal.prevMethod = (pdxfCalInfo && pdxfCalInfo.method === 'tps') ? 'tps'
+    : (pdxfCalInfo && pdxfCalInfo.method === 'mls') ? 'mls' : 'sim';
   if (pdxfEditMode) pdxfToggleEditMode();   // 互斥
   if (pdxfAdjustOn) pdxfToggleAdjust();     // 互斥
   pdxfMap.getContainer().style.cursor = 'crosshair';
   pdxfMap.on('click', pdxfCalOnClick);
   document.getElementById('pdxfCalStartBtn').style.display = 'none';
   document.getElementById('pdxfCalStopBtn').style.display = '';
-  document.getElementById('pdxfCalDoneBtn').style.display = 'none';
+  // 累积选点预载的旧点可能已 ≥4 组——✓ 按钮可见性按当前点数重算，
+  // 不能硬编码隐藏（否则只能靠加/删点触发重算，"完成选点"永远出不来）
+  pdxfCalUpdateDoneBtn();
   document.getElementById('pdxfCalTable').style.display = '';
   document.getElementById('pdxfCalActions').style.display = 'none';
   pdxfCalStepMsg();
   pdxfCalRenderPairs();
-  pdxfCalStatusMsg('');
+  // 无图纸、在已入库管线上取点：库线活在「最近应用过的标定」下。当前
+  // 生效标定若还没应用，用它反算取点坐标会算错——先提示去应用。
+  // （source 非 db 时无标定可应用，不提示）
+  if (!pdxfToken && pdxfCalInfo && pdxfCalInfo.source === 'db' && !pdxfCalInfo.applied_at) {
+    pdxfCalStatusMsg('⚠ 当前标定尚未「应用到已保存的管道」——已入库管道仍活在上一标定下，'
+                   + '现在在管线上取点的 DXF 坐标会算偏。请先应用当前标定，或上传 DXF 图纸校准。', true);
+  } else {
+    pdxfCalStatusMsg('');
+  }
 }
 
 // tps/mls 都是多点模式（≥4 后可"完成选点"，上限 300）
@@ -761,6 +775,9 @@ function pdxfCalFinishPick() {
   if (pdxfCal.pairs.length < 4) return;
   pdxfCal.phase = 'done';
   pdxfMap.off('click', pdxfCalOnClick);
+  // 选点完成 = 只读的拟合/对比/保存阶段：解锁算法单选，直接切换
+  // TPS↔MLS 即可对比同一点集在两个引擎下的拟合结果，不必退出校准
+  pdxfCalLockMode(false);
   pdxfCalUpdateDoneBtn();
   pdxfCalFitShow();
 }
@@ -771,6 +788,7 @@ function pdxfCalResumePick() {
   pdxfCal.phase = 'dxf';
   pdxfCal.idx = pdxfCal.pairs.length;
   pdxfCal.pending = null;
+  pdxfCalLockMode(true);   // 重新进入选点：锁单选（保存引擎 = 保存那一刻的选择）
   document.getElementById('pdxfCalStopBtn').style.display = '';
   document.getElementById('pdxfCalStartBtn').style.display = 'none';
   pdxfMap.getContainer().style.cursor = 'crosshair';
@@ -840,7 +858,12 @@ function pdxfCalOnClick(e) {
     pdxfCal.pending = null;
     pdxfCal.phase = pdxfCal.idx < pdxfCalTarget() ? 'dxf' : 'done';
     pdxfCalUpdateDoneBtn();
-    if (pdxfCal.phase === 'done') { pdxfMap.off('click', pdxfCalOnClick); pdxfCalFitShow(); }
+    // 三点模式选满自动完成：同样进入"只读对比"阶段，解锁单选可切引擎对比
+    if (pdxfCal.phase === 'done') {
+      pdxfMap.off('click', pdxfCalOnClick);
+      pdxfCalLockMode(false);
+      pdxfCalFitShow();
+    }
   }
   pdxfCalStepMsg();
   pdxfCalRenderPairs();
@@ -851,6 +874,7 @@ function pdxfCalDropPair(i) {
   pdxfCal.idx = pdxfCal.pairs.length;
   pdxfCal.phase = pdxfCal.idx < pdxfCalTarget() ? 'dxf' : 'done';
   if (pdxfCal.phase !== 'done' && pdxfCal.on) pdxfMap.on('click', pdxfCalOnClick);
+  if (pdxfCal.phase === 'dxf' && pdxfCal.on) pdxfCalLockMode(true);   // 回到选点态：重新锁单选
   pdxfCalUpdateDoneBtn();
   if (!pdxfCal.on) { pdxfCalRenderPairs(); return; }   // 已退出校准：不再重建标记（避免复活的点）
   // 标记重建（比按索引删 marker 简单且不易错位）
@@ -1169,7 +1193,7 @@ function pdxfCalFitShow() {
   pdxfCalRenderPairs();
 }
 
-function pdxfCalSave(pairsOverride) {
+function pdxfCalSave(pairsOverride, methodOverride) {
   var pairs = pairsOverride || pdxfCal.pairs;
   var mode = pdxfCalMode();
   var minPts = pdxfCalMulti() ? 4 : 2;
@@ -1182,7 +1206,10 @@ function pdxfCalSave(pairsOverride) {
   fd.append('pairs', JSON.stringify(toSave.map(function (p) {
     return { dxf_x: p.dxfX, dxf_y: p.dxfY, lat: p.satLat, lng: p.satLng };
   })));
-  fd.append('method', mode === 'tps' || mode === 'mls' ? mode : '');
+  // ls3/exact2 显式传 'sim'：累积选点常带着 ≥4 组旧点，传 ''(自动)会被
+  // 服务端按点数升级成 TPS——用户在 UI 上选的明明是"三点最小二乘"。
+  // methodOverride：「恢复上次标定」用它沿用当时的引擎，不随当前单选漂移。
+  fd.append('method', methodOverride || (mode === 'tps' || mode === 'mls' ? mode : 'sim'));
   fd.append('note', (mode === 'exact2' ? '两点精确' : mode === 'tps' ? ('TPS ' + toSave.length + '点')
     : mode === 'mls' ? ('MLS ' + toSave.length + '点') : '三点最小二乘') + '校准 ' + new Date().toLocaleString());
   fetch("{% url 'core:pipeline_dxf_calibration_save' %}", {
@@ -1254,16 +1281,16 @@ function pdxfCalSave(pairsOverride) {
 
 function pdxfCalRevert() {
   if (!pdxfCal.prevPoints || pdxfCal.prevPoints.length < 2) return;
+  // 沿用进入校准时的引擎（pdxfCal.prevMethod），不随当前单选漂移
   pdxfCalSave(pdxfCal.prevPoints.map(function (p) {
     return { dxfX: p.dxf_x, dxfY: p.dxf_y, satLat: p.lat, satLng: p.lng };
-  }));
+  }), pdxfCal.prevMethod || undefined);
 }
 
 function pdxfCalApplySaved(force) {
   if (!force && !confirm('把新标定追溯应用到数据库里全部已保存的管道/阀门坐标？\n' +
-               '· 按上一生效标定还原回本地坐标，再按新标定重新换算\n' +
-               '· 执行前自动备份全部坐标到服务器 JSON 文件（可回滚）\n' +
-               '· 最近导入的图纸若已按新标定导入，请勿重复应用')) return;
+               '· 每批管道按其「导入时的生效标定」分别还原回本地坐标，再按新标定重新换算\n' +
+               '· 执行前自动备份全部坐标到服务器 JSON 文件（可回滚）')) return;
   var btn = document.getElementById('pdxfCalApplyBtn');
   btn.disabled = true; btn.textContent = '应用中…';
   var fd = new FormData();
@@ -1280,6 +1307,7 @@ function pdxfCalApplySaved(force) {
       return;
     }
     if (!d.success) { pdxfCalStatusMsg(d.error || '应用失败', true); return; }
+    if (pdxfCalInfo) pdxfCalInfo.applied_at = new Date().toISOString();   // 防下轮 fromDb 取点误报"未应用"
     var ctrlMsg = (d.ctrl_max_m != null)
       ? ' 控制点核验：最大偏差 <b style="color:' + (d.ctrl_max_m > 0.5 ? '#c0392b' : '#2D6A4F') + '">' +
         d.ctrl_max_m + ' m</b>' +

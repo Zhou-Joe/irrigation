@@ -5172,7 +5172,7 @@ def pipeline_dxf_calibration_save(request):
     if err:
         return JsonResponse({'success': False, 'error': err}, status=400)
     method = (request.POST.get('method') or '').strip()
-    if method not in ('', 'tps', 'mls'):
+    if method not in ('', 'sim', 'tps', 'mls'):
         return JsonResponse({'success': False, 'error': '未知的拟合方法'}, status=400)
     cal = [{'dxf_x': p['dxf_x'], 'dxf_y': -p['dxf_y'], 'lat': p['lat'], 'lng': p['lng']}
            for p in pairs]
@@ -5202,9 +5202,9 @@ def pipeline_dxf_calibration_apply(request):
     import json as _json
     from django.db import transaction
     from django.utils import timezone as _tz
-    from core.dxf_utils import (SITE_CALIBRATION_POINTS, similarity_transform_ls,
+    from core.dxf_utils import (SITE_CALIBRATION_POINTS,
                                 fit_calibration_transform, fit_calibration_inverse)
-    from core.models import SiteCalibration, Pipeline, PipeValve
+    from core.models import SiteCalibration, Pipeline, PipeValve, PipelineImportBatch
     from core.dxf_pipeline_utils import _bust_calibration_cache
     if not _pipeline_dxf_gate(request.user):
         return JsonResponse({'success': False, 'error': '无权限'}, status=403)
@@ -5220,42 +5220,68 @@ def pipeline_dxf_calibration_apply(request):
         return JsonResponse({'success': False,
                              'error': '当前标定已应用过（%s）。如需再次重算，请先保存一份新标定。'
                                       % new_row.applied_at.strftime('%m-%d %H:%M')}, status=400)
-    # old = 已存坐标当前所处的标定：最近一次 applied 的历史行；从未应用过则
-    # 为硬编码默认两点（此前导入的数据都由它换算）。
-    old_row = next((r for r in rows[1:] if r.applied_at), None)
+    # old（逐批次推导）：某批管道的当前坐标活在哪个标定下 =
+    #   max(该批导入时刻的生效标定, 最近一次 applied 的行)，按行序(id)。
+    # 旧实现把全库当作活在同一个 old 下（最近 applied 行 / 默认两点）——在
+    # 「新标定已保存但未应用」窗口里导入的批次实际活在导入时标定下，用错误
+    # 的 old⁻¹ 还原，每保存+应用一轮就叠加一次偏差（表现为"导入的线条越调
+    # 越歪"）。导入时标定 = created_at ≤ 批次 imported_at 的最新行（auto_now_add
+    # 单调，id 序即时间序）；该时刻无行则硬编码默认两点。手动建的管道无批次，
+    # 沿用旧语义（最近 applied 行 / 默认两点）。
     new_pts = new_row.points
-    old_pts = old_row.points if old_row else SITE_CALIBRATION_POINTS
-    old_method = (old_row.method if old_row else '') or ''
     new_method = new_row.method or ''
-    if not old_pts or len(old_pts) < 2:
-        return JsonResponse({'success': False, 'error': '上一标定点数不足'}, status=400)
+    if not new_pts or len(new_pts) < 2:
+        return JsonResponse({'success': False, 'error': '新标定点数不足'}, status=400)
 
-    def _fit(pts, method):
+    hist = list(SiteCalibration.objects.order_by('id')
+                .values('id', 'created_at', 'points', 'method', 'applied_at'))
+    rows_by_id = {r['id']: r for r in hist}
+    last_applied = max((r for r in hist if r['applied_at']),
+                       key=lambda r: r['id'], default=None)
+    DEFAULT_OLD = {'id': 0, 'points': SITE_CALIBRATION_POINTS, 'method': ''}
+    # 闸门/无批次管道对照用的全局 old：最近 applied 行，无则默认两点
+    gate_old = last_applied or DEFAULT_OLD
+
+    def old_row_of(imported_at):
+        row = DEFAULT_OLD
+        for r in hist:
+            if r['created_at'] <= imported_at:
+                row = r
+        if last_applied and last_applied['id'] > row['id']:
+            return last_applied   # 批次导入后有过 apply：全库已搬到该行
+        return row
+
+    def _fit_row(row):
+        """→ (fn, stats, inv)。inv 为该标定的反向变换，退化时 None。"""
         cal = [{'dxf_x': float(p['dxf_x']), 'dxf_y': -float(p['dxf_y']),
-                'lat': float(p['lat']), 'lng': float(p['lng'])} for p in pts]
-        return fit_calibration_transform(cal, method or None)
+                'lat': float(p['lat']), 'lng': float(p['lng'])} for p in row['points']]
+        fn, stats = fit_calibration_transform(cal, row['method'] or None)
+        inv = fit_calibration_inverse(cal, row['method'] or '') if callable(fn) else None
+        return fn, stats, inv
 
-    old_fn, old_stats = _fit(old_pts, old_method)
-    new_fn, new_stats = _fit(new_pts, new_method)
-    if not callable(old_fn) or not callable(new_fn):
-        return JsonResponse({'success': False, 'error': '标定拟合失败'}, status=400)
-    # 反向变换：TPS/MLS 无解析逆，反向重拟合；相似变换走 similarity_inverse
-    old_inv = fit_calibration_inverse(
-        [{'dxf_x': float(p['dxf_x']), 'dxf_y': -float(p['dxf_y']),
-          'lat': float(p['lat']), 'lng': float(p['lng'])} for p in old_pts],
-        old_method)
-    if old_inv is None:
-        return JsonResponse({'success': False, 'error': '旧标定不可逆'}, status=400)
+    new_fn, new_stats, _ni = _fit_row({'id': new_row.id, 'created_at': None,
+                                       'points': new_pts, 'method': new_method,
+                                       'applied_at': None})
+    if not callable(new_fn):
+        return JsonResponse({'success': False, 'error': '新标定拟合失败'}, status=400)
+    _gf, gate_stats, _gi = _fit_row(gate_old)
+    if not callable(_gf):
+        return JsonResponse({'success': False, 'error': '上一标定拟合失败'}, status=400)
 
     from core.pipe_utils import _to_latlng
 
-    def _remap_pt(pt):
+    _inv_cache = {}   # 标定行 id → 反向变换（同一行的多条管道只拟一次）
+    def old_inv_of(row):
+        if row['id'] not in _inv_cache:
+            _inv_cache[row['id']] = _fit_row(row)[2]
+        return _inv_cache[row['id']]
+
+    def _remap_pt(inv, pt):
         # 兼容 dict {lat,lng} 与历史数组 [lat,lng] 两种行格式；输出统一 dict。
         ll = _to_latlng(pt)
         if ll is None:
             return pt   # 无法解析的行原样保留（不因个别脏数据中断整批重算）
-        lat, lng = ll
-        x, y = old_inv(lat, lng)
+        x, y = inv(ll[0], ll[1])
         la, ln = new_fn(x, y)
         return {'lat': round(float(la), 7), 'lng': round(float(ln), 7)}
 
@@ -5263,8 +5289,8 @@ def pipeline_dxf_calibration_apply(request):
     # 不做逐批偏移簿记（偏差在亚米级，记录成本不值）。
     # 安全闸的比例/旋转取相似变换对照值（TPS stats 里同样带，退化时为 None
     # → 视作 0，不拦）。TPS 的"比例"本身只是参考量级。
-    drift = ((new_stats['scale'] / old_stats['scale']) - 1) * 100 if old_stats['scale'] else 0
-    rot_change = (new_stats['rotation_deg'] or 0) - (old_stats['rotation_deg'] or 0)
+    drift = ((new_stats['scale'] / gate_stats['scale']) - 1) * 100 if gate_stats['scale'] else 0
+    rot_change = (new_stats['rotation_deg'] or 0) - (gate_stats['rotation_deg'] or 0)
     rot_change = ((rot_change + 180.0) % 360.0) - 180.0   # ±180° 环绕归一
     # 安全闸：比例/旋转剧变几乎总是选点错误（正常土建/卫星偏差在个位数百分比和
     # 小角度内）。需显式 force=1 才放行，防止误操作大规模移动已存坐标。
@@ -5289,7 +5315,12 @@ def pipeline_dxf_calibration_apply(request):
         with open(backup_path, 'w', encoding='utf-8') as bf:
             _json.dump({
                 'created_at': _tz.now().isoformat(),
-                'old_calibration': old_pts, 'new_calibration': new_pts,
+                # 逐批旧标定（重算依据）：id → {points, method}；历史行可按 id
+                # 从 SiteCalibration 复原。gate_old 仅为闸门对照，不参与重算。
+                'old_calibration': gate_old['points'], 'new_calibration': new_pts,
+                'old_calibration_rows': {str(r['id']): {'points': r['points'],
+                                                        'method': r['method']}
+                                         for r in hist},
                 'pipelines': [{'id': p.id, 'line_points': p.line_points}
                               for p in Pipeline.objects.all().only('id', 'line_points')],
                 'valves': [{'id': v.id, 'point': v.point}
@@ -5301,17 +5332,38 @@ def pipeline_dxf_calibration_apply(request):
 
     n_pipes = n_valves = 0
     with transaction.atomic():
-        # 快照在事务内取，缩小与并发编辑的竞态窗口
-        for p in Pipeline.objects.all().only('id', 'line_points').iterator():
-            if not p.line_points:
-                continue
-            p.line_points = [_remap_pt(pt) for pt in p.line_points]
-            p.save(update_fields=['line_points'])
-            n_pipes += 1
-        for v in PipeValve.objects.all().only('id', 'point').iterator():
+        # 快照在事务内取，缩小与并发编辑的竞态窗口。按「旧标定行」分组管道，
+        # 每组用各自的 old⁻¹∘new 重算——不同批次可以活在不同的标定下。
+        batch_ts = dict(PipelineImportBatch.objects.values_list('id', 'imported_at'))
+        old_key_by_pid = {}
+        groups = {}   # 旧标定行 id → [pipelines]
+        for p in Pipeline.objects.all().only('id', 'line_points', 'import_batch_id'):
+            ts = batch_ts.get(p.import_batch_id)
+            key = old_row_of(ts)['id'] if ts else gate_old['id']
+            old_key_by_pid[p.id] = key
+            groups.setdefault(key, []).append(p)
+        # 写入前统一解析全部需要的逆变换——有任何不可逆就在零写入时退出
+        # （atomic 块正常退出即 commit，中途 return 会把已 save 的部分提交）。
+        for key in sorted(set(groups) | {gate_old['id']}):
+            row = DEFAULT_OLD if key == 0 else rows_by_id[key]
+            if old_inv_of(row) is None:
+                return JsonResponse({'success': False,
+                                     'error': f'标定 #{key} 不可逆，已中止（未改动任何数据）'},
+                                    status=400)
+        for key, plist in groups.items():
+            inv = _inv_cache[key]
+            for p in plist:
+                if not p.line_points:
+                    continue
+                p.line_points = [_remap_pt(inv, pt) for pt in p.line_points]
+                p.save(update_fields=['line_points'])
+                n_pipes += 1
+        for v in PipeValve.objects.all().only('id', 'point', 'pipeline_id').iterator():
             if not v.point:
                 continue
-            v.point = [_remap_pt(v.point[0])]
+            key = old_key_by_pid.get(v.pipeline_id, gate_old['id'])
+            inv = _inv_cache[key]
+            v.point = [_remap_pt(inv, v.point[0])]
             v.save(update_fields=['point'])
             n_valves += 1
         SiteCalibration.objects.filter(pk=new_row.pk).update(applied_at=_tz.now())
