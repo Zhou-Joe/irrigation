@@ -771,11 +771,16 @@ def mls_fit(pairs, _skip=None):
 
 
 def fit_calibration_transform(pairs, method=None):
-    """按 method/点数选型：'mls' → MLS；≥4 → TPS 橡皮筋；2-3 → 相似 LS。
+    """按 method/点数选型：'sim' → 强制相似 LS；'mls' → MLS；''/None 自动
+    （≥4 → TPS 橡皮筋；2-3 → 相似 LS）。
 
     所有标定链路（预览换算 / info / 保存校验 / 追溯应用）统一走这里，
     保证「保存时验证的变换」与「导入时使用的变换」是同一个。
+    'sim' 显式强制：累积选点常带着 ≥4 组旧点，UI 选"三点最小二乘"时
+    不能被自动选型静默升级成 TPS。
     """
+    if method == 'sim' and len(pairs) >= 2:
+        return similarity_transform_ls(pairs)
     if method == 'mls' and len(pairs) >= 2:
         return mls_fit(pairs)
     if len(pairs) >= 4:
@@ -784,12 +789,25 @@ def fit_calibration_transform(pairs, method=None):
 
 
 def fit_calibration_inverse(pairs, method=None):
-    """标定的反向变换 (lat,lng)→(dxf_x, dxf_y)。TPS/MLS 无解析逆——直接把
-    点对调个方向重新拟合（GIS 常规做法，误差量级与正向一致）。
+    """标定的反向变换 (lat,lng)→(dxf_x, dxf_y)。
+
+    相似变换走**解析逆**（similarity_inverse——控制点上零误差，与
+    active_calibration_info 给客户端的逆是同一套系数）；method='sim' 或
+    ''/None 且 <4 点（正向即相似）同此。TPS/MLS 无解析逆——直接把点对
+    调个方向重新拟合（GIS 常规做法，误差量级与正向一致）。
 
     返回 inverse_fn 或 None。注意 pairs 的 dxf_y 已是取反后的 negY 空间
     （与 similarity_inverse 的返回语义一致：调用方再自行取反回 DXF y）。
     """
+    if method == 'sim' or (method in (None, '') and len(pairs) < 4):
+        fn, stats = similarity_transform_ls(pairs)
+        if not callable(fn):
+            return None
+        inv = similarity_inverse(stats['a'], stats['b'], stats['c'], stats['d'])
+        if not inv:
+            return None
+        return lambda lat, lng: (inv['ia'] * lat + inv['ib'] * lng + inv['ic'],
+                                 -inv['ib'] * lat + inv['ia'] * lng + inv['id'])
     rev = [{'dxf_x': p['lat'], 'dxf_y': p['lng'],
             'lat': p['dxf_x'], 'lng': p['dxf_y']} for p in pairs]
     fn, _stats = fit_calibration_transform(rev, 'mls' if method == 'mls' else None)

@@ -155,10 +155,17 @@ def active_calibration_info():
     cal = [{'dxf_x': float(p['dxf_x']), 'dxf_y': -float(p['dxf_y']),
             'lat': float(p['lat']), 'lng': float(p['lng'])} for p in pts]
     fn, stats = fit_calibration_transform(cal, stored_method or None)
+    # applied_at：该标定是否已重算过库里坐标。客户端在已入库管线上取点时
+    # 据此提示——未应用的标定下库线还活在旧标定里，反算取点会算偏。
+    applied_at = None
+    if source == 'db':
+        from core.models import SiteCalibration
+        row = SiteCalibration.objects.order_by('-id').values_list('applied_at', flat=True).first()
+        applied_at = row.isoformat() if row else None
     if not callable(fn):
         return {'source': source, 'n': 0, 'method': 'similarity', 'scale': None,
                 'rotation_deg': None, 'rms_m': None, 'residuals_m': [],
-                'inverse': None, 'points': pts}
+                'applied_at': applied_at, 'inverse': None, 'points': pts}
     method = stats.get('method', 'similarity')
     inv = None
     if method == 'mls':
@@ -181,6 +188,7 @@ def active_calibration_info():
         'rms_m': round(stats['rms_m'], 2) if stats.get('rms_m') is not None else None,
         'sim_rms_m': round(stats['sim_rms_m'], 2) if stats.get('sim_rms_m') is not None else None,
         'residuals_m': stats['residuals_m'],
+        'applied_at': applied_at,
         'inverse': inv,
         'points': pts,
     }
@@ -267,8 +275,63 @@ def _parsed_from_cache_or_file(content_bytes):
     return token, parsed[0], parsed[1], parsed[2]
 
 
+# ── CAD 曲线：bulge 弧段细分 ───────────────────────────────────────────
+# DXF 里弯管不是密集顶点，而是「顶点 + bulge 凸度」编码的圆弧段：CAD 按
+# 圆弧渲染，只取顶点的话弧会变成弦（导入观感比 CAD 粗糙）。按 ≤ARC_STEP_DEG
+# 一段在弧上取真实点；独立 ARC 实体同理细分。
+ARC_STEP_DEG = 8.0
+
+
+def _arc_points(cx, cy, radius, start_rad, sweep, n):
+    return [(round(cx + radius * math.cos(start_rad + sweep * i / n), 3),
+             round(cy + radius * math.sin(start_rad + sweep * i / n), 3))
+            for i in range(1, n + 1)]
+
+
+def _bulge_arc_points(a, b, bulge):
+    """折线顶点对 (a,b) 上的 bulge 弧段 → 弧内细分点（不含端点 a/b）。
+
+    bulge=0（直线段）或几何异常返回 []——退化成弦，不丢管线。
+    bulge_to_arc 返回的 (sa, ea) 恒为逆时针弧；负 bulge（顺时针弧）时
+    ezdxf 已把起止角交换（弧从 end_point 逆时针走回 start_point），因此
+    含角 θ = (ea-sa) mod 2π，正 bulge 从 sa 正向采样、负 bulge 从 ea
+    反向采样，才能按 a→b 顺序沿真实弧取点。
+    """
+    if abs(bulge) < 1e-9:
+        return []
+    try:
+        from ezdxf.math import bulge_to_arc, Vec2
+        center, sa, ea, radius = bulge_to_arc(Vec2(a[0], a[1]), Vec2(b[0], b[1]), bulge)
+        cx, cy = float(center[0]), float(center[1])
+        radius = float(radius)
+        theta = (ea - sa) % (2 * math.pi)
+        if radius < 1e-9 or theta < 1e-9:
+            return []
+        n = max(2, min(64, math.ceil(math.degrees(theta) / ARC_STEP_DEG)))
+        if bulge > 0:
+            return _arc_points(cx, cy, radius, sa, theta, n)
+        return _arc_points(cx, cy, radius, ea, -theta, n)
+    except Exception:
+        return []
+
+
+def _polyline_pts(raw):
+    """[(x, y, bulge)] 顶点序列 → 含弧段细分的坐标点列表（bulge 属于
+    该顶点起始的段）。"""
+    pts = []
+    for (x0, y0, b0), (x1, y1, _b1) in zip(raw, raw[1:]):
+        pts.append((round(x0, 3), round(y0, 3)))
+        pts.extend(_bulge_arc_points((x0, y0), (x1, y1), b0))
+    if raw:
+        pts.append((round(raw[-1][0], 3), round(raw[-1][1], 3)))
+    return pts
+
+
 def _collect_geometry(msp):
-    """一次遍历 modelspace，按图层归集开放折线 / 阀门 INSERT / 文字标注。"""
+    """一次遍历 modelspace，按图层归集开放折线 / 阀门 INSERT / 文字标注。
+
+    折线按 bulge 细分（CAD 曲线），独立 ARC 实体按 ≤8° 细分为开放折线；
+    SPLINE 未支持（当前图纸无此类实体）。"""
     layers = {}   # layer -> {'polys': [[(x,y),...]], 'closed': n}
     valves = []   # {'block', 'x', 'y', 'attrs'}
     labels = []   # {'layer', 'text', 'x', 'y'}
@@ -278,12 +341,13 @@ def _collect_geometry(msp):
         layer = e.dxf.layer
         if et in ('LWPOLYLINE', 'POLYLINE'):
             if et == 'LWPOLYLINE':
-                pts = [(round(p[0], 3), round(p[1], 3)) for p in e.get_points('xy')]
+                raw = [(p[0], p[1], p[2] or 0.0) for p in e.get_points('xyb')]
                 closed = bool(e.closed)
             else:
-                pts = [(round(v.dxf.location.x, 3), round(v.dxf.location.y, 3))
-                       for v in e.vertices]
+                raw = [(v.dxf.location.x, v.dxf.location.y,
+                        getattr(v.dxf, 'bulge', 0) or 0.0) for v in e.vertices]
                 closed = bool(e.is_closed)
+            pts = _polyline_pts(raw)
             if len(pts) < 2:
                 continue
             bucket = layers.setdefault(layer, {'polys': [], 'closed': 0})
@@ -292,6 +356,16 @@ def _collect_geometry(msp):
                 # 封闭折线是边界/底图而非管道，跳过
                 continue
             bucket['polys'].append(pts)
+        elif et == 'ARC':
+            c, r = e.dxf.center, float(e.dxf.radius)
+            sa = math.radians(float(e.dxf.start_angle))
+            sweep = (math.radians(float(e.dxf.end_angle)) - sa) % (2 * math.pi)
+            if sweep < 1e-9:
+                sweep = 2 * math.pi   # 起点=终点的整圆表示
+            n = max(2, min(90, math.ceil(math.degrees(sweep) / ARC_STEP_DEG)))
+            pts = [(round(c.x + r * math.cos(sa), 3), round(c.y + r * math.sin(sa), 3))]
+            pts.extend(_arc_points(c.x, c.y, r, sa, sweep, n))
+            layers.setdefault(layer, {'polys': [], 'closed': 0})['polys'].append(pts)
         elif et == 'LINE':
             a, b = e.dxf.start, e.dxf.end
             layers.setdefault(layer, {'polys': [], 'closed': 0})['polys'].append(
