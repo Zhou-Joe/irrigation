@@ -320,47 +320,6 @@ def json_html_safe(obj):
             .replace('\u2029', '\\u2029'))
 
 
-def _auto_pipeline_name_code(zone_ids, pipeline_type, exclude_pk=None):
-    """Generate unique pipeline name and code from zone IDs and type.
-
-    ``exclude_pk`` keeps the uniqueness check from colliding with the row
-    being edited (its own current code would otherwise match and force a
-    pointless " (2)" suffix on every re-save).
-    """
-    from .models import Pipeline
-    _excl = ~Q(pk=exclude_pk) if exclude_pk else Q()
-
-    type_meta = {
-        'irrigation': ('灌溉主管', 'IRR'),
-        'flush': ('冲洗主管', 'FLU'),
-        'toilet': ('冲厕主管', 'TOL'),
-        'casing': ('过路套管', 'CAS'),
-        'control': ('控制线', 'CTL'),
-        'comm': ('通讯线', 'COM'),
-    }
-    type_label, type_prefix = type_meta.get(pipeline_type, ('灌溉主管', 'IRR'))
-
-    zones = Zone.objects.filter(id__in=zone_ids).order_by('code')
-    zone_names = list(zones.values_list('name', flat=True))
-    zone_codes = list(zones.values_list('code', flat=True))
-
-    if not zone_names:
-        return '', ''
-
-    base_name = '、'.join(zone_names) + ' - ' + type_label
-    base_code = type_prefix + '-' + '-'.join(zone_codes)
-
-    # Ensure uniqueness
-    name, code = base_name, base_code
-    suffix = 2
-    while Pipeline.objects.filter(_excl, code=code).exists():
-        name = f"{base_name} ({suffix})"
-        code = f"{base_code}-{suffix}"
-        suffix += 1
-
-    return name, code
-
-
 from django.views.decorators.csrf import ensure_csrf_cookie
 
 
@@ -684,6 +643,9 @@ def _cached(key, ttl, builder):
         except Exception:
             pass
     return val
+
+
+from .pipe_utils import _auto_pipeline_name_code
 
 
 def _invalidate_cached(key):
@@ -5163,7 +5125,7 @@ def pipeline_dxf_calibration_save(request):
     服务端重新做最小二乘拟合（不信客户端算的参数），返回拟合统计 +
     逆变换系数（客户端地图点击→本地坐标用）。历史行保留，可重复保存。
     """
-    from core.dxf_utils import fit_calibration_transform
+    from core.calibration import fit_calibration_transform
     from core.models import SiteCalibration
     from core.dxf_pipeline_utils import _bust_calibration_cache, active_calibration_info
     if not _pipeline_dxf_gate(request.user):
@@ -5202,7 +5164,7 @@ def pipeline_dxf_calibration_apply(request):
     import json as _json
     from django.db import transaction
     from django.utils import timezone as _tz
-    from core.dxf_utils import (SITE_CALIBRATION_POINTS,
+    from core.calibration import (SITE_CALIBRATION_POINTS,
                                 fit_calibration_transform, fit_calibration_inverse)
     from core.models import SiteCalibration, Pipeline, PipeValve, PipelineImportBatch
     from core.dxf_pipeline_utils import _bust_calibration_cache

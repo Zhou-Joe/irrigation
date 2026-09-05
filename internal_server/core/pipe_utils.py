@@ -351,3 +351,45 @@ def detect_valve_anchors(line_points, buffer_meters=20):
             'point': [{'lat': round(anchor[0], 6), 'lng': round(anchor[1], 6)}],
         })
     return out
+
+
+def _auto_pipeline_name_code(zone_ids, pipeline_type, exclude_pk=None):
+    """Generate unique pipeline name and code from zone IDs and type.
+
+    ``exclude_pk`` keeps the uniqueness check from colliding with the row
+    being edited (its own current code would otherwise match and force a
+    pointless " (2)" suffix on every re-save).
+    """
+    from django.db.models import Q
+    from .models import Pipeline, Zone
+    _excl = ~Q(pk=exclude_pk) if exclude_pk else Q()
+
+    type_meta = {
+        'irrigation': ('灌溉主管', 'IRR'),
+        'flush': ('冲洗主管', 'FLU'),
+        'toilet': ('冲厕主管', 'TOL'),
+        'casing': ('过路套管', 'CAS'),
+        'control': ('控制线', 'CTL'),
+        'comm': ('通讯线', 'COM'),
+    }
+    type_label, type_prefix = type_meta.get(pipeline_type, ('灌溉主管', 'IRR'))
+
+    zones = Zone.objects.filter(id__in=zone_ids).order_by('code')
+    zone_names = list(zones.values_list('name', flat=True))
+    zone_codes = list(zones.values_list('code', flat=True))
+
+    if not zone_names:
+        return '', ''
+
+    base_name = '、'.join(zone_names) + ' - ' + type_label
+    base_code = type_prefix + '-' + '-'.join(zone_codes)
+
+    # Ensure uniqueness
+    name, code = base_name, base_code
+    suffix = 2
+    while Pipeline.objects.filter(_excl, code=code).exists():
+        name = f"{base_name} ({suffix})"
+        code = f"{base_code}-{suffix}"
+        suffix += 1
+
+    return name, code

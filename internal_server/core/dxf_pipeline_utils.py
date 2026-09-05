@@ -114,7 +114,7 @@ def _active_calibration_points():
     """
     from django.core.cache import cache
     from core.models import SiteCalibration
-    from core.dxf_utils import SITE_CALIBRATION_POINTS
+    from core.calibration import SITE_CALIBRATION_POINTS
     try:
         hit = cache.get(CALIBRATION_CACHE_KEY)
     except Exception:
@@ -150,7 +150,7 @@ def active_calibration_info():
     比例/旋转），rms_m 为 LOO 泛化误差；inverse 为反向 TPS 的可序列化
     系数（{'type':'tps', ...}），JS 端用核函数求值。
     """
-    from core.dxf_utils import fit_calibration_transform
+    from core.calibration import fit_calibration_transform
     pts, source, stored_method = _active_calibration_points()
     cal = [{'dxf_x': float(p['dxf_x']), 'dxf_y': -float(p['dxf_y']),
             'lat': float(p['lat']), 'lng': float(p['lng'])} for p in pts]
@@ -174,12 +174,12 @@ def active_calibration_info():
                'points': [[p['lat'], p['lng'], p['dxf_x'], p['dxf_y']] for p in cal]}
     elif method == 'tps':
         # 反向 TPS 系数 ((lat,lng)→(x,-y))，JS 用核函数求值（地图取点用）
-        from core.dxf_utils import _tps_fit_core
+        from core.calibration import _tps_fit_core
         rc = _tps_fit_core([(p['lat'], p['lng']) for p in cal],
                            [(p['dxf_x'], p['dxf_y']) for p in cal])
         inv = {'type': 'tps', 'coeffs': rc} if rc else None
     else:
-        from core.dxf_utils import similarity_inverse
+        from core.calibration import similarity_inverse
         inv = similarity_inverse(stats['a'], stats['b'], stats['c'], stats['d'])
     return {
         'source': source, 'n': stats['n'], 'method': method,
@@ -200,7 +200,7 @@ def _local_to_latlng_fn():
     标定点来源：用户校准（SiteCalibration 最新行，含 method）优先，退回
     dxf_utils.SITE_CALIBRATION_POINTS 硬编码两点。method='mls' 用 MLS，
     其余按点数自动（≥4 TPS / 2-3 相似）。"""
-    from core.dxf_utils import fit_calibration_transform
+    from core.calibration import fit_calibration_transform
     cal_pts, _source, _method = _active_calibration_points()
     if not cal_pts or len(cal_pts) < 2:
         return None, None
@@ -743,7 +743,7 @@ def import_dxf_pipelines(layer_specs, block_specs, uploaded_file=None,
     """
     from django.db import transaction as _db_txn
     from core.models import Pipeline, PipeValve, PipelineImportBatch
-    from core.views import _auto_pipeline_name_code
+    from core.pipe_utils import _auto_pipeline_name_code
 
     to_latlng, meters_per_unit = _local_to_latlng_fn()
     if to_latlng is None:
