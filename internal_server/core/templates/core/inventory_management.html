@@ -1601,8 +1601,15 @@ function ivJstreePost(url, data) {
   Object.keys(data || {}).forEach(function (k) {
     if (data[k] !== null && data[k] !== undefined) fd.append(k, data[k]);
   });
-  return fetch(url, { method:'POST', headers:{'X-CSRFToken': IV_CSRF}, body: fd })
-    .then(function (r) { return r.json(); });
+  // X-Requested-With is REQUIRED: the category create/edit/delete/reorder views
+  // branch on it — without it they commit the change but respond with a 302
+  // redirect to the HTML page, r.json() throws, and every tree action toasts
+  // "网络错误" while the change only shows after a manual page reload.
+  return fetch(url, {
+    method: 'POST',
+    headers: { 'X-CSRFToken': IV_CSRF, 'X-Requested-With': 'XMLHttpRequest' },
+    body: fd,
+  }).then(function (r) { return r.json(); });
 }
 
 // Lazy-init jsTree the first time the 库存目录 tab opens.
