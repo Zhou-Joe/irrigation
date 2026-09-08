@@ -165,22 +165,41 @@ def active_calibration_info():
     if not callable(fn):
         return {'source': source, 'n': 0, 'method': 'similarity', 'scale': None,
                 'rotation_deg': None, 'rms_m': None, 'residuals_m': [],
-                'applied_at': applied_at, 'inverse': None, 'points': pts}
+                'applied_at': applied_at, 'inverse': None, 'points': pts,
+                'iso_k': None, 'spread_m': None}
     method = stats.get('method', 'similarity')
+    # 逆变换系数/点对均活在 (lat, lng·k) 归一空间——payload 携带 iso_k，
+    # JS 求值前先把输入经度乘 k（与服务端 fit_calibration_inverse 一致）。
+    k = stats.get('iso_k') or 1.0
     inv = None
     if method == 'mls':
-        # MLS 无拟合系数——逆变换直接携带点对，JS 端加权相似 LS 求值
-        inv = {'type': 'mls',
-               'points': [[p['lat'], p['lng'], p['dxf_x'], p['dxf_y']] for p in cal]}
+        # MLS 无拟合系数——逆变换直接携带点对（经度已归一），JS 端加权
+        # 相似 LS 求值
+        inv = {'type': 'mls', 'iso_k': k,
+               'points': [[p['lat'], p['lng'] * k, p['dxf_x'], p['dxf_y']] for p in cal]}
     elif method == 'tps':
-        # 反向 TPS 系数 ((lat,lng)→(x,-y))，JS 用核函数求值（地图取点用）
+        # 反向 TPS 系数 ((lat,lng·k)→(x,-y))，JS 用核函数求值（地图取点用）
         from core.calibration import _tps_fit_core
-        rc = _tps_fit_core([(p['lat'], p['lng']) for p in cal],
+        rc = _tps_fit_core([(p['lat'], p['lng'] * k) for p in cal],
                            [(p['dxf_x'], p['dxf_y']) for p in cal])
-        inv = {'type': 'tps', 'coeffs': rc} if rc else None
+        inv = {'type': 'tps', 'iso_k': k, 'coeffs': rc} if rc else None
     else:
         from core.calibration import similarity_inverse
         inv = similarity_inverse(stats['a'], stats['b'], stats['c'], stats['d'])
+        if inv:
+            inv = dict(inv, iso_k=k)
+    # 标定点最大间距（米）：n=2 即基线长。客户端据此提示"基线过短，
+    # 远离基线的区域误差放大"（默认两点仅 ~29 m，是最危险的形态）。
+    spread_m = None
+    if len(pts) >= 2:
+        worst = 0.0
+        for a in pts:
+            for b in pts:
+                dlat = (b['lat'] - a['lat']) * 111320.0
+                dlng = (b['lng'] - a['lng']) * 111320.0 * math.cos(
+                    math.radians((a['lat'] + b['lat']) / 2))
+                worst = max(worst, math.hypot(dlat, dlng))
+        spread_m = round(worst, 1)
     return {
         'source': source, 'n': stats['n'], 'method': method,
         'scale': round(stats['scale'], 8) if stats.get('scale') else None,
@@ -191,6 +210,8 @@ def active_calibration_info():
         'applied_at': applied_at,
         'inverse': inv,
         'points': pts,
+        'iso_k': k,
+        'spread_m': spread_m,
     }
 
 
