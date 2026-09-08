@@ -121,7 +121,7 @@ function pdxfAnalyze() {
   st.innerHTML = '正在解析（大图约需几秒）…';
   var fd = new FormData();
   fd.append('file', f);
-  fetch("__DXF__.urls.analyze", {
+  fetch(window.__DXF__.urls.analyze, {
     method: 'POST',
     headers: { 'X-CSRFToken': pdxfCsrf(), 'X-Requested-With': 'XMLHttpRequest' },
     body: fd,
@@ -324,7 +324,7 @@ function pdxfImport() {
   fd.append('label_layers', JSON.stringify(specs.labelLayers));
   fd.append('offset_lat', String(pdxfOffset.dLat));
   fd.append('offset_lng', String(pdxfOffset.dLng));
-  fetch("__DXF__.urls.importSubmit", {
+  fetch(window.__DXF__.urls.importSubmit, {
     method: 'POST',
     headers: { 'X-CSRFToken': pdxfCsrf(), 'X-Requested-With': 'XMLHttpRequest' },
     body: fd,
@@ -341,8 +341,8 @@ function pdxfImport() {
       '<div class="pdxf-result"><b>导入完成</b>：创建水管 <b>' + d.pipelines + '</b> 条、阀门 <b>' + d.valves + '</b> 个' +
       '（' + d.labeled_valves + ' 个带标注名，' + d.skipped_valves + ' 个距管线过远未挂接）<div style="margin-top:6px;">' + stats + '</div>' +
       '<div style="margin-top:8px;"><button type="button" class="pdxf-btn pdxf-btn-primary" onclick="pdxfGoTune()">🔧 去精调（逐线对齐卫星图）</button>　' +
-      '<a href="__DXF__.urls.dashboard" target="_blank">→ 查看地图</a>　' +
-      '<a href="__DXF__.urls.settings" target="_blank">→ 水管管理列表</a></div></div>';
+      '<a href="' + window.__DXF__.urls.dashboard + '" target="_blank">→ 查看地图</a>　' +
+      '<a href="' + window.__DXF__.urls.settings + '" target="_blank">→ 水管管理列表</a></div></div>';
     st.textContent = '';
   }).catch(function () {
     btn.disabled = false; btn.textContent = '确认导入';

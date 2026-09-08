@@ -171,22 +171,25 @@
   // 服务端数据注入：静态 JS 文件不再含 Django 模板标签，可 lint/单测
   window.__DXF__ = {
     urls: {
-    analyze: {% url 'core:pipeline_dxf_analyze' %},
-    importSubmit: {% url 'core:pipeline_dxf_import_submit' %},
-    dashboard: {% url 'core:dashboard' %},
-    settings: {% url 'core:settings' %},
-    editData: {% url 'core:pipeline_edit_data' %},
-    calSave: {% url 'core:pipeline_dxf_calibration_save' %},
-    calApply: {% url 'core:pipeline_dxf_calibration_apply' %},
+    // url 标签输出必须带引号：裸 /pipelines/... 会被 JS 当正则字面量 →
+    // SyntaxError → window.__DXF__ 未定义 → 全页 JS（含 pdxfInitMap）静默失效。
+    analyze: '{% url 'core:pipeline_dxf_analyze' %}',
+    importSubmit: '{% url 'core:pipeline_dxf_import_submit' %}',
+    dashboard: '{% url 'core:dashboard' %}',
+    settings: '{% url 'core:settings' %}',
+    editData: '{% url 'core:pipeline_edit_data' %}',
+    calSave: '{% url 'core:pipeline_dxf_calibration_save' %}',
+    calClear: '{% url 'core:pipeline_dxf_calibration_clear' %}',
+    calApply: '{% url 'core:pipeline_dxf_calibration_apply' %}',
     },
     cal: {{ dxf_calibration_json|safe }},
     zones: {{ ref_zones_json|safe }},
     pipelines: {{ ref_pipelines_json|safe }},
   };
 </script>
-<script src="{% static "js/dxf-import/dxf-core.js" %}?v=20260905a"></script>
-<script src="{% static "js/dxf-import/dxf-cal-math.js" %}?v=20260905a"></script>
-<script src="{% static "js/dxf-import/dxf-cal.js" %}?v=20260905a"></script>
-<script src="{% static "js/dxf-import/dxf-tune.js" %}?v=20260905a"></script>
+<script src="{% static "js/dxf-import/dxf-core.js" %}?v=20260908b"></script>
+<script src="{% static "js/dxf-import/dxf-cal-math.js" %}?v=20260908b"></script>
+<script src="{% static "js/dxf-import/dxf-cal.js" %}?v=20260908b"></script>
+<script src="{% static "js/dxf-import/dxf-tune.js" %}?v=20260908b"></script>
 <script>pdxfInitMap(); /* 依赖 core/cal/tune 全部就绪后初始化 */</script>
 {% endblock %}
