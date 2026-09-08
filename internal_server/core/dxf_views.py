@@ -315,6 +315,14 @@ def pipeline_dxf_calibration_apply(request):
                 return JsonResponse({'success': False,
                                      'error': f'标定 #{key} 不可逆，已中止（未改动任何数据）'},
                                     status=400)
+        # 并发闸：两个会话同时通过外层 applied_at 检查时，只有第一个能在
+        # 这里占到 applied_at；后到的 update 命中 0 行即整体退出（本事务
+        # 尚未写入任何坐标，提交零改动），避免双重搬移。
+        if not SiteCalibration.objects.filter(
+                pk=new_row.pk, applied_at__isnull=True).update(applied_at=_tz.now()):
+            return JsonResponse({'success': False,
+                                 'error': '该标定刚刚已被其他会话应用，本次未做任何改动'},
+                                status=409)
         for key, plist in groups.items():
             inv = _inv_cache[key]
             for p in plist:
@@ -323,7 +331,9 @@ def pipeline_dxf_calibration_apply(request):
                 p.line_points = [_remap_pt(inv, pt) for pt in p.line_points]
                 p.save(update_fields=['line_points'])
                 n_pipes += 1
-        for v in PipeValve.objects.all().only('id', 'point', 'pipeline_id').iterator():
+        # SQLite 不允许对同表边扫边改：.iterator() 的惰性游标下 UPDATE
+        # 可能跳过/重复行（文档化行为）——阀门量级物化成列表完全放得起。
+        for v in list(PipeValve.objects.all().only('id', 'point', 'pipeline_id')):
             if not v.point:
                 continue
             key = old_key_by_pid.get(v.pipeline_id, gate_old['id'])
@@ -331,7 +341,6 @@ def pipeline_dxf_calibration_apply(request):
             v.point = [_remap_pt(inv, v.point[0])]
             v.save(update_fields=['point'])
             n_valves += 1
-        SiteCalibration.objects.filter(pk=new_row.pk).update(applied_at=_tz.now())
     _invalidate_cached('dashboard:pipelines')
     _bust_calibration_cache()
 
