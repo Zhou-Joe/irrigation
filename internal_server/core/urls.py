@@ -90,6 +90,7 @@ urlpatterns = [
     path('pipelines/dxf/', dxf_views.pipeline_dxf_import, name='pipeline_dxf_import'),
     path('pipelines/dxf/analyze/', dxf_views.pipeline_dxf_analyze, name='pipeline_dxf_analyze'),
     path('pipelines/dxf/calibration/save/', dxf_views.pipeline_dxf_calibration_save, name='pipeline_dxf_calibration_save'),
+    path('pipelines/dxf/calibration/clear/', dxf_views.pipeline_dxf_calibration_clear, name='pipeline_dxf_calibration_clear'),
     path('pipelines/dxf/calibration/apply/', dxf_views.pipeline_dxf_calibration_apply, name='pipeline_dxf_calibration_apply'),
     path('pipelines/dxf/import/', dxf_views.pipeline_dxf_import_submit, name='pipeline_dxf_import_submit'),
     path('pipelines/edit/data/', dxf_views.pipeline_edit_data, name='pipeline_edit_data'),

@@ -134,6 +134,29 @@ def pipeline_dxf_calibration_save(request):
 
 @require_POST
 @login_required(login_url='core:login')
+def pipeline_dxf_calibration_clear(request):
+    """AJAX: 清空全部已存匹配点（历史 SiteCalibration 行）。
+
+    换新图纸/重新导入前的干净起点：旧点引用旧图纸的本地坐标系，对新图纸
+    既是垃圾输入也会污染累计选点。已入库水管坐标不受影响（入库时已换成
+    经纬度）。返回清空后的标定信息（回落到系统默认两点及其逆变换）。
+    """
+    from core.models import SiteCalibration
+    from core.dxf_pipeline_utils import _bust_calibration_cache, active_calibration_info
+    if not _pipeline_dxf_gate(request.user):
+        return JsonResponse({'success': False, 'error': '无权限'}, status=403)
+    deleted, _ = SiteCalibration.objects.all().delete()
+    _bust_calibration_cache()
+    return JsonResponse({
+        'success': True,
+        'deleted': deleted,
+        'message': f'已清空 {deleted} 条历史标定记录，请重新解析图纸并选点校准',
+        'calibration': active_calibration_info(),
+    })
+
+
+@require_POST
+@login_required(login_url='core:login')
 def pipeline_dxf_calibration_apply(request):
     """AJAX: 把新的生效标定追溯应用到已保存的管道/阀门坐标。
 
