@@ -7,13 +7,16 @@
  *   'cartodb'   - CartoDB Positron (light, clean)
  *   'esri'      - Esri World Street Map
  *   'esri_sat'  - Esri World Imagery (satellite)
- *   'geoq'      - GeoQ China (智图, works in China)
  *   'gaode'     - Gaode/Amap (高德, works in China but may need API key)
+ *
+ * GeoQ providers removed: GCJ-02 (火星坐标) tiles sit ~400m off the WGS-84
+ * Esri layers this app calibrates against, and map.geoq.cn is unreachable
+ * from many networks.
  */
 
 const MAP_CONFIG = {
     // Current provider - change this to switch
-    PROVIDER: 'geoq',
+    PROVIDER: 'esri_sat',
 
     // Tile providers configuration
     PROVIDERS: {
@@ -45,22 +48,6 @@ const MAP_CONFIG = {
             options: {
                 attribution: '&copy; Esri',
                 maxZoom: 19
-            }
-        },
-        geoq: {
-            // GeoQ - Works in China without API key
-            url: 'https://map.geoq.cn/ArcGIS/rest/services/ChinaOnlineCommunity/MapServer/tile/{z}/{y}/{x}',
-            options: {
-                attribution: '&copy; GeoQ 智图',
-                maxZoom: 18
-            }
-        },
-        geoq_sat: {
-            // GeoQ Satellite
-            url: 'https://map.geoq.cn/ArcGIS/rest/services/ChinaOnlineStreetPurplishBlue/MapServer/tile/{z}/{y}/{x}',
-            options: {
-                attribution: '&copy; GeoQ 智图',
-                maxZoom: 18
             }
         },
         gaode: {

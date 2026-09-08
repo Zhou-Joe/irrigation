@@ -23,16 +23,9 @@
         maxZoom: 22
     });
 
-    // Fallback tile layer for high zoom levels (GeoQ)
-    const fallbackLayer = L.tileLayer('https://map.geoq.cn/ArcGIS/rest/services/ChinaOnlineCommunity/MapServer/tile/{z}/{y}/{x}', {
-        attribution: '',
-        minZoom: 19,
-        maxZoom: 22,
-        opacity: 0.7
-    });
-
-    // Hybrid layer group - satellite for normal zoom, fallback for high zoom
-    const hybridLayer = L.layerGroup([satelliteLayer, fallbackLayer]);
+    // 高倍补底曾用 GeoQ（GCJ-02 火星坐标，与 WGS-84 卫星图错开 ~400m，且多数
+    // 网络连不上 map.geoq.cn）——已移除。19 级以上由 satelliteLayer 的
+    // maxNativeZoom 拉伸补足，画面略糊但坐标可信。
 
     // Zone layers group
     let zonesLayerGroup;
@@ -248,7 +241,7 @@
             minZoom: 15,
             maxBounds: bounds,
             maxBoundsViscosity: 1.0,
-            layers: [hybridLayer],
+            layers: [satelliteLayer],
             zoomControl: true,
             preferCanvas: true,
             // Touch: the map must own pan + pinch-zoom (mobile users pinch the map
