@@ -532,7 +532,7 @@ table.iv-ledger .lvl-tag.warn { background: #fdf6ec; color: #cc7722; }
             {% if t.work_report_id %}
               <div class="iv-dest-sub"><a href="{% url 'core:work_report_detail' report_id=t.work_report_id %}">工单 #{{ t.work_report_id }}</a></div>
             {% elif t.zone %}
-              <div class="iv-dest-sub">{{ t.zone.code|default:t.zone.name_zh }}</div>
+              <div class="iv-dest-sub">{{ t.zone.code }}</div>
             {% endif %}
           </td>
           <td class="l-left">{{ t.remark|default:'' }}</td>
