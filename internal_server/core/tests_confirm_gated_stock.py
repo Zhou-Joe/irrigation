@@ -55,7 +55,9 @@ class ConfirmGatedStockTests(TestCase):
     def txn_action(self, action, ids):
         from django.urls import reverse
         url = reverse('core:inventory_txn_%s' % action)
-        return self.mgr.post(url, [('txn_ids', str(i)) for i in ids],
+        # dict + list 值 = 同键多值的规范写法；元组列表在 Django 5 的
+        # encode_multipart 里会 AttributeError（list 无 .items）
+        return self.mgr.post(url, {'txn_ids': [str(i) for i in ids]},
                              HTTP_HOST='127.0.0.1',
                              HTTP_X_REQUESTED_WITH='XMLHttpRequest')
 
@@ -123,8 +125,10 @@ class ConfirmGatedStockTests(TestCase):
     def test_edit_confirmed_reverses_old_applies_new(self):
         self.post_txn(self.mgr, qty=5)                # confirmed → 95
         t = InventoryTransaction.objects.order_by('-id').first()
-        self.post_txn(self.mgr, txn_id=t.id, qty=9)   # -5 +9 → 96
-        self.assertEqual(self.stock(), 96)
+        self.post_txn(self.mgr, txn_id=t.id, qty=9)   # 重算：+5 回滚后按新数量 -9
+        # 96 是原始提交里与姊妹测试矛盾的笔误（那会是"只扣增量 4"的语义，
+        # 与本模块不变量「confirmed 单按行全额反映」及 pending 改 8→92 不符）
+        self.assertEqual(self.stock(), 91)
 
     def test_inbound_pending_no_add_until_confirm(self):
         self.post_txn(self.wkc, op='入库', subtype='采购')
