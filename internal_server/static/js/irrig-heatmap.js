@@ -148,10 +148,8 @@
         var satellite = L.tileLayer(
             'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
             { attribution: 'Esri', maxNativeZoom: 19, maxZoom: 22 });
-        var fallback = L.tileLayer(
-            'https://map.geoq.cn/ArcGIS/rest/services/ChinaOnlineCommunity/MapServer/tile/{z}/{y}/{x}',
-            { minZoom: 19, maxZoom: 22, opacity: 0.7 });
-        var hybrid = L.layerGroup([satellite, fallback]);
+        // GeoQ GCJ-02 补底已移除（与 WGS-84 卫星图错开 ~400m 且常不可达）
+        var hybrid = L.layerGroup([satellite]);
 
         map = L.map('irrigHeatMap', {
             center: [cLat, cLng],

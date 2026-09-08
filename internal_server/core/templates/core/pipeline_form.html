@@ -384,16 +384,14 @@
             maxBoundsViscosity: 1.0
         });
 
-        // Use same tile config as dashboard (satellite + GeoQ fallback for high zoom)
+        // Use same tile config as dashboard (satellite only; GeoQ GCJ-02 fallback removed)
         var satTile = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
             attribution: '&copy; Esri', maxNativeZoom: 19, maxZoom: 22
         });
-        var fallbackTile = L.tileLayer('https://map.geoq.cn/ArcGIS/rest/services/ChinaOnlineCommunity/MapServer/tile/{z}/{y}/{x}', {
-            attribution: '&copy; GeoQ', minZoom: 19, maxZoom: 22, opacity: 0.7
-        });
-        var satGroup = L.layerGroup([satTile, fallbackTile]).addTo(editMap);
-        var baseTile = L.tileLayer('https://map.geoq.cn/ArcGIS/rest/services/ChinaOnlineCommunity/MapServer/tile/{z}/{y}/{x}', {
-            attribution: '&copy; GeoQ', maxZoom: 18
+        var satGroup = L.layerGroup([satTile]).addTo(editMap);
+        // 「地图」备选底图也用 WGS-84 系（Esri World Street），与卫星图/数据无偏移
+        var baseTile = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {
+            attribution: '&copy; Esri', maxNativeZoom: 19, maxZoom: 22
         });
         L.control.layers({'地图': baseTile}, {'卫星': satGroup}, {position: 'topright'}).addTo(editMap);
 

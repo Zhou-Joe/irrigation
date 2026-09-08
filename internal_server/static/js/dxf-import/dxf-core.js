@@ -56,14 +56,11 @@ function pdxfRings(bp) {
 }
 function pdxfInitMap() {
   pdxfMap = L.map('pdxfMap', { preferCanvas: true });
-  // 与首页/管线表单同一套瓦片：Esri 卫星 + GeoQ 高层级补底（OSM 国内不可达）
+  // 与首页/管线表单同一套瓦片：Esri 卫星（GeoQ GCJ-02 补底已移除，高倍由卫星拉伸补足）
   var satTile = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
     attribution: '&copy; Esri', maxNativeZoom: 19, maxZoom: 22,
   });
-  var fallbackTile = L.tileLayer('https://map.geoq.cn/ArcGIS/rest/services/ChinaOnlineCommunity/MapServer/tile/{z}/{y}/{x}', {
-    attribution: '&copy; GeoQ', minZoom: 19, maxZoom: 22, opacity: 0.7,
-  });
-  L.layerGroup([satTile, fallbackTile]).addTo(pdxfMap);
+  satTile.addTo(pdxfMap);
   // 预览专用 pane（管线 canvas + 阀门 + 标注都挂进来），微调拖动只动这个 pane
   pdxfPreviewPane = pdxfMap.createPane('pdxfPreview');
   pdxfPreviewPane.style.zIndex = 450;

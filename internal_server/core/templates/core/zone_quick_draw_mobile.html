@@ -1079,10 +1079,7 @@
 
             const centerLat = 31.145794 + 0.010, centerLng = 121.656804 + 0.012;
             editMap = L.map('editMap', { center:[centerLat, centerLng], zoom:15, maxZoom:22, minZoom:15, maxBounds: L.latLngBounds(L.latLng(centerLat-0.027,centerLng-0.032), L.latLng(centerLat+0.027,centerLng+0.032)), maxBoundsViscosity:1.0, zoomControl:false });
-            L.layerGroup([
-                L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {attribution:'&copy; Esri', maxNativeZoom:19, maxZoom:22}),
-                L.tileLayer('https://map.geoq.cn/ArcGIS/rest/services/ChinaOnlineCommunity/MapServer/tile/{z}/{y}/{x}', {attribution:'&copy; GeoQ', minZoom:19, maxZoom:22, opacity:0.7})
-            ]).addTo(editMap);
+            L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {attribution:'&copy; Esri', maxNativeZoom:19, maxZoom:22}).addTo(editMap);
             rebuildRefLayers();
             editMap.getContainer().addEventListener('contextmenu', function(e) { e.preventDefault(); });
 
