@@ -33,14 +33,18 @@ function pdxfCalFitPairs(pairs) {
   });
   var rms = Math.sqrt(residuals.reduce(function (s, r) { return s + r * r; }, 0) / n);
   return { a: a, b: b, c: c, d: d,
+           iso_k: k,
            scale: Math.hypot(a, b),
            rotation_deg: Math.atan2(-b, a) * 180 / Math.PI,
            residuals_m: residuals, rms_m: rms, n: n };
 }
 
 // 单点残差（米）：给定拟合系数算某配对点的偏差 — 验证点用。
+// 反归一化必须用拟合时的 k（fit.iso_k）：经度绝对值 ~121.6°，用别的 k
+// （如验证点自身纬度的 cos）等于给预测经度乘上 k_fit/k_p，每米纬向
+// 偏移放大出 ~1.1m 假残差。老 fit 对象无 iso_k 时退回单点估计（仅兜底）。
 function pdxfCalResidualOf(fit, p) {
-  var k = pdxfIsoK([p]);
+  var k = (fit.iso_k != null) ? fit.iso_k : pdxfIsoK([p]);
   var pla = fit.a * p.dxfX + fit.b * (-p.dxfY) + fit.c;
   var pln = (-fit.b * p.dxfX + fit.a * (-p.dxfY) + fit.d) / k;
   var dlatm = (p.satLat - pla) * 111320;

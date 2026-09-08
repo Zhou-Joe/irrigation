@@ -153,6 +153,60 @@ class CalibrationMathTests(SimpleTestCase):
                      for p in cal)
             self.assertLess(rt, 0.05, f'{method} 逆变换控制点往返 {rt:.3f} 单位')
 
+    def test_dxf_utils_two_point_anchor_absorbs_anisotropy(self):
+        """zone 手动两点锚定路径（dxf_utils._similarity_transform）：同样必须
+        吸收经度各向异性。该路径曾与 calibration.py 各自为政漏掉 cos 修正
+        （变异测试证实此处零覆盖时，旧回归 3 km 外漂 384 m 无测试拦截）。"""
+        from core.dxf_utils import _similarity_transform
+        for theta in (0.0, -20.0):
+            cal = _cal([self.enu(-1500, -1000, theta), self.enu(1500, 1000, theta)])
+            fn = _similarity_transform(cal)
+            self.assertTrue(callable(fn), fn if isinstance(fn, str) else '两点锚定应可拟合')
+            worst = max(self._err_m(fn(p['dxf_x'], -p['dxf_y']),
+                                    (p['lat'], p['lng']), p['lat'])
+                        for p in [self.enu(3000, 0, theta), self.enu(-2500, 2000, theta)])
+            self.assertLess(worst, 0.01, f'θ={theta}° 远点 {worst:.2f} m')
+
+
+class ZoneAutoCalibrateTests(TestCase):
+    """zone 边界导入的标定源必须与管线同源：DB 用户标定最新行优先，退回
+    硬编码两点。曾各自为政——管线读 SiteCalibration、边界只认硬编码两点，
+    用户重新标定后新导入的边界与管线在同一张图上静默错位。"""
+
+    SHAPES = [{'id': 1, 'entity_type': 'LWPOLYLINE', 'layer': '0',
+               'vertices': [(150.0, -250.0), (250.0, -350.0)]}]
+
+    def setUp(self):
+        from core.dxf_pipeline_utils import _bust_calibration_cache
+        _bust_calibration_cache()
+        # 测试间清缓存：LocMemCache 不随事务回滚，别让本类的 'db' 命中
+        # 泄漏到依赖默认标定的其他测试
+        self.addCleanup(_bust_calibration_cache)
+
+    def test_uses_db_calibration_over_hardcoded(self):
+        """有 DB 标定行时，auto_calibrate 必须用它而不是硬编码两点。"""
+        from core.dxf_utils import auto_calibrate
+        from core.models import SiteCalibration
+        pts = _mk(0.004, 0.006)   # 与硬编码两点完全不同的一对标定
+        SiteCalibration.objects.create(points=pts, method='sim')
+        out = auto_calibrate(self.SHAPES)
+        self.assertIsNotNone(out)
+        fn, _st = fit_calibration_transform(_cal(pts), 'sim')
+        for v, (x, y) in zip(out[0]['vertices_latlng'], self.SHAPES[0]['vertices']):
+            la, ln = fn(x, -y)
+            self.assertAlmostEqual(v['lat'], la, places=9)
+            self.assertAlmostEqual(v['lng'], ln, places=9)
+
+    def test_falls_back_to_hardcoded_without_db_rows(self):
+        """无 DB 行：退回硬编码两点（首装兜底语义），输出与直接拟合一致。"""
+        from core.dxf_utils import auto_calibrate
+        out = auto_calibrate(self.SHAPES)
+        self.assertIsNotNone(out)
+        fn, _st = fit_calibration_transform(_cal(SITE_CALIBRATION_POINTS), None)
+        la, ln = fn(150.0, 250.0)   # SHAPES 顶点 (150, -250) 的 negY 形态
+        self.assertAlmostEqual(out[0]['vertices_latlng'][0]['lat'], la, places=9)
+        self.assertAlmostEqual(out[0]['vertices_latlng'][0]['lng'], ln, places=9)
+
 
 class BulgeTessellationTests(SimpleTestCase):
     """折线 bulge 弧段细分：方向/圆性。"""

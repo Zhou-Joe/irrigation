@@ -5,7 +5,7 @@ and affine transformation from local DXF coords to WGS84 lat/lng.
 """
 import math
 
-from core.calibration import SITE_CALIBRATION_POINTS  # noqa: F401 — 边界导入兜底标定
+from core.calibration import SITE_CALIBRATION_POINTS, fit_calibration_transform  # noqa: F401 — SITE_CALIBRATION_POINTS 为外部消费方保留的兜底标定
 
 
 def parse_dxf_shapes(uploaded_file):
@@ -217,7 +217,8 @@ def detect_coord_system(shapes):
         }
 
     # Not WGS84 — check if site calibration is available for auto-transform
-    has_calibration = bool(SITE_CALIBRATION_POINTS) and len(SITE_CALIBRATION_POINTS) >= 2
+    _cal_pts, _cal_src, _cal_method = _active_site_calibration()
+    has_calibration = bool(_cal_pts) and len(_cal_pts) >= 2
 
     return {
         'type': 'local',
@@ -228,23 +229,38 @@ def detect_coord_system(shapes):
     }
 
 
+def _active_site_calibration():
+    """当前生效站点标定 → (points, source, method)，与管线导入
+    （dxf_pipeline_utils._active_calibration_points）同源同缓存。
+
+    zone 边界导入必须与管线活在同一套标定下：否则用户重新标定后，
+    新导入的边界仍按旧硬编码两点落坐标，与管线在同一张图上静默错位。
+    """
+    from core.dxf_pipeline_utils import _active_calibration_points
+    return _active_calibration_points()
+
+
 def auto_calibrate(shapes):
     """
-    Auto-transform local DXF coordinates to WGS84 using site calibration points.
-    Negates DXF Y axis to correct for the common CAD Y-down vs geographic Y-up mismatch.
-    Returns list of transformed shape dicts with vertices_latlng, or None if no calibration.
+    Auto-transform local DXF coordinates to WGS84 using the ACTIVE site
+    calibration (DB 用户标定最新行优先，退回硬编码两点——与管线导入同一
+    来源、同一拟合方法)。Negates DXF Y axis to correct for the common CAD
+    Y-down vs geographic Y-up mismatch. Returns list of transformed shape
+    dicts with vertices_latlng, or None if no calibration.
     """
-    if not SITE_CALIBRATION_POINTS or len(SITE_CALIBRATION_POINTS) < 2:
+    pts, _source, method = _active_site_calibration()
+    if not pts or len(pts) < 2:
         return None
 
     # Build calibration with negated Y (reflect to match geographic handedness)
     cal = [
-        {'dxf_x': p['dxf_x'], 'dxf_y': -p['dxf_y'], 'lat': p['lat'], 'lng': p['lng']}
-        for p in SITE_CALIBRATION_POINTS
+        {'dxf_x': float(p['dxf_x']), 'dxf_y': -float(p['dxf_y']),
+         'lat': float(p['lat']), 'lng': float(p['lng'])}
+        for p in pts
     ]
-    transform_fn = _similarity_transform(cal)
-    if isinstance(transform_fn, str):
-        return None  # error string
+    transform_fn, _stats = fit_calibration_transform(cal, method or None)
+    if not callable(transform_fn):
+        return None  # 退化（锚点重合/过近等）
 
     # Apply transform with negated Y on each vertex
     result = []
