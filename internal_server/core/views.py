@@ -1463,8 +1463,8 @@ def dashboard(request):
     context = {
         # zones_json no longer inlined — fetched async from /api/zones-payload/
         'grouped_zones': grouped_zones,  # For hierarchical sidebar display
-        'pending_water_requests_json': json.dumps(pending_water_requests, ensure_ascii=False),
-        'pending_remarks_json': json.dumps(pending_remarks_data),
+        'pending_water_requests_json': json_html_safe(pending_water_requests),
+        'pending_remarks_json': json_html_safe(pending_remarks_data),
 
         'all_plant_names': all_plant_names,
         'landmarks_json': json_html_safe(landmarks_data),
@@ -3859,8 +3859,8 @@ def zone_edit(request, zone_id):
         'ref_zones_json': ref_zones_json,
         'ref_pipelines_json': ref_pipelines_json,
         'sibling_zones': sibling_zones,
-        'equip_notes_json': json.dumps(json.loads(zone.equipment_maintenance_notes)) if zone.equipment_maintenance_notes else '[]',
-        'irrig_notes_json': json.dumps(json.loads(zone.irrigation_management_notes)) if zone.irrigation_management_notes else '[]',
+        'equip_notes_json': json_html_safe(json.loads(zone.equipment_maintenance_notes) if zone.equipment_maintenance_notes else []),
+        'irrig_notes_json': json_html_safe(json.loads(zone.irrigation_management_notes) if zone.irrigation_management_notes else []),
         'boundary_count': len(zone.boundary_points) if zone.boundary_points else 0,
         'equip_notes_count': len(json.loads(zone.equipment_maintenance_notes)) if zone.equipment_maintenance_notes else 0,
         'irrig_notes_count': len(json.loads(zone.irrigation_management_notes)) if zone.irrigation_management_notes else 0,
