@@ -12,7 +12,14 @@ function pdxfCalRenderCurrent() {
     (multi && i.rms_m != null ? ' · 留一 RMS ' + i.rms_m.toFixed(2) + 'm' +
       (i.sim_rms_m != null ? '（等比 ' + i.sim_rms_m.toFixed(2) + 'm）' : '') : '') +
     (!multi && i.rotation_deg != null ? ' · 旋转 ' + i.rotation_deg.toFixed(3) + '°' : '') +
-    (!multi && i.rms_m != null ? ' · RMS ' + i.rms_m.toFixed(2) + 'm' : '');
+    (!multi && i.rms_m != null ? ' · RMS ' + i.rms_m.toFixed(2) + 'm' : '') +
+    // 一键清空已存点：换新图纸时旧点的本地坐标对新图毫无意义（累计选点
+    // 是为同一坐标系的多张图纸设计的），点这里回到干净起点重新校准。
+    (i.source === 'db'
+      ? ' <button type="button" onclick="pdxfCalClearSaved()" title="删除全部历史标定点，重新校准前用" ' +
+        'style="margin-left:6px;padding:1px 8px;font-size:.72rem;border:1px solid #c8d6cd;' +
+        'border-radius:10px;background:#fff;color:#b3261e;cursor:pointer;">🗑 清空已存点</button>'
+      : '');
   document.getElementById('pdxfCalBadge').textContent = src + method;
 }
 pdxfCalRenderCurrent();
@@ -96,7 +103,7 @@ function pdxfCalStart() {
     // 未上传图纸：拉取已入库管道作为 DXF 侧取点对象（继续校准免重传重取点）
     if (window.pdxfEdit) { pdxfCalStartBody(); return; }
     pdxfCalStatusMsg('未上传图纸——加载已入库管道作为取点对象…');
-    fetch("__DXF__.urls.editData", { credentials: 'same-origin' })
+    fetch(window.__DXF__.urls.editData, { credentials: 'same-origin' })
       .then(function (r) { return r.json(); })
       .then(function (d) {
         if (!d.success || !((d.pipelines || []).length)) {
@@ -223,6 +230,31 @@ function pdxfCalUpdateMoreBtn() {
   b.style.display = (pdxfCal.phase === 'done' && pdxfCal.on !== false &&
                      pdxfCal.pairs.length < pdxfCalTarget()) ? '' : 'none';
 }
+// 清空已存匹配点（服务端删除全部 SiteCalibration 历史）：换新图纸的本地
+// 坐标系与旧点不匹配时一键回到干净起点。已入库水管不受影响（坐标已定），
+// 清空后标定回落到系统默认两点，需重新选点保存才能再导入。
+function pdxfCalClearSaved() {
+  var i = pdxfCalInfo || {};
+  if (i.source !== 'db' || !i.n) return;
+  if (!confirm('清空已存的 ' + i.n + ' 个匹配点（含全部历史标定记录）？\n' +
+      '已导入的水管不受影响；清空后需重新解析图纸、重新选点校准。')) return;
+  if (pdxfCal.on) pdxfCalStop();          // 校准会话里的旧种子点一并作废
+  var fd = new FormData();
+  fetch(window.__DXF__.urls.calClear, {
+    method: 'POST',
+    headers: { 'X-CSRFToken': pdxfCsrf(), 'X-Requested-With': 'XMLHttpRequest' },
+    body: fd,
+  }).then(function (r) { return r.json(); }).then(function (d) {
+    if (!d.success) { pdxfCalStatusMsg(d.error || '清空失败', true); return; }
+    pdxfCalInfo = d.calibration;          // 回落系统默认两点（含逆变换系数）
+    pdxfCal.pairs = []; pdxfCal.idx = 0; pdxfCal._fit = null; pdxfCal._valRes = null;
+    document.getElementById('pdxfCalTable').style.display = 'none';
+    document.getElementById('pdxfCalFit').innerHTML = '';
+    pdxfCalRenderCurrent();
+    pdxfCalStatusMsg(d.message || '已清空');
+  }).catch(function () { pdxfCalStatusMsg('网络错误', true); });
+}
+
 function pdxfCalStop() {
   pdxfCal.on = false;
   pdxfCalLockMode(false);
@@ -444,7 +476,7 @@ function pdxfCalSave(pairsOverride, methodOverride) {
   fd.append('method', methodOverride || (mode === 'tps' || mode === 'mls' ? mode : 'sim'));
   fd.append('note', (mode === 'exact2' ? '两点精确' : mode === 'tps' ? ('TPS ' + toSave.length + '点')
     : mode === 'mls' ? ('MLS ' + toSave.length + '点') : '三点最小二乘') + '校准 ' + new Date().toLocaleString());
-  fetch("__DXF__.urls.calSave", {
+  fetch(window.__DXF__.urls.calSave, {
     method: 'POST',
     headers: { 'X-CSRFToken': pdxfCsrf(), 'X-Requested-With': 'XMLHttpRequest' },
     body: fd,
@@ -471,7 +503,7 @@ function pdxfCalSave(pairsOverride, methodOverride) {
     // 新系数配旧预览，下轮校准的逆映射悄悄算错。
     var fd2 = new FormData();
     fd2.append('token', pdxfToken);
-    return fetch("__DXF__.urls.analyze", {
+    return fetch(window.__DXF__.urls.analyze, {
       method: 'POST',
       headers: { 'X-CSRFToken': pdxfCsrf(), 'X-Requested-With': 'XMLHttpRequest' },
       body: fd2,
@@ -528,7 +560,7 @@ function pdxfCalApplySaved(force) {
   var fd = new FormData();
   fd.append('confirm', '1');
   if (force) fd.append('force', '1');
-  fetch("__DXF__.urls.calApply", {
+  fetch(window.__DXF__.urls.calApply, {
     method: 'POST',
     headers: { 'X-CSRFToken': pdxfCsrf(), 'X-Requested-With': 'XMLHttpRequest' },
     body: fd,

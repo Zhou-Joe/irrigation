@@ -68,7 +68,7 @@ function pdxfLoadEditData() {
   }
   document.getElementById('pdxfEditBody').innerHTML =
     '<p class="pdxf-hint">加载中…</p>';
-  fetch("__DXF__.urls.editData", { credentials: 'same-origin' })
+  fetch(window.__DXF__.urls.editData, { credentials: 'same-origin' })
     .then(function (r) { return r.json(); })
     .then(function (d) {
       if (!d.success) throw new Error(d.error);
@@ -123,7 +123,7 @@ function pdxfSetPickTarget(t) {
 // 重画，否则退出编辑看起来像"改动作被撤销了"。wipePreview=true 时同时撤掉
 // DXF 预览层（预览是导入前坐标，DB 变过后只会误导）。
 function pdxfRefreshRefPipelines(wipePreview) {
-  fetch("__DXF__.urls.editData", { credentials: 'same-origin' })
+  fetch(window.__DXF__.urls.editData, { credentials: 'same-origin' })
     .then(function (r) { return r.json(); })
     .then(function (d) {
       if (!d.success) return;
