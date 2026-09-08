@@ -143,7 +143,10 @@ function pdxfCalStartBody() {
   // 累计选点：预载当前生效标定的点——新一轮选点在旧点之上继续累加，
   // 保存时旧点+新点一起拟合（跨页面刷新/跨天也累计；不想要的旧点可在
   // 表格里删除）。否则第二次进页面选点保存会把上一批点整体替换掉。
-  if (pdxfCalInfo && pdxfCalInfo.points && pdxfCalInfo.points.length >= 2) {
+  // 只预载「用户标定」的点（source==='db'）。清空后回落的系统默认两点是
+  // 代码里的测量基准常量，不是用户在新图纸上选的——预载它们会让每次
+  // 新导入都莫名带出 2 组"已存"点。
+  if (pdxfCalInfo && pdxfCalInfo.source === 'db' && pdxfCalInfo.points && pdxfCalInfo.points.length >= 2) {
     pdxfCalInfo.points.forEach(function (p) {
       pdxfCal.pairs.push({
         dxfX: parseFloat(p.dxf_x), dxfY: parseFloat(p.dxf_y),
