@@ -5230,6 +5230,7 @@ def pipeline_batch_delete(request, batch_id):
     from django.conf import settings as _dj_settings
     from django.db import transaction as _db_txn
     from django.utils import timezone as _tz
+    from .dxf_views import _pipeline_dxf_gate   # 4aff3dce 把闸门挪到了 dxf_views
     from .models import PipelineImportBatch, Pipeline, PipeValve
 
     if not _pipeline_dxf_gate(request.user):
