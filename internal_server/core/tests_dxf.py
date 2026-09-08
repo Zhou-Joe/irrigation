@@ -41,16 +41,21 @@ LOCAL_PTS = [(150, -250), (250, -350)]
 class CalibrationMathTests(SimpleTestCase):
     """core/calibration.py 的方法语义与逆变换一致性。"""
 
-    # sim 一致数据：negY 空间标准相似 + 第 5 点 3e-6°(≈0.3m) 不一致
+    # sim 一致数据：negY 空间标准相似 + 第 5 点 3e-6°(≈0.3m) 不一致。
+    # lng 在**归一空间**生成（÷k）：拟合自 2026-09 起在 (lat, lng·k) 空间
+    # 进行（经度各向异性修复），一致数据必须按同一空间构造。
     A, B, C, D = 9e-6, 2e-6, 31.0, 121.0
 
     @classmethod
     def sim5(cls):
+        grid = [(0, 0), (100, 0), (0, 100), (100, 100), (50, 30)]
+        lats = [cls.A * x + cls.B * yn + cls.C for x, yn in grid]
+        k = math.cos(math.radians(sum(lats) / len(lats)))
         pts = []
-        for x, yn in [(0, 0), (100, 0), (0, 100), (100, 100), (50, 30)]:
+        for (x, yn), la in zip(grid, lats):
             pts.append({'dxf_x': float(x), 'dxf_y': float(-yn),
-                        'lat': cls.A * x + cls.B * yn + cls.C,
-                        'lng': -cls.B * x + cls.A * yn + cls.D})
+                        'lat': la,
+                        'lng': (-cls.B * x + cls.A * yn + cls.D) / k})
         pts[4]['lat'] += 3e-6
         return pts
 
@@ -82,10 +87,71 @@ class CalibrationMathTests(SimpleTestCase):
         inv = similarity_inverse(st['a'], st['b'], st['c'], st['d'])
         p = (18000.0, -10100.0)
         la, ln = fn(*p)
-        x, y = inv['ia'] * la + inv['ib'] * ln + inv['ic'], \
-               -inv['ib'] * la + inv['ia'] * ln + inv['id']
+        x, y = inv['ia'] * la + inv['ib'] * ln * st['iso_k'] + inv['ic'], \
+               -inv['ib'] * la + inv['ia'] * ln * st['iso_k'] + inv['id']
         self.assertAlmostEqual(x, p[0], places=6)
         self.assertAlmostEqual(y, p[1], places=6)
+
+    # ── 经度各向异性回归（甲方报告：DXF 导入后与卫星图对不上）──────────
+    # 物理自洽构造：地面 EN(米) → DXF 绘图坐标(x, y_raw)与 WGS84。旧代码
+    # 直接在原始度空间拟合等比变换，装不下「经度每度比纬度短 cos(φ)」的
+    # 各向异性 → 折成虚假旋转角（2 点标定零残差静默通过，3 km 外偏 4 km）。
+    X0, Y0_RAW, LAT0, LNG0 = 18199.4368, 10216.4603, 31.1431589, 121.6579836
+
+    @classmethod
+    def enu(cls, E, N, theta=0.0):
+        """E/N=东/北米制，theta=图幅相对北的旋转角（度）。"""
+        t = math.radians(theta)
+        return {
+            'dxf_x': cls.X0 + E * math.cos(t) + N * math.sin(t),
+            'dxf_y': cls.Y0_RAW - E * math.sin(t) + N * math.cos(t),   # 原始 DXF y（北正）
+            'lat': cls.LAT0 + N / 111320.0,
+            'lng': cls.LNG0 + E / (111320.0 * math.cos(math.radians(cls.LAT0))),
+        }
+
+    @staticmethod
+    def _err_m(got, want, lat_ref):
+        cos = math.cos(math.radians(lat_ref))
+        return math.hypot((got[0] - want[0]) * 111320.0,
+                          (got[1] - want[1]) * 111320.0 * cos)
+
+    def test_sim_absorbs_lng_anisotropy_far_from_baseline(self):
+        """2 点等比标定：任意图幅旋转下，远离基线的点必须亚厘米级命中。"""
+        for theta in (0.0, 15.0, -30.0):
+            cal = _cal([self.enu(-2000, -1500, theta), self.enu(2000, 1500, theta)])
+            fn, st = similarity_transform_ls(cal)
+            self.assertAlmostEqual(st['rms_m'], 0.0, places=6)
+            worst = 0.0
+            for E, N in [(3000, 0), (0, 3000), (3536, 3536), (-3200, 2400)]:
+                p = self.enu(E, N, theta)
+                worst = max(worst, self._err_m(
+                    fn(p['dxf_x'], -p['dxf_y']), (p['lat'], p['lng']), p['lat']))
+            self.assertLess(worst, 0.01,
+                            f'θ={theta}° 远点 {worst:.2f} m（旧度空间拟合此处为 km 级）')
+
+    def test_short_baseline_two_point_stays_accurate(self):
+        """29 m 短基线 2 点（默认标定形态）：3 km 外仍须亚厘米。"""
+        cal = _cal([self.enu(0, 0), self.enu(21.1, 20.1)])
+        fn, _st = similarity_transform_ls(cal)
+        worst = max(self._err_m(fn(p['dxf_x'], -p['dxf_y']), (p['lat'], p['lng']), p['lat'])
+                    for p in [self.enu(3000, 0), self.enu(0, 3000), self.enu(-2500, -1800)])
+        self.assertLess(worst, 0.05, f'短基线远点 {worst:.2f} m')
+
+    def test_tps_mls_far_point_and_inverse_roundtrip(self):
+        """TPS/MLS 5 点标定（旋转 15°）：控制点外 5 km 远点 <1 m，逆变换往返成立。"""
+        cal = _cal([self.enu(e, n, 15.0) for e, n in
+                    [(-2000, -1500), (2000, -1500), (-2000, 1500), (2000, 1500), (0, 0)]])
+        far = self.enu(3536, 3536, 15.0)
+        for method in ('tps', 'mls'):
+            fn, _st = fit_calibration_transform(cal, method)
+            err = self._err_m(fn(far['dxf_x'], -far['dxf_y']),
+                              (far['lat'], far['lng']), far['lat'])
+            self.assertLess(err, 1.0, f'{method} 远点 {err:.2f} m')
+            inv = fit_calibration_inverse(cal, method)
+            rt = max(max(abs(inv(*fn(p['dxf_x'], -p['dxf_y']))[i] - v)
+                         for i, v in enumerate((p['dxf_x'], -p['dxf_y'])))
+                     for p in cal)
+            self.assertLess(rt, 0.05, f'{method} 逆变换控制点往返 {rt:.3f} 单位')
 
 
 class BulgeTessellationTests(SimpleTestCase):

@@ -13,6 +13,11 @@ function pdxfCalRenderCurrent() {
       (i.sim_rms_m != null ? '（等比 ' + i.sim_rms_m.toFixed(2) + 'm）' : '') : '') +
     (!multi && i.rotation_deg != null ? ' · 旋转 ' + i.rotation_deg.toFixed(3) + '°' : '') +
     (!multi && i.rms_m != null ? ' · RMS ' + i.rms_m.toFixed(2) + 'm' : '') +
+    // 短基线警示：2 点标定的基线（点间距）远小于园区尺度时，锚点上的微小
+    // 选点误差会被放大百倍。默认两点仅 ~29 m，是最危险的形态。
+    (i.spread_m != null && i.n === 2 && i.spread_m < 500
+      ? ' <span style="color:#c0392b;">⚠ 标定基线仅 ' + Math.round(i.spread_m) +
+        ' m——远离基线的区域误差会放大，建议 ≥3 组点均匀撒满园区</span>' : '') +
     // 一键清空已存点：换新图纸时旧点的本地坐标对新图毫无意义（累计选点
     // 是为同一坐标系的多张图纸设计的），点这里回到干净起点重新校准。
     (i.source === 'db'
@@ -78,22 +83,24 @@ function pdxfCalSnapDxf(ll) {
   }
   if (!best) return null;
   // 逆变换回本地坐标（negY 空间）→ 原始 DXF（y 取反）。
-  // TPS：反向系数 ((lat,lng)→(x, yNeg)) 核函数求值；相似：线性系数。
-  var x, yNeg;
+  // TPS：反向系数 ((lat,lng·k)→(x, yNeg)) 核函数求值；相似：线性系数。
+  // 逆系数/点对都活在 (lat, lng·k) 归一空间——输入经度先乘 iso_k
+  // （与服务端 fit_calibration_inverse 一致；老载荷无 iso_k 时按 1 兜底）。
+  var x, yNeg, lk = best.lng * ((inv.iso_k != null) ? inv.iso_k : 1);
   if (inv.type === 'tps') {
-    var r = pdxfTpsApply(inv.coeffs, best.lat, best.lng);
+    var r = pdxfTpsApply(inv.coeffs, best.lat, lk);
     x = r[0]; yNeg = r[1];
   } else if (inv.type === 'mls') {
-    // MLS 逆变换：点对直接加权求值（输入 (lat,lng) → (x, yNeg)）
+    // MLS 逆变换：点对直接加权求值（points 的经度已是归一值）
     var mp = inv.points.map(function (p) {
       return { dxfX: p[0], dxfY: -p[1], satLat: p[2], satLng: p[3] };
     });
-    var mr = pdxfMlsApply(mp, best.lat, best.lng, null);
+    var mr = pdxfMlsApply(mp, best.lat, lk, null);
     if (!mr) return null;
     x = mr[0]; yNeg = mr[1];
   } else {
-    x = inv.ia * best.lat + inv.ib * best.lng + inv.ic;
-    yNeg = -inv.ib * best.lat + inv.ia * best.lng + inv.id;
+    x = inv.ia * best.lat + inv.ib * lk + inv.ic;
+    yNeg = -inv.ib * best.lat + inv.ia * lk + inv.id;
   }
   return { lat: best.lat, lng: best.lng, dxfX: x, dxfY: -yNeg };
 }

@@ -404,14 +404,22 @@ def _similarity_transform(pairs):
     """
     2-point similarity transform: translation + rotation + uniform scale.
     lat = a * dxf_x + b * dxf_y + c
-    lng = -b * dxf_x + a * dxf_y + d  (rotation by same angle, same scale)
+    lng·k = -b * dxf_x + a * dxf_y + d  (rotation by same angle, same scale)
 
     With 2 points we get 4 equations for 4 unknowns (a, b, c, d).
+
+    拟合在 (lat, lng·k) 归一空间（k=cos 平均纬度）：经度每度比纬度短
+    cos(φ)，原始度空间里的等比变换装不下这份各向异性，会被迫折成虚假
+    旋转角——2 点锚定零残差，但远离基线漂移可达百米级。与
+    core.calibration.similarity_transform_ls 同一数学。
     """
     x1, y1 = pairs[0]['dxf_x'], pairs[0]['dxf_y']
     lat1, lng1 = pairs[0]['lat'], pairs[0]['lng']
     x2, y2 = pairs[1]['dxf_x'], pairs[1]['dxf_y']
     lat2, lng2 = pairs[1]['lat'], pairs[1]['lng']
+
+    import math as _math
+    k = _math.cos(_math.radians((lat1 + lat2) / 2.0))
 
     # dx, dy in DXF space
     ddx = x2 - x1
@@ -421,9 +429,9 @@ def _similarity_transform(pairs):
     if ddx2 < 1e-12:
         return '两个锚点的DXF坐标不能相同'
 
-    # dlat, dlng in WGS84 space
+    # dlat, dlng in normalized WGS84 space (lng·k)
     dlat = lat2 - lat1
-    dlng = lng2 - lng1
+    dlng = (lng2 - lng1) * k
 
     # a = (ddx*dlat + ddy*dlng) / ddx2
     # b = (ddy*dlat - ddx*dlng) / ddx2
@@ -431,11 +439,11 @@ def _similarity_transform(pairs):
     b = (ddy * dlat - ddx * dlng) / ddx2
 
     c = lat1 - a * x1 - b * y1
-    d = lng1 - (-b) * x1 - a * y1
+    d = lng1 * k + b * x1 - a * y1
 
     def transform(dx, dy):
         lat = a * dx + b * dy + c
-        lng = -b * dx + a * dy + d
+        lng = (-b * dx + a * dy + d) / k
         return (lat, lng)
 
     return transform

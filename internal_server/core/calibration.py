@@ -16,26 +16,43 @@ SITE_CALIBRATION_POINTS = [
 
 
 
-def similarity_transform_ls(pairs):
-    """N点(≥2)相似变换最小二乘：lat = a*x + b*y + c；lng = -b*x + a*y + d。
+def iso_k(pairs):
+    """经度归一因子 k = cos(平均纬度)。
+
+    所有拟合都在 (lat, lng·k) 归一空间进行：两轴"每度米数"一致(≈111320)，
+    等比/TPS/MLS 才能正确表达米制图纸的几何。直接在原始度空间拟合时，
+    经度方向每度比纬度短 cos(φ)（上海 ≈14%），等比变换装不下这份各向
+    异性，会被迫折成一个**虚假旋转角**——2 点标定在点上完全重合（零残差
+    无警告），远离标定基线的区域偏移可达百米~公里级（甲方报告的"导入后
+    与卫星图对不上"即此）。TPS/MLS 同样受益：不再需要用弯曲去补偿一个
+    本可解析消除的线性各向异性。
+    """
+    return math.cos(math.radians(sum(p['lat'] for p in pairs) / len(pairs)))
+
+
+def similarity_transform_ls(pairs, k=None):
+    """N点(≥2)相似变换最小二乘：lat = a*x + b*y + c；lng·k = -b*x + a*y + d。
 
     与 ``_similarity_transform`` 同一变换形式；N≥3 时存在多余约束，可给出
     每点残差（米）与 RMS，用于标定质量评估。传入的 pairs 需与现有调用方
-    一致（DXF y 已取反）。返回 ``(transform_fn, stats)``；退化输入返回
-    ``(None, 错误消息)``。
+    一致（DXF y 已取反）。``k`` 为经度归一因子（None=按平均纬度自动）；
+    目标不是经纬度（逆变换的反向拟合，目标=绘图单位）时显式传 1.0。
+    返回 ``(transform_fn, stats)``；退化输入返回 ``(None, 错误消息)``。
     """
     import math
+    if k is None:
+        k = iso_k(pairs)
     n = len(pairs)
     if n < 2:
         return None, '标定点至少需要 2 个'
     mx = sum(p['dxf_x'] for p in pairs) / n
     my = sum(p['dxf_y'] for p in pairs) / n
     mlat = sum(p['lat'] for p in pairs) / n
-    mlng = sum(p['lng'] for p in pairs) / n
+    mlng = sum(p['lng'] * k for p in pairs) / n
     nr = ni = denom = 0.0
     for p in pairs:
         x, y = p['dxf_x'] - mx, p['dxf_y'] - my
-        la, ln = p['lat'] - mlat, p['lng'] - mlng
+        la, ln = p['lat'] - mlat, p['lng'] * k - mlng
         nr += x * la + y * ln
         ni += y * la - x * ln
         denom += x * x + y * y
@@ -47,9 +64,9 @@ def similarity_transform_ls(pairs):
     d = mlng + b * mx - a * my
 
     def transform(x, y):
-        return (a * x + b * y + c, -b * x + a * y + d)
+        return (a * x + b * y + c, (-b * x + a * y + d) / k)
 
-    # 残差（米）：等距圆柱近似换算经纬度差
+    # 残差（米）：先还原成真实度，再等距圆柱近似换算
     residuals = []
     for p in pairs:
         plat, plng = transform(p['dxf_x'], p['dxf_y'])
@@ -58,7 +75,7 @@ def similarity_transform_ls(pairs):
         residuals.append(math.hypot(dlatm, dlngm))
     rms = math.sqrt(sum(r * r for r in residuals) / n)
     stats = {
-        'a': a, 'b': b, 'c': c, 'd': d,
+        'a': a, 'b': b, 'c': c, 'd': d, 'iso_k': k,
         'scale': math.hypot(a, b),
         'rotation_deg': math.degrees(math.atan2(-b, a)),
         'rms_m': rms,
@@ -218,23 +235,30 @@ def _residual_m(pred, lat, lng):
     return math.hypot(dlatm, dlngm)
 
 
-def tps_fit(pairs):
+def tps_fit(pairs, k=None):
     """N点(≥4) TPS 拟合：pairs 同 similarity_transform_ls 格式。
 
     返回 (transform_fn, stats)。控制点零残差（精确落位），因此 stats 的
     residuals_m / rms_m 用**留一交叉验证**（LOO）：逐点用其余点重拟合、
     预测该点——这是 TPS 泛化误差的诚实度量（GIS 惯例：TPS 在控制点上
     残差恒为 0，展示残差没有意义）。退化输入返回 (None, 错误消息)。
+    拟合在 (lat, lng·k) 归一空间（见 iso_k）；``k``=None 自动。
     """
     n = len(pairs)
     if n < 4:
         return None, 'TPS 至少需要 4 个标定点'
+    if k is None:
+        k = iso_k(pairs)
     src = [(p['dxf_x'], p['dxf_y']) for p in pairs]
-    dst = [(p['lat'], p['lng']) for p in pairs]
+    dst = [(p['lat'], p['lng'] * k) for p in pairs]
     coeffs = _tps_fit_core(src, dst)
     if coeffs is None:
         return None, '标定点过于集中或存在重复点，无法拟合 TPS'
-    fn = tps_from_coeffs(coeffs)
+    _raw_fn = tps_from_coeffs(coeffs)
+
+    def fn(x, y):
+        u, v = _raw_fn(x, y)
+        return (u, v / k)
 
     # LOO 残差：n-1 ≥ 3 点的核心拟合仍然成立。n 次重拟合在 numpy 下是
     # 毫秒级/次；无 numpy 的纯 Python 回退在 n>30 时会慢到不可用 → 跳过。
@@ -251,14 +275,16 @@ def tps_fit(pairs):
                 residuals.append(None)
                 continue
             sub_fn = tps_from_coeffs(sub)
-            residuals.append(_residual_m(sub_fn(*src[i]), dst[i][0], dst[i][1]))
+            pred = sub_fn(*src[i])
+            residuals.append(_residual_m((pred[0], pred[1] / k),
+                                         dst[i][0], pairs[i]['lng']))
     valid = [r for r in residuals if r is not None]
     rms = math.sqrt(sum(r * r for r in valid) / len(valid)) if valid else None
 
     # 对照：同样点数下的相似变换 RMS（用户能看到 TPS 带来多大改善）
-    _sim_fn, sim_stats = similarity_transform_ls(pairs)
+    _sim_fn, sim_stats = similarity_transform_ls(pairs, k)
     stats = {
-        'method': 'tps', 'n': n,
+        'method': 'tps', 'n': n, 'iso_k': k,
         'coeffs': coeffs,
         'rms_m': rms,
         'residuals_m': [None if r is None else round(r, 2) for r in residuals],
@@ -269,7 +295,7 @@ def tps_fit(pairs):
     return fn, stats
 
 
-def mls_fit(pairs, _skip=None):
+def mls_fit(pairs, k=None, _skip=None):
     """N点(≥2) MLS 相似变形（Moving Least Squares，Schaefer et al. 2006 的
     加权相似最小二乘等价形式）：对每个待求点 v，按 w_i = 1/(d_i²+ε²) 加权
     在控制点上拟合一个局部相似变换（中心化的相似 LS 闭式解）再作用于 v。
@@ -279,13 +305,17 @@ def mls_fit(pairs, _skip=None):
     发飘），单个坏点也只污染局部。控制点上近似精确落位（ε 很小时权重
     完全集中在自身）。无全局方程组、无需数值求解。评估 O(N)/点。
 
-    ``_skip``：LOO 用——跳过该下标的控制点。
+    ``_skip``：LOO 用——跳过该下标的控制点。拟合在 (lat, lng·k) 归一空间
+    （见 iso_k）；``k``=None 自动。
     """
     n = len(pairs)
     if n - (1 if _skip is not None else 0) < 2:
         return None, 'MLS 至少需要 2 个标定点'
+    if k is None:
+        k = iso_k(pairs)
     px = [p['dxf_x'] for p in pairs]
     py = [p['dxf_y'] for p in pairs]
+    plngn = [p['lng'] * k for p in pairs]
     span = max(max(px) - min(px), max(py) - min(py))
     eps2 = (max(span, 1.0) * 1e-4) ** 2   # v→p_j 时权重被 j 完全主导
 
@@ -297,7 +327,7 @@ def mls_fit(pairs, _skip=None):
             w = 1.0 / ((px[i] - x) ** 2 + (py[i] - y) ** 2 + eps2)
             sw += w
             sxw += w * px[i]; syw += w * py[i]
-            slaw += w * pairs[i]['lat']; slnw += w * pairs[i]['lng']
+            slaw += w * pairs[i]['lat']; slnw += w * plngn[i]
         if sw <= 0:
             return None
         mx, my, mla, mln = sxw / sw, syw / sw, slaw / sw, slnw / sw
@@ -306,7 +336,7 @@ def mls_fit(pairs, _skip=None):
                 continue
             w = 1.0 / ((px[i] - x) ** 2 + (py[i] - y) ** 2 + eps2)
             cx, cy = px[i] - mx, py[i] - my
-            cla, cln = pairs[i]['lat'] - mla, pairs[i]['lng'] - mln
+            cla, cln = pairs[i]['lat'] - mla, plngn[i] - mln
             nr += w * (cx * cla + cy * cln)
             ni += w * (cy * cla - cx * cln)
             den += w * (cx * cx + cy * cy)
@@ -314,7 +344,7 @@ def mls_fit(pairs, _skip=None):
             return None
         a, b = nr / den, ni / den
         dx, dy = x - mx, y - my
-        return (a * dx + b * dy + mla, -b * dx + a * dy + mln)
+        return (a * dx + b * dy + mla, (-b * dx + a * dy + mln) / k)
 
     fn = lambda x, y: transform(x, y)
 
@@ -326,9 +356,9 @@ def mls_fit(pairs, _skip=None):
                          _residual_m(pred, pairs[j]['lat'], pairs[j]['lng']))
     valid = [r for r in residuals if r is not None]
     rms = math.sqrt(sum(r * r for r in valid) / len(valid)) if valid else None
-    _sf, sim_stats = similarity_transform_ls(pairs)
+    _sf, sim_stats = similarity_transform_ls(pairs, k)
     stats = {
-        'method': 'mls', 'n': n,
+        'method': 'mls', 'n': n, 'iso_k': k,
         'rms_m': rms,
         'residuals_m': [None if r is None else round(r, 2) for r in residuals],
         'sim_rms_m': sim_stats['rms_m'] if sim_stats else None,
@@ -338,7 +368,7 @@ def mls_fit(pairs, _skip=None):
     return fn, stats
 
 
-def fit_calibration_transform(pairs, method=None):
+def fit_calibration_transform(pairs, method=None, k=None):
     """按 method/点数选型：'sim' → 强制相似 LS；'mls' → MLS；''/None 自动
     （≥4 → TPS 橡皮筋；2-3 → 相似 LS）。
 
@@ -346,16 +376,18 @@ def fit_calibration_transform(pairs, method=None):
     保证「保存时验证的变换」与「导入时使用的变换」是同一个。
     'sim' 显式强制：累积选点常带着 ≥4 组旧点，UI 选"三点最小二乘"时
     不能被自动选型静默升级成 TPS。
+    ``k``：经度归一因子（None=自动）。目标不是经纬度（反向拟合的
+    目标=绘图单位）时由调用方显式传 1.0，防止 auto 取 cos(绘图坐标)。
     """
     if method == 'sim' and len(pairs) >= 2:
-        fn, stats = similarity_transform_ls(pairs)
+        fn, stats = similarity_transform_ls(pairs, k)
         stats['method'] = 'similarity'
         return fn, stats
     if method == 'mls' and len(pairs) >= 2:
-        return mls_fit(pairs)
+        return mls_fit(pairs, k)
     if len(pairs) >= 4:
-        return tps_fit(pairs)
-    return similarity_transform_ls(pairs)
+        return tps_fit(pairs, k)
+    return similarity_transform_ls(pairs, k)
 
 
 def fit_calibration_inverse(pairs, method=None):
@@ -366,19 +398,25 @@ def fit_calibration_inverse(pairs, method=None):
     ''/None 且 <4 点（正向即相似）同此。TPS/MLS 无解析逆——直接把点对
     调个方向重新拟合（GIS 常规做法，误差量级与正向一致）。
 
+    系数均活在 (lat, lng·k) 归一空间：解析逆与反向拟合的**输入**经度
+    都先乘 k，输出不再除回（目标就是绘图单位）。
+
     返回 inverse_fn 或 None。注意 pairs 的 dxf_y 已是取反后的 negY 空间
     （与 similarity_inverse 的返回语义一致：调用方再自行取反回 DXF y）。
     """
+    k = iso_k(pairs)
     if method == 'sim' or (method in (None, '') and len(pairs) < 4):
-        fn, stats = similarity_transform_ls(pairs)
+        fn, stats = similarity_transform_ls(pairs, k)
         if not callable(fn):
             return None
         inv = similarity_inverse(stats['a'], stats['b'], stats['c'], stats['d'])
         if not inv:
             return None
-        return lambda lat, lng: (inv['ia'] * lat + inv['ib'] * lng + inv['ic'],
-                                 -inv['ib'] * lat + inv['ia'] * lng + inv['id'])
-    rev = [{'dxf_x': p['lat'], 'dxf_y': p['lng'],
+        return lambda lat, lng: (inv['ia'] * lat + inv['ib'] * (lng * k) + inv['ic'],
+                                 -inv['ib'] * lat + inv['ia'] * (lng * k) + inv['id'])
+    rev = [{'dxf_x': p['lat'], 'dxf_y': p['lng'] * k,
             'lat': p['dxf_x'], 'lng': p['dxf_y']} for p in pairs]
-    fn, _stats = fit_calibration_transform(rev, 'mls' if method == 'mls' else None)
-    return fn if callable(fn) else None
+    fn, _stats = fit_calibration_transform(rev, 'mls' if method == 'mls' else None, k=1.0)
+    if callable(fn):
+        return lambda lat, lng: fn(lat, lng * k)
+    return None
