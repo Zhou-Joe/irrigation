@@ -412,13 +412,13 @@ map. Desktop (max-width:768px is false) is unaffected.{% endcomment %}
 <!-- Leaflet JS -->
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <!-- Map Config -->
-<script src="{% static 'js/map-config.js' %}?v=20260423"></script>
+<script src="{% static 'js/map-config.js' %}?v=20260908"></script>
 <script>window.MAP_STYLE_CONFIG = {{ map_style_json|safe }} || {};</script>
 <script id="pending-water-requests" type="application/json">{{ pending_water_requests_json|safe }}</script>
 <script id="pending-remarks" type="application/json">{{ pending_remarks_json|safe }}</script>
 <script id="pm-tasks-data" type="application/json">{{ pm_tasks_json|safe }}</script>
 <!-- Custom Map JS -->
-<script src="{% static 'js/map.js' %}?v=20260830c"></script>
+<script src="{% static 'js/map.js' %}?v=20260908"></script>
 <script src="{% static 'js/dashboard-modal.js' %}?v=20260814a"></script>
 <script>
 // Override the notification popup's PM-task "填写" handler: on the dashboard we
