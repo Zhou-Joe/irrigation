@@ -645,7 +645,7 @@
           <div class="am-row" data-aid="{{ a.id }}">
             <div class="am-row-main">
               <div class="am-row-title">{{ a.title }}{% if not a.active %}<span class="am-off">已停用</span>{% endif %}</div>
-              <div class="am-row-meta">发布人 {{ a.created_by.get_full_name|default:a.created_by.username|default:"—" }} · {{ a.created_at|date:"Y-m-d H:i" }}</div>
+              <div class="am-row-meta">发布人 {% if a.created_by %}{{ a.created_by.get_full_name|default:a.created_by.username }}{% else %}—{% endif %} · {{ a.created_at|date:"Y-m-d H:i" }}</div>
               {% if a.body %}<div class="am-row-body">{{ a.body }}</div>{% endif %}
             </div>
             <span class="am-stat">已确认 <b>{{ a.ack_count }}</b></span>
