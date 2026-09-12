@@ -236,6 +236,103 @@ class BulgeTessellationTests(SimpleTestCase):
         self.assertEqual(pts[-1], (10.0, 0.0))
 
 
+def _parse_doc(build):
+    """内存构建 DXF → 直接走解析管线（跳过文件/缓存层）。"""
+    import ezdxf
+    from core.dxf_pipeline_utils import _collect_geometry
+    doc = ezdxf.new('R2018')
+    build(doc.modelspace(), doc.blocks)
+    return _collect_geometry(doc.modelspace())
+
+
+class GeometryCompletenessTests(SimpleTestCase):
+    """线条/block 不再缺失：闭合环管、SPLINE/ELLIPSE/CIRCLE、块内几何展开、
+    默认勾选猜测——解析层一次收全（此前各有一类实体被静默丢弃）。"""
+
+    def test_closed_ring_kept_with_closing_edge(self):
+        """闭合折线是环状管网：闭合段（含末顶点 bulge）必须收集，不许整条丢。"""
+        from core.dxf_pipeline_utils import _decompose_paths, _polyline_len
+
+        def build(msp, _blocks):
+            # 方形环，末顶点 bulge=1 → 闭合段是半圆，整环=3直边+1半圆
+            msp.add_lwpolyline([(0, 0, 0), (10, 0, 0), (10, 10, 0), (0, 10, 1)],
+                               format='xyb', close=True,
+                               dxfattribs={'layer': 'RING'})
+
+        layers, _v, _l = _parse_doc(build)
+        self.assertEqual(layers['RING']['closed'], 1)
+        ring = layers['RING']['polys'][0]
+        self.assertEqual(ring[0], ring[-1], '环必须首尾闭合')
+        # 周长 = 3 边×10 + 半圆 πr=5π ≈ 45.708
+        self.assertAlmostEqual(_polyline_len(ring), 30 + 5 * math.pi, delta=0.05)
+        paths = _decompose_paths(layers['RING']['polys'])
+        self.assertEqual(len(paths), 1, '独立环输出为单条路径')
+        self.assertAlmostEqual(_polyline_len(paths[0]), 30 + 5 * math.pi, delta=0.05)
+
+    def test_spline_ellipse_circle_collected(self):
+        """SPLINE/ELLIPSE/CIRCLE 按矢高细分收进图层（此前整类实体被丢弃）。"""
+
+        def build(msp, _blocks):
+            msp.add_spline([(0, 0, 0), (10, 5, 0), (20, -5, 0), (30, 0, 0)],
+                           dxfattribs={'layer': 'CURVE'})
+            msp.add_ellipse((50, 0), (25, 0), 0.5,
+                            dxfattribs={'layer': 'CURVE'})
+            msp.add_circle((100, 0), 25, dxfattribs={'layer': 'CURVE'})
+
+        layers, _v, _l = _parse_doc(build)
+        polys = layers['CURVE']['polys']
+        self.assertEqual(len(polys), 3)
+        spline, ellipse, circle = polys
+        self.assertGreater(len(spline), 4, '样条应细分出多点')
+        self.assertGreater(len(ellipse), 8)
+        self.assertEqual(circle[0], circle[-1], '整圆输出为闭合环')
+        cx, cy = 100.0, 0.0
+        worst = max(abs(math.hypot(px - cx, py - cy) - 25.0) for px, py in circle)
+        self.assertLess(worst, 2e-3, '圆环细分点应落在真实圆上')
+
+    def test_polyface_mesh_skipped(self):
+        """多面片网格的顶点串不成管线，跳过而不是产出垃圾折线。"""
+
+        def build(msp, _blocks):
+            mesh = msp.add_polyface(dxfattribs={'layer': 'MESH'})
+            mesh.append_face([(0, 0, 0), (10, 0, 0), (10, 10, 0), (0, 10, 0)])
+
+        layers, _v, _l = _parse_doc(build)
+        self.assertNotIn('MESH', layers)
+
+    def test_insert_geometry_exploded_to_virtual_layer(self):
+        """块内线条几何（含嵌套块，应用插入变换）展开到 块·<名> 虚拟图层。"""
+
+        def build(msp, blocks):
+            blk = blocks.new('OUTER')
+            blk.add_line((0, 0), (10, 0), dxfattribs={'layer': '0'})
+            inner = blocks.new('INNER')
+            inner.add_lwpolyline([(0, 0), (5, 5), (10, 0)],
+                                 dxfattribs={'layer': '0'})
+            blk.add_blockref('INNER', insert=(2, 2))
+            msp.add_blockref('OUTER', insert=(100, 100),
+                             dxfattribs={'rotation': 45, 'layer': 'HOST'})
+
+        layers, valves, _l = _parse_doc(build)
+        self.assertEqual(valves[0]['block'], 'OUTER', 'INSERT 仍记为阀门候选')
+        bucket = layers['块·OUTER']
+        self.assertEqual(len(bucket['polys']), 2, '直线+嵌套折线都要展开')
+        line = bucket['polys'][0]
+        # (0,0)-(10,0) 旋转 45° 平移 (100,100)
+        self.assertAlmostEqual(line[0][0], 100.0, places=2)
+        self.assertAlmostEqual(line[0][1], 100.0, places=2)
+        self.assertAlmostEqual(line[-1][0], 100 + 10 / math.sqrt(2), places=2)
+        self.assertAlmostEqual(line[-1][1], 100 + 10 / math.sqrt(2), places=2)
+
+    def test_layer_include_guess(self):
+        """默认勾选：数字层/关键词层进，civil/POC/块展开层不进。"""
+        from core.dxf_pipeline_utils import _layer_include_guess
+        for name in ('100', '75', 'WD', 'WD 40', 'AD-I-LL', 'AD-I-ML', 'LATERAL-X'):
+            self.assertTrue(_layer_include_guess(name), name)
+        for name in ('C-L-EOP', 'C-L-WALL', 'POC', '块·ST-103B', '块·WID_Val-cf'):
+            self.assertFalse(_layer_include_guess(name), name)
+
+
 @override_settings(ALLOWED_HOSTS=['testserver'])
 class ApplyPerBatchTests(TestCase):
     """逐批旧标定推导 + 不可逆零写入（曾出现过的 P0 回归网）。"""
