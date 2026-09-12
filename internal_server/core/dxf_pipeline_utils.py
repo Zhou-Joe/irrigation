@@ -2,11 +2,15 @@
 
 面向的图纸约定（与 Test dxf.dxf 一致）：
   * 管道按图层分类，图层名常直接是管径（``100``/``75``/``150``…）或
-    ``WD``（疏水/放水）；
+    ``WD``（疏水/放水）、``AD-I-LL/ML``（支管/主管）等关键词层；
   * 阀门是 INSERT 块，块名 ``WID_Val-*`` 的后缀编码阀门类型，插入点
-    几乎总落在管道线上；
+    几乎总落在管道线上；块内画着的线条几何另展开到 ``块·<块名>``
+    虚拟图层（默认不勾选，可当管线导入）；
   * 文字标注（MTEXT/TEXT，多在 ``设备编号``/``POC`` 层）是最近的阀门/
     设备编号，如 ``9-GV6``。
+
+线条实体一次收全：LINE/LWPOLYLINE/POLYLINE/ARC/SPLINE/ELLIPSE/CIRCLE，
+弧段按 ≤8° 或矢高细分；闭合折线是环状管网，按完整环收集。
 
 流程：``analyze_dxf_pipelines`` 产出图层/块/标注清单 + 预览几何，并按
 内容 hash 把解析结果缓存（导入阶段凭 token 复用，同一图纸不再二次解析）；
@@ -60,6 +64,9 @@ LAYER_TYPE_KEYWORDS = [
     ('control', r'控制|CTRL|CTL'),
     ('comm', r'通讯|通信|COMM'),
     ('flush', r'冲洗|疏水|放水|\bWD\b|WASH|FLUSH'),
+    # 灌溉主干/支管命名（AD-I-LL/ML、LATERAL 等）——层名常不带管径数字，
+    # 命中即默认勾选，不再整层漏导入
+    ('irrigation', r'灌溉|喷灌|滴灌|IRRIG|\bLL\b|\bML\b|\bWL\b|LATERAL|MAINLINE'),
 ]
 
 # 端点吸附容差（米）——判定两条折线相接
@@ -70,6 +77,8 @@ SNAP_TOL_M = 1.5
 LABEL_RADIUS_M = 2.5
 # 解析缓存 TTL（秒）——analyze → import 之间复用
 PARSE_CACHE_TTL = 15 * 60
+# 缓存 key 前缀带解析器版本：解析逻辑升级后旧缓存立即失效
+PARSE_CACHE_KEY_PREFIX = 'dxf:parse:v2:'
 
 
 def _guess_line_type(layer_name):
@@ -91,6 +100,14 @@ def _guess_block_type(block_name):
 def _layer_diameter_guess(name):
     m = re.search(r'(\d+(?:\.\d+)?)', name)
     return float(m.group(1)) if m else None
+
+
+def _layer_include_guess(name):
+    """图层默认勾选：层名带管径数字 或 命中管线关键词（AD-I-LL/WD 这类
+    不带数字的支管/冲洗层不再整层漏导入）；civil 图层与块展开虚拟层除外。"""
+    return ((_layer_diameter_guess(name) is not None
+             or any(re.search(pat, name, re.I) for _t, pat in LAYER_TYPE_KEYWORDS))
+            and not name.startswith(('C-L', INSERT_EXPLODE_PREFIX)))
 
 
 def _mtext_plain(text):
@@ -266,7 +283,7 @@ def _parse_dxf_geometry(content_bytes):
 
 
 def _parse_cache():
-    """``dxf:parse:*`` 缓存句柄 —— FileBasedCache，跨 gunicorn worker 共享。
+    """``dxf:parse:v2:*`` 缓存句柄 —— FileBasedCache，跨 gunicorn worker 共享。
 
     不能用默认 LocMemCache（每 worker 一份内存）：analyze 落在哪个 worker，
     缓存就只在那个 worker 里；token 免重传的「保存并预览」/导入请求再落到
@@ -284,7 +301,7 @@ def _parsed_from_cache_or_file(content_bytes):
     """
     cache = _parse_cache()
     token = hashlib.sha256(content_bytes).hexdigest()[:32]
-    key = 'dxf:parse:' + token
+    key = PARSE_CACHE_KEY_PREFIX + token
     hit = cache.get(key)
     if hit is not None:
         return token, hit[0], hit[1], hit[2]
@@ -348,11 +365,122 @@ def _polyline_pts(raw):
     return pts
 
 
-def _collect_geometry(msp):
-    """一次遍历 modelspace，按图层归集开放折线 / 阀门 INSERT / 文字标注。
+# 曲线实体细分：弦到弧的最大偏差（绘图单位）。SPLINE/ELLIPSE/CIRCLE 无
+# 顶点可取，按矢高细分——与 ARC_STEP_DEG 一样与半径无关地平滑。
+FLATTEN_SAGITTA = 0.05
+# 单条曲线细分点数上限：异常长曲线降采样，防预览/缓存负载爆炸
+MAX_CURVE_PTS = 360
 
-    折线按 bulge 细分（CAD 曲线），独立 ARC 实体按 ≤8° 细分为开放折线；
-    SPLINE 未支持（当前图纸无此类实体）。"""
+# 视作「线条几何」的实体类型（INSERT 块内展开同表）
+LINE_ENTITY_TYPES = frozenset(
+    ('LINE', 'LWPOLYLINE', 'POLYLINE', 'ARC', 'SPLINE', 'ELLIPSE', 'CIRCLE'))
+
+
+def _flatten_curve(e):
+    """SPLINE/ELLIPSE/CIRCLE → (细分点列, 是否闭合环)；失败返回 (None, False)。"""
+    from ezdxf.path import make_path
+    try:
+        p = make_path(e)
+        pts = [(round(v.x, 3), round(v.y, 3)) for v in p.flattening(FLATTEN_SAGITTA)]
+    except Exception:
+        return None, False
+    if len(pts) > MAX_CURVE_PTS:
+        step = math.ceil(len(pts) / MAX_CURVE_PTS)
+        pts = pts[::step]
+        pts.append(pts[0])
+    closed = bool(p.is_closed)
+    if closed and pts and pts[0] != pts[-1]:
+        pts.append(pts[0])
+    return pts, closed
+
+
+def _entity_polyline(e):
+    """单个线条实体 → (坐标点列, 是否闭合)。非线条实体/退化几何返回 None。
+
+    闭合折线补上 末顶点→首顶点 的闭合段（该段 bulge 挂在末顶点上），
+    环状管网按完整环输出而不是整条丢弃。
+    """
+    et = e.dxftype()
+    if et in ('LWPOLYLINE', 'POLYLINE'):
+        if et == 'POLYLINE' and getattr(e, 'is_poly_face_mesh', False):
+            return None   # 多面片网格顶点串不成管线
+        if et == 'LWPOLYLINE':
+            raw = [(p[0], p[1], p[2] or 0.0) for p in e.get_points('xyb')]
+            closed = bool(e.closed)
+        else:
+            raw = [(v.dxf.location.x, v.dxf.location.y,
+                    getattr(v.dxf, 'bulge', 0) or 0.0) for v in e.vertices]
+            closed = bool(e.is_closed)
+        if closed and len(raw) >= 2:
+            raw.append(raw[0])
+        pts = _polyline_pts(raw)
+        return (pts, closed) if len(pts) >= 2 else None
+    if et == 'ARC':
+        c, r = e.dxf.center, float(e.dxf.radius)
+        sa = math.radians(float(e.dxf.start_angle))
+        sweep = (math.radians(float(e.dxf.end_angle)) - sa) % (2 * math.pi)
+        if sweep < 1e-9:
+            sweep = 2 * math.pi   # 起点=终点的整圆表示
+        n = max(2, min(90, math.ceil(math.degrees(sweep) / ARC_STEP_DEG)))
+        pts = [(round(c.x + r * math.cos(sa), 3), round(c.y + r * math.sin(sa), 3))]
+        pts.extend(_arc_points(c.x, c.y, r, sa, sweep, n))
+        return pts, False
+    if et == 'LINE':
+        a, b = e.dxf.start, e.dxf.end
+        return [(round(a.x, 3), round(a.y, 3)), (round(b.x, 3), round(b.y, 3))], False
+    if et == 'CIRCLE':
+        # 整圆=起止角相等的 ARC：走精确三角细分（make_path 的 Bézier 近似
+        # 在 r=25 时有 ~7mm 径向误差，没必要）
+        c, r = e.dxf.center, float(e.dxf.radius)
+        n = max(8, math.ceil(360.0 / ARC_STEP_DEG))
+        pts = [(round(c.x + r, 3), round(c.y, 3))]
+        pts.extend(_arc_points(c.x, c.y, r, 0.0, 2 * math.pi, n))
+        if pts[0] != pts[-1]:
+            pts.append(pts[0])
+        return pts, True
+    if et in ('SPLINE', 'ELLIPSE'):
+        return _flatten_curve(e)
+    return None
+
+
+# INSERT 块内线条几何展开到的虚拟图层前缀（默认不勾选，用户按需导入）
+INSERT_EXPLODE_PREFIX = '块·'
+# 嵌套块展开深度上限（防自引用块递归）
+INSERT_EXPLODE_DEPTH = 3
+
+
+def _explode_insert_geometry(insert, name, layers, depth=INSERT_EXPLODE_DEPTH):
+    """INSERT 块内的线条几何（含嵌套块，应用插入变换）展开到 ``块·<块名>``
+    虚拟图层——阀/接头符号、块内画的水管不再凭空消失，勾选即可当管线导入。"""
+    if depth <= 0:
+        return
+    try:
+        ves = list(insert.virtual_entities())
+    except Exception:
+        return
+    for ve in ves:
+        if ve.dxftype() == 'INSERT':
+            _explode_insert_geometry(ve, name, layers, depth - 1)
+            continue
+        r = _entity_polyline(ve)
+        if r is None:
+            continue
+        pts, closed = r
+        if len(pts) < 2 or _polyline_len(pts) <= 0:
+            continue
+        bucket = layers.setdefault(INSERT_EXPLODE_PREFIX + name,
+                                   {'polys': [], 'closed': 0})
+        bucket['polys'].append(pts)
+        if closed:
+            bucket['closed'] += 1
+
+
+def _collect_geometry(msp):
+    """一次遍历 modelspace，按图层归集线条几何 / 阀门 INSERT / 文字标注。
+
+    线条几何覆盖 LINE/LWPOLYLINE/POLYLINE/ARC/SPLINE/ELLIPSE/CIRCLE（弧按
+    ≤8° 或矢高 0.05 细分）；闭合折线是环状管网，按完整环收集而不是丢弃。
+    INSERT 块当阀门候选，块内线条几何另展开到 ``块·<块名>`` 虚拟图层。"""
     layers = {}   # layer -> {'polys': [[(x,y),...]], 'closed': n}
     valves = []   # {'block', 'x', 'y', 'attrs'}
     labels = []   # {'layer', 'text', 'x', 'y'}
@@ -360,43 +488,24 @@ def _collect_geometry(msp):
     for e in msp:
         et = e.dxftype()
         layer = e.dxf.layer
-        if et in ('LWPOLYLINE', 'POLYLINE'):
-            if et == 'LWPOLYLINE':
-                raw = [(p[0], p[1], p[2] or 0.0) for p in e.get_points('xyb')]
-                closed = bool(e.closed)
-            else:
-                raw = [(v.dxf.location.x, v.dxf.location.y,
-                        getattr(v.dxf, 'bulge', 0) or 0.0) for v in e.vertices]
-                closed = bool(e.is_closed)
-            pts = _polyline_pts(raw)
-            if len(pts) < 2:
+        if et in LINE_ENTITY_TYPES:
+            r = _entity_polyline(e)
+            if r is None:
+                continue
+            pts, closed = r
+            if len(pts) < 2 or _polyline_len(pts) <= 0:
                 continue
             bucket = layers.setdefault(layer, {'polys': [], 'closed': 0})
+            bucket['polys'].append(pts)
             if closed and _polyline_len(pts) > 0:
                 bucket['closed'] += 1
-                # 封闭折线是边界/底图而非管道，跳过
-                continue
-            bucket['polys'].append(pts)
-        elif et == 'ARC':
-            c, r = e.dxf.center, float(e.dxf.radius)
-            sa = math.radians(float(e.dxf.start_angle))
-            sweep = (math.radians(float(e.dxf.end_angle)) - sa) % (2 * math.pi)
-            if sweep < 1e-9:
-                sweep = 2 * math.pi   # 起点=终点的整圆表示
-            n = max(2, min(90, math.ceil(math.degrees(sweep) / ARC_STEP_DEG)))
-            pts = [(round(c.x + r * math.cos(sa), 3), round(c.y + r * math.sin(sa), 3))]
-            pts.extend(_arc_points(c.x, c.y, r, sa, sweep, n))
-            layers.setdefault(layer, {'polys': [], 'closed': 0})['polys'].append(pts)
-        elif et == 'LINE':
-            a, b = e.dxf.start, e.dxf.end
-            layers.setdefault(layer, {'polys': [], 'closed': 0})['polys'].append(
-                [(round(a.x, 3), round(a.y, 3)), (round(b.x, 3), round(b.y, 3))])
         elif et == 'INSERT':
             valves.append({
                 'block': e.dxf.name,
                 'x': float(e.dxf.insert[0]), 'y': float(e.dxf.insert[1]),
                 'attrs': {a.dxf.tag: a.dxf.text for a in e.attribs},
             })
+            _explode_insert_geometry(e, e.dxf.name, layers)
         elif et in ('MTEXT', 'TEXT'):
             raw = e.text if et == 'MTEXT' else e.dxf.text
             plain = _mtext_plain(raw)
@@ -653,7 +762,7 @@ def analyze_dxf_pipelines(uploaded_file=None, token=None):
             content = content.encode('utf-8', errors='ignore')
         token, layers, valves, labels = _parsed_from_cache_or_file(content)
     elif token:
-        hit = _parse_cache().get('dxf:parse:' + token)
+        hit = _parse_cache().get(PARSE_CACHE_KEY_PREFIX + token)
         if hit is None:
             return {'success': False, 'error': '解析缓存已过期（15 分钟），请重新上传 DXF 文件'}
         layers, valves, labels = hit[0], hit[1], hit[2]
@@ -675,8 +784,7 @@ def analyze_dxf_pipelines(uploaded_file=None, token=None):
             'closed_shapes': bucket['closed'],
             'diameter_guess': _layer_diameter_guess(name),
             'type_guess': _guess_line_type(name),
-            'include_guess': _layer_diameter_guess(name) is not None
-                             and not name.startswith('C-L'),
+            'include_guess': _layer_include_guess(name),
         })
 
     blocks = defaultdict(lambda: {'count': 0, 'attrs': set(), 'samples': []})
@@ -710,8 +818,10 @@ def analyze_dxf_pipelines(uploaded_file=None, token=None):
             lat, lng = to_latlng(lb['x'], lb['y'])
             b['points'].append({'lat': round(lat, 6), 'lng': round(lng, 6), 'text': lb['text']})
 
+    previewable = [i for i in layer_infos
+                   if not i['layer'].startswith(INSERT_EXPLODE_PREFIX)]
     preview_layers = []
-    for info in layer_infos[:12]:
+    for info in previewable[:12]:
         pts_list = layers[info['layer']]['polys']
         paths = []
         for pts in pts_list[:600]:
@@ -751,7 +861,7 @@ def analyze_dxf_pipelines(uploaded_file=None, token=None):
 def _resolve_parsed_geometry(uploaded_file, token, content):
     """导入几何来源：``token`` 解析缓存优先，过期/缺失退回文件/字节内容。"""
     if token:
-        hit = _parse_cache().get('dxf:parse:' + token)
+        hit = _parse_cache().get(PARSE_CACHE_KEY_PREFIX + token)
         if hit is not None:
             return hit
         # 缓存过期，退回文件解析
@@ -934,7 +1044,10 @@ def import_dxf_pipelines(layer_specs, block_specs, uploaded_file=None,
                 )
                 if zids:
                     p.zones.set(zids)
-                all_paths.append((pts, diameter, p))
+                # 块展开层（阀/接头符号）不作贴管目标——否则阀门会吸到自己的
+                # 符号环上，而不是真正经过它的管道
+                if not layer.startswith(INSERT_EXPLODE_PREFIX):
+                    all_paths.append((pts, diameter, p))
                 created_pipes += 1
                 n_paths += 1
             layer_stats.append({'layer': layer, 'paths': n_paths,
