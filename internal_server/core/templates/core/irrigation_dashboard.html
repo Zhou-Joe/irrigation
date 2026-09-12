@@ -978,16 +978,25 @@
         <!-- CCU pager (全部 mode only — one clean matrix per CCU). Hidden by
              default; renderPivot() shows it when the response carries >1 CCU. -->
         <div class="ccu-pager" id="ccuPager" style="display:none;">
-            <button type="button" id="ccuPagerPrev" onclick="goToCcuPage(currentCcuPage - 1)"
+            <button type="button" id="ccuPagerPrev" onclick="goToCcuPage(currentCcuPage - 1, true)"
                     title="上一页">◀ 上一页</button>
             <div class="ccu-pager-pills" id="ccuPagerPills"></div>
-            <button type="button" id="ccuPagerNext" onclick="goToCcuPage(currentCcuPage + 1)"
+            <button type="button" id="ccuPagerNext" onclick="goToCcuPage(currentCcuPage + 1, true)"
                     title="下一页">下一页 ▶</button>
             <span class="ccu-pager-count" id="ccuPagerCount"></span>
         </div>
         <div class="pivot-wrap">
             <div id="pivotContent">
                 {% include 'core/_irrigation_pivot.html' %}
+            </div>
+        </div>
+
+        <!-- 浇水量：mdb 流量计（XA_FLOZO 导入）+ 站点运行估算（运行分钟×
+             站点系数），合计 = Maxicom 桌面端口径。随筛选 AJAX 刷新。 -->
+        <div style="margin-top:14px;">
+            <div class="section-title">💧 浇水量（升）— 流量计 + 站点估算</div>
+            <div id="flowContent">
+                {% include 'core/_irrigation_flow.html' %}
             </div>
         </div>
     </div>
@@ -1030,6 +1039,93 @@ function exportExcel() {
     window.location.href = '{% url "core:irrigation_report_excel" %}?' + _exportParams();
 }
 
+// 浇水量表格 — 与服务端 partial _irrigation_flow.html 保持同一结构。
+// 全部 CCU：每 CCU 一行（流量计/估算/合计）；选中单个 CCU（下拉筛选或点
+// CCU 分页 pill）：主表切换为该 CCU 的流量区明细，头部汇总行给三项合计。
+// flowZonesByCcu 缓存全部模式下各 CCU 的 zone 明细，点 pill 即时切换免请求。
+let flowRowsCache = [], flowZonesByCcu = {};
+const _flowNote = '<p style="font-size:.74rem;color:var(--color-text-muted,#888);margin:6px 0 0;">' +
+    '流量计 = mdb XA_FLOZO 按灌溉日聚合（随 maxicom 导入更新）；站点估算 = 运行分钟 × 站点流量系数；' +
+    '合计与 Maxicom 桌面端「浇水量」口径一致（系数为 0 的主阀不计）。选单个 CCU 或点分页 pill 切换为该 CCU 的流量区明细。</p>';
+function _flowZoneHtml(s, zones, backLink) {
+    const n = x => (x || 0).toLocaleString('en-US');
+    let html = '<div style="font-size:.82rem;margin-bottom:6px;">' +
+        (backLink ? '<a href="javascript:void(0)" onclick="renderFlowAll()" ' +
+            'style="color:var(--color-primary,#2D6A4F);margin-right:6px;">« 返回全部 CCU</a>' : '') +
+        s.ccu + '（' + s.name + '）：' +
+        '流量计 <b>' + n(s.meter_l) + '</b> L · 站点估算 <b>' + n(s.est_l) + '</b> L · ' +
+        '合计 <b>' + n(s.total_l) + '</b> L</div>' +
+        '<div style="overflow-x:auto;"><table class="matrix-table">' +
+        '<thead><tr><th>Zone</th><th>流量区名称</th><th>浇水量 (L)</th></tr></thead><tbody>';
+    let tm = 0;
+    for (const z of zones) {
+        tm += z.liters;
+        html += '<tr><td class="sticky-col-sub">z' + z.zone + '</td>' +
+            '<td class="sticky-col-sub">' + z.name + '</td>' +
+            '<td class="cell">' + n(z.liters) + '</td></tr>';
+    }
+    html += '</tbody><tfoot><tr><th colspan="2">流量计合计</th><th>' + n(tm) +
+        '</th></tr></tfoot></table></div>' + _flowNote;
+    return html;
+}
+function renderFlowAll() {
+    const el = document.getElementById('flowContent');
+    if (!el) return;
+    const n = x => (x || 0).toLocaleString('en-US');
+    if (!flowRowsCache.length) {
+        el.innerHTML = '<div class="chart-empty">该窗口无浇水量数据（等待 maxicom 导入或调整时间范围）</div>';
+        return;
+    }
+    let tm = 0, te = 0;
+    let html = '<div style="overflow-x:auto;"><table class="matrix-table"><thead><tr>' +
+        '<th>CCU</th><th>名称</th><th>流量计 (L)</th><th>站点估算 (L)</th><th>合计 (L)</th>' +
+        '</tr></thead><tbody>';
+    for (const r of flowRowsCache) {
+        tm += r.meter_l; te += r.est_l;
+        html += '<tr><td class="sticky-col-sub">' + r.ccu + '</td>' +
+            '<td class="sticky-col-sub">' + r.name + '</td>' +
+            '<td class="cell">' + n(r.meter_l) + '</td>' +
+            '<td class="cell">' + n(r.est_l) + '</td>' +
+            '<td class="row-total">' + n(r.total_l) + '</td></tr>';
+    }
+    html += '</tbody><tfoot><tr><th colspan="2">合计</th><th>' + n(tm) + '</th><th>' + n(te) +
+        '</th><th>' + n(tm + te) + '</th></tr></tfoot></table></div>' + _flowNote;
+    el.innerHTML = html;
+}
+function renderFlowForCcu(ccuId, withBackLink) {
+    const el = document.getElementById('flowContent');
+    if (!el) return;
+    const s = flowRowsCache.find(r => r.ccu_id === ccuId);
+    const zones = flowZonesByCcu[String(ccuId)] || [];
+    if (!s || !zones.length) {
+        if (s) {
+            // 有汇总无 zone 明细（该 CCU 无流量计数据）——仍显示汇总行
+            el.innerHTML = _flowZoneHtml(s, [], !!withBackLink);
+        } else {
+            renderFlowAll();
+        }
+        return;
+    }
+    el.innerHTML = _flowZoneHtml(s, zones, !!withBackLink);
+}
+function renderFlow(d) {
+    flowRowsCache = d.flow_rows || [];
+    flowZonesByCcu = d.flow_zones_by_ccu || {};
+    const el = document.getElementById('flowContent');
+    if (!el) return;
+    if (!flowRowsCache.length) {
+        el.innerHTML = '<div class="chart-empty">该窗口无浇水量数据（等待 maxicom 导入或调整时间范围）</div>';
+        return;
+    }
+    if (d.flow_zone_rows && d.flow_zone_rows.length) {
+        // 下拉选中单个 CCU：zone 明细为主表（无返回链接——筛选本身就是单 CCU）
+        flowZonesByCcu[String(flowRowsCache[0].ccu_id)] = d.flow_zone_rows;
+        el.innerHTML = _flowZoneHtml(flowRowsCache[0], d.flow_zone_rows, false);
+    } else {
+        renderFlowAll();
+    }
+}
+
 function applyFilters() {
     const ccu = document.getElementById('ccuSelect').value;
     const from = _fromParam();
@@ -1048,7 +1144,7 @@ function applyFilters() {
         headers: { 'X-Requested-With': 'XMLHttpRequest' }
     })
     .then(r => r.json())
-    .then(d => renderPivot(d))
+    .then(d => { renderPivot(d); renderFlow(d); })
     .catch(err => {
         document.getElementById('pivotContent').innerHTML = '<div class="chart-empty">加载失败</div>';
         console.error(err);
@@ -1146,7 +1242,7 @@ function _setSummaryForCcu(t) {
     document.getElementById('sumRuntime').textContent = t.grand_total;
 }
 
-function goToCcuPage(i) {
+function goToCcuPage(i, fromUser) {
     const n = ccuTablesCache.length;
     if (!n) return;
     if (i < 0 || i >= n) return;
@@ -1164,6 +1260,10 @@ function goToCcuPage(i) {
     document.getElementById('ccuPagerNext').disabled = (i === n - 1);
     // Summary cards reflect the visible CCU (user chose "current CCU only").
     _setSummaryForCcu(ccuTablesCache[i]);
+    // 浇水量表同步切到该 CCU 的流量区明细——仅用户点击（renderPivot 播种
+    // goToCcuPage(0) 不带 fromUser，保持全部 CCU 汇总首屏）。数据已在
+    // flowZonesByCcu 缓存，点击即时切换不发请求；表头带返回链接。
+    if (fromUser) renderFlowForCcu(ccuTablesCache[i].ccu_id, true);
 }
 
 function renderPivot(d) {
@@ -1188,7 +1288,7 @@ function renderPivot(d) {
         // Build the pager pills (one per CCU, labelled with the CCU code).
         const pills = d.ccu_tables.map((t, idx) =>
             `<button type="button" class="page-pill${idx === 0 ? ' active' : ''}" `
-            + `onclick="goToCcuPage(${idx})" title="${t.ccu_code} (${t.ccu_name})">${t.ccu_code}</button>`
+            + `onclick="goToCcuPage(${idx}, true)" title="${t.ccu_code} (${t.ccu_name})">${t.ccu_code}</button>`
         ).join('');
         document.getElementById('ccuPagerPills').innerHTML = pills;
         pager.style.display = 'flex';

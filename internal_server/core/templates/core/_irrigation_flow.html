@@ -1,0 +1,75 @@
+{% comment %}
+浇水量表格（灌溉数据页 chart 视图）。
+数据流：mdb XA_FLOZO → 导入命令按灌溉日聚合 → MaxicomFlowDaily（流量计）；
+站点估算 = MaxicomRuntime 运行分钟 × MaxicomStationFlowFactor（L/min）。
+合计 = Maxicom 桌面端「浇水量」口径。
+两种形态（与 JS renderFlow 保持同构）：
+· 全部 CCU —— 每 CCU 一行（流量计/估算/合计）+ 总计；
+· 选中单个 CCU —— 主表为该 CCU 的流量区明细（zone 名 + 升），
+  头部汇总行给出该 CCU 的流量计/估算/合计。
+{% endcomment %}
+{% if flow_rows %}
+  {% if flow_zone_rows %}
+    {# ── 单 CCU：zone 明细为主表 ── #}
+    <div style="font-size:.82rem;margin-bottom:6px;">
+      {{ flow_rows.0.ccu }}（{{ flow_rows.0.name }}）：
+      流量计 <b>{{ flow_rows.0.meter_l_str }}</b> L ·
+      站点估算 <b>{{ flow_rows.0.est_l_str }}</b> L ·
+      合计 <b>{{ flow_rows.0.total_l_str }}</b> L
+    </div>
+    <div style="overflow-x:auto;">
+      <table class="matrix-table">
+        <thead><tr><th>Zone</th><th>流量区名称</th><th>浇水量 (L)</th></tr></thead>
+        <tbody>
+          {% for z in flow_zone_rows %}
+          <tr>
+            <td class="sticky-col-sub">z{{ z.zone }}</td>
+            <td class="sticky-col-sub">{{ z.name }}</td>
+            <td class="cell">{{ z.liters_str }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+        <tfoot>
+          <tr><th colspan="2">流量计合计</th><th>{{ flow_totals.meter_str }}</th></tr>
+        </tfoot>
+      </table>
+    </div>
+  {% else %}
+    {# ── 全部 CCU：每 CCU 一行 ── #}
+    <div style="overflow-x:auto;">
+      <table class="matrix-table">
+        <thead>
+          <tr>
+            <th>CCU</th><th>名称</th>
+            <th>流量计 (L)</th><th>站点估算 (L)</th><th>合计 (L)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in flow_rows %}
+          <tr>
+            <td class="sticky-col-sub">{{ r.ccu }}</td>
+            <td class="sticky-col-sub">{{ r.name }}</td>
+            <td class="cell">{{ r.meter_l_str }}</td>
+            <td class="cell">{{ r.est_l_str }}</td>
+            <td class="row-total">{{ r.total_l_str }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+        <tfoot>
+          <tr>
+            <th colspan="2">合计</th>
+            <th>{{ flow_totals.meter_str }}</th>
+            <th>{{ flow_totals.est_str }}</th>
+            <th>{{ flow_totals.total_str }}</th>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  {% endif %}
+<p style="font-size:.74rem;color:var(--color-text-muted,#888);margin:6px 0 0;">
+  流量计 = mdb XA_FLOZO 按灌溉日聚合（随 maxicom 导入更新）；站点估算 = 运行分钟 × 站点流量系数；
+  合计与 Maxicom 桌面端「浇水量」口径一致（系数为 0 的主阀不计）。选单个 CCU 后点「查询」切换为该 CCU 的流量区明细。
+</p>
+{% else %}
+<div class="chart-empty">该窗口无浇水量数据（等待 maxicom 导入或调整时间范围）</div>
+{% endif %}

@@ -56,6 +56,7 @@ from collections import defaultdict
 from django.core.management.base import BaseCommand
 from django.db import transaction
 from core.models import Patch, MaxicomRuntime, MaxicomController
+from core.models import MaxicomFlowZone, MaxicomFlowDaily, MaxicomStationFlowFactor
 
 CCU_RE = re.compile(r'^CCU(\d+)$', re.IGNORECASE)
 BATCH = 1000
@@ -78,7 +79,7 @@ def _mdb_rows(mdb_path, table):
 
 
 class Command(BaseCommand):
-    help = 'Import CTROL_CF controllers + STATN_CF stations + runtime (XA_LOG M polls merged with XA_RuntimeProject minute runs, raw timestamps) from a Maxicom2.mdb (Linux/mdbtools, CCU-safe)'
+    help = 'Import CTROL_CF controllers + STATN_CF stations + runtime (XA_LOG M polls merged with XA_RuntimeProject minute runs, raw timestamps) + flow zones/daily liters (FLOZO_CF/XA_FLOZO by irrigation day) + station flow factors, from a Maxicom2.mdb (Linux/mdbtools, CCU-safe)'
 
     def add_arguments(self, parser):
         parser.add_argument('--mdb', type=str, required=True,
@@ -380,6 +381,111 @@ class Command(BaseCommand):
         self.stdout.write(self.style.SUCCESS(
             f'Runtime (XA_LOG M + XA_RuntimeProject merged, raw ts): {created_rt} rows, '
             f'{skipped_no_site} no-CCU-skipped'
+        ))
+
+        # ── 4. FLOZO_CF + XA_FLOZO → 流量区字典 + 灌溉日浇水量 ──────────
+        # XA_FLOZO 每次轮询一行：XactIndex→FLOZO_CF.IndexNumber，
+        # FlowZoneValue × FlowZoneMultiplier = 该次轮询内的升数，SiteID 为
+        # FLOZO 站点号。聚合按灌溉日 [D-1 22:00 → D 21:59]（时间戳 ≥22:00
+        # 归次日），与灌溉数据页/导出的日窗口一致，页面按天求和即可。
+        # Maxicom 桌面端的「浇水量」= 本流量计聚合 + 站点运行估算
+        # （run_time × 站点系数）；系数快照存 MaxicomStationFlowFactor
+        # （MV 等未配置站 = 0，与桌面端口径一致，已验证 site 8 吻合 98.8%）。
+
+        # 4a. 字典（FLOZO_CF）→ MaxicomFlowZone
+        zone_objs, zone_site_id, skipped_zones = [], {}, 0
+        for r in _mdb_rows(mdb_path, 'FLOZO_CF'):
+            try:
+                idx = int(r.get('IndexNumber') or 0)
+                site_no = int(r.get('FlowZoneSiteNumber') or 0)
+            except (TypeError, ValueError):
+                continue
+            if not idx:
+                continue
+            site = site_map.get(site_no)
+            if site is None:
+                skipped_zones += 1     # 无 CCU 补丁的站点（twatch 等测试区）
+                continue
+            zone_objs.append(MaxicomFlowZone(
+                site=site, mdb_index=idx,
+                name=_sq(r.get('IndexName')) or f'Zone {idx}',
+                join_site=_sq(r.get('FlowZoneJoinSite')).strip().upper() == 'Y'))
+            zone_site_id[idx] = site.id
+
+        # 4b. XA_FLOZO 流式聚合 (day, zone) → [liters, minutes]
+        # ~400 万行：不能走 _mdb_rows（capture_output 会把整表读进内存），
+        # 改 Pipe 流式逐行读；-Q -d '|' 无引号且列全为数字/时间戳，split 即可。
+        agg = defaultdict(lambda: [0, 0])
+        proc = subprocess.Popen(
+            ['mdb-export', '-Q', '-d', '|', mdb_path, 'XA_FLOZO'],
+            stdout=subprocess.PIPE, text=True)
+        header = proc.stdout.readline().rstrip('\n').split('|')
+        ci = {c: i for i, c in enumerate(header)}
+        i_stamp, i_idx = ci['XactStamp'], ci['XactIndex']
+        i_val, i_mult, i_site = ci['FlowZoneValue'], ci['FlowZoneMultiplier'], ci['SiteID']
+        for line in proc.stdout:
+            f = line.rstrip('\n').split('|')
+            try:
+                ts = f[i_stamp]
+                idx = int(f[i_idx])
+                val = int(f[i_val] or 0)
+                mult = int(f[i_mult] or 1)
+            except (IndexError, ValueError):
+                continue
+            if not ts or len(ts) < 8 or not idx:
+                continue
+            day = ts[:8]
+            if ts[8:12] >= '2200':     # 灌溉日翻日
+                d = datetime.datetime.strptime(day, '%Y%m%d') + datetime.timedelta(days=1)
+                day = d.strftime('%Y%m%d')
+            a = agg[(day, idx)]
+            a[0] += val * mult
+            if val > 0:
+                a[1] += 1
+        proc.stdout.close()
+        proc.wait()
+
+        # 4c. 站点流量系数快照（STATN_CF.StationFlowFactor，L/min）
+        # STATN_CF 的 IndexNumber 会重复——同号站改动后留历史行（DateClose
+        # 非空）。只取有效行（DateClose 为空）；仍重复时保留 DateOpen 最新。
+        factor_map = {}
+        for r in _mdb_rows(mdb_path, 'STATN_CF'):
+            try:
+                idx = int(r.get('IndexNumber') or 0)
+                fac = float(r.get('StationFlowFactor') or 0)
+            except (TypeError, ValueError):
+                continue
+            if not idx or _sq(r.get('DateClose')):
+                continue
+            opened = _sq(r.get('DateOpen'))
+            if idx not in factor_map or opened > factor_map[idx][0]:
+                factor_map[idx] = (opened, max(fac, 0.0))
+        factor_rows = [MaxicomStationFlowFactor(station_raw=i, factor=f[1])
+                       for i, f in factor_map.items()]
+
+        # 4d. 全量重建（字典 → 日聚合 → 系数），一个事务
+        daily_objs = []
+        with transaction.atomic():
+            MaxicomFlowDaily.objects.all().delete()
+            MaxicomFlowZone.objects.all().delete()
+            MaxicomFlowZone.objects.bulk_create(zone_objs)
+            zid_map = dict(MaxicomFlowZone.objects.values_list('mdb_index', 'id'))
+            for (day, idx), (liters, minutes) in agg.items():
+                zid = zid_map.get(idx)
+                if zid is None:
+                    continue           # 无 CCU 站点的 zone 数据不入库
+                daily_objs.append(MaxicomFlowDaily(
+                    flow_day=day, zone_id=zid, site_id=zone_site_id.get(idx),
+                    liters=liters, minutes=minutes))
+            MaxicomFlowDaily.objects.bulk_create(daily_objs, batch_size=BATCH)
+            MaxicomStationFlowFactor.objects.all().delete()
+            MaxicomStationFlowFactor.objects.bulk_create(factor_rows, batch_size=BATCH)
+
+        self.stdout.write(self.style.SUCCESS(
+            f'Flow: {MaxicomFlowZone.objects.count()} zones '
+            f'({skipped_zones} no-CCU-skipped), '
+            f'{MaxicomFlowDaily.objects.count()} zone-days, '
+            f'{MaxicomStationFlowFactor.objects.count()} station factors'
         ))
         self.stdout.write(self.style.SUCCESS(
             f'Done: {Patch.objects.count()} patches, '
