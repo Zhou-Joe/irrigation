@@ -1090,6 +1090,52 @@ class MaxicomRuntime(models.Model):
         return f"Runtime {self.site.name} @ {self.timestamp}"
 
 
+class MaxicomFlowDaily(models.Model):
+    """ mdb XA_FLOZO 按灌溉日聚合的浇水量（升）。
+
+    XA_FLOZO 每次轮询一行（FlowZoneValue × FlowZoneMultiplier = 本次轮询
+    内的升数）；导入时按灌溉日窗口 [D-1 22:00 → D 21:59] 聚合成一天一行
+    ——与灌溉数据页/PDF/Excel 的日窗口完全一致，页面任意日期范围查询
+    直接按天求和即可。zone 指向既有 MaxicomFlowZone（FLOZO_CF 字典，
+    mdb_index=FLOZO IndexNumber）。Maxicom 桌面端的"浇水量"= 本表流量计
+    值 + 站点运行估算（MaxicomRuntime × MaxicomStationFlowFactor）。
+    """
+    flow_day = models.CharField('灌溉日 YYYYMMDD', max_length=8, db_index=True)
+    zone = models.ForeignKey(MaxicomFlowZone, on_delete=models.CASCADE, related_name='daily')
+    site = models.ForeignKey(Patch, on_delete=models.SET_NULL, null=True, blank=True,
+                             related_name='flow_daily', verbose_name='CCU')
+    liters = models.IntegerField('浇水量(升)')
+    minutes = models.IntegerField('有流量的分钟数', default=0)
+
+    class Meta:
+        verbose_name = 'Maxicom浇水量(日)'
+        verbose_name_plural = 'Maxicom浇水量(日)'
+        constraints = [models.UniqueConstraint(fields=['flow_day', 'zone'], name='uniq_flow_day_zone')]
+        indexes = [models.Index(fields=['site', 'flow_day'])]
+
+    def __str__(self):
+        return f'{self.flow_day} z{self.zone.mdb_index} {self.liters}L'
+
+
+class MaxicomStationFlowFactor(models.Model):
+    """ mdb STATN_CF.StationFlowFactor 快照 — 每站流量系数（升/分钟）。
+
+    站点估算浇水量 = Σ(运行分钟 × 系数)。主阀(MV)等未配置的站系数为 0，
+    与 Maxicom 桌面端口径一致（其差值即来自 MV/未配置站）。每次 mdb 导入
+    全量重建；station_raw 即 STATN_CF.IndexNumber，与
+    MaxicomRuntime.station_id_raw 对应。
+    """
+    station_raw = models.IntegerField('STATN_CF IndexNumber', primary_key=True)
+    factor = models.FloatField('流量系数 L/min', default=0)
+
+    class Meta:
+        verbose_name = 'Maxicom站点流量系数'
+        verbose_name_plural = 'Maxicom站点流量系数'
+
+    def __str__(self):
+        return f'st{self.station_raw} {self.factor:.2f} L/min'
+
+
 class EquipmentCatalog(models.Model):
     """Catalog of equipment models that can be reused across zones."""
 

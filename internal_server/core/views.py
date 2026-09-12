@@ -7639,6 +7639,77 @@ def irrigation_dashboard(request):
     today_iso = timezone.localdate().isoformat()
     data_span_dt = (_iso_dt(span_from), _iso_dt(span_to))
 
+    # --- 浇水量表格（mdb 流量计导入 + Django 站点运行估算）─────────────
+    # 流量计：MaxicomFlowDaily 由导入命令按灌溉日 [D-1 22:00 → D 21:59]
+    # 聚合（XA_FLOZO value×multiplier），窗口与 _irrig_window 的灌溉日边界
+    # 对齐时按天求和即精确值。站点估算：窗口内每站运行分钟 × 站点流量系数
+    # （STATN_CF 快照，L/min）。合计 = Maxicom 桌面端「浇水量」口径
+    # （2026-09-12 site 8 验证吻合 98.8%；差额为系数 0 的主阀 MV）。
+    import datetime as _dt
+    from core.models import MaxicomFlowDaily, MaxicomStationFlowFactor
+    flow_rows, flow_zone_rows = [], []
+    if date_from[:8] and date_to[:8]:
+        d0 = _dt.datetime.strptime(date_from[:8], '%Y%m%d').date()
+        d1 = _dt.datetime.strptime(date_to[:8], '%Y%m%d').date()
+        days = [(d0 + timedelta(days=i)).strftime('%Y%m%d')
+                for i in range(min((d1 - d0).days, 366) + 1)]
+        flow_ccus = [ccu_obj] if ccu_obj is not None else list(ccus)
+        ccu_ids = {c.id for c in flow_ccus}
+        meter = defaultdict(int)
+        for site_id, liters in MaxicomFlowDaily.objects.filter(
+                flow_day__in=days, site_id__in=ccu_ids
+                ).values_list('site_id').annotate(liters=Sum('liters')):
+            meter[site_id] = liters or 0
+        fac = dict(MaxicomStationFlowFactor.objects.values_list('station_raw', 'factor'))
+        est = defaultdict(float)
+        for site_id, sraw, mins in (
+                MaxicomRuntime.objects
+                .filter(timestamp__gte=ts_from, timestamp__lte=ts_to, site_id__in=ccu_ids)
+                .values_list('site_id', 'station_id_raw')
+                .annotate(mins=Sum('run_time'))):
+            est[site_id] += (mins or 0) * fac.get(sraw, 0.0)
+        for c in flow_ccus:
+            m, e = meter.get(c.id, 0), int(round(est.get(c.id, 0.0)))
+            if m or e:
+                flow_rows.append({
+                    'ccu_id': c.id, 'ccu': c.code, 'name': c.name,
+                    'meter_l': m, 'est_l': e, 'total_l': m + e,
+                    'meter_l_str': f'{m:,}', 'est_l_str': f'{e:,}', 'total_l_str': f'{m + e:,}',
+                })
+        # zone 明细：单 CCU 时直接带（flow_zone_rows）；全部模式带
+        # flow_zones_by_ccu（每 CCU 一组），点 CCU 分页 pill 时前端即时
+        # 切换浇水量表，不再发请求。一次分组查询，zone 总数仅几十行。
+        def _zone_rows(site_id):
+            return [{
+                'zone': z['zone__mdb_index'], 'name': z['zone__name'],
+                'liters': z['liters'] or 0, 'liters_str': f'{z["liters"] or 0:,}',
+            } for z in (MaxicomFlowDaily.objects
+                        .filter(flow_day__in=days, site_id=site_id)
+                        .values('zone__mdb_index', 'zone__name')
+                        .annotate(liters=Sum('liters'))
+                        .order_by('-liters'))]
+        flow_zones_by_ccu = {}
+        if ccu_obj is not None:
+            flow_zone_rows = _zone_rows(ccu_obj.id)
+        else:
+            for z in (MaxicomFlowDaily.objects
+                      .filter(flow_day__in=days, site_id__in=ccu_ids)
+                      .values('site_id', 'zone__mdb_index', 'zone__name')
+                      .annotate(liters=Sum('liters')).order_by('-liters')):
+                flow_zones_by_ccu.setdefault(str(z['site_id']), []).append({
+                    'zone': z['zone__mdb_index'], 'name': z['zone__name'],
+                    'liters': z['liters'] or 0, 'liters_str': f'{z["liters"] or 0:,}',
+                })
+
+    flow_totals = {
+        'meter': sum(r['meter_l'] for r in flow_rows),
+        'est': sum(r['est_l'] for r in flow_rows),
+        'total': sum(r['total_l'] for r in flow_rows),
+    }
+    flow_totals.update(meter_str=f"{flow_totals['meter']:,}",
+                       est_str=f"{flow_totals['est']:,}",
+                       total_str=f"{flow_totals['total']:,}")
+
     context = {
         'is_admin': is_admin,
         'ccus': ccus,
@@ -7657,6 +7728,11 @@ def irrigation_dashboard(request):
         'max_cell': max_cell,
         'total_stations': total_stations_with_runtime,
         'show_ccu_col': show_ccu_col,
+        # 浇水量表格（chart 视图；AJAX 刷新时由 renderFlow 重绘）
+        'flow_rows': flow_rows,
+        'flow_zone_rows': flow_zone_rows,
+        'flow_zones_by_ccu': flow_zones_by_ccu,
+        'flow_totals': flow_totals,
         # 全部 mode only: one entry per CCU so the client can page between
         # per-CCU matrices. Empty for a specific-CCU selection (the top-level
         # keys above already hold that single CCU's table).
@@ -7679,6 +7755,9 @@ def irrigation_dashboard(request):
             'date_to': date_to,
             'show_ccu_col': show_ccu_col,
             'ccu_tables': ccu_tables,
+            'flow_rows': flow_rows,
+            'flow_zone_rows': flow_zone_rows,
+            'flow_zones_by_ccu': flow_zones_by_ccu,
         })
 
     return render(request, 'core/irrigation_dashboard.html', context)
