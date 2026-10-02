@@ -221,6 +221,18 @@ map. Desktop (max-width:768px is false) is unaffected.{% endcomment %}
                     <span>水管</span>
                 </label>
                 <label class="map-layer-item">
+                    <input type="checkbox" onchange="toggleLayer('cad_reference', this.checked)">
+                    <span class="map-layer-checkmark"></span><span>CAD 参考线</span>
+                </label>
+                <label class="map-layer-item">
+                    <input type="checkbox" onchange="toggleLayer('cad_notes', this.checked)">
+                    <span class="map-layer-checkmark"></span><span>CAD 标注</span>
+                </label>
+                <label class="map-layer-item">
+                    <input type="checkbox" checked onchange="toggleLayer('cad_unmatched', this.checked)">
+                    <span class="map-layer-checkmark"></span><span>待挂接设备</span>
+                </label>
+                <label class="map-layer-item">
                     <input type="checkbox" onchange="toggleLayer('landmarks', this.checked)">
                     <span class="map-layer-checkmark"></span>
                     <span>地标区域</span>
@@ -418,7 +430,7 @@ map. Desktop (max-width:768px is false) is unaffected.{% endcomment %}
 <script id="pending-remarks" type="application/json">{{ pending_remarks_json|safe }}</script>
 <script id="pm-tasks-data" type="application/json">{{ pm_tasks_json|safe }}</script>
 <!-- Custom Map JS -->
-<script src="{% static 'js/map.js' %}?v=20260908"></script>
+<script src="{% static 'js/map.js' %}?v=20261002a"></script>
 <script src="{% static 'js/dashboard-modal.js' %}?v=20260814a"></script>
 <script>
 // Override the notification popup's PM-task "填写" handler: on the dashboard we

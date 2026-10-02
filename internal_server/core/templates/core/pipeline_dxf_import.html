@@ -1,195 +1,88 @@
 {% extends 'core/base.html' %}
 {% load static %}
-{% comment %}DXF 管线导入：全屏地图 + 右侧可折叠流程面板（上传→映射→预览→导入）。{% endcomment %}
-
-{% block title %}DXF 管线导入 - 灌溉管理系统{% endblock %}
-
+{% block title %}导入管网 - 灌溉管理系统{% endblock %}
 {% block extra_css %}
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-<style>
-  /* 全屏布局：地图占满导航以下的剩余空间，流程面板固定在右侧 */
-  .pdxf-app { display: flex; height: calc(100vh - 52px); background: #f4f7f5; }
-  .pdxf-mapwrap { position: relative; flex: 1; min-width: 0; }
-  #pdxfMap { position: absolute; inset: 0; background: #e8ecef; }
-  .pdxf-side { width: 470px; flex: 0 0 470px; overflow-y: auto; background: #fff;
-               border-left: 1px solid #e2e8e4; padding: 12px 14px 40px; }
-  .pdxf-side h1 { font-size: 1.1rem; margin: 2px 0 4px; color: var(--color-primary, #2D6A4F); }
-  .pdxf-intro { font-size: .76rem; color: #888; margin: 0 0 8px; line-height: 1.5; }
-  .pdxf-steps { display: flex; gap: 4px; margin-bottom: 10px; flex-wrap: wrap; }
-  .pdxf-step { font-size: .72rem; padding: 3px 10px; border-radius: 12px; background: #eef3ef; color: #888; }
-  .pdxf-step.on { background: var(--color-primary, #2D6A4F); color: #fff; font-weight: 600; }
-  /* 可折叠卡片 */
-  .pdxf-card { border: 1px solid #e2e8e4; border-radius: 10px; margin-bottom: 10px; background: #fff; }
-  .pdxf-card-head { display: flex; align-items: center; gap: 8px; padding: 9px 12px; cursor: pointer;
-                    user-select: none; background: #f7faf8; border-radius: 10px; }
-  .pdxf-card-head:hover { background: #eef4f0; }
-  .pdxf-card-head h2 { margin: 0; font-size: .9rem; color: var(--color-primary, #2D6A4F); flex: 1; }
-  .pdxf-card-head .pdxf-fold { color: #97a79d; font-size: .8rem; transition: transform .15s; }
-  .pdxf-card.open .pdxf-fold { transform: rotate(90deg); }
-  .pdxf-card-body { display: none; padding: 10px 12px; border-top: 1px solid #edf2ee; }
-  .pdxf-card.open .pdxf-card-body { display: block; }
-  .pdxf-card .pdxf-badge { font-size: .7rem; background: #eef3ef; color: #666; border-radius: 10px; padding: 2px 8px; }
-  .pdxf-hint { font-size: .74rem; color: #999; margin: 0 0 8px; line-height: 1.5; }
-  table.pdxf-table { width: 100%; border-collapse: collapse; font-size: .76rem; }
-  table.pdxf-table th { background: #1B4332; color: #fff; font-size: .7rem; padding: 5px 6px; border: 1px solid #fff; text-align: center; }
-  table.pdxf-table td { padding: 4px 6px; border-bottom: 1px solid #f0f0f0; text-align: center; }
-  table.pdxf-table tr:hover td { background: #e8f5e9; }
-  .pdxf-btn { padding: 7px 16px; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: .84rem; }
-  .pdxf-btn-primary { background: var(--color-primary, #2D6A4F); color: #fff; }
-  .pdxf-btn-secondary { background: #eef3ef; color: #2D6A4F; }
-  .pdxf-btn:disabled { opacity: .5; cursor: not-allowed; }
-  .pdxf-input, .pdxf-select { padding: 4px 8px; border: 1px solid #ddd; border-radius: 6px; font-size: .78rem; }
-  .pdxf-chip { display: inline-block; padding: 2px 10px; border-radius: 12px; background: #eef3ef; color: #555; font-size: .74rem; margin: 2px; }
-  .pdxf-result { background: #e8f5e9; border: 1px solid #b7dfc1; border-radius: 10px; padding: 12px; font-size: .84rem; line-height: 1.7; }
-  .pdxf-layer-legend-color { cursor: pointer; text-decoration: underline dotted; }
-  .pdxf-adjust.leaflet-control a, .pdxf-adjust button { cursor: pointer; }
-  .pdxf-adjust button { display: block; width: 100%; padding: 5px 8px; font-size: .74rem;
-    background: #fff; color: #333; border: none; border-bottom: 1px solid #e8e8e8; }
-  .pdxf-adjust button:hover { background: #f0f6f2; }
-  /* 地图上的图例（Leaflet control，左下角） */
-  .pdxf-legend.leaflet-control { background: #fff; padding: 8px 10px; border-radius: 8px;
-    box-shadow: 0 1px 4px rgba(0,0,0,.2); font-size: .74rem; line-height: 1.7; max-height: 42vh; overflow-y: auto; min-width: 130px; }
-  .pdxf-legend .sw { display: inline-block; width: 18px; height: 4px; border-radius: 2px; vertical-align: middle; margin-right: 5px; }
-  /* 窄屏退化为上下布局 */
-  @media (max-width: 900px) {
-    .pdxf-app { flex-direction: column; height: auto; }
-    .pdxf-mapwrap { flex: none; height: 55vh; }
-    .pdxf-side { width: auto; flex: none; border-left: none; border-top: 1px solid #e2e8e4; }
-  }
-</style>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="{% static 'css/dxf-import.css' %}?v=20261002c">
 {% endblock %}
-
 {% block content %}
 <div class="pdxf-app">
-  <div class="pdxf-mapwrap"><div id="pdxfMap"></div></div>
+  <aside class="pdxf-side">
+    <header class="pdxf-header"><a href="{% url 'core:dashboard' %}">← 地图总览</a><h1>导入管网</h1><p>保留 CAD 原图，按步骤导入管线、设备和标注。</p></header>
+    <nav class="pdxf-steps" aria-label="导入步骤">
+      <button id="pdxfStep1" class="pdxf-step on" onclick="pdxfGoStep(1)"><span>1</span>上传</button>
+      <button id="pdxfStep2" class="pdxf-step" onclick="pdxfGoStep(2)" disabled><span>2</span>选择</button>
+      <button id="pdxfStep3" class="pdxf-step" onclick="pdxfGoStep(3)" disabled><span>3</span>对齐</button>
+      <button id="pdxfStep4" class="pdxf-step" onclick="pdxfGoStep(4)" disabled><span>4</span>导入</button>
+    </nav>
+    <div class="pdxf-panels">
+      <section data-step="1" id="pdxfUploadCard" class="pdxf-card open" aria-labelledby="pdxfUploadTitle">
+        <h2 id="pdxfUploadTitle">选择 CAD 图纸</h2><p class="pdxf-hint">上传 .dxf 文件，直接叠到地图上预览，再选择内容和对齐位置。</p>
+        <div class="pdxf-drop" id="pdxfDropZone"><span class="pdxf-file-icon" aria-hidden="true">↥</span><strong>拖放 DXF 文件到这里</strong><span>或选择本地文件</span><input type="file" id="pdxfFile" accept=".dxf" aria-label="选择 DXF 文件" onchange="pdxfFileChanged()"></div>
+        <div id="pdxfFileInfo" class="pdxf-file-info" hidden></div>
+        <button type="button" class="pdxf-btn pdxf-btn-primary pdxf-wide" id="pdxfAnalyzeBtn" onclick="pdxfAnalyze()" disabled>解析并叠到地图</button>
+        <div id="pdxfAnalyzeStatus" class="pdxf-status" role="status" aria-live="polite"></div>
+        <div class="pdxf-note"><b>哪些信息会保留？</b><p>管线、块符号、完整文字与设备属性。未选中的线保留作参考，未匹配的设备保留待处理。</p></div>
+        <details class="pdxf-existing"><summary>重新定位已导入的批次</summary><label for="pdxfCalBatch">选择批次</label><select id="pdxfCalBatch" class="pdxf-select" onchange="pdxfBatchChanged()"><option value="">请选择批次</option>{% for batch in import_batches %}<option value="{{ batch.id }}" data-token="{{ batch.source_token }}">{{ batch.name }}</option>{% endfor %}</select><button type="button" class="pdxf-btn pdxf-btn-secondary" onclick="pdxfLoadBatch()">加载原始坐标并对齐</button></details>
+      </section>
+      <section data-step="2" id="pdxfMapCard" class="pdxf-card" hidden aria-labelledby="pdxfMappingTitle">
+        <h2 id="pdxfMappingTitle">选择要导入的内容</h2><p id="pdxfCoverage" class="pdxf-hint"></p><p id="pdxfCoordInfo" class="pdxf-muted"></p>
+        <div id="pdxfSelectionSummary" class="pdxf-selection-summary" aria-live="polite"></div>
+        <div class="pdxf-tabs" role="tablist" aria-label="内容类型"><button id="pdxfPipeTab" role="tab" aria-selected="true" aria-controls="pdxfPipePanel" onclick="pdxfMappingTab('pipes')">管线</button><button id="pdxfDeviceTab" role="tab" aria-selected="false" aria-controls="pdxfDevicePanel" onclick="pdxfMappingTab('devices')">设备</button><button id="pdxfNoteTab" role="tab" aria-selected="false" aria-controls="pdxfNotePanel" onclick="pdxfMappingTab('notes')">标注</button></div>
+        <input id="pdxfMappingSearch" class="pdxf-input pdxf-search" type="search" aria-label="搜索图层或设备" placeholder="搜索图层或设备名称…" oninput="pdxfFilterMapping()">
+        <div id="pdxfPipePanel" role="tabpanel" aria-labelledby="pdxfPipeTab"><p class="pdxf-hint">选择管线图层，并核对管径与用途。点击名称可在叠图中定位。</p><div class="pdxf-table-scroll"><table class="pdxf-table"><thead><tr><th>导入</th><th>图层 / 段数</th><th>管径 mm</th><th>用途</th></tr></thead><tbody id="pdxfLayerBody"></tbody></table></div><p id="pdxfSymbolHint" class="pdxf-muted"></p></div>
+        <div id="pdxfDevicePanel" role="tabpanel" aria-labelledby="pdxfDeviceTab" hidden><p class="pdxf-hint">块实例作为设备导入。距离管线过远的设备会保留待挂接。</p><div class="pdxf-table-scroll"><table class="pdxf-table"><thead><tr><th>导入</th><th>设备 / 数量</th><th>设备类型</th></tr></thead><tbody id="pdxfBlockBody"></tbody></table></div></div>
+        <div id="pdxfNotePanel" role="tabpanel" aria-labelledby="pdxfNoteTab" hidden><p class="pdxf-hint">完整标注始终保留。选择哪些标注层用于查找设备名称。</p><div id="pdxfLabelBox" class="pdxf-label-options"></div></div>
+        <details class="pdxf-diagnostics"><summary>解析说明与未支持的实体</summary><div id="pdxfDiagnostics"></div></details>
+      </section>
+      <section data-step="3" id="pdxfCalCard" class="pdxf-card" hidden aria-labelledby="pdxfAlignmentTitle">
+        <h2 id="pdxfAlignmentTitle">对齐到卫星地图</h2><p class="pdxf-hint">只调整整张图的比例、旋转和位置，保持 CAD 的形状与相对尺寸。</p>
+        <div id="pdxfCalCurrent" class="pdxf-note"></div>
+        <details class="pdxf-coarse" open><summary>先把 CAD 大致摆到对应位置</summary><p class="pdxf-hint">初步叠图用于辨认线条。可移动、旋转、等比缩放；选点后会锁定粗调，位置仍需验证。</p><div class="pdxf-action-row"><button class="pdxf-btn pdxf-btn-secondary" id="pdxfMoveBtn" onclick="pdxfPlacementToggle()">移动 CAD</button><button class="pdxf-btn pdxf-btn-secondary" data-placement onclick="pdxfPlacementCenter()">放到地图中心</button></div><div class="pdxf-action-row"><button class="pdxf-btn pdxf-btn-secondary" data-placement onclick="pdxfPlacementAdjust(5,1)">↶ 5°</button><button class="pdxf-btn pdxf-btn-secondary" data-placement onclick="pdxfPlacementAdjust(-5,1)">↷ 5°</button><button class="pdxf-btn pdxf-btn-secondary" data-placement onclick="pdxfPlacementAdjust(0,1/1.1)">缩小 CAD</button><button class="pdxf-btn pdxf-btn-secondary" data-placement onclick="pdxfPlacementAdjust(0,1.1)">放大 CAD</button></div><p id="pdxfPlacementHint" class="pdxf-muted"></p></details>
+        <ol class="pdxf-alignment-guide"><li>在地图上的 CAD 叠图中选角点或设备点。</li><li>CAD 会临时隐藏，再点卫星图中的同一位置。</li><li>叠图随对应点更新。至少选 <b>3 个对齐点</b>和 <b>1 个独立检查点</b>，再验证保存。</li></ol>
+        <div class="pdxf-pick-role"><label><input type="radio" name="pdxfPickRole" value="control" checked onchange="pdxfCalRoleChanged()">对齐点</label><label><input type="radio" name="pdxfPickRole" value="check" onchange="pdxfCalRoleChanged()">独立检查点</label></div>
+        <div class="pdxf-action-row"><button class="pdxf-btn pdxf-btn-primary" id="pdxfCalStartBtn" onclick="pdxfCalStart()">开始选点</button><button class="pdxf-btn pdxf-btn-secondary" id="pdxfCalStopBtn" onclick="pdxfCalStop()" hidden>暂停选点</button><button class="pdxf-btn pdxf-btn-secondary" id="pdxfCalRetryBtn" onclick="pdxfCalRoleChanged()" hidden>重选此点</button><button class="pdxf-btn pdxf-btn-secondary" onclick="pdxfCalClearDraft()">重新选点</button></div>
+        <div id="pdxfCalStep" class="pdxf-pick-step" role="status" aria-live="polite">先在同一张地图上粗调 CAD，再选择对应点。</div>
+        <table class="pdxf-table pdxf-pairs" id="pdxfCalTable" hidden><thead><tr><th>点 / 用途</th><th>CAD 坐标</th><th>误差</th><th></th></tr></thead><tbody id="pdxfCalPairBody"></tbody></table>
+        <details class="pdxf-coordinates"><summary>输入测量坐标</summary><p class="pdxf-hint">使用上方所选的“对齐点”或“独立检查点”用途。</p><div class="pdxf-coordinate-grid"><label>CAD X<input id="pdxfPointX" type="number" step="any" class="pdxf-input"></label><label>CAD Y<input id="pdxfPointY" type="number" step="any" class="pdxf-input"></label><label>纬度 WGS84<input id="pdxfPointLat" type="number" step="any" class="pdxf-input" min="-90" max="90"></label><label>经度 WGS84<input id="pdxfPointLng" type="number" step="any" class="pdxf-input" min="-180" max="180"></label></div><button class="pdxf-btn pdxf-btn-secondary" onclick="pdxfCalAddCoordinates()">添加坐标对</button></details>
+        <div id="pdxfCalFit" class="pdxf-fit" aria-live="polite"></div>
+        <button class="pdxf-btn pdxf-btn-primary pdxf-wide" id="pdxfCalSaveBtn" onclick="pdxfCalSave()" disabled>验证并保存对齐</button>
+        <button class="pdxf-btn pdxf-btn-primary pdxf-wide" id="pdxfCalApplyBtn" onclick="pdxfCalApplySaved()" hidden>应用到所选批次</button>
+        <div id="pdxfCalStatus" class="pdxf-status" role="status" aria-live="polite"></div>
+        <p class="pdxf-muted">检查点不参与拟合。保存时服务端会重新计算误差；所有点的误差须在 <span id="pdxfAccuracyLimit">5</span> m 内。</p>
+      </section>
+      <section data-step="4" id="pdxfImportCard" class="pdxf-card" hidden aria-labelledby="pdxfReviewTitle">
+        <h2 id="pdxfReviewTitle">检查并导入</h2><p class="pdxf-hint">核对卫星图中的位置与所选内容，再创建管网。</p><div id="pdxfReviewSummary" class="pdxf-review"></div>
+        <label class="pdxf-review-check"><input type="checkbox" id="pdxfReviewConfirmed" onchange="pdxfUpdateWorkflow()">我已核对管线位置、设备和标注</label>
+        <button type="button" class="pdxf-btn pdxf-btn-primary pdxf-wide" id="pdxfImportBtn" onclick="pdxfImport()" disabled>确认导入管网</button><div id="pdxfImportStatus" class="pdxf-status" role="status" aria-live="polite"></div><div id="pdxfResultBox"></div>
+      </section>
 
-  <div class="pdxf-side">
-    <h1>DXF 管线导入</h1>
-    <p class="pdxf-intro">上传 CAD 管网图 → 识别图层（管径）/ 阀门块 / 文字标注 → 地图预览确认 → 创建水管与阀门。坐标按站点标定自动叠加。</p>
-    <div class="pdxf-steps">
-      <span class="pdxf-step on" id="pdxfStep1">① 上传</span>
-      <span class="pdxf-step" id="pdxfStep2">② 映射</span>
-      <span class="pdxf-step" id="pdxfStep3">③ 预览</span>
-      <span class="pdxf-step" id="pdxfStep4">④ 导入</span>
     </div>
-
-    <div class="pdxf-card open" id="pdxfUploadCard">
-      <div class="pdxf-card-head" onclick="pdxfToggle('pdxfUploadCard')">
-        <h2>① 上传解析</h2><span class="pdxf-badge" id="pdxfUploadBadge"></span><span class="pdxf-fold">▶</span>
-      </div>
-      <div class="pdxf-card-body">
-        <p class="pdxf-hint">支持按图层分管径的管网图（图层名含管径数字最佳）；阀门块 <code>WID_Val-*</code>、文字标注（设备编号等）自动识别。</p>
-        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-          <input type="file" id="pdxfFile" accept=".dxf" class="pdxf-input" style="flex:1;min-width:180px;">
-          <button type="button" class="pdxf-btn pdxf-btn-primary" id="pdxfAnalyzeBtn" onclick="pdxfAnalyze()">解析图纸</button>
-        </div>
-        <div id="pdxfAnalyzeStatus" style="margin-top:8px;font-size:.8rem;"></div>
-      </div>
+    <footer class="pdxf-footer"><div id="pdxfWorkflowHint" class="pdxf-muted" aria-live="polite">先上传并解析图纸</div><div class="pdxf-action-row"><button id="pdxfBackBtn" class="pdxf-btn pdxf-btn-secondary" onclick="pdxfGoStep(pdxfBatchMode ? 1 : pdxfStep-1)" hidden>上一步</button><button id="pdxfNextBtn" class="pdxf-btn pdxf-btn-primary" onclick="pdxfGoStep(pdxfStep+1)" disabled>下一步</button></div></footer>
+  </aside>
+  <main class="pdxf-workspace">
+    <div class="pdxf-workspace-head"><div><strong id="pdxfDrawingName">CAD 原图与地图</strong><span id="pdxfMapStatus">等待上传图纸</span></div><a class="pdxf-btn pdxf-btn-secondary" href="{% url 'core:settings' %}">管网管理</a></div>
+    <div class="pdxf-map-tools" aria-label="预览显示"><label><input id="pdxfShowOverlay" type="checkbox" checked onchange="pdxfToggleOverlay()">CAD 叠图</label><label><input id="pdxfShowReference" type="checkbox" checked onchange="pdxfRefreshMap()">原图参考线</label><label><input id="pdxfShowDevices" type="checkbox" checked onchange="pdxfRefreshMap()">设备</label><label><input id="pdxfShowNotes" type="checkbox" onchange="pdxfRefreshMap()">标注（放大显示）</label><label><input id="pdxfShowExisting" type="checkbox" onchange="pdxfShowExisting()">已有管网（虚线）</label><label class="pdxf-opacity">叠图透明度<input id="pdxfOpacity" type="range" min="20" max="100" value="70" oninput="pdxfRefreshMap()"></label><button class="pdxf-btn pdxf-btn-secondary" onclick="pdxfFitDrawing()">查看全图</button><button class="pdxf-btn pdxf-btn-secondary" onclick="pdxfOpenOriginal()">查看 CAD 原图</button></div>
+    <div class="pdxf-map-grid">
+      <section class="pdxf-map-panel"><div class="pdxf-map-caption"><b>CAD + 卫星地图</b><span id="pdxfSatelliteHint">解析后先显示初步叠图，再选点对齐</span></div><div class="pdxf-map-area"><div id="pdxfMap"></div><div id="pdxfCadEmpty" class="pdxf-empty"><b>在同一张地图上对齐 CAD</b><span>解析后会立即显示初步叠图，可先粗调位置，再选择对应点。</span></div></div></section>
     </div>
-
-    <div class="pdxf-card" id="pdxfCalCard">
-      <div class="pdxf-card-head" onclick="pdxfToggle('pdxfCalCard')">
-        <h2>📍 比例校准（多点）</h2><span class="pdxf-badge" id="pdxfCalBadge"></span><span class="pdxf-fold">▶</span>
-      </div>
-      <div class="pdxf-card-body">
-        <div id="pdxfCalCurrent" style="font-size:.78rem;color:#666;margin-bottom:6px;"></div>
-        <p class="pdxf-hint" id="pdxfCalIntro">DXF 图层与卫星图有比例/角度偏差时用对应点校准：每组先点 <b>DXF 图上的点</b>（自动吸附最近的管点/阀门），再点 <b>卫星图上的同一位置</b>。三种拟合方案：<b>多点橡皮筋 TPS（推荐，4~300 点）</b> — 卫星图有局部畸变时唯一能精准贴合的方案，每个控制点精确落位、点间平滑变形（GIS 配准标准算法）；<b>三点最小二乘</b> — 只有整体比例/角度偏差时够用；<b>两点精确 + 验证</b> — 快速定解。TPS 要点撒满整个园区（范围外的区域会外推发飘），路牙、建筑角等清晰地物优先。</p>
-        <div style="display:flex;gap:14px;flex-wrap:wrap;font-size:.78rem;margin-bottom:6px;">
-          <label style="cursor:pointer;"><input type="radio" name="pdxfCalMode" value="tps" checked onchange="pdxfCalModeChanged()"> 多点橡皮筋 TPS（≥4 点，推荐）</label>
-          <label style="cursor:pointer;"><input type="radio" name="pdxfCalMode" value="mls" onchange="pdxfCalModeChanged()"> MLS 边界稳定（≥4 点）</label>
-          <label style="cursor:pointer;"><input type="radio" name="pdxfCalMode" value="ls3" onchange="pdxfCalModeChanged()"> 三点最小二乘</label>
-          <label style="cursor:pointer;"><input type="radio" name="pdxfCalMode" value="exact2" onchange="pdxfCalModeChanged()"> 两点精确 + 第三点验证</label>
-        </div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;">
-          <button type="button" class="pdxf-btn pdxf-btn-primary" id="pdxfCalStartBtn" onclick="pdxfCalStart()">开始校准</button>
-          <button type="button" class="pdxf-btn" id="pdxfCalStopBtn" style="display:none;" onclick="pdxfCalStop()">退出校准</button>
-          <button type="button" class="pdxf-btn pdxf-btn-primary" id="pdxfCalDoneBtn" style="display:none;" onclick="pdxfCalFinishPick()">✓ 完成选点（TPS）</button>
-        </div>
-        <div id="pdxfCalStep" style="margin-top:8px;font-size:.84rem;font-weight:600;"></div>
-        <table class="pdxf-table" id="pdxfCalTable" style="display:none;margin-top:6px;">
-          <thead><tr><th>#</th><th>DXF 点（局部坐标）</th><th>卫星点（经纬度）</th><th>残差</th><th></th></tr></thead>
-          <tbody id="pdxfCalPairBody"></tbody>
-        </table>
-        <div id="pdxfCalFit" style="margin-top:8px;font-size:.82rem;"></div>
-        <div id="pdxfCalActions" style="display:none;gap:8px;flex-wrap:wrap;margin-top:8px;">
-          <button type="button" class="pdxf-btn pdxf-btn-primary" id="pdxfCalSaveBtn" onclick="pdxfCalSave()">保存并刷新预览</button>
-          <button type="button" class="pdxf-btn" id="pdxfCalMoreBtn" style="display:none;" onclick="pdxfCalResumePick()">➕ 继续加点</button>
-          <button type="button" class="pdxf-btn" id="pdxfCalRevertBtn" style="display:none;" onclick="pdxfCalRevert()">恢复上次标定</button>
-          <button type="button" class="pdxf-btn" id="pdxfCalApplyBtn" style="display:none;" onclick="pdxfCalApplySaved()">应用到已保存的管道…</button>
-        </div>
-        <div id="pdxfCalStatus" style="margin-top:8px;font-size:.8rem;"></div>
-      </div>
-    </div>
-
-    <div class="pdxf-card" id="pdxfMapCard">
-      <div class="pdxf-card-head" onclick="pdxfToggle('pdxfMapCard')">
-        <h2>② 图层 / 阀门块 / 标注映射</h2><span class="pdxf-badge" id="pdxfMapBadge"></span><span class="pdxf-fold">▶</span>
-      </div>
-      <div class="pdxf-card-body">
-        <p class="pdxf-hint" id="pdxfCoordInfo"></p>
-        <div style="font-weight:600;font-size:.8rem;margin-bottom:4px;">管道图层 → 管径 / 类型</div>
-        <table class="pdxf-table">
-          <thead><tr><th>导入</th><th>图层</th><th>段数</th><th>总长(m)</th><th>管径(mm)</th><th>类型</th></tr></thead>
-          <tbody id="pdxfLayerBody"></tbody>
-        </table>
-        <div style="font-weight:600;font-size:.8rem;margin:10px 0 4px;">阀门块 → 阀门类型</div>
-        <table class="pdxf-table">
-          <thead><tr><th>导入</th><th>块名</th><th>数量</th><th>属性样本</th><th>类型</th></tr></thead>
-          <tbody id="pdxfBlockBody"></tbody>
-        </table>
-        <div style="font-weight:600;font-size:.8rem;margin:10px 0 4px;">文字标注层（用于阀门命名）</div>
-        <div id="pdxfLabelBox" style="font-size:.78rem;"></div>
-      </div>
-    </div>
-
-    <div class="pdxf-card" id="pdxfImportCard">
-      <div class="pdxf-card-head" onclick="pdxfToggle('pdxfImportCard')">
-        <h2>③④ 预览确认并导入</h2><span class="pdxf-badge" id="pdxfImportBadge"></span><span class="pdxf-fold">▶</span>
-      </div>
-      <div class="pdxf-card-body">
-        <p class="pdxf-hint">预览无误后导入：管道按连通性分解为简单路径（交叉点断开），每条路径一条水管；阀门吸附到 1.5m 内最近管段并继承管径；所选标注层 2.5m 内最近的文字写入阀门名。重复导入同一图纸会产生重复数据。</p>
-        <button type="button" class="pdxf-btn pdxf-btn-primary" id="pdxfImportBtn" onclick="pdxfImport()">确认导入</button>
-        <span id="pdxfImportStatus" style="font-size:.8rem;margin-left:8px;"></span>
-        <div id="pdxfResultBox" style="margin-top:10px;"></div>
-      </div>
-    </div>
-    <div class="pdxf-card" id="pdxfEditCard" style="display:none;">
-      <div class="pdxf-card-head" onclick="pdxfToggle('pdxfEditCard')">
-        <h2>🔧 编辑选中元素</h2><span class="pdxf-fold">▶</span>
-      </div>
-      <div class="pdxf-card-body" id="pdxfEditBody">
-        <p class="pdxf-hint">在地图上点击一条管道或一个阀门进行编辑。</p>
-      </div>
-    </div>
-  </div>
+  </main>
 </div>
+<dialog id="pdxfApplyDialog" class="pdxf-dialog" aria-labelledby="pdxfApplyDialogTitle"><h2 id="pdxfApplyDialogTitle">确认重新定位</h2><p id="pdxfApplyDialogBatch"></p><p id="pdxfApplyDialogMessage"></p><div class="pdxf-action-row"><button id="pdxfApplyCancel" class="pdxf-btn pdxf-btn-secondary">取消</button><button id="pdxfApplyConfirm" class="pdxf-btn pdxf-btn-primary">确认重新定位</button></div></dialog>
+<dialog id="pdxfOriginalDialog" class="pdxf-dialog pdxf-original-dialog" aria-labelledby="pdxfOriginalTitle"><div class="pdxf-workspace-head"><h2 id="pdxfOriginalTitle">CAD 原图（辅助查看）</h2><button class="pdxf-btn pdxf-btn-secondary" onclick="pdxfEl('pdxfOriginalDialog').close()">关闭原图</button></div><p class="pdxf-hint">原始坐标与形状保持不变。主要对齐操作在卫星地图的 CAD 叠图上完成。</p><div class="pdxf-original-map"><div id="pdxfCadMap"></div></div></dialog>
 {% endblock %}
-
 {% block extra_js %}
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
-  // 服务端数据注入：静态 JS 文件不再含 Django 模板标签，可 lint/单测
-  window.__DXF__ = {
-    urls: {
-    // url 标签输出必须带引号：裸 /pipelines/... 会被 JS 当正则字面量 →
-    // SyntaxError → window.__DXF__ 未定义 → 全页 JS（含 pdxfInitMap）静默失效。
-    analyze: '{% url 'core:pipeline_dxf_analyze' %}',
-    importSubmit: '{% url 'core:pipeline_dxf_import_submit' %}',
-    dashboard: '{% url 'core:dashboard' %}',
-    settings: '{% url 'core:settings' %}',
-    editData: '{% url 'core:pipeline_edit_data' %}',
-    calSave: '{% url 'core:pipeline_dxf_calibration_save' %}',
-    calClear: '{% url 'core:pipeline_dxf_calibration_clear' %}',
-    calApply: '{% url 'core:pipeline_dxf_calibration_apply' %}',
-    },
-    cal: {{ dxf_calibration_json|safe }},
-    zones: {{ ref_zones_json|safe }},
-    pipelines: {{ ref_pipelines_json|safe }},
-  };
+window.__DXF__ = {urls: {
+  analyze: '{% url 'core:pipeline_dxf_analyze' %}', importSubmit: '{% url 'core:pipeline_dxf_import_submit' %}',
+  dashboard: '{% url 'core:dashboard' %}', settings: '{% url 'core:settings' %}', editData: '{% url 'core:pipeline_edit_data' %}',
+  calSave: '{% url 'core:pipeline_dxf_calibration_save' %}', calClear: '{% url 'core:pipeline_dxf_calibration_clear' %}', calApply: '{% url 'core:pipeline_dxf_calibration_apply' %}'},
+  placementPoints: {{ dxf_placement_points_json|safe }}, cal: {{ dxf_calibration_json|safe }}, zones: {{ ref_zones_json|safe }}, pipelines: {{ ref_pipelines_json|safe }} };
 </script>
-<script src="{% static "js/dxf-import/dxf-core.js" %}?v=20260908d"></script>
-<script src="{% static "js/dxf-import/dxf-cal-math.js" %}?v=20260908d"></script>
-<script src="{% static "js/dxf-import/dxf-cal.js" %}?v=20260908d"></script>
-<script src="{% static "js/dxf-import/dxf-tune.js" %}?v=20260908d"></script>
-<script>pdxfInitMap(); /* 依赖 core/cal/tune 全部就绪后初始化 */</script>
+<script src="{% static 'js/dxf-import/dxf-core.js' %}?v=20261002c"></script>
+<script src="{% static 'js/dxf-import/dxf-cal-math.js' %}?v=20261002c"></script>
+<script src="{% static 'js/dxf-import/dxf-placement.js' %}?v=20261002c"></script>
+<script src="{% static 'js/dxf-import/dxf-cal.js' %}?v=20261002c"></script>
+<script>pdxfInitMap();</script>
 {% endblock %}

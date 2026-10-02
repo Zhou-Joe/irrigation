@@ -78,7 +78,7 @@ LABEL_RADIUS_M = 2.5
 # 解析缓存 TTL（秒）——analyze → import 之间复用
 PARSE_CACHE_TTL = 15 * 60
 # 缓存 key 前缀带解析器版本：解析逻辑升级后旧缓存立即失效
-PARSE_CACHE_KEY_PREFIX = 'dxf:parse:v2:'
+PARSE_CACHE_KEY_PREFIX = 'dxf:parse:v3:'
 
 
 def _guess_line_type(layer_name):
@@ -137,7 +137,7 @@ def _active_calibration_points():
     except Exception:
         hit = None   # 缓存后端故障时直接走 DB，不让校准链路 500
     if hit is None:
-        row = (SiteCalibration.objects.order_by('-id')
+        row = (SiteCalibration.objects.filter(is_active=True, drawing_token='').order_by('-id')
                .values_list('points', 'method').first())
         if row and row[0] and len(row[0]) >= 2:
             hit = (list(row[0]), 'db', row[1] or '')
@@ -158,49 +158,35 @@ def _bust_calibration_cache():
         pass
 
 
-def active_calibration_info():
-    """当前生效标定的展示/客户端信息：来源、点数、方法、拟合统计、逆变换。
+def active_calibration_info(snapshot=None):
+    """Display a specific calibration and its validation statistics.
 
-    页面初始渲染用它给 JS 提供逆变换（地图点击 → 本地坐标，校准取点用），
-    以及拟合参数（比例/旋转）供新拟合对比显示。≥4 点时 method='tps'：
-    比例/旋转取同样点数下相似变换的拟合值（仅作对照显示——TPS 没有单一
-    比例/旋转），rms_m 为 LOO 泛化误差；inverse 为反向 TPS 的可序列化
-    系数（{'type':'tps', ...}），JS 端用核函数求值。
+    Nonlinear reverse fits are deliberately not exposed as inverse transforms;
+    calibration picking uses preserved CAD coordinates instead.
     """
     from core.calibration import fit_calibration_transform
-    pts, source, stored_method = _active_calibration_points()
+    from core.dxf_state import calibration_snapshot, calibration_quality, alignment_status
+    snapshot = snapshot or calibration_snapshot()
+    pts, source, stored_method = snapshot['points'], ('db' if snapshot['id'] else 'default'), snapshot['method']
     cal = [{'dxf_x': float(p['dxf_x']), 'dxf_y': -float(p['dxf_y']),
             'lat': float(p['lat']), 'lng': float(p['lng'])} for p in pts]
     fn, stats = fit_calibration_transform(cal, stored_method or None)
-    # applied_at：该标定是否已重算过库里坐标。客户端在已入库管线上取点时
-    # 据此提示——未应用的标定下库线还活在旧标定里，反算取点会算偏。
+    # Display only; each batch stores its own effective transform.
     applied_at = None
     if source == 'db':
         from core.models import SiteCalibration
-        row = SiteCalibration.objects.order_by('-id').values_list('applied_at', flat=True).first()
+        row = SiteCalibration.objects.filter(pk=snapshot['id']).values_list('applied_at', flat=True).first()
         applied_at = row.isoformat() if row else None
     if not callable(fn):
-        return {'source': source, 'n': 0, 'method': 'similarity', 'scale': None,
+        return {'id': snapshot['id'], 'quality': calibration_quality(snapshot), 'alignment': alignment_status(snapshot),
+                'source': source, 'n': 0, 'method': 'similarity', 'scale': None,
                 'rotation_deg': None, 'rms_m': None, 'residuals_m': [],
                 'applied_at': applied_at, 'inverse': None, 'points': pts,
                 'iso_k': None, 'spread_m': None}
     method = stats.get('method', 'similarity')
-    # 逆变换系数/点对均活在 (lat, lng·k) 归一空间——payload 携带 iso_k，
-    # JS 求值前先把输入经度乘 k（与服务端 fit_calibration_inverse 一致）。
     k = stats.get('iso_k') or 1.0
     inv = None
-    if method == 'mls':
-        # MLS 无拟合系数——逆变换直接携带点对（经度已归一），JS 端加权
-        # 相似 LS 求值
-        inv = {'type': 'mls', 'iso_k': k,
-               'points': [[p['lat'], p['lng'] * k, p['dxf_x'], p['dxf_y']] for p in cal]}
-    elif method == 'tps':
-        # 反向 TPS 系数 ((lat,lng·k)→(x,-y))，JS 用核函数求值（地图取点用）
-        from core.calibration import _tps_fit_core
-        rc = _tps_fit_core([(p['lat'], p['lng'] * k) for p in cal],
-                           [(p['dxf_x'], p['dxf_y']) for p in cal])
-        inv = {'type': 'tps', 'iso_k': k, 'coeffs': rc} if rc else None
-    else:
+    if method == 'similarity':
         from core.calibration import similarity_inverse
         inv = similarity_inverse(stats['a'], stats['b'], stats['c'], stats['d'])
         if inv:
@@ -218,6 +204,10 @@ def active_calibration_info():
                 worst = max(worst, math.hypot(dlat, dlng))
         spread_m = round(worst, 1)
     return {
+        'id': snapshot['id'],
+        'quality': calibration_quality(snapshot),
+        'alignment': alignment_status(snapshot),
+        'check_points': snapshot.get('check_points', []),
         'source': source, 'n': stats['n'], 'method': method,
         'scale': round(stats['scale'], 8) if stats.get('scale') else None,
         'rotation_deg': round(stats['rotation_deg'], 4) if stats.get('rotation_deg') is not None else None,
@@ -232,14 +222,17 @@ def active_calibration_info():
     }
 
 
-def _local_to_latlng_fn():
+def _local_to_latlng_fn(snapshot=None):
     """返回 (to_latlng, meters_per_unit)。米/单位比例用于把米制容差换算
     成绘图单位——图纸以 mm/寸绘制时吸附距离依然按米判定。
     标定点来源：用户校准（SiteCalibration 最新行，含 method）优先，退回
     dxf_utils.SITE_CALIBRATION_POINTS 硬编码两点。method='mls' 用 MLS，
     其余按点数自动（≥4 TPS / 2-3 相似）。"""
     from core.calibration import fit_calibration_transform
-    cal_pts, _source, _method = _active_calibration_points()
+    if snapshot is None:
+        cal_pts, _source, _method = _active_calibration_points()
+    else:
+        cal_pts, _method = snapshot['points'], snapshot.get('method', '')
     if not cal_pts or len(cal_pts) < 2:
         return None, None
     cal = [
@@ -252,14 +245,13 @@ def _local_to_latlng_fn():
 
     def to_latlng(x, y):
         lat, lng = fn(x, -y)
+        if not (math.isfinite(lat) and math.isfinite(lng)
+                and -90 <= lat <= 90 and -180 <= lng <= 180):
+            raise ValueError('标定在图纸范围内产生无效坐标，请重新校准')
         return float(lat), float(lng)   # numpy 标量 → 原生 float（JSON 安全）
 
-    p1, p2 = cal_pts[0], cal_pts[1]
-    du = math.hypot(p2['dxf_x'] - p1['dxf_x'], p2['dxf_y'] - p1['dxf_y'])
-    dlat = (p2['lat'] - p1['lat']) * 111320.0
-    dlng = (p2['lng'] - p1['lng']) * 111320.0 * math.cos(
-        math.radians((p1['lat'] + p2['lat']) / 2))
-    meters_per_unit = math.hypot(dlat, dlng) / du if du else 1.0
+    # Use the complete least-squares fit, rather than an arbitrary first pair.
+    meters_per_unit = (_stats.get('scale') or 0) * 111320.0
     return to_latlng, meters_per_unit
 
 
@@ -279,11 +271,15 @@ def _parse_dxf_geometry(content_bytes):
             os.unlink(tmp_path)
         except OSError:
             pass
-    return _collect_geometry(doc.modelspace())
+    diagnostics = []
+    geometry = _collect_geometry(doc.modelspace(), diagnostics=diagnostics)
+    return (*geometry, {'file_hash': hashlib.sha256(content_bytes).hexdigest()[:32],
+                        'units': int(doc.header.get('$INSUNITS', 0)),
+                        'dxf_version': doc.dxfversion, 'diagnostics': diagnostics})
 
 
 def _parse_cache():
-    """``dxf:parse:v2:*`` 缓存句柄 —— FileBasedCache，跨 gunicorn worker 共享。
+    """``dxf:parse:v3:*`` 缓存句柄 —— FileBasedCache，跨 gunicorn worker 共享。
 
     不能用默认 LocMemCache（每 worker 一份内存）：analyze 落在哪个 worker，
     缓存就只在那个 worker 里；token 免重传的「保存并预览」/导入请求再落到
@@ -304,13 +300,13 @@ def _parsed_from_cache_or_file(content_bytes):
     key = PARSE_CACHE_KEY_PREFIX + token
     hit = cache.get(key)
     if hit is not None:
-        return token, hit[0], hit[1], hit[2]
+        return token, hit[0], hit[1], hit[2], hit[3]
     parsed = _parse_dxf_geometry(content_bytes)
     try:
         cache.set(key, parsed, PARSE_CACHE_TTL)
     except Exception:
         pass   # 缓存写失败不影响功能
-    return token, parsed[0], parsed[1], parsed[2]
+    return token, parsed[0], parsed[1], parsed[2], parsed[3]
 
 
 # ── CAD 曲线：bulge 弧段细分 ───────────────────────────────────────────
@@ -385,9 +381,11 @@ def _flatten_curve(e):
     except Exception:
         return None, False
     if len(pts) > MAX_CURVE_PTS:
+        last = pts[-1]
         step = math.ceil(len(pts) / MAX_CURVE_PTS)
         pts = pts[::step]
-        pts.append(pts[0])
+        if pts[-1] != last:
+            pts.append(last)
     closed = bool(p.is_closed)
     if closed and pts and pts[0] != pts[-1]:
         pts.append(pts[0])
@@ -401,6 +399,12 @@ def _entity_polyline(e):
     环状管网按完整环输出而不是整条丢弃。
     """
     et = e.dxftype()
+    def wcs(points, elevation=0):
+        if tuple(e.dxf.get('extrusion', (0, 0, 1))) == (0, 0, 1):
+            return points
+        ocs = e.ocs()
+        return [(round(v.x, 3), round(v.y, 3))
+                for v in (ocs.to_wcs((x, y, elevation)) for x, y in points)]
     if et in ('LWPOLYLINE', 'POLYLINE'):
         if et == 'POLYLINE' and getattr(e, 'is_poly_face_mesh', False):
             return None   # 多面片网格顶点串不成管线
@@ -414,6 +418,10 @@ def _entity_polyline(e):
         if closed and len(raw) >= 2:
             raw.append(raw[0])
         pts = _polyline_pts(raw)
+        if et == 'LWPOLYLINE':
+            pts = wcs(pts, e.dxf.elevation)
+        elif e.is_2d_polyline:
+            pts = wcs(pts, e.dxf.elevation.z)
         return (pts, closed) if len(pts) >= 2 else None
     if et == 'ARC':
         c, r = e.dxf.center, float(e.dxf.radius)
@@ -424,7 +432,7 @@ def _entity_polyline(e):
         n = max(2, min(90, math.ceil(math.degrees(sweep) / ARC_STEP_DEG)))
         pts = [(round(c.x + r * math.cos(sa), 3), round(c.y + r * math.sin(sa), 3))]
         pts.extend(_arc_points(c.x, c.y, r, sa, sweep, n))
-        return pts, False
+        return wcs(pts, c.z), False
     if et == 'LINE':
         a, b = e.dxf.start, e.dxf.end
         return [(round(a.x, 3), round(a.y, 3)), (round(b.x, 3), round(b.y, 3))], False
@@ -437,7 +445,7 @@ def _entity_polyline(e):
         pts.extend(_arc_points(c.x, c.y, r, 0.0, 2 * math.pi, n))
         if pts[0] != pts[-1]:
             pts.append(pts[0])
-        return pts, True
+        return wcs(pts, c.z), True
     if et in ('SPLINE', 'ELLIPSE'):
         return _flatten_curve(e)
     return None
@@ -449,71 +457,111 @@ INSERT_EXPLODE_PREFIX = '块·'
 INSERT_EXPLODE_DEPTH = 3
 
 
-def _explode_insert_geometry(insert, name, layers, depth=INSERT_EXPLODE_DEPTH):
-    """INSERT 块内的线条几何（含嵌套块，应用插入变换）展开到 ``块·<块名>``
-    虚拟图层——阀/接头符号、块内画的水管不再凭空消失，勾选即可当管线导入。"""
-    if depth <= 0:
-        return
+def _entity_label(e, layer=None, source_id='', block=''):
+    if e.dxftype() not in ('TEXT', 'MTEXT', 'ATTRIB', 'ATTDEF'):
+        return None
+    plain = e.plain_text().strip()
+    if not plain:
+        return None
+    if e.dxftype() == 'MTEXT':
+        pos = e.dxf.insert
+    else:
+        pos = e.ocs().to_wcs(e.get_placement()[1])
+    if not all(math.isfinite(float(c)) for c in pos):
+        raise ValueError('标注包含非有限坐标')
+    return {'layer': layer or e.dxf.layer, 'text': plain,
+            'x': float(pos[0]), 'y': float(pos[1]),
+            'source_id': source_id, 'block': block}
+
+
+def _add_geometry(e, layer, layers, source_id, diagnostics):
     try:
-        ves = list(insert.virtual_entities())
-    except Exception:
-        return
-    for ve in ves:
-        if ve.dxftype() == 'INSERT':
-            _explode_insert_geometry(ve, name, layers, depth - 1)
-            continue
-        r = _entity_polyline(ve)
-        if r is None:
-            continue
-        pts, closed = r
-        if len(pts) < 2 or _polyline_len(pts) <= 0:
-            continue
-        bucket = layers.setdefault(INSERT_EXPLODE_PREFIX + name,
-                                   {'polys': [], 'closed': 0})
+        result = _entity_polyline(e)
+        if result is None or not result[0] or len(result[0]) < 2 or _polyline_len(result[0]) <= 0:
+            raise ValueError('退化或不支持的线条几何')
+        pts, closed = result
+        if not all(math.isfinite(c) for point in pts for c in point):
+            raise ValueError('线条包含非有限坐标')
+        bucket = layers.setdefault(layer, {'polys': [], 'closed': 0, 'entities': []})
         bucket['polys'].append(pts)
-        if closed:
-            bucket['closed'] += 1
+        bucket['entities'].append({'source_id': source_id, 'type': e.dxftype(),
+                                   'layer': e.dxf.layer})
+        bucket['closed'] += int(closed)
+    except Exception as exc:
+        diagnostics.append({'source_id': source_id, 'type': e.dxftype(),
+                            'layer': layer, 'reason': str(exc)})
 
 
-def _collect_geometry(msp):
-    """一次遍历 modelspace，按图层归集线条几何 / 阀门 INSERT / 文字标注。
+def _explode_insert_geometry(insert, name, layers, depth=INSERT_EXPLODE_DEPTH,
+                             labels=None, diagnostics=None, source_id=''):
+    labels = labels if labels is not None else []
+    diagnostics = diagnostics if diagnostics is not None else []
+    if depth <= 0:
+        diagnostics.append({'source_id': source_id, 'type': 'INSERT',
+                            'layer': insert.dxf.layer, 'reason': '嵌套块超过展开深度'})
+        return
+    def skipped(entity, reason):
+        diagnostics.append({'source_id': source_id, 'type': entity.dxftype(),
+                            'layer': entity.dxf.layer, 'reason': reason})
+    try:
+        ves = list(insert.virtual_entities(skipped_entity_callback=skipped))
+    except Exception as exc:
+        skipped(insert, str(exc))
+        return
+    for index, ve in enumerate(ves):
+        child_id = f'{source_id}/{index}'
+        if ve.dxftype() == 'INSERT':
+            instances = list(ve.multi_insert()) if ve.mcount > 1 else [ve]
+            for i, instance in enumerate(instances):
+                _explode_insert_geometry(instance, name, layers, depth - 1,
+                                         labels, diagnostics, f'{child_id}/{i}')
+        elif ve.dxftype() in LINE_ENTITY_TYPES:
+            _add_geometry(ve, INSERT_EXPLODE_PREFIX + name, layers, child_id, diagnostics)
+        elif ve.dxftype() in ('TEXT', 'MTEXT', 'ATTRIB', 'ATTDEF'):
+            try:
+                label = _entity_label(ve, INSERT_EXPLODE_PREFIX + name, child_id, name)
+                if label:
+                    labels.append(label)
+            except Exception as exc:
+                skipped(ve, str(exc))
+        else:
+            skipped(ve, '未作为管线或标注导入')
 
-    线条几何覆盖 LINE/LWPOLYLINE/POLYLINE/ARC/SPLINE/ELLIPSE/CIRCLE（弧按
-    ≤8° 或矢高 0.05 细分）；闭合折线是环状管网，按完整环收集而不是丢弃。
-    INSERT 块当阀门候选，块内线条几何另展开到 ``块·<块名>`` 虚拟图层。"""
-    layers = {}   # layer -> {'polys': [[(x,y),...]], 'closed': n}
-    valves = []   # {'block', 'x', 'y', 'attrs'}
-    labels = []   # {'layer', 'text', 'x', 'y'}
 
+def _collect_geometry(msp, diagnostics=None):
+    """Collect source geometry in WCS, retaining identity and unsupported reasons."""
+    layers, valves, labels = {}, [], []
+    diagnostics = diagnostics if diagnostics is not None else []
     for e in msp:
-        et = e.dxftype()
-        layer = e.dxf.layer
+        et, layer = e.dxftype(), e.dxf.layer
+        source_id = e.dxf.get('handle', '')
         if et in LINE_ENTITY_TYPES:
-            r = _entity_polyline(e)
-            if r is None:
-                continue
-            pts, closed = r
-            if len(pts) < 2 or _polyline_len(pts) <= 0:
-                continue
-            bucket = layers.setdefault(layer, {'polys': [], 'closed': 0})
-            bucket['polys'].append(pts)
-            if closed and _polyline_len(pts) > 0:
-                bucket['closed'] += 1
+            _add_geometry(e, layer, layers, source_id, diagnostics)
         elif et == 'INSERT':
-            valves.append({
-                'block': e.dxf.name,
-                'x': float(e.dxf.insert[0]), 'y': float(e.dxf.insert[1]),
-                'attrs': {a.dxf.tag: a.dxf.text for a in e.attribs},
-            })
-            _explode_insert_geometry(e, e.dxf.name, layers)
+            instances = list(e.multi_insert()) if e.mcount > 1 else [e]
+            for i, instance in enumerate(instances):
+                sid = f'{source_id}/{i}'
+                pos = instance.ocs().to_wcs(instance.dxf.insert)
+                if not all(math.isfinite(float(c)) for c in pos):
+                    diagnostics.append({'source_id': sid, 'type': et, 'layer': layer,
+                                        'reason': '块包含非有限坐标'})
+                    continue
+                valves.append({'block': instance.dxf.name, 'layer': layer,
+                               'source_id': sid, 'x': float(pos.x), 'y': float(pos.y),
+                               'attrs': {a.dxf.tag: a.dxf.text for a in instance.attribs}})
+                _explode_insert_geometry(instance, instance.dxf.name, layers,
+                                         labels=labels, diagnostics=diagnostics, source_id=sid)
         elif et in ('MTEXT', 'TEXT'):
-            raw = e.text if et == 'MTEXT' else e.dxf.text
-            plain = _mtext_plain(raw)
-            if not plain:
-                continue
-            pos = e.dxf.insert if et == 'MTEXT' else (e.dxf.align_point if e.dxf.align_point else e.dxf.start)
-            labels.append({'layer': layer, 'text': plain[:60],
-                           'x': float(pos[0]), 'y': float(pos[1])})
+            try:
+                label = _entity_label(e, source_id=source_id)
+                if label:
+                    labels.append(label)
+            except Exception as exc:
+                diagnostics.append({'source_id': source_id, 'type': et,
+                                    'layer': layer, 'reason': str(exc)})
+        else:
+            diagnostics.append({'source_id': source_id, 'type': et,
+                                'layer': layer, 'reason': '未作为管线或标注导入'})
     return layers, valves, labels
 
 
@@ -745,29 +793,36 @@ def _crossed_zone_ids(line, zone_rings):
 
 # ── analyze：图纸概览 + 预览几何 ───────────────────────────────────────
 
-def analyze_dxf_pipelines(uploaded_file=None, token=None):
-    """解析上传的 DXF，返回页面所需的概览 + 预览几何（全部已转 lat/lng）。
+def analyze_dxf_pipelines(uploaded_file=None, token=None, user_id=None, calibration_id=None):
+    """解析 DXF，始终返回原始 CAD 坐标；位置验证通过后才附加经纬度。
 
     额外返回 ``token``（内容 hash）——导入阶段凭它复用本次解析结果。
     ``uploaded_file`` 为空且给了 ``token`` 时直接读解析缓存重建预览
     （三点校准保存后免重传刷新预览用）。
     """
-    to_latlng, meters_per_unit = _local_to_latlng_fn()
-    if to_latlng is None:
-        return {'success': False, 'error': '缺少站点标定点，无法转换坐标'}
-
     if uploaded_file is not None:
         content = uploaded_file.read()
         if isinstance(content, str):
             content = content.encode('utf-8', errors='ignore')
-        token, layers, valves, labels = _parsed_from_cache_or_file(content)
+        token, layers, valves, labels, metadata = _parsed_from_cache_or_file(content)
     elif token:
         hit = _parse_cache().get(PARSE_CACHE_KEY_PREFIX + token)
         if hit is None:
             return {'success': False, 'error': '解析缓存已过期（15 分钟），请重新上传 DXF 文件'}
-        layers, valves, labels = hit[0], hit[1], hit[2]
+        layers, valves, labels, metadata = hit
     else:
         return {'success': False, 'error': '请上传 .dxf 文件或提供解析 token'}
+
+    from core.dxf_state import calibration_snapshot, sign_preview, alignment_status
+    snapshot = calibration_snapshot(token, calibration_id)
+    alignment = alignment_status(snapshot)
+    to_latlng, meters_per_unit = _local_to_latlng_fn(snapshot) if alignment['ready'] else (None, None)
+    def preview_point(x, y):
+        point = {'dxf_x': x, 'dxf_y': y}
+        if to_latlng:
+            lat, lng = to_latlng(x, y)
+            point.update(lat=round(lat, 6), lng=round(lng, 6))
+        return point
 
     layer_infos = []
     for name, bucket in sorted(layers.items(),
@@ -795,8 +850,7 @@ def analyze_dxf_pipelines(uploaded_file=None, token=None):
             if val and len(blk['attrs']) < 6:
                 blk['attrs'].add(val[:20])
         if len(blk['samples']) < 3:
-            lat, lng = to_latlng(v['x'], v['y'])
-            blk['samples'].append({'lat': lat, 'lng': lng})
+            blk['samples'].append(preview_point(v['x'], v['y']))
     block_infos = []
     for name, info in sorted(blocks.items(), key=lambda kv: -kv[1]['count']):
         block_infos.append({
@@ -814,26 +868,21 @@ def analyze_dxf_pipelines(uploaded_file=None, token=None):
         b['count'] += 1
         if len(b['samples']) < 6:
             b['samples'].append(lb['text'])
-        if len(b['points']) < 400:
-            lat, lng = to_latlng(lb['x'], lb['y'])
-            b['points'].append({'lat': round(lat, 6), 'lng': round(lng, 6), 'text': lb['text']})
+        b['points'].append(dict(preview_point(lb['x'], lb['y']), text=lb['text'],
+                                source_id=lb.get('source_id', '')))
 
-    previewable = [i for i in layer_infos
-                   if not i['layer'].startswith(INSERT_EXPLODE_PREFIX)]
+    previewable = layer_infos
     preview_layers = []
-    for info in previewable[:12]:
+    for info in previewable:
         pts_list = layers[info['layer']]['polys']
         paths = []
-        for pts in pts_list[:600]:
-            paths.append([{'lat': round(la, 6), 'lng': round(ln, 6)}
-                          for la, ln in (to_latlng(x, y) for x, y in pts)])
+        for pts in pts_list:
+            paths.append([preview_point(x, y) for x, y in pts])
         preview_layers.append({'layer': info['layer'], 'paths': paths})
     preview_valves = []
     for v in valves:
-        if len(preview_valves) >= 600:
-            break
-        lat, lng = to_latlng(v['x'], v['y'])
-        preview_valves.append({'lat': round(lat, 6), 'lng': round(lng, 6), 'block': v['block']})
+        preview_valves.append(dict(preview_point(v['x'], v['y']), block=v['block'],
+                                   source_id=v.get('source_id', '')))
 
     extents = []
     for bucket in layers.values():
@@ -842,11 +891,19 @@ def analyze_dxf_pipelines(uploaded_file=None, token=None):
     coord_info = ''
     if extents:
         xs = [p[0] for p in extents]; ys = [p[1] for p in extents]
-        coord_info = f'本地坐标 X[{min(xs):.0f}..{max(xs):.0f}] Y[{min(ys):.0f}..{max(ys):.0f}]，已按站点标定转换'
+        coord_info = f'本地坐标 X[{min(xs):.0f}..{max(xs):.0f}] Y[{min(ys):.0f}..{max(ys):.0f}]' + ('，已验证对齐' if alignment['ready'] else '，尚未定位')
 
     return {
         'success': True,
         'token': token,
+        'preview_token': sign_preview(token, snapshot, user_id),
+        'calibration': active_calibration_info(snapshot),
+        'metadata': metadata,
+        'alignment': alignment,
+        'length_unit': 'm' if to_latlng else 'CAD',
+        'coverage': {'paths': sum(len(b['polys']) for b in layers.values()),
+                     'blocks': len(valves), 'labels': len(labels),
+                     'unsupported': len(metadata['diagnostics'])},
         'coord_info': coord_info,
         'layers': layer_infos,
         'blocks': block_infos,
@@ -871,8 +928,8 @@ def _resolve_parsed_geometry(uploaded_file, token, content):
         content = uploaded_file.read()
         if isinstance(content, str):
             content = content.encode('utf-8', errors='ignore')
-    _, layers, valves, labels = _parsed_from_cache_or_file(content)
-    return layers, valves, labels
+    _, layers, valves, labels, metadata = _parsed_from_cache_or_file(content)
+    return layers, valves, labels, metadata
 
 
 def _unique_name_code(name, code, used_names, used_codes):
@@ -892,7 +949,7 @@ def _attach_valves(valves, block_specs, all_paths, to_latlng,
                    off_lat, off_lng, meters_per_unit, usable_labels,
                    zone_rings, zone_info):
     """阀门吸附：INSERT 块 → 1.5m 内最近管段（网格空间索引），就近标注命名，
-    电磁阀配 zone/station/口径。→ (valve_rows, labeled_valves, skipped_valves)。"""
+    电磁阀配 zone/station/口径。→ (valve_rows, labeled_valves, skipped_valves, unmatched)。"""
     from core.models import PipeValve
     from core.pipe_utils import _point_in_ring
 
@@ -911,7 +968,7 @@ def _attach_valves(valves, block_specs, all_paths, to_latlng,
     label_units = LABEL_RADIUS_M / (meters_per_unit or 1.0)
     label_idx = _LabelIndex(usable_labels) if usable_labels else None
 
-    valve_rows, labeled_valves, skipped_valves = [], 0, 0
+    valve_rows, labeled_valves, skipped_valves, unmatched = [], 0, 0, []
     order_by_pipe = defaultdict(int)
     for v in valves:
         spec = (block_specs or {}).get(v['block'])
@@ -924,13 +981,19 @@ def _attach_valves(valves, block_specs, all_paths, to_latlng,
                 best = (d, pi)
         if best is None:
             skipped_valves += 1
+            unmatched.append(dict(v, reason='距所选管线超过 1.5 m，待人工挂接'))
             continue
         _, pi = best
         pts, diameter, pipe = all_paths[pi]
         lat, lng = to_latlng(v['x'], v['y'])
         lat += off_lat; lng += off_lng
-        name = ''
-        if label_idx:
+        if not (math.isfinite(lat) and math.isfinite(lng) and -90 <= lat <= 90 and -180 <= lng <= 180):
+            raise ValueError('阀门坐标无效或超界，请重新校准')
+        name = next((value for tag, value in v['attrs'].items()
+                     if tag.upper() in ('ID', 'NAME', 'NUMBER', 'VALVE_ID', '设备编号') and value), '')
+        if name:
+            labeled_valves += 1
+        if label_idx and not name:
             hit = label_idx.nearest_within(v['x'], v['y'], label_units)
             if hit:
                 name = hit[1][:50]   # PipeValve.name 上限 50
@@ -955,17 +1018,22 @@ def _attach_valves(valves, block_specs, all_paths, to_latlng,
             station_id=station_id,
             name=name[:50] or f"{v['block'].rsplit('-', 1)[-1].upper()}·{v['x']:.0f},{v['y']:.0f}"[:50],
             point=[{'lat': round(lat, 6), 'lng': round(lng, 6)}],
+            source_point=[v['x'], v['y']],
+            source_map_point=[{'lat': round(lat, 6), 'lng': round(lng, 6)}],
+            source_attributes={'tags': v['attrs'], 'block': v['block'],
+                               'source_id': v.get('source_id', '')},
+            notes='\n'.join(f'{tag}: {value}' for tag, value in v['attrs'].items()),
             valve_type=vtype,
             diameter=vdia,
             order=order_by_pipe[pipe.id],
         ))
-    return valve_rows, labeled_valves, skipped_valves
+    return valve_rows, labeled_valves, skipped_valves, unmatched
 
 
 def import_dxf_pipelines(layer_specs, block_specs, uploaded_file=None,
                          label_layers=None, valve_name_from_label=True,
                          offset=(0.0, 0.0), token=None, content=None,
-                         batch_name=None, imported_by=None):
+                         batch_name=None, imported_by=None, preview_token=None):
     """按映射创建 Pipeline + PipeValve。
 
     ``layer_specs``: {layer: {'include', 'diameter', 'type'}}
@@ -980,11 +1048,23 @@ def import_dxf_pipelines(layer_specs, block_specs, uploaded_file=None,
     from core.models import Pipeline, PipeValve, PipelineImportBatch
     from core.pipe_utils import _auto_pipeline_name_code
 
-    to_latlng, meters_per_unit = _local_to_latlng_fn()
+    from core.dxf_state import calibration_snapshot, read_preview, require_quality
+    if preview_token:
+        state = read_preview(preview_token, token, getattr(imported_by, 'pk', None))
+        token = state['token']
+        snapshot = state['calibration']
+    else:
+        snapshot = calibration_snapshot(token)
+    require_quality(snapshot)
+    to_latlng, meters_per_unit = _local_to_latlng_fn(snapshot)
     if to_latlng is None:
         raise ValueError('缺少站点标定点，无法转换坐标')
-
-    layers, valves, labels = _resolve_parsed_geometry(uploaded_file, token, content)
+    if uploaded_file is not None:
+        content = uploaded_file.read()
+        if token and hashlib.sha256(content).hexdigest()[:32] != token:
+            raise ValueError('文件与预览不一致，请重新解析图纸')
+    layers, valves, labels, metadata = _resolve_parsed_geometry(None, token, content)
+    token = token or metadata['file_hash']
 
     usable_labels = [lb for lb in labels
                      if label_layers is None or lb['layer'] in label_layers]
@@ -992,6 +1072,8 @@ def import_dxf_pipelines(layer_specs, block_specs, uploaded_file=None,
     zone_rings, zone_info = _load_zone_data()
 
     off_lat, off_lng = float(offset[0] or 0), float(offset[1] or 0)
+    if not all(math.isfinite(n) for n in (off_lat, off_lng)):
+        raise ValueError('微调偏移必须是有限数值')
 
     # 名称唯一性判重：内存 set（一次 DB 读取），DB 唯一约束兜底并发
     used_names = set(Pipeline.objects.values_list('name', flat=True))
@@ -1005,19 +1087,30 @@ def import_dxf_pipelines(layer_specs, block_specs, uploaded_file=None,
         # 批次在事务内创建：导入失败整体回滚，不留 0 管道的孤儿批次行
         batch = PipelineImportBatch.objects.create(
             name=(batch_name or 'DXF导入')[:200],
-            imported_by=imported_by,
+            imported_by=imported_by, source_token=token or '',
+            calibration_snapshot=snapshot, applied_calibration=snapshot,
+            source_geometry={'layers': layers, 'valves': valves, 'labels': labels,
+                             'metadata': metadata},
+            import_options={'layers': layer_specs, 'blocks': block_specs,
+                            'label_layers': label_layers, 'offset': [off_lat, off_lng]},
         )
         for layer, spec in layer_specs.items():
+            if not isinstance(spec, dict):
+                raise ValueError(f'图层 {layer} 的映射参数无效')
             if not spec.get('include'):
                 continue
             bucket = layers.get(layer)
             if not bucket or not bucket['polys']:
-                continue
+                raise ValueError(f'图层 {layer} 不在已解析图纸内，请刷新映射')
             try:
                 diameter = float(spec.get('diameter')) if spec.get('diameter') else None
             except (TypeError, ValueError):
-                diameter = None
+                raise ValueError(f'图层 {layer} 的管径不是有效数值')
+            if diameter is not None and (not math.isfinite(diameter) or diameter <= 0):
+                raise ValueError(f'图层 {layer} 的管径需为正数')
             ptype = spec.get('type') or 'irrigation'
+            if ptype not in dict(Pipeline.TYPE_CHOICES):
+                raise ValueError(f'图层 {layer} 的管线类型无效')
             paths = _decompose_paths(bucket['polys'], JOIN_TOL_M, meters_per_unit or 1.0)
             n_paths = 0
             for pts in paths:
@@ -1025,6 +1118,9 @@ def import_dxf_pipelines(layer_specs, block_specs, uploaded_file=None,
                       for la, ln in (to_latlng(x, y) for x, y in pts)]
                 if len(ll) < 2:
                     continue
+                if any(not (math.isfinite(pt['lat']) and math.isfinite(pt['lng'])
+                            and -90 <= pt['lat'] <= 90 and -180 <= pt['lng'] <= 180) for pt in ll):
+                    raise ValueError('导入坐标无效或超界，请重新校准')
                 # 内存穿越检测 + zone 属性查表（批量预计算，零 DB 访问）
                 zids = _crossed_zone_ids([(p['lat'], p['lng']) for p in ll], zone_rings)
                 name, code = _auto_pipeline_name_code(zids, ptype)
@@ -1039,7 +1135,7 @@ def import_dxf_pipelines(layer_specs, block_specs, uploaded_file=None,
                     main_diameter=diameter,
                     flow_direction=Pipeline.FLOW_FORWARD,
                     source_label=f'DXF导入 · 图层 {layer}',
-                    line_points=ll,
+                    line_points=ll, source_points=pts, source_map_points=ll,
                     import_batch=batch,
                 )
                 if zids:
@@ -1053,10 +1149,11 @@ def import_dxf_pipelines(layer_specs, block_specs, uploaded_file=None,
             layer_stats.append({'layer': layer, 'paths': n_paths,
                                 'segments': len(bucket['polys'])})
 
-        valve_rows, labeled_valves, skipped_valves = _attach_valves(
+        valve_rows, labeled_valves, skipped_valves, unmatched = _attach_valves(
             valves, block_specs, all_paths, to_latlng, off_lat, off_lng,
             meters_per_unit, usable_labels, zone_rings, zone_info)
-        created_valves = len(valve_rows)
+        batch.source_geometry['unmatched_valves'] = unmatched
+        batch.save(update_fields=['source_geometry'])
         if valve_rows:
             PipeValve.objects.bulk_create(valve_rows)
 
@@ -1067,4 +1164,35 @@ def import_dxf_pipelines(layer_specs, block_specs, uploaded_file=None,
         'skipped_valves': skipped_valves,
         'layer_stats': layer_stats,
         'batch_id': batch.id,
+        'unmatched_valves': unmatched,
+        'unsupported': metadata['diagnostics'],
     }
+
+
+def build_cad_reference_payload():
+    """Independent, retained CAD reference/annotation/unmatched-asset overlays."""
+    from core.models import PipelineImportBatch
+    result = []
+    for batch in PipelineImportBatch.objects.exclude(source_geometry={}):
+        snapshot = batch.applied_calibration or batch.calibration_snapshot
+        if not snapshot:
+            continue
+        fn, _ = _local_to_latlng_fn(snapshot)
+        if fn is None:
+            continue
+        off_lat, off_lng = batch.import_options.get('offset', [0, 0])
+        def point(x, y):
+            lat, lng = fn(x, y)
+            return {'lat': round(lat + off_lat, 6), 'lng': round(lng + off_lng, 6)}
+        source = batch.source_geometry
+        result.append({
+            'batch_id': batch.id, 'name': batch.name,
+            'layers': [{'layer': name, 'paths': [[point(x, y) for x, y in path]
+                         for path in bucket['polys']]}
+                       for name, bucket in source.get('layers', {}).items()],
+            'labels': [dict(lb, **point(lb['x'], lb['y'])) for lb in source.get('labels', [])],
+            'unmatched_valves': [dict(v, **point(v['x'], v['y']))
+                                 for v in source.get('unmatched_valves', [])],
+            'unsupported': source.get('metadata', {}).get('diagnostics', []),
+        })
+    return result

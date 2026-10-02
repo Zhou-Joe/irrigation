@@ -667,6 +667,7 @@ def _invalidate_cached(key):
     try:
         cache.delete(key)
         if key == 'dashboard:pipelines':
+            cache.delete('dashboard:cad-reference')
             ver = cache.get('ref_map:ver') or 0
             cache.set('ref_map:ver', ver + 1, 30 * 86400)
     except Exception:
@@ -860,7 +861,7 @@ def _build_pipelines_list_module():
     valves_qs = (PipeValve.objects
                  .select_related('zone', 'station')
                  .only('id', 'pipeline_id', 'order', 'name', 'valve_type',
-                       'diameter', 'point', 'zone_id', 'station_id',
+                       'diameter', 'point', 'zone_id', 'station_id', 'notes', 'source_attributes',
                        'zone__id', 'zone__name', 'zone__code',
                        'zone__irrigation_intensity'))
     qs = (Pipeline.objects
@@ -888,6 +889,7 @@ def _build_pipelines_list_module():
                 'id': v.id, 'order': v.order, 'name': v.name,
                 'valve_type': v.valve_type,
                 'valve_type_display': v.get_valve_type_display(),
+                'notes': v.notes, 'source_attributes': v.source_attributes,
                 'diameter': v.diameter,
                 'point': v.point,
                 'zone_id': v.zone_id,
@@ -5029,7 +5031,9 @@ def pipelines_payload(request):
     管线增删改的失效点自动覆盖两边。
     """
     pipelines_list = _cached('dashboard:pipelines', 300, _build_pipelines_list_module)
-    return JsonResponse({'pipelines': pipelines_list})
+    from .dxf_pipeline_utils import build_cad_reference_payload
+    reference = _cached('dashboard:cad-reference', 300, build_cad_reference_payload)
+    return JsonResponse({'pipelines': pipelines_list, 'cad_reference': reference})
 
 
 @login_required(login_url='core:login')

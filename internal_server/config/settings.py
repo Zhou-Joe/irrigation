@@ -130,6 +130,9 @@ FILE_UPLOAD_MAX_MEMORY_SIZE = 100 * 1024 * 1024       # 100 MB
 # so the bulk stock-save keeps working as the catalog grows.
 DATA_UPLOAD_MAX_NUMBER_FIELDS = 10000
 
+# A calibration must pass validation before use in new pipeline imports.
+DXF_CALIBRATION_MAX_RMS_M = float(os.environ.get('DXF_CALIBRATION_MAX_RMS_M', '5'))
+
 
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'

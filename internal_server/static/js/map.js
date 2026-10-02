@@ -32,6 +32,9 @@
 
     // Pipeline layers group
     let pipelinesLayerGroup;
+    let cadReferenceLayerGroup;
+    let cadNotesLayerGroup;
+    let cadUnmatchedLayerGroup;
     // Rendered valve markers + their tooltip content, so a zoomend handler can
     // flip labels to permanent (auto-show) at max zoom, hover-only otherwise.
     let valveMarkersForLabels = [];
@@ -269,6 +272,9 @@
 
         // Initialize pipelines layer group
         pipelinesLayerGroup = L.layerGroup().addTo(map);
+        cadReferenceLayerGroup = L.layerGroup();
+        cadNotesLayerGroup = L.layerGroup();
+        cadUnmatchedLayerGroup = L.layerGroup().addTo(map);
 
         // Initialize labels layer group (separate for independent layer control)
         labelsLayerGroup = L.layerGroup().addTo(map);
@@ -1674,6 +1680,7 @@
             .then(r => r.ok ? r.json() : Promise.reject(r.status))
             .then(d => {
                 renderPipelines(d.pipelines || []);
+                renderCadReference(d.cad_reference || []);
                 applyValveLabelMode(true);   // fresh markers — force rebind
                 updatePipeOverlayTiers();    // valve dots follow the current zoom
             })
@@ -1870,6 +1877,7 @@
                         <div style="margin-top:6px;">控制区域: ${zLink}</div>
                         <div>${stLink}</div>
                         <div>最近灌溉: <b>${runtime}</b></div>
+                        ${v.notes ? `<div style="white-space:pre-wrap;">备注: ${escapeHtml(v.notes)}</div>` : ''}
                     </div>
                 `);
                 const tipContent = escapeHtml((v.zone_name || '') + (v.zone_code ? ' ' + v.zone_code : '') || ('阀门 #' + (v.order + 1))) + (watered ? ' · 已浇水' : ' · 未浇水');
@@ -1878,6 +1886,35 @@
                 vm._watered = watered;          // 未浇水阀门最大层级不常显 label（仍可悬停查看）
                 valveMarkersForLabels.push(vm);
                 pipelinesLayerGroup.addLayer(vm);
+            });
+        });
+    }
+
+    function renderCadReference(batches) {
+        cadReferenceLayerGroup.clearLayers();
+        cadNotesLayerGroup.clearLayers();
+        cadUnmatchedLayerGroup.clearLayers();
+        batches.forEach(batch => {
+            (batch.layers || []).forEach(layer => {
+                (layer.paths || []).forEach(path => {
+                    L.polyline(path.map(p => [p.lat, p.lng]), {
+                        color: '#d6a544', weight: 1.5, opacity: 0.7
+                    }).bindTooltip(escapeHtml(batch.name + ' · ' + layer.layer))
+                        .addTo(cadReferenceLayerGroup);
+                });
+            });
+            (batch.labels || []).forEach(note => {
+                L.marker([note.lat, note.lng], {
+                    icon: L.divIcon({ className: 'cad-note',
+                        html: `<span style="font-size:10px;background:rgba(255,255,255,.85);white-space:nowrap;">${escapeHtml(note.text)}</span>` })
+                }).bindPopup(`<div style="white-space:pre-wrap;">${escapeHtml(note.text)}</div><small>${escapeHtml(batch.name + ' · ' + note.layer)}</small>`)
+                    .addTo(cadNotesLayerGroup);
+            });
+            (batch.unmatched_valves || []).forEach(valve => {
+                L.circleMarker([valve.lat, valve.lng], {
+                    radius: 6, color: '#a65d00', fillColor: '#ffc65a', fillOpacity: 1
+                }).bindPopup(`<b>待挂接设备 · ${escapeHtml(valve.block)}</b><div>${escapeHtml(valve.reason)}</div><small>${escapeHtml(batch.name + ' · ' + valve.source_id)}</small>`)
+                    .addTo(cadUnmatchedLayerGroup);
             });
         });
     }
@@ -2110,6 +2147,10 @@
             } else {
                 if (map.hasLayer(pipelinesLayerGroup)) map.removeLayer(pipelinesLayerGroup);
             }
+        } else if (layer === 'cad_reference' || layer === 'cad_notes' || layer === 'cad_unmatched') {
+            const group = layer === 'cad_reference' ? cadReferenceLayerGroup
+                : layer === 'cad_notes' ? cadNotesLayerGroup : cadUnmatchedLayerGroup;
+            if (visible) map.addLayer(group); else map.removeLayer(group);
         } else if (layer === 'landmarks') {
             if (visible) {
                 if (!map.hasLayer(landmarksLayerGroup)) {

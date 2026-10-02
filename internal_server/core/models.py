@@ -446,6 +446,10 @@ class Pipeline(models.Model):
         default=list,
         help_text='Array of {lat, lng} points defining the pipeline polyline'
     )
+    source_points = models.JSONField(default=list, blank=True,
+                                    help_text='Original CAD [x,y] vertices; never reverse-fit map coordinates')
+    source_map_points = models.JSONField(default=list, blank=True,
+                                        help_text='Last derived geometry, before manual corrections')
     line_weight = models.IntegerField(default=3, help_text='Line thickness in pixels')
     main_diameter = models.FloatField(
         '主管径(mm)', null=True, blank=True,
@@ -523,6 +527,10 @@ class PipeValve(models.Model):
     point = models.JSONField(
         default=list, blank=True,
         help_text='[{lat,lng}] 在管道上的位置(单点)')
+    source_point = models.JSONField(default=list, blank=True)
+    source_map_point = models.JSONField(default=list, blank=True)
+    source_attributes = models.JSONField(default=dict, blank=True)
+    notes = models.TextField(blank=True)
     valve_type = models.CharField(
         '阀门类型', max_length=20, choices=VALVE_TYPE_CHOICES, default=VALVE_SOLENOID)
     diameter = models.FloatField('口径(mm)', null=True, blank=True)
@@ -2683,18 +2691,22 @@ class EmailSmtpSetting(models.Model):
 class SiteCalibration(models.Model):
     """DXF 本地坐标 → WGS84 站点标定（用户三点校准产生的控制点对）。
 
-    最新一行即当前生效标定；保存历史行便于审计/回退。points 存原始
+    图纸内最新生效行为当前标定；历史行保留用于审计/回退。points 存原始
     DXF 坐标（与 dxf_utils.SITE_CALIBRATION_POINTS 同格式），拟合时由
-    调用方统一做 Y 取反。硬编码两点仅在无任何行时作为兜底。
+    调用方统一做 Y 取反。未选择生效记录时使用硬编码两点作为初始兜底。
     """
     points = models.JSONField(
         help_text='[{dxf_x, dxf_y(原始DXF), lat, lng}]，至少 2 点、建议 3 点')
+    check_points = models.JSONField(default=list, blank=True,
+                                   help_text='Independent CAD/map point pairs excluded from fitting')
+    is_active = models.BooleanField(default=True)
+    drawing_token = models.CharField(max_length=32, blank=True, db_index=True)
     method = models.CharField(
         '拟合方法', max_length=12, blank=True, default='',
         help_text="''=按点数自动(tps/similarity) / 'sim'=相似变换(强制) / 'tps'=薄板样条 / 'mls'=移动最小二乘(边界稳定)")
     applied_at = models.DateTimeField(
         '应用到已存管道的时间', null=True, blank=True,
-        help_text='非空表示该标定已重算过库里全部坐标；重复应用会被拒绝（幂等保护）')
+        help_text='该标定最近一次应用到所选批次的时间；各批次另存有效标定')
     note = models.CharField('备注', max_length=200, blank=True)
     created_by = models.ForeignKey(
         User, on_delete=models.SET_NULL, null=True, blank=True,
@@ -2717,6 +2729,11 @@ class PipelineImportBatch(models.Model):
     页的整批删除端点（先备份坐标再删）。
     """
     name = models.CharField('批次名/DXF文件名', max_length=200)
+    source_token = models.CharField(max_length=32, blank=True, db_index=True)
+    calibration_snapshot = models.JSONField(default=dict, blank=True)
+    applied_calibration = models.JSONField(default=dict, blank=True)
+    source_geometry = models.JSONField(default=dict, blank=True)
+    import_options = models.JSONField(default=dict, blank=True)
     imported_at = models.DateTimeField('导入时间', auto_now_add=True)
     imported_by = models.ForeignKey(
         User, on_delete=models.SET_NULL, null=True, blank=True,

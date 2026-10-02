@@ -8,6 +8,7 @@ from django.contrib.auth.decorators import login_required
 from django.http import JsonResponse
 from django.shortcuts import redirect, render
 from django.views.decorators.http import require_POST
+from django.views.decorators.csrf import ensure_csrf_cookie
 
 from core.views import _invalidate_cached, _get_reference_map_data, json_html_safe
 
@@ -21,6 +22,7 @@ def _pipeline_dxf_gate(user):
 
 
 @login_required(login_url='core:login')
+@ensure_csrf_cookie
 def pipeline_dxf_import(request):
     """Dedicated page: import a CAD (DXF) irrigation drawing into Pipeline/PipeValve.
 
@@ -34,10 +36,14 @@ def pipeline_dxf_import(request):
         return redirect('core:dashboard')
     ref_zones_json, ref_pipelines_json = _get_reference_map_data()
     from core.dxf_pipeline_utils import active_calibration_info
+    from core.calibration import SITE_CALIBRATION_POINTS
+    from core.models import PipelineImportBatch
     return render(request, 'core/pipeline_dxf_import.html', {
         'ref_zones_json': ref_zones_json,
         'ref_pipelines_json': ref_pipelines_json,
         'dxf_calibration_json': json_html_safe(active_calibration_info()),
+        'dxf_placement_points_json': json_html_safe(SITE_CALIBRATION_POINTS),
+        'import_batches': PipelineImportBatch.objects.only('id', 'name', 'source_token'),
     })
 
 
@@ -50,7 +56,6 @@ def pipeline_dxf_analyze(request):
     parse-cache TTL) it rebuilds the preview from cache — used after saving a
     new site calibration so the overlay re-renders without re-upload.
     """
-    import json as _json
     from core.dxf_pipeline_utils import analyze_dxf_pipelines
     if not _pipeline_dxf_gate(request.user):
         return JsonResponse({'success': False, 'error': '无权限'}, status=403)
@@ -61,28 +66,29 @@ def pipeline_dxf_analyze(request):
     if f and not f.name.lower().endswith('.dxf'):
         return JsonResponse({'success': False, 'error': '请上传 .dxf 文件'}, status=400)
     try:
-        return JsonResponse(analyze_dxf_pipelines(f or None, token=token or None))
+        return JsonResponse(analyze_dxf_pipelines(f or None, token=token or None, user_id=request.user.pk,
+                    calibration_id=request.POST.get('calibration_id') or None))
     except Exception:
         import logging
         logging.getLogger(__name__).exception('DXF analyze failed')
         return JsonResponse({'success': False, 'error': 'DXF 解析失败，请确认文件是标准 DXF 格式'}, status=400)
 
 
-def _cal_pairs_from_post(request):
+def _cal_pairs_from_post(request, field='pairs', minimum=2):
     """校准端点共用：解析并验证 POST 的 pairs JSON（原始 DXF 坐标）。
 
-    返回 (pairs, err)。点数 2..10，字段全部转 float 且必须有限，卫星点
+    返回 (pairs, err)。点数 2..300，字段全部转 float 且必须有限，卫星点
     经纬度限合法范围 — json.loads 接受 NaN/Infinity 字面量且拟合不会拒绝
     它们，一条毒化的标定会全局破坏坐标转换，必须在这里拦下。
     """
     import json as _json
     import math as _math
     try:
-        raw = _json.loads(request.POST.get('pairs') or '[]')
+        raw = _json.loads(request.POST.get(field) or '[]')
     except (ValueError, TypeError):
         return None, 'pairs 不是合法 JSON'
-    if not isinstance(raw, list) or not (2 <= len(raw) <= 300):
-        return None, '标定点数量需在 2 到 300 之间（TPS 建议 ≥6 点且撒满园区）'
+    if not isinstance(raw, list) or not (minimum <= len(raw) <= 300):
+        return None, f'{field} 需包含 {minimum} 到 300 个点'
     pairs = []
     for p in raw:
         try:
@@ -100,276 +106,121 @@ def _cal_pairs_from_post(request):
 @require_POST
 @login_required(login_url='core:login')
 def pipeline_dxf_calibration_save(request):
-    """AJAX: 保存用户三点校准（DXF→WGS84 控制点对）为当前生效标定。
-
-    服务端重新做最小二乘拟合（不信客户端算的参数），返回拟合统计 +
-    逆变换系数（客户端地图点击→本地坐标用）。历史行保留，可重复保存。
-    """
+    """Validate and save a drawing-scoped calibration, retaining history."""
     from core.calibration import fit_calibration_transform
     from core.models import SiteCalibration
+    from core.dxf_state import calibration_snapshot
     from core.dxf_pipeline_utils import _bust_calibration_cache, active_calibration_info
     if not _pipeline_dxf_gate(request.user):
         return JsonResponse({'success': False, 'error': '无权限'}, status=403)
-    pairs, err = _cal_pairs_from_post(request)
+    pairs, err = _cal_pairs_from_post(request, minimum=3)
     if err:
         return JsonResponse({'success': False, 'error': err}, status=400)
-    method = (request.POST.get('method') or '').strip()
-    if method not in ('', 'sim', 'tps', 'mls'):
-        return JsonResponse({'success': False, 'error': '未知的拟合方法'}, status=400)
+    method = (request.POST.get('method') or 'sim').strip()
+    if method != 'sim':
+        return JsonResponse({'success': False, 'error': '只支持保持 CAD 比例的控制点对齐；旧变形方法已停用'}, status=400)
+    checks, err = _cal_pairs_from_post(request, 'check_points', minimum=1)
+    if err:
+        return JsonResponse({'success': False, 'error': err}, status=400)
     cal = [{'dxf_x': p['dxf_x'], 'dxf_y': -p['dxf_y'], 'lat': p['lat'], 'lng': p['lng']}
            for p in pairs]
     fn, stats = fit_calibration_transform(cal, method or None)
     if not callable(fn):
         return JsonResponse({'success': False, 'error': stats or '标定点退化'}, status=400)
-    SiteCalibration.objects.create(
-        points=pairs,
+    from core.dxf_state import alignment_status
+    alignment = alignment_status({'points': pairs, 'check_points': checks, 'method': method})
+    if not alignment['ready']:
+        return JsonResponse({'success': False, 'error': alignment['error'], 'alignment': alignment}, status=400)
+    drawing_token = (request.POST.get('token') or '').strip()
+    batch_id = request.POST.get('batch_id')
+    if not drawing_token and not batch_id:
+        return JsonResponse({'success': False, 'error': '请先上传图纸或选择导入批次'}, status=400)
+    if batch_id:
+        from core.models import PipelineImportBatch
+        try:
+            batch = PipelineImportBatch.objects.filter(pk=int(batch_id)).first()
+        except (TypeError, ValueError):
+            batch = None
+        if batch is None:
+            return JsonResponse({'success': False, 'error': '导入批次不存在'}, status=400)
+        if drawing_token and drawing_token != batch.source_token:
+            return JsonResponse({'success': False, 'error': '图纸与导入批次不一致'}, status=400)
+        drawing_token = batch.source_token
+    if drawing_token and not batch_id:
+        from core.dxf_pipeline_utils import _parse_cache, PARSE_CACHE_KEY_PREFIX
+        if _parse_cache().get(PARSE_CACHE_KEY_PREFIX + drawing_token) is None:
+            return JsonResponse({'success': False, 'error': '图纸预览已过期，请重新解析'}, status=400)
+    row = SiteCalibration.objects.create(
+        points=pairs, check_points=checks, drawing_token=drawing_token,
         method=method,
         note=(request.POST.get('note') or '').strip()[:200],
         created_by=request.user if request.user.is_authenticated else None,
     )
     _bust_calibration_cache()
-    info = active_calibration_info()
+    info = active_calibration_info(calibration_snapshot(calibration_id=row.pk))
     return JsonResponse({'success': True, 'calibration': info})
 
 
 @require_POST
 @login_required(login_url='core:login')
 def pipeline_dxf_calibration_clear(request):
-    """AJAX: 清空全部已存匹配点（历史 SiteCalibration 行）。
-
-    换新图纸/重新导入前的干净起点：旧点引用旧图纸的本地坐标系，对新图纸
-    既是垃圾输入也会污染累计选点。已入库水管坐标不受影响（入库时已换成
-    经纬度）。返回清空后的标定信息（回落到系统默认两点及其逆变换）。
-    """
+    """Reset active calibration selection, retaining historical batch transforms."""
     from core.models import SiteCalibration
+    from core.dxf_state import calibration_snapshot
     from core.dxf_pipeline_utils import _bust_calibration_cache, active_calibration_info
     if not _pipeline_dxf_gate(request.user):
         return JsonResponse({'success': False, 'error': '无权限'}, status=403)
-    deleted, _ = SiteCalibration.objects.all().delete()
+    rows = SiteCalibration.objects.filter(is_active=True)
+    drawing_token = (request.POST.get('token') or '').strip()
+    rows = rows.filter(drawing_token=drawing_token)
+    cleared = rows.update(is_active=False)
+    if drawing_token and not SiteCalibration.objects.filter(drawing_token=drawing_token).exists():
+        # An inactive scoped marker prevents falling back to an unrelated legacy
+        # site-wide calibration after a drawing-specific reset.
+        SiteCalibration.objects.create(points=[], is_active=False,
+                                       drawing_token=drawing_token, note='重置图纸标定',
+                                       created_by=request.user)
     _bust_calibration_cache()
     return JsonResponse({
         'success': True,
-        'deleted': deleted,
-        'message': f'已清空 {deleted} 条历史标定记录，请重新解析图纸并选点校准',
-        'calibration': active_calibration_info(),
+        'deleted': 0, 'cleared': cleared,
+        'message': f'已重置 {cleared} 条生效标定，历史记录与已导入管道保留，请重新解析图纸',
+        'calibration': active_calibration_info(calibration_snapshot(drawing_token or None)),
     })
 
 
 @require_POST
 @login_required(login_url='core:login')
 def pipeline_dxf_calibration_apply(request):
-    """AJAX: 把新的生效标定追溯应用到已保存的管道/阀门坐标。
-
-    已存数据是按「上一生效标定」换算的，所以重算 = old⁻¹ ∘ new：
-    先把每个 lat/lng 还原回本地坐标，再按新标定正向变换。执行前把全部
-    管道/阀门坐标备份为 JSON 文件。POST 需带 confirm=1。
-    """
-    import json as _json
-    from django.db import transaction
-    from django.utils import timezone as _tz
-    from core.calibration import (SITE_CALIBRATION_POINTS,
-                                fit_calibration_transform, fit_calibration_inverse)
-    from core.models import SiteCalibration, Pipeline, PipeValve, PipelineImportBatch
+    """Apply a selected calibration to imported batches using retained CAD coordinates."""
+    import json
+    from core.dxf_reproject import apply_calibration
     from core.dxf_pipeline_utils import _bust_calibration_cache
     if not _pipeline_dxf_gate(request.user):
         return JsonResponse({'success': False, 'error': '无权限'}, status=403)
     if request.POST.get('confirm') != '1':
         return JsonResponse({'success': False, 'error': '缺少确认参数'}, status=400)
-
-    rows = list(SiteCalibration.objects.order_by('-id')[:20])
-    if not rows:
-        return JsonResponse({'success': False, 'error': '还没有已保存的用户标定'}, status=400)
-    new_row = rows[0]
-    if new_row.applied_at:
-        # 幂等保护：库中坐标已按该标定重算过，再叠加一次会重复移动
-        return JsonResponse({'success': False,
-                             'error': '当前标定已应用过（%s）。如需再次重算，请先保存一份新标定。'
-                                      % new_row.applied_at.strftime('%m-%d %H:%M')}, status=400)
-    # old（逐批次推导）：某批管道的当前坐标活在哪个标定下 =
-    #   max(该批导入时刻的生效标定, 最近一次 applied 的行)，按行序(id)。
-    # 旧实现把全库当作活在同一个 old 下（最近 applied 行 / 默认两点）——在
-    # 「新标定已保存但未应用」窗口里导入的批次实际活在导入时标定下，用错误
-    # 的 old⁻¹ 还原，每保存+应用一轮就叠加一次偏差（表现为"导入的线条越调
-    # 越歪"）。导入时标定 = created_at ≤ 批次 imported_at 的最新行（auto_now_add
-    # 单调，id 序即时间序）；该时刻无行则硬编码默认两点。手动建的管道无批次，
-    # 沿用旧语义（最近 applied 行 / 默认两点）。
-    new_pts = new_row.points
-    new_method = new_row.method or ''
-    if not new_pts or len(new_pts) < 2:
-        return JsonResponse({'success': False, 'error': '新标定点数不足'}, status=400)
-
-    hist = list(SiteCalibration.objects.order_by('id')
-                .values('id', 'created_at', 'points', 'method', 'applied_at'))
-    rows_by_id = {r['id']: r for r in hist}
-    last_applied = max((r for r in hist if r['applied_at']),
-                       key=lambda r: r['id'], default=None)
-    DEFAULT_OLD = {'id': 0, 'points': SITE_CALIBRATION_POINTS, 'method': ''}
-    # 闸门/无批次管道对照用的全局 old：最近 applied 行，无则默认两点
-    gate_old = last_applied or DEFAULT_OLD
-
-    def old_row_of(imported_at):
-        row = DEFAULT_OLD
-        for r in hist:
-            if r['created_at'] <= imported_at:
-                row = r
-        if last_applied and last_applied['id'] > row['id']:
-            return last_applied   # 批次导入后有过 apply：全库已搬到该行
-        return row
-
-    def _fit_row(row):
-        """→ (fn, stats, inv)。inv 为该标定的反向变换，退化时 None。"""
-        cal = [{'dxf_x': float(p['dxf_x']), 'dxf_y': -float(p['dxf_y']),
-                'lat': float(p['lat']), 'lng': float(p['lng'])} for p in row['points']]
-        fn, stats = fit_calibration_transform(cal, row['method'] or None)
-        inv = fit_calibration_inverse(cal, row['method'] or '') if callable(fn) else None
-        return fn, stats, inv
-
-    new_fn, new_stats, _ni = _fit_row({'id': new_row.id, 'created_at': None,
-                                       'points': new_pts, 'method': new_method,
-                                       'applied_at': None})
-    if not callable(new_fn):
-        return JsonResponse({'success': False, 'error': '新标定拟合失败'}, status=400)
-    _gf, gate_stats, _gi = _fit_row(gate_old)
-    if not callable(_gf):
-        return JsonResponse({'success': False, 'error': '上一标定拟合失败'}, status=400)
-
-    from core.pipe_utils import _to_latlng
-
-    _inv_cache = {}   # 标定行 id → 反向变换（同一行的多条管道只拟一次）
-    def old_inv_of(row):
-        if row['id'] not in _inv_cache:
-            _inv_cache[row['id']] = _fit_row(row)[2]
-        return _inv_cache[row['id']]
-
-    def _remap_pt(inv, pt):
-        # 兼容 dict {lat,lng} 与历史数组 [lat,lng] 两种行格式；输出统一 dict。
-        ll = _to_latlng(pt)
-        if ll is None:
-            return pt   # 无法解析的行原样保留（不因个别脏数据中断整批重算）
-        x, y = inv(ll[0], ll[1])
-        la, ln = new_fn(x, y)
-        return {'lat': round(float(la), 7), 'lng': round(float(ln), 7)}
-
-    # 注：此前带「整体微调」偏移导入的批次，其偏移会随组合变换近似映射，
-    # 不做逐批偏移簿记（偏差在亚米级，记录成本不值）。
-    # 安全闸的比例/旋转取相似变换对照值（TPS stats 里同样带，退化时为 None
-    # → 视作 0，不拦）。TPS 的"比例"本身只是参考量级。
-    drift = ((new_stats['scale'] / gate_stats['scale']) - 1) * 100 if gate_stats['scale'] else 0
-    rot_change = (new_stats['rotation_deg'] or 0) - (gate_stats['rotation_deg'] or 0)
-    rot_change = ((rot_change + 180.0) % 360.0) - 180.0   # ±180° 环绕归一
-    # 安全闸：比例/旋转剧变几乎总是选点错误（正常土建/卫星偏差在个位数百分比和
-    # 小角度内）。需显式 force=1 才放行，防止误操作大规模移动已存坐标。
-    if request.POST.get('force') != '1' and (abs(drift) > 15 or abs(rot_change) > 10):
-        return JsonResponse({
-            'success': False, 'need_force': True,
-            'error': f'新旧标定差异过大（比例 {drift:+.1f}%，旋转 {rot_change:+.1f}°），'
-                     '通常是标定点选错。请核对三组点；确认无误请再点一次确认强制应用。',
-            'scale_change_pct': round(drift, 3),
-            'rotation_change_deg': round(rot_change, 3),
-        }, status=400)
-
-    # 备份：全部现有坐标写入时间戳 JSON（回滚用）。uuid 后缀防同秒覆盖。
-    import os
-    import uuid as _uuid
-    from django.conf import settings as _settings
     try:
-        backup_dir = os.path.join(_settings.BASE_DIR, 'pipeline_backups')
-        os.makedirs(backup_dir, exist_ok=True)
-        ts = _tz.localtime().strftime('%Y%m%d_%H%M%S')
-        backup_path = os.path.join(backup_dir, f'recalib_{ts}_{_uuid.uuid4().hex[:6]}.json')
-        with open(backup_path, 'w', encoding='utf-8') as bf:
-            _json.dump({
-                'created_at': _tz.now().isoformat(),
-                # 逐批旧标定（重算依据）：id → {points, method}；历史行可按 id
-                # 从 SiteCalibration 复原。gate_old 仅为闸门对照，不参与重算。
-                'old_calibration': gate_old['points'], 'new_calibration': new_pts,
-                'old_calibration_rows': {str(r['id']): {'points': r['points'],
-                                                        'method': r['method']}
-                                         for r in hist},
-                'pipelines': [{'id': p.id, 'line_points': p.line_points}
-                              for p in Pipeline.objects.all().only('id', 'line_points')],
-                'valves': [{'id': v.id, 'point': v.point}
-                           for v in PipeValve.objects.all().only('id', 'point')],
-            }, bf, ensure_ascii=False)
-    except OSError as exc:
-        return JsonResponse({'success': False,
-                             'error': f'备份文件写入失败，已中止（{exc.__class__.__name__}）'}, status=500)
-
-    n_pipes = n_valves = 0
-    with transaction.atomic():
-        # 快照在事务内取，缩小与并发编辑的竞态窗口。按「旧标定行」分组管道，
-        # 每组用各自的 old⁻¹∘new 重算——不同批次可以活在不同的标定下。
-        batch_ts = dict(PipelineImportBatch.objects.values_list('id', 'imported_at'))
-        old_key_by_pid = {}
-        groups = {}   # 旧标定行 id → [pipelines]
-        for p in Pipeline.objects.all().only('id', 'line_points', 'import_batch_id'):
-            ts = batch_ts.get(p.import_batch_id)
-            key = old_row_of(ts)['id'] if ts else gate_old['id']
-            old_key_by_pid[p.id] = key
-            groups.setdefault(key, []).append(p)
-        # 写入前统一解析全部需要的逆变换——有任何不可逆就在零写入时退出
-        # （atomic 块正常退出即 commit，中途 return 会把已 save 的部分提交）。
-        for key in sorted(set(groups) | {gate_old['id']}):
-            row = DEFAULT_OLD if key == 0 else rows_by_id[key]
-            if old_inv_of(row) is None:
-                return JsonResponse({'success': False,
-                                     'error': f'标定 #{key} 不可逆，已中止（未改动任何数据）'},
-                                    status=400)
-        # 并发闸：两个会话同时通过外层 applied_at 检查时，只有第一个能在
-        # 这里占到 applied_at；后到的 update 命中 0 行即整体退出（本事务
-        # 尚未写入任何坐标，提交零改动），避免双重搬移。
-        if not SiteCalibration.objects.filter(
-                pk=new_row.pk, applied_at__isnull=True).update(applied_at=_tz.now()):
-            return JsonResponse({'success': False,
-                                 'error': '该标定刚刚已被其他会话应用，本次未做任何改动'},
-                                status=409)
-        for key, plist in groups.items():
-            inv = _inv_cache[key]
-            for p in plist:
-                if not p.line_points:
-                    continue
-                p.line_points = [_remap_pt(inv, pt) for pt in p.line_points]
-                p.save(update_fields=['line_points'])
-                n_pipes += 1
-        # SQLite 不允许对同表边扫边改：.iterator() 的惰性游标下 UPDATE
-        # 可能跳过/重复行（文档化行为）——阀门量级物化成列表完全放得起。
-        for v in list(PipeValve.objects.all().only('id', 'point', 'pipeline_id')):
-            if not v.point:
-                continue
-            key = old_key_by_pid.get(v.pipeline_id, gate_old['id'])
-            inv = _inv_cache[key]
-            v.point = [_remap_pt(inv, v.point[0])]
-            v.save(update_fields=['point'])
-            n_valves += 1
-    _invalidate_cached('dashboard:pipelines')
-    _bust_calibration_cache()
-
-    # 事后核验：应用后每个控制点的卫星位置距最近管线顶点应≈0。>0.5m
-    # 说明这一轮换算有残差（逆推近似的累积），提示用户但不算失败——
-    # 再保存应用一轮或喊管理员重锚定即可收敛。
-    import math as _math
-    verts = []
-    for p in Pipeline.objects.all().only('line_points').iterator():
-        for pt in (p.line_points or []):
-            ll = _to_latlng(pt)
-            if ll:
-                verts.append(ll)
-    ctrl_max = 0.0
-    if verts:
-        for cp in new_pts:
-            la, ln = float(cp['lat']), float(cp['lng'])
-            d = min(_math.hypot((v[0] - la) * 111320.0,
-                                (v[1] - ln) * 111320.0 * _math.cos(_math.radians(la)))
-                    for v in verts)
-            ctrl_max = max(ctrl_max, d)
-    return JsonResponse({
-        'success': True,
-        'pipelines': n_pipes, 'valves': n_valves,
-        'scale_change_pct': round(drift, 3),
-        'rotation_change_deg': round(rot_change, 3),
-        'backup': os.path.basename(backup_path),
-        'ctrl_max_m': round(ctrl_max, 3),
-    })
+        from .dxf_state import calibration_snapshot, require_alignment
+        if not request.POST.get('calibration_id') or 'batch_ids' not in request.POST:
+            raise ValueError('请选择已验证的标定和要重新定位的批次')
+        require_alignment(calibration_snapshot(calibration_id=request.POST['calibration_id']))
+        batch_ids = None
+        if 'batch_ids' in request.POST:
+            raw = json.loads(request.POST['batch_ids'])
+            if not isinstance(raw, list) or not raw or any(type(i) is not int for i in raw):
+                raise ValueError('请选择有效的导入批次')
+            batch_ids = raw
+        result = apply_calibration(request.POST.get('calibration_id') or None,
+                                   batch_ids, request.POST.get('force') == '1', discard_legacy_offset=True)
+    except (ValueError, TypeError, KeyError) as exc:
+        return JsonResponse({'success': False, 'error': str(exc)}, status=400)
+    except OSError:
+        return JsonResponse({'success': False, 'error': '备份写入失败，未修改任何坐标'}, status=500)
+    if result.get('success'):
+        _invalidate_cached('dashboard:pipelines')
+        _bust_calibration_cache()
+    return JsonResponse(result, status=200 if result.get('success') else 400)
 
 
 @require_POST
@@ -393,20 +244,34 @@ def pipeline_dxf_import_submit(request):
         layer_specs = _json.loads(request.POST.get('layers_json') or '{}')
         block_specs = _json.loads(request.POST.get('blocks_json') or '{}')
         label_layers = _json.loads(request.POST.get('label_layers') or '[]')
-    except (json.JSONDecodeError, TypeError):
+    except (_json.JSONDecodeError, TypeError):
         return JsonResponse({'success': False, 'error': '映射参数格式无效'}, status=400)
-    if not layer_specs:
+    if not isinstance(layer_specs, dict) or not any(
+            isinstance(spec, dict) and spec.get('include') for spec in layer_specs.values()):
         return JsonResponse({'success': False, 'error': '请至少选择一个管道图层'}, status=400)
-    # 整体微调偏移（度）：预览阶段用户拖动校准的结果，导入时叠加到最终坐标
+    if not isinstance(block_specs, dict) or not isinstance(label_layers, list):
+        return JsonResponse({'success': False, 'error': '映射参数格式无效'}, status=400)
+    if any(layer.startswith('块·') and isinstance(spec, dict) and spec.get('include')
+           for layer, spec in layer_specs.items()):
+        return JsonResponse({'success': False, 'error': '块符号仅作为 CAD 参考，请在设备页选择阀门类型'}, status=400)
+    preview_token = request.POST.get('preview_token') or ''
+    if not preview_token:
+        return JsonResponse({'success': False, 'error': '请先解析图纸并确认预览'}, status=400)
+    # Older clients may send zero offsets; unverified whole-drawing shifts are retired.
     try:
         offset = (float(request.POST.get('offset_lat') or 0),
                   float(request.POST.get('offset_lng') or 0))
     except (TypeError, ValueError):
-        offset = (0.0, 0.0)
+        return JsonResponse({'success': False, 'error': '偏移参数必须为有效数值'}, status=400)
+    if offset != (0.0, 0.0):
+        return JsonResponse({'success': False, 'error': '拖动偏移定位已停用，请使用控制点重新对齐'}, status=400)
     try:
+        from .dxf_state import read_preview, require_alignment
+        state = read_preview(preview_token, token, request.user.pk)
+        require_alignment(state['calibration'])
         result = import_dxf_pipelines(
             layer_specs, block_specs, uploaded_file=f,
-            label_layers=label_layers, offset=offset, token=token,
+            label_layers=label_layers, offset=offset, token=token, preview_token=preview_token,
             batch_name=(f.name if f and f.name
                         else (request.POST.get('filename') or 'DXF导入')),
             imported_by=request.user if request.user.is_authenticated else None)
@@ -426,7 +291,9 @@ def pipeline_dxf_import_submit(request):
 @login_required(login_url='core:login')
 def pipeline_edit_data(request):
     """编辑模式的地图数据：全部管线 + 阀门 + zone 清单（用于指派下拉）。"""
-    from .models import Pipeline, PipeValve, Zone
+    from .models import Pipeline, PipelineImportBatch, PipeValve, Zone
+    from .dxf_pipeline_utils import active_calibration_info
+    from .dxf_state import calibration_snapshot
     if not _pipeline_dxf_gate(request.user):
         return JsonResponse({'success': False, 'error': '无权限'}, status=403)
     pipes = []
@@ -435,7 +302,8 @@ def pipeline_edit_data(request):
             'id': p.id, 'name': p.name, 'code': p.code,
             'type': p.pipeline_type, 'type_display': p.get_pipeline_type_display(),
             'diameter': p.main_diameter, 'color': p.line_color,
-            'line_points': p.line_points, 'source': p.source_label or '',
+            'line_points': p.line_points, 'source_points': p.source_points,
+            'batch_id': p.import_batch_id, 'source': p.source_label or '',
         })
     valves = []
     for v in (PipeValve.objects.select_related('zone', 'station').order_by('id')):
@@ -443,14 +311,31 @@ def pipeline_edit_data(request):
             'id': v.id, 'pipeline_id': v.pipeline_id,
             'name': v.name or '', 'type': v.valve_type,
             'type_display': v.get_valve_type_display(),
-            'diameter': v.diameter, 'point': v.point,
+            'diameter': v.diameter, 'point': v.point, 'source_point': v.source_point,
+            'notes': v.notes, 'source_attributes': v.source_attributes,
             'zone_id': v.zone_id, 'zone_label': (v.zone.code + ' ' + v.zone.name) if v.zone else '',
             'station_id': v.station_id,
         })
     zones = [{'id': z.id, 'label': f'{z.code} {z.name}'}
              for z in Zone.objects.order_by('code')]
+    batch_calibrations = {
+        str(b.id): active_calibration_info(b.applied_calibration or b.calibration_snapshot
+                                          or calibration_snapshot(b.source_token or None))
+        for b in PipelineImportBatch.objects.all()
+    }
+    cad_source = None
+    cad_options = None
+    if request.GET.get('batch_id'):
+        try:
+            batch = PipelineImportBatch.objects.get(pk=int(request.GET['batch_id']))
+        except (ValueError, PipelineImportBatch.DoesNotExist):
+            return JsonResponse({'success': False, 'error': '导入批次不存在'}, status=400)
+        cad_source = batch.source_geometry or None
+        cad_options = batch.import_options
     return JsonResponse({'success': True, 'pipelines': pipes,
-                         'valves': valves, 'zones': zones})
+                         'valves': valves, 'zones': zones,
+                         'batch_calibrations': batch_calibrations, 'cad_source': cad_source,
+                         'cad_options': cad_options})
 
 
 @require_POST
