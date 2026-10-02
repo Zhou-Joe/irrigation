@@ -381,7 +381,8 @@ def fit_calibration_transform(pairs, method=None, k=None):
     """
     if method == 'sim' and len(pairs) >= 2:
         fn, stats = similarity_transform_ls(pairs, k)
-        stats['method'] = 'similarity'
+        if callable(fn):
+            stats['method'] = 'similarity'
         return fn, stats
     if method == 'mls' and len(pairs) >= 2:
         return mls_fit(pairs, k)

@@ -343,11 +343,12 @@ class ApplyPerBatchTests(TestCase):
         cls.rf = RequestFactory()
 
     def _apply(self):
-        from core import dxf_views
-        req = self.rf.post('/x/', {'confirm': '1', 'force': '1'})
-        req.user = self.user
-        resp = dxf_views.pipeline_dxf_calibration_apply(req)
-        return resp.status_code, json.loads(resp.content)
+        from core.dxf_reproject import apply_calibration
+        try:
+            result=apply_calibration(force=True)
+            return 200,result
+        except ValueError as exc:
+            return 400,{'success':False,'error':str(exc)}
 
     @staticmethod
     def _line(pairs, pts):
@@ -418,6 +419,10 @@ class AnalyzeImportSmokeTests(TestCase):
         d = r.json()
         self.assertTrue(d['success'], d.get('error'))
         self.assertEqual(d['token'], 'd6b96e7916d1e8b0cd08b529ec3933db')  # 内容 hash 锚点
+        self.assertEqual(d['coverage']['paths'], 1982)
+        self.assertEqual(d['coverage']['labels'], 405)
+        self.assertEqual(sum(len(layer['paths']) for layer in d['preview']['layers']), 1982)
+        self.assertEqual(len(d['preview']['valves']), 515)
         ad = next(pl for pl in d['preview']['layers'] if pl['layer'] == 'AD-I-LL')
         self.assertGreaterEqual(sum(len(p) for p in ad['paths']), 140,
                                 'AD-I-LL 的 bulge 弧应已细分（旧值 100 顶点）')
