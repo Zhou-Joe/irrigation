@@ -1,0 +1,8 @@
+{
+  "server_url": "http://localhost:8000",
+  "api_key": "change-me-same-as-server-setting",
+  "mdb_path": "C:/path/to/Database/Maxicom2.mdb",
+  "mdb_password": "",
+  "sync_interval_minutes": 5,
+  "overlap_buffer_minutes": 2
+}
