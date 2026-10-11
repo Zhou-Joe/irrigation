@@ -108,7 +108,7 @@ class Command(BaseCommand):
                 continue
 
             # Crews that cover every land in this PM.
-            common = set.intersection(*[s for s in crew_sets if s])
+            common = set.intersection(*crew_sets)
             if len(common) >= 1:
                 # Pick the lowest-id crew (deterministic) when multiple overlap.
                 # In production each land should map to exactly one crew; on the

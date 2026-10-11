@@ -114,6 +114,8 @@ def pm_tasks_for_field_worker(user):
     """
     from datetime import date as _date
     from .models import Worker, GeneratedWorkOrder
+    from .pm_utils import is_overdue
+    from django.db.models import Q
     try:
         worker = Worker.objects.get(user=user, active=True)
     except Worker.DoesNotExist:
@@ -121,13 +123,12 @@ def pm_tasks_for_field_worker(user):
     # Crews this worker belongs to (as member) or leads.
     crew_ids = set(worker.crews.values_list('id', flat=True)) | \
         set(worker.led_crews.values_list('id', flat=True))
-    if not crew_ids:
-        return []
     from django.utils import timezone as _tz
     today = _tz.localdate()
     tasks = (GeneratedWorkOrder.objects
              .filter(status__in=['dispatched', 'overdue'],
-                     crew_id__in=crew_ids, scheduled_date__lte=today)
+                     scheduled_date__lte=today)
+             .filter(Q(crew_id__in=crew_ids) | Q(crew__isnull=True, worker=worker))
              .select_related('plan__job_plan', 'worker')
              .prefetch_related('zones')
              .order_by('scheduled_date')[:20])
@@ -145,7 +146,7 @@ def pm_tasks_for_field_worker(user):
             'scheduled_date': gwo.scheduled_date.strftime('%Y-%m-%d'),
             'zone_count': len(zones_qs),
             'zone_preview': '、'.join(first_codes),
-            'overdue': gwo.scheduled_date < today,
+            'overdue': is_overdue(gwo, today),
         })
     return result
 
