@@ -63,8 +63,12 @@
                 </div>
                 <div class="pm-field">
                     <label>提前生成天数</label>
-                    <input type="number" name="lead_days" class="pm-input" value="{{ plan.lead_days|default:'28' }}" min="0">
+                    <input type="number" name="lead_days" class="pm-input" value="{% if plan %}{{ plan.lead_days }}{% else %}28{% endif %}" min="0">
                 </div>
+            </div>
+            <div class="pm-field">
+                <label>到期基准日</label>
+                <input type="date" name="start_date" class="pm-input" value="{{ plan.start_date|date:'Y-m-d' }}">
             </div>
             <div class="pm-field">
                 <label>工配备注模板</label>

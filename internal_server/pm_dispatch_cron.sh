@@ -3,8 +3,8 @@
 #
 # Runs two management commands in sequence:
 #   1. mark_pm_overdue       — transitions dispatched GWOs past their
-#                              scheduled_date to 'overdue'
-#   2. generate_pm_workorders — generates WorkReports for due PM plans
+#                              scheduled_date + one period to 'overdue'
+#   2. generate_pm_workorders — generates PM dispatch records for due plans
 #                              (backfills any missed cycles automatically)
 #
 # Cron entry (runs 6:00 AM Asia/Shanghai — before the 8 AM shift so field
@@ -32,9 +32,9 @@ fi
 cd "$PROJECT/internal_server"
 
 echo "$(ts) marking overdue..." >> "$LOG"
-"$PY" "$MANAGE" mark_pm_overdue >> "$LOG" 2>&1 || true
+"$PY" "$MANAGE" mark_pm_overdue >> "$LOG" 2>&1
 
 echo "$(ts) generating work orders..." >> "$LOG"
-"$PY" "$MANAGE" generate_pm_workorders >> "$LOG" 2>&1 || true
+"$PY" "$MANAGE" generate_pm_workorders >> "$LOG" 2>&1
 
 echo "$(ts) === PM dispatch done ===" >> "$LOG"

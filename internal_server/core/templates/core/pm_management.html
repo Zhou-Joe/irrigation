@@ -481,21 +481,23 @@
             <!-- C. 逾期工单清单 -->
             <div class="settings-card">
                 <div class="settings-card-header" style="cursor:default;">
-                    <h2>逾期工单 {% if overdue_orders %}({{ overdue_orders|length }}){% endif %}</h2>
+                    <h2>逾期工单 {% if overdue_count %}({{ overdue_count }}){% endif %}</h2>
                     {% if overdue_orders %}
-                    <div class="header-actions"><button class="btn btn-sm btn-secondary" onclick="skipAllOverdue(event)">一键全部跳过</button></div>
+                    {% if overdue_count > 100 %}<p style="color:#888;">共 {{ overdue_count }} 张，当前展示前 100 张；“一键全部跳过”会处理全部逾期工单。</p>{% endif %}
+                    <div class="header-actions"><button class="btn btn-sm btn-secondary" data-overdue-count="{{ overdue_count }}" onclick="skipAllOverdue(event)">一键全部跳过</button></div>
                     {% endif %}
                 </div>
                 <div class="settings-card-body" style="max-height:none;">
                     {% if overdue_orders %}
                     <table class="card-table">
-                        <thead><tr><th>PM编号</th><th>JobPlan</th><th>计划日期</th><th>逾期天数</th><th>班组</th><th>操作</th></tr></thead>
+                        <thead><tr><th>PM编号</th><th>JobPlan</th><th>计划日期</th><th>完成截止</th><th>逾期天数</th><th>班组</th><th>操作</th></tr></thead>
                         <tbody>
                             {% for o in overdue_orders %}
                             <tr id="overdueRow-{{ o.gwo_id }}">
                                 <td><strong>{{ o.pm_number }}</strong></td>
                                 <td>{{ o.job_plan_name }}</td>
                                 <td>{{ o.scheduled_date|date:"Y-m-d" }}</td>
+                                <td>{{ o.deadline|date:"Y-m-d" }}</td>
                                 <td><span style="color:#dc2626;font-weight:600;">{{ o.days_overdue }}天</span></td>
                                 <td>{{ o.crew_name }}</td>
                                 <td><button class="btn btn-sm btn-secondary" onclick="skipGwo({{ o.gwo_id }})">标跳过</button></td>
@@ -1030,7 +1032,7 @@ function _updatePmRow(plan, isEdit) {
         row.dataset.pmNumber = plan.pm_number; row.dataset.jobPlan = plan.job_plan_id;
         row.dataset.crew = plan.crew_id || ''; row.dataset.freqValue = plan.frequency_value;
         row.dataset.freqUnit = plan.frequency_unit; row.dataset.active = plan.active ? '1' : '';
-        row.dataset.remark = plan.remark_template || ''; row.dataset.leadDays = plan.lead_days || 1;
+        row.dataset.remark = plan.remark_template || ''; row.dataset.leadDays = plan.lead_days == null ? 28 : plan.lead_days;
         row.dataset.startDate = plan.start_date || '';
         row.dataset.patch = plan.patch_id || ''; row.dataset.satellite = plan.satellite_id || '';
         var tds = row.querySelectorAll('td');
@@ -1049,7 +1051,7 @@ function _updatePmRow(plan, isEdit) {
         tr.className = 'pm-data-row'; tr.id = 'pmRow-' + plan.id;
         tr.dataset.pmNumber = plan.pm_number; tr.dataset.jobPlan = plan.job_plan_id;
         tr.dataset.crew = plan.crew_id || ''; tr.dataset.freqValue = plan.frequency_value; tr.dataset.freqUnit = plan.frequency_unit;
-        tr.dataset.active = plan.active ? '1' : ''; tr.dataset.remark = plan.remark_template || ''; tr.dataset.leadDays = plan.lead_days || 1;
+        tr.dataset.active = plan.active ? '1' : ''; tr.dataset.remark = plan.remark_template || ''; tr.dataset.leadDays = plan.lead_days == null ? 28 : plan.lead_days;
         tr.dataset.startDate = plan.start_date || '';
         tr.dataset.patch = plan.patch_id || ''; tr.dataset.satellite = plan.satellite_id || '';
         tr.innerHTML = '<td><strong>' + esc(plan.pm_number) + '</strong></td>' +
@@ -1206,12 +1208,13 @@ function skipGwo(gwoId) {
         method: 'POST', headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRFToken': pmCsrf() }
     }).then(function(r) { return r.json(); }).then(function(d) {
         pmToast(d.message, !d.success);
-        if (d.success) { var row = document.getElementById('overdueRow-' + gwoId); if (row) row.remove(); }
+        if (d.success) setTimeout(function(){ pmReloadActiveTab(); }, 800);
     }).catch(function() { pmToast('网络错误', true); });
 }
 function skipAllOverdue(e) {
-    var btn = (e && e.target) || event.target;
-    if (!confirm('确定把所有逾期工单全部标为跳过？\n（操作不可撤销）')) return;
+    var btn = e.currentTarget || e.target;
+    if (btn.disabled) return;
+    if (!confirm('确定把全部 ' + btn.dataset.overdueCount + ' 张逾期工单标为跳过？\n相关待审批延期申请也会关闭。\n（操作不可撤销）')) return;
     btn.disabled = true; btn.textContent = '跳过中…';
     fetch('/settings/pm/gwo/skip-all/', {
         method: 'POST', headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRFToken': pmCsrf() }

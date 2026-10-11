@@ -2582,6 +2582,28 @@ def crew_edit(request, crew_id):
     return render(request, 'core/crew_form.html', context)
 
 
+def _parse_pm_schedule(data, default_start):
+    """Validate the scheduling fields shared by PM create and edit."""
+    from datetime import date
+    try:
+        frequency_value = int(data.get('frequency_value', 1) or 1)
+        lead_days = int(data.get('lead_days', 28) or 28)
+    except (ValueError, TypeError):
+        raise ValueError('频率值和提前生成天数必须是整数')
+    if frequency_value < 1 or lead_days < 0:
+        raise ValueError('频率值必须大于0，提前生成天数不能小于0')
+    frequency_unit = data.get('frequency_unit', 'weeks')
+    if frequency_unit not in ('days', 'weeks', 'months'):
+        raise ValueError('频率单位无效')
+    start = data.get('start_date', '').strip()
+    try:
+        start_date = date.fromisoformat(start) if start else default_start
+    except ValueError:
+        raise ValueError('到期基准日格式无效')
+    return {'frequency_value': frequency_value, 'frequency_unit': frequency_unit,
+            'lead_days': lead_days, 'start_date': start_date}
+
+
 @login_required(login_url='core:login')
 def pm_plan_new(request):
     """Create a new MaintenancePlan (PM 计划)."""
@@ -2592,14 +2614,18 @@ def pm_plan_new(request):
     from .models import JobPlanTemplate, Crew, Zone, Satellite, MaintenancePlan, Patch
     from django.utils import timezone as _tz
     if request.method == 'POST':
+        try:
+            schedule = _parse_pm_schedule(request.POST, _tz.localdate())
+        except ValueError as ex:
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return JsonResponse({'success': False, 'message': str(ex)}, status=400)
+            messages.error(request, str(ex))
+            return redirect('core:pm_plan_new')
         plan = MaintenancePlan.objects.create(
             pm_number=request.POST.get('pm_number', '').strip(),
             job_plan_id=request.POST.get('job_plan') or None,
             crew_id=request.POST.get('crew') or None,
-            frequency_value=int(request.POST.get('frequency_value', 1) or 1),
-            frequency_unit=request.POST.get('frequency_unit', 'weeks'),
-            start_date=_tz.localdate(),
-            lead_days=int(request.POST.get('lead_days', 28) or 28),
+            **schedule,
             active=bool(request.POST.get('active')),
             remark_template=request.POST.get('remark_template', '').strip(),
             patch_id=request.POST.get('patch') or None,
@@ -2632,24 +2658,22 @@ def pm_plan_edit(request, plan_id):
     from .models import JobPlanTemplate, Crew, Zone, Satellite, MaintenancePlan, Patch
     plan = get_object_or_404(MaintenancePlan, pk=plan_id)
     if request.method == 'POST':
+        try:
+            schedule = _parse_pm_schedule(request.POST, plan.start_date)
+        except ValueError as ex:
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return JsonResponse({'success': False, 'message': str(ex)}, status=400)
+            messages.error(request, str(ex))
+            return redirect('core:pm_plan_edit', plan_id=plan_id)
         plan.pm_number = request.POST.get('pm_number', '').strip()
         plan.job_plan_id = request.POST.get('job_plan') or None
         plan.crew_id = request.POST.get('crew') or None
-        plan.frequency_value = int(request.POST.get('frequency_value', 1) or 1)
-        plan.frequency_unit = request.POST.get('frequency_unit', 'weeks')
-        plan.lead_days = int(request.POST.get('lead_days', 28) or 28)
+        for field, value in schedule.items():
+            setattr(plan, field, value)
         plan.active = bool(request.POST.get('active'))
         plan.remark_template = request.POST.get('remark_template', '').strip()
         plan.patch_id = request.POST.get('patch') or None
         plan.satellite_id = request.POST.get('satellite') or None
-        # 到期基准日：经理可改。改后仅影响未来派发（rrule 锚点），已有 GWO 不动。
-        from datetime import date as _dt
-        start_date_str = request.POST.get('start_date', '').strip()
-        if start_date_str:
-            try:
-                plan.start_date = _dt.fromisoformat(start_date_str)
-            except ValueError:
-                pass  # 格式无效时保持原值
         plan.save()
         plan.zones.set(request.POST.getlist('zones'))
         if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
@@ -2685,6 +2709,9 @@ def _pm_period_window(freq_value, freq_unit, anchor, offset, today):
     """
     from datetime import timedelta
     from dateutil.relativedelta import relativedelta
+
+    if freq_value < 1 or freq_unit not in ('days', 'weeks', 'months'):
+        return None, None, '频率无效'
 
     if freq_unit == 'days':
         period = timedelta(days=freq_value)
@@ -2974,26 +3001,31 @@ def pm_extension_request(request, gwo_id):
 def pm_extension_approve(request, req_id):
     """Manager approves an extension: skip old GWO + update plan.start_date."""
     from core.role_utils import is_admin
-    from .models import ExtensionRequest
+    from .models import ExtensionRequest, GeneratedWorkOrder
+    from django.db import transaction
     from django.utils import timezone as _tz
     if not is_admin(request.user):
         return JsonResponse({'success': False, 'message': '无权限'}, status=403)
     if request.method != 'POST':
         return JsonResponse({'success': False, 'message': '仅支持POST'}, status=405)
     ext = get_object_or_404(ExtensionRequest, pk=req_id, status='pending')
-    gwo = ext.gwo
-    plan = gwo.plan
-    # Mark the old GWO as skipped (its work_report stays but is no longer tracked).
-    gwo.status = 'skipped'
-    gwo.save(update_fields=['status'])
-    # Shift the plan's frequency anchor so next dispatch uses the new date.
-    plan.start_date = ext.requested_date
-    plan.save(update_fields=['start_date'])
-    ext.status = 'approved'
-    ext.reviewed_by = request.user
-    ext.reviewed_at = _tz.now()
-    ext.review_note = request.POST.get('note', '').strip()
-    ext.save()
+    with transaction.atomic():
+        # Take the same GWO lock as skip/completion before reviewing a request.
+        gwo = GeneratedWorkOrder.objects.select_for_update().get(pk=ext.gwo_id)
+        ext = ExtensionRequest.objects.select_for_update().get(pk=req_id)
+        if ext.status != 'pending' or gwo.status not in ('dispatched', 'overdue'):
+            return JsonResponse({'success': False, 'message': '工单或延期申请已处理'}, status=400)
+        plan = gwo.plan
+        gwo.status = 'skipped'
+        gwo.save(update_fields=['status'])
+        # Shift the frequency anchor only after confirming the task is open.
+        plan.start_date = ext.requested_date
+        plan.save(update_fields=['start_date'])
+        ext.status = 'approved'
+        ext.reviewed_by = request.user
+        ext.reviewed_at = _tz.now()
+        ext.review_note = request.POST.get('note', '').strip()
+        ext.save()
     return JsonResponse({'success': True, 'message': f'已批准延期到 {ext.requested_date}，下次派发按新日期执行'})
 
 
@@ -3025,9 +3057,18 @@ def pm_gwo_skip(request, gwo_id):
         return JsonResponse({'success': False, 'message': '无权限'}, status=403)
     if request.method != 'POST':
         return JsonResponse({'success': False, 'message': '仅支持POST'}, status=405)
-    gwo = get_object_or_404(GeneratedWorkOrder, pk=gwo_id)
-    gwo.status = 'skipped'
-    gwo.save(update_fields=['status'])
+    from .models import ExtensionRequest
+    from django.db import transaction
+    with transaction.atomic():
+        gwo = get_object_or_404(GeneratedWorkOrder.objects.select_for_update(), pk=gwo_id)
+        if gwo.status not in ('dispatched', 'overdue'):
+            return JsonResponse({'success': False, 'message': '该工单已处理，不能跳过'}, status=400)
+        gwo.status = 'skipped'
+        gwo.save(update_fields=['status'])
+        ExtensionRequest.objects.filter(gwo=gwo, status='pending').update(
+            status='rejected', reviewed_by=request.user, reviewed_at=timezone.now(),
+            review_note='工单已跳过，延期申请自动关闭',
+        )
     return JsonResponse({'success': True, 'message': f'已跳过 {gwo.plan.pm_number}'})
 
 
@@ -3036,11 +3077,20 @@ def pm_gwo_skip(request, gwo_id):
 def pm_gwo_skip_all(request):
     """Mark ALL overdue GeneratedWorkOrders as skipped (one-click bulk skip)."""
     from core.role_utils import is_admin
-    from .models import GeneratedWorkOrder
+    from .models import ExtensionRequest
+    from .pm_utils import overdue_orders
+    from django.db import transaction
     if not is_admin(request.user):
         return JsonResponse({'success': False, 'message': '无权限'}, status=403)
-    count = GeneratedWorkOrder.objects.filter(status='overdue').update(status='skipped')
-    return JsonResponse({'success': True, 'message': f'已跳过 {count} 张逾期工单'})
+    with transaction.atomic():
+        orders = overdue_orders()
+        ids = list(orders.select_for_update().values_list('id', flat=True))
+        count = orders.filter(pk__in=ids).update(status='skipped')
+        ExtensionRequest.objects.filter(gwo_id__in=ids, status='pending').update(
+            status='rejected', reviewed_by=request.user, reviewed_at=timezone.now(),
+            review_note='工单已跳过，延期申请自动关闭',
+        )
+    return JsonResponse({'success': True, 'count': count, 'message': f'已跳过 {count} 张逾期工单'})
 
 
 @require_POST
@@ -3371,9 +3421,8 @@ def work_report_resolve_all_repair(request):
 def pm_completion_chart(request):
     """AJAX: overdue work-order counts bucketed by scheduled_date.
 
-    Overdue = any GWO whose status is NOT 'completed' (so dispatched/overdue/
-    pending/skipped all count — a skipped ticket was overdue before it was
-    skipped). Buckets are built in pure Python (no DB Trunc) for SQLite
+    Only open orders past one full execution cycle count. Buckets are built in
+    pure Python (no DB Trunc) for SQLite
     compatibility, with zero-filled continuous buckets across the range.
 
     Query params:
@@ -3384,6 +3433,7 @@ def pm_completion_chart(request):
     """
     from core.role_utils import is_admin
     from .models import GeneratedWorkOrder
+    from .pm_utils import overdue_orders
     from django.utils import timezone
     from datetime import timedelta
     from collections import defaultdict
@@ -3400,7 +3450,7 @@ def pm_completion_chart(request):
     if rng == 'all':
         earliest = (GeneratedWorkOrder.objects
                     .order_by('scheduled_date').values_list('scheduled_date', flat=True).first())
-        start = earliest or today
+        start = min(earliest, today) if earliest else today
     else:
         start = today - timedelta(days=range_days)
 
@@ -3445,9 +3495,8 @@ def pm_completion_chart(request):
             cur = cur.replace(year=ny, month=nm, day=1)
 
     counts = defaultdict(int)
-    qs = (GeneratedWorkOrder.objects
-          .filter(scheduled_date__gte=start, scheduled_date__lte=today)
-          .exclude(status='completed')
+    qs = (overdue_orders(today)
+          .filter(scheduled_date__gte=start)
           .values_list('scheduled_date', flat=True))
     for d in qs:
         counts[_bucket_key(d)] += 1
@@ -3514,9 +3563,11 @@ def pm_management(request):
 
     # ── 完成情况 tab 数据 ──
     from .models import GeneratedWorkOrder, ExtensionRequest
+    from .pm_utils import overdue_orders as get_overdue_orders, completion_deadline
     from django.utils import timezone as _tz
     from django.db.models import Count, Q
     today = _tz.localdate()
+    all_overdue_orders = get_overdue_orders(today)
     # Completion stats: each JobPlan's period window is driven by its dominant
     # plan's frequency_value × frequency_unit, anchored to that plan's start_date.
     # The period selector (current/prev/prev2/all) shifts the window back.
@@ -3549,7 +3600,7 @@ def pm_management(request):
         total = gwos.count()
         completed = gwos.filter(status='completed').count()
         dispatched = gwos.filter(status__in=['dispatched', 'overdue']).count()
-        overdue = gwos.filter(status__in=['dispatched', 'overdue'], scheduled_date__lt=today).count()
+        overdue = all_overdue_orders.filter(pk__in=gwos.values('pk')).count()
         rate = round(completed * 100 / total) if total else 0
         completion_stats.append({
             'name': jp_name_map.get(jp_id, ''),
@@ -3559,17 +3610,19 @@ def pm_management(request):
             'dispatched': dispatched, 'overdue': overdue, 'rate': rate,
         })
     completion_stats.sort(key=lambda s: s['name'])
-    # Overdue orders: dispatched/overdue GWOs past their scheduled_date.
-    overdue_orders = (GeneratedWorkOrder.objects
-        .filter(status__in=['dispatched', 'overdue'], scheduled_date__lt=today)
-        .select_related('plan__job_plan', 'plan__crew', 'work_report')
-        .order_by('scheduled_date')[:100])
+    # A task has a full frequency cycle after its scheduled date to complete.
+    overdue_orders = (all_overdue_orders
+        .select_related('plan__job_plan', 'crew')
+        .order_by('scheduled_date', 'id'))
+    overdue_count = overdue_orders.count()
     overdue_list = [{
         'gwo_id': g.id, 'pm_number': g.plan.pm_number,
         'job_plan_name': g.plan.job_plan.name if g.plan.job_plan_id else '',
-        'scheduled_date': g.scheduled_date, 'days_overdue': (today - g.scheduled_date).days,
-        'crew_name': g.plan.crew.name if g.plan.crew_id else '—',
-    } for g in overdue_orders]
+        'scheduled_date': g.scheduled_date,
+        'deadline': completion_deadline(g.plan, g.scheduled_date),
+        'days_overdue': (today - completion_deadline(g.plan, g.scheduled_date)).days,
+        'crew_name': g.crew.name if g.crew_id else '—',
+    } for g in overdue_orders[:100]]
     # Pending extension requests.
     pending_exts = (ExtensionRequest.objects
         .filter(status='pending')
@@ -3593,6 +3646,7 @@ def pm_management(request):
         'modal_options_json': modal_options,
         'completion_stats': completion_stats,
         'overdue_orders': overdue_list,
+        'overdue_count': overdue_count,
         'pending_extensions': ext_list,
         # WorkItem tree tab: pass the choices so the create/edit modal can
         # render dropdowns without an extra fetch.
@@ -3614,7 +3668,7 @@ def _compute_next_due(plan, today):
     from dateutil.rrule import rrule, DAILY, WEEKLY, MONTHLY
     freq_map = {'days': DAILY, 'weeks': WEEKLY, 'months': MONTHLY}
     freq = freq_map.get(plan.frequency_unit)
-    if not freq or not plan.start_date:
+    if not freq or not plan.start_date or plan.frequency_value < 1:
         return None
     occs = list(rrule(freq, interval=plan.frequency_value,
                       dtstart=plan.start_date, until=today + timedelta(days=730)))
@@ -9552,15 +9606,15 @@ def _pm_gwo_queryset(user, is_mgr, include_done=False):
             return GeneratedWorkOrder.objects.none()
         crew_ids = set(worker.crews.values_list('id', flat=True)) | \
             set(worker.led_crews.values_list('id', flat=True))
-        if not crew_ids:
-            return GeneratedWorkOrder.objects.none()
-        qs = qs.filter(crew_id__in=crew_ids)
+        from django.db.models import Q
+        qs = qs.filter(Q(crew_id__in=crew_ids) | Q(crew__isnull=True, worker=worker))
     return qs.select_related('pm_order', 'plan__job_plan', 'crew', 'worker').prefetch_related('zones').order_by('-scheduled_date', '-id')
 
 
 def _serialize_pm_tasks(gwos, is_mgr):
     """Serialize a GWO iterable into PM-task dicts for the work-reports PM tab."""
     from django.utils import timezone as _tz
+    from .pm_utils import is_overdue
     today = _tz.localdate()
     result = []
     for gwo in gwos:
@@ -9594,7 +9648,7 @@ def _serialize_pm_tasks(gwos, is_mgr):
             # Legacy fields (kept for existing PM-tab template compatibility).
             'zone_count': area_count,
             'zone_preview': area_desc,
-            'overdue': gwo.scheduled_date < today,
+            'overdue': is_overdue(gwo, today),
             'crew_name': gwo.crew.name if gwo.crew_id else '—',
             'status': gwo.status,
             'completed_at': timezone.localtime(gwo.completed_at).strftime('%Y-%m-%d') if gwo.completed_at else '',
