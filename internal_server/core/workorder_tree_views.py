@@ -125,6 +125,10 @@ def mark_pm_completed(report, gwo_id=None):
     gwo.status = 'completed'
     gwo.completed_at = _tz.now()
     gwo.save(update_fields=['status', 'completed_at', 'pm_order'])
+    from core.models import ExtensionRequest
+    ExtensionRequest.objects.filter(gwo=gwo, status='pending').update(
+        status='rejected', reviewed_at=_tz.now(), review_note='工单已完成，延期申请自动关闭',
+    )
 
 
 def maybe_create_difficult_zone_remarks(report, zones, note='', author_name='',
@@ -1350,6 +1354,12 @@ def _handle_save(request, report):
         pm_gwo_id = request.POST.get('gwo_id')
         is_pm_completion = bool(pm_gwo_id and pm_gwo_id.isdigit())
         if is_new and is_pm_completion:
+            from core.pm_utils import visible_orders
+            from django.utils import timezone
+            gwo = get_object_or_404(visible_orders(request.user).select_for_update(), pk=int(pm_gwo_id))
+            if gwo.status not in ('dispatched', 'overdue') or gwo.scheduled_date > timezone.localdate():
+                messages.error(request, '该PM工单已处理或尚未到执行日期')
+                return redirect('core:work_reports')
             from core.models import PMWorkOrder
             report = PMWorkOrder(gwo_id=int(pm_gwo_id), worker=worker)
             report.date = request.POST.get('date') or date.today()

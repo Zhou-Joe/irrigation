@@ -1,230 +1,118 @@
-"""PM dispatch engine — generates GeneratedWorkOrders for due MaintenancePlans.
-
-Runs daily via cron. For each active MaintenancePlan, computes the next due
-date using ``dateutil.rrule``, and if the plan is within its ``lead_days``
-window, generates a GeneratedWorkOrder record (preventing duplicates).
-
-Dispatch creates ONLY a GWO (no WorkReport shell). The GWO carries the worker,
-zones and remark so the PM tab can render and a worker can later complete the
-task — at which point a new PMWorkOrder is created and linked. This
-keeps PM work out of 维修日志 and the normal WorkReport id sequence gap-free.
-
-Usage:
-    python manage.py generate_pm_workorders              # run for today
-    python manage.py generate_pm_workorders --dry-run    # preview only
-    python manage.py generate_pm_workorders --date 2026-07-15   # run for a specific date
-"""
+"""Daily PM dispatch with calendar cycles, atomic plans and saved outcomes."""
 
 from datetime import date, timedelta
 import logging
-
-from dateutil.rrule import rrule, DAILY, WEEKLY, MONTHLY
 
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 from django.utils import timezone
 
-from core.models import (
-    MaintenancePlan, GeneratedWorkOrder, Crew,
-)
-from core.pm_utils import completion_deadline
+from core.models import MaintenancePlan, GeneratedWorkOrder, PMDispatchRun
+from core.pm_utils import (completion_deadline, occurrence, cycle_index,
+                           plan_zones, matching_crew, crew_worker, next_due)
 
 logger = logging.getLogger(__name__)
-
-
-FREQ_MAP = {
-    'days': DAILY,
-    'weeks': WEEKLY,
-    'months': MONTHLY,
-}
 
 
 class Command(BaseCommand):
     help = 'Generate PM work orders for due plans (daily cron dispatch engine).'
 
     def add_arguments(self, parser):
-        parser.add_argument('--dry-run', action='store_true', help='Preview without creating.')
-        parser.add_argument('--date', type=str, default='', help='Run for a specific date (YYYY-MM-DD).')
+        parser.add_argument('--dry-run', action='store_true', help='Preview without modifying data.')
+        parser.add_argument('--date', default='', help='Run for a specific date (YYYY-MM-DD).')
 
     def handle(self, *args, **options):
-        today = timezone.localdate()
-        if options['date']:
-            today = date.fromisoformat(options['date'])
+        try:
+            today = date.fromisoformat(options['date']) if options['date'] else timezone.localdate()
+        except ValueError:
+            raise CommandError('Invalid date; use YYYY-MM-DD.')
         dry = options['dry_run']
+        ids = list(MaintenancePlan.objects.filter(active=True, job_plan__active=True).values_list('id', flat=True))
+        self.stdout.write(f'PM dispatch for {today} ({len(ids)} active plans, {"DRY RUN" if dry else "LIVE"})')
+        summary = dict(generated=0, already_done=0, not_due=0, unassignable=0, failed=0)
+        details = []
+        for plan_id in ids:
+            plan = None
+            try:
+                with transaction.atomic():
+                    plan = (MaintenancePlan.objects.select_for_update()
+                            .select_related('job_plan', 'crew__leader', 'satellite')
+                            .get(pk=plan_id))
+                    if not plan.active or not plan.job_plan.active:
+                        continue
+                    result = self._dispatch_plan(plan, today, dry)
+                details.append(result)
+                summary['generated'] += result['generated']
+                if result['outcome'] != 'generated':
+                    summary[result['outcome']] += 1
+            except Exception as ex:
+                summary['failed'] += 1
+                logger.exception('PM dispatch error for plan %s', plan_id)
+                details.append({'plan_id': plan_id, 'pm_number': plan.pm_number if plan else str(plan_id),
+                                'outcome': 'failed', 'reason': str(ex), 'generated': 0})
+                self.stdout.write(self.style.ERROR(f'  {details[-1]["pm_number"]}: ERROR — {ex}'))
+        if not dry:
+            PMDispatchRun.objects.create(run_date=today, summary=summary, details=details)
+        message = (f'{summary["generated"]} generated, {summary["already_done"]} already done, '
+                   f'{summary["not_due"]} not due, {summary["unassignable"]} unassignable, '
+                   f'{summary["failed"]} failed. (non-generated counts are plans)')
+        self.stdout.write(f'\nDone: {message}')
+        if summary['failed']:
+            raise CommandError(f'PM dispatch partially failed: {message}')
 
-        plans = (MaintenancePlan.objects.filter(active=True, job_plan__active=True)
-                 .select_related('job_plan', 'crew', 'crew__leader', 'satellite'))
-        self.stdout.write(f'PM dispatch for {today} ({len(plans)} active plans, '
-                          f'{"DRY RUN" if dry else "LIVE"})')
-
-        generated = 0
-        skipped_dup = 0
-        skipped_not_due = 0
-        skipped_no_zones = 0
-        errors = 0
-
-        for plan in plans:
-          try:
-            # Guard: unknown frequency_unit would silently degrade to DAILY and
-            # massively over-generate. Report a failed plan instead.
-            if plan.frequency_unit not in FREQ_MAP:
-                raise ValueError(f'Unknown frequency_unit: {plan.frequency_unit}')
-
-            if plan.frequency_value < 1:
-                raise ValueError('frequency_value must be at least 1')
-
-            # Repair assignment even when all dates have already been generated.
-            # A preview must never mutate existing orders.
-            if plan.crew_id and plan.crew.active and not dry:
-                GeneratedWorkOrder.objects.filter(
-                    plan=plan, crew__isnull=True,
-                    status__in=['dispatched', 'overdue'],
-                ).update(crew=plan.crew)
-
-            # Backfill-capable dispatch: find ALL due occurrences in the window
-            # (not just the next one). This catches missed cycles when cron was
-            # down — each past occurrence that has no GWO yet gets generated.
-            # The window extends from start_date through today + lead_days so we
-            # catch both overdue backfill and upcoming lead-time dispatch.
-            due_dates = self._due_dates_in_window(plan, today)
-            if not due_dates:
-                skipped_not_due += 1
-                continue
-
-            # Pre-fetch existing scheduled_dates to dedup (avoids N queries).
-            existing_dates = set(
-                GeneratedWorkOrder.objects
-                .filter(plan=plan, scheduled_date__in=due_dates)
-                .values_list('scheduled_date', flat=True)
-            )
-            new_dates = [d for d in due_dates if d not in existing_dates]
-            if not new_dates:
-                skipped_dup += 1
-                continue
-
-            # Resolve zones.
-            zones = self._resolve_zones(plan)
-            if not zones:
-                self.stdout.write(self.style.WARNING(
-                    f'  {plan.pm_number}: no zones linked, skipping.'))
-                skipped_no_zones += 1
-                continue
-
-            # Resolve worker (crew leader or system fallback).
+    def _dispatch_plan(self, plan, today, dry):
+        due_dates = self._due_dates_in_window(plan, today)
+        result = {'plan_id': plan.id, 'pm_number': plan.pm_number, 'generated': 0,
+                  'next_due': next_due(plan, today).isoformat()}
+        if not due_dates:
+            return {**result, 'outcome': 'not_due', 'reason': '尚未进入提前生成窗口'}
+        existing = set(plan.generated_orders.filter(scheduled_date__lte=due_dates[-1])
+                       .values_list('scheduled_date', flat=True))
+        new_dates = [day for day in due_dates if day not in existing]
+        zones = self._resolve_zones(plan)
+        crew, reason = matching_crew(plan, zones)
+        if crew and not dry:
+            plan.generated_orders.filter(crew__isnull=True, status__in=['dispatched', 'overdue']).update(crew=crew)
+        if not new_dates:
+            return {**result, 'outcome': 'already_done', 'reason': '窗口内各期工单均已生成，含已完成或已跳过'}
+        if not zones:
+            reason = '未关联有效区域'
+        elif crew:
+            plan.crew = crew
             worker = self._resolve_worker(plan, zones)
             if worker is None:
-                self.stdout.write(self.style.WARNING(
-                    f'  {plan.pm_number}: no active worker to assign, skipping.'))
-                skipped_no_zones += 1
+                reason = '负责班组没有启用的组长或成员'
+        if reason:
+            self.stdout.write(self.style.WARNING(f'  {plan.pm_number}: {reason}'))
+            return {**result, 'outcome': 'unassignable', 'reason': reason, 'missing_cycles': len(new_dates)}
+        remark = plan.remark_template or f'{plan.job_plan.name} - {plan.pm_number}'
+        for due_date in new_dates:
+            if dry:
+                self.stdout.write(f'  [DRY] {plan.pm_number} → {due_date} ({len(zones)} zones)')
+                result['generated'] += 1
                 continue
-
-            for due_date in new_dates:
-                if dry:
-                    self.stdout.write(f'  [DRY] {plan.pm_number} → {due_date} '
-                                      f'({len(zones)} zones, worker={worker})')
-                    generated += 1
-                    continue
-
-                with transaction.atomic():
-                    remark = plan.remark_template or f'{plan.job_plan.name} - {plan.pm_number}'
-                    # Dispatch creates ONLY a GWO — no WorkReport shell. The GWO
-                    # carries the dispatch payload (worker/zones/remark) so the PM
-                    # tab can render and the completion form can seed a new
-                    # PMWorkOrder later. This keeps the normal WorkReport
-                    # id sequence gap-free and PM work out of 维修日志.
-                    gwo, created = GeneratedWorkOrder.objects.get_or_create(
-                        plan=plan, scheduled_date=due_date,
-                        defaults={'crew': plan.crew, 'worker': worker,
-                                  'status': ('overdue' if completion_deadline(plan, due_date) < today
-                                             else 'dispatched'),
-                                  'remark': remark},
-                    )
-                    if not created:
-                        skipped_dup += 1
-                        continue
-                    gwo.zones.set(zones)
-                    plan.last_generated_date = today
-                    plan.save(update_fields=['last_generated_date'])
-
-                generated += 1
-                self.stdout.write(self.style.SUCCESS(
-                    f'  {plan.pm_number} → GWO #{gwo.id} (PM-{gwo.id}, {due_date}, '
-                    f'{len(zones)} zones)'))
-
-          except Exception as ex:
-            errors += 1
-            # Isolate failures: one bad plan must not abort the whole dispatch.
-            logger.exception('PM dispatch error for %s', plan.pm_number)
-            self.stdout.write(self.style.ERROR(
-                f'  {plan.pm_number}: ERROR — {ex}'))
-
-        summary = (f'{generated} generated, {skipped_dup} already done, '
-                   f'{skipped_not_due} not due, {skipped_no_zones} unassignable, '
-                   f'{errors} failed.')
-        if generated:
-            logger.info('PM dispatch for %s: %s', today, summary)
-        self.stdout.write(self.style.SUCCESS(f'\nDone: {summary}'))
-        if errors:
-            raise CommandError(f'PM dispatch partially failed: {summary}')
+            deadline = completion_deadline(plan, due_date)
+            gwo, created = GeneratedWorkOrder.objects.get_or_create(
+                plan=plan, scheduled_date=due_date,
+                defaults={'crew': crew, 'worker': worker, 'deadline': deadline, 'remark': remark,
+                          'status': 'overdue' if deadline < today else 'dispatched'},
+            )
+            if created:
+                gwo.zones.set(zones)
+                result['generated'] += 1
+                self.stdout.write(f'  {plan.pm_number} → PM-{gwo.id} ({due_date}, {len(zones)} zones)')
+        if result['generated'] and not dry:
+            plan.last_generated_date = today
+            plan.save(update_fields=['last_generated_date', 'crew'])
+        return {**result, 'outcome': 'generated' if result['generated'] else 'already_done',
+                'reason': '生成工单' if result['generated'] else '并发派发已生成，无需重复创建'}
 
     def _due_dates_in_window(self, plan, today):
-        """Return ALL due dates that should be dispatched today (backfill-capable).
-
-        Computes rrule occurrences from start_date through today + lead_days.
-        A due date enters the window lead_days BEFORE it arrives (so
-        the task appears early), and stays in the window FOREVER once passed
-        (so a cron outage doesn't skip it — the missed occurrence is
-        backfilled on the next run). The dedup check (no existing GWO for
-        that plan+scheduled_date) prevents double-generation.
-
-        Caller guards unknown frequency_unit before calling.
-        """
-        freq = FREQ_MAP[plan.frequency_unit]
-        window_end = today + timedelta(days=plan.lead_days)
-        occurrences = list(rrule(freq, interval=plan.frequency_value,
-                                 dtstart=plan.start_date, until=window_end))
-        if not occurrences:
-            return []
-        # An occurrence is "due" once we're within lead_days of it (ahead or
-        # behind). The lookback is unbounded (capped only by start_date) so
-        # missed past occurrences are caught.
-        return [occ.date() for occ in occurrences]
+        end = today + timedelta(days=plan.lead_days)
+        return [occurrence(plan, index) for index in range(cycle_index(plan, end) + 1)]
 
     def _resolve_zones(self, plan):
-        """Return the list/queryset of zones this plan targets."""
-        level = plan.job_plan.asset_level
-        if level == 'zone_group':
-            return list(plan.zones.all())
-        elif level == 'sat' and plan.satellite_id:
-            return list(plan.satellite.zones.all())
-        elif level == 'ccu' and plan.patch_id:
-            return list(plan.patch.zones.all())
-        # Fallback: if zones are directly linked, use them.
-        if plan.zones.exists():
-            return list(plan.zones.all())
-        return []
+        return plan_zones(plan)
 
     def _resolve_worker(self, plan, zones):
-        """Resolve an active worker for the generated PM task.
-
-        Priority: plan.crew.leader → crew member → Crew responsible for the
-        zone's patch → system fallback (first active worker).
-        """
-        if plan.crew_id:
-            crew = plan.crew
-            if not crew.active:
-                return None
-            if crew.leader_id and crew.leader.active:
-                return crew.leader
-            return crew.members.filter(active=True).first()
-
-        # Try to find a crew responsible for the first zone's Land.
-        first_zone = zones[0] if zones else None
-        if first_zone and first_zone.land_id:
-            crew = Crew.objects.filter(lands=first_zone.land_id, active=True).first()
-            if crew and crew.leader_id and crew.leader.active:
-                return crew.leader
-
-        # System fallback: first active worker.
-        from core.models import Worker
-        return Worker.objects.filter(active=True).first()
+        return crew_worker(plan.crew)

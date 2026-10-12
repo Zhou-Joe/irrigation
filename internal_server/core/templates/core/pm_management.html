@@ -277,7 +277,7 @@
                     <div class="header-actions">
                         <button class="btn btn-sm btn-secondary" onclick="pmGenerateNow(event)">立即生成</button>
                         <button class="btn btn-sm btn-secondary" onclick="pmAssignCrews(event)">自动分配班组</button>
-                        <button class="btn btn-sm btn-secondary" onclick="pmResetOverdue(event)">重置安排</button>
+                        <button class="btn btn-sm btn-secondary" onclick="pmResetOverdue(event)">清理逾期工单</button>
                         <button class="btn btn-sm btn-primary" onclick="openPmModal('pm-new')">+ 新建</button>
                     </div>
                 </div>
@@ -315,6 +315,7 @@
                                     data-freq-value="{{ p.frequency_value }}"
                                     data-freq-unit="{{ p.frequency_unit }}"
                                     data-lead-days="{{ p.lead_days }}"
+                                    data-zone-ids="{{ p.zone_ids_json }}"
                                     data-start-date="{{ p.start_date|date:'Y-m-d' }}"
                                     data-remark="{{ p.remark_template }}"
                                     data-patch="{{ p.patch_id|default:'' }}"
@@ -332,14 +333,12 @@
                                     <td>{% if p.next_due_date %}{{ p.next_due_date|date:"Y-m-d" }}{% else %}<span style="color:#aaa;">{{ p.start_date|date:"Y-m-d" }}</span>{% endif %}</td>
                                     <td>{% if p.active %}<span style="color:#40916C;">启用</span>{% else %}<span style="color:#aaa;">停用</span>{% endif %}</td>
                                     <td>
-                                        {% with orders=p.generated_orders.all %}
-                                        {% if orders %}
+                                        {% if p.order_count %}
                                         <span class="pm-wo-toggle" onclick="event.stopPropagation();togglePmOrders({{ p.id }})" title="点击展开关联工单">
-                                            {{ orders|length }} 张
+                                            {{ p.order_count }} 张
                                             <span class="pm-wo-arrow">▾</span>
                                         </span>
                                         {% else %}<span style="color:#ccc;">—</span>{% endif %}
-                                        {% endwith %}
                                     </td>
                                     <td><button class="btn btn-sm btn-secondary" onclick="openPmModal('pm-edit', {{ p.id }})">编辑</button></td>
                                 </tr>
@@ -352,6 +351,25 @@
                     {% else %}
                     <div class="card-empty"><p>暂无PM计划</p><button class="btn btn-sm btn-primary" onclick="openPmModal('pm-new')">创建</button></div>
                     {% endif %}
+                </div>
+            </div>
+            <div class="settings-card">
+                <div class="settings-card-header" style="cursor:default;"><h2>最近派发记录</h2></div>
+                <div class="settings-card-body" style="max-height:none;">
+                    <p style="color:#888;">生成数量按工单计，其余按计划计。展开可查看本次未派发的原因。</p>
+                    {% for run in dispatch_runs %}
+                    <details style="margin:10px 0;">
+                        <summary>{{ run.created_at|date:"Y-m-d H:i" }} · 生成 {{ run.summary.generated }} 张 · 已有工单 {{ run.summary.already_done }} 个计划 · 未到生成时间 {{ run.summary.not_due }} 个计划 · 无法派发 {{ run.summary.unassignable }} 个计划 · 失败 {{ run.summary.failed }} 个计划</summary>
+                        <table class="card-table">
+                            <thead><tr><th>PM编号</th><th>派发结果</th><th>生成张数</th><th>原因</th></tr></thead>
+                            <tbody>{% for result in run.details %}<tr>
+                                <td>{{ result.pm_number }}</td>
+                                <td>{% if result.outcome == 'generated' %}已生成{% elif result.outcome == 'already_done' %}已有工单{% elif result.outcome == 'not_due' %}未到生成时间{% elif result.outcome == 'unassignable' %}无法派发{% else %}失败{% endif %}</td>
+                                <td>{{ result.generated }}</td><td>{{ result.reason }}</td>
+                            </tr>{% endfor %}</tbody>
+                        </table>
+                    </details>
+                    {% empty %}<p>暂无派发记录，下次自动或手动生成后会在这里保存结果。</p>{% endfor %}
                 </div>
             </div>
         </div>
@@ -849,7 +867,7 @@ function filterPmRows() {
 
 // ── In-page CRUD modal (JobPlan + PM计划 create/edit) ─────────────────
 </script>
-<script id="pm-modal-options" type="application/json">{{ modal_options_json|safe }}</script>
+{{ modal_options_json|json_script:"pm-modal-options" }}
 <script>
 var PM_OPTS = {};
 try { PM_OPTS = JSON.parse(document.getElementById('pm-modal-options').textContent || '{}'); } catch(e) {}
@@ -907,11 +925,12 @@ function _jpFormHtml(isEdit) {
 }
 function _pmFormHtml(isEdit) {
     var d = isEdit ? {} : { pm_number:'', job_plan:'', crew:'', frequency_value:1, frequency_unit:'weeks', lead_days:28, remark:'', patch:'', satellite:'', active:'1' };
-    var jpOpts = '<option value="">— 选择 —</option>' + (PM_OPTS.job_plans || []).map(function(j){ return '<option value="'+j.id+'"'+(d.job_plan==j.id?' selected':'')+'>'+j.name+'</option>'; }).join('');
-    var crewOpts = '<option value="">— 不指定 —</option>' + (PM_OPTS.crews || []).map(function(c){ return '<option value="'+c.id+'"'+(d.crew==c.id?' selected':'')+'>'+c.name+'</option>'; }).join('');
+    var jpOpts = '<option value="">— 选择 —</option>' + (PM_OPTS.job_plans || []).map(function(j){ return '<option value="'+j.id+'"'+(d.job_plan==j.id?' selected':'')+'>'+esc(j.name)+'</option>'; }).join('');
+    var crewOpts = '<option value="">— 不指定 —</option>' + (PM_OPTS.crews || []).map(function(c){ return '<option value="'+c.id+'"'+(d.crew==c.id?' selected':'')+'>'+esc(c.name)+'</option>'; }).join('');
     var unitOpts = (PM_OPTS.freq_units || []).map(function(u){ return '<option value="'+u.value+'"'+(d.frequency_unit===u.value?' selected':'')+'>'+u.label+'</option>'; }).join('');
-    var patchOpts = '<option value="">— 不关联 —</option>' + (PM_OPTS.patches || []).map(function(p){ return '<option value="'+p.id+'"'+(d.patch==p.id?' selected':'')+'>'+p.code+' '+p.name+'</option>'; }).join('');
-    var satOpts = '<option value="">— 不关联 —</option>' + (PM_OPTS.satellites || []).map(function(s){ return '<option value="'+s.id+'"'+(d.satellite==s.id?' selected':'')+'>'+s.code+' '+s.name+'</option>'; }).join('');
+    var patchOpts = '<option value="">— 不关联 —</option>' + (PM_OPTS.patches || []).map(function(p){ return '<option value="'+p.id+'"'+(d.patch==p.id?' selected':'')+'>'+esc(p.code+' '+p.name)+'</option>'; }).join('');
+    var satOpts = '<option value="">— 不关联 —</option>' + (PM_OPTS.satellites || []).map(function(s){ return '<option value="'+s.id+'"'+(d.satellite==s.id?' selected':'')+'>'+esc(s.code+' '+s.name)+'</option>'; }).join('');
+    var zoneOpts = (PM_OPTS.zones || []).map(function(z){ return '<option value="'+z.id+'">'+esc(z.code+' '+z.name)+'</option>'; }).join('');
     return '<div class="app-grid">' +
         '<div class="full"><label>PM编号 *</label><input id="f-pm-number" value="'+esc(d.pm_number)+'" placeholder="如：703605MJ1D"></div>' +
         '<div><label>作业计划 (JobPlan) *</label><select id="f-pm-jobplan">'+jpOpts+'</select></div>' +
@@ -923,6 +942,7 @@ function _pmFormHtml(isEdit) {
         '<div><label>工配备注模板</label><input id="f-pm-remark" value="'+esc(d.remark)+'"></div>' +
         '<div><label>关联CCU</label><select id="f-pm-patch">'+patchOpts+'</select></div>' +
         '<div><label>关联SAT</label><select id="f-pm-satellite">'+satOpts+'</select></div>' +
+        '<div class="full"><label>关联Zone组（Zone组级必填，可多选）</label><input placeholder="搜索区域编号或名称" oninput="filterPmZoneOptions(this.value)"><select id="f-pm-zones" multiple size="8">'+zoneOpts+'</select></div>' +
         '<div class="full"><label><input type="checkbox" id="f-pm-active"'+(d.active!=='0'?' checked':'')+'> 启用</label></div>' +
     '</div>';
 }
@@ -947,9 +967,14 @@ function _fillPmForm(id) {
     setVal('f-pm-remark', row.dataset.remark);
     setVal('f-pm-patch', row.dataset.patch);
     setVal('f-pm-satellite', row.dataset.satellite);
+    var selected = JSON.parse(row.dataset.zoneIds || '[]').map(String);
+    Array.from(document.getElementById('f-pm-zones').options).forEach(function(o){ o.selected = selected.indexOf(o.value) >= 0; });
     document.getElementById('f-pm-active').checked = row.dataset.active === '1';
 }
 function setVal(id, v) { var el = document.getElementById(id); if (el) el.value = v; }
+function filterPmZoneOptions(q) {
+    Array.from(document.getElementById('f-pm-zones').options).forEach(function(o){ o.hidden = !o.selected && o.textContent.toLowerCase().indexOf(q.toLowerCase().trim()) < 0; });
+}
 function esc(s) { var d = document.createElement('div'); d.textContent = s == null ? '' : s; return d.innerHTML; }
 
 function submitPmModal() {
@@ -974,6 +999,8 @@ function submitPmModal() {
         fd.append('lead_days', val('f-pm-lead-days') || '28');
         if (val('f-pm-start')) fd.append('start_date', val('f-pm-start'));
         fd.append('remark_template', val('f-pm-remark'));
+        fd.append('zones_present', '1');
+        Array.from(document.getElementById('f-pm-zones').selectedOptions).forEach(function(o){ fd.append('zones', o.value); });
         if (val('f-pm-patch')) fd.append('patch', val('f-pm-patch'));
         if (val('f-pm-satellite')) fd.append('satellite', val('f-pm-satellite'));
         if (document.getElementById('f-pm-active').checked) fd.append('active', '1');
@@ -987,82 +1014,14 @@ function submitPmModal() {
             if (d.success) {
                 pmToast(d.message, false);
                 closePmModal();
-                if (isJobplan) _updateJpRow(d.jp, _pmModalMode === 'jobplan-edit');
-                else _updatePmRow(d.plan, _pmModalMode === 'pm-edit');
+                var refreshed = new URL(location.href);
+                refreshed.searchParams.set('tab', isJobplan ? 'jobplans' : 'plans');
+                location.href = refreshed.toString();
             } else { pmToast(d.message || '操作失败', true); }
         })
         .catch(function() { btn.disabled = false; btn.textContent = '保存'; pmToast('网络错误，请重试', true); });
 }
 function val(id) { var el = document.getElementById(id); return el ? el.value : ''; }
-
-function _updateJpRow(jp, isEdit) {
-    if (isEdit) {
-        var row = document.getElementById('jpRow-' + jp.id);
-        if (!row) return;
-        row.dataset.name = jp.name; row.dataset.assetLevel = jp.asset_level;
-        row.dataset.description = jp.description; row.dataset.active = jp.active ? '1' : '';
-        var tds = row.querySelectorAll('td');
-        tds[0].innerHTML = '<strong>' + esc(jp.name) + '</strong>';
-        tds[1].textContent = jp.asset_level_display;
-        tds[2].textContent = jp.description || '—';
-        tds[3].textContent = jp.plan_count;
-        tds[4].innerHTML = jp.active ? '<span style="color:#40916C;">启用</span>' : '<span style="color:#aaa;">停用</span>';
-    } else {
-        // Insert new row — simplest: reload the JobPlan tab section.
-        var tbody = document.querySelector('#jpTable tbody');
-        if (!tbody) { location.reload(); return; }
-        var tr = document.createElement('tr');
-        tr.id = 'jpRow-' + jp.id;
-        tr.dataset.name = jp.name; tr.dataset.assetLevel = jp.asset_level;
-        tr.dataset.description = jp.description; tr.dataset.active = jp.active ? '1' : '';
-        tr.innerHTML = '<td><strong>' + esc(jp.name) + '</strong></td>' +
-            '<td>' + esc(jp.asset_level_display) + '</td>' +
-            '<td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + esc(jp.description || '—') + '</td>' +
-            '<td>' + jp.plan_count + '</td>' +
-            '<td>' + (jp.active ? '<span style="color:#40916C;">启用</span>' : '<span style="color:#aaa;">停用</span>') + '</td>' +
-            '<td><button class="btn btn-sm btn-secondary" onclick="openPmModal(\'jobplan-edit\', ' + jp.id + ')">编辑</button></td>';
-        tbody.appendChild(tr);
-    }
-}
-
-function _updatePmRow(plan, isEdit) {
-    if (isEdit) {
-        var row = document.getElementById('pmRow-' + plan.id);
-        if (!row) { location.reload(); return; }
-        row.dataset.pmNumber = plan.pm_number; row.dataset.jobPlan = plan.job_plan_id;
-        row.dataset.crew = plan.crew_id || ''; row.dataset.freqValue = plan.frequency_value;
-        row.dataset.freqUnit = plan.frequency_unit; row.dataset.active = plan.active ? '1' : '';
-        row.dataset.remark = plan.remark_template || ''; row.dataset.leadDays = plan.lead_days == null ? 28 : plan.lead_days;
-        row.dataset.startDate = plan.start_date || '';
-        row.dataset.patch = plan.patch_id || ''; row.dataset.satellite = plan.satellite_id || '';
-        var tds = row.querySelectorAll('td');
-        tds[0].innerHTML = '<strong>' + esc(plan.pm_number) + '</strong>';
-        tds[1].textContent = plan.freq_display;
-        tds[2].textContent = plan.asset_info;
-        tds[3].textContent = plan.crew_name || '—';
-        tds[4].textContent = plan.start_date;
-        tds[5].innerHTML = plan.active ? '<span style="color:#40916C;">启用</span>' : '<span style="color:#aaa;">停用</span>';
-    } else {
-        // New PM — if its JobPlan sub-tab exists, insert there; else reload.
-        var panel = document.getElementById('pmSubpanel-' + plan.job_plan_id);
-        if (!panel) { pmToast('新PM属于新JobPlan分类，刷新页面查看', false); setTimeout(function(){ location.reload(); }, 1500); return; }
-        var tbody = panel.querySelector('tbody');
-        var tr = document.createElement('tr');
-        tr.className = 'pm-data-row'; tr.id = 'pmRow-' + plan.id;
-        tr.dataset.pmNumber = plan.pm_number; tr.dataset.jobPlan = plan.job_plan_id;
-        tr.dataset.crew = plan.crew_id || ''; tr.dataset.freqValue = plan.frequency_value; tr.dataset.freqUnit = plan.frequency_unit;
-        tr.dataset.active = plan.active ? '1' : ''; tr.dataset.remark = plan.remark_template || ''; tr.dataset.leadDays = plan.lead_days == null ? 28 : plan.lead_days;
-        tr.dataset.startDate = plan.start_date || '';
-        tr.dataset.patch = plan.patch_id || ''; tr.dataset.satellite = plan.satellite_id || '';
-        tr.innerHTML = '<td><strong>' + esc(plan.pm_number) + '</strong></td>' +
-            '<td>' + esc(plan.freq_display) + '</td><td>' + esc(plan.asset_info) + '</td>' +
-            '<td>' + esc(plan.crew_name || '—') + '</td><td>' + esc(plan.start_date) + '</td>' +
-            '<td>' + (plan.active ? '<span style="color:#40916C;">启用</span>' : '<span style="color:#aaa;">停用</span>') + '</td>' +
-            '<td><span style="color:#ccc;">—</span></td>' +
-            '<td><button class="btn btn-sm btn-secondary" onclick="openPmModal(\'pm-edit\', ' + plan.id + ')">编辑</button></td>';
-        tbody.appendChild(tr);
-    }
-}
 
 // Refresh just the active tab's content via AJAX, preserving the current tab
 // and sub-tab selection (so the user doesn't get bounced back to tab 1 after
@@ -1079,7 +1038,9 @@ function pmReloadActiveTab() {
     var activeSub = document.querySelector('.pm-subtab.active');
     var activeJp = activeSub ? activeSub.getAttribute('data-jpid') : null;
 
-    fetch('/pm/?tab=' + encodeURIComponent(tab), { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+    var refreshUrl = new URL(location.href);
+    refreshUrl.searchParams.set('tab', tab);
+    fetch(refreshUrl.toString(), { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
         .then(function(r) { return r.text(); })
         .then(function(html) {
             var doc = new DOMParser().parseFromString(html, 'text/html');
@@ -1169,7 +1130,7 @@ function pmAssignCrews(e) {
 
 function pmResetOverdue(e) {
     var btn = (e && e.target) || event.target;
-    if (!confirm('把 start_date 已过期的 PM 重置到下一个未来到期日？\n（会删除这些 PM 的未完工单，已完成的保留；重置后自动错峰派发日期）')) return;
+    if (!confirm('将超过完整执行周期的工单标为跳过？\n保留工单历史、当前周期和未来工单，相关待审批延期申请会关闭。')) return;
     btn.disabled = true; btn.textContent = '重置中…';
     fetch('/settings/pm/reset-overdue/', {
         method: 'POST',
@@ -1177,11 +1138,11 @@ function pmResetOverdue(e) {
     })
         .then(function(r) { return r.json(); })
         .then(function(d) {
-            btn.disabled = false; btn.textContent = '重置安排';
+            btn.disabled = false; btn.textContent = '清理逾期工单';
             pmToast(d.message, !d.success);
             if (d.success) setTimeout(function(){ pmReloadActiveTab(); }, 1200);
         })
-        .catch(function() { btn.disabled = false; btn.textContent = '重置安排'; pmToast('网络错误', true); });
+        .catch(function() { btn.disabled = false; btn.textContent = '清理逾期工单'; pmToast('网络错误', true); });
 }
 
 // ── Extension approval / GWO skip (完成情况 tab) ──────────────────────

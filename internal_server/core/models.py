@@ -2440,6 +2440,8 @@ class GeneratedWorkOrder(models.Model):
         related_name='generated_orders', verbose_name='派发班组',
     )
     scheduled_date = models.DateField('计划执行日期')
+    deadline = models.DateField('完成截止日期', null=True, blank=True, db_index=True,
+                               help_text='派发时保存，修改计划频率不会改变旧工单截止日期。')
     # Dispatch payload: since dispatch no longer creates a WorkReport shell, the
     # GWO itself carries the data the PM tab + completion form need (worker,
     # zones, remark). On completion these seed the new is_pm=True WorkReport.
@@ -2464,6 +2466,26 @@ class GeneratedWorkOrder(models.Model):
 
     def __str__(self):
         return f'{self.plan.pm_number} → {self.scheduled_date}'
+
+    def save(self, *args, **kwargs):
+        if self._state.adding and self.deadline is None and self.plan_id:
+            from .pm_utils import completion_deadline
+            try:
+                self.deadline = completion_deadline(self.plan, self.scheduled_date)
+            except ValueError:
+                pass
+        super().save(*args, **kwargs)
+
+
+class PMDispatchRun(models.Model):
+    """Persist each real dispatch's summary and per-plan diagnostic outcomes."""
+    run_date = models.DateField('调度日期')
+    created_at = models.DateTimeField(auto_now_add=True)
+    summary = models.JSONField(default=dict)
+    details = models.JSONField(default=list)
+
+    class Meta:
+        ordering = ['-created_at', '-id']
 
 
 class ExtensionRequest(models.Model):
