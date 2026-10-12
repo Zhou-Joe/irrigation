@@ -32,6 +32,7 @@ Thumbs.db
 
 # Playwright MCP logs
 .playwright-mcp/
+.tmp-pm-review/
 
 # Environment
 .env

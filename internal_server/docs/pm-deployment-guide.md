@@ -12,7 +12,7 @@
 | Python 虚拟环境 | `/home/projects/irrigation/.venv` |
 | Django 项目目录 | `/home/projects/irrigation/internal_server` |
 | 环境变量文件 | `/home/projects/irrigation/.env.production`（含 `SECRET_KEY`、`MAXICOM_*` 等） |
-| `python-dateutil` | 已安装（`pip install python-dateutil`，rrule 日期计算依赖） |
+| `python-dateutil` | 已安装（`pip install python-dateutil`，日历月日期计算依赖） |
 | `openpyxl` | 已安装（Excel 导入依赖） |
 | 时区 | `config/settings.py` 中 `TIME_ZONE = 'Asia/Shanghai'` + `USE_TZ = True` |
 
@@ -287,7 +287,7 @@ Crew (班组)
 
 每日 cron:
   mark_pm_overdue → dispatched 中过期的标 overdue
-  generate_pm_workorders → 从 plan.start_date + rrule 算计划执行日期，仅生成 GWO
+  generate_pm_workorders → 按计划基准日和频率算各期执行日期，仅生成 GWO
 ```
 
 派发与逾期使用不同时间点：每日 06:00 检查计划，在计划执行日期前
@@ -301,6 +301,21 @@ Crew (班组)
 相关待审批延期申请自动关闭。派发按「计划 + 计划执行日期」去重，包括跳过记录。
 停机后从计划基准日补齐遗漏周期；`--dry-run` 不修改工单或班组。
 单个计划失败时继续处理其他计划，最终以失败退出，避免日志误报全部成功。
+
+月周期以原基准日计算：1 月 31 日的月度计划依次为 2 月 28/29 日、3 月 31 日，
+不漏掉短月份，也不会在下个月继续漂移到 28 日。每张派发工单保存完成截止日期，
+后续编辑计划频率仅影响新工单。
+
+后台「PM维护计划 → 最近派发记录」保存最近 10 次实际派发的结果，展开可查看
+各 PM 的未到生成时间、已有工单、无法分配、失败原因。预览不写入记录。
+班组必须完整覆盖资产范围；匹配到多个班组时由经理明确指定，避免随机指派。
+
+「清理逾期工单」沿用 `reset_pm_overdue --apply` 命令入口，但仅将真正逾期的
+工单标为跳过。保留历史、当前周期和未来工单，不再删除记录或自动重排所有计划。
+延期审批会关闭旧基准下后续未完成的任务，以免新旧两套周期重复派发。
+
+升级时先执行 `python manage.py migrate`，应用 `0131_pm_deadlines_and_dispatch_runs`。
+迁移为现有工单按当时计划频率补齐截止日期，并新增派发结果记录表。
 
 ## 附：管理命令速查
 

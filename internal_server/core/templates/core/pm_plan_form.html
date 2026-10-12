@@ -98,6 +98,13 @@
                 <label>启用</label>
                 <input type="checkbox" name="active" {% if not plan or plan.active %}checked{% endif %}>
             </div>
+            <div class="pm-field">
+                <label>关联Zone组（Zone组级必填，可多选）</label>
+                <input type="hidden" name="zones_present" value="1">
+                <select name="zones" class="pm-select" multiple size="8">
+                    {% for z in zones %}<option value="{{ z.id }}" {% if z.id in selected_zone_ids %}selected{% endif %}>{{ z.code }} {{ z.name }}</option>{% endfor %}
+                </select>
+            </div>
             <div class="pm-actions">
                 <button type="submit" class="btn-sm btn-primary">保存</button>
                 <a href="{% url 'core:pm_management' %}" class="btn-sm btn-secondary">取消</a>

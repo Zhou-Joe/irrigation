@@ -12,7 +12,7 @@ from django.urls import reverse
 from core.management.commands.generate_pm_workorders import Command
 from core.models import (
     Crew, ExtensionRequest, GeneratedWorkOrder, JobPlanTemplate, Land,
-    MaintenancePlan, Worker, WorkReport, Zone,
+    MaintenancePlan, Worker, WorkReport, Zone, PMDispatchRun, PMWorkOrder,
 )
 from core.notifications import pm_tasks_for_field_worker
 from core.pm_utils import completion_deadline, is_overdue
@@ -381,3 +381,256 @@ class PMPlanScheduleTests(PMFixture):
         self.assertEqual(self.plan.lead_days, 0)
         self.assertEqual(gwo.scheduled_date, self.today)
         self.assertEqual(gwo.status, 'skipped')
+
+    def test_modal_edit_omitting_zones_preserves_existing_scope(self):
+        fields = {'pm_number': self.plan.pm_number, 'job_plan': self.job.id, 'crew': self.crew.id,
+                  'frequency_value': 1, 'frequency_unit': 'weeks', 'lead_days': 0, 'active': 'on'}
+        response = self.client.post(reverse('core:pm_plan_edit', args=[self.plan.id]), fields,
+            HTTP_HOST='127.0.0.1', HTTP_X_REQUESTED_WITH='XMLHttpRequest')
+        self.assertTrue(response.json()['success'])
+        self.assertEqual(list(self.plan.zones.values_list('id', flat=True)), [self.zone.id])
+
+    def test_empty_scope_invalid_foreign_keys_and_duplicate_numbers_do_not_write(self):
+        for fields in [{'pm_number': self.plan.pm_number}, {'job_plan': 999999},
+                       {'zones': [999999]}, {'zones': [], 'zones_present': '1'}, {'crew': 999999}]:
+            with self.subTest(fields=fields):
+                response = self.save_plan(fields)
+                self.assertEqual(response.status_code, 400)
+        self.assertEqual(MaintenancePlan.objects.count(), 1)
+
+    def test_asset_level_change_cannot_invalidate_existing_plans(self):
+        response = self.client.post(reverse('core:jobplan_edit', args=[self.job.id]),
+            {'name': self.job.name, 'asset_level': 'sat', 'active': '1'}, HTTP_HOST='127.0.0.1',
+            HTTP_X_REQUESTED_WITH='XMLHttpRequest')
+        self.assertEqual(response.status_code, 400)
+        self.job.refresh_from_db()
+        self.assertEqual(self.job.asset_level, 'zone_group')
+
+    def test_duplicate_or_invalid_jobplan_returns_validation_error(self):
+        for fields in [{'name': self.job.name, 'asset_level': 'ccu'},
+                       {'name': 'Bad level', 'asset_level': 'unknown'}, {'name': ''}]:
+            response = self.client.post(reverse('core:jobplan_new'), fields, HTTP_HOST='127.0.0.1',
+                HTTP_X_REQUESTED_WITH='XMLHttpRequest')
+            self.assertEqual(response.status_code, 400)
+        self.assertEqual(JobPlanTemplate.objects.count(), 1)
+
+
+class PMReviewRegressionTests(PMFixture):
+    def setUp(self):
+        self.client.force_login(self.manager)
+        date_patch = patch('django.utils.timezone.localdate', return_value=self.today)
+        date_patch.start()
+        self.addCleanup(date_patch.stop)
+
+    def test_month_end_dispatch_does_not_skip_february_or_drift_to_28th(self):
+        self.plan.start_date = date(2026, 1, 31)
+        self.plan.frequency_unit = 'months'
+        self.plan.save()
+        call_command('generate_pm_workorders', date='2026-03-31', stdout=StringIO())
+        self.assertEqual(list(self.plan.generated_orders.order_by('scheduled_date')
+                              .values_list('scheduled_date', flat=True)),
+                         [date(2026, 1, 31), date(2026, 2, 28), date(2026, 3, 31)])
+        from core.views import _compute_next_due, _pm_period_window
+        self.assertEqual(_compute_next_due(self.plan, date(2026, 3, 1)), date(2026, 3, 31))
+        self.assertEqual(_pm_period_window(1, 'months', date(2026, 1, 31), 0, date(2026, 3, 1))[:2],
+                         (date(2026, 2, 28), date(2026, 3, 30)))
+
+    def test_long_cycle_next_due_is_not_limited_to_two_years(self):
+        from core.views import _compute_next_due
+        self.plan.frequency_unit = 'months'
+        self.plan.frequency_value = 48
+        self.plan.start_date = date(2026, 1, 1)
+        self.assertEqual(_compute_next_due(self.plan, self.today), date(2030, 1, 1))
+
+    def test_frequency_edit_does_not_change_old_order_deadline(self):
+        gwo = self.order(days=-8)
+        self.plan.frequency_unit = 'months'
+        self.plan.frequency_value = 12
+        self.plan.save()
+        gwo.refresh_from_db()
+        self.assertEqual(gwo.deadline, self.today - timedelta(days=1))
+        self.assertTrue(is_overdue(gwo, self.today))
+        self.assertEqual(self.post('pm_gwo_skip_all').json()['count'], 1)
+
+    def test_dispatch_saves_unassignable_details_and_preview_saves_nothing(self):
+        self.plan.zones.clear()
+        self.dispatch(dry_run=True)
+        self.assertEqual(PMDispatchRun.objects.count(), 0)
+        self.dispatch()
+        run = PMDispatchRun.objects.get()
+        self.assertEqual(run.summary['unassignable'], 1)
+        self.assertEqual(run.details[0]['pm_number'], self.plan.pm_number)
+        self.assertEqual(run.details[0]['reason'], '未关联有效区域')
+        self.assertFalse(GeneratedWorkOrder.objects.exists())
+        page = self.client.get(reverse('core:pm_management'), {'tab': 'plans'}, HTTP_HOST='127.0.0.1')
+        self.assertContains(page, '最近派发记录')
+        self.assertContains(page, '未关联有效区域')
+
+    def test_crew_match_requires_all_lands_and_does_not_assign_random_worker(self):
+        self.plan.crew = None
+        self.plan.save()
+        self.dispatch()
+        self.assertFalse(GeneratedWorkOrder.objects.exists())
+        self.assertEqual(PMDispatchRun.objects.get().summary['unassignable'], 1)
+
+    def test_ambiguous_crew_is_reported_for_manual_assignment(self):
+        land = Land.objects.create(name='Shared land')
+        self.zone.land = land
+        self.zone.save()
+        self.crew.lands.add(land)
+        other = Crew.objects.create(name='Also responsible', leader=self.worker)
+        other.lands.add(land)
+        self.plan.crew = None
+        self.plan.save()
+        self.dispatch()
+        self.assertFalse(GeneratedWorkOrder.objects.exists())
+        self.assertIn('多个班组', PMDispatchRun.objects.get().details[0]['reason'])
+
+    def test_resolved_crew_is_snapshotted_and_whole_crew_sees_orders(self):
+        land = Land.objects.create(name='Unique crew land')
+        self.zone.land = land
+        self.zone.save()
+        self.crew.lands.add(land)
+        self.plan.crew = None
+        self.plan.save()
+        self.dispatch()
+        gwo = GeneratedWorkOrder.objects.get()
+        self.assertEqual(gwo.crew_id, self.crew.id)
+        self.plan.refresh_from_db()
+        self.assertEqual(self.plan.crew_id, self.crew.id)
+
+    def test_staggered_completion_stats_use_each_plans_period(self):
+        self.plan.start_date = self.today - timedelta(days=3)
+        self.plan.save()
+        self.order(days=-1)
+        other = MaintenancePlan.objects.create(pm_number='PM-OTHER', job_plan=self.job,
+            start_date=self.today - timedelta(days=5), frequency_value=1, frequency_unit='weeks')
+        GeneratedWorkOrder.objects.create(plan=other, scheduled_date=self.today - timedelta(days=4))
+        page = self.client.get(reverse('core:pm_management'), HTTP_HOST='127.0.0.1')
+        self.assertEqual(page.context['completion_stats'][0]['total'], 2)
+
+    def test_period_before_anchor_does_not_accidentally_count_all_history(self):
+        self.order(days=-10)
+        page = self.client.get(reverse('core:pm_management'), {'period': 'prev'}, HTTP_HOST='127.0.0.1')
+        self.assertEqual(page.context['completion_stats'][0]['total'], 0)
+
+    def test_cursor_pagination_handles_old_dates_with_new_ids(self):
+        orders = [self.order(days=-i) for i in range(25)]
+        url = reverse('core:work_reports_pm_tasks')
+        first = self.client.get(url, HTTP_HOST='127.0.0.1').json()['tasks']
+        second = self.client.get(url, {'before_id': first[-1]['gwo_id']}, HTTP_HOST='127.0.0.1').json()['tasks']
+        self.assertEqual(len(first), 20)
+        self.assertEqual(len(second), 5)
+        self.assertEqual({t['gwo_id'] for t in first + second}, {g.id for g in orders})
+
+    def test_reset_keeps_current_future_history_and_anchor(self):
+        expired = self.order(days=-8)
+        current = self.order(days=-1)
+        future = self.order(days=7)
+        completed = self.order(days=-9, status='completed')
+        call_command('reset_pm_overdue', stdout=StringIO())
+        expired.refresh_from_db()
+        self.assertEqual(expired.status, 'dispatched')
+        call_command('reset_pm_overdue', apply=True, stdout=StringIO())
+        for obj, status in [(expired, 'skipped'), (current, 'dispatched'),
+                            (future, 'dispatched'), (completed, 'completed')]:
+            obj.refresh_from_db()
+            self.assertEqual(obj.status, status)
+        self.plan.refresh_from_db()
+        self.assertEqual(self.plan.start_date, self.today)
+        self.assertEqual(GeneratedWorkOrder.objects.count(), 4)
+
+    def test_other_worker_cannot_read_or_extend_task(self):
+        user = User.objects.create_user('outside')
+        Worker.objects.create(user=user, employee_id='OUT', full_name='Outside')
+        gwo = self.order(crew=self.crew)
+        self.client.force_login(user)
+        self.assertEqual(self.client.get(reverse('core:pm_gwo_detail', args=[gwo.id]),
+                                        HTTP_HOST='127.0.0.1').status_code, 404)
+        self.assertEqual(self.client.post(reverse('core:pm_extension_request', args=[gwo.id]),
+            {'reason': 'Later', 'requested_date': '2026-11-01'}, HTTP_HOST='127.0.0.1').status_code, 404)
+        self.assertEqual(self.client.get(reverse('core:pm_plan_orders', args=[self.plan.id]),
+                                        HTTP_HOST='127.0.0.1').status_code, 403)
+        self.assertFalse(ExtensionRequest.objects.exists())
+
+    def test_extension_cannot_target_closed_future_or_earlier_date(self):
+        for days, status, requested in [(0, 'skipped', '2026-11-01'), (1, 'dispatched', '2026-11-01'),
+                                        (-1, 'dispatched', '2026-10-13')]:
+            gwo = self.order(days=days, status=status)
+            response = self.client.post(reverse('core:pm_extension_request', args=[gwo.id]),
+                {'reason': 'Later', 'requested_date': requested}, HTTP_HOST='127.0.0.1')
+            self.assertEqual(response.status_code, 400)
+        self.assertFalse(ExtensionRequest.objects.exists())
+
+    def test_extension_approval_cancels_old_future_schedule_without_deleting_history(self):
+        gwo = self.order()
+        future = self.order(days=7)
+        completed = self.order(days=14, status='completed')
+        ext = ExtensionRequest.objects.create(gwo=gwo, reason='Later', requested_date=date(2026, 11, 1))
+        self.assertTrue(self.post('pm_extension_approve', [ext.id]).json()['success'])
+        for obj, status in [(gwo, 'skipped'), (future, 'skipped'), (completed, 'completed')]:
+            obj.refresh_from_db()
+            self.assertEqual(obj.status, status)
+        self.plan.refresh_from_db()
+        self.assertEqual(self.plan.start_date, date(2026, 11, 1))
+
+    def complete(self, gwo, **kwargs):
+        fields = {'date': self.today.isoformat(), 'gwo_id': gwo.id, 'zones': [self.zone.code],
+                  'entries': '[]', 'team_size': '1', 'shift': '白班'}
+        fields.update(kwargs)
+        return self.client.post(reverse('core:workorder_mobile_v2'), fields, HTTP_HOST='127.0.0.1',
+                                HTTP_X_REQUESTED_WITH='XMLHttpRequest')
+
+    def test_completion_is_idempotent_and_closes_pending_extension(self):
+        gwo = self.order()
+        ext = ExtensionRequest.objects.create(gwo=gwo, reason='Later', requested_date=date(2026, 11, 1))
+        self.client.force_login(self.user)
+        response = self.complete(gwo)
+        self.assertTrue(response.json()['success'], response.content)
+        self.assertEqual(self.complete(gwo).status_code, 409)
+        self.assertEqual(PMWorkOrder.objects.count(), 1)
+        ext.refresh_from_db()
+        self.assertEqual(ext.status, 'rejected')
+
+    def test_closed_future_or_unowned_task_cannot_create_completion(self):
+        for days, status in [(0, 'skipped'), (1, 'dispatched')]:
+            gwo = self.order(days=days, status=status)
+            self.assertEqual(self.complete(gwo).status_code, 409)
+        outside = User.objects.create_user('no-pm-access')
+        Worker.objects.create(user=outside, employee_id='OUTSIDE', full_name='Outside')
+        self.client.force_login(outside)
+        gwo = self.order(days=-1, crew=self.crew)
+        self.assertFalse(self.complete(gwo).json()['success'])
+        self.assertFalse(PMWorkOrder.objects.exists())
+
+    def test_migration_backfills_legacy_deadline(self):
+        from importlib import import_module
+        from types import SimpleNamespace
+        from django.apps import apps
+        from django.db import connection
+        gwo = self.order(days=-8)
+        GeneratedWorkOrder.objects.filter(pk=gwo.pk).update(deadline=None)
+        migration = import_module('core.migrations.0131_pm_deadlines_and_dispatch_runs')
+        migration.snapshot_deadlines(apps, SimpleNamespace(connection=connection))
+        gwo.refresh_from_db()
+        self.assertEqual(gwo.deadline, self.today - timedelta(days=1))
+
+    def test_modal_options_cannot_inject_script_tags(self):
+        self.zone.name = '</script><script>alert(1)</script>'
+        self.zone.save()
+        response = self.client.get(reverse('core:pm_management'), HTTP_HOST='127.0.0.1')
+        self.assertNotContains(response, '</script><script>alert(1)</script>')
+        self.assertContains(response, '\\u003C/script\\u003E')
+
+    def test_fresh_management_page_sets_csrf_cookie_for_modal_saves(self):
+        from django.test import Client
+        client = Client(enforce_csrf_checks=True)
+        client.force_login(self.manager)
+        page = client.get(reverse('core:pm_management'), HTTP_HOST='127.0.0.1')
+        self.assertIn('csrftoken', page.cookies)
+        response = client.post(reverse('core:pm_plan_edit', args=[self.plan.id]),
+            {'pm_number': self.plan.pm_number, 'job_plan': self.job.id, 'crew': self.crew.id,
+             'frequency_value': 1, 'frequency_unit': 'weeks', 'lead_days': 0, 'active': '1'},
+            HTTP_HOST='127.0.0.1', HTTP_X_REQUESTED_WITH='XMLHttpRequest',
+            HTTP_X_CSRFTOKEN=page.cookies['csrftoken'].value)
+        self.assertTrue(response.json()['success'])
