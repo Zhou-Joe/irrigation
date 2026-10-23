@@ -613,7 +613,10 @@
     // ── Mobile FAB Menu ──
 
     function initFabMenu() {
-        var isDesktop = !('ontouchstart' in window) && window.innerWidth > 768;
+        // Width-only, matching the CSS breakpoint and ai-chat.js: touch-capable
+        // wide screens (tablets, landscape phones, touch laptops) must keep the
+        // desktop control layout — the mobile button cluster is display:none there.
+        var isDesktop = !window.matchMedia('(max-width:768px)').matches;
 
         // Action map — replaces eval()
         var fabActions = {
