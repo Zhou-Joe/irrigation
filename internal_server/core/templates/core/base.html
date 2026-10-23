@@ -228,15 +228,16 @@
         /* Nav unread badge — sits next to the username so notifications are
            discoverable even after the popup is dismissed. The count pill pins to
            the bell's top-right (the conventional spot) instead of sitting beside it. */
-        .top-nav-notif { position: relative; display: inline-flex; align-items: center; color: rgba(245,240,232,0.85); padding: 6px 8px; border-radius: 6px; cursor: pointer; line-height: 0; }
+        .top-nav-notif { position:relative;display:inline-flex;align-items:center;justify-content:center;flex:0 0 44px;width:44px;height:44px;box-sizing:border-box;color:#f5f0e8;padding:0;border:1px solid #ffffff18;background:#ffffff0a;border-radius:50%;cursor:pointer;line-height:1; }
         .top-nav-notif:hover { background: rgba(255,255,255,0.12); color: #fff; }
-        .top-nav-notif-icon { display: block; }
+        .top-nav-notif>.ui-icon { display:block;width:20px;height:20px;transform:translate(-2px,2px); }
+        .top-nav-notif:focus-visible { outline:2px solid #dfbd80;outline-offset:2px; }
         .top-nav-notif .notif-count {
-            position: absolute; top: 0; right: 0; transform: translate(40%, -40%);
-            background: var(--color-warning, #CC7722); color: #fff;
-            font-size: 0.66rem; font-weight: 700; padding: 0 5px;
-            border-radius: 9px; min-width: 16px; height: 16px; line-height: 16px;
-            text-align: center; display: none; border: 1.5px solid var(--color-primary, #1B4332);
+            position:absolute;top:2px;right:1px;transform:none;box-sizing:border-box;
+            background:#dfbd80;color:#173e2c;font-size:10px;font-weight:700;
+            font-variant-numeric:tabular-nums;letter-spacing:0;padding:0 4px;
+            border-radius:10px;min-width:18px;height:18px;line-height:16px;
+            text-align:center;display:none;border:1px solid #1b4332;box-shadow:0 0 0 1px #1b4332;pointer-events:none;
         }
         .top-nav-notif .notif-count.show { display: inline-block; }
 
@@ -279,9 +280,9 @@
             </div>
         </div>
         <div class="top-nav-right">
-            <button type="button" class="top-nav-notif" id="navNotifBtn" title="通知" aria-label="查看通知和PM任务" onclick="reopenNotifPopup()" style="background:none;border:0;color:inherit;padding:8px;">
+            <button type="button" class="top-nav-notif" id="navNotifBtn" title="通知与PM任务" aria-label="查看通知和PM任务" aria-haspopup="dialog" aria-controls="notifPopup" aria-expanded="false" onclick="reopenNotifPopup()">
                 <svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-bell"/></svg>
-                <span class="notif-count" id="navNotifCount">0</span>
+                <span class="notif-count" id="navNotifCount" aria-hidden="true">0</span>
             </button>
             <a href="{% url 'core:profile' %}" class="top-nav-user">{{ user.get_full_name|default:user.username }}</a>
             <a href="{% url 'core:logout' %}" class="top-nav-logout">退出</a>
@@ -357,6 +358,7 @@
             var b = document.getElementById('navNotifCount');
             if (!b) return;
             var total = queue.length + pmTasks.length;
+            document.getElementById('navNotifBtn').setAttribute('aria-label', '查看通知和PM任务，共 ' + total + ' 项待办');
             if (total) { b.textContent = total > 99 ? '99+' : total; b.classList.add('show'); }
             else { b.classList.remove('show'); }
         }
@@ -392,6 +394,7 @@
         function renderAll() {
             var popup = document.getElementById('notifPopup');
             if (!popup) return;
+            document.getElementById('navNotifBtn').setAttribute('aria-expanded', 'true');
             var empty = document.getElementById('notifEmpty');
             var content = document.getElementById('notifContent');
             var ackBtn = document.getElementById('notifAckBtn');
@@ -444,7 +447,7 @@
         window.reopenNotifPopup = function () {
             var popup = document.getElementById('notifPopup');
             if (!popup) return;
-            if (popup.style.display === 'flex') { popup.style.display = 'none'; }   // toggle off
+            if (popup.style.display === 'flex') { window.closeNotifPopup(); }   // toggle off
             else { openPopup(); }                                                    // toggle on
         };
         // Close (✕ / backdrop click / Esc) — dismisses WITHOUT marking read, so the
@@ -452,6 +455,7 @@
         window.closeNotifPopup = function () {
             var popup = document.getElementById('notifPopup');
             if (popup) popup.style.display = 'none';
+            document.getElementById('navNotifBtn').setAttribute('aria-expanded', 'false');
         };
         document.addEventListener('keydown', function (e) {
             if (e.key === 'Escape') { window.closeNotifPopup(); }
