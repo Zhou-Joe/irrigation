@@ -15,7 +15,7 @@ from core.models import (
     MaintenancePlan, Worker, WorkReport, Zone, PMDispatchRun, PMWorkOrder,
 )
 from core.notifications import pm_tasks_for_field_worker
-from core.pm_utils import completion_deadline, is_overdue
+from core.pm_utils import completion_deadline, is_overdue, occurrence, cycle_index, next_due
 from core.views import _pm_gwo_queryset, _serialize_pm_tasks
 
 
@@ -163,6 +163,240 @@ class PMDispatchTests(PMFixture):
         call_command('assign_pm_crews', stdout=StringIO())
         self.plan.refresh_from_db()
         self.assertIsNone(self.plan.crew_id)
+
+
+class PMRotationTests(PMFixture):
+    def setUp(self):
+        self.plan.active = False
+        self.plan.save(update_fields=['active'])
+
+    def cohort(self, count=10, anchor=date(2026, 9, 1), unit='months', value=1, lead=0):
+        plans = []
+        for i in range(count):
+            plan = MaintenancePlan.objects.create(
+                pm_number=f'ROTATE-{MaintenancePlan.objects.count():04d}', job_plan=self.job,
+                crew=self.crew, start_date=anchor, frequency_unit=unit,
+                frequency_value=value, lead_days=lead,
+            )
+            plan.zones.add(self.zone)
+            plans.append(plan)
+        return plans
+
+    def generate(self, day, **kwargs):
+        out = StringIO()
+        call_command('generate_pm_workorders', date=day.isoformat(), stdout=out, **kwargs)
+        return out.getvalue()
+
+    def schedules(self):
+        return list(MaintenancePlan.objects.order_by('id').values_list(
+            'id', 'start_date', 'rotation_anchor', 'rotation_slot', 'rotation_size', 'rotation_cycle'))
+
+    def test_ten_monthly_pms_generate_every_three_days_in_a_thirty_day_month(self):
+        self.cohort()
+        self.generate(date(2026, 9, 30))
+        dates = list(GeneratedWorkOrder.objects.order_by('scheduled_date')
+                     .values_list('scheduled_date', flat=True))
+        self.assertEqual(dates, [date(2026, 9, day) for day in range(1, 29, 3)])
+        self.assertEqual(set(GeneratedWorkOrder.objects.values_list('crew_id', flat=True)), {self.crew.id})
+        # Daily reruns do not shift the next cycle or duplicate issued tasks.
+        schedules = self.schedules()
+        self.generate(date(2026, 9, 30))
+        self.generate(date(2026, 10, 31))
+        self.assertEqual(self.schedules(), schedules)
+        self.assertEqual(GeneratedWorkOrder.objects.count(), 20)
+
+    def test_monthly_rotation_spreads_each_real_calendar_cycle_including_leap_february(self):
+        from core.pm_rotation import initialize_rotation
+        from dateutil.relativedelta import relativedelta
+        for anchor in [date(2024, 1, 1), date(2026, 1, 31)]:
+            with self.subTest(anchor=anchor):
+                MaintenancePlan.objects.filter(active=True).delete()
+                self.cohort(anchor=anchor)
+                plans, _ = initialize_rotation(anchor)
+                for index in range(14):
+                    start = anchor + relativedelta(months=index)
+                    end = anchor + relativedelta(months=index + 1)
+                    dates = [occurrence(p, index) for p in plans]
+                    self.assertEqual(len(set(dates)), 10)
+                    gaps = [(b - a).days for a, b in zip(dates, dates[1:] + [end])]
+                    self.assertLessEqual(max(gaps) - min(gaps), 1)
+                    self.assertTrue(all(start <= day < end for day in dates))
+                    for plan, day in zip(plans, dates):
+                        self.assertEqual(cycle_index(plan, day), index)
+                        self.assertEqual(next_due(plan, day), day)
+                        self.assertEqual(next_due(plan, day + timedelta(days=1)), occurrence(plan, index + 1))
+
+    def test_rotated_tasks_keep_a_full_calendar_month_deadline_when_generated_early(self):
+        from dateutil.relativedelta import relativedelta
+        self.cohort(anchor=date(2026, 1, 1), lead=90)
+        self.generate(date(2026, 1, 1))
+        orders = list(GeneratedWorkOrder.objects.select_related('plan'))
+        self.assertGreaterEqual(len(orders), 30)
+        for order in orders:
+            with self.subTest(date=order.scheduled_date):
+                self.assertEqual(order.deadline, order.scheduled_date + relativedelta(months=1))
+                self.assertFalse(is_overdue(order, order.deadline))
+                self.assertTrue(is_overdue(order, order.deadline + timedelta(days=1)))
+        jan28 = next(o for o in orders if o.scheduled_date == date(2026, 1, 28))
+        feb26 = next(o for o in orders if o.scheduled_date == date(2026, 2, 26))
+        self.assertEqual(jan28.deadline, date(2026, 2, 28))
+        self.assertEqual(feb26.deadline, date(2026, 3, 26))
+
+    def test_new_month_end_tasks_have_a_full_calendar_month_including_leap_year(self):
+        for year, last_day in [(2024, 29), (2026, 28)]:
+            with self.subTest(year=year):
+                MaintenancePlan.objects.filter(active=True).delete()
+                plan = self.cohort(count=1, anchor=date(year, 1, 31), lead=28)[0]
+                self.generate(date(year, 1, 3))
+                order = plan.generated_orders.get()
+                self.assertEqual(order.scheduled_date, date(year, 1, 31))
+                self.assertEqual(order.deadline, date(year, 2, last_day))
+                self.assertFalse(is_overdue(order, order.deadline))
+                self.assertTrue(is_overdue(order, order.deadline + timedelta(days=1)))
+
+    def test_fixed_day_week_and_oversubscribed_daily_rotations(self):
+        from collections import Counter
+        from core.pm_rotation import initialize_rotation
+        for unit, value, period in [('days', 30, 30), ('weeks', 3, 21), ('days', 1, 1)]:
+            with self.subTest(unit=unit, value=value):
+                MaintenancePlan.objects.filter(active=True).delete()
+                self.cohort(unit=unit, value=value)
+                plans, _ = initialize_rotation(date(2026, 9, 1))
+                counts = Counter(p.start_date for p in plans)
+                self.assertEqual(len(counts), min(10, period))
+                self.assertLessEqual(max(counts.values()) - min(counts.values()), 1)
+                for plan in plans:
+                    self.assertEqual((occurrence(plan, 1) - occurrence(plan, 0)).days, period)
+
+    def test_dry_run_projects_same_dates_without_writing_plans_orders_or_runs(self):
+        self.cohort()
+        before = self.schedules()
+        output = self.generate(date(2026, 9, 30), dry_run=True)
+        self.assertEqual(self.schedules(), before)
+        self.assertFalse(GeneratedWorkOrder.objects.exists())
+        self.assertFalse(PMDispatchRun.objects.exists())
+        self.assertIn('10 generated', output)
+        self.assertIn('2026-09-28', output)
+        self.generate(date(2026, 9, 30))
+        self.assertEqual(GeneratedWorkOrder.objects.count(), 10)
+
+    def test_existing_orders_and_deadlines_survive_cutover_without_rotated_backfill(self):
+        from core.management.commands.level_pm_schedule import projected_load
+        from core.pm_utils import completion_stats
+        from core.views import _pm_period_window
+        plans = self.cohort(lead=28)
+        for plan in plans:
+            GeneratedWorkOrder.objects.create(plan=plan, scheduled_date=date(2026, 9, 1), status='completed')
+            GeneratedWorkOrder.objects.create(plan=plan, scheduled_date=date(2026, 10, 1),
+                                             crew=self.crew, worker=self.worker)
+        before = list(GeneratedWorkOrder.objects.order_by('id').values())
+        self.generate(date(2026, 9, 30))
+        self.assertEqual(list(GeneratedWorkOrder.objects.order_by('id').values()), before)
+        load = projected_load(MaintenancePlan.objects.filter(active=True), date(2026, 9, 30), 60)
+        self.assertEqual(load[date(2026, 10, 1)], 10)
+        active = list(MaintenancePlan.objects.filter(active=True).select_related('job_plan'))
+        stats = completion_stats(active, 'current', date(2026, 10, 15), _pm_period_window)
+        self.assertEqual(stats[0]['total'], 10)
+        previous = completion_stats(active, 'prev', date(2026, 10, 15), _pm_period_window)
+        self.assertEqual(previous[0]['completed'], 10)
+        # The first newly phased work falls after the existing October cycle.
+        self.generate(date(2026, 11, 30))
+        new = GeneratedWorkOrder.objects.exclude(id__in=[row['id'] for row in before])
+        self.assertEqual(new.filter(scheduled_date__lt=date(2026, 11, 1)).count(), 0)
+        for row in before:
+            self.assertEqual(GeneratedWorkOrder.objects.values().get(id=row['id']), row)
+        self.assertEqual(new.filter(scheduled_date__month=11).count(), 10)
+
+    def test_new_members_fill_gaps_without_moving_existing_or_reactivating_disabled_plans(self):
+        from core.pm_rotation import initialize_rotation
+        plans = self.cohort(count=2)
+        initialize_rotation(date(2026, 9, 1), apply=True)
+        before = self.schedules()
+        newcomer = self.cohort(count=1)[0]
+        disabled = self.cohort(count=1)[0]
+        disabled.active = False
+        disabled.save(update_fields=['active'])
+        initialize_rotation(date(2026, 9, 1), apply=True)
+        self.assertEqual(self.schedules()[:len(before)], before)
+        newcomer.refresh_from_db()
+        disabled.refresh_from_db()
+        self.assertEqual(newcomer.start_date, date(2026, 9, 8))
+        self.assertIsNone(disabled.rotation_anchor)
+        plans[0].job_plan.active = False
+        plans[0].job_plan.save()
+        self.assertEqual(initialize_rotation(date(2026, 9, 1))[0], [])
+
+    def test_schedule_edit_keeps_the_explicit_date_on_next_dispatch(self):
+        from core.pm_rotation import initialize_rotation
+        plans = self.cohort()
+        initialize_rotation(date(2026, 9, 1), apply=True)
+        plan = MaintenancePlan.objects.get(pk=plans[5].pk)
+        plan.start_date = date(2026, 11, 5)
+        plan.save(update_fields=['start_date'])
+        self.generate(date(2026, 11, 5))
+        plan.refresh_from_db()
+        self.assertEqual(plan.start_date, date(2026, 11, 5))
+        self.assertTrue(plan.generated_orders.filter(scheduled_date=plan.start_date).exists())
+        self.assertEqual(occurrence(plan, 1), date(2026, 12, 5))
+
+    def test_approved_extension_keeps_its_date_and_full_month_deadline(self):
+        self.cohort(lead=30)
+        self.generate(date(2026, 9, 30))
+        plan = MaintenancePlan.objects.get(rotation_slot=1, rotation_size=2)
+        order = plan.generated_orders.get(scheduled_date=date(2026, 9, 16))
+        future = plan.generated_orders.get(scheduled_date=date(2026, 10, 16))
+        request = ExtensionRequest.objects.create(
+            gwo=order, reason='Later', requested_date=date(2026, 11, 15))
+        self.client.force_login(self.manager)
+        with patch('django.utils.timezone.localdate', return_value=self.today):
+            response = self.post('pm_extension_approve', [request.id])
+        self.assertTrue(response.json()['success'])
+        future.refresh_from_db()
+        self.assertEqual(future.status, 'skipped')
+        self.generate(date(2026, 11, 15))
+        extended = plan.generated_orders.get(scheduled_date=date(2026, 11, 15))
+        self.assertEqual(extended.deadline, date(2026, 12, 15))
+        plan.refresh_from_db()
+        self.assertEqual(next_due(plan, date(2026, 11, 16)), date(2026, 12, 15))
+
+    def test_early_generated_rotated_tasks_appear_to_workers_on_their_scheduled_dates(self):
+        self.cohort(lead=28)
+        self.generate(date(2026, 9, 1))
+        self.assertEqual(GeneratedWorkOrder.objects.count(), 10)
+        for day, visible in [(1, 1), (3, 1), (4, 2), (7, 3)]:
+            with patch('django.utils.timezone.localdate', return_value=date(2026, 9, day)):
+                self.assertEqual(_pm_gwo_queryset(self.user, False).count(), visible)
+                self.assertEqual(len(pm_tasks_for_field_worker(self.user)), visible)
+
+    def test_relevel_command_uses_dispatch_calendar_and_full_preview_horizon(self):
+        from core.management.commands.level_pm_schedule import projected_load
+        self.cohort(anchor=date(2026, 1, 1))
+        before = self.schedules()
+        out = StringIO()
+        call_command('level_pm_schedule', date='2026-01-01', preview_days=90, stdout=out)
+        self.assertEqual(self.schedules(), before)
+        self.assertIn('AFTER peak:  1 orders/day', out.getvalue())
+        call_command('level_pm_schedule', date='2026-01-01', apply=True, stdout=StringIO())
+        first = self.schedules()
+        self.assertEqual(sum(projected_load(MaintenancePlan.objects.filter(active=True),
+                                            date(2026, 1, 1), 90).values()), 30)
+        call_command('level_pm_schedule', date='2026-01-01', apply=True, stdout=StringIO())
+        self.assertEqual(self.schedules(), first)
+        self.generate(date(2026, 3, 31))
+        self.assertEqual(GeneratedWorkOrder.objects.count(), 30)
+
+    def test_completion_stats_and_next_due_use_the_rotated_monthly_phase(self):
+        from core.pm_rotation import initialize_rotation
+        from core.pm_utils import completion_stats
+        from core.views import _compute_next_due, _pm_period_window
+        self.cohort(anchor=date(2026, 1, 1))
+        initialize_rotation(date(2026, 1, 1), apply=True)
+        plan = MaintenancePlan.objects.get(rotation_slot=9, rotation_size=10)
+        self.assertEqual(plan.start_date, date(2026, 1, 28))
+        self.assertEqual(_compute_next_due(plan, date(2026, 2, 1)), date(2026, 2, 26))
+        GeneratedWorkOrder.objects.create(plan=plan, scheduled_date=date(2026, 2, 26))
+        stats = completion_stats([plan], 'current', date(2026, 2, 27), _pm_period_window)
+        self.assertEqual(stats[0]['total'], 1)
 
 
 class PMDeadlineTests(PMFixture):

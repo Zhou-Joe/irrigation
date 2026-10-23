@@ -155,6 +155,15 @@
         resetWoZoneRecords();
         _editingReportId = null; _editingPmOrderId = null; _pendingEdit = false; _existingPhotos = []; _photoRemove.clear();   // create mode
 
+        if (type === 'workorder') {
+            // A new form must not reuse a canceled PM/edit form when the
+            // zone-first flow returns from the map. Changing zones within
+            // an already-open form still keeps that form's input intact.
+            _pmGwoId = null;
+            var oldBody = $('woModalBody');
+            if (oldBody) oldBody.innerHTML = '';
+        }
+
         // Fetch form data in background (cached or from API)
         var dataUrl = type === 'workorder' ? '/api/modal/workorder-data/'
                     : type === 'inventory' ? '/api/modal/inventory-data/'
@@ -252,8 +261,8 @@
     // which triggers this on dashboard load.
     // Open the workorder CREATE form seeded for completing a PM task.
     // Dispatch stores the task on the GWO (no WorkReport shell), so completion
-    // is a create flow: _pmGwoId is sent on submit so the server builds an
-    // is_pm=True WorkReport, links it to the GWO, and marks the GWO completed.
+    // is a create flow: the server creates a separate PMWorkOrder and completes
+    // the GWO after all form data has been saved.
     // Mirrors quickWorkorder (build the form directly — openV2Modal would route
     // workorder into map/zone-first mode instead of showing the form).
     window.openV2ModalForPm = function (gwoId) {
@@ -267,6 +276,7 @@
         _zoneConfirmed = true;   // skip the zone-first gate; zones pre-filled below
         _editingReportId = null; _editingPmOrderId = null; _pendingEdit = false; _existingPhotos = []; _photoRemove.clear();   // create mode
         _pmGwoId = String(gwoId);
+        _pendingEdit = true;  // category comes from the assigned Job Plan
         resetWoZoneRecords();
 
         // GWO seed data (zones/date/remark) fetched alongside the form structure,
@@ -277,26 +287,14 @@
             if (!pmSeed) return;
             // Pre-select the GWO's zones.
             (pmSeed.zone_codes || []).forEach(function (c) { _selectedZoneCodes.add(c); });
-            // Date: set the visible <select> if the option exists, else hidden input.
-            if (pmSeed.scheduled_date) {
-                var dateSel = $('woDate'), dateHidden = $('woDateHidden'), headerDate = $('woHeaderDate');
-                if (dateSel) {
-                    var opt = dateSel.querySelector('option[value="' + pmSeed.scheduled_date + '"]');
-                    if (opt) dateSel.value = pmSeed.scheduled_date;
-                }
-                if (dateHidden) dateHidden.value = pmSeed.scheduled_date;
-                if (headerDate) headerDate.textContent = pmSeed.scheduled_date;
-            }
-            // Remark.
-            if (pmSeed.remark != null) {
-                var rm = document.querySelector('#woModalForm [name="remark"]');
-                if (rm) rm.value = pmSeed.remark;
-            }
+            applyWoEditPrefill({ header: pmSeed.header, existing: [] });
+            var submit = $('woSubmitBtn'); if (submit) submit.textContent = '完成PM任务';
             renderZoneSummary();
             syncSelectionOverlays();   // paint red on the map for pre-filled zones
         };
 
         var showForm = function () {
+            if (_currentModal !== 'workorder' || _pmGwoId !== String(gwoId)) return;
             if (_formDataCache.workorder) {
                 buildForm('workorder', _formDataCache.workorder);
             }
@@ -305,16 +303,17 @@
             if (backdrop) backdrop.style.display = '';
             if (container) { container.style.display = ''; container.classList.add('open'); }
             applySeed();
-            // Reflect the PM task in the title so the worker sees what to complete.
-            var titleEl = document.querySelector('#woModalContainer .modal-title, #woModalContainer h2, #woModalContainer h3');
-            if (titleEl) { titleEl.textContent = '完成 PM 任务 (PM-' + gwoId + ')'; }
         };
 
         // Fetch both the GWO seed and the form data, then render.
         var seedP = fetch('/settings/pm/gwo/' + gwoId + '/detail/', { credentials: 'same-origin' })
-            .then(function (r) { return r.json(); })
-            .then(function (d) { pmSeed = d; })
-            .catch(function () { /* seed optional — form still works without it */ });
+            .then(function (r) {
+                if (!r.ok) throw new Error('PM任务不存在、已处理或无权访问，请刷新任务列表');
+                return r.json().then(function (d) {
+                    if (!d.header || !d.gwo_id) throw new Error(d.message || '无法加载PM任务');
+                    pmSeed = d;
+                });
+            });
 
         var formP;
         if (_formDataCache.workorder) {
@@ -332,7 +331,12 @@
                     _formDataCache.workorder = data;
                 });
         }
-        Promise.all([seedP, formP]).then(showForm).catch(function () { /* already surfaced */ });
+        Promise.all([seedP, formP]).then(showForm).catch(function (err) {
+            if (_currentModal === 'workorder' && _pmGwoId === String(gwoId)) {
+                closeV2Modal('workorder');
+                showToast(err.message || '加载PM任务失败，请重试', 'error');
+            }
+        });
     };
 
     window.openV2ModalForEdit = function (reportId) {
@@ -459,7 +463,11 @@
         if (h.h_date) {
             if (dateSel) {
                 var opt = dateSel.querySelector('option[value="' + h.h_date + '"]');
-                if (opt) dateSel.value = h.h_date;
+                if (!opt) {
+                    opt = document.createElement('option'); opt.value = h.h_date; opt.textContent = h.h_date;
+                    dateSel.appendChild(opt);
+                }
+                dateSel.value = h.h_date;
             }
             if (dateHidden) dateHidden.value = h.h_date;
             if (headerDate) headerDate.textContent = h.h_date;
@@ -527,6 +535,8 @@
         // isn't accessible here, so we set _woCatNode + the display label inline —
         // mirroring what restoreWoCategory does above.
         if (h.h_pm_job_plan) {
+            var zoneButton = document.querySelector('#woModalFooter .v2-btn-map');
+            if (zoneButton) zoneButton.style.display = 'none';
             // Derive the category from the PM leaf node (h_pm_work_item) by
             // walking up _woParentById — robust to category renames, unlike
             // matching by the Chinese display name '维保定期检查'.
@@ -553,7 +563,8 @@
             }
             // Seed the JobPlan name into the PM leaf entry AFTER setting the
             // category, so the content tree shows it.
-            if (h.h_pm_work_item != null && _woNodeById[h.h_pm_work_item]) {
+            if (h.h_pm_work_item != null && _woNodeById[h.h_pm_work_item] &&
+                    !Object.prototype.hasOwnProperty.call(_woEntries, h.h_pm_work_item)) {
                 _woEntries[h.h_pm_work_item] = {
                     count: 0, status: '', text_value: h.h_pm_job_plan,
                     hasPhoto: false, project: null
@@ -564,8 +575,8 @@
             if (h.h_pm_gwo_id) {
                 _pmGwoId = h.h_pm_gwo_id;
                 var body = $('woModalBody');
-                if (body && !document.getElementById('pmExtSection')) {
-                    var todayStr = _ymd(new Date());
+                if (body && h.h_pm_can_extend && !document.getElementById('pmExtSection')) {
+                    var todayStr = h.h_pm_extension_min || _ymd(new Date());
                     var extDiv = document.createElement('div');
                     extDiv.id = 'pmExtSection';
                     extDiv.style.cssText = 'margin-top:12px;padding:10px;border:1px dashed #d1e7dd;border-radius:8px;background:#f8fdfb;';
@@ -578,6 +589,16 @@
                         '<button type="button" class="btn-sm btn-secondary" onclick="submitPmExtension()" style="align-self:flex-start;">提交延期申请</button>' +
                         '</div></details>';
                     body.appendChild(extDiv);
+                }
+                if (body && h.h_pm_deadline) {
+                    var context = document.getElementById('pmTaskContext');
+                    if (!context) {
+                        context = document.createElement('div'); context.id = 'pmTaskContext';
+                        context.style.cssText = 'padding:8px;margin-bottom:10px;background:#f0f7f2;border-radius:8px;font-size:.82rem;color:#2D6A4F;';
+                        body.insertBefore(context, body.firstChild);
+                    }
+                    context.textContent = '作业计划：' + h.h_pm_job_plan + ' · 计划执行：' +
+                        h.h_pm_scheduled_date + ' · 完成截止：' + h.h_pm_deadline + '（按派发区域完成）';
                 }
             }
         }
@@ -776,6 +797,9 @@
         // could have left it set, which would silently swallow the next submit.
         window._woInflight = false;
         _mergeDupIds = null;   // cancel merge if user closes the form
+        _pmGwoId = null;
+        _editingPmOrderId = null;
+        _pendingEdit = false;
         // Reset zone summaries
         var woZS = $('woZoneSummary'); if (woZS) woZS.innerHTML = '<h2>工作记录</h2>';
         var wrZS = $('wrZoneSummary'); if (wrZS) wrZS.innerHTML = '<h2>浇水需求</h2>';
@@ -979,6 +1003,12 @@
         var el = $(type === 'workorder' ? 'woZoneSummary' : 'wrZoneSummary');
         if (!el) return;
         var codes = Array.from(_selectedZoneCodes);
+        if (type === 'workorder' && _pmGwoId) {
+            el.innerHTML = '<h2 style="color:#fff;">' + (_editingPmOrderId ? 'PM工单记录' : '完成 PM 任务') +
+                ' (PM-' + Number(_pmGwoId) + ') <span style="font-size:.7em;font-weight:500;">' +
+                codes.length + ' 个区域</span></h2>';
+            return;
+        }
         if (codes.length === 0) { el.innerHTML = '<h2>' + (type === 'workorder' ? '工作记录' : '浇水需求') + '</h2>'; return; }
         // Only show the count — listing every selected zone name overflowed the header
         // when many zones were picked. The full selection is still visible on the map.
@@ -1956,6 +1986,9 @@
 
         injectCSRF(body.querySelector('form'));
         initWorkorderBehaviors(data);
+        body.scrollTop = 0;
+        var zoneButton = document.querySelector('#woModalFooter .v2-btn-map');
+        if (zoneButton) zoneButton.style.display = '';
         var sb = $('woSubmitBtn'); if (sb) { sb.disabled = false; sb.textContent = '提交'; }
     }
 
@@ -3447,7 +3480,7 @@
                 html = '<p style="text-align:center;color:#aaa;padding:24px 0;">该频率下暂无工单</p>';
             } else {
                 html = '<table style="width:100%;border-collapse:collapse;font-size:.88rem;"><thead><tr style="text-align:left;border-bottom:2px solid #e2e8f0;">'
-                    + '<th style="padding:6px 4px;">作业计划</th><th style="padding:6px 4px;">到期日</th><th style="padding:6px 4px;">区域</th><th style="padding:6px 4px;"></th>'
+                    + '<th style="padding:6px 4px;">作业计划</th><th style="padding:6px 4px;">计划 / 截止</th><th style="padding:6px 4px;">区域</th><th style="padding:6px 4px;"></th>'
                     + '</tr></thead><tbody>';
                 filtered.forEach(function (t) {
                     var statusHtml = t.status === 'completed' ? '<span style="color:#40916C;">✓</span>'
@@ -3462,7 +3495,8 @@
                     }
                     html += '<tr style="border-bottom:1px solid #f1f59;">'
                         + '<td style="padding:7px 4px;"><strong>' + _esc(t.job_plan_name) + '</strong><br><span style="font-size:.72em;color:#aaa;">' + _esc(t.ticket) + '</span></td>'
-                        + '<td style="padding:7px 4px;">' + _esc(t.scheduled_date) + '<br>' + statusHtml + '</td>'
+                        + '<td style="padding:7px 4px;">' + _esc(t.scheduled_date) +
+                            (t.deadline ? '<br>截止 ' + _esc(t.deadline) : '') + '<br>' + statusHtml + '</td>'
                         + '<td style="padding:7px 4px;font-size:.8rem;color:#555;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + _esc(area) + '</td>'
                         + '<td style="padding:7px 4px;">' + action + '</td>'
                         + '</tr>';

@@ -1492,11 +1492,10 @@ def dashboard(request):
     # crew's dispatched/overdue tasks (managers see all). Capped for the panel.
     try:
         pm_tasks_qs = _pm_gwo_queryset(request.user, is_admin or is_manager)
-        context['pm_tasks_json'] = json.dumps(
-            _serialize_pm_tasks(pm_tasks_qs[:50], is_admin or is_manager), ensure_ascii=False)
+        context['pm_tasks_data'] = _serialize_pm_tasks(pm_tasks_qs[:50], is_admin or is_manager)
         context['pm_tasks_total'] = pm_tasks_qs.count()
     except Exception:
-        context['pm_tasks_json'] = '[]'
+        context['pm_tasks_data'] = []
         context['pm_tasks_total'] = 0
 
     return render(request, 'core/dashboard.html', context)
@@ -2672,7 +2671,7 @@ def pm_plan_edit(request, plan_id):
     return render(request, 'core/pm_plan_form.html', context)
 
 
-def _pm_period_window(freq_value, freq_unit, anchor, offset, today):
+def _pm_period_window(freq_value, freq_unit, anchor, offset, today, *, plan=None):
     """Return (start, end, label) for a plan's own frequency-based period.
 
     The period is anchored to ``anchor`` (the plan's start_date). offset=0 →
@@ -2694,7 +2693,8 @@ def _pm_period_window(freq_value, freq_unit, anchor, offset, today):
     if freq_value < 1 or freq_unit not in ('days', 'weeks', 'months'):
         return None, None, '频率无效'
 
-    plan = SimpleNamespace(frequency_value=freq_value, frequency_unit=freq_unit, start_date=anchor)
+    if plan is None:
+        plan = SimpleNamespace(frequency_value=freq_value, frequency_unit=freq_unit, start_date=anchor)
     target_n = max(0, cycle_index(plan, today)) + offset
     if target_n < 0:
         return None, None, f'锚点前{abs(target_n)}期'
@@ -9513,13 +9513,14 @@ def _pm_gwo_queryset(user, is_mgr, include_done=False):
         qs = visible_orders(user).filter(
             status__in=['dispatched', 'overdue'], scheduled_date__lte=today,
         )
-    return qs.select_related('pm_order', 'plan__job_plan', 'crew', 'worker').prefetch_related('zones').order_by('-scheduled_date', '-id')
+    return qs.select_related('pm_order__worker', 'plan__job_plan', 'crew', 'worker').prefetch_related(
+        'zones__patch', 'zones__satellite').order_by('-scheduled_date', '-id')
 
 
 def _serialize_pm_tasks(gwos, is_mgr):
     """Serialize a GWO iterable into PM-task dicts for the work-reports PM tab."""
     from django.utils import timezone as _tz
-    from .pm_utils import is_overdue
+    from .pm_utils import is_overdue, order_zones, order_deadline
     today = _tz.localdate()
     result = []
     for gwo in gwos:
@@ -9529,14 +9530,18 @@ def _serialize_pm_tasks(gwos, is_mgr):
         # Smart area description: zone_group → zone codes; ccu/sat → the CCU/SAT
         # label only (don't list every included zone for device-level tasks).
         # patch.code already starts with "CCU" (e.g. CCU2), so no extra prefix.
-        if level == 'ccu' and plan.patch_id:
-            area_desc = f'{plan.patch.code} {plan.patch.name}'.strip()
+        zones_qs = order_zones(gwo)
+        patches = {zone.patch_id for zone in zones_qs}
+        satellites = {zone.satellite_id for zone in zones_qs}
+        if level == 'ccu' and len(patches) == 1 and None not in patches:
+            asset = zones_qs[0].patch
+            area_desc = f'{asset.code} {asset.name}'.strip()
             area_count = 1
-        elif level == 'sat' and plan.satellite_id:
-            area_desc = f'{plan.satellite.code} {plan.satellite.name}'.strip()
+        elif level == 'sat' and len(satellites) == 1 and None not in satellites:
+            asset = zones_qs[0].satellite
+            area_desc = f'{asset.code} {asset.name}'.strip()
             area_count = 1
         else:
-            zones_qs = list(gwo.zones.all())
             area_desc = '、'.join(z.code for z in zones_qs[:3])
             area_count = len(zones_qs)
         result.append({
@@ -9547,6 +9552,7 @@ def _serialize_pm_tasks(gwos, is_mgr):
             'job_plan_id': plan.job_plan_id,
             'job_plan_name': plan.job_plan.name if plan.job_plan_id else '',
             'scheduled_date': gwo.scheduled_date.strftime('%Y-%m-%d'),
+            'deadline': order_deadline(gwo).isoformat(),
             'area_desc': area_desc,
             'area_count': area_count,
             'freq_label': f'每{plan.frequency_value}{plan.get_frequency_unit_display()}',
@@ -9557,7 +9563,8 @@ def _serialize_pm_tasks(gwos, is_mgr):
             'crew_name': gwo.crew.name if gwo.crew_id else '—',
             'status': gwo.status,
             'completed_at': timezone.localtime(gwo.completed_at).strftime('%Y-%m-%d') if gwo.completed_at else '',
-            'worker_name': gwo.worker.full_name if gwo.worker_id and gwo.worker else '',
+            'worker_name': (pmwo.worker.full_name if pmwo else
+                            gwo.worker.full_name if gwo.worker_id else ''),
         })
     return result
 
@@ -9571,7 +9578,8 @@ def pm_gwo_detail(request, gwo_id):
     fields so the form can pre-select zones, date and remark without the worker
     re-entering them.
     """
-    from .pm_utils import visible_orders
+    from .pm_utils import visible_orders, order_zones
+    from .workorder_tree_views import pm_form_header
     gwo = get_object_or_404(visible_orders(request.user), pk=gwo_id)
     if gwo.status not in ('dispatched', 'overdue') or gwo.scheduled_date > timezone.localdate():
         return JsonResponse({'success': False, 'message': '该工单当前不可填写'}, status=400)
@@ -9581,8 +9589,10 @@ def pm_gwo_detail(request, gwo_id):
         'pm_number': gwo.plan.pm_number,
         'scheduled_date': gwo.scheduled_date.strftime('%Y-%m-%d'),
         'remark': gwo.remark or '',
-        'zone_codes': list(gwo.zones.values_list('code', flat=True)),
+        'zone_codes': [zone.code for zone in order_zones(gwo)],
         'worker_id': gwo.worker_id,
+        'header': {**pm_form_header(gwo), 'h_date': timezone.localdate().isoformat(),
+                   'h_remark': gwo.remark or ''},
     })
 
 
@@ -11065,7 +11075,7 @@ def workorder_mobile_v2(request):
     from core.workorder_tree_views import (
         _calc_hours, _save_entries, _collect_entry_photos, _save_photo,
         _resolve_pending_repairs, _record_edit, _save_workorder_materials,
-        _resolve_material_dest,
+        _resolve_material_dest, validate_workorder_request, pm_completion_entries,
     )
     from datetime import date, datetime, time
 
@@ -11081,6 +11091,7 @@ def workorder_mobile_v2(request):
 
     if request.method == 'POST':
         try:
+            entries, materials = validate_workorder_request(request)
             if not worker and not is_admin(request.user):
                 return JsonResponse({'success': False, 'message': '未关联处理人账号'}, status=400)
 
@@ -11137,9 +11148,7 @@ def workorder_mobile_v2(request):
                 location = first_zone.patch
             elif selected_zones.exists():
                 z_with_patch = next((z for z in selected_zones if z.patch_id), None)
-                location = z_with_patch.patch if z_with_patch else Patch.objects.first()
-            else:
-                location = Patch.objects.first()
+                location = z_with_patch.patch if z_with_patch else None
 
             # Edit vs create: a posted report_id means we update an existing
             # report in place; otherwise we create a new one. A posted gwo_id
@@ -11168,8 +11177,13 @@ def workorder_mobile_v2(request):
                 # PM completion uses a separate PMWorkOrder table (own id sequence),
                 # so PM work never occupies a WorkReport #id slot.
                 if is_pm_completion:
-                    from .pm_utils import visible_orders
+                    from .pm_utils import visible_orders, validate_pm_completion
                     gwo = get_object_or_404(visible_orders(request.user).select_for_update(), pk=int(pm_gwo_id))
+                    if not pm_order_id and (gwo.status not in ('dispatched', 'overdue') or
+                                            gwo.scheduled_date > timezone.localdate()):
+                        return JsonResponse({'success': False, 'message': '该PM工单已处理或尚未到执行日期'}, status=409)
+                    validate_pm_completion(gwo, request, selected_zones)
+                    entries = pm_completion_entries(gwo, entries)
                     if pm_order_id and pm_order_id.isdigit():
                         report = get_object_or_404(PMWorkOrder, pk=pm_order_id, gwo=gwo)
                         report.date = request.POST.get('date') or report.date
@@ -11324,12 +11338,10 @@ def workorder_mobile_v2(request):
 
                 # Work-content tree entries (replaces the old two-level fault model).
                 # _save_entries deletes-then-recreates, so it's idempotent on edit.
-                entries = json.loads(request.POST.get('entries', '[]') or '[]')
                 _save_entries(report, entries, _collect_entry_photos(request))
                 # Material consumption (材料消耗): rebuild the report's outbound
                 # transaction from the cart (rolls back prior, then applies). The
                 # destination is auto-derived from the work category or user-picked.
-                materials = json.loads(request.POST.get('materials', '[]') or '[]')
                 m_dest, m_proj, m_cp = _resolve_material_dest(request, entries)
                 _save_workorder_materials(report, materials, entry_subtype=m_dest,
                                           related_project_id=m_proj, counterparty=m_cp,
@@ -11342,11 +11354,11 @@ def workorder_mobile_v2(request):
                 # order detail page. Existing orders keep their per-flag state on
                 # edit.
                 has_project_link = any(e.get('project') for e in entries) or bool(m_proj)
-                if has_project_link and not is_edit:
+                if has_project_link and not is_edit and not is_pm_completion:
                     report.hours_confirmed = False
                     report.materials_confirmed = False
                     report.save(update_fields=['hours_confirmed', 'materials_confirmed'])
-                elif is_edit and has_project_link and not (report.hours_confirmed or report.materials_confirmed):
+                elif is_edit and has_project_link and not is_pm_completion and not (report.hours_confirmed or report.materials_confirmed):
                     pass   # already pending; leave as-is until manager confirms
                 # 计划性维修: resolve the checked past 待修 workorders (create only —
                 # re-resolving on edit would double-link).
@@ -11373,12 +11385,13 @@ def workorder_mobile_v2(request):
                 # those the user explicitly removed, then append any new uploads.
                 # (On create, just use the new uploads.)
                 if is_edit:
-                    removed = set(x for x in (request.POST.get('report_photos_remove') or '').split(',') if x.strip())
+                    removed = set(x for x in (request.POST.get('report_photos_remove') or '').split(',')
+                                  if x.strip()) & set(report.photos or [])
                     kept = [p for p in (report.photos or []) if p not in removed]
                     # Physically delete the removed media + thumbnails.
                     from core.workorder_tree_views import _delete_media
                     for p in removed:
-                        _delete_media(p)
+                        transaction.on_commit(lambda path=p: _delete_media(path))
                     new_paths = [_save_photo(report, f) for f in request.FILES.getlist('report_photos')]
                     report.photos = kept + new_paths
                     report.save(update_fields=['photos'])

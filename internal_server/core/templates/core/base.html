@@ -334,8 +334,8 @@
             </div>
         </div>
     </div>
-    <script id="unread-notifications-data" type="application/json">{{ unread_notifications_json|default:'[]'|safe }}</script>
-    <script id="pm-tasks-data" type="application/json">{{ pm_tasks_json|default:'[]'|safe }}</script>
+    {{ unread_notifications_data|json_script:"unread-notifications-data" }}
+    {{ pm_tasks_data|json_script:"pm-tasks-data" }}
     <script>
     (function () {
         var queue = [];
@@ -373,12 +373,13 @@
                 return escDiv.innerHTML;
             }
             list.innerHTML = pmTasks.map(function (t) {
-                var dueText = t.overdue ? '⚠️ 已逾期' : '今天到期';
+                var dueText = t.overdue ? '⚠️ 已逾期' : '待完成';
+                if (t.deadline) dueText += ' · 截止 ' + esc(t.deadline);
                 var zoneInfo = t.zone_count > 0
                     ? (t.zone_preview ? t.zone_count + ' zones (' + esc(t.zone_preview) + '…)' : t.zone_count + ' zones')
                     : '';
-                var fillBtn = t.report_id
-                    ? '<button class="notif-pm-fill" onclick="event.stopPropagation();fillPmTask(' + t.report_id + ')">填写</button>'
+                var fillBtn = t.gwo_id
+                    ? '<button class="notif-pm-fill" onclick="event.stopPropagation();fillPmTask(' + Number(t.gwo_id) + ')">填写</button>'
                     : '';
                 return '<div class="notif-pm-item' + (t.overdue ? ' overdue' : '') + '">' +
                     '<div class="notif-pm-main">' +
@@ -473,7 +474,9 @@
         // PM task "填写" button. Overridden on the dashboard page to open the
         // work-order modal; default fallback (other pages) navigates home where
         // the modal is available.
-        window.fillPmTask = window.fillPmTask || function (reportId) { window.location.href = '/'; };
+        window.fillPmTask = window.fillPmTask || function (gwoId) {
+            window.location.href = '/?pm_gwo_id=' + encodeURIComponent(gwoId);
+        };
         if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', load); else load();
     })();
     </script>

@@ -8,6 +8,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from core.models import MaintenancePlan, GeneratedWorkOrder, PMDispatchRun
+from core.pm_rotation import initialize_rotation, ROTATION_FIELDS
 from core.pm_utils import (completion_deadline, occurrence, cycle_index,
                            plan_zones, matching_crew, crew_worker, next_due)
 
@@ -27,8 +28,11 @@ class Command(BaseCommand):
         except ValueError:
             raise CommandError('Invalid date; use YYYY-MM-DD.')
         dry = options['dry_run']
+        projected, rotation_changes = initialize_rotation(today, apply=not dry)
+        rotation_by_id = {p.pk: p for p in projected}
         ids = list(MaintenancePlan.objects.filter(active=True, job_plan__active=True).values_list('id', flat=True))
         self.stdout.write(f'PM dispatch for {today} ({len(ids)} active plans, {"DRY RUN" if dry else "LIVE"})')
+        self.stdout.write(f'Rotation: {len(rotation_changes)} plans {"would be initialized" if dry else "initialized"}.')
         summary = dict(generated=0, already_done=0, not_due=0, unassignable=0, failed=0)
         details = []
         for plan_id in ids:
@@ -40,6 +44,9 @@ class Command(BaseCommand):
                             .get(pk=plan_id))
                     if not plan.active or not plan.job_plan.active:
                         continue
+                    if dry and plan.pk in rotation_by_id:
+                        for name in ROTATION_FIELDS:
+                            setattr(plan, name, getattr(rotation_by_id[plan.pk], name))
                     result = self._dispatch_plan(plan, today, dry)
                 details.append(result)
                 summary['generated'] += result['generated']

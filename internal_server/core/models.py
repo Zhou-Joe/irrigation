@@ -2388,6 +2388,12 @@ class MaintenancePlan(models.Model):
     frequency_unit = models.CharField('频率单位', max_length=10, choices=FREQ_UNIT_CHOICES, default='weeks')
     # 派发控制
     start_date = models.DateField('启动日期', help_text='基准日期（上次执行日），首次到期日从此开始算')
+    # A persisted phase keeps daily dispatch and later additions from moving
+    # an existing rotation. Months use a fraction of each actual calendar cycle.
+    rotation_anchor = models.DateField(null=True, blank=True, editable=False)
+    rotation_slot = models.PositiveIntegerField(default=0, editable=False)
+    rotation_size = models.PositiveIntegerField(default=1, editable=False)
+    rotation_cycle = models.PositiveIntegerField(default=0, editable=False)
     lead_days = models.PositiveIntegerField('提前生成天数', default=28, help_text='提前N天生成工单')
     active = models.BooleanField('启用', default=True)
     last_generated_date = models.DateField('上次生成日期', null=True, blank=True)
@@ -2408,6 +2414,23 @@ class MaintenancePlan(models.Model):
 
     def __str__(self):
         return f'{self.pm_number} ({self.job_plan.name})'
+
+    def save(self, *args, **kwargs):
+        schedule_fields = {'start_date', 'frequency_value', 'frequency_unit'}
+        update_fields = kwargs.get('update_fields')
+        if self.pk and (update_fields is None or schedule_fields.intersection(update_fields)):
+            previous = type(self).objects.filter(pk=self.pk).values(*schedule_fields).first()
+            written_fields = schedule_fields if update_fields is None else schedule_fields.intersection(update_fields)
+            if previous and any(previous[name] != getattr(self, name) for name in written_fields):
+                # An explicit edit or approved extension chooses a new phase.
+                # Do not let automatic rotation undo the manager's chosen date.
+                self.rotation_anchor = self.start_date
+                self.rotation_slot, self.rotation_size = 0, 1
+                self.rotation_cycle = 0
+                if update_fields is not None:
+                    kwargs['update_fields'] = set(update_fields) | {
+                        'rotation_anchor', 'rotation_slot', 'rotation_size', 'rotation_cycle'}
+        super().save(*args, **kwargs)
 
 
 class PMWorkOrder(models.Model):

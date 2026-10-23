@@ -19,7 +19,7 @@ class Command(BaseCommand):
             with transaction.atomic():
                 plan = (MaintenancePlan.objects.select_for_update()
                         .select_related('job_plan', 'crew', 'satellite').get(pk=plan_id))
-                if plan.crew_id:
+                if plan.crew_id and plan.crew.active:
                     already += 1
                     continue
                 crew, reason = matching_crew(plan, plan_zones(plan))

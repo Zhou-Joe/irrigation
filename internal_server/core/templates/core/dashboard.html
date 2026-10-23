@@ -428,20 +428,18 @@ map. Desktop (max-width:768px is false) is unaffected.{% endcomment %}
 <script>window.MAP_STYLE_CONFIG = {{ map_style_json|safe }} || {};</script>
 <script id="pending-water-requests" type="application/json">{{ pending_water_requests_json|safe }}</script>
 <script id="pending-remarks" type="application/json">{{ pending_remarks_json|safe }}</script>
-<script id="pm-tasks-data" type="application/json">{{ pm_tasks_json|safe }}</script>
 <!-- Custom Map JS -->
 <script src="{% static 'js/map.js' %}?v=20261002a"></script>
-<script src="{% static 'js/dashboard-modal.js' %}?v=20260814a"></script>
+<script src="{% static 'js/dashboard-modal.js' %}?v=20261023pm"></script>
 <script>
 // Override the notification popup's PM-task "填写" handler: on the dashboard we
-// can open the work-order edit modal directly. base.html's default fallback
-// just navigates home.
-window.fillPmTask = function (reportId) {
-    if (typeof openV2ModalForEdit === 'function') {
+// can open the assigned PM task directly; other pages navigate with its GWO id.
+window.fillPmTask = function (gwoId) {
+    if (typeof openV2ModalForPm === 'function') {
         closeNotifPopup();
-        openV2ModalForEdit(reportId);
+        openV2ModalForPm(gwoId);
     } else {
-        window.location.href = '/';
+        window.location.href = '/?pm_gwo_id=' + encodeURIComponent(gwoId);
     }
 };
 </script>
