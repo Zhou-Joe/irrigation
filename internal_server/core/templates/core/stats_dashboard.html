@@ -251,7 +251,7 @@ table.excel-preview tbody tr:hover td { background:#e8f5e9; }
     <aside class="sh-sidebar" id="shSidebar">
         <div class="sh-sidebar-header">
             <h2>数据报表</h2>
-            <button class="sh-sidebar-close" onclick="toggleShSidebar()" title="收起">✕</button>
+            <button class="sh-sidebar-close" onclick="toggleShSidebar()" title="收起"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-close"/></svg></button>
         </div>
         <div class="sh-sidebar-body">
             {# ── Date range ── #}
@@ -267,7 +267,7 @@ table.excel-preview tbody tr:hover td { background:#e8f5e9; }
                     <a class="sh-preset" data-days="90">近90天</a>
                     <a class="sh-preset" data-days="0">本月</a>
                     {% if is_admin %}
-                    <a class="sh-export-btn" href="{% url 'core:work_reports_excel' %}?{{ request.GET.urlencode }}"><i class="fa fa-file-excel-o"></i> Excel</a>
+                    <a class="sh-export-btn" href="{% url 'core:work_reports_excel' %}?{{ request.GET.urlencode }}"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-download"/></svg> Excel</a>
                     {% endif %}
                 </div>
                 <div style="font-size:0.75rem;color:var(--color-text-muted);text-align:center;">
@@ -335,12 +335,12 @@ table.excel-preview tbody tr:hover td { background:#e8f5e9; }
 
     {# ════════ Map area ════════ #}
     <div class="sh-map-area">
-        <button class="sh-sidebar-expand" id="shSidebarExpand" onclick="toggleShSidebar()" title="展开侧边栏">侧边栏 ▶</button>
+        <button class="sh-sidebar-expand" id="shSidebarExpand" onclick="toggleShSidebar()" title="展开侧边栏"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-menu"/></svg><span class="pwa-sr-only">展开侧边栏</span></button>
 
         {# Top-left overlay buttons ── #}
         <div class="sh-overlay-tl">
-            <button class="sh-btn" onclick="toggleShSidebar()" title="侧边栏">☰</button>
-            <button class="sh-btn" id="shReportBtn" onclick="toggleShReport()" title="数据报表">📊 数据报表</button>
+            <button class="sh-btn" onclick="toggleShSidebar()" title="侧边栏"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-menu"/></svg></button>
+            <button class="sh-btn" id="shReportBtn" onclick="toggleShReport()" title="数据报表"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-chart"/></svg> 数据报表</button>
         </div>
 
         {# Map mounts here ── #}
@@ -362,7 +362,7 @@ table.excel-preview tbody tr:hover td { background:#e8f5e9; }
             <div class="sh-report-inner">
                 <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
                     <h1 style="margin:0;color:var(--color-primary);">数据报表</h1>
-                    <button class="sh-btn" onclick="toggleShReport()" style="height:36px;">✕ 关闭</button>
+                    <button class="sh-btn" onclick="toggleShReport()" style="height:36px;"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-close"/></svg> 关闭</button>
                 </div>
 
                 {% comment %}Export data island: the four tables' rows serialized as JSON so the
@@ -388,7 +388,7 @@ table.excel-preview tbody tr:hover td { background:#e8f5e9; }
 
                 {% if is_admin %}
                 {# ── 2. Excel-format preview ── #}
-                <div class="section-title collapsible" onclick="toggleSection(this)">工单明细 <span style="font-weight:400;font-size:0.8rem;color:var(--color-text-muted);">(与导出 Excel 格式一致 · {{ excel_preview_rows|length }} 条)</span> <a class="sec-export" href="{% url 'core:work_reports_excel' %}?{{ request.GET.urlencode }}"><i class="fa fa-file-excel-o"></i> 导出 Excel</a> <span class="sec-arrow">▼</span></div>
+                <div class="section-title collapsible" onclick="toggleSection(this)">工单明细 <span style="font-weight:400;font-size:0.8rem;color:var(--color-text-muted);">(与导出 Excel 格式一致 · {{ excel_preview_rows|length }} 条)</span> <a class="sec-export" href="{% url 'core:work_reports_excel' %}?{{ request.GET.urlencode }}"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-download"/></svg> 导出 Excel</a> <span class="sec-arrow"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-chevron-down"/></svg></span></div>
                 <div class="weekly-dashboard">
                     <div class="dashboard-card full">
                         {% if excel_preview_rows %}
@@ -437,7 +437,7 @@ table.excel-preview tbody tr:hover td { background:#e8f5e9; }
                 {% endif %}
 
                 {# ── 3. By section ── #}
-                <div class="section-title collapsible" onclick="toggleSection(this)">工作内容 · 按章节 <span style="font-weight:400;font-size:0.8rem;color:var(--color-text-muted);">(共 {{ entries_total }} 项 · 计数合计 {{ entries_count_sum }})</span> <button type="button" class="sec-export" onclick="event.stopPropagation();exportStats('section')">导出 CSV</button> <span class="sec-arrow">▼</span></div>
+                <div class="section-title collapsible" onclick="toggleSection(this)">工作内容 · 按章节 <span style="font-weight:400;font-size:0.8rem;color:var(--color-text-muted);">(共 {{ entries_total }} 项 · 计数合计 {{ entries_count_sum }})</span> <button type="button" class="sec-export" onclick="event.stopPropagation();exportStats('section')">导出 CSV</button> <span class="sec-arrow"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-chevron-down"/></svg></span></div>
                 <div class="weekly-dashboard">
                     <div class="dashboard-card">
                         <h3>工作内容明细 <span style="font-weight:400;font-size:0.8rem;color:var(--color-text-muted);">(点击节点逐级展开)</span></h3>
@@ -455,7 +455,7 @@ table.excel-preview tbody tr:hover td { background:#e8f5e9; }
                         {% if section_rows %}
                         {% for sec in section_rows %}
                         <div class="drill-head" onclick="toggleDrill(this)">
-                            <span><span class="dh-arrow">▶</span> <span class="dh-label">{{ sec.label }}</span><span class="dh-meta">{{ sec.reports }} 单 · {{ sec.hours|floatformat:1 }}h · {{ sec.entries }} 项{% if sec.counts %} · {{ sec.counts }}{% endif %}</span></span>
+                            <span><span class="dh-arrow"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-chevron-right"/></svg></span> <span class="dh-label">{{ sec.label }}</span><span class="dh-meta">{{ sec.reports }} 单 · {{ sec.hours|floatformat:1 }}h · {{ sec.entries }} 项{% if sec.counts %} · {{ sec.counts }}{% endif %}</span></span>
                         </div>
                         <div class="drill-body">
                             {% for child in sec.children %}
@@ -468,7 +468,7 @@ table.excel-preview tbody tr:hover td { background:#e8f5e9; }
                 </div>
 
                 {# ── 4. By project ── #}
-                <div class="section-title collapsible" onclick="toggleSection(this)">项目分布 <span style="font-weight:400;font-size:0.8rem;color:var(--color-text-muted);">(工时按涉及该项目的工单合计)</span> <button type="button" class="sec-export" onclick="event.stopPropagation();exportStats('project')">导出 CSV</button> <span class="sec-arrow">▼</span></div>
+                <div class="section-title collapsible" onclick="toggleSection(this)">项目分布 <span style="font-weight:400;font-size:0.8rem;color:var(--color-text-muted);">(工时按涉及该项目的工单合计)</span> <button type="button" class="sec-export" onclick="event.stopPropagation();exportStats('project')">导出 CSV</button> <span class="sec-arrow"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-chevron-down"/></svg></span></div>
                 <div class="weekly-dashboard">
                     <div class="dashboard-card full">
                         {% if project_rows %}
@@ -492,18 +492,18 @@ table.excel-preview tbody tr:hover td { background:#e8f5e9; }
                 </div>
 
                 {# ── 5. Land → 通用名称 → Zone ── #}
-                <div class="section-title collapsible" onclick="toggleSection(this)">区域分布 · Land → 通用名称 → Zone <span style="font-weight:400;font-size:0.8rem;color:var(--color-text-muted);">(按工单多区域展开)</span> <button type="button" class="sec-export" onclick="event.stopPropagation();exportStats('land')">导出 CSV</button> <span class="sec-arrow">▼</span></div>
+                <div class="section-title collapsible" onclick="toggleSection(this)">区域分布 · Land → 通用名称 → Zone <span style="font-weight:400;font-size:0.8rem;color:var(--color-text-muted);">(按工单多区域展开)</span> <button type="button" class="sec-export" onclick="event.stopPropagation();exportStats('land')">导出 CSV</button> <span class="sec-arrow"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-chevron-down"/></svg></span></div>
                 <div class="weekly-dashboard">
                     <div class="dashboard-card full">
                         {% if land_rows %}
                         {% for land in land_rows %}
                         <div class="drill-head" onclick="toggleDrill(this)">
-                            <span><span class="dh-arrow">▶</span> <span class="dh-label">{{ land.name }}</span><span class="dh-meta">{{ land.reports }} 单 · {{ land.hours|floatformat:1 }}h</span></span>
+                            <span><span class="dh-arrow"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-chevron-right"/></svg></span> <span class="dh-label">{{ land.name }}</span><span class="dh-meta">{{ land.reports }} 单 · {{ land.hours|floatformat:1 }}h</span></span>
                         </div>
                         <div class="drill-body">
                             {% for nm in land.names %}
                             <div class="drill-head" onclick="toggleDrill(this)" style="padding-left:0;">
-                                <span><span class="dh-arrow">▶</span> <span class="dh-label">{{ nm.name }}</span><span class="dh-meta">{{ nm.reports }} 单 · {{ nm.hours|floatformat:1 }}h</span></span>
+                                <span><span class="dh-arrow"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-chevron-right"/></svg></span> <span class="dh-label">{{ nm.name }}</span><span class="dh-meta">{{ nm.reports }} 单 · {{ nm.hours|floatformat:1 }}h</span></span>
                             </div>
                             <div class="drill-body">
                                 {% for c in nm.codes %}
@@ -519,7 +519,7 @@ table.excel-preview tbody tr:hover td { background:#e8f5e9; }
 
                 {# ── 6. Worker hours ── #}
                 {% if is_admin %}
-                <div class="section-title collapsible" onclick="toggleSection(this)">人员工时统计 <button type="button" class="sec-export" onclick="event.stopPropagation();exportStats('worker')">导出 CSV</button> <span class="sec-arrow">▼</span></div>
+                <div class="section-title collapsible" onclick="toggleSection(this)">人员工时统计 <button type="button" class="sec-export" onclick="event.stopPropagation();exportStats('worker')">导出 CSV</button> <span class="sec-arrow"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-chevron-down"/></svg></span></div>
                 <div class="weekly-dashboard">
                     <div class="dashboard-card full">
                         {% if worker_stats %}

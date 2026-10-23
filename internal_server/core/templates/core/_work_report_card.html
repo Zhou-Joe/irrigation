@@ -23,7 +23,7 @@
                 {% for lbl in report.section_labels %}<span class="wr-chip">{{ lbl }}</span>{% endfor %}
                 {% if report.entry_count %}<span class="wr-chip count">{{ report.entry_count }}项</span>{% endif %}
             {% endif %}
-            <button type="button" class="wr-cmt-chip {% if not report.comment_count %}zero{% endif %}" onclick="event.stopPropagation();toggleCmt({{ report.id }}, this)">💬 {{ report.comment_count|default:0 }}</button>
+            <button type="button" class="wr-cmt-chip {% if not report.comment_count %}zero{% endif %}" onclick="event.stopPropagation();toggleCmt({{ report.id }}, this)"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-message"/></svg> {{ report.comment_count|default:0 }}</button>
         </div>
         {% if report.photos %}
         {# Thumbnail strip — visible without expanding. Capped at 4 with a +N overflow; clicking a thumb opens the lightbox (event.stopPropagation so it doesn't toggle the card). #}
@@ -137,7 +137,7 @@
                 {% if p|is_video %}
                 <div class="wr-photo-wrap" onclick="playInlineVid(this,'{{ p|addslashes }}')">
                     <img class="wr-photo" src="/media/{{ p|thumb }}" data-orig="{{ p }}" loading="lazy" alt="视频缩略图">
-                    <span class="wr-photo-play">▶</span>
+                    <span class="wr-photo-play"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-play"/></svg></span>
                 </div>
                 {% else %}
                 <div class="wr-photo-wrap" onclick="openLb(photoData[{{ report.id }}] || ['{{ p|addslashes }}'], {{ forloop.counter0 }})">

@@ -1,0 +1,6 @@
+<button type="button" class="collapse-indicator" id="{{ control_id }}"
+        aria-expanded="true" aria-controls="{{ target_id }}" aria-label="收起{{ label }}"
+        data-section-label="{{ label }}"
+        onclick="event.stopPropagation(); toggleCardBody(this, '{{ target_id }}', '{{ control_id }}')">
+    <svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-chevron-down"/></svg>
+</button>

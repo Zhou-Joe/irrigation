@@ -82,9 +82,10 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 <link rel="stylesheet" href="{% static 'css/compact-ui.css' %}?v=20261023responsive">
     <link rel="stylesheet" href="{% static 'css/responsive-ui.css' %}?v=20261023responsive">
 <script src="{% static 'js/pwa.js' %}?v=20261023" defer></script>
-<script src="{% static 'js/responsive-ui.js' %}?v=20261023responsive" defer></script>
+<link rel="stylesheet" href="{% static 'css/page-ui.css' %}?v=20261024pages4">
+<script src="{% static 'js/responsive-ui.js' %}?v=20261024pages4" defer></script>
 </head>
-<body class="pwa-authenticated" data-page="workorder_history">
+<body class="ui-system pwa-authenticated" data-page="workorder_history">
 
 <div class="top-bar">
     <a href="{% url 'core:dashboard' %}">&#8592;</a>
@@ -213,7 +214,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
                     <div class="detail-photo-wrap" onclick="this.querySelector('video').style.display='block';this.querySelector('img').style.display='none';this.querySelector('video').play()">
                         <img class="detail-photo" src="/media/{{ p|thumb }}" alt="视频缩略图" loading="lazy">
                         <video class="detail-photo" style="display:none;" src="/media/{{ p }}" muted preload="none" controls></video>
-                        <span class="detail-photo-play">▶</span>
+                        <span class="detail-photo-play"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-play"/></svg></span>
                     </div>
                     {% else %}
                     <a href="/media/{{ p }}" target="_blank">

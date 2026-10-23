@@ -98,29 +98,48 @@
     margin: 0;
     display: flex;
     align-items: center;
-    gap: var(--space-xs);
+    gap: 8px;
 }
 
-.collapse-indicator {
+.collapse-indicator,
+.patch-toggle {
+    appearance: none;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 22px;
-    height: 22px;
-    border-radius: var(--radius-sm);
-    background: var(--color-surface);
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    margin: 0;
+    border-radius: 8px;
+    background: var(--color-surface-alt);
     border: 1px solid var(--color-surface-dark);
-    font-size: 0.65rem;
     color: var(--color-text-secondary);
-    transition: transform 0.2s, background 0.15s;
+    cursor: pointer;
+    vertical-align: middle;
+    transition: background 0.15s, border-color 0.15s;
     flex-shrink: 0;
 }
 
-.settings-card-header:hover .collapse-indicator,
-.zone-section-header:hover .collapse-indicator {
-    background: var(--color-primary);
-    color: var(--color-text-inverse);
-    border-color: var(--color-primary);
+.collapse-indicator:hover,
+.patch-toggle:hover {
+    background: #e5eedc;
+    border-color: #b9cbb0;
+    color: #214c33;
+}
+
+.collapse-indicator:focus-visible,
+.patch-toggle:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 3px; }
+.collapse-indicator .ui-icon,
+.patch-toggle .ui-icon { display: block; width: 18px; height: 18px; transition: transform 0.2s; }
+.collapse-indicator[aria-expanded="false"] .ui-icon,
+.patch-toggle[aria-expanded="false"] .ui-icon { transform: rotate(-90deg); }
+
+@media (max-width: 768px) {
+    .collapse-indicator, .patch-toggle { width: 44px; height: 44px; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .collapse-indicator .ui-icon, .patch-toggle .ui-icon { transition: none; }
 }
 
 .settings-card-header .header-actions {
@@ -379,11 +398,7 @@
 }
 
 .patch-toggle {
-    font-size: 0.55rem;
-    color: var(--color-primary);
-    margin-right: 4px;
-    transition: transform 0.2s;
-    display: inline-block;
+    margin-right: 8px;
 }
 
 .patch-name {
@@ -500,13 +515,6 @@
 .pipeline-toggle-row {
     cursor: pointer;
     user-select: none;
-}
-
-.collapse-indicator {
-    display: inline-block;
-    transition: transform 0.2s;
-    font-size: 0.7em;
-    vertical-align: middle;
 }
 
 /* Empty state */

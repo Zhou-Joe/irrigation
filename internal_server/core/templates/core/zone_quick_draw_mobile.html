@@ -198,9 +198,10 @@
     <link rel="stylesheet" href="{% static 'css/pwa.css' %}?v=20261023responsive">
     <link rel="stylesheet" href="{% static 'css/compact-ui.css' %}?v=20261023responsive">
     <link rel="stylesheet" href="{% static 'css/responsive-ui.css' %}?v=20261023responsive">
+    <link rel="stylesheet" href="{% static 'css/page-ui.css' %}?v=20261024pages4">
     <script src="{% static 'js/pwa.js' %}?v=20261023" defer></script>
 </head>
-<body>
+<body class="ui-system" data-page="zone_quick_draw_mobile">
     <!-- Top Bar -->
     <header class="top-bar">
         <div class="top-bar-left">
@@ -224,33 +225,33 @@
     <div id="editMap"></div>
 
     <!-- Status Pill -->
-    <div class="status-pill" id="statusPill">点击 ✏ 开始绘制</div>
+    <div class="status-pill" id="statusPill">点击 <svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-edit"/></svg> 开始绘制</div>
 
     <!-- FAB Group -->
     <div class="fab-group">
-        <button type="button" class="fab" id="fabDraw" title="绘制模式"><span class="fab-label">✏</span></button>
-        <button type="button" class="fab" id="fabUndo" disabled title="撤销">↩</button>
+        <button type="button" class="fab" id="fabDraw" title="绘制模式"><span class="fab-label"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-edit"/></svg></span></button>
+        <button type="button" class="fab" id="fabUndo" disabled title="撤销"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-undo"/></svg></button>
         <button type="button" class="fab" id="fabComplete" title="完成区域" style="font-size:0.72rem;font-weight:600;">完成</button>
-        <button type="button" class="fab danger" id="fabClear" title="清除">✕</button>
-        <button type="button" class="fab" id="fabBoundaryList" title="区域列表" style="font-size:0.72rem;">☰</button>
+        <button type="button" class="fab danger" id="fabClear" title="清除"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-close"/></svg></button>
+        <button type="button" class="fab" id="fabBoundaryList" title="区域列表" style="font-size:0.72rem;"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-menu"/></svg></button>
     </div>
 
     <!-- Context Menu -->
     <div class="ctx-menu" id="ctxMenu">
         <div class="ctx-title" id="ctxTitle"></div>
-        <div class="ctx-item" id="ctxEdit">✏️ 编辑边界</div>
-        <div class="ctx-item" id="ctxCopyShape">⧉ 复制形状</div>
+        <div class="ctx-item" id="ctxEdit"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-edit"/></svg> 编辑边界</div>
+        <div class="ctx-item" id="ctxCopyShape"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-copy"/></svg> 复制形状</div>
         <div class="ctx-item" id="ctxColor" style="display:flex;align-items:center;gap:8px;">
-            🎨 修改颜色
+            <svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-palette"/></svg> 修改颜色
             <input type="color" id="ctxColorPicker" value="#52B788" style="width:28px;height:24px;padding:0;border:none;cursor:pointer;margin-left:auto;" onclick="event.stopPropagation();">
         </div>
         <div class="ctx-item" id="ctxRingDisplayMode" style="display:none;">
-            <span id="ctxRingDisplayModeText">🏷️ 切换为子标签</span>
+            <span id="ctxRingDisplayModeText"> 切换为子标签</span>
         </div>
         <div class="ctx-item" id="ctxAllRingDisplayMode" style="display:none;">
-            <span id="ctxAllRingDisplayModeText">🏷️ 全部切换为子标签</span>
+            <span id="ctxAllRingDisplayModeText"> 全部切换为子标签</span>
         </div>
-        <div class="ctx-item" id="ctxDelete">🗑️ 删除边界</div>
+        <div class="ctx-item" id="ctxDelete"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-trash"/></svg> 删除边界</div>
     </div>
 
     <!-- Boundary List Panel -->
@@ -258,7 +259,7 @@
     <div class="boundary-panel" id="boundaryPanel">
         <div class="boundary-panel-header">
             <span>区域列表</span>
-            <button type="button" class="boundary-panel-close" id="boundaryPanelClose">✕</button>
+            <button type="button" class="boundary-panel-close" id="boundaryPanelClose"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-close"/></svg></button>
         </div>
         <div class="boundary-panel-body" id="boundaryPanelBody"></div>
     </div>
@@ -266,7 +267,7 @@
     <!-- Floating Action Bar -->
     <div class="map-action-bar" id="mapActionBar">
         <button type="button" class="map-action-save" id="saveBtn" disabled>保存</button>
-        <button type="button" id="copyShapeBtn" style="display:none;padding:8px 14px;border:none;border-radius:8px;background:#2D6A4F;color:white;font-size:0.85rem;font-weight:600;cursor:pointer;">⧉ 复制区域</button>
+        <button type="button" id="copyShapeBtn" style="display:none;padding:8px 14px;border:none;border-radius:8px;background:#2D6A4F;color:white;font-size:0.85rem;font-weight:600;cursor:pointer;"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-copy"/></svg> 复制区域</button>
         <button type="button" class="map-action-cancel" id="cancelSaveBtn">取消</button>
     </div>
 
@@ -275,7 +276,7 @@
     <div class="copy-shape-popup" id="copyShapePopup" style="display:none;position:fixed;bottom:0;left:0;right:0;background:white;border-radius:16px 16px 0 0;z-index:2999;box-shadow:0 -4px 20px rgba(0,0,0,0.15);max-height:50vh;overflow-y:auto;transform:translateY(100%);transition:transform 0.25s ease;">
         <div style="padding:14px 18px 8px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #eee;">
             <span style="font-weight:600;font-size:0.95rem;">选择要复制的区域</span>
-            <button type="button" style="background:none;border:none;font-size:1.2rem;color:#999;cursor:pointer;padding:4px 8px;" onclick="closeCopyPicker()">✕</button>
+            <button type="button" style="background:none;border:none;font-size:1.2rem;color:#999;cursor:pointer;padding:4px 8px;" onclick="closeCopyPicker()"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-close"/></svg></button>
         </div>
         <div id="copyShapeList" style="padding:8px 0;"></div>
     </div>
@@ -285,7 +286,7 @@
         <div class="save-popup-card">
             <div class="save-popup-header">
                 <span>保存区域</span>
-                <button type="button" class="save-popup-close" id="savePopupClose">✕</button>
+                <button type="button" class="save-popup-close" id="savePopupClose"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-close"/></svg></button>
             </div>
             <div class="save-popup-body">
                 <div class="zone-input-wrap">
@@ -314,6 +315,7 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script id="all-drawn-zones-data" type="application/json">{{ all_drawn_zones_json|safe }}</script>
     <script id="all-zones-data" type="application/json">{{ all_zones_json|safe }}</script>
+    <script src="{% static 'js/map-runtime.js' %}?v=20261024drawing"></script>
     <script>window.MAP_STYLE_CONFIG = {{ map_style_json|safe }} || {};</script>
     <script>
     // Stats dropdown
@@ -517,11 +519,7 @@
         }
 
         function normalizeBoundaryData(data) {
-            if (!data || data.length === 0) return [];
-            if (Array.isArray(data[0]) && (Array.isArray(data[0][0]) || (data[0].length > 0 && data[0][0].lat !== undefined))) return data;
-            if (data[0].lat !== undefined || data[0].lng !== undefined || (Array.isArray(data[0]) && data[0].length === 2 && typeof data[0][0] === 'number'))
-                return [data.map(p => p.lat !== undefined ? {lat:p.lat,lng:p.lng} : {lat:p[0],lng:p[1]})];
-            return [];
+            return window.IrrigationMapRuntime.boundaryObjects(data);
         }
 
         function getZoneCode() { const inp = document.getElementById('zoneCodeInput'); return inp ? (inp.value || 'ZONE') : 'ZONE'; }
@@ -677,7 +675,7 @@
             if (copyBtn) copyBtn.style.display = (editingZoneId && shapes.length > 0) ? '' : 'none';
             const pill = document.getElementById('statusPill');
             if (!isDrawing) {
-                pill.textContent = '点击 ✏ 开始绘制';
+                pill.textContent = '点击绘制按钮开始绘制';
             } else if (shapes.length > 0 && markers.length === 0) {
                 pill.textContent = '区域已完成 — 保存或继续绘制';
             } else if (markers.length > 0) {
@@ -859,11 +857,11 @@
             if (isMulti) {
                 const currentMode = (z.ring_display_modes || {})[String(contextMenuRingIndex)] || 'line';
                 document.getElementById('ctxRingDisplayModeText').textContent =
-                    currentMode === 'sublabel' ? '🔗 切换为引导线' : '🏷️ 切换为子标签';
+                    currentMode === 'sublabel' ? ' 切换为引导线' : ' 切换为子标签';
                 const allCurrent = (z.ring_display_modes || {});
                 const allLine = polys.every((_, i) => (allCurrent[String(i)] || 'line') === 'line');
                 document.getElementById('ctxAllRingDisplayModeText').textContent =
-                    allLine ? '🏷️ 全部切换为子标签' : '🔗 全部切换为引导线';
+                    allLine ? ' 全部切换为子标签' : ' 全部切换为引导线';
             }
             const mr = editMap.getContainer().getBoundingClientRect();
             let x, y;
@@ -1038,7 +1036,7 @@
                 return '<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 18px;border-bottom:1px solid #f0f0f0;cursor:pointer;" data-copy-idx="' + i + '">'
                     + '<div><div style="font-size:0.9rem;font-weight:500;">区域 ' + (i + 1) + '</div>'
                     + '<div style="font-size:0.75rem;color:#888;">' + pts + ' 个节点</div></div>'
-                    + '<button type="button" style="background:#2D6A4F;color:white;border:none;border-radius:6px;padding:6px 14px;font-size:0.82rem;font-weight:600;cursor:pointer;">⧉ 复制</button>'
+                    + '<button type="button" style="background:#2D6A4F;color:white;border:none;border-radius:6px;padding:6px 14px;font-size:0.82rem;font-weight:600;cursor:pointer;"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-copy"/></svg> 复制</button>'
                     + '</div>';
             }).join('');
             list.querySelectorAll('[data-copy-idx]').forEach(function(el) {
@@ -1199,7 +1197,7 @@
                     return '<div class="boundary-list-item">' +
                         '<div class="boundary-list-num">' + (i + 1) + '</div>' +
                         '<div class="boundary-list-info">' + pts + ' 个节点</div>' +
-                        '<button type="button" class="boundary-list-del" data-idx="' + i + '">✕</button>' +
+                        '<button type="button" class="boundary-list-del" data-idx="' + i + '"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-close"/></svg></button>' +
                     '</div>';
                 }).join('');
                 bpBody.querySelectorAll('.boundary-list-del').forEach(btn => {

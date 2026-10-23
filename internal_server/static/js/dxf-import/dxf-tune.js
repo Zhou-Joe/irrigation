@@ -252,7 +252,7 @@ function pdxfSelect(sel) {
       '编号: ' + pdxfEsc(p.code) + '<br>' +
       '<span style="color:#888;">' + pdxfEsc(p.source || '') + '</span></div>' +
       '<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;">' +
-      '<button type="button" class="pdxf-btn pdxf-btn-primary" onclick="pdxfTuneEnter(' + p.id + ')">⚙ 逐线精调</button>' +
+      '<button type="button" class="pdxf-btn pdxf-btn-primary" onclick="pdxfTuneEnter(' + p.id + ')"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-settings"/></svg> 逐线精调</button>' +
       '<button type="button" class="pdxf-btn pdxf-btn-primary" style="background:#c0392b;" onclick="pdxfDeleteSelected()">删除这条管道</button></div>';
   } else {
     var v = pdxfEdit.valves.find(function (x) { return x.id === sel.id; });
@@ -372,7 +372,7 @@ function pdxfTuneEnterGroup(ids) {
   pdxfTuneExit(true);
   pdxfTuneLiveLines = null; pdxfTuneLiveValves = null;   // 清残留（中止手势的幽灵数据）
   pdxfTune.on = true;
-  pdxfTune.pipeId = pipes.length ? pipes[0].id : null;   // 空组=点选状态（🔧 进入编辑模式的默认态）
+  pdxfTune.pipeId = pipes.length ? pipes[0].id : null;   // 空组=点选状态（进入编辑模式的默认态）
   pdxfTune.group = pipes.map(function (p) { return p.id; });
   pdxfTune.lines = {};
   pdxfTune.layers = L.layerGroup();
@@ -945,7 +945,7 @@ function pdxfTunePanel() {
   body.innerHTML =
     pickRow +
     '<div style="font-size:.84rem;line-height:1.7;">' +
-    '<b style="color:#e67e22;">⚙ ' + title + '</b><br>' +
+    '<b style="color:#e67e22;"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-settings"/></svg> ' + title + '</b><br>' +
     '<span style="color:#888;">' + hint + '</span></div>' +
     '<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;">' +
     '<button type="button" class="pdxf-btn' + (pdxfTuneBox.mode ? ' pdxf-btn-primary' : '') + '" onclick="pdxfTuneBoxToggle()">⬚ 框选' + (pdxfTuneBox.mode ? ' 已开（拖拽=拉框）' : '') + '</button>' +
@@ -953,5 +953,5 @@ function pdxfTunePanel() {
     '<button type="button" class="pdxf-btn" onclick="pdxfTuneMultiStart()"' + (pdxfTune.lastXform ? '' : ' disabled') + '>复制变换到其他线…</button>' +
     (dirtyN ? '<button type="button" class="pdxf-btn pdxf-btn-primary" onclick="pdxfTuneSave()">保存修改 (' + dirtyN + ')</button>' : '<span style="font-size:.76rem;color:#2D6A4F;align-self:center;">已保存 ✓</span>') +
     '</div>' +
-    '<div class="pdxf-hint" style="margin-top:6px;">关掉右上角 🔧 会自动保存未保存的修改；撤销可回退到手势前（保存过也能继续撤）。</div>';
+    '<div class="pdxf-hint" style="margin-top:6px;">关掉右上角 <svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-settings"/></svg> 会自动保存未保存的修改；撤销可回退到手势前（保存过也能继续撤）。</div>';
 }

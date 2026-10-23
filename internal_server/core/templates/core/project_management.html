@@ -264,7 +264,7 @@
           </select></div>
         <button type="submit" class="btn-sm btn-primary">筛选</button>
         <button type="button" class="btn-sm btn-secondary" onclick="pmClearFilter()">清除</button>
-        <button type="button" class="btn-sm btn-secondary" onclick="pmExport()">⬇ 导出Excel</button>
+        <button type="button" class="btn-sm btn-secondary" onclick="pmExport()"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-download"/></svg> 导出Excel</button>
         <button type="button" class="btn-sm btn-primary" onclick="pmOpenCreate()">+ 新建项目</button>
       </div>
     </form>
@@ -483,7 +483,7 @@
       <button type="button" class="app-close" onclick="pdClose()">×</button>
     </div>
     <div class="app-body">
-      <div class="pd-warn">⚠ 此操作不可撤销。项目「<b id="pdName"></b>」及其关联将被删除，相关工单/库存流水的项目引用会被清空。</div>
+      <div class="pd-warn"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-alert"/></svg> 此操作不可撤销。项目「<b id="pdName"></b>」及其关联将被删除，相关工单/库存流水的项目引用会被清空。</div>
       <div class="pd-field">
         <label>您的账号</label>
         <input type="text" id="pdUsername" autocomplete="off" placeholder="重新输入登录账号">
@@ -757,7 +757,7 @@ function pmRenderDetail(pid) {
             return '<span class="pm-rec-line"><span style="color:#CC7722;">' + _pmEsc(m.name) +
                 ' <b>×' + m.qty + '</b>' + (m.unit ? _pmEsc(m.unit) : '') + '</span></span>';
         }).join('');
-        estHtml = '<div class="pm-est-warn">⚠ 以下为预估消耗，确认前不计入余额：<div class="pm-rec-lines">' + estHtml + '</div></div>';
+        estHtml = '<div class="pm-est-warn"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-alert"/></svg> 以下为预估消耗，确认前不计入余额：<div class="pm-rec-lines">' + estHtml + '</div></div>';
     } else {
         estHtml = '';
     }
@@ -801,7 +801,7 @@ function pmRenderDetail(pid) {
         '<div class="pm-sub">其他出库记录（' + (b.consumption_records ? b.consumption_records.length : 0) + '）</div>' + recHtml +
         '<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;">' +
             '<button type="button" class="btn btn-primary" style="font-size:.82rem;padding:5px 12px;" onclick="pbOpen(' + pid + ')">编辑预算与关联</button>' +
-            '<a class="btn btn-secondary" href="/projects/' + pid + '/export/" style="font-size:.82rem;padding:5px 12px;text-decoration:none;">⬇ 导出Excel</a>' +
+            '<a class="btn btn-secondary" href="/projects/' + pid + '/export/" style="font-size:.82rem;padding:5px 12px;text-decoration:none;"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-download"/></svg> 导出Excel</a>' +
         '</div>';
 }
 

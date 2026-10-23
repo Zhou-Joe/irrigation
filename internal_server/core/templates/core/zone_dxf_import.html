@@ -180,7 +180,7 @@
                         <span class="step-badge">1</span> 上传 DXF 文件
                     </div>
                     <div class="upload-zone" id="uploadZone" onclick="document.getElementById('dxfFileInput').click()">
-                        <div class="upload-icon">📄</div>
+                        <div class="upload-icon"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-file"/></svg></div>
                         <p>点击或拖拽上传 .dxf 文件</p>
                     </div>
                     <input type="file" id="dxfFileInput" class="dxf-input" accept=".dxf">
@@ -218,7 +218,7 @@
                     </div>
                     <div id="groupsList" style="max-height:320px; overflow-y:auto; padding-right:4px;"></div>
                     <div id="suggestedZones" style="display:none; margin-top:8px;">
-                        <div style="font-size:0.78rem; color:#888; margin-bottom:4px;">💡 建议匹配区域（按距离排序）</div>
+                        <div style="font-size:0.78rem; color:#888; margin-bottom:4px;"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-bulb"/></svg> 建议匹配区域（按距离排序）</div>
                         <div id="suggestedZonesList"></div>
                     </div>
                     <div class="zone-input-wrapper" style="margin-top:10px;">
@@ -244,7 +244,7 @@
 
                 <!-- DXF Import History -->
                 <div class="panel">
-                    <div class="panel-title">📋 DXF导入记录</div>
+                    <div class="panel-title"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-clipboard"/></svg> DXF导入记录</div>
                     <select id="dxfHistorySelect" style="width:100%;padding:6px 8px;border:1px solid var(--color-surface-dark);border-radius:6px;font-size:0.82rem;background:var(--color-surface);" onchange="showDxfHistory()">
                         <option value="">-- 选择已导入的区域 --</option>
                     </select>
@@ -677,7 +677,7 @@
             '<input class="anchor-lat" placeholder="纬度" style="width:90px;padding:3px 5px;background:#f0f7f4;" readonly>' +
             '<input class="anchor-lng" placeholder="经度" style="width:90px;padding:3px 5px;background:#f0f7f4;" readonly>' +
             '<button class="btn btn-sm btn-secondary" style="padding:3px 7px;" onclick="startPickLatLng(this)" title="在地图上点击选取坐标"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-pin"/></svg></button>' +
-            '<span class="anchor-row-remove" onclick="this.closest(\'.anchor-row\').remove();renderAnchors();" style="cursor:pointer;color:#9B2226;font-size:1rem;">✕</span>' +
+            '<span class="anchor-row-remove" onclick="this.closest(\'.anchor-row\').remove();renderAnchors();" style="cursor:pointer;color:#9B2226;font-size:1rem;"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-close"/></svg></span>' +
             '</div>';
         container.appendChild(row);
     };
@@ -816,7 +816,7 @@
             var onclick = isAssigned ? '' : ' onclick="selectGroup(\'' + g.id + '\')"';
             html += '<div class="shape-card" style="' + cardStyle + selected + '"' + onclick + '>';
             html += '<div class="shape-card-header">';
-            var prefix = isAssigned ? '✅ 已分配 ' : (isSelected ? '✅ ' : '⬜ ');
+            var prefix = isAssigned ? '已分配 ' : (isSelected ? '已选 ' : '未选 ');
             html += prefix + '<span class="shape-type">组 ' + (parseInt(g.id.replace('group_', '')) + 1) + '</span>';
             html += '<span class="shape-layer">' + (outerShape.entity_type || '?') + ' · ' + (outerShape.layer || '?') + '</span>';
             html += '<span class="shape-verts">' + (outerShape.vertex_count || '?') + '点</span>';

@@ -321,7 +321,7 @@
 {% block content %}
 <div class="approval-container">
     <div class="page-header">
-        <h1>📋 注册审批</h1>
+        <h1><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-clipboard"/></svg> 注册审批</h1>
         <a href="{% url 'core:dashboard' %}" class="btn btn-secondary">返回首页</a>
     </div>
 
@@ -358,13 +358,13 @@
                         {% if request.department %}
                         <span>部门: {% if request.department == '其他' %}{{ request.department_other }}{% else %}{{ request.department }}{% endif %}</span>
                         {% endif %}
-                        <span>📱 {{ request.phone }}</span>
+                        <span><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-phone"/></svg> {{ request.phone }}</span>
                         {% if request.username %}
-                        <span>👤 {{ request.username }}</span>
+                        <span><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-user"/></svg> {{ request.username }}</span>
                         {% endif %}
                     </div>
                     <div class="meta" style="margin-top: 4px;">
-                        <span>📅 申请时间: {{ request.created_at|date:"Y-m-d H:i" }}</span>
+                        <span><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-calendar"/></svg> 申请时间: {{ request.created_at|date:"Y-m-d H:i" }}</span>
                         {% if request.processed_at %}
                         <span>✓ 处理时间: {{ request.processed_at|date:"Y-m-d H:i" }}</span>
                         {% endif %}
@@ -396,13 +396,13 @@
             {% if request.status == 'pending' %}
             <div class="request-actions">
                 <button class="btn btn-approve" onclick="approveRequest({{ request.id }})">✓ 批准</button>
-                <button class="btn btn-reject" onclick="showRejectModal({{ request.id }})">✕ 拒绝</button>
+                <button class="btn btn-reject" onclick="showRejectModal({{ request.id }})"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-close"/></svg> 拒绝</button>
             </div>
             {% endif %}
         </div>
         {% empty %}
         <div class="empty-state">
-            <div class="icon">📭</div>
+            <div class="icon"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-inbox"/></svg></div>
             <p>暂无{% if filter != 'all' %}{{ filter }}{% endif %}注册申请</p>
         </div>
         {% endfor %}

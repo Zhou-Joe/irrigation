@@ -7,7 +7,7 @@
 {% block nav_settings %}active{% endblock %}
 
 {% block extra_css %}
-<link rel="stylesheet" href="{% static 'css/settings.css' %}?v=20260430">
+<link rel="stylesheet" href="{% static 'css/settings.css' %}?v=20261024controls">
 <style>
 /* Tab bar for the settings page. The shared .app-tabs has max-width:480px which
    is fine for 3 tabs but cramped for 5 — widen it and allow wrapping so the
@@ -73,7 +73,7 @@
     <div class="app-tab-content active" id="tabZones">
     <div class="zone-section">
         <div class="zone-section-header" onclick="toggleCardBody(this, 'zoneBody', 'zoneIndicator')">
-            <h2><span class="collapse-indicator" id="zoneIndicator">▼</span> 灌溉区域</h2>
+            <h2>{% include "core/_section_toggle.html" with control_id="zoneIndicator" target_id="zoneBody" label="灌溉区域" %} 灌溉区域</h2>
             <div class="header-actions" onclick="event.stopPropagation()">
                 <a href="{% url 'core:zone_export_excel' %}" class="btn btn-sm btn-secondary">导出</a>
                 <button type="button" class="btn btn-sm btn-secondary" onclick="showImportModal()">导入</button>
@@ -144,7 +144,10 @@
                     {% for group in grouped_zones %}
                     <tr class="patch-row collapsed" data-patch-id="{{ group.id }}" data-patch-name="{{ group.name }}">
                         <td colspan="5" class="patch-header-cell" onclick="togglePatchRow(this)">
-                            <span class="patch-toggle" style="transform: rotate(-90deg);">▼</span>
+                            <button type="button" class="patch-toggle" aria-expanded="false" aria-label="展开片区 {{ group.name }}"
+                                    data-section-label="片区 {{ group.name }}" onclick="event.stopPropagation(); togglePatchRow(this.closest('td'))">
+                                <svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-chevron-down"/></svg>
+                            </button>
                             <strong class="patch-name">{% if group.code %}{{ group.code }} - {% endif %}{{ group.name }}</strong>
                             <span class="patch-count">{{ group.zone_count }}</span>
                         </td>
@@ -182,7 +185,7 @@
     <div class="settings-grid">
         <div class="settings-card">
             <div class="settings-card-header" onclick="toggleCardBody(this, 'patchBody', 'patchIndicator')">
-                <h2><span class="collapse-indicator" id="patchIndicator">▼</span> 片区管理</h2>
+                <h2>{% include "core/_section_toggle.html" with control_id="patchIndicator" target_id="patchBody" label="片区管理" %} 片区管理</h2>
                 <div class="header-actions" onclick="event.stopPropagation()">
                     <a href="{% url 'core:patch_new' %}" class="btn btn-sm btn-primary" target="_blank">+ 新建</a>
                 </div>
@@ -221,7 +224,7 @@
                 </div>
             </div>
             {% else %}
-            <div class="card-empty">
+            <div class="card-empty" id="patchBody">
                 <p>暂无片区</p>
                 <a href="{% url 'core:patch_new' %}" class="btn btn-sm btn-primary" target="_blank">创建</a>
             </div>
@@ -231,7 +234,7 @@
         <!-- SAT 卫星控制器 -->
         <div class="settings-card">
             <div class="settings-card-header" onclick="toggleCardBody(this, 'satBody', 'satIndicator')">
-                <h2><span class="collapse-indicator" id="satIndicator">▼</span> SAT卫星控制器 <span style="color:#aaa;font-size:.8em;">({{ satellites|length }})</span></h2>
+                <h2>{% include "core/_section_toggle.html" with control_id="satIndicator" target_id="satBody" label="SAT卫星控制器" %} SAT卫星控制器 <span style="color:#aaa;font-size:.8em;">({{ satellites|length }})</span></h2>
             </div>
             <div class="settings-card-body" id="satBody">
                 <input type="text" id="satSearch" placeholder="搜索SAT..." class="card-search">
@@ -258,7 +261,7 @@
     <div class="settings-grid">
         <div class="settings-card">
             <div class="settings-card-header" onclick="toggleCardBody(this, 'regionBody', 'regionIndicator')">
-                <h2><span class="collapse-indicator" id="regionIndicator">▼</span> 大区管理</h2>
+                <h2>{% include "core/_section_toggle.html" with control_id="regionIndicator" target_id="regionBody" label="大区管理" %} 大区管理</h2>
                 <div class="header-actions" onclick="event.stopPropagation()">
                     <a href="{% url 'core:region_new' %}" class="btn btn-sm btn-primary" target="_blank">+ 新建</a>
                 </div>
@@ -293,7 +296,7 @@
                 </div>
             </div>
             {% else %}
-            <div class="card-empty">
+            <div class="card-empty" id="regionBody">
                 <p>暂无大区</p>
                 <a href="{% url 'core:region_new' %}" class="btn btn-sm btn-primary" target="_blank">创建</a>
             </div>
@@ -307,10 +310,10 @@
     <div class="settings-grid">
         <div class="settings-card">
             <div class="settings-card-header" onclick="toggleCardBody(this, 'pipelineBody', 'pipelineIndicator')">
-                <h2><span class="collapse-indicator" id="pipelineIndicator">▼</span> 水管管理</h2>
+                <h2>{% include "core/_section_toggle.html" with control_id="pipelineIndicator" target_id="pipelineBody" label="水管管理" %} 水管管理</h2>
                 <div class="header-actions" onclick="event.stopPropagation()">
                     <a href="{% url 'core:pipeline_new' %}" class="btn btn-sm btn-primary" target="_blank">+ 新建</a>
-                    <a href="{% url 'core:pipeline_dxf_import' %}" class="btn btn-sm btn-secondary" target="_blank">⬆ DXF导入</a>
+                    <a href="{% url 'core:pipeline_dxf_import' %}" class="btn btn-sm btn-secondary" target="_blank"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-upload"/></svg> DXF导入</a>
                 </div>
             </div>
             {% if pipelines or pipeline_batches %}
@@ -388,7 +391,7 @@
                 {% endif %}
             </div>
             {% else %}
-            <div class="card-empty">
+            <div class="card-empty" id="pipelineBody">
                 <p>暂无水管</p>
                 <a href="{% url 'core:pipeline_new' %}" class="btn btn-sm btn-primary" target="_blank">创建</a>
             </div>
@@ -401,7 +404,7 @@
     <div class="app-tab-content" id="tabLandmarks">
     <div class="settings-card">
         <div class="settings-card-header" onclick="toggleCardBody(this, 'landmarkBody', 'landmarkIndicator')">
-            <h2><span class="collapse-indicator" id="landmarkIndicator">▼</span> 地标管理</h2>
+            <h2>{% include "core/_section_toggle.html" with control_id="landmarkIndicator" target_id="landmarkBody" label="地标管理" %} 地标管理</h2>
             <div class="header-actions" onclick="event.stopPropagation()">
                 <button type="button" class="btn btn-sm btn-secondary" onclick="recalcLandmarks(this)" title="根据边界重叠重新计算每个地标包含的区域">重新分配</button>
                 <a href="{% url 'core:landmark_new' %}" class="btn btn-sm btn-primary" target="_blank">+ 新建</a>
@@ -441,7 +444,7 @@
             </div>
         </div>
         {% else %}
-        <div class="card-empty">
+        <div class="card-empty" id="landmarkBody">
             <p>暂无地标</p>
             <a href="{% url 'core:landmark_new' %}" class="btn btn-sm btn-primary" target="_blank">创建</a>
         </div>
@@ -503,7 +506,10 @@ window.toggleCardBody = function(header, bodyId, indicatorId) {
     if (!body) return;
     const isHidden = body.style.display === 'none';
     body.style.display = isHidden ? '' : 'none';
-    if (indicator) indicator.style.transform = isHidden ? '' : 'rotate(-90deg)';
+    if (indicator) {
+        indicator.setAttribute('aria-expanded', String(isHidden));
+        indicator.setAttribute('aria-label', (isHidden ? '收起' : '展开') + indicator.dataset.sectionLabel);
+    }
 };
 
 // Tab switching for the management sections. Mirrors the work-reports pattern:
@@ -547,7 +553,10 @@ window.settingsSwitchTab = function(tab) {
             }
         });
         const toggle = cell.querySelector('.patch-toggle');
-        if (toggle) toggle.style.transform = isCollapsed ? 'rotate(-90deg)' : '';
+        if (toggle) {
+            toggle.setAttribute('aria-expanded', String(!isCollapsed));
+            toggle.setAttribute('aria-label', (isCollapsed ? '展开' : '收起') + toggle.dataset.sectionLabel);
+        }
     };
 
     // Plant filter

@@ -136,13 +136,13 @@
         <span>提交 {{ wr.created_at|date:"m-d H:i" }}</span>
         {% if wr.approver %}<span>审批 {{ wr.approver.full_name }}{% if wr.processed_at %} · {{ wr.processed_at|date:"m-d H:i" }}{% endif %}</span>{% endif %}
       </div>
-      {% if wr.status_notes %}<div class="wq-notes">📝 {{ wr.status_notes }}</div>{% endif %}
+      {% if wr.status_notes %}<div class="wq-notes">备注：{{ wr.status_notes }}</div>{% endif %}
       {% if wr.photos %}
       <div class="wq-photo-row">
         {% for p in wr.photos %}
         {% if forloop.counter <= 6 %}
         <div class="wq-photo-thumb" onclick="openLb({{ wr.id }}, {{ forloop.counter0 }})">
-          {% if p|is_video %}<video src="/media/{{ p|thumb }}" muted preload="metadata"></video><span class="wq-photo-play">▶</span>
+          {% if p|is_video %}<video src="/media/{{ p|thumb }}" muted preload="metadata"></video><span class="wq-photo-play"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-play"/></svg></span>
           {% else %}<img src="/media/{{ p|thumb }}" loading="lazy" alt="照片">{% endif %}
         </div>
         {% endif %}
@@ -207,7 +207,7 @@ function updateReq(id, status){
         if(card){
           var badge = card.querySelector('.wq-badge');
           badge.className = 'wq-badge '+status; badge.textContent = d.status_display;
-          if(d.status_notes){ var n=card.querySelector('.wq-notes'); if(!n){ n=document.createElement('div'); n.className='wq-notes'; card.querySelector('.wq-card-main').appendChild(n);} n.textContent='📝 '+d.status_notes; }
+          if(d.status_notes){ var n=card.querySelector('.wq-notes'); if(!n){ n=document.createElement('div'); n.className='wq-notes'; card.querySelector('.wq-card-main').appendChild(n);} n.textContent='备注：'+d.status_notes; }
         }
       } else { alert(d.message||'操作失败'); }
     })

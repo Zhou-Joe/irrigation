@@ -1,5 +1,6 @@
 """PWA routing, privacy boundaries, permissions and field-home regressions."""
 from datetime import timedelta
+import re
 from unittest.mock import patch
 
 from django.contrib.auth.models import User
@@ -42,6 +43,16 @@ class PublicPWATests(SimpleTestCase):
         self.assertNotContains(response, 'pm-tasks-data')
         self.assertNotContains(response, 'csrfmiddlewaretoken')
         self.assertNotContains(response, 'anti-leak-watermark')
+
+    def test_every_offline_asset_is_precached_with_the_exact_version(self):
+        html = self.get('pwa_offline').content.decode()
+        worker = self.get('pwa_service_worker').content.decode()
+        shell = worker.split('const SHELL = [', 1)[1].split('];', 1)[0]
+        assets = re.findall(r'(?:href|src)="([^"]+\.(?:css|js|png)(?:\?[^"]*)?)"', html)
+        self.assertTrue(assets)
+        for asset in assets:
+            with self.subTest(asset=asset):
+                self.assertIn("'" + asset + "'", shell)
 
     def test_public_shell_routes_reject_mutations(self):
         for route in ('pwa_manifest', 'pwa_service_worker', 'pwa_offline'):

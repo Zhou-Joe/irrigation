@@ -601,7 +601,7 @@
         var header = panel ? panel.querySelector('.irrig-unmapped-header') : null;
         if (!panel) return;
         var open = panel.classList.toggle('open');
-        if (arrow) arrow.textContent = open ? '▼' : '▶';
+        if (arrow) arrow.innerHTML = window.uiIcon(open ? 'chevron-down' : 'chevron-right');
         if (header) header.setAttribute('aria-expanded', open ? 'true' : 'false');
     }
 
@@ -642,7 +642,7 @@
         var header = panel ? panel.querySelector('.irrig-excluded-header') : null;
         if (!panel) return;
         var open = panel.classList.toggle('open');
-        if (arrow) arrow.textContent = open ? '▼' : '▶';
+        if (arrow) arrow.innerHTML = window.uiIcon(open ? 'chevron-down' : 'chevron-right');
         if (header) header.setAttribute('aria-expanded', open ? 'true' : 'false');
     }
 

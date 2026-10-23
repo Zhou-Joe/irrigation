@@ -1,453 +1,100 @@
 {% extends 'core/base.html' %}
-
 {% load static %}
-
-{% block title %}登录 - 园艺管理系统{% endblock %}
-
-{% block extra_css %}
-<style>
-/* ============================================================
-   ORGANIC anchor — earth tones · grain · humanist serif
-   Palette: sand #E8DCC7 · moss #606C38 · sage #8B9D83 ·
-            terracotta #C66B3D · deep olive #3A4128
-   No pure white, no pure black, no hard rectangles, no cream.
-   ============================================================ */
-
-/* ---------- Reset + base ---------- */
-*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-:root {
-  --sand:        #E8DCC7;
-  --sand-deep:   #DDD0B5;
-  --moss:        #606C38;
-  --moss-dark:   #3A4128;
-  --sage:        #8B9D83;
-  --sage-light:  #A7B5A0;
-  --terracotta:  #C66B3D;
-  --clay:        #B08B6E;
-  --ink:         #3A4128;       /* deep olive "black" — never pure black */
-  --ink-soft:    #6B6553;       /* warm grey secondary text */
-  --hairline:    rgba(58, 65, 40, 0.14);
-  --serif:       var(--font-body);
-  --sans:        var(--font-body);
-  --grain:       url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='220' height='220'><filter id='g'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.23  0 0 0 0 0.25  0 0 0 0 0.16  0 0 0 0.04 0'/></filter><rect width='100%25' height='100%25' filter='url(%23g)'/></svg>");
-}
-
-/* ---------- Full-bleed organic background ---------- */
-.organic-shell {
-  min-height: 100vh;
-  min-height: 100dvh;             /* mobile address-bar aware */
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  position: relative;
-  overflow: hidden;
-  /* Layered earth-tone wash — moss to sage, deep at the edges for focus */
-  background:
-    radial-gradient(120% 90% at 50% 8%, #6E7A48 0%, #606C38 38%, #4A5230 72%, #3A4128 100%);
-  font-family: var(--sans);
-}
-
-/* Grain overlay — the anchor's texture signature. ~2% noise on the whole field. */
-.organic-shell::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background-image: var(--grain);
-  background-size: 220px 220px;
-  opacity: 0.55;
-  mix-blend-mode: overlay;
-  pointer-events: none;
-  z-index: 0;
-}
-
-/* Soft drifting light blobs — suggest water/light through foliage, not tech glow */
-.organic-shell::after {
-  content: '';
-  position: absolute;
-  width: 60vw;
-  height: 60vw;
-  max-width: 720px;
-  max-height: 720px;
-  top: -12%;
-  right: -10%;
-  background: radial-gradient(circle, rgba(167, 181, 160, 0.28) 0%, rgba(167, 181, 160, 0) 68%);
-  border-radius: 50%;
-  animation: drift 14s ease-in-out infinite alternate;
-  pointer-events: none;
-  z-index: 0;
-}
-@keyframes drift {
-  from { transform: translate(0, 0) scale(1); }
-  to   { transform: translate(-4%, 5%) scale(1.08); }
-}
-
-/* ---------- The card ---------- */
-.organic-card {
-  position: relative;
-  z-index: 1;
-  width: 100%;
-  max-width: 420px;
-  margin: 20px;
-  padding: 44px 38px 32px;
-  /* Sand surface — warm, not cream, not white */
-  background: var(--sand);
-  background-image: var(--grain), linear-gradient(165deg, #ECE0CB 0%, #E2D5BE 100%);
-  background-size: 220px 220px, 100% 100%;
-  border-radius: 28px;
-  border: 1px solid rgba(58, 65, 40, 0.10);
-  box-shadow:
-    0 30px 60px -22px rgba(28, 33, 18, 0.55),
-    0 8px 18px -10px rgba(28, 33, 18, 0.35),
-    inset 0 1px 0 rgba(255, 252, 240, 0.5);
-  animation: rise 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
-}
-@keyframes rise {
-  from { opacity: 0; transform: translateY(26px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
-
-/* ---------- Organic brand mark — a leaf + water drop (CSS/SVG, no emoji) ---------- */
-.organic-mark {
-  width: 58px;
-  height: 58px;
-  margin: 0 auto 22px;
-  border-radius: 50% 42% 50% 42%;
-  background: radial-gradient(circle at 35% 30%, var(--sage-light), var(--moss) 78%);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow:
-    0 8px 20px -6px rgba(58, 65, 40, 0.45),
-    inset 0 -3px 6px rgba(58, 65, 40, 0.2);
-  animation: breathe 5s ease-in-out infinite;
-}
-@keyframes breathe {
-  0%, 100% { transform: scale(1); border-radius: 50% 42% 50% 42%; }
-  50%      { transform: scale(1.05); border-radius: 46% 50% 46% 50%; }
-}
-.organic-mark svg { width: 30px; height: 30px; display: block; }
-
-/* ---------- Heading ---------- */
-.organic-heading {
-  text-align: center;
-  margin-bottom: 30px;
-}
-.organic-heading h1 {
-  font-family: var(--serif);
-  font-size: 1.7rem;
-  font-weight: 600;
-  letter-spacing: 0.5px;
-  color: var(--ink);
-  line-height: 1.2;
-}
-.organic-heading p {
-  margin-top: 6px;
-  font-size: 0.86rem;
-  color: var(--ink-soft);
-  letter-spacing: 1.5px;
-}
-
-/* ---------- Django messages ---------- */
-.organic-messages { margin-bottom: 22px; }
-.organic-messages .message {
-  padding: 12px 16px;
-  border-radius: 16px;
-  margin-bottom: 10px;
-  font-size: 0.86rem;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  border: 1px solid var(--hairline);
-}
-.organic-messages .message.error {
-  background: rgba(198, 107, 61, 0.10);
-  color: #9E4A22;
-  border-color: rgba(198, 107, 61, 0.28);
-}
-.organic-messages .message.success {
-  background: rgba(96, 108, 56, 0.10);
-  color: var(--moss);
-  border-color: rgba(96, 108, 56, 0.25);
-}
-
-/* ---------- Form ---------- */
-.organic-field { margin-bottom: 20px; }
-.organic-field label {
-  display: block;
-  font-size: 0.82rem;
-  font-weight: 600;
-  color: var(--ink);
-  margin-bottom: 7px;
-  letter-spacing: 0.4px;
-}
-.organic-field .ctrl {
-  position: relative;
-  display: flex;
-  align-items: center;
-}
-.organic-field .ctrl svg {
-  position: absolute;
-  left: 16px;
-  width: 18px;
-  height: 18px;
-  color: var(--clay);
-  pointer-events: none;
-  transition: color 0.3s ease;
-}
-.organic-field input {
-  width: 100%;
-  height: 52px;             /* touch-friendly */
-  padding: 0 16px 0 46px;
-  font-family: var(--sans);
-  font-size: 1rem;
-  color: var(--ink);
-  background: rgba(255, 252, 240, 0.55);
-  border: 1.5px solid var(--hairline);
-  border-radius: 18px;
-  transition: border-color 0.3s ease, box-shadow 0.3s ease, background 0.3s ease;
-  -webkit-appearance: none;
-  appearance: none;
-}
-.organic-field input::placeholder { color: rgba(107, 101, 83, 0.6); }
-.organic-field input:focus {
-  outline: none;
-  border-color: var(--terracotta);
-  background: rgba(255, 252, 240, 0.85);
-  box-shadow: 0 0 0 4px rgba(198, 107, 61, 0.14);
-}
-.organic-field .ctrl:focus-within svg { color: var(--terracotta); }
-
-/* password visibility toggle */
-.organic-field .toggle-eye {
-  position: absolute;
-  right: 14px;
-  background: none;
-  border: none;
-  cursor: pointer;
-  padding: 8px;
-  color: var(--ink-soft);
-  border-radius: 50%;
-  display: flex;
-  transition: color 0.2s ease, background 0.2s ease;
-}
-.organic-field .toggle-eye:hover { color: var(--terracotta); background: rgba(198, 107, 61, 0.08); }
-.organic-field .toggle-eye svg { position: static; width: 18px; height: 18px; }
-
-/* ---------- Submit button ---------- */
-.organic-submit {
-  width: 100%;
-  height: 54px;
-  margin-top: 8px;
-  font-family: var(--sans);
-  font-size: 1.02rem;
-  font-weight: 600;
-  letter-spacing: 4px;
-  color: #F4EEDF;
-  background: linear-gradient(135deg, var(--moss) 0%, #4F5A30 100%);
-  border: none;
-  border-radius: 18px;
-  cursor: pointer;
-  position: relative;
-  overflow: hidden;
-  transition: transform 0.25s ease, box-shadow 0.25s ease;
-  box-shadow: 0 10px 22px -10px rgba(58, 65, 40, 0.6);
-}
-.organic-submit::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(120deg, transparent 30%, rgba(255, 255, 255, 0.18) 50%, transparent 70%);
-  transform: translateX(-100%);
-  transition: transform 0.6s ease;
-}
-.organic-submit:hover { transform: translateY(-2px); box-shadow: 0 14px 26px -10px rgba(58, 65, 40, 0.7); }
-.organic-submit:hover::after { transform: translateX(100%); }
-.organic-submit:active { transform: translateY(0); }
-.organic-submit:disabled { opacity: 0.65; cursor: progress; transform: none; }
-
-/* ---------- Footer ---------- */
-.organic-foot {
-  margin-top: 28px;
-  padding-top: 20px;
-  border-top: 1px solid var(--hairline);
-  text-align: center;
-}
-.organic-foot a {
-  color: var(--terracotta);
-  text-decoration: none;
-  font-size: 0.86rem;
-  font-weight: 500;
-  transition: color 0.2s ease;
-}
-.organic-foot a:hover { color: #9E4A22; text-decoration: underline; text-underline-offset: 3px; }
-.organic-version {
-  margin-top: 14px;
-  font-size: 0.72rem;
-  color: var(--ink-soft);
-  letter-spacing: 1px;
-  opacity: 0.75;
-}
-
-/* ============================================================
-   RESPONSIVE — mobile-first refinements
-   ============================================================ */
-
-/* Large phones / small tablets */
-@media (max-width: 480px) {
-  .organic-shell { padding: 0; }
-  .organic-card {
-    margin: 0;
-    max-width: none;
-    min-height: 100vh;
-    min-height: 100dvh;
-    border-radius: 0;
-    border: none;
-    padding: 0 24px;
-    /* center content vertically in the full-height card */
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    box-shadow: none;
-    background-image: var(--grain), linear-gradient(170deg, #ECE0CB 0%, #E0D3BB 100%);
-  }
-  .organic-heading h1 { font-size: 1.5rem; }
-  .organic-mark { width: 50px; height: 50px; margin-bottom: 18px; }
-}
-
-/* Very small phones */
-@media (max-width: 360px) {
-  .organic-card { padding: 0 18px; }
-  .organic-heading h1 { font-size: 1.35rem; }
-  .organic-heading p { font-size: 0.78rem; }
-  .organic-submit { letter-spacing: 2px; }
-}
-
-/* Landscape phones — keep content above the fold, less vertical centering */
-@media (max-width: 820px) and (orientation: landscape) and (max-height: 500px) {
-  .organic-card {
-    min-height: auto;
-    margin: 12px;
-    border-radius: 22px;
-    padding: 26px 30px 22px;
-    justify-content: flex-start;
-  }
-  .organic-mark { width: 40px; height: 40px; margin-bottom: 12px; }
-  .organic-heading { margin-bottom: 18px; }
-  .organic-field { margin-bottom: 14px; }
-  .organic-field input { height: 46px; }
-  .organic-submit { height: 48px; }
-  .organic-foot { margin-top: 16px; padding-top: 14px; }
-}
-
-/* Desktop — add breathing room, never let the card get too wide */
-@media (min-width: 768px) {
-  .organic-card { padding: 52px 46px 38px; }
-  .organic-heading h1 { font-size: 1.85rem; }
-}
-
-/* Respect reduced-motion users */
-@media (prefers-reduced-motion: reduce) {
-  .organic-mark, .organic-shell::after { animation: none; }
-  .organic-card { animation: none; }
-  .organic-submit::after { display: none; }
-}
-</style>
+{% block title %}登录 - 灌溉管理系统{% endblock %}
+{% block extra_ui_css %}
+<link rel="stylesheet" href="{% static 'css/auth.css' %}?v=20261024auth4">
 {% endblock %}
-
 {% block content %}
-<div class="organic-shell">
-  <div class="organic-card">
-    <!-- Brand mark: leaf + droplet, drawn in SVG (no emoji, organic form) -->
-    <div class="organic-mark" aria-hidden="true">
-      <svg viewBox="0 0 32 32" fill="none">
-        <!-- leaf vein -->
-        <path d="M16 4C9 8 6 14 6 20c0 0 4-1 7-4" stroke="#E8DCC7" stroke-width="1.8" stroke-linecap="round" opacity="0.85"/>
-        <!-- leaf body -->
-        <path d="M16 5C12 10 10 15 11 21c4-1 8-5 9-12 0 0-2-3-4-4z" fill="#E8DCC7" opacity="0.92"/>
-        <!-- water drop -->
-        <path d="M20 16c2 2.5 3 4.5 3 6.5a3.5 3.5 0 0 1-7 0c0-2 1-4 3-6.5z" fill="#A7B5A0"/>
-      </svg>
-    </div>
-
-    <div class="organic-heading">
-      <h1>园艺管理系统</h1>
-    </div>
-
-    {% if messages %}
-    <div class="organic-messages">
-      {% for message in messages %}
-      <div class="message {{ message.tags }}">
-        {% if message.tags == 'error' %}<span>⚠</span>{% else %}<span>✓</span>{% endif %}
-        {{ message }}
-      </div>
-      {% endfor %}
-    </div>
-    {% endif %}
-
-    <form method="post" id="loginForm" autocomplete="on">
-      {% csrf_token %}
-      <div class="organic-field">
-        <label for="username">用户名</label>
-        <div class="ctrl">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="12" cy="8" r="4"/>
-            <path d="M4 21c0-4 4-7 8-7s8 3 8 7"/>
-          </svg>
-          <input type="text" id="username" name="username" placeholder="请输入用户名"
-                 autocapitalize="none" autocorrect="off" spellcheck="false" required autofocus>
+<main class="auth-shell" aria-labelledby="loginTitle">
+  <div class="auth-scene" aria-hidden="true">
+    <div class="auth-light auth-light-one"></div>
+    <div class="auth-light auth-light-two"></div>
+    <svg class="auth-map" viewBox="0 0 1440 1000" fill="none" preserveAspectRatio="xMidYMid slice" focusable="false">
+      <g class="auth-contours">
+        <path d="M-120 400C70 100 290 120 400 240S550 520 780 400s310-80 420 80 290 180 390-60"/>
+        <path d="M-120 450C70 150 290 170 400 290S550 570 780 450s310-80 420 80 290 180 390-60"/>
+        <path d="M-120 500C70 200 290 220 400 340S550 620 780 500s310-80 420 80 290 180 390-60"/>
+        <path d="M-120 550C70 250 290 270 400 390S550 670 780 550s310-80 420 80 290 180 390-60"/>
+        <path d="M-120 600C70 300 290 320 400 440S550 720 780 600s310-80 420 80 290 180 390-60"/>
+        <path d="M-120 650C70 350 290 370 400 490S550 770 780 650s310-80 420 80 290 180 390-60"/>
+        <path d="M-120 700C70 400 290 420 400 540S550 820 780 700s310-80 420 80 290 180 390-60"/>
+      </g>
+      <g class="auth-parcels">
+        <path d="m1030-60-85 190 75 150 190-20 80-210M945 130l-205-45-100 140 80 150 300-95M720 375l-60 200 195 120 220-100-55-315M1075 595l210 90 170-160-100-195-145-70M80 760l210-90 145 120-30 240M290 670l20-185-190-100-180 145"/>
+      </g>
+      <g class="auth-flow">
+        <path d="M740 85 945 130 1020 280 1075 595 1285 685"/>
+        <path d="m-60 530 180-145 190 100-20 185 145 120"/>
+      </g>
+      <g class="auth-nodes">
+        <circle cx="945" cy="130" r="5"/><circle cx="1020" cy="280" r="5"/>
+        <circle cx="1075" cy="595" r="5"/><circle cx="290" cy="670" r="5"/>
+      </g>
+      <g class="auth-ripples">
+        <circle class="auth-ripple" cx="1020" cy="280" r="22"/>
+        <circle class="auth-ripple auth-ripple-two" cx="290" cy="670" r="22"/>
+      </g>
+    </svg>
+  </div>
+  <div class="auth-content">
+    <div class="auth-layout">
+      <section class="auth-story" aria-label="灌溉管理系统">
+        <div class="auth-brand">
+          <img src="{% static 'pwa/brand.svg' %}" width="128" height="128" alt="">
+          <div class="auth-brand-name">
+            <strong>灌溉管理系统</strong>
+            <span class="auth-brand-subtitle">FOS · Horticulture</span>
+            <span class="auth-brand-version">v2.0</span>
+          </div>
         </div>
-      </div>
-
-      <div class="organic-field">
-        <label for="password">密码</label>
-        <div class="ctrl">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="4" y="11" width="16" height="10" rx="2"/>
-            <path d="M8 11V7a4 4 0 0 1 8 0v4"/>
-          </svg>
-          <input type="password" id="password" name="password" placeholder="请输入密码" required>
-          <button type="button" class="toggle-eye" id="togglePw" aria-label="显示密码" tabindex="-1">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/>
-              <circle cx="12" cy="12" r="3"/>
-            </svg>
+      </section>
+      <section class="auth-card" aria-labelledby="loginTitle">
+        <div class="auth-card-heading">
+          <h1 id="loginTitle">账号登录</h1>
+        </div>
+        {% if messages %}
+        <div class="auth-messages" role="alert">
+          {% for message in messages %}
+          <div class="auth-message {{ message.tags }}">
+            <svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-{% if message.tags == 'error' %}alert{% else %}check{% endif %}"/></svg>
+            <span>{{ message }}</span>
+          </div>
+          {% endfor %}
+        </div>
+        {% endif %}
+        <form method="post" id="loginForm" autocomplete="on">
+          {% csrf_token %}
+          <div class="auth-field">
+            <label for="username">用户名</label>
+            <div class="auth-control">
+              <svg class="ui-icon auth-field-icon" aria-hidden="true" focusable="false"><use href="#pwa-user"/></svg>
+              <input type="text" id="username" name="username" placeholder="请输入用户名"
+                     value="{{ request.POST.username|default:'' }}" autocomplete="username"
+                     autocapitalize="none" autocorrect="off" spellcheck="false" required>
+            </div>
+          </div>
+          <div class="auth-field">
+            <label for="password">密码</label>
+            <div class="auth-control">
+              <svg class="ui-icon auth-field-icon" aria-hidden="true" focusable="false"><use href="#pwa-lock"/></svg>
+              <input type="password" id="password" name="password" placeholder="请输入密码" autocomplete="current-password" required>
+              <button type="button" class="auth-eye" id="togglePw" aria-label="显示密码" aria-pressed="false" aria-controls="password">
+                <svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-eye"/></svg>
+              </button>
+            </div>
+          </div>
+          <button type="submit" class="auth-submit" id="loginBtn">
+            <span class="auth-submit-spinner" hidden aria-hidden="true"></span>
+            <span id="loginLabel" aria-live="polite">登录</span>
+            <svg class="ui-icon auth-submit-arrow" aria-hidden="true" focusable="false"><use href="#pwa-arrow"/></svg>
           </button>
-        </div>
-      </div>
-
-      <button type="submit" class="organic-submit" id="loginBtn">登 录</button>
-    </form>
-
-    <div class="organic-foot">
-      <a href="{% url 'core:register' %}">注册申请</a>
-      <div class="organic-version">FOS · Horticulture · v1.0</div>
+        </form>
+        <div class="auth-register">还没有账号？<a href="{% url 'core:register' %}">申请加入<svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-arrow"/></svg></a></div>
+      </section>
     </div>
   </div>
-</div>
+</main>
 {% endblock %}
-
 {% block extra_js %}
-<script>
-// Prevent double-submit (CSRF errors) by disabling the button after first click.
-document.getElementById('loginForm').addEventListener('submit', function () {
-  var btn = document.getElementById('loginBtn');
-  if (btn.disabled) return false;
-  btn.disabled = true;
-  // Keep the label legible while disabled so the user sees it's working.
-  setTimeout(function () { if (btn.disabled) { btn.textContent = '登录中…'; } }, 200);
-});
-
-// Password visibility toggle.
-(function () {
-  var toggle = document.getElementById('togglePw');
-  var pw = document.getElementById('password');
-  if (!toggle || !pw) return;
-  toggle.addEventListener('click', function () {
-    var show = pw.type === 'password';
-    pw.type = show ? 'text' : 'password';
-    toggle.setAttribute('aria-label', show ? '隐藏密码' : '显示密码');
-  });
-})();
-</script>
+<script src="{% static 'js/auth-login.js' %}?v=20261024auth4" defer></script>
 {% endblock %}
