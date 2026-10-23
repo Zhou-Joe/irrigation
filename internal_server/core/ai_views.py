@@ -191,7 +191,7 @@ def _events_from_chunk(chunk, seen_tool_calls):
                     'url': finfo.get('url', ''),
                     'size': finfo.get('size', 0),
                 })
-        elif name == 'export_work_reports_excel' and parsed.get('file'):
+        elif name in ('export_work_reports_excel', 'generate_weekly_report') and parsed.get('file'):
             finfo = parsed['file']
             yield ('file', {
                 'name': finfo.get('name', ''),
