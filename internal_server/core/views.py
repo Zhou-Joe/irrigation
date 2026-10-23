@@ -541,55 +541,39 @@ def api_docs_page(request):
 
 
 def get_zone_center(boundary_points):
-    """Calculate the center point of a zone from its boundary points. Supports multi-polygon format."""
-    if not boundary_points or len(boundary_points) == 0:
+    """Mean of valid boundary vertices, across legacy rings and nested CAD groups.
+
+    A malformed vertex or empty leading group must not make the entire zone API
+    fail. Keep valid coordinate precision and the existing six-decimal center.
+    """
+    import math
+    lats, lngs = [], []
+
+    def visit(value):
+        pair = None
+        if isinstance(value, dict):
+            pair = (value.get('lat'), value.get('lng'))
+        elif isinstance(value, (list, tuple)):
+            if len(value) >= 2 and all(isinstance(v, (int, float, str)) and not isinstance(v, bool) for v in value[:2]):
+                pair = value[:2]
+            else:
+                for child in value:
+                    visit(child)
+        if pair is not None:
+            if any(isinstance(v, bool) for v in pair):
+                return
+            try:
+                lat, lng = map(float, pair)
+                if math.isfinite(lat) and math.isfinite(lng) and abs(lat) <= 90 and abs(lng) <= 180:
+                    lats.append(lat)
+                    lngs.append(lng)
+            except (TypeError, ValueError):
+                pass
+
+    visit(boundary_points)
+    if not lats:
         return None
-
-    lats = []
-    lngs = []
-
-    def _extract_coords(points):
-        for point in points:
-            if isinstance(point, list) and len(point) >= 2:
-                lats.append(point[0])
-                lngs.append(point[1])
-            elif isinstance(point, dict) and 'lat' in point and 'lng' in point:
-                lats.append(point['lat'])
-                lngs.append(point['lng'])
-
-    # Detect multi-polygon format: [[{lat,lng},...], [{lat,lng},...]]
-    first = boundary_points[0]
-    is_multi = isinstance(first, list) and len(first) > 0 and (
-        isinstance(first[0], list) or (isinstance(first[0], dict) and 'lat' in first[0])
-    )
-
-    # Detect nested multi-group: [[[{lat,lng},...], ...], ...]
-    is_nested = False
-    if is_multi and isinstance(first, list) and len(first) > 0:
-        inner = first[0]
-        if isinstance(inner, list) and len(inner) > 0:
-            innermost = inner[0]
-            if isinstance(innermost, (list, dict)):
-                is_nested = True
-
-    if is_nested:
-        # Flatten: [[ring1, ring2], [ring3]] → [ring1, ring2, ring3]
-        for group in boundary_points:
-            if isinstance(group, list):
-                for ring in group:
-                    _extract_coords(ring)
-    elif is_multi:
-        for ring in boundary_points:
-            _extract_coords(ring)
-    else:
-        _extract_coords(boundary_points)
-
-    if lats and lngs:
-        return {
-            'lat': round(sum(lats) / len(lats), 6),
-            'lng': round(sum(lngs) / len(lngs), 6)
-        }
-    return None
+    return {'lat': round(sum(lats) / len(lats), 6), 'lng': round(sum(lngs) / len(lngs), 6)}
 
 
 def _safe_remark_items(raw):
@@ -920,6 +904,31 @@ def _build_pipelines_list_module():
 
 
 
+def _build_dashboard_sidebar_zones():
+    """Sidebar summaries only: geometry and histories load through the map API.
+
+    Keep the HTML request independent of the heavy boundary serializer. Reading
+    only sidebar fields avoids decoding both manual and CAD geometry twice per
+    visit, and avoids fetching work-order histories before the map can appear.
+    """
+    from collections import defaultdict
+    from .models import Plant, Zone
+
+    plants = defaultdict(list)
+    for zone_id, name in Plant.objects.values_list('zone_id', 'name'):
+        plants[zone_id].append(name)
+    zones = list(Zone.objects.values(
+        'id', 'code', 'name', 'patch_id', 'land_id', 'priority',
+        'remarks', 'confirmed_remarks'))
+    for zone in zones:
+        zone['plant_names'] = plants[zone['id']]
+        zone['plant_count'] = len(zone['plant_names'])
+        zone['has_remarks'] = bool(_safe_remark_items(zone.pop('remarks')))
+        zone['has_confirmed_remarks'] = bool(_safe_remark_items(zone.pop('confirmed_remarks')))
+        zone['status'] = Zone.STATUS_UNARRANGED
+    return zones
+
+
 def _build_zones_payload(today, week_ago):
     """Build the per-zone JSON payload used by the dashboard map + zone-detail cards.
 
@@ -932,7 +941,7 @@ def _build_zones_payload(today, week_ago):
     """
     from datetime import timedelta
     from collections import defaultdict
-    from django.db.models import Count, Sum
+    from django.db.models import Count, Sum, Prefetch
     from django.db.models.functions import Coalesce
     from core.models import (
         Zone, Plant, ZoneEquipment, WorkReport, WaterRequest,
@@ -961,6 +970,7 @@ def _build_zones_payload(today, week_ago):
                    'land__id', 'land__name'))
 
     zone_ids = list(zones.values_list('id', flat=True))
+    zone_id_set = set(zone_ids)
 
     # Group-by counts (one query each, no distinct=True cross-product).
     def _count_map(model, **filters):
@@ -994,16 +1004,17 @@ def _build_zones_payload(today, week_ago):
         status='submitted',
         start_datetime__date__lte=today,
         end_datetime__date__gte=today
-    ).prefetch_related('zones'):
+    ).prefetch_related(Prefetch('zones', queryset=Zone.objects.only('id'))):
         for z in wr.zones.all():
-            if z.id in zone_ids:
+            if z.id in zone_id_set:
                 pending_water_map.setdefault(z.id, []).append({
                     'id': wr.id, 'type': 'water', 'type_display': '浇水协调',
                 })
 
     # ── Bulk: recent water requests (top 3 per zone) — a request spans multiple zones ──
     recent_water_map = defaultdict(list)
-    for w in WaterRequest.objects.prefetch_related('zones').order_by('-created_at'):
+    for w in WaterRequest.objects.prefetch_related(
+            Prefetch('zones', queryset=Zone.objects.only('id'))).order_by('-created_at', '-id'):
         item = {
             'id': w.id,
             'type': w.get_request_type_display(),
@@ -1013,7 +1024,7 @@ def _build_zones_payload(today, week_ago):
             'end': timezone.localtime(w.end_datetime).strftime('%m-%d %H:%M'),
         }
         for z in w.zones.all():
-            if z.id in zone_ids:
+            if z.id in zone_id_set:
                 lst = recent_water_map[z.id]
                 if len(lst) < 3:
                     lst.append(item)
@@ -1058,7 +1069,7 @@ def _build_zones_payload(today, week_ago):
         # Pull one entry per report (the first by id) — that's the "前级" prefix.
         first_entries = (WorkReportEntry.objects
                          .filter(work_report_id__in=wr_ids_set)
-                         .select_related('work_item', 'project')
+                         .select_related('work_item')
                          .order_by('work_report_id', 'id'))
         first_entry_per_report = {}
         sections_per_report = defaultdict(set)
@@ -1178,10 +1189,10 @@ def zones_payload_api(request):
         to ~0.3MB on the wire.
     """
     from datetime import date, timedelta
-    today = date.today()
+    today = timezone.localdate()
     week_ago = today - timedelta(days=7)
     payload = _build_zones_payload(today, week_ago)
-    resp = JsonResponse(payload, safe=False, json_dumps_params={'ensure_ascii': False})
+    resp = JsonResponse(payload, safe=False, json_dumps_params={'ensure_ascii': False, 'separators': (',', ':')})
     # Zones' status/counts are day-scoped; cache briefly on the browser to make
     # back-to-back dashboard loads near-instant, but not so long that stale status lingers.
     resp['Cache-Control'] = 'private, max-age=60'
@@ -1247,7 +1258,7 @@ def dashboard(request):
     )
 
     user = request.user
-    today = date.today()
+    today = timezone.localdate()
     week_ago = today - timedelta(days=7)
 
     # Determine user role
@@ -1278,8 +1289,7 @@ def dashboard(request):
         except Worker.DoesNotExist:
             pass
 
-    # Zone payload (queries + serialization) is shared with the cacheable JSON endpoint.
-    zones_list = _build_zones_payload(today, week_ago)
+    zones_list = _build_dashboard_sidebar_zones()
 
     # Group zones by Land → common-name (zone.name) for sidebar display
     from .models import Land
@@ -1430,20 +1440,9 @@ def dashboard(request):
                 'end': timezone.localtime(wr.end_datetime).strftime('%m-%d %H:%M'),
             })
 
-    # Pending remarks: collapse all zones with unconfirmed remarks into one group
-    # (one marker at the centroid with the count + orange outline on each zone).
-    _remark_zones = [z for z in zones_list if z.get('has_remarks')]
-    _rm_centers = [z['center'] for z in _remark_zones if z.get('center')]
+    # The map derives this marker from the asynchronously loaded full geometry.
+    # The HTML request only reads sidebar summaries.
     pending_remarks_data = None
-    if _remark_zones and _rm_centers:
-        pending_remarks_data = {
-            'count': len(_remark_zones),
-            'zone_ids': [z['id'] for z in _remark_zones],
-            'center': {
-                'lat': round(sum(c['lat'] for c in _rm_centers) / len(_rm_centers), 6),
-                'lng': round(sum(c['lng'] for c in _rm_centers) / len(_rm_centers), 6),
-            },
-        }
 
     # Patch list for map filter plugin
     from .models import Patch

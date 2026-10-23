@@ -4,7 +4,8 @@
 <html lang="zh">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+{% include 'core/pwa_head.html' %}
 <title>工作记录历史</title>
 <link rel="stylesheet" href="{% static 'css/design-system.css' %}">
 <style>
@@ -77,8 +78,13 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 /* FAB */
 .fab { position: fixed; bottom: 24px; right: 24px; width: 56px; height: 56px; border-radius: 28px; background: var(--color-primary, #2D6A4F); color: #fff; border: none; font-size: 1.8em; cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,0.2); display: flex; align-items: center; justify-content: center; text-decoration: none; }
 </style>
+<link rel="stylesheet" href="{% static 'css/pwa.css' %}?v=20261023responsive">
+<link rel="stylesheet" href="{% static 'css/compact-ui.css' %}?v=20261023responsive">
+    <link rel="stylesheet" href="{% static 'css/responsive-ui.css' %}?v=20261023responsive">
+<script src="{% static 'js/pwa.js' %}?v=20261023" defer></script>
+<script src="{% static 'js/responsive-ui.js' %}?v=20261023responsive" defer></script>
 </head>
-<body>
+<body class="pwa-authenticated" data-page="workorder_history">
 
 <div class="top-bar">
     <a href="{% url 'core:dashboard' %}">&#8592;</a>
@@ -228,5 +234,6 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 
 <a href="{% url 'core:dashboard' %}" class="fab">+</a>
 
+{% include 'core/pwa_shell.html' %}
 </body>
 </html>

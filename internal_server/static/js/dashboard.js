@@ -7,7 +7,7 @@
 
     // ── Zone Data ──
     // Kept as var at IIFE top level; also exposed on window for map.js
-    var zonesData = [];
+    var zonesData = window.zonesData || [];
 
     // ── Filter State (on window so map.js can read) ──
     // Empty set + touched=false -> show all. Click chip -> add to set + touched=true -> show only selected.
@@ -41,7 +41,7 @@
             zonesData = window.zonesData;
         } else {
             var dataEl = document.getElementById('zones-data');
-            if (dataEl) {
+            if (dataEl && dataEl.textContent.trim()) {
                 zonesData = JSON.parse(dataEl.textContent);
                 window.zonesData = zonesData;
             }
@@ -599,7 +599,7 @@
         }, 0);
 
         content.innerHTML =
-            '<div class="sync-detail-row"><span class="label">连接状态</span><span class="value" style="color: ' + (data.status === 'online' ? '#40916C' : data.status === 'offline' ? '#9B2226' : '#888') + '">' + (data.status === 'online' ? '🟢 在线' : data.status === 'offline' ? '🟡 离线' : '⚪ 未连接') + '</span></div>' +
+            '<div class="sync-detail-row"><span class="label">连接状态</span><span class="value" style="color: ' + (data.status === 'online' ? '#40916C' : data.status === 'offline' ? '#9B2226' : '#888') + '">' + (data.status === 'online' ? '在线' : data.status === 'offline' ? '离线' : '未连接') + '</span></div>' +
             '<div class="sync-detail-row"><span class="label">最后心跳</span><span class="value">' + (data.last_heartbeat ? formatSyncTime(data.last_heartbeat) : '-') + '</span></div>' +
             '<div class="sync-detail-row"><span class="label">距上次同步</span><span class="value">' + formatElapsed(data.seconds_since_heartbeat) + '</span></div>' +
             (data.agent_version ? '<div class="sync-detail-row"><span class="label">代理版本</span><span class="value">' + data.agent_version + '</span></div>' : '') +
@@ -632,11 +632,11 @@
         menuContainer.style.cssText = 'display:flex;flex-direction:row;align-items:center;justify-content:center;gap:8px;position:fixed;left:50%;top:64px;transform:translateX(-50%);z-index:1199;';
 
         var menuItems = [
-            { icon: '📝', label: '工单提交', key: 'workorder' },
-            { icon: '🔧', label: 'PM安排', key: 'pm' },
-            { icon: '💧', label: '浇水需求', key: 'water_request' },
-            { icon: '📦', label: '库存管理', key: 'inventory' },
-            { icon: '📋', label: '历史记录', url: window.HISTORY_URL || '#' },
+            { icon: 'clipboard', label: '工单提交', key: 'workorder' },
+            { icon: 'calendar', label: 'PM安排', key: 'pm' },
+            { icon: 'drop', label: '浇水需求', key: 'water_request' },
+            { icon: 'box', label: '库存管理', key: 'inventory' },
+            { icon: 'folder', label: '历史记录', url: window.HISTORY_URL || '#' },
         ];
 
         // Options are visible by default (shown above the FAB on page load).
@@ -656,7 +656,7 @@
                     if (fabActions[item.key]) fabActions[item.key]();
                 };
             }
-            a.innerHTML = '<span style="font-size:1.3em">' + item.icon + '</span><span style="font-size:0.75em;margin-top:2px">' + item.label + '</span>';
+            a.innerHTML = '<span class="map-action-icon">' + window.uiIcon(item.icon) + '</span><span style="font-size:0.75em;margin-top:2px">' + item.label + '</span>';
             a.style.cssText = 'display:flex;flex-direction:column;align-items:center;justify-content:center;width:60px;height:60px;border-radius:14px;background:#fff;color:#222;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,0.12);opacity:1;transform:translateY(0);transition:opacity 0.2s,transform 0.2s;pointer-events:auto;';
             menuContainer.appendChild(a);
             menuEls.push(a);
@@ -665,7 +665,7 @@
         var fab = document.createElement('button');
         fab.className = 'fab-btn active';
         fab.style.cssText = 'width:42px;height:42px;border-radius:50%;border:3px solid rgba(255,255,255,0.95);color:#fff;display:flex;align-items:center;justify-content:center;font-size:1.3em;cursor:pointer;transition:all 0.3s cubic-bezier(0.22,1,0.36,1);';
-        fab.innerHTML = '&#9776;';
+        fab.innerHTML = window.uiIcon('menu');
         fab.title = '功能菜单';
 
         fab.addEventListener('click', function () {

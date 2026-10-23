@@ -14,7 +14,7 @@
         </div>
         <div class="wr-meta">
             {% if report.worker.full_name %}<span><b>{{ report.worker.full_name }}</b></span>{% endif %}
-            {% if report.zone_summary %}<span class="wr-zone-summary"><span class="pin">📍</span> {{ report.zone_summary }}</span>{% endif %}
+            {% if report.zone_summary %}<span class="wr-zone-summary"><span class="pin"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-pin"/></svg></span> {{ report.zone_summary }}</span>{% endif %}
             {% if report.work_start_time %}<span class="wr-meta-sub">{{ report.work_start_time }}–{{ report.work_end_time }}{% if report.team_hours %} · {{ report.team_hours }}h{% endif %}{% if report.third_party_hours %} +{{ report.third_party_hours }}h{% endif %}</span>{% endif %}
             {% if report.team_size %}<span class="wr-meta-sub">灌溉组{{ report.team_size }}人{% if report.third_party_count %} · 第三方{{ report.third_party_count }}人{% endif %}</span>{% endif %}
         </div>

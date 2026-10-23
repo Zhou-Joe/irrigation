@@ -114,7 +114,7 @@
     <div class="wq-card-main">
       <div class="wq-card-top">
         <span class="wq-req-type">{{ wr.request_type }}{% if wr.request_type == '其他需求' and wr.request_type_other %} ({{ wr.request_type_other }}){% endif %}</span>
-        <span class="wq-zone">📍 {{ wr.zone_summary|default:"未指定区域" }}</span>
+        <span class="wq-zone"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-pin"/></svg> {{ wr.zone_summary|default:"未指定区域" }}</span>
         <span class="wq-badge {{ wr.status }}">{{ wr.get_status_display }}</span>
       </div>
       {% if wr.zone_hierarchy %}

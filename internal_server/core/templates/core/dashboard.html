@@ -5,15 +5,12 @@
 {% block title %}灌溉区域总览{% endblock %}
 {% block nav_dashboard %}active{% endblock %}
 
-{% comment %}Mobile: lock page zoom so a stray pinch on the nav/sidebar never zooms the
-whole page — the pinch lands in Leaflet's touch handler and zooms ONLY the
-map. Desktop (max-width:768px is false) is unaffected.{% endcomment %}
-{% block viewport %}width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no, viewport-fit=cover{% endblock %}
+{% block viewport %}width=device-width, initial-scale=1.0, viewport-fit=cover{% endblock %}
 
 {% block extra_css %}
 <!-- Leaflet CSS -->
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-<link rel="stylesheet" href="{% static 'css/dashboard.css' %}?v=20260629" />
+<link rel="stylesheet" href="{% static 'vendor/leaflet/leaflet.css' %}?v=1.9.4" />
+<link rel="stylesheet" href="{% static 'css/dashboard.css' %}?v=20261023map2" />
 <!-- Dashboard JS needs Django URL, set before external scripts -->
 <style>
 /* Announcement popup */
@@ -30,12 +27,7 @@ map. Desktop (max-width:768px is false) is unaffected.{% endcomment %}
 .ann-btn:active { transform: scale(0.97); }
 .ann-btn:disabled { opacity: 0.6; cursor: default; }
 
-/* ── Mobile gesture lockdown ────────────────────────────────────────────────
-   On phones: the nav bar stays fixed on top and the sidebar fixed below; only
-   the map may be dragged / pinch-zoomed. We (1) lock page zoom via the viewport
-   meta above, and (2) set touch-action so a pinch starting on the nav/sidebar is
-   NOT interpreted as a page zoom — it's ignored. The map keeps pan-zoom via its
-   own touch handler. Pinch-zoom still works normally on every OTHER page. */
+/* Let Leaflet own gestures on the map while forms retain accessible page zoom. */
 @media (max-width: 768px) {
     .top-nav, .sidebar, .sidebar-header, .sidebar-body, .zone-search,
     .map-layer-panel, .map-filter-widget, .v2-map-info-bar, .v2-map-action-bar,
@@ -58,7 +50,7 @@ map. Desktop (max-width:768px is false) is unaffected.{% endcomment %}
 <div id="annPopup" class="ann-popup" style="display:none;">
     <div class="ann-card">
         <div class="ann-header">
-            <span class="ann-badge">📢 通知</span>
+            <span class="ann-badge"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-bell"/></svg> 通知</span>
             <span class="ann-counter" id="annCounter"></span>
         </div>
         <h3 class="ann-title" id="annTitle"></h3>
@@ -78,7 +70,7 @@ map. Desktop (max-width:768px is false) is unaffected.{% endcomment %}
     <!-- 侧边栏 -->
     <aside class="sidebar" id="sidebar">
         <div class="sidebar-header">
-            <button class="sidebar-toggle" onclick="toggleSidebar()" id="sidebarToggle" title="收起侧边栏">✕</button>
+            <button class="sidebar-toggle" onclick="toggleSidebar()" id="sidebarToggle" title="收起侧边栏"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-close"/></svg></button>
             <div class="sidebar-header-content">
                 <h1>灌溉区域</h1>
                 <p class="zone-count" id="zoneCount">{{ total_zones }} 个区域</p>
@@ -97,7 +89,7 @@ map. Desktop (max-width:768px is false) is unaffected.{% endcomment %}
             <button type="button" class="filter-dropdown-toggle" id="plantDropdownBtn" onclick="togglePlantDropdown()">
                 <span>植物筛选</span>
                 <span class="filter-dropdown-count" id="plantFilterCount">全部</span>
-                <span class="filter-dropdown-arrow">▾</span>
+                <span class="filter-dropdown-arrow"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-chevron-down"/></svg></span>
             </button>
             <div class="filter-dropdown-panel" id="plantDropdownPanel">
                 <label class="filter-dropdown-check">
@@ -120,7 +112,7 @@ map. Desktop (max-width:768px is false) is unaffected.{% endcomment %}
             <!-- Land 组 -->
             <div class="region-group collapsed" data-land-id="{{ land.id }}">
                 <div class="region-header" onclick="toggleRegionGroup(this)">
-                    <span class="region-toggle">▼</span>
+                    <span class="region-toggle"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-chevron-down"/></svg></span>
                     <span class="region-name">{{ land.name }}</span>
                     <span class="region-count">{{ land.zone_count }}</span>
                 </div>
@@ -128,7 +120,7 @@ map. Desktop (max-width:768px is false) is unaffected.{% endcomment %}
                     {% for ng in land.name_groups %}
                     <div class="patch-group collapsed" data-common-name="{{ ng.name }}" data-type="patch">
                         <div class="patch-header" onclick="togglePatchGroup(this)">
-                            <span class="patch-toggle">▼</span>
+                            <span class="patch-toggle"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-chevron-down"/></svg></span>
                             <span class="patch-name">{{ ng.name }}</span>
                             <span class="patch-count">{{ ng.zone_count }}</span>
                         </div>
@@ -145,7 +137,7 @@ map. Desktop (max-width:768px is false) is unaffected.{% endcomment %}
             <!-- 未分配Land -->
             <div class="region-group collapsed">
                 <div class="region-header" style="background: var(--color-text-secondary);" onclick="toggleRegionGroup(this)">
-                    <span class="region-toggle">▼</span>
+                    <span class="region-toggle"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-chevron-down"/></svg></span>
                     <span class="region-name">{{ land.name }}</span>
                     <span class="region-count">{{ land.zone_count }}</span>
                 </div>
@@ -153,7 +145,7 @@ map. Desktop (max-width:768px is false) is unaffected.{% endcomment %}
                     {% for ng in land.name_groups %}
                     <div class="patch-group collapsed" data-common-name="{{ ng.name }}" data-type="patch">
                         <div class="patch-header" onclick="togglePatchGroup(this)">
-                            <span class="patch-toggle">▼</span>
+                            <span class="patch-toggle"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-chevron-down"/></svg></span>
                             <span class="patch-name">{{ ng.name }}</span>
                             <span class="patch-count">{{ ng.zone_count }}</span>
                         </div>
@@ -180,7 +172,7 @@ map. Desktop (max-width:768px is false) is unaffected.{% endcomment %}
 
     <!-- 地图容器 -->
     <main class="map-container">
-        <button class="sidebar-expand-btn" id="sidebarExpandBtn" onclick="toggleSidebar()" title="展开侧边栏">▶</button>
+        <button class="sidebar-expand-btn" id="sidebarExpandBtn" onclick="toggleSidebar()" title="展开侧边栏"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-chevron-right"/></svg></button>
         <!-- Mobile top-right button cluster (shown on mobile via CSS) -->
         <div class="mobile-btn-cluster" id="mobileBtnCluster">
             <div id="mobileLocateSlot"></div>
@@ -188,16 +180,21 @@ map. Desktop (max-width:768px is false) is unaffected.{% endcomment %}
         <div id="map"></div>
         <!-- Loading overlay shown while the zone payload (~5MB) is fetched/parsed.
              Removed once renderZones() completes (see map.js applyZones). -->
-        <div id="zone-loading-overlay" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,0.6);z-index:500;pointer-events:none;">
+        <div id="zone-loading-overlay" role="status" aria-live="polite" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,0.6);z-index:500;pointer-events:none;">
             <div style="display:flex;flex-direction:column;align-items:center;gap:8px;color:#2D6A4F;">
-                <div style="width:26px;height:26px;border:3px solid #b7d9c8;border-top-color:#2D6A4F;border-radius:50%;animation:zspin .8s linear infinite;"></div>
-                <span style="font-size:0.82em;">加载区域数据…</span>
+                <div id="zoneLoadingSpinner" style="width:26px;height:26px;border:3px solid #b7d9c8;border-top-color:#2D6A4F;border-radius:50%;animation:zspin .8s linear infinite;"></div>
+                <span id="zoneLoadingMessage" style="font-size:0.82em;">加载区域数据…</span>
+                <button type="button" id="zoneLoadingRetry" class="btn-sm btn-primary" hidden style="pointer-events:auto;">重新加载区域</button>
             </div>
         </div>
         <style>@keyframes zspin{to{transform:rotate(360deg)}}</style>
+        <div id="pipelineLoadNotice" class="map-data-notice" role="status" hidden>
+            <span>管网加载失败，区域地图仍可使用。</span>
+            <button type="button" id="pipelineLoadingRetry" class="btn-sm btn-primary">重试管网</button>
+        </div>
         <!-- 地图图层控制 -->
         <div class="map-layer-panel" id="mapLayerPanel">
-            <button class="map-layer-toggle-btn" id="mapLayerToggleBtn" onclick="toggleLayerPanel()" title="图层控制"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg></button>
+            <button class="map-layer-toggle-btn" id="mapLayerToggleBtn" onclick="toggleLayerPanel()" title="图层控制"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-layers"/></svg></button>
             <div class="map-layer-body" id="mapLayerBody" style="display:none;">
                 <div class="map-layer-title">图层控制</div>
                 <label class="map-layer-item">
@@ -242,20 +239,15 @@ map. Desktop (max-width:768px is false) is unaffected.{% endcomment %}
 
         <!-- 地图筛选插件 -->
         <div class="map-filter-widget" id="mapFilterWidget">
-            <button type="button" class="filter-toggle-btn" id="filterToggleBtn" onclick="toggleFilterPanel()" title="筛选">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                    <line x1="4" y1="6" x2="20" y2="6"/><circle cx="9" cy="6" r="2.5" fill="white" stroke="none"/>
-                    <line x1="4" y1="12" x2="20" y2="12"/><circle cx="15" cy="12" r="2.5" fill="white" stroke="none"/>
-                    <line x1="4" y1="18" x2="20" y2="18"/><circle cx="10" cy="18" r="2.5" fill="white" stroke="none"/>
-                </svg>
+            <button type="button" class="filter-toggle-btn" id="filterToggleBtn" onclick="toggleFilterPanel()" title="筛选"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-filter"/></svg>
             </button>
-            <button type="button" class="filter-quick-clear" id="filterQuickClear" onclick="clearAllFilters()" title="清除筛选">✕</button>
+            <button type="button" class="filter-quick-clear" id="filterQuickClear" onclick="clearAllFilters()" title="清除筛选"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-close"/></svg></button>
             <div class="filter-panel" id="filterPanel">
                 <div class="filter-panel-header">
                     <span class="filter-panel-title">筛选</span>
                     <div class="filter-panel-actions">
                         <button type="button" class="filter-clear-btn" id="filterClearBtn" onclick="clearAllFilters()">清除筛选</button>
-                        <button type="button" class="filter-close-btn" onclick="toggleFilterPanel()" title="关闭">✕</button>
+                        <button type="button" class="filter-close-btn" onclick="toggleFilterPanel()" title="关闭"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-close"/></svg></button>
                     </div>
                 </div>
                 <div class="filter-layer" id="landmarkFilterLayer">
@@ -290,7 +282,7 @@ map. Desktop (max-width:768px is false) is unaffected.{% endcomment %}
 
 <!-- Expanded Sync Status Panel -->
 <div class="sync-status-panel" id="syncStatusPanel" style="display:none;">
-    <h4>📡 Maxicom 同步代理详情</h4>
+    <h4><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-radio"/></svg> Maxicom 同步代理详情</h4>
     <div id="syncPanelContent">
         <div class="sync-detail-row"><span class="label">加载中...</span></div>
     </div>
@@ -301,7 +293,7 @@ map. Desktop (max-width:768px is false) is unaffected.{% endcomment %}
 <div class="v2-modal-container" id="woModalContainer" style="display:none;">
     <div class="v2-modal-header">
         <div id="woZoneSummary" style="flex:1;"></div>
-        <button class="v2-modal-close" onclick="closeV2Modal('workorder')">&#x2715;</button>
+        <button class="v2-modal-close" aria-label="关闭表单" onclick="closeV2Modal('workorder')"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-close"/></svg></button>
     </div>
     <div class="v2-modal-body" id="woModalBody">
         <div style="text-align:center;padding:30px;color:#888;">加载中...</div>
@@ -316,7 +308,7 @@ map. Desktop (max-width:768px is false) is unaffected.{% endcomment %}
 <div class="v2-modal-container" id="wrModalContainer" style="display:none;">
     <div class="v2-modal-header">
         <div id="wrZoneSummary" style="flex:1;"></div>
-        <button class="v2-modal-close" onclick="closeV2Modal('water_request')">&#x2715;</button>
+        <button class="v2-modal-close" aria-label="关闭表单" onclick="closeV2Modal('water_request')"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-close"/></svg></button>
     </div>
     <div class="v2-modal-body" id="wrModalBody">
         <div style="text-align:center;padding:30px;color:#888;">加载中...</div>
@@ -332,7 +324,7 @@ map. Desktop (max-width:768px is false) is unaffected.{% endcomment %}
 <div class="v2-modal-container" id="invModalContainer" style="display:none;">
     <div class="v2-modal-header">
         <div id="invZoneSummary" style="flex:1;"><h2>库存管理</h2></div>
-        <button class="v2-modal-close" onclick="closeV2Modal('inventory')">&#x2715;</button>
+        <button class="v2-modal-close" aria-label="关闭表单" onclick="closeV2Modal('inventory')"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-close"/></svg></button>
     </div>
     <div class="v2-modal-body" id="invModalBody">
         <div style="text-align:center;padding:30px;color:#888;">加载中...</div>
@@ -422,15 +414,16 @@ map. Desktop (max-width:768px is false) is unaffected.{% endcomment %}
 
 {% block extra_js %}
 <!-- Leaflet JS -->
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="{% static 'vendor/leaflet/leaflet.js' %}?v=1.9.4"></script>
 <!-- Map Config -->
 <script src="{% static 'js/map-config.js' %}?v=20260908"></script>
 <script>window.MAP_STYLE_CONFIG = {{ map_style_json|safe }} || {};</script>
 <script id="pending-water-requests" type="application/json">{{ pending_water_requests_json|safe }}</script>
 <script id="pending-remarks" type="application/json">{{ pending_remarks_json|safe }}</script>
 <!-- Custom Map JS -->
-<script src="{% static 'js/map.js' %}?v=20261002a"></script>
-<script src="{% static 'js/dashboard-modal.js' %}?v=20261023pm"></script>
+<script src="{% static 'js/map-runtime.js' %}?v=20261023map2"></script>
+<script src="{% static 'js/map.js' %}?v=20261023map2"></script>
+<script src="{% static 'js/dashboard-modal.js' %}?v=20261023icons"></script>
 <script>
 // Override the notification popup's PM-task "填写" handler: on the dashboard we
 // can open the assigned PM task directly; other pages navigate with its GWO id.
@@ -445,10 +438,10 @@ window.fillPmTask = function (gwoId) {
 </script>
 <!-- Dashboard JS — pass Django URL to external script -->
 <script>window.HISTORY_URL = '{% url "core:work_reports" %}';</script>
-<script src="{% static 'js/dashboard.js' %}?v=20260618"></script>
+<script src="{% static 'js/dashboard.js' %}?v=20261023map2"></script>
 <!-- AI data-analyst chat widget (deferred: non-blocking load, auto-mounts on DOMContentLoaded) -->
-<script defer src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
-<script defer src="{% static 'js/ai-chat.js' %}?v=20260629"></script>
+<script defer src="{% static 'vendor/marked/marked.min.js' %}?v=12.0.2"></script>
+<script defer src="{% static 'js/ai-chat.js' %}?v=20261023icons"></script>
 <!-- Announcement popup driver -->
 <script>
 (function () {
