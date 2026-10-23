@@ -81,11 +81,12 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 <link rel="stylesheet" href="{% static 'css/pwa.css' %}?v=20261023responsive">
 <link rel="stylesheet" href="{% static 'css/compact-ui.css' %}?v=20261023responsive">
     <link rel="stylesheet" href="{% static 'css/responsive-ui.css' %}?v=20261023responsive">
-<script src="{% static 'js/pwa.js' %}?v=20261023" defer></script>
-<link rel="stylesheet" href="{% static 'css/page-ui.css' %}?v=20261024pages4">
-<script src="{% static 'js/responsive-ui.js' %}?v=20261024pages4" defer></script>
+<script src="{% static 'js/pwa.js' %}?v=20261024update" defer></script>
+<link rel="stylesheet" href="{% static 'css/page-ui.css' %}?v=20261024pages6">
+<script src="{% static 'js/responsive-ui.js' %}?v=20261024pages6" defer></script>
 </head>
 <body class="ui-system pwa-authenticated" data-page="workorder_history">
+{% include 'core/_watermark.html' %}
 
 <div class="top-bar">
     <a href="{% url 'core:dashboard' %}">&#8592;</a>
