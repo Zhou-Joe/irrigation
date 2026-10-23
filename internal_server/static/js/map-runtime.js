@@ -59,5 +59,16 @@
             return await response.json();
         } finally { clearTimeout(timer); }
     }
-    return { point, boundaryRings, renderBatches, matchesPatch, fetchJSON };
+    function requestLocation(geolocation) {
+        function attempt(options) {
+            return new Promise((resolve, reject) => geolocation.getCurrentPosition(resolve, reject, options));
+        }
+        return attempt({enableHighAccuracy:true, timeout:15000, maximumAge:30000}).catch(error => {
+            // A fresh GPS fix can be unavailable indoors; permit the device's
+            // normal location provider on retry, while respecting a denial.
+            if (error.code !== 2 && error.code !== 3) throw error;
+            return attempt({enableHighAccuracy:false, timeout:12000, maximumAge:60000});
+        });
+    }
+    return { point, boundaryRings, renderBatches, matchesPatch, fetchJSON, requestLocation };
 });

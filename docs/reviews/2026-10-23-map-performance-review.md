@@ -42,6 +42,24 @@ full boundary coordinate precision and the existing Esri/WGS-84 basemap.
   request zones prefetch only IDs, membership checks use a set, and an unused
   project join is removed. Day-scoped map data uses Django's configured local
   date. Existing authentication and private HTTP cache behavior remain intact.
+- **Consistent icons:** map shortcuts, layers/filter/location/zoom controls,
+  popups, work-order/inventory forms and the AI panel now use the workbench's
+  local SVG symbols, with a 1.7px rounded stroke. The location pin in both
+  initial work-report cards and subsequently loaded cards uses that same set.
+  This also replaces pins in water-request summaries and the CAD point picker.
+- **Phone control overlap:** the shortcut row covered part of Locate at a
+  390px viewport. Its invisible wrapper remained a hit target after folding.
+  Phone shortcuts now start folded, use a separate two-column flyout, and
+  leave the control column clear. Folding uses `hidden`, and the wrapper is
+  excluded from pointer hit testing. All four controls use 44px circular
+  buttons, 20px SVGs and the same rounded stroke. The AI launcher uses a
+  distinct assistant face with a warm accent sparkle.
+- **Location feedback:** a tap immediately marks the button busy and opens a
+  status message. Success reports accuracy; fixes outside the designated map
+  bounds explicitly explain why the map stays on the project. Denial,
+  unavailability and timeout show an actionable retry message. A slow GPS fix
+  can retry the device's normal location provider; a permission denial does
+  not trigger repeated requests. Project bounds stay unchanged.
 
 ## Baseline measurements
 
@@ -61,8 +79,9 @@ unintended geometry change.
 ## Verification
 
 - Full Django suite: 190 tests, 189 passed and one existing CAD fixture skip.
-- Fifteen map JavaScript regressions passed, including a 2,508-zone rendering
-  case, geometry formats, viewport labels, filters, recovery and smoothing.
+- Twenty map JavaScript regressions passed, including a 2,508-zone rendering
+  case, geometry formats, viewport labels, filters, recovery, smoothing,
+  location retries, busy/error feedback and out-of-project fixes.
 - Nine service-worker tests passed; JavaScript syntax, Django checks,
   static-collection dry run, migration drift check and diff whitespace checks passed.
 - Browser preview: nested CAD rings, sidebar search/selection, popup rendering,

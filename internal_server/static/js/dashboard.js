@@ -629,7 +629,8 @@
 
         // Menu items: a centered horizontal row on screen (independent of the FAB position)
         var menuContainer = document.createElement('div');
-        menuContainer.style.cssText = 'display:flex;flex-direction:row;align-items:center;justify-content:center;gap:8px;position:fixed;left:50%;top:64px;transform:translateX(-50%);z-index:1199;';
+        menuContainer.id = 'mapShortcuts';
+        menuContainer.className = 'map-shortcut-menu';
 
         var menuItems = [
             { icon: 'clipboard', label: '工单提交', key: 'workorder' },
@@ -641,7 +642,8 @@
 
         // Options are visible by default (shown above the FAB on page load).
         // The FAB toggles between expanded (options visible) and collapsed (options hidden).
-        var open = true;
+        var open = isDesktop;
+        menuContainer.hidden = !open;
 
         var menuEls = [];
         menuItems.forEach(function (item) {
@@ -663,13 +665,17 @@
         });
 
         var fab = document.createElement('button');
-        fab.className = 'fab-btn active';
-        fab.style.cssText = 'width:42px;height:42px;border-radius:50%;border:3px solid rgba(255,255,255,0.95);color:#fff;display:flex;align-items:center;justify-content:center;font-size:1.3em;cursor:pointer;transition:all 0.3s cubic-bezier(0.22,1,0.36,1);';
+        fab.className = 'fab-btn map-tool-btn' + (open ? ' active' : '');
+        fab.type = 'button';
+        fab.setAttribute('aria-controls', 'mapShortcuts');
+        fab.setAttribute('aria-expanded', String(open));
         fab.innerHTML = window.uiIcon('menu');
         fab.title = '功能菜单';
 
         fab.addEventListener('click', function () {
             open = !open;
+            menuContainer.hidden = !open;
+            fab.setAttribute('aria-expanded', String(open));
             if (open) {
                 fab.classList.add('active');
             } else {

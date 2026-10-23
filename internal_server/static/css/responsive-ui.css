@@ -113,8 +113,22 @@ body.presentation-mode .charts-grid { grid-template-columns:repeat(auto-fit,minm
 .batch-header,.batch-header-left,.batch-map-settings,.map-toolbar { flex-wrap:wrap;gap:8px; }
 .batch-header h1 { margin:0; }
 .batch-sidebar { min-width:0; }
-.fab-mobile-wrap>div { width:340px;max-width:calc(100vw - 24px);gap:6px !important; }
+.map-shortcut-menu { display:flex;align-items:center;justify-content:center;gap:6px;position:fixed;left:50%;top:64px;transform:translateX(-50%);z-index:1199;width:340px;max-width:calc(100vw - 24px);pointer-events:none; }
 .fab-mobile-wrap>div>a { flex:1;min-width:0;width:auto !important; }
+/* Controls share a shell; the phone shortcut flyout leaves that column clear. */
+button.map-tool-btn { box-sizing:border-box;width:44px;height:44px;min-width:44px;min-height:44px;border-radius:50%;border:1px solid #ceddcf;padding:0;background:#fff;color:#244c39;box-shadow:0 3px 12px #153b2b24;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:background .16s,box-shadow .16s,transform .16s;touch-action:manipulation; }
+button.map-tool-btn .ui-icon { width:20px;height:20px;stroke-width:1.7;transform:none; }
+button.map-tool-btn:hover,button.map-tool-btn.active,button.map-tool-btn[aria-expanded="true"] { background:#e8f1e4 !important;color:#244c39 !important;box-shadow:0 3px 12px #153b2b24;transform:none; }
+button.map-tool-btn:active { background:#d8e8d2 !important;transform:scale(.94); }
+button.map-tool-btn:focus-visible { outline:3px solid #8bb99a;outline-offset:3px; }
+button.map-tool-btn[aria-busy="true"] { background:#e8f1e4;cursor:wait; }
+.ai-launcher-btn { border:1px solid #a4c4a3;background:linear-gradient(145deg,#386c51,#1b4332);box-shadow:0 4px 16px #173c3540; }
+.ai-launcher-btn .ui-icon { width:27px;height:27px; }
+.ai-icon-spark { fill:#e0c98d;stroke:#e0c98d;stroke-width:1; }
+@media (max-width:768px) {
+    .map-shortcut-menu { left:12px;right:68px;top:calc(var(--pwa-header-height,52px) + 12px);transform:none;width:auto;max-width:none;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px; }
+    .map-shortcut-menu>a:last-child { grid-column:1/-1; }
+}
 .v2-form-row>* { min-width:0; }
 .coord-list,.coord-list-header { max-width:100%;overflow-x:auto; }
 /* Keep overlays above the sticky navigation and their contents reachable
