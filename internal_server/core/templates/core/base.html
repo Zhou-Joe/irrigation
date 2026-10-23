@@ -248,10 +248,11 @@
         document.getElementById('mobileNavOverlay').classList.toggle('visible');
     }
     </script>
-    <link rel="stylesheet" href="{% static 'css/pwa.css' %}?v=20261023icons">
+    <link rel="stylesheet" href="{% static 'css/pwa.css' %}?v=20261023icons2">
     <link rel="stylesheet" href="{% static 'css/compact-ui.css' %}?v=20261023responsive">
-    <link rel="stylesheet" href="{% static 'css/responsive-ui.css' %}?v=20261023controlsresponsive">
-    <script src="{% static 'js/pwa.js' %}?v=20261023" defer></script>
+    <link rel="stylesheet" href="{% static 'css/responsive-ui.css' %}?v=20261023controls2">
+    <script src="{% static 'js/pwa.js' %}?v=20261023tabs" defer></script>
+    <script src="{% static 'js/pwa-navigation.js' %}?v=20261023tabs" defer></script>
     <script src="{% static 'js/responsive-ui.js' %}?v=20261023responsive" defer></script>
 </head>
 <body class="{% if user.is_authenticated %}pwa-authenticated{% endif %}" data-page="{{ request.resolver_match.url_name }}">

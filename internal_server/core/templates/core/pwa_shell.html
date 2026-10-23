@@ -4,7 +4,7 @@
     <div id="pwaUpdate" class="pwa-update" hidden><span>应用有新版本</span><button type="button" id="pwaUpdateBtn">更新并重新打开</button></div>
 </div>
 {% if user.is_authenticated %}
-<nav class="pwa-bottom-nav" aria-label="手机主导航">
+<nav class="pwa-bottom-nav" aria-label="手机主导航" data-user-id="{{ user.pk }}">
     <a href="{% url 'core:app_home' %}" data-pwa-nav="home"><svg><use href="#pwa-home"/></svg><span>工作台</span></a>
     <a href="{% url 'core:dashboard' %}" data-pwa-nav="map"><svg><use href="#pwa-map"/></svg><span>地图</span></a>
     <a href="{% url 'core:work_reports' %}" data-pwa-nav="work"><svg><use href="#pwa-clipboard"/></svg><span>工单</span></a>

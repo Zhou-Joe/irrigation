@@ -106,7 +106,7 @@ body[data-page="app_home"] { background:#f6f7f2; }
     .pwa-bottom-nav svg { padding:4px 16px;border-radius:14px;box-sizing:content-box;width:21px;height:21px; }
     .pwa-bottom-nav [aria-current="page"] { color:#16422a;font-weight:700; }
     .pwa-bottom-nav [aria-current="page"] svg { background:#e4eedc;stroke-width:2; }
-    .pwa-authenticated:has(input:focus,textarea:focus,select:focus) .pwa-bottom-nav { visibility:hidden; }
+    .pwa-authenticated:has(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):focus,textarea:focus,select:focus) .pwa-bottom-nav { visibility:hidden; }
     .pwa-authenticated[data-page="dashboard"] { padding-bottom:0;overflow:hidden; }
     .pwa-authenticated[data-page="dashboard"] .dashboard-container,.pwa-authenticated[data-page="dashboard"] .map-container { height:calc(100vh - var(--pwa-header-height) - var(--pwa-nav-height)) !important;height:calc(100dvh - var(--pwa-header-height) - var(--pwa-nav-height)) !important; }
     .pwa-authenticated .mobile-btn-cluster { top:calc(var(--pwa-header-height) + 12px); }

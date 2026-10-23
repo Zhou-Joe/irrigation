@@ -4,6 +4,13 @@
     var launcher = document.getElementById('pwaLauncher');
     var installDialog = document.getElementById('pwaInstall');
     var toastTimer;
+    function warnBeforeLeave(event) { event.preventDefault(); event.returnValue = ''; }
+    function setDirty(value) {
+        if (dirty === value) return;
+        dirty = value;
+        if (dirty) window.addEventListener('beforeunload', warnBeforeLeave);
+        else window.removeEventListener('beforeunload', warnBeforeLeave);
+    }
     function toast(message) {
         var el = document.getElementById('pwaToast');
         el.textContent = message; el.hidden = false;
@@ -43,7 +50,7 @@
         return false;
     }
     window.IrrigationPWA = {openLauncher: openLauncher, canSubmit: canSubmit,
-        markClean: function () { dirty = false; }, markDirty: function () { dirty = true; }};
+        markClean: function () { setDirty(false); }, markDirty: function () { setDirty(true); }};
     // The native dialog supersedes the old CSS-only dropdown; remove its
     // off-screen links from keyboard focus and accessibility navigation.
     ['mobileNavDropdown', 'mobileNavOverlay'].forEach(function (id) {
@@ -79,19 +86,16 @@
         var form = event.target.closest('form');
         if (!form || form.id === 'pwaModuleSearch') return;
         var method = (form.getAttribute('method') || 'get').toLowerCase();
-        if (method === 'post' || /^(wo|wr|inv)ModalForm$/.test(form.id)) dirty = true;
+        if (method === 'post' || /^(wo|wr|inv)ModalForm$/.test(form.id)) setDirty(true);
     }
     document.addEventListener('input', trackEdits);
     document.addEventListener('change', trackEdits);
     document.addEventListener('submit', function (event) {
         var method = (event.target.getAttribute('method') || 'get').toLowerCase();
         if (method !== 'get' && !canSubmit()) { event.preventDefault(); event.stopImmediatePropagation(); return; }
-        dirty = false;
+        setDirty(false);
     }, true);
-    window.addEventListener('beforeunload', function (event) {
-        if (dirty) { event.preventDefault(); event.returnValue = ''; }
-    });
-    document.addEventListener('pwa:submitted', function () { dirty = false; });
+    document.addEventListener('pwa:submitted', function () { setDirty(false); });
     function installHelp() {
         var instructions = document.getElementById('pwaInstallInstructions');
         var button = document.getElementById('pwaNativeInstall');
@@ -157,6 +161,6 @@
         if (!registration || !registration.waiting) return;
         if (window._woInflight) { toast('工单正在提交，请等待结果后再更新。'); return; }
         if (dirty && !window.confirm('有尚未提交的内容或照片，更新会关闭当前页面。确认放弃并更新？')) return;
-        dirty = false; reloadAfterUpdate = true; registration.waiting.postMessage({type: 'ACTIVATE_UPDATE'});
+        setDirty(false); reloadAfterUpdate = true; registration.waiting.postMessage({type: 'ACTIVATE_UPDATE'});
     });
 }());
