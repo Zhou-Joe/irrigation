@@ -206,7 +206,7 @@
         btn.className = 'ai-launcher-btn';
         btn.title = 'AI 数据助手';
         // Chat-bubble icon (clear, friendly, universally understood).
-        btn.innerHTML = window.uiIcon('message');
+        btn.innerHTML = window.uiIcon('ai');
         btn.onclick = toggle;
         document.body.appendChild(btn);
         console.log('[AIChat] launcher appended, total body children:', document.body.children.length);
@@ -220,7 +220,7 @@
                               'overflow:hidden;z-index:2001;display:none;';
         panel.innerHTML =
             '<div class="ai-chat-header">' +
-              '<div style="font-weight:600;font-size:1em;">' + window.uiIcon('message') + ' AI 数据助手</div>' +
+              '<div style="font-weight:600;font-size:1em;">' + window.uiIcon('ai') + ' AI 数据助手</div>' +
               '<div style="display:flex;align-items:center;gap:4px;">' +
                 '<button id="aiChatNew" title="新建对话" style="background:none;border:none;color:#fff;font-size:0.82em;cursor:pointer;line-height:1;opacity:0.85;padding:4px 8px;border-radius:6px;">' + window.uiIcon('plus') + ' 新对话</button>' +
                 '<button id="aiChatClose" title="关闭" style="background:none;border:none;color:#fff;font-size:1.3em;cursor:pointer;line-height:1;">' + window.uiIcon('close') + '</button>' +

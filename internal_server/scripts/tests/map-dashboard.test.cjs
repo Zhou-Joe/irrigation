@@ -57,6 +57,28 @@ test('stalled map requests abort instead of leaving the loading state forever', 
     })}),/aborted/);
 });
 
+test('location retries a slow GPS fix with the normal provider', async () => {
+    const options=[];const fix={coords:{latitude:31,longitude:121,accuracy:50}};
+    const actual=await runtime.requestLocation({getCurrentPosition(ok,fail,opts){
+        options.push(opts);if(options.length===1)fail({code:3});else ok(fix);
+    }});
+    assert.equal(actual,fix);assert.equal(options[0].enableHighAccuracy,true);
+    assert.equal(options[1].enableHighAccuracy,false);
+});
+
+test('denied location permissions are respected without repeated requests', async () => {
+    let calls=0;
+    await assert.rejects(runtime.requestLocation({getCurrentPosition(ok,fail){calls++;fail({code:1});}}),e=>e.code===1);
+    assert.equal(calls,1);
+});
+
+test('unavailable or throwing location providers reject cleanly', async () => {
+    let calls=0;
+    await assert.rejects(runtime.requestLocation({getCurrentPosition(ok,fail){calls++;fail({code:2});}}),e=>e.code===2);
+    assert.equal(calls,2);
+    await assert.rejects(runtime.requestLocation({getCurrentPosition(){throw Error('blocked');}}),/blocked/);
+});
+
 // Execute the real map implementation with small Leaflet/DOM adapters. Tests
 // expose private functions only in the VM; no debug API ships to production.
 function mapHarness() {
@@ -93,7 +115,7 @@ function mapHarness() {
     const L={tileLayer:()=>({}),layerGroup:()=>new Group(),divIcon:o=>o,latLng:(lat,lng)=>({lat,lng}),
         marker:(p,o)=>new Layer(p,o),polygon:(p,o)=>new Layer(p,o),polyline:(p,o)=>new Layer(p,o)};
     let source=fs.readFileSync(path.join(__dirname,'../../static/js/map.js'),'utf8');
-    const hook=`window.__test={renderZones,loadZones,loadPipelines,updateLabelSizes,_cullLabelsToViewport,buildCardHtml,_refreshZonePolygons,
+    const hook=`window.__test={renderZones,loadZones,loadPipelines,locateUser,updateLabelSizes,_cullLabelsToViewport,buildCardHtml,_refreshZonePolygons,
         labels:()=>zoneLabels, setState(m,g){map=m;[zonesLayerGroup,labelsLayerGroup,leaderLinesLayerGroup,ringLabelsLayerGroup,landmarksLayerGroup]=g;}};`;
     source=source.replace(/\}\)\(\);\s*$/,hook+'})();');
     const context={window,document,L,localStorage:{getItem:()=>null,setItem(){}},console,setTimeout,clearTimeout,
@@ -176,4 +198,31 @@ test('group work orders include every matching zone while map rendering is still
     let chosen;h.window.quickWorkorder=codes=>{chosen=codes;};
     h.window._quickPatchWorkorder({getAttribute:name=>name==='data-zone-name'?'Map zone':first.code});
     assert.deepEqual([...chosen],[first.code,second.code]);
+});
+
+test('locate gives immediate feedback and explains a fix outside the project bounds', async () => {
+    const h=mapHarness();let done,flights=0;
+    h.context.navigator={geolocation:{getCurrentPosition(ok){done=ok;}}};
+    const button={disabled:false,setAttribute(n,v){this[n]=v;},removeAttribute(n){delete this[n];}};
+    h.context.document.querySelector=()=>button;
+    for(const name of ['mapLocationNotice','mapLocationMessage','mapLocationRetry','mapLocationClose'])h.elements[name]={hidden:true};
+    h.map.options={maxBounds:{contains:()=>false}};h.map.flyTo=()=>flights++;
+    h.context.L.circle=()=>({addTo(){return this;}});
+    const pending=h.api.locateUser();
+    assert.equal(button.disabled,true);assert.equal(button['aria-busy'],'true');
+    assert.match(h.elements.mapLocationMessage.textContent,/正在定位/);
+    done({coords:{latitude:31,longitude:121,accuracy:8}});await pending;
+    assert.equal(flights,0);assert.match(h.elements.mapLocationMessage.textContent,/项目范围外/);
+    assert.match(h.elements.mapLocationMessage.textContent,/8 米/);
+    assert.equal(button.disabled,false);assert.equal(button['aria-busy'],undefined);
+});
+
+test('locate failure restores the button and offers retry with a useful permission message', async () => {
+    const h=mapHarness();h.context.navigator={geolocation:{getCurrentPosition(ok,fail){fail({code:1});}}};
+    const button={disabled:false,setAttribute(){},removeAttribute(){}};h.context.document.querySelector=()=>button;
+    for(const name of ['mapLocationNotice','mapLocationMessage','mapLocationRetry','mapLocationClose'])h.elements[name]={hidden:true};
+    await h.api.locateUser();
+    assert.equal(button.disabled,false);assert.equal(h.elements.mapLocationRetry.hidden,false);
+    assert.match(h.elements.mapLocationMessage.textContent,/定位权限未开启/);
+    assert.equal(typeof h.elements.mapLocationRetry.onclick,'function');
 });

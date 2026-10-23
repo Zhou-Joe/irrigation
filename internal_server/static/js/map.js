@@ -1909,47 +1909,63 @@
      * Locate user and show marker on map
      * @param {Object} [opts] - Options: { auto: true } for auto-locate mode
      */
+    let locating = false;
+    function locationFeedback(message, retry) {
+        const notice = document.getElementById('mapLocationNotice');
+        if (!notice) return;
+        notice.hidden = false;
+        document.getElementById('mapLocationMessage').textContent = message;
+        const retryButton = document.getElementById('mapLocationRetry');
+        retryButton.hidden = !retry;
+        retryButton.onclick = () => locateUser();
+        document.getElementById('mapLocationClose').onclick = () => { notice.hidden = true; };
+    }
+
     function locateUser(opts) {
-        opts = opts || {};
-        var isAuto = opts.auto || false;
-        if (!('geolocation' in navigator)) {
-            if (!isAuto) alert('您的浏览器不支持定位功能');
+        if (locating) return;
+        const isAuto = opts?.auto === true;
+        if (window.isSecureContext === false) {
+            if (!isAuto) locationFeedback('定位需要安全连接，请使用正式网站的 HTTPS 地址打开应用。', false);
             return;
         }
-        var locateBtn = isAuto ? null : document.querySelector('.locate-btn');
-        if (locateBtn) { locateBtn.disabled = true; locateBtn.style.opacity = '0.5'; }
-        var markerColor = isAuto ? '#D4A574' : '#1B4332';
-        var markerShadow = isAuto ? 'rgba(212, 165, 74, 0.4)' : 'rgba(27, 67, 50, 0.3)';
-
-        navigator.geolocation.getCurrentPosition(
-            function(position) {
-                var lat = position.coords.latitude, lng = position.coords.longitude, accuracy = position.coords.accuracy;
-                if (userMarker) map.removeLayer(userMarker);
-                if (userAccuracyCircle) map.removeLayer(userAccuracyCircle);
-                userAccuracyCircle = L.circle([lat, lng], { radius: accuracy, color: '#1B4332', fillColor: '#2D6A4F', fillOpacity: 0.15, weight: 1 }).addTo(map);
-                userMarker = L.marker([lat, lng], {
-                    icon: L.divIcon({ className: 'user-location-marker',
-                        html: '<div style="background: ' + markerColor + '; width: 16px; height: 16px; border: 3px solid white; border-radius: 50%; box-shadow: 0 0 0 2px ' + markerColor + ', 0 2px 8px ' + markerShadow + ';"></div>',
-                        iconSize: [22, 22], iconAnchor: [11, 11]
-                    })
-                }).addTo(map);
-                map.flyTo([lat, lng], 16, { animate: true, duration: isAuto ? 1.0 : 1.5 });
-                if (locateBtn) { locateBtn.disabled = false; locateBtn.style.opacity = ''; }
-                if (!isAuto) {
-                    L.popup().setLatLng([lat, lng]).setContent('<div><strong>您的位置</strong><br>精度: ~' + Math.round(accuracy) + '米</div>').openOn(map);
-                }
-            },
-            function(error) {
-                if (locateBtn) { locateBtn.disabled = false; locateBtn.style.opacity = ''; }
-                if (!isAuto) {
-                    var message = '无法获取您的位置';
-                    if (error.code === error.PERMISSION_DENIED) message = '定位权限被拒绝，请在浏览器设置中允许定位。';
-                    else if (error.code === error.TIMEOUT) message = '定位请求超时，请重试。';
-                    alert(message);
-                }
-            },
-            { enableHighAccuracy: true, timeout: isAuto ? 15000 : 10000, maximumAge: isAuto ? 60000 : 0 }
-        );
+        if (!navigator.geolocation) {
+            if (!isAuto) locationFeedback('当前设备未提供定位功能，请检查手机的定位服务。', false);
+            return;
+        }
+        locating = true;
+        const button = document.querySelector('.locate-btn');
+        if (button) {
+            button.disabled = true;
+            button.setAttribute('aria-busy', 'true');
+            button.title = '正在定位…';
+        }
+        if (!isAuto) locationFeedback('正在定位…请在手机提示中允许访问位置。', false);
+        return runtime.requestLocation(navigator.geolocation).then(position => {
+            const lat = position.coords.latitude, lng = position.coords.longitude;
+            const accuracy = position.coords.accuracy;
+            if (!runtime.point([lat, lng]) || !Number.isFinite(accuracy) || accuracy < 0) throw new Error('invalid location');
+            if (userMarker) map.removeLayer(userMarker);
+            if (userAccuracyCircle) map.removeLayer(userAccuracyCircle);
+            userAccuracyCircle = L.circle([lat, lng], {radius:accuracy, color:'#1B4332', fillColor:'#2D6A4F', fillOpacity:0.15, weight:1}).addTo(map);
+            userMarker = L.marker([lat, lng], {icon:L.divIcon({className:'user-location-marker',
+                html:'<div class="user-location-dot"></div>', iconSize:[22,22], iconAnchor:[11,11]})}).addTo(map);
+            const outside = map.options?.maxBounds && !map.options.maxBounds.contains([lat, lng]);
+            if (!outside) map.flyTo([lat, lng], 16, {animate:true, duration:1});
+            if (!isAuto) locationFeedback((outside ? '当前位置在项目范围外，地图保留项目视图。' : '已定位。') + '精度约 ' + Math.round(accuracy) + ' 米。', false);
+        }).catch(error => {
+            if (isAuto) return;
+            let message = '暂时无法获取位置，请检查手机定位服务和网络后重试。';
+            if (error.code === 1) message = '定位权限未开启。请在手机系统及此应用的网站权限中允许位置访问，然后重试。';
+            else if (error.code === 3) message = '定位超时，请移至开阔处并检查手机定位服务后重试。';
+            locationFeedback(message, true);
+        }).finally(() => {
+            locating = false;
+            if (button) {
+                button.disabled = false;
+                button.removeAttribute('aria-busy');
+                button.title = '定位我';
+            }
+        });
     }
 
     /**
@@ -1959,8 +1975,8 @@
         const locateControl = L.control({ position: 'topright' });
 
         locateControl.onAdd = function(map) {
-            const button = L.DomUtil.create('button', 'locate-btn');
-            button.innerHTML = window.uiIcon('locate');
+            const button = L.DomUtil.create('button', 'locate-btn map-tool-btn');
+            button.innerHTML = window.uiIcon('pin');
             button.title = '定位我';
             button.type = 'button';
 

@@ -10,7 +10,7 @@
 {% block extra_css %}
 <!-- Leaflet CSS -->
 <link rel="stylesheet" href="{% static 'vendor/leaflet/leaflet.css' %}?v=1.9.4" />
-<link rel="stylesheet" href="{% static 'css/dashboard.css' %}?v=20261023map2" />
+<link rel="stylesheet" href="{% static 'css/dashboard.css' %}?v=20261023map3" />
 <!-- Dashboard JS needs Django URL, set before external scripts -->
 <style>
 /* Announcement popup */
@@ -192,9 +192,14 @@
             <span>管网加载失败，区域地图仍可使用。</span>
             <button type="button" id="pipelineLoadingRetry" class="btn-sm btn-primary">重试管网</button>
         </div>
+        <div id="mapLocationNotice" class="map-location-notice" role="status" aria-live="polite" hidden>
+            <span id="mapLocationMessage"></span>
+            <button type="button" id="mapLocationRetry" class="btn-sm btn-secondary" hidden>重试定位</button>
+            <button type="button" id="mapLocationClose" class="location-notice-close" aria-label="关闭定位提示"><svg class="ui-icon" aria-hidden="true"><use href="#pwa-close"/></svg></button>
+        </div>
         <!-- 地图图层控制 -->
         <div class="map-layer-panel" id="mapLayerPanel">
-            <button class="map-layer-toggle-btn" id="mapLayerToggleBtn" onclick="toggleLayerPanel()" title="图层控制"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-layers"/></svg></button>
+            <button class="map-layer-toggle-btn map-tool-btn" id="mapLayerToggleBtn" onclick="toggleLayerPanel()" title="图层控制"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-layers"/></svg></button>
             <div class="map-layer-body" id="mapLayerBody" style="display:none;">
                 <div class="map-layer-title">图层控制</div>
                 <label class="map-layer-item">
@@ -239,7 +244,7 @@
 
         <!-- 地图筛选插件 -->
         <div class="map-filter-widget" id="mapFilterWidget">
-            <button type="button" class="filter-toggle-btn" id="filterToggleBtn" onclick="toggleFilterPanel()" title="筛选"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-filter"/></svg>
+            <button type="button" class="filter-toggle-btn map-tool-btn" id="filterToggleBtn" onclick="toggleFilterPanel()" title="筛选"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-filter"/></svg>
             </button>
             <button type="button" class="filter-quick-clear" id="filterQuickClear" onclick="clearAllFilters()" title="清除筛选"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-close"/></svg></button>
             <div class="filter-panel" id="filterPanel">
@@ -421,9 +426,9 @@
 <script id="pending-water-requests" type="application/json">{{ pending_water_requests_json|safe }}</script>
 <script id="pending-remarks" type="application/json">{{ pending_remarks_json|safe }}</script>
 <!-- Custom Map JS -->
-<script src="{% static 'js/map-runtime.js' %}?v=20261023map2"></script>
-<script src="{% static 'js/map.js' %}?v=20261023map2"></script>
-<script src="{% static 'js/dashboard-modal.js' %}?v=20261023icons"></script>
+<script src="{% static 'js/map-runtime.js' %}?v=20261023map3"></script>
+<script src="{% static 'js/map.js' %}?v=20261023map3"></script>
+<script src="{% static 'js/dashboard-modal.js' %}?v=20261023icons2"></script>
 <script>
 // Override the notification popup's PM-task "填写" handler: on the dashboard we
 // can open the assigned PM task directly; other pages navigate with its GWO id.
@@ -438,10 +443,10 @@ window.fillPmTask = function (gwoId) {
 </script>
 <!-- Dashboard JS — pass Django URL to external script -->
 <script>window.HISTORY_URL = '{% url "core:work_reports" %}';</script>
-<script src="{% static 'js/dashboard.js' %}?v=20261023map2"></script>
+<script src="{% static 'js/dashboard.js' %}?v=20261023map3"></script>
 <!-- AI data-analyst chat widget (deferred: non-blocking load, auto-mounts on DOMContentLoaded) -->
 <script defer src="{% static 'vendor/marked/marked.min.js' %}?v=12.0.2"></script>
-<script defer src="{% static 'js/ai-chat.js' %}?v=20261023icons"></script>
+<script defer src="{% static 'js/ai-chat.js' %}?v=20261023icons2"></script>
 <!-- Announcement popup driver -->
 <script>
 (function () {
