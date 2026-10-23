@@ -252,6 +252,7 @@
     <link rel="stylesheet" href="{% static 'css/pwa.css' %}?v=20261023icons2">
     <link rel="stylesheet" href="{% static 'css/compact-ui.css' %}?v=20261023responsive">
     <link rel="stylesheet" href="{% static 'css/responsive-ui.css' %}?v=20261023controls2">
+    {% block extra_ui_css %}{% endblock %}
     <script src="{% static 'js/pwa.js' %}?v=20261023tabs" defer></script>
     <script src="{% static 'js/pwa-navigation.js' %}?v=20261023tabs" defer></script>
     <script src="{% static 'js/responsive-ui.js' %}?v=20261023responsive" defer></script>

@@ -1,280 +1,233 @@
-/* ai-chat.js — AI data-analyst chat widget for the dashboard.
- * Streams responses from /api/ai/chat (SSE), renders markdown, shows tool progress.
- * Exposes window.AIChat.open() / .toggle() and auto-mounts a launcher button.
- */
+/* Accessible streaming assistant UI. Business actions remain server-side. */
 (function () {
     'use strict';
-
-    var CSRF = null;
+    const core = window.AIChatCore;
+    if (!core) return;
+    let threadId = null, activeRun = null, sequence = 0, panelOpen = false, expanded = false, follow = true;
+    const byId = id => document.getElementById(id);
+    const icon = name => window.uiIcon(name);
+    const node = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
     function getCSRF() {
-        if (CSRF) return CSRF;
-        var cookie = document.cookie.split('; ').find(function (c) { return c.startsWith('csrftoken='); });
-        if (cookie) { CSRF = cookie.split('=')[1]; return CSRF; }
-        var el = document.querySelector('[name=csrfmiddlewaretoken]');
-        if (el) { CSRF = el.value; return CSRF; }
-        return '';
+        const cookie = document.cookie.split('; ').find(value => value.startsWith('csrftoken='));
+        return cookie ? cookie.slice(10) : document.querySelector('[name=csrfmiddlewaretoken]')?.value || '';
     }
-
-    // Minimal markdown renderer using marked if available; otherwise escapes text.
-    function renderMd(text) {
-        if (window.marked && typeof window.marked.parse === 'function') {
-            try { return window.marked.parse(text); } catch (e) {}
-        }
-        return '<p>' + String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/\n/g, '<br>') + '</p>';
+    function say(message) { const live = byId('aiChatLive'); if (live && live.textContent !== message) live.textContent = message; }
+    function scrollLatest(force) { const box = byId('aiChatMessages'); if (box && (force || follow)) box.scrollTop = box.scrollHeight; }
+    function modalMode() { return expanded || window.matchMedia('(max-width:768px)').matches; }
+    function setOpen(open) {
+        const panel = byId('aiChatPanel'); if (!panel) return;
+        panelOpen = open; panel.hidden = !open;
+        byId('aiChatLauncher').hidden = open;
+        byId('aiChatLauncher').setAttribute('aria-expanded', String(open));
+        byId('aiChatBackdrop').hidden = !open || !modalMode();
+        document.body.classList.toggle('ai-chat-modal-open', open && modalMode());
+        panel.setAttribute('aria-modal', String(open && modalMode()));
+        if (open) { activeRun?.view.refresh(); (modalMode() ? byId('aiChatClose') : byId('aiChatInput')).focus(); }
+        else byId('aiChatLauncher').focus();
     }
-
-    var threadId = null;
-    var sending = false;
-
-    function el(id) { return document.getElementById(id); }
-
-    // Show/hide the chat panel. The floating launcher is hidden while the panel
-    // is open so the two never overlap (on mobile the launcher otherwise sits on
-    // top of the panel's send button).
-    function _setPanelOpen(open) {
-        var p = el('aiChatPanel'), lc = el('aiChatLauncher');
-        if (!p) return;
-        p.style.display = open ? 'flex' : 'none';
-        if (lc) lc.style.display = open ? 'none' : '';
-        if (open) { var i = el('aiChatInput'); if (i) i.focus(); }
-    }
-    function toggle() { var p = el('aiChatPanel'); if (p) { _setPanelOpen(p.style.display === 'none' || !p.style.display); } }
-    function open() { _setPanelOpen(true); }
-
-    function addMsg(role, contentHtml) {
-        var box = el('aiChatMessages'); if (!box) return null;
-        var m = document.createElement('div');
-        m.className = 'ai-msg ai-msg-' + role;
-        m.innerHTML = contentHtml;
-        box.appendChild(m);
-        box.scrollTop = box.scrollHeight;
-        return m;
-    }
-
-    function addUserMsg(text) {
-        addMsg('user', '<div class="ai-bubble">' + renderMd(text) + '</div>');
-    }
-
-    function startAssistantMsg() {
-        var box = el('aiChatMessages'); if (!box) return { el: null, append: function () {} };
-        var m = document.createElement('div');
-        m.className = 'ai-msg ai-msg-assistant';
-        m.innerHTML = '<div class="ai-bubble"></div>';
-        var progress = document.createElement('div');
-        progress.className = 'ai-tool-progress';
-        m.appendChild(progress);
-        box.appendChild(m);
-        box.scrollTop = box.scrollHeight;
-        var bubble = m.querySelector('.ai-bubble');
-        return {
-            el: m,
-            text: '',
-            appendToken: function (t) { this.text += t; bubble.innerHTML = renderMd(this.text); box.scrollTop = box.scrollHeight; },
-            addTool: function (name, status) {
-                var item = document.createElement('div');
-                item.className = 'ai-tool-item ai-tool-' + status;
-                item.dataset.tool = name;
-                item.innerHTML = '<span class="ai-tool-icon">' + (status === 'done' ? '✓' : '<span class="ai-tool-spinner"></span>') + '</span>' +
-                                 '<span class="ai-tool-name">' + name + '</span>';
-                progress.appendChild(item);
-                progress.style.display = 'flex';
-                box.scrollTop = box.scrollHeight;
-            },
-            markToolDone: function (name) {
-                var items = progress.querySelectorAll('.ai-tool-item');
-                items.forEach(function (it) {
-                    if (it.dataset.tool === name) { it.className = 'ai-tool-item ai-tool-done'; it.querySelector('.ai-tool-icon').textContent = '✓'; }
-                });
-            },
-            addFile: function (name, url, size) {
-                var card = document.createElement('a');
-                card.className = 'ai-file-card';
-                card.href = url;
-                card.download = name;
-                var ext = name.split('.').pop().toLowerCase();
-                var icon = ext === 'xlsx' || ext === 'xls' ? window.uiIcon('chart') : (ext === 'csv' ? window.uiIcon('file') : window.uiIcon('paperclip'));
-                card.innerHTML =
-                    '<span class="ai-file-icon">' + icon + '</span>' +
-                    '<span class="ai-file-info"><span class="ai-file-name">' + name + '</span>' +
-                    '<span class="ai-file-meta">' + _fmtSize(size) + ' · 点击下载</span></span>';
-                progress.appendChild(card);
-                progress.style.display = 'flex';
-                box.scrollTop = box.scrollHeight;
-            },
-            finalize: function () { progress.style.display = progress.children.length ? 'flex' : 'none'; }
-        };
-    }
-
-    function _fmtSize(bytes) {
-        if (!bytes) return '';
-        if (bytes < 1024) return bytes + ' B';
-        if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
-        return (bytes / 1024 / 1024).toFixed(1) + ' MB';
-    }
-
-    function showError(msg) {
-        var box = el('aiChatMessages');
-        addMsg('assistant', '<div class="ai-bubble ai-error">⚠ ' + msg + '</div>');
-    }
-
-    // Start a fresh conversation: new thread id, clear history, show welcome.
-    function newConversation() {
-        threadId = null;
-        sending = false;
-        setSending(false);
-        var box = el('aiChatMessages');
-        if (box) box.innerHTML = '';
-        addMsg('assistant', '<div class="ai-bubble">已开启新对话，需要什么帮助吗？</div>');
-        var input = el('aiChatInput'); if (input) input.focus();
-    }
-
-    async function send() {
-        var input = el('aiChatInput'); if (!input || sending) return;
-        var text = input.value.trim(); if (!text) return;
-        input.value = '';
-        addUserMsg(text);
-        var asst = startAssistantMsg();
-        sending = true;
-        setSending(true);
-
-        try {
-            var resp = await fetch('/api/ai/chat', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCSRF() },
-                body: JSON.stringify({ message: text, thread_id: threadId }),
-            });
-
-            if (!resp.ok) {
-                var errBody = '';
-                try { errBody = JSON.parse(await resp.text()); } catch (e) {}
-                showError(errBody.error || ('请求失败 (HTTP ' + resp.status + ')'));
-                return;
-            }
-
-            // Parse SSE stream from the response body.
-            var reader = resp.body.getReader();
-            var decoder = new TextDecoder('utf-8');
-            var buffer = '';
-            while (true) {
-                var _ref = await reader.read(),
-                    done = _ref.done,
-                    value = _ref.value;
-                if (done) break;
-                buffer += decoder.decode(value, { stream: true });
-                var parts = buffer.split('\n\n');
-                buffer = parts.pop();
-                for (var i = 0; i < parts.length; i++) {
-                    var frame = parts[i];
-                    if (frame.indexOf('data:') !== 0) continue;
-                    var jsonStr = frame.slice(5).trim();
-                    if (!jsonStr) continue;
-                    var evt; try { evt = JSON.parse(jsonStr); } catch (e) { continue; }
-                    handleEvent(evt, asst);
-                }
-            }
-            asst.finalize();
-        } catch (e) {
-            showError('网络错误：' + e.message);
-        } finally {
-            sending = false;
-            setSending(false);
-        }
-    }
-
-    function handleEvent(evt, asst) {
-        switch (evt.event) {
-            case 'thread': threadId = evt.thread_id; break;
-            case 'token': asst.appendToken(evt.text); break;
-            case 'tool_start': asst.addTool(evt.name, 'running'); break;
-            case 'tool_end': asst.markToolDone(evt.name); break;
-            case 'file': asst.addFile(evt.name, evt.url, evt.size); break;
-            case 'error': showError(evt.message); break;
-            case 'done': break;
-        }
-    }
-
-    function setSending(v) {
-        var btn = el('aiChatSend'); if (!btn) return;
-        btn.disabled = v; btn.textContent = v ? '…' : '发送';
-    }
-
-    function mount() {
-        console.log('[AIChat] mount() start');
-        // Launcher button
-        var btn = document.createElement('button');
-        btn.id = 'aiChatLauncher';
-        btn.className = 'ai-launcher-btn';
-        btn.title = 'AI 数据助手';
-        // Chat-bubble icon (clear, friendly, universally understood).
-        btn.innerHTML = window.uiIcon('ai');
-        btn.onclick = toggle;
-        var controlsMedia = window.matchMedia('(max-width:768px)');
-        function placeLauncher() {
-            var mobileControls = document.getElementById('mobileBtnCluster');
-            var parent = mobileControls && controlsMedia.matches ? mobileControls : document.body;
-            if (btn.parentElement !== parent) parent.appendChild(btn);
-        }
-        placeLauncher();
-        if (controlsMedia.addEventListener) controlsMedia.addEventListener('change', placeLauncher);
-        else controlsMedia.addListener(placeLauncher);
-        console.log('[AIChat] launcher appended, total body children:', document.body.children.length);
-
-        // Chat panel — positioning/size controlled by .ai-chat-panel CSS so media
-        // queries can adapt it (desktop: floating card; mobile: near-fullscreen).
-        var panel = document.createElement('div');
-        panel.id = 'aiChatPanel';
-        panel.className = 'ai-chat-panel';
-        panel.style.cssText = 'background:#fff;border-radius:16px;box-shadow:0 8px 32px rgba(0,0,0,0.2);' +
-                              'overflow:hidden;z-index:2001;display:none;';
-        panel.innerHTML =
-            '<div class="ai-chat-header">' +
-              '<div style="font-weight:600;font-size:1em;">' + window.uiIcon('ai') + ' AI 数据助手</div>' +
-              '<div style="display:flex;align-items:center;gap:4px;">' +
-                '<button id="aiChatNew" title="新建对话" style="background:none;border:none;color:#fff;font-size:0.82em;cursor:pointer;line-height:1;opacity:0.85;padding:4px 8px;border-radius:6px;">' + window.uiIcon('plus') + ' 新对话</button>' +
-                '<button id="aiChatClose" title="关闭" style="background:none;border:none;color:#fff;font-size:1.3em;cursor:pointer;line-height:1;">' + window.uiIcon('close') + '</button>' +
-              '</div>' +
-            '</div>' +
-            '<div id="aiChatMessages" class="ai-chat-messages"></div>' +
-            '<div class="ai-chat-input-row">' +
-              '<textarea id="aiChatInput" placeholder="Shift+Enter 发送" rows="1"></textarea>' +
-              '<button id="aiChatSend">发送</button>' +
-            '</div>';
-        document.body.appendChild(panel);
-
-        el('aiChatClose').onclick = toggle;
-        el('aiChatSend').onclick = send;
-        el('aiChatNew').onclick = newConversation;
-        var input = el('aiChatInput');
-        input.addEventListener('keydown', function (e) {
-            // Shift+Enter sends; Enter alone inserts a newline.
-            if (e.key === 'Enter' && e.shiftKey) { e.preventDefault(); send(); }
+    function toggle() { setOpen(!panelOpen); }
+    function welcome() {
+        const box = byId('aiChatMessages'); box.replaceChildren();
+        const empty = node('div','ai-welcome'); empty.id = 'aiChatWelcome';
+        const art = node('div','ai-welcome-icon'); art.innerHTML = icon('ai');
+        empty.append(art, node('h3','', '有什么可以帮你？'), node('p','', '查询灌溉数据，梳理维修记录，生成图表与报表。'));
+        const prompts = node('div','ai-prompts');
+        ['汇总本周的维修记录','查看最近的灌溉与用水情况','分析 PM 待办并生成报表'].forEach(text => {
+            const b = node('button','ai-prompt',text); b.type = 'button';
+            b.onclick = () => { byId('aiChatInput').value = text; resizeInput(); byId('aiChatInput').focus(); }; prompts.append(b);
         });
-
-        // Welcome message
-        addMsg('assistant', '<div class="ai-bubble">你好！我是 AI 数据助手，需要什么帮助吗？</div>');
+        empty.append(prompts); box.append(empty);
     }
-
-    // Only mount the launcher if the backend says the AI assistant is available
-    // for the current user (feature enabled in admin + manager/super_admin role).
-    function mountIfAvailable() {
-        fetch('/api/ai/status', { credentials: 'same-origin' })
-            .then(function (r) { return r.json(); })
-            .then(function (data) {
-                if (data && data.available) {
-                    mount();
-                    console.log('[AIChat] available, launcher mounted');
-                } else {
-                    console.log('[AIChat] not available for this user/disabled');
+    async function copyText(text, button) {
+        try {
+            await navigator.clipboard.writeText(text);
+            const originalLabel = button.getAttribute('aria-label');
+            const original = [...button.childNodes]; button.replaceChildren();
+            if (button.classList.contains('ai-code-copy')) button.textContent = '已复制'; else button.innerHTML = icon('check');
+            button.setAttribute('aria-label','已复制'); say('已复制');
+            setTimeout(() => { if (button.isConnected) { button.replaceChildren(...original); if (originalLabel) button.setAttribute('aria-label',originalLabel); else button.removeAttribute('aria-label'); } },1500);
+        }
+        catch (_) { say('复制未成功，请选择文本复制。'); }
+    }
+    function renderMarkdown(target, text, files, final) {
+        if (!window.marked || !window.DOMPurify) { target.textContent = text; target.classList.add('ai-plain'); return; }
+        const fragment = window.DOMPurify.sanitize(window.marked.parse(text, {gfm:true, breaks:false}), {
+            ALLOWED_TAGS:['p','h1','h2','h3','h4','strong','em','del','blockquote','ul','ol','li','a','code','pre','br','hr','table','thead','tbody','tr','th','td','img'],
+            ALLOWED_ATTR:['href','title','alt','src','align','colspan','rowspan'], RETURN_DOM_FRAGMENT:true
+        });
+        fragment.querySelectorAll('a').forEach(link => {
+            const url = core.safeLink(link.getAttribute('href'), window.location.origin);
+            if (!url) { link.removeAttribute('href'); return; }
+            link.href = url.href; link.target = '_blank'; link.rel = 'noopener noreferrer';
+        });
+        fragment.querySelectorAll('img').forEach(image => {
+            const file = core.artifactInfo({url:image.getAttribute('src')}, window.location.origin);
+            if (!file || file.kind !== 'image' || files.some(item => core.artifactInfo(item,window.location.origin)?.url === file.url)) { image.remove(); return; }
+            image.src = file.url; image.loading = 'lazy'; image.decoding = 'async';
+        });
+        fragment.querySelectorAll('table').forEach(table => {
+            const wrap = node('div','ai-table-scroll'); wrap.tabIndex = 0; wrap.setAttribute('role','region'); wrap.setAttribute('aria-label','数据表，可左右滚动');
+            table.replaceWith(wrap); wrap.append(table);
+        });
+        if (final) fragment.querySelectorAll('pre').forEach(pre => {
+            const code = pre.querySelector('code'); if (!code) return;
+            const b = node('button','ai-code-copy','复制'); b.type = 'button'; b.onclick = () => copyText(code.textContent,b); pre.prepend(b);
+        });
+        target.replaceChildren(fragment);
+    }
+    const duration = (start,end) => ((end-start)/1000).toFixed(1) + ' 秒';
+    function responseView(requestText) {
+        byId('aiChatWelcome')?.remove();
+        const box = byId('aiChatMessages');
+        const user = node('article','ai-msg ai-msg-user'); user.append(node('div','ai-user-text',requestText)); box.append(user);
+        const turn = core.createTurn();
+        const article = node('article','ai-msg ai-msg-assistant'); article.setAttribute('aria-label','助手回复');
+        const heading = node('div','ai-turn-head'), avatar = node('span','ai-turn-avatar'); avatar.innerHTML = icon('ai');
+        const status = node('span','ai-turn-status'), copy = node('button','ai-icon-button ai-copy-response');
+        copy.type = 'button'; copy.title = '复制回复'; copy.setAttribute('aria-label','复制回复'); copy.innerHTML = icon('copy'); copy.hidden = true;
+        copy.onclick = () => copyText(turn.text,copy); heading.append(avatar,status,copy);
+        const work = node('details','ai-work'); work.hidden = true;
+        const summary = node('summary','ai-work-summary'), toolList = node('div','ai-tool-list'); work.append(summary,toolList);
+        summary.onclick = () => { work.dataset.keepOpen = String(!work.open); };
+        const content = node('div','ai-answer'), artifacts = node('div','ai-artifacts'), note = node('div','ai-response-note'); note.hidden = true;
+        article.append(heading,work,content,artifacts,note); box.append(article);
+        const rows = new Map(), cards = new Set(); let frame = null, initialTools = true;
+        function renderTools() {
+            if (!turn.tools.length) return;
+            work.hidden = false;
+            if (initialTools) { work.open = true; initialTools = false; }
+            const completed = turn.tools.filter(tool => tool.status === 'done').length;
+            summary.textContent = turn.ended !== null ? '操作记录 · ' + turn.tools.length + ' 项' : '正在处理 · ' + completed + '/' + turn.tools.length + ' 项已完成';
+            turn.tools.forEach(tool => {
+                let row = rows.get(tool.id);
+                if (!row) {
+                    row = node('details','ai-tool'); row.dataset.callId = tool.id;
+                    const line = node('summary','ai-tool-line'); line.append(node('span','ai-tool-state'), node('span','ai-tool-name'), node('span','ai-tool-duration'));
+                    row.append(line,node('pre','ai-tool-detail')); toolList.append(row); rows.set(tool.id,row);
                 }
-            })
-            .catch(function () { console.log('[AIChat] status check failed'); });
+                row.dataset.status = tool.status;
+                row.querySelector('.ai-tool-name').textContent = core.toolLabel(tool.name);
+                row.querySelector('.ai-tool-state').innerHTML = tool.status === 'running' ? '<span class="ai-spin-ring"></span>' : icon(tool.status === 'done' ? 'check' : tool.status === 'error' ? 'alert' : 'minus');
+                row.querySelector('.ai-tool-duration').textContent = tool.ended === null ? '进行中' : (tool.status === 'error' ? '失败 · ' : tool.status === 'interrupted' ? '未收到结果 · ' : '') + duration(tool.started,tool.ended);
+                row.querySelector('.ai-tool-detail').textContent = (Object.keys(tool.args || {}).length ? JSON.stringify(tool.args,null,2) + '\n\n' : '') + (tool.output || '等待返回结果…').slice(0,2400);
+            });
+            if (turn.ended !== null && work.dataset.keepOpen !== 'true') work.open = false;
+        }
+        function renderFiles() {
+            turn.files.forEach(file => {
+                const info = core.artifactInfo(file,window.location.origin); if (!info || cards.has(info.url)) return; cards.add(info.url);
+                const item = node('section','ai-artifact'); item.dataset.kind = info.kind;
+                if (info.kind === 'image') {
+                    const preview = node('a','ai-chart-preview'); preview.href = info.url; preview.target = '_blank'; preview.rel = 'noopener'; preview.setAttribute('aria-label','查看原图：' + info.name);
+                    const image = node('img'); image.src = info.url; image.alt = info.name; image.loading = 'lazy'; image.decoding = 'async';
+                    image.onerror = () => { preview.replaceChildren(node('span','ai-preview-error','预览暂不可用，可下载原文件')); }; preview.append(image); item.append(preview);
+                }
+                const link = node('a','ai-file-card'); link.href = info.url; link.download = info.name;
+                const symbol = node('span','ai-file-symbol'); symbol.innerHTML = icon(info.kind === 'spreadsheet' || info.kind === 'image' ? 'chart' : 'file');
+                const body = node('span','ai-file-info'); body.append(node('strong','ai-file-name',info.name), node('small','ai-file-meta',[info.type,info.size].filter(Boolean).join(' · ')));
+                const download = node('span','ai-file-download'); download.innerHTML = icon('download'); link.append(symbol,body,download); item.append(link); artifacts.append(item);
+            });
+        }
+        function render() {
+            frame = null;
+            if (!panelOpen && turn.ended === null) return;
+            const previousScroll = box.scrollTop;
+            const phases = {preparing:'正在准备回复',thinking:'正在整理结果',writing:'正在回复',tool:'正在使用工具',done:'已完成',error:'回复未完成',stopped:'已停止接收'};
+            const label = phases[turn.phase] || '正在处理'; article.dataset.phase = turn.phase;
+            status.textContent = label + (turn.ended !== null ? ' · ' + duration(turn.started,turn.ended) : ''); say(label); copy.hidden = !turn.text;
+            if (turn.text) renderMarkdown(content,turn.text,turn.files,turn.ended !== null);
+            renderTools(); renderFiles();
+            if (turn.phase === 'error' || turn.phase === 'stopped') {
+                note.hidden = false; note.replaceChildren(node('p','',turn.error || '已停止接收。已启动的后台操作可能仍在完成。'));
+                const edit = node('button','ai-edit-request','重新编辑请求'); edit.type = 'button'; edit.onclick = () => { byId('aiChatInput').value = requestText; resizeInput(); byId('aiChatInput').focus(); }; note.append(edit);
+            }
+            if (follow) scrollLatest(false); else box.scrollTop = previousScroll;
+        }
+        render(); scrollLatest(true);
+        return {turn, refresh:render, event(event) { core.applyEvent(turn,event); if (!frame) frame = requestAnimationFrame(render); },
+            finish(phase,message) { if (frame) cancelAnimationFrame(frame); frame = null; core.finishTurn(turn,phase,message); render(); }};
     }
-
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', mountIfAvailable);
-    } else {
-        mountIfAvailable();
+    function resizeInput() {
+        const input = byId('aiChatInput'); if (!input) return;
+        input.style.height = 'auto'; input.style.height = Math.min(input.scrollHeight + 2,144) + 'px';
+        const latest = byId('aiChatLatest'), composer = document.querySelector('#aiChatPanel .ai-composer');
+        if (latest && composer) latest.style.bottom = (composer.offsetHeight + 12) + 'px';
+        const button = byId('aiChatSend'); if (button) button.disabled = !activeRun && !input.value.trim();
     }
-
-    window.AIChat = { open: open, toggle: toggle };
+    function sendingState() {
+        const button = byId('aiChatSend'); if (!button) return;
+        button.innerHTML = icon(activeRun ? 'stop' : 'send'); button.title = activeRun ? '停止接收回复' : '发送'; button.setAttribute('aria-label',button.title); button.dataset.sending = String(!!activeRun); resizeInput();
+    }
+    function stop() { if (activeRun) { activeRun.controller.abort(); activeRun.view.finish('stopped'); } }
+    function resetFollow() { follow = true; byId('aiChatLatest').hidden = true; }
+    function newConversation() { stop(); sequence++; activeRun = null; threadId = null; sendingState(); welcome(); resetFollow(); say('已开启新对话'); }
+    async function send() {
+        const input = byId('aiChatInput'); if (!input || activeRun) return;
+        const text = input.value.trim(); if (!text) return; input.value = ''; resetFollow();
+        const run = {id:++sequence, controller:new AbortController(), view:responseView(text)}; activeRun = run; sendingState(); let completed = false;
+        try {
+            const response = await fetch('/api/ai/chat',{method:'POST',credentials:'same-origin',signal:run.controller.signal,headers:{'Content-Type':'application/json','X-CSRFToken':getCSRF()},body:JSON.stringify({message:text,thread_id:threadId})});
+            if (!response.ok) {
+                let message = '请求失败 (HTTP ' + response.status + ')'; try { const data = await response.json(); if (data.error) message = String(data.error); } catch (_) {} throw new Error(message);
+            }
+            if (!response.body || !response.headers.get('Content-Type')?.includes('text/event-stream')) throw new Error('未收到有效回复，请检查登录状态后重试。');
+            const reader = response.body.getReader(), decoder = new TextDecoder();
+            const parser = core.createParser(event => {
+                if (sequence !== run.id || run.controller.signal.aborted) return;
+                if (event.event === 'thread') { if (/^u\d+-[0-9a-f]{8,32}$/.test(event.thread_id || '')) threadId = event.thread_id; return; }
+                if (event.event === 'done') completed = true; run.view.event(event);
+            });
+            while (true) {
+                const chunk = await reader.read();
+                if (sequence !== run.id || run.controller.signal.aborted) { await reader.cancel(); break; }
+                if (chunk.done) { parser.finish(decoder.decode()); break; }
+                parser.push(decoder.decode(chunk.value,{stream:true}));
+            }
+            if (!run.controller.signal.aborted && sequence === run.id) run.view.finish(completed ? 'done' : 'error', completed ? '' : '连接已结束，回复可能尚未完成。');
+        } catch (error) {
+            if (sequence === run.id && !run.controller.signal.aborted) { run.view.finish('error',error.message || '网络连接中断，请检查后重试。'); run.controller.abort(); }
+        } finally { if (activeRun === run) { activeRun = null; sendingState(); } }
+    }
+    function mount(preview) {
+        if (byId('aiChatPanel')) return;
+        const launcher = node('button','ai-launcher-btn'); launcher.id = 'aiChatLauncher'; launcher.type = 'button'; launcher.title = 'AI 数据助手'; launcher.setAttribute('aria-label','打开 AI 数据助手'); launcher.setAttribute('aria-controls','aiChatPanel'); launcher.setAttribute('aria-expanded','false'); launcher.innerHTML = icon('ai'); launcher.onclick = toggle;
+        const media = window.matchMedia('(max-width:768px)');
+        function placeLauncher() {
+            const controls = byId('mobileBtnCluster'); const parent = controls && media.matches ? controls : document.body; if (launcher.parentElement !== parent) parent.append(launcher);
+            if (panelOpen) { byId('aiChatBackdrop').hidden = !modalMode(); byId('aiChatPanel').setAttribute('aria-modal',String(modalMode())); document.body.classList.toggle('ai-chat-modal-open',modalMode()); }
+        }
+        const backdrop = node('div','ai-chat-backdrop'); backdrop.id = 'aiChatBackdrop'; backdrop.hidden = true; backdrop.onclick = () => setOpen(false);
+        const panel = node('section','ai-chat-panel'); panel.id = 'aiChatPanel'; panel.hidden = true; panel.setAttribute('role','dialog'); panel.setAttribute('aria-labelledby','aiChatTitle'); panel.setAttribute('aria-modal','false');
+        panel.innerHTML = '<header class="ai-chat-header"><div class="ai-chat-heading"><span class="ai-header-icon">' + icon('ai') + '</span><div><h2 id="aiChatTitle">AI 数据助手</h2><p>灌溉 · 运维 · 数据分析</p></div></div><div class="ai-header-actions"><button type="button" id="aiChatNew" class="ai-icon-button" title="新建对话" aria-label="新建对话">' + icon('plus') + '</button><button type="button" id="aiChatExpand" class="ai-icon-button" title="展开对话" aria-label="展开对话">' + icon('expand') + '</button><button type="button" id="aiChatClose" class="ai-icon-button" title="关闭" aria-label="关闭 AI 数据助手">' + icon('close') + '</button></div></header><div id="aiChatLive" class="pwa-sr-only" aria-live="polite" aria-atomic="true"></div><div id="aiChatMessages" class="ai-chat-messages" role="log" aria-live="off" aria-label="对话内容"></div><button type="button" id="aiChatLatest" class="ai-latest" hidden>' + icon('chevron-down') + ' 回到最新</button><div class="ai-composer"><label class="pwa-sr-only" for="aiChatInput">发送给 AI 数据助手</label><div class="ai-composer-box"><textarea id="aiChatInput" placeholder="描述你要分析的问题…" rows="1"></textarea><button type="button" id="aiChatSend" aria-label="发送" disabled>' + icon('send') + '</button></div><p class="ai-composer-hint">Enter 发送 · Shift+Enter 换行</p></div>';
+        document.body.append(backdrop,panel); placeLauncher(); if (media.addEventListener) media.addEventListener('change',placeLauncher); else media.addListener(placeLauncher);
+        if (preview) byId('aiChatTitle').append(node('span','ai-preview-badge','演示'));
+        function fitViewport() {
+            const viewport = window.visualViewport;
+            if (!viewport || viewport.scale !== 1) return;
+            panel.style.setProperty('--ai-viewport-height', viewport.height + 'px');
+            panel.style.setProperty('--ai-viewport-top', viewport.offsetTop + 'px');
+        }
+        fitViewport();
+        window.visualViewport?.addEventListener('resize',fitViewport,{passive:true});
+        window.visualViewport?.addEventListener('scroll',fitViewport,{passive:true});
+        byId('aiChatClose').onclick = () => setOpen(false); byId('aiChatNew').onclick = newConversation;
+        byId('aiChatExpand').onclick = () => { expanded = !expanded; panel.classList.toggle('is-expanded',expanded); byId('aiChatExpand').innerHTML = icon(expanded ? 'collapse' : 'expand'); byId('aiChatExpand').setAttribute('aria-label',expanded ? '收起对话' : '展开对话'); byId('aiChatExpand').title = expanded ? '收起对话' : '展开对话'; placeLauncher(); };
+        byId('aiChatSend').onclick = () => activeRun ? stop() : send();
+        const input = byId('aiChatInput'); input.addEventListener('input',resizeInput);
+        input.addEventListener('keydown',event => { if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) { event.preventDefault(); send(); } });
+        const box = byId('aiChatMessages'); box.addEventListener('scroll',() => { follow = box.scrollHeight-box.scrollTop-box.clientHeight < 80; byId('aiChatLatest').hidden = follow; },{passive:true});
+        byId('aiChatLatest').onclick = () => { follow = true; scrollLatest(true); byId('aiChatLatest').hidden = true; };
+        panel.addEventListener('keydown',event => {
+            if (event.key === 'Escape') { event.preventDefault(); setOpen(false); }
+            if (event.key !== 'Tab' || !modalMode()) return;
+            const focusable = [...panel.querySelectorAll('button,a[href],textarea,summary,[tabindex="0"]')].filter(item => !item.disabled && item.getClientRects().length);
+            const first = focusable[0], last = focusable[focusable.length-1];
+            if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+            else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+        });
+        welcome();
+    }
+    function mountIfAvailable() { fetch('/api/ai/status',{credentials:'same-origin'}).then(response => response.ok ? response.json() : null).then(data => { if (data?.available) mount(data.preview === true); }).catch(() => {}); }
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded',mountIfAvailable); else mountIfAvailable();
+    window.AIChat = {open:() => setOpen(true),toggle};
 })();

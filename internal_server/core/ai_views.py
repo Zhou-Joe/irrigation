@@ -162,18 +162,25 @@ def _events_from_chunk(chunk, seen_tool_calls):
         for tc in chunk.tool_call_chunks:
             name = tc.get('name')
             idx = tc.get('index', 0)
-            if name and idx not in seen_tool_calls:
-                seen_tool_calls[idx] = name
+            call_id = tc.get('id')
+            # Tool indices restart at zero on each model turn. Prefer the
+            # actual call ID so later rounds and parallel same-name tools
+            # remain distinct in the client timeline.
+            message_id = (getattr(chunk, 'id', None), seen_tool_calls.get('_round', 0))
+            key = ('id', call_id) if call_id else ('index', message_id, idx)
+            if name and key not in seen_tool_calls:
+                seen_tool_calls[key] = name
+                seen_tool_calls[('index', message_id, idx)] = name
                 args_str = tc.get('args', '') if isinstance(tc.get('args'), str) else ''
                 try:
                     parsed_args = json.loads(args_str) if args_str else {}
                 except json.JSONDecodeError:
                     parsed_args = {'_raw': args_str}
-                yield ('tool_start', {'name': name, 'args': parsed_args})
-        return
+                yield ('tool_start', {'id': call_id, 'name': name, 'args': parsed_args})
     # Tool results arrive as ToolMessage
     if isinstance(chunk, ToolMessage):
         name = getattr(chunk, 'name', 'tool')
+        call_id = getattr(chunk, 'tool_call_id', None)
         content = getattr(chunk, 'content', '')
         if isinstance(content, list):
             content = json.dumps(content, ensure_ascii=False)
@@ -184,22 +191,26 @@ def _events_from_chunk(chunk, seen_tool_calls):
             parsed = json.loads(content) if isinstance(content, str) else (content or {})
         except (json.JSONDecodeError, TypeError):
             parsed = {}
-        if name == 'run_python_code':
-            for finfo in parsed.get('files', []):
-                yield ('file', {
-                    'name': finfo.get('name', ''),
-                    'url': finfo.get('url', ''),
-                    'size': finfo.get('size', 0),
-                })
-        elif name in ('export_work_reports_excel', 'generate_weekly_report') and parsed.get('file'):
-            finfo = parsed['file']
+        if not isinstance(parsed, dict):
+            parsed = {}
+        generated = parsed.get('files', []) if name == 'run_python_code' else []
+        if not isinstance(generated, list):
+            generated = []
+        if isinstance(parsed.get('file'), dict):
+            generated = [*generated, parsed['file']]
+        for finfo in generated:
+            if not isinstance(finfo, dict):
+                continue
             yield ('file', {
                 'name': finfo.get('name', ''),
                 'url': finfo.get('url', ''),
                 'size': finfo.get('size', 0),
             })
         out_preview = str(content)[:800]
-        yield ('tool_end', {'name': name, 'output': out_preview})
+        failed = (getattr(chunk, 'status', None) == 'error' or bool(parsed.get('error'))
+                  or parsed.get('success') is False or parsed.get('exit_code', 0) not in (0, None))
+        yield ('tool_end', {'id': call_id, 'name': name, 'status': 'error' if failed else 'done', 'output': out_preview})
+        seen_tool_calls['_round'] = seen_tool_calls.get('_round', 0) + 1
         return
     # Regular AI text tokens (streamed as AIMessageChunk; note .type is the
     # class name 'AIMessageChunk', not 'ai', so use isinstance).
