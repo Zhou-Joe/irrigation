@@ -244,6 +244,63 @@ def _populate_workspace_data(ws):
                 pm.zone_names or '', (pm.remark or '')[:200],
             ])
 
+    # Irrigation daily aggregates (近90天) — 灌溉日 × (运行分钟/次数/活跃站点/浇水量)。
+    # 天气×灌溉、周报类跨表分析的主表；灌溉日 = 前日22:00→当日21:59（跨夜归次日）。
+    from core.irrig_time import irrigation_day_bounds
+    from core.models import MaxicomRuntime, MaxicomFlowDaily, GeneratedWorkOrder
+    f14, t14 = irrigation_day_bounds(since, today)
+
+    def _irr_day(ts):
+        if len(ts) >= 13 and ts[8:] >= '220000':
+            try:
+                return (date(int(ts[:4]), int(ts[4:6]), int(ts[6:8])) + timedelta(days=1)).isoformat()
+            except ValueError:
+                return None
+        return f'{ts[:4]}-{ts[4:6]}-{ts[6:8]}'
+
+    agg = {}
+    for ts, sid, rt in MaxicomRuntime.objects.filter(
+            timestamp__gte=f14, timestamp__lte=t14).values_list('timestamp', 'site_id', 'run_time'):
+        key = _irr_day(ts)
+        if not key:
+            continue
+        a = agg.setdefault(key, {'min': 0, 'runs': 0, 'sites': set(), 'lit': 0})
+        a['min'] += (rt or 0)
+        a['runs'] += 1
+        a['sites'].add(sid)
+    for fd, liters in MaxicomFlowDaily.objects.filter(
+            flow_day__gte=since.strftime('%Y%m%d'), flow_day__lte=today.strftime('%Y%m%d')
+    ).values_list('flow_day', 'liters'):
+        key = f'{fd[:4]}-{fd[4:6]}-{fd[6:8]}'
+        agg.setdefault(key, {'min': 0, 'runs': 0, 'sites': set(), 'lit': 0})
+        agg[key]['lit'] += (liters or 0)
+    with open(os.path.join(ws, 'irrigation_daily.csv'), 'w', newline='', encoding='utf-8-sig') as f:
+        w = csv.writer(f)
+        w.writerow(['日期', '运行分钟', '运行次数', '活跃站点数', '浇水量升'])
+        for k in sorted(agg):
+            a = agg[k]
+            w.writerow([k, a['min'], a['runs'], len(a['sites']), a['lit']])
+
+    # PM 派发工单 (近90天计划日) — PM 执行率/逾期分析。
+    with open(os.path.join(ws, 'pm_orders.csv'), 'w', newline='', encoding='utf-8-sig') as f:
+        w = csv.writer(f)
+        w.writerow(['计划日', '截止日', 'PM编号', '作业计划', '资产粒度', '班组', '指派工人', '状态'])
+        status_map = dict(GeneratedWorkOrder.STATUS_CHOICES)
+        gwo_qs = (GeneratedWorkOrder.objects
+                  .filter(scheduled_date__gte=since)
+                  .select_related('plan__job_plan', 'crew', 'worker')
+                  .order_by('scheduled_date'))
+        for g in gwo_qs:
+            w.writerow([
+                g.scheduled_date.isoformat(),
+                g.deadline.isoformat() if g.deadline else '',
+                g.plan.pm_number, g.plan.job_plan.name,
+                g.plan.job_plan.get_asset_level_display(),
+                str(g.crew) if g.crew_id else '',
+                g.worker.full_name if g.worker_id else '',
+                status_map.get(g.status, g.status),
+            ])
+
 
 
 # ── Tool implementations (call ORM directly) ──────────────────────────────
@@ -719,6 +776,565 @@ def query_irrigation_overview() -> str:
     }, ensure_ascii=False)
 
 
+# ── Unified query tools (v2 扩展域) ────────────────────────────────────────
+#
+# 统一设计原则（新增/修改工具都遵守）：
+#   1. 命名 query_<域>，参数一律 (过滤词..., start_date="", end_date="", limit=N)。
+#   2. 高频流水域默认查最近 7~30 天；台账/名册/参考数据默认全量，limit 封顶。
+#   3. 时间语义：业务表按自然日；Maxicom 运行/浇水量按灌溉日窗口(前日22:00→当日21:59)，
+#      MaxicomFlowDaily.flow_day 是 YYYYMMDD 字符串。
+#   4. 返回统一为 json.dumps(中文键, ensure_ascii=False)，并带 总数/returned/date_range，
+#      优先返回聚合而非明细流水；明细必须 limit 封顶。
+#   5. 只走 ORM，select_related/prefetch，聚合用 values().annotate()。
+#   6. docstring 用中文写清"覆盖什么、什么时候选它"，Args 段逐参数说明。
+
+
+@tool
+def query_irrigation_runtime(start_date: str = "", end_date: str = "", limit: int = 20) -> str:
+    """查询 Maxicom 灌溉运行时长（按灌溉日窗口 D-1 22:00→D 21:59 聚合，跨夜灌溉归次日）。
+
+    返回逐日总运行分钟/运行次数/活跃站点数，以及区间内按 CCU(站点组)的运行分钟分布。
+    用于"每天浇了多少分钟/哪些 CCU 跑得最多/本周 vs 上周"。
+    数据由 Maxicom 导入，最晚约滞后 1 天。CCU/SAT/站点编号体系见 query_geo_assets。
+
+    Args:
+        start_date: 起始灌溉日 YYYY-MM-DD，留空默认最近7天
+        end_date: 结束灌溉日 YYYY-MM-DD，留空默认今天
+        limit: 按站点组分布最多返回条数，默认20
+    """
+    from core.irrig_time import irrigation_day_bounds
+    from core.models import MaxicomRuntime
+
+    today = date.today()
+    end = _parse_date(end_date) or today
+    start = _parse_date(start_date) or (end - timedelta(days=7))
+    f, t = irrigation_day_bounds(start, end)
+    day_min, day_runs, day_sites, site_min = {}, {}, {}, {}
+    for ts, site_id, rt in MaxicomRuntime.objects.filter(
+            timestamp__gte=f, timestamp__lte=t).values_list('timestamp', 'site_id', 'run_time'):
+        # 22:00 起的记录归次日灌溉日
+        if len(ts) >= 13 and ts[8:] >= '220000':
+            try:
+                key = (date(int(ts[:4]), int(ts[4:6]), int(ts[6:8])) + timedelta(days=1)).isoformat()
+            except ValueError:
+                continue
+        else:
+            key = f'{ts[:4]}-{ts[4:6]}-{ts[6:8]}'
+        day_min[key] = day_min.get(key, 0) + (rt or 0)
+        day_runs[key] = day_runs.get(key, 0) + 1
+        day_sites.setdefault(key, set()).add(site_id)
+        if site_id is not None:
+            site_min[site_id] = site_min.get(site_id, 0) + (rt or 0)
+    days = [{'灌溉日': k, '运行分钟': day_min[k], '运行次数': day_runs[k],
+             '活跃站点数': len(day_sites[k])} for k in sorted(day_min)]
+    site_names = {p.id: f'{p.code} {p.name}' for p in Patch.objects.filter(id__in=site_min)}
+    by_site = sorted(
+        ({'站点组': site_names.get(sid, str(sid)), '运行分钟': v} for sid, v in site_min.items()),
+        key=lambda x: -x['运行分钟'])[:limit]
+    return json.dumps({
+        'date_range': [start.isoformat(), end.isoformat()],
+        '总运行分钟': sum(day_min.values()),
+        '总运行次数': sum(day_runs.values()),
+        '逐日汇总': days,
+        '按站点组分布': by_site,
+    }, ensure_ascii=False)
+
+
+@tool
+def query_flow_daily(start_date: str = "", end_date: str = "", limit: int = 15) -> str:
+    """查询 Maxicom 每日浇水量（升）——流量计按灌溉日聚合的读数（XA_FLOZO）。
+
+    返回逐日总浇水量（升/立方米）与按流量区域的分布。与 query_irrigation_runtime 的
+    运行时长互补（时长大≠水量大，无流量计的站点不在此表）。导入约滞后 1-2 天，
+    最近一两天可能偏小或缺数。
+
+    Args:
+        start_date: 起始灌溉日 YYYY-MM-DD，留空默认最近7天
+        end_date: 结束灌溉日 YYYY-MM-DD，留空默认今天
+        limit: 按流量区域分布最多返回条数，默认15
+    """
+    from core.models import MaxicomFlowDaily, MaxicomFlowZone
+
+    today = date.today()
+    end = _parse_date(end_date) or today
+    start = _parse_date(start_date) or (end - timedelta(days=7))
+    qs = MaxicomFlowDaily.objects.filter(
+        flow_day__gte=start.strftime('%Y%m%d'), flow_day__lte=end.strftime('%Y%m%d'))
+    day_lit, zone_lit = {}, {}
+    for fd, zid, liters in qs.values_list('flow_day', 'zone_id', 'liters'):
+        day = f'{fd[:4]}-{fd[4:6]}-{fd[6:8]}'
+        day_lit[day] = day_lit.get(day, 0) + (liters or 0)
+        zone_lit[zid] = zone_lit.get(zid, 0) + (liters or 0)
+    zones = MaxicomFlowZone.objects.select_related('site').in_bulk(zone_lit)
+    by_zone = sorted(
+        ({'流量区域': str(zones[zid]) if zid in zones else f'zone#{zid}',
+          '浇水量升': v} for zid, v in zone_lit.items()),
+        key=lambda x: -x['浇水量升'])[:limit]
+    days = [{'灌溉日': k, '浇水量升': v, '浇水量立方米': round(v / 1000, 1)}
+            for k, v in sorted(day_lit.items())]
+    return json.dumps({
+        'date_range': [start.isoformat(), end.isoformat()],
+        '总浇水量升': sum(day_lit.values()),
+        '逐日汇总': days,
+        '按流量区域分布': by_zone,
+    }, ensure_ascii=False)
+
+
+@tool
+def query_pm_dispatch(start_date: str = "", end_date: str = "", status: str = "", limit: int = 40) -> str:
+    """查询 PM 预防性维护派发情况（GeneratedWorkOrder）：各状态工单数 + 明细 + 最近派发运行日志。
+
+    状态：pending=待执行 dispatched=已派发 completed=已完成 overdue=逾期 skipped=跳过。
+    默认窗口 [今天-14天, 今天+14天]（兼顾逾期未完成与即将到期）。
+    用于"PM 执行得怎么样/有哪些逾期/这周要做什么 PM"。PM 完成后的工时填报看 pm_workorders.csv。
+
+    Args:
+        start_date: 计划执行日起 YYYY-MM-DD，留空默认今天-14天
+        end_date: 计划执行日止 YYYY-MM-DD，留空默认今天+14天
+        status: 状态过滤 pending/dispatched/completed/overdue/skipped，留空看全部
+        limit: 明细最多返回条数，默认40
+    """
+    from django.db.models import Count
+    from core.models import GeneratedWorkOrder, PMDispatchRun
+
+    today = date.today()
+    end = _parse_date(end_date) or (today + timedelta(days=14))
+    start = _parse_date(start_date) or (today - timedelta(days=14))
+    base = GeneratedWorkOrder.objects.filter(scheduled_date__gte=start, scheduled_date__lte=end)
+    status_map = dict(GeneratedWorkOrder.STATUS_CHOICES)
+    status_dist = {status_map.get(r['status'], r['status']): r['c']
+                   for r in base.values('status').annotate(c=Count('id'))}
+    qs = base.select_related('plan__job_plan', 'crew', 'worker').order_by('-scheduled_date', '-id')
+    if status:
+        qs = qs.filter(status=status)
+    rows = []
+    for g in qs[:limit]:
+        rows.append({
+            '计划日': g.scheduled_date.isoformat(),
+            '截止日': g.deadline.isoformat() if g.deadline else '',
+            'PM编号': g.plan.pm_number,
+            '作业计划': g.plan.job_plan.name,
+            '资产粒度': g.plan.job_plan.get_asset_level_display(),
+            '班组': str(g.crew) if g.crew_id else '',
+            '指派工人': g.worker.full_name if g.worker_id else '',
+            '状态': status_map.get(g.status, g.status),
+        })
+    runs = [{'运行日期': r.run_date.isoformat(), '摘要': r.summary}
+            for r in PMDispatchRun.objects.all()[:5]]
+    return json.dumps({
+        'date_range': [start.isoformat(), end.isoformat()],
+        '按状态分布': status_dist,
+        'returned': len(rows),
+        'records': rows,
+        '最近派发运行': runs,
+    }, ensure_ascii=False)
+
+
+@tool
+def query_pm_plans(q: str = "", include_inactive: bool = False, limit: int = 40) -> str:
+    """查询 PM 维护计划（MaintenancePlan）：PM编号、作业计划、资产粒度、频率、负责班组、关联资产。
+
+    用于"有哪些 PM 计划/某计划多久做一次/哪个班组负责哪些 PM"。派发出来的具体工单看 query_pm_dispatch。
+
+    Args:
+        q: PM编号/作业计划名模糊匹配，留空返回全部
+        include_inactive: True 含停用计划，False(默认)只看启用中
+        limit: 最多返回条数，默认40
+    """
+    from django.db.models import Q as _Q
+    from core.models import MaintenancePlan
+
+    qs = MaintenancePlan.objects.select_related('job_plan', 'crew', 'patch', 'satellite')
+    if q:
+        qs = qs.filter(_Q(pm_number__icontains=q) | _Q(job_plan__name__icontains=q))
+    if not include_inactive:
+        qs = qs.filter(active=True)
+    plans = list(qs.order_by('pm_number')[:limit])
+    rows = []
+    for p in plans:
+        asset = ''
+        if p.job_plan.asset_level == 'ccu':
+            asset = f'CCU {p.patch}' if p.patch_id else ''
+        elif p.job_plan.asset_level == 'sat':
+            asset = f'SAT {p.satellite}' if p.satellite_id else ''
+        else:
+            asset = f'{p.zones.count()} 个Zone'
+        rows.append({
+            'PM编号': p.pm_number,
+            '作业计划': p.job_plan.name,
+            '资产粒度': p.job_plan.get_asset_level_display(),
+            '关联资产': asset,
+            '频率': f'每{p.frequency_value}{p.get_frequency_unit_display()}',
+            '负责班组': str(p.crew) if p.crew_id else '未指定',
+            '基准日期': p.start_date.isoformat(),
+            '上次生成': p.last_generated_date.isoformat() if p.last_generated_date else '',
+            '启用': p.active,
+        })
+    return json.dumps({
+        '计划总数': MaintenancePlan.objects.filter(active=True).count(),
+        'returned': len(rows),
+        'records': rows,
+    }, ensure_ascii=False)
+
+
+@tool
+def query_inventory(q: str = "", low_stock_only: bool = False, limit: int = 30) -> str:
+    """查询库存物料与库存量（InventoryCategory 部件层）：编码/名称/单位/现有库存/最小库存/主材/当前单价。
+
+    low_stock_only=True 只看库存不足（现有<最小且最小>0）的物料，用于库存预警。
+
+    Args:
+        q: 物料编码/中文名模糊匹配，留空返回全部（量大请配合 low_stock_only 或 q）
+        low_stock_only: True 只看库存不足的物料
+        limit: 最多返回条数，默认30
+    """
+    from django.db.models import F, Q as _Q
+    from core.inventory_tree_views import current_price_for
+    from core.models import InventoryCategory
+
+    qs = InventoryCategory.objects.filter(node_type='part', active=True)
+    if q:
+        qs = qs.filter(_Q(code__icontains=q) | _Q(name_zh__icontains=q))
+    if low_stock_only:
+        qs = qs.filter(min_stock__gt=0, current_stock__lt=F('min_stock'))
+    parts = list(qs.order_by('code')[:limit])
+    rows = []
+    for c in parts:
+        price = current_price_for(c)
+        rows.append({
+            '编码': c.code,
+            '名称': c.name_zh,
+            '单位': c.unit,
+            '现有库存': c.current_stock,
+            '最小库存': c.min_stock,
+            '库存不足': c.min_stock > 0 and c.current_stock < c.min_stock,
+            '主材': c.is_main_material,
+            '当前单价': float(price.unit_price) if price and price.unit_price else None,
+        })
+    low_total = InventoryCategory.objects.filter(
+        node_type='part', active=True, min_stock__gt=0, current_stock__lt=F('min_stock')).count()
+    return json.dumps({
+        '部件总数': InventoryCategory.objects.filter(node_type='part', active=True).count(),
+        '库存不足总数': low_total,
+        'returned': len(rows),
+        'records': rows,
+    }, ensure_ascii=False)
+
+
+@tool
+def query_inventory_transactions(
+    start_date: str = "", end_date: str = "",
+    operation: str = "", confirm_status: str = "", limit: int = 30,
+) -> str:
+    """查询库存出入库流水（InventoryTransaction）：日期/操作/来源去向/关联项目或订单/确认状态/物料行数与数量。
+
+    operation: 入库/出库；confirm_status: pending=待确认 confirmed=已确认 removed=已移除。
+    库存只在 confirmed 后才增减——pending 流水不影响库存数字。
+
+    Args:
+        start_date: 起始日期 YYYY-MM-DD，留空默认最近30天
+        end_date: 结束日期 YYYY-MM-DD，留空默认今天
+        operation: 入库/出库，留空看全部
+        confirm_status: pending/confirmed/removed，留空看全部
+        limit: 最多返回条数，默认30
+    """
+    from django.db.models import Count, Sum
+    from core.models import InventoryTransaction
+
+    today = date.today()
+    end = _parse_date(end_date) or today
+    start = _parse_date(start_date) or (end - timedelta(days=30))
+    qs = InventoryTransaction.objects.filter(date__gte=start, date__lte=end)
+    if operation:
+        qs = qs.filter(operation=operation)
+    if confirm_status:
+        qs = qs.filter(confirm_status=confirm_status)
+    base = InventoryTransaction.objects.filter(date__gte=start, date__lte=end)
+    op_dist = {r['operation'] or '未指定': r['c'] for r in base.values('operation').annotate(c=Count('id'))}
+    conf_map = dict(InventoryTransaction.CONFIRM_STATUS_CHOICES)
+    conf_dist = {conf_map.get(r['confirm_status'], r['confirm_status'] or '未指定'): r['c']
+                 for r in base.values('confirm_status').annotate(c=Count('id'))}
+    rows = []
+    for t in (qs.select_related('worker', 'related_project', 'purchase_order')
+              .annotate(n_lines=Count('lines'), qty=Sum('lines__quantity'))
+              .order_by('-date', '-id')[:limit]):
+        rows.append({
+            '日期': t.date.isoformat(),
+            '操作': t.operation,
+            '来源/去向': t.entry_subtype or '',
+            '提交人': str(t.worker) if t.worker_id else '',
+            '关联项目': str(t.related_project) if t.related_project_id else '',
+            '采购订单': t.purchase_order.order_number if t.purchase_order_id else (t.order_no or ''),
+            '确认状态': t.get_confirm_status_display(),
+            '消耗类型': t.get_consumption_mode_display(),
+            '物料行数': t.n_lines,
+            '总数量': t.qty or 0,
+        })
+    return json.dumps({
+        'date_range': [start.isoformat(), end.isoformat()],
+        '流水总数': base.count(),
+        '按操作分布': op_dist,
+        '按确认状态分布': conf_dist,
+        'returned': len(rows),
+        'records': rows,
+    }, ensure_ascii=False)
+
+
+@tool
+def query_purchase_orders(q: str = "", include_completed: bool = True, limit: int = 20) -> str:
+    """查询采购订单（PurchaseOrder）：订单号/PO号/项目/收货日期/完成状态/计划采购物料与数量/已入库数量。
+
+    已入库数量 = 该订单关联的、台账已确认的入库流水汇总。用于"采购到货情况/订单完成没"。
+
+    Args:
+        q: 订单号/PO号/项目名模糊匹配，留空返回全部
+        include_completed: True=含已完成，False=只看进行中
+        limit: 最多返回条数，默认20
+    """
+    from django.db.models import Q as _Q, Sum
+    from core.models import PurchaseOrder, InventoryTransactionLine
+
+    qs = PurchaseOrder.objects.all()
+    if q:
+        qs = qs.filter(_Q(order_number__icontains=q) | _Q(po_number__icontains=q)
+                       | _Q(project_name__icontains=q))
+    if not include_completed:
+        qs = qs.filter(is_completed=False)
+    pos = list(qs.order_by('-created_at')[:limit])
+    po_ids = [p.id for p in pos]
+    recv = {}
+    if po_ids:
+        for r in (InventoryTransactionLine.objects
+                  .filter(transaction__purchase_order_id__in=po_ids,
+                          transaction__operation='入库',
+                          transaction__confirm_status='confirmed')
+                  .values('transaction__purchase_order_id')
+                  .annotate(qty=Sum('quantity'))):
+            recv[r['transaction__purchase_order_id']] = r['qty'] or 0
+    rows = []
+    for p in pos:
+        planned_lines = list(p.planned_lines.all())
+        rows.append({
+            '订单号': p.order_number,
+            'PO号': p.po_number or '',
+            '项目': p.project_name or '',
+            '收货日期': p.received_date.isoformat() if p.received_date else '',
+            '已完成': p.is_completed,
+            '计划物料数': len(planned_lines),
+            '计划数量合计': sum(l.quantity for l in planned_lines),
+            '已入库数量': recv.get(p.id, 0),
+        })
+    return json.dumps({
+        '订单总数': PurchaseOrder.objects.count(),
+        '进行中': PurchaseOrder.objects.filter(is_completed=False).count(),
+        'returned': len(rows),
+        'records': rows,
+    }, ensure_ascii=False)
+
+
+@tool
+def query_crews_workers(include_inactive: bool = False) -> str:
+    """查询班组与工人名册（Crew/Worker）：各班组的组长/成员/负责区域(Land)与CCU，以及未编入班组的工人。
+
+    Args:
+        include_inactive: True 含停用班组/工人，False(默认)只看启用中
+    """
+    from core.models import Crew, Worker
+
+    crews = Crew.objects.prefetch_related('members', 'lands', 'patches').select_related('leader')
+    if not include_inactive:
+        crews = crews.filter(active=True)
+    crew_rows = []
+    member_ids = set()
+    for c in crews:
+        members = [w.full_name for w in c.members.all()]
+        member_ids.update(w.id for w in c.members.all())
+        crew_rows.append({
+            '班组': c.name,
+            '组长': c.leader.full_name if c.leader_id else '未指定',
+            '成员': members,
+            '人数': len(members),
+            '负责区域': [str(l) for l in c.lands.all()],
+            '负责CCU': [f'{p.code} {p.name}' for p in c.patches.all()],
+        })
+    workers = Worker.objects.filter(active=True) if not include_inactive else Worker.objects.all()
+    unassigned = [w.full_name for w in workers.exclude(id__in=member_ids)]
+    return json.dumps({
+        '班组总数': len(crew_rows),
+        '班组成员总数': len(member_ids),
+        'crews': crew_rows,
+        '未编组工人': unassigned,
+        '未编组人数': len(unassigned),
+    }, ensure_ascii=False)
+
+
+@tool
+def query_geo_assets(code: str = "") -> str:
+    """查询灌溉地理资产层级（Region/Land/Patch/Satellite/Zone/Pipeline）。
+
+    留空返回总览（各层资产数量、锁定站点数）。传编号查详情：
+    CCU 编号（如 CCU3）→ 其卫星控制器/站点/区域概况；SAT 编号（如 3-2）→ 其区域清单；
+    station-N → 站点参数（控制器通道/锁定/降水率等）。区域(Zone)详情用 query_zones。
+
+    Args:
+        code: CCU/SAT/站点编号，留空返回总览
+    """
+    from core.models import Region, Land, Pipeline, Satellite as _Sat
+
+    if not code:
+        ccu_n = Patch.objects.filter(code__regex=r'^CCU\d+$').count()
+        st_qs = Patch.objects.filter(code__startswith='station-')
+        return json.dumps({
+            '大区数': Region.objects.count(),
+            'Land数': Land.objects.count(),
+            'CCU数': ccu_n,
+            '站点数': st_qs.count(),
+            '锁定站点数': st_qs.filter(lockout=True).count(),
+            'SAT卫星控制器数': _Sat.objects.filter(active=True).count(),
+            '区域Zone数': Zone.objects.count(),
+            '管线数': Pipeline.objects.count(),
+        }, ensure_ascii=False)
+    out = {}
+    p = Patch.objects.filter(code__iexact=code).first()
+    if p:
+        if p.code.startswith('station-'):
+            out['站点'] = {
+                '编号': p.code, '名称': p.name,
+                '所属CCU': str(p.parent) if p.parent_id else '',
+                '控制器编号': p.controller_number, '控制器通道': p.controller_channel,
+                '锁定': p.lockout, '降水率': p.precip_rate, '流量率': p.flow_rate,
+                '循环时间分': p.cycle_time, '浸润时间分': p.soak_time,
+            }
+        else:
+            st = Patch.objects.filter(parent=p)
+            out['CCU'] = {
+                '编号': p.code, '名称': p.name,
+                '站点数': st.count(), '锁定站点数': st.filter(lockout=True).count(),
+                '区域Zone数': Zone.objects.filter(patch=p).count(),
+                '卫星控制器': [f'{s.code} {s.name}'.strip()
+                              for s in _Sat.objects.filter(patch=p, active=True)],
+            }
+    sat = _Sat.objects.filter(code__iexact=code).first()
+    if sat:
+        zones = Zone.objects.filter(code__startswith=sat.code + '-')
+        out['SAT'] = {
+            '编号': sat.code, '名称': sat.name,
+            '所属CCU': str(sat.patch) if sat.patch_id else '',
+            '区域数': zones.count(),
+            '区域示例': [f'{z.code} {z.name}' for z in zones[:15]],
+        }
+    if not out:
+        out = {'提示': '未找到该编号。CCU 形如 CCU3，SAT 形如 3-2，站点形如 station-12；区域用 query_zones 查。'}
+    return json.dumps(out, ensure_ascii=False)
+
+
+@tool
+def generate_weekly_report(start_date: str = "", end_date: str = "", runtime: ToolRuntime = None) -> str:
+    """一键生成标准周报 Word 文档（数字/图表/照片网格/通用分类文案，模板格式）并下载。
+    快速路径；若要把本周特色工作写进周报（编辑式），用 get_weekly_report_material →
+    自行撰写 → build_weekly_report。
+
+    自动完成全流程：一周运维数据(工单/工时/PM/灌溉运行/浇水量/天气) → 3 张图表 →
+    工单照片分组网格(统一裁剪排版) → 克隆模板生成 docx。正文为英文、量化、过去式，
+    与既有周报完全同格式。生成后请向用户转述关键统计与下载链接。
+
+    Args:
+        start_date: 周期起始日 YYYY-MM-DD，留空默认上一个完整周(周一~周日)的周一
+        end_date: 周期结束日 YYYY-MM-DD，留空默认该周周日；只给一个日期时自动取 7 天窗口
+        runtime: LangChain 运行时（自动注入，提供会话工作区）
+    """
+    ctx = (runtime.context if runtime is not None else None) or {}
+    thread_id = ctx.get('thread_id')
+    if not thread_id:
+        return json.dumps({'error': '无法确定会话工作区'}, ensure_ascii=False)
+    ws = ensure_workspace(thread_id)
+
+    start = _parse_date(start_date)
+    end = _parse_date(end_date)
+    if start is None and end is None:
+        from core.weekly_report import last_full_week
+        start, end = last_full_week(date.today())
+    elif end is None:
+        end = start + timedelta(days=6)
+    elif start is None:
+        start = end - timedelta(days=6)
+
+    from core.weekly_report import build_weekly_report
+    try:
+        result = build_weekly_report(start, end, ws)
+    except Exception as e:  # noqa: BLE001
+        logger.exception('weekly report build failed')
+        return json.dumps({'error': '周报生成失败: %s' % e}, ensure_ascii=False)
+    return json.dumps(result, ensure_ascii=False)
+
+
+@tool
+def get_weekly_report_material(start_date: str = "", end_date: str = "") -> str:
+    """获取周报素材包：本周全部工作明细(中英对照)/工单原文摘录/重点工单/疑难待修/PM完成/
+    项目动态/照片组/逐日统计。用于"编辑式周报"第一步——先审阅素材，再自己决定
+    周报写什么、如何叙事，最后调 build_weekly_report 生成。
+
+    Args:
+        start_date: 起始日 YYYY-MM-DD，留空默认上一个完整周的周一
+        end_date: 结束日 YYYY-MM-DD，留空默认该周周日
+    """
+    start = _parse_date(start_date)
+    end = _parse_date(end_date)
+    if start is None and end is None:
+        from core.weekly_report import last_full_week
+        start, end = last_full_week(date.today())
+    elif end is None:
+        end = start + timedelta(days=6)
+    elif start is None:
+        start = end - timedelta(days=6)
+    from core.weekly_report import material_digest
+    return json.dumps(material_digest(start, end), ensure_ascii=False)
+
+
+@tool
+def build_weekly_report(start_date: str, end_date: str, blocks_json: str,
+                        runtime: ToolRuntime = None) -> str:
+    """用你撰写的 blocks 生成周报 docx（官方模板格式）并提供下载。编辑式周报第三步。
+
+    blocks_json 为 JSON 数组，元素：
+      {"type":"section","text":"章节名"}
+      {"type":"item","lead":"引导句(以': '结尾,渲染为粗体)","text":"正文(英文/过去式/量化)"}
+      {"type":"chart","key":"chart1|chart2|chart3"}   图表数据服务端按周期自动生成
+      {"type":"photos","ids":["nozzle_1","pm_3",...]}  按条目精选照片(id来自素材 photo_pool,数量为3的倍数,紧跟所佐证的条目)
+      {"type":"photos","group":"nozzle|drip|valve|project|inspect|pm"}  整组照片网格(可用组以素材返回为准)
+    页眉日期区间自动生成。无效 block 会被忽略并在 warnings 里说明。
+
+    Args:
+        start_date: 周期起始日 YYYY-MM-DD
+        end_date: 周期结束日 YYYY-MM-DD
+        blocks_json: 你撰写的内容 blocks 的 JSON 数组字符串
+        runtime: LangChain 运行时（自动注入，提供会话工作区）
+    """
+    ctx = (runtime.context if runtime is not None else None) or {}
+    thread_id = ctx.get('thread_id')
+    if not thread_id:
+        return json.dumps({'error': '无法确定会话工作区'}, ensure_ascii=False)
+    try:
+        blocks = json.loads(blocks_json)
+        if not isinstance(blocks, list) or not blocks:
+            raise ValueError('blocks 必须是非空 JSON 数组')
+    except Exception as e:  # noqa: BLE001
+        return json.dumps({'error': 'blocks_json 无效: %s' % e}, ensure_ascii=False)
+
+    start = _parse_date(start_date)
+    end = _parse_date(end_date)
+    if start is None or end is None:
+        return json.dumps({'error': 'start_date/end_date 需为 YYYY-MM-DD'}, ensure_ascii=False)
+
+    from core.weekly_report import build_with_blocks
+    try:
+        result = build_with_blocks(start, end, blocks, ensure_workspace(thread_id))
+    except Exception as e:  # noqa: BLE001
+        logger.exception('weekly report build failed')
+        return json.dumps({'error': '周报生成失败: %s' % e}, ensure_ascii=False)
+    return json.dumps(result, ensure_ascii=False)
+
+
 # ── Helpers ───────────────────────────────────────────────────────────────
 
 
@@ -1082,10 +1698,17 @@ def send_report_email(report_type: str, start_date: str, end_date: str,
 def run_python_code(code: str, description: str = "", runtime: ToolRuntime = None) -> str:
     """运行 Python 代码进行数据分析、计算、并生成报表文件。
 
-    工作目录已预置以下 CSV 数据文件，用 pandas 读取：
-    - work_reports.csv（最近90天维修工单：日期/处理人/位置/班次/章节/工时/待修/内容）
-    - work_entries.csv（最近90天工单明细：日期/章节/节点编码/节点名称/值类型/项目/数量/状态/文本）
+    工作目录已预置以下 CSV 数据文件（除注明外均为最近90天），用 pandas 读取：
+    - work_reports.csv（维修工单：日期/处理人/位置/班次/章节/工时/待修/内容）
+    - work_entries.csv（工单明细：日期/章节/节点编码/节点名称/值类型/项目/数量/状态/文本）
     - zones.csv（全部区域：编号/通用名称/片区/面积/优先级/灌水器类型）
+    - projects.csv（全部项目：预算/费率/日期）
+    - water_requests.csv（浇水协调需求）
+    - weather.csv（Maxicom 气象日志）
+    - project_consumption.csv（出库-项目实际消耗，含单价金额）
+    - pm_workorders.csv（PM 完成工单：工时/班次/区域）
+    - irrigation_daily.csv（逐日灌溉汇总：运行分钟/次数/活跃站点数/浇水量升，灌溉日口径）
+    - pm_orders.csv（PM 派发工单：计划日/截止/PM编号/班组/状态）
 
     用法规则：
     - 用 `import pandas as pd` 然后 `pd.read_csv('work_reports.csv')` 加载数据
@@ -1168,6 +1791,18 @@ ALL_TOOLS = [
     export_work_reports_excel,
     send_report_email,
     run_python_code,
+    query_irrigation_runtime,
+    query_flow_daily,
+    query_pm_dispatch,
+    query_pm_plans,
+    query_inventory,
+    query_inventory_transactions,
+    query_purchase_orders,
+    query_crews_workers,
+    query_geo_assets,
+    generate_weekly_report,
+    get_weekly_report_material,
+    build_weekly_report,
 ]
 
 

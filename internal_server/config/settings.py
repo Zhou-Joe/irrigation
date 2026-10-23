@@ -143,8 +143,11 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 if not DEBUG:
     # Cookie flags were previously forced False here (a bug) — they must be True in
     # production so session/CSRF cookies are only ever sent over HTTPS.
-    SESSION_COOKIE_SECURE = True
-    CSRF_COOKIE_SECURE = True
+    # COOKIE_SECURE=0 allows plain-HTTP LAN access (e.g., WSL IP before the
+    # public HTTPS domain is live). Defaults to 1 (secure) for production.
+    _COOKIE_SECURE = os.environ.get('COOKIE_SECURE', '1') == '1'
+    SESSION_COOKIE_SECURE = _COOKIE_SECURE
+    CSRF_COOKIE_SECURE = _COOKIE_SECURE
     SESSION_COOKIE_HTTPONLY = True
     SESSION_COOKIE_SAMESITE = 'Lax'
     # Ali Cloud nginx terminates TLS and forwards to FRP tunnel over HTTP. It does
@@ -185,7 +188,7 @@ CSRF_TRUSTED_ORIGINS = [
     'https://zctestbench.asia',
     'https://www.zctestbench.asia',
     'https://irrigation.zctestbench.asia',
-]
+] + [o.strip() for o in os.environ.get('CSRF_TRUSTED_ORIGINS_EXTRA', '').split(',') if o.strip()]
 
 # Cloud Relay settings
 CLOUD_RELAY_BASE_URL = os.environ.get('CLOUD_RELAY_BASE_URL', 'https://horticulture-relay.your-domain.workers.dev')
