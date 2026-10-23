@@ -58,7 +58,7 @@ def manifest(request):
         'id': '/app/', 'name': '灌溉管理 · 现场工作台', 'short_name': '灌溉管理',
         'description': '现场工单、PM任务、区域地图、用水需求与库存管理。',
         'lang': 'zh-CN', 'start_url': '/app/', 'scope': '/', 'display': 'standalone',
-        'background_color': '#F5F0E8', 'theme_color': '#1B4332',
+        'background_color': '#F5F7F3', 'theme_color': '#1B4332',
         'categories': ['productivity', 'utilities'],
         'icons': [
             {'src': static('pwa/icon-192.png'), 'sizes': '192x192', 'type': 'image/png', 'purpose': 'any'},

@@ -54,7 +54,7 @@
   </div>
 
   {# ── 认证 ── #}
-  <h2>🔐 认证</h2>
+  <h2><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-lock"/></svg> 认证</h2>
   <p>系统支持两种认证方式：</p>
   <div class="api-card">
     <h3>方式一：Token（外部平台 / AI / 脚本）</h3>
@@ -69,7 +69,7 @@
   <div class="note"><b>权限说明：</b>报表导出 + 只读数据 API 的 token 路径<b>仅限管理员/经理令牌</b>（<code>ManagerProfile</code>）。现场工人/部门用户的令牌调用会返回 <code>403</code>。移动 App 走独立的 REST 资源（见下文），不受此限制。</div>
 
   {# ── 登录换令牌 ── #}
-  <h2>🔑 登录与令牌</h2>
+  <h2><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-key"/></svg> 登录与令牌</h2>
   <div class="api-card">
     <div class="ep"><span class="method POST">POST</span><span class="path">/api/auth/login</span><span class="auth-tag auth-public">公开</span></div>
     <p class="desc">用用户名密码换取 API 令牌。返回 JSON 含 <code>token</code> 及用户角色信息。</p>
@@ -80,7 +80,7 @@
   </div>
 
   {# ── 报表导出 ── #}
-  <h2>📊 报表导出（Excel）</h2>
+  <h2><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-chart"/></svg> 报表导出（Excel）</h2>
   <p>按报表类型 + 日期范围生成 <code>.xlsx</code> 并以附件返回。<b>仅限管理员/经理令牌。</b></p>
   <div class="api-card">
     <div class="ep"><span class="method GET">GET</span><span class="path">/api/report-exports/&lt;report_type&gt;/</span><span class="auth-tag manager">仅管理员/经理</span></div>
@@ -107,7 +107,7 @@
   </div>
 
   {# ── 只读数据 API ── #}
-  <h2>📡 只读数据 API（管理员/经理令牌）</h2>
+  <h2><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-radio"/></svg> 只读数据 API（管理员/经理令牌）</h2>
   <p>下列 API 均需 <code>Authorization: Token &lt;管理员/经理令牌&gt;</code>，返回 JSON。</p>
 
   <div class="api-card">
@@ -161,7 +161,7 @@
   </div>
 
   {# ── REST 资源 ── #}
-  <h2>🗂️ REST 资源（DRF · 移动端 / 任意令牌）</h2>
+  <h2><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-folder"/></svg> REST 资源（DRF · 移动端 / 任意令牌）</h2>
   <p>下列资源走 DRF Router，支持标准 CRUD。所有角色令牌（管理员/经理/工人/部门用户）均可读；写操作受角色权限约束。每个资源提供 list / retrieve / create / update / destroy。</p>
   <table class="rest">
     <tr><th>资源</th><th>URL</th><th>说明</th></tr>
@@ -189,14 +189,14 @@ curl -X POST -H "Authorization: Token &lt;令牌&gt;" \
   "{{ api_base }}/api/work-reports/"</pre>
 
   {# ── 公开 API ── #}
-  <h2>🌦️ 公开 API（无需认证）</h2>
+  <h2><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-cloud"/></svg> 公开 API（无需认证）</h2>
   <div class="api-card">
     <div class="ep"><span class="method GET">GET</span><span class="path">/api/weather</span><span class="auth-tag auth-public">公开</span></div>
     <p class="desc">天气数据（当前小时及前后区间）。参数 <code>?lat=</code> <code>&amp;lon=</code> 可选。</p>
   </div>
 
   {# ── 错误码 ── #}
-  <h2>⚠️ 响应与错误码</h2>
+  <h2><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-alert"/></svg> 响应与错误码</h2>
   <table class="rest">
     <tr><th>状态码</th><th>含义</th></tr>
     <tr><td><code>200</code></td><td>成功（GET / 成功的写操作）</td></tr>

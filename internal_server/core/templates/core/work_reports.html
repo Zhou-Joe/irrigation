@@ -44,7 +44,7 @@
 
   /* Suspected-duplicate group: cards flagged in-dup-group get a left accent;
      the JS wraps each run of same-group cards in a .wr-dup-group with a
-     header (⚠ 疑似重复) + a merge button (admin-only). */
+     header (疑似重复) + a merge button (admin-only). */
   .wr-card.in-dup-group { border-left: 3px solid #f0ad4e; }
   /* In the 维修日志 list, dup cards blend in (no amber accent); the grouping
      lives in the dedicated 疑似重复 tab where the accent is meaningful. */
@@ -437,10 +437,10 @@
     <div class="app-head">
         <div>
             <h1>维修日志</h1>
-            <div class="app-subtitle">默认显示最近 {{ default_days }} 天 · 点击卡片展开详情</div>
+            <div class="app-subtitle" id="wrPageSubtitle" data-report-caption="默认显示最近 {{ default_days }} 天 · 点击卡片展开详情">{% if active_tab == 'pm' %}按计划分类查看任务、计划日期与完成状态{% else %}默认显示最近 {{ default_days }} 天 · 点击卡片展开详情{% endif %}</div>
         </div>
-        <a class="export-btn" href="{% url 'core:work_reports_excel' %}?from={{ filters.date_from|default:'' }}&to={{ filters.date_to|default:'' }}" target="_blank" rel="noopener" title="导出当前日期范围内的工单为 Excel">
-            <i class="fa fa-file-excel-o"></i> 导出 Excel
+        <a class="export-btn" id="wrReportExport" {% if active_tab == 'pm' %}hidden{% endif %} href="{% url 'core:work_reports_excel' %}?from={{ filters.date_from|default:'' }}&to={{ filters.date_to|default:'' }}" target="_blank" rel="noopener" title="导出当前日期范围内的工单为 Excel">
+            <svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-download"/></svg> 导出 Excel
         </a>
     </div>
 
@@ -468,8 +468,8 @@
         {% endif %}
     </div>
 
-    {# ── Filter card: shared across all three tabs (kept visible on tab switch). #}
-    <div class="filter-card">
+    {# Report filters do not apply to the separate PM task queue. #}
+    <div class="filter-card" id="wrReportFilters" {% if active_tab == 'pm' %}hidden{% endif %}>
         {# Date-range presets. The selected one sets date_from accordingly; near-7-days is the default. #}
         <div class="preset-row" id="presetRow">
             <button type="button" class="preset-pill" data-days="today">今天</button>
@@ -602,7 +602,7 @@
                             <span class="wr-flag {{ r.flag_class }}">{{ r.flags }}</span>
                         </div>
                         {# Comment chip — same class/contract as the 维修日志 card so the existing toggleCmt/loadComments/postComment JS works unchanged. data-rid on the .wr-card lets bumpCommentChip find the chip after a post. #}
-                        <button type="button" class="wr-cmt-chip {% if not r.comment_count %}zero{% endif %}" onclick="event.stopPropagation();toggleCmt({{ r.id }}, this)">💬 {{ r.comment_count|default:0 }}</button>
+                        <button type="button" class="wr-cmt-chip {% if not r.comment_count %}zero{% endif %}" onclick="event.stopPropagation();toggleCmt({{ r.id }}, this)"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-message"/></svg> {{ r.comment_count|default:0 }}</button>
                     </div>
                     <div class="wr-meta">
                         {% if r.worker_name and r.worker_name != '—' %}<span><b>{{ r.worker_name }}</b></span>{% endif %}
@@ -660,7 +660,7 @@
     <div id="tabPhotos" class="wr-remarks-panel {% if active_tab == 'photos' %}active{% endif %}">
         <div class="wr-photo-dl-toolbar">
             <button type="button" class="wr-photo-dl-btn" onclick="selectAllPhotoReports(this)">全选工单</button>
-            <button type="button" class="wr-photo-dl-btn primary" onclick="downloadSelectedPhotos()">⬇ 下载选中</button>
+            <button type="button" class="wr-photo-dl-btn primary" onclick="downloadSelectedPhotos()"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-download"/></svg> 下载选中</button>
             <span class="wr-photo-quality" title="缩略图体积小、下载快，适合快速预览汇总；原图清晰但较慢。视频始终打包原文件。">
                 <label><input type="radio" name="dlQuality" value="thumb" checked onchange="updatePhotoDlHint()"> 缩略图(快)</label>
                 <label><input type="radio" name="dlQuality" value="original" onchange="updatePhotoDlHint()"> 原图(慢)</label>
@@ -989,6 +989,12 @@ var remarkGroups = {};
 
 // ── Tab switching (维修日志 / 待确认备注 / 媒体下载) ──────────────────────
 function switchTab(tab) {
+    var reportFilters = document.getElementById('wrReportFilters');
+    if (reportFilters) reportFilters.hidden = tab === 'pm';
+    var reportExport = document.getElementById('wrReportExport');
+    if (reportExport) reportExport.hidden = tab === 'pm';
+    var subtitle = document.getElementById('wrPageSubtitle');
+    if (subtitle) subtitle.textContent = tab === 'pm' ? '按计划分类查看任务、计划日期与完成状态' : subtitle.dataset.reportCaption;
     document.getElementById('tabWorkorders').classList.toggle('active', tab === 'workorders');
     var pm = document.getElementById('tabPm');
     if (pm) pm.classList.toggle('active', tab === 'pm');
@@ -1471,7 +1477,7 @@ function renderPhotoReports() {
         r.photos.forEach(function (p) {
             html += '<label class="wr-photo-cell" title="' + esc(p.path) + '">'
                 + '<input type="checkbox" class="wr-media-sel" value="' + esc(p.path) + '" data-rid="' + r.id + '" onchange="onMediaToggle(' + r.id + ')">'
-                + (p.is_video ? '<span class="wr-vid-mark">▶</span>' : '')
+                + (p.is_video ? '<span class="wr-vid-mark"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-play"/></svg></span>' : '')
                 + '<img loading="lazy" src="/media/' + esc(thumbPath(p.path)) + '" onerror="this.parentElement.style.opacity=0.3">'
                 + '</label>';
         });
@@ -1746,7 +1752,7 @@ function moveRemarkGroup(btnOrKey, target) {
             if (multi) {
                 arrow = document.createElement('span');
                 arrow.style.cssText = 'margin-left:auto;color:#aaa;font-size:0.75rem;';
-                arrow.textContent = '▶';
+                arrow.innerHTML = window.uiIcon('chevron-right');
                 nrow.appendChild(arrow);
             }
             body.appendChild(nrow);
@@ -1774,7 +1780,7 @@ function moveRemarkGroup(btnOrKey, target) {
                     if (e.target === ncb) return;
                     var open = zoneWrap.style.display !== 'none';
                     zoneWrap.style.display = open ? 'none' : 'block';
-                    if (arrow) arrow.textContent = open ? '▶' : '▼';
+                    if (arrow) arrow.innerHTML = window.uiIcon(open ? 'chevron-right' : 'chevron-down');
                 });
             }
         });
@@ -2057,7 +2063,7 @@ function aggregateDupGroups(scope) {
         // Now wrap the contiguous run (they're at the top, in order).
         var head = document.createElement('div');
         head.className = 'wr-dup-head';
-        head.innerHTML = '<span>⚠ 疑似重复工单（' + run.length + ' 条）— 同日同班次同区域同类别，不同处理人</span>'
+        head.innerHTML = '<span><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-alert"/></svg> 疑似重复工单（' + run.length + ' 条）— 同日同班次同区域同类别，不同处理人</span>'
             + (isAdmin ? '<button type="button" class="wr-merge-btn" onclick="openMergeModal(\'' + gk + '\')">合并</button>' : '');
         var wrap = document.createElement('div');
         wrap.className = 'wr-dup-group';
@@ -2159,13 +2165,13 @@ function renderCard(r) {
     if (r.edit_logs && r.edit_logs.length) {
         var last = r.edit_logs[r.edit_logs.length - 1];
         var more = r.edit_logs.length > 1 ? ' (共 ' + r.edit_logs.length + ' 次)' : '';
-        html += '<div class="wr-edit-latest"><span class="wr-edit-icon">✏️</span> 最后修改：<b>' + esc(last.editor) + '</b> 于 ' + esc(last.time) + more + '</div>';
+        html += '<div class="wr-edit-latest"><span class="wr-edit-icon"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-file"/></svg></span> 最后修改：<b>' + esc(last.editor) + '</b> 于 ' + esc(last.time) + more + '</div>';
     }
     // chips
     var chips = '';
     (r.section_labels || []).forEach(function (l) { chips += '<span class="wr-chip">' + esc(l) + '</span>'; });
     if (r.entry_count) chips += '<span class="wr-chip count">' + r.entry_count + '项</span>';
-    chips += '<button type="button" class="wr-cmt-chip ' + (r.comment_count ? '' : 'zero') + '" onclick="event.stopPropagation();toggleCmt(' + r.id + ', this)">💬 ' + (r.comment_count || 0) + '</button>';
+    chips += '<button type="button" class="wr-cmt-chip ' + (r.comment_count ? '' : 'zero') + '" onclick="event.stopPropagation();toggleCmt(' + r.id + ', this)"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-message"/></svg> ' + (r.comment_count || 0) + '</button>';
     if (chips) html += '<div class="wr-chips">' + chips + '</div>';
     // Thumbnail strip in the collapsed summary (no expand needed). Capped at 4 + overflow.
     if (r.photos && r.photos.length) {
@@ -2259,7 +2265,7 @@ function renderCard(r) {
         html += '<div class="wr-dsec"><div class="wr-dlabel">照片</div><div class="wr-photo-grid">';
         r.photos.forEach(function (p) {
             if (isVideoPath(p)) {
-                html += '<div class="wr-photo-wrap" onclick="playInlineVid(this,\'' + p.replace(/'/g, "\\'") + '\')"><img class="wr-photo" src="/media/' + thumbPath(p) + '" data-orig="' + p + '" loading="lazy"><span class="wr-photo-play">▶</span></div>';
+                html += '<div class="wr-photo-wrap" onclick="playInlineVid(this,\'' + p.replace(/'/g, "\\'") + '\')"><img class="wr-photo" src="/media/' + thumbPath(p) + '" data-orig="' + p + '" loading="lazy"><span class="wr-photo-play"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-play"/></svg></span></div>';
             } else {
                 html += '<div class="wr-photo-wrap" onclick="openLbPath(\'' + p.replace(/'/g, "\\'") + '\')"><img class="wr-photo" src="/media/' + thumbPath(p) + '" data-orig="' + p + '" loading="lazy"></div>';
             }
@@ -2341,7 +2347,7 @@ function bumpCommentChip(rid) {
         var chip = card.querySelector('.wr-cmt-chip');
         if (chip) {
             var n = (parseInt((chip.textContent || '').replace(/\D/g, ''), 10) || 0) + 1;
-            chip.textContent = '💬 ' + n;
+            chip.innerHTML = window.uiIcon('message'); chip.appendChild(document.createTextNode(' ' + n));
             chip.classList.remove('zero');
         }
     });

@@ -509,22 +509,7 @@
     </div>
 
     <div class="register-card">
-        <!-- Castle silhouette logo -->
-        <div class="castle-logo">
-            <svg viewBox="0 0 120 100" fill="none">
-                <rect x="35" y="40" width="50" height="60" fill="#1B4332" rx="2"/>
-                <polygon points="60,10 45,40 75,40" fill="#2D6A4F"/>
-                <polygon points="40,25 30,40 50,40" fill="#40916C"/>
-                <polygon points="80,25 70,40 90,40" fill="#40916C"/>
-                <rect x="25" y="20" width="8" height="25" fill="#1B4332"/>
-                <polygon points="29,5 22,20 36,20" fill="#2D6A4F"/>
-                <rect x="87" y="20" width="8" height="25" fill="#1B4332"/>
-                <polygon points="91,5 84,20 98,20" fill="#2D6A4F"/>
-                <rect x="50" y="55" width="20" height="30" fill="#0a1628" rx="10" ry="10"/>
-                <rect x="55" y="15" width="10" height="8" fill="#40916C"/>
-                <circle cx="60" cy="12" r="4" fill="#52B788"/>
-            </svg>
-        </div>
+        <img class="castle-logo" src="{% static 'pwa/brand.svg' %}?v=20261024brand" width="52" height="44" alt="灌溉管理">
 
         <div class="register-header">
             <h1>注册申请</h1>
@@ -536,7 +521,7 @@
             {% for message in messages %}
             <div class="message {{ message.tags }}">
                 {% if message.tags == 'error' %}
-                <span>⚠</span>
+                <span><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-alert"/></svg></span>
                 {% else %}
                 <span>✓</span>
                 {% endif %}
@@ -547,7 +532,7 @@
         {% endif %}
 
         <div class="info-box">
-            <span class="info-icon">💡</span>
+            <span class="info-icon"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-bulb"/></svg></span>
             <span>请设置您的登录用户名和密码。提交后管理员将审核，审批通过即可登录。</span>
         </div>
 
@@ -557,7 +542,7 @@
                 <label for="full_name">姓名 *</label>
                 <div class="input-wrapper">
                     <input type="text" id="full_name" name="full_name" placeholder="请输入您的姓名" required>
-                    <span class="input-icon">👤</span>
+                    <span class="input-icon"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-user"/></svg></span>
                 </div>
             </div>
 
@@ -565,7 +550,7 @@
                 <label for="username">登录用户名 *</label>
                 <div class="input-wrapper">
                     <input type="text" id="username" name="username" placeholder="请输入登录用户名（唯一）" required minlength="3" maxlength="150">
-                    <span class="input-icon">📝</span>
+                    <span class="input-icon"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-edit"/></svg></span>
                 </div>
             </div>
 
@@ -573,7 +558,7 @@
                 <label for="password">登录密码 *</label>
                 <div class="input-wrapper">
                     <input type="password" id="password" name="password" placeholder="请输入登录密码" required minlength="6">
-                    <span class="input-icon">🔒</span>
+                    <span class="input-icon"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-lock"/></svg></span>
                 </div>
             </div>
 
@@ -581,7 +566,7 @@
                 <label for="phone">手机号 *</label>
                 <div class="input-wrapper">
                     <input type="tel" id="phone" name="phone" placeholder="请输入手机号" required>
-                    <span class="input-icon">📱</span>
+                    <span class="input-icon"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-phone"/></svg></span>
                 </div>
             </div>
 
@@ -589,7 +574,7 @@
                 <label for="employee_id">工号</label>
                 <div class="input-wrapper">
                     <input type="text" id="employee_id" name="employee_id" placeholder="选填，不填则自动生成">
-                    <span class="input-icon">🆔</span>
+                    <span class="input-icon"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-tag"/></svg></span>
                 </div>
             </div>
 
@@ -603,7 +588,7 @@
                         <option value="manager">园艺经理</option>
                         <option value="dept_user">其他部门</option>
                     </select>
-                    <span class="input-icon">🏢</span>
+                    <span class="input-icon"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-building"/></svg></span>
                 </div>
             </div>
 
@@ -618,7 +603,7 @@
                         <option value="ENT">ENT</option>
                         <option value="其他">其他</option>
                     </select>
-                    <span class="input-icon">📂</span>
+                    <span class="input-icon"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-folder"/></svg></span>
                 </div>
             </div>
 
@@ -627,7 +612,7 @@
                 <label for="department_other">部门名称 *</label>
                 <div class="input-wrapper">
                     <input type="text" id="department_other" name="department_other" placeholder="请输入部门名称">
-                    <span class="input-icon">📁</span>
+                    <span class="input-icon"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-folder"/></svg></span>
                 </div>
             </div>
 

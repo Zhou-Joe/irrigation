@@ -16,7 +16,7 @@
     </section>
     <div class="field-workspace">
     <section class="field-task-section" aria-labelledby="fieldTaskTitle">
-        <div class="field-section-head"><h2 id="fieldTaskTitle">优先处理</h2><a href="{% url 'core:work_reports' %}?tab=pm">全部任务 <span aria-hidden="true">↗</span></a></div>
+        <div class="field-section-head"><h2 id="fieldTaskTitle">优先处理</h2><a href="{% url 'core:work_reports' %}?tab=pm">全部任务 <span aria-hidden="true"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-external"/></svg></span></a></div>
         {% for task in app_tasks %}
         <a class="field-task" href="{% url 'core:dashboard' %}?pm_gwo_id={{ task.gwo_id }}">
             <span class="field-task-icon {% if task.overdue %}is-overdue{% endif %}"><svg><use href="#pwa-clipboard"/></svg></span>
@@ -27,7 +27,7 @@
         {% endfor %}
     </section>
     <div class="field-tools">
-    <section aria-labelledby="fieldModuleTitle"><div class="field-section-head"><h2 id="fieldModuleTitle">工作应用</h2><button type="button" data-pwa-launcher>全部功能 <span aria-hidden="true">↗</span></button></div>
+    <section aria-labelledby="fieldModuleTitle"><div class="field-section-head"><h2 id="fieldModuleTitle">工作应用</h2><button type="button" data-pwa-launcher>全部功能 <span aria-hidden="true"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-external"/></svg></span></button></div>
         <div class="field-modules">{% for module in pwa_modules %}<a href="{{ module.url }}"><svg><use href="#pwa-{{ module.icon }}"/></svg><strong>{{ module.label }}</strong></a>{% endfor %}</div>
     </section>
     <aside class="field-install"><img src="{% static 'pwa/icon-192.png' %}" alt="" width="44" height="44"><div><strong>让工作台触手可及</strong><p>添加到桌面，下次一触即达</p></div><button type="button" data-pwa-install>安装应用</button></aside>

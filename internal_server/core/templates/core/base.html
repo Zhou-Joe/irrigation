@@ -145,7 +145,7 @@
             .top-nav-brand { font-size: 0.95rem !important; }
             /* Hide the inline desktop link row on phones — it would wrap into a
                messy stack. The hamburger already opens the clean mobile dropdown
-               (mobile-nav-dropdown) with the same links, so tap ☰ to expand. */
+               (mobile-nav-dropdown) with the same links, so tap the menu to expand. */
             .top-nav-links { display: none; }
             /* Keep only the essentials visible in the bar itself on phones. */
             .top-nav-right .top-nav-user { display: none; }
@@ -252,17 +252,18 @@
     <link rel="stylesheet" href="{% static 'css/pwa.css' %}?v=20261023icons2">
     <link rel="stylesheet" href="{% static 'css/compact-ui.css' %}?v=20261023responsive">
     <link rel="stylesheet" href="{% static 'css/responsive-ui.css' %}?v=20261023controls2">
+    <link rel="stylesheet" href="{% static 'css/page-ui.css' %}?v=20261024pages4">
     {% block extra_ui_css %}{% endblock %}
     <script src="{% static 'js/pwa.js' %}?v=20261023tabs" defer></script>
     <script src="{% static 'js/pwa-navigation.js' %}?v=20261023tabs" defer></script>
-    <script src="{% static 'js/responsive-ui.js' %}?v=20261023responsive" defer></script>
+    <script src="{% static 'js/responsive-ui.js' %}?v=20261024pages4" defer></script>
 </head>
-<body class="{% if user.is_authenticated %}pwa-authenticated{% endif %}" data-page="{{ request.resolver_match.url_name }}">
+<body class="ui-system {% if user.is_authenticated %}pwa-authenticated{% endif %}" data-page="{{ request.resolver_match.url_name }}">
     {% if user.is_authenticated %}
     <nav class="top-nav">
         <div class="top-nav-left">
-            <a href="{% url 'core:app_home' %}" class="top-nav-brand">灌溉管理系统</a>
-            <button type="button" class="mobile-hamburger" id="mobileHamburger" onclick="toggleMobileNav()" aria-label="打开全部功能" aria-haspopup="dialog">☰</button>
+            <a href="{% url 'core:app_home' %}" class="top-nav-brand"><img class="project-brand-mark" src="{% static 'pwa/brand.svg' %}?v=20261024brand" width="24" height="24" alt="">灌溉管理系统</a>
+            <button type="button" class="mobile-hamburger" id="mobileHamburger" onclick="toggleMobileNav()" aria-label="打开全部功能" aria-haspopup="dialog"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-menu"/></svg></button>
             <div class="top-nav-links" id="topNavLinks">
                 <a href="{% url 'core:dashboard' %}" class="{% block nav_dashboard %}{% endblock %}">地图总览</a>
                 <a href="{% url 'core:work_reports' %}" class="{% block nav_work_reports %}{% endblock %}">维修日志</a>
@@ -376,7 +377,7 @@
                 return escDiv.innerHTML;
             }
             list.innerHTML = pmTasks.map(function (t) {
-                var dueText = t.overdue ? '⚠️ 已逾期' : '待完成';
+                var dueText = t.overdue ? '已逾期' : '待完成';
                 if (t.deadline) dueText += ' · 截止 ' + esc(t.deadline);
                 var zoneInfo = t.zone_count > 0
                     ? (t.zone_preview ? t.zone_count + ' zones (' + esc(t.zone_preview) + '…)' : t.zone_count + ' zones')

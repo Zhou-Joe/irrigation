@@ -170,7 +170,7 @@
 .wo-mat-sheet-row:hover { background: var(--wo-accent-soft); }
 .wo-mat-sheet-row .wo-mat-sr-name { flex: 1; }
 .wo-mat-sheet-row .wo-mat-sr-meta { font-size: .74rem; color: var(--wo-muted); margin-left: 8px; white-space: nowrap; }
-.wo-mat-sheet-row.leaf .wo-mat-sr-name::before { content: '🔹 '; }
+.wo-mat-sheet-row.leaf .wo-mat-sr-name::before { content: ' '; }
 .wo-mat-sheet-row.branch .wo-mat-sr-arrow { color: var(--wo-muted); font-size: .8rem; }
 .wo-mat-sheet-row.back .wo-mat-sr-name { color: var(--wo-muted); font-size: .84rem; }
 .wo-mat-sheet-close { border: none; background: var(--wo-accent); color: #fff; border-radius: 8px;
@@ -250,7 +250,7 @@
 
   <!-- global search -->
   <div class="wo-search">
-    <input type="search" id="wo-search-input" placeholder="🔍 搜索工作内容（喷头 / 主管 / 维保…）" autocomplete="off">
+    <input type="search" id="wo-search-input" placeholder="搜索工作内容（喷头 / 主管 / 维保…）" autocomplete="off">
     <div class="wo-results" id="wo-search-results" hidden></div>
   </div>
 
@@ -593,7 +593,7 @@ function renderExistingPhotos(){
     const t = photoThumb(p);
     if (isVideoPath(p)) {
       tile.innerHTML = `<video src="/media/${esc(t)}" muted preload="metadata"></video>` +
-        `<span class="wo-photo-play">▶</span>` +
+        `<span class="wo-photo-play"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-play"/></svg></span>` +
         `<button type="button" class="wo-photo-del" title="删除">×</button>`;
     } else {
       tile.innerHTML = `<img src="/media/${esc(t)}" alt="照片" loading="lazy">` +
@@ -634,7 +634,7 @@ function renderNewPhotos(){
     tile.className = 'wo-photo-tile';
     const url = URL.createObjectURL(f);
     if (f.type.startsWith('video/')) {
-      tile.innerHTML = `<video src="${url}" muted preload="metadata"></video><span class="wo-photo-play">▶</span>`;
+      tile.innerHTML = `<video src="${url}" muted preload="metadata"></video><span class="wo-photo-play"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-play"/></svg></span>`;
     } else {
       tile.innerHTML = `<img src="${url}" alt="预览">`;
     }
@@ -748,7 +748,7 @@ function renderMatCart(){
       '<span class="wo-mat-name" title="'+esc(c.label || c.name)+'">'+esc(c.label || c.name)+'</span>'+
       '<span class="wo-mat-stock'+lowCls+'">库存 '+c.stock+'</span>'+
       '<input type="number" min="1" step="1" class="wo-mat-qty" value="'+c.quantity+'" placeholder="数量">'+
-      '<button type="button" class="wo-mat-del" title="移除">✕</button>';
+      '<button type="button" class="wo-mat-del" title="移除"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-close"/></svg></button>';
     row.querySelector('.wo-mat-qty').addEventListener('input', e => { c.quantity = parseFloat(e.target.value)||0; });
     row.querySelector('.wo-mat-del').addEventListener('click', () => { _matCart.splice(i,1); renderMatCart(); updateMatDest(); });
     box.appendChild(row);
@@ -820,7 +820,7 @@ function openMatSheet(path){
     const meta = leaf ? ('库存 ' + (n.current_stock||0)) : '';
     row.innerHTML = '<span class="wo-mat-sr-name">'+esc(n.name||n.name_zh)+'</span>'+
                     '<span class="wo-mat-sr-meta">'+meta+'</span>'+
-                    (leaf ? '' : '<span class="wo-mat-sr-arrow">▶</span>');
+                    (leaf ? '' : '<span class="wo-mat-sr-arrow"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-chevron-right"/></svg></span>');
     row.addEventListener('click', () => {
       if (leaf){ addToMatCart(n.id); closeMatSheet(); }
       else openMatSheet(_matSheetPath.concat([n.id]));
@@ -880,7 +880,7 @@ function updateMatRecommend(){
   scored.sort((a,b) => b.hits - a.hits || String(a.n.name||a.n.name_zh).localeCompare(String(b.n.name||b.n.name_zh)));
   const top = scored.slice(0, 8);
   strip.hidden = false;
-  strip.innerHTML = '<div class="wo-mat-recommend-title">根据工单内容推荐 💡</div><div class="wo-mat-rec-chips">'+
+  strip.innerHTML = '<div class="wo-mat-recommend-title">根据工单内容推荐</div><div class="wo-mat-rec-chips">'+
     top.map(s => {
       // Inline label: "类别 › 子类 › 名称" (up to 2 ancestor levels) + stock.
       const anc = (_matAncestors[s.n.id]||[]).slice(-2);

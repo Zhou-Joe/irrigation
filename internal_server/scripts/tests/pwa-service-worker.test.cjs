@@ -119,11 +119,12 @@ test('updates wait for explicit activation and only remove this apps old caches'
 });
 test('runtime cache stays bounded while retaining required offline assets', async () => {
     const h = harness(); await h.lifecycle('install');
+    const cache = [...h.stores.values()][0];
+    const required = [...cache.values.keys()];
     h.context.fetch = async () => networkResponse('asset');
     for (let n=0;n<90;n++) await h.request('/static/asset-' + n + '.js');
-    const cache = [...h.stores.values()][0];
-    assert.equal(cache.values.size, 89); // 9 required shell assets + 80 runtime assets.
-    assert.ok(await cache.match('/offline/'));
+    assert.equal(cache.values.size, required.length + 80);
+    for (const url of required) assert.ok(await cache.match(url), url);
     assert.equal(await cache.match('/static/asset-0.js'), undefined);
     assert.ok(await cache.match('/static/asset-89.js'));
 });

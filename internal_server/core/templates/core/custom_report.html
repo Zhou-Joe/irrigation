@@ -278,8 +278,8 @@ body.presentation-mode .present-toggle-btn {
 <div class="cr-container">
     <div class="cr-header">
         <h1>自定义报表</h1>
-        <div class="dashboard-controls" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-            <select id="dashboardSelector" onchange="selectDashboard(this.value); renderAllCharts(); fetchChartData();" style="padding:6px 12px;border:1px solid var(--color-surface-dark);border-radius:var(--radius-sm);font-size:0.875rem;background:var(--color-surface);min-width:140px;">
+        <div class="dashboard-controls">
+            <select id="dashboardSelector" onchange="selectDashboard(this.value); renderAllCharts(); fetchChartData();">
             </select>
             <button class="btn-add-chart" onclick="createDashboard()" title="新建仪表盘">+ 新建</button>
             <button class="btn-add-chart" onclick="renameDashboard()" title="重命名" style="background:var(--color-text-muted);">重命名</button>
@@ -326,7 +326,7 @@ body.presentation-mode .present-toggle-btn {
             <div class="builder-group">
                 <label>起始日期</label>
                 <div style="display:flex;gap:4px;align-items:center;">
-                    <select id="dateMode" style="padding:8px 8px;border:1px solid var(--color-surface-dark);border-radius:var(--radius-sm);font-size:0.875rem;background:var(--color-surface);">
+                    <select id="dateMode">
                         <option value="relative">最近</option>
                         <option value="fixed">固定日期</option>
                     </select>
@@ -356,7 +356,7 @@ body.presentation-mode .present-toggle-btn {
     <!-- Charts Grid -->
     <div class="charts-grid" id="chartsGrid">
         <div class="empty-state" id="emptyState">
-            <div class="empty-state-icon">📊</div>
+            <div class="empty-state-icon"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-chart"/></svg></div>
             <p>点击上方「添加图表」开始创建自定义报表</p>
         </div>
     </div>
@@ -745,7 +745,7 @@ function renderAllCharts() {
     grid.innerHTML = '';
 
     if (charts.length === 0) {
-        grid.innerHTML = '<div class="empty-state" id="emptyState"><div class="empty-state-icon">📊</div><p>点击上方「添加图表」开始创建自定义报表</p></div>';
+        grid.innerHTML = '<div class="empty-state" id="emptyState"><div class="empty-state-icon"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-chart"/></svg></div><p>点击上方「添加图表」开始创建自定义报表</p></div>';
         return;
     }
 

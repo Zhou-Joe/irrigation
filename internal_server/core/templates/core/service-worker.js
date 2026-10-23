@@ -2,13 +2,14 @@
 'use strict';
 // Bump on release when the public shell changes. Never store business HTML,
 // API responses, media, third-party resources, or mutations on a shared phone.
-const CACHE = 'irrigation-shell-20261023-4';
+const CACHE = 'irrigation-shell-20261024-4';
 const PREFIX = 'irrigation-shell-';
 const OFFLINE = '{% url "core:pwa_offline" %}';
 const SHELL = [OFFLINE, '{% static "css/pwa.css" %}?v=20261023icons2',
     '{% static "css/compact-ui.css" %}?v=20261023responsive',
     '{% static "css/responsive-ui.css" %}?v=20261023controls2',
-    '{% static "js/responsive-ui.js" %}?v=20261023responsive',
+    '{% static "css/page-ui.css" %}?v=20261024pages4',
+    '{% static "js/responsive-ui.js" %}?v=20261024pages4',
     '{% static "js/pwa-offline.js" %}', '{% static "pwa/icon-192.png" %}',
     '{% static "pwa/icon-512.png" %}', '{% static "pwa/icon-maskable-512.png" %}'];
 

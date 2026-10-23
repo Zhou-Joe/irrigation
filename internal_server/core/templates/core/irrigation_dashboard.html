@@ -307,7 +307,7 @@
 .irrig-search-toggle:hover { background: #fff; }
 .irrig-search-box {
     position: absolute;
-    top: 56px;              /* sit below the 🔍 toggle so it can't cover the input */
+    top: 56px;              /* sit below the search toggle so it can't cover the input */
     left: 60px;
     z-index: 1000;
     display: flex;
@@ -823,21 +823,21 @@
     <aside class="irrig-sidebar" id="irrigSidebar">
         <div class="irrig-sidebar-header">
             <h1>灌溉运行数据</h1>
-            <button class="irrig-sidebar-close" onclick="toggleIrrigSidebar()" title="收起侧边栏">✕</button>
+            <button class="irrig-sidebar-close" onclick="toggleIrrigSidebar()" title="收起侧边栏"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-close"/></svg></button>
         </div>
         <div class="irrig-sidebar-body">
             <div class="irrig-topbar">
                 <div class="view-toggle" role="tablist" aria-label="视图切换">
                     <button class="irrig-view-pill" data-view="chart"
-                            onclick="switchIrrigView('chart')" role="tab">📊 表格</button>
+                            onclick="switchIrrigView('chart')" role="tab"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-chart"/></svg> 表格</button>
                     <button class="irrig-view-pill active" data-view="heatmap"
-                            onclick="switchIrrigView('heatmap')" role="tab">🗺️ 热力图</button>
+                            onclick="switchIrrigView('heatmap')" role="tab"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-map"/></svg> 热力图</button>
                 </div>
                 <div class="export-dropdown" id="exportDropdown">
-                    <button onclick="toggleExportMenu(event)" style="background:var(--color-accent);color:#fff;border:none;border-radius:6px;padding:8px 16px;cursor:pointer;font-weight:600;font-size:0.9rem;">⬇ 导出 ▾</button>
+                    <button class="btn-sm btn-secondary" onclick="toggleExportMenu(event)"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-download"/></svg> 导出 ▾</button>
                     <div class="export-menu" id="exportMenu">
-                        <a href="javascript:void(0)" onclick="exportPDF()">📄 PDF 报告（每CCU一页）</a>
-                        <a href="javascript:void(0)" onclick="exportExcel()">📊 Excel 表格（每CCU一表）</a>
+                        <a href="javascript:void(0)" onclick="exportPDF()"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-file"/></svg> PDF 报告（每CCU一页）</a>
+                        <a href="javascript:void(0)" onclick="exportExcel()"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-chart"/></svg> Excel 表格（每CCU一表）</a>
                     </div>
                 </div>
             </div>
@@ -864,9 +864,9 @@
                         <label>结束时间</label>
                         <input type="datetime-local" id="dateTo" value="{{ datetime_to_iso }}" step="60">
                     </div>
-                    <button onclick="applyFilters()">查询</button>
-                    <button onclick="resetFilters()" style="background:var(--color-surface-dark);">重置</button>
-                    <span class="hint">数据范围: {{ data_span.0 }} ~ {{ data_span.1 }}</span>
+                    <button class="btn-sm btn-primary" onclick="applyFilters()">查询</button>
+                    <button class="btn-sm btn-secondary" onclick="resetFilters()">重置</button>
+                    <span class="hint">{% if data_span.0 %}数据范围: {{ data_span.0 }} ~ {{ data_span.1 }}{% else %}暂无可用运行数据{% endif %}</span>
                 </div>
 
                 <!-- Summary (chart view only — heatmap has its own legend) -->
@@ -890,9 +890,9 @@
             <div class="irrig-legend-panel" id="irrigLegendPanel">
                 <div class="irrig-metric-toggle" role="tablist" aria-label="指标切换">
                     <button class="irrig-metric-pill active" data-metric="time"
-                            onclick="switchIrrigMetric('time')" role="tab">⏱ 运行时间</button>
+                            onclick="switchIrrigMetric('time')" role="tab"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-activity"/></svg> 运行时间</button>
                     <button class="irrig-metric-pill" data-metric="volume"
-                            onclick="switchIrrigMetric('volume')" role="tab">💧 灌水量</button>
+                            onclick="switchIrrigMetric('volume')" role="tab"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-drop"/></svg> 灌水量</button>
                 </div>
                 <div class="irrig-legend-title" id="irrigLegendTitle">区域灌溉运行分钟</div>
                 <div class="heat-legend">
@@ -915,8 +915,8 @@
             <div class="irrig-unmapped-panel" id="irrigUnmappedPanel">
                 <button type="button" class="irrig-unmapped-header"
                         onclick="toggleIrrigUnmapped()" aria-expanded="false">
-                    <span>⚠ 未绘制边界区域 <span id="irrigUnmappedCount" class="irrig-unmapped-badge">0</span></span>
-                    <span id="irrigUnmappedArrow" class="irrig-unmapped-arrow">▶</span>
+                    <span><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-alert"/></svg> 未绘制边界区域 <span id="irrigUnmappedCount" class="irrig-unmapped-badge">0</span></span>
+                    <span id="irrigUnmappedArrow" class="irrig-unmapped-arrow"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-chevron-right"/></svg></span>
                 </button>
                 <div class="irrig-unmapped-body" id="irrigUnmappedBody">
                     <div class="irrig-unmapped-note">
@@ -935,8 +935,8 @@
             <div class="irrig-excluded-panel" id="irrigExcludedPanel">
                 <button type="button" class="irrig-excluded-header"
                         onclick="toggleIrrigExcluded()" aria-expanded="false">
-                    <span>🚫 已排除区域 <span id="irrigExcludedCount" class="irrig-excluded-badge zero">0</span></span>
-                    <span id="irrigExcludedArrow" class="irrig-excluded-arrow">▶</span>
+                    <span><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-minus"/></svg> 已排除区域 <span id="irrigExcludedCount" class="irrig-excluded-badge zero">0</span></span>
+                    <span id="irrigExcludedArrow" class="irrig-excluded-arrow"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-chevron-right"/></svg></span>
                 </button>
                 <div class="irrig-excluded-body" id="irrigExcludedBody">
                     <div class="irrig-excluded-note">
@@ -952,20 +952,20 @@
     <!-- Sidebar expand handle — outside both panels so it works in chart AND
          heatmap modes. Anchored to the .irrig-fullscreen left edge. -->
     <button class="irrig-sidebar-expand" id="irrigSidebarExpand"
-            onclick="toggleIrrigSidebar()" title="展开侧边栏">侧边栏 ▶</button>
+            onclick="toggleIrrigSidebar()" title="展开侧边栏"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-menu"/></svg><span class="pwa-sr-only">展开侧边栏</span></button>
 
     <!-- Map area (heatmap mode) -->
     <div class="irrig-map-area">
         <div id="irrigHeatMap" data-is-manager="{{ is_admin|yesno:'1,0' }}"></div>
         <!-- Collapsed by default: click 🔍 to expand the search panel -->
         <button id="irrigSearchToggle" class="irrig-search-toggle"
-                onclick="toggleIrrigSearch()" title="搜索区域">🔍</button>
+                onclick="toggleIrrigSearch()" title="搜索区域"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-search"/></svg></button>
         <div id="irrigSearchPanel" class="irrig-search-box" style="display:none;">
             <div class="irrig-search-row">
                 <input type="text" id="irrigZoneSearch" placeholder="搜索 zone（代码或名称，如 1-1-5 或 BOH）"
                        oninput="searchIrrigZone()">
                 <button onclick="document.getElementById('irrigZoneSearch').value=''; searchIrrigZone('');"
-                        title="清除">✕</button>
+                        title="清除"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-close"/></svg></button>
                 <span id="irrigZoneSearchStatus" class="irrig-search-status"></span>
             </div>
             <div id="irrigZoneResults" class="irrig-search-results"></div>
@@ -994,7 +994,7 @@
         <!-- 浇水量：mdb 流量计（XA_FLOZO 导入）+ 站点运行估算（运行分钟×
              站点系数），合计 = Maxicom 桌面端口径。随筛选 AJAX 刷新。 -->
         <div style="margin-top:14px;">
-            <div class="section-title">💧 浇水量（升）— 流量计 + 站点估算</div>
+            <div class="section-title"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-drop"/></svg> 浇水量（升）— 流量计 + 站点估算</div>
             <div id="flowContent">
                 {% include 'core/_irrigation_flow.html' %}
             </div>
@@ -1005,7 +1005,7 @@
 
 {% block extra_js %}
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="{% static 'js/irrig-heatmap.js' %}?v=16"></script>
+<script src="{% static 'js/irrig-heatmap.js' %}?v=20261024pages4"></script>
 <script>
 function toggleExportMenu(event) {
     event.stopPropagation();
@@ -1200,7 +1200,7 @@ function _matrixTableHTML(t, showCcuCol) {
         const orphanVals = r.orphan_values || [];
         const labelCls = r.orphan ? 'sticky-col orphan-label' : 'sticky-col';
         const labelTitle = r.orphan ? ' title="该行所有运行单元均无 Zone 对应（未映射到任何景观区域）"' : '';
-        const labelSuffix = r.orphan ? ' ⚠' : '';
+        const labelSuffix = r.orphan ? ' [未匹配]' : '';
         html += `<tr><td class="${labelCls}"${labelTitle}>${r.station}${labelSuffix}</td>`;
         if (showCcuCol) html += `<td class="sticky-col-sub">${r.site}</td>`;
         r.values.forEach((v, ci) => {
@@ -1229,7 +1229,7 @@ function _matrixTableHTML(t, showCcuCol) {
 
 const _matrixLegend = '<div class="legend"><span>少</span><div class="scale"></div><span>多</span>'
     + '<span style="margin-left:12px;">列 = 卫星控制器（如 AI 7-1），每站24通道；单元格 = 运行分钟数</span>'
-    + '<span style="margin-left:12px;color:#C62828;">⚠ 红色行 = 该站点无 Zone 对应（运行数据真实，但未映射到任何景观区域）</span></div>';
+    + '<span style="margin-left:12px;color:#C62828;"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-alert"/></svg> 红色行 = 该站点无 Zone 对应（运行数据真实，但未映射到任何景观区域）</span></div>';
 
 // 全部 mode paging state. -1 = not in 全部 mode (single table).
 let currentCcuPage = -1;
