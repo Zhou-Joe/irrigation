@@ -10,6 +10,7 @@
     let watermarkCache = null;
     let zonesLoading = false;
     let pipelinesLoading = false;
+    let lastZoneRefresh = 0;
 
     // Inject pulse animation for remark indicators
     const style = document.createElement('style');
@@ -238,14 +239,18 @@
         const southWest = L.latLng(centerLat - latOffset, centerLng - lngOffset);
         const northEast = L.latLng(centerLat + latOffset, centerLng + lngOffset);
         const bounds = L.latLngBounds(southWest, northEast);
+        const viewKey = 'irrigation-map-view:' + (document.querySelector('.pwa-bottom-nav')?.dataset.userId || '');
+        let savedView = null;
+        try { savedView = runtime.readView(window.sessionStorage, viewKey); } catch (_) {}
+        if (savedView && !bounds.contains(savedView.center)) savedView = null;
 
         // Create map centered on location with satellite layer.
         // preferCanvas: render 1100+ zone polygons on a single <canvas> instead of one
         // SVG element each. This cuts ~1100 DOM nodes on mobile and makes pan/zoom far
         // smoother (canvas redraw is GPU-friendly; SVG re-layout per element is not).
         map = L.map('map', {
-            center: [centerLat, centerLng],
-            zoom: 15,
+            center: savedView?.center || [centerLat, centerLng],
+            zoom: savedView?.zoom || 15,
             maxZoom: 22,
             minZoom: 15,
             maxBounds: bounds,
@@ -263,6 +268,10 @@
 
         // Expose map instance for external use (sidebar resize)
         window._map = map;
+        map.on('moveend', function () {
+            const center = map.getCenter();
+            try { window.sessionStorage.setItem(viewKey, JSON.stringify({center:[center.lat, center.lng], zoom:map.getZoom()})); } catch (_) {}
+        });
 
         // Initialize leader lines layer group (rendered below zones so boundaries occlude lines)
         leaderLinesLayerGroup = L.layerGroup().addTo(map);
@@ -357,6 +366,7 @@
                 lng:centers.reduce((sum,c) => sum+c[1],0)/centers.length}
         } : null;
         return renderZones(zones).then(() => {
+            lastZoneRefresh = Date.now();
             var ov = document.getElementById('zone-loading-overlay');
             if (ov) ov.style.display = 'none';
             document.getElementById('map').dataset.zonesState = 'ready';
@@ -2003,6 +2013,9 @@
     }
 
     // Auto-locate is triggered from dashboard.js
+    window.addEventListener?.('pageshow', event => {
+        if (event.persisted && Date.now() - lastZoneRefresh > 60000) loadZones();
+    });
 
     /**
      * Apply combined map filters (priority + plant)

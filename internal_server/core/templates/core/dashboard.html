@@ -10,7 +10,7 @@
 {% block extra_css %}
 <!-- Leaflet CSS -->
 <link rel="stylesheet" href="{% static 'vendor/leaflet/leaflet.css' %}?v=1.9.4" />
-<link rel="stylesheet" href="{% static 'css/dashboard.css' %}?v=20261023map3" />
+<link rel="stylesheet" href="{% static 'css/dashboard.css' %}?v=20261023map4" />
 <!-- Dashboard JS needs Django URL, set before external scripts -->
 <style>
 /* Announcement popup */
@@ -426,9 +426,9 @@
 <script id="pending-water-requests" type="application/json">{{ pending_water_requests_json|safe }}</script>
 <script id="pending-remarks" type="application/json">{{ pending_remarks_json|safe }}</script>
 <!-- Custom Map JS -->
-<script src="{% static 'js/map-runtime.js' %}?v=20261023map3"></script>
-<script src="{% static 'js/map.js' %}?v=20261023map3"></script>
-<script src="{% static 'js/dashboard-modal.js' %}?v=20261023icons2"></script>
+<script src="{% static 'js/map-runtime.js' %}?v=20261023map4"></script>
+<script src="{% static 'js/map.js' %}?v=20261023map4"></script>
+<script src="{% static 'js/dashboard-modal.js' %}?v=20261023icons3"></script>
 <script>
 // Override the notification popup's PM-task "填写" handler: on the dashboard we
 // can open the assigned PM task directly; other pages navigate with its GWO id.
@@ -443,10 +443,10 @@ window.fillPmTask = function (gwoId) {
 </script>
 <!-- Dashboard JS — pass Django URL to external script -->
 <script>window.HISTORY_URL = '{% url "core:work_reports" %}';</script>
-<script src="{% static 'js/dashboard.js' %}?v=20261023map3"></script>
+<script src="{% static 'js/dashboard.js' %}?v=20261023map4"></script>
 <!-- AI data-analyst chat widget (deferred: non-blocking load, auto-mounts on DOMContentLoaded) -->
 <script defer src="{% static 'vendor/marked/marked.min.js' %}?v=12.0.2"></script>
-<script defer src="{% static 'js/ai-chat.js' %}?v=20261023icons2"></script>
+<script defer src="{% static 'js/ai-chat.js' %}?v=20261023icons3"></script>
 <!-- Announcement popup driver -->
 <script>
 (function () {

@@ -60,6 +60,19 @@ full boundary coordinate precision and the existing Esri/WGS-84 basemap.
   unavailability and timeout show an actionable retry message. A slow GPS fix
   can retry the device's normal location provider; a permission denial does
   not trigger repeated requests. Project bounds stay unchanged.
+- **AI placement:** the eligible user's AI launcher joins the phone's right
+  control column and aligns above the desktop menu toggle. It responds to
+  viewport changes, keeping the bottom location message clear. Existing AI
+  authorization and configuration checks are preserved.
+- **Returning to Map:** bottom-tab navigation reuses the previous plain-map
+  history entry rather than always creating a new page. The browser can restore
+  its in-memory map; when it cannot, per-user, per-tab camera settings restore
+  the zoom and center. Only navigation metadata and camera settings enter
+  session storage. Business responses and photos are not added to offline caches.
+  Unsaved-form warnings attach only while there are edits. Restored maps refresh
+  business data after 60 seconds without recreating the Leaflet instance.
+  A focused checkbox no longer hides bottom navigation as if a keyboard were open.
+  Map downloads tolerate slow connections for up to two minutes before offering retry.
 
 ## Baseline measurements
 
@@ -71,6 +84,29 @@ these measure server processing, not public network or satellite tile latency.
 | HTML `/` | 353.4 / 301.5 ms | 32 / 30 | 1,429,005 | 89,723 |
 | Zone data | 243.2 / 240.4 ms | 13 / 13 | 8,112,395 | 554,245 |
 | Pipeline data | 0.8 / 0.1 ms | 0 / 0 | 573 | 296 |
+
+## Production results
+
+Deployed through the GitHub branch `codex/map-performance-icons`. Existing office
+source is preserved in `deployment_backups/map-git-20261023-223245` and Git stashes.
+Django checks, static collection and the `horticulture` restart succeeded.
+
+| Endpoint | Server time, runs 1 / 2 | Queries, runs 1 / 2 | Response bytes | Gzip bytes |
+| --- | ---: | ---: | ---: | ---: |
+| HTML `/` | 221.3 / 163.8 ms | 24 / 19 | 1,440,052 | 88,955 |
+| Zone data | 384.7 / 304.4 ms | 14 / 13 | 7,496,552 | 532,302 |
+| Pipeline data | 4.5 / 0.2 ms | 4 / 0 | 573 | 296 |
+
+The HTML path was about 37–46% faster in these two samples. The first API samples
+were slower than the earlier baseline, so they do not support a general API CPU
+speedup claim. A same-process comparison on identical data measured the old
+payload builder at 283.4 ms and the new one at 274.5 ms. These small samples are
+diagnostics, not load-test statistics or public network timings.
+
+All 2,508 active boundary payloads exactly match both the original builder and
+the pre-deployment geometry digest. Public HTTPS is healthy at the Aliyun gateway;
+intermittent connection resets and slow downloads were observed from the review
+computer and remain separate network variables.
 
 The baseline boundary digest covers every zone ID and its exact active boundary
 coordinates, sorted by ID. It is compared again after deployment to detect any
@@ -87,6 +123,9 @@ unintended geometry change.
 - Browser preview: nested CAD rings, sidebar search/selection, popup rendering,
   deep-zoom labels, label toggle through zoom changes, and PM form entry checked.
 - No production records are created or submitted for these checks.
+- Five navigation/view-state regressions passed: multi-tab map returns, direct
+  navigation fallback, account changes, action URLs and blocked storage. Browser
+  navigation preserved the zoom on return, including its full-load fallback.
 
 Physical phone frame rates, OS keyboard behavior, GPS and varying outdoor
 network conditions remain device acceptance checks. Browser and server results

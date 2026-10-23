@@ -70,5 +70,12 @@
             return attempt({enableHighAccuracy:false, timeout:12000, maximumAge:60000});
         });
     }
-    return { point, boundaryRings, renderBatches, matchesPatch, fetchJSON, requestLocation };
+    function readView(storage, key) {
+        try {
+            const value = JSON.parse(storage.getItem(key));
+            const center = point(value?.center);
+            return center && Number.isInteger(value.zoom) && value.zoom >= 15 && value.zoom <= 22 ? {center, zoom:value.zoom} : null;
+        } catch (_) { return null; }
+    }
+    return { point, boundaryRings, renderBatches, matchesPatch, fetchJSON, requestLocation, readView };
 });

@@ -208,7 +208,15 @@
         // Chat-bubble icon (clear, friendly, universally understood).
         btn.innerHTML = window.uiIcon('ai');
         btn.onclick = toggle;
-        document.body.appendChild(btn);
+        var controlsMedia = window.matchMedia('(max-width:768px)');
+        function placeLauncher() {
+            var mobileControls = document.getElementById('mobileBtnCluster');
+            var parent = mobileControls && controlsMedia.matches ? mobileControls : document.body;
+            if (btn.parentElement !== parent) parent.appendChild(btn);
+        }
+        placeLauncher();
+        if (controlsMedia.addEventListener) controlsMedia.addEventListener('change', placeLauncher);
+        else controlsMedia.addListener(placeLauncher);
         console.log('[AIChat] launcher appended, total body children:', document.body.children.length);
 
         // Chat panel — positioning/size controlled by .ai-chat-panel CSS so media
