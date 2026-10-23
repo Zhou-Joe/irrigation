@@ -1,0 +1,38 @@
+{% extends 'core/base.html' %}
+{% load static %}
+{% block title %}现场工作台 · 灌溉管理{% endblock %}
+{% block content %}
+<main class="field-app">
+    <header class="field-greeting"><div><p class="pwa-eyebrow">FIELD / 现场工作台</p><h1>{{ user.get_full_name|default:user.username }}，工作顺利</h1></div><time datetime="{{ app_today|date:'Y-m-d' }}">{{ app_today|date:'m月d日' }}<small>{{ app_weekday }}</small></time></header>
+    <section class="field-hero" aria-labelledby="fieldHeroTitle">
+        <div><span class="field-hero-kicker">{% if is_admin %}团队待办{% else %}我的班组待办{% endif %}</span><h2 id="fieldHeroTitle"><strong>{{ app_task_count }}</strong> 项 PM 待完成</h2><p>按任务截止日期安排现场工作</p><a href="{% url 'core:work_reports' %}?tab=pm">查看任务 <svg><use href="#pwa-arrow"/></svg></a></div>
+        <svg class="field-hero-art" viewBox="0 0 140 160" fill="none" aria-hidden="true"><path d="M70 8S25 61 25 91a45 45 0 0 0 90 0C115 61 70 8 70 8Z" stroke="currentColor" stroke-width="1.5"/><path d="M70 125V69m0 32C45 104 41 82 42 75c17-2 28 8 28 26Zm0-14c0-19 12-30 28-31 2 19-7 31-28 31Z" stroke="currentColor" stroke-width="2"/><circle cx="70" cy="91" r="60" stroke="currentColor" stroke-opacity=".22"/></svg>
+    </section>
+    <section class="field-actions" aria-label="现场快捷操作">
+        <a class="field-action field-action-primary" href="{% url 'core:dashboard' %}?action=workorder"><svg><use href="#pwa-plus"/></svg><strong>新建工单</strong><small>选区域 · 拍照 · 记录</small></a>
+        <a class="field-action" href="{% url 'core:dashboard' %}?action=water_request"><svg><use href="#pwa-drop"/></svg><strong>用水申请</strong><small>提交现场浇水需求</small></a>
+        <a class="field-action" href="{% url 'core:dashboard' %}"><svg><use href="#pwa-map"/></svg><strong>区域地图</strong><small>定位与区域详情</small></a>
+        <a class="field-action" href="{% url 'core:dashboard' %}?action=inventory"><svg><use href="#pwa-box"/></svg><strong>库存操作</strong><small>领用、入库与归还</small></a>
+    </section>
+    <div class="field-workspace">
+    <section class="field-task-section" aria-labelledby="fieldTaskTitle">
+        <div class="field-section-head"><h2 id="fieldTaskTitle">优先处理</h2><a href="{% url 'core:work_reports' %}?tab=pm">全部任务 <span aria-hidden="true">↗</span></a></div>
+        {% for task in app_tasks %}
+        <a class="field-task" href="{% url 'core:dashboard' %}?pm_gwo_id={{ task.gwo_id }}">
+            <span class="field-task-icon {% if task.overdue %}is-overdue{% endif %}"><svg><use href="#pwa-clipboard"/></svg></span>
+            <span class="field-task-main"><span class="field-task-meta">{{ task.ticket }} · {{ task.pm_number }}</span><strong>{{ task.job_plan_name }}</strong><small>{{ task.area_desc|default:'查看派发区域' }}</small><span class="field-task-deadline {% if task.overdue %}is-overdue{% endif %}">{% if task.overdue %}已逾期 · {% endif %}截止 {{ task.deadline }}</span></span><span class="field-task-chevron" aria-hidden="true">›</span>
+        </a>
+        {% empty %}
+        <div class="field-empty"><svg><use href="#pwa-clipboard"/></svg><div><strong>当前没有待完成的 PM 任务</strong><p>你可以新建工单，或前往维修日志查看记录。</p></div></div>
+        {% endfor %}
+    </section>
+    <div class="field-tools">
+    <section aria-labelledby="fieldModuleTitle"><div class="field-section-head"><h2 id="fieldModuleTitle">工作应用</h2><button type="button" data-pwa-launcher>全部功能 <span aria-hidden="true">↗</span></button></div>
+        <div class="field-modules">{% for module in pwa_modules %}<a href="{{ module.url }}"><svg><use href="#pwa-{{ module.icon }}"/></svg><strong>{{ module.label }}</strong></a>{% endfor %}</div>
+    </section>
+    <aside class="field-install"><img src="{% static 'pwa/icon-192.png' %}" alt="" width="44" height="44"><div><strong>让工作台触手可及</strong><p>添加到桌面，下次一触即达</p></div><button type="button" data-pwa-install>安装应用</button></aside>
+    <p class="field-network-note">业务数据实时读取，现场提交需要网络连接。</p>
+    </div>
+    </div>
+</main>
+{% endblock %}

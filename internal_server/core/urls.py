@@ -1,6 +1,7 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from core import dxf_views, views
+from core import pwa
 from core.sync_views import sync_status, agent_status
 from core.ai_views import ai_chat, ai_status
 from core.api import (
@@ -38,6 +39,10 @@ router.register(r'locations', LocationViewSet, basename='location')
 router.register(r'work-reports', WorkReportViewSet, basename='workreport')
 
 urlpatterns = [
+    path('app/', pwa.app_home, name='app_home'),
+    path('manifest.webmanifest', pwa.manifest, name='pwa_manifest'),
+    path('service-worker.js', pwa.service_worker, name='pwa_service_worker'),
+    path('offline/', pwa.offline, name='pwa_offline'),
     path('', views.dashboard, name='dashboard'),
     path('stats/', views.stats_dashboard, name='stats_dashboard'),
     path('stats/excel/', views.work_reports_excel, name='work_reports_excel'),

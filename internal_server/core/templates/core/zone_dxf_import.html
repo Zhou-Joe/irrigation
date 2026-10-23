@@ -676,7 +676,7 @@
             '<span style="color:var(--color-text-secondary);">→</span>' +
             '<input class="anchor-lat" placeholder="纬度" style="width:90px;padding:3px 5px;background:#f0f7f4;" readonly>' +
             '<input class="anchor-lng" placeholder="经度" style="width:90px;padding:3px 5px;background:#f0f7f4;" readonly>' +
-            '<button class="btn btn-sm btn-secondary" style="padding:3px 7px;" onclick="startPickLatLng(this)" title="在地图上点击选取坐标">📍</button>' +
+            '<button class="btn btn-sm btn-secondary" style="padding:3px 7px;" onclick="startPickLatLng(this)" title="在地图上点击选取坐标"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-pin"/></svg></button>' +
             '<span class="anchor-row-remove" onclick="this.closest(\'.anchor-row\').remove();renderAnchors();" style="cursor:pointer;color:#9B2226;font-size:1rem;">✕</span>' +
             '</div>';
         container.appendChild(row);
@@ -702,7 +702,7 @@
         const infoBar = document.getElementById('mapInfoBar');
         infoBar.classList.add('visible');
         const rows = Array.from(document.querySelectorAll('.anchor-row'));
-        infoBar.textContent = '📍 点击地图选取锚点 ' + (rows.indexOf(row) + 1) + ' 的经纬度坐标';
+        infoBar.textContent = '点击地图选取锚点 ' + (rows.indexOf(row) + 1) + ' 的经纬度坐标';
         mapClickMode = 'anchor';
     };
 

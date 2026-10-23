@@ -5,16 +5,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="{% block viewport %}width=device-width, initial-scale=1.0, viewport-fit=cover{% endblock %}">
     <title>{% block title %}灌溉管理系统{% endblock %}</title>
-
-    <!-- Google Fonts -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet">
+    {% include 'core/pwa_head.html' %}
 
     <!-- Design System CSS -->
-    <link rel="stylesheet" href="{% static 'css/design-system.css' %}?v=20260421">
+    <link rel="stylesheet" href="{% static 'css/design-system.css' %}?v=20261023responsive">
     <!-- Component Styles -->
-    <link rel="stylesheet" href="{% static 'css/style.css' %}?v=20260704">
+    <link rel="stylesheet" href="{% static 'css/style.css' %}?v=20261023responsive">
     <!-- Shared list-page components (wrap, tabs, filter-card, btn-sm, app-table, modal) -->
     <link rel="stylesheet" href="{% static 'css/app.css' %}?v=20260705">
 
@@ -22,7 +18,7 @@
 
     <style>
         body {
-            font-family: 'Noto Sans SC', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            font-family: var(--font-body);
             margin: 0;
             padding: 0;
         }
@@ -247,17 +243,23 @@
     </style>
     <script>
     function toggleMobileNav() {
+        if (window.IrrigationPWA) { window.IrrigationPWA.openLauncher(); return; }
         document.getElementById('mobileNavDropdown').classList.toggle('visible');
         document.getElementById('mobileNavOverlay').classList.toggle('visible');
     }
     </script>
+    <link rel="stylesheet" href="{% static 'css/pwa.css' %}?v=20261023icons">
+    <link rel="stylesheet" href="{% static 'css/compact-ui.css' %}?v=20261023responsive">
+    <link rel="stylesheet" href="{% static 'css/responsive-ui.css' %}?v=20261023responsive">
+    <script src="{% static 'js/pwa.js' %}?v=20261023" defer></script>
+    <script src="{% static 'js/responsive-ui.js' %}?v=20261023responsive" defer></script>
 </head>
-<body>
+<body class="{% if user.is_authenticated %}pwa-authenticated{% endif %}" data-page="{{ request.resolver_match.url_name }}">
     {% if user.is_authenticated %}
     <nav class="top-nav">
         <div class="top-nav-left">
-            <a href="{% url 'core:dashboard' %}" class="top-nav-brand">灌溉管理系统</a>
-            <button type="button" class="mobile-hamburger" id="mobileHamburger" onclick="toggleMobileNav()">☰</button>
+            <a href="{% url 'core:app_home' %}" class="top-nav-brand">灌溉管理系统</a>
+            <button type="button" class="mobile-hamburger" id="mobileHamburger" onclick="toggleMobileNav()" aria-label="打开全部功能" aria-haspopup="dialog">☰</button>
             <div class="top-nav-links" id="topNavLinks">
                 <a href="{% url 'core:dashboard' %}" class="{% block nav_dashboard %}{% endblock %}">地图总览</a>
                 <a href="{% url 'core:work_reports' %}" class="{% block nav_work_reports %}{% endblock %}">维修日志</a>
@@ -276,13 +278,10 @@
             </div>
         </div>
         <div class="top-nav-right">
-            <span class="top-nav-notif" id="navNotifBtn" title="通知" onclick="reopenNotifPopup()">
-                <svg class="top-nav-notif-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                    <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"></path>
-                    <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
-                </svg>
+            <button type="button" class="top-nav-notif" id="navNotifBtn" title="通知" aria-label="查看通知和PM任务" onclick="reopenNotifPopup()" style="background:none;border:0;color:inherit;padding:8px;">
+                <svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-bell"/></svg>
                 <span class="notif-count" id="navNotifCount">0</span>
-            </span>
+            </button>
             <a href="{% url 'core:profile' %}" class="top-nav-user">{{ user.get_full_name|default:user.username }}</a>
             <a href="{% url 'core:logout' %}" class="top-nav-logout">退出</a>
         </div>
@@ -317,7 +316,7 @@
     <div id="notifPopup" class="notif-popup" onclick="if(event.target===this)closeNotifPopup()">
         <div class="notif-card">
             <div class="notif-header">
-                <span class="notif-badge"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg> 通知</span>
+                <span class="notif-badge"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-bell"/></svg> 通知</span>
                 <span class="notif-counter" id="notifCounter"></span>
                 <button type="button" class="notif-x" onclick="closeNotifPopup()" title="关闭">&times;</button>
             </div>
@@ -329,7 +328,7 @@
                 </div>
             </div>
             <div id="pmTaskSection" class="notif-pm-section" style="display:none;">
-                <div class="notif-pm-head">📋 今日PM任务 (<span id="pmTaskCount">0</span>)</div>
+                <div class="notif-pm-head"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-clipboard"/></svg> 今日PM任务 (<span id="pmTaskCount">0</span>)</div>
                 <div id="pmTaskList" class="notif-pm-list"></div>
             </div>
         </div>
@@ -482,6 +481,8 @@
     </script>
     {% endif %}
 
+    <script src="{% static 'js/ui-icons.js' %}?v=20261023icons"></script>
     {% block extra_js %}{% endblock %}
+    {% include 'core/pwa_shell.html' %}
 </body>
 </html>

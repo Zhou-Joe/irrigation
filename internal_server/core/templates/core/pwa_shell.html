@@ -1,0 +1,35 @@
+{% include 'core/pwa_icons.html' %}
+<div class="pwa-status-stack" aria-live="polite" aria-atomic="true">
+    <div id="pwaConnection" class="pwa-connection" hidden>已离线。请保持当前页面，恢复网络后再提交。未提交的内容与照片尚未保存。</div>
+    <div id="pwaUpdate" class="pwa-update" hidden><span>应用有新版本</span><button type="button" id="pwaUpdateBtn">更新并重新打开</button></div>
+</div>
+{% if user.is_authenticated %}
+<nav class="pwa-bottom-nav" aria-label="手机主导航">
+    <a href="{% url 'core:app_home' %}" data-pwa-nav="home"><svg><use href="#pwa-home"/></svg><span>工作台</span></a>
+    <a href="{% url 'core:dashboard' %}" data-pwa-nav="map"><svg><use href="#pwa-map"/></svg><span>地图</span></a>
+    <a href="{% url 'core:work_reports' %}" data-pwa-nav="work"><svg><use href="#pwa-clipboard"/></svg><span>工单</span></a>
+    <a href="{% url 'core:inventory_management' %}" data-pwa-nav="stock"><svg><use href="#pwa-box"/></svg><span>库存</span></a>
+    <button type="button" data-pwa-launcher aria-haspopup="dialog"><svg><use href="#pwa-grid"/></svg><span>全部</span></button>
+</nav>
+<dialog id="pwaLauncher" class="pwa-dialog" aria-labelledby="pwaLauncherTitle">
+    <div class="pwa-dialog-head"><div><span class="pwa-eyebrow">FIELD WORKSPACE</span><h2 id="pwaLauncherTitle">全部功能</h2></div><button type="button" data-pwa-close aria-label="关闭全部功能">×</button></div>
+    <label class="pwa-search"><span class="pwa-sr-only">查找功能</span><input id="pwaModuleSearch" type="search" placeholder="查找功能，例如：作业计划" autocomplete="off"></label>
+    <div class="pwa-module-list">
+        <a class="pwa-module" href="{% url 'core:app_home' %}"><svg><use href="#pwa-home"/></svg><span><strong>现场工作台</strong><small>快捷操作与待办任务</small></span><span aria-hidden="true">›</span></a>
+        {% for module in pwa_modules %}
+        <a class="pwa-module" href="{{ module.url }}"><svg><use href="#pwa-{{ module.icon }}"/></svg><span><strong>{{ module.label }}</strong><small>{{ module.description }}</small></span><span aria-hidden="true">›</span></a>
+        {% endfor %}
+        <p id="pwaNoModules" hidden>没有匹配的功能，请尝试其他关键词。</p>
+    </div>
+    <div class="pwa-launcher-footer"><button class="pwa-button" type="button" data-pwa-install><svg><use href="#pwa-download"/></svg>安装到手机桌面</button><a href="{% url 'core:logout' %}">退出账号</a></div>
+</dialog>
+{% endif %}
+<dialog id="pwaInstall" class="pwa-dialog pwa-install-dialog" aria-labelledby="pwaInstallTitle">
+    <div class="pwa-dialog-head"><div><span class="pwa-eyebrow">随手打开 · 即刻作业</span><h2 id="pwaInstallTitle">把工作台放进手机桌面</h2></div><button type="button" data-pwa-close aria-label="关闭安装说明">×</button></div>
+    <p>从桌面图标打开，使用完整的地图、工单、PM、需求与管理功能。</p>
+    <div id="pwaInstallInstructions"></div>
+    <p class="pwa-install-note">现场提交、地图及业务数据需要网络。离线时请保留正在填写的页面，联网后再提交。</p>
+    <p id="pwaShellStatus" role="status">正在检查离线提示支持…</p>
+    <button type="button" id="pwaNativeInstall" class="pwa-button" hidden>安装应用</button>
+</dialog>
+<div class="pwa-toast" id="pwaToast" role="status" hidden></div>

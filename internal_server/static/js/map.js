@@ -5,6 +5,11 @@
 
 (function() {
     'use strict';
+    const runtime = window.IrrigationMapRuntime;
+    let labelsVisible = true;
+    let watermarkCache = null;
+    let zonesLoading = false;
+    let pipelinesLoading = false;
 
     // Inject pulse animation for remark indicators
     const style = document.createElement('style');
@@ -134,14 +139,15 @@
     const _smoothIter = _bCfg.smooth || 0;
 
     function _zoneSmooth(zone) {
-        return zone.smooth_override != null ? zone.smooth_override : _smoothIter;
+        const value = Number(zone.smooth_override != null ? zone.smooth_override : _smoothIter);
+        return Number.isFinite(value) ? Math.max(0, Math.min(3, Math.floor(value))) : 0;
     }
 
     // Default zone style (fallback when no status)
     const defaultStyle = {
         color: '#2D6A4F',
-        weight: _bCfg.weight || 2,
-        opacity: _bCfg.opacity || 0.8,
+        weight: _bCfg.weight ?? 2,
+        opacity: _bCfg.opacity ?? 0.8,
         fillColor: '#2D6A4F',
         fillOpacity: _bCfg.fillOpacity != null ? _bCfg.fillOpacity : 0.12,
         dashArray: _dash(_bCfg.dashStyle),
@@ -160,8 +166,8 @@
     // unresolved 待修 work report (needs_attention flag from the payload).
     const attentionStyle = {
         color: '#CC7722',
-        weight: _bCfg.weight || 2,
-        opacity: _bCfg.opacity || 0.7,
+        weight: _bCfg.weight ?? 2,
+        opacity: _bCfg.opacity ?? 0.7,
         fillColor: '#CC7722',
         fillOpacity: _bCfg.fillOpacity != null ? _bCfg.fillOpacity : 0.15,
         dashArray: _dash(_bCfg.dashStyle),
@@ -169,8 +175,8 @@
     };
 
     // Status-based polygon styling (from design system)
-    const _bW = _bCfg.weight || 2;
-    const _bO = _bCfg.opacity || 0.7;
+    const _bW = _bCfg.weight ?? 2;
+    const _bO = _bCfg.opacity ?? 0.7;
     const _bFO = _bCfg.fillOpacity != null ? _bCfg.fillOpacity : 0.15;
     const _bD = _dash(_bCfg.dashStyle);
 
@@ -245,13 +251,15 @@
             maxBounds: bounds,
             maxBoundsViscosity: 1.0,
             layers: [satelliteLayer],
-            zoomControl: true,
+            zoomControl: false,
             preferCanvas: true,
             // Touch: the map must own pan + pinch-zoom (mobile users pinch the map
             // to zoom, never the page — page zoom is locked via the viewport meta).
             dragging: true,
             touchZoom: true,
         });
+
+        L.control.zoom({zoomInText: window.uiIcon('plus'), zoomOutText: window.uiIcon('minus')}).addTo(map);
 
         // Expose map instance for external use (sidebar resize)
         window._map = map;
@@ -334,38 +342,54 @@
      * shown over the map until the zones render.
      */
     function applyZones(zones) {
+        if (!Array.isArray(zones)) throw new Error('Invalid zone payload');
         window.zonesData = zones;
         window._zoneById = {};
         zones.forEach(function (z) { window._zoneById[z.id] = z; });
-        renderZones(zones);
-        var ov = document.getElementById('zone-loading-overlay');
-        if (ov) ov.style.display = 'none';
+        // Remark grouping uses the same geometry as the map, without making
+        // the HTML request decode every zone's boundaries a second time.
+        const remarked = zones.filter(z => z.has_remarks);
+        const centers = remarked.map(z => runtime.point(z.center)).filter(Boolean);
+        _pendingRemarkZoneIds = new Set(remarked.map(z => z.id));
+        _pendingRemarksData = centers.length ? {
+            count:remarked.length, zone_ids:remarked.map(z => z.id),
+            center:{lat:centers.reduce((sum,c) => sum+c[0],0)/centers.length,
+                lng:centers.reduce((sum,c) => sum+c[1],0)/centers.length}
+        } : null;
+        return renderZones(zones).then(() => {
+            var ov = document.getElementById('zone-loading-overlay');
+            if (ov) ov.style.display = 'none';
+            document.getElementById('map').dataset.zonesState = 'ready';
+            document.dispatchEvent(new CustomEvent('irrigation:zones-ready'));
+        });
     }
 
     function loadZones() {
+        if (zonesLoading) return;
+        zonesLoading = true;
         var overlay = document.getElementById('zone-loading-overlay');
         if (overlay) overlay.style.display = '';
+        const message = document.getElementById('zoneLoadingMessage');
+        const spinner = document.getElementById('zoneLoadingSpinner');
+        const retry = document.getElementById('zoneLoadingRetry');
+        if (message) message.textContent = '加载区域数据…';
+        if (spinner) spinner.hidden = false;
+        if (retry) { retry.hidden = true; retry.onclick = loadZones; }
+        document.getElementById('map').dataset.zonesState = 'loading';
 
         // Legacy fallback: if the page still inlines the zones JSON, use it directly.
         var zonesDataElement = document.getElementById('zones-data');
-        if (zonesDataElement && zonesDataElement.textContent.trim()) {
-            try {
-                applyZones(JSON.parse(zonesDataElement.textContent));
-            } catch (error) {
-                console.error('Error parsing zones data:', error);
-                if (overlay) overlay.style.display = 'none';
-            }
-            return;
-        }
-
-        // Async fetch from the cacheable endpoint.
-        fetch('/api/zones-payload/', { credentials: 'same-origin' })
-            .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
-            .then(function (zones) { applyZones(zones); })
+        const request = zonesDataElement && zonesDataElement.textContent.trim()
+            ? Promise.resolve().then(() => JSON.parse(zonesDataElement.textContent))
+            : runtime.fetchJSON('/api/zones-payload/');
+        request.then(applyZones)
             .catch(function (err) {
                 console.error('Failed to load zones:', err);
-                if (overlay) overlay.style.display = 'none';
-            });
+                if (spinner) spinner.hidden = true;
+                if (message) message.textContent = '区域加载失败，请检查网络后重试。';
+                if (retry) retry.hidden = false;
+                document.getElementById('map').dataset.zonesState = 'error';
+            }).finally(() => { zonesLoading = false; });
     }
 
     /**
@@ -445,28 +469,28 @@
             interactive: false,
             icon: L.divIcon({
                 className: 'zone-label',
-                html: `<div style="transform:translate(-50%,-50%);white-space:nowrap;"><span style="${labelStyle}">${getCodeForZoom(code, map.getZoom())}</span></div>`,
+                html: `<div style="transform:translate(-50%,-50%);white-space:nowrap;"><span style="${labelStyle}">${escapeHtml(getCodeForZoom(code, map.getZoom()))}</span></div>`,
                 iconSize: null,
                 iconAnchor: [0, 0]
             })
         });
         label._zone = zone;
         label._originalCenter = center;
-        labelsLayerGroup.addLayer(label);
+        // Attach only labels needed at this zoom/viewport. At overview zoom
+        // thousands of hidden markers otherwise enter the DOM before hiding.
         zoneLabels.push(label);
 
         // Multi-boundary zones: build BOTH the leader lines (shown when 连线 is ON) and
         // small per-ring sublabels (shown when 连线 is OFF). Initial visibility follows
         // the global toggle so the 连线 layer switch is instant (no re-render needed).
-        if (isMultiPolygonFormat(zone.boundary_points) && zone.boundary_points.length > 1) {
+        if (zone._mapRings && zone._mapRings.length > 1) {
             label._leaderLines = [];
             label._ringLabels = [];
             const showLines = window._leaderLinesVisible;
             const ringLabelSize = Math.round((_lCfg.fontSize || 25) * 0.7);
-            zone.boundary_points.forEach(ring => {
-                const ringPts = pointsToLatLngs(ring);
+            zone._mapRings.forEach((ringPts, ringIndex) => {
                 if (ringPts.length < 3) return;
-                const smoothPts = _smoothLL(ringPts, _zoneSmooth(zone));
+                const smoothPts = zone._renderRings[ringIndex];
                 const ringCenter = _ringAnchor(smoothPts, center[0], center[1]);
                 // Leader line from the zone centroid to this ring's anchor
                 const line = L.polyline([center, ringCenter], {
@@ -477,7 +501,6 @@
                     interactive: false
                 });
                 if (!showLines) line.setStyle({ opacity: 0 });
-                leaderLinesLayerGroup.addLayer(line);
                 label._leaderLines.push(line);
                 // Small sublabel centered on the ring (shown only when 连线 is OFF).
                 // Visibility is controlled solely by syncMultiBoundaryDisplay() via
@@ -487,12 +510,11 @@
                     icon: L.divIcon({
                         className: 'zone-ring-label',
                         html: `<div style="transform:translate(-50%,-50%);white-space:nowrap;">
-                            <span style="font-size:${ringLabelSize}px;color:#1B4332;font-weight:600;background:rgba(255,255,255,0.7);padding:0 3px;border-radius:3px;">${zone.code}</span>
+                            <span style="font-size:${ringLabelSize}px;color:#1B4332;font-weight:600;background:rgba(255,255,255,0.7);padding:0 3px;border-radius:3px;">${escapeHtml(zone.code)}</span>
                         </div>`,
                         iconSize: null, iconAnchor: [0, 0]
                     })
                 });
-                ringLabelsLayerGroup.addLayer(sub);
                 label._ringLabels.push(sub);
             });
         }
@@ -541,6 +563,7 @@
      * Both rules mean "no point expanding a name level when it adds no information".
      */
     function computeWatermarks() {
+        if (watermarkCache) return watermarkCache;
         // landName -> { centerSum:[lat,lng], count, names:Set }
         const landAgg = {};
         // name -> { centerSum:[lat,lng], count, land:landName }
@@ -578,7 +601,7 @@
             if (landName && name === landName) return;
             nameWm[name] = { center: [a.sLat / a.count, a.sLng / a.count], land: landName };
         });
-        return { landWm: landWm, nameWm: nameWm };
+        return watermarkCache = { landWm: landWm, nameWm: nameWm };
     }
 
     /**
@@ -595,7 +618,7 @@
                 icon: L.divIcon({
                     className: 'zone-watermark',
                     html: `<div style="transform:translate(-50%,-50%);white-space:nowrap;">
-                        <span style="font-size:${e.size}px;color:rgba(255,255,255,0.55);font-weight:700;text-shadow:0 0 8px rgba(0,0,0,0.3);pointer-events:none;">${e.text}</span>
+                        <span style="font-size:${e.size}px;color:rgba(255,255,255,0.55);font-weight:700;text-shadow:0 0 8px rgba(0,0,0,0.3);pointer-events:none;">${escapeHtml(e.text)}</span>
                     </div>`,
                     iconSize: null, iconAnchor: [0, 0]
                 })
@@ -614,20 +637,30 @@
      *     (zoom>=19). Earlier levels keep the map uncluttered.
      * Called after every label re-layout so the 连线 layer toggle stays consistent.
      */
+    function setMarkerVisible(marker, group, visible) {
+        if (visible && !group.hasLayer(marker)) group.addLayer(marker);
+        else if (!visible && group.hasLayer(marker)) group.removeLayer(marker);
+        const el = marker.getElement();
+        if (el && visible) el.style.opacity = marker._filterMatch === false ? '0.1' : '1';
+    }
+
     function syncMultiBoundaryDisplay(showLabels, zoom) {
         const wantLines = showLabels && window._leaderLinesVisible;
         const wantRing = showLabels && !window._leaderLinesVisible && zoom >= 19;
+        const bounds = map.getBounds().pad(0.15);
         const lineOpacity = _rCfg.opacity != null ? _rCfg.opacity : 0.55;
         zoneLabels.forEach(label => {
-            if (label._leaderLines) {
-                label._leaderLines.forEach(line => { line.setStyle({ opacity: wantLines ? lineOpacity : 0 }); });
-            }
-            if (label._ringLabels) {
-                label._ringLabels.forEach(sub => {
-                    const el = sub.getElement();
-                    if (el) el.style.display = wantRing ? '' : 'none';
-                });
-            }
+            (label._leaderLines || []).forEach(line => {
+                const visible = wantLines && bounds.intersects(line.getBounds());
+                if (visible) {
+                    line.setStyle({opacity: label._filterMatch === false ? 0.05 : lineOpacity});
+                    if (!leaderLinesLayerGroup.hasLayer(line)) leaderLinesLayerGroup.addLayer(line);
+                } else if (leaderLinesLayerGroup.hasLayer(line)) leaderLinesLayerGroup.removeLayer(line);
+            });
+            (label._ringLabels || []).forEach(sub => {
+                sub._filterMatch = label._filterMatch;
+                setMarkerVisible(sub, ringLabelsLayerGroup, wantRing && bounds.contains(sub.getLatLng()));
+            });
         });
     }
 
@@ -646,8 +679,8 @@
     // Clearing the class after the layout pass (not before) avoids a flash where the CSS
     // override lifts before per-element display has been re-applied.
     function _updateLabelSizesAndClearZoom() {
-        updateLabelSizes();
-        map.getContainer().classList.remove('map-zooming');
+        try { updateLabelSizes(); }
+        finally { map.getContainer().classList.remove('map-zooming'); }
     }
     const updateLabelSizesDebounced = _debounce(_updateLabelSizesAndClearZoom, 120);
 
@@ -661,151 +694,75 @@
      * at lower zoom levels labels are already grouped/hidden.
      */
     function _cullLabelsToViewport() {
-        const z = map.getZoom();
-        if (z < 18) return;
-        const pad = 0.002;  // ~200m margin so labels at the edge stay visible while panning
-        const b = map.getBounds().pad(pad);
+        const zoom = map.getZoom();
+        if (!labelsVisible || zoom < 18) return;
+        const bounds = map.getBounds().pad(0.15);
         zoneLabels.forEach(label => {
-            const el = label.getElement();
-            if (!el) return;
-            const c = label._originalCenter;
-            const inView = c && b.contains(L.latLng(c[0], c[1]));
-            el.style.display = inView ? '' : 'none';
+            const center = label._originalCenter;
+            setMarkerVisible(label, labelsLayerGroup, !!center && bounds.contains(L.latLng(center[0], center[1])));
+            const span = label.getElement()?.querySelector('span');
+            if (span) {
+                span.style.fontSize = (getLabelFontSize(zoom) * (label._zone?.label_scale || 1)) + 'px';
+                span.textContent = label._zone?.code || '';
+            }
         });
+        syncMultiBoundaryDisplay(true, zoom);
     }
     const _cullLabelsToViewportDebounced = _debounce(_cullLabelsToViewport, 80);
 
-    /**
-     * Update all zone label sizes on zoom change
-     */
     function updateLabelSizes() {
         const zoom = map.getZoom();
-        const showLabels = zoom >= LABEL_MIN_ZOOM;
+        const showLabels = labelsVisible && zoom >= LABEL_MIN_ZOOM;
         const baseSize = getLabelFontSize(zoom);
-
-        // Group labels by truncated code when zoomed out
-        if (showLabels && zoom < 18) {
-            if (zoom < 17) {
-                // Farthest level: show ONLY the Land watermark (smaller font). Zone code
-                // labels are hidden to reduce clutter — the watermark carries the location
-                // meaning at this scale.
-                zoneLabels.forEach(label => {
-                    const el = label.getElement();
-                    if (el) el.style.display = 'none';
-                });
-                const wm = computeWatermarks();
-                const wmSize = Math.round(baseSize * 0.7);  // smaller than the xx-xx watermark
-                const landEntries = Object.entries(wm.landWm).map(([name, center]) => ({
-                    text: name, center: center, size: wmSize
-                }));
-                renderWatermarks(landEntries);
-            } else {
-                // xx-xx level (zoom 17): group labels by truncated code, show one per group,
-                // plus a Land watermark at each land's centroid.
-                const groups = {};
-                zoneLabels.forEach(label => {
-                    const zone = label._zone;
-                    if (!zone) return;
-                    const key = getCodeForZoom(zone.code, zoom);
-                    if (!groups[key]) groups[key] = [];
-                    groups[key].push(label);
-                });
-
-                const wm = computeWatermarks();
-                const wmSize = Math.round(baseSize * 1.2);
-                const landEntries = Object.entries(wm.landWm).map(([name, center]) => ({
-                    text: name, center: center, size: wmSize
-                }));
-                renderWatermarks(landEntries);
-
-                // For each group, show only one label at the group centroid
-                Object.entries(groups).forEach(([key, labels]) => {
-                    let latSum = 0, lngSum = 0, count = 0;
-                    labels.forEach(l => {
-                        const c = l._originalCenter;
-                        if (c) { latSum += c[0]; lngSum += c[1]; count++; }
-                    });
-                    const groupCenter = count > 0 ? [latSum / count, lngSum / count] : labels[0]._originalCenter;
-
-                    labels.forEach((label, i) => {
-                        const el = label.getElement();
-                        if (i === 0) {
-                            if (el) el.style.display = '';
-                            label.setLatLng(groupCenter);
-                            const zone = label._zone;
-                            const scale = zone ? (zone.label_scale || 1.0) : 1.0;
-                            const size = baseSize * scale;
-                            const span = el ? el.querySelector('span') : null;
-                            if (span) {
-                                span.style.fontSize = size + 'px';
-                                span.textContent = key;  // xx-xx level: label is just xx-xx
-                            }
-                        } else {
-                            if (el) el.style.display = 'none';
-                        }
-                    });
-                });
-            }
-        } else {
-            // Full zoom (zoom>=18): show individual labels at original positions.
-            // Watermarks show the Land (big), plus — at deep zoom — a smaller 通用名称
-            // watermark under each land, EXCEPT when the name adds no information (land has
-            // only one name, or name === land name). Name dedup lives in computeWatermarks().
-            if (showLabels) {
-                const wmFull = computeWatermarks();
-                const wmFullSize = Math.round(baseSize * 1.2);
-                const wmZoom17Size = Math.round(getLabelFontSize(17) * 1.2);
-                const landWmSize = Math.max(wmFullSize, wmZoom17Size);  // baseSize is tiny at full zoom
-                const nameWmSize = Math.round(landWmSize * 0.49);
-                const entries = [];
-                Object.entries(wmFull.landWm).forEach(([name, center]) => {
-                    entries.push({ text: name, center: center, size: landWmSize });
-                });
-                if (zoom > 18) {
-                    Object.entries(wmFull.nameWm).forEach(([name, info]) => {
-                        entries.push({ text: name, center: info.center, size: nameWmSize });
-                    });
-                }
-                renderWatermarks(entries);
-            } else if (window.__wmLayer) {
-                // Labels off (zoom < LABEL_MIN_ZOOM): clear any stale watermarks.
-                window.__wmLayer.clearLayers();
-            }
+        const representatives = new Map();
+        if (showLabels && zoom === 17) {
+            const groups = new Map();
             zoneLabels.forEach(label => {
-                const el = label.getElement();
-                if (el) {
-                    // Style/position every label, but visibility is decided by viewport
-                    // culling below (off-screen labels hidden to keep pan smooth).
-                    el.style.display = 'none';
-                    if (showLabels) {
-                        const zone = label._zone;
-                        const scale = zone ? (zone.label_scale || 1.0) : 1.0;
-                        const size = baseSize * scale;
-                        const span = el.querySelector('span');
-                        if (span) {
-                            span.style.fontSize = size + 'px';
-                            span.textContent = zone ? zone.code : '';
-                        }
-                    }
-                }
-                // Restore original position
-                if (label._originalCenter) label.setLatLng(label._originalCenter);
+                const key = getCodeForZoom(label._zone.code, zoom);
+                if (!groups.has(key)) groups.set(key, []);
+                groups.get(key).push(label);
             });
-            // At full zoom, only show labels inside the viewport (off-screen ones stay hidden).
-            if (showLabels) _cullLabelsToViewport();
+            groups.forEach((labels, key) => {
+                const centers = labels.map(l => l._originalCenter).filter(Boolean);
+                const center = centers.length ? [
+                    centers.reduce((sum,c) => sum+c[0],0)/centers.length,
+                    centers.reduce((sum,c) => sum+c[1],0)/centers.length
+                ] : labels[0]._originalCenter;
+                representatives.set(labels[0], {center, code:key});
+            });
         }
-        // Leader lines / ring sublabels follow the current 连线 toggle + zoom visibility.
-        syncMultiBoundaryDisplay(showLabels, zoom);
-        // Landmark labels: same zoom-based scaling, no per-item scale
-        const lmSize = baseSize * 0.85;
+        zoneLabels.forEach(label => {
+            const grouped = representatives.get(label);
+            const center = grouped ? grouped.center : label._originalCenter;
+            if (center) label.setLatLng(center);
+            const visible = showLabels && zoom === 17 && !!grouped;
+            // Full-zoom visibility is applied by viewport culling below.
+            if (zoom < 18 || !showLabels) setMarkerVisible(label, labelsLayerGroup, visible);
+            const span = label.getElement()?.querySelector('span');
+            if (span && grouped) {
+                span.style.fontSize = (baseSize * (label._zone.label_scale || 1)) + 'px';
+                span.textContent = grouped.code;
+            }
+        });
+        const entries = [];
+        if (showLabels) {
+            const wm = computeWatermarks();
+            const size = zoom < 17 ? Math.round(baseSize * 0.7)
+                : Math.max(Math.round(baseSize * 1.2), Math.round(getLabelFontSize(17) * 1.2));
+            Object.entries(wm.landWm).forEach(([text, center]) => entries.push({text, center, size}));
+            if (zoom > 18) Object.entries(wm.nameWm).forEach(([text, info]) => {
+                entries.push({text, center:info.center, size:Math.round(size * 0.49)});
+            });
+        }
+        renderWatermarks(entries);
+        if (showLabels && zoom >= 18) _cullLabelsToViewport();
+        else syncMultiBoundaryDisplay(showLabels, zoom);
         landmarkLabels.forEach(label => {
             const el = label.getElement();
             if (el) {
                 el.style.display = showLabels ? '' : 'none';
-                if (showLabels) {
-                    const span = el.querySelector('span');
-                    if (span) span.style.fontSize = lmSize + 'px';
-                }
+                const span = el.querySelector('span');
+                if (span && showLabels) span.style.fontSize = (baseSize * 0.85) + 'px';
             }
         });
     }
@@ -889,7 +846,7 @@
                 iconSize: [30, 30], iconAnchor: [15, 15]
             })
         });
-        marker.bindTooltip('<div style="font-size:12px;"><strong>📝 待确认备注 · ' + d.count + ' 个区域</strong><br><span style="color:#888;font-size:11px;">点击查看详情</span></div>', { direction: 'top', offset: [0, -10] });
+        marker.bindTooltip('<div style="font-size:12px;"><strong>' + window.uiIcon('clipboard') + ' 待确认备注 · ' + d.count + ' 个区域</strong><br><span style="color:#888;font-size:11px;">点击查看详情</span></div>', { direction: 'top', offset: [0, -10] });
         marker.on('click', function () {
             window.location.href = '/remarks/';
         });
@@ -911,7 +868,7 @@
                 })
             });
             marker.bindTooltip('<div style="font-size:12px;">' +
-                '<strong>💧 ' + (r.request_type || r.type_display || '浇水协调') + '</strong>' +
+                '<strong>' + window.uiIcon('drop') + ' ' + (r.request_type || r.type_display || '浇水协调') + '</strong>' +
                 ' · <span style="color:#888;">' + (r.user_type || '') + '</span>' +
                 ' · ' + r.count + ' 个区域<br>' +
                 '<span style="color:#555;">' + (r.start || '') + ' → ' + (r.end || '') + '</span><br>' +
@@ -932,13 +889,18 @@
         if (leaderLinesLayerGroup) leaderLinesLayerGroup.clearLayers();
         if (ringLabelsLayerGroup) ringLabelsLayerGroup.clearLayers();
         zoneLabels = [];
+        watermarkCache = null;
 
-        zones.forEach(zone => {
+        return runtime.renderBatches(zones, zone => {
             if (!zone.boundary_points || zone.boundary_points.length === 0) {
                 return;
             }
 
             try {
+                const rings = runtime.boundaryRings(zone.boundary_points);
+                if (!rings.length) return;
+                zone._mapRings = rings;
+                zone._renderRings = rings.map(ring => _smoothLL(ring, _zoneSmooth(zone)));
                 // Color rule: green default; orange if needs_attention (unconfirmed
                 // remarks OR unresolved 待修); red only when user-selected (highlight).
                 // A pending water request overrides to an orange outline (the marker
@@ -983,61 +945,24 @@
                     equipmentNotes: zone.equipment_maintenance_notes || '',
                     irrigationNotes: zone.irrigation_management_notes || '',
                     recentWorkorders: zone.recent_workorders || [],
+                    smooth_override: zone.smooth_override,
                     hasRemarks: zone.has_remarks || false,
                     hasConfirmedRemarks: zone.has_confirmed_remarks || false,
                     center: zone.center || null,
                 };
 
-                if (isMultiPolygonFormat(zone.boundary_points)) {
-                    // Check if nested multi-group: [[[{lat,lng},...], ...], ...]
-                    const bp = zone.boundary_points;
-                    const isNestedMultiGroup = bp.length > 0 && Array.isArray(bp[0]) && bp[0].length > 0
-                        && Array.isArray(bp[0][0]) && bp[0][0].length > 0 && (bp[0][0][0]?.lat !== undefined || bp[0][0][0]?.lng !== undefined);
-
-                    // Flatten to a list of rings for rendering
-                    let flatRings;
-                    if (isNestedMultiGroup) {
-                        flatRings = [];
-                        bp.forEach(group => { group.forEach(ring => { flatRings.push(ring); }); });
-                    } else {
-                        flatRings = bp;
-                    }
-
-                    let allLatLngs = [];
-                    flatRings.forEach((ring, ringIdx) => {
-                        const latLngs = pointsToLatLngs(ring);
-                        if (latLngs.length < 3) return;
-
-                        const polygon = L.polygon(_smoothLL(latLngs, _zoneSmooth(zone)), zoneStyle);
-                        polygon.zoneData = zoneData;
-                        polygon.originalStyle = zoneStyle;
-                        polygon.on('mouseover', handleMouseOver);
-                        polygon.on('mouseout', handleMouseOut);
-                        polygon.on('click', handleClick);
-                        polygon.bindTooltip(`${zone.code} ${zone.name || ''}`, {sticky: true});
-                        zonesLayerGroup.addLayer(polygon);
-                        allLatLngs = allLatLngs.concat(latLngs);
-                    });
-                    if (allLatLngs.length > 0) {
-                        zone._allLatLngs = allLatLngs;
-                        addZoneLabel(zone);
-                    }
-                } else {
-                    // Legacy single-polygon format
-                    const latLngs = pointsToLatLngs(zone.boundary_points);
-                    if (latLngs.length < 3) return;
-
-                    const polygon = L.polygon(_smoothLL(latLngs, _zoneSmooth(zone)), zoneStyle);
+                zone._renderRings.forEach(latLngs => {
+                    const polygon = L.polygon(latLngs, zoneStyle);
                     polygon.zoneData = zoneData;
                     polygon.originalStyle = zoneStyle;
                     polygon.on('mouseover', handleMouseOver);
                     polygon.on('mouseout', handleMouseOut);
                     polygon.on('click', handleClick);
-                    polygon.bindTooltip(`${zone.code} ${zone.name || ''}`, {sticky: true});
+                    polygon.bindTooltip(escapeHtml(`${zone.code} ${zone.name || ''}`), {sticky: true});
                     zonesLayerGroup.addLayer(polygon);
-                    zone._allLatLngs = latLngs;
-                    addZoneLabel(zone);
-                }
+                });
+                zone._allLatLngs = rings.flat();
+                addZoneLabel(zone);
 
                 // Pending water requests are shown as a single marker per request
                 // (see renderPendingWaterRequestMarkers) instead of one per zone.
@@ -1048,15 +973,23 @@
             } catch (err) {
                 console.error('Error creating polygon for zone:', zone.name, err);
             }
-        });
-
-        // Apply initial label visibility based on current zoom
+        }, { progress(done, total) {
+            const message = document.getElementById('zoneLoadingMessage');
+            if (message) message.textContent = '绘制区域 ' + done + ' / ' + total + '…';
+        }}).then(() => {
+        // Apply initial label visibility based on current zoom.
         updateLabelSizes();
+        if (window.applyMapFilters) window.applyMapFilters();
+        if (currentPopupZoneData?.id) {
+            highlightedZoneId = null;
+            highlightZonePolygons(currentPopupZoneData.id);
+        }
         // One marker per pending water request (with zone boundaries already
         // highlighted via pendingWaterStyle above).
         renderPendingWaterRequestMarkers();
         // One marker for all pending-remark zones (boundaries highlighted too).
         renderPendingRemarksMarker();
+        });
     }
 
     /**
@@ -1099,7 +1032,7 @@
         // visual clutter when many zones shared a request).
         marker.bindTooltip(`
             <div style="font-size: 12px;">
-                <strong>💧 待审批浇水需求 ${pendingCount} 个</strong><br>
+                <strong>${window.uiIcon('drop')} 待审批浇水需求 ${pendingCount} 个</strong><br>
                 <span style="color: #888; font-size: 11px;">点击查看详情</span>
             </div>
         `, {
@@ -1193,11 +1126,14 @@
     ];
 
     const CARD_SETTINGS_KEY = 'zoneProfileCardFields';
+    let cardSettingsMemory = null;
 
     function getCardFieldSettings() {
+        if (cardSettingsMemory) return cardSettingsMemory;
         try {
             const saved = localStorage.getItem(CARD_SETTINGS_KEY);
-            if (saved) return JSON.parse(saved);
+            const parsed = saved ? JSON.parse(saved) : null;
+            if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed;
         } catch (e) {}
         // Default: all fields hidden
         const defaults = {};
@@ -1208,7 +1144,8 @@
     function saveCardFieldSetting(key, visible) {
         const settings = getCardFieldSettings();
         settings[key] = visible;
-        localStorage.setItem(CARD_SETTINGS_KEY, JSON.stringify(settings));
+        cardSettingsMemory = settings;
+        try { localStorage.setItem(CARD_SETTINGS_KEY, JSON.stringify(settings)); } catch (e) { /* Keep the UI usable when storage is unavailable. */ }
     }
 
     // Currently displayed zone data (for re-rendering after settings change)
@@ -1247,18 +1184,18 @@
                 const maxShow = 5;
                 const listId = 'notes_' + f.key + '_' + zone.id;
                 const allHtml = entries.map(e => {
-                    const d = e.date || '';
+                    const d = typeof e.date === 'string' ? e.date : '';
                     const displayDate = d && d !== '日期格式错误'
                         ? d.replace(/-0*/g, '/').replace(/^20/, '')
                         : '';
-                    return `<div style="display:flex;gap:4px;font-size:0.82em;padding:1px 0;"><span style="color:var(--color-primary);flex-shrink:0;min-width:56px;">${displayDate}</span><span style="color:#555;word-break:break-all;">${e.content || ''}</span></div>`;
+                    return `<div style="display:flex;gap:4px;font-size:0.82em;padding:1px 0;"><span style="color:var(--color-primary);flex-shrink:0;min-width:56px;">${escapeHtml(displayDate)}</span><span style="color:#555;word-break:break-all;">${escapeHtml(e.content || '')}</span></div>`;
                 }).join('');
                 const collapsedHtml = entries.slice(0, maxShow).map(e => {
-                    const d = e.date || '';
+                    const d = typeof e.date === 'string' ? e.date : '';
                     const displayDate = d && d !== '日期格式错误'
                         ? d.replace(/-0*/g, '/').replace(/^20/, '')
                         : '';
-                    return `<div style="display:flex;gap:4px;font-size:0.82em;padding:1px 0;"><span style="color:var(--color-primary);flex-shrink:0;min-width:56px;">${displayDate}</span><span style="color:#555;word-break:break-all;">${e.content || ''}</span></div>`;
+                    return `<div style="display:flex;gap:4px;font-size:0.82em;padding:1px 0;"><span style="color:var(--color-primary);flex-shrink:0;min-width:56px;">${escapeHtml(displayDate)}</span><span style="color:#555;word-break:break-all;">${escapeHtml(e.content || '')}</span></div>`;
                 }).join('');
                 const remaining = entries.length - maxShow;
                 const moreBtn = remaining > 0
@@ -1279,9 +1216,9 @@
                     const url = w.detail_url || ('/work-reports/' + id + '/');
                     return `<div style="display:flex;gap:6px;font-size:0.82em;padding:2px 0;align-items:baseline;">
                         <a href="${url}" target="_blank" rel="noopener" style="color:var(--color-primary);font-weight:600;flex-shrink:0;text-decoration:none;" title="在新标签打开工单 #${id}">#${id}</a>
-                        <span style="color:#888;flex-shrink:0;min-width:46px;">${date}</span>
-                        ${sections ? `<span style="color:#1565c0;background:#e3f2fd;padding:0 5px;border-radius:8px;font-size:0.92em;flex-shrink:0;">${sections}</span>` : ''}
-                        <span style="color:#555;word-break:break-all;flex:1;min-width:0;">${path}</span>
+                        <span style="color:#888;flex-shrink:0;min-width:46px;">${escapeHtml(date)}</span>
+                        ${sections ? `<span style="color:#1565c0;background:#e3f2fd;padding:0 5px;border-radius:8px;font-size:0.92em;flex-shrink:0;">${escapeHtml(sections)}</span>` : ''}
+                        <span style="color:#555;word-break:break-all;flex:1;min-width:0;">${escapeHtml(path)}</span>
                     </div>`;
                 }).join('');
                 const collapsedHtml = rowHtml(entries.slice(0, maxShow));
@@ -1292,21 +1229,21 @@
                     : '';
                 fieldsHtml += `<div class="popup-field" style="flex-direction:column;align-items:stretch;gap:2px;"><span class="popup-field-label">${f.label}</span><div id="${listId}_collapsed" style="margin-left:0;">${collapsedHtml}${moreBtn}</div><div id="${listId}_expanded" style="margin-left:0;display:none;">${allHtml}<div class="notes-expand-btn" style="font-size:0.78em;color:var(--color-primary);padding-top:1px;cursor:pointer;text-decoration:underline;" onclick="window._toggleNotesExpand('${listId}', this)">收起</div></div></div>`;
             } else {
-                fieldsHtml += `<div class="popup-field"><span class="popup-field-label">${f.label}</span><span class="popup-field-value">${val}</span></div>`;
+                fieldsHtml += `<div class="popup-field"><span class="popup-field-label">${f.label}</span><span class="popup-field-value">${escapeHtml(val)}</span></div>`;
             }
         });
 
         // Fault warning
         let faultHtml = '';
         if (zone.recentFaultCount > 0) {
-            faultHtml = `<div class="popup-alert">⚠️ 近30天 ${zone.recentFaultCount} 次故障</div>`;
+            faultHtml = `<div class="popup-alert">${window.uiIcon('alert')} 近30天 ${zone.recentFaultCount} 次故障</div>`;
         }
 
         // Pending requests
         let pendingHtml = '';
         const pendingCount = (zone.pendingRequests || []).length;
         if (pendingCount > 0) {
-            pendingHtml = `<div class="popup-alert popup-alert-warn">💧 ${pendingCount} 个待审批浇水需求</div>`;
+            pendingHtml = `<div class="popup-alert popup-alert-warn">${window.uiIcon('drop')} ${pendingCount} 个待审批浇水需求</div>`;
         }
 
         const hasExtra = fieldsHtml || faultHtml || pendingHtml;
@@ -1315,19 +1252,19 @@
             <div class="popup-card">
                 <div class="popup-header">
                     <div>
-                        <div class="popup-title">${zone.code} - ${zone.name}</div>
-                        ${statusInfo ? `<span class="popup-status-badge" style="background: ${statusInfo.color}18; color: ${statusInfo.color};">${statusInfo.label}</span>` : ''}
+                        <div class="popup-title">${escapeHtml(zone.code)} - ${escapeHtml(zone.name)}</div>
+                        ${statusInfo ? `<span class="popup-status-badge" style="background: ${statusInfo.color}18; color: ${statusInfo.color};">${escapeHtml(statusInfo.label)}</span>` : ''}
                     </div>
                     <div style="display:flex;gap:6px;align-items:center;">
-                        <button class="popup-settings-btn" onclick="togglePopupSettings()" title="自定义显示字段">⚙</button>
-                        <button class="popup-close-btn" onclick="window.hideZonePopup()" title="关闭">✕</button>
+                        <button class="popup-settings-btn" onclick="togglePopupSettings()" title="自定义显示字段">${window.uiIcon('settings')}</button>
+                        <button class="popup-close-btn" onclick="window.hideZonePopup()" title="关闭">${window.uiIcon('close')}</button>
                     </div>
                 </div>
                 ${hasExtra ? '<div class="popup-fields">' + fieldsHtml + faultHtml + pendingHtml + '</div>' : ''}
                 <div class="popup-footer">
                     <div class="popup-quick-actions">
-                        <button class="popup-action-btn popup-action-primary" onclick="if(typeof window.quickWorkorder==='function')window.quickWorkorder(['${zone.code}'])">📝 创建工单</button>
-                        <button class="popup-action-btn popup-action-patch" data-zone-name="${zone.name || ''}" data-zone-code="${zone.code}" onclick="window._quickPatchWorkorder(this)">📋 片区工单</button>
+                        <button class="popup-action-btn popup-action-primary" data-zone-code="${escapeHtml(zone.code)}" onclick="if(typeof window.quickWorkorder==='function')window.quickWorkorder([this.dataset.zoneCode])">${window.uiIcon('clipboard')} 创建工单</button>
+                        <button class="popup-action-btn popup-action-patch" data-zone-name="${escapeHtml(zone.name || '')}" data-zone-code="${escapeHtml(zone.code)}" onclick="window._quickPatchWorkorder(this)">${window.uiIcon('layers')} 片区工单</button>
                     </div>
                     <button class="popup-detail-btn" onclick="window.location.href='/zone/${zone.id}/detail/'">查看区域详情</button>
                 </div>
@@ -1343,7 +1280,7 @@
             <div class="popup-card">
                 <div class="popup-header">
                     <div class="popup-title" style="font-size:0.92em;">自定义显示字段</div>
-                    <button class="popup-settings-btn" onclick="togglePopupSettings()" title="返回">✕</button>
+                    <button class="popup-settings-btn" onclick="togglePopupSettings()" title="返回">${window.uiIcon('close')}</button>
                 </div>
                 <div class="popup-settings-list">
                     ${ZONE_CARD_FIELDS.map(f => `
@@ -1447,10 +1384,10 @@
         if (!zoneCode) return;
         var codes = [zoneCode];
         // Group by common name (zone.name); if name is empty, fall back to just this zone
-        if (zoneName && window._dashboardZonesLayer) {
-            window._dashboardZonesLayer.eachLayer(function (l) {
-                if (l.zoneData && l.zoneData.name === zoneName && l.zoneData.code && !codes.includes(l.zoneData.code)) {
-                    codes.push(l.zoneData.code);
+        if (zoneName && window.zonesData) {
+            window.zonesData.forEach(function (zone) {
+                if (zone.name === zoneName && zone.code && !codes.includes(zone.code)) {
+                    codes.push(zone.code);
                 }
             });
         }
@@ -1503,56 +1440,44 @@
     };
 
     function _refreshZonePolygons(zoneData) {
-        // Find and remove existing polygons for this zone, then re-add with new smooth
+        const zone = (window.zonesData || []).find(z => z.id === zoneData.id);
+        if (!zone) return;
+        zone.smooth_override = zoneData.smooth_override;
+        const wasSelected = highlightedZoneId === zone.id;
+        let data = zoneData;
         zonesLayerGroup.eachLayer(layer => {
-            if (layer.zoneData && layer.zoneData.id === zoneData.id) {
+            if (layer.zoneData?.id === zone.id) {
+                data = {...layer.zoneData, smooth_override:zone.smooth_override};
                 zonesLayerGroup.removeLayer(layer);
             }
         });
-        // Re-add from zonesData
-        const zone = zonesData.find(z => z.id === zoneData.id);
-        if (!zone || !zone.boundary_points) return;
-        zone.smooth_override = zoneData.smooth_override;
-
-        // Color rule mirrors initial render: green default, orange if needs_attention.
-        let zoneStyle = zone.needs_attention ? {...attentionStyle} : {...defaultStyle};
-
-        if (isMultiPolygonFormat(zone.boundary_points)) {
-            // Check nested multi-group and flatten
-            const bp = zone.boundary_points;
-            const isNestedMultiGroup = bp.length > 0 && Array.isArray(bp[0]) && bp[0].length > 0
-                && Array.isArray(bp[0][0]) && bp[0][0].length > 0 && (bp[0][0][0]?.lat !== undefined || bp[0][0][0]?.lng !== undefined);
-            let flatRings;
-            if (isNestedMultiGroup) {
-                flatRings = [];
-                bp.forEach(group => { group.forEach(ring => { flatRings.push(ring); }); });
-            } else {
-                flatRings = bp;
-            }
-            flatRings.forEach(ring => {
-                const ll = pointsToLatLngs(ring);
-                if (ll.length < 3) return;
-                const poly = L.polygon(_smoothLL(ll, _zoneSmooth(zone)), zoneStyle);
-                poly.zoneData = {id: zone.id, code: zone.code, name: zone.name};
-                poly.originalStyle = zoneStyle;
-                poly.on('mouseover', handleMouseOver);
-                poly.on('mouseout', handleMouseOut);
-                poly.on('click', handleClick);
-                poly.bindTooltip(`${zone.code} ${zone.name || ''}`, {sticky: true});
-                zonesLayerGroup.addLayer(poly);
-            });
-        } else {
-            const ll = pointsToLatLngs(zone.boundary_points);
-            if (ll.length < 3) return;
-            const poly = L.polygon(_smoothLL(ll, _zoneSmooth(zone)), zoneStyle);
-            poly.zoneData = {id: zone.id, code: zone.code, name: zone.name};
-            poly.originalStyle = zoneStyle;
-            poly.on('mouseover', handleMouseOver);
-            poly.on('mouseout', handleMouseOut);
-            poly.on('click', handleClick);
-            poly.bindTooltip(`${zone.code} ${zone.name || ''}`, {sticky: true});
-            zonesLayerGroup.addLayer(poly);
+        let style = zone.needs_attention ? attentionStyle : defaultStyle;
+        if (_pendingWaterZoneIds.has(zone.id) || _pendingRemarkZoneIds.has(zone.id)) style = pendingWaterStyle;
+        zone._mapRings = runtime.boundaryRings(zone.boundary_points);
+        zone._renderRings = zone._mapRings.map(ring => _smoothLL(ring, _zoneSmooth(zone)));
+        zone._renderRings.forEach(ring => {
+            const polygon = L.polygon(ring, style);
+            polygon.zoneData = data;
+            polygon.originalStyle = style;
+            polygon.on('mouseover', handleMouseOver);
+            polygon.on('mouseout', handleMouseOut);
+            polygon.on('click', handleClick);
+            polygon.bindTooltip(escapeHtml(`${zone.code} ${zone.name || ''}`), {sticky:true});
+            zonesLayerGroup.addLayer(polygon);
+        });
+        const oldLabel = zoneLabels.find(label => label._zone.id === zone.id);
+        if (oldLabel) {
+            labelsLayerGroup.removeLayer(oldLabel);
+            (oldLabel._leaderLines || []).forEach(line => leaderLinesLayerGroup.removeLayer(line));
+            (oldLabel._ringLabels || []).forEach(label => ringLabelsLayerGroup.removeLayer(label));
+            zoneLabels = zoneLabels.filter(label => label !== oldLabel);
         }
+        zone._allLatLngs = zone._mapRings.flat();
+        if (zone._allLatLngs.length) addZoneLabel(zone);
+        watermarkCache = null;
+        updateLabelSizes();
+        if (window.applyMapFilters) window.applyMapFilters();
+        if (wasSelected) { highlightedZoneId = null; highlightZonePolygons(zone.id); }
     }
     window._toggleNotesExpand = function(listId, btn) {
         const collapsed = document.getElementById(listId + '_collapsed');
@@ -1628,7 +1553,8 @@
     function handleMouseOut(e) {
         if (window._v2ModalMapMode) return;
         e.target.closeTooltip();
-        unhighlightZonePolygons();
+        if (currentPopupZoneData?.id) highlightZonePolygons(currentPopupZoneData.id);
+        else unhighlightZonePolygons();
     }
 
     /**
@@ -1666,8 +1592,13 @@
      * data (kept for any page still embedding it).
      */
     function loadPipelines() {
+        if (pipelinesLoading) return;
         const el = document.getElementById('pipelines-data');
         if (!el) return;
+        const notice = document.getElementById('pipelineLoadNotice');
+        const retry = document.getElementById('pipelineLoadingRetry');
+        if (notice) notice.hidden = true;
+        if (retry) retry.onclick = loadPipelines;
         if (el.textContent && el.textContent.trim().length > 2) {
             try {
                 renderPipelines(JSON.parse(el.textContent));
@@ -1676,15 +1607,18 @@
             } catch (e) { console.error('pipelines inline parse failed', e); }
             return;
         }
-        fetch('/api/pipelines-payload/', { credentials: 'same-origin' })
-            .then(r => r.ok ? r.json() : Promise.reject(r.status))
+        pipelinesLoading = true;
+        runtime.fetchJSON('/api/pipelines-payload/')
             .then(d => {
                 renderPipelines(d.pipelines || []);
                 renderCadReference(d.cad_reference || []);
                 applyValveLabelMode(true);   // fresh markers — force rebind
                 updatePipeOverlayTiers();    // valve dots follow the current zoom
             })
-            .catch(err => console.error('pipelines payload fetch failed', err));
+            .catch(err => {
+                console.error('pipelines payload fetch failed', err);
+                if (notice) notice.hidden = false;
+            }).finally(() => { pipelinesLoading = false; });
     }
 
     // Valve labels: permanent (auto-shown) at the max zoom level, hover-only
@@ -1959,7 +1893,6 @@
                     if (layer.zoneData?.id === zoneId && !found) {
                         found = true;
                         highlightedLayer = layer;
-                        highlightedZoneId = zoneId;
                         highlightZonePolygons(zoneId);
                         flyToZone(layer.zoneData, layer);
                         showZonePopup(layer.zoneData);
@@ -2027,7 +1960,7 @@
 
         locateControl.onAdd = function(map) {
             const button = L.DomUtil.create('button', 'locate-btn');
-            button.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg>';
+            button.innerHTML = window.uiIcon('locate');
             button.title = '定位我';
             button.type = 'button';
 
@@ -2077,9 +2010,7 @@
 
         function matchPatch(zoneData) {
             if (!patchFilterTouched) return true;
-            const pid = zoneData.patchId;
-            if (pid == null) return true;
-            return activePatches.has(String(pid));
+            return runtime.matchesPatch(zoneData, patchFilterTouched, activePatches);
         }
 
         zonesLayerGroup.eachLayer(layer => {
@@ -2104,15 +2035,20 @@
             const matchLm = matchLandmark(zoneId);
             const matchPa = matchPatch(label._zone || {});
             const match = matchPriority && matchPlant && matchLm && matchPa;
+            label._filterMatch = match;
             const el = label.getElement();
             if (el) el.style.opacity = match ? '1' : '0.1';
             // Filter leader lines for this label's zone
             if (label._leaderLines) {
                 label._leaderLines.forEach(line => {
-                    const le = line.getElement();
-                    if (le) le.style.opacity = match ? '' : '0.05';
+                    line.setStyle({ opacity:match ? (_rCfg.opacity ?? 0.55) : 0.05 });
                 });
             }
+            (label._ringLabels || []).forEach(sub => {
+                sub._filterMatch = match;
+                const el = sub.getElement();
+                if (el) el.style.opacity = match ? '1' : '0.1';
+            });
         });
     };
 
@@ -2124,6 +2060,7 @@
                 if (map.hasLayer(zonesLayerGroup)) map.removeLayer(zonesLayerGroup);
             }
         } else if (layer === 'labels') {
+            labelsVisible = visible;
             if (visible) {
                 if (!map.hasLayer(labelsLayerGroup)) map.addLayer(labelsLayerGroup);
                 // Ring sublabels (per-boundary labels shown when 连线 is OFF) are part of
@@ -2135,12 +2072,13 @@
                 // Hide ring sublabels together with the main labels.
                 if (ringLabelsLayerGroup && map.hasLayer(ringLabelsLayerGroup)) map.removeLayer(ringLabelsLayerGroup);
             }
+            updateLabelSizes();
         } else if (layer === 'leader_lines') {
             // 连线 toggle: ON  → leader lines visible, ring sublabels hidden
             //              OFF → leader lines hidden, each boundary gets its own small label
             window._leaderLinesVisible = visible;
             const z = map.getZoom();
-            syncMultiBoundaryDisplay(z >= LABEL_MIN_ZOOM, z);
+            syncMultiBoundaryDisplay(labelsVisible && z >= LABEL_MIN_ZOOM, z);
         } else if (layer === 'pipelines') {
             if (visible) {
                 if (!map.hasLayer(pipelinesLayerGroup)) map.addLayer(pipelinesLayerGroup);
@@ -2201,7 +2139,7 @@
                         interactive: false,
                         icon: L.divIcon({
                             className: 'landmark-label',
-                            html: '<div style="transform:translate(-50%,-50%);white-space:nowrap;"><span style="font-weight:600;color:' + lm.boundary_color + ';text-shadow:0 0 4px white,0 0 4px white;">' + lm.name + '</span></div>',
+                            html: '<div style="transform:translate(-50%,-50%);white-space:nowrap;"><span style="font-weight:600;color:' + lm.boundary_color + ';text-shadow:0 0 4px white,0 0 4px white;">' + escapeHtml(lm.name) + '</span></div>',
                             iconSize: null,
                             iconAnchor: [0, 0],
                         })

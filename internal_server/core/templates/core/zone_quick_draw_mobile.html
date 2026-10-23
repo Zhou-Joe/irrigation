@@ -3,7 +3,8 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    {% include 'core/pwa_head.html' %}
     <title>快速绘制 - 灌溉管理</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
@@ -194,6 +195,10 @@
         .toast-box { position: fixed; top: 62px; left: 50%; transform: translateX(-50%); z-index: 3000; display: flex; flex-direction: column; gap: 6px; pointer-events: none; }
         .toast-msg { background: #333; color: white; padding: 8px 18px; border-radius: 10px; font-size: 0.82rem; box-shadow: 0 2px 12px rgba(0,0,0,0.2); transition: opacity 0.4s; white-space: nowrap; }
     </style>
+    <link rel="stylesheet" href="{% static 'css/pwa.css' %}?v=20261023responsive">
+    <link rel="stylesheet" href="{% static 'css/compact-ui.css' %}?v=20261023responsive">
+    <link rel="stylesheet" href="{% static 'css/responsive-ui.css' %}?v=20261023responsive">
+    <script src="{% static 'js/pwa.js' %}?v=20261023" defer></script>
 </head>
 <body>
     <!-- Top Bar -->
@@ -1230,5 +1235,6 @@
         window._deleteSavedZone = deleteSavedZone;
     })();
     </script>
+{% include 'core/pwa_shell.html' %}
 </body>
 </html>

@@ -606,7 +606,7 @@
                     </div>
                     <div class="wr-meta">
                         {% if r.worker_name and r.worker_name != '—' %}<span><b>{{ r.worker_name }}</b></span>{% endif %}
-                        {% if r.zone_summary %}<span class="wr-zone-summary"><span class="pin">📍</span> {{ r.zone_summary }}</span>{% elif r.zone_count %}<span class="wr-zone-summary"><span class="pin">📍</span> {{ r.zone_count }} zones ({{ r.zone_preview }}{% if r.zone_count > 4 %}…{% endif %})</span>{% endif %}
+                        {% if r.zone_summary %}<span class="wr-zone-summary"><span class="pin"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-pin"/></svg></span> {{ r.zone_summary }}</span>{% elif r.zone_count %}<span class="wr-zone-summary"><span class="pin"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-pin"/></svg></span> {{ r.zone_count }} zones ({{ r.zone_preview }}{% if r.zone_count > 4 %}…{% endif %})</span>{% endif %}
                         {% if r.work_start_time %}<span class="wr-meta-sub">{{ r.work_start_time }}–{{ r.work_end_time }}{% if r.total_team_hours %} · {{ r.total_team_hours|floatformat:1 }}h{% endif %}{% if r.total_third_party_hours %} +{{ r.total_third_party_hours|floatformat:1 }}h{% endif %}</span>{% elif r.total_team_hours or r.total_third_party_hours %}<span class="wr-meta-sub">工时 · 灌溉组 {{ r.total_team_hours|floatformat:1 }}h{% if r.total_third_party_hours %} · 第三方 {{ r.total_third_party_hours|floatformat:1 }}h{% endif %}</span>{% endif %}
                         {% if r.team_size %}<span class="wr-meta-sub">灌溉组{{ r.team_size }}人{% if r.third_party_count %} · 第三方{{ r.third_party_count }}人{% endif %}</span>{% endif %}
                     </div>
