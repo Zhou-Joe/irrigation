@@ -151,35 +151,6 @@
             .top-nav-right .top-nav-user { display: none; }
         }
 
-        /* ── Anti-leak watermark ───────────────────────────────────────────────
-           A full-screen, repeating, diagonal overlay showing the viewer's name +
-           phone + department so any screenshot leaks are traceable to the account,
-           plus a second line "仅限内部沟通，严禁外传" warning (甲方要求).
-           Sits ABOVE everything (incl. modals/toasts) so it's captured in every
-           screenshot; pointer-events:none so it never blocks clicks. The SVG tile
-           is data-URI-encoded inline; identity + warning are injected into two
-           <text> lines. Tile widened to fit 姓名·手机·部门 without truncation. */
-        .anti-leak-watermark {
-            position: fixed;
-            inset: 0;
-            z-index: 2147483000;          /* near int32 max — always on top */
-            pointer-events: none;
-            opacity: 0.55;
-            /* White text with a dark stroke so it stays legible over BOTH the dark
-               satellite map AND the light UI. Two rotated <text> lines: identity
-               then warning. Tile widened (680px) so the longer identity string
-               (姓名·手机·部门) isn't clipped. */
-            background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='680' height='680'><text x='-90' y='610' fill='%23ffffff' stroke='%23000000' stroke-width='0.6' stroke-opacity='0.35' font-size='22' font-family='sans-serif' transform='rotate(-40)' text-anchor='start'>{{ watermark_text|urlencode }}</text><text x='-90' y='650' fill='%23ffffff' stroke='%23000000' stroke-width='0.6' stroke-opacity='0.35' font-size='20' font-family='sans-serif' transform='rotate(-40)' text-anchor='start'>{{ watermark_warning|urlencode }}</text></svg>");
-            background-repeat: repeat;
-        }
-        /* Phones: sparser (halved) — the identity + warning pair per larger tile. */
-        @media (max-width: 768px) {
-            .anti-leak-watermark {
-                opacity: 0.6;
-                background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='460' height='520'><text x='-80' y='440' fill='%23ffffff' stroke='%23000000' stroke-width='0.6' stroke-opacity='0.35' font-size='19' font-family='sans-serif' transform='rotate(-40)' text-anchor='start'>{{ watermark_text|urlencode }}</text><text x='-80' y='475' fill='%23ffffff' stroke='%23000000' stroke-width='0.6' stroke-opacity='0.35' font-size='18' font-family='sans-serif' transform='rotate(-40)' text-anchor='start'>{{ watermark_warning|urlencode }}</text><text x='200' y='230' fill='%23ffffff' stroke='%23000000' stroke-width='0.6' stroke-opacity='0.35' font-size='19' font-family='sans-serif' transform='rotate(-40)' text-anchor='start'>{{ watermark_text|urlencode }}</text><text x='200' y='265' fill='%23ffffff' stroke='%23000000' stroke-width='0.6' stroke-opacity='0.35' font-size='18' font-family='sans-serif' transform='rotate(-40)' text-anchor='start'>{{ watermark_warning|urlencode }}</text></svg>");
-            }
-        }
-
         /* ── Notification popup (shared, all authenticated pages) ────────────
            Surfaces per-user notifications (comments, request status changes,
            resubmits) as a modal card. Department users — the majority of request
@@ -252,11 +223,11 @@
     <link rel="stylesheet" href="{% static 'css/pwa.css' %}?v=20261023icons2">
     <link rel="stylesheet" href="{% static 'css/compact-ui.css' %}?v=20261023responsive">
     <link rel="stylesheet" href="{% static 'css/responsive-ui.css' %}?v=20261023controls2">
-    <link rel="stylesheet" href="{% static 'css/page-ui.css' %}?v=20261024pages4">
+    <link rel="stylesheet" href="{% static 'css/page-ui.css' %}?v=20261024pages6">
     {% block extra_ui_css %}{% endblock %}
-    <script src="{% static 'js/pwa.js' %}?v=20261023tabs" defer></script>
+    <script src="{% static 'js/pwa.js' %}?v=20261024update" defer></script>
     <script src="{% static 'js/pwa-navigation.js' %}?v=20261023tabs" defer></script>
-    <script src="{% static 'js/responsive-ui.js' %}?v=20261024pages4" defer></script>
+    <script src="{% static 'js/responsive-ui.js' %}?v=20261024pages6" defer></script>
 </head>
 <body class="ui-system {% if user.is_authenticated %}pwa-authenticated{% endif %}" data-page="{{ request.resolver_match.url_name }}">
     {% if user.is_authenticated %}
@@ -311,9 +282,7 @@
 
     {% block content %}{% endblock %}
 
-    {% if user.is_authenticated and watermark_text %}
-    <div class="anti-leak-watermark" aria-hidden="true"></div>
-    {% endif %}
+    {% include 'core/_watermark.html' %}
 
     {# ── Per-user notification popup (shared, all authed pages) ── #}
     {% if user.is_authenticated %}

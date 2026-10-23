@@ -84,6 +84,7 @@
         <div class="sidebar-body">
         <!-- 搜索框 -->
         <div class="zone-search">
+            <svg class="ui-icon zone-search-icon" aria-hidden="true" focusable="false"><use href="#pwa-search"/></svg>
             <input type="text" class="zone-search-input" id="zoneSidebarSearch" placeholder="搜索区域名称或编号...">
         </div>
 
@@ -140,7 +141,7 @@
             {% elif land.type == 'orphan' %}
             <!-- 未分配Land -->
             <div class="region-group collapsed">
-                <div class="region-header" style="background: var(--color-text-secondary);" onclick="toggleRegionGroup(this)">
+                <div class="region-header" onclick="toggleRegionGroup(this)">
                     <span class="region-toggle"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-chevron-down"/></svg></span>
                     <span class="region-name">{{ land.name }}</span>
                     <span class="region-count">{{ land.zone_count }}</span>

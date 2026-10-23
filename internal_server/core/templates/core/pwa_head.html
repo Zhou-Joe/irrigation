@@ -8,3 +8,7 @@
 <link rel="apple-touch-icon" href="{% static 'pwa/apple-touch-icon.png' %}">
 <link rel="icon" type="image/png" sizes="192x192" href="{% static 'pwa/icon-192.png' %}">
 <link rel="icon" type="image/svg+xml" href="{% static 'pwa/brand.svg' %}?v=20261024brand">
+{% if user.is_authenticated and watermark_text %}
+<link rel="stylesheet" href="{% static 'css/watermark.css' %}?v=20261024wm2">
+<script src="{% static 'js/watermark.js' %}?v=20261024wm2" defer></script>
+{% endif %}
