@@ -381,7 +381,7 @@
         var zonesDataElement = document.getElementById('zones-data');
         const request = zonesDataElement && zonesDataElement.textContent.trim()
             ? Promise.resolve().then(() => JSON.parse(zonesDataElement.textContent))
-            : runtime.fetchJSON('/api/zones-payload/');
+            : runtime.fetchJSON('/api/zones-payload/', {timeout:120000});
         request.then(applyZones)
             .catch(function (err) {
                 console.error('Failed to load zones:', err);
