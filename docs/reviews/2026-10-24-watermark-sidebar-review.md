@@ -86,3 +86,47 @@ update, avoiding a stale prompt whose button would otherwise do nothing.
 No schema changes are required. Collect static files and restart using the normal
 deployment workflow. Public shell: `irrigation-shell-20261024-6`; shared CSS/JS:
 `20261024pages6`; watermark CSS/JS: `20261024wm2`; PWA UI script: `20261024update`.
+
+## Production deployment — 2026-10-24
+
+Deployed release `0eb9280c2726703619c09cf75861ad05762b0d84` to
+<https://irrigation.zctestbench.asia/> at the user's explicit request. This release
+also includes the AI chat and full-page UI changes in `4f0ace90` and `6442e83d`.
+The office checkout's `main` branch advanced directly from `9dce1e8e` without
+conflicts or tracked local modifications. No database migration was required.
+
+The initial GitHub fetch stalled. A Git bundle with the same reviewed commits
+was transferred over the authorized SSH tunnel; its SHA-256 matched at both ends.
+After the user restored connectivity, another GitHub fetch succeeded and its
+`FETCH_HEAD` exactly matched the deployed commit.
+
+Backup: `/home/noname/irrigation/deployment_backups/ui-release-20261024-030239`.
+It contains the previous source archive, commit/status records, a private copy of
+the existing environment, and a consistent SQLite online-backup snapshot. The
+live database, media, user privileges and production configuration were preserved.
+
+Production Django checks passed with no issues. Static collection copied 18
+changed assets; `horticulture` restarted at 03:04:02 CST and remained active with
+zero automatic restarts. Subsequent service logs contained no application
+tracebacks, internal server errors, worker failures or error-level entries.
+
+Public HTTPS verification returned HTTP 200 for 13 runtime assets and the login,
+registration, offline, manifest and service-worker routes. All 13 downloaded
+assets exactly matched the deployed source bytes. The public worker contains
+`irrigation-shell-20261024-6`; the gateway also confirmed public HTTPS availability.
+
+Read-only browser verification used the existing signed-in production admin
+session. The map rendered all 2,508 areas, the loading indicator cleared, and the
+AI conversation panel opened successfully without sending a model request.
+Work reports, region settings, irrigation data, inventory, PM, profile and the
+workbench passed desktop layout checks; phone checks additionally covered
+registration. No viewport overflow or clipped controls were found, all protected
+pages received the new watermark, and registration inputs retained 44 px icon
+padding with a centered brand mark. No new JavaScript errors occurred during
+post-restart checks. An initial browser request made before restart encountered
+incomplete old static responses during replacement; fresh post-restart loads and
+the public byte comparisons confirmed those responses were resolved.
+
+The final targeted watermark/PWA rerun passed all 17 tests. Physical-phone GPS,
+camera, keyboard and live-model/tool calls were not exercised during deployment.
+No production work orders, PM tasks, users or inventory records were submitted.
