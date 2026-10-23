@@ -79,6 +79,13 @@ class Command(BaseCommand):
             else:
                 updated += 1
 
+        parent = WorkItem.objects.filter(code='1.2').first()
+        if parent:
+            WorkItem.objects.update_or_create(code='1.2.pm', defaults={
+                'parent': parent, 'name_zh': 'PM作业计划', 'name_en': 'PM Job Plan',
+                'order': 999, 'section': 'routine_maint', 'value_type': 'text',
+                'is_project_scoped': False, 'active': True,
+            })
         self.stdout.write(self.style.SUCCESS(
             f'WorkItem: {created} created, {updated} updated ({len(rows)} total).'
         ))

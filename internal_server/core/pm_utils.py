@@ -13,24 +13,40 @@ def validate_schedule(plan):
         raise ValueError('PM frequency must be positive and use days/weeks/months')
 
 
-def occurrence(plan, index):
-    """Keep the original anchor day; short months clamp without losing a cycle."""
+def _cycle_start(plan, anchor, index):
     validate_schedule(plan)
     if plan.frequency_unit == 'months':
-        return plan.start_date + relativedelta(months=plan.frequency_value * index)
+        return anchor + relativedelta(months=plan.frequency_value * index)
     days = plan.frequency_value * (7 if plan.frequency_unit == 'weeks' else 1)
-    return plan.start_date + timedelta(days=days * index)
+    return anchor + timedelta(days=days * index)
+
+
+def occurrence(plan, index):
+    """Use a stable phase within each cycle, including short calendar months."""
+    anchor = getattr(plan, 'rotation_anchor', None) or plan.start_date
+    if getattr(plan, 'rotation_anchor', None):
+        index += plan.rotation_cycle
+    start = _cycle_start(plan, anchor, index)
+    slot = getattr(plan, 'rotation_slot', 0) if getattr(plan, 'rotation_anchor', None) else 0
+    if not slot:
+        return start
+    end = _cycle_start(plan, anchor, index + 1)
+    return start + timedelta(days=(end - start).days * slot // plan.rotation_size)
 
 
 def cycle_index(plan, day):
     validate_schedule(plan)
     if day < plan.start_date:
         return -1
+    anchor = getattr(plan, 'rotation_anchor', None) or plan.start_date
     if plan.frequency_unit != 'months':
         days = plan.frequency_value * (7 if plan.frequency_unit == 'weeks' else 1)
-        return (day - plan.start_date).days // days
-    months = (day.year - plan.start_date.year) * 12 + day.month - plan.start_date.month
-    index = months // plan.frequency_value
+        index = (day - anchor).days // days
+    else:
+        months = (day.year - anchor.year) * 12 + day.month - anchor.month
+        index = months // plan.frequency_value
+    if getattr(plan, 'rotation_anchor', None):
+        index -= plan.rotation_cycle
     if occurrence(plan, index) > day:
         index -= 1
     return index
@@ -51,6 +67,29 @@ def plan_zones(plan):
     if level == 'ccu':
         return list(plan.patch.zones.all()) if plan.patch_id else []
     return list(plan.zones.all())
+
+
+def order_zones(gwo):
+    """Prefer the issued snapshot; support orders from the legacy dispatcher."""
+    zones = list(gwo.zones.all())
+    if not zones and gwo.work_report_id:
+        zones = list(gwo.work_report.zones.all())
+    return zones or plan_zones(gwo.plan)
+
+
+def validate_pm_completion(gwo, request, zones):
+    from datetime import date
+    today = timezone.localdate()
+    try:
+        day = date.fromisoformat(request.POST.get('date') or today.isoformat())
+    except ValueError as ex:
+        raise ValueError('PM执行日期无效') from ex
+    if not gwo.scheduled_date <= day <= today:
+        raise ValueError('PM执行日期必须在计划执行日至今天之间')
+    expected = order_zones(gwo)
+    if (not expected or {zone.pk for zone in zones} != {zone.pk for zone in expected} or
+            set(request.POST.getlist('zones')) != {zone.code for zone in expected}):
+        raise ValueError('PM工单必须完成派发的全部区域，不能遗漏、替换或增加区域')
 
 
 def matching_crew(plan, zones):
@@ -145,7 +184,7 @@ def overdue_orders(today=None):
 
 def completion_stats(plans, period, today, period_window):
     """Aggregate each plan in its own cycle, including staggered anchors."""
-    groups, windows = {}, {}
+    groups, windows, transitioning = {}, {}, {}
     offset = {'current': 0, 'prev': -1, 'prev2': -2}.get(period, 0)
     units = {'days': '日', 'weeks': '周', 'months': '月'}
     for plan in plans:
@@ -157,7 +196,22 @@ def completion_stats(plans, period, today, period_window):
         if period == 'all':
             windows[plan.pk] = (None, None)
         else:
-            start, end, _ = period_window(plan.frequency_value, plan.frequency_unit, plan.start_date, offset, today)
+            start, end, _ = period_window(plan.frequency_value, plan.frequency_unit, plan.start_date,
+                                         offset, today, plan=plan)
+            windows[plan.pk] = (start, end) if start is not None else None
+            if getattr(plan, 'rotation_cycle', 0) and today < plan.start_date:
+                transitioning[plan.pk] = plan
+    if transitioning:
+        # Until the new phase starts, the already-issued schedule still owns
+        # the current/previous workload. Do not hide it behind a future anchor.
+        from django.db.models import Min
+        legacy = GeneratedWorkOrder.objects.filter(
+            plan_id__in=transitioning, scheduled_date__lte=today,
+        ).values('plan_id').annotate(anchor=Min('scheduled_date'))
+        for row in legacy:
+            plan = transitioning[row['plan_id']]
+            start, end, _ = period_window(plan.frequency_value, plan.frequency_unit,
+                                         row['anchor'], offset, today)
             windows[plan.pk] = (start, end) if start is not None else None
     orders = GeneratedWorkOrder.objects.filter(plan_id__in=windows).select_related('plan')
     for gwo in orders.iterator():

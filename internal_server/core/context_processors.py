@@ -24,6 +24,8 @@ def notifications(request):
     notifications_list = []
     unread_notifications_json = '[]'
     pm_tasks_json = '[]'
+    unread = []
+    pm_tasks_data = []
 
     if request.user.is_authenticated:
         # Per-user inbox (the popup). Cheap: one indexed query per page load.
@@ -35,7 +37,8 @@ def notifications(request):
         # computed for field workers — admins/managers get an empty list.
         pm_tasks_json = '[]'
         if is_field_worker(request.user):
-            pm_tasks_json = json.dumps(pm_tasks_for_field_worker(request.user), ensure_ascii=False)
+            pm_tasks_data = pm_tasks_for_field_worker(request.user)
+            pm_tasks_json = json.dumps(pm_tasks_data, ensure_ascii=False)
 
         # Legacy admin digest (retained for backward compat).
         if is_admin(request.user):
@@ -63,6 +66,8 @@ def notifications(request):
         'notification_count': len(notifications_list),
         'unread_notifications_json': unread_notifications_json,
         'pm_tasks_json': pm_tasks_json,
+        'pm_tasks_data': pm_tasks_data,
+        'unread_notifications_data': unread,
     }
 
 

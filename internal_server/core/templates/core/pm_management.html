@@ -283,6 +283,7 @@
                 </div>
                 <div class="settings-card-body" style="max-height:none;">
                     {% if pm_plans %}
+                    <p style="color:#888;font-size:.82rem;">启用计划按相同维护频率均匀轮转。工单可提前生成，从计划执行日开始保留一个完整维护周期。</p>
                     {% regroup pm_plans by job_plan as jp_groups %}
 
                     <!-- Sub-tab bar: one button per JobPlan -->
@@ -938,7 +939,7 @@ function _pmFormHtml(isEdit) {
         '<div><label>频率值</label><input type="number" id="f-pm-freq-val" value="'+d.frequency_value+'" min="1"></div>' +
         '<div><label>频率单位</label><select id="f-pm-freq-unit">'+unitOpts+'</select></div>' +
         '<div><label>提前生成天数</label><input type="number" id="f-pm-lead-days" value="'+d.lead_days+'" min="0"></div>' +
-        '<div><label>到期基准日</label><input type="date" id="f-pm-start" value="'+esc(d.start_date||'')+'"><small style="color:#aaa;font-size:.72rem;">改后仅影响未来派发，已生成工单不变</small></div>' +
+        '<div><label>到期基准日</label><input type="date" id="f-pm-start" value="'+esc(d.start_date||'')+'"><small style="color:#aaa;font-size:.72rem;">新计划从此日期起安排轮转；修改日期后按指定日期执行，已生成工单不变</small></div>' +
         '<div><label>工配备注模板</label><input id="f-pm-remark" value="'+esc(d.remark)+'"></div>' +
         '<div><label>关联CCU</label><select id="f-pm-patch">'+patchOpts+'</select></div>' +
         '<div><label>关联SAT</label><select id="f-pm-satellite">'+satOpts+'</select></div>' +

@@ -1,7 +1,7 @@
 """Validated PM writes shared by modal and standalone forms."""
 from django import forms
 
-from .models import MaintenancePlan, JobPlanTemplate
+from .models import MaintenancePlan, JobPlanTemplate, Zone
 
 
 class MaintenancePlanForm(forms.ModelForm):
@@ -25,6 +25,16 @@ class MaintenancePlanForm(forms.ModelForm):
         if self.instance.pk and 'zones' not in self.data and 'zones_present' not in self.data:
             data['zones'] = self.instance.zones.all()
         jp = data.get('job_plan')
+        if jp:
+            # Keep only the asset scope used by this Job Plan. Stale hidden
+            # fields otherwise mislabel the plan and can validate a later
+            # asset-level change against an unrelated association.
+            if jp.asset_level != 'zone_group':
+                data['zones'] = Zone.objects.none()
+            if jp.asset_level != 'sat':
+                data['satellite'] = None
+            if jp.asset_level != 'ccu':
+                data['patch'] = None
         if jp and data.get('active'):
             if jp.asset_level == 'zone_group' and not data.get('zones'):
                 self.add_error('zones', 'Zone组计划必须选择关联区域')

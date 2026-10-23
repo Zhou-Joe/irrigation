@@ -10,7 +10,6 @@ docs/superpowers/specs/2026-06-16-workorder-form-refactor-design.md.
 import json
 import os
 from datetime import date, datetime, timedelta
-from functools import lru_cache
 
 from django.conf import settings
 from django.contrib import messages
@@ -86,15 +85,88 @@ def weather_icon_for(text):
 
 # ── PM (preventive maintenance) helpers ─────────────────────────────────────
 
-@lru_cache(maxsize=1)
 def _pm_leaf_id():
-    """Cached id of the WorkItem with code '1.2.pm' (PM作业计划 leaf).
-
-    This is static reference data (seeded by migration 0094), so we cache it
-    to avoid a DB query on every PM work-order edit-modal render.
-    """
-    leaf = WorkItem.objects.filter(code='1.2.pm').only('id').first()
+    """Read current reference data; a missing leaf may be seeded later."""
+    leaf = WorkItem.objects.filter(code='1.2.pm', active=True).only('id').first()
     return leaf.id if leaf else None
+
+
+def pm_form_header(gwo):
+    from core.pm_utils import order_deadline
+    from django.utils import timezone
+    today = timezone.localdate()
+    deadline = order_deadline(gwo)
+    return {
+        'h_pm_job_plan': gwo.plan.job_plan.name,
+        'h_pm_work_item': _pm_leaf_id(), 'h_pm_gwo_id': gwo.pk,
+        'h_pm_scheduled_date': gwo.scheduled_date.isoformat(),
+        'h_pm_deadline': deadline.isoformat(),
+        'h_pm_can_extend': gwo.status in ('dispatched', 'overdue') and gwo.scheduled_date <= today,
+        'h_pm_extension_min': (max(today, deadline) + timedelta(days=1)).isoformat(),
+    }
+
+
+def validate_workorder_request(request):
+    """Validate both form paths before writing records, photos or inventory."""
+    from django import forms
+    from django.core.exceptions import ValidationError
+    from core.upload_security import validate_upload
+    for name in ('report_id', 'pm_order_id', 'gwo_id'):
+        value = request.POST.get(name, '')
+        if value and (not value.isascii() or not value.isdigit() or int(value) < 1):
+            raise ValueError('工单编号无效')
+    is_pm = bool(request.POST.get('pm_order_id') or request.POST.get('gwo_id'))
+    if (request.POST.get('report_id') and is_pm) or (is_pm and request.POST.get('merge_dup_ids')):
+        raise ValueError('PM工单不能与普通工单编辑或合并混用')
+    try:
+        forms.DateField(required=False).clean(request.POST.get('date'))
+        forms.IntegerField(min_value=1).clean(request.POST.get('team_size') or 1)
+        forms.IntegerField(min_value=0).clean(request.POST.get('third_party_count') or 0)
+        for name in ('work_start_time', 'work_end_time'):
+            forms.TimeField(required=False).clean(request.POST.get(name))
+    except ValidationError as ex:
+        raise ValueError('日期、时间或人数无效：' + '；'.join(ex.messages)) from ex
+    payload = {}
+    for name in ('entries', 'materials'):
+        try:
+            rows = json.loads(request.POST.get(name, '[]') or '[]')
+        except (ValueError, TypeError) as ex:
+            raise ValueError('工作内容或材料格式无效') from ex
+        if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
+            raise ValueError('工作内容和材料必须是列表')
+        payload[name] = rows
+    try:
+        for entry in payload['entries']:
+            entry['count'] = forms.IntegerField(min_value=0).clean(entry.get('count') or 0)
+            for key in ('work_item', 'project'):
+                if entry.get(key):
+                    entry[key] = forms.IntegerField(min_value=1).clean(entry[key])
+            for key in ('status', 'text_value'):
+                if entry.get(key) is not None and not isinstance(entry[key], str):
+                    raise ValueError('工作内容文字格式无效')
+        for key, model in [('work_item', WorkItem), ('project', Project)]:
+            ids = {e[key] for e in payload['entries'] if e.get(key)}
+            if ids - set(model.objects.filter(pk__in=ids).values_list('pk', flat=True)):
+                raise ValueError('工作内容类别或项目不存在，请刷新后重试')
+    except ValidationError as ex:
+        raise ValueError('工作内容数值无效：' + '；'.join(ex.messages)) from ex
+    for files in request.FILES.lists():
+        name, uploads = files
+        if name != 'report_photos' and not name.startswith('ep_'):
+            continue
+        for upload in uploads:
+            ok, error = validate_upload(upload)
+            if not ok:
+                raise ValueError(f'{upload.name}: {error}')
+    return payload['entries'], payload['materials']
+
+
+def pm_completion_entries(gwo, entries):
+    """Keep the Job Plan on submissions from older clients as well."""
+    leaf_id = _pm_leaf_id()
+    if leaf_id and not any(str(e.get('work_item')) == str(leaf_id) for e in entries):
+        entries = entries + [{'work_item': leaf_id, 'text_value': gwo.plan.job_plan.name}]
+    return entries
 
 
 def mark_pm_completed(report, gwo_id=None):
@@ -1109,7 +1181,9 @@ def _save_photo(report, uploaded):
     if not ok:
         raise ValueError(f'{getattr(uploaded, "name", "")}: {err}')
 
-    subdir = f'workorder_photos/{report.id}'
+    from core.models import PMWorkOrder
+    subdir = (f'workorder_photos/pm/{report.id}' if isinstance(report, PMWorkOrder)
+              else f'workorder_photos/{report.id}')
     name = default_storage.get_available_name(os.path.join(subdir, uploaded.name))
     saved = default_storage.save(name, uploaded)
 
@@ -1298,9 +1372,7 @@ def _report_header_dict(report):
     # to its GWO via the forward .gwo FK; WorkReport via the reverse pm_generation.
     gwo = report.gwo if is_pm else getattr(report, 'pm_generation', None)
     if gwo and gwo.plan_id:
-        header['h_pm_job_plan'] = gwo.plan.job_plan.name if gwo.plan.job_plan_id else ''
-        header['h_pm_work_item'] = _pm_leaf_id()
-        header['h_pm_gwo_id'] = gwo.id
+        header.update(pm_form_header(gwo))
     return header
 
 
@@ -1320,6 +1392,12 @@ def _record_edit(report, user, note=''):
 
 
 def _handle_save(request, report):
+    try:
+        entries, materials = validate_workorder_request(request)
+        if report is not None and (request.POST.get('gwo_id') or request.POST.get('pm_order_id')):
+            raise ValueError('PM工单不能与普通工单编辑混用')
+    except ValueError as ex:
+        return JsonResponse({'success': False, 'message': str(ex)}, status=400)
     # Resolve the real submitter. Field workers have a linked Worker row;
     # managers/admins do not, so provision one from their profile (idempotent).
     from core.role_utils import resolve_or_create_worker
@@ -1354,20 +1432,24 @@ def _handle_save(request, report):
         pm_gwo_id = request.POST.get('gwo_id')
         is_pm_completion = bool(pm_gwo_id and pm_gwo_id.isdigit())
         if is_new and is_pm_completion:
-            from core.pm_utils import visible_orders
+            from core.pm_utils import visible_orders, validate_pm_completion
             from django.utils import timezone
             gwo = get_object_or_404(visible_orders(request.user).select_for_update(), pk=int(pm_gwo_id))
             if gwo.status not in ('dispatched', 'overdue') or gwo.scheduled_date > timezone.localdate():
                 messages.error(request, '该PM工单已处理或尚未到执行日期')
                 return redirect('core:work_reports')
+            try:
+                validate_pm_completion(gwo, request, zones)
+            except ValueError as ex:
+                return JsonResponse({'success': False, 'message': str(ex)}, status=400)
+            entries = pm_completion_entries(gwo, entries)
             from core.models import PMWorkOrder
             report = PMWorkOrder(gwo_id=int(pm_gwo_id), worker=worker)
             report.date = request.POST.get('date') or date.today()
             report.shift = request.POST.get('shift', '')
-            loc_id = request.POST.get('location') or None
-            if not loc_id and zones:
-                loc_id = next((z.patch_id for z in zones if z.patch_id), None)
+            loc_id = next((z.patch_id for z in zones if z.patch_id), None)
             report.location_id = loc_id
+            report.zone_location = zones[0] if zones else None
             report.zone_names = request.POST.get('zone_names', '')
             report.remark = request.POST.get('remark', '')
             report.team_size = team_size
@@ -1444,20 +1526,12 @@ def _handle_save(request, report):
             kept = []
             for p in existing:
                 if p in remove_set:
-                    _delete_media(p)            # best-effort; ignore missing
+                    transaction.on_commit(lambda path=p: _delete_media(path))
                 else:
                     kept.append(p)
             existing = kept
         # New uploads append to the surviving list.
-        # Validate uploads BEFORE the save loop: _save_photo raises ValueError on
-        # a disallowed extension/size/content, which would otherwise abort the
-        # whole atomic block as a 500. Pre-checking gives a clean user-facing error.
-        from core.upload_security import validate_upload
-        for f in request.FILES.getlist('report_photos'):
-            ok, err = validate_upload(f)
-            if not ok:
-                messages.error(request, f'{getattr(f, "name", "")}: {err}')
-                return _handle_render(request, report)
+        # All uploads were validated before entering the save transaction.
         new_photos = [_save_photo(report, f)
                       for f in request.FILES.getlist('report_photos')]
         if new_photos:
@@ -1467,16 +1541,7 @@ def _handle_save(request, report):
             report.save(update_fields=['photos'])
 
         # Work-content entries.
-        entries = json.loads(request.POST.get('entries', '[]') or '[]')
         entry_photos = _collect_entry_photos(request)
-        # Validate entry-level uploads too (same pre-check pattern as report photos).
-        from core.upload_security import validate_upload
-        for _wid, files in entry_photos.items():
-            for f in files:
-                ok, err = validate_upload(f)
-                if not ok:
-                    messages.error(request, f'{getattr(f, "name", "")}: {err}')
-                    return _handle_render(request, report)
         _save_entries(report, entries, entry_photos)
 
         # Material consumption (材料消耗): rebuild the report's outbound
@@ -1484,7 +1549,6 @@ def _handle_save(request, report):
         # prior linked transaction first, so edits keep stock correct. The
         # destination is auto-derived from the work category (routine→日常维护,
         # project sections→项目) unless the user picked one for 'other' categories.
-        materials = json.loads(request.POST.get('materials', '[]') or '[]')
         m_dest, m_proj, m_cp = _resolve_material_dest(request, entries)
         from core.role_utils import get_user_role, ROLE_MANAGER, ROLE_SUPER_ADMIN
         _sub_role = get_user_role(request.user)
@@ -1509,6 +1573,9 @@ def _handle_save(request, report):
         )
 
     messages.success(request, f'现场作业记录已保存 (ID: {report.id})')
+    if is_pm_completion:
+        from django.urls import reverse
+        return redirect(reverse('core:dashboard') + f'?pm_order_id={report.pk}')
     if request.POST.get('save_and_new'):
         return redirect('core:workorder_tree_form')
     return redirect('core:work_report_detail', report_id=report.id)
@@ -1538,6 +1605,7 @@ def _save_entries(report, entries, entry_photos):
     """
     from core.models import PMWorkOrder
     is_pm = isinstance(report, PMWorkOrder)
+    originals = {(e.work_item_id, e.project_id): list(e.photos or []) for e in report.entries.all()}
     # Clear existing entries for this owner.
     if is_pm:
         WorkReportEntry.objects.filter(pm_work_order=report).delete()
@@ -1560,11 +1628,12 @@ def _save_entries(report, entries, entry_photos):
         text_value = (e.get('text_value') or '').strip()
         project_id = e.get('project') or None
         photos = entry_photos.get(int(wid), [])
-        has_value = bool(count or status or text_value or photos)
+        old_photos = originals.get((int(wid), int(project_id) if project_id else None), [])
+        has_value = bool(count or status or text_value or photos or old_photos)
         is_category_marker = wid in group_wids
         if not has_value and not is_category_marker:
             continue
-        saved_paths = [_save_photo(report, f) for f in photos]
+        saved_paths = old_photos + [_save_photo(report, f) for f in photos]
         WorkReportEntry.objects.update_or_create(
             work_item_id=wid, project_id=project_id, **kw,
             defaults={'count': count, 'status': status,

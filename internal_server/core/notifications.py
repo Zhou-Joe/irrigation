@@ -114,7 +114,7 @@ def pm_tasks_for_field_worker(user):
     """
     from datetime import date as _date
     from .models import Worker, GeneratedWorkOrder
-    from .pm_utils import is_overdue
+    from .pm_utils import is_overdue, order_deadline
     from django.db.models import Q
     try:
         worker = Worker.objects.get(user=user, active=True)
@@ -144,6 +144,7 @@ def pm_tasks_for_field_worker(user):
             'job_plan_name': gwo.plan.job_plan.name if gwo.plan.job_plan_id else '',
             'remark': gwo.remark or '',
             'scheduled_date': gwo.scheduled_date.strftime('%Y-%m-%d'),
+            'deadline': order_deadline(gwo).isoformat(),
             'zone_count': len(zones_qs),
             'zone_preview': '、'.join(first_codes),
             'overdue': is_overdue(gwo, today),

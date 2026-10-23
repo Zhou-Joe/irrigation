@@ -74,6 +74,11 @@ db1.sqlite3
 db_backups/
 *.sqlite3.bak.*
 db.sqlite3.bak.*
+*.sqlite3.bak*
+
+# Local Maxicom Access databases (real data, ~640MB each)
+*.mdb
+*.ldb
 
 # User-uploaded media (photos, videos, AI workspaces)
 internal_server/media/workorder_photos/
