@@ -76,8 +76,20 @@ Rain Bird water-volume reports. No allocation ratios are invented by this fix.
 
 ## Validation
 
-14 new tests cover all operator totals through web and Excel, heatmap consistency,
+15 new tests cover all operator totals through web and Excel, heatmap consistency,
 inclusive seconds, year/day boundaries, invalid input, local latest-run labels,
-full-day meter selection, actual-only import and failed-export preservation.
+full-day meter selection, actual-only import, failed-export preservation and
+second-precision values surviving the actual datetime input's initial render.
 The complete Django core suite passed: **219 tests, 218 passed, one existing skip**.
-Production-copy import, final source reconciliation and deployment checks follow.
+The subsequent datetime-control follow-up passed all 15 targeted tests.
+
+The isolated production-copy import also passed all three original-data cases
+through the web matrix and Excel; PDF generation succeeded for each window.
+Runtime changed from 359,362 rows / 20,428,089 minutes to 356,281 actual rows /
+20,417,398 minutes. Flow day labels changed from 17,896 to 17,932 rows; the total
+193,445,205 liters was exactly preserved. SHA-256 comparisons of every row in
+Zone, Patch, User, WorkReport, WorkReportEntry, GeneratedWorkOrder,
+MaintenancePlan, InventoryTransaction and InventoryTransactionLine were unchanged.
+The source and candidate database, logs, expected values and checks are retained
+inside the private audit directory. Three rendered inline scripts passed Node
+syntax checks. Final live deployment verification follows.

@@ -171,6 +171,11 @@ class MaxicomRuntimeViewTests(TestCase):
     def test_invalid_local_window_returns_bad_request(self):
         self.assertEqual(self.client.get('/irrigation/', {'from': 'bad'}).status_code, 400)
 
+    def test_second_precision_survives_initial_page_render(self):
+        response = self.client.get('/irrigation/', self._params(CASES[2]))
+        self.assertContains(response, 'value="2026-08-18T07:01:00" step="1"')
+        self.assertContains(response, 'value="2026-08-19T06:57:59" step="1"')
+
     def test_latest_station_uses_its_local_irrigation_day(self):
         from core.views import _format_irrig_ts, _latest_runtime_by_station
         station = self.stations['7-4-24']

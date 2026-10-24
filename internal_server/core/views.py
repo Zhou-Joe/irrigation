@@ -7602,17 +7602,18 @@ def irrigation_dashboard(request):
     # ISO datetime forms for the native <input type="datetime-local"> picker
     # (YYYY-MM-DDTHH:MM), which the template binds directly. The compact
     # YYYYMMDDHHMM form is kept for export URLs / backend filtering.
-    def _iso_dt(s):
+    def _iso_dt(s, *, end=False):
         s = (s or '').strip()
         if len(s) < 8:
             return s
         hh = s[8:10] if len(s) >= 10 else '00'
         mm = s[10:12] if len(s) >= 12 else '00'
-        return s[:4] + '-' + s[4:6] + '-' + s[6:8] + 'T' + hh + ':' + mm
+        ss = s[12:14] if len(s) >= 14 else ('59' if end else '00')
+        return s[:4] + '-' + s[4:6] + '-' + s[6:8] + 'T' + hh + ':' + mm + ':' + ss
     datetime_from_iso = _iso_dt(date_from)
-    datetime_to_iso = _iso_dt(date_to)
+    datetime_to_iso = _iso_dt(date_to, end=True)
     today_iso = timezone.localdate().isoformat()
-    data_span_dt = (_iso_dt(span_from), _iso_dt(span_to))
+    data_span_dt = (_iso_dt(span_from), _iso_dt(span_to, end=True))
 
     # --- 浇水量表格（mdb 流量计导入 + Django 站点运行估算）─────────────
     # 流量计：MaxicomFlowDaily 由导入命令按灌溉日 [D-1 22:00 → D 21:59]
