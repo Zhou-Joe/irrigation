@@ -27,4 +27,20 @@ and empty areas, a legacy direct station link, inactive/nested areas, and zones
 without any patch. The tests use an isolated memory cache to avoid depending on
 the development server's filesystem cache.
 
-Production deployment and browser verification are recorded after completion.
+Deployed `47d4bd74` and the clear-action follow-up `9e102b26` through GitHub to the
+office production server. Backup:
+`/home/noname/irrigation/deployment_backups/map-filter-20261025-003114`.
+Django checks passed; one changed static file was collected. `horticulture`
+restarted at 00:35:55 CST and remained active with zero automatic restarts and no
+warning/error journal entries. The public dashboard script exactly matched its
+source SHA-256. The tracked production working tree remained clean.
+
+Production read-only browser checks confirmed 22 area chips and zero station
+chips. West gate selected 87 zones; the inactive exploration road selected 92.
+Both clear actions restored all 2,508 zones. The clear button appeared only during
+an active filter. At 390 px the panel occupied x=12…378 with no document overflow;
+desktop and phone screenshots were saved locally. All 2,508 map boundaries
+finished loading. Database counts remained 2,508 zones, 3,377 patches and 3,352
+station records. All 11 Django dashboard tests and 21 JavaScript map regressions
+passed; JavaScript syntax and diff whitespace checks passed. No business records
+were submitted during verification.
