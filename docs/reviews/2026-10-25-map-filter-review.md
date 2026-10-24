@@ -15,7 +15,12 @@ An ordinary area whose human-readable name contains “Station” is preserved.
 
 The change only affects the map's filter options. It does not alter imported
 equipment, hierarchy, runtime records, boundaries, or zone assignments. No schema
-or static-resource changes are required.
+changes are required.
+
+Live selection testing also found the panel's clear button remained hidden:
+JavaScript removed its inline display value but the stylesheet still set
+`display: none`. It now toggles the existing `visible` class provided by that
+stylesheet. The dashboard script version is `20261025filters`.
 
 Validation: all 11 dashboard tests passed, including regressions for equipment
 and empty areas, a legacy direct station link, inactive/nested areas, and zones

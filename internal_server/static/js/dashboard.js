@@ -378,11 +378,11 @@
         if (count > 0) {
             btn.classList.add('active');
             if (qc) qc.classList.add('visible');
-            if (clearBtn) clearBtn.style.display = '';
+            if (clearBtn) clearBtn.classList.add('visible');
         } else {
             btn.classList.remove('active');
             if (qc) qc.classList.remove('visible');
-            if (clearBtn) clearBtn.style.display = 'none';
+            if (clearBtn) clearBtn.classList.remove('visible');
         }
     }
 
