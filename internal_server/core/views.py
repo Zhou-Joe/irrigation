@@ -792,7 +792,11 @@ def _format_irrig_ts(ts):
     """
     if not ts or not isinstance(ts, str):
         return None
-    s = ts.strip()
+    from core.irrig_time import utc_timestamp_to_local
+    try:
+        s = utc_timestamp_to_local(ts.strip())
+    except ValueError:
+        return None
     if len(s) >= 12 and s[:12].isdigit():
         return f"{s[0:4]}-{s[4:6]}-{s[6:8]} {s[8:10]}:{s[10:12]}"
     if len(s) >= 8 and s[:8].isdigit():
@@ -806,34 +810,33 @@ def _latest_runtime_by_station(station_ids):
     For each station, finds ITS OWN most recent runtime row with run_time>0
     (so a valve that last watered Tuesday isn't shown as "0 on today's global-
     latest day"). ``minutes`` = total run_time on that station's latest
-    irrigation day (8-char YYYYMMDD prefix, irrigation-day flip already baked
-    into the stored timestamp). ``ts`` = that latest row's full timestamp
-    (for display to the minute). Returns {} when there's no data.
+    local irrigation day. ``ts`` remains the raw UTC timestamp; display uses
+    the same UTC-to-local conversion as the irrigation pages.
     """
     from .models import MaxicomRuntime
     if not station_ids:
         return {}
     # Per-station latest timestamp that actually recorded runtime > 0.
-    latest_rows = (MaxicomRuntime.objects
+    latest_rows = list(MaxicomRuntime.objects
                    .filter(station_id__in=station_ids, run_time__gt=0)
                    .values('station_id')
                    .annotate(latest=Max('timestamp')))
-    # 每站点最近日的合计：一次查询按 (station, 日前缀) 聚合再取各自最新日。
-    from django.db.models.functions import Substr
-    day_totals = (MaxicomRuntime.objects
-                  .filter(station_id__in=station_ids)
-                  .annotate(day=Substr('timestamp', 1, 8))
-                  .values('station_id', 'day')
+    from collections import defaultdict
+    from core.irrig_time import irrigation_day_for_utc, irrigation_day_utc_bounds
+    by_day = defaultdict(list)
+    for row in latest_rows:
+        by_day[irrigation_day_for_utc(row['latest'])].append(row['station_id'])
+    scope = Q(pk__in=[])
+    for day, ids in by_day.items():
+        start, end = irrigation_day_utc_bounds(day, day)
+        scope |= Q(station_id__in=ids, timestamp__gte=start, timestamp__lte=end)
+    totals = dict(MaxicomRuntime.objects.filter(scope).values_list('station_id')
                   .annotate(total=Sum('run_time')))
-    totals = {}
-    for row in day_totals:
-        totals[(row['station_id'], row['day'])] = row['total'] or 0
     result = {}
     for row in latest_rows:
         sid = row['station_id']
         ts = row['latest'] or ''
-        day_prefix = ts[:8]
-        result[sid] = {'minutes': totals.get((sid, day_prefix), 0),
+        result[sid] = {'minutes': totals.get(sid, 0) or 0,
                        'ts': ts or None}
     return result
 
@@ -7289,10 +7292,8 @@ def _ccu_queryset():
 def _irrig_window(request):
     """Resolve the irrigation dashboard's `from`/`to` GET params.
 
-    Returns (date_from_compact, date_to_compact, ts_from_14, ts_to_14) where
-    the compact form is the raw YYYYMMDDHHMM the user passed (or yesterday's
-    irrigation day by default) and the ts_* forms are padded to 14-char strings
-    suitable for string-range matching against MaxicomRuntime.timestamp.
+    Returns local input strings and their UTC database bounds. Date-only inputs
+    include the whole local day; minute inputs include second 00 through 59.
 
     Default = yesterday's IRRIGATION DAY (D-1 22:00 -> D 21:59), matching the
     Maxicom UI's daily totals — runtime rows keep raw timestamps, so a plain
@@ -7307,13 +7308,17 @@ def _irrig_window(request):
     default_from, default_to = irrigation_day_bounds(yesterday, yesterday)
     date_from = request.GET.get('from', default_from).strip()
     date_to = request.GET.get('to', default_to).strip()
-    ts_from = date_from.ljust(14, '0')[:14] if date_from else ''
-    ts_to = date_to.ljust(14, '9')[:14] if date_to else ''
+    from core.irrig_time import runtime_window_bounds
+    from django.core.exceptions import BadRequest
+    try:
+        ts_from, ts_to = runtime_window_bounds(date_from, date_to)
+    except ValueError as exc:
+        raise BadRequest(str(exc)) from exc
     return date_from, date_to, ts_from, ts_to
 
 
 def _irrig_data_span():
-    """Return (first_ts, last_ts) — the min/max MaxicomRuntime.timestamp.
+    """Return the available data span as compact local UI timestamps.
 
     Used by the dashboard (for the 数据范围 hint and the 重置 default) and by
     the PDF/Excel exports (for their default window when no params given).
@@ -7323,7 +7328,8 @@ def _irrig_data_span():
     from core.models import MaxicomRuntime
     from django.db.models import Min, Max
     row = MaxicomRuntime.objects.aggregate(min_ts=Min('timestamp'), max_ts=Max('timestamp'))
-    return (row['min_ts'] or '', row['max_ts'] or '')
+    from core.irrig_time import utc_timestamp_to_local
+    return (utc_timestamp_to_local(row['min_ts']), utc_timestamp_to_local(row['max_ts']))
 
 
 def _mapped_station_ids():
@@ -7471,8 +7477,8 @@ def irrigation_dashboard(request):
     """Maxicom irrigation runtime dashboard.
 
     Pivot: rows = station, columns = controller (satellite), cell = sum of
-    runtime minutes within the selected CCU and date range. A runtime row
-    carries run_time=1 per active minute, so SUM(run_time) = minutes run.
+    actual runtime minutes within the selected CCU and local date range.
+    Poll readings remain UTC in the database and are not projected schedules.
     """
     from core.models import Patch, MaxicomController, MaxicomRuntime
     from django.db.models import Sum
@@ -7496,10 +7502,7 @@ def irrigation_dashboard(request):
     span_from = first_ts[:12] if len(first_ts) >= 12 else (first_ts[:8] if first_ts else '')
     span_to = last_ts[:12] if len(last_ts) >= 12 else (last_ts[:8] if last_ts else '')
 
-    # default range = the last complete irrigation day (yesterday 00:00→23:59).
-    # Today is partial: overnight runs are rolled to the next date by the
-    # importer, so yesterday is the most recent full day. Shared with the
-    # zone-heatmap endpoint via _irrig_window so both honour identical windows.
+    # Local irrigation-day inputs share their UTC conversion with the heatmap.
     date_from, date_to, ts_from, ts_to = _irrig_window(request)
 
     # --- build the pivot ---
@@ -7619,17 +7622,21 @@ def irrigation_dashboard(request):
     # （2026-09-12 site 8 验证吻合 98.8%；差额为系数 0 的主阀 MV）。
     import datetime as _dt
     from core.models import MaxicomFlowDaily, MaxicomStationFlowFactor
-    flow_rows, flow_zone_rows = [], []
-    if date_from[:8] and date_to[:8]:
-        d0 = _dt.datetime.strptime(date_from[:8], '%Y%m%d').date()
-        d1 = _dt.datetime.strptime(date_to[:8], '%Y%m%d').date()
-        days = [(d0 + timedelta(days=i)).strftime('%Y%m%d')
-                for i in range(min((d1 - d0).days, 366) + 1)]
+    from core.irrig_time import complete_irrigation_days
+    flow_rows, flow_zone_rows, flow_zones_by_ccu = [], [], {}
+    meter_days = complete_irrigation_days(date_from, date_to)
+    flow_notice = ''
+    if meter_days is None:
+        flow_notice = ('流量计仅保存完整灌溉日汇总，无法精确计算当前小时范围。'
+                       '请选前日 22:00 至当日 21:59 查询用水量；运行时长仍按所选时段显示。')
+    else:
+        d0, d1 = meter_days
+        day_range = (d0.strftime('%Y%m%d'), d1.strftime('%Y%m%d'))
         flow_ccus = [ccu_obj] if ccu_obj is not None else list(ccus)
         ccu_ids = {c.id for c in flow_ccus}
         meter = defaultdict(int)
         for site_id, liters in MaxicomFlowDaily.objects.filter(
-                flow_day__in=days, site_id__in=ccu_ids
+                flow_day__range=day_range, site_id__in=ccu_ids
                 ).values_list('site_id').annotate(liters=Sum('liters')):
             meter[site_id] = liters or 0
         fac = dict(MaxicomStationFlowFactor.objects.values_list('station_raw', 'factor'))
@@ -7656,7 +7663,7 @@ def irrigation_dashboard(request):
                 'zone': z['zone__mdb_index'], 'name': z['zone__name'],
                 'liters': z['liters'] or 0, 'liters_str': f'{z["liters"] or 0:,}',
             } for z in (MaxicomFlowDaily.objects
-                        .filter(flow_day__in=days, site_id=site_id)
+                        .filter(flow_day__range=day_range, site_id=site_id)
                         .values('zone__mdb_index', 'zone__name')
                         .annotate(liters=Sum('liters'))
                         .order_by('-liters'))]
@@ -7665,7 +7672,7 @@ def irrigation_dashboard(request):
             flow_zone_rows = _zone_rows(ccu_obj.id)
         else:
             for z in (MaxicomFlowDaily.objects
-                      .filter(flow_day__in=days, site_id__in=ccu_ids)
+                      .filter(flow_day__range=day_range, site_id__in=ccu_ids)
                       .values('site_id', 'zone__mdb_index', 'zone__name')
                       .annotate(liters=Sum('liters')).order_by('-liters')):
                 flow_zones_by_ccu.setdefault(str(z['site_id']), []).append({
@@ -7702,6 +7709,7 @@ def irrigation_dashboard(request):
         'show_ccu_col': show_ccu_col,
         # 浇水量表格（chart 视图；AJAX 刷新时由 renderFlow 重绘）
         'flow_rows': flow_rows,
+        'flow_notice': flow_notice,
         'flow_zone_rows': flow_zone_rows,
         'flow_zones_by_ccu': flow_zones_by_ccu,
         'flow_totals': flow_totals,
@@ -7728,6 +7736,7 @@ def irrigation_dashboard(request):
             'show_ccu_col': show_ccu_col,
             'ccu_tables': ccu_tables,
             'flow_rows': flow_rows,
+            'flow_notice': flow_notice,
             'flow_zone_rows': flow_zone_rows,
             'flow_zones_by_ccu': flow_zones_by_ccu,
         })
@@ -8173,8 +8182,12 @@ def irrigation_report_pdf(request):
     default_to = last_ts[:12] if len(last_ts) >= 12 else (last_ts[:8] if last_ts else '')
     date_from = request.GET.get('from', default_from).strip()
     date_to = request.GET.get('to', default_to).strip()
-    ts_from = date_from.ljust(14, '0')[:14] if date_from else ''
-    ts_to = date_to.ljust(14, '9')[:14] if date_to else ''
+    from core.irrig_time import runtime_window_bounds
+    from django.core.exceptions import BadRequest
+    try:
+        ts_from, ts_to = runtime_window_bounds(date_from, date_to)
+    except ValueError as exc:
+        raise BadRequest(str(exc)) from exc
 
     # --- precompute satellite lookup and runtime queryset once ---
     ctrl_map = {c.mdb_index: c for c in MaxicomController.objects.exclude(name__icontains='CCU')}

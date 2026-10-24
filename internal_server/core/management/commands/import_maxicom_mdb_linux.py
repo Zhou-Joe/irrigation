@@ -1,50 +1,14 @@
-"""Import CTROL_CF (controllers) + STATN_CF (stations) + XA_LOG (runtime)
-from a Maxicom2.mdb into the Django DB — Linux (mdbtools), CCU-safe.
+"""Import Maxicom actual controller/station logs from a Linux MDB export.
 
-CCU grouping: satellites are grouped into CCUs by the "<N>-<x>" prefix in the
-controller IndexName (e.g. "SAT 3-5" -> CCU3), NOT by Maxicom's SiteNumber. The
-sites were renumbered in Maxicom so SiteNumber no longer matches the CCU number,
-while the satellite names are stable. This map is re-derived from CTROL_CF every
-run and re-applied to controllers/stations/runtime, so a future renumbering
-self-heals on the next import.
+XA_LOG station M readings are actual runtime minutes with UTC timestamps.
+XA_RuntimeProject is projected schedule data and must never be merged into
+Actual Log totals. UI and report boundaries convert local time to UTC through
+core.irrig_time; the stored original timestamps remain unchanged.
 
-Runtime: merged from TWO mdb sources, because each is lossy in a different way
-(verified against the Maxicom UI on 6 stations in CCU2, 2026-08-30):
-
-  * XA_LOG (SignalType 'M') — the raw controller poll log. Each 'M' reading
-    (XactIndex = station, SignalValue = minutes) is the runtime accumulated
-    SINCE THE PREVIOUS POLL, stamped at poll time. Complete (no dropped runs)
-    but cannot localize runs: a poll's minutes actually happened anywhere in
-    the poll interval, so custom windows misplace boundary runs.
-  * XA_RuntimeProject — minute-level runs (one row per active minute), exact
-    timing, but it silently DROPS long runs (a 538-min cycle absent entirely)
-    and whole stations (SAT 2-5 ch23 had zero rows), and only keeps ~1 month.
-
-Merge rule per station, per poll interval (prev_poll, this_poll]:
-  - sum the minute-level runs that START inside the interval;
-  - if that sum >= the poll's reported minutes, store the minute-level runs
-    (true start timestamps, NO 22:00 roll) — timing-exact, matches the Maxicom
-    UI for custom windows;
-  - else store the poll row (with the irrigation-day roll below) — preserves
-    long runs / whole days the minute table dropped.
-Minute-level runs after the last poll (or with no polls at all) are stored
-directly.
-
-All rows (poll and minute-run) are stored at RAW timestamps — no 22:00 roll.
-Day-scoped views (dashboard default, email/PDF/Excel irrigation reports) build
-irrigation-day windows [D-1 22:00, D 21:59] via core.irrig_time so daily totals
-still match the Maxicom UI's day view, while custom windows stay exact (verified
-2026-08-30: SAT 2-6 st15=84, st19=25, SAT 2-2 st21=20, SAT 2-5 st02=20, and
-SAT 2-6 st11 irrigation-day 8/27=168). MaxicomRuntime is fully rebuilt each
-run (XA_LOG is the cumulative source), which also clears stale data.
-
-CCU safety: snapshots every CCU patch's (code, name, parent_id, mdb_index)
-before writing, verifies them unchanged after. If anything drifts, restores
-from the snapshot and aborts — the earlier corruption (CCU parent/name wiped)
-cannot recur.
-
-Usage:
-    python manage.py import_maxicom_mdb_linux --mdb /path/to/Maxicom2.mdb
+CCU grouping follows controller name prefixes because historical SiteNumber
+renumbering does not follow the geographic CCU labels. Existing CCU safety
+snapshots remain in force. Flow days are assigned after converting UTC readings
+to the application's local timezone.
 """
 import csv
 import datetime
@@ -53,13 +17,30 @@ import re
 import subprocess
 from collections import defaultdict
 
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 from core.models import Patch, MaxicomRuntime, MaxicomController
 from core.models import MaxicomFlowZone, MaxicomFlowDaily, MaxicomStationFlowFactor
+from core.irrig_time import irrigation_day_for_utc
 
 CCU_RE = re.compile(r'^CCU(\d+)$', re.IGNORECASE)
 BATCH = 1000
+
+
+def actual_runtime_values(rows):
+    """Yield (UTC timestamp, raw station ID, actual minutes) from station logs."""
+    for row in rows:
+        if _sq(row.get('SignalType')) != 'M' or _sq(row.get('SignalTable')) != 'S':
+            continue
+        try:
+            station = int(row.get('XactIndex') or 0)
+            minutes = int(row.get('SignalValue') or 0)
+            stamp = _sq(row.get('XactStamp'))
+            datetime.datetime.strptime(stamp, '%Y%m%d%H%M%S')
+        except (TypeError, ValueError):
+            continue
+        if station > 0 and minutes > 0:
+            yield stamp, station, minutes
 
 
 def _sq(v):
@@ -79,7 +60,7 @@ def _mdb_rows(mdb_path, table):
 
 
 class Command(BaseCommand):
-    help = 'Import CTROL_CF controllers + STATN_CF stations + runtime (XA_LOG M polls merged with XA_RuntimeProject minute runs, raw timestamps) + flow zones/daily liters (FLOZO_CF/XA_FLOZO by irrigation day) + station flow factors, from a Maxicom2.mdb (Linux/mdbtools, CCU-safe)'
+    help = 'Import Maxicom actual runtime (XA_LOG M, UTC) and local irrigation-day flow data (CCU-safe)'
 
     def add_arguments(self, parser):
         parser.add_argument('--mdb', type=str, required=True,
@@ -248,138 +229,38 @@ class Command(BaseCommand):
             f'Controllers rebuilt: {len(new_ctrls)} ({MaxicomController.objects.count()} total)'
         ))
 
-        # ── 3. XA_LOG (SignalType 'M') -> MaxicomRuntime ────────────────────
-        # The authoritative runtime source is XA_LOG (the raw controller poll
-        # log), NOT XA_RuntimeProject (an incomplete derivative that silently
-        # drops long runs — e.g. a 538-min cycle was entirely absent there). Each
-        # 'M' signal: XactIndex = station IndexNumber, SignalValue = runtime
-        # minutes accumulated since the previous poll.
-        # Irrigation-day roll: landscape irrigation runs overnight and the nightly
-        # poll (~22:30) STARTS the next day's cycle, so a reading timestamped
-        # >= 22:00 is attributed to date+1. Daily totals then match the Maxicom
-        # UI exactly (verified across CCU9 SAT 9-1..9-4: 10/20/10/538/899…).
+        # Actual runtime only. Reading the original UTC poll timestamps keeps
+        # historical values stable when projected schedules are regenerated.
         stn_map = {p.mdb_index: p for p in
                    Patch.objects.filter(code__startswith='station-').exclude(mdb_index__isnull=True)}
-
-        # NOTE: poll rows are stored at their RAW poll timestamp (no 22:00
-        # roll). Day-scoped views build irrigation-day windows [D-1 22:00,
-        # D 21:59] via core.irrig_time instead — rolling the timestamp itself
-        # misplaces boundary runs in custom windows (verified 2026-08-30:
-        # SAT 2-6 st15 showed 105 instead of 84 with the roll).
-
-        # ── 3a. XA_RuntimeProject → minute-level runs per station ─────────
-        # One row per active minute. Group consecutive minutes into runs:
-        # [start_dt, minutes, last_minute_dt]. StationID shares XA_LOG's
-        # XactIndex space. Note: mdb-export emits rows in arbitrary order —
-        # sort per station before grouping.
-        stamps_by_station = defaultdict(list)
-        for r in _mdb_rows(mdb_path, 'XA_RuntimeProject'):
-            try:
-                xi = int((r.get('StationID') or '0') or 0)
-                rt = int((r.get('RunTime') or '0') or 0)
-                dt = datetime.datetime.strptime(_sq(r.get('TimeStamps'))[:14],
-                                                '%Y%m%d%H%M%S')
-            except (TypeError, ValueError):
-                continue
-            if xi and rt > 0:
-                stamps_by_station[xi].append(dt)
-        rp_runs = defaultdict(list)
-        for xi, stamps in stamps_by_station.items():
-            stamps.sort()
-            for dt in stamps:
-                if rp_runs[xi] and dt - rp_runs[xi][-1][2] <= datetime.timedelta(minutes=1):
-                    rp_runs[xi][-1][1] += 1
-                    rp_runs[xi][-1][2] = dt
-                else:
-                    rp_runs[xi].append([dt, 1, dt])
-        del stamps_by_station
-
-        # ── 3b. XA_LOG (SignalType 'M') → polls per station ────────────────
-        polls_by_station = defaultdict(list)   # xi -> [(poll_dt, raw_stamp, minutes)]
-        for r in _mdb_rows(mdb_path, 'XA_LOG'):
-            if (r.get('SignalType') or '').strip() != 'M':
-                continue
-            try:
-                xi = int((r.get('XactIndex') or '0') or 0)
-                val = int((r.get('SignalValue') or '0') or 0)
-                dt = datetime.datetime.strptime(_sq(r.get('XactStamp'))[:14],
-                                                '%Y%m%d%H%M%S')
-            except (TypeError, ValueError):
-                continue
-            if xi:
-                polls_by_station[xi].append((dt, _sq(r.get('XactStamp')), val))
-        for lst in polls_by_station.values():
-            lst.sort(key=lambda t: t[0])
-
-        # ── 3c. Merge (see module docstring for the rationale) ─────────────
-        # Per poll interval (prev_poll, this_poll]: minute-runs starting inside
-        # it replace the poll row when their sum >= the poll's minutes (timing
-        # wins); otherwise the poll row (22:00-rolled) wins (long-run safety).
-        # Runs after the last poll — or stations with runs but no polls — are
-        # stored directly at their true timestamps.
         to_create = []
         skipped_no_site = 0
-
-        def _flush():
-            if len(to_create) >= BATCH:
-                MaxicomRuntime.objects.bulk_create(to_create)
-                to_create.clear()
-
+        previous_runtime_count = MaxicomRuntime.objects.count()
         with transaction.atomic():
             MaxicomRuntime.objects.all().delete()
-
-            def _mk(st, ts14, minutes, xi):
+            for raw_stamp, xi, minutes in actual_runtime_values(_mdb_rows(mdb_path, 'XA_LOG')):
+                st = stn_map.get(xi)
+                if st is None or st.parent_id is None:
+                    skipped_no_site += 1
+                    continue
                 to_create.append(MaxicomRuntime(
-                    timestamp=ts14, site_id=st.parent_id,
+                    timestamp=raw_stamp, site_id=st.parent_id,
                     station_id=st.id, station_id_raw=xi, run_time=minutes))
-                _flush()
-
-            for xi, polls in polls_by_station.items():
-                st = stn_map.get(xi)
-                if st is None or st.parent_id is None:
-                    skipped_no_site += len(polls)
-                    continue
-                runs = rp_runs.pop(xi, [])   # pop: what's left has no polls
-                ri = 0
-                for poll_dt, raw_stamp, val in polls:
-                    first_ri = ri
-                    interval_minutes = 0
-                    while ri < len(runs) and runs[ri][0] <= poll_dt:
-                        interval_minutes += runs[ri][1]
-                        ri += 1
-                    if interval_minutes >= val:
-                        for k in range(first_ri, ri):
-                            s, mins, _ = runs[k]
-                            _mk(st, s.strftime('%Y%m%d%H%M%S'), mins, xi)
-                    else:
-                        _mk(st, raw_stamp, val, xi)
-                # minute-runs after the station's last poll
-                for k in range(ri, len(runs)):
-                    s, mins, _ = runs[k]
-                    _mk(st, s.strftime('%Y%m%d%H%M%S'), mins, xi)
-
-            # stations with minute-runs but zero polls (poll log gaps)
-            for xi, runs in rp_runs.items():
-                st = stn_map.get(xi)
-                if st is None or st.parent_id is None:
-                    skipped_no_site += len(runs)
-                    continue
-                for s, mins, _ in runs:
-                    _mk(st, s.strftime('%Y%m%d%H%M%S'), mins, xi)
-
+                if len(to_create) >= BATCH:
+                    MaxicomRuntime.objects.bulk_create(to_create)
+                    to_create.clear()
             if to_create:
                 MaxicomRuntime.objects.bulk_create(to_create)
-        created_rt = MaxicomRuntime.objects.count()
-
+            if previous_runtime_count and not MaxicomRuntime.objects.exists():
+                raise CommandError('No mapped actual runtime readings; previous runtime data was preserved')
         drifted = verify_ccus()
         if drifted:
             self.stderr.write(self.style.ERROR(
                 f'CCU corruption after runtime ({len(drifted)} drifted) — restoring'))
             restore_ccus()
             return
-
         self.stdout.write(self.style.SUCCESS(
-            f'Runtime (XA_LOG M + XA_RuntimeProject merged, raw ts): {created_rt} rows, '
+            f'Runtime (XA_LOG actual M readings, UTC): {MaxicomRuntime.objects.count()} rows, '
             f'{skipped_no_site} no-CCU-skipped'
         ))
 
@@ -416,6 +297,7 @@ class Command(BaseCommand):
         # ~400 万行：不能走 _mdb_rows（capture_output 会把整表读进内存），
         # 改 Pipe 流式逐行读；-Q -d '|' 无引号且列全为数字/时间戳，split 即可。
         agg = defaultdict(lambda: [0, 0])
+        day_by_hour = {}
         proc = subprocess.Popen(
             ['mdb-export', '-Q', '-d', '|', mdb_path, 'XA_FLOZO'],
             stdout=subprocess.PIPE, text=True)
@@ -434,16 +316,22 @@ class Command(BaseCommand):
                 continue
             if not ts or len(ts) < 8 or not idx:
                 continue
-            day = ts[:8]
-            if ts[8:12] >= '2200':     # 灌溉日翻日
-                d = datetime.datetime.strptime(day, '%Y%m%d') + datetime.timedelta(days=1)
-                day = d.strftime('%Y%m%d')
+            # China has an integral-hour UTC offset. Cache the local day per UTC
+            # hour rather than parsing millions of readings' timestamps twice.
+            hour = ts[:10]
+            if hour not in day_by_hour:
+                try:
+                    day_by_hour[hour] = irrigation_day_for_utc(hour).strftime('%Y%m%d')
+                except ValueError:
+                    continue
+            day = day_by_hour[hour]
             a = agg[(day, idx)]
             a[0] += val * mult
             if val > 0:
                 a[1] += 1
         proc.stdout.close()
-        proc.wait()
+        if proc.wait() != 0:
+            raise CommandError('XA_FLOZO export failed; previous flow data was preserved')
 
         # 4c. 站点流量系数快照（STATN_CF.StationFlowFactor，L/min）
         # STATN_CF 的 IndexNumber 会重复——同号站改动后留历史行（DateClose

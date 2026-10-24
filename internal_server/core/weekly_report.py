@@ -120,14 +120,10 @@ def last_full_week(today=None):
 
 
 def _irr_day(ts):
-    """Irrigation day for a YYYYMMDDHHMMSS string (>=22:00 belongs to next day)."""
-    if len(ts) >= 13 and ts[8:] >= '220000':
-        try:
-            return date(int(ts[:4]), int(ts[4:6]), int(ts[6:8])) + timedelta(days=1)
-        except ValueError:
-            return None
+    """Local irrigation day for a compact UTC runtime timestamp."""
+    from core.irrig_time import irrigation_day_for_utc
     try:
-        return date(int(ts[:4]), int(ts[4:6]), int(ts[6:8]))
+        return irrigation_day_for_utc(ts)
     except ValueError:
         return None
 
@@ -174,8 +170,8 @@ def _week_data(d0, d1):
     d['pm_done'] = pm_done
 
     # runtime per irrigation day
-    from core.irrig_time import irrigation_day_bounds
-    f14, t14 = irrigation_day_bounds(d0, d1)
+    from core.irrig_time import irrigation_day_utc_bounds
+    f14, t14 = irrigation_day_utc_bounds(d0, d1)
     day_min = Counter()
     sites = set()
     runs = 0

@@ -246,17 +246,15 @@ def _populate_workspace_data(ws):
 
     # Irrigation daily aggregates (近90天) — 灌溉日 × (运行分钟/次数/活跃站点/浇水量)。
     # 天气×灌溉、周报类跨表分析的主表；灌溉日 = 前日22:00→当日21:59（跨夜归次日）。
-    from core.irrig_time import irrigation_day_bounds
+    from core.irrig_time import irrigation_day_utc_bounds, irrigation_day_for_utc
     from core.models import MaxicomRuntime, MaxicomFlowDaily, GeneratedWorkOrder
-    f14, t14 = irrigation_day_bounds(since, today)
+    f14, t14 = irrigation_day_utc_bounds(since, today)
 
     def _irr_day(ts):
-        if len(ts) >= 13 and ts[8:] >= '220000':
-            try:
-                return (date(int(ts[:4]), int(ts[4:6]), int(ts[6:8])) + timedelta(days=1)).isoformat()
-            except ValueError:
-                return None
-        return f'{ts[:4]}-{ts[4:6]}-{ts[6:8]}'
+        try:
+            return irrigation_day_for_utc(ts).isoformat()
+        except ValueError:
+            return None
 
     agg = {}
     for ts, sid, rt in MaxicomRuntime.objects.filter(
@@ -802,24 +800,20 @@ def query_irrigation_runtime(start_date: str = "", end_date: str = "", limit: in
         end_date: 结束灌溉日 YYYY-MM-DD，留空默认今天
         limit: 按站点组分布最多返回条数，默认20
     """
-    from core.irrig_time import irrigation_day_bounds
+    from core.irrig_time import irrigation_day_utc_bounds, irrigation_day_for_utc
     from core.models import MaxicomRuntime
 
     today = date.today()
     end = _parse_date(end_date) or today
     start = _parse_date(start_date) or (end - timedelta(days=7))
-    f, t = irrigation_day_bounds(start, end)
+    f, t = irrigation_day_utc_bounds(start, end)
     day_min, day_runs, day_sites, site_min = {}, {}, {}, {}
     for ts, site_id, rt in MaxicomRuntime.objects.filter(
             timestamp__gte=f, timestamp__lte=t).values_list('timestamp', 'site_id', 'run_time'):
-        # 22:00 起的记录归次日灌溉日
-        if len(ts) >= 13 and ts[8:] >= '220000':
-            try:
-                key = (date(int(ts[:4]), int(ts[4:6]), int(ts[6:8])) + timedelta(days=1)).isoformat()
-            except ValueError:
-                continue
-        else:
-            key = f'{ts[:4]}-{ts[4:6]}-{ts[6:8]}'
+        try:
+            key = irrigation_day_for_utc(ts).isoformat()
+        except ValueError:
+            continue
         day_min[key] = day_min.get(key, 0) + (rt or 0)
         day_runs[key] = day_runs.get(key, 0) + 1
         day_sites.setdefault(key, set()).add(site_id)
