@@ -1444,15 +1444,16 @@ def dashboard(request):
     # The HTML request only reads sidebar summaries.
     pending_remarks_data = None
 
-    # Patch list for map filter plugin
+    # Patch stores CCUs/areas and imported station equipment in the same table.
+    # Only offer areas used by the zones on this map, not thousands of valves or
+    # empty locations. Keep used inactive areas: their zones are still displayed.
     from .models import Patch
-    patches_list = []
-    for p in Patch.objects.order_by('code'):
-        patches_list.append({
-            'id': p.id,
-            'name': p.name,
-            'code': p.code,
-        })
+    map_patch_ids = {z['patch_id'] for z in zones_list if z.get('patch_id') is not None}
+    patches_list = list(
+        Patch.objects.filter(id__in=map_patch_ids)
+        .exclude(code__istartswith='station-')
+        .order_by('code').values('id', 'name', 'code')
+    )
 
     # Land list for map filter plugin
     lands_list = []
