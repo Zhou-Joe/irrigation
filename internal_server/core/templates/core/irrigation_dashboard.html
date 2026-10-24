@@ -858,11 +858,11 @@
                     </div>
                     <div class="field">
                         <label>开始时间</label>
-                        <input type="datetime-local" id="dateFrom" value="{{ datetime_from_iso }}" step="60">
+                        <input type="datetime-local" id="dateFrom" value="{{ datetime_from_iso }}" step="1">
                     </div>
                     <div class="field">
                         <label>结束时间</label>
-                        <input type="datetime-local" id="dateTo" value="{{ datetime_to_iso }}" step="60">
+                        <input type="datetime-local" id="dateTo" value="{{ datetime_to_iso }}" step="1">
                     </div>
                     <button class="btn-sm btn-primary" onclick="applyFilters()">查询</button>
                     <button class="btn-sm btn-secondary" onclick="resetFilters()">重置</button>
@@ -1022,7 +1022,10 @@ document.addEventListener('click', () => {
 // any precision from day down to minute works).
 function _compactDt(v) { return (v || '').replace(/[^0-9]/g, ''); }
 function _fromParam() { return _compactDt(document.getElementById('dateFrom').value); }
-function _toParam()   { return _compactDt(document.getElementById('dateTo').value); }
+function _toParam()   {
+    const value = _compactDt(document.getElementById('dateTo').value);
+    return value.length === 12 ? value + '00' : value;
+}
 
 function _exportParams() {
     const from = _fromParam();
