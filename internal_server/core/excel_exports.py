@@ -343,9 +343,8 @@ def build_irrigation_report_excel(date_from, date_to, ccu_ids=None):
 
     Mirrors the former inline body of ``views.irrigation_report_excel`` (after
     the request param parsing). ``date_from`` / ``date_to`` are the compact
-    Maxicom timestamp strings (``YYYYMMDDHHMM`` / ``YYYYMMDDHH`` etc.) exactly
-    as the dashboard uses — they are embedded verbatim in the filename and
-    padded to 14 chars for the timestamp range filter.
+    local timestamp strings used by the dashboard. They are embedded in the
+    filename; database filters use the common explicit local-to-UTC conversion.
 
     ``ccu_ids`` (optional) restricts the export to a subset of CCU Patch ids —
     used by the scheduled-email feature to distribute specific CCUs to the
@@ -357,8 +356,8 @@ def build_irrigation_report_excel(date_from, date_to, ccu_ids=None):
     from core.views import (_irrig_data_span, _mapped_station_ids,
                             _ccu_queryset, _build_ccu_matrix)
 
-    ts_from = date_from.ljust(14, '0')[:14] if date_from else ''
-    ts_to = date_to.ljust(14, '9')[:14] if date_to else ''
+    from core.irrig_time import runtime_window_bounds
+    ts_from, ts_to = runtime_window_bounds(date_from, date_to)
 
     ctrl_map = {c.mdb_index: c for c in MaxicomController.objects.exclude(name__icontains='CCU')}
     rt_qs = MaxicomRuntime.objects.select_related('station', 'station__parent', 'site')
