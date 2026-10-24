@@ -93,3 +93,25 @@ MaintenancePlan, InventoryTransaction and InventoryTransactionLine were unchange
 The source and candidate database, logs, expected values and checks are retained
 inside the private audit directory. Three rendered inline scripts passed Node
 syntax checks. Final live deployment verification follows.
+
+## Production release
+
+Production advanced to `80a08b44`; Django checks passed and the import of the
+same original 10-24 MDB exited successfully. A fresh pre-deployment SQLite backup
+and source archive are retained in the audit directory (`db-pre-deployment.sqlite3`,
+`pre-deployment-source.tar.gz`, `pre-deployment-head.txt`). Import output is saved
+as `production-import.log`.
+
+The final datetime-control follow-up `4bf2a45d` was then fast-forwarded and
+`horticulture` restarted. The follow-up GitHub fetch timed out, so the same pushed
+commit was transferred as a small Git bundle over the existing authorized SSH
+connection. No migrations or new dependencies were required.
+
+The user requested that data reconciliation stop because they had completed it.
+No additional live page/data comparisons were performed after that instruction;
+remaining work was limited to completing the final code switch and checking
+service health. The 20-value reconciliation and business-table integrity claims
+above describe the independently validated production-copy run, not an additional
+post-deployment live audit. Water-meter geographic attribution remains the separate
+concern documented above; the UI now describes the arithmetic sum as a reference
+and removes the unsupported claim of exact agreement with Rain Bird's water totals.
