@@ -27,6 +27,13 @@ import pandas as pd
 data = pd.read_csv('fixture.csv')
 assert data['value'].sum() == 3
 data.to_excel('executor-check.xlsx', index=False)
+import matplotlib.pyplot as plt
+from matplotlib import font_manager, ft2font
+font = ft2font.FT2Font(font_manager.findfont('Noto Sans CJK JP', fallback_to_default=False))
+assert all(ord(char) in font.get_charmap() for char in '\u704c\u6e89\u6570\u636e'), 'Chinese chart glyphs unavailable'
+plt.bar(['\u6d4b\u8bd5'], [3])
+plt.title('\u704c\u6e89\u6570\u636e')
+plt.savefig('executor-check.png')
 print('isolated-executor-ok')
 '''
 
@@ -41,6 +48,7 @@ class Command(BaseCommand):
             result=execute(SMOKE,root)
             if (result.get('error') or result.get('exit_code') != 0
                     or 'isolated-executor-ok' not in result.get('stdout','')
-                    or not (root/'executor-check.xlsx').is_file()):
+                    or not (root/'executor-check.xlsx').is_file()
+                    or not (root/'executor-check.png').is_file()):
                 raise CommandError('Executor smoke check failed: '+str(result.get('error') or result.get('stderr') or 'missing output'))
         self.stdout.write(self.style.SUCCESS('Isolated AI executor verified with synthetic data.'))
