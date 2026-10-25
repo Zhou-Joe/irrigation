@@ -72,33 +72,7 @@ def sync_status(request):
 
 
 def agent_status(request):
-    """Return sync agent connection status based on heartbeat (dashboard widget).
-
-    With the sync agent retired this will report ``offline`` /
-    ``never_connected``; the nightly mdb import keeps the data fresh instead.
-    """
     if not _auth_key_or_session(request):
-        return JsonResponse({'error': 'Auth required'}, status=401)
-    try:
-        heartbeat = SyncAgentHeartbeat.objects.get(pk=1)
-        last = heartbeat.last_heartbeat
-        if timezone.is_naive(last):
-            last = timezone.make_aware(last)
-        now = timezone.now()
-        elapsed = (now - last).total_seconds()
-        status = 'online' if elapsed < 900 else 'offline'
-        return JsonResponse({
-            'status': status,
-            'last_heartbeat': last.isoformat(),
-            'seconds_since_heartbeat': int(elapsed),
-            'last_sync_counts': heartbeat.last_sync_counts,
-            'agent_version': heartbeat.agent_version,
-        })
-    except SyncAgentHeartbeat.DoesNotExist:
-        return JsonResponse({
-            'status': 'never_connected',
-            'last_heartbeat': None,
-            'seconds_since_heartbeat': None,
-            'last_sync_counts': {},
-            'agent_version': '',
-        })
+        return JsonResponse({'error':'Auth required'},status=401)
+    from .import_status import status
+    return JsonResponse(status())

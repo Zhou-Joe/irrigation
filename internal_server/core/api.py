@@ -120,7 +120,12 @@ def worker_login(request):
             'full_name': user.first_name or user.username,
             'role': 'super_admin',
         }
-        token = str(user.id)
+        manager, _ = ManagerProfile.objects.get_or_create(user=user, defaults={
+            'employee_id':f'SYS-{user.pk}', 'full_name':user.get_full_name() or user.username,
+            'is_super_admin':True})
+        if not manager.active:
+            return Response({'error':'账号已停用'},status=status.HTTP_403_FORBIDDEN)
+        token = str(manager.api_token)
 
     if role is None:
         return Response(
@@ -296,6 +301,20 @@ class WaterRequestSerializer(serializers.ModelSerializer):
     def get_zone_names(self, obj):
         return ', '.join(z.name for z in obj.all_zones)
 
+    def validate(self, attrs):
+        from .business_rules import water_window
+        if 'status' in self.initial_data and self.initial_data['status'] != (self.instance.status if self.instance else 'submitted'):
+            raise serializers.ValidationError({'status': '请通过经理审批入口修改状态'})
+        start = attrs.get('start_datetime', getattr(self.instance, 'start_datetime', None))
+        end = attrs.get('end_datetime', getattr(self.instance, 'end_datetime', None))
+        try:
+            attrs['start_datetime'], attrs['end_datetime'] = water_window(start, end)
+        except ValueError as exc:
+            raise serializers.ValidationError(str(exc))
+        if not self.instance and not attrs.get('zones'):
+            raise serializers.ValidationError({'zones': '请选择至少一个区域'})
+        return attrs
+
     class Meta:
         model = WaterRequest
         fields = [
@@ -307,7 +326,7 @@ class WaterRequestSerializer(serializers.ModelSerializer):
             'start_datetime', 'end_datetime', 'photos',
             'created_at', 'updated_at'
         ]
-        read_only_fields = ['submitter', 'approver', 'processed_at', 'created_at', 'updated_at']
+        read_only_fields = ['submitter', 'approver', 'processed_at', 'created_at', 'updated_at', 'status']
 
 
 class AllRequestsSerializer(serializers.Serializer):
@@ -357,8 +376,10 @@ class ZoneViewSet(viewsets.ModelViewSet):
     def perform_update(self, serializer):
         """Auto-close boundary polygons before saving."""
         from .views import auto_close_boundary_points
-        boundary_points = serializer.validated_data.get('boundary_points', [])
-        serializer.save(boundary_points=auto_close_boundary_points(boundary_points))
+        if 'boundary_points' in serializer.validated_data:
+            serializer.save(boundary_points=auto_close_boundary_points(serializer.validated_data['boundary_points']))
+        else:
+            serializer.save()
 
     @action(detail=True, methods=['get'], url_path='zone-detail')
     def zone_detail(self, request, pk=None):
@@ -481,24 +502,30 @@ class WaterRequestViewSet(viewsets.ModelViewSet):
     queryset = WaterRequest.objects.all().order_by('-created_at')
     serializer_class = WaterRequestSerializer
     authentication_classes = [TokenAuthentication, authentication.SessionAuthentication]
-    permission_classes = [IsOwnerOrAdmin]
+    permission_classes = [IsAuthenticatedByTokenOrSession, IsOwnerOrAdmin]
 
     def get_queryset(self):
-        from .role_utils import is_admin, is_dept_user, get_worker_for_user
-        if is_dept_user(self.request.user):
-            return WaterRequest.objects.all().order_by('-created_at')
+        from .role_utils import is_admin, get_worker_for_user, get_django_user
+        qs = super().get_queryset().select_related('submitter', 'submitter_user', 'approver', 'zone').prefetch_related('zones')
         if is_admin(self.request.user):
-            return WaterRequest.objects.all().order_by('-created_at')
+            return qs
         worker = get_worker_for_user(self.request.user)
+        user = get_django_user(self.request.user)
+        condition = models.Q(submitter_user=user) if user else models.Q(pk__in=[])
         if worker:
-            return WaterRequest.objects.filter(submitter=worker).order_by('-created_at')
-        return WaterRequest.objects.none()
+            condition |= models.Q(submitter=worker)
+        return qs.filter(condition)
 
     def perform_create(self, serializer):
-        if isinstance(self.request.user, Worker):
-            serializer.save(submitter=self.request.user)
-        else:
-            serializer.save(submitter=self.request.user.worker_profile)
+        from .business_rules import water_owner_kwargs
+        zones = serializer.validated_data.get('zones', [])
+        serializer.save(**water_owner_kwargs(self.request.user), zone=zones[0] if zones else None, status='submitted')
+
+    def perform_update(self, serializer):
+        if serializer.instance.status != 'submitted':
+            raise serializers.ValidationError('需求已处理，请使用补充信息或审批入口')
+        zones = serializer.validated_data.get('zones')
+        serializer.save(**({'zone': zones[0]} if zones else {}))
 
 
 @api_view(['GET'])
@@ -753,7 +780,7 @@ class WorkReportSerializer(serializers.ModelSerializer):
             'photos', 'photo_urls',
             'created_at', 'updated_at',
         ]
-        read_only_fields = ['created_at', 'updated_at']
+        read_only_fields = ['created_at', 'updated_at', 'worker', 'photos']
         extra_kwargs = {
             'zone_location': {'required': False, 'allow_null': True},
             'worker': {'required': False},
@@ -786,9 +813,8 @@ class WorkReportSerializer(serializers.ModelSerializer):
         return WorkReport.objects.create(**validated_data)
 
     def update(self, instance, validated_data):
-        zone = validated_data.pop('zone_location_code', None)
-        if zone:
-            validated_data['zone_location'] = zone
+        if 'zone_location_code' in validated_data:
+            validated_data['zone_location'] = validated_data.pop('zone_location_code')
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
         instance.save()
@@ -811,7 +837,7 @@ class PatchSerializer(serializers.ModelSerializer):
 
 
 class PatchViewSet(viewsets.ReadOnlyModelViewSet):
-    queryset = Patch.objects.filter(active=True).order_by('order', 'code')
+    queryset = Patch.objects.filter(active=True).select_related('region').order_by('order', 'code')
     serializer_class = PatchSerializer
     authentication_classes = [TokenAuthentication, authentication.SessionAuthentication]
     permission_classes = [IsAuthenticatedByTokenOrSession]
@@ -825,18 +851,18 @@ class RegionSerializer(serializers.ModelSerializer):
         fields = ['id', 'name', 'order', 'active', 'patch_count']
 
     def get_patch_count(self, obj):
-        return obj.patches.filter(active=True).count()
+        return obj.active_patch_count
 
 
 class RegionViewSet(viewsets.ReadOnlyModelViewSet):
-    queryset = Region.objects.filter(active=True).order_by('order', 'name')
+    queryset = Region.objects.filter(active=True).annotate(active_patch_count=models.Count('patches', filter=models.Q(patches__active=True))).order_by('order', 'name')
     serializer_class = RegionSerializer
     authentication_classes = [TokenAuthentication, authentication.SessionAuthentication]
     permission_classes = [IsAuthenticatedByTokenOrSession]
 
 
 class LocationViewSet(viewsets.ReadOnlyModelViewSet):
-    queryset = Patch.objects.filter(active=True).order_by('order', 'code')
+    queryset = Patch.objects.filter(active=True).select_related('region').order_by('order', 'code')
     serializer_class = LocationSerializer
     authentication_classes = [TokenAuthentication, authentication.SessionAuthentication]
     permission_classes = [IsAuthenticatedByTokenOrSession]
@@ -851,10 +877,19 @@ class WorkReportViewSet(viewsets.ModelViewSet):
     authentication_classes = [TokenAuthentication, authentication.SessionAuthentication]
     permission_classes = [IsAuthenticatedByTokenOrSession]
 
+    def initial(self, request, *args, **kwargs):
+        super().initial(request, *args, **kwargs)
+        from .business_rules import require_workorder_user
+        require_workorder_user(request.user)
+        from .role_utils import is_admin
+        if self.action == 'destroy' and not is_admin(request.user):
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied('仅经理可删除工单')
+
     def get_queryset(self):
         qs = WorkReport.objects.select_related(
-            'worker', 'location', 'work_category', 'info_source'
-        ).prefetch_related('fault_entries__fault_subtype__category').order_by('-date', '-id')
+            'worker', 'location', 'zone_location'
+        ).prefetch_related('entries__work_item', 'zones').order_by('-date', '-id')
 
         from .role_utils import is_admin, get_worker_for_user, is_field_worker
         # Both 灌溉一线 (field workers) and managers/admins see ALL workorders.
@@ -881,7 +916,7 @@ class WorkReportViewSet(viewsets.ModelViewSet):
         if patch:
             qs = qs.filter(location_id=patch)
         if work_category:
-            qs = qs.filter(work_category_id=work_category)
+            qs = qs.filter(entries__work_item__section=work_category).distinct()
         if worker_id:
             qs = qs.filter(worker_id=worker_id)
         if zone_id:
@@ -892,21 +927,10 @@ class WorkReportViewSet(viewsets.ModelViewSet):
         return qs
 
     def perform_create(self, serializer):
-        # If worker was explicitly passed, use it
-        if 'worker' in serializer.validated_data:
-            serializer.save()
-            return
-        from .role_utils import get_worker_for_user
-        worker = get_worker_for_user(self.request.user)
-        if worker is None:
-            from .models import Worker
-            django_user = getattr(self.request.user, 'user', self.request.user)
-            worker, _ = Worker.objects.get_or_create(
-                employee_id=f"USR-{django_user.id}",
-                defaults={
-                    'full_name': getattr(django_user, 'get_full_name', lambda: '')() or getattr(django_user, 'username', ''),
-                },
-            )
+        from .role_utils import resolve_or_create_worker
+        worker, _ = resolve_or_create_worker(self.request.user)
+        if not worker:
+            raise serializers.ValidationError('无法确定处理人账号')
         serializer.save(worker=worker)
 
     @action(detail=True, methods=['post'], url_path='upload-photos')

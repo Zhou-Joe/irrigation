@@ -2,8 +2,10 @@ from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from core import dxf_views, views
 from core import pwa
+from core import ai_storage
+from core import submissions
 from core.sync_views import sync_status, agent_status
-from core.ai_views import ai_chat, ai_status
+from core.ai_views import ai_chat, ai_status, ai_cancel, ai_conversations
 from core.api import (
     ZoneViewSet, PlantViewSet, WorkerViewSet,
     WaterRequestViewSet,
@@ -240,6 +242,10 @@ urlpatterns = [
     path('api/maxicom-dashboard', views.maxicom_dashboard_api, name='maxicom_dashboard_api'),
     path('api/sync/status', sync_status, name='sync_status'),
     path('api/sync/agent-status', agent_status, name='agent_status'),
+    path('api/submissions/<uuid:key>/', submissions.result, name='submission_result'),
     path('api/ai/chat', ai_chat, name='ai_chat'),
+    path('ai/files/<str:thread_id>/<str:name>', ai_storage.download, name='ai_artifact'),
     path('api/ai/status', ai_status, name='ai_status'),
+    path('api/ai/cancel', ai_cancel, name='ai_cancel'),
+    path('api/ai/conversations', ai_conversations, name='ai_conversations'),
 ]

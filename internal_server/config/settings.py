@@ -53,6 +53,7 @@ MIDDLEWARE = [
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'core.session_guard.SessionGuardMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
@@ -137,6 +138,9 @@ DXF_CALIBRATION_MAX_RMS_M = float(os.environ.get('DXF_CALIBRATION_MAX_RMS_M', '5
 
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
+AI_PRIVATE_ROOT = BASE_DIR / 'private_ai'
+AI_EXECUTOR_BINARY = os.environ.get('AI_EXECUTOR_BINARY', 'docker')
+AI_EXECUTOR_IMAGE = os.environ.get('AI_EXECUTOR_IMAGE', '')
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 

@@ -109,7 +109,10 @@ class MapDashboardTests(TestCase):
     def test_anonymous_visitors_cannot_read_map_data(self):
         self.client.logout()
         for url in ('/', '/api/zones-payload/', '/api/pipelines-payload/'):
-            self.assertEqual(self.client.get(url, HTTP_HOST='127.0.0.1').status_code, 302)
+            response = self.client.get(url, HTTP_HOST='127.0.0.1')
+            self.assertEqual(response.status_code, 401 if url.startswith('/api/') else 302)
+            if url.startswith('/api/'):
+                self.assertIn('error', response.json())
 
     def test_empty_leading_cad_groups_and_malformed_vertices_do_not_break_the_map(self):
         boundary = [[], [[{'lat': None, 'lng': 121}, {'lat': 'bad', 'lng': 121}]], [self.cad]]

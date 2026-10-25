@@ -55,7 +55,9 @@ def flow_window(local_from, local_to):
     from core.models import MaxicomFlowDaily, MaxicomFlowZone
 
     utc_from, utc_to = runtime_window_bounds(local_from, local_to)
-    result = {'sites': [], 'notice': '', 'unit': 'L'}
+    result = {'sites': [], 'notice': '', 'unit': 'L', 'unit_verified': False,
+        'source': 'Rain Bird 流量区记录',
+        'unit_note': '当前数值按源记录汇总，升数换算及采样口径尚待核准，请作为参考。'}
     if not utc_from or not utc_to:
         result['notice'] = '请选择开始和结束时间。'
         return result

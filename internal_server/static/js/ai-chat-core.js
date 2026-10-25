@@ -35,7 +35,7 @@
         if (!url || url.origin !== new URL(origin).origin) return null;
         let parts;
         try { parts = decodeURIComponent(url.pathname).split('/').filter(Boolean); } catch (_) { return null; }
-        if (parts.length !== 4 || parts[0] !== 'media' || parts[1] !== 'ai_workspaces' || !/^u\d+-[0-9a-f]{8,32}$/.test(parts[2]) || parts[3].startsWith('.') || /[\\/]/.test(parts[3])) return null;
+        if (parts.length !== 4 || !((parts[0] === 'ai' && parts[1] === 'files') || (parts[0] === 'media' && parts[1] === 'ai_workspaces')) || !/^u\d+-[0-9a-f]{8,32}$/.test(parts[2]) || parts[3].startsWith('.') || /[\\/]/.test(parts[3])) return null;
         const name = String(file.name || parts[3]).slice(0,240);
         const ext = parts[3].split('.').pop().toLowerCase();
         const kind = /^(png|jpe?g|webp|gif|avif)$/.test(ext) ? 'image' : /^(xlsx?|csv)$/.test(ext) ? 'spreadsheet' : ext === 'pdf' ? 'pdf' : /^(docx?|txt|md)$/.test(ext) ? 'document' : 'file';

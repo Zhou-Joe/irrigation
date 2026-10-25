@@ -109,6 +109,7 @@
     </form>
   </div>
 
+  {% include 'core/_pagination.html' %}
   {% for wr in requests %}
   <div class="wq-card" data-pk="{{ wr.id }}">
     <div class="wq-card-main">

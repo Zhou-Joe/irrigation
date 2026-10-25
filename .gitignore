@@ -89,3 +89,5 @@ internal_server/pipeline_backups/
 # Sync agent real config (contains credentials)
 sync_agent/sync_config.json
 internal_server/media/ai_checkpoints.sqlite3*
+
+internal_server/private_ai/

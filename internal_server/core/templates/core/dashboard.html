@@ -44,7 +44,7 @@
 {% endblock %}
 
 {% block extra_ui_css %}
-<link rel="stylesheet" href="{% static 'css/ai-chat.css' %}?v=20261024chat">
+<link rel="stylesheet" href="{% static 'css/ai-chat.css' %}?v=20261026business1">
 {% endblock %}
 
 {% block content %}
@@ -433,7 +433,7 @@
 <!-- Custom Map JS -->
 <script src="{% static 'js/map-runtime.js' %}?v=20261023map4"></script>
 <script src="{% static 'js/map.js' %}?v=20261023map4"></script>
-<script src="{% static 'js/dashboard-modal.js' %}?v=20261023icons3"></script>
+<script src="{% static 'js/dashboard-modal.js' %}?v=20261026business1"></script>
 <script>
 // Override the notification popup's PM-task "填写" handler: on the dashboard we
 // can open the assigned PM task directly; other pages navigate with its GWO id.
@@ -448,12 +448,12 @@ window.fillPmTask = function (gwoId) {
 </script>
 <!-- Dashboard JS — pass Django URL to external script -->
 <script>window.HISTORY_URL = '{% url "core:work_reports" %}';</script>
-<script src="{% static 'js/dashboard.js' %}?v=20261025filters"></script>
+<script src="{% static 'js/dashboard.js' %}?v=20261026business1"></script>
 <!-- AI data-analyst chat widget (deferred: non-blocking load, auto-mounts on DOMContentLoaded) -->
 <script defer src="{% static 'vendor/marked/marked.min.js' %}?v=12.0.2"></script>
 <script defer src="{% static 'vendor/dompurify/purify.min.js' %}?v=3.4.17"></script>
-<script defer src="{% static 'js/ai-chat-core.js' %}?v=20261024chat"></script>
-<script defer src="{% static 'js/ai-chat.js' %}?v=20261024chat"></script>
+<script defer src="{% static 'js/ai-chat-core.js' %}?v=20261026business1"></script>
+<script defer src="{% static 'js/ai-chat.js' %}?v=20261026business1"></script>
 <!-- Announcement popup driver -->
 <script>
 (function () {

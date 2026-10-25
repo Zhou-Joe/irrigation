@@ -1,3 +1,4 @@
+from core.submissions import submission
 import json
 from datetime import timedelta
 from django.shortcuts import render, redirect, get_object_or_404
@@ -20,6 +21,9 @@ from rest_framework.authentication import SessionAuthentication
 from rest_framework.permissions import IsAuthenticated
 from core.authentication import TokenAuthentication as _TokenAuth
 from core.authentication import token_or_session
+from core.business_rules import atomic_operation, inventory_scope, require_inventory_edit, material_lines, integer_quantity, water_window
+from django.db import transaction
+from django.core.exceptions import PermissionDenied
 
 def auto_close_boundary_points(boundary_data):
     """
@@ -2394,8 +2398,8 @@ def settings_page(request):
         .annotate(pipe_count=Count('pipelines', distinct=True),
                   valve_count=Count('pipelines__valves', distinct=True))
         .order_by('-id'))
-    regions = Region.objects.filter(active=True).order_by('order', 'name')
-    site_patches = Patch.objects.order_by('code')
+    regions = Region.objects.filter(active=True).annotate(patch_count=Count('patches')).order_by('order', 'name')
+    site_patches = Patch.objects.exclude(code__startswith='station-').annotate(child_count=Count('children')).order_by('code')
 
     # Precompute zone counts per patch (FK + derived from code prefix)
     grouped_zones_data = _build_grouped_zones(zones)
@@ -2409,12 +2413,12 @@ def settings_page(request):
     # Precompute linked patch counts (children via parent FK)
     child_counts = {}
     for p in site_patches:
-        child_counts[p.id] = p.children.count()
+        child_counts[p.id] = p.child_count
 
     # Precompute patch counts per region
     region_patch_counts = {}
     for r in regions:
-        region_patch_counts[r.id] = r.patches.count()
+        region_patch_counts[r.id] = r.patch_count
 
     all_plant_names = list(Plant.objects.values_list('name', flat=True).distinct().order_by('name'))
 
@@ -5441,33 +5445,33 @@ def _boundary_points_to_shapely(boundary_points):
 
 
 def _recalculate_landmark_assignments():
-    """Recalculate all zone↔landmark assignments based on boundary overlap."""
     try:
-        from shapely.geometry import MultiPolygon as _MP  # noqa: F401 — verify import
+        from shapely.strtree import STRtree
     except ImportError:
         return -1
-
-    from .models import Landmark, ZoneLandmarkAssignment, Zone
-
-    ZoneLandmarkAssignment.objects.all().delete()
-
-    landmarks = Landmark.objects.exclude(boundary_points=[])
-    zones = Zone.objects.exclude(boundary_points=[])
-    count = 0
-
-    for landmark in landmarks:
-        landmark_geom = _boundary_points_to_shapely(landmark.boundary_points)
-        if landmark_geom is None:
-            continue
-        for zone in zones:
-            zone_geom = _boundary_points_to_shapely(zone.boundary_points)
-            if zone_geom is None:
+    from .models import Landmark, ZoneLandmarkAssignment
+    geometries=[]; zone_ids=[]
+    for zone in Zone.objects.only('boundary_points','dxf_boundary_points','boundary_source'):
+        geom=_boundary_points_to_shapely(zone.active_boundary_points)
+        if geom is not None and not geom.is_empty:
+            geometries.append(geom); zone_ids.append(zone.pk)
+    rows=[]
+    if geometries:
+        tree=STRtree(geometries)
+        # Shapely 2 returns indices; 1.x returns geometry objects.
+        identity={id(geom):i for i,geom in enumerate(geometries)}
+        for landmark in Landmark.objects.only('boundary_points'):
+            geom=_boundary_points_to_shapely(landmark.boundary_points)
+            if geom is None or geom.is_empty:
                 continue
-            if landmark_geom.intersects(zone_geom):
-                ZoneLandmarkAssignment.objects.create(zone=zone, landmark=landmark)
-                count += 1
-
-    return count
+            for candidate in tree.query(geom):
+                index=int(candidate) if not hasattr(candidate,'geom_type') else identity[id(candidate)]
+                if geom.intersects(geometries[index]):
+                    rows.append(ZoneLandmarkAssignment(zone_id=zone_ids[index],landmark_id=landmark.pk))
+    with transaction.atomic():
+        ZoneLandmarkAssignment.objects.all().delete()
+        ZoneLandmarkAssignment.objects.bulk_create(rows, batch_size=500)
+    return len(rows)
 
 
 def _landmark_draw_context(landmark):
@@ -5504,6 +5508,8 @@ def _landmark_draw_context(landmark):
 
 @login_required(login_url='core:login')
 def landmark_new(request):
+    if not _check_zone_admin(request):
+        return JsonResponse({'error': '无权限'}, status=403)
     from .models import Landmark
     if request.method == 'POST':
         name = request.POST.get('name', '').strip()
@@ -5525,6 +5531,8 @@ def landmark_new(request):
 
 @login_required(login_url='core:login')
 def landmark_edit(request, landmark_id):
+    if not _check_zone_admin(request):
+        return JsonResponse({'error': '无权限'}, status=403)
     from .models import Landmark
     landmark = get_object_or_404(Landmark, pk=landmark_id)
     if request.method == 'POST':
@@ -5551,6 +5559,8 @@ def landmark_edit(request, landmark_id):
 @login_required(login_url='core:login')
 @require_POST
 def landmark_delete(request, landmark_id):
+    if not _check_zone_admin(request):
+        return JsonResponse({'error': '无权限'}, status=403)
     from .models import Landmark
     landmark = get_object_or_404(Landmark, pk=landmark_id)
     landmark.delete()
@@ -5580,6 +5590,8 @@ def landmarks_api(request):
 @login_required(login_url='core:login')
 @require_POST
 def landmarks_recalculate(request):
+    if not _check_zone_admin(request):
+        return JsonResponse({'error': '无权限'}, status=403)
     from .models import Landmark
     count = _recalculate_landmark_assignments()
     if count < 0:
@@ -5591,6 +5603,8 @@ def landmarks_recalculate(request):
 @login_required(login_url='core:login')
 @require_POST
 def batch_delete_landmark(request):
+    if not _check_zone_admin(request):
+        return JsonResponse({'error': '无权限'}, status=403)
     from .models import Landmark
     try:
         body = json.loads(request.body)
@@ -6021,6 +6035,9 @@ def registration_approval(request):
         return redirect('core:dashboard')
 
     # Handle POST actions
+    from core.registration_service import require_approver
+    require_approver(request.user)
+
     if request.method == 'POST':
         request_id = request.POST.get('request_id')
         action = request.POST.get('action')
@@ -6030,93 +6047,20 @@ def registration_approval(request):
             reg = RegistrationRequest.objects.get(pk=request_id, status='pending')
 
             if action == 'approve':
-                # Use submitted username and password
-                username = reg.username
-                password = reg.password  # Already hashed during submission
-
-                # Generate employee_id
-                if reg.requested_role == ROLE_MANAGER:
-                    prefix = 'ADM'
-                    model_class = ManagerProfile
-                elif reg.requested_role == ROLE_DEPT_USER:
-                    prefix = 'DEPT'
-                    model_class = DepartmentUserProfile
-                else:
-                    prefix = 'EMP'
-                    model_class = Worker
-
-                # Use submitted employee_id if provided, otherwise auto-generate
-                if reg.employee_id:
-                    employee_id = reg.employee_id
-                else:
-                    # Find max employee_id number by scanning all records
-                    max_num = 0
-                    for profile in model_class.objects.all():
-                        eid = profile.employee_id or ''
-                        if eid.startswith(prefix):
-                            try:
-                                num = int(eid[len(prefix):])
-                                if num > max_num:
-                                    max_num = num
-                            except ValueError:
-                                continue
-
-                    next_num = max_num + 1
-                    employee_id = f'{prefix}{next_num:03d}'
-
-                # Create Django User with submitted credentials
-                user = User.objects.create(
-                    username=username,
-                    password=password,  # Already hashed
-                    first_name=reg.full_name,
-                )
-
-                # Create profile based on role
-                if reg.requested_role == ROLE_MANAGER:
-                    ManagerProfile.objects.create(
-                        user=user,
-                        employee_id=employee_id,
-                        full_name=reg.full_name,
-                        phone=reg.phone,
-                        is_super_admin=False,
-                        can_approve_registrations=True,
-                        can_approve_work_orders=True,
-                    )
-                elif reg.requested_role == ROLE_DEPT_USER:
-                    DepartmentUserProfile.objects.create(
-                        user=user,
-                        employee_id=employee_id,
-                        full_name=reg.full_name,
-                        phone=reg.phone,
-                        department=reg.department or 'ENT',
-                        department_other=reg.department_other if reg.department == '其他' else '',
-                    )
-                else:  # field_worker
-                    Worker.objects.create(
-                        user=user,
-                        employee_id=employee_id,
-                        full_name=reg.full_name,
-                        phone=reg.phone,
-                        department=reg.department or '',
-                        department_other=reg.department_other if reg.department == '其他' else '',
-                    )
-
-                # Update registration
-                reg.status = 'approved'
-                reg.employee_id = employee_id
-                reg.processed_at = timezone.now()
-                reg.created_user = user
-                reg.save()
-
-                messages.success(request, f'已批准 {reg.full_name} 的注册申请，用户名：{username}，工号：{employee_id}')
+                from core.registration_service import approve
+                reg = approve(reg.pk, request.user)
+                msg = f'已批准 {reg.full_name} 的注册申请，用户名：{reg.username}，工号：{reg.employee_id}'
+                messages.success(request, msg)
 
             elif action == 'reject':
-                reg.status = 'rejected'
-                reg.status_notes = reason
-                reg.processed_at = timezone.now()
-                reg.save()
+                from core.registration_service import reject
+                reject(reg.pk, request.user, reason)
                 messages.success(request, f'已拒绝 {reg.full_name} 的注册申请')
 
+        except ValueError as exc:
+            if request.headers.get('x-requested-with') == 'XMLHttpRequest':
+                return JsonResponse({'success':False,'message':str(exc)},status=400)
+            messages.error(request,str(exc))
         except RegistrationRequest.DoesNotExist:
             messages.error(request, '注册申请不存在')
 
@@ -6165,8 +6109,11 @@ def user_management(request):
         messages.error(request, '无权限访问此页面')
         return redirect('core:dashboard')
 
+
     # Handle POST actions (registration approval/rejection)
     if request.method == 'POST':
+        from core.registration_service import require_approver
+        require_approver(request.user)
         is_ajax = request.headers.get('x-requested-with') == 'XMLHttpRequest'
         request_id = request.POST.get('request_id')
         action = request.POST.get('action')
@@ -6176,84 +6123,25 @@ def user_management(request):
             reg = RegistrationRequest.objects.get(pk=request_id, status='pending')
 
             if action == 'approve':
-                username = reg.username
-                password = reg.password
-
-                if reg.requested_role == ROLE_MANAGER:
-                    prefix = 'ADM'
-                    model_class = ManagerProfile
-                elif reg.requested_role == ROLE_DEPT_USER:
-                    prefix = 'DEPT'
-                    model_class = DepartmentUserProfile
-                else:
-                    prefix = 'EMP'
-                    model_class = Worker
-
-                if reg.employee_id:
-                    employee_id = reg.employee_id
-                else:
-                    max_num = 0
-                    for profile in model_class.objects.all():
-                        eid = profile.employee_id or ''
-                        if eid.startswith(prefix):
-                            try:
-                                num = int(eid[len(prefix):])
-                                if num > max_num:
-                                    max_num = num
-                            except ValueError:
-                                continue
-                    next_num = max_num + 1
-                    employee_id = f'{prefix}{next_num:03d}'
-
-                user = User.objects.create(
-                    username=username,
-                    password=password,
-                    first_name=reg.full_name,
-                )
-
-                if reg.requested_role == ROLE_MANAGER:
-                    ManagerProfile.objects.create(
-                        user=user, employee_id=employee_id,
-                        full_name=reg.full_name, phone=reg.phone,
-                        is_super_admin=False,
-                        can_approve_registrations=True,
-                        can_approve_work_orders=True,
-                    )
-                elif reg.requested_role == ROLE_DEPT_USER:
-                    DepartmentUserProfile.objects.create(
-                        user=user, employee_id=employee_id,
-                        full_name=reg.full_name, phone=reg.phone,
-                        department=reg.department or 'ENT',
-                        department_other=reg.department_other if reg.department == '其他' else '',
-                    )
-                else:
-                    Worker.objects.create(
-                        user=user, employee_id=employee_id,
-                        full_name=reg.full_name, phone=reg.phone,
-                        department=reg.department or '',
-                        department_other=reg.department_other if reg.department == '其他' else '',
-                    )
-
-                reg.status = 'approved'
-                reg.employee_id = employee_id
-                reg.processed_at = timezone.now()
-                reg.created_user = user
-                reg.save()
-                msg = f'已批准 {reg.full_name} 的注册申请，用户名：{username}，工号：{employee_id}'
+                from core.registration_service import approve
+                reg = approve(reg.pk, request.user)
+                msg = f'已批准 {reg.full_name} 的注册申请，用户名：{reg.username}，工号：{reg.employee_id}'
                 if is_ajax:
-                    return JsonResponse({'success': True, 'message': msg})
+                    return JsonResponse({'success':True,'message':msg})
                 messages.success(request, msg)
 
             elif action == 'reject':
-                reg.status = 'rejected'
-                reg.status_notes = reason
-                reg.processed_at = timezone.now()
-                reg.save()
+                from core.registration_service import reject
+                reject(reg.pk, request.user, reason)
                 msg = f'已拒绝 {reg.full_name} 的注册申请'
                 if is_ajax:
                     return JsonResponse({'success': True, 'message': msg})
                 messages.success(request, msg)
 
+        except ValueError as exc:
+            if request.headers.get('x-requested-with') == 'XMLHttpRequest':
+                return JsonResponse({'success':False,'message':str(exc)},status=400)
+            messages.error(request,str(exc))
         except RegistrationRequest.DoesNotExist:
             msg = '注册申请不存在'
             if is_ajax:
@@ -6436,6 +6324,9 @@ def user_edit(request, profile_type, profile_id):
             profile.department_other = ''
 
     profile.save()
+    if 'active' in request.POST and profile.user_id:
+        from core.session_guard import set_account_enabled
+        set_account_enabled(profile.user, profile.active)
     return JsonResponse({'success': True, 'message': f'已更新 {profile.full_name}'})
 
 
@@ -7356,7 +7247,7 @@ def _mapped_station_ids():
     return mapped
 
 
-def _build_ccu_matrix(ccu, rt_qs, ctrl_map, mapped_station_ids=None):
+def _build_ccu_matrix(ccu, rt_qs, ctrl_map, mapped_station_ids=None, stations=None):
     """Build the 24 x N-satellite runtime matrix for one CCU.
 
     Returns dict: {controllers, rows, col_totals, grand_total, max_cell}
@@ -7384,7 +7275,7 @@ def _build_ccu_matrix(ccu, rt_qs, ctrl_map, mapped_station_ids=None):
     # Tracking the station_id per (sat, channel) lets us flag orphan rows.
     sat_chan_minutes = defaultdict(dict)
     sat_chan_station = defaultdict(dict)
-    for st in Patch.objects.filter(parent=ccu, controller_channel__isnull=False):
+    for st in (stations if stations is not None else Patch.objects.filter(parent=ccu, controller_channel__isnull=False)):
         ctrl = ctrl_map.get(st.controller_number)
         sat_name = ctrl.name if ctrl else f'SAT {st.controller_number}'
         sat_chan_minutes[sat_name][st.controller_channel] = 0
@@ -7530,9 +7421,8 @@ def irrigation_dashboard(request):
     #
     # Bucket rt_qs by site_id once so each CCU's matrix only sees its own
     # runtime — same pattern as irrigation_report_pdf (see ~line 7645).
-    rt_by_site = defaultdict(list)
-    for rt in rt_qs:
-        rt_by_site[rt.site_id].append(rt)
+    from core.irrigation_queries import runtime_buckets
+    rt_by_site, station_metadata = runtime_buckets(rt_qs)
 
     # Per-CCU matrix list. Each entry is self-contained (its own controllers /
     # col_totals / max_cell) so the template and JS can render each as an
@@ -7540,7 +7430,7 @@ def irrigation_dashboard(request):
     ccu_tables = []
     if ccu_obj is None:
         for ccu in ccus:
-            m = _build_ccu_matrix(ccu, rt_by_site.get(ccu.id, []), ctrl_map, mapped_station_ids)
+            m = _build_ccu_matrix(ccu, rt_by_site.get(ccu.id, []), ctrl_map, mapped_station_ids, stations=station_metadata.get(ccu.id, []))
             ccu_tables.append({
                 'ccu_id': ccu.id,
                 'ccu_code': ccu.code,
@@ -7557,7 +7447,7 @@ def irrigation_dashboard(request):
     # the summary cards. In 全部 mode they mirror the FIRST CCU page (page 1) so
     # the initial paint is consistent with what the client shows after paging.
     if ccu_obj is not None:
-        m = _build_ccu_matrix(ccu_obj, rt_by_site.get(ccu_obj.id, []), ctrl_map, mapped_station_ids)
+        m = _build_ccu_matrix(ccu_obj, rt_by_site.get(ccu_obj.id, []), ctrl_map, mapped_station_ids, stations=station_metadata.get(ccu_obj.id, []))
         all_controllers = m['controllers']
         rows = m['rows']
         col_totals = defaultdict(int, dict(zip(all_controllers, m['col_totals'])))
@@ -7619,6 +7509,7 @@ def irrigation_dashboard(request):
     # CCU grouping must not relabel, filter away, or estimate these water records.
     from core.flow_data import flow_window
     flow_data = flow_window(date_from, date_to)
+    from core.import_status import status as import_status
 
     context = {
         'is_admin': is_admin,
@@ -7639,6 +7530,7 @@ def irrigation_dashboard(request):
         'total_stations': total_stations_with_runtime,
         'show_ccu_col': show_ccu_col,
         'flow_data': flow_data,
+        'import_status': import_status(),
         # 全部 mode only: one entry per CCU so the client can page between
         # per-CCU matrices. Empty for a specific-CCU selection (the top-level
         # keys above already hold that single CCU's table).
@@ -8119,9 +8011,8 @@ def irrigation_report_pdf(request):
         rt_qs = rt_qs.filter(timestamp__gte=ts_from)
     if ts_to:
         rt_qs = rt_qs.filter(timestamp__lte=ts_to)
-    rt_by_site = defaultdict(list)
-    for rt in rt_qs:
-        rt_by_site[rt.site_id].append(rt)
+    from core.irrigation_queries import runtime_buckets
+    rt_by_site, station_metadata = runtime_buckets(rt_qs)
 
     # Station Patch IDs claimed by at least one Zone — rows whose station is
     # NOT in this set are flagged red as orphan (no Zone backing = un-attributable).
@@ -8155,7 +8046,7 @@ def irrigation_report_pdf(request):
     elements = []
 
     for idx, ccu in enumerate(ccus):
-        m = _build_ccu_matrix(ccu, rt_by_site.get(ccu.id, []), ctrl_map, mapped_station_ids)
+        m = _build_ccu_matrix(ccu, rt_by_site.get(ccu.id, []), ctrl_map, mapped_station_ids, stations=station_metadata.get(ccu.id, []))
         controllers = m['controllers']
         rows = m['rows']
         col_totals = m['col_totals']
@@ -9575,6 +9466,7 @@ def work_reports_list(request):
     (any truthy value), and ``before_id`` (report id cursor for load-more).
     """
     from core.models import Patch, Worker, Land, WorkReport
+    from django.db.models import Q
     from core.role_utils import is_admin
     from core.workorder_tree_views import workitem_path_map, enrich_reports, attach_zone_hierarchy
 
@@ -9624,16 +9516,44 @@ def work_reports_list(request):
     if q:
         if q.isdigit():
             qs = qs.filter(id__startswith=q)
-    # Cursor pagination — older records have smaller ids under (-date, -id).
-    if before_id:
+    from django.core import signing
+    cursor_raw = request.GET.get('cursor')
+    if cursor_raw:
         try:
-            qs = qs.filter(id__lt=int(before_id))
-        except (TypeError, ValueError):
-            pass
+            cursor = signing.loads(cursor_raw, salt='work-report-cursor', max_age=86400)
+            if cursor['sort'] != sort:
+                raise ValueError('排序已改变，请重新加载')
+            last_id = int(cursor['id'])
+            if sort == 'worker':
+                qs = qs.filter(Q(worker__full_name__gt=cursor['value']) | Q(worker__full_name=cursor['value'], id__lt=last_id))
+            elif sort == 'created':
+                qs = qs.filter(Q(created_at__lt=cursor['value']) | Q(created_at=cursor['value'], id__lt=last_id))
+            else:
+                qs = qs.filter(id__lt=last_id)
+        except (signing.BadSignature, KeyError, ValueError, TypeError):
+            return JsonResponse({'error': '分页已过期，请重新加载列表'}, status=400)
+    elif before_id:
+        # Backward-compatible clients still supply an ID; resolve its actual
+        # sort position rather than silently treating every sort as ID order.
+        previous = WorkReport.objects.filter(pk=before_id).select_related('worker').first() if str(before_id).isdigit() else None
+        if previous:
+            if sort == 'worker':
+                qs = qs.filter(Q(worker__full_name__gt=previous.worker.full_name) | Q(worker__full_name=previous.worker.full_name,id__lt=previous.pk))
+            elif sort == 'created':
+                qs = qs.filter(Q(created_at__lt=previous.created_at) | Q(created_at=previous.created_at,id__lt=previous.pk))
+            else:
+                qs=qs.filter(id__lt=previous.pk)
 
+    if request.GET.get('tab', 'workorders') not in ('workorders', 'dups') and not request.GET.get('ajax'):
+        qs = qs.none()
     page = list(qs[:WORK_REPORTS_PAGE_SIZE + 1])  # +1 to detect a next page.
     has_more = len(page) > WORK_REPORTS_PAGE_SIZE
     reports = page[:WORK_REPORTS_PAGE_SIZE]
+    next_cursor = None
+    if reports:
+        last = reports[-1]
+        value = last.worker.full_name if sort == 'worker' else last.created_at.isoformat() if sort == 'created' else ''
+        next_cursor = signing.dumps({'sort':sort,'id':last.pk,'value':value},salt='work-report-cursor')
     # Material consumption (材料消耗) outbound lines for the expanded card.
     # Prefetched here (not in _scoped_work_reports_qs) so other callers of that
     # helper — the stats/Excel path — can attach their own material_consumptions
@@ -9663,6 +9583,7 @@ def work_reports_list(request):
             'reports': _serialize_work_reports(reports, dup_groups),
             'has_more': has_more,
             'last_id': reports[-1].id if reports else None,
+            'next_cursor': next_cursor,
             'is_admin': admin,
             # Worker list so the admin-only reassign control can render on
             # AJAX-loaded cards (mirrors the server-rendered workers context).
@@ -9683,33 +9604,36 @@ def work_reports_list(request):
     # surface its zone remarks without a separate tab.
     is_manager = admin
     show_collab_tabs = True
-    pending_remark_groups = _group_zone_remarks('remarks')
-    confirmed_remark_groups = _group_zone_remarks('confirmed_remarks')
-    # Merge pending + confirmed into one {wo_id: group} map. Confirmed wins
-    # (carries the confirm metadata); per-zone (no wo_id) remarks are dropped
-    # here since the merged tab is work-order-centric.
-    remark_groups_by_wo = {}
-    for g in list(pending_remark_groups) + list(confirmed_remark_groups):
-        _wid = g['remark'].get('workorder_id')
-        if _wid and _wid not in remark_groups_by_wo:
-            remark_groups_by_wo[_wid] = g
-    # Per-group data for the JS: a flat [[zone_id, index]] list (for confirm, which
-    # still fans out to all zones) AND a Land → 通用名称 → zone tree (for transfer,
-    # where the user picks which names/zones to write the record to — avoids duplicate
-    # records across zones). Keys are unique across both lists.
-    remark_groups_map = {}
-    for g in list(pending_remark_groups) + list(confirmed_remark_groups):
-        tree = []
-        for h in g['hierarchy']:
-            names = []
-            for nm in h['names']:
-                zones = [{'code': z.code, 'zid': z.id, 'idx': i} for z, i in nm['pairs']]
-                names.append({'name': nm['name'], 'zones': zones})
-            tree.append({'land': h['land'], 'names': names})
-        remark_groups_map[g['key']] = {
-            'pairs': [[z.id, i] for z, i in g['zones']],
-            'tree': tree,
-        }
+    active_tab = request.GET.get('tab', 'workorders')
+    pending_remark_groups=[]; confirmed_remark_groups=[]; remark_groups_map={}; remark_groups_by_wo={}
+    if active_tab == 'repairs':
+        pending_remark_groups = _group_zone_remarks('remarks')
+        confirmed_remark_groups = _group_zone_remarks('confirmed_remarks')
+        # Merge pending + confirmed into one {wo_id: group} map. Confirmed wins
+        # (carries the confirm metadata); per-zone (no wo_id) remarks are dropped
+        # here since the merged tab is work-order-centric.
+        remark_groups_by_wo = {}
+        for g in list(pending_remark_groups) + list(confirmed_remark_groups):
+            _wid = g['remark'].get('workorder_id')
+            if _wid and _wid not in remark_groups_by_wo:
+                remark_groups_by_wo[_wid] = g
+        # Per-group data for the JS: a flat [[zone_id, index]] list (for confirm, which
+        # still fans out to all zones) AND a Land → 通用名称 → zone tree (for transfer,
+        # where the user picks which names/zones to write the record to — avoids duplicate
+        # records across zones). Keys are unique across both lists.
+        remark_groups_map = {}
+        for g in list(pending_remark_groups) + list(confirmed_remark_groups):
+            tree = []
+            for h in g['hierarchy']:
+                names = []
+                for nm in h['names']:
+                    zones = [{'code': z.code, 'zid': z.id, 'idx': i} for z, i in nm['pairs']]
+                    names.append({'name': nm['name'], 'zones': zones})
+                tree.append({'land': h['land'], 'names': names})
+            remark_groups_map[g['key']] = {
+                'pairs': [[z.id, i] for z, i in g['zones']],
+                'tree': tree,
+            }
 
     filter_json = {
         'filters': {
@@ -9725,6 +9649,7 @@ def work_reports_list(request):
             'q': q,
         },
         'last_id': reports[-1].id if reports else None,
+            'next_cursor': next_cursor,
         'is_admin': admin,
         # Worker list for the admin-only reassign control on AJAX-loaded cards.
         'workers': [{'id': w.id, 'name': w.full_name, 'employee_id': w.employee_id or ''}
@@ -9741,20 +9666,22 @@ def work_reports_list(request):
     pm_tasks_total = pm_qs.count()
     # PM列表按JP（作业计划模板）sub-tab 展示：聚合当前模式下各分类任务数（降序），
     # 点选 ?jp=<id> 后列表仅显示该类任务。
-    pm_jp_groups = [{
-        'id': g['plan__job_plan_id'],
-        'name': g['plan__job_plan__name'] or '（无作业计划）',
-        'total': g['total'],
-    } for g in pm_qs.values('plan__job_plan_id', 'plan__job_plan__name')
-        .annotate(total=Count('id')).order_by('-total')]
-    pm_jp_selected = None
-    _jp_raw = request.GET.get('jp', '').strip()
-    if _jp_raw.isdigit() and any(g['id'] == int(_jp_raw) for g in pm_jp_groups):
-        pm_jp_selected = int(_jp_raw)
-    if pm_jp_selected:
-        pm_qs = pm_qs.filter(plan__job_plan_id=pm_jp_selected)
-    pm_list_total = pm_qs.count()
-    pm_tasks = _serialize_pm_tasks(pm_qs[:20], admin)
+    pm_jp_groups=[]; pm_jp_selected=None; pm_list_total=0; pm_tasks=[]
+    if active_tab == 'pm':
+        pm_jp_groups = [{
+            'id': g['plan__job_plan_id'],
+            'name': g['plan__job_plan__name'] or '（无作业计划）',
+            'total': g['total'],
+        } for g in pm_qs.values('plan__job_plan_id', 'plan__job_plan__name')
+            .annotate(total=Count('id')).order_by('-total')]
+        pm_jp_selected = None
+        _jp_raw = request.GET.get('jp', '').strip()
+        if _jp_raw.isdigit() and any(g['id'] == int(_jp_raw) for g in pm_jp_groups):
+            pm_jp_selected = int(_jp_raw)
+        if pm_jp_selected:
+            pm_qs = pm_qs.filter(plan__job_plan_id=pm_jp_selected)
+        pm_list_total = pm_qs.count()
+        pm_tasks = _serialize_pm_tasks(pm_qs[:20], admin)
 
     # ── 疑难/待修工单 tab (merged, ALL users) ──
     # Unresolved 待修 OR 疑难未处理 — both block a report from being "done"
@@ -9769,125 +9696,127 @@ def work_reports_list(request):
     # 90 days, so they show under the 已完成 sub-tab for audit. Without this they
     # would vanish entirely (the old 已修复/history tab was removed). Older ones
     # are excluded so the list doesn't grow without bound.
-    from datetime import date as _date_cls
-    from django.db.models import Q as _Q
-    _disposed_since = _date_cls.today() - timedelta(days=90)
-    pending_repairs = []
-    pr_qs = ((WorkReport.objects.filter(is_pending_repair=True, resolved_by_pm__isnull=True)
-              | WorkReport.objects.filter(is_difficult=True, is_difficult_resolved=False)
-              | WorkReport.objects.filter(collab_status__in=['ongoing', 'pending_review', 'resolved'])
-              # Recently-disposed: was a 疑难/待修 but collab now cleared, recent only.
-              | WorkReport.objects.filter(
-                  collab_status='', date__gte=_disposed_since
-                  ).filter(
-                      _Q(is_difficult=True) | _Q(resolved_by_pm__isnull=False) | _Q(followup_children__isnull=False)
-                  ))
-             .distinct().select_related('worker', 'location').order_by('-date', '-id')
-             .prefetch_related('zones')
-             .annotate(comment_count=Count('comments', distinct=True)))
-    # Apply the SAME date-range / land / worker filters as the main reports list
-    # so the 疑难跟进 tab responds to 今天 / 近一天 / 近7天 … just like 维修日志.
-    # hist_qs below already did this; the active list didn't, so filter pills
-    # silently had no effect here. A 疑难/待修 ticket spans multiple days via
-    # follow-ups, but its root `date` is the work date, which is what we scope on.
-    pr_qs = pr_qs.filter(date__gte=date_from)
-    if date_to:
-        pr_qs = pr_qs.filter(date__lte=date_to)
-    if land_id:
-        pr_qs = pr_qs.filter(zones__in=Zone.objects.filter(land_id=land_id))
-    if worker_id:
-        pr_qs = pr_qs.filter(worker_id=worker_id)
-    if q and q.isdigit():
-        # Work-order-number search, same as the main list + history tab.
-        pr_qs = pr_qs.filter(id__startswith=q)
-    # Materialize + enrich with the SAME data the 维修日志 cards get (entries →
-    # section labels, zone hierarchy/summary, materials) so the 疑难/待修 cards
-    # show the same granularity. pr_qs is small (active tickets), cost is fine.
-    pr_list = list(pr_qs)
-    from django.db.models import Prefetch
-    from django.db.models.query import prefetch_related_objects
-    from .models import InventoryTransaction, InventoryTransactionLine
-    from .workorder_tree_views import enrich_reports, attach_zone_hierarchy, workitem_path_map
-    prefetch_related_objects(pr_list,
-        Prefetch('entries', queryset=WorkReportEntry.objects.select_related('work_item', 'project')),
-        Prefetch('material_consumptions', queryset=InventoryTransaction.objects.prefetch_related('lines__category')),
-    )
-    enrich_reports(pr_list, workitem_path_map())
-    attach_zone_hierarchy(pr_list)
-    pr_ids = [wr.id for wr in pr_list]
-    stories = _followup_stories(pr_ids)
-    for wr in pr_list:
-        pending_repairs.append(_serialize_repair_card(wr, stories.get(wr.id, []),
-                                                       remark_groups_by_wo.get(wr.id)))
-
-    # Historical view (manager-only): closed 疑难/待修 tickets — was a 疑难/待修
-    # at some point (is_difficult=True OR resolved_by_pm set OR had followup
-    # children) but no longer active (NOT in pr_qs above). Lets managers audit
-    # what was closed, when, and by whom — without it polluting the active list.
-    resolved_repairs = []
-    if is_manager:
-        hist_qs = (WorkReport.objects
-                   .filter(is_difficult=True)
-                   | WorkReport.objects.filter(resolved_by_pm__isnull=False)
-                   | WorkReport.objects.filter(followup_children__isnull=False)).distinct()
-        # Apply the SAME global filters as the main reports list, so the history
-        # tab responds to date range / land / worker / difficult / pending /
-        # work-order-number search just like 维修日志 does. Without this the
-        # history tab ignored every filter and always showed all 200 rows.
-        hist_qs = hist_qs.filter(date__gte=date_from)
+    pending_repairs=[]; resolved_repairs=[]
+    if active_tab == 'repairs':
+        from datetime import date as _date_cls
+        from django.db.models import Q as _Q
+        _disposed_since = _date_cls.today() - timedelta(days=90)
+        pending_repairs = []
+        pr_qs = ((WorkReport.objects.filter(is_pending_repair=True, resolved_by_pm__isnull=True)
+                  | WorkReport.objects.filter(is_difficult=True, is_difficult_resolved=False)
+                  | WorkReport.objects.filter(collab_status__in=['ongoing', 'pending_review', 'resolved'])
+                  # Recently-disposed: was a 疑难/待修 but collab now cleared, recent only.
+                  | WorkReport.objects.filter(
+                      collab_status='', date__gte=_disposed_since
+                      ).filter(
+                          _Q(is_difficult=True) | _Q(resolved_by_pm__isnull=False) | _Q(followup_children__isnull=False)
+                      ))
+                 .distinct().select_related('worker', 'location').order_by('-date', '-id')
+                 .prefetch_related('zones')
+                 .annotate(comment_count=Count('comments', distinct=True)))
+        # Apply the SAME date-range / land / worker filters as the main reports list
+        # so the 疑难跟进 tab responds to 今天 / 近一天 / 近7天 … just like 维修日志.
+        # hist_qs below already did this; the active list didn't, so filter pills
+        # silently had no effect here. A 疑难/待修 ticket spans multiple days via
+        # follow-ups, but its root `date` is the work date, which is what we scope on.
+        pr_qs = pr_qs.filter(date__gte=date_from)
         if date_to:
-            hist_qs = hist_qs.filter(date__lte=date_to)
+            pr_qs = pr_qs.filter(date__lte=date_to)
         if land_id:
-            hist_qs = hist_qs.filter(zones__in=Zone.objects.filter(land_id=land_id))
+            pr_qs = pr_qs.filter(zones__in=Zone.objects.filter(land_id=land_id))
         if worker_id:
-            hist_qs = hist_qs.filter(worker_id=worker_id)
-        if difficult:
-            hist_qs = hist_qs.filter(is_difficult=True)
-        if pending:
-            # Pending-only doesn't quite apply to a "closed history" list, but
-            # honoring it keeps the filter UI consistent (the user asking for
-            # 待修 + history expects closed tickets that WERE 待修).
-            hist_qs = hist_qs.filter(is_pending_repair=False, is_difficult=True)
+            pr_qs = pr_qs.filter(worker_id=worker_id)
         if q and q.isdigit():
-            hist_qs = hist_qs.filter(id__startswith=q)
-        # Exclude anything still active (in pr_ids). Then prefetch.
-        hist_qs = (hist_qs.exclude(id__in=pr_ids)
-                   .select_related('worker', 'location').order_by('-date', '-id')
-                   .prefetch_related('zones')
-                   .annotate(comment_count=Count('comments', distinct=True)))[:200]
-        hist_ids = [wr.id for wr in hist_qs]
-        hist_stories = _followup_stories(hist_ids)
-        # Batch-fetch the most recent "closing" edit log per ticket so the
-        # history tab can show who closed it and when, without N+1 queries.
-        # Closing notes contain 待修→已解决 / 疑难未处理→已处理 / 区域备注归档 /
-        # 区域备注转至... — match any of those substrings.
-        closing_logs = {}
-        if hist_ids:
-            close_substrs = ('待修→已解决', '疑难未处理→已处理',
-                             '区域备注归档', '区域备注转至')
-            from django.db.models import Q
-            from .models import WorkReportEditLog
-            close_q = Q()
-            for s in close_substrs:
-                close_q |= Q(note__contains=s)
-            for log in (WorkReportEditLog.objects
-                        .filter(work_report_id__in=hist_ids)
-                        .filter(close_q)
-                        .order_by('work_report_id', '-created_at')
-                        .select_related('editor')):
-                # Last per work_report wins (the loop iterates work_report_id
-                # asc, created_at desc, so the first row per group is latest).
-                if log.work_report_id not in closing_logs:
-                    closing_logs[log.work_report_id] = {
-                        'at': log.created_at,
-                        'by': log.editor.full_name if log.editor else '—',
-                        'note': log.note,
-                    }
-        for wr in hist_qs:
-            card = _serialize_repair_card(wr, hist_stories.get(wr.id, []),
-                                          remark_groups_by_wo.get(wr.id))
-            card['closed'] = closing_logs.get(wr.id)
-            resolved_repairs.append(card)
+            # Work-order-number search, same as the main list + history tab.
+            pr_qs = pr_qs.filter(id__startswith=q)
+        # Materialize + enrich with the SAME data the 维修日志 cards get (entries →
+        # section labels, zone hierarchy/summary, materials) so the 疑难/待修 cards
+        # show the same granularity. pr_qs is small (active tickets), cost is fine.
+        pr_list = list(pr_qs)
+        from django.db.models import Prefetch
+        from django.db.models.query import prefetch_related_objects
+        from .models import InventoryTransaction, InventoryTransactionLine
+        from .workorder_tree_views import enrich_reports, attach_zone_hierarchy, workitem_path_map
+        prefetch_related_objects(pr_list,
+            Prefetch('entries', queryset=WorkReportEntry.objects.select_related('work_item', 'project')),
+            Prefetch('material_consumptions', queryset=InventoryTransaction.objects.prefetch_related('lines__category')),
+        )
+        enrich_reports(pr_list, workitem_path_map())
+        attach_zone_hierarchy(pr_list)
+        pr_ids = [wr.id for wr in pr_list]
+        stories = _followup_stories(pr_ids)
+        for wr in pr_list:
+            pending_repairs.append(_serialize_repair_card(wr, stories.get(wr.id, []),
+                                                           remark_groups_by_wo.get(wr.id)))
+
+        # Historical view (manager-only): closed 疑难/待修 tickets — was a 疑难/待修
+        # at some point (is_difficult=True OR resolved_by_pm set OR had followup
+        # children) but no longer active (NOT in pr_qs above). Lets managers audit
+        # what was closed, when, and by whom — without it polluting the active list.
+        resolved_repairs = []
+        if is_manager:
+            hist_qs = (WorkReport.objects
+                       .filter(is_difficult=True)
+                       | WorkReport.objects.filter(resolved_by_pm__isnull=False)
+                       | WorkReport.objects.filter(followup_children__isnull=False)).distinct()
+            # Apply the SAME global filters as the main reports list, so the history
+            # tab responds to date range / land / worker / difficult / pending /
+            # work-order-number search just like 维修日志 does. Without this the
+            # history tab ignored every filter and always showed all 200 rows.
+            hist_qs = hist_qs.filter(date__gte=date_from)
+            if date_to:
+                hist_qs = hist_qs.filter(date__lte=date_to)
+            if land_id:
+                hist_qs = hist_qs.filter(zones__in=Zone.objects.filter(land_id=land_id))
+            if worker_id:
+                hist_qs = hist_qs.filter(worker_id=worker_id)
+            if difficult:
+                hist_qs = hist_qs.filter(is_difficult=True)
+            if pending:
+                # Pending-only doesn't quite apply to a "closed history" list, but
+                # honoring it keeps the filter UI consistent (the user asking for
+                # 待修 + history expects closed tickets that WERE 待修).
+                hist_qs = hist_qs.filter(is_pending_repair=False, is_difficult=True)
+            if q and q.isdigit():
+                hist_qs = hist_qs.filter(id__startswith=q)
+            # Exclude anything still active (in pr_ids). Then prefetch.
+            hist_qs = (hist_qs.exclude(id__in=pr_ids)
+                       .select_related('worker', 'location').order_by('-date', '-id')
+                       .prefetch_related('zones')
+                       .annotate(comment_count=Count('comments', distinct=True)))[:200]
+            hist_ids = [wr.id for wr in hist_qs]
+            hist_stories = _followup_stories(hist_ids)
+            # Batch-fetch the most recent "closing" edit log per ticket so the
+            # history tab can show who closed it and when, without N+1 queries.
+            # Closing notes contain 待修→已解决 / 疑难未处理→已处理 / 区域备注归档 /
+            # 区域备注转至... — match any of those substrings.
+            closing_logs = {}
+            if hist_ids:
+                close_substrs = ('待修→已解决', '疑难未处理→已处理',
+                                 '区域备注归档', '区域备注转至')
+                from django.db.models import Q
+                from .models import WorkReportEditLog
+                close_q = Q()
+                for s in close_substrs:
+                    close_q |= Q(note__contains=s)
+                for log in (WorkReportEditLog.objects
+                            .filter(work_report_id__in=hist_ids)
+                            .filter(close_q)
+                            .order_by('work_report_id', '-created_at')
+                            .select_related('editor')):
+                    # Last per work_report wins (the loop iterates work_report_id
+                    # asc, created_at desc, so the first row per group is latest).
+                    if log.work_report_id not in closing_logs:
+                        closing_logs[log.work_report_id] = {
+                            'at': log.created_at,
+                            'by': log.editor.full_name if log.editor else '—',
+                            'note': log.note,
+                        }
+            for wr in hist_qs:
+                card = _serialize_repair_card(wr, hist_stories.get(wr.id, []),
+                                              remark_groups_by_wo.get(wr.id))
+                card['closed'] = closing_logs.get(wr.id)
+                resolved_repairs.append(card)
 
     return render(request, 'core/work_reports.html', {
         'reports': reports,
@@ -10145,7 +10074,9 @@ def water_requests_list(request):
     if date_to:
         qs = qs.filter(end_datetime__date__lte=date_to)
 
-    requests = list(qs[:200])
+    from core.pagination import page_slice
+    page, pagination = page_slice(request, qs, 'page', '用水需求')
+    requests = list(page)
     # Attach a Land → 通用名称 → [codes] hierarchy to each request so the list
     # collapses repetitive zones instead of printing every zone name.
     from core.workorder_tree_views import attach_zone_hierarchy
@@ -10156,6 +10087,7 @@ def water_requests_list(request):
 
     context = {
         'requests': requests,
+        'pagination': [pagination],
         'zones': zones,
         'is_admin': admin,
         'status_choices': status_choices,
@@ -10498,10 +10430,11 @@ def remarks_list(request):
 
 @require_POST
 @login_required(login_url='core:login')
+@atomic_operation
 def water_request_update(request, pk):
     """Approve / reject / request-info on a WaterRequest (admin only, AJAX)."""
     from core.models import WaterRequest
-    from core.role_utils import is_admin, get_worker_for_user
+    from core.role_utils import is_admin, resolve_or_create_worker
     if not is_admin(request.user):
         return JsonResponse({'success': False, 'message': '无权限'}, status=403)
     wr = get_object_or_404(WaterRequest, pk=pk)
@@ -10511,7 +10444,7 @@ def water_request_update(request, pk):
         return JsonResponse({'success': False, 'message': '无效状态'}, status=400)
     wr.status = new_status
     wr.status_notes = request.POST.get('status_notes', '').strip()
-    wr.approver = get_worker_for_user(request.user)
+    wr.approver, _ = resolve_or_create_worker(request.user)
     wr.processed_at = timezone.now()
     wr.save()
 
@@ -10963,47 +10896,21 @@ def work_report_delete(request, report_id):
 @token_or_session(require_manager=True)
 @login_required(login_url='core:login')
 def zone_geo_api(request):
-    from core.models import Zone
-    import json as _json
-    zones = Zone.objects.filter(Q(boundary_points__isnull=False) | Q(dxf_boundary_points__isnull=False)).exclude(boundary_points=[]).exclude(dxf_boundary_points=[]).only('code', 'name', 'boundary_points', 'dxf_boundary_points', 'boundary_source')
-    data = []
-    for z in zones:
-        bp = z.active_boundary_points
-        if not bp:
-            continue
-        all_pts = bp if isinstance(bp[0], dict) else []
-        if isinstance(bp[0], list):
-            all_pts = [p for ring in bp for p in ring]
-        center = None
-        if all_pts:
-            lat = sum(p.get('lat', 0) for p in all_pts) / len(all_pts)
-            lng = sum(p.get('lng', 0) for p in all_pts) / len(all_pts)
-            center = [round(lat, 6), round(lng, 6)]
-        data.append({'c': z.code, 'n': z.name or z.code, 'b': bp, 't': center})
-    return JsonResponse(data, safe=False)
+    return JsonResponse(_build_zone_geo_data(), safe=False)
 
 
 def _build_zone_geo_data():
-    from core.models import Zone
-    zones = Zone.objects.filter(Q(boundary_points__isnull=False) | Q(dxf_boundary_points__isnull=False)).exclude(boundary_points=[]).exclude(dxf_boundary_points=[]).only('code', 'name', 'boundary_points', 'dxf_boundary_points', 'boundary_source')
-    data = []
-    for z in zones:
-        bp = z.active_boundary_points
-        if not bp:
-            continue
-        all_pts = bp if isinstance(bp[0], dict) else []
-        if isinstance(bp[0], list):
-            all_pts = [p for ring in bp for p in ring]
-        center = None
-        if all_pts:
-            lat = sum(p.get('lat', 0) for p in all_pts) / len(all_pts)
-            lng = sum(p.get('lng', 0) for p in all_pts) / len(all_pts)
-            center = [round(lat, 6), round(lng, 6)]
-        data.append({'c': z.code, 'n': z.name or z.code, 'b': bp, 't': center})
+    zones = Zone.objects.only('code', 'name', 'boundary_points', 'dxf_boundary_points', 'boundary_source')
+    data=[]
+    for zone in zones:
+        boundary=zone.active_boundary_points
+        if boundary:
+            data.append({'c':zone.code, 'n':zone.name or zone.code, 'b':boundary, 't':get_zone_center(boundary)})
     return data
 
 
 @login_required(login_url='core:login')
+@submission('workorder')
 def workorder_mobile_v2(request):
     from core.models import WorkReport, Patch, Zone, Worker
     from core.role_utils import get_worker_for_user, is_admin, get_user_role, ROLE_FIELD_WORKER
@@ -11415,6 +11322,7 @@ def workorder_mobile_v2(request):
 
 
 @login_required(login_url='core:login')
+@submission('water_request')
 def water_request_mobile_v2(request):
     from core.models import WaterRequest, Zone, Patch, Worker, DepartmentUserProfile
     from core.role_utils import (
@@ -11450,8 +11358,7 @@ def water_request_mobile_v2(request):
             if not start_dt or not end_dt:
                 return JsonResponse({'success': False, 'message': '请填写需求时间段'}, status=400)
 
-            start_datetime = datetime.fromisoformat(start_dt)
-            end_datetime = datetime.fromisoformat(end_dt)
+            start_datetime, end_datetime = water_window(start_dt, end_dt)
 
             zones = list(Zone.objects.filter(code__in=zone_codes))
             if not zones:
@@ -11688,6 +11595,9 @@ def inventory_modal_data(request):
             .prefetch_related('lines__category', 'edit_logs__editor'),
             pk=txn_id,
         )
+        if not inventory_scope(request.user).filter(pk=txn.pk).exists():
+            raise PermissionDenied('无权查看此流水')
+        require_inventory_edit(request.user, txn)
         edit_payload = {
             'txn_id': txn.id,
             'header': {
@@ -11734,6 +11644,7 @@ def inventory_modal_data(request):
 
 
 @login_required(login_url='core:login')
+@submission('inventory')
 def inventory_mobile_v2(request):
     """Submit an inventory transaction (a multi-item cart of stock movements).
 
@@ -11773,6 +11684,7 @@ def inventory_mobile_v2(request):
             lines = []
         if not lines:
             return JsonResponse({'success': False, 'message': '请至少添加一个物料'}, status=400)
+        lines = material_lines(lines)
 
         # Optional zone association.
         zone_id = request.POST.get('zone_id')
@@ -11800,7 +11712,12 @@ def inventory_mobile_v2(request):
         is_edit = bool(edit_txn_id and edit_txn_id.isdigit())
         with _db_txn.atomic():
             if is_edit:
-                txn = get_object_or_404(InventoryTransaction, pk=edit_txn_id)
+                editable = inventory_scope(request.user).filter(pk=edit_txn_id)
+                if not editable.update(updated_at=timezone.now()):
+                    raise PermissionDenied('无权修改此流水')
+                txn = editable.get()
+                require_inventory_edit(request.user, txn)
+                old_po_id = txn.purchase_order_id
                 # Reverse the OLD delta so stock reflects only what the new lines
                 # will apply below. Old direction may differ from the new one.
                 # Skip reversal unless the old delta was actually applied:
@@ -11861,11 +11778,7 @@ def inventory_mobile_v2(request):
             created_lines = 0
             for ln in lines:
                 cat_id = ln.get('category')
-                qty = ln.get('quantity') or 0
-                try:
-                    qty = abs(float(qty))
-                except (ValueError, TypeError):
-                    continue
+                qty = ln['quantity']
                 cat = InventoryCategory.objects.filter(pk=cat_id).first()
                 if not cat or qty <= 0:
                     continue
@@ -11886,6 +11799,11 @@ def inventory_mobile_v2(request):
                 txn.delete()
                 return JsonResponse({'success': False, 'message': '没有有效的物料行'}, status=400)
 
+            from core.inventory_service import reconcile_purchase_order
+            reconcile_purchase_order(txn.purchase_order_id)
+            if is_edit:
+                reconcile_purchase_order(old_po_id)
+
             # Edit history: record one log row per edit save (new txns get none).
             if is_edit:
                 InventoryTransactionEditLog.objects.create(
@@ -11901,6 +11819,8 @@ def inventory_mobile_v2(request):
             })
         return redirect('core:dashboard')
 
+    except PermissionDenied:
+        raise
     except Exception as e:
         if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
             return JsonResponse({'success': False, 'message': str(e)}, status=400)
@@ -11909,200 +11829,102 @@ def inventory_mobile_v2(request):
 
 @login_required(login_url='core:login')
 def inventory_management(request):
-    """Manager-only page: collapsible inventory tree + per-item stock editing.
-
-    The catalog renders as a nested, all-collapsed-by-default tree. Leaf nodes
-    show an editable current-stock input and a "查看出入库记录" trigger that
-    lazy-loads that item's transactions within the selected date range.
-    """
-    from core.models import InventoryCategory
+    from core.models import InventoryCategory, InventoryTransaction, PurchaseOrder
     from core.role_utils import get_user_role, ROLE_MANAGER, ROLE_SUPER_ADMIN
-    from datetime import date, timedelta
-
-    role = get_user_role(request.user)
-    # 管理員/超管可访问整个页面。灌溉一线(field_worker)可见「出入库记录」+
-    # 「预估消耗确认」两个标签——出入库记录只显示本人提交的流水，其余管理功能
-    # （库存警告、库存目录、采购订单）仍限管理員。
-    is_full_access = role in (ROLE_MANAGER, ROLE_SUPER_ADMIN)
-    if not is_full_access and role != 'field_worker':
-        messages.error(request, '无权限访问库存管理')
+    from core.pagination import page_slice
+    role=get_user_role(request.user)
+    full=role in (ROLE_MANAGER, ROLE_SUPER_ADMIN)
+    if not full and role != 'field_worker':
+        messages.error(request,'无权限访问库存管理')
         return redirect('core:dashboard')
-
-    # Flat query → nested tree (same algorithm as serialize_inventory_tree,
-    # but on real model objects so the template can render them directly).
-    cats = list(InventoryCategory.objects.filter(active=True).order_by('order', 'code'))
-    nodes = {c.id: {'obj': c, 'children': []} for c in cats}
-    roots = []
+    tab=request.GET.get('tab','ledger')
+    allowed={'ledger','estimate','alert','tree','orders'} if full else {'ledger','estimate'}
+    if tab not in allowed: tab='ledger'
+    today=timezone.localdate()
+    date_from=request.GET.get('from') or (today-timedelta(days=30)).isoformat()
+    date_to=request.GET.get('to') or today.isoformat()
+    try:
+        from datetime import date as _date
+        _date.fromisoformat(date_from); _date.fromisoformat(date_to)
+    except ValueError:
+        return JsonResponse({'error':'日期格式无效'},status=400)
+    cats=list(InventoryCategory.objects.filter(active=True).order_by('order','code')) if tab in ('alert','tree') else []
+    nodes={c.pk:{'obj':c,'children':[]} for c in cats}; roots=[]
     for c in cats:
-        node = nodes[c.id]
-        if c.parent_id and c.parent_id in nodes:
-            nodes[c.parent_id]['children'].append(node)
-        else:
-            roots.append(node)
-
-    # Skip a single wrapper root — promote its children to top-level (see
-    # serialize_inventory_tree for the rationale).
-    if len(roots) == 1 and roots[0]['children']:
-        roots = roots[0]['children']
-
-    # Default date range: last 30 days.
-    today = date.today()
-    date_from = request.GET.get('from') or (today - timedelta(days=30)).isoformat()
-    date_to = request.GET.get('to') or today.isoformat()
-
-    # Transactions ledger (出入库记录 tab): every transaction in the date range
-    # with its lines expanded, newest first. Prefetch lines + related objects so
-    # the template renders without N+1 queries.
-    from core.models import InventoryTransaction
-    # 出入库记录只显示实际流水（预估消耗 estimated 尚未扣库存，只在「预估消耗
-    # 确认」tab）。经理看到三段（已确认主列表 / 待确认 / 已移除）；一线看自己
-    # 全部（含刚提交的待确认，免得提交后"消失"——他们不能确认/移除，只能看）。
-    txn_filter = {'date__gte': date_from, 'date__lte': date_to,
-                  'consumption_mode': 'actual'}
-    # 灌溉一线只看到本人提交的出入库记录；管理員看到全部。
-    if not is_full_access:
-        from core.role_utils import get_worker_for_user
-        worker = get_worker_for_user(request.user)
-        if worker:
-            txn_filter['worker_id'] = worker.id
-        else:
-            txn_filter['worker_id'] = -1   # no linked worker → show nothing
-
-    def _ledger_qs(status):
-        return (InventoryTransaction.objects
-                .filter(**txn_filter, confirm_status=status)
-                .select_related('worker', 'related_project', 'zone', 'work_report')
-                .prefetch_related('lines__category', 'edit_logs__editor')
-                .order_by('-date', '-id'))
-
-    if is_full_access:
-        txns = _ledger_qs('confirmed')
-        pending_txns = _ledger_qs('pending')
-        removed_txns = _ledger_qs('removed')
-    else:
-        # 一线：自己的流水一列（含待确认；已移除的被经理驳回，不再展示）
-        txns = (InventoryTransaction.objects
-                .filter(**txn_filter)
-                .exclude(confirm_status='removed')
-                .select_related('worker', 'related_project', 'zone', 'work_report')
-                .prefetch_related('lines__category', 'edit_logs__editor')
-                .order_by('-date', '-id'))
-        pending_txns = removed_txns = []
-
-    # Stockable leaves for the alert tab — {id, name, path, stock, min}. The
-    # threshold filtering is done client-side so the slider updates instantly.
-    # Also builds a cat_id → full hierarchy path map reused by the ledger tab.
-    # Path computation uses one query + in-memory parent walk (was N×D queries).
-    full_paths = inventory_category_paths()   # id → "大类别 › … › 品名" (leaf incl.)
-    cat_paths = dict(full_paths)              # alias used by the ledger tab
-    leaves = []
+        if c.parent_id in nodes: nodes[c.parent_id]['children'].append(nodes[c.pk])
+        else: roots.append(nodes[c.pk])
+    if len(roots)==1 and roots[0]['children']: roots=roots[0]['children']
+    paths=inventory_category_paths() if tab in ('ledger','alert','estimate','orders') else {}
+    pagination=[]; txns=[]; pending=[]; removed=[]; estimates=[]; pos=[]
+    scope=inventory_scope(request.user)
+    estimate_count=scope.filter(consumption_mode='estimated').count()
+    def paginate(qs,key,label):
+        page,info=page_slice(request,qs,key,label)
+        pagination.append(info); return page
+    if tab=='ledger':
+        qs=(scope.filter(date__range=(date_from,date_to),consumption_mode='actual')
+            .select_related('worker','related_project','zone','work_report')
+            .prefetch_related('lines__category','edit_logs__editor').order_by('-date','-id'))
+        txns=paginate(qs.filter(confirm_status='confirmed') if full else qs.exclude(confirm_status='removed'),'ledger_page','出入库记录')
+        if full:
+            pending=paginate(qs.filter(confirm_status='pending'),'pending_page','待确认')
+            removed=paginate(qs.filter(confirm_status='removed'),'removed_page','已移除')
+    elif tab=='estimate':
+        estimates=paginate(scope.filter(consumption_mode='estimated').select_related('worker','related_project')
+            .prefetch_related('lines__category').order_by('-date','-id'),'estimate_page','预估消耗')
+    elif tab=='orders':
+        orders=PurchaseOrder.objects.all().order_by('-created_at','-id')
+        query=request.GET.get('po_q','').strip()
+        if query: orders=orders.filter(Q(order_number__icontains=query)|Q(po_number__icontains=query)|Q(project_name__icontains=query))
+        pos=list(paginate(orders,'orders_page','采购订单'))
+    leaves=[]
     for c in cats:
-        if c.node_type != 'part':
-            continue   # only 'part' nodes carry stock; empty categories are skipped
-        # leaves[].path is ancestors only (no leaf name); strip the trailing leaf.
-        full = full_paths.get(c.id, c.name_zh)
-        ancestor_path = full.rsplit(' › ', 1)[0] if ' › ' in full else ''
-        leaves.append({
-            'id': c.id, 'name': c.name_zh, 'path': ancestor_path,
-            'stock': c.current_stock, 'min': c.min_stock,
-            'main': c.is_main_material, 'unit': c.unit,
-        })
-
-    # Purchase orders for the 采购订单 tab — batched (2 queries total, was 2 per PO).
-    from core.models import PurchaseOrder
-    pos = list(PurchaseOrder.objects.all().order_by('-created_at'))
-    pos_json = json.dumps(_serialize_purchase_orders(pos), ensure_ascii=False)
-
-    # Pending estimated-consumption transactions for the 预估消耗确认 tab.
-    pending_estimates = (InventoryTransaction.objects
-                         .filter(consumption_mode='estimated')
-                         .select_related('worker', 'related_project')
-                         .prefetch_related('lines__category')
-                         .order_by('-date', '-id'))
-
-    return render(request, 'core/inventory_management.html', {
-        'roots': roots,
-        'date_from': date_from,
-        'date_to': date_to,
-        'txns': txns,
-        'pending_txns': pending_txns,
-        'removed_txns': removed_txns,
-        'pending_estimates': pending_estimates,
-        'is_full_access': is_full_access,
-        'cat_paths_json': json.dumps(cat_paths, ensure_ascii=False),
-        'leaves_json': json.dumps(leaves, ensure_ascii=False),
-        'pos_json': pos_json,
-        'inventory_tree_json': json.dumps(serialize_inventory_tree(), ensure_ascii=False),
-        'projects_json': json.dumps(_po_project_options(), ensure_ascii=False),
+        if c.node_type=='part':
+            full_path=paths.get(c.pk,c.name_zh)
+            leaves.append({'id':c.pk,'name':c.name_zh,'path':full_path.rsplit(' › ',1)[0] if ' › ' in full_path else '',
+                'stock':c.current_stock,'min':c.min_stock,'main':c.is_main_material,'unit':c.unit})
+    return render(request,'core/inventory_management.html',{
+        'active_tab':tab,'roots':roots,'date_from':date_from,'date_to':date_to,
+        'txns':txns,'pending_txns':pending,'removed_txns':removed,'pending_estimates':estimates,
+        'estimate_count':estimate_count,'pagination':pagination,'is_full_access':full,
+        'cat_paths_json':json.dumps(paths,ensure_ascii=False),'leaves_json':json.dumps(leaves,ensure_ascii=False),
+        'pos_json':json.dumps(_serialize_purchase_orders(pos),ensure_ascii=False),
+        'inventory_tree_json':json.dumps(serialize_inventory_tree() if tab in ('tree','orders') else [],ensure_ascii=False),
+        'projects_json':json.dumps(_po_project_options() if tab=='orders' else [],ensure_ascii=False),
+        'po_query':request.GET.get('po_q',''),
     })
 
 
 @login_required(login_url='core:login')
 def inventory_estimate_confirm(request, txn_id):
-    """Confirm a pending estimated-consumption transaction as actual.
-
-    Manager + field-worker. Field workers can submit estimated consumption and
-    also need to confirm it. Updates each line to the (possibly revised) actual
-    quantity and flips consumption_mode 'estimated' → 'actual'. Stock follows
-    the confirm gate: a manager promotion is ledger-confirmed and deducts stock
-    here; a field-worker promotion stays pending and deducts when the manager
-    confirms it in the ledger. Writes an InventoryTransactionEditLog audit entry.
-
-    POST params: ``quantities`` = JSON ``{line_id: qty}``.
-    """
-    from core.models import InventoryTransaction, InventoryTransactionEditLog
-    from core.role_utils import get_user_role, ROLE_MANAGER, ROLE_SUPER_ADMIN, ROLE_FIELD_WORKER
-    from django.db import transaction as _db_txn
-    import json as _json
-
-    role = get_user_role(request.user)
-    if role not in (ROLE_MANAGER, ROLE_SUPER_ADMIN, ROLE_FIELD_WORKER):
-        return JsonResponse({'success': False, 'error': '无权限'}, status=403)
+    from core.role_utils import is_admin, get_worker_for_user
+    from core.models import InventoryTransaction, InventoryTransactionEditLog, move_stock_for_txn
     if request.method != 'POST':
         return JsonResponse({'success': False, 'error': 'POST only'}, status=405)
-
-    txn = get_object_or_404(InventoryTransaction, pk=txn_id)
-    if txn.consumption_mode != 'estimated':
-        return JsonResponse({'success': False, 'error': '该流水不是预估消耗'}, status=400)
-
-    # Revised actual quantities: {line_id: qty}. Missing lines keep their estimate.
+    scope = inventory_scope(request.user).filter(pk=txn_id, consumption_mode='estimated')
     try:
-        quantities = _json.loads(request.POST.get('quantities') or '{}')
-    except (ValueError, TypeError):
-        quantities = {}
-
-    try:
-        promoted_status = 'confirmed' if role in (ROLE_MANAGER, ROLE_SUPER_ADMIN) else 'pending'
-        with _db_txn.atomic():
-            for ln in txn.lines.select_related('category'):
-                new_qty = quantities.get(str(ln.id))
-                if new_qty is not None:
-                    try:
-                        new_qty = abs(float(new_qty))
-                    except (ValueError, TypeError):
-                        continue
-                    ln.quantity = new_qty
+        quantities = json.loads(request.POST.get('quantities') or '{}')
+        if not isinstance(quantities, dict):
+            raise ValueError('数量格式无效')
+        quantities = {str(k): integer_quantity(v, zero=True) for k, v in quantities.items()}
+        with transaction.atomic():
+            status = 'confirmed' if is_admin(request.user) else 'pending'
+            if not scope.update(consumption_mode='actual', confirm_status=status, updated_at=timezone.now()):
+                return JsonResponse({'success': False, 'error': '记录不存在、无权限或已经处理'}, status=409)
+            txn = InventoryTransaction.objects.get(pk=txn_id)
+            lines = list(txn.lines.all())
+            if set(quantities) - {str(ln.pk) for ln in lines}:
+                raise ValueError('物料行不属于此流水')
+            for ln in lines:
+                if str(ln.pk) in quantities:
+                    ln.quantity = quantities[str(ln.pk)]
                     ln.save(update_fields=['quantity'])
-            txn.consumption_mode = 'actual'
-            # Crossing point with the ledger-confirmation feature: promoting an
-            # estimate to actual also settles its ledger status by who did it.
-            # Confirm-gated stock: only a manager promotion (→ confirmed) moves
-            # stock now; a field-worker promotion stays pending and the stock is
-            # deducted later by the manager's ledger-confirm endpoint.
-            txn.confirm_status = promoted_status
-            txn.save(update_fields=['consumption_mode', 'confirm_status'])
-            if promoted_status == 'confirmed':
-                from core.models import move_stock_for_txn
-                move_stock_for_txn(txn, +1)
-            worker = getattr(request.user, 'worker_profile', None)
-            InventoryTransactionEditLog.objects.create(
-                transaction=txn, editor=worker,
-                note='预估消耗确认（经理确认，已按实际量扣减库存）' if promoted_status == 'confirmed'
-                     else '预估消耗确认（一线确认，待经理台账确认后扣减库存）',
-            )
-    except Exception as exc:
-        return JsonResponse({'success': False, 'error': str(exc)}, status=500)
-
+            if status == 'confirmed':
+                move_stock_for_txn(txn, 1)
+            InventoryTransactionEditLog.objects.create(transaction=txn, editor=get_worker_for_user(request.user),
+                note='预估转实际（已确认）' if status == 'confirmed' else '预估转实际（待经理确认）')
+    except (ValueError, TypeError) as exc:
+        return JsonResponse({'success': False, 'error': str(exc)}, status=400)
     return JsonResponse({'success': True})
 
 
@@ -12126,144 +11948,56 @@ def _inventory_txn_ids(request):
 @require_POST
 @login_required(login_url='core:login')
 def inventory_txn_confirm(request):
-    """Manager batch-confirms pending ledger transactions → confirmed.
-
-    POST ``txn_ids`` (list). Only rows currently 'pending' flip; each gets an
-    InventoryTransactionEditLog audit entry. Confirming is what actually moves
-    stock (out → deduct, in → add) — pending submissions never touched it.
-    """
-    from core.models import InventoryTransaction, InventoryTransactionEditLog, move_stock_for_txn
-    from django.db import transaction as _db_txn
     if not _inventory_txn_perm(request):
         return JsonResponse({'success': False, 'error': '无权限'}, status=403)
-    ids = _inventory_txn_ids(request)
-    editor = getattr(request.user, 'worker_profile', None)
-    count = 0
-    # consumption_mode='actual' guard: a pending ESTIMATED txn lives in the
-    # 预估消耗确认 tab until promoted; it must not be ledger-confirmed while
-    # still estimated (the UI never shows those ids, this is the server guard).
-    for t in InventoryTransaction.objects.filter(id__in=ids, confirm_status='pending',
-                                                  consumption_mode='actual'):
-        with _db_txn.atomic():
-            t.confirm_status = 'confirmed'
-            t.save(update_fields=['confirm_status'])
-            move_stock_for_txn(t, +1)
-            InventoryTransactionEditLog.objects.create(
-                transaction=t, editor=editor, note='流水确认（扣减库存并计入台账统计）',
-            )
-            count += 1
+    from core.inventory_service import transition
+    from core.role_utils import get_worker_for_user
+    count = transition(_inventory_txn_ids(request), 'confirm', get_worker_for_user(request.user))
     return JsonResponse({'success': True, 'count': count})
 
 
 @require_POST
 @login_required(login_url='core:login')
 def inventory_txn_unconfirm(request):
-    """Manager flips a confirmed transaction back to pending (ledger switch off).
-
-    Mirrors work-report project-unconfirm: the row leaves the stats until
-    re-confirmed, and its stock delta is rolled back (confirm-gated stock).
-    """
-    from core.models import InventoryTransaction, InventoryTransactionEditLog, move_stock_for_txn
-    from django.db import transaction as _db_txn
     if not _inventory_txn_perm(request):
         return JsonResponse({'success': False, 'error': '无权限'}, status=403)
-    ids = _inventory_txn_ids(request)
-    editor = getattr(request.user, 'worker_profile', None)
-    count = 0
-    for t in InventoryTransaction.objects.filter(id__in=ids, confirm_status='confirmed',
-                                                  consumption_mode='actual'):
-        with _db_txn.atomic():
-            move_stock_for_txn(t, -1)
-            t.confirm_status = 'pending'
-            t.save(update_fields=['confirm_status'])
-            InventoryTransactionEditLog.objects.create(
-                transaction=t, editor=editor, note='流水取消确认（开关关闭，回滚库存退回待确认）',
-            )
-            count += 1
+    from core.inventory_service import transition
+    from core.role_utils import get_worker_for_user
+    count = transition(_inventory_txn_ids(request), 'unconfirm', get_worker_for_user(request.user))
     return JsonResponse({'success': True, 'count': count})
 
 
 @require_POST
 @login_required(login_url='core:login')
 def inventory_txn_remove(request):
-    """Manager dismisses a transaction (pending or confirmed) → removed.
-
-    Removed stays out of stats and is restorable. Stock: a confirmed txn had
-    its delta applied, so removal reverses it; a pending txn never moved stock,
-    so nothing to reverse. 库存纠错仍走编辑表单/手工调库存。
-    """
-    from core.models import (
-        InventoryTransaction, InventoryTransactionEditLog, move_stock_for_txn, txn_stock_applied,
-    )
-    from django.db import transaction as _db_txn
     if not _inventory_txn_perm(request):
         return JsonResponse({'success': False, 'error': '无权限'}, status=403)
-    ids = _inventory_txn_ids(request)
-    editor = getattr(request.user, 'worker_profile', None)
-    count = 0
-    for t in InventoryTransaction.objects.filter(id__in=ids, consumption_mode='actual') \
-            .exclude(confirm_status='removed'):
-        with _db_txn.atomic():
-            was_applied = txn_stock_applied(t)
-            if was_applied:
-                move_stock_for_txn(t, -1)
-            t.confirm_status = 'removed'
-            t.save(update_fields=['confirm_status'])
-            InventoryTransactionEditLog.objects.create(
-                transaction=t, editor=editor,
-                note='流水移除（已回滚库存，不计入统计，可恢复）' if was_applied
-                     else '流水移除（未扣过库存，不计入统计，可恢复）',
-            )
-            count += 1
+    from core.inventory_service import transition
+    from core.role_utils import get_worker_for_user
+    count = transition(_inventory_txn_ids(request), 'remove', get_worker_for_user(request.user))
     return JsonResponse({'success': True, 'count': count})
 
 
 @require_POST
 @login_required(login_url='core:login')
 def inventory_txn_restore(request):
-    """Manager restores a removed transaction → confirmed (back in stats)."""
-    from core.models import InventoryTransaction, InventoryTransactionEditLog, move_stock_for_txn
-    from django.db import transaction as _db_txn
     if not _inventory_txn_perm(request):
         return JsonResponse({'success': False, 'error': '无权限'}, status=403)
-    ids = _inventory_txn_ids(request)
-    editor = getattr(request.user, 'worker_profile', None)
-    count = 0
-    for t in InventoryTransaction.objects.filter(id__in=ids, confirm_status='removed',
-                                                  consumption_mode='actual'):
-        with _db_txn.atomic():
-            t.confirm_status = 'confirmed'
-            t.save(update_fields=['confirm_status'])
-            move_stock_for_txn(t, +1)
-            InventoryTransactionEditLog.objects.create(
-                transaction=t, editor=editor, note='流水恢复（重扣库存并重新计入统计）',
-            )
-            count += 1
+    from core.inventory_service import transition
+    from core.role_utils import get_worker_for_user
+    count = transition(_inventory_txn_ids(request), 'restore', get_worker_for_user(request.user))
     return JsonResponse({'success': True, 'count': count})
 
 
 @login_required(login_url='core:login')
 def inventory_estimate_void(request, txn_id):
-    """Void (delete) a pending estimated-consumption transaction.
-
-    Manager + field-worker. Only estimated txns can be voided — they never
-    deducted stock, so deletion is clean (no reversal needed). Actual txns must
-    be edited instead.
-    """
-    from core.models import InventoryTransaction
-    from core.role_utils import get_user_role, ROLE_MANAGER, ROLE_SUPER_ADMIN, ROLE_FIELD_WORKER
-
-    role = get_user_role(request.user)
-    if role not in (ROLE_MANAGER, ROLE_SUPER_ADMIN, ROLE_FIELD_WORKER):
-        return JsonResponse({'success': False, 'error': '无权限'}, status=403)
     if request.method != 'POST':
         return JsonResponse({'success': False, 'error': 'POST only'}, status=405)
-
-    txn = get_object_or_404(InventoryTransaction, pk=txn_id)
-    if txn.consumption_mode != 'estimated':
-        return JsonResponse({'success': False, 'error': '实际消耗流水不能作废，请改用编辑'}, status=400)
-
-    txn.delete()   # CASCADE removes lines; estimated never touched stock.
+    with transaction.atomic():
+        qs = inventory_scope(request.user).filter(pk=txn_id, consumption_mode='estimated')
+        if not qs.update(updated_at=timezone.now()):
+            return JsonResponse({'success': False, 'error': '记录不存在、无权限或已经处理'}, status=409)
+        qs.delete()
     return JsonResponse({'success': True})
 
 
@@ -12879,7 +12613,8 @@ def _po_received_parts_batch(po_ids, cat_paths):
     agg = {}        # (po_id, cat_id) → entry
     txn_count = {}  # po_id → int
     txns = (InventoryTransaction.objects
-            .filter(purchase_order_id__in=po_ids, operation='入库', entry_subtype='采购')
+            .filter(purchase_order_id__in=po_ids, operation='入库', entry_subtype='采购',
+                    confirm_status='confirmed', consumption_mode='actual')
             .prefetch_related('lines__category'))
     for t in txns:
         pid = t.purchase_order_id
@@ -12925,46 +12660,17 @@ def _po_planned_lines_batch(po_ids, cat_paths):
 
 
 def _po_upsert_planned_lines(po, lines_raw):
-    """Apply planned purchase lines (from the JSON ``lines`` POST field) to a PO.
-
-    ``lines_raw`` is the raw JSON string (same contract as the 入库 cart):
-    a list of ``{category, quantity, unit}``. Replace semantics: lines for
-    categories not in the payload are removed; the rest are created/updated.
-    Invalid entries (bad category id / non-positive qty) are skipped silently.
-    """
-    from core.models import InventoryCategory, PurchaseOrderLine
-    try:
-        lines = json.loads(lines_raw or '[]')
-    except (json.JSONDecodeError, TypeError):
-        lines = []
-    if not isinstance(lines, list):
+    from core.models import PurchaseOrderLine
+    if lines_raw is None:
         return
-    seen = {}
+    try: lines=material_lines(json.loads(lines_raw or '[]'))
+    except (ValueError,TypeError) as exc: raise ValueError('采购物料格式无效：'+str(exc)) from exc
+    po.planned_lines.exclude(category_id__in=[ln['category'] for ln in lines]).delete()
     for ln in lines:
-        if not isinstance(ln, dict):
-            continue
-        cat_id = ln.get('category')
-        try:
-            qty = int(ln.get('quantity') or 0)
-        except (ValueError, TypeError):
-            continue
-        if not cat_id or qty <= 0:
-            continue
-        # Last write wins if a category appears more than once.
-        seen[cat_id] = {'qty': qty, 'unit': (str(ln.get('unit') or '').strip())}
-
-    # Remove lines whose category isn't in the payload.
-    po.planned_lines.exclude(category_id__in=seen.keys()).delete()
-    # Upsert the rest.
-    valid_cat_ids = set(InventoryCategory.objects.filter(pk__in=seen.keys())
-                        .values_list('id', flat=True))
-    for cat_id, data in seen.items():
-        if int(cat_id) not in valid_cat_ids:
-            continue
-        PurchaseOrderLine.objects.update_or_create(
-            purchase_order=po, category_id=cat_id,
-            defaults={'quantity': data['qty'], 'unit': data['unit']},
-        )
+        PurchaseOrderLine.objects.update_or_create(purchase_order=po,category_id=ln['category'],
+            defaults={'quantity':ln['quantity'],'unit':ln['unit']})
+    from core.inventory_service import reconcile_purchase_order
+    reconcile_purchase_order(po.pk)
 
 
 def _po_sync_project_link(po, project_id_raw):
@@ -13060,6 +12766,7 @@ def _serialize_purchase_order(po):
 
 @login_required(login_url='core:login')
 @require_POST
+@atomic_operation
 def purchase_order_create(request):
     """Create a PurchaseOrder. 灌溉订单编号 is mandatory and must be unique."""
     from core.models import PurchaseOrder
@@ -13082,6 +12789,7 @@ def purchase_order_create(request):
         try:
             from decimal import Decimal
             amount = Decimal(amount_raw)
+            if not amount.is_finite() or amount < 0: raise ValueError('PO金额必须是非负有限金额')
         except InvalidOperation:
             return JsonResponse({'success': False, 'message': 'PO未税金额格式无效'}, status=400)
     from datetime import date as _date
@@ -13111,6 +12819,7 @@ def purchase_order_create(request):
 
 @login_required(login_url='core:login')
 @require_POST
+@atomic_operation
 def purchase_order_edit(request, po_id):
     """Edit a PurchaseOrder's fields. 灌溉订单编号 stays unique."""
     from core.models import PurchaseOrder
@@ -13135,6 +12844,7 @@ def purchase_order_edit(request, po_id):
     if amount_raw:
         try:
             amount = Decimal(amount_raw)
+            if not amount.is_finite() or amount < 0: raise ValueError('PO金额必须是非负有限金额')
         except InvalidOperation:
             return JsonResponse({'success': False, 'message': 'PO未税金额格式无效'}, status=400)
     from datetime import date as _date
@@ -13180,6 +12890,7 @@ def purchase_order_delete(request, po_id):
 
 @login_required(login_url='core:login')
 @require_POST
+@atomic_operation
 def purchase_order_complete(request, po_id):
     """Mark a PurchaseOrder completed: requires the planned materials and the
     received (入库-采购) materials to match exactly — same categories AND same

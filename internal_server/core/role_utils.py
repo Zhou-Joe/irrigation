@@ -20,6 +20,8 @@ def get_user_role(user):
     """Return the role constant for a user (supports Django User and profile models)."""
     if not user or not getattr(user, 'is_authenticated', False):
         return None
+    if not account_enabled(user):
+        return None
     # Profile model instances
     if isinstance(user, ManagerProfile):
         return ROLE_SUPER_ADMIN if user.is_super_admin else ROLE_MANAGER
@@ -43,6 +45,8 @@ def is_admin(user):
     """Check if user has admin privileges (super_admin, staff, or manager)."""
     if not user or not getattr(user, 'is_authenticated', False):
         return False
+    if not account_enabled(user):
+        return False
     # Profile model instances
     if isinstance(user, ManagerProfile):
         return True
@@ -52,6 +56,12 @@ def is_admin(user):
     if getattr(user, 'is_superuser', False) or getattr(user, 'is_staff', False):
         return True
     return ManagerProfile.objects.filter(user=user, active=True).exists()
+
+
+def account_enabled(user):
+    if isinstance(user, (ManagerProfile, Worker, DepartmentUserProfile)):
+        return user.active and (not user.user_id or user.user.is_active)
+    return bool(getattr(user, 'is_active', False))
 
 
 def is_field_worker(user):
@@ -116,18 +126,24 @@ def resolve_or_create_worker(user):
         full_name = django_user.get_full_name() or django_user.username
         phone = ''
 
+    # Employee IDs are shared with legacy imports. A matching ID must never
+    # attribute this account's actions to another person's linked Worker.
+    collision = Worker.objects.filter(employee_id=employee_id).first()
+    if collision and collision.user_id != django_user.pk:
+        employee_id = f'SYS-USER-{django_user.pk}'
+        if Worker.objects.filter(employee_id=employee_id).exclude(user=django_user).exists():
+            import uuid
+            employee_id = f'SYS-{django_user.pk}-{uuid.uuid4().hex[:12]}'
     worker, created = Worker.objects.get_or_create(
-        employee_id=employee_id,
+        user=django_user,
         defaults={
-            'user': django_user,
+            'employee_id': employee_id,
             'full_name': full_name,
             'phone': phone,
         },
     )
-    # Backfill the user link if the row pre-dated it.
-    if not worker.user_id:
-        worker.user = django_user
-        worker.save(update_fields=['user'])
+    # This row is attribution only. Access is checked against the account's
+    # actual role by each entry point; do not reactivate an inactive Worker.
     return worker, created
 
 

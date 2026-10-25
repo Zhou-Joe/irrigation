@@ -30,6 +30,11 @@ class IsOwnerOrAdmin(AdminCheckMixin, permissions.BasePermission):
         if self._is_admin(request.user):
             return True
 
+        from .role_utils import get_django_user
+        django_user = get_django_user(request.user)
+        if django_user and getattr(obj, 'submitter_user_id', None) == django_user.pk:
+            return True
+
         if hasattr(obj, 'submitter'):
             from .role_utils import get_worker_for_user
             worker = get_worker_for_user(request.user)

@@ -71,7 +71,7 @@ echo "$(ts) extracted Maxicom2.mdb: $(du -h Maxicom2.mdb | cut -f1)"
 
 # ── 3. Import (idempotent + CCU-safe) ──────────────────────────────────────
 cd "$PROJECT/internal_server"
-"$PY" "$MANAGE" import_maxicom_mdb_linux --mdb "$TMP_DIR/Maxicom2.mdb" 2>&1 | while read -r line; do
+"$PY" "$MANAGE" import_maxicom_mdb_linux --mdb "$TMP_DIR/Maxicom2.mdb" --source-archive "$LATEST_ZIP" 2>&1 | while read -r line; do
     echo "$(ts)   $line"
 done
 

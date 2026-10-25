@@ -1,0 +1,7 @@
+{% for item in pagination %}
+<nav class="business-pagination" aria-label="{{ item.label }}分页" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:12px 0;font-size:13px;">
+  <span>{{ item.label }} · 共 {{ item.page.paginator.count }} 条 · 第 {{ item.page.number }} / {{ item.page.paginator.num_pages }} 页</span>
+  {% if item.previous %}<a class="btn-sm btn-secondary" href="{{ item.previous }}">上一页</a>{% endif %}
+  {% if item.next %}<a class="btn-sm btn-secondary" href="{{ item.next }}">下一页</a>{% endif %}
+</nav>
+{% endfor %}
