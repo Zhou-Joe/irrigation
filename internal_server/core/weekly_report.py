@@ -12,6 +12,7 @@ space runs, charts 5900000 EMU wide, jpg Content-Types default, photo rels
 from rId103). Do NOT "simplify" the XML recipes — they reproduce the official
 Weekly Report template byte-for-byte in structure.
 """
+from core.ai_storage import artifact_url
 import json
 import os
 import re
@@ -669,7 +670,7 @@ def build_weekly_report(d0, d1, out_dir):
         warnings.append('浇水量数据只到 %s（Maxicom 导入滞后），周期末几天流量可能偏小' % D['flow_max_day'])
     return {
         'file': {'name': fname, 'size': size,
-                 'url': '%sai_workspaces/%s/%s' % (settings.MEDIA_URL, os.path.basename(out_dir.rstrip('/')), fname)},
+                 'url': artifact_url(os.path.basename(out_dir.rstrip('/')), fname)},
         'period': [d0.isoformat(), d1.isoformat()],
         'stats': {
             '工单数': D['reports'], '灌溉组工时': D['team_hours'], '第三方工时': D['third_hours'],
@@ -905,8 +906,7 @@ def build_with_blocks(d0, d1, blocks, out_dir):
         warnings.append('已忽略无效 blocks: %s' % '; '.join(dropped[:5]))
     return {
         'file': {'name': fname, 'size': size,
-                 'url': '%sai_workspaces/%s/%s' % (settings.MEDIA_URL,
-                                                   os.path.basename(out_dir.rstrip('/')), fname)},
+                 'url': artifact_url(os.path.basename(out_dir.rstrip('/')), fname)},
         'period': [d0.isoformat(), d1.isoformat()],
         'blocks_rendered': len(valid),
         'photos': {g: len(v) for g, v in man.items() if v},

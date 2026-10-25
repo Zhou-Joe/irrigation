@@ -365,9 +365,8 @@ def build_irrigation_report_excel(date_from, date_to, ccu_ids=None):
         rt_qs = rt_qs.filter(timestamp__gte=ts_from)
     if ts_to:
         rt_qs = rt_qs.filter(timestamp__lte=ts_to)
-    rt_by_site = defaultdict(list)
-    for rt in rt_qs:
-        rt_by_site[rt.site_id].append(rt)
+    from core.irrigation_queries import runtime_buckets
+    rt_by_site, station_metadata = runtime_buckets(rt_qs)
 
     # Station Patch IDs claimed by at least one Zone — rows whose station is
     # NOT in this set are flagged red as orphan (no Zone backing = un-attributable).
@@ -398,7 +397,7 @@ def build_irrigation_report_excel(date_from, date_to, ccu_ids=None):
         ccus = [c for c in ccus if c.id in wanted]
 
     for idx, ccu in enumerate(ccus):
-        m = _build_ccu_matrix(ccu, rt_by_site.get(ccu.id, []), ctrl_map, mapped_station_ids)
+        m = _build_ccu_matrix(ccu, rt_by_site.get(ccu.id, []), ctrl_map, mapped_station_ids, stations=station_metadata.get(ccu.id, []))
         controllers = m['controllers']
         rows = m['rows']
         col_totals = m['col_totals']
@@ -506,7 +505,7 @@ def build_inventory_catalog_excel():
         # column — pending (awaiting manager) and removed stay out of stats.
         for ln in (InventoryTransactionLine.objects
                    .filter(category_id__in=part_ids,
-                           transaction__confirm_status='confirmed')
+                           transaction__confirm_status='confirmed', transaction__consumption_mode='actual')
                    .select_related('transaction')
                    .order_by('-transaction__date', '-id')):
             txn_map.setdefault(ln.category_id, []).append(ln)
@@ -681,7 +680,7 @@ def build_inventory_transactions_excel(date_from=None, date_to=None):
 
     txns = (InventoryTransaction.objects
             .filter(date__gte=date_from, date__lte=date_to)
-            .exclude(confirm_status='removed')   # removed stays out of exports too
+            .filter(confirm_status='confirmed', consumption_mode='actual')   # same scope as accepted ledger
             .select_related('worker', 'related_project', 'zone', 'work_report')
             .prefetch_related('lines__category')
             .order_by('-date', '-id'))
@@ -1042,8 +1041,7 @@ def build_project_detail_excel(project):
         txns = (InventoryTransaction.objects
                 .filter(work_report_id__in=wr_ids, related_project=project,
                         operation='出库', entry_subtype='项目',
-                        consumption_mode='actual')
-                .exclude(confirm_status='removed')
+                        consumption_mode='actual', confirm_status='confirmed')
                 .prefetch_related('lines__category'))
         for t in txns:
             cell = mat_by_wr.setdefault(t.work_report_id, [])

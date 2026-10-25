@@ -113,114 +113,56 @@ class Command(BaseCommand):
             help='Force-run a single config by id (ignores frequency/is_active).')
 
     def handle(self, *args, **options):
-        dry = options['dry_run']
-        force_id = options['config_id']
-
-        # SMTP gate: needs either a DB-configured EmailSmtpSetting or an env
-        # EMAIL_HOST. Without SMTP there's nothing to actually send.
-        from core.smtp_utils import is_smtp_configured
+        from core.models import EmailDispatch
+        from django.db import IntegrityError, transaction
+        from core.smtp_utils import is_smtp_configured, get_email_connection, resolve_from_email
+        import uuid
+        dry=options['dry_run'];force_id=options['config_id']
         if not dry and not is_smtp_configured():
-            self.stdout.write(self.style.WARNING(
-                'SMTP 未配置 — 请在「用户管理 → 邮件报表」tab 配置 SMTP，'
-                '或在环境变量设置 EMAIL_HOST。'))
+            self.stdout.write('SMTP 未配置，未发送邮件。')
             return
-
-        qs = EmailReportConfig.objects.all()
-        if force_id:
-            qs = qs.filter(pk=force_id)
-        else:
-            qs = qs.filter(is_active=True)
-
-        # Use Beijing time for the dispatch instant: _is_due_now's hour/weekday/
-        # day gate and the per-report "前N天" windows are all in Asia/Shanghai.
-        # timezone.now() is UTC-aware; localtime() converts before .date()/.hour.
-        now = timezone.localtime(timezone.now())
-        today = now.date()
-        configs = list(qs.order_by('frequency', 'name'))
-        self.stdout.write(f'Email report dispatch: {len(configs)} config(s), '
-                          f'now={now.strftime("%Y-%m-%d %H:%M")} (Beijing), dry_run={dry}')
-
-        sent, skipped, failed = 0, 0, 0
-        for cfg in configs:
-            # Day-of-cycle + send-hour gate (skipped when forcing one config by id).
-            if not force_id and not _is_due_now(cfg, now):
-                hour = cfg.send_hour if cfg.send_hour is not None else 7
-                self.stdout.write(
-                    f'  [skip] {cfg.name} ({cfg.frequency}, hour={hour}) — not due now')
-                skipped += 1
-                continue
-
-            recipients = cfg.recipient_list
-            if not recipients:
-                msg = '无收件人邮箱'
-                self._record(cfg, 'failed: ' + msg, dry)
-                self.stdout.write(self.style.ERROR(f'  [fail] {cfg.name}: {msg}'))
-                failed += 1
-                continue
-
-            # Resolve the effective report-type list (multi-select, with
-            # legacy single-report_type fallback). Each becomes one attachment.
-            report_types = cfg.effective_report_types()
-            if not report_types:
-                msg = '未选择报表类型'
-                self._record(cfg, 'failed: ' + msg, dry)
-                self.stdout.write(self.style.ERROR(f'  [fail] {cfg.name}: {msg}'))
-                failed += 1
-                continue
-
-            # Build every selected report (one attachment each). Each date-
-            # windowed report carries its OWN start/end in report_windows
-            # (relative to the send instant); ccu_ids scopes irrigation.
-            attachments = _build_all_attachments(
-                report_types, cfg.frequency, today,
-                report_windows=cfg.report_windows or None,
-                ccu_ids=cfg.ccu_ids or None,
-            )
-            built = [(f, b, lbl) for (f, b, lbl) in attachments
-                     if f is not None and not lbl.startswith('FAILED:')]
-            failures = [lbl for (_, _, lbl) in attachments if lbl.startswith('FAILED:')]
-            if not built:
-                msg = '生成报表失败: ' + '; '.join(failures)
-                self._record(cfg, 'failed: ' + msg[:200], dry)
-                self.stdout.write(self.style.ERROR(f'  [fail] {cfg.name}: {msg}'))
-                failed += 1
-                continue
-
-            period = self._period_label(cfg.frequency, today, cfg.data_range_days)
-            report_labels = [lbl for (_, _, lbl) in built]
-            subject, body = _render_subject_body(cfg, report_labels, period)
-
-            if dry:
-                self.stdout.write(self.style.WARNING(
-                    f'  [dry] {cfg.name} → {recipients} | {len(built)} attachment(s): '
-                    f'{[f for (f, _, _) in built]} | subject="{subject}"'))
-                if failures:
-                    self.stdout.write(self.style.ERROR(
-                        f'        partial failures: {failures}'))
-                continue
-
+        now=timezone.localtime();today=now.date()
+        configs=EmailReportConfig.objects.filter(pk=force_id) if force_id else EmailReportConfig.objects.filter(is_active=True)
+        totals={'sent':0,'failed':0,'skipped':0,'partial':0}
+        for cfg in configs.order_by('frequency','name'):
+            if not force_id and not _is_due_now(cfg,now):
+                totals['skipped']+=1;continue
+            dispatch=None
+            if not dry:
+                slot=now.strftime('%Y-%m-%dT%H') if not force_id else 'manual-'+uuid.uuid4().hex
+                try:
+                    with transaction.atomic():
+                        dispatch=EmailDispatch.objects.create(config=cfg,slot=slot)
+                except IntegrityError:
+                    totals['skipped']+=1;continue
             try:
-                from core.smtp_utils import get_email_connection, resolve_from_email
-                msg = EmailMessage(
-                    subject=subject, body=body,
-                    from_email=resolve_from_email(), to=recipients,
-                    connection=get_email_connection(),
-                )
-                for fname, buf, _ in built:
-                    msg.attach(fname, buf.getvalue(), XLSX_CT)
-                msg.send(fail_silently=False)
-                self._record(cfg, 'success', dry)
-                self.stdout.write(self.style.SUCCESS(
-                    f'  [ok] {cfg.name} → {len(recipients)} recipient(s) '
-                    f'({len(built)} attachment(s))'))
-                sent += 1
-            except Exception as e:
-                self._record(cfg, f'failed: 发送失败 {e}', dry)
-                self.stdout.write(self.style.ERROR(f'  [fail] {cfg.name}: 发送失败 {e}'))
-                failed += 1
-
-        self.stdout.write(self.style.SUCCESS(
-            f'Done. sent={sent} skipped={skipped} failed={failed}'))
+                recipients=cfg.recipient_list
+                if not recipients:raise ValueError('无有效收件人')
+                types=cfg.effective_report_types()
+                if not types:raise ValueError('未选择报表类型')
+                attachments=_build_all_attachments(types,cfg.frequency,today,
+                    report_windows=cfg.report_windows or None,ccu_ids=cfg.ccu_ids or None)
+                built=[item for item in attachments if item[0] is not None and not item[2].startswith('FAILED:')]
+                failures=[item[2] for item in attachments if item[2].startswith('FAILED:')]
+                if not built:raise ValueError('生成报表失败：'+'；'.join(failures))
+                subject,body=_render_subject_body(cfg,[x[2] for x in built],self._period_label(cfg.frequency,today,cfg.data_range_days))
+                if dry:
+                    self.stdout.write(f'[dry] {cfg.name}: {len(built)} 附件，{len(failures)} 失败')
+                    continue
+                msg=EmailMessage(subject=subject,body=body,from_email=resolve_from_email(),to=recipients,connection=get_email_connection())
+                for filename,buffer,label in built:msg.attach(filename,buffer.getvalue(),XLSX_CT)
+                if msg.send(fail_silently=False)!=1:raise ValueError('邮件未确认发送成功')
+                state='partial_success' if failures else 'success'
+                self._record(cfg,state+('：'+'；'.join(failures) if failures else ''),False)
+                EmailDispatch.objects.filter(pk=dispatch.pk).update(status=state,details={'attachments':[x[0] for x in built],'failures':failures},updated_at=timezone.now())
+                totals['partial' if failures else 'sent']+=1
+            except Exception as exc:
+                # Isolate configuration errors, including bad format strings.
+                self._record(cfg,'failed: '+str(exc),dry)
+                if dispatch:
+                    EmailDispatch.objects.filter(pk=dispatch.pk).update(status='failed',details={'error':str(exc)[:500]},updated_at=timezone.now())
+                totals['failed']+=1
+        self.stdout.write(str(totals))
 
     # ── helpers ──
 

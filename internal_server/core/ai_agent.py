@@ -12,8 +12,6 @@ import csv
 import json
 import logging
 import os
-import subprocess
-import sys
 from datetime import date, timedelta
 from functools import lru_cache
 from typing import TypedDict
@@ -37,24 +35,21 @@ logger = logging.getLogger(__name__)
 # (replaces the older InjectedState / get_runtime / ContextVar patterns).
 class WorkorderContext(TypedDict):
     thread_id: str
+    cancel_event: object
 
 
 # ── Code-execution workspace management ───────────────────────────────────
 
-WORKSPACE_ROOT = os.path.join(settings.MEDIA_ROOT, 'ai_workspaces')
+from core.ai_storage import private_root, workspace, artifact_url
 
 
-def ensure_workspace(thread_id):
-    """Return the per-session workspace dir, creating it and preloading data on first use."""
-    ws = os.path.join(WORKSPACE_ROOT, thread_id)
-    marker = os.path.join(ws, '.populated')
-    if not os.path.isdir(ws):
-        os.makedirs(ws, exist_ok=True)
-    if not os.path.exists(marker):
-        _populate_workspace_data(ws)
-        with open(marker, 'w') as f:
-            f.write(timezone.now().isoformat())
-    return ws
+def ensure_workspace(thread_id, *, refresh=False):
+    ws = workspace(thread_id)
+    marker = ws / '.populated'
+    if refresh or not marker.exists():
+        _populate_workspace_data(str(ws))
+        marker.write_text(timezone.now().isoformat(), encoding='utf-8')
+    return str(ws)
 
 
 # Section labels are reused across the CSV export and the report tools.
@@ -205,19 +200,22 @@ def _populate_workspace_data(ws):
         w = csv.writer(f)
         w.writerow(['日期', '项目', '操作', '去向', '消耗模式', '物料编码', '物料名称',
                     '单位', '数量', '单价', '金额'])
-        from core.inventory_tree_views import current_price_for
         # Ledger-confirmed only: pending (awaiting manager) and removed stay
         # out of the consumption stats the AI analyzes.
-        txn_qs = (InventoryTransaction.objects.filter(date__gte=since,
-                                                      confirm_status='confirmed')
+        txn_qs = (InventoryTransaction.objects.filter(date__gte=since, operation='出库', entry_subtype='项目',
+                                                      confirm_status='confirmed', consumption_mode='actual')
                   .select_related('related_project').prefetch_related('lines__category'))
+        from core.models import InventoryPriceRecord
+        price_map = {}
+        for price in InventoryPriceRecord.objects.filter(category__transaction_lines__transaction__in=txn_qs).distinct().order_by('-is_current','-date','-id'):
+            price_map.setdefault(price.category_id,price)
         for txn in txn_qs.order_by('-date'):
             proj = str(txn.related_project) if txn.related_project_id else ''
             for line in txn.lines.all():
                 cat = line.category
                 # 当前价格：优先 is_current，否则最新一条采购价。无价格记录→空。
-                price_rec = current_price_for(cat) if cat else None
-                unit_price = float(price_rec.unit_price) if price_rec and price_rec.unit_price else ''
+                price_rec = price_map.get(line.category_id)
+                unit_price = float(price_rec.unit_price) if price_rec is not None and price_rec.unit_price is not None else ''
                 qty = line.quantity or 0
                 amount = round(unit_price * qty, 2) if unit_price != '' else ''
                 w.writerow([
@@ -275,7 +273,7 @@ def _populate_workspace_data(ws):
         agg[key]['lit'] += (liters or 0)
     with open(os.path.join(ws, 'irrigation_daily.csv'), 'w', newline='', encoding='utf-8-sig') as f:
         w = csv.writer(f)
-        w.writerow(['日期', '运行分钟', '运行次数', '活跃站点数', '流量站点汇总升'])
+        w.writerow(['日期', '运行分钟', '运行次数', '活跃站点数', '流量源记录汇总（升数待核准）'])
         for k in sorted(agg):
             a = agg[k]
             w.writerow([k, a['min'], a['runs'], len(a['sites']), a['lit']])
@@ -876,6 +874,8 @@ def query_flow_daily(start_date: str = "", end_date: str = "", limit: int = 15) 
     return json.dumps({
         'date_range': [start.isoformat(), end.isoformat()],
         '站点汇总水量升': sum(day_lit.values()),
+        '单位已核准': False,
+        '单位说明': '当前为源记录数值汇总；升数换算及采样口径尚待核准，请作为参考。',
         '统计口径': '按源 Site 的计入设置汇总；分区明细有重叠，不再次相加，不含运行时长估算。数值沿用流量导入倍率。',
         '逐日汇总': days,
         '按流量区域分布': by_zone,
@@ -1109,7 +1109,7 @@ def query_purchase_orders(q: str = "", include_completed: bool = True, limit: in
         for r in (InventoryTransactionLine.objects
                   .filter(transaction__purchase_order_id__in=po_ids,
                           transaction__operation='入库',
-                          transaction__confirm_status='confirmed')
+                          transaction__confirm_status='confirmed', transaction__consumption_mode='actual')
                   .values('transaction__purchase_order_id')
                   .annotate(qty=Sum('quantity'))):
             recv[r['transaction__purchase_order_id']] = r['qty'] or 0
@@ -1352,24 +1352,6 @@ def _parse_date(s: str):
 # ── Code execution tool ───────────────────────────────────────────────────
 
 
-# Generated code runs in a stripped-down environment. No Django/DB credentials
-# leak through — the subprocess only sees a minimal PATH and the preloaded CSVs.
-_SANDBOX_ENV = {
-    'PATH': '/usr/bin:/bin:/usr/local/bin',
-    'LANG': 'en_US.UTF-8',
-    'LC_ALL': 'en_US.UTF-8',
-    'HOME': '/tmp',
-    'MPLBACKEND': 'Agg',  # matplotlib headless, in case it's ever installed
-}
-
-# Cap output preview to keep the LLM context small.
-_MAX_STDOUT = 2000
-_MAX_STDERR = 1000
-# Allowed output extensions + size guard.
-_ALLOWED_EXTS = {'.xlsx', '.xls', '.csv', '.json', '.txt'}
-_MAX_FILE_BYTES = 20 * 1024 * 1024  # 20 MB
-
-
 def _fault_matrix_columns():
     """Fixed fault-matrix columns for the Excel export: every count leaf node in
     the routine_maint section, as [(work_item_id, path_segments), ...], sorted by
@@ -1597,7 +1579,7 @@ def export_work_reports_excel(start_date: str = "", end_date: str = "", runtime:
         'file': {
             'name': fname,
             'size': size,
-            'url': f'{settings.MEDIA_URL}ai_workspaces/{thread_id}/{fname}',
+            'url': artifact_url(thread_id, fname),
         },
         'report_count': qs.count(),
         'matrix_columns': len(count_nodes),
@@ -1709,7 +1691,7 @@ def run_python_code(code: str, description: str = "", runtime: ToolRuntime = Non
     - weather.csv（Maxicom 气象日志）
     - project_consumption.csv（出库-项目实际消耗，含单价金额）
     - pm_workorders.csv（PM 完成工单：工时/班次/区域）
-    - irrigation_daily.csv（逐日灌溉汇总：运行分钟/次数/活跃站点数/浇水量升，灌溉日口径）
+    - irrigation_daily.csv（逐日灌溉汇总：运行分钟/次数/活跃站点数/流量源记录汇总，升数尚待核准，灌溉日口径）
     - pm_orders.csv（PM 派发工单：计划日/截止/PM编号/班组/状态）
 
     用法规则：
@@ -1725,58 +1707,15 @@ def run_python_code(code: str, description: str = "", runtime: ToolRuntime = Non
         description: 对这段代码目的的简短描述
         runtime: LangChain 运行时（保留参数名，自动注入；提供会话 context.thread_id）
     """
-    # `runtime` is a reserved param (auto-injected, hidden from the LLM). The
-    # default None keeps the function callable for direct unit tests.
+    from core.ai_executor import execute
     ctx = (runtime.context if runtime is not None else None) or {}
     thread_id = ctx.get('thread_id')
     if not thread_id:
         return json.dumps({'error': '无法确定会话工作区'}, ensure_ascii=False)
-    ws = ensure_workspace(thread_id)
-
-    # Snapshot existing files so we can detect newly-created outputs.
-    before = set(os.listdir(ws))
-
-    try:
-        result = subprocess.run(
-            [sys.executable, '-c', code],
-            cwd=ws,
-            env=_SANDBOX_ENV,
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-    except subprocess.TimeoutExpired:
-        return json.dumps({'error': '代码执行超时（30秒）'}, ensure_ascii=False)
-    except Exception as e:  # noqa: BLE001
-        return json.dumps({'error': f'执行失败: {e}'}, ensure_ascii=False)
-
-    # Collect newly-created files matching allowed extensions.
-    files = []
-    for name in os.listdir(ws):
-        if name in before or name.startswith('.'):
-            continue
-        ext = os.path.splitext(name)[1].lower()
-        if ext not in _ALLOWED_EXTS:
-            continue
-        path = os.path.join(ws, name)
-        if not os.path.isfile(path):
-            continue
-        size = os.path.getsize(path)
-        if size > _MAX_FILE_BYTES:
-            continue
-        files.append({
-            'name': name,
-            'size': size,
-            'url': f'{settings.MEDIA_URL}ai_workspaces/{thread_id}/{name}',
-        })
-
-    return json.dumps({
-        'exit_code': result.returncode,
-        'stdout': (result.stdout or '')[:_MAX_STDOUT],
-        'stderr': (result.stderr or '')[:_MAX_STDERR],
-        'files': files,
-        'generated_count': len(files),
-    }, ensure_ascii=False)
+    result = execute(code, ensure_workspace(thread_id), ctx.get('cancel_event'))
+    for info in result.get('files', []):
+        info['url'] = artifact_url(thread_id, info['name'])
+    return json.dumps(result, ensure_ascii=False)
 
 
 ALL_TOOLS = [
@@ -1824,7 +1763,7 @@ def _checkpoint_saver():
     managers), so sqlite is plenty here; for higher scale use PostgresSaver.
     """
     import sqlite3
-    db_path = os.path.join(settings.MEDIA_ROOT, 'ai_checkpoints.sqlite3')
+    db_path = str(private_root() / 'checkpoints.sqlite3')
     conn = sqlite3.connect(db_path, check_same_thread=False)
     # WAL: readers don't block the writer, so concurrent workers stay responsive.
     conn.execute('PRAGMA journal_mode=WAL')
@@ -1864,7 +1803,7 @@ def build_agent():
         temperature=cfg.temperature,
         # Many third-party OpenAI-compatible proxies do not support stream_options;
         # disable streaming usage metadata to avoid 400 errors.
-        stream_usage=False,
+        stream_usage=False, timeout=45, max_retries=0,
     )
     base_prompt = cfg.get_system_prompt()
     # 时间块插在系统提示词最前面，保证模型一开始就知道当前日期。

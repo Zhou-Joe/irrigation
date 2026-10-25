@@ -40,27 +40,6 @@ def notifications(request):
             pm_tasks_data = pm_tasks_for_field_worker(request.user)
             pm_tasks_json = json.dumps(pm_tasks_data, ensure_ascii=False)
 
-        # Legacy admin digest (retained for backward compat).
-        if is_admin(request.user):
-            for reg in RegistrationRequest.objects.filter(status='pending').order_by('-created_at')[:5]:
-                notifications_list.append({
-                    'type': 'registration',
-                    'id': reg.id,
-                    'title': f'新注册申请: {reg.full_name}',
-                    'description': f'{reg.get_requested_role_display()} - {reg.phone}',
-                    'url': '/user-management/?tab=approval',
-                    'created_at': reg.created_at,
-                })
-            for req in WaterRequest.objects.filter(status='submitted').order_by('-created_at')[:5]:
-                notifications_list.append({
-                    'type': 'water',
-                    'id': req.id,
-                    'title': f'浇水协调需求: {req.zone.name}',
-                    'description': f'{req.get_request_type_display()} - {req.user_type}',
-                    'url': f'/requests/water/{req.id}/',
-                    'created_at': req.created_at,
-                })
-
     return {
         'notifications_list': notifications_list,
         'notification_count': len(notifications_list),

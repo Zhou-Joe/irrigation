@@ -28,26 +28,16 @@ class TokenAuthentication(authentication.BaseAuthentication):
         return self.authenticate_credentials(token)
 
     def authenticate_credentials(self, token):
-        # 1. Try Worker api_token
-        try:
-            worker = Worker.objects.get(api_token=token, active=True)
-            return (worker, token)
-        except (Worker.DoesNotExist, Exception):
-            pass
-
-        # 2. Try ManagerProfile api_token
-        try:
-            manager = ManagerProfile.objects.get(api_token=token, active=True)
-            return (manager, token)
-        except (ManagerProfile.DoesNotExist, Exception):
-            pass
-
-        # 3. Try DepartmentUserProfile api_token
-        try:
-            dept_user = DepartmentUserProfile.objects.get(api_token=token, active=True)
-            return (dept_user, token)
-        except (DepartmentUserProfile.DoesNotExist, Exception):
-            pass
+        from django.core.exceptions import ValidationError
+        from django.db.models import Q
+        for model in (Worker, ManagerProfile, DepartmentUserProfile):
+            try:
+                profile = model.objects.select_related('user').filter(
+                    Q(user__is_active=True) | Q(user__isnull=True)
+                ).get(api_token=token, active=True)
+                return (profile, token)
+            except (model.DoesNotExist, ValidationError, ValueError):
+                continue
 
         # NOTE: a numeric user-ID fallback was removed — it let any caller forge
         # `Authorization: Token 1` to impersonate a superuser (low/PK-guessable).
@@ -160,7 +150,12 @@ def token_or_session(view_func=None, *, require_manager=False):
                             {'error': '此 API 仅限管理员/经理 token 访问'}, status=403)
                     # Non-AJAX: leave anonymous so login_required redirects.
                 else:
-                    request.user = user
+                    from .role_utils import get_django_user
+                    django_user = get_django_user(user)
+                    if django_user is None:
+                        from django.http import JsonResponse
+                        return JsonResponse({'error':'此账号尚未关联登录用户，请联系管理员'},status=403)
+                    request.user = django_user
             return func(request, *args, **kwargs)
         return _wrapper
 

@@ -16,6 +16,9 @@ body.ai-chat-modal-open { overflow:hidden; }
 #aiChatPanel .ai-icon-button { display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;min-width:32px;padding:0;border:0;border-radius:8px;background:transparent;color:#6b7e70;cursor:pointer; }
 #aiChatPanel .ai-icon-button:hover { background:#eef3ed;color:#234f37; }
 #aiChatPanel .ai-chat-messages { flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;scrollbar-gutter:stable;padding:24px 20px;background:#fff;-webkit-overflow-scrolling:touch; }
+#aiChatPanel .ai-chat-history { flex:0 0 auto;width:calc(100% - 32px);margin:10px 16px 0;min-height:38px;padding:7px 10px;border:1px solid #dce4d6;border-radius:10px;background:#fcfdfb;color:#4e6556;font:13px var(--font-body,system-ui,sans-serif); }
+#aiChatSnapshot:not(:empty) { display:block;margin:6px 3px 0;color:#71806a;font-size:11px; }
+#aiChatSnapshot:empty { display:none; }
 #aiChatPanel.is-expanded .ai-chat-messages { padding-inline:max(28px,calc((100% - 728px)/2)); }
 .ai-welcome { display:flex;min-height:230px;flex-direction:column;justify-content:center;align-items:center;text-align:center;padding:20px 4px; }
 .ai-welcome-icon { display:flex;align-items:center;justify-content:center;width:58px;height:58px;margin-bottom:18px;border-radius:20px;background:#f0f5ec;color:#315c43; }

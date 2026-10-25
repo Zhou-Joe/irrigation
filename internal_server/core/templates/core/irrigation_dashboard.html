@@ -1006,7 +1006,9 @@
         </div>
 
         <div style="margin-top:14px;">
-            <div class="section-title"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-drop"/></svg> 流量区用水量（升）</div>
+            <div class="section-title"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-drop"/></svg> 流量区用水量（升，换算待核准）</div>
+            <p class="flow-note">来源：Rain Bird 流量记录。当前数值与源记录汇总一致；升数换算及采样口径尚待核准，请作为参考。</p>
+            <p class="flow-note">最近成功同步（上海时间）：{{ import_status.last_sync_display|default:'暂无记录' }}{% if import_status.source %} · {{ import_status.source }}{% endif %}{% if import_status.latest_status == 'failed' %} · 最近一次导入失败{% endif %}</p>
             <div class="flow-toolbar">
                 <label for="flowSiteSelect">流量站点</label>
                 <select id="flowSiteSelect" onchange="renderFlowSelection()">

@@ -21,6 +21,56 @@ ROLE_CHOICES = [
 ]
 
 
+class AIConversation(models.Model):
+    id = models.CharField(primary_key=True, max_length=64)
+    owner = models.ForeignKey(User, on_delete=models.CASCADE, related_name='ai_conversations')
+    title = models.CharField(max_length=120, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+
+class AIExecutionLease(models.Model):
+    conversation = models.OneToOneField(AIConversation, on_delete=models.CASCADE, primary_key=True)
+    owner = models.OneToOneField(User, on_delete=models.CASCADE)
+    token = models.UUIDField(default=uuid.uuid4)
+    expires_at = models.DateTimeField()
+    cancel_requested = models.BooleanField(default=False)
+
+
+class SubmissionReceipt(models.Model):
+    owner = models.ForeignKey(User, on_delete=models.CASCADE)
+    key = models.UUIDField()
+    kind = models.CharField(max_length=40)
+    fingerprint = models.CharField(max_length=64)
+    response = models.JSONField(default=dict)
+    status_code = models.PositiveSmallIntegerField(default=200)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['owner', 'key'], name='unique_user_submission')]
+
+
+class EmailDispatch(models.Model):
+    config = models.ForeignKey('EmailReportConfig', on_delete=models.CASCADE)
+    slot = models.CharField(max_length=40)
+    status = models.CharField(max_length=24, default='sending')
+    details = models.JSONField(default=dict)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['config', 'slot'], name='unique_email_dispatch_slot')]
+
+
+class DataImportRun(models.Model):
+    source = models.CharField(max_length=255, blank=True)
+    flow_only = models.BooleanField(default=False)
+    status = models.CharField(max_length=20, default='running')
+    details = models.JSONField(default=dict)
+    started_at = models.DateTimeField(default=timezone.now)
+    finished_at = models.DateTimeField(null=True)
+
+
 class Region(models.Model):
     """大区 — highest-level geographic grouping above 片区."""
 

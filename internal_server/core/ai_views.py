@@ -14,6 +14,12 @@ import queue
 import re
 import threading
 import uuid
+import time
+from datetime import timedelta
+from django.db import transaction, IntegrityError, close_old_connections
+from django.utils import timezone
+from core.ai_storage import conversation_for
+from core.models import AIConversation, AIExecutionLease
 
 from django.contrib.auth.decorators import login_required
 from django.http import StreamingHttpResponse, HttpResponseBadRequest, JsonResponse
@@ -52,106 +58,122 @@ def ai_status(request):
 @login_required(login_url='core:login')
 @require_POST
 def ai_chat(request):
-    """POST {message, thread_id?} -> SSE stream of agent output.
-
-    Events emitted (each under a ``data:`` line):
-      {"event":"thread","thread_id":"..."}      the conversation thread id
-      {"event":"tool_start","name":"...","args":{...}}   tool invoked
-      {"event":"token","text":"..."}            streamed LLM token
-      {"event":"tool_end","name":"...","output":"..."}   tool finished
-      {"event":"done"}                          stream complete
-      {"event":"error","message":"..."}         failure
-    """
     role = get_user_role(request.user)
     if role not in _ALLOWED_ROLES:
         return JsonResponse({'error': '无权限使用 AI 助手'}, status=403)
-
     cfg = AISettings.get_settings()
     if not (cfg.enabled and cfg.api_base_url and cfg.api_key and cfg.model_name):
-        return JsonResponse({'error': 'AI 助手未配置，请联系管理员在后台设置 base_url / api_key / model'}, status=400)
-
+        return JsonResponse({'error': 'AI 助手尚未配置，请联系管理员'}, status=400)
     try:
-        body = json.loads(request.body.decode('utf-8') or '{}')
-    except json.JSONDecodeError:
-        return HttpResponseBadRequest('invalid json')
-    message = (body.get('message') or '').strip()
-    if not message:
-        return HttpResponseBadRequest('message is required')
-    # Per-user conversation thread. New id if the client didn't supply one.
-    # A client-supplied thread_id MUST match the safe pattern (u<uid>-<hex>) — it
-    # is used directly as a filesystem path segment under MEDIA_ROOT/ai_workspaces,
-    # so an unvalidated value like "../../" would let a manager write/create dirs
-    # outside the workspace. Reject anything that isn't a plain identifier.
-    client_thread_id = body.get('thread_id') or ''
-    _THREAD_ID_RE = re.compile(r'^u\d+-[0-9a-f]{8,32}$')
-    if client_thread_id:
-        if not _THREAD_ID_RE.match(client_thread_id):
-            return HttpResponseBadRequest('invalid thread_id')
-        thread_id = client_thread_id
-    else:
-        thread_id = f'u{request.user.id}-{uuid.uuid4().hex[:8]}'
-
+        body = json.loads(request.body)
+        message = body.get('message', '')
+        if not isinstance(message, str) or not message.strip() or len(message) > 20000:
+            raise ValueError('请输入不超过 20000 字的消息')
+        supplied = body.get('thread_id')
+        if supplied and not isinstance(supplied, str):
+            raise ValueError('会话编号无效')
+        thread_id = supplied or f'u{request.user.pk}-{uuid.uuid4().hex}'
+        conversation = conversation_for(request.user, thread_id, create=not supplied, title=message.strip())
+    except (ValueError, AttributeError, TypeError):
+        return JsonResponse({'error': '消息或会话格式无效'}, status=400)
+    try:
+        with transaction.atomic():
+            AIExecutionLease.objects.filter(owner=request.user, expires_at__lte=timezone.now()).delete()
+            lease = AIExecutionLease.objects.create(conversation=conversation, owner=request.user,
+                expires_at=timezone.now()+timedelta(seconds=300))
+            if AIExecutionLease.objects.filter(expires_at__gt=timezone.now()).count() > 3:
+                raise ValueError('分析任务较多，请稍后重试')
+    except IntegrityError:
+        return JsonResponse({'error': '上一项 AI 任务仍在运行或停止中，请稍候再试'}, status=409)
+    except ValueError as exc:
+        return JsonResponse({'error':str(exc)},status=429)
+    started = [False]
+    def release_or_cancel():
+        qs=AIExecutionLease.objects.filter(conversation_id=thread_id, token=lease.token)
+        if started[0]:qs.update(cancel_requested=True)
+        else:qs.delete()
     def event_stream():
-        # Echo the thread id first so the client can store it for follow-ups.
-        yield _sse('thread', {'thread_id': thread_id})
-        yield from _stream_via_queue(message, thread_id)
-
+        try:
+            yield _sse('thread', {'thread_id': thread_id})
+            started[0] = True
+            yield from _stream_via_queue(message.strip(), thread_id)
+        finally:
+            release_or_cancel()
     resp = StreamingHttpResponse(event_stream(), content_type='text/event-stream')
-    resp['Cache-Control'] = 'no-cache'
-    resp['X-Accel-Buffering'] = 'no'  # disable proxy buffering for true streaming
-    # Bypass GZipMiddleware. SSE token frames are tiny (~40B each); gzip's
-    # internal buffer accumulates them and only flushes in big batches, which
-    # collapses per-token streaming into a few delayed chunks (verified: a 45-
-    # token stream compresses to just 2 large blocks delivered ~2s apart).
-    # Setting Content-Encoding makes GZipMiddleware skip this response entirely
-    # (it returns early when the header is already set), preserving true
-    # incremental token delivery.
+    resp._resource_closers.append(release_or_cancel)
+    resp['Cache-Control'] = 'private, no-store'
+    resp['X-Accel-Buffering'] = 'no'
     resp['Content-Encoding'] = 'identity'
     return resp
 
 
 def _stream_via_queue(message: str, thread_id: str):
-    """Sync generator: run the agent (sync stream) on a worker thread, yield SSE frames.
-
-    The worker thread is a plain Python thread (no event loop), so the @tool
-    functions can call the Django ORM synchronously without hitting the
-    "You cannot call this from an async context" error.
-    """
-    q: "queue.Queue" = queue.Queue()
-    _SENTINEL = object()
-
+    q = queue.Queue(maxsize=128)
+    stopped = threading.Event()
+    sentinel = object()
+    lease = AIExecutionLease.objects.get(conversation_id=thread_id)
+    def put(event):
+        while not stopped.is_set():
+            try:
+                q.put(event, timeout=0.25)
+                return
+            except queue.Full:
+                continue
     def worker():
-        from core.ai_agent import build_agent
-        from langchain_core.messages import HumanMessage
+        close_old_connections()
         try:
+            from core.ai_agent import build_agent, ensure_workspace
+            from langchain_core.messages import HumanMessage
+            ensure_workspace(thread_id, refresh=True)
+            put(('snapshot', {'at': timezone.localtime().isoformat()}))
             agent = build_agent()
-            config = {'configurable': {'thread_id': thread_id}}
-            # Per-run context (workspace thread id) for tools reading ToolRuntime.
-            # Distinct from `config` (which drives the checkpointer's conversation memory).
-            context = {'thread_id': thread_id}
-            input_msg = {'messages': [HumanMessage(content=message)]}
-            seen_tool_calls = {}
-            # Sync stream — runs tools in this thread, where Django ORM is safe.
-            for chunk, metadata in agent.stream(
-                input_msg, config=config, context=context, stream_mode='messages'
-            ):
-                for evt in _events_from_chunk(chunk, seen_tool_calls):
-                    q.put(evt)
-        except Exception as e:  # noqa: BLE001
-            logger.exception('AI agent worker failed')
-            q.put(('error', {'message': f'agent error: {e}'}))
+            config = {'configurable': {'thread_id': thread_id}, 'recursion_limit': 30}
+            context = {'thread_id': thread_id, 'cancel_event': stopped}
+            seen = {}
+            stream = agent.stream({'messages': [HumanMessage(content=message)]}, config=config,
+                context=context, stream_mode='messages')
+            try:
+                for chunk, metadata in stream:
+                    if stopped.is_set():
+                        break
+                    for evt in _events_from_chunk(chunk, seen):
+                        put(evt)
+            finally:
+                stream.close()
+            AIConversation.objects.filter(pk=thread_id).update(updated_at=timezone.now())
+        except Exception:
+            logger.exception('AI agent task failed')
+            put(('error', {'message': '分析未完成，请稍后重试；已生成的文件仍可下载。'}))
         finally:
-            q.put(_SENTINEL)
-
+            AIExecutionLease.objects.filter(conversation_id=thread_id, token=lease.token).delete()
+            put(sentinel)
+            close_old_connections()
     threading.Thread(target=worker, daemon=True).start()
-
-    while True:
-        item = q.get()
-        if item is _SENTINEL:
-            break
-        event_type, payload = item
-        yield _sse(event_type, payload)
-    yield _sse('done', {})
+    deadline = time.monotonic() + 180
+    next_cancel_check = 0
+    try:
+        while time.monotonic() < deadline:
+            try:
+                item = q.get(timeout=3)
+            except queue.Empty:
+                item = None
+            cancelled = False
+            if time.monotonic() >= next_cancel_check:
+                cancelled = AIExecutionLease.objects.filter(conversation_id=thread_id, token=lease.token, cancel_requested=True).exists()
+                next_cancel_check = time.monotonic() + 3
+            if cancelled:
+                yield _sse('error', {'message': '任务已停止'})
+                return
+            if item is sentinel:
+                yield _sse('done', {})
+                return
+            if item is None:
+                yield ': heartbeat\n\n'
+            else:
+                yield _sse(*item)
+        yield _sse('error', {'message': '分析达到时间限制，请缩小范围后重试'})
+    finally:
+        stopped.set()
 
 
 def _events_from_chunk(chunk, seen_tool_calls):
@@ -218,3 +240,53 @@ def _events_from_chunk(chunk, seen_tool_calls):
         text = chunk.text if hasattr(chunk, 'text') else ''
         if text:
             yield ('token', {'text': text})
+
+
+@login_required(login_url='core:login')
+@require_POST
+def ai_cancel(request):
+    try:
+        body = json.loads(request.body)
+        conversation = conversation_for(request.user, body.get('thread_id', ''))
+    except (ValueError, TypeError, AttributeError):
+        return JsonResponse({'error': '会话格式无效'}, status=400)
+    AIExecutionLease.objects.filter(conversation=conversation, owner=request.user).update(cancel_requested=True)
+    return JsonResponse({'success': True})
+
+
+@login_required(login_url='core:login')
+def ai_conversations(request):
+    if get_user_role(request.user) not in _ALLOWED_ROLES:
+        return JsonResponse({'error': '无权限'}, status=403)
+    from core.ai_agent import _checkpoint_saver
+    thread_id = request.GET.get('thread_id')
+    if not thread_id:
+        return JsonResponse({'conversations': list(AIConversation.objects.filter(owner=request.user)
+            .order_by('-updated_at').values('id', 'title', 'updated_at')[:30])})
+    conversation_for(request.user, thread_id)
+    checkpoint = _checkpoint_saver().get_tuple({'configurable': {'thread_id': thread_id}})
+    messages = checkpoint.checkpoint.get('channel_values', {}).get('messages', []) if checkpoint else []
+    turns = []
+    current = None
+    for message in messages[-100:]:
+        role = getattr(message, 'type', '')
+        content = getattr(message, 'content', '')
+        if role == 'human':
+            current={'question':content[:30000] if isinstance(content,str) else '', 'answer':'', 'files':[]}
+            turns.append(current)
+        elif current is not None and role == 'ai' and isinstance(content,str):
+            current['answer']=(current['answer']+content)[:60000]
+        elif current is not None and role == 'tool':
+            try:
+                data=json.loads(content) if isinstance(content,str) else {}
+                files=data.get('files',[])
+                if isinstance(data.get('file'),dict):files=[*files,data['file']]
+                from .ai_storage import artifact_url
+                from pathlib import Path
+                for file in files[:20]:
+                    name=file.get('name','')
+                    if name and Path(name).name==name:
+                        current['files'].append({'name':name,'size':file.get('size',0),'url':artifact_url(thread_id,name)})
+            except (ValueError,TypeError,AttributeError):
+                continue
+    return JsonResponse({'thread_id': thread_id, 'turns': turns})

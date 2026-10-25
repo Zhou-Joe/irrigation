@@ -132,13 +132,13 @@
             frame = null;
             if (!panelOpen && turn.ended === null) return;
             const previousScroll = box.scrollTop;
-            const phases = {preparing:'正在准备回复',thinking:'正在整理结果',writing:'正在回复',tool:'正在使用工具',done:'已完成',error:'回复未完成',stopped:'已停止接收'};
+            const phases = {preparing:'正在准备回复',thinking:'正在整理结果',writing:'正在回复',tool:'正在使用工具',done:'已完成',error:'回复未完成',stopped:'已请求停止'};
             const label = phases[turn.phase] || '正在处理'; article.dataset.phase = turn.phase;
             status.textContent = label + (turn.ended !== null ? ' · ' + duration(turn.started,turn.ended) : ''); say(label); copy.hidden = !turn.text;
             if (turn.text) renderMarkdown(content,turn.text,turn.files,turn.ended !== null);
             renderTools(); renderFiles();
             if (turn.phase === 'error' || turn.phase === 'stopped') {
-                note.hidden = false; note.replaceChildren(node('p','',turn.error || '已停止接收。已启动的后台操作可能仍在完成。'));
+                note.hidden = false; note.replaceChildren(node('p','',turn.error || '已请求停止任务，后台正在收尾。请稍候再发起新任务。'));
                 const edit = node('button','ai-edit-request','重新编辑请求'); edit.type = 'button'; edit.onclick = () => { byId('aiChatInput').value = requestText; resizeInput(); byId('aiChatInput').focus(); }; note.append(edit);
             }
             if (follow) scrollLatest(false); else box.scrollTop = previousScroll;
@@ -156,11 +156,32 @@
     }
     function sendingState() {
         const button = byId('aiChatSend'); if (!button) return;
-        button.innerHTML = icon(activeRun ? 'stop' : 'send'); button.title = activeRun ? '停止接收回复' : '发送'; button.setAttribute('aria-label',button.title); button.dataset.sending = String(!!activeRun); resizeInput();
+        button.innerHTML = icon(activeRun ? 'stop' : 'send'); button.title = activeRun ? '停止任务' : '发送'; button.setAttribute('aria-label',button.title); button.dataset.sending = String(!!activeRun); resizeInput();
+        if(byId('aiChatHistory'))byId('aiChatHistory').disabled=!!activeRun;
     }
-    function stop() { if (activeRun) { activeRun.controller.abort(); activeRun.view.finish('stopped'); } }
+    function stop() { if (activeRun) {
+        if (threadId) fetch('/api/ai/cancel',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-CSRFToken':getCSRF()},body:JSON.stringify({thread_id:threadId})}).catch(()=>{});
+        activeRun.controller.abort(); activeRun.view.finish('stopped');
+    } }
+    async function loadHistory() {
+        const select=byId('aiChatHistory');if(!select)return;
+        try{const data=await fetch('/api/ai/conversations',{credentials:'same-origin'}).then(r=>r.ok?r.json():{});
+            select.replaceChildren(new Option('历史对话',''));
+            for(const item of data.conversations||[])select.add(new Option(item.title||'未命名对话',item.id));
+            if(threadId)select.value=threadId;
+        }catch(_){}
+    }
+    async function restoreHistory(id) {
+        if(!id||activeRun)return;
+        try{const response=await fetch('/api/ai/conversations?thread_id='+encodeURIComponent(id),{credentials:'same-origin'});
+            if(!response.ok)throw new Error('会话暂时无法恢复');
+            const data=await response.json();welcome();threadId=id;byId('aiChatSnapshot').textContent='历史回复 · 再次发送时更新数据快照';
+            for(const turn of data.turns||[]){const view=responseView(turn.question);view.event({event:'token',text:turn.answer||''});for(const file of turn.files||[])view.event({event:'file',...file});view.finish('done');}
+            resetFollow();scrollLatest(true);
+        }catch(error){say(error.message);}
+    }
     function resetFollow() { follow = true; byId('aiChatLatest').hidden = true; }
-    function newConversation() { stop(); sequence++; activeRun = null; threadId = null; sendingState(); welcome(); resetFollow(); say('已开启新对话'); }
+    function newConversation() { stop(); sequence++; activeRun = null; threadId = null; sendingState(); welcome(); resetFollow();byId('aiChatHistory').value='';byId('aiChatSnapshot').textContent=''; say('已开启新对话'); }
     async function send() {
         const input = byId('aiChatInput'); if (!input || activeRun) return;
         const text = input.value.trim(); if (!text) return; input.value = ''; resetFollow();
@@ -175,6 +196,7 @@
             const parser = core.createParser(event => {
                 if (sequence !== run.id || run.controller.signal.aborted) return;
                 if (event.event === 'thread') { if (/^u\d+-[0-9a-f]{8,32}$/.test(event.thread_id || '')) threadId = event.thread_id; return; }
+                if (event.event === 'snapshot') { const hint=byId('aiChatSnapshot');if(hint)hint.textContent='数据快照更新于 '+new Date(event.at).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai'});return; }
                 if (event.event === 'done') completed = true; run.view.event(event);
             });
             while (true) {
@@ -186,7 +208,7 @@
             if (!run.controller.signal.aborted && sequence === run.id) run.view.finish(completed ? 'done' : 'error', completed ? '' : '连接已结束，回复可能尚未完成。');
         } catch (error) {
             if (sequence === run.id && !run.controller.signal.aborted) { run.view.finish('error',error.message || '网络连接中断，请检查后重试。'); run.controller.abort(); }
-        } finally { if (activeRun === run) { activeRun = null; sendingState(); } }
+        } finally { if (activeRun === run) { activeRun = null; sendingState();loadHistory(); } }
     }
     function mount(preview) {
         if (byId('aiChatPanel')) return;
@@ -207,6 +229,11 @@
             panel.style.setProperty('--ai-viewport-height', viewport.height + 'px');
             panel.style.setProperty('--ai-viewport-top', viewport.offsetTop + 'px');
         }
+        const history=document.createElement('select');history.id='aiChatHistory';history.className='ai-chat-history';history.setAttribute('aria-label','历史对话');
+        history.add(new Option('历史对话',''));history.onchange=()=>restoreHistory(history.value);
+        panel.querySelector('.ai-chat-header').after(history);
+        const snapshot=document.createElement('p');snapshot.id='aiChatSnapshot';snapshot.className='ai-composer-hint';panel.querySelector('.ai-composer').append(snapshot);
+        loadHistory();
         fitViewport();
         window.visualViewport?.addEventListener('resize',fitViewport,{passive:true});
         window.visualViewport?.addEventListener('scroll',fitViewport,{passive:true});
@@ -220,7 +247,7 @@
         panel.addEventListener('keydown',event => {
             if (event.key === 'Escape') { event.preventDefault(); setOpen(false); }
             if (event.key !== 'Tab' || !modalMode()) return;
-            const focusable = [...panel.querySelectorAll('button,a[href],textarea,summary,[tabindex="0"]')].filter(item => !item.disabled && item.getClientRects().length);
+            const focusable = [...panel.querySelectorAll('button,a[href],textarea,select,summary,[tabindex="0"]')].filter(item => !item.disabled && item.getClientRects().length);
             const first = focusable[0], last = focusable[focusable.length-1];
             if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
             else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }

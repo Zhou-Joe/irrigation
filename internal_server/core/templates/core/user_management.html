@@ -1069,7 +1069,8 @@ function renderEmailConfigList(configs) {
     document.getElementById('emailConfigCount').textContent = configs.length;
     if (!configs.length) { list.innerHTML = '<div class="am-empty">暂无邮件报表配置，点击右上「新建」</div>'; return; }
     list.innerHTML = configs.map(function (c) {
-        var last = c.last_sent_at ? ('最后发送 ' + c.last_sent_at + ' · ' + _emailEsc(c.last_status || ''))
+        var statusText=(c.last_status || '').replace(/^partial_success/, '部分发送成功（附件不完整）').replace(/^success/, '发送成功').replace(/^failed/, '发送失败');
+        var last = c.last_sent_at ? ('最近尝试 ' + c.last_sent_at + ' · ' + _emailEsc(statusText))
                                    : '尚未发送';
         var offBadge = c.is_active ? '' : '<span class="am-off">已停用</span>';
         return '<div class="am-row">' +

@@ -901,6 +901,7 @@ json_script so the JSON is always valid.{% endcomment %}
 <script>
 var cfg = JSON.parse(document.getElementById('wr-filter-json').textContent);
 var currentFilter = cfg.filters;            // {date_from, date_to, location, worker, is_pending_repair, is_difficult}
+var lastCursor = cfg.next_cursor;
 var lastLoadedId = cfg.last_id;             // report id cursor (null when none loaded)
 var isAdmin = cfg.is_admin || false;        // show admin-only reassign control
 var allWorkers = cfg.workers || [];         // [{id,name,employee_id}] for reassign dropdown
@@ -989,6 +990,7 @@ var remarkGroups = {};
 
 // ── Tab switching (维修日志 / 待确认备注 / 媒体下载) ──────────────────────
 function switchTab(tab) {
+    if (tab !== '{{ active_tab|escapejs }}') { var url=new URL(location.href);url.searchParams.set('tab',tab);url.searchParams.delete('before_id');url.searchParams.delete('cursor');location.assign(url.href);return; }
     var reportFilters = document.getElementById('wrReportFilters');
     if (reportFilters) reportFilters.hidden = tab === 'pm';
     var reportExport = document.getElementById('wrReportExport');
@@ -1948,7 +1950,7 @@ function loadMore() {
     isLoadingMore = true;
 
     var params = new URLSearchParams();
-    params.set('before_id', lastLoadedId);
+    if (lastCursor) params.set('cursor',lastCursor); else params.set('before_id', lastLoadedId);
     if (currentFilter.date_from) params.set('date_from', currentFilter.date_from);
     if (currentFilter.date_to) params.set('date_to', currentFilter.date_to);
     if (currentFilter.land) params.set('land', currentFilter.land);
@@ -1969,7 +1971,7 @@ function loadMore() {
             div.innerHTML = renderCard(rep).trim();
             if (div.firstChild) list.appendChild(div.firstChild);
         });
-        lastLoadedId = d.last_id;
+        lastLoadedId = d.last_id; lastCursor = d.next_cursor;
         document.getElementById('loadMoreWrap').style.display = d.has_more ? '' : 'none';
         btn.disabled = false;
         btn.textContent = '加载更多';

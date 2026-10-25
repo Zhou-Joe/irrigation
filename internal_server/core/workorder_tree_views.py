@@ -15,6 +15,7 @@ from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from core.authentication import token_or_session
+from core.submissions import submission
 from django.views.decorators.cache import never_cache
 from django.views.decorators.http import require_POST
 from django.core.files.storage import default_storage
@@ -413,7 +414,7 @@ def _project_budget_data(projects):
     ).values_list('id', flat=True))
     txns = (InventoryTransaction.objects
             .filter(related_project_id__in=pids, operation='出库', entry_subtype='项目',
-                    consumption_mode='actual')
+                    consumption_mode='actual', confirm_status='confirmed')
             .exclude(work_report_id__in=pending_rep_ids)
             # Ledger-dismissed txns (经理在台账移除) must not count here either —
             # removal is an explicit dismissal, orthogonal to materials_confirmed.
@@ -1305,7 +1306,10 @@ def _calc_hours(start, end, headcount):
 # ── view ────────────────────────────────────────────────────────────────────
 
 @login_required(login_url='core:login')
+@submission('workorder')
 def workorder_tree_form(request, report_id=None):
+    from .business_rules import require_workorder_user
+    require_workorder_user(request.user)
     report = None
     if report_id:
         report = get_object_or_404(WorkReport, pk=report_id)
@@ -1715,6 +1719,8 @@ def _save_workorder_materials(report, lines, entry_subtype='日常维护',
     existing cart instead carry the prior status (all-confirmed → confirmed).
     """
     from django.db.models import F
+    from .business_rules import material_lines
+    lines = material_lines(lines)
     from core.models import (
         InventoryTransaction, InventoryTransactionLine, InventoryCategory, Project,
     )
@@ -1728,6 +1734,12 @@ def _save_workorder_materials(report, lines, entry_subtype='日常维护',
     # txn) doesn't wipe a manager's confirmation. All-confirmed → carry confirmed;
     # brand-new cart → submitter rule; anything else (mixed/pending/removed) → pending.
     prior_statuses = set(old_txns.values_list('confirm_status', flat=True))
+    if 'confirmed' in prior_statuses and not submitter_is_manager:
+        previous = sorted((ln.category_id, ln.quantity, ln.unit) for txn in old_txns for ln in txn.lines.all())
+        proposed = sorted((ln['category'], ln['quantity'], ln['unit']) for ln in lines)
+        if previous != proposed:
+            from django.core.exceptions import PermissionDenied
+            raise PermissionDenied('已确认的材料消耗由经理修改，请联系经理')
     if prior_statuses == {'confirmed'}:
         carry_status = 'confirmed'
     elif not prior_statuses and submitter_is_manager:
@@ -1771,11 +1783,7 @@ def _save_workorder_materials(report, lines, entry_subtype='日常维护',
     created = 0
     for ln in lines:
         cat_id = ln.get('category')
-        qty = ln.get('quantity') or 0
-        try:
-            qty = abs(float(qty))
-        except (ValueError, TypeError):
-            continue
+        qty = ln['quantity']
         cat = InventoryCategory.objects.filter(pk=cat_id).first()
         if not cat or qty <= 0:
             continue

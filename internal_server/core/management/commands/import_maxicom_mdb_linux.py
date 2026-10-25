@@ -20,6 +20,7 @@ from collections import defaultdict
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 from core.models import Patch, MaxicomRuntime, MaxicomController
+from core.import_status import record_import
 
 CCU_RE = re.compile(r'^CCU(\d+)$', re.IGNORECASE)
 BATCH = 1000
@@ -61,16 +62,17 @@ class Command(BaseCommand):
     help = 'Import Maxicom actual runtime (XA_LOG M, UTC) and local irrigation-day flow data (CCU-safe)'
 
     def add_arguments(self, parser):
+        parser.add_argument('--source-archive', default='', help='Source backup name for the sync indicator')
         parser.add_argument('--flow-only', action='store_true',
                             help='Import flow records without changing station runtime')
         parser.add_argument('--mdb', type=str, required=True,
                             help='Path to Maxicom2.mdb')
 
+    @record_import
     def handle(self, *args, **options):
         mdb_path = options['mdb']
         if not os.path.exists(mdb_path):
-            self.stderr.write(self.style.ERROR(f'MDB not found: {mdb_path}'))
-            return
+            raise CommandError(f'MDB not found: {mdb_path}')
 
         if options.get('flow_only'):
             self._import_flow(mdb_path)
@@ -101,6 +103,16 @@ class Command(BaseCommand):
             m = CCU_RE.match(p.code)
             site_map[int(m.group(1))] = p
 
+        from core.flow_import import latest_config
+        source_sites = latest_config(list(_mdb_rows(mdb_path, 'SITE_CF')))
+        source_to_ccu = {}
+        for source_index, row in source_sites.items():
+            try:
+                number = int(row.get('SiteNumber') or 0)
+                if number in site_map: source_to_ccu[int(source_index)] = site_map[number]
+            except (ValueError, TypeError):
+                continue
+
         # ── 1b. Controller IndexNumber -> CCU (by satellite NAME prefix) ───
         # Maxicom's SiteNumber is NOT a reliable CCU key: the sites were
         # renumbered, so e.g. the satellites named "SAT 3-x" now sit under
@@ -114,7 +126,7 @@ class Command(BaseCommand):
         SAT_PREFIX_RE = re.compile(r'(\d+)\s*-\s*\d+')
         ctrl_to_ccu = {}          # CTROL_CF IndexNumber -> CCU Patch
         no_prefix_ctrl = 0
-        for r in _mdb_rows(mdb_path, 'CTROL_CF'):
+        for r in latest_config(list(_mdb_rows(mdb_path, 'CTROL_CF'))).values():
             idx = (r.get('IndexNumber') or '').strip()
             nm = _sq(r.get('IndexName'))
             if not idx or nm == 'Site CCU':
@@ -132,7 +144,7 @@ class Command(BaseCommand):
         # ── 2. STATN_CF -> station Patches (idempotent) ────────────────────
         existing_station_codes = set(
             Patch.objects.filter(code__startswith='station-').values_list('code', flat=True))
-        rows = list(_mdb_rows(mdb_path, 'STATN_CF'))
+        rows = list(latest_config(list(_mdb_rows(mdb_path, 'STATN_CF'))).values())
         seen_idx = set()
         to_create = []
         no_site = 0
@@ -148,11 +160,9 @@ class Command(BaseCommand):
             ctrl_num = int((r.get('StationControllerNumber') or '0') or 0) or None
             parent_ccu = ctrl_to_ccu.get(ctrl_num) if ctrl_num else None
             if not parent_ccu:
-                # SiteID fallback: some sites (e.g. Maxicom 15/16/17) name their
-                # satellites "SAT1"/"SAT2" with no "<N>-x" prefix, so the name map
-                # can't place them — fall back to StationSiteNumber so they land on
-                # the CCU patch matching their site number (CCU15/16/17).
-                parent_ccu = site_map.get(site_number)
+                # StationSiteNumber is a SITE_CF internal IndexNumber. Resolve
+                # its current SiteNumber before looking up the display CCU.
+                parent_ccu = source_to_ccu.get(site_number)
             if not parent_ccu:
                 no_site += 1
                 continue
@@ -175,10 +185,22 @@ class Command(BaseCommand):
         # station imported under the old scrambled SiteNumber moves to the CCU its
         # satellite name actually denotes on the next run).
         by_ccu = defaultdict(list)
+        changed_metadata = []
+        current_stations = {int(r['IndexNumber']): r for r in rows if str(r.get('IndexNumber','')).isdigit()}
         for st in Patch.objects.filter(code__startswith='station-'):
-            ccu = ctrl_to_ccu.get(st.controller_number) if st.controller_number else None
+            current = current_stations.get(st.mdb_index)
+            if current:
+                previous = (st.controller_number, st.controller_channel, st.site_number)
+                st.controller_number = int(current.get('StationControllerNumber') or 0) or None
+                st.controller_channel = int(current.get('StationControllerChannel') or 0) or None
+                st.site_number = int(current.get('StationSiteNumber') or 0)
+                if previous != (st.controller_number, st.controller_channel, st.site_number):
+                    changed_metadata.append(st)
+            ccu = (ctrl_to_ccu.get(st.controller_number) if st.controller_number else None) or source_to_ccu.get(st.site_number)
             if ccu is not None and ccu.id != st.parent_id:
                 by_ccu[ccu.id].append(st.id)
+        if changed_metadata:
+            Patch.objects.bulk_update(changed_metadata, ['controller_number','controller_channel','site_number'], batch_size=500)
         reparented = 0
         for ccu_id, ids in by_ccu.items():
             Patch.objects.filter(id__in=ids).update(parent_id=ccu_id)
@@ -194,7 +216,7 @@ class Command(BaseCommand):
             self.stderr.write(self.style.ERROR(
                 f'CCU corruption after stations ({len(drifted)} drifted) — restoring + aborting'))
             restore_ccus()
-            return
+            raise CommandError('CCU safety verification failed after station import')
 
         # ── 2b. CTROL_CF -> MaxicomController (full rebuild) ──────────────
         # The dashboard pivots runtime by satellite using ctrl_map keyed by
@@ -207,12 +229,12 @@ class Command(BaseCommand):
         # only a fallback for controllers with no parseable prefix. No model FKs
         # into MaxicomController, so delete+rebuild cascades nothing.
         new_ctrls = []
-        for r in _mdb_rows(mdb_path, 'CTROL_CF'):
+        for r in latest_config(list(_mdb_rows(mdb_path, 'CTROL_CF'))).values():
             idx = (r.get('IndexNumber') or '').strip()
             if not idx:
                 continue
             site_number = int((r.get('ControllerSiteNumber') or '0') or 0)
-            site = ctrl_to_ccu.get(int(idx)) or site_map.get(site_number)
+            site = ctrl_to_ccu.get(int(idx)) or source_to_ccu.get(site_number)
             if site is None:
                 continue
             new_ctrls.append(MaxicomController(
@@ -262,7 +284,7 @@ class Command(BaseCommand):
             self.stderr.write(self.style.ERROR(
                 f'CCU corruption after runtime ({len(drifted)} drifted) — restoring'))
             restore_ccus()
-            return
+            raise CommandError('CCU safety verification failed after runtime import')
         self.stdout.write(self.style.SUCCESS(
             f'Runtime (XA_LOG actual M readings, UTC): {MaxicomRuntime.objects.count()} rows, '
             f'{skipped_no_site} no-CCU-skipped'

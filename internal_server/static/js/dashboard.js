@@ -554,14 +554,14 @@
                 dot.className = 'status-dot ' + (data.status === 'online' ? 'online' : data.status === 'offline' ? 'offline' : 'never_connected');
 
                 if (data.status === 'online') {
-                    label.textContent = '同步代理 \xB7 在线';
+                    label.textContent = '数据同步 · 已更新';
                     detail.textContent = '最近同步: ' + formatElapsed(data.seconds_since_heartbeat);
                 } else if (data.status === 'offline') {
-                    label.textContent = '同步代理 \xB7 离线';
-                    detail.textContent = '最后心跳: ' + formatElapsed(data.seconds_since_heartbeat);
+                    label.textContent = '数据同步 · 待检查';
+                    detail.textContent = data.message || '最近导入: ' + formatElapsed(data.seconds_since_heartbeat);
                 } else {
-                    label.textContent = '同步代理 \xB7 未连接';
-                    detail.textContent = '尚未收到同步数据';
+                    label.textContent = '数据同步 · 暂无记录';
+                    detail.textContent = data.message || '等待下次备份导入';
                 }
 
                 refresh.textContent = new Date().toLocaleTimeString('zh-CN', { timeZone: 'Asia/Shanghai', hour: '2-digit', minute: '2-digit' });
@@ -576,7 +576,7 @@
             })
             .catch(function () {
                 dot.className = 'status-dot offline';
-                label.textContent = '同步代理 \xB7 错误';
+                label.textContent = '数据同步 · 获取失败';
                 detail.textContent = '无法获取状态';
                 refresh.textContent = '!';
             });
@@ -589,6 +589,11 @@
     }
 
     function updateSyncPanelContent(data) {
+        if (data.mode === 'backup-import') {
+            var box = document.getElementById('syncPanelContent'); box.replaceChildren();
+            [['同步状态',data.message],['备份文件',data.source || '—'],['最近成功',data.last_heartbeat ? formatSyncTime(data.last_heartbeat) : '—']].forEach(function(pair){var row=document.createElement('p');row.textContent=pair[0]+'：'+pair[1];box.appendChild(row);});
+            return;
+        }
         var content = document.getElementById('syncPanelContent');
         var counts = data.last_sync_counts || {};
         var totalInserted = Object.values(counts).reduce(function (sum, v) {

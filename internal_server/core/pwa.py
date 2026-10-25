@@ -30,6 +30,9 @@ def navigation(request):
             ('project_management', '项目管理', '项目、预算与采购记录', 'folder'),
             ('user_management', '用户管理', '账号、班组与注册审批', 'users'),
         ]
+    from .role_utils import is_dept_user
+    if is_dept_user(request.user):
+        modules = [m for m in modules if m[0] in ('dashboard', 'water_requests')]
     modules.append(('profile', '我的账号', '个人资料与账号设置', 'user'))
     return {'pwa_modules': [dict(name=name, label=label, description=desc,
                                  icon=icon, url=reverse('core:' + name))
