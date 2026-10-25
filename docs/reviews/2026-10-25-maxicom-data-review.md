@@ -115,3 +115,14 @@ above describe the independently validated production-copy run, not an additiona
 post-deployment live audit. Water-meter geographic attribution remains the separate
 concern documented above; the UI now describes the arithmetic sum as a reference
 and removes the unsupported claim of exact agreement with Rain Bird's water totals.
+
+## Follow-up water-volume investigation
+
+The subsequent read-only investigation found additional confirmed causes: skipped
+real flow zones, ignored whole-Site inclusion flags, overlapping meter/estimate
+addition, wrong numeric fallbacks for controllers without CCU prefixes, and current
+flow factors applied to historical runtime. `SITE_CF` distinguishes internal keys
+from displayed Site numbers; controller-prefix inference alone does not resolve
+all Sites. See [the water-volume investigation](2026-10-25-maxicom-water-volume-review.md)
+for original-data examples, shared-meter limits, and the concrete repair design.
+That investigation does not deploy a further water-volume change.
