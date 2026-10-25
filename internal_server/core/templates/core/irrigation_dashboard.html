@@ -8,6 +8,20 @@
 {% block extra_css %}
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <style>
+.flow-toolbar { display:flex; align-items:center; flex-wrap:wrap; gap:8px; margin:8px 0 12px; font-size:.82rem; }
+.flow-toolbar select { min-width:0; max-width:100%; flex:0 1 360px; min-height:36px; padding:6px 10px; border:1px solid var(--color-border,#dce3df); border-radius:8px; background:var(--color-surface,#fff); color:inherit; font:inherit; }
+.flow-site { border:1px solid var(--color-border,#dce3df); border-radius:10px; margin:8px 0; overflow:hidden; }
+.flow-site summary { display:flex; align-items:center; gap:10px; padding:11px 12px; cursor:pointer; font-size:.85rem; list-style:none; }
+.flow-site summary::-webkit-details-marker { display:none; }
+.flow-site summary::before { content:''; width:6px; height:6px; flex:0 0 6px; border-right:1.5px solid currentColor; border-bottom:1.5px solid currentColor; transform:rotate(-45deg); }
+.flow-site[open] summary::before { transform:rotate(45deg); }
+.flow-site summary span { flex:1; min-width:0; overflow-wrap:anywhere; }
+.flow-site summary strong { white-space:nowrap; font-variant-numeric:tabular-nums; }
+.flow-table-scroll { overflow-x:auto; border-top:1px solid var(--color-border,#dce3df); }
+.flow-site .matrix-table { width:100%; min-width:440px; }
+.flow-site .matrix-table th, .flow-site .matrix-table td { padding:8px 10px; font-size:.8rem; }
+.flow-site .matrix-table td:nth-child(2) { white-space:normal; text-align:left; }
+.flow-note { font-size:.75rem; line-height:1.6; color:var(--color-text-muted,#777); margin:8px 0 0; }
 .page-header {
     display: flex;
     justify-content: space-between;
@@ -991,10 +1005,15 @@
             </div>
         </div>
 
-        <!-- 浇水量：mdb 流量计（XA_FLOZO 导入）+ 站点运行估算（运行分钟×
-             站点系数），合计 = Maxicom 桌面端口径。随筛选 AJAX 刷新。 -->
         <div style="margin-top:14px;">
-            <div class="section-title"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-drop"/></svg> 浇水量（升）— 流量计 + 站点估算</div>
+            <div class="section-title"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-drop"/></svg> 流量区用水量（升）</div>
+            <div class="flow-toolbar">
+                <label for="flowSiteSelect">流量站点</label>
+                <select id="flowSiteSelect" onchange="renderFlowSelection()">
+                    <option value="">全部 Site</option>
+                    {% for site in flow_data.sites %}<option value="{{ site.key }}">{{ site.label }} · {{ site.name }}</option>{% endfor %}
+                </select>
+            </div>
             <div id="flowContent">
                 {% include 'core/_irrigation_flow.html' %}
             </div>
@@ -1004,8 +1023,7 @@
 {% endblock %}
 
 {% block extra_js %}
-{{ flow_rows|json_script:"initial-flow-rows" }}
-{{ flow_zones_by_ccu|json_script:"initial-flow-zones" }}
+{{ flow_data|json_script:"initial-flow-data" }}
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="{% static 'js/irrig-heatmap.js' %}?v=20261024pages6"></script>
 <script>
@@ -1044,103 +1062,60 @@ function exportExcel() {
     window.location.href = '{% url "core:irrigation_report_excel" %}?' + _exportParams();
 }
 
-// 浇水量表格 — 与服务端 partial _irrigation_flow.html 保持同一结构。
-// 全部 CCU：每 CCU 一行（流量计/估算/合计）；选中单个 CCU（下拉筛选或点
-// CCU 分页 pill）：主表切换为该 CCU 的流量区明细，头部汇总行给三项合计。
-// flowZonesByCcu 缓存全部模式下各 CCU 的 zone 明细，点 pill 即时切换免请求。
-let flowRowsCache = JSON.parse(document.getElementById('initial-flow-rows').textContent);
-let flowZonesByCcu = JSON.parse(document.getElementById('initial-flow-zones').textContent);
-let flowNotice = '{{ flow_notice|escapejs }}';
-const _flowNote = '<p style="font-size:.74rem;color:var(--color-text-muted,#888);margin:6px 0 0;">' +
-    '流量计 = mdb XA_FLOZO 按灌溉日聚合（随 maxicom 导入更新）；站点估算 = 运行分钟 × 站点流量系数；' +
-    '源 Site 编号与区域 CCU 存在差异，水表归属待校核；参考合计不代表独立实测总用水量。</p>';
-function _flowZoneHtml(s, zones, backLink) {
-    const n = x => (x || 0).toLocaleString('en-US');
-    let html = '<div style="font-size:.82rem;margin-bottom:6px;">' +
-        (backLink ? '<a href="javascript:void(0)" onclick="renderFlowAll()" ' +
-            'style="color:var(--color-primary,#2D6A4F);margin-right:6px;">« 返回全部 CCU</a>' : '') +
-        s.ccu + '（' + s.name + '）：' +
-        '流量计 <b>' + n(s.meter_l) + '</b> L · 站点估算 <b>' + n(s.est_l) + '</b> L · ' +
-        '参考合计 <b>' + n(s.total_l) + '</b> L</div>' +
-        '<div style="overflow-x:auto;"><table class="matrix-table">' +
-        '<thead><tr><th>Zone</th><th>流量区名称</th><th>浇水量 (L)</th></tr></thead><tbody>';
-    let tm = 0;
-    for (const z of zones) {
-        tm += z.liters;
-        html += '<tr><td class="sticky-col-sub">z' + z.zone + '</td>' +
-            '<td class="sticky-col-sub">' + z.name + '</td>' +
-            '<td class="cell">' + n(z.liters) + '</td></tr>';
-    }
-    html += '</tbody><tfoot><tr><th colspan="2">流量计合计</th><th>' + n(tm) +
-        '</th></tr></tfoot></table></div>' + _flowNote;
-    return html;
+let flowData = JSON.parse(document.getElementById('initial-flow-data').textContent);
+function renderFlow(d) {
+    flowData = d.flow_data || {sites: [], notice: '该时段暂无流量记录。'};
+    const select = document.getElementById('flowSiteSelect');
+    const previous = select.value;
+    select.replaceChildren(new Option('全部 Site', ''));
+    for (const site of flowData.sites) select.add(new Option(site.label + ' · ' + site.name, site.key));
+    if (flowData.sites.some(site => site.key === previous)) select.value = previous;
+    renderFlowSelection();
 }
-function renderFlowAll() {
-    const el = document.getElementById('flowContent');
-    if (!el) return;
-    if (flowNotice) {
-        el.replaceChildren();
+function renderFlowSelection() {
+    const root = document.getElementById('flowContent');
+    root.replaceChildren();
+    if (flowData.notice) {
         const note = document.createElement('div');
         note.className = 'chart-empty';
-        note.textContent = flowNotice;
-        el.appendChild(note);
+        note.textContent = flowData.notice;
+        root.append(note);
         return;
     }
-    const n = x => (x || 0).toLocaleString('en-US');
-    if (!flowRowsCache.length) {
-        el.innerHTML = '<div class="chart-empty">该窗口无浇水量数据（等待 maxicom 导入或调整时间范围）</div>';
-        return;
-    }
-    let tm = 0, te = 0;
-    let html = '<div style="overflow-x:auto;"><table class="matrix-table"><thead><tr>' +
-        '<th>CCU</th><th>名称</th><th>流量计 (L)</th><th>站点估算 (L)</th><th>参考合计 (L)</th>' +
-        '</tr></thead><tbody>';
-    for (const r of flowRowsCache) {
-        tm += r.meter_l; te += r.est_l;
-        html += '<tr><td class="sticky-col-sub">' + r.ccu + '</td>' +
-            '<td class="sticky-col-sub">' + r.name + '</td>' +
-            '<td class="cell">' + n(r.meter_l) + '</td>' +
-            '<td class="cell">' + n(r.est_l) + '</td>' +
-            '<td class="row-total">' + n(r.total_l) + '</td></tr>';
-    }
-    html += '</tbody><tfoot><tr><th colspan="2">合计</th><th>' + n(tm) + '</th><th>' + n(te) +
-        '</th><th>' + n(tm + te) + '</th></tr></tfoot></table></div>' + _flowNote;
-    el.innerHTML = html;
-}
-function renderFlowForCcu(ccuId, withBackLink) {
-    const el = document.getElementById('flowContent');
-    if (!el) return;
-    const s = flowRowsCache.find(r => r.ccu_id === ccuId);
-    const zones = flowZonesByCcu[String(ccuId)] || [];
-    if (!s || !zones.length) {
-        if (s) {
-            // 有汇总无 zone 明细（该 CCU 无流量计数据）——仍显示汇总行
-            el.innerHTML = _flowZoneHtml(s, [], !!withBackLink);
-        } else {
-            renderFlowAll();
+    const selected = document.getElementById('flowSiteSelect').value;
+    const sites = flowData.sites.filter(site => !selected || site.key === selected);
+    for (const site of sites) {
+        const detail = document.createElement('details');
+        detail.className = 'flow-site';
+        detail.open = !!selected || sites.length === 1;
+        const summary = document.createElement('summary');
+        const title = document.createElement('span');
+        title.textContent = site.label + ' · ' + site.name;
+        const amount = document.createElement('strong');
+        amount.textContent = site.formatted + (site.value === null ? '' : ' L');
+        summary.append(title, amount);
+        const scroll = document.createElement('div');
+        scroll.className = 'flow-table-scroll';
+        const table = document.createElement('table');
+        table.className = 'matrix-table';
+        const head = table.createTHead().insertRow();
+        for (const label of ['流量区', '记录名称', '水量 (L)', '站点汇总']) {
+            const cell = document.createElement('th'); cell.textContent = label; head.append(cell);
         }
-        return;
+        const body = table.createTBody();
+        for (const zone of site.zones) {
+            const row = body.insertRow();
+            for (const value of [zone.counter === null ? 'z' + zone.index : zone.counter,
+                                 zone.name, zone.formatted, zone.included ? '计入' : '仅明细']) {
+                row.insertCell().textContent = value;
+            }
+        }
+        scroll.append(table); detail.append(summary, scroll); root.append(detail);
     }
-    el.innerHTML = _flowZoneHtml(s, zones, !!withBackLink);
-}
-function renderFlow(d) {
-    flowRowsCache = d.flow_rows || [];
-    flowZonesByCcu = d.flow_zones_by_ccu || {};
-    flowNotice = d.flow_notice || '';
-    const el = document.getElementById('flowContent');
-    if (!el) return;
-    if (flowNotice) { renderFlowAll(); return; }
-    if (!flowRowsCache.length) {
-        el.innerHTML = '<div class="chart-empty">该窗口无浇水量数据（等待 maxicom 导入或调整时间范围）</div>';
-        return;
-    }
-    if (d.flow_zone_rows && d.flow_zone_rows.length) {
-        // 下拉选中单个 CCU：zone 明细为主表（无返回链接——筛选本身就是单 CCU）
-        flowZonesByCcu[String(flowRowsCache[0].ccu_id)] = d.flow_zone_rows;
-        el.innerHTML = _flowZoneHtml(flowRowsCache[0], d.flow_zone_rows, false);
-    } else {
-        renderFlowAll();
-    }
+    const note = document.createElement('p');
+    note.className = 'flow-note';
+    note.textContent = '站点汇总按 Rain Bird 的计入设置计算；总表与分表分别保留，请勿再次相加。— 表示无记录。此处不叠加站点运行估算，流量站点与上方运行时长 CCU 分别筛选。';
+    root.append(note);
 }
 
 function applyFilters() {
@@ -1277,10 +1252,7 @@ function goToCcuPage(i, fromUser) {
     document.getElementById('ccuPagerNext').disabled = (i === n - 1);
     // Summary cards reflect the visible CCU (user chose "current CCU only").
     _setSummaryForCcu(ccuTablesCache[i]);
-    // 浇水量表同步切到该 CCU 的流量区明细——仅用户点击（renderPivot 播种
-    // goToCcuPage(0) 不带 fromUser，保持全部 CCU 汇总首屏）。数据已在
-    // flowZonesByCcu 缓存，点击即时切换不发请求；表头带返回链接。
-    if (fromUser) renderFlowForCcu(ccuTablesCache[i].ccu_id, true);
+
 }
 
 function renderPivot(d) {

@@ -927,17 +927,24 @@ class MaxicomSchedule(models.Model):
 
 class MaxicomFlowZone(models.Model):
     """Flow monitoring zone from Maxicom2 system."""
-    site = models.ForeignKey(Patch, on_delete=models.CASCADE, related_name='flow_zones')
+    site = models.ForeignKey(Patch, on_delete=models.SET_NULL, related_name='flow_zones',
+                             null=True, blank=True)
     mdb_index = models.IntegerField()
     name = models.CharField(max_length=255)
     join_site = models.BooleanField(default=False)
+    source_site_index = models.IntegerField(null=True, blank=True, db_index=True)
+    source_site_number = models.IntegerField(null=True, blank=True)
+    source_site_name = models.CharField(max_length=255, blank=True)
+    source_counter = models.IntegerField(null=True, blank=True)
+    is_active = models.BooleanField(default=True)
 
     class Meta:
         verbose_name = 'Maxicom流量区域'
         verbose_name_plural = 'Maxicom流量区域'
 
     def __str__(self):
-        return f"{self.name} @ {self.site.name}"
+        label = self.source_site_name or (self.site.name if self.site_id else '未关联站点')
+        return f"{self.name} @ {label}"
 
 
 class MaxicomWeatherStation(models.Model):
@@ -1099,14 +1106,11 @@ class MaxicomRuntime(models.Model):
 
 
 class MaxicomFlowDaily(models.Model):
-    """ mdb XA_FLOZO 按灌溉日聚合的浇水量（升）。
+    """Source flow-zone values by local irrigation day, with lossless timed samples.
 
-    XA_FLOZO 每次轮询一行（FlowZoneValue × FlowZoneMultiplier = 本次轮询
-    内的升数）；导入时按灌溉日窗口 [D-1 22:00 → D 21:59] 聚合成一天一行
-    ——与灌溉数据页/PDF/Excel 的日窗口完全一致，页面任意日期范围查询
-    直接按天求和即可。zone 指向既有 MaxicomFlowZone（FLOZO_CF 字典，
-    mdb_index=FLOZO IndexNumber）。Maxicom 桌面端的"浇水量"= 本表流量计
-    值 + 站点运行估算（MaxicomRuntime × MaxicomStationFlowFactor）。
+    Whole days use the cached sum; partial windows filter the original timestamps.
+    Values retain the import's existing scale. They never include station-runtime
+    estimates. Zone source identity and join_site determine source Site summaries.
     """
     flow_day = models.CharField('灌溉日 YYYYMMDD', max_length=8, db_index=True)
     zone = models.ForeignKey(MaxicomFlowZone, on_delete=models.CASCADE, related_name='daily')
@@ -1114,6 +1118,7 @@ class MaxicomFlowDaily(models.Model):
                              related_name='flow_daily', verbose_name='CCU')
     liters = models.IntegerField('浇水量(升)')
     minutes = models.IntegerField('有流量的分钟数', default=0)
+    samples = models.BinaryField(null=True, blank=True, editable=False)
 
     class Meta:
         verbose_name = 'Maxicom浇水量(日)'
@@ -1126,12 +1131,10 @@ class MaxicomFlowDaily(models.Model):
 
 
 class MaxicomStationFlowFactor(models.Model):
-    """ mdb STATN_CF.StationFlowFactor 快照 — 每站流量系数（升/分钟）。
+    """Legacy latest station-factor snapshot; not used to calculate flow records.
 
-    站点估算浇水量 = Σ(运行分钟 × 系数)。主阀(MV)等未配置的站系数为 0，
-    与 Maxicom 桌面端口径一致（其差值即来自 MV/未配置站）。每次 mdb 导入
-    全量重建；station_raw 即 STATN_CF.IndexNumber，与
-    MaxicomRuntime.station_id_raw 对应。
+    Raw station-factor units and effective dates require separate validation.
+    FS/WD/Toilet water records come directly from XA_FLOZO, independently of this.
     """
     station_raw = models.IntegerField('STATN_CF IndexNumber', primary_key=True)
     factor = models.FloatField('流量系数 L/min', default=0)

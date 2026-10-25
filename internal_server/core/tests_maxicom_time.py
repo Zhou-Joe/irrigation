@@ -132,8 +132,7 @@ class MaxicomRuntimeViewTests(TestCase):
                         if value:
                             actual[f'{column.removeprefix("SAT ")}-{row["channel"]}'] = value
                 self.assertEqual(actual, case[3])
-                self.assertTrue(data['flow_notice'])
-                self.assertEqual(data['flow_rows'], [])
+                self.assertTrue(data['flow_data']['notice'])
 
     def test_excel_matches_the_same_window_and_cell_values(self):
         from core.excel_exports import build_irrigation_report_excel
@@ -159,14 +158,14 @@ class MaxicomRuntimeViewTests(TestCase):
 
     def test_complete_day_flow_reads_only_its_local_day(self):
         ccu = self.ccus[7]
-        flow = MaxicomFlowZone.objects.create(site=ccu, mdb_index=900001, name='Meter')
+        flow = MaxicomFlowZone.objects.create(site=ccu, mdb_index=900001, name='Meter', join_site=True)
         for day, liters in [('20261023', 228507), ('20261024', 7420)]:
             MaxicomFlowDaily.objects.create(zone=flow, site=ccu, flow_day=day, liters=liters)
         response = self.client.get('/irrigation/', {
             'ccu': ccu.pk, 'from': '202610232200', 'to': '202610242159', 'format': 'json'})
         data = response.json()
-        self.assertEqual(data['flow_rows'][0]['meter_l'], 7420)
-        self.assertEqual(data['flow_notice'], '')
+        self.assertEqual(data['flow_data']['sites'][0]['value'], 7420)
+        self.assertEqual(data['flow_data']['notice'], '')
 
     def test_invalid_local_window_returns_bad_request(self):
         self.assertEqual(self.client.get('/irrigation/', {'from': 'bad'}).status_code, 400)
@@ -195,6 +194,7 @@ class MaxicomImportTests(TestCase):
 
     def _run_import(self, flow_exit=0):
         tables = {
+            'SITE_CF': [{'IndexNumber': '7', 'SiteNumber': '7', 'IndexName': 'Site Seven'}],
             'CTROL_CF': [{'IndexNumber': '900707', 'IndexName': 'SAT 7-1',
                           'ControllerSiteNumber': '7', 'ControllerLinkChannel': '1'}],
             'STATN_CF': [{'IndexNumber': '900701', 'StationSiteNumber': '7',
