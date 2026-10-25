@@ -267,14 +267,15 @@ def _populate_workspace_data(ws):
         a['runs'] += 1
         a['sites'].add(sid)
     for fd, liters in MaxicomFlowDaily.objects.filter(
-            flow_day__gte=since.strftime('%Y%m%d'), flow_day__lte=today.strftime('%Y%m%d')
+            flow_day__gte=since.strftime('%Y%m%d'), flow_day__lte=today.strftime('%Y%m%d'),
+            zone__join_site=True
     ).values_list('flow_day', 'liters'):
         key = f'{fd[:4]}-{fd[4:6]}-{fd[6:8]}'
         agg.setdefault(key, {'min': 0, 'runs': 0, 'sites': set(), 'lit': 0})
         agg[key]['lit'] += (liters or 0)
     with open(os.path.join(ws, 'irrigation_daily.csv'), 'w', newline='', encoding='utf-8-sig') as f:
         w = csv.writer(f)
-        w.writerow(['日期', '运行分钟', '运行次数', '活跃站点数', '浇水量升'])
+        w.writerow(['日期', '运行分钟', '运行次数', '活跃站点数', '流量站点汇总升'])
         for k in sorted(agg):
             a = agg[k]
             w.writerow([k, a['min'], a['runs'], len(a['sites']), a['lit']])
@@ -836,11 +837,11 @@ def query_irrigation_runtime(start_date: str = "", end_date: str = "", limit: in
 
 @tool
 def query_flow_daily(start_date: str = "", end_date: str = "", limit: int = 15) -> str:
-    """查询 Maxicom 每日浇水量（升）——流量计按灌溉日聚合的读数（XA_FLOZO）。
+    """查询 Maxicom FS Low/High、WD、Toilet 等流量区的每日用水记录。
 
-    返回逐日总浇水量（升/立方米）与按流量区域的分布。与 query_irrigation_runtime 的
-    运行时长互补（时长大≠水量大，无流量计的站点不在此表）。导入约滞后 1-2 天，
-    最近一两天可能偏小或缺数。
+    Site 汇总只计入 Rain Bird 标记 join_site 的区域，分区明细保留其他流量区并标记。
+    Site 是源站点，不可把其内部编号当成 CCU 编号；不叠加站点运行估算。
+    流量可包含生活/厕所用水，不能全部称为灌溉量。导入可能滞后 1-2 天。
 
     Args:
         start_date: 起始灌溉日 YYYY-MM-DD，留空默认最近7天
@@ -854,21 +855,28 @@ def query_flow_daily(start_date: str = "", end_date: str = "", limit: int = 15) 
     start = _parse_date(start_date) or (end - timedelta(days=7))
     qs = MaxicomFlowDaily.objects.filter(
         flow_day__gte=start.strftime('%Y%m%d'), flow_day__lte=end.strftime('%Y%m%d'))
+    if start > end:
+        return json.dumps({'error': '结束日期早于开始日期'}, ensure_ascii=False)
     day_lit, zone_lit = {}, {}
-    for fd, zid, liters in qs.values_list('flow_day', 'zone_id', 'liters'):
+    for fd, zid, liters, included in qs.values_list('flow_day', 'zone_id', 'liters', 'zone__join_site'):
         day = f'{fd[:4]}-{fd[4:6]}-{fd[6:8]}'
-        day_lit[day] = day_lit.get(day, 0) + (liters or 0)
+        if included:
+            day_lit[day] = day_lit.get(day, 0) + (liters or 0)
         zone_lit[zid] = zone_lit.get(zid, 0) + (liters or 0)
     zones = MaxicomFlowZone.objects.select_related('site').in_bulk(zone_lit)
     by_zone = sorted(
         ({'流量区域': str(zones[zid]) if zid in zones else f'zone#{zid}',
-          '浇水量升': v} for zid, v in zone_lit.items()),
-        key=lambda x: -x['浇水量升'])[:limit]
-    days = [{'灌溉日': k, '浇水量升': v, '浇水量立方米': round(v / 1000, 1)}
+          '源Site内部编号': zones[zid].source_site_index,
+          '源Site显示编号': zones[zid].source_site_number,
+          '计入站点汇总': zones[zid].join_site,
+          '水量升': v} for zid, v in zone_lit.items()),
+        key=lambda x: -x['水量升'])[:max(1, min(limit, 200))]
+    days = [{'灌溉日': k, '站点汇总水量升': v, '站点汇总水量立方米': round(v / 1000, 1)}
             for k, v in sorted(day_lit.items())]
     return json.dumps({
         'date_range': [start.isoformat(), end.isoformat()],
-        '总浇水量升': sum(day_lit.values()),
+        '站点汇总水量升': sum(day_lit.values()),
+        '统计口径': '按源 Site 的计入设置汇总；分区明细有重叠，不再次相加，不含运行时长估算。数值沿用流量导入倍率。',
         '逐日汇总': days,
         '按流量区域分布': by_zone,
     }, ensure_ascii=False)
