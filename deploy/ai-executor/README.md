@@ -31,7 +31,7 @@ cd internal_server
 ../.venv/bin/python manage.py check_ai_executor
 ```
 
-该命令只创建临时假数据，不调用模型、不读取业务记录。它验证非特权账号、根目录不可写、仅 loopback 网络、读表及导出 Excel。必须出现 `Isolated AI executor verified with synthetic data.` 才能把计算功能记作已启用。它不能替代资源限制/并发压测或主机隔离评估。
+该命令只创建临时假数据，不调用模型、不读取业务记录。它验证非特权账号、根目录不可写、仅 loopback 网络、资源限额、读表、导出 Excel 及中文 PNG。必须出现 `Isolated AI executor verified with synthetic data.` 才能把计算功能记作已启用。它不能替代资源限制/并发压测或主机隔离评估。
 
 ## 应用发布顺序
 
@@ -44,7 +44,7 @@ cd internal_server
 7. 恢复定时任务。下一次成功导入才会生成真实的新鲜度记录；升级后首次显示“暂无记录”是正常现象。现有分钟值不重算。K02 归属与元数据在正常下一次导入更新，再执行既有 `populate_zone_maxicom_runtime` 步骤。
 8. 验证手机收到 PWA 更新提示并重新打开；检查新的脚本版本和 `irrigation-shell-20261026-business-1`。有未提交表单时不要强制刷新。
 
-本次 SSH 只读检查发现生产服务运行旧版 `8bb190d`，未安装 Docker/Podman/bwrap，**没有实施上述发布或环境安装**。先完成运行环境准备，再启用 Python 分析。
+2026-10-26 已完成生产部署：应用 `3f8d38f6`、rootless Docker 用户服务及 cgroup v2 限制已验收，私有 AI 历史已迁移。生产配置下的自检成功导出 Excel 和中文 PNG。完整记录见 [部署验收](../../docs/reviews/2026-10-26-business-hardening-release.md)。
 
 ## 回滚及操作语义
 
@@ -54,3 +54,10 @@ cd internal_server
 - 提交回执不是离线队列。结果不明时复用原提交编号核对/重试；文字草稿按账号隔离、保留 24 小时，可恢复或清除，不保存照片/完整区域和物料选择。浏览器禁止存储时仅当前页面内保留提交编号。
 - 库存数量沿用现有整数模型。小数/负数/NaN/Infinity 被拒绝，不静默截断；历史账实差异应先核查再单独修账，本次不自动重算。
 - 全局最多 3 个 AI 分析、每账号 1 个，当前生产 4 个同步 worker 至少保留 1 个给普通页面。这是容量保护，不是将任务迁出 HTTP 的分布式作业系统；未来扩容需结合独立队列、数据库和实际负载评估。
+
+
+## 网络受限环境的本次构建记录
+
+生产无法直接访问 Docker Hub 时，采用 [DaoCloud 镜像缓存](https://github.com/DaoCloud/public-image-mirror)按官方仓库确认的 manifest 摘要拉取基础镜像。安装包通过 PyPI 缓存下载，全部与 PyPI 官方 SHA-256 一致，再以 `--network=none` 离线构建。缓存服务只获取公共包，不传入应用配置或业务文件。
+
+回滚目录 `deployment_backups/business-hardening.mBFVRi` 中的 `executor-context/Dockerfile`、`requirements-offline.txt`、`executor-provenance.json` 记录本次完整构建；`executor-image.tar.gz` 保存已验收镜像。离线 COPY 的公共配置必须为 0644，字体目录为 0755，确保 UID 65534 可读取。生产环境变量仍使用本说明中的三个固定键。
