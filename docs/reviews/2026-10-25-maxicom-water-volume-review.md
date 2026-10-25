@@ -262,3 +262,91 @@ The runtime reference cases already supplied by the operator must remain unchang
 **Status:** investigation complete; these water-volume corrections have not been
 implemented or deployed by this investigation. Existing runtime/timezone fixes
 remain in place.
+
+## Subsequent FS-record repair — 2026-10-25
+
+The operator clarified that the target is FS Low/High, WD FS and Toilet FS water
+records, independently of the already checked CCU–satellite–station minutes. They
+confirmed the source display uses liters but could not supply a water-volume
+reference. No additional reference or station-flow configuration was requested.
+
+Release `8bb190dd` therefore fixes the confirmed flow-data defects while preserving
+the existing raw-value multiplier. It does **not** claim an independently verified
+liters conversion, and does not change the runtime import, station grouping,
+runtime values or station identities to implement this water-record repair.
+
+Implemented:
+
+- Flow-zone source Site internal key, displayed number/name and zone number are
+  retained separately. Geographic Patch is optional; every source flow zone is
+  retained, including previously omitted real Sites and the unmatched test Site.
+- The water page has its own source Site selector and zone details, preserving
+  original names such as FS/WD/Toilet. Runtime CCU filtering/paging cannot relabel
+  the water records or drop a different source Site's readings. Shared meters stay
+  under their original source Site; they are not divided among geographic CCUs.
+- `join_site` governs the Site summary. Excluded submeter zones remain visible
+  with an explicit detail-only marker. The unsupported runtime estimate and
+  arithmetic reference total are removed from the water page. The AI daily tool
+  and newly generated daily workspace CSVs also honor the inclusion flag.
+- Migration `0133_flow_source_identity_and_samples` adds source metadata and a
+  versioned compressed sample payload. Each sparse sample retains its original
+  second offset and integer `value × multiplier`. Complete days use the indexed
+  daily cache; partial days use their retained timestamps with inclusive bounds.
+  Daily-only legacy rows explicitly decline precise partial-day totals until
+  reimported, rather than present complete-day values for an hourly window.
+- The `--flow-only` importer updates flow data transactionally and preserves flow
+  zone IDs/legacy reading relations. Missing, empty, malformed or inconsistent
+  exports preserve prior flow records. It does not write runtime/business tables.
+
+Verification:
+
+- **231 Django tests: 230 passed, one existing DXF-sample skip.** The full suite
+  uses test-only in-memory caches: the restricted Windows environment's file
+  cache caused an unrelated DXF test to spin in temporary-file creation. No
+  production cache configuration was changed. The targeted flow/time suite has
+  26 tests, including 11 new independent-flow regressions.
+- Desktop 1280px and phone 390×844 previews were inspected using disposable data.
+  Document width equals viewport width; the phone detail table has an intentional
+  horizontal scroller. Selection, AJAX refresh and keyboard collapse/expand work;
+  selecting a runtime CCU leaves the independently selected water Site intact.
+  Local screenshots are `assets/flow-sensors-desktop.png` and
+  `assets/flow-sensors-phone.png` and contain **test data**, not production figures.
+- An isolated fresh production database copy was migrated and flow-only imported
+  from the original **MC2Backup10252026.zip**. It retained all **93 zones**,
+  **4,050,857 timed readings**, **24,905 zone-days** and the exact unchanged sum of
+  **257,387,774 raw volume units**. Compressed timestamps/values occupy 11,651,255
+  bytes. The flow-only import took 4.71 seconds in that verification run.
+- All per-zone values match an independent direct export of the source for three
+  Shanghai windows: September 11 22:00 → September 12 21:59:59;
+  September 20 06:54 → September 21 06:54:59; and October 24 07:01 → October 25
+  07:01:59. Each Site summary matches its included zones, and the web JSON matches
+  the shared calculation. This validates source-record preservation/window
+  selection, not a new manufacturer-screen liters reconciliation.
+- Full-row hashes of Patch, Zone, User, Runtime, Controller, legacy FlowReading,
+  WorkReport, WorkReportEntry, GeneratedWorkOrder, MaintenancePlan,
+  InventoryTransaction and InventoryTransactionLine are unchanged in the isolated
+  before/after run.
+
+The private verification/release directory is
+`/home/noname/irrigation/deployment_backups/flow-volume-review.Xb0PJn`, with the
+original latest ZIP/MDB, `candidate.sqlite3`, `validation.json`, logs, a fresh
+`db-before-release.sqlite3`, `pre-release-head.txt` and `pre-release-source.tar`.
+GitHub fetch timed out; the same pushed branch commit was transferred through the
+authorized SSH jump connection as `release.bundle`. Production was fast-forwarded,
+the migration applied, and the latest MDB flow-only import completed successfully.
+Service restart and final live checks are recorded after completion below.
+
+Final release checks:
+
+- `horticulture` is active/running with zero automatic restarts; restart timestamp
+  **2026-10-25 15:03:13 CST**. Public `/irrigation/` returns its expected HTTP 302
+  login redirect without an authenticated session.
+- A read-only production RequestFactory invocation returns HTTP 200 for both the
+  rendered page and JSON. It finds 23 source Sites, 93 active zones, 24,905
+  zone-days and the same 257,387,774 stored raw units. The September 12 East
+  Entrance included-zone summary is 2,803 rather than the doubled 5,606. The
+  production HTML contains the independent Site selector and no reference sum.
+- These live checks read existing data/user state; no temporary production user,
+  forced login session, sample rows or account permission changes were created.
+- Production source release is `8bb190dd`. Remaining unit-conversion uncertainty
+  is explicitly unchanged; no new request for an operator example is pending.
