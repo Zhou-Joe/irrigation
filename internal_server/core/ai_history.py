@@ -96,8 +96,28 @@ def prune_history(*, now=None, dry_run=False, reconcile_dates=False):
                 _remove_workspace(root, thread_id)
                 AIConversation.objects.filter(pk=thread_id, created_at__lt=start).delete()
             removed += 1
+        # Pre-registration/QA state can lack a conversation row entirely. Read
+        # message IDs before owners, so a newly registered live thread is never
+        # mistaken for an orphan while another worker starts it.
+        state_ids = set()
+        if connection:
+            for table in ('checkpoints', 'writes'):
+                if table in tables:
+                    state_ids.update(row[0] for row in connection.execute(f'SELECT DISTINCT thread_id FROM {table}'))
+        known = set(AIConversation.objects.values_list('pk', flat=True))
+        orphans = state_ids - known - set(ids)
+        for thread_id in orphans:
+            if not dry_run:
+                with connection:
+                    for table in ('checkpoints', 'writes'):
+                        if table in tables:
+                            connection.execute(f'DELETE FROM {table} WHERE thread_id=?', (thread_id,))
+                from .ai_storage import THREAD_RE
+                if THREAD_RE.fullmatch(thread_id):
+                    _remove_workspace(root, thread_id)
         return {'day': start.date().isoformat(), 'expired': len(ids), 'removed': removed,
-                'active_deferred': len(active), 'dates_reconciled': reconciled, 'dry_run': dry_run}
+                'active_deferred': len(active), 'dates_reconciled': reconciled,
+                'orphan_threads_removed': len(orphans), 'dry_run': dry_run}
     finally:
         if connection:
             connection.close()

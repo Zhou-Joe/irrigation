@@ -105,3 +105,13 @@ class DailyAIHistoryTests(TestCase):
         result=prune_history(now=self.now,reconcile_dates=True)
         self.assertEqual(result['dates_reconciled'],1)
         self.assertFalse(AIConversation.objects.exists())
+
+    def test_unregistered_checkpoint_and_pending_writes_are_cleaned_without_touching_today(self):
+        with closing(sqlite3.connect(self.database)) as db, db:
+            db.execute('INSERT INTO checkpoints VALUES(?,?,?,?)',('u1-e2e-legacy','json',b'{}','1'))
+            db.execute('INSERT INTO writes VALUES(?,?)',('u1-e2e-legacy','fixture'))
+        result=prune_history(now=self.now)
+        self.assertEqual(result['orphan_threads_removed'],1)
+        with closing(sqlite3.connect(self.database)) as db:
+            self.assertEqual(db.execute('SELECT DISTINCT thread_id FROM checkpoints').fetchall(),[(self.today.pk,)])
+            self.assertEqual(db.execute('SELECT DISTINCT thread_id FROM writes').fetchall(),[(self.today.pk,)])
