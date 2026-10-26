@@ -21,3 +21,13 @@ chat assets with the disposable local fixture and synthetic responses. Verified
 the desktop floating chat, 390-pixel phone layout, Chinese/English wrapping,
 launcher/header/welcome artwork and preparation state. No model calls or production
 business operations were used for these checks. This change needs no migration.
+
+Production: deployed `49ecf260` on 2026-10-27 through the existing SSH tunnel after
+the office GitHub fetch timed out. Collected static assets, passed Django checks,
+and restarted `horticulture` successfully. Public avatar directories use mode 755;
+the release recovery directory remains private. The running service served the
+original image with HTTP 200 and the matching hash. The public production page
+was checked in the browser: all three mounted portrait images decoded at 1312
+pixels wide, and the new heading/greeting rendered correctly. No live AI request
+was sent. The source snapshot and deployment log are retained under
+`deployment_backups/everflow-20261027/` on the office server.
