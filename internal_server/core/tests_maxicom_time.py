@@ -211,7 +211,8 @@ class MaxicomImportTests(TestCase):
         process.wait.return_value = flow_exit
         with patch(self.module + '._mdb_rows', side_effect=lambda _path, table: iter(tables[table])) as exported, \
                 patch(self.module + '.os.path.exists', return_value=True), \
-                patch(self.module + '.subprocess.Popen', return_value=process):
+                patch(self.module + '.subprocess.Popen', return_value=process), \
+                patch('core.sensor_flow.import_sensor_flow'):
             call_command('import_maxicom_mdb_linux', mdb='fixture.mdb', stdout=io.StringIO())
         self.assertNotIn('XA_RuntimeProject', [call.args[1] for call in exported.call_args_list])
 

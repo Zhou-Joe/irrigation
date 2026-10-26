@@ -65,6 +65,8 @@ class Command(BaseCommand):
         parser.add_argument('--source-archive', default='', help='Source backup name for the sync indicator')
         parser.add_argument('--flow-only', action='store_true',
                             help='Import flow records without changing station runtime')
+        parser.add_argument('--sensors-only', action='store_true',
+                            help='Import physical flow sensors without changing runtime or FLO WATCH')
         parser.add_argument('--mdb', type=str, required=True,
                             help='Path to Maxicom2.mdb')
 
@@ -73,6 +75,11 @@ class Command(BaseCommand):
         mdb_path = options['mdb']
         if not os.path.exists(mdb_path):
             raise CommandError(f'MDB not found: {mdb_path}')
+
+        if options.get('sensors_only'):
+            from core.sensor_flow import import_sensor_flow
+            import_sensor_flow(mdb_path, _mdb_rows, subprocess.Popen, self.stdout)
+            return
 
         if options.get('flow_only'):
             self._import_flow(mdb_path)
@@ -298,4 +305,7 @@ class Command(BaseCommand):
 
     def _import_flow(self, mdb_path):
         from core.flow_import import import_flow
-        import_flow(mdb_path, _mdb_rows, subprocess.Popen, self.stdout)
+        from core.sensor_flow import import_sensor_flow
+        with transaction.atomic():
+            import_flow(mdb_path, _mdb_rows, subprocess.Popen, self.stdout)
+            import_sensor_flow(mdb_path, _mdb_rows, subprocess.Popen, self.stdout)

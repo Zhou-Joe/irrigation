@@ -51,7 +51,8 @@ class FlowImportTests(TestCase):
         process.wait.return_value = exit_code
         with patch(self.module + '.os.path.exists', return_value=True), \
                 patch(self.module + '._mdb_rows', side_effect=lambda _p, t: iter(self.tables[t])) as exported, \
-                patch(self.module + '.subprocess.Popen', return_value=process):
+                patch(self.module + '.subprocess.Popen', return_value=process), \
+                patch('core.sensor_flow.import_sensor_flow'):
             call_command('import_maxicom_mdb_linux', mdb='fixture.mdb', flow_only=True, stdout=io.StringIO())
         self.assertEqual({c.args[1] for c in exported.call_args_list}, {'SITE_CF', 'FLOZO_CF'})
 
@@ -166,8 +167,8 @@ class FlowViewTests(TestCase):
         self.assertNotContains(page, '参考合计')
 
     def test_ai_total_and_details_use_the_same_inclusion_flags(self):
-        from core.ai_agent import query_flow_daily
-        data = json.loads(query_flow_daily.invoke({'start_date': '2026-09-12', 'end_date': '2026-09-12'}))
-        self.assertEqual(data['站点汇总水量升'], 2803)
+        from core.ai_agent import query_flow_watch_reference
+        data = json.loads(query_flow_watch_reference.invoke({'start_date': '2026-09-12', 'end_date': '2026-09-12'}))
+        self.assertEqual(data['站点源记录参考值'], 2803)
         self.assertEqual(len(data['按流量区域分布']), 2)
         self.assertEqual({z['计入站点汇总'] for z in data['按流量区域分布']}, {True, False})

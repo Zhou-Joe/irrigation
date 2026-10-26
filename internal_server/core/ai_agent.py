@@ -245,7 +245,7 @@ def _populate_workspace_data(ws):
     # Irrigation daily aggregates (近90天) — 灌溉日 × (运行分钟/次数/活跃站点/浇水量)。
     # 天气×灌溉、周报类跨表分析的主表；灌溉日 = 前日22:00→当日21:59（跨夜归次日）。
     from core.irrig_time import irrigation_day_utc_bounds, irrigation_day_for_utc
-    from core.models import MaxicomRuntime, MaxicomFlowDaily, GeneratedWorkOrder
+    from core.models import MaxicomRuntime, MaxicomFlowDaily, MaxicomSensorDaily, GeneratedWorkOrder
     f14, t14 = irrigation_day_utc_bounds(since, today)
 
     def _irr_day(ts):
@@ -277,6 +277,17 @@ def _populate_workspace_data(ws):
         for k in sorted(agg):
             a = agg[k]
             w.writerow([k, a['min'], a['runs'], len(a['sites']), a['lit']])
+
+    # Master/submeters may measure the same water; keep physical sensors separate.
+    with open(os.path.join(ws, 'water_sensors_daily.csv'), 'w', newline='', encoding='utf-8-sig') as f:
+        w = csv.writer(f)
+        w.writerow(['灌溉日', '源Site内部编号', '源Site显示编号', '站点名称', '传感器', '通道', '实际水量（升）'])
+        for row in MaxicomSensorDaily.objects.filter(
+                flow_day__gte=since.strftime('%Y%m%d'), flow_day__lte=today.strftime('%Y%m%d')
+                ).select_related('sensor').order_by('flow_day', 'sensor_id'):
+            s = row.sensor
+            w.writerow([row.flow_day, s.source_site_index, s.source_site_number, s.source_site_name,
+                        s.name, s.channel, round(row.microliters / 1_000_000, 2)])
 
     # PM 派发工单 (近90天计划日) — PM 执行率/逾期分析。
     with open(os.path.join(ws, 'pm_orders.csv'), 'w', newline='', encoding='utf-8-sig') as f:
@@ -834,12 +845,35 @@ def query_irrigation_runtime(start_date: str = "", end_date: str = "", limit: in
 
 
 @tool
-def query_flow_daily(start_date: str = "", end_date: str = "", limit: int = 15) -> str:
-    """查询 Maxicom FS Low/High、WD、Toilet 等流量区的每日用水记录。
+def query_flow_daily(start_date: str = "", end_date: str = "", limit: int = 100) -> str:
+    """查询实际 FS Low/High、WP/WD、Toilet 传感器的每日升数。
+
+    来自 XA_LOG D/F 实际脉冲及当时倍率。按传感器单独列出，不把重叠总表分表相加。
+    参数为灌溉日 YYYY-MM-DD（前日22:00到当日21:59:59），默认最近7天。
+    """
+    from core.models import MaxicomSensorDaily
+    end = _parse_date(end_date) or date.today()
+    start = _parse_date(start_date) or (end - timedelta(days=7))
+    if start > end:
+        return json.dumps({'error': '结束日期早于开始日期'}, ensure_ascii=False)
+    rows = MaxicomSensorDaily.objects.filter(flow_day__range=(start.strftime('%Y%m%d'), end.strftime('%Y%m%d'))
+        ).select_related('sensor').order_by('flow_day', 'sensor__source_site_number', 'sensor__channel')
+    entries = [{'灌溉日': r.flow_day, '源Site内部编号': r.sensor.source_site_index,
+                '源Site显示编号': r.sensor.source_site_number, '站点名称': r.sensor.source_site_name,
+                '传感器': r.sensor.name, '通道': r.sensor.channel, '水量升': round(r.microliters / 1_000_000, 2)}
+               for r in rows[:max(1, min(limit, 1000))]]
+    return json.dumps({'date_range': [start.isoformat(), end.isoformat()], '单位已核准': True,
+        '来源': 'XA_LOG D/F 实际流量传感器', '按传感器逐日记录': entries,
+        '统计口径': '总表与分表可能重叠，不合并相加；未列出的日期/传感器需查询网页确认备份覆盖，不视为自动补零。'}, ensure_ascii=False)
+
+
+@tool
+def query_flow_watch_reference(start_date: str = "", end_date: str = "", limit: int = 15) -> str:
+    """查询 FLO WATCH 区域源记录参考值；这不是 FS 实体传感器的升数。
 
     Site 汇总只计入 Rain Bird 标记 join_site 的区域，分区明细保留其他流量区并标记。
     Site 是源站点，不可把其内部编号当成 CCU 编号；不叠加站点运行估算。
-    流量可包含生活/厕所用水，不能全部称为灌溉量。导入可能滞后 1-2 天。
+    单位尚未核准。请用 query_flow_daily 查询独立实际流量传感器。
 
     Args:
         start_date: 起始灌溉日 YYYY-MM-DD，留空默认最近7天
@@ -867,13 +901,13 @@ def query_flow_daily(start_date: str = "", end_date: str = "", limit: int = 15) 
           '源Site内部编号': zones[zid].source_site_index,
           '源Site显示编号': zones[zid].source_site_number,
           '计入站点汇总': zones[zid].join_site,
-          '水量升': v} for zid, v in zone_lit.items()),
-        key=lambda x: -x['水量升'])[:max(1, min(limit, 200))]
-    days = [{'灌溉日': k, '站点汇总水量升': v, '站点汇总水量立方米': round(v / 1000, 1)}
+          '源记录参考值': v} for zid, v in zone_lit.items()),
+        key=lambda x: -x['源记录参考值'])[:max(1, min(limit, 200))]
+    days = [{'灌溉日': k, '站点源记录参考值': v}
             for k, v in sorted(day_lit.items())]
     return json.dumps({
         'date_range': [start.isoformat(), end.isoformat()],
-        '站点汇总水量升': sum(day_lit.values()),
+        '站点源记录参考值': sum(day_lit.values()),
         '单位已核准': False,
         '单位说明': '当前为源记录数值汇总；升数换算及采样口径尚待核准，请作为参考。',
         '统计口径': '按源 Site 的计入设置汇总；分区明细有重叠，不再次相加，不含运行时长估算。数值沿用流量导入倍率。',
@@ -1692,6 +1726,7 @@ def run_python_code(code: str, description: str = "", runtime: ToolRuntime = Non
     - project_consumption.csv（出库-项目实际消耗，含单价金额）
     - pm_workorders.csv（PM 完成工单：工时/班次/区域）
     - irrigation_daily.csv（逐日灌溉汇总：运行分钟/次数/活跃站点数/流量源记录汇总，升数尚待核准，灌溉日口径）
+    - water_sensors_daily.csv（实际传感器逐日升数，按Site/通道独立列出，总表分表不要相加）
     - pm_orders.csv（PM 派发工单：计划日/截止/PM编号/班组/状态）
 
     用法规则：
@@ -1734,6 +1769,7 @@ ALL_TOOLS = [
     run_python_code,
     query_irrigation_runtime,
     query_flow_daily,
+    query_flow_watch_reference,
     query_pm_dispatch,
     query_pm_plans,
     query_inventory,

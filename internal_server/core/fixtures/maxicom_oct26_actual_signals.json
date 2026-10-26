@@ -1,0 +1,1047 @@
+{
+  "source": "MC2Backup10262026.zip XA_LOG: selected station and physical sensor readings only",
+  "stations": [
+    {
+      "XactStamp": "20261023000837",
+      "XactIndex": "1467",
+      "ControllerChannel": "7",
+      "SignalIndex": "1",
+      "SignalTable": "S",
+      "SignalType": "M",
+      "SignalValue": "64",
+      "SignalMultiplier": "1"
+    },
+    {
+      "XactStamp": "20261023010237",
+      "XactIndex": "1467",
+      "ControllerChannel": "7",
+      "SignalIndex": "1",
+      "SignalTable": "S",
+      "SignalType": "M",
+      "SignalValue": "54",
+      "SignalMultiplier": "1"
+    },
+    {
+      "XactStamp": "20261023014737",
+      "XactIndex": "1467",
+      "ControllerChannel": "7",
+      "SignalIndex": "1",
+      "SignalTable": "S",
+      "SignalType": "M",
+      "SignalValue": "43",
+      "SignalMultiplier": "1"
+    },
+    {
+      "XactStamp": "20261023022025",
+      "XactIndex": "1467",
+      "ControllerChannel": "7",
+      "SignalIndex": "1",
+      "SignalTable": "S",
+      "SignalType": "M",
+      "SignalValue": "33",
+      "SignalMultiplier": "1"
+    },
+    {
+      "XactStamp": "20261023030130",
+      "XactIndex": "1467",
+      "ControllerChannel": "7",
+      "SignalIndex": "1",
+      "SignalTable": "S",
+      "SignalType": "M",
+      "SignalValue": "41",
+      "SignalMultiplier": "1"
+    },
+    {
+      "XactStamp": "20261023035137",
+      "XactIndex": "1467",
+      "ControllerChannel": "7",
+      "SignalIndex": "1",
+      "SignalTable": "S",
+      "SignalType": "M",
+      "SignalValue": "48",
+      "SignalMultiplier": "1"
+    },
+    {
+      "XactStamp": "20261023050237",
+      "XactIndex": "1467",
+      "ControllerChannel": "7",
+      "SignalIndex": "1",
+      "SignalTable": "S",
+      "SignalType": "M",
+      "SignalValue": "71",
+      "SignalMultiplier": "1"
+    },
+    {
+      "XactStamp": "20261023063237",
+      "XactIndex": "1467",
+      "ControllerChannel": "7",
+      "SignalIndex": "1",
+      "SignalTable": "S",
+      "SignalType": "M",
+      "SignalValue": "88",
+      "SignalMultiplier": "1"
+    },
+    {
+      "XactStamp": "20261023073137",
+      "XactIndex": "1467",
+      "ControllerChannel": "7",
+      "SignalIndex": "1",
+      "SignalTable": "S",
+      "SignalType": "M",
+      "SignalValue": "59",
+      "SignalMultiplier": "1"
+    },
+    {
+      "XactStamp": "20261023083237",
+      "XactIndex": "1467",
+      "ControllerChannel": "7",
+      "SignalIndex": "1",
+      "SignalTable": "S",
+      "SignalType": "M",
+      "SignalValue": "59",
+      "SignalMultiplier": "1"
+    },
+    {
+      "XactStamp": "20261023121737",
+      "XactIndex": "1467",
+      "ControllerChannel": "7",
+      "SignalIndex": "1",
+      "SignalTable": "S",
+      "SignalType": "M",
+      "SignalValue": "215",
+      "SignalMultiplier": "1"
+    },
+    {
+      "XactStamp": "20261023140037",
+      "XactIndex": "1467",
+      "ControllerChannel": "7",
+      "SignalIndex": "1",
+      "SignalTable": "S",
+      "SignalType": "M",
+      "SignalValue": "95",
+      "SignalMultiplier": "1"
+    },
+    {
+      "XactStamp": "20261023150037",
+      "XactIndex": "1467",
+      "ControllerChannel": "7",
+      "SignalIndex": "1",
+      "SignalTable": "S",
+      "SignalType": "M",
+      "SignalValue": "29",
+      "SignalMultiplier": "1"
+    },
+    {
+      "XactStamp": "20261023210037",
+      "XactIndex": "1397",
+      "ControllerChannel": "5",
+      "SignalIndex": "1",
+      "SignalTable": "S",
+      "SignalType": "M",
+      "SignalValue": "29",
+      "SignalMultiplier": "1"
+    },
+    {
+      "XactStamp": "20261023223737",
+      "XactIndex": "1397",
+      "ControllerChannel": "5",
+      "SignalIndex": "1",
+      "SignalTable": "S",
+      "SignalType": "M",
+      "SignalValue": "58",
+      "SignalMultiplier": "1"
+    },
+    {
+      "XactStamp": "20261023230325",
+      "XactIndex": "1467",
+      "ControllerChannel": "7",
+      "SignalIndex": "1",
+      "SignalTable": "S",
+      "SignalType": "M",
+      "SignalValue": "3",
+      "SignalMultiplier": "1"
+    },
+    {
+      "XactStamp": "20261024000837",
+      "XactIndex": "1467",
+      "ControllerChannel": "7",
+      "SignalIndex": "1",
+      "SignalTable": "S",
+      "SignalType": "M",
+      "SignalValue": "61",
+      "SignalMultiplier": "1"
+    },
+    {
+      "XactStamp": "20261024010337",
+      "XactIndex": "1467",
+      "ControllerChannel": "7",
+      "SignalIndex": "1",
+      "SignalTable": "S",
+      "SignalType": "M",
+      "SignalValue": "53",
+      "SignalMultiplier": "1"
+    },
+    {
+      "XactStamp": "20261024020337",
+      "XactIndex": "1467",
+      "ControllerChannel": "7",
+      "SignalIndex": "1",
+      "SignalTable": "S",
+      "SignalType": "M",
+      "SignalValue": "58",
+      "SignalMultiplier": "1"
+    },
+    {
+      "XactStamp": "20261024030137",
+      "XactIndex": "1467",
+      "ControllerChannel": "7",
+      "SignalIndex": "1",
+      "SignalTable": "S",
+      "SignalType": "M",
+      "SignalValue": "54",
+      "SignalMultiplier": "1"
+    },
+    {
+      "XactStamp": "20261024035337",
+      "XactIndex": "1467",
+      "ControllerChannel": "7",
+      "SignalIndex": "1",
+      "SignalTable": "S",
+      "SignalType": "M",
+      "SignalValue": "50",
+      "SignalMultiplier": "1"
+    },
+    {
+      "XactStamp": "20261024050337",
+      "XactIndex": "1467",
+      "ControllerChannel": "7",
+      "SignalIndex": "1",
+      "SignalTable": "S",
+      "SignalType": "M",
+      "SignalValue": "66",
+      "SignalMultiplier": "1"
+    },
+    {
+      "XactStamp": "20261024063337",
+      "XactIndex": "1467",
+      "ControllerChannel": "7",
+      "SignalIndex": "1",
+      "SignalTable": "S",
+      "SignalType": "M",
+      "SignalValue": "86",
+      "SignalMultiplier": "1"
+    },
+    {
+      "XactStamp": "20261024073137",
+      "XactIndex": "1467",
+      "ControllerChannel": "7",
+      "SignalIndex": "1",
+      "SignalTable": "S",
+      "SignalType": "M",
+      "SignalValue": "54",
+      "SignalMultiplier": "1"
+    },
+    {
+      "XactStamp": "20261024083337",
+      "XactIndex": "1467",
+      "ControllerChannel": "7",
+      "SignalIndex": "1",
+      "SignalTable": "S",
+      "SignalType": "M",
+      "SignalValue": "60",
+      "SignalMultiplier": "1"
+    },
+    {
+      "XactStamp": "20261024121737",
+      "XactIndex": "1467",
+      "ControllerChannel": "7",
+      "SignalIndex": "1",
+      "SignalTable": "S",
+      "SignalType": "M",
+      "SignalValue": "208",
+      "SignalMultiplier": "1"
+    },
+    {
+      "XactStamp": "20261024140037",
+      "XactIndex": "1467",
+      "ControllerChannel": "7",
+      "SignalIndex": "1",
+      "SignalTable": "S",
+      "SignalType": "M",
+      "SignalValue": "99",
+      "SignalMultiplier": "1"
+    },
+    {
+      "XactStamp": "20261024150037",
+      "XactIndex": "1467",
+      "ControllerChannel": "7",
+      "SignalIndex": "1",
+      "SignalTable": "S",
+      "SignalType": "M",
+      "SignalValue": "29",
+      "SignalMultiplier": "1"
+    },
+    {
+      "XactStamp": "20261024230325",
+      "XactIndex": "1467",
+      "ControllerChannel": "7",
+      "SignalIndex": "1",
+      "SignalTable": "S",
+      "SignalType": "M",
+      "SignalValue": "3",
+      "SignalMultiplier": "1"
+    },
+    {
+      "XactStamp": "20261025000837",
+      "XactIndex": "1467",
+      "ControllerChannel": "7",
+      "SignalIndex": "1",
+      "SignalTable": "S",
+      "SignalType": "M",
+      "SignalValue": "63",
+      "SignalMultiplier": "1"
+    },
+    {
+      "XactStamp": "20261025010337",
+      "XactIndex": "1467",
+      "ControllerChannel": "7",
+      "SignalIndex": "1",
+      "SignalTable": "S",
+      "SignalType": "M",
+      "SignalValue": "53",
+      "SignalMultiplier": "1"
+    },
+    {
+      "XactStamp": "20261025020337",
+      "XactIndex": "1467",
+      "ControllerChannel": "7",
+      "SignalIndex": "1",
+      "SignalTable": "S",
+      "SignalType": "M",
+      "SignalValue": "60",
+      "SignalMultiplier": "1"
+    },
+    {
+      "XactStamp": "20261025030137",
+      "XactIndex": "1467",
+      "ControllerChannel": "7",
+      "SignalIndex": "1",
+      "SignalTable": "S",
+      "SignalType": "M",
+      "SignalValue": "56",
+      "SignalMultiplier": "1"
+    },
+    {
+      "XactStamp": "20261025035337",
+      "XactIndex": "1467",
+      "ControllerChannel": "7",
+      "SignalIndex": "1",
+      "SignalTable": "S",
+      "SignalType": "M",
+      "SignalValue": "50",
+      "SignalMultiplier": "1"
+    },
+    {
+      "XactStamp": "20261025050337",
+      "XactIndex": "1467",
+      "ControllerChannel": "7",
+      "SignalIndex": "1",
+      "SignalTable": "S",
+      "SignalType": "M",
+      "SignalValue": "70",
+      "SignalMultiplier": "1"
+    },
+    {
+      "XactStamp": "20261025063337",
+      "XactIndex": "1467",
+      "ControllerChannel": "7",
+      "SignalIndex": "1",
+      "SignalTable": "S",
+      "SignalType": "M",
+      "SignalValue": "88",
+      "SignalMultiplier": "1"
+    },
+    {
+      "XactStamp": "20261025073137",
+      "XactIndex": "1467",
+      "ControllerChannel": "7",
+      "SignalIndex": "1",
+      "SignalTable": "S",
+      "SignalType": "M",
+      "SignalValue": "56",
+      "SignalMultiplier": "1"
+    },
+    {
+      "XactStamp": "20261025083337",
+      "XactIndex": "1467",
+      "ControllerChannel": "7",
+      "SignalIndex": "1",
+      "SignalTable": "S",
+      "SignalType": "M",
+      "SignalValue": "60",
+      "SignalMultiplier": "1"
+    },
+    {
+      "XactStamp": "20261025121737",
+      "XactIndex": "1467",
+      "ControllerChannel": "7",
+      "SignalIndex": "1",
+      "SignalTable": "S",
+      "SignalType": "M",
+      "SignalValue": "220",
+      "SignalMultiplier": "1"
+    },
+    {
+      "XactStamp": "20261025140037",
+      "XactIndex": "1467",
+      "ControllerChannel": "7",
+      "SignalIndex": "1",
+      "SignalTable": "S",
+      "SignalType": "M",
+      "SignalValue": "101",
+      "SignalMultiplier": "1"
+    },
+    {
+      "XactStamp": "20261025150037",
+      "XactIndex": "1467",
+      "ControllerChannel": "7",
+      "SignalIndex": "1",
+      "SignalTable": "S",
+      "SignalType": "M",
+      "SignalValue": "29",
+      "SignalMultiplier": "1"
+    },
+    {
+      "XactStamp": "20261025230225",
+      "XactIndex": "1467",
+      "ControllerChannel": "7",
+      "SignalIndex": "1",
+      "SignalTable": "S",
+      "SignalType": "M",
+      "SignalValue": "2",
+      "SignalMultiplier": "1"
+    }
+  ],
+  "sensors": [
+    {
+      "XactStamp": "20261023000839",
+      "XactIndex": "82",
+      "ControllerChannel": "15",
+      "SignalIndex": "1",
+      "SignalTable": "D",
+      "SignalType": "F",
+      "SignalValue": "1",
+      "SignalMultiplier": "18.494055"
+    },
+    {
+      "XactStamp": "20261023014739",
+      "XactIndex": "82",
+      "ControllerChannel": "15",
+      "SignalIndex": "1",
+      "SignalTable": "D",
+      "SignalType": "F",
+      "SignalValue": "1",
+      "SignalMultiplier": "18.494055"
+    },
+    {
+      "XactStamp": "20261023035139",
+      "XactIndex": "82",
+      "ControllerChannel": "15",
+      "SignalIndex": "1",
+      "SignalTable": "D",
+      "SignalType": "F",
+      "SignalValue": "1",
+      "SignalMultiplier": "18.494055"
+    },
+    {
+      "XactStamp": "20261023063239",
+      "XactIndex": "82",
+      "ControllerChannel": "15",
+      "SignalIndex": "1",
+      "SignalTable": "D",
+      "SignalType": "F",
+      "SignalValue": "1",
+      "SignalMultiplier": "18.494055"
+    },
+    {
+      "XactStamp": "20261023083239",
+      "XactIndex": "82",
+      "ControllerChannel": "15",
+      "SignalIndex": "1",
+      "SignalTable": "D",
+      "SignalType": "F",
+      "SignalValue": "1",
+      "SignalMultiplier": "18.494055"
+    },
+    {
+      "XactStamp": "20261023121739",
+      "XactIndex": "82",
+      "ControllerChannel": "15",
+      "SignalIndex": "1",
+      "SignalTable": "D",
+      "SignalType": "F",
+      "SignalValue": "5",
+      "SignalMultiplier": "18.494055"
+    },
+    {
+      "XactStamp": "20261023140039",
+      "XactIndex": "82",
+      "ControllerChannel": "15",
+      "SignalIndex": "1",
+      "SignalTable": "D",
+      "SignalType": "F",
+      "SignalValue": "5",
+      "SignalMultiplier": "18.494055"
+    },
+    {
+      "XactStamp": "20261023150039",
+      "XactIndex": "82",
+      "ControllerChannel": "15",
+      "SignalIndex": "1",
+      "SignalTable": "D",
+      "SignalType": "F",
+      "SignalValue": "5",
+      "SignalMultiplier": "18.494055"
+    },
+    {
+      "XactStamp": "20261023160037",
+      "XactIndex": "82",
+      "ControllerChannel": "15",
+      "SignalIndex": "1",
+      "SignalTable": "D",
+      "SignalType": "F",
+      "SignalValue": "1",
+      "SignalMultiplier": "18.494055"
+    },
+    {
+      "XactStamp": "20261023160038",
+      "XactIndex": "84",
+      "ControllerChannel": "17",
+      "SignalIndex": "1",
+      "SignalTable": "D",
+      "SignalType": "F",
+      "SignalValue": "14",
+      "SignalMultiplier": "52.840157"
+    },
+    {
+      "XactStamp": "20261023170038",
+      "XactIndex": "84",
+      "ControllerChannel": "17",
+      "SignalIndex": "1",
+      "SignalTable": "D",
+      "SignalType": "F",
+      "SignalValue": "60",
+      "SignalMultiplier": "52.840157"
+    },
+    {
+      "XactStamp": "20261023180037",
+      "XactIndex": "82",
+      "ControllerChannel": "15",
+      "SignalIndex": "1",
+      "SignalTable": "D",
+      "SignalType": "F",
+      "SignalValue": "2",
+      "SignalMultiplier": "18.494055"
+    },
+    {
+      "XactStamp": "20261023180038",
+      "XactIndex": "84",
+      "ControllerChannel": "17",
+      "SignalIndex": "1",
+      "SignalTable": "D",
+      "SignalType": "F",
+      "SignalValue": "48",
+      "SignalMultiplier": "52.840157"
+    },
+    {
+      "XactStamp": "20261023190037",
+      "XactIndex": "82",
+      "ControllerChannel": "15",
+      "SignalIndex": "1",
+      "SignalTable": "D",
+      "SignalType": "F",
+      "SignalValue": "5",
+      "SignalMultiplier": "18.494055"
+    },
+    {
+      "XactStamp": "20261023190038",
+      "XactIndex": "84",
+      "ControllerChannel": "17",
+      "SignalIndex": "1",
+      "SignalTable": "D",
+      "SignalType": "F",
+      "SignalValue": "17",
+      "SignalMultiplier": "52.840157"
+    },
+    {
+      "XactStamp": "20261023200038",
+      "XactIndex": "82",
+      "ControllerChannel": "15",
+      "SignalIndex": "1",
+      "SignalTable": "D",
+      "SignalType": "F",
+      "SignalValue": "1",
+      "SignalMultiplier": "18.494055"
+    },
+    {
+      "XactStamp": "20261023200038",
+      "XactIndex": "84",
+      "ControllerChannel": "17",
+      "SignalIndex": "1",
+      "SignalTable": "D",
+      "SignalType": "F",
+      "SignalValue": "3",
+      "SignalMultiplier": "52.840157"
+    },
+    {
+      "XactStamp": "20261023210039",
+      "XactIndex": "82",
+      "ControllerChannel": "15",
+      "SignalIndex": "1",
+      "SignalTable": "D",
+      "SignalType": "F",
+      "SignalValue": "10",
+      "SignalMultiplier": "18.494055"
+    },
+    {
+      "XactStamp": "20261023210039",
+      "XactIndex": "84",
+      "ControllerChannel": "17",
+      "SignalIndex": "1",
+      "SignalTable": "D",
+      "SignalType": "F",
+      "SignalValue": "22",
+      "SignalMultiplier": "52.840157"
+    },
+    {
+      "XactStamp": "20261023223739",
+      "XactIndex": "82",
+      "ControllerChannel": "15",
+      "SignalIndex": "1",
+      "SignalTable": "D",
+      "SignalType": "F",
+      "SignalValue": "28",
+      "SignalMultiplier": "18.494055"
+    },
+    {
+      "XactStamp": "20261023223739",
+      "XactIndex": "84",
+      "ControllerChannel": "17",
+      "SignalIndex": "1",
+      "SignalTable": "D",
+      "SignalType": "F",
+      "SignalValue": "10",
+      "SignalMultiplier": "52.840157"
+    },
+    {
+      "XactStamp": "20261024000839",
+      "XactIndex": "82",
+      "ControllerChannel": "15",
+      "SignalIndex": "1",
+      "SignalTable": "D",
+      "SignalType": "F",
+      "SignalValue": "3",
+      "SignalMultiplier": "18.494055"
+    },
+    {
+      "XactStamp": "20261024010338",
+      "XactIndex": "82",
+      "ControllerChannel": "15",
+      "SignalIndex": "1",
+      "SignalTable": "D",
+      "SignalType": "F",
+      "SignalValue": "2",
+      "SignalMultiplier": "18.494055"
+    },
+    {
+      "XactStamp": "20261024020339",
+      "XactIndex": "82",
+      "ControllerChannel": "15",
+      "SignalIndex": "1",
+      "SignalTable": "D",
+      "SignalType": "F",
+      "SignalValue": "1",
+      "SignalMultiplier": "18.494055"
+    },
+    {
+      "XactStamp": "20261024030139",
+      "XactIndex": "82",
+      "ControllerChannel": "15",
+      "SignalIndex": "1",
+      "SignalTable": "D",
+      "SignalType": "F",
+      "SignalValue": "2",
+      "SignalMultiplier": "18.494055"
+    },
+    {
+      "XactStamp": "20261024035339",
+      "XactIndex": "82",
+      "ControllerChannel": "15",
+      "SignalIndex": "1",
+      "SignalTable": "D",
+      "SignalType": "F",
+      "SignalValue": "1",
+      "SignalMultiplier": "18.494055"
+    },
+    {
+      "XactStamp": "20261024050339",
+      "XactIndex": "82",
+      "ControllerChannel": "15",
+      "SignalIndex": "1",
+      "SignalTable": "D",
+      "SignalType": "F",
+      "SignalValue": "2",
+      "SignalMultiplier": "18.494055"
+    },
+    {
+      "XactStamp": "20261024063338",
+      "XactIndex": "82",
+      "ControllerChannel": "15",
+      "SignalIndex": "1",
+      "SignalTable": "D",
+      "SignalType": "F",
+      "SignalValue": "2",
+      "SignalMultiplier": "18.494055"
+    },
+    {
+      "XactStamp": "20261024073138",
+      "XactIndex": "82",
+      "ControllerChannel": "15",
+      "SignalIndex": "1",
+      "SignalTable": "D",
+      "SignalType": "F",
+      "SignalValue": "2",
+      "SignalMultiplier": "18.494055"
+    },
+    {
+      "XactStamp": "20261024083338",
+      "XactIndex": "82",
+      "ControllerChannel": "15",
+      "SignalIndex": "1",
+      "SignalTable": "D",
+      "SignalType": "F",
+      "SignalValue": "2",
+      "SignalMultiplier": "18.494055"
+    },
+    {
+      "XactStamp": "20261024121738",
+      "XactIndex": "82",
+      "ControllerChannel": "15",
+      "SignalIndex": "1",
+      "SignalTable": "D",
+      "SignalType": "F",
+      "SignalValue": "8",
+      "SignalMultiplier": "18.494055"
+    },
+    {
+      "XactStamp": "20261024140039",
+      "XactIndex": "82",
+      "ControllerChannel": "15",
+      "SignalIndex": "1",
+      "SignalTable": "D",
+      "SignalType": "F",
+      "SignalValue": "2",
+      "SignalMultiplier": "18.494055"
+    },
+    {
+      "XactStamp": "20261024160038",
+      "XactIndex": "84",
+      "ControllerChannel": "17",
+      "SignalIndex": "1",
+      "SignalTable": "D",
+      "SignalType": "F",
+      "SignalValue": "16",
+      "SignalMultiplier": "52.840157"
+    },
+    {
+      "XactStamp": "20261024170037",
+      "XactIndex": "82",
+      "ControllerChannel": "15",
+      "SignalIndex": "1",
+      "SignalTable": "D",
+      "SignalType": "F",
+      "SignalValue": "1",
+      "SignalMultiplier": "18.494055"
+    },
+    {
+      "XactStamp": "20261024170038",
+      "XactIndex": "84",
+      "ControllerChannel": "17",
+      "SignalIndex": "1",
+      "SignalTable": "D",
+      "SignalType": "F",
+      "SignalValue": "48",
+      "SignalMultiplier": "52.840157"
+    },
+    {
+      "XactStamp": "20261024180038",
+      "XactIndex": "84",
+      "ControllerChannel": "17",
+      "SignalIndex": "1",
+      "SignalTable": "D",
+      "SignalType": "F",
+      "SignalValue": "47",
+      "SignalMultiplier": "52.840157"
+    },
+    {
+      "XactStamp": "20261024190038",
+      "XactIndex": "84",
+      "ControllerChannel": "17",
+      "SignalIndex": "1",
+      "SignalTable": "D",
+      "SignalType": "F",
+      "SignalValue": "22",
+      "SignalMultiplier": "52.840157"
+    },
+    {
+      "XactStamp": "20261024200038",
+      "XactIndex": "82",
+      "ControllerChannel": "15",
+      "SignalIndex": "1",
+      "SignalTable": "D",
+      "SignalType": "F",
+      "SignalValue": "1",
+      "SignalMultiplier": "18.494055"
+    },
+    {
+      "XactStamp": "20261024200038",
+      "XactIndex": "84",
+      "ControllerChannel": "17",
+      "SignalIndex": "1",
+      "SignalTable": "D",
+      "SignalType": "F",
+      "SignalValue": "8",
+      "SignalMultiplier": "52.840157"
+    },
+    {
+      "XactStamp": "20261024210038",
+      "XactIndex": "84",
+      "ControllerChannel": "17",
+      "SignalIndex": "1",
+      "SignalTable": "D",
+      "SignalType": "F",
+      "SignalValue": "17",
+      "SignalMultiplier": "52.840157"
+    },
+    {
+      "XactStamp": "20261024223638",
+      "XactIndex": "82",
+      "ControllerChannel": "15",
+      "SignalIndex": "1",
+      "SignalTable": "D",
+      "SignalType": "F",
+      "SignalValue": "14",
+      "SignalMultiplier": "18.494055"
+    },
+    {
+      "XactStamp": "20261024223638",
+      "XactIndex": "84",
+      "ControllerChannel": "17",
+      "SignalIndex": "1",
+      "SignalTable": "D",
+      "SignalType": "F",
+      "SignalValue": "13",
+      "SignalMultiplier": "52.840157"
+    },
+    {
+      "XactStamp": "20261024230326",
+      "XactIndex": "82",
+      "ControllerChannel": "15",
+      "SignalIndex": "1",
+      "SignalTable": "D",
+      "SignalType": "F",
+      "SignalValue": "1",
+      "SignalMultiplier": "18.494055"
+    },
+    {
+      "XactStamp": "20261025010339",
+      "XactIndex": "82",
+      "ControllerChannel": "15",
+      "SignalIndex": "1",
+      "SignalTable": "D",
+      "SignalType": "F",
+      "SignalValue": "1",
+      "SignalMultiplier": "18.494055"
+    },
+    {
+      "XactStamp": "20261025030139",
+      "XactIndex": "82",
+      "ControllerChannel": "15",
+      "SignalIndex": "1",
+      "SignalTable": "D",
+      "SignalType": "F",
+      "SignalValue": "1",
+      "SignalMultiplier": "18.494055"
+    },
+    {
+      "XactStamp": "20261025035339",
+      "XactIndex": "82",
+      "ControllerChannel": "15",
+      "SignalIndex": "1",
+      "SignalTable": "D",
+      "SignalType": "F",
+      "SignalValue": "1",
+      "SignalMultiplier": "18.494055"
+    },
+    {
+      "XactStamp": "20261025063339",
+      "XactIndex": "82",
+      "ControllerChannel": "15",
+      "SignalIndex": "1",
+      "SignalTable": "D",
+      "SignalType": "F",
+      "SignalValue": "1",
+      "SignalMultiplier": "18.494055"
+    },
+    {
+      "XactStamp": "20261025073139",
+      "XactIndex": "82",
+      "ControllerChannel": "15",
+      "SignalIndex": "1",
+      "SignalTable": "D",
+      "SignalType": "F",
+      "SignalValue": "1",
+      "SignalMultiplier": "18.494055"
+    },
+    {
+      "XactStamp": "20261025083339",
+      "XactIndex": "82",
+      "ControllerChannel": "15",
+      "SignalIndex": "1",
+      "SignalTable": "D",
+      "SignalType": "F",
+      "SignalValue": "1",
+      "SignalMultiplier": "18.494055"
+    },
+    {
+      "XactStamp": "20261025121739",
+      "XactIndex": "82",
+      "ControllerChannel": "15",
+      "SignalIndex": "1",
+      "SignalTable": "D",
+      "SignalType": "F",
+      "SignalValue": "2",
+      "SignalMultiplier": "18.494055"
+    },
+    {
+      "XactStamp": "20261025140038",
+      "XactIndex": "82",
+      "ControllerChannel": "15",
+      "SignalIndex": "1",
+      "SignalTable": "D",
+      "SignalType": "F",
+      "SignalValue": "1",
+      "SignalMultiplier": "18.494055"
+    },
+    {
+      "XactStamp": "20261025160037",
+      "XactIndex": "82",
+      "ControllerChannel": "15",
+      "SignalIndex": "1",
+      "SignalTable": "D",
+      "SignalType": "F",
+      "SignalValue": "1",
+      "SignalMultiplier": "18.494055"
+    },
+    {
+      "XactStamp": "20261025160038",
+      "XactIndex": "84",
+      "ControllerChannel": "17",
+      "SignalIndex": "1",
+      "SignalTable": "D",
+      "SignalType": "F",
+      "SignalValue": "10",
+      "SignalMultiplier": "52.840157"
+    },
+    {
+      "XactStamp": "20261025170038",
+      "XactIndex": "84",
+      "ControllerChannel": "17",
+      "SignalIndex": "1",
+      "SignalTable": "D",
+      "SignalType": "F",
+      "SignalValue": "57",
+      "SignalMultiplier": "52.840157"
+    },
+    {
+      "XactStamp": "20261025180038",
+      "XactIndex": "84",
+      "ControllerChannel": "17",
+      "SignalIndex": "1",
+      "SignalTable": "D",
+      "SignalType": "F",
+      "SignalValue": "55",
+      "SignalMultiplier": "52.840157"
+    },
+    {
+      "XactStamp": "20261025190037",
+      "XactIndex": "82",
+      "ControllerChannel": "15",
+      "SignalIndex": "1",
+      "SignalTable": "D",
+      "SignalType": "F",
+      "SignalValue": "1",
+      "SignalMultiplier": "18.494055"
+    },
+    {
+      "XactStamp": "20261025190038",
+      "XactIndex": "84",
+      "ControllerChannel": "17",
+      "SignalIndex": "1",
+      "SignalTable": "D",
+      "SignalType": "F",
+      "SignalValue": "49",
+      "SignalMultiplier": "52.840157"
+    },
+    {
+      "XactStamp": "20261025200039",
+      "XactIndex": "84",
+      "ControllerChannel": "17",
+      "SignalIndex": "1",
+      "SignalTable": "D",
+      "SignalType": "F",
+      "SignalValue": "33",
+      "SignalMultiplier": "52.840157"
+    },
+    {
+      "XactStamp": "20261025210038",
+      "XactIndex": "84",
+      "ControllerChannel": "17",
+      "SignalIndex": "1",
+      "SignalTable": "D",
+      "SignalType": "F",
+      "SignalValue": "34",
+      "SignalMultiplier": "52.840157"
+    },
+    {
+      "XactStamp": "20261025223639",
+      "XactIndex": "82",
+      "ControllerChannel": "15",
+      "SignalIndex": "1",
+      "SignalTable": "D",
+      "SignalType": "F",
+      "SignalValue": "19",
+      "SignalMultiplier": "18.494055"
+    },
+    {
+      "XactStamp": "20261025223639",
+      "XactIndex": "83",
+      "ControllerChannel": "16",
+      "SignalIndex": "1",
+      "SignalTable": "D",
+      "SignalType": "F",
+      "SignalValue": "2",
+      "SignalMultiplier": "52.840157"
+    },
+    {
+      "XactStamp": "20261025223639",
+      "XactIndex": "84",
+      "ControllerChannel": "17",
+      "SignalIndex": "1",
+      "SignalTable": "D",
+      "SignalType": "F",
+      "SignalValue": "33",
+      "SignalMultiplier": "52.840157"
+    }
+  ]
+}

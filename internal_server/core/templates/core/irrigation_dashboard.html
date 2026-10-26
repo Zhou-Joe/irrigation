@@ -1005,10 +1005,21 @@
             </div>
         </div>
 
-        <div style="margin-top:14px;">
-            <div class="section-title"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-drop"/></svg> 流量区用水量（升，换算待核准）</div>
-            <p class="flow-note">来源：Rain Bird 流量记录。当前数值与源记录汇总一致；升数换算及采样口径尚待核准，请作为参考。</p>
+        <p class="flow-note" id="irrigationTimeSummary" aria-live="polite">查询时段（上海时间，24 小时制）：{{ datetime_from_iso }} → {{ datetime_to_iso }}</p>
+        <section style="margin-top:14px;" aria-label="实际流量传感器">
+            <div class="section-title"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-drop"/></svg> 实际传感器水量（升）</div>
+            <p class="flow-note">FS Low / FS High / WP / WD / Toilet 等传感器，与上方运行分钟分别统计。</p>
             <p class="flow-note">最近成功同步（上海时间）：{{ import_status.last_sync_display|default:'暂无记录' }}{% if import_status.source %} · {{ import_status.source }}{% endif %}{% if import_status.latest_status == 'failed' %} · 最近一次导入失败{% endif %}</p>
+            <div class="flow-toolbar"><label for="sensorSiteSelect">传感器站点</label>
+                <select id="sensorSiteSelect" onchange="renderSensorSelection()"><option value="">全部 Site</option>
+                    {% for site in sensor_data.sites %}<option value="{{ site.key }}">{{ site.label }} · {{ site.name }}</option>{% endfor %}
+                </select>
+            </div>
+            <div id="sensorContent">{% include 'core/_irrigation_sensors.html' %}</div>
+        </section>
+        <details style="margin-top:14px;">
+            <summary class="section-title">FLO WATCH 区域参考记录</summary>
+            <p class="flow-note">这是流量区记录，独立于上述实体传感器；保留源数值供参考，单位和采样口径尚待核准。</p>
             <div class="flow-toolbar">
                 <label for="flowSiteSelect">流量站点</label>
                 <select id="flowSiteSelect" onchange="renderFlowSelection()">
@@ -1019,13 +1030,14 @@
             <div id="flowContent">
                 {% include 'core/_irrigation_flow.html' %}
             </div>
-        </div>
+        </details>
     </div>
 </div>
 {% endblock %}
 
 {% block extra_js %}
 {{ flow_data|json_script:"initial-flow-data" }}
+{{ sensor_data|json_script:"initial-sensor-data" }}
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="{% static 'js/irrig-heatmap.js' %}?v=20261024pages6"></script>
 <script>
@@ -1065,6 +1077,60 @@ function exportExcel() {
 }
 
 let flowData = JSON.parse(document.getElementById('initial-flow-data').textContent);
+let sensorData = JSON.parse(document.getElementById('initial-sensor-data').textContent);
+function renderSensors(d) {
+    sensorData = d.sensor_data || {sites: [], notice: '实际流量传感器尚未同步。'};
+    const select = document.getElementById('sensorSiteSelect');
+    const previous = select.value;
+    select.replaceChildren(new Option('全部 Site', ''));
+    for (const site of sensorData.sites) select.add(new Option(site.label + ' · ' + site.name, site.key));
+    if (sensorData.sites.some(site => site.key === previous)) select.value = previous;
+    renderSensorSelection();
+}
+function renderSensorSelection() {
+    const root = document.getElementById('sensorContent');
+    root.replaceChildren();
+    for (const message of [sensorData.notice, sensorData.coverage_note]) {
+        if (!message) continue;
+        const note = document.createElement('p'); note.className = 'flow-note'; note.textContent = message;
+        root.append(note);
+    }
+    const selected = document.getElementById('sensorSiteSelect').value;
+    const sites = sensorData.sites.filter(site => !selected || site.key === selected);
+    for (const site of sites) {
+        const detail = document.createElement('details'); detail.className = 'flow-site';
+        detail.open = !!selected || sites.length === 1;
+        const summary = document.createElement('summary');
+        const title = document.createElement('span'); title.textContent = site.label + ' · ' + site.name;
+        const count = document.createElement('span'); count.textContent = site.sensors.length + ' 个传感器';
+        summary.append(title, count);
+        const scroll = document.createElement('div'); scroll.className = 'flow-table-scroll';
+        const table = document.createElement('table'); table.className = 'matrix-table';
+        const head = table.createTHead().insertRow();
+        for (const label of ['通道', '传感器', '水量 (L)', '记录状态']) {
+            const cell = document.createElement('th'); cell.textContent = label; head.append(cell);
+        }
+        const body = table.createTBody();
+        for (const sensor of site.sensors) {
+            const row = body.insertRow();
+            for (const value of [sensor.channel ?? '—', sensor.name, sensor.formatted,
+                !sensor.complete ? '覆盖不完整' : !sensor.enabled ? '已停用' : '实际记录']) row.insertCell().textContent = value;
+        }
+        scroll.append(table); detail.append(summary, scroll); root.append(detail);
+    }
+    const note = document.createElement('p'); note.className = 'flow-note';
+    note.textContent = '按实际脉冲及记录时的倍率换算为升。总表与分表分别保留，不合并相加。0 表示备份覆盖时段内无流量日志；— 表示无法确认。';
+    root.append(note);
+}
+function showQueryWindow(d) {
+    function format(value, end) {
+        let s = value || '';
+        if ([8, 10, 12].includes(s.length)) s += (end ? '235959' : '000000').slice(s.length - 8);
+        return s.slice(0,4) + '-' + s.slice(4,6) + '-' + s.slice(6,8) + ' ' + s.slice(8,10) + ':' + s.slice(10,12) + ':' + s.slice(12,14);
+    }
+    document.getElementById('irrigationTimeSummary').textContent = '查询时段（上海时间，24 小时制）：' + format(d.date_from, false) + ' → ' + format(d.date_to, true);
+}
+showQueryWindow({date_from: '{{ date_from|escapejs }}', date_to: '{{ date_to|escapejs }}'});
 function renderFlow(d) {
     flowData = d.flow_data || {sites: [], notice: '该时段暂无流量记录。'};
     const select = document.getElementById('flowSiteSelect');
@@ -1094,14 +1160,14 @@ function renderFlowSelection() {
         const title = document.createElement('span');
         title.textContent = site.label + ' · ' + site.name;
         const amount = document.createElement('strong');
-        amount.textContent = site.formatted + (site.value === null ? '' : ' L');
+        amount.textContent = site.formatted;
         summary.append(title, amount);
         const scroll = document.createElement('div');
         scroll.className = 'flow-table-scroll';
         const table = document.createElement('table');
         table.className = 'matrix-table';
         const head = table.createTHead().insertRow();
-        for (const label of ['流量区', '记录名称', '水量 (L)', '站点汇总']) {
+        for (const label of ['流量区', '记录名称', '源记录参考值', '站点汇总']) {
             const cell = document.createElement('th'); cell.textContent = label; head.append(cell);
         }
         const body = table.createTBody();
@@ -1138,7 +1204,7 @@ function applyFilters() {
         headers: { 'X-Requested-With': 'XMLHttpRequest' }
     })
     .then(r => r.json())
-    .then(d => { renderPivot(d); renderFlow(d); })
+    .then(d => { renderPivot(d); renderFlow(d); renderSensors(d); showQueryWindow(d); })
     .catch(err => {
         document.getElementById('pivotContent').innerHTML = '<div class="chart-empty">加载失败</div>';
         console.error(err);
