@@ -166,7 +166,7 @@
     } }
     async function loadHistory() {
         const select=byId('aiChatHistory');if(!select)return;
-        try{const data=await fetch('/api/ai/conversations',{credentials:'same-origin'}).then(r=>r.ok?r.json():{});
+        try{const data=await fetch('/api/ai/conversations',{credentials:'same-origin',cache:'no-store'}).then(r=>r.ok?r.json():{});
             if (!data.day) return;
             if (historyDay && data.day < historyDay) return;
             if (historyDay && historyDay !== data.day) { newConversation(); say('已切换到新的一天，聊天记录和附件仅保留当天。'); }
@@ -190,7 +190,7 @@
     }
     async function restoreHistory(id) {
         if(!id||activeRun)return;
-        try{const response=await fetch('/api/ai/conversations?thread_id='+encodeURIComponent(id),{credentials:'same-origin'});
+        try{const response=await fetch('/api/ai/conversations?thread_id='+encodeURIComponent(id),{credentials:'same-origin',cache:'no-store'});
             if(response.status===404) { newConversation(); loadHistory(); throw new Error('会话已过期，历史记录仅保留当天。'); }
             if(!response.ok)throw new Error('会话暂时无法恢复');
             const data=await response.json();welcome();threadId=id;byId('aiChatSnapshot').textContent='历史回复 · 再次发送时更新数据快照';

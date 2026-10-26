@@ -75,6 +75,7 @@ class DailyAIHistoryTests(TestCase):
     def test_expired_detail_and_download_are_inaccessible_before_cleanup(self):
         with patch('core.ai_history.timezone.now',return_value=self.now),patch('core.ai_views.maybe_prune_history'):
             response=self.client.get('/api/ai/conversations')
+            self.assertIn('no-store',response['Cache-Control'])
             self.assertEqual([x['id'] for x in response.json()['conversations']],[self.today.pk])
             self.assertEqual(response.json()['day'],'2026-10-27')
             self.assertEqual(self.client.get('/api/ai/conversations',{'thread_id':self.old.pk}).status_code,404)
