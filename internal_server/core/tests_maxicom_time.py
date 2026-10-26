@@ -139,7 +139,7 @@ class MaxicomRuntimeViewTests(TestCase):
         for ccu, start, end, expected in CASES:
             _, buffer = build_irrigation_report_excel(start, end, [self.ccus[ccu].pk])
             workbook = load_workbook(io.BytesIO(buffer.getvalue()), data_only=True)
-            sheet = workbook.active
+            sheet = workbook[f'CCU{ccu}_{self.ccus[ccu].name}'[:31]]
             actual = {}
             for column in range(2, sheet.max_column + 1):
                 satellite = str(sheet.cell(4, column).value).removeprefix('SAT ')
