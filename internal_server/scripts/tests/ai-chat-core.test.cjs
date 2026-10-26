@@ -1,6 +1,11 @@
 const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const core=require('../../static/js/ai-chat-core.js');
+test('history reset follows Shanghai midnight using server timestamps, not device timezone',()=>{
+    assert.equal(core.retentionDelay({server_now:'2026-10-26T15:59:59Z',expires_at:'2026-10-27T00:00:00+08:00'}),1000);
+    assert.equal(core.retentionDelay({server_now:'2026-10-26T16:00:00Z',expires_at:'2026-10-27T00:00:00+08:00'}),0);
+    assert.equal(core.retentionDelay({}),null);
+});
 test('SSE supports split CRLF frames, comments, multiple data lines and final tails',()=>{
     const events=[],p=core.createParser(e=>events.push(e));
     p.push(': heartbeat\r\ndata: {"event":"token",\r');p.push('\ndata: "text":"你好"}\r\n\r');p.push('\ndata: {"event":"done"}');p.finish();

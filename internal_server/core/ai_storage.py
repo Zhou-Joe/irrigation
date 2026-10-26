@@ -15,6 +15,10 @@ from .role_utils import get_django_user, get_user_role, ROLE_MANAGER, ROLE_SUPER
 THREAD_RE = re.compile(r'u[0-9]+-[0-9a-f]{8,32}\Z')
 
 
+class ConversationExpired(Http404):
+    pass
+
+
 def private_root():
     root = Path(getattr(settings, 'AI_PRIVATE_ROOT', settings.BASE_DIR / 'private_ai'))
     from django.core.exceptions import ImproperlyConfigured
@@ -37,7 +41,7 @@ def workspace(thread_id):
     return path
 
 
-def conversation_for(user, thread_id, *, create=False, title=''):
+def conversation_for(user, thread_id, *, create=False, title='', allow_expired=False):
     owner = get_django_user(user)
     if not owner or get_user_role(user) not in (ROLE_MANAGER, ROLE_SUPER_ADMIN):
         raise PermissionDenied('无权限使用 AI 助手')
@@ -47,11 +51,14 @@ def conversation_for(user, thread_id, *, create=False, title=''):
         item, _ = AIConversation.objects.get_or_create(id=thread_id, defaults={'owner': owner, 'title': title[:120]})
     else:
         item = AIConversation.objects.filter(pk=thread_id).first()
-        # Allow the owner's pre-upgrade identifier to register itself once.
         if item is None:
-            item = AIConversation.objects.create(id=thread_id, owner=owner, title=title[:120])
+            raise ConversationExpired('会话已过期，请开启新对话')
     if item.owner_id != owner.pk:
         raise PermissionDenied('无权访问此会话')
+    from .ai_history import day_bounds
+    start, end = day_bounds()
+    if not allow_expired and not start <= item.created_at < end:
+        raise ConversationExpired('会话已过期，请开启新对话')
     return item
 
 

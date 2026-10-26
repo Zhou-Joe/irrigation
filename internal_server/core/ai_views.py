@@ -18,7 +18,8 @@ import time
 from datetime import timedelta
 from django.db import transaction, IntegrityError, close_old_connections
 from django.utils import timezone
-from core.ai_storage import conversation_for
+from core.ai_storage import conversation_for, ConversationExpired
+from core.ai_history import day_bounds, policy, maybe_prune_history, prune_history
 from core.models import AIConversation, AIExecutionLease
 
 from django.contrib.auth.decorators import login_required
@@ -65,6 +66,7 @@ def ai_chat(request):
     if not (cfg.enabled and cfg.api_base_url and cfg.api_key and cfg.model_name):
         return JsonResponse({'error': 'AI 助手尚未配置，请联系管理员'}, status=400)
     try:
+        maybe_prune_history()
         body = json.loads(request.body)
         message = body.get('message', '')
         if not isinstance(message, str) or not message.strip() or len(message) > 20000:
@@ -73,7 +75,13 @@ def ai_chat(request):
         if supplied and not isinstance(supplied, str):
             raise ValueError('会话编号无效')
         thread_id = supplied or f'u{request.user.pk}-{uuid.uuid4().hex}'
-        conversation = conversation_for(request.user, thread_id, create=not supplied, title=message.strip())
+        reset = False
+        try:
+            conversation = conversation_for(request.user, thread_id, create=not supplied, title=message.strip())
+        except ConversationExpired:
+            thread_id = f'u{request.user.pk}-{uuid.uuid4().hex}'
+            conversation = conversation_for(request.user, thread_id, create=True, title=message.strip())
+            reset = True
     except (ValueError, AttributeError, TypeError):
         return JsonResponse({'error': '消息或会话格式无效'}, status=400)
     try:
@@ -94,7 +102,7 @@ def ai_chat(request):
         else:qs.delete()
     def event_stream():
         try:
-            yield _sse('thread', {'thread_id': thread_id})
+            yield _sse('thread', {'thread_id': thread_id, 'reset': reset, **policy()})
             started[0] = True
             yield from _stream_via_queue(message.strip(), thread_id)
         finally:
@@ -146,6 +154,11 @@ def _stream_via_queue(message: str, thread_id: str):
             put(('error', {'message': '分析未完成，请稍后重试；已生成的文件仍可下载。'}))
         finally:
             AIExecutionLease.objects.filter(conversation_id=thread_id, token=lease.token).delete()
+            if AIConversation.objects.filter(pk=thread_id, created_at__lt=day_bounds()[0]).exists():
+                try:
+                    prune_history()
+                except Exception:
+                    logger.exception('Unable to clean an expired AI task after completion')
             put(sentinel)
             close_old_connections()
     threading.Thread(target=worker, daemon=True).start()
@@ -247,7 +260,7 @@ def _events_from_chunk(chunk, seen_tool_calls):
 def ai_cancel(request):
     try:
         body = json.loads(request.body)
-        conversation = conversation_for(request.user, body.get('thread_id', ''))
+        conversation = conversation_for(request.user, body.get('thread_id', ''), allow_expired=True)
     except (ValueError, TypeError, AttributeError):
         return JsonResponse({'error': '会话格式无效'}, status=400)
     AIExecutionLease.objects.filter(conversation=conversation, owner=request.user).update(cancel_requested=True)
@@ -258,12 +271,14 @@ def ai_cancel(request):
 def ai_conversations(request):
     if get_user_role(request.user) not in _ALLOWED_ROLES:
         return JsonResponse({'error': '无权限'}, status=403)
-    from core.ai_agent import _checkpoint_saver
+    maybe_prune_history()
     thread_id = request.GET.get('thread_id')
     if not thread_id:
-        return JsonResponse({'conversations': list(AIConversation.objects.filter(owner=request.user)
-            .order_by('-updated_at').values('id', 'title', 'updated_at')[:30])})
+        start, end = day_bounds()
+        return JsonResponse({**policy(), 'conversations': list(AIConversation.objects.filter(owner=request.user,
+            created_at__gte=start, created_at__lt=end).order_by('-updated_at').values('id', 'title', 'updated_at')[:30])})
     conversation_for(request.user, thread_id)
+    from core.ai_agent import _checkpoint_saver
     checkpoint = _checkpoint_saver().get_tuple({'configurable': {'thread_id': thread_id}})
     messages = checkpoint.checkpoint.get('channel_values', {}).get('messages', []) if checkpoint else []
     turns = []
