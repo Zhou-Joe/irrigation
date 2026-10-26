@@ -17,10 +17,17 @@ operator figures for **Shanghai 2026-10-24 15:32:00 → 10-25 15:32:00**:
 Station 1397 (3-5-1) has original stamps `20261023210037` (29 min) and
 `20261023223737` (58 min), displayed as October 24 05:00:37 and 06:37:37 Shanghai.
 These precede the afternoon window and fall inside the morning window. This does
-not establish a global timezone defect. Operator confirmation of AM versus PM
-remains pending; no global time conversion, runtime rows, station identity or
-projection policy changes. The page states the applied Shanghai range in 24-hour
-notation.
+not establish a global timezone defect. The operator subsequently confirmed the
+Rain Bird window is **3:32 PM to the following 3:32 PM**. No global time conversion,
+runtime rows, station identity or projection policy changes. The page states the
+applied Shanghai range in 24-hour notation.
+
+CCU3's other nonzero entries in the afternoon window are 3-5-11=30 minutes,
+3-6-15=20 and 3-6-24=840 (all other channels zero except 3-7-23=895).
+The 3-5-11 record is dated October 25 06:36:37 Shanghai; 3-6-15 has records at
+October 24 23:00:37, October 25 05:00:37 and 06:36:37. The 3-6-24 and 3-7-23
+included record stamps run from October 24 16:33:37 through October 25 15:31:37.
+These are log timestamps, not reconstructed continuous valve start/stop times.
 
 ## Confirmed water-source defect
 
@@ -68,9 +75,33 @@ metric factor is supported by its configuration and independent operator values.
 ## Verification and release
 
 Local full validation: 275 Django tests (274 passed, one existing CAD fixture
-skip), 60 Node tests passed; migration drift check passed. An additional combined
-flow rollback regression is checked separately. Production-copy validation and
-release results will be recorded after completion.
+skip), 60 Node tests passed; migration drift check passed. The sensor suite,
+including a subsequently added combined-flow rollback regression, passed all 8
+tests. Three scripts extracted from the actual production-copy rendered page
+passed local Node syntax checks; no Node installation was added to production.
+
+An isolated consistent production database copy was migrated and imported from
+the original October 26 MDB. It retained **68 physical sensors, 61,468 timed
+readings and 16,931 sensor-days**; sensor import took 0.81 seconds. For both time
+windows, all 68 displayed sensor values were compared with an independent direct
+CSV export. All 85 existing business/runtime/FLO WATCH tables had identical
+full-row hashes. Django added only the two new content types and their eight
+standard permission definitions; existing metadata and user/group grants stayed
+unchanged.
+
+Production advanced to **29872d9d** via the same pushed Git bundle. A fresh SQLite
+backup, old HEAD and source archive were saved before migration. Only the new
+sensor tables were populated (`--sensors-only`); regular future imports include
+sensors automatically. `horticulture` restarted at **2026-10-26 21:32:32 CST**,
+active/running with zero automatic restarts; Django checks passed. An independent
+post-release comparison against the fresh backup again verified all 85 original
+tables unchanged. The unauthenticated route returns its expected HTTP 302.
+
+The authenticated live production page verified the CCU3 matrix (0/895), the
+three sensor values (2380/0/34200), Site selection, AJAX refresh and the explicit
+15:32 → 15:32 label. No browser console errors were recorded. At 390×844 the page
+width remains 390; the sensor table scrolls horizontally within its container.
+Phone and desktop proof images were saved locally under `docs/reviews/assets/`.
 
 Private source audit: `/home/noname/irrigation/deployment_backups/oct26-window-audit/`.
 No credentials are included in this report, fixture or repository.
