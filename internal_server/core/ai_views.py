@@ -25,6 +25,7 @@ from core.models import AIConversation, AIExecutionLease
 from django.contrib.auth.decorators import login_required
 from django.http import StreamingHttpResponse, HttpResponseBadRequest, JsonResponse
 from django.views.decorators.http import require_POST
+from django.views.decorators.cache import never_cache
 
 from core.models import AISettings
 from core.role_utils import get_user_role, ROLE_SUPER_ADMIN, ROLE_MANAGER
@@ -268,6 +269,7 @@ def ai_cancel(request):
 
 
 @login_required(login_url='core:login')
+@never_cache
 def ai_conversations(request):
     if get_user_role(request.user) not in _ALLOWED_ROLES:
         return JsonResponse({'error': '无权限'}, status=403)
