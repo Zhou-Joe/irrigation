@@ -4,6 +4,7 @@
     const core = window.AIChatCore;
     if (!core) return;
     let threadId = null, activeRun = null, sequence = 0, panelOpen = false, expanded = false, follow = true;
+    let historyDay = null, historyTimer = null, historyDeadline = null;
     const byId = id => document.getElementById(id);
     const icon = name => window.uiIcon(name);
     const node = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
@@ -22,7 +23,7 @@
         byId('aiChatBackdrop').hidden = !open || !modalMode();
         document.body.classList.toggle('ai-chat-modal-open', open && modalMode());
         panel.setAttribute('aria-modal', String(open && modalMode()));
-        if (open) { activeRun?.view.refresh(); (modalMode() ? byId('aiChatClose') : byId('aiChatInput')).focus(); }
+        if (open) { loadHistory(); activeRun?.view.refresh(); (modalMode() ? byId('aiChatClose') : byId('aiChatInput')).focus(); }
         else byId('aiChatLauncher').focus();
     }
     function toggle() { setOpen(!panelOpen); }
@@ -166,14 +167,31 @@
     async function loadHistory() {
         const select=byId('aiChatHistory');if(!select)return;
         try{const data=await fetch('/api/ai/conversations',{credentials:'same-origin'}).then(r=>r.ok?r.json():{});
-            select.replaceChildren(new Option('历史对话',''));
+            if (!data.day) return;
+            if (historyDay && data.day < historyDay) return;
+            if (historyDay && historyDay !== data.day) { newConversation(); say('已切换到新的一天，聊天记录和附件仅保留当天。'); }
+            setHistoryPolicy(data);
+            select.replaceChildren(new Option('当天对话（上海时间）',''));
             for(const item of data.conversations||[])select.add(new Option(item.title||'未命名对话',item.id));
             if(threadId)select.value=threadId;
         }catch(_){}
     }
+    function setHistoryPolicy(data) {
+        const delay = core.retentionDelay(data);
+        if (delay === null) return;
+        historyDay = data.day;
+        historyDeadline = performance.now() + delay;
+        clearTimeout(historyTimer);
+        historyTimer = setTimeout(() => {
+            newConversation(); historyDay = null;
+            say('已切换到新的一天，聊天记录和附件仅保留当天。');
+            loadHistory();
+        }, Math.min(delay + 100, 2147483647));
+    }
     async function restoreHistory(id) {
         if(!id||activeRun)return;
         try{const response=await fetch('/api/ai/conversations?thread_id='+encodeURIComponent(id),{credentials:'same-origin'});
+            if(response.status===404) { newConversation(); loadHistory(); throw new Error('会话已过期，历史记录仅保留当天。'); }
             if(!response.ok)throw new Error('会话暂时无法恢复');
             const data=await response.json();welcome();threadId=id;byId('aiChatSnapshot').textContent='历史回复 · 再次发送时更新数据快照';
             for(const turn of data.turns||[]){const view=responseView(turn.question);view.event({event:'token',text:turn.answer||''});for(const file of turn.files||[])view.event({event:'file',...file});view.finish('done');}
@@ -184,6 +202,7 @@
     function newConversation() { stop(); sequence++; activeRun = null; threadId = null; sendingState(); welcome(); resetFollow();byId('aiChatHistory').value='';byId('aiChatSnapshot').textContent=''; say('已开启新对话'); }
     async function send() {
         const input = byId('aiChatInput'); if (!input || activeRun) return;
+        if (historyDeadline !== null && performance.now() >= historyDeadline) { newConversation(); loadHistory(); }
         const text = input.value.trim(); if (!text) return; input.value = ''; resetFollow();
         const run = {id:++sequence, controller:new AbortController(), view:responseView(text)}; activeRun = run; sendingState(); let completed = false;
         try {
@@ -195,7 +214,11 @@
             const reader = response.body.getReader(), decoder = new TextDecoder();
             const parser = core.createParser(event => {
                 if (sequence !== run.id || run.controller.signal.aborted) return;
-                if (event.event === 'thread') { if (/^u\d+-[0-9a-f]{8,32}$/.test(event.thread_id || '')) threadId = event.thread_id; return; }
+                if (event.event === 'thread') {
+                    if (event.reset) { run.view.finish('stopped'); welcome(); run.view=responseView(text); }
+                    if (/^u\d+-[0-9a-f]{8,32}$/.test(event.thread_id || '')) threadId = event.thread_id;
+                    setHistoryPolicy(event); return;
+                }
                 if (event.event === 'snapshot') { const hint=byId('aiChatSnapshot');if(hint)hint.textContent='数据快照更新于 '+new Date(event.at).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai'});return; }
                 if (event.event === 'done') completed = true; run.view.event(event);
             });
@@ -229,11 +252,13 @@
             panel.style.setProperty('--ai-viewport-height', viewport.height + 'px');
             panel.style.setProperty('--ai-viewport-top', viewport.offsetTop + 'px');
         }
-        const history=document.createElement('select');history.id='aiChatHistory';history.className='ai-chat-history';history.setAttribute('aria-label','历史对话');
-        history.add(new Option('历史对话',''));history.onchange=()=>restoreHistory(history.value);
+        const history=document.createElement('select');history.id='aiChatHistory';history.className='ai-chat-history';history.setAttribute('aria-label','当天对话（上海时间）');
+        history.title='聊天记录和生成的附件仅保留上海时间当天，每日 00:00 过期';
+        history.add(new Option('当天对话（上海时间）',''));history.onchange=()=>restoreHistory(history.value);
         panel.querySelector('.ai-chat-header').after(history);
         const snapshot=document.createElement('p');snapshot.id='aiChatSnapshot';snapshot.className='ai-composer-hint';panel.querySelector('.ai-composer').append(snapshot);
         loadHistory();
+        document.addEventListener('visibilitychange', () => { if (!document.hidden) loadHistory(); });
         fitViewport();
         window.visualViewport?.addEventListener('resize',fitViewport,{passive:true});
         window.visualViewport?.addEventListener('scroll',fitViewport,{passive:true});

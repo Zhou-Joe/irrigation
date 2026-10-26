@@ -102,5 +102,9 @@
             turn.phase = 'error'; turn.error = '本次未返回内容，请重新编辑请求后发送。';
         }
     }
-    return {toolLabel, formatBytes, safeLink, artifactInfo, createParser, createTurn, applyEvent, finishTurn};
+    function retentionDelay(policy) {
+        const end = Date.parse(policy?.expires_at), now = Date.parse(policy?.server_now);
+        return Number.isFinite(end) && Number.isFinite(now) ? Math.max(0, end - now) : null;
+    }
+    return {toolLabel, formatBytes, safeLink, artifactInfo, createParser, createTurn, applyEvent, finishTurn, retentionDelay};
 });
