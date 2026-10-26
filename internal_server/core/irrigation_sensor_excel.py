@@ -80,7 +80,7 @@ def add_sensor_sheet(workbook, date_from, date_to, ccu_ids=None):
                     cell.data_type = 's'  # Source labels must remain literal text.
                 cell.font = Font(name='Arial', size=10, color='243A30')
                 cell.fill = PatternFill('solid', fgColor='F0F5F1' if group % 2 == 0 else 'FFFFFF')
-                cell.alignment = Alignment(horizontal='right' if col == 5 else 'center' if col in (1, 3) else 'left',
+                cell.alignment = Alignment(horizontal='right' if col == 5 else 'center' if col in (1, 3, 6) else 'left',
                                            vertical='center', wrap_text=col in (2, 4, 7))
                 if offset == 0:
                     cell.border = Border(top=Side(style='thin', color='D3DED6'))
@@ -96,7 +96,7 @@ def add_sensor_sheet(workbook, date_from, date_to, ccu_ids=None):
         for cell in ws[line]:
             if cell.value is not None:
                 cell.font = Font(name='Arial', size=10, color='56675C')
-                cell.alignment = Alignment(vertical='center', wrap_text=line in (4, 5))
+                cell.alignment = Alignment(horizontal='left', vertical='center', wrap_text=line in (4, 5))
                 if isinstance(cell.value, str):
                     cell.data_type = 's'
     for col, width in zip('ABCDEFG', (10, 32, 8, 36, 17, 16, 23)):
