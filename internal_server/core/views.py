@@ -7509,6 +7509,8 @@ def irrigation_dashboard(request):
     # CCU grouping must not relabel, filter away, or estimate these water records.
     from core.flow_data import flow_window
     flow_data = flow_window(date_from, date_to)
+    from core.sensor_flow import sensor_window
+    sensor_data = sensor_window(date_from, date_to)
     from core.import_status import status as import_status
 
     context = {
@@ -7530,6 +7532,7 @@ def irrigation_dashboard(request):
         'total_stations': total_stations_with_runtime,
         'show_ccu_col': show_ccu_col,
         'flow_data': flow_data,
+        'sensor_data': sensor_data,
         'import_status': import_status(),
         # 全部 mode only: one entry per CCU so the client can page between
         # per-CCU matrices. Empty for a specific-CCU selection (the top-level
@@ -7554,6 +7557,7 @@ def irrigation_dashboard(request):
             'show_ccu_col': show_ccu_col,
             'ccu_tables': ccu_tables,
             'flow_data': flow_data,
+            'sensor_data': sensor_data,
         })
 
     return render(request, 'core/irrigation_dashboard.html', context)

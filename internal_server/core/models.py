@@ -1180,11 +1180,45 @@ class MaxicomFlowDaily(models.Model):
         return f'{self.flow_day} z{self.zone.mdb_index} {self.liters}L'
 
 
+class MaxicomFlowSensor(models.Model):
+    """Physical DCODE_CF flow meter; distinct from a FLO WATCH zone."""
+    mdb_index = models.IntegerField(unique=True)
+    name = models.CharField(max_length=255)
+    source_site_index = models.IntegerField(db_index=True)
+    source_site_number = models.IntegerField(null=True, blank=True)
+    source_site_name = models.CharField(max_length=255, blank=True)
+    controller_number = models.IntegerField(null=True, blank=True)
+    channel = models.IntegerField(null=True, blank=True)
+    is_active = models.BooleanField(default=True)
+    is_enabled = models.BooleanField(default=True)
+    coverage_start = models.CharField(max_length=14, blank=True)
+    coverage_end = models.CharField(max_length=14, blank=True)
+
+    def __str__(self):
+        return f'{self.name} @ Site {self.source_site_number}'
+
+
+class MaxicomSensorDaily(models.Model):
+    """XA_LOG D/F pulses × logged calibration, retained at microliter precision.
+
+    Samples use the same seconds/int64 encoding as FLO WATCH, in microliters.
+    They must never be combined with FLO WATCH or station flow estimates.
+    """
+    sensor = models.ForeignKey(MaxicomFlowSensor, on_delete=models.CASCADE, related_name='daily')
+    flow_day = models.CharField(max_length=8, db_index=True)
+    microliters = models.BigIntegerField()
+    sample_count = models.PositiveIntegerField()
+    samples = models.BinaryField(editable=False)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['sensor', 'flow_day'], name='uniq_sensor_flow_day')]
+
+
 class MaxicomStationFlowFactor(models.Model):
     """Legacy latest station-factor snapshot; not used to calculate flow records.
 
     Raw station-factor units and effective dates require separate validation.
-    FS/WD/Toilet water records come directly from XA_FLOZO, independently of this.
+    FS/WD/Toilet sensor records come from XA_LOG D/F, independently of this.
     """
     station_raw = models.IntegerField('STATN_CF IndexNumber', primary_key=True)
     factor = models.FloatField('流量系数 L/min', default=0)
@@ -2158,8 +2192,9 @@ class AISettings(models.Model):
         '**Maxicom 灌溉自控数据**（从 Maxicom2 中央控制系统每日导入）：\n'
         '- **运行时长 MaxicomRuntime**：每条 = 一次站点运行记录，run_time 单位分钟。'
         '**灌溉日窗口 = 前日 22:00 → 当日 21:59**（跨夜灌溉归次日），所有日统计用它。\n'
-        '- **浇水量 MaxicomFlowDaily**：流量计按灌溉日聚合的读数（升）。导入约滞后 1-2 天，'
-        '最近一两天数据可能偏小或缺数。\n'
+        '- **实际传感器 MaxicomSensorDaily**：XA_LOG D/F 脉冲按当时倍率换算为升；总表与分表可能重叠，不相加。'
+        '**MaxicomFlowDaily** 是独立的 FLO WATCH 区域参考值，单位尚未核准，不当成 FS 实体传感器升数。'
+        '备份导入可能滞后 1-2 天。\n'
         '- 设备台账（控制器/计划/流量区域/气象站/事件）与地理层级：大区 Region → 片区/CCU Patch → '
         '卫星控制器 Satellite(SAT) → 区域 Zone；Patch 另有 station-N 站点层（阀门站）。\n'
         '\n'
@@ -2191,7 +2226,7 @@ class AISettings(models.Model):
         '|---|---|\n'
         '| **query_irrigation_overview** | 系统总览（片区/控制器/站点/气象站/事件数） |\n'
         '| **query_irrigation_runtime** | 灌溉运行时长（逐日分钟/次数/活跃站点 + 按CCU分布，灌溉日窗口） |\n'
-        '| **query_flow_daily** | 每日浇水量（逐日升数 + 按流量区域分布） |\n'
+        '| **query_flow_daily** | 实际传感器逐日升数（按Site/通道独立列出，不合并总分表） |\n'
         '| **query_geo_assets** | 地理资产层级（大区/CCU/SAT/站点/管线；传编号查详情） |\n'
         '| **query_work_reports** | 工单明细列表（日期/处理人/位置/班次/工时/内容） |\n'
         '| **query_work_report_stats** | 工单统计汇总（总数/总工时/按班次·章节·处理人分布/疑难/待修数） |\n'
@@ -2225,7 +2260,7 @@ class AISettings(models.Model):
         'pd.read_csv 加载）：**work_reports.csv**(工单)、**work_entries.csv**(工单明细)、'
         '**zones.csv**(全部区域)、**projects.csv**(全部项目+预算+费率)、**water_requests.csv**(浇水需求)、'
         '**weather.csv**(气象)、**project_consumption.csv**(出库-项目消耗)、**pm_workorders.csv**(PM完成工单)、'
-        '**irrigation_daily.csv**(逐日运行分钟/次数/站点数/浇水量)、**pm_orders.csv**(PM派发工单)。'
+        '**irrigation_daily.csv**(运行分钟/次数/站点数/FLO WATCH参考值)、**water_sensors_daily.csv**(实际传感器升数)、**pm_orders.csv**(PM派发工单)。'
         '生成文件保存到当前目录(.xlsx/.csv/.json/.txt)，自动提供给用户下载 |\n'
         '\n'
         '## 选工具的决策规则\n'

@@ -5,11 +5,11 @@
 <details class="flow-site"{% if flow_data.sites|length == 1 %} open{% endif %}>
   <summary>
     <span>{{ site.label }} · {{ site.name }}</span>
-    <strong>{{ site.formatted }}{% if site.value != None %} L{% endif %}</strong>
+    <strong>{{ site.formatted }}</strong>
   </summary>
   <div class="flow-table-scroll">
     <table class="matrix-table">
-      <thead><tr><th>流量区</th><th>记录名称</th><th>水量 (L)</th><th>站点汇总</th></tr></thead>
+      <thead><tr><th>流量区</th><th>记录名称</th><th>源记录参考值</th><th>站点汇总</th></tr></thead>
       <tbody>
       {% for zone in site.zones %}
         <tr>

@@ -1,5 +1,9 @@
 # Maxicom water-volume investigation — 2026-10-25
 
+**Correction (October 26):** the source reviewed here is FLO WATCH zone data,
+not the physical FS sensor logs. Actual sensors and a five-value operator
+reconciliation are covered in [the follow-up review](2026-10-26-actual-flow-sensors.md).
+
 ## Scope and evidence
 
 This is a read-only investigation of the water table on `/irrigation/`, following

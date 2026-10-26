@@ -6,9 +6,9 @@ from django.utils import timezone
 def record_import(func):
     @wraps(func)
     def run(self,*args,**options):
-        from .models import DataImportRun, MaxicomRuntime, MaxicomFlowDaily, MaxicomFlowZone
+        from .models import DataImportRun, MaxicomRuntime, MaxicomFlowDaily, MaxicomFlowZone, MaxicomFlowSensor, MaxicomSensorDaily
         item=DataImportRun.objects.create(source=Path(options.get('source_archive') or options.get('mdb','')).name,
-            flow_only=bool(options.get('flow_only')))
+            flow_only=bool(options.get('flow_only') or options.get('sensors_only')))
         try:
             result=func(self,*args,**options)
         except Exception as exc:
@@ -17,7 +17,9 @@ def record_import(func):
         else:
             DataImportRun.objects.filter(pk=item.pk).update(status='success',finished_at=timezone.now(),details={
                 'runtime_rows':MaxicomRuntime.objects.count(),'flow_days':MaxicomFlowDaily.objects.count(),
-                'flow_zones':MaxicomFlowZone.objects.filter(is_active=True).count()})
+                'flow_zones':MaxicomFlowZone.objects.filter(is_active=True).count(),
+                'flow_sensors':MaxicomFlowSensor.objects.filter(is_active=True).count(),
+                'sensor_days':MaxicomSensorDaily.objects.count()})
             return result
     return run
 
