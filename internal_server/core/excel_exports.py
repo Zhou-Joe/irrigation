@@ -461,6 +461,11 @@ def build_irrigation_report_excel(date_from, date_to, ccu_ids=None):
             ws.column_dimensions[get_column_letter(2 + ci)].width = 11
         ws.freeze_panes = 'B5'
 
+    # Same query window for actual sensor liters and runtime, shared by web,
+    # scheduled mail, manual downloads and the report API.
+    from core.irrigation_sensor_excel import add_sensor_sheet
+    add_sensor_sheet(wb, date_from, date_to, ccu_ids=ccu_ids)
+
     # remove default empty sheet
     if default_ws is not None and default_ws.title in wb.sheetnames and len(wb.sheetnames) > 1:
         wb.remove(default_ws)
