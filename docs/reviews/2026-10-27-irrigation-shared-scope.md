@@ -68,3 +68,8 @@ window, rather than treating uncovered hours as confirmed zero readings.
 Private source/database backups, the candidate report and release logs are kept
 in `deployment_backups/irrigation-scope-20261028/` on the office server. No schema
 update, source-data import or business write was performed during this release.
+
+Final phone follow-up `41b12225` keeps two-digit sensor channel numbers on one
+line at 320 pixels. The actual phone fixture confirms both channel 15 and its
+liter value remain readable without horizontal scrolling; the production service
+was restarted on this final code revision after checks passed.
