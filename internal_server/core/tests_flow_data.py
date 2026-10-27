@@ -154,7 +154,7 @@ class FlowViewTests(TestCase):
         self.assertTrue(data['notice'])
         self.assertEqual(data['sites'], [])
 
-    def test_web_and_ajax_use_source_site_and_do_not_follow_runtime_ccu_paging(self):
+    def test_source_payload_is_retained_for_shared_client_side_ccu_paging(self):
         params = {'from': '202609112200', 'to': '202609122159'}
         a = self.client.get('/irrigation/', {**params, 'format': 'json'}).json()['flow_data']
         b = self.client.get('/irrigation/', {**params, 'ccu': self.ccu.pk, 'format': 'json'}).json()['flow_data']
@@ -165,6 +165,12 @@ class FlowViewTests(TestCase):
         self.assertContains(page, '&lt;img src=x onerror=alert(1)&gt;')
         self.assertNotContains(page, '<img src=x onerror=alert(1)>')
         self.assertNotContains(page, '参考合计')
+        self.assertNotContains(page, 'id="sensorSiteSelect"')
+        self.assertNotContains(page, 'id="flowSiteSelect"')
+        self.assertContains(page, '运行时间与浇水量共用 CCU 筛选')
+        navigation = page.context['ccu_navigation']
+        self.assertEqual(next(t['ccu_id'] for t in navigation if t['ccu_code']=='CCU2'), self.ccu.pk)
+        self.assertNotIn('rows', navigation[0])
 
     def test_ai_total_and_details_use_the_same_inclusion_flags(self):
         from core.ai_agent import query_flow_watch_reference

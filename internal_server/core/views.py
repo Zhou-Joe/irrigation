@@ -7180,23 +7180,38 @@ def _ccu_queryset():
     return ccus
 
 
-def _irrig_window(request):
+def _irrig_default_window(*, latest_data=None):
+    """Last 24 hours ending at the latest successful import, in local time."""
+    from core.models import DataImportRun
+    from datetime import datetime
+    synced = (DataImportRun.objects.filter(status='success', finished_at__isnull=False)
+              .order_by('-finished_at').values_list('finished_at', flat=True).first())
+    if synced:
+        end = timezone.localtime(synced).replace(microsecond=0)
+    else:
+        latest_data = _irrig_data_span()[1] if latest_data is None else latest_data
+        end = (datetime.strptime(latest_data, '%Y%m%d%H%M%S') if latest_data
+               else timezone.localtime(timezone.now()).replace(microsecond=0))
+    return ((end - timedelta(hours=24)).strftime('%Y%m%d%H%M%S'),
+            end.strftime('%Y%m%d%H%M%S'))
+
+
+def _irrig_window(request, *, defaults=None):
     """Resolve the irrigation dashboard's `from`/`to` GET params.
 
     Returns local input strings and their UTC database bounds. Date-only inputs
     include the whole local day; minute inputs include second 00 through 59.
 
-    Default = yesterday's IRRIGATION DAY (D-1 22:00 -> D 21:59), matching the
-    Maxicom UI's daily totals — runtime rows keep raw timestamps, so a plain
-    calendar 00:00-23:59 window would split each overnight run across two
-    days (see core.irrig_time).
+    Default = latest successful synchronization minus 24 hours through that
+    synchronization. Before any recorded success, use the latest runtime record
+    (or the current local time when no records exist). Explicit inputs retain
+    their existing inclusive second-boundary semantics.
 
     Shared by the irrigation dashboard view and the zone-heatmap API so both
     honour the exact same date-window semantics.
     """
-    from core.irrig_time import irrigation_day_bounds
-    yesterday = timezone.localdate() - timedelta(days=1)
-    default_from, default_to = irrigation_day_bounds(yesterday, yesterday)
+    default_from, default_to = defaults or (('', '') if 'from' in request.GET and 'to' in request.GET
+                                             else _irrig_default_window())
     date_from = request.GET.get('from', default_from).strip()
     date_to = request.GET.get('to', default_to).strip()
     from core.irrig_time import runtime_window_bounds
@@ -7211,7 +7226,7 @@ def _irrig_window(request):
 def _irrig_data_span():
     """Return the available data span as compact local UI timestamps.
 
-    Used by the dashboard (for the 数据范围 hint and the 重置 default) and by
+    Used by the dashboard (for the 数据范围 hint and pre-sync fallback) and by
     the PDF/Excel exports (for their default window when no params given).
     Implemented as a single Min/Max aggregate rather than separate
     .exists()/.first()/.last() calls (3 queries → 1).
@@ -7394,7 +7409,8 @@ def irrigation_dashboard(request):
     span_to = last_ts[:12] if len(last_ts) >= 12 else (last_ts[:8] if last_ts else '')
 
     # Local irrigation-day inputs share their UTC conversion with the heatmap.
-    date_from, date_to, ts_from, ts_to = _irrig_window(request)
+    default_window = _irrig_default_window(latest_data=last_ts)
+    date_from, date_to, ts_from, ts_to = _irrig_window(request, defaults=default_window)
 
     # --- build the pivot ---
     rt_qs = MaxicomRuntime.objects.select_related('station', 'station__parent', 'site')
@@ -7505,8 +7521,8 @@ def irrigation_dashboard(request):
     today_iso = timezone.localdate().isoformat()
     data_span_dt = (_iso_dt(span_from), _iso_dt(span_to, end=True))
 
-    # Flow zones have their own source Site identity and selector. The runtime
-    # CCU grouping must not relabel, filter away, or estimate these water records.
+    # Retain source identity/calculations. The shared UI matches Site display
+    # numbers to CCU codes, never internal source keys or database primary keys.
     from core.flow_data import flow_window
     flow_data = flow_window(date_from, date_to)
     from core.sensor_flow import sensor_window
@@ -7524,6 +7540,7 @@ def irrigation_dashboard(request):
         'datetime_to_iso': datetime_to_iso,
         'today_iso': today_iso,
         'data_span_dt': data_span_dt,
+        'default_window_dt': (_iso_dt(default_window[0]), _iso_dt(default_window[1])),
         'controllers': all_controllers,
         'rows': rows,
         'col_totals': [col_totals[c] for c in all_controllers],
@@ -7538,6 +7555,9 @@ def irrigation_dashboard(request):
         # per-CCU matrices. Empty for a specific-CCU selection (the top-level
         # keys above already hold that single CCU's table).
         'ccu_tables': ccu_tables,
+        'ccu_navigation': [{key: table[key] for key in (
+            'ccu_id', 'ccu_code', 'ccu_name', 'controllers', 'grand_total', 'total_stations')}
+            for table in ccu_tables],
     }
 
     # JSON response for AJAX refresh (filters changed without full reload).
@@ -7556,6 +7576,7 @@ def irrigation_dashboard(request):
             'date_to': date_to,
             'show_ccu_col': show_ccu_col,
             'ccu_tables': ccu_tables,
+            'selected_ccu_code': ccu_obj.code if ccu_obj else None,
             'flow_data': flow_data,
             'sensor_data': sensor_data,
         })
@@ -7575,11 +7596,15 @@ def irrigation_zone_heatmap(request):
     Returns ``{zones: [...], max: <minutes>}`` shaped to match stats_zone_heatmap
     so the client can reuse the same Leaflet polygon renderer.
     """
-    from core.models import Zone, MaxicomRuntime
+    from core.models import Zone, MaxicomRuntime, Patch
     from django.db.models import Sum
     from collections import defaultdict
 
     _date_from, _date_to, ts_from, ts_to = _irrig_window(request)
+    ccu = next((item for item in _ccu_queryset() if str(item.pk) == request.GET.get('ccu')), None)
+    selected_stations = (set(Patch.objects.filter(parent=ccu).values_list('id', flat=True))
+                         if ccu is not None else None)
+    selected_station_tokens = {str(s) for s in selected_stations} if selected_stations is not None else None
 
     # active_boundary_points is a Python @property (resolves dxf vs manual), so
     # we can't filter on it in the ORM — load all zones and filter in Python.
@@ -7599,6 +7624,8 @@ def irrigation_zone_heatmap(request):
             sids = [int(sid) for sid in (z.maxicom_runtime or []) if sid is not None]
         except (TypeError, ValueError):
             continue
+        if selected_stations is not None:
+            sids = [sid for sid in sids if sid in selected_stations]
         if not sids:
             continue
         station_ids.update(sids)
@@ -7655,8 +7682,6 @@ def irrigation_zone_heatmap(request):
         minutes = sum(minutes_by_station.get(sid, 0) for sid in entry['station_ids'])
         intensity = z.irrigation_intensity
         depth = round(minutes / 60.0 * intensity, 1) if intensity else None
-        if depth and depth > max_volume:
-            max_volume = depth
         unmapped_out.append({
             'id': z.id,
             'code': z.code,
@@ -7682,7 +7707,9 @@ def irrigation_zone_heatmap(request):
             'name': z.name or '',
             'land_name': z.land.name if z.land else '',
         } for z in Zone.objects.filter(heatmap_excluded=True)
-                                .select_related('land').order_by('code')]
+                                .select_related('land').order_by('code')
+            if selected_station_tokens is None or any(str(sid) in selected_station_tokens
+                                                for sid in (z.maxicom_runtime or []))]
 
     return JsonResponse({
         'zones': out,

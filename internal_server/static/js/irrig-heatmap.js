@@ -107,9 +107,6 @@
         time:   'irrigHeatUserMax',
         volume: 'irrigHeatUserMaxVolume',
     };
-    function effectiveMax(dataMax) {
-        return (userMaxOverride && userMaxOverride > 0) ? userMaxOverride : (dataMax || 0);
-    }
     function loadUserMax() {
         var raw = localStorage.getItem(USERMAX_KEYS[currentMetric] || USERMAX_KEYS.time) || '';
         // volume caps may be fractional (mm), time caps are integer minutes.
@@ -183,8 +180,10 @@
         // Each metric has its own data-max (minutes vs mm) so the color scale
         // spans the right range. max_volume only counts zones WITH intensity,
         // so gray (no-intensity) zones never get to set the red end.
-        var dataMax = isVolume ? (heatData.max_volume || 0) : (heatData.max || 0);
-        var max = effectiveMax(dataMax);
+        var colorScale = window.IrrigationColors.scale(zones.map(function (zone) {
+            return isVolume ? zone.irrigation_depth_mm : zone.runtime_minutes;
+        }), userMaxOverride);
+        var dataMax = colorScale.max;
         var unitLabel = isVolume ? 'mm' : '分钟';
 
         for (var i = 0; i < zones.length; i++) {
@@ -195,7 +194,7 @@
             var val, hasData, detail;
             if (isVolume) {
                 var intensity = z.irrigation_intensity;
-                hasData = (intensity != null);
+                hasData = (z.irrigation_depth_mm != null);
                 val = z.irrigation_depth_mm || 0;
                 if (hasData) {
                     detail = '深度 ' + val + ' mm' +
@@ -217,7 +216,7 @@
                 color = 'rgb(140,140,140)';
                 opacity = 0.25;
             } else {
-                color = heatColor(val, max);
+                color = val > 0 ? heatColor(colorScale.position(val), 1) : heatColor(0, 1);
                 opacity = val > 0 ? 0.75 : 0.06;
             }
             var style = {
@@ -252,8 +251,15 @@
         if (maxLabel) {
             maxLabel.textContent = (userMaxOverride && userMaxOverride > 0)
                 ? '色阶上限: ' + userMaxOverride + ' ' + unitLabel + ' (最大值 ' + dataMax + ')'
-                : '最大: ' + dataMax + ' ' + unitLabel;
+                : '地图最大: ' + dataMax + ' ' + unitLabel + ' · 自动均衡色阶';
         }
+        var scaleLabels = document.getElementById('irrigHeatScaleLabels');
+        if (scaleLabels) scaleLabels.textContent = colorScale.kind === 'manual' ? '手动色阶按数值比例着色'
+            : dataMax > 0 ? '低 ' + colorScale.low + ' · 中位 ' + Number(colorScale.median.toFixed(1)) + ' · 高 ' + dataMax + ' ' + unitLabel
+            : '当前范围暂无非零数值。';
+        var coverage = document.getElementById('irrigMapCoverage');
+        if (coverage) coverage.textContent = zones.length + ' 个区域已上图；' + (heatData.unmapped || []).length
+            + ' 个未绘制边界，数值保留在下方清单和运行时间表格。';
         var bar = document.getElementById('irrigHeatLegendBar');
         if (bar) {
             bar.style.background = 'linear-gradient(to right, rgb(40,180,90), rgb(250,210,40), rgb(200,30,30))';
@@ -266,8 +272,10 @@
         if (unitSpan) unitSpan.textContent = unitLabel;
         var note = document.getElementById('irrigLegendNote');
         if (note) note.textContent = isVolume
-            ? '深度 = 运行分钟 ÷ 60 × 灌溉强度(mm/h) · 灰色 = 未配置强度'
-            : '颜色 = 所选时间窗口内该区域的运行分钟数';
+            ? '深度 = 运行分钟 ÷ 60 × 灌溉强度(mm/h) · 灰色 = 未配置强度。'
+                + (userMaxOverride ? '' : '颜色按地图正值的相对分布均衡显示，原始数值不变。')
+            : (userMaxOverride ? '颜色按手动上限与实际运行分钟数的比例显示。'
+                : '颜色按地图正值的相对分布均衡显示，原始分钟数不变，详见区域提示。');
         // The user-max input step should allow fractions in volume mode (mm
         // can be 0.5) but stay integer in time mode.
         var maxInput = document.getElementById('irrigHeatUserMax');
@@ -521,24 +529,32 @@
     function currentWindowParams() {
         var fromEl = document.getElementById('dateFrom');
         var toEl = document.getElementById('dateTo');
+        var ccuEl = document.getElementById('ccuSelect');
         var params = new URLSearchParams();
-        if (fromEl && fromEl.value) params.set('from', fromEl.value.replace(/[^0-9]/g, ''));
-        if (toEl && toEl.value) params.set('to', toEl.value.replace(/[^0-9]/g, ''));
+        if (fromEl && fromEl.value) params.set('from', window.IrrigationScope.compactInput(fromEl.value, false));
+        if (toEl && toEl.value) params.set('to', window.IrrigationScope.compactInput(toEl.value, true));
+        if (ccuEl && ccuEl.value) params.set('ccu', ccuEl.value);
         return params.toString();
     }
 
+    var heatQuerySequence = 0;
     function loadIrrigHeatmap() {
+        var sequence = ++heatQuerySequence;
         var qs = currentWindowParams();
         fetch('/api/irrigation/zone-heatmap/?' + qs)
-            .then(function (r) { return r.json(); })
+            .then(function (r) { if (!r.ok) throw new Error('热力图查询失败'); return r.json(); })
             .then(function (d) {
+                if (sequence !== heatQuerySequence) return;
                 heatData = d;
                 renderHeatZones();
                 renderUnmappedZones();
                 renderExcludedZones();
             })
             .catch(function (err) {
+                if (sequence !== heatQuerySequence) return;
                 console.error('[irrig-heatmap] load failed', err);
+                var coverage = document.getElementById('irrigMapCoverage');
+                if (coverage) coverage.textContent = '热力图更新失败，请重新查询。当前地图可能仍为上次结果。';
             });
     }
 
@@ -712,6 +728,13 @@
         document.querySelectorAll('.irrig-view-pill').forEach(function (p) {
             p.classList.toggle('active', p.dataset.view === mode);
         });
+        // On phones the filter sheet otherwise covers the table the user just
+        // requested. Keep its reopen control available above the common pager.
+        if (!isHeat && window.matchMedia('(max-width:768px)').matches) {
+            var sidebar = document.getElementById('irrigSidebar');
+            if (sidebar && !sidebar.classList.contains('collapsed')) toggleIrrigSidebar();
+            document.getElementById('irrigSidebarExpand')?.focus();
+        }
 
         if (isHeat) {
             initMap();
