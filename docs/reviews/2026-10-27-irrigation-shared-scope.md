@@ -47,3 +47,24 @@ scripts pass syntax checks. Browser checks use disposable synthetic records:
 CCU3/CCU5 selection and requery, current sync reset, retained Site 99, a 10-zone
 outlier color example and a 320-pixel phone layout. No importer, business records,
 email schedules or sensor conversion factors are changed. No migration is needed.
+
+## Production verification
+
+Deployed `1bfdead2` from `49ecf260` after an isolated, read-only production-copy
+check. That check preserved the database file hash and confirmed the exact window
+`20261026163020` through `20261027163020`, matching the latest successful import.
+It retained 2,247 drawn zones and 206 boundary-less zones; CCU3's map contained 172
+drawn zones and its sensor source retained internal key 5 / display number 3.
+Both map maxima matched drawn observations only.
+
+Django checks, static collection and the `horticulture` restart succeeded. The
+public page was checked for the new default inputs, balanced color legend,
+coverage counts and CCU3's three physical sensors under the common navigator.
+All three served JavaScript files were checked against their deployed source
+hashes. Current backup coverage is earlier than the successful import's finish
+time; the existing partial-coverage notice remains visible for that default
+window, rather than treating uncovered hours as confirmed zero readings.
+
+Private source/database backups, the candidate report and release logs are kept
+in `deployment_backups/irrigation-scope-20261028/` on the office server. No schema
+update, source-data import or business write was performed during this release.
