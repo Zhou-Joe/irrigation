@@ -154,7 +154,7 @@ class BusinessOperationsTests(TestCase):
         response=self.client.get('/requests/',HTTP_X_REQUESTED_WITH='XMLHttpRequest')
         self.assertEqual(response.status_code,401)
 
-    def test_import_fallback_resolves_site_internal_key_and_keeps_name_prefix(self):
+    def test_import_resolves_site_internal_key_before_names_and_keeps_fallback(self):
         module='core.management.commands.import_maxicom_mdb_linux'
         ccu2,_=Patch.objects.get_or_create(code='CCU2',defaults={'name':'Two'})
         ccu44,_=Patch.objects.get_or_create(code='CCU44',defaults={'name':'Forty-four'})
@@ -163,9 +163,11 @@ class BusinessOperationsTests(TestCase):
         tables={
             'SITE_CF':[{'IndexNumber':'2','SiteNumber':'44'},{'IndexNumber':'44','SiteNumber':'2'}],
             'CTROL_CF':[{'IndexNumber':'501','IndexName':'SAT1','ControllerSiteNumber':'2'},
-                {'IndexNumber':'502','IndexName':'SAT 7-1','ControllerSiteNumber':'44'}],
+                {'IndexNumber':'502','IndexName':'SAT 7-1','ControllerSiteNumber':'44'},
+                {'IndexNumber':'503','IndexName':'SAT 7-2','ControllerSiteNumber':'999'}],
             'STATN_CF':[{'IndexNumber':'901','StationSiteNumber':'2','StationControllerNumber':'501','StationControllerChannel':'19'},
-                {'IndexNumber':'902','StationSiteNumber':'44','StationControllerNumber':'502','StationControllerChannel':'20'}],
+                {'IndexNumber':'902','StationSiteNumber':'44','StationControllerNumber':'502','StationControllerChannel':'20'},
+                {'IndexNumber':'903','StationSiteNumber':'999','StationControllerNumber':'503','StationControllerChannel':'21'}],
             'XA_LOG':[{'SignalType':'M','SignalTable':'S','XactIndex':'901','XactStamp':'20261025100000','SignalValue':'20'}],
         }
         with patch(module+'._mdb_rows',side_effect=lambda _path,table:iter(tables[table])), \
@@ -173,4 +175,5 @@ class BusinessOperationsTests(TestCase):
             call_command('import_maxicom_mdb_linux',mdb='fixture.mdb',stdout=io.StringIO())
         old.refresh_from_db();self.assertEqual(old.parent_id,ccu44.pk)
         self.assertEqual(old.controller_channel,19);self.assertEqual(old.controller_number,501)
-        self.assertEqual(Patch.objects.get(code='station-902').parent_id,ccu7.pk)
+        self.assertEqual(Patch.objects.get(code='station-902').parent_id,ccu2.pk)
+        self.assertEqual(Patch.objects.get(code='station-903').parent_id,ccu7.pk)
