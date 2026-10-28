@@ -231,3 +231,98 @@ class MaxicomImportTests(TestCase):
         with self.assertRaises(CommandError):
             self._run_import(flow_exit=1)
         self.assertEqual(MaxicomFlowDaily.objects.get(pk=previous.pk).liters, 123)
+
+
+@override_settings(TIME_ZONE='Asia/Shanghai', CACHES={
+    'default': {'BACKEND': 'django.core.cache.backends.locmem.LocMemCache'}})
+class CrossNamedControllerTests(TestCase):
+    """LR37-4 belongs to source key 12 / displayed Site 14, not CCU37."""
+    @classmethod
+    def setUpTestData(cls):
+        cls.user = User.objects.create_superuser('lr-runtime-review', '', 'test-only')
+        cls.ccu14, _ = Patch.objects.get_or_create(code='CCU14', defaults={'name': 'Parking'})
+        cls.ccu37, _ = Patch.objects.get_or_create(code='CCU37', defaults={'name': 'West Loop'})
+        cls.old_station = Patch.objects.create(
+            code='station-4421', mdb_index=4421, parent=cls.ccu37,
+            name='LR valve', site_number=12, controller_number=213, controller_channel=1)
+        cls.zone = Zone.objects.create(code='14-7-1', name='Parking LR zone', patch=cls.ccu14)
+        cls.run_import()
+        call_command('populate_zone_maxicom_runtime', stdout=io.StringIO())
+
+    @classmethod
+    def run_import(cls):
+        tables = {
+            'SITE_CF': [{'IndexNumber': '12', 'SiteNumber': '14'},
+                        {'IndexNumber': '15', 'SiteNumber': '37'}],
+            'CTROL_CF': [{'IndexNumber': '213', 'IndexName': 'LR37-4',
+                          'ControllerSiteNumber': '12', 'ControllerLinkNumber': '25',
+                          'ControllerLinkChannel': '7'},
+                         {'IndexNumber': '182', 'IndexName': 'SAT7(CCHP)',
+                          'ControllerSiteNumber': '15', 'ControllerLinkNumber': '28',
+                          'ControllerLinkChannel': '7'}],
+            'STATN_CF': [{'IndexNumber': str(4420 + ch), 'StationSiteNumber': '12',
+                          'StationControllerNumber': '213', 'StationControllerChannel': str(ch)}
+                         for ch in range(1, 25)] + [
+                            {'IndexNumber': '8001', 'StationSiteNumber': '15',
+                             'StationControllerNumber': '182', 'StationControllerChannel': '1'}],
+            'XA_LOG': [{'XactStamp': '20261017222147', 'XactIndex': '4421',
+                        'SignalTable': 'S', 'SignalType': 'M', 'SignalValue': '29'},
+                       {'XactStamp': '20261017223000', 'XactIndex': '4421',
+                        'SignalTable': 'S', 'SignalType': 'M', 'SignalValue': '58'},
+                       {'XactStamp': '20261017223000', 'XactIndex': '8001',
+                        'SignalTable': 'S', 'SignalType': 'M', 'SignalValue': '15'}],
+        }
+        module = 'core.management.commands.import_maxicom_mdb_linux'
+        with patch(module + '._mdb_rows', side_effect=lambda _path, table: iter(tables[table])), \
+                patch(module + '.os.path.exists', return_value=True), patch(module + '.Command._import_flow'):
+            call_command('import_maxicom_mdb_linux', mdb='fixture.mdb', stdout=io.StringIO())
+
+    def setUp(self):
+        self.client.force_login(self.user)
+        self.params = {'from': '20261018000000', 'to': '20261018235959'}
+
+    def test_source_membership_repairs_existing_ids_and_remains_stable_on_reimport(self):
+        for _ in range(2):
+            station = Patch.objects.get(code='station-4421')
+            self.assertEqual(station.pk, self.old_station.pk)
+            self.assertEqual(station.parent_id, self.ccu14.pk)
+            self.assertEqual(Patch.objects.filter(controller_number=213, parent=self.ccu14).count(), 24)
+            controller = MaxicomController.objects.get(mdb_index=213)
+            self.assertEqual((controller.name, controller.site_id, controller.link_channel),
+                             ('LR37-4', self.ccu14.pk, 7))
+            self.assertEqual(list(MaxicomRuntime.objects.filter(station=station)
+                                  .values_list('site_id', 'run_time')),
+                             [(self.ccu14.pk, 29), (self.ccu14.pk, 58)])
+            self.run_import()
+
+    def test_all_and_single_ccu_web_tables_count_lr_exactly_once(self):
+        all_data = self.client.get('/irrigation/', {**self.params, 'format': 'json'}).json()
+        tables = {t['ccu_code']: t for t in all_data['ccu_tables']}
+        for number in (14, 37):
+            single = self.client.get('/irrigation/', {**self.params, 'format': 'json',
+                                                     'ccu': getattr(self, f'ccu{number}').pk}).json()
+            self.assertEqual(single['controllers'], tables[f'CCU{number}']['controllers'])
+            self.assertEqual(single['grand_total'], 87 if number == 14 else 15)
+        self.assertIn('LR37-4', tables['CCU14']['controllers'])
+        self.assertNotIn('LR37-4', tables['CCU37']['controllers'])
+        self.assertEqual(sum(t['grand_total'] for t in tables.values()), 102)
+        html = self.client.get('/irrigation/', {**self.params, 'ccu': self.ccu14.pk})
+        self.assertContains(html, '<th>LR37-4</th>', html=True)
+
+    def test_excel_uses_the_same_column_and_minutes(self):
+        from core.excel_exports import build_irrigation_report_excel
+        _, data = build_irrigation_report_excel(self.params['from'], self.params['to'], [self.ccu14.pk])
+        workbook = load_workbook(io.BytesIO(data.getvalue()), data_only=True)
+        sheet = workbook[f'CCU14_{self.ccu14.name}'[:31]]
+        column = next(cell.column for cell in sheet[4] if cell.value == 'LR37-4')
+        self.assertEqual(sheet.cell(5, column).value, 87)
+
+    def test_zone_mapping_and_filtered_heatmap_follow_real_link_seven(self):
+        self.zone.refresh_from_db()
+        self.assertEqual(self.zone.maxicom_runtime, [self.old_station.pk])
+        data = self.client.get('/api/irrigation/zone-heatmap/',
+                               {**self.params, 'ccu': self.ccu14.pk}).json()
+        self.assertEqual([(z['code'], z['runtime_minutes']) for z in data['unmapped']], [('14-7-1', 87)])
+        other = self.client.get('/api/irrigation/zone-heatmap/',
+                                {**self.params, 'ccu': self.ccu37.pk}).json()
+        self.assertFalse(other['zones'] or other['unmapped'])

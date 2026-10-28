@@ -5,10 +5,11 @@ XA_RuntimeProject is projected schedule data and must never be merged into
 Actual Log totals. UI and report boundaries convert local time to UTC through
 core.irrig_time; the stored original timestamps remain unchanged.
 
-CCU grouping follows controller name prefixes because historical SiteNumber
-renumbering does not follow the geographic CCU labels. Existing CCU safety
-snapshots remain in force. Flow days are assigned after converting UTC readings
-to the application's local timezone.
+CCU grouping resolves the controller's source Site key through SITE_CF to its
+display number. Controller names are labels, and may name a different area
+(LR37-4 is connected to Site 14). A name prefix is only a fallback when the
+source Site cannot be resolved. Existing CCU safety snapshots remain in force.
+Flow days are assigned after converting UTC readings to the local timezone.
 """
 import csv
 import datetime
@@ -24,6 +25,21 @@ from core.import_status import record_import
 
 CCU_RE = re.compile(r'^CCU(\d+)$', re.IGNORECASE)
 BATCH = 1000
+
+
+def controller_ccus(rows, source_to_ccu, ccus_by_number):
+    """Resolve physical Site membership before considering descriptive names."""
+    resolved = {}
+    for row in rows:
+        index = int(row.get('IndexNumber') or 0)
+        source = int(row.get('ControllerSiteNumber') or 0)
+        ccu = source_to_ccu.get(source)
+        if ccu is None:
+            match = re.search(r'(\d+)\s*-\s*\d+', _sq(row.get('IndexName')))
+            ccu = ccus_by_number.get(int(match.group(1))) if match else None
+        if index and ccu is not None:
+            resolved[index] = ccu
+    return resolved
 
 
 def actual_runtime_values(rows):
@@ -120,33 +136,14 @@ class Command(BaseCommand):
             except (ValueError, TypeError):
                 continue
 
-        # ── 1b. Controller IndexNumber -> CCU (by satellite NAME prefix) ───
-        # Maxicom's SiteNumber is NOT a reliable CCU key: the sites were
-        # renumbered, so e.g. the satellites named "SAT 3-x" now sit under
-        # Maxicom site 5 (and "SAT 5-x" under site 3), and the offset is
-        # different again for other sites. The satellite NAME prefix is the
-        # stable CCU identity — it matches the original setup (every CCU's
-        # satellites were "SAT <ccu>-x") and what operators expect. So we group
-        # controllers/stations/runtime by the "<N>-<x>" prefix in the controller
-        # IndexName, not by SiteNumber. Re-derived from CTROL_CF every run, so a
-        # future Maxicom renumbering self-heals on the next import.
-        SAT_PREFIX_RE = re.compile(r'(\d+)\s*-\s*\d+')
-        ctrl_to_ccu = {}          # CTROL_CF IndexNumber -> CCU Patch
-        no_prefix_ctrl = 0
-        for r in latest_config(list(_mdb_rows(mdb_path, 'CTROL_CF'))).values():
-            idx = (r.get('IndexNumber') or '').strip()
-            nm = _sq(r.get('IndexName'))
-            if not idx or nm == 'Site CCU':
-                continue
-            m = SAT_PREFIX_RE.search(nm or '')
-            if not m:
-                no_prefix_ctrl += 1
-                continue
-            ccu = site_map.get(int(m.group(1)))
-            if ccu is not None:
-                ctrl_to_ccu[int(idx)] = ccu
-        self.stdout.write(f'Controller->CCU by name prefix: {len(ctrl_to_ccu)} mapped, '
-                          f'{no_prefix_ctrl} no-prefix/skipped')
+        # ── 1b. Controller IndexNumber -> actual Site's display CCU ────────
+        # ControllerSiteNumber is an internal key, NOT the displayed number:
+        # key 5 displays CCU3, while key 12 displays CCU14. Resolve SITE_CF
+        # first. A label such as LR37-4 must not override its real Site 14
+        # connection. Cache the selected controller config for the rebuild.
+        controller_rows = list(latest_config(list(_mdb_rows(mdb_path, 'CTROL_CF'))).values())
+        ctrl_to_ccu = controller_ccus(controller_rows, source_to_ccu, site_map)
+        self.stdout.write(f'Controller->CCU by resolved Site: {len(ctrl_to_ccu)} mapped')
 
         # ── 2. STATN_CF -> station Patches (idempotent) ────────────────────
         existing_station_codes = set(
@@ -188,9 +185,8 @@ class Command(BaseCommand):
         if to_create:
             Patch.objects.bulk_create(to_create)
 
-        # Re-parent existing stations to their name-prefix CCU (self-healing: a
-        # station imported under the old scrambled SiteNumber moves to the CCU its
-        # satellite name actually denotes on the next run).
+        # Re-parent existing stations to the controller's actual Site CCU.
+        # Patch IDs remain stable, preserving all station/zone references.
         by_ccu = defaultdict(list)
         changed_metadata = []
         current_stations = {int(r['IndexNumber']): r for r in rows if str(r.get('IndexNumber','')).isdigit()}
@@ -215,7 +211,7 @@ class Command(BaseCommand):
         self.stdout.write(self.style.SUCCESS(
             f'Stations: {len(existing_station_codes)} existed, '
             f'{Patch.objects.filter(code__startswith="station-").count() - len(existing_station_codes)} new, '
-            f'{no_site} no-CCU-skipped, {reparented} re-parented to name-prefix CCU'
+            f'{no_site} no-CCU-skipped, {reparented} re-parented to resolved Site CCU'
         ))
 
         drifted = verify_ccus()
@@ -231,12 +227,10 @@ class Command(BaseCommand):
         # (== CTROL_CF IndexNumber). If this table drifts from the mdb, that join
         # misses and the dashboard silently shows 0 — which happened because the
         # nightly job never refreshed MaxicomController. Rebuild it every run.
-        # site follows the satellite NAME prefix (ctrl_to_ccu) so the controller
-        # lines up with where its stations/runtime actually live; SiteNumber is
-        # only a fallback for controllers with no parseable prefix. No model FKs
-        # into MaxicomController, so delete+rebuild cascades nothing.
+        # Controllers, stations and runtime share the same resolved source Site.
+        # No model FKs into MaxicomController, so delete+rebuild cascades nothing.
         new_ctrls = []
-        for r in latest_config(list(_mdb_rows(mdb_path, 'CTROL_CF'))).values():
+        for r in controller_rows:
             idx = (r.get('IndexNumber') or '').strip()
             if not idx:
                 continue
