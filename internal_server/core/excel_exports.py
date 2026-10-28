@@ -433,7 +433,7 @@ def build_irrigation_report_excel(date_from, date_to, ccu_ids=None):
             c.alignment = center
             c.border = border
 
-        # 24 station rows (no per-row 合计 cell)
+        # All configured station channels (no per-row 合计 cell).
         for ri, r in enumerate(rows):
             rownum = header_row + 1 + ri
             sc = ws.cell(row=rownum, column=1, value=r['station'])

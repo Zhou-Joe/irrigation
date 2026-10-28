@@ -326,3 +326,62 @@ class CrossNamedControllerTests(TestCase):
         other = self.client.get('/api/irrigation/zone-heatmap/',
                                 {**self.params, 'ccu': self.ccu37.pk}).json()
         self.assertFalse(other['zones'] or other['unmapped'])
+
+
+@override_settings(TIME_ZONE='Asia/Shanghai', CACHES={
+    'default': {'BACKEND': 'django.core.cache.backends.locmem.LocMemCache'}})
+class ExtendedControllerChannelTests(TestCase):
+    """CCU6 has a real 40-channel satellite; channels 25–40 must survive reports."""
+    @classmethod
+    def setUpTestData(cls):
+        cls.user = User.objects.create_superuser('extended-runtime-review', '', 'test-only')
+        cls.ccu, _ = Patch.objects.get_or_create(code='CCU6', defaults={'name': 'CCU Six'})
+        cls.ctrl = MaxicomController.objects.create(
+            site=cls.ccu, mdb_index=601, name='SAT6-7 (40stn, 6-8)',
+            site_number=6, link_number=1, link_channel=7)
+        for channel in range(1, 41):
+            station = Patch.objects.create(
+                code=f'extended-station-{channel}', parent=cls.ccu,
+                controller_number=cls.ctrl.mdb_index, controller_channel=channel)
+            if channel in (1, 24, 25, 40):
+                MaxicomRuntime.objects.create(
+                    site=cls.ccu, station=station, station_id_raw=station.pk,
+                    timestamp='20261017223000', run_time=channel)
+
+    def setUp(self):
+        self.client.force_login(self.user)
+        self.params = {'from': '20261018000000', 'to': '20261018235959', 'ccu': self.ccu.pk}
+
+    def test_extended_channels_and_totals_match_in_all_and_single_ccu_tables(self):
+        single = self.client.get('/irrigation/', {**self.params, 'format': 'json'}).json()
+        all_params = {k: v for k, v in self.params.items() if k != 'ccu'}
+        all_data = self.client.get('/irrigation/', {**all_params, 'format': 'json'}).json()
+        table = next(t for t in all_data['ccu_tables'] if t['ccu_id'] == self.ccu.pk)
+        for data in (single, table):
+            self.assertEqual(data['grand_total'], 90)
+            self.assertEqual([r['channel'] for r in data['rows']], list(range(1, 41)))
+            self.assertEqual({r['channel']: r['values'][0] for r in data['rows'] if r['total']},
+                             {1: 1, 24: 24, 25: 25, 40: 40})
+        html = self.client.get('/irrigation/', self.params)
+        self.assertContains(html, '>40</td>', html=False)
+
+    def test_configured_extended_channels_still_appear_in_an_empty_time_window(self):
+        data = self.client.get('/irrigation/', {**self.params, 'format': 'json',
+                                               'from': '20261019000000', 'to': '20261019235959'}).json()
+        self.assertEqual(len(data['rows']), 40)
+        self.assertEqual(data['grand_total'], 0)
+
+    def test_excel_retains_channel_40_and_its_minutes(self):
+        from core.excel_exports import build_irrigation_report_excel
+        _, data = build_irrigation_report_excel(self.params['from'], self.params['to'], [self.ccu.pk])
+        workbook = load_workbook(io.BytesIO(data.getvalue()), data_only=True)
+        sheet = workbook[f'{self.ccu.code}_{self.ccu.name}'[:31]]
+        self.assertEqual(sheet['A44'].value, '40')
+        self.assertEqual(sheet['B44'].value, 40)
+        self.assertEqual(sum(sheet.cell(row, 2).value or 0 for row in range(5, 45)), 90)
+
+    def test_pdf_can_render_the_extended_matrix(self):
+        response = self.client.get('/irrigation/report.pdf', self.params)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response['Content-Type'], 'application/pdf')
+        self.assertTrue(response.content.startswith(b'%PDF-'))

@@ -7263,11 +7263,12 @@ def _mapped_station_ids():
 
 
 def _build_ccu_matrix(ccu, rt_qs, ctrl_map, mapped_station_ids=None, stations=None):
-    """Build the 24 x N-satellite runtime matrix for one CCU.
+    """Build a channel x satellite runtime matrix for one CCU.
 
     Returns dict: {controllers, rows, col_totals, grand_total, max_cell}
       - controllers: sorted list of satellite names (columns)
-      - rows: 24 entries, station '01'..'24', each with values[] + total,
+      - rows: station '01'..'24' plus configured/recorded higher channels,
+        each with values[] + total,
         plus ``orphan`` (True if no Zone maps to this row's station).
       - col_totals: list aligned to controllers
     Used by both the dashboard view and the PDF/Excel exports.
@@ -7290,11 +7291,14 @@ def _build_ccu_matrix(ccu, rt_qs, ctrl_map, mapped_station_ids=None, stations=No
     # Tracking the station_id per (sat, channel) lets us flag orphan rows.
     sat_chan_minutes = defaultdict(dict)
     sat_chan_station = defaultdict(dict)
+    channels = set(range(1, 25))
     for st in (stations if stations is not None else Patch.objects.filter(parent=ccu, controller_channel__isnull=False)):
         ctrl = ctrl_map.get(st.controller_number)
         sat_name = ctrl.name if ctrl else f'SAT {st.controller_number}'
         sat_chan_minutes[sat_name][st.controller_channel] = 0
         sat_chan_station[sat_name][st.controller_channel] = st.id
+        if sat_name in ctrl_index and st.controller_channel and st.controller_channel > 0:
+            channels.add(st.controller_channel)
 
     # Fill in actual runtime minutes within the date range.
     for rt in rt_qs:
@@ -7304,13 +7308,15 @@ def _build_ccu_matrix(ccu, rt_qs, ctrl_map, mapped_station_ids=None, stations=No
         ctrl = ctrl_map.get(st.controller_number)
         sat_name = ctrl.name if ctrl else f'SAT {st.controller_number}'
         if sat_name in ctrl_index:
+            if st.controller_channel and st.controller_channel > 0:
+                channels.add(st.controller_channel)
             sat_chan_minutes[sat_name][st.controller_channel] = \
                 sat_chan_minutes[sat_name].get(st.controller_channel, 0) + (rt.run_time or 0)
             sat_chan_station[sat_name][st.controller_channel] = st.id
 
     rows = []
     col_totals = defaultdict(int)
-    for ch in range(1, 25):
+    for ch in sorted(channels):
         vals = [0] * len(all_controllers)
         orphan_vals = [False] * len(all_controllers)   # per-cell orphan flags
         for sat_name, idx in ctrl_index.items():
@@ -7428,8 +7434,8 @@ def irrigation_dashboard(request):
     # in this set is an "orphan" (no Zone backing) and its row gets flagged.
     mapped_station_ids = _mapped_station_ids()
 
-    # Build a clean 24 x N-satellites matrix PER CCU (rows = station numbers
-    # 01-24, columns = that CCU's satellites, cell = runtime of the valve at
+    # Build a channel x satellite matrix PER CCU (rows include channels above
+    # 24 on extended controllers, columns = that CCU's satellites, cell = runtime at
     # (channel, satellite)). A specific CCU builds just one matrix; "全部 CCU"
     # builds one matrix per CCU (mirrors the PDF/Excel exports — one page/sheet
     # each) and the client pages between them. This replaces the old "all CCUs"
@@ -8000,7 +8006,7 @@ def stats_zone_heatmap(request):
 @login_required(login_url='core:login')
 def irrigation_report_pdf(request):
     """One-click PDF export: one page per CCU (sorted by CCU code), each page a
-    24 x N-satellite runtime matrix fitting the page. Same format as the
+    Channel x satellite runtime matrix fitting the page. Same format as the
     dashboard. Honors the date-range filter from the query string.
     """
     from core.models import Patch, MaxicomController, MaxicomRuntime
@@ -8057,7 +8063,6 @@ def irrigation_report_pdf(request):
     frame_h = page_size[1] - 16 * mm              # page minus top/bottom margins
     title_block_h = 28 * mm
     avail_for_table = frame_h - title_block_h
-    ROW_H = avail_for_table / 25.4                # 1.4 + 24 = 25.4 row-units (no 合计 row/col)
     FS = 6.0                                       # cell font size
 
     doc = SimpleDocTemplate(
@@ -8106,7 +8111,8 @@ def irrigation_report_pdf(request):
         sat_col_w = max(7 * mm, (avail_w - side_w) / n_sat) if n_sat else (avail_w - side_w)
         col_widths = [side_w] + [sat_col_w] * n_sat
         # row heights: header slightly taller
-        row_heights = [ROW_H * 1.4] + [ROW_H] * 24
+        row_h = avail_for_table / (len(rows) + 1.4)
+        row_heights = [row_h * 1.4] + [row_h] * len(rows)
 
         tbl = Table(data, colWidths=col_widths, rowHeights=row_heights, repeatRows=1)
         ts = [
@@ -8170,7 +8176,7 @@ def irrigation_report_pdf(request):
 @login_required(login_url='core:login')
 def irrigation_report_excel(request):
     """One-click Excel export: one sheet per CCU (sorted naturally), each sheet
-    a 24 x N-satellite runtime matrix. Same data as the dashboard / PDF.
+    a channel x satellite runtime matrix. Same data as the dashboard / PDF.
     Honors the date-range filter from the query string.
     """
     from core.excel_exports import build_irrigation_report_excel
