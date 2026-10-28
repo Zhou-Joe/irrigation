@@ -35,4 +35,21 @@ fit without clipping. The earlier LR37-4 and operator runtime examples pass.
 
 ## Production release
 
-Pending read-only production-copy checks and deployment.
+Deployed `30cab35b` from `10fdc4f3`. The office GitHub fetch timed out, so the
+already-pushed Git commit was transferred as a verified incremental bundle over
+the existing authorized SSH tunnel. The bundle SHA-256 was
+`8432b1bd70523cb5356b73142a055285405dc236e89bc3aaf4d2d52b5b10494f`.
+
+Read-only checks against consistent production snapshots before and after the
+restart confirm all 40 per-channel web and Excel values match the stored Actual
+Log sums. The complete matrix totals 21,283,420 minutes, exactly matching the
+stored runtime total, including the previously hidden 33,424 minutes. A full
+PDF export succeeds, LR37-4 remains in CCU14, and the snapshot file hashes stay
+unchanged by verification. No import, migration or business-data write occurred.
+
+Django checks passed, `horticulture` is active on the deployed revision, the
+public login returns HTTP 200, and production has no tracked modifications.
+Source/database backups, the source-membership audit, release bundle and
+candidate/live reports are retained under
+`deployment_backups/ccu6-extended-20261028/` (the source audit is retained with
+the prior LR release in `deployment_backups/ccu14-lr-20261028/`).
