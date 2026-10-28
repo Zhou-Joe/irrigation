@@ -34,4 +34,27 @@ name-prefix test now checks source-first resolution and unknown-source fallback.
 
 ## Production release
 
-Pending isolated production-copy validation and controlled metadata repair.
+Deployed `10fdc4f3` from `41b12225` after validation against an isolated,
+consistent production database copy. The repair updated one controller's CCU,
+24 station parents, the Site foreign key on 1,296 runtime rows, and the cached
+station references on the 21 affected zones. All other columns and tables were
+fingerprinted inside the transaction and verified unchanged. No source import,
+schema migration, timestamp/measurement edit or email dispatch was performed.
+
+Single/all-CCU application queries and Excel retain the full 17,628 minutes in
+the LR column exactly once, under CCU14. The CCU14 heatmap response includes the
+21 configured LR zones. Full-history matrix totals were identical before/after
+the repair. Django checks and the `horticulture` restart succeeded. Private
+source/database snapshots, the repair script and verification reports are kept
+in `deployment_backups/ccu14-lr-20261028/` on the office server.
+
+### Separate finding during the total-preservation check
+
+The existing pivot assumes every controller has only 24 channels. Production
+`SAT6-7 (40stn, 6-8)` has channels 25–40, so 4,072 stored readings / 33,424 minutes
+across the retained history are omitted from the matrix and its exports. Those
+readings are retained in the database. This is separate from the LR37-4 Site
+membership defect; the follow-up in `2026-10-28-extended-controller-channels.md`
+removes the 24-row limit. The LR repair's preservation
+comparison uses the same existing matrix coverage before and after, and separately
+checks every stored measurement and timestamp remains unchanged.

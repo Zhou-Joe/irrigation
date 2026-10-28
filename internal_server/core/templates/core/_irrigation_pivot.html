@@ -1,6 +1,6 @@
 {% comment %}Server-rendered runtime pivot matrix. Re-rendered client-side via JS on filter change.
    Two render shapes:
-     - 全部 CCU mode (ccu_tables non-empty): one 24xN matrix per CCU, each on its
+     - 全部 CCU mode (ccu_tables non-empty): one channel x satellite matrix per CCU, each on its
        own .ccu-table-page; the client pages between them. Only the first page is
        .active at first paint.
      - Specific CCU / single table: the legacy single table below, unchanged.{% endcomment %}
@@ -49,7 +49,7 @@
     {% endfor %}
 </div>
 <div class="legend"><span>少</span><div class="scale"></div><span>多</span>
-    <span style="margin-left:12px;">列 = 卫星控制器（如 AI 7-1），每站24通道；单元格 = 运行分钟数</span></div>
+    <span style="margin-left:12px;">列 = 卫星控制器（如 AI 7-1），行 = 站点通道；单元格 = 运行分钟数</span></div>
 {% else %}
 {% if rows %}
 <div style="overflow-x:auto;">
@@ -88,7 +88,7 @@
     </table>
 </div>
 <div class="legend"><span>少</span><div class="scale"></div><span>多</span>
-    <span style="margin-left:12px;">列 = 卫星控制器（如 AI 7-1），每站24通道；单元格 = 运行分钟数</span></div>
+    <span style="margin-left:12px;">列 = 卫星控制器（如 AI 7-1），行 = 站点通道；单元格 = 运行分钟数</span></div>
 {% else %}
 <div class="chart-empty">所选范围内无运行数据</div>
 {% endif %}
