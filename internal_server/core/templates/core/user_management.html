@@ -1112,7 +1112,7 @@ function toggleEcCcuField() {
 var _EC_LABELS = {
     {% for code, rlabel in report_choices %}'{{ code }}': '{{ rlabel }}',{% endfor %}
 };
-var _EC_WINDOWED = ['work_reports', 'irrigation', 'inventory_txn'];   // types that need a time window
+var _EC_WINDOWED = ['work_reports', 'difficult_workorders', 'irrigation', 'inventory_txn'];
 // Called whenever a report checkbox toggles: refresh CCU picker + window inputs.
 function ecOnReportToggle() {
     toggleEcCcuField();

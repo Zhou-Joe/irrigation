@@ -1,5 +1,5 @@
 """Shared CCU filters, synchronization defaults and drawable heatmap scope."""
-from datetime import datetime, timezone as dt_timezone
+from datetime import datetime, timedelta, timezone as dt_timezone
 from unittest.mock import patch
 from django.contrib.auth.models import User
 from django.test import TestCase, RequestFactory, override_settings
@@ -9,6 +9,43 @@ from core.views import _irrig_default_window, _irrig_window
 
 @override_settings(TIME_ZONE='Asia/Shanghai')
 class IrrigationDefaultWindowTests(TestCase):
+    def test_every_sync_preset_uses_successful_sync_and_preserves_ccu(self):
+        sync=datetime(2026,11,3,23,1,30,tzinfo=dt_timezone.utc)
+        DataImportRun.objects.create(status='success',finished_at=sync)
+        DataImportRun.objects.create(status='failed',finished_at=sync+timedelta(hours=1))
+        user=User.objects.create_superuser('irrig-presets','','test-only');self.client.force_login(user)
+        ccu,_=Patch.objects.get_or_create(code='CCU3',defaults={'name':'TL'})
+        for days in (1,3,7,14,30):
+            with self.subTest(days=days):
+                params={'sync_days':days,'ccu':ccu.pk}
+                response=self.client.get('/irrigation/',{**params,'format':'json'})
+                self.assertEqual(response.status_code,200)
+                data=response.json()
+                self.assertEqual(data['date_to'],'20261104070130')
+                self.assertEqual(datetime.strptime(data['date_to'],'%Y%m%d%H%M%S')-
+                                 datetime.strptime(data['date_from'],'%Y%m%d%H%M%S'),timedelta(days=days))
+                self.assertEqual(data['selected_ccu_code'],'CCU3')
+                self.assertEqual(data['sync_days'],days)
+                self.assertEqual(_irrig_window(RequestFactory().get('/api/irrigation/zone-heatmap/',params))[:2],
+                                 (data['date_from'],data['date_to']))
+        html=self.client.get('/irrigation/')
+        for label in ('同步前24h','同步前3天','同步前7天','同步前14天','同步前30天'):
+            self.assertContains(html,label)
+
+    def test_preset_requeries_new_sync_and_explicit_dates_take_precedence(self):
+        first=datetime(2026,11,3,23,1,30,tzinfo=dt_timezone.utc)
+        DataImportRun.objects.create(status='success',finished_at=first)
+        request=RequestFactory().get('/irrigation/',{'sync_days':'7'})
+        old=_irrig_window(request)
+        DataImportRun.objects.create(status='success',finished_at=first+timedelta(hours=2))
+        self.assertNotEqual(_irrig_window(request),old)
+        manual=RequestFactory().get('/irrigation/',{'sync_days':'30','from':'20260912070100','to':'20260912070159'})
+        self.assertEqual(_irrig_window(manual)[:2],('20260912070100','20260912070159'))
+        from django.core.exceptions import BadRequest
+        for invalid in ('0','-3','31','3.5','bad'):
+            with self.assertRaises(BadRequest):
+                _irrig_window(RequestFactory().get('/irrigation/',{'sync_days':invalid}))
+
     def test_latest_success_anchors_24_hours_even_when_newer_import_failed(self):
         sync=datetime(2026,10,26,23,1,30,tzinfo=dt_timezone.utc)
         DataImportRun.objects.create(status='success',finished_at=sync)

@@ -1631,6 +1631,7 @@ def send_report_email(report_type: str, start_date: str, end_date: str,
 
     支持的 report_type：
       - work_reports      维修工单记录
+      - difficult_workorders 疑难问题跟进报表
       - irrigation        灌溉运行报表
       - projects          项目管理
       - inventory_catalog 库存目录

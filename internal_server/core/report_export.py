@@ -25,7 +25,7 @@ XLSX_CT = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
 
 # All supported report types (mirrors EmailReportConfig.REPORT_CHOICES keys).
 REPORT_TYPES = [
-    'work_reports', 'irrigation', 'projects', 'inventory_catalog',
+    'work_reports', 'difficult_workorders', 'irrigation', 'projects', 'inventory_catalog',
     'inventory_txn', 'purchase_orders', 'zones',
 ]
 
@@ -33,6 +33,7 @@ REPORT_TYPES = [
 # command's _resolve_builder table. Used for email subjects and API error text.
 REPORT_TYPE_LABELS = {
     'work_reports': '维修工单记录',
+    'difficult_workorders': '疑难问题跟进报表',
     'irrigation': '灌溉运行报表',
     'projects': '项目管理',
     'inventory_catalog': '库存目录',
@@ -56,8 +57,10 @@ def resolve_builder(report_type):
     ``excel_exports`` never blocks Django from booting.
     """
     from core import excel_exports as ex
+    from core.difficult_report import build_difficult_workorders_excel
     table = {
         'work_reports': (ex.build_work_reports_excel, '维修工单记录'),
+        'difficult_workorders': (build_difficult_workorders_excel, '疑难问题跟进报表'),
         'irrigation': (ex.build_irrigation_report_excel, '灌溉运行报表'),
         'projects': (ex.build_project_export_excel, '项目管理'),
         'inventory_catalog': (ex.build_inventory_catalog_excel, '库存目录'),
@@ -165,7 +168,7 @@ def build_report(report_type, start=None, end=None, user=None, ccu_ids=None):
         from core.irrig_time import irrigation_day_bounds
         df, dt = irrigation_day_bounds(start, end)
         return build_fn(df, dt, ccu_ids=ccu_ids)
-    if report_type == 'work_reports':
+    if report_type in {'work_reports', 'difficult_workorders'}:
         if user is None:
             from django.contrib.auth import get_user_model
             User = get_user_model()
@@ -228,7 +231,7 @@ def build_all_attachments(report_types, frequency, today, report_windows=None,
                 df = start_dt.strftime('%Y%m%d%H%M')
                 dt = end_dt.strftime('%Y%m%d%H%M')
                 fname, buf = build_fn(df, dt, ccu_ids=ccu_ids)
-            elif rt == 'work_reports':
+            elif rt in {'work_reports', 'difficult_workorders'}:
                 # Day-granular: WorkReport.date is a DateField, hours are ignored.
                 ds = int(win.get('days_start', 1)); de = int(win.get('days_end', 0))
                 start_d = today - timedelta(days=ds)

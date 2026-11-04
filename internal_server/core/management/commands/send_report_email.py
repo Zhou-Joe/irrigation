@@ -187,7 +187,7 @@ class Command(BaseCommand):
             from core.irrig_time import irrigation_day_bounds
             df, dt = irrigation_day_bounds(start, end)
             return build_fn(df, dt)
-        if report_type == 'work_reports':
+        if report_type in {'work_reports', 'difficult_workorders'}:
             from django.contrib.auth import get_user_model
             User = get_user_model()
             # Scheduled email has no per-user scope — export as a manager
