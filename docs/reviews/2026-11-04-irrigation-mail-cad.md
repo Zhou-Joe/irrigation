@@ -36,7 +36,24 @@ part of this release.
 
 ## Production release
 
-Pending candidate verification and deployment. The existing active `每日推送`
-configuration (id 2, daily at 09:00) will receive the new attachment with the
-existing work-report date window. Its recipients, schedule and other selected
-reports will be preserved; no immediate test email will be sent.
+Deployed `9934068f` from `30cab35b` after verification on a consistent production
+copy. The office GitHub fetch timed out after the bounded 25-second attempt;
+the already-pushed commit was transferred as a verified Git bundle over SSH.
+The existing active `每日推送` configuration (id 2, daily at 09:00) now includes
+the new attachment with the existing work-report date window. Recipients,
+schedule, dispatch history and other report selections were preserved.
+
+Candidate and post-release checks confirm all five windows end at the latest
+successful sync, `2026-11-04 16:30:17` Shanghai time. Each window has its exact
+requested duration and preserves CCU3. The new workbook has all five worksheets;
+the inspected snapshot contains 62 ongoing, 14 awaiting confirmation, one
+recently completed issue and 37 follow-up entries. A dry run generates seven
+attachments with zero generation failures. No SMTP message was sent by testing.
+Snapshot business-table fingerprints remain unchanged during verification.
+
+Django checks, the no-op choice-state migration and the `horticulture` restart
+succeeded. The public login returns HTTP 200, production is on the tested
+revision with no tracked modifications, and release snapshots/reports are held
+under `deployment_backups/nov4-irrigation-mail-cad/`. Browser verification uses
+disposable synthetic data only; phone buttons span the full filter width at
+320 pixels, preserve an explicit selected style, and fit without clipping.
