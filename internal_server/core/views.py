@@ -1737,7 +1737,7 @@ def email_config_save(request):
     # _hour_start / _days_end / _hour_end per checked windowed type (irrigation
     # carries hours; work_reports/inventory_txn are day-only). Dateless types
     # (zones/inventory_catalog/purchase_orders/projects) have no window.
-    WINDOWED = {'work_reports', 'irrigation', 'inventory_txn'}
+    WINDOWED = {'work_reports', 'difficult_workorders', 'irrigation', 'inventory_txn'}
     # Which windowed types are actually selected? Each needs a window entry.
     selected_windowed = [rt for rt in report_types if rt in WINDOWED]
     report_windows = {}
@@ -7180,8 +7180,20 @@ def _ccu_queryset():
     return ccus
 
 
-def _irrig_default_window(*, latest_data=None):
-    """Last 24 hours ending at the latest successful import, in local time."""
+IRRIG_SYNC_DAYS = (1, 3, 7, 14, 30)
+
+
+def _irrig_sync_days(request):
+    """Only offer bounded, supported synchronization-relative query windows."""
+    from django.core.exceptions import BadRequest
+    value = request.GET.get('sync_days', '1')
+    if value not in {str(days) for days in IRRIG_SYNC_DAYS}:
+        raise BadRequest('请选择同步前24小时、3天、7天、14天或30天。')
+    return int(value)
+
+
+def _irrig_default_window(*, latest_data=None, days=1):
+    """Requested days ending at the latest successful import, in local time."""
     from core.models import DataImportRun
     from datetime import datetime
     synced = (DataImportRun.objects.filter(status='success', finished_at__isnull=False)
@@ -7192,7 +7204,7 @@ def _irrig_default_window(*, latest_data=None):
         latest_data = _irrig_data_span()[1] if latest_data is None else latest_data
         end = (datetime.strptime(latest_data, '%Y%m%d%H%M%S') if latest_data
                else timezone.localtime(timezone.now()).replace(microsecond=0))
-    return ((end - timedelta(hours=24)).strftime('%Y%m%d%H%M%S'),
+    return ((end - timedelta(days=days)).strftime('%Y%m%d%H%M%S'),
             end.strftime('%Y%m%d%H%M%S'))
 
 
@@ -7202,16 +7214,17 @@ def _irrig_window(request, *, defaults=None):
     Returns local input strings and their UTC database bounds. Date-only inputs
     include the whole local day; minute inputs include second 00 through 59.
 
-    Default = latest successful synchronization minus 24 hours through that
-    synchronization. Before any recorded success, use the latest runtime record
+    Default = 24 hours before the latest successful synchronization; sync_days
+    can request 3, 7, 14 or 30 days. Before any success, use the latest runtime record
     (or the current local time when no records exist). Explicit inputs retain
     their existing inclusive second-boundary semantics.
 
     Shared by the irrigation dashboard view and the zone-heatmap API so both
     honour the exact same date-window semantics.
     """
+    days = _irrig_sync_days(request)
     default_from, default_to = defaults or (('', '') if 'from' in request.GET and 'to' in request.GET
-                                             else _irrig_default_window())
+                                             else _irrig_default_window(days=days))
     date_from = request.GET.get('from', default_from).strip()
     date_to = request.GET.get('to', default_to).strip()
     from core.irrig_time import runtime_window_bounds
@@ -7415,7 +7428,9 @@ def irrigation_dashboard(request):
     span_to = last_ts[:12] if len(last_ts) >= 12 else (last_ts[:8] if last_ts else '')
 
     # Local irrigation-day inputs share their UTC conversion with the heatmap.
-    default_window = _irrig_default_window(latest_data=last_ts)
+    sync_days = _irrig_sync_days(request)
+    selected_sync_days = sync_days if 'from' not in request.GET and 'to' not in request.GET else None
+    default_window = _irrig_default_window(latest_data=last_ts, days=sync_days)
     date_from, date_to, ts_from, ts_to = _irrig_window(request, defaults=default_window)
 
     # --- build the pivot ---
@@ -7547,6 +7562,8 @@ def irrigation_dashboard(request):
         'today_iso': today_iso,
         'data_span_dt': data_span_dt,
         'default_window_dt': (_iso_dt(default_window[0]), _iso_dt(default_window[1])),
+        'sync_days_options': IRRIG_SYNC_DAYS,
+        'selected_sync_days': selected_sync_days,
         'controllers': all_controllers,
         'rows': rows,
         'col_totals': [col_totals[c] for c in all_controllers],
@@ -7580,6 +7597,7 @@ def irrigation_dashboard(request):
             'total_stations': total_stations_with_runtime,
             'date_from': date_from,
             'date_to': date_to,
+            'sync_days': selected_sync_days,
             'show_ccu_col': show_ccu_col,
             'ccu_tables': ccu_tables,
             'selected_ccu_code': ccu_obj.code if ccu_obj else None,

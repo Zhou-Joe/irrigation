@@ -153,6 +153,9 @@
         margin-bottom: 8px;
     }
     .coord-info-box .label { color: var(--color-text-secondary); margin-bottom: 2px; }
+    .cad-modes { display:flex; gap:6px; margin:10px 0 6px; }
+    .cad-modes button { flex:1; min-height:36px; }
+    .cad-modes button[aria-pressed="true"] { background:var(--color-primary); color:white; }
 </style>
 {% endblock %}
 
@@ -173,6 +176,16 @@
         <!-- Sidebar -->
         <div class="batch-sidebar">
             <div class="sidebar-scroll">
+                <div class="panel">
+                    <label style="display:flex;align-items:center;gap:8px;font-size:.85rem;">
+                        <input type="checkbox" id="showRefZones" onchange="toggleReferenceZones()"> 显示已有区域边界和标签
+                    </label>
+                    <div class="cad-modes" role="group" aria-label="CAD 操作模式">
+                        <button type="button" id="cadMoveMode" class="btn btn-secondary btn-sm" aria-pressed="false" onclick="setDxfMoveMode(true)" disabled>整体平移</button>
+                        <button type="button" id="cadBindMode" class="btn btn-secondary btn-sm" aria-pressed="true" onclick="setDxfMoveMode(false)">绑定勿动</button>
+                    </div>
+                    <div id="cadModeHint" role="status" style="font-size:.78rem;color:var(--color-text-secondary);">整体位置已锁定，点击图形可选择区域。</div>
+                </div>
 
                 <!-- Step 1: Upload -->
                 <div class="panel" id="panelUpload">
@@ -203,9 +216,9 @@
                         <div id="geoRefStatus"></div>
                     </div>
                     <div id="autoGeoRef" style="display:none;">
-                        <div class="status-msg success">坐标已自动配准 — 拖拽图形可微调位置</div>
+                        <div class="status-msg success">坐标已自动配准；如需微调，请先切换到「整体平移」。</div>
                         <div style="margin-top:6px;display:flex;gap:6px;align-items:center;">
-                            <button class="btn btn-secondary btn-sm" onclick="resetDxfOffset()">重置位置</button>
+                            <button class="btn btn-secondary btn-sm" id="resetDxfOffsetBtn" onclick="resetDxfOffset()" disabled>重置位置</button>
                             <span id="offsetInfo" style="font-size:0.78rem;color:var(--color-text-secondary);"></span>
                         </div>
                     </div>
@@ -340,9 +353,13 @@
     function renderRefZones() {
         refLayerGroup.clearLayers();
         refLabelLayer.clearLayers();
+        if (!document.getElementById('showRefZones').checked) {
+            updateRefLabelVisibility();
+            return;
+        }
         allDrawnZones.forEach(function(zone) {
             if (!zone.boundary_points || zone.boundary_points.length === 0) return;
-            const style = { color: '#fff', weight: 2, opacity: 0.6, fillOpacity: 0.03, dashArray: '6 4' };
+            const style = { color: '#fff', weight: 2, opacity: 0.6, fillOpacity: 0.03, dashArray: '6 4', interactive: false };
             var labelLatLng = null;
             var rings = flattenBoundaryRings(zone.boundary_points);
             rings.forEach(function(ring, ri) {
@@ -377,7 +394,7 @@
     }
 
     function updateRefLabelVisibility() {
-        var show = map.getZoom() >= 19;
+        var show = document.getElementById('showRefZones').checked && map.getZoom() >= 19;
         if (show) {
             if (!map.hasLayer(refLabelLayer)) map.addLayer(refLabelLayer);
         } else {
@@ -386,6 +403,7 @@
     }
 
     map.on('zoomend', updateRefLabelVisibility);
+    window.toggleReferenceZones = renderRefZones;
 
     renderRefZones();
 
@@ -413,8 +431,26 @@
     let _suppressNextMapClick = false;  // set on polygon mousedown → ignore the synthesized map click
     let dxfDragging = false;
     let dxfOrigLatLngs = null;  // snapshot of polygon positions at drag start
+    let dxfMoveEnabled = false;
+    let dxfAssignmentBusy = false;
+    let cancelDxfDrag = null;
+
+    window.setDxfMoveMode = function(enabled) {
+        if (cancelDxfDrag) cancelDxfDrag();
+        dxfMoveEnabled = !!enabled && !!dxfTransformed && assignedGroupIds.size === 0 && !dxfAssignmentBusy;
+        document.getElementById('cadMoveMode').disabled = !dxfTransformed || assignedGroupIds.size > 0 || dxfAssignmentBusy;
+        document.getElementById('cadMoveMode').setAttribute('aria-pressed', String(dxfMoveEnabled));
+        document.getElementById('cadBindMode').setAttribute('aria-pressed', String(!dxfMoveEnabled));
+        document.getElementById('resetDxfOffsetBtn').disabled = !dxfMoveEnabled;
+        document.getElementById('cadModeHint').textContent = dxfAssignmentBusy ? '正在绑定区域，整体位置已锁定。' : assignedGroupIds.size
+            ? '已分配区域，整体位置已锁定。继续点击其余图形进行绑定。'
+            : dxfMoveEnabled ? '拖动 CAD 图形可整体平移；到位后切换「绑定勿动」。'
+            : '整体位置已锁定，点击图形可选择区域。';
+        dxfPolygons.forEach(function(p) { var el=p.getElement(); if(el) el.style.cursor=dxfMoveEnabled?'grab':'pointer'; });
+    };
 
     function renderDxfShapes(fit) {
+        if (cancelDxfDrag) cancelDxfDrag();
         dxfLayerGroup.clearLayers();
         dxfPolygons = [];
         if (!dxfTransformed) return;
@@ -449,13 +485,19 @@
             poly._groupId = it.groupId;
             poly._outerId = it.outerId;
             dxfPolygons.push(poly);
+            poly.on('click', function(e) {
+                if (mapClickMode === 'anchor') return;
+                L.DomEvent.stopPropagation(e);
+                if (dxfMoveEnabled) return;
+                if (it.groupId) selectGroup(it.groupId);
+            });
 
             // Combined click + drag via DOM-level mousedown
             var svgEl = poly.getElement();
             if (svgEl) {
-                svgEl.style.cursor = 'grab';
+                svgEl.style.cursor = dxfMoveEnabled ? 'grab' : 'pointer';
                 svgEl.addEventListener('mousedown', function(domE) {
-                    if (domE.button !== 0) return;
+                    if (domE.button !== 0 || !dxfMoveEnabled || mapClickMode === 'anchor' || assignedGroupIds.size) return;
                     domE.stopPropagation();  // prevent map drag
                     _suppressNextMapClick = true;  // ignore the click that follows (don't deselect)
 
@@ -472,7 +514,7 @@
                         var cur = map.mouseEventToLatLng(ev);
                         var dlat = cur.lat - startLL.lat;
                         var dlng = cur.lng - startLL.lng;
-                        if (!clicked && (Math.abs(dlat) > 1e-8 || Math.abs(dlng) > 1e-8)) {
+                        if (!clicked && Math.hypot(ev.clientX - domE.clientX, ev.clientY - domE.clientY) >= 6) {
                             clicked = true; // it's a drag, not a click
                         }
                         if (clicked) {
@@ -487,6 +529,8 @@
                     function onDocUp() {
                         document.removeEventListener('mousemove', onDocMove);
                         document.removeEventListener('mouseup', onDocUp);
+                        cancelDxfDrag = null;
+                        _suppressNextMapClick = false;
 
                         if (clicked) {
                             // Was a drag — commit offset (reference the first polygon's outer ring)
@@ -504,20 +548,15 @@
                             updateOffsetInfo(offLat, offLng);
                             // Refresh zone suggestions with new position
                             computeSuggestions();
-                        } else {
-                            // Was a click — select/deselect group
-                            if (it.groupId) {
-                                selectGroup(it.groupId);
-                            } else if (dxfGroups) {
-                                for (var gi = 0; gi < dxfGroups.length; gi++) {
-                                    if (getGroupShapeIds(dxfGroups[gi]).includes(it.outerId)) {
-                                        selectGroup(dxfGroups[gi].id);
-                                        return;
-                                    }
-                                }
-                            }
                         }
                     }
+                    cancelDxfDrag = function() {
+                        document.removeEventListener('mousemove', onDocMove);
+                        document.removeEventListener('mouseup', onDocUp);
+                        dxfPolygons.forEach(function(p, pi) { p.setLatLngs(dxfOrigLatLngs[pi]); });
+                        cancelDxfDrag = null;
+                        _suppressNextMapClick = false;
+                    };
                     document.addEventListener('mousemove', onDocMove);
                     document.addEventListener('mouseup', onDocUp);
                 });
@@ -545,7 +584,7 @@
         }
     }
     window.resetDxfOffset = function() {
-        if (!dxfTransformed || _cumulOffLat === 0 && _cumulOffLng === 0) return;
+        if (!dxfMoveEnabled || assignedGroupIds.size || !dxfTransformed || _cumulOffLat === 0 && _cumulOffLng === 0) return;
         dxfTransformed.forEach(function(ts) {
             ts.vertices_latlng = ts.vertices_latlng.map(function(p) {
                 return { lat: p.lat - _cumulOffLat, lng: p.lng - _cumulOffLng };
@@ -602,6 +641,7 @@
     fileInput.addEventListener('change', uploadDxf);
 
     function uploadDxf() {
+        if (dxfAssignmentBusy) return;
         if (!fileInput.files || fileInput.files.length === 0) return;
         const file = fileInput.files[0];
         document.getElementById('uploadStatus').innerHTML = '<div class="status-msg info">上传解析中...</div>';
@@ -614,6 +654,14 @@
             .then(function(r) { return r.json(); })
             .then(function(data) {
                 if (data.success) {
+                    if (cancelDxfDrag) cancelDxfDrag();
+                    assignedGroupIds.clear(); selectedGroupIds.clear(); assignedItems.length = 0;
+                    _cumulOffLat = 0; _cumulOffLng = 0;
+                    dxfTransformed = null;
+                    dxfLayerGroup.clearLayers(); dxfPolygons = [];
+                    document.getElementById('offsetInfo').textContent = '';
+                    document.getElementById('panelAssign').classList.add('disabled');
+                    renderAssignedList();
                     document.getElementById('uploadStatus').innerHTML =
                         '<div class="status-msg success">' + data.message + '</div>';
 
@@ -641,6 +689,7 @@
                         dxfTransformed = data.transformed;
                         document.getElementById('panelAssign').classList.remove('disabled');
                         renderDxfShapes();
+                        renderGroupsList();
                     } else {
                         // Manual mode
                         document.getElementById('manualGeoRef').style.display = 'block';
@@ -650,6 +699,7 @@
                         addAnchorRow();
                         addAnchorRow();
                     }
+                    setDxfMoveMode(false);
                 } else {
                     document.getElementById('uploadStatus').innerHTML =
                         '<div class="status-msg error">' + (data.message || '上传失败') + '</div>';
@@ -686,6 +736,7 @@
     let activePickRow = null;
 
     window.startPickLatLng = function(btn) {
+        setDxfMoveMode(false);
         const row = btn.closest('.anchor-row');
         // If clicking the same button, cancel
         if (activePickRow === row) {
@@ -769,6 +820,9 @@
             .then(function(data) {
                 if (data.success) {
                     dxfTransformed = data.transformed;
+                    _cumulOffLat = 0; _cumulOffLng = 0;
+                    setDxfMoveMode(false);
+                    document.getElementById('offsetInfo').textContent = '';
                     renderDxfShapes();
                     document.getElementById('geoRefStatus').innerHTML = '<div class="status-msg success">预览已更新</div>';
                 } else {
@@ -792,6 +846,9 @@
             .then(function(data) {
                 if (data.success) {
                     dxfTransformed = data.transformed;
+                    _cumulOffLat = 0; _cumulOffLng = 0;
+                    setDxfMoveMode(false);
+                    document.getElementById('offsetInfo').textContent = '';
                     renderDxfShapes();
                     document.getElementById('panelAssign').classList.remove('disabled');
                     document.getElementById('geoRefStatus').innerHTML = '<div class="status-msg success">配准成功！可以分配图形了</div>';
@@ -943,6 +1000,7 @@
     }
 
     window.selectGroup = function(gid) {
+        setDxfMoveMode(false);
         if (selectedGroupIds.has(gid)) {
             selectedGroupIds.delete(gid);
         } else {
@@ -993,6 +1051,8 @@
 
     // ── Assign shape ──
     window.assignSelectedShape = function() {
+        if (dxfAssignmentBusy) return;
+        setDxfMoveMode(false);
         const zoneCode = zoneInput.value.trim();
         if (!zoneCode) {
             document.getElementById('assignStatus').innerHTML = '<div class="status-msg error">请输入区域编号</div>';
@@ -1002,6 +1062,9 @@
             document.getElementById('assignStatus').innerHTML = '<div class="status-msg error">请先选择至少一个图形组</div>';
             return;
         }
+        dxfAssignmentBusy = true;
+        setDxfMoveMode(false);
+        document.getElementById('assignBtn').disabled = true;
         document.getElementById('assignStatus').innerHTML = '<div class="status-msg info">分配中...</div>';
         const fd = new FormData();
         fd.append('action', 'assign_shape');
@@ -1020,6 +1083,7 @@
                     // Mark the just-assigned groups as done (hidden on map), clear selection,
                     // and re-render WITHOUT refitting/zooming so the user can keep assigning others.
                     selectedGroupIds.forEach(function(gid) { assignedGroupIds.add(gid); });
+                    setDxfMoveMode(false);
                     selectedGroupIds.clear();
                     zoneInput.value = '';
                     renderDxfShapes(false);
@@ -1028,6 +1092,13 @@
                 } else {
                     document.getElementById('assignStatus').innerHTML = '<div class="status-msg error">' + data.message + '</div>';
                 }
+            }).catch(function(err) {
+                document.getElementById('assignStatus').innerHTML = '<div class="status-msg error">绑定失败，请重新尝试。</div>';
+                console.error(err);
+            }).finally(function() {
+                dxfAssignmentBusy = false;
+                document.getElementById('assignBtn').disabled = false;
+                setDxfMoveMode(false);
             });
     };
 
