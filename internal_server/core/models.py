@@ -2053,6 +2053,7 @@ class PurchaseOrderLine(models.Model):
         verbose_name='物料',
     )
     quantity = models.PositiveIntegerField('计划数量', default=1)
+    unit_price = models.DecimalField('采购单价', max_digits=12, decimal_places=2, null=True, blank=True)
     unit = models.CharField('单位', max_length=20, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
