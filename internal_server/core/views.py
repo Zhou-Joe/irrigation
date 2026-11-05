@@ -12710,20 +12710,47 @@ def _po_planned_lines_batch(po_ids, cat_paths):
             'category_id': cat.id, 'name': cat.name_zh,
             'path': cat_paths.get(cat.id, cat.name_zh),
             'qty': ln.quantity, 'unit': ln.unit or cat.unit,
+            'unit_price': str(ln.unit_price) if ln.unit_price is not None else '',
         })
     return out
 
 
 def _po_upsert_planned_lines(po, lines_raw):
-    from core.models import PurchaseOrderLine
+    from core.models import PurchaseOrderLine, InventoryPriceRecord
+    from decimal import Decimal, InvalidOperation
     if lines_raw is None:
         return
-    try: lines=material_lines(json.loads(lines_raw or '[]'))
+    try:
+        raw=json.loads(lines_raw or '[]')
+        lines=material_lines(raw)
     except (ValueError,TypeError) as exc: raise ValueError('采购物料格式无效：'+str(exc)) from exc
+    prices={}
+    for row in raw:
+        value=row.get('unit_price')
+        price=None
+        if value is not None and str(value).strip():
+            try:
+                price=Decimal(str(value))
+                if not price.is_finite() or price<0 or price>Decimal('9999999999.99') or price!=price.quantize(Decimal('.01')):
+                    raise ValueError
+            except (ValueError,InvalidOperation):
+                raise ValueError('采购单价必须为非负金额，最多两位小数') from None
+        prices[int(row['category'])]=price
     po.planned_lines.exclude(category_id__in=[ln['category'] for ln in lines]).delete()
     for ln in lines:
-        PurchaseOrderLine.objects.update_or_create(purchase_order=po,category_id=ln['category'],
-            defaults={'quantity':ln['quantity'],'unit':ln['unit']})
+        previous=po.planned_lines.filter(category_id=ln['category']).first()
+        # Older clients omit the field; preserve an existing order's price.
+        supplied=next(row for row in raw if int(row['category'])==ln['category'])
+        price=prices[ln['category']] if 'unit_price' in supplied else (previous.unit_price if previous else None)
+        changed=price is not None and (previous is None or previous.unit_price!=price or previous.unit!=ln['unit'])
+        line,_=PurchaseOrderLine.objects.update_or_create(purchase_order=po,category_id=ln['category'],
+            defaults={'quantity':ln['quantity'],'unit':ln['unit'],'unit_price':price})
+        if changed:
+            unit=line.unit or line.category.unit
+            if len(unit)>10:raise ValueError('采购价格的单位最多支持10个字符')
+            InventoryPriceRecord.objects.filter(category_id=line.category_id,is_current=True).update(is_current=False)
+            InventoryPriceRecord.objects.create(category_id=line.category_id,date=timezone.localdate(),
+                unit_price=price,unit=unit,is_current=True,note=f'采购订单：{po.order_number}'[:200])
     from core.inventory_service import reconcile_purchase_order
     reconcile_purchase_order(po.pk)
 
