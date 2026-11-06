@@ -41,6 +41,10 @@
 .zd-badge.area { background: var(--color-surface-dark, #D9D0C0); color: var(--color-text-secondary, #4A6355);
                  font-family: var(--font-mono, monospace); font-weight: 500; }
 .zd-edit { flex-shrink: 0; }
+.zd-boundary-source { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px;
+    margin-top: 8px; font-size: 0.8rem; color: var(--color-text-secondary, #4A6355); }
+.zd-boundary-source strong { color: var(--color-text-primary, #1B4332); font-weight: 600; }
+.zd-boundary-file { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
 
 /* Stats — compact inline counters, wrap on small screens. */
 .zd-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 12px; }
@@ -165,6 +169,13 @@
                 {% elif status_display == '施工中' %}<span class="zd-badge bs-construction">状态: {{ status_display }}</span>
                 {% elif status_display == '停浇' %}<span class="zd-badge bs-stopped">状态: {{ status_display }}</span>{% endif %}
                 {% if zone.area_sqm %}<span class="zd-badge area">面积: {{ zone.area_display }}</span>{% endif %}
+            </div>
+            <div class="zd-boundary-source" role="note">
+                <span>当前边界来源：</span>
+                {% if zone.boundary_source == 'dxf' and zone.dxf_boundary_points %}
+                <strong>DXF 导入</strong>{% if zone.dxf_boundary_source %}<span class="zd-boundary-file">{{ zone.dxf_boundary_source }}</span>{% endif %}
+                {% elif zone.boundary_points %}<strong>手动绘制</strong>
+                {% else %}<strong>未设置边界</strong>{% endif %}
             </div>
         </div>
         <a href="{% url 'core:zone_edit' zone.id %}" class="zd-edit zd-btn zd-btn-secondary">编辑</a>
