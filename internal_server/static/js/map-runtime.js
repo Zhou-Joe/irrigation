@@ -59,8 +59,9 @@
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), options.timeout ?? 30000);
         try {
-            const response = await (options.fetcher || fetch)(url, { credentials:'same-origin', signal:controller.signal });
+            const response = await (options.fetcher || fetch)(url, { credentials:'same-origin', signal:controller.signal, cache:options.cache || 'default' });
             if (!response.ok) throw new Error('HTTP ' + response.status);
+            options.onResponse?.(response);
             return await response.json();
         } finally { clearTimeout(timer); }
     }
