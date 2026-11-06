@@ -1186,6 +1186,19 @@ def _build_zones_payload(today, week_ago):
 
 @token_or_session(require_manager=True)
 @login_required(login_url='core:login')
+def zone_revision_api(request):
+    return JsonResponse({'revision': _zone_revision()}, headers={'Cache-Control': 'no-store'})
+
+
+def _zone_revision():
+    from core.models import Zone
+    from django.db.models import Count, Max
+    state = Zone.objects.aggregate(count=Count('pk'), updated=Max('updated_at'))
+    return f"{state['count']}:{state['updated'].isoformat() if state['updated'] else ''}"
+
+
+@token_or_session(require_manager=True)
+@login_required(login_url='core:login')
 def zones_payload_api(request):
     """Serve the dashboard zone payload as a standalone, cacheable JSON document.
 
@@ -1198,11 +1211,13 @@ def zones_payload_api(request):
     from datetime import date, timedelta
     today = timezone.localdate()
     week_ago = today - timedelta(days=7)
+    revision = _zone_revision()
     payload = _build_zones_payload(today, week_ago)
     resp = JsonResponse(payload, safe=False, json_dumps_params={'ensure_ascii': False, 'separators': (',', ':')})
     # Zones' status/counts are day-scoped; cache briefly on the browser to make
     # back-to-back dashboard loads near-instant, but not so long that stale status lingers.
-    resp['Cache-Control'] = 'private, max-age=60'
+    resp['Cache-Control'] = 'private, no-store'
+    resp['X-Zone-Revision'] = revision
     resp['Vary'] = 'Accept-Encoding'
     return resp
 

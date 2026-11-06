@@ -11,6 +11,8 @@
     let zonesLoading = false;
     let pipelinesLoading = false;
     let lastZoneRefresh = 0;
+    let zoneRevision = null;
+    let zoneRevisionChecking = false;
 
     // Inject pulse animation for remark indicators
     const style = document.createElement('style');
@@ -389,10 +391,12 @@
 
         // Legacy fallback: if the page still inlines the zones JSON, use it directly.
         var zonesDataElement = document.getElementById('zones-data');
+        let receivedRevision = null;
         const request = zonesDataElement && zonesDataElement.textContent.trim()
             ? Promise.resolve().then(() => JSON.parse(zonesDataElement.textContent))
-            : runtime.fetchJSON('/api/zones-payload/', {timeout:120000});
-        request.then(applyZones)
+            : runtime.fetchJSON('/api/zones-payload/', {timeout:120000, cache:'no-store',
+                onResponse:response => { receivedRevision = response.headers.get('X-Zone-Revision'); }});
+        request.then(applyZones).then(() => { zoneRevision = receivedRevision; })
             .catch(function (err) {
                 console.error('Failed to load zones:', err);
                 if (spinner) spinner.hidden = true;
@@ -2013,9 +2017,19 @@
     }
 
     // Auto-locate is triggered from dashboard.js
-    window.addEventListener?.('pageshow', event => {
-        if (event.persisted && Date.now() - lastZoneRefresh > 60000) loadZones();
-    });
+    async function checkZoneRevision() {
+        if (!map || zonesLoading || zoneRevisionChecking || document.visibilityState === 'hidden') return;
+        zoneRevisionChecking = true;
+        try {
+            const state = await runtime.fetchJSON('/api/zones-revision/', {cache:'no-store'});
+            if (state.revision !== zoneRevision) loadZones();
+        } catch (error) { console.warn('Zone update check failed:', error); }
+        finally { zoneRevisionChecking = false; }
+    }
+    window.addEventListener?.('pageshow', event => { if (event.persisted) checkZoneRevision(); });
+    window.addEventListener?.('focus', checkZoneRevision);
+    document.addEventListener('visibilitychange', checkZoneRevision);
+    setInterval(checkZoneRevision, 30000);
 
     /**
      * Apply combined map filters (priority + plant)

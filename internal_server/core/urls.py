@@ -50,6 +50,7 @@ urlpatterns = [
     path('stats/excel/', views.work_reports_excel, name='work_reports_excel'),
     path('irrigation/', views.irrigation_dashboard, name='irrigation_dashboard'),
     path('api/irrigation/zone-heatmap/', views.irrigation_zone_heatmap, name='irrigation_zone_heatmap'),
+    path('api/zones-revision/', views.zone_revision_api, name='zone_revision'),
     path('api/irrigation/zone/<int:zone_id>/exclude/', views.irrigation_zone_exclude, name='irrigation_zone_exclude'),
     path('api/irrigation/zone/<int:zone_id>/restore/', views.irrigation_zone_restore, name='irrigation_zone_restore'),
     path('api/stats/zone-heatmap/', views.stats_zone_heatmap, name='stats_zone_heatmap'),

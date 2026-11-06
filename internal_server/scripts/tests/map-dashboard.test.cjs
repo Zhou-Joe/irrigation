@@ -131,7 +131,7 @@ function mapHarness() {
     const hook=`window.__test={renderZones,loadZones,loadPipelines,locateUser,updateLabelSizes,_cullLabelsToViewport,buildCardHtml,_refreshZonePolygons,
         labels:()=>zoneLabels, setState(m,g){map=m;[zonesLayerGroup,labelsLayerGroup,leaderLinesLayerGroup,ringLabelsLayerGroup,landmarksLayerGroup]=g;}};`;
     source=source.replace(/\}\)\(\);\s*$/,hook+'})();');
-    const context={window,document,L,localStorage:{getItem:()=>null,setItem(){}},console,setTimeout,clearTimeout,
+    const context={window,document,L,localStorage:{getItem:()=>null,setItem(){}},console,setTimeout,clearTimeout,setInterval:()=>0,
         requestAnimationFrame:setImmediate,performance,Set,Map,CustomEvent:class{}};
     vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../../static/js/ui-icons.js'),'utf8'),context);
     vm.runInNewContext(source,context);
