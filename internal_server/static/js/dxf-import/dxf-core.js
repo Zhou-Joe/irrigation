@@ -93,6 +93,10 @@ function pdxfPost(url, body) {
     });
 }
 function pdxfReady() {
+  if (pdxfUsePlacement()) return pdxfPlacementValid();
+  return pdxfVerified();
+}
+function pdxfVerified() {
   return !!(
     pdxfData &&
     pdxfData.alignment &&
@@ -110,6 +114,7 @@ function pdxfGoStep(n) {
   if (n === 2 && pdxfBatchMode) return;
   if (n === 4 && (!pdxfReady() || pdxfBatchMode)) return;
   if (pdxfCal.on && n !== 3) pdxfCalStop();
+  if (n !== 3) pdxfPlacementMoving = false;
   pdxfStep = n;
   document.querySelectorAll("[data-step]").forEach(function (el) {
     el.hidden = Number(el.dataset.step) !== n;
@@ -191,8 +196,8 @@ function pdxfUpdateWorkflow() {
         ? "未选择的原图内容仍会保留作参考"
         : pdxfStep === 3
           ? ready
-            ? "对齐与独立检查已通过"
-            : "至少 3 个对齐点 + 1 个独立检查点"
+            ? pdxfUsePlacement() ? "按当前摆放位置导入，未做选点校准" : "对齐与独立检查已通过"
+            : "可按当前摆放导入，或选点校准位置"
           : "勾选确认后创建管网";
   pdxfPlacementControls();
 }
@@ -600,7 +605,7 @@ function pdxfClearGroups(map, groups) {
   });
 }
 function pdxfGeographic(point) {
-  if (pdxfReady() && typeof point.lat === "number")
+  if (!pdxfUsePlacement() && pdxfVerified() && typeof point.lat === "number")
     return [point.lat, point.lng];
   return pdxfProjectPoint(pdxfOverlayFit(), point);
 }
@@ -712,6 +717,8 @@ function pdxfRefreshMap() {
   }
   pdxfEl("pdxfMapStatus").textContent = pdxfBatchMode
     ? "重新定位所选批次"
+    : pdxfUsePlacement()
+      ? "当前摆放位置 · 未做选点校准"
     : pdxfReady()
       ? "位置已验证 · 可继续检查并导入"
       : pdxfCal.pairs.length
@@ -790,13 +797,16 @@ function pdxfRenderReview() {
     ["管线", c.layers + " 层 · " + c.paths + " 段源线"],
     ["设备候选", c.devices + " 个，未匹配设备将保留"],
     ["完整标注", c.labels + " 条"],
+    ["定位方式", pdxfUsePlacement() ? "当前摆放位置（未做选点校准）" : "选点校准"],
+  ];
+  if (!pdxfUsePlacement()) rows = rows.concat([
     ["对齐点", a.control_count + " 个"],
     [
       "独立检查",
       a.check_count + " 个 · 最大误差 " + a.check_max_m.toFixed(2) + " m",
     ],
     ["拟合误差", a.rms_m.toFixed(2) + " m"],
-  ];
+  ]);
   pdxfEl("pdxfReviewSummary").innerHTML = rows
     .map(function (r) {
       return (
@@ -830,6 +840,10 @@ function pdxfImport() {
   fd.append("layers_json", JSON.stringify(specs.layers));
   fd.append("blocks_json", JSON.stringify(specs.blocks));
   fd.append("label_layers", JSON.stringify(specs.labelLayers));
+  if (pdxfUsePlacement()) {
+    fd.append("positioning_mode", "placement");
+    fd.append("placement_fit", JSON.stringify(pdxfPlacementFit));
+  }
   pdxfPost(window.__DXF__.urls.importSubmit, fd)
     .then(function (d) {
       pdxfImported = true;

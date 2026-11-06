@@ -35,10 +35,34 @@ def calibration_snapshot(drawing_token=None, calibration_id=None):
 
 
 def fit_snapshot(snapshot):
+    if snapshot.get('method') == 'placement':
+        fit = placement_snapshot(snapshot.get('fit'))['fit']
+        a, b, c, d, k = (fit[key] for key in ('a', 'b', 'c', 'd', 'iso_k'))
+        return (lambda x, y: (a*x + b*y + c, (-b*x + a*y + d)/k)), {
+            **fit, 'method': 'similarity', 'scale': math.hypot(a, b),
+            'rotation_deg': math.degrees(math.atan2(-b, a)),
+            'n': 0, 'rms_m': None, 'residuals_m': []}
     pairs = [{'dxf_x': float(p['dxf_x']), 'dxf_y': -float(p['dxf_y']),
               'lat': float(p['lat']), 'lng': float(p['lng'])}
              for p in snapshot['points']]
     return fit_calibration_transform(pairs, snapshot.get('method') or None)
+
+
+def placement_snapshot(fit):
+    """Explicitly accepted map placement; never a verified point calibration."""
+    try:
+        if not isinstance(fit, dict) or any(isinstance(fit.get(k), bool)
+                                           for k in ('a', 'b', 'c', 'd', 'iso_k')):
+            raise ValueError
+        values = {key: float(fit[key]) for key in ('a', 'b', 'c', 'd', 'iso_k')}
+        if (not all(math.isfinite(v) for v in values.values())
+                or not 0 < values['iso_k'] <= 1
+                or not 1e-12 < math.hypot(values['a'], values['b']) < 1):
+            raise ValueError
+    except (KeyError, TypeError, ValueError, OverflowError) as exc:
+        raise ValueError('当前摆放参数无效，请重新摆放图纸') from exc
+    return {'id': 0, 'method': 'placement', 'points': [], 'check_points': [],
+            'fit': values}
 
 
 def calibration_quality(snapshot):
@@ -79,6 +103,8 @@ def alignment_status(snapshot):
     result = {'ready': False, 'limit_m': limit, 'control_count': len(snapshot.get('points', [])),
               'check_count': len(snapshot.get('check_points', []))}
     try:
+        if snapshot.get('method') == 'placement':
+            raise ValueError('按当前摆放位置导入，未做选点校准')
         if snapshot.get('method') != 'sim':
             raise ValueError('旧变形标定仅供历史显示，请使用控制点重新对齐')
         controls = snapshot.get('points', [])
@@ -157,4 +183,5 @@ def read_preview(preview_token, token=None, user_id=None):
 
 
 def same_transform(a, b):
-    return a.get('points') == b.get('points') and a.get('method', '') == b.get('method', '')
+    return (a.get('points') == b.get('points') and a.get('method', '') == b.get('method', '')
+            and a.get('fit') == b.get('fit'))

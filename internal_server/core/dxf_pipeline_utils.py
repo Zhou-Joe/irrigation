@@ -164,15 +164,14 @@ def active_calibration_info(snapshot=None):
     Nonlinear reverse fits are deliberately not exposed as inverse transforms;
     calibration picking uses preserved CAD coordinates instead.
     """
-    from core.calibration import fit_calibration_transform
-    from core.dxf_state import calibration_snapshot, calibration_quality, alignment_status
+    from core.dxf_state import calibration_snapshot, calibration_quality, alignment_status, fit_snapshot
     snapshot = snapshot or calibration_snapshot()
     pts, source, stored_method = snapshot['points'], ('db' if snapshot['id'] else 'default'), snapshot['method']
-    cal = [{'dxf_x': float(p['dxf_x']), 'dxf_y': -float(p['dxf_y']),
-            'lat': float(p['lat']), 'lng': float(p['lng'])} for p in pts]
-    fn, stats = fit_calibration_transform(cal, stored_method or None)
+    fn, stats = fit_snapshot(snapshot)
     # Display only; each batch stores its own effective transform.
     applied_at = None
+    if stored_method == 'placement':
+        source = 'placement'
     if source == 'db':
         from core.models import SiteCalibration
         row = SiteCalibration.objects.filter(pk=snapshot['id']).values_list('applied_at', flat=True).first()
@@ -219,6 +218,7 @@ def active_calibration_info(snapshot=None):
         'points': pts,
         'iso_k': k,
         'spread_m': spread_m,
+        'fit': snapshot.get('fit') if stored_method == 'placement' else None,
     }
 
 
@@ -233,13 +233,17 @@ def _local_to_latlng_fn(snapshot=None):
         cal_pts, _source, _method = _active_calibration_points()
     else:
         cal_pts, _method = snapshot['points'], snapshot.get('method', '')
-    if not cal_pts or len(cal_pts) < 2:
+    if snapshot is not None and snapshot.get('method') == 'placement':
+        from core.dxf_state import fit_snapshot
+        fn, _stats = fit_snapshot(snapshot)
+    elif not cal_pts or len(cal_pts) < 2:
         return None, None
-    cal = [
-        {'dxf_x': p['dxf_x'], 'dxf_y': -p['dxf_y'], 'lat': p['lat'], 'lng': p['lng']}
-        for p in cal_pts
-    ]
-    fn, _stats = fit_calibration_transform(cal, _method or None)
+    else:
+        cal = [
+            {'dxf_x': p['dxf_x'], 'dxf_y': -p['dxf_y'], 'lat': p['lat'], 'lng': p['lng']}
+            for p in cal_pts
+        ]
+        fn, _stats = fit_calibration_transform(cal, _method or None)
     if not callable(fn):
         return None, None
 
@@ -1033,7 +1037,8 @@ def _attach_valves(valves, block_specs, all_paths, to_latlng,
 def import_dxf_pipelines(layer_specs, block_specs, uploaded_file=None,
                          label_layers=None, valve_name_from_label=True,
                          offset=(0.0, 0.0), token=None, content=None,
-                         batch_name=None, imported_by=None, preview_token=None):
+                         batch_name=None, imported_by=None, preview_token=None,
+                         placement_fit=None):
     """按映射创建 Pipeline + PipeValve。
 
     ``layer_specs``: {layer: {'include', 'diameter', 'type'}}
@@ -1055,6 +1060,11 @@ def import_dxf_pipelines(layer_specs, block_specs, uploaded_file=None,
         snapshot = state['calibration']
     else:
         snapshot = calibration_snapshot(token)
+    if placement_fit is not None:
+        from core.dxf_state import placement_snapshot
+        if not preview_token:
+            raise ValueError('请先解析图纸并确认预览')
+        snapshot = placement_snapshot(placement_fit)
     require_quality(snapshot)
     to_latlng, meters_per_unit = _local_to_latlng_fn(snapshot)
     if to_latlng is None:
@@ -1065,6 +1075,15 @@ def import_dxf_pipelines(layer_specs, block_specs, uploaded_file=None,
             raise ValueError('文件与预览不一致，请重新解析图纸')
     layers, valves, labels, metadata = _resolve_parsed_geometry(None, token, content)
     token = token or metadata['file_hash']
+    if placement_fit is not None:
+        # Retained reference layers and notes use this same placement, even when
+        # they are not selected for creation. Reject an unusable map atomically.
+        for bucket in layers.values():
+            for path in bucket['polys']:
+                for x, y in path:
+                    to_latlng(x, y)
+        for item in valves + labels:
+            to_latlng(item['x'], item['y'])
 
     usable_labels = [lb for lb in labels
                      if label_layers is None or lb['layer'] in label_layers]
