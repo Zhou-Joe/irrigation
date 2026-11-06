@@ -147,7 +147,7 @@ def _zone_save_response(request, zone, message, created=False):
             except (json.JSONDecodeError, TypeError):
                 resp[field] = []
                 resp[field + '_count'] = 0
-        resp['boundary_count'] = len(zone.boundary_points) if zone.boundary_points else 0
+        resp['boundary_count'] = len(zone.active_boundary_points) if zone.active_boundary_points else 0
         resp['area_display'] = zone.area_display
         resp['plant_count'] = zone.plants.count()
         resp['equipment_count'] = zone.equipments.count()
@@ -3710,8 +3710,29 @@ def zone_edit(request, zone_id):
         return redirect('core:dashboard')
 
     zone = get_object_or_404(Zone, pk=zone_id)
+    edit_source = 'dxf' if zone.boundary_source == 'dxf' and zone.dxf_boundary_points else 'manual'
 
     if request.method == 'POST':
+        # Old forms only edited manual geometry. Never silently write those
+        # coordinates into an active CAD boundary, or save into an inactive slot.
+        submitted_source = request.POST.get('boundary_edit_source', 'manual')
+        if submitted_source != edit_source:
+            message = '边界来源已变化，请重新打开编辑页后再保存，以免修改错误的边界版本'
+            if _wants_json(request):
+                return JsonResponse({'success': False, 'message': message}, status=409)
+            messages.error(request, message)
+            return redirect('core:zone_edit', zone_id=zone.id)
+        boundary_error = '边界点数据格式有误，请重新绘制区域边界后重试'
+        try:
+            boundary_data = auto_close_boundary_points(json.loads(request.POST.get('boundary_points', '[]')))
+            if edit_source == 'dxf' and not boundary_data:
+                boundary_error = '清除 DXF 前请先在 CAD 导入页切换边界来源；手绘备份将保留'
+                raise ValueError(boundary_error)
+        except (json.JSONDecodeError, TypeError, ValueError, OverflowError):
+            if _wants_json(request):
+                return JsonResponse({'success': False, 'message': boundary_error}, status=400)
+            messages.error(request, boundary_error)
+            return redirect('core:zone_edit', zone_id=zone.id)
         zone.name = request.POST.get('name', zone.name)
         zone.code = request.POST.get('code', zone.code)
         zone.description = request.POST.get('description', zone.description)
@@ -3766,16 +3787,10 @@ def zone_edit(request, zone_id):
             zone.patch = None
 
         # Parse boundary points from JSON
-        boundary_json = request.POST.get('boundary_points', '[]')
-        try:
-            boundary_points = json.loads(boundary_json)
-            # Auto-close any incomplete polygons (points defined but not explicitly "completed")
-            zone.boundary_points = auto_close_boundary_points(boundary_points)
-        except json.JSONDecodeError:
-            if _wants_json(request):
-                return JsonResponse({'success': False, 'message': '边界点数据格式有误，请重新绘制区域边界后重试'}, status=400)
-            messages.error(request, '边界点数据格式有误，请重新绘制区域边界后重试')
-            return redirect('core:zone_edit', zone_id=zone.id)
+        if edit_source == 'dxf':
+            zone.dxf_boundary_points = boundary_data
+        else:
+            zone.boundary_points = boundary_data
 
         zone.drawn_by = request.user
         zone.save()
@@ -3844,7 +3859,8 @@ def zone_edit(request, zone_id):
 
     context = {
         'zone': zone,
-        'boundary_json': json.dumps(zone.boundary_points),
+        'boundary_json': json.dumps(zone.active_boundary_points),
+        'boundary_edit_source': edit_source,
         'available_plants': available_plants,
         'zone_equipments': zone_equipments,
         'patches': patches,
@@ -3853,7 +3869,7 @@ def zone_edit(request, zone_id):
         'sibling_zones': sibling_zones,
         'equip_notes_json': json_html_safe(json.loads(zone.equipment_maintenance_notes) if zone.equipment_maintenance_notes else []),
         'irrig_notes_json': json_html_safe(json.loads(zone.irrigation_management_notes) if zone.irrigation_management_notes else []),
-        'boundary_count': len(zone.boundary_points) if zone.boundary_points else 0,
+        'boundary_count': len(zone.active_boundary_points) if zone.active_boundary_points else 0,
         'equip_notes_count': len(json.loads(zone.equipment_maintenance_notes)) if zone.equipment_maintenance_notes else 0,
         'irrig_notes_count': len(json.loads(zone.irrigation_management_notes)) if zone.irrigation_management_notes else 0,
         'plant_count': zone.plants.count(),
