@@ -3,7 +3,7 @@
 {% block title %}导入管网 - 灌溉管理系统{% endblock %}
 {% block extra_css %}
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-<link rel="stylesheet" href="{% static 'css/dxf-import.css' %}?v=20261002c">
+<link rel="stylesheet" href="{% static 'css/dxf-import.css' %}?v=20261106placement">
 {% endblock %}
 {% block content %}
 <div class="pdxf-app">
@@ -37,9 +37,9 @@
       </section>
       <section data-step="3" id="pdxfCalCard" class="pdxf-card" hidden aria-labelledby="pdxfAlignmentTitle">
         <h2 id="pdxfAlignmentTitle">对齐到卫星地图</h2><p class="pdxf-hint">只调整整张图的比例、旋转和位置，保持 CAD 的形状与相对尺寸。</p>
-        <div id="pdxfCalCurrent" class="pdxf-note"></div>
-        <details class="pdxf-coarse" open><summary>先把 CAD 大致摆到对应位置</summary><p class="pdxf-hint">初步叠图用于辨认线条。可移动、旋转、等比缩放；选点后会锁定粗调，位置仍需验证。</p><div class="pdxf-action-row"><button class="pdxf-btn pdxf-btn-secondary" id="pdxfMoveBtn" onclick="pdxfPlacementToggle()">移动 CAD</button><button class="pdxf-btn pdxf-btn-secondary" data-placement onclick="pdxfPlacementCenter()">放到地图中心</button></div><div class="pdxf-action-row"><button class="pdxf-btn pdxf-btn-secondary" data-placement onclick="pdxfPlacementAdjust(5,1)">↶ 5°</button><button class="pdxf-btn pdxf-btn-secondary" data-placement onclick="pdxfPlacementAdjust(-5,1)">↷ 5°</button><button class="pdxf-btn pdxf-btn-secondary" data-placement onclick="pdxfPlacementAdjust(0,1/1.1)">缩小 CAD</button><button class="pdxf-btn pdxf-btn-secondary" data-placement onclick="pdxfPlacementAdjust(0,1.1)">放大 CAD</button></div><p id="pdxfPlacementHint" class="pdxf-muted"></p></details>
-        <ol class="pdxf-alignment-guide"><li>在地图上的 CAD 叠图中选角点或设备点。</li><li>CAD 会临时隐藏，再点卫星图中的同一位置。</li><li>叠图随对应点更新。至少选 <b>3 个对齐点</b>和 <b>1 个独立检查点</b>，再验证保存。</li></ol>
+        <div id="pdxfPositionMode" class="pdxf-coarse"><p class="pdxf-hint">选点校准为可选项。也可以直接使用地图上摆放好的位置。</p><div class="pdxf-pick-role"><label><input id="pdxfPositionCalibrated" type="radio" name="pdxfPositionMode" value="calibrated" checked onchange="pdxfPositionModeChanged(false)">选点校准</label><label><input type="radio" name="pdxfPositionMode" value="placement" onchange="pdxfPositionModeChanged(true)">按当前摆放位置导入</label></div></div><div id="pdxfCalCurrent" class="pdxf-note"></div>
+        <details class="pdxf-coarse" open><summary>先把 CAD 大致摆到对应位置</summary><p class="pdxf-hint">初步叠图用于辨认线条。可移动、旋转、等比缩放；选点校准时会锁定粗调；按当前摆放导入时可继续调整。</p><div class="pdxf-action-row"><button class="pdxf-btn pdxf-btn-secondary" id="pdxfMoveBtn" onclick="pdxfPlacementToggle()">移动 CAD</button><button class="pdxf-btn pdxf-btn-secondary" data-placement onclick="pdxfPlacementCenter()">放到地图中心</button></div><div class="pdxf-action-row"><button class="pdxf-btn pdxf-btn-secondary" data-placement onclick="pdxfPlacementAdjust(5,1)">↶ 5°</button><button class="pdxf-btn pdxf-btn-secondary" data-placement onclick="pdxfPlacementAdjust(-5,1)">↷ 5°</button><button class="pdxf-btn pdxf-btn-secondary" data-placement onclick="pdxfPlacementAdjust(0,1/1.1)">缩小 CAD</button><button class="pdxf-btn pdxf-btn-secondary" data-placement onclick="pdxfPlacementAdjust(0,1.1)">放大 CAD</button></div><p id="pdxfPlacementHint" class="pdxf-muted"></p></details>
+        <div id="pdxfPreciseControls"><ol class="pdxf-alignment-guide"><li>在地图上的 CAD 叠图中选角点或设备点。</li><li>CAD 会临时隐藏，再点卫星图中的同一位置。</li><li>叠图随对应点更新。至少选 <b>3 个对齐点</b>和 <b>1 个独立检查点</b>，再验证保存。</li></ol>
         <div class="pdxf-pick-role"><label><input type="radio" name="pdxfPickRole" value="control" checked onchange="pdxfCalRoleChanged()">对齐点</label><label><input type="radio" name="pdxfPickRole" value="check" onchange="pdxfCalRoleChanged()">独立检查点</label></div>
         <div class="pdxf-action-row"><button class="pdxf-btn pdxf-btn-primary" id="pdxfCalStartBtn" onclick="pdxfCalStart()">开始选点</button><button class="pdxf-btn pdxf-btn-secondary" id="pdxfCalStopBtn" onclick="pdxfCalStop()" hidden>暂停选点</button><button class="pdxf-btn pdxf-btn-secondary" id="pdxfCalRetryBtn" onclick="pdxfCalRoleChanged()" hidden>重选此点</button><button class="pdxf-btn pdxf-btn-secondary" onclick="pdxfCalClearDraft()">重新选点</button></div>
         <div id="pdxfCalStep" class="pdxf-pick-step" role="status" aria-live="polite">先在同一张地图上粗调 CAD，再选择对应点。</div>
@@ -49,7 +49,7 @@
         <button class="pdxf-btn pdxf-btn-primary pdxf-wide" id="pdxfCalSaveBtn" onclick="pdxfCalSave()" disabled>验证并保存对齐</button>
         <button class="pdxf-btn pdxf-btn-primary pdxf-wide" id="pdxfCalApplyBtn" onclick="pdxfCalApplySaved()" hidden>应用到所选批次</button>
         <div id="pdxfCalStatus" class="pdxf-status" role="status" aria-live="polite"></div>
-        <p class="pdxf-muted">检查点不参与拟合。保存时服务端会重新计算误差；所有点的误差须在 <span id="pdxfAccuracyLimit">5</span> m 内。</p>
+        <p class="pdxf-muted">检查点不参与拟合。保存时服务端会重新计算误差；所有点的误差须在 <span id="pdxfAccuracyLimit">5</span> m 内。</p></div>
       </section>
       <section data-step="4" id="pdxfImportCard" class="pdxf-card" hidden aria-labelledby="pdxfReviewTitle">
         <h2 id="pdxfReviewTitle">检查并导入</h2><p class="pdxf-hint">核对卫星图中的位置与所选内容，再创建管网。</p><div id="pdxfReviewSummary" class="pdxf-review"></div>
@@ -80,9 +80,9 @@ window.__DXF__ = {urls: {
   calSave: '{% url 'core:pipeline_dxf_calibration_save' %}', calClear: '{% url 'core:pipeline_dxf_calibration_clear' %}', calApply: '{% url 'core:pipeline_dxf_calibration_apply' %}'},
   placementPoints: {{ dxf_placement_points_json|safe }}, cal: {{ dxf_calibration_json|safe }}, zones: {{ ref_zones_json|safe }}, pipelines: {{ ref_pipelines_json|safe }} };
 </script>
-<script src="{% static 'js/dxf-import/dxf-core.js' %}?v=20261002c"></script>
-<script src="{% static 'js/dxf-import/dxf-cal-math.js' %}?v=20261002c"></script>
-<script src="{% static 'js/dxf-import/dxf-placement.js' %}?v=20261002c"></script>
-<script src="{% static 'js/dxf-import/dxf-cal.js' %}?v=20261002c"></script>
+<script src="{% static 'js/dxf-import/dxf-core.js' %}?v=20261106placement"></script>
+<script src="{% static 'js/dxf-import/dxf-cal-math.js' %}?v=20261106placement"></script>
+<script src="{% static 'js/dxf-import/dxf-placement.js' %}?v=20261106placement"></script>
+<script src="{% static 'js/dxf-import/dxf-cal.js' %}?v=20261106placement"></script>
 <script>pdxfInitMap();</script>
 {% endblock %}

@@ -233,3 +233,50 @@ test("out-of-range or nonfinite preview projections are not rendered as valid ma
     null,
   );
 });
+
+test("explicit placement uses the displayed fit, supports adjustments, and keeps exact calibration independent", () => {
+  const c = workspace(), { fit, pairs } = fixture(c);
+  c.pdxfData = { alignment: { ready: false } };
+  c.pdxfPlacementFit = fit;
+  c.pdxfDraftFit = c.pdxfMoveFit(fit, { dxf_x: 0, dxf_y: 0 }, [31.17, 121.67]);
+  c.pdxfCal.pairs = pairs.slice(0, 2);
+  c.pdxfCalStop = () => { c.pdxfCal.on = false; };
+  c.pdxfRefreshMap = () => {};
+  c.pdxfUpdateWorkflow = () => {};
+  const displayed = JSON.stringify(c.pdxfOverlayFit());
+  assert.equal(c.pdxfReady(), false);
+  c.pdxfPositionModeChanged(true);
+  assert.equal(c.pdxfReady(), true);
+  assert.equal(c.pdxfVerified(), false);
+  assert.equal(c.pdxfPlacementAllowed(), true);
+  assert.equal(JSON.stringify(c.pdxfOverlayFit()), displayed);
+  const point = { dxf_x: 50, dxf_y: -25, lat: -80, lng: -100 };
+  assert.equal(JSON.stringify(c.pdxfGeographic(point)),
+    JSON.stringify(c.pdxfProjectPoint(c.pdxfPlacementFit, point)));
+  c.pdxfPlacementFit = c.pdxfMoveFit(c.pdxfPlacementFit, point, [31.18, 121.68]);
+  close(c.pdxfGeographic(point)[0], 31.18);
+  c.pdxfStep = 4;
+  assert.equal(c.pdxfPlacementAllowed(), false);
+  c.pdxfPositionModeChanged(false);
+  assert.equal(c.pdxfReady(), false);
+  assert.equal(JSON.stringify(c.pdxfOverlayFit()), displayed);
+  c.pdxfPositionModeChanged(true);
+  c.pdxfBatchMode = true;
+  assert.equal(c.pdxfUsePlacement(), false);
+  assert.equal(c.pdxfReady(), false);
+});
+
+test("new drawing resets manual positioning and invalid fits cannot enable import", () => {
+  const c = workspace(), { fit } = fixture(c);
+  c.pdxfData = { alignment: { ready: false } };
+  c.pdxfPlacementMode = true;
+  for (const bad of [null, {}, {...fit, a: NaN}, {...fit, iso_k: 0}, {...fit, a: 0, b: 0}]) {
+    c.pdxfPlacementFit = bad;
+    assert.equal(c.pdxfReady(), false);
+  }
+  c.pdxfPlacementFit = fit;
+  assert.equal(c.pdxfReady(), true);
+  c.pdxfPlacementReset();
+  assert.equal(c.pdxfUsePlacement(), false);
+  assert.equal(c.pdxfReady(), false);
+});

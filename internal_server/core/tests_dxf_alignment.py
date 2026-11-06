@@ -54,6 +54,88 @@ class AlignmentWorkflowTests(TestCase):
         self.assertEqual(self.import_preview(data).status_code, 400)
         self.assertEqual(Pipeline.objects.count(), 0)
 
+    def placement_import(self, data, **extra):
+        params = {'token': data['token'], 'preview_token': data['preview_token'],
+                  'layers_json': json.dumps({'100': {'include': True}}),
+                  'positioning_mode': 'placement', 'placement_fit': json.dumps({
+                      'a': 2e-6, 'b': -7e-6, 'c': 31.1, 'd': 104.3, 'iso_k': .86})}
+        params.update(extra)
+        return self.client.post('/pipelines/dxf/import/', params)
+
+    def test_explicit_placement_import_matches_map_and_retained_reference(self):
+        data = self.analyze_raw()
+        response = self.placement_import(data)
+        self.assertEqual(response.status_code, 200, response.content)
+        pipe = Pipeline.objects.get()
+        expected = [{'lat': round(2e-6*x + 7e-6*y + 31.1, 6),
+                     'lng': round((7e-6*x - 2e-6*y + 104.3)/.86, 6)}
+                    for x, y in pipe.source_points]
+        self.assertEqual(pipe.line_points, expected)
+        batch = pipe.import_batch
+        self.assertEqual(batch.applied_calibration['method'], 'placement')
+        self.assertFalse(alignment_status(batch.applied_calibration)['ready'])
+        self.assertEqual(SiteCalibration.objects.count(), 0)
+        self.assertEqual(utils.build_cad_reference_payload()[0]['layers'][0]['paths'][0], expected)
+        info = self.client.get('/pipelines/edit/data/').json()['batch_calibrations'][str(batch.pk)]
+        self.assertEqual(info['source'], 'placement')
+        self.assertIsNone(info['rms_m'])
+        self.assertEqual(info['fit'], batch.applied_calibration['fit'])
+
+    def test_placement_rejects_missing_nonfinite_degenerate_or_out_of_map_fit(self):
+        data = self.analyze_raw()
+        valid = {'a': 2e-6, 'b': -7e-6, 'c': 31.1, 'd': 104.3, 'iso_k': .86}
+        fits = [None, [], {}, {**valid, 'a': float('nan')},
+                {**valid, 'a': True}, {**valid, 'iso_k': 0},
+                {**valid, 'a': 0, 'b': 0}, {**valid, 'c': 200}]
+        for fit in fits:
+            with self.subTest(fit=fit):
+                self.assertEqual(self.placement_import(data, placement_fit=json.dumps(fit)).status_code, 400)
+        self.assertEqual(PipelineImportBatch.objects.count(), 0)
+
+    def test_placement_still_requires_matching_authenticated_signed_preview(self):
+        data = self.analyze_raw()
+        for extra in ({'preview_token': ''}, {'preview_token': data['preview_token']+'bad'},
+                      {'token': 'another-drawing'}, {'positioning_mode': 'unknown'}):
+            self.assertEqual(self.placement_import(data, **extra).status_code, 400)
+        self.assertEqual(Pipeline.objects.count(), 0)
+
+    def test_placement_batch_can_later_be_precisely_calibrated(self):
+        data = self.analyze_raw()
+        response = self.placement_import(data)
+        self.assertEqual(response.status_code, 200, response.content)
+        pipe = Pipeline.objects.get()
+        raw = pipe.source_points
+        saved = self.save(data)
+        self.assertEqual(saved.status_code, 200, saved.content)
+        result = self.client.post('/pipelines/dxf/calibration/apply/', {
+            'confirm': '1', 'calibration_id': saved.json()['calibration']['id'],
+            'batch_ids': json.dumps([pipe.import_batch_id]), 'force': '1'})
+        self.assertEqual(result.status_code, 200, result.content)
+        pipe.refresh_from_db()
+        self.assertEqual(pipe.source_points, raw)
+        fn, _ = fit_snapshot(pipe.import_batch.applied_calibration)
+        self.assertEqual(pipe.line_points, [{'lat': round(fn(x, -y)[0], 7),
+                                            'lng': round(fn(x, -y)[1], 7)} for x, y in raw])
+
+    def test_placement_keeps_devices_and_annotations_at_the_same_map_position(self):
+        def build(doc):
+            doc.modelspace().add_line((18100, -10100), (18120, -10120), dxfattribs={'layer': '100'})
+            doc.blocks.new('VALVE').add_circle((0, 0), 1)
+            doc.modelspace().add_blockref('VALVE', (18100, -10100))
+            doc.modelspace().add_text('Water inlet', dxfattribs={'insert': (18100, -10100)})
+        data = self.client.post('/pipelines/dxf/analyze/', {
+            'file': SimpleUploadedFile('devices.dxf', drawing(build))}).json()
+        response = self.placement_import(data, blocks_json=json.dumps({
+            'VALVE': {'include': True, 'valve_type': 'gate'}}))
+        self.assertEqual(response.status_code, 200, response.content)
+        pipe = Pipeline.objects.get()
+        valve = pipe.valves.get()
+        for key in ('lat', 'lng'):
+            self.assertAlmostEqual(valve.point[0][key], pipe.line_points[0][key], places=6)
+        label = utils.build_cad_reference_payload()[0]['labels'][0]
+        self.assertEqual(label['text'], 'Water inlet')
+        self.assertEqual({k: label[k] for k in ('lat', 'lng')}, pipe.line_points[0])
+
     def test_only_shape_preserving_alignment_can_be_saved(self):
         data = self.analyze_raw()
         for method in ('tps', 'mls', 'exact2', 'auto', 'unknown'):

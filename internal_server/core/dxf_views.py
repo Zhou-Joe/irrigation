@@ -268,13 +268,26 @@ def pipeline_dxf_import_submit(request):
     try:
         from .dxf_state import read_preview, require_alignment
         state = read_preview(preview_token, token, request.user.pk)
-        require_alignment(state['calibration'])
+        mode = request.POST.get('positioning_mode') or 'calibrated'
+        placement_fit = None
+        if mode == 'placement':
+            from .dxf_state import placement_snapshot
+            try:
+                placement_fit = _json.loads(request.POST.get('placement_fit') or '')
+            except (_json.JSONDecodeError, TypeError) as exc:
+                raise ValueError('当前摆放参数无效，请重新摆放图纸') from exc
+            placement_fit = placement_snapshot(placement_fit)['fit']
+        elif mode == 'calibrated':
+            require_alignment(state['calibration'])
+        else:
+            raise ValueError('请选择有效的定位方式')
         result = import_dxf_pipelines(
             layer_specs, block_specs, uploaded_file=f,
             label_layers=label_layers, offset=offset, token=token, preview_token=preview_token,
             batch_name=(f.name if f and f.name
                         else (request.POST.get('filename') or 'DXF导入')),
-            imported_by=request.user if request.user.is_authenticated else None)
+            imported_by=request.user if request.user.is_authenticated else None,
+            placement_fit=placement_fit)
     except ValueError as exc:
         return JsonResponse({'success': False, 'error': str(exc)}, status=400)
     except Exception:

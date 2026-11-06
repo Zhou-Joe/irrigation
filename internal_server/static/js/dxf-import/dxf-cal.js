@@ -17,6 +17,7 @@ function pdxfCalRenderCurrent() {
       " 个独立检查点，最大误差 " +
       info.alignment.check_max_m.toFixed(2) +
       " m。"
+    : info.source === "placement" ? "本批次按摆放位置导入，未做选点校准。可在此重新选点校准。"
     : "尚未验证定位。" +
       ((info.alignment && info.alignment.error) ||
         "请在 CAD 叠图与卫星底图中选择对应点。");
@@ -112,6 +113,8 @@ function pdxfCalStepMsg() {
     ? pdxfCal.phase === "sat"
       ? "② 点底图的对应位置 · CAD 已隐藏"
       : "① 点 CAD 叠图上的角点或设备"
+    : pdxfUsePlacement()
+      ? "按当前摆放位置导入，无需选点"
     : pdxfReady()
       ? "已验证的 CAD 叠图"
       : pdxfCal.pairs.length
