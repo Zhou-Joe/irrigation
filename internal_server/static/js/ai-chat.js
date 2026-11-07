@@ -3,16 +3,31 @@
     'use strict';
     const core = window.AIChatCore;
     if (!core) return;
-    const avatarURL = document.currentScript?.dataset.avatarUrl || '/static/ai/everflow.png';
+    const mascotBaseURL = document.currentScript?.dataset.mascotBase || '/static/ai/engenie/';
     let threadId = null, activeRun = null, sequence = 0, panelOpen = false, expanded = false, follow = true;
     let historyDay = null, historyTimer = null, historyDeadline = null;
+    let panelMotion = null, motionVersion = 0;
     const byId = id => document.getElementById(id);
     const icon = name => window.uiIcon(name);
     const node = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
-    function mascot(full) {
-        const frame = node('span', 'ai-mascot' + (full ? ' ai-mascot-full' : ''));
+    function mascot(pose = 'reply') {
+        const frame = node('span', 'ai-mascot' + (pose === 'welcome' ? ' ai-mascot-full' : ''));
         frame.setAttribute('aria-hidden', 'true');
-        const image = node('img'); image.src = avatarURL; image.alt = ''; image.width = 1312; image.height = 1199; image.decoding = 'async';
+        if (pose === 'welcome') {
+            const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            svg.setAttribute('viewBox', '0 0 40 40'); svg.setAttribute('aria-hidden', 'true');
+            svg.dataset.genieArrival = ''; svg.dataset.duration = '2560';
+            for (const theme of ['light', 'dark']) {
+                svg.dataset[theme + 'Intro'] = mascotBaseURL + 'engenie-arrival-' + theme + '.gif';
+                svg.dataset[theme + 'Still'] = mascotBaseURL + 'engenie-idle-' + theme + '.png';
+            }
+            const idle = document.createElementNS('http://www.w3.org/2000/svg', 'image');
+            idle.dataset.genieIdle = ''; idle.setAttribute('href', svg.dataset.lightStill);
+            idle.setAttribute('width', '40'); idle.setAttribute('height', '40');
+            svg.append(idle); frame.append(svg); return frame;
+        }
+        const image = node('img'); image.src = mascotBaseURL + (pose === 'launcher' ? 'engenie-look-up.png' : 'engenie-genie.png');
+        image.alt = ''; image.width = 40; image.height = 40; image.decoding = 'async';
         frame.append(image); return frame;
     }
     function getCSRF() {
@@ -22,9 +37,28 @@
     function say(message) { const live = byId('aiChatLive'); if (live && live.textContent !== message) live.textContent = message; }
     function scrollLatest(force) { const box = byId('aiChatMessages'); if (box && (force || follow)) box.scrollTop = box.scrollHeight; }
     function modalMode() { return expanded || window.matchMedia('(max-width:768px)').matches; }
+    function revealPanel(panel, open) {
+        const version = ++motionVersion;
+        const current = panel.hidden ? null : {opacity:getComputedStyle(panel).opacity, transform:getComputedStyle(panel).transform};
+        panelMotion?.cancel(); panelMotion = null;
+        panel.hidden = false; panel.inert = !open; panel.setAttribute('aria-hidden', String(!open));
+        if (window.matchMedia('(prefers-reduced-motion: reduce)').matches || typeof panel.animate !== 'function') {
+            panel.hidden = !open; return;
+        }
+        const rest = {opacity:1, transform:'none'}, fold = {opacity:0, transform:'translateY(18px) scale(.965)'};
+        const motion = panel.animate([current || (open ? fold : rest), open ? rest : fold],
+            {duration:open ? 320 : 180, easing:open ? 'cubic-bezier(.2,.85,.25,1)' : 'cubic-bezier(.4,0,1,1)', fill:'both'});
+        panelMotion = motion;
+        motion.finished.then(() => {
+            if (version !== motionVersion) return;
+            panel.hidden = !panelOpen; panelMotion = null; motion.cancel();
+        }).catch(() => {});
+    }
     function setOpen(open) {
         const panel = byId('aiChatPanel'); if (!panel) return;
-        panelOpen = open; panel.hidden = !open;
+        const changed = panelOpen !== open; panelOpen = open;
+        if (changed) revealPanel(panel, open);
+        if (changed && open) window.fosGenieArrival?.replay(panel);
         byId('aiChatLauncher').hidden = open;
         byId('aiChatLauncher').setAttribute('aria-expanded', String(open));
         byId('aiChatBackdrop').hidden = !open || !modalMode();
@@ -37,10 +71,10 @@
     function welcome() {
         const box = byId('aiChatMessages'); box.replaceChildren();
         const empty = node('div','ai-welcome'); empty.id = 'aiChatWelcome';
-        const art = node('div','ai-welcome-icon'); art.append(mascot(true));
-        const title = node('h3','', 'Everflow');
+        const art = node('div','ai-welcome-icon'); art.append(mascot('welcome'));
+        const title = node('h3','', 'EnGenie');
         title.append(node('span','ai-welcome-tagline', ' — Your Intelligent Irrigation Companion'));
-        empty.append(art, title, node('p','', '你好，我是 Everflow。今天需要什么帮助？'));
+        empty.append(art, title, node('p','', '你好，我是 EnGenie。今天需要什么帮助？'));
         const prompts = node('div','ai-prompts');
         ['汇总本周的维修记录','查看最近的灌溉与用水情况','分析 PM 待办并生成报表'].forEach(text => {
             const b = node('button','ai-prompt',text); b.type = 'button';
@@ -91,7 +125,7 @@
         const box = byId('aiChatMessages');
         const user = node('article','ai-msg ai-msg-user'); user.append(node('div','ai-user-text',requestText)); box.append(user);
         const turn = core.createTurn();
-        const article = node('article','ai-msg ai-msg-assistant'); article.setAttribute('aria-label','Everflow 回复');
+        const article = node('article','ai-msg ai-msg-assistant'); article.setAttribute('aria-label','EnGenie 回复');
         const heading = node('div','ai-turn-head'), avatar = node('span','ai-turn-avatar'); avatar.append(mascot());
         const status = node('span','ai-turn-status'), copy = node('button','ai-icon-button ai-copy-response');
         copy.type = 'button'; copy.title = '复制回复'; copy.setAttribute('aria-label','复制回复'); copy.innerHTML = icon('copy'); copy.hidden = true;
@@ -244,7 +278,7 @@
     }
     function mount(preview) {
         if (byId('aiChatPanel')) return;
-        const launcher = node('button','ai-launcher-btn'); launcher.id = 'aiChatLauncher'; launcher.type = 'button'; launcher.title = 'Everflow · 智能灌溉伙伴'; launcher.setAttribute('aria-label','打开 Everflow 智能灌溉助手'); launcher.setAttribute('aria-controls','aiChatPanel'); launcher.setAttribute('aria-expanded','false'); launcher.append(mascot()); launcher.onclick = toggle;
+        const launcher = node('button','ai-launcher-btn'); launcher.id = 'aiChatLauncher'; launcher.type = 'button'; launcher.title = 'EnGenie · 智能灌溉伙伴'; launcher.setAttribute('aria-label','打开 EnGenie 智能灌溉助手'); launcher.setAttribute('aria-controls','aiChatPanel'); launcher.setAttribute('aria-expanded','false'); launcher.append(mascot('launcher')); launcher.onclick = toggle;
         const media = window.matchMedia('(max-width:768px)');
         function placeLauncher() {
             const controls = byId('mobileBtnCluster'); const parent = controls && media.matches ? controls : document.body; if (launcher.parentElement !== parent) parent.append(launcher);
@@ -252,7 +286,7 @@
         }
         const backdrop = node('div','ai-chat-backdrop'); backdrop.id = 'aiChatBackdrop'; backdrop.hidden = true; backdrop.onclick = () => setOpen(false);
         const panel = node('section','ai-chat-panel'); panel.id = 'aiChatPanel'; panel.hidden = true; panel.setAttribute('role','dialog'); panel.setAttribute('aria-labelledby','aiChatTitle'); panel.setAttribute('aria-modal','false');
-        panel.innerHTML = '<header class="ai-chat-header"><div class="ai-chat-heading"><span class="ai-header-icon"></span><div><h2 id="aiChatTitle">Everflow</h2><p>智能灌溉伙伴</p></div></div><div class="ai-header-actions"><button type="button" id="aiChatNew" class="ai-icon-button" title="新建对话" aria-label="新建对话">' + icon('plus') + '</button><button type="button" id="aiChatExpand" class="ai-icon-button" title="展开对话" aria-label="展开对话">' + icon('expand') + '</button><button type="button" id="aiChatClose" class="ai-icon-button" title="关闭" aria-label="关闭 Everflow">' + icon('close') + '</button></div></header><div id="aiChatLive" class="pwa-sr-only" aria-live="polite" aria-atomic="true"></div><div id="aiChatMessages" class="ai-chat-messages" role="log" aria-live="off" aria-label="对话内容"></div><button type="button" id="aiChatLatest" class="ai-latest" hidden>' + icon('chevron-down') + ' 回到最新</button><div class="ai-composer"><label class="pwa-sr-only" for="aiChatInput">发送给 Everflow</label><div class="ai-composer-box"><textarea id="aiChatInput" placeholder="向 Everflow 提问…" rows="1"></textarea><button type="button" id="aiChatSend" aria-label="发送" disabled>' + icon('send') + '</button></div><p class="ai-composer-hint">Enter 发送 · Shift+Enter 换行</p></div>';
+        panel.innerHTML = '<header class="ai-chat-header"><div class="ai-chat-heading"><span class="ai-header-icon"></span><div><h2 id="aiChatTitle">EnGenie</h2><p>智能灌溉伙伴</p></div></div><div class="ai-header-actions"><button type="button" id="aiChatNew" class="ai-icon-button" title="新建对话" aria-label="新建对话">' + icon('plus') + '</button><button type="button" id="aiChatExpand" class="ai-icon-button" title="展开对话" aria-label="展开对话">' + icon('expand') + '</button><button type="button" id="aiChatClose" class="ai-icon-button" title="关闭" aria-label="关闭 EnGenie">' + icon('close') + '</button></div></header><div id="aiChatLive" class="pwa-sr-only" aria-live="polite" aria-atomic="true"></div><div id="aiChatMessages" class="ai-chat-messages" role="log" aria-live="off" aria-label="对话内容"></div><button type="button" id="aiChatLatest" class="ai-latest" hidden>' + icon('chevron-down') + ' 回到最新</button><div class="ai-composer"><label class="pwa-sr-only" for="aiChatInput">发送给 EnGenie</label><div class="ai-composer-box"><textarea id="aiChatInput" placeholder="向 EnGenie 提问…" rows="1"></textarea><button type="button" id="aiChatSend" aria-label="发送" disabled>' + icon('send') + '</button></div><p class="ai-composer-hint">Enter 发送 · Shift+Enter 换行</p></div>';
         panel.querySelector('.ai-header-icon').append(mascot());
         document.body.append(backdrop,panel); placeLauncher(); if (media.addEventListener) media.addEventListener('change',placeLauncher); else media.addListener(placeLauncher);
         if (preview) byId('aiChatTitle').append(node('span','ai-preview-badge','演示'));
