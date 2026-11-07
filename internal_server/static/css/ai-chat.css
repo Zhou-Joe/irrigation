@@ -1,13 +1,15 @@
 /* Chat owns its layout independently of the map's floating controls. */
 .ai-chat-backdrop { position:fixed;inset:0;z-index:3200;background:#102a2229;backdrop-filter:blur(2px); }
 body.ai-chat-modal-open { overflow:hidden; }
-/* Reuse the supplied transparent artwork; crop the portrait in CSS without altering it. */
-.ai-mascot { position:relative;display:block;width:100%;height:100%;overflow:hidden;isolation:isolate;border-radius:50%;background:radial-gradient(circle at 35% 25%,#fff,#e1f3fa 72%); }
-.ai-mascot>img { position:absolute;display:block;width:215%;max-width:none;height:auto;left:-83%;top:-23%;pointer-events:none;user-select:none; }
+/* EnGenie artwork and arrival playback are shared with the RAG project. */
+.ai-mascot { position:relative;display:block;width:100%;height:100%;isolation:isolate; }
+.ai-mascot>img,.ai-mascot>svg { display:block;width:100%;height:100%;object-fit:contain;pointer-events:none;user-select:none; }
 #aiChatLauncher { padding:3px;background:#f4fbf9;border-color:#b7d6c8;box-shadow:0 4px 16px #173c352b; }
 #aiChatLauncher:focus-visible { outline:3px solid #8bb99a;outline-offset:3px; }
 #aiChatPanel { position:fixed;right:24px;bottom:80px;z-index:3201;display:flex;flex-direction:column;width:min(448px,calc(100vw - 48px));height:min(680px,calc(100dvh - 112px));max-height:calc(100dvh - 32px);min-height:0;overflow:hidden;border:1px solid #d7e0d9;border-radius:20px;background:#fff;color:#24362d;box-shadow:0 18px 70px #102e2338;font-family:var(--font-body,system-ui,sans-serif);font-size:14px;line-height:1.6; }
 #aiChatPanel.is-expanded { inset:24px;margin:auto;width:min(920px,calc(100vw - 48px));height:calc(100dvh - 48px);max-height:none; }
+#aiChatPanel { transform-origin:bottom right; }
+#aiChatPanel[aria-hidden="true"] { pointer-events:none; }
 #aiChatPanel .ui-icon { width:18px;height:18px; }
 #aiChatPanel :focus-visible { outline:2px solid #588a6d;outline-offset:3px; }
 #aiChatPanel .ai-chat-header { flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:14px 16px;background:#fff;color:#203d2e;border-bottom:1px solid #e9eee9; }
@@ -26,7 +28,7 @@ body.ai-chat-modal-open { overflow:hidden; }
 #aiChatSnapshot:empty { display:none; }
 #aiChatPanel.is-expanded .ai-chat-messages { padding-inline:max(28px,calc((100% - 728px)/2)); }
 .ai-welcome { display:flex;min-height:230px;flex-direction:column;justify-content:center;align-items:center;text-align:center;padding:20px 4px; }
-.ai-welcome-icon { display:flex;align-items:center;justify-content:center;width:116px;height:108px;margin-bottom:14px;filter:drop-shadow(0 8px 10px #2c7ca51c);animation:ai-mascot-float 5s ease-in-out infinite; }
+.ai-welcome-icon { display:flex;align-items:center;justify-content:center;width:150px;height:150px;margin-bottom:14px; }
 .ai-mascot-full { overflow:visible;border-radius:0;background:none; }
 .ai-mascot-full>img { inset:0;width:100%;height:100%;object-fit:contain; }
 .ai-welcome h3 { margin:0 0 8px;font-size:22px;font-weight:600;letter-spacing:-.3px;color:#203d2e; }

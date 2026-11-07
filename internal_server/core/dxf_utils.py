@@ -8,6 +8,41 @@ import math
 from core.calibration import SITE_CALIBRATION_POINTS, fit_calibration_transform  # noqa: F401 — SITE_CALIBRATION_POINTS 为外部消费方保留的兜底标定
 
 
+def _boundary_polyline_vertices(raw, ocs=None, elevation=0):
+    """Expand each vertex's bulge, including the last-to-first segment.
+
+    Sample the actual circle, keeping CAD corners and source precision. Limit
+    each chord to 5 degrees and 0.05 drawing units of sagitta (up to 4096
+    segments per arc for unusually large drawings). Rings omit a repeated end.
+    """
+    from ezdxf.math import bulge_to_arc
+
+    vertices = []
+    for i, (x, y, bulge) in enumerate(raw):
+        vertices.append((float(x), float(y)))
+        end = raw[(i + 1) % len(raw)]
+        if not bulge or (x, y) == end[:2]:
+            continue
+        center, start, finish, radius = bulge_to_arc((x, y), end[:2], bulge)
+        sweep = (finish - start) % math.tau
+        if not sweep or not radius:
+            continue
+        # asin is stable even when radius is very large relative to sagitta.
+        step = min(math.radians(5), 4 * math.asin(math.sqrt(min(1, .05 / (2 * radius)))))
+        count = min(4096, max(2, math.ceil(sweep / step)))
+        angle, direction = (start, 1) if bulge > 0 else (finish, -1)
+        for j in range(1, count):
+            theta = angle + direction * sweep * j / count
+            vertices.append((center.x + radius * math.cos(theta),
+                             center.y + radius * math.sin(theta)))
+    if ocs is not None:
+        vertices = [(v.x, v.y) for v in
+                    (ocs.to_wcs((x, y, elevation)) for x, y in vertices)]
+    if len(vertices) > 1 and vertices[-1] == vertices[0]:
+        vertices.pop()
+    return vertices
+
+
 def parse_dxf_shapes(uploaded_file):
     """
     Parse a DXF file and extract all closed shapes.
@@ -51,7 +86,8 @@ def parse_dxf_shapes(uploaded_file):
             closed = bool(entity.dxf.get('flags', 0) & 1)
             if not closed:
                 continue
-            vertices = [(float(p[0]), float(p[1])) for p in entity.get_points(format='xy')]
+            vertices = _boundary_polyline_vertices(
+                list(entity.get_points(format='xyb')), entity.ocs(), entity.dxf.elevation)
             if len(vertices) < 3:
                 continue
             shapes.append({
@@ -65,13 +101,19 @@ def parse_dxf_shapes(uploaded_file):
             idx += 1
 
         elif etype == 'POLYLINE':
-            # Check POLYLINE2D with closed flag
+            # Mesh vertex records do not describe a polygon boundary.
+            if not (entity.is_2d_polyline or entity.is_3d_polyline):
+                continue
             closed = bool(entity.dxf.get('flags', 0) & 1)
             if not closed:
                 continue
-            vertices = []
-            for v in entity.vertices:
-                vertices.append((float(v.dxf.location.x), float(v.dxf.location.y)))
+            if entity.is_2d_polyline:
+                vertices = _boundary_polyline_vertices([
+                    (v.dxf.location.x, v.dxf.location.y, v.dxf.get('bulge', 0))
+                    for v in entity.vertices], entity.ocs(), entity.dxf.elevation.z)
+            else:
+                vertices = [(float(v.dxf.location.x), float(v.dxf.location.y))
+                            for v in entity.vertices]
             if len(vertices) < 3:
                 continue
             shapes.append({
