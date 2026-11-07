@@ -26,5 +26,14 @@ Validation: 66 targeted Django regressions passed (one existing sample-file test
 skipped), including new geometric direction, radius, area, chord-error, OCS and
 preview-to-assignment-to-homepage checks. All 13 chat-core/arrival JavaScript
 tests passed. The actual local dashboard rendered the EnGenie launcher and
-welcome with no browser warning/error logs. Production status is recorded below
-after deployment.
+welcome with no browser warning/error logs.
+
+Production: deployed `a83942bb` directly through the existing office SSH tunnel
+using a Git bundle. The production checkout fast-forwarded from `4fe96a27`;
+Django checks passed, 10 static files were collected, and `horticulture`
+restarted at 2026-11-07 15:53:56 Asia/Shanghai with active/running status and
+ExecMainStatus=0. Collected chat JavaScript and arrival GIF hashes match their
+source files. The prior revision, source archive and release bundle are retained
+under `deployment_backups/engenie-zone-curves-20261107/` on the office server.
+No migrations or stored zone-boundary updates were performed. The user will
+inspect the deployed visual behavior.
