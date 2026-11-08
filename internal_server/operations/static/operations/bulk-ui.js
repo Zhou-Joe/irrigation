@@ -8,11 +8,12 @@
         if(event.target.closest('[data-batch-close]'))event.target.closest('dialog').close();
         if(event.target.matches('[data-check-visible]'))event.target.closest('form').querySelectorAll('[data-batch-choice]').forEach(input=>{if(!input.disabled)input.checked=event.target.checked;});
     });
-    async function refreshList() {
+    async function refreshList({maps=true}={}) {
         const panel=document.getElementById('opLocationResults');
         if(panel){const response=await fetch(location.href,{credentials:'same-origin',cache:'no-store'});if(!response.ok)throw Error('列表更新失败，请重试');const doc=new DOMParser().parseFromString(await response.text(),'text/html');const next=doc.getElementById('opLocationResults');if(next)panel.replaceWith(next);}
-        await window.FOSLocationMap?.refresh();await window.FOSPestMap?.refresh();
+        if(maps){await window.FOSLocationMap?.refresh();await window.FOSPestMap?.refresh();}
     }
+    window.FOSBulkLocations.refreshResults=refreshList;
     document.addEventListener('submit',async event=>{
         const form=event.target;if(!form.matches('[data-batch-create],[data-batch-share]'))return;
         event.preventDefault();if(form.dataset.busy)return;form.dataset.busy='1';
@@ -33,9 +34,9 @@
         try{const response=await fetch(url,{credentials:'same-origin',cache:'no-store'});if(!response.ok)throw Error('搜索暂不可用');const doc=new DOMParser().parseFromString(await response.text(),'text/html');document.getElementById('opLocationResults').replaceWith(doc.getElementById('opLocationResults'));history.replaceState(history.state,'',url);await window.FOSLocationMap?.refresh();}catch(error){announce(form,error.message);}
     });
     document.addEventListener('submit',async event=>{
-        const form=event.target;if(!form.matches('[data-location-edit],[data-location-share]'))return;event.preventDefault();if(form.dataset.busy)return;form.dataset.busy='1';
+        const form=event.target;if(!form.matches('[data-location-share]'))return;event.preventDefault();if(form.dataset.busy)return;form.dataset.busy='1';
         const button=event.submitter;if(button)button.disabled=true;announce(form,'正在保存…');
-        try{const response=await fetch(form.action||location.href,{method:'POST',credentials:'same-origin',body:new FormData(form),headers:{'X-Requested-With':'XMLHttpRequest'}});const data=await response.json();if(!response.ok||!data.success)throw Error(data.message||data.error||'保存失败');announce(form,data.message);if(data.edit_url){form.action=data.edit_url;const title=form.closest('section')?.querySelector('h2');if(title)title.textContent='编辑地点';}
+        try{const response=await fetch(form.getAttribute('action')||location.href,{method:'POST',credentials:'same-origin',body:new FormData(form),headers:{'X-Requested-With':'XMLHttpRequest'}});const data=await response.json();if(!response.ok||!data.success)throw Error(data.message||data.error||'保存失败');announce(form,data.message);if(data.edit_url){form.action=data.edit_url;const title=form.closest('section')?.querySelector('h2');if(title)title.textContent='编辑地点';}
             if(form.matches('[data-location-share]')){const page=await fetch(location.href,{credentials:'same-origin',cache:'no-store'});const doc=new DOMParser().parseFromString(await page.text(),'text/html'),list=document.querySelector('.op-sharing'),next=doc.querySelector('.op-sharing');if(list&&next)list.replaceWith(next);}window.opsDirty=false;window.IrrigationPWA?.markClean();}
         catch(error){announce(form,error.message||'网络异常，请保留内容重试。');}finally{delete form.dataset.busy;if(button)button.disabled=false;}
     });

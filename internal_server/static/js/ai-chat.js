@@ -7,6 +7,7 @@
     let threadId = null, activeRun = null, sequence = 0, panelOpen = false, expanded = false, follow = true;
     let historyDay = null, historyTimer = null, historyDeadline = null;
     let panelMotion = null, motionVersion = 0;
+    let workspaceAvailable=true,repositionLauncher=()=>{};
     const byId = id => document.getElementById(id);
     const icon = name => window.uiIcon(name);
     const node = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
@@ -54,18 +55,22 @@
             panel.hidden = !panelOpen; panelMotion = null; motion.cancel();
         }).catch(() => {});
     }
-    function setOpen(open) {
-        const panel = byId('aiChatPanel'); if (!panel) return;
-        const changed = panelOpen !== open; panelOpen = open;
-        if (changed) revealPanel(panel, open);
-        if (changed && open) window.fosGenieArrival?.replay(panel);
-        byId('aiChatLauncher').hidden = open;
-        byId('aiChatLauncher').setAttribute('aria-expanded', String(open));
-        byId('aiChatBackdrop').hidden = !open || !modalMode();
-        document.body.classList.toggle('ai-chat-modal-open', open && modalMode());
-        panel.setAttribute('aria-modal', String(open && modalMode()));
-        if (open) { loadHistory(); activeRun?.view.refresh(); (modalMode() ? byId('aiChatClose') : byId('aiChatInput')).focus(); }
-        else byId('aiChatLauncher').focus();
+    function setOpen(open, {immediate=false,focus=true}={}) {
+        const panel=byId('aiChatPanel');if(!panel)return;
+        open=!!open&&workspaceAvailable;
+        const changed=panelOpen!==open;panelOpen=open;
+        if(immediate||!changed){
+            motionVersion++;panelMotion?.cancel();panelMotion=null;
+            panel.hidden=!open;panel.inert=!open;panel.setAttribute('aria-hidden',String(!open));
+        }else revealPanel(panel,open);
+        if(changed&&open)window.fosGenieArrival?.replay(panel);
+        const launcher=byId('aiChatLauncher'),backdrop=byId('aiChatBackdrop');
+        if(launcher){launcher.hidden=open||!workspaceAvailable;launcher.setAttribute('aria-expanded',String(open));}
+        if(backdrop)backdrop.hidden=!open||!modalMode();
+        document.body.classList.toggle('ai-chat-modal-open',open&&modalMode());
+        panel.setAttribute('aria-modal',String(open&&modalMode()));
+        if(open){loadHistory();activeRun?.view.refresh();if(focus)(modalMode()?byId('aiChatClose'):byId('aiChatInput'))?.focus();}
+        else if(focus&&workspaceAvailable)launcher?.focus();
     }
     function toggle() { setOpen(!panelOpen); }
     function welcome() {
@@ -287,8 +292,10 @@
         const backdrop = node('div','ai-chat-backdrop'); backdrop.id = 'aiChatBackdrop'; backdrop.hidden = true; backdrop.onclick = () => setOpen(false);
         const panel = node('section','ai-chat-panel'); panel.id = 'aiChatPanel'; panel.hidden = true; panel.setAttribute('role','dialog'); panel.setAttribute('aria-labelledby','aiChatTitle'); panel.setAttribute('aria-modal','false');
         panel.innerHTML = '<header class="ai-chat-header"><div class="ai-chat-heading"><span class="ai-header-icon"></span><div><h2 id="aiChatTitle">EnGenie</h2><p>智能灌溉伙伴</p></div></div><div class="ai-header-actions"><button type="button" id="aiChatNew" class="ai-icon-button" title="新建对话" aria-label="新建对话">' + icon('plus') + '</button><button type="button" id="aiChatExpand" class="ai-icon-button" title="展开对话" aria-label="展开对话">' + icon('expand') + '</button><button type="button" id="aiChatClose" class="ai-icon-button" title="关闭" aria-label="关闭 EnGenie">' + icon('close') + '</button></div></header><div id="aiChatLive" class="pwa-sr-only" aria-live="polite" aria-atomic="true"></div><div id="aiChatMessages" class="ai-chat-messages" role="log" aria-live="off" aria-label="对话内容"></div><button type="button" id="aiChatLatest" class="ai-latest" hidden>' + icon('chevron-down') + ' 回到最新</button><div class="ai-composer"><label class="pwa-sr-only" for="aiChatInput">发送给 EnGenie</label><div class="ai-composer-box"><textarea id="aiChatInput" placeholder="向 EnGenie 提问…" rows="1"></textarea><button type="button" id="aiChatSend" aria-label="发送" disabled>' + icon('send') + '</button></div><p class="ai-composer-hint">Enter 发送 · Shift+Enter 换行</p></div>';
+        panel.inert=true;panel.setAttribute('aria-hidden','true');
         panel.querySelector('.ai-header-icon').append(mascot());
-        document.body.append(backdrop,panel); placeLauncher(); if (media.addEventListener) media.addEventListener('change',placeLauncher); else media.addListener(placeLauncher);
+        repositionLauncher=placeLauncher;workspaceAvailable=byId('dashboardWorkspace')?.dataset.ai!=='no';
+        document.body.append(backdrop,panel); placeLauncher();launcher.hidden=!workspaceAvailable; if (media.addEventListener) media.addEventListener('change',placeLauncher); else media.addListener(placeLauncher);
         if (preview) byId('aiChatTitle').append(node('span','ai-preview-badge','演示'));
         function fitViewport() {
             const viewport = window.visualViewport;
@@ -325,5 +332,13 @@
     }
     function mountIfAvailable() { fetch('/api/ai/status',{credentials:'same-origin'}).then(response => response.ok ? response.json() : null).then(data => { if (data?.available) mount(data.preview === true); }).catch(() => {}); }
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded',mountIfAvailable); else mountIfAvailable();
-    window.AIChat = {open:() => setOpen(true),toggle};
+    window.AIChat = {open:()=>setOpen(true),toggle,close:()=>setOpen(false),
+        beforeWorkspaceChange(){
+            setOpen(false,{immediate:true,focus:false});
+            const launcher=byId('aiChatLauncher');if(launcher&&launcher.parentElement!==document.body)document.body.append(launcher);
+        },
+        afterWorkspaceChange(){
+            workspaceAvailable=byId('dashboardWorkspace')?.dataset.ai==='yes';
+            repositionLauncher();setOpen(false,{immediate:true,focus:false});
+        }};
 })();

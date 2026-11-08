@@ -15,7 +15,7 @@
     <link rel="stylesheet" href="{% static 'css/app.css' %}?v=20260705">
 
     {% block extra_css %}{% endblock %}
-    {% if multi_team_enabled %}<link rel="stylesheet" href="{% static 'operations/bulk-ui.css' %}?v=20261108business1">{% endif %}
+    {% if multi_team_enabled %}<link rel="stylesheet" href="{% static 'operations/bulk-ui.css' %}?v=20261108fixes2">{% endif %}
 
     <style>
         body {
@@ -227,8 +227,8 @@
     <link rel="stylesheet" href="{% static 'css/page-ui.css' %}?v=20261024pages6">
     {% block extra_ui_css %}{% endblock %}
     <script src="{% static 'js/submissions.js' %}?v=20261026business1" defer></script>
-    <script src="{% static 'js/pwa.js' %}?v=20261108business1" defer></script>
-    <script src="{% static 'js/pwa-navigation.js' %}?v=20261108business1" defer></script>
+    <script src="{% static 'js/pwa.js' %}?v=20261108fixes2" defer></script>
+    <script src="{% static 'js/pwa-navigation.js' %}?v=20261108fixes2" defer></script>
     <script src="{% static 'js/responsive-ui.js' %}?v=20261024pages6" defer></script>
 </head>
 <body class="ui-system {% if user.is_authenticated %}pwa-authenticated{% endif %}" data-page="{{ request.resolver_match.url_name }}">
@@ -415,6 +415,6 @@
     <script src="{% static 'js/ui-icons.js' %}?v=20261023icons"></script>
     {% block extra_js %}{% endblock %}
     {% include 'core/pwa_shell.html' %}
-    {% if multi_team_enabled %}<script src="{% static 'operations/bulk-ui.js' %}?v=20261108business1" defer></script><script src="{% static 'operations/workspace.js' %}?v=20261108business1" defer></script>{% endif %}
+    {% if multi_team_enabled %}<script src="{% static 'operations/bulk-ui.js' %}?v=20261108fixes2" defer></script><script src="{% static 'operations/workspace.js' %}?v=20261108fixes2" defer></script>{% endif %}
 </body>
 </html>

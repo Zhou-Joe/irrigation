@@ -20,6 +20,7 @@
         }
     }
     function updateShell(doc) {
+        window.AIChat?.beforeWorkspaceChange?.();
         window.closeNotifPopup?.();
         const nav=doc.getElementById('appNavigation');if(nav)document.getElementById('appNavigation').replaceChildren(...[...nav.childNodes].map(n=>document.importNode(n,true)));
         const old=document.querySelector('.pwa-bottom-nav'),next=doc.querySelector('.pwa-bottom-nav');
@@ -32,7 +33,6 @@
         document.title=doc.title;
         const allowAI=doc.getElementById('dashboardWorkspace')?.dataset.ai==='yes';
         document.body.classList.toggle('fos-ai-hidden',!allowAI);
-        document.querySelectorAll('.ai-launcher-btn,.ai-chat-panel').forEach(el=>{el.hidden=!allowAI;});
         window.dispatchEvent(new CustomEvent('fos:workspace-changed'));
     }
     document.addEventListener('submit',async event=>{
@@ -73,6 +73,6 @@
             }
             window.IrrigationPWA?.markClean();
         } catch(error){notify(form,error.message||'切换未完成，请重试。');}
-        finally{changing=false;if(button.isConnected){button.disabled=false;button.textContent=label;}}
+        finally{window.AIChat?.afterWorkspaceChange?.();changing=false;if(button.isConnected){button.disabled=false;button.textContent=label;}}
     });
 })();
