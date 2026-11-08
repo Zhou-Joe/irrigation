@@ -1,0 +1,17 @@
+/* Loaded only for the pest map. The irrigation layout and sheet sizes stay intact. */
+#mapContainer[data-business="pest-control"]{height:calc(100dvh - 52px)!important}
+#mapContainer[data-business="pest-control"] .map-container{height:100%!important}
+.business-switch{margin:0}
+.business-switch button{white-space:nowrap}
+@media(max-width:768px){
+    #mapContainer[data-business="pest-control"]{height:calc(100dvh - 116px - env(safe-area-inset-bottom))!important;position:relative}
+    #mapContainer[data-business="pest-control"] .sidebar-expand-btn{display:flex!important;top:108px;left:12px;bottom:auto;z-index:800}
+    #mapContainer[data-business="pest-control"].pest-sidebar-open .sidebar{display:flex!important;position:absolute;inset:0 auto 0 0;width:min(85vw,320px)!important;min-width:0!important;z-index:1100;transform:none!important}
+    #mapContainer[data-business="pest-control"].pest-sidebar-open .sidebar-expand-btn{display:none!important}
+    .pest-create{bottom:14px}
+    #mapContainer[data-business="pest-control"] .map-layer-panel{top:70px;right:12px}
+    .business-switch select{font-size:12px!important;max-width:140px!important}
+    .top-nav:has(.business-switch){padding-left:12px;padding-right:8px;gap:5px}
+    .top-nav:has(.business-switch) .top-nav-right{gap:5px}
+    .top-nav:has(.business-switch) .top-nav-left{gap:6px!important}
+}

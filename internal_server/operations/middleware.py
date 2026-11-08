@@ -2,6 +2,7 @@
 from django.conf import settings
 from django.http import HttpResponseNotFound, JsonResponse
 from django.shortcuts import redirect
+import re
 
 
 class BusinessAccessMiddleware:
@@ -30,12 +31,26 @@ class BusinessAccessMiddleware:
             from core.role_utils import get_django_user
             user = get_django_user(resolve_token_user(request))
         if user and user.is_authenticated:
-            if request.path == '/app/' and request.method == 'GET':
-                return redirect('operations:home')
+            from .access import active_membership
+            from django.shortcuts import render
+            member = active_membership(request) if request.user.is_authenticated else None
+            pest = member and member.team.business.code == 'pest-control'
+            if pest:
+                request.operations_shell = True
+                if request.path == '/app/' and request.method == 'GET':
+                    return redirect('core:dashboard')
+                shared = {'/', '/api/zones-payload/', '/api/modal/workorder-data/',
+                          '/mobile/workorder/v2/', '/work-reports/', '/work-reports/tree/new/'}
+                if request.path in shared or re.fullmatch(r'/work-reports/\d+/',request.path):
+                    response = self.get_response(request)
+                    response['Cache-Control'] = 'private, no-store'
+                    response['Vary'] = 'Cookie'
+                    return response
             admin_blocked = request.path.startswith('/admin/') and not user.is_superuser
-            if admin_blocked or not has_irrigation_access(user):
+            if admin_blocked or pest or not has_irrigation_access(user):
                 if request.path == '/' and request.method == 'GET':
-                    return redirect('operations:home')
-                return JsonResponse({'error': '当前账号无权访问灌溉业务，请进入团队工作台。',
+                    request.operations_shell = True
+                    return render(request,'operations/no_membership.html',status=403)
+                return JsonResponse({'error': '当前账号无权访问灌溉业务，请返回团队地图。',
                                      'workspace_url': '/ops/'}, status=403)
         return self.get_response(request)

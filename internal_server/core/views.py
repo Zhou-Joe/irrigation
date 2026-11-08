@@ -351,12 +351,12 @@ def user_login(request):
             if settings.MULTI_TEAM_ENABLED:
                 from operations.access import memberships
                 if memberships(user).exists():
-                    redirect_url = '/ops/'
+                    redirect_url = '/'
 
             # Check if dept user - redirect to requests page (water requests focus)
             try:
                 DepartmentUserProfile.objects.get(user=user, active=True)
-                if redirect_url != '/ops/':
+                if redirect_url != '/':
                     redirect_url = 'core:water_requests'
             except DepartmentUserProfile.DoesNotExist:
                 pass
@@ -1208,6 +1208,9 @@ def _zone_revision():
 @token_or_session(require_manager=True)
 @login_required(login_url='core:login')
 def zones_payload_api(request):
+    from operations.map_views import is_pest, pest_map_data
+    if is_pest(request):
+        return pest_map_data(request)
     """Serve the dashboard zone payload as a standalone, cacheable JSON document.
 
     Same data as the inline `zones_json` in the dashboard HTML, but separated so:
@@ -1279,6 +1282,9 @@ def dashboard(request):
     """
     Main dashboard view with interactive map showing irrigation zones.
     """
+    from operations.map_views import is_pest, pest_dashboard
+    if is_pest(request):
+        return pest_dashboard(request)
     from datetime import date, timedelta
     from django.db.models.functions import TruncDate
     from core.models import (
@@ -9550,6 +9556,9 @@ def work_reports_pm_tasks(request):
 @never_cache
 @login_required(login_url='core:login')
 def work_reports_list(request):
+    from operations.map_views import is_pest, pest_reports
+    if is_pest(request):
+        return pest_reports(request)
     """Unified, responsive work-order list (维修日志).
 
     Server-renders the initial page (latest 7 days by default) and also serves
@@ -10649,6 +10658,9 @@ def notification_read_all(request):
 
 @login_required(login_url='core:login')
 def work_report_detail(request, report_id):
+    from operations.map_views import is_pest, pest_report_detail
+    if is_pest(request):
+        return pest_report_detail(request, report_id)
     from core.models import WorkReport, WorkItem
     from core.role_utils import is_admin, is_field_worker
     from core.workorder_tree_views import _PROJECT_SECTIONS, weather_snapshot_at, weather_icon_for
@@ -11004,8 +11016,15 @@ def _build_zone_geo_data():
 
 
 @login_required(login_url='core:login')
-@submission('workorder')
 def workorder_mobile_v2(request):
+    from operations.map_views import is_pest, pest_workorder
+    if is_pest(request):
+        return pest_workorder(request)
+    return _irrigation_workorder_mobile_v2(request)
+
+
+@submission('workorder')
+def _irrigation_workorder_mobile_v2(request):
     from core.models import WorkReport, Patch, Zone, Worker
     from core.role_utils import get_worker_for_user, is_admin, get_user_role, ROLE_FIELD_WORKER
     from core.role_utils import ROLE_SUPER_ADMIN, ROLE_MANAGER, resolve_or_create_worker
@@ -11492,6 +11511,9 @@ def water_request_mobile_v2(request):
 @token_or_session(require_manager=True)
 @login_required(login_url='core:login')
 def workorder_modal_data(request):
+    from operations.map_views import is_pest, pest_form_data
+    if is_pest(request):
+        return pest_form_data(request)
     """API: return workorder form metadata as JSON for dashboard modal."""
     from core.models import WorkReport, Worker
     from core.role_utils import get_worker_for_user, get_user_role, is_admin, ROLE_FIELD_WORKER, ROLE_SUPER_ADMIN, ROLE_MANAGER

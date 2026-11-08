@@ -4,18 +4,18 @@
     <div id="pwaUpdate" class="pwa-update" hidden><span>应用有新版本</span><button type="button" id="pwaUpdateBtn">更新并重新打开</button></div>
 </div>
 {% if user.is_authenticated %}
-<nav class="pwa-bottom-nav" aria-label="手机主导航" data-user-id="{{ user.pk }}">
-    <a href="{% url 'core:app_home' %}" data-pwa-nav="home"><svg><use href="#pwa-home"/></svg><span>工作台</span></a>
+<nav class="pwa-bottom-nav" aria-label="手机主导航" {% if pest_mode %}style="grid-template-columns:repeat(3,1fr)"{% endif %} data-user-id="{{ user.pk }}{% if active_business_key %}:{{ active_business_key }}{% endif %}">
+    {% if not pest_mode %}<a href="{% url 'core:app_home' %}" data-pwa-nav="home"><svg><use href="#pwa-home"/></svg><span>工作台</span></a>{% endif %}
     <a href="{% url 'core:dashboard' %}" data-pwa-nav="map"><svg><use href="#pwa-map"/></svg><span>地图</span></a>
     <a href="{% url 'core:work_reports' %}" data-pwa-nav="work"><svg><use href="#pwa-clipboard"/></svg><span>工单</span></a>
-    <a href="{% url 'core:inventory_management' %}" data-pwa-nav="stock"><svg><use href="#pwa-box"/></svg><span>库存</span></a>
+{% if not pest_mode %}    <a href="{% url 'core:inventory_management' %}" data-pwa-nav="stock"><svg><use href="#pwa-box"/></svg><span>库存</span></a>{% endif %}
     <button type="button" data-pwa-launcher aria-haspopup="dialog"><svg><use href="#pwa-grid"/></svg><span>全部</span></button>
 </nav>
 <dialog id="pwaLauncher" class="pwa-dialog" aria-labelledby="pwaLauncherTitle">
     <div class="pwa-dialog-head"><div><span class="pwa-eyebrow">FIELD WORKSPACE</span><h2 id="pwaLauncherTitle">全部功能</h2></div><button type="button" data-pwa-close aria-label="关闭全部功能">×</button></div>
     <label class="pwa-search"><span class="pwa-sr-only">查找功能</span><input id="pwaModuleSearch" type="search" placeholder="查找功能，例如：作业计划" autocomplete="off"></label>
     <div class="pwa-module-list">
-        <a class="pwa-module" href="{% url 'core:app_home' %}"><svg><use href="#pwa-home"/></svg><span><strong>现场工作台</strong><small>快捷操作与待办任务</small></span><span aria-hidden="true">›</span></a>
+        {% if not pest_mode %}<a class="pwa-module" href="{% url 'core:app_home' %}"><svg><use href="#pwa-home"/></svg><span><strong>现场工作台</strong><small>快捷操作与待办任务</small></span><span aria-hidden="true">›</span></a>{% endif %}
         {% for module in pwa_modules %}
         <a class="pwa-module" href="{{ module.url }}"><svg><use href="#pwa-{{ module.icon }}"/></svg><span><strong>{{ module.label }}</strong><small>{{ module.description }}</small></span><span aria-hidden="true">›</span></a>
         {% endfor %}

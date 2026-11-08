@@ -1,0 +1,26 @@
+/* Business-specific map elements; form controls inherit the existing dashboard UI. */
+.pest-icon{border:0;background:transparent;color:inherit;cursor:pointer}
+.pest-search-label{display:block;font-size:12px;padding:12px 12px 4px;color:#607269}
+.pest-search{width:calc(100% - 24px);margin:0 12px 10px;border:1px solid #d6e1d8;border-radius:8px;padding:9px}
+.pest-location-row{width:100%;border:0;border-bottom:1px solid #edf0ed;background:white;text-align:left;padding:12px 16px;color:#244534;cursor:pointer;font:inherit}
+.pest-location-row:hover{background:#edf5ee}
+.pest-location-row small{display:block;color:#718176;margin-top:4px}
+.pest-map-notice{position:absolute;left:50%;top:12px;transform:translateX(-50%);padding:8px 14px;background:#fffffff0;color:#234a35;border-radius:8px;z-index:500;max-width:70%;font-size:13px}
+.pest-create{position:absolute;right:20px;bottom:24px;z-index:600;display:flex;align-items:center;gap:8px;padding:12px 20px;font:inherit;cursor:pointer}
+.pest-modal[hidden],#woModalBackdrop[hidden],#mapLayerBody[hidden]{display:none!important}
+.pest-modal .v2-form-row>*{min-width:0}
+.pest-modal .v2-chip{font-family:inherit;text-align:left;overflow-wrap:anywhere}
+.pest-chip-level{margin-bottom:12px}
+.pest-chip-hint{font-size:.85em;color:#888;margin:4px 0}
+.pest-chip-summary{padding-top:2px}
+.pest-chip-summary .v2-chip{max-width:100%;white-space:normal}
+#pestSubmitStatus{flex:1;font-size:.85em;align-self:center;overflow-wrap:anywhere}
+#mapLayerBody label{display:flex;align-items:center;gap:8px;padding:8px 5px;font-size:13px;white-space:nowrap}
+#mapLayerBody input{accent-color:#2d6a4f}
+.pest-place-popup h3{font-size:15px;margin:3px 0 7px}
+.pest-place-popup p{font-size:12px;color:#62756a}
+.pest-place-popup button{border:0;border-radius:7px;background:#1b4332;color:white;padding:8px 14px;font:inherit;cursor:pointer}
+@media(max-width:768px){
+    .pest-create{right:12px}
+    .pest-map-notice{top:8px;font-size:12px;max-width:60%}
+}

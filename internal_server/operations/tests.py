@@ -39,11 +39,11 @@ class WorkspaceTests(TestCase):
         self.client.force_login(self.pm)
 
     def test_new_manager_cannot_read_legacy_pages_apis_ai_exports_or_media(self):
-        for path in ['/api/zones-payload/', f'/zone/{self.zone.pk}/detail/', '/irrigation/',
+        for path in [f'/zone/{self.zone.pk}/detail/', '/irrigation/',
                      '/user-management/', '/admin/', '/media/workreport/1/photo.jpg', '/ai/status/', '/stats/excel/']:
             with self.subTest(path=path):
                 self.assertEqual(self.client.get(path).status_code, 403)
-        self.assertRedirects(self.client.get('/'), '/ops/', fetch_redirect_response=False)
+        self.assertContains(self.client.get('/'), 'data-business="pest-control"')
 
     def test_token_also_cannot_bypass_legacy_gate(self):
         token = self.pm.manager_profile.api_token
@@ -51,10 +51,10 @@ class WorkspaceTests(TestCase):
         self.assertEqual(client.get('/api/zones-payload/', HTTP_AUTHORIZATION='Token '+str(token)).status_code, 403)
 
     def test_membership_does_not_leak_irrigation_status_in_shell(self):
-        response = self.client.get('/ops/')
+        response = self.client.get('/')
         self.assertContains(response, '植保团队')
         self.assertNotContains(response, 'private-irrigation-note')
-        self.assertNotContains(response, 'navNotifBtn')
+        self.assertNotContains(response, 'id="navNotifBtn"')
         self.assertIn('no-store', response['Cache-Control'])
         self.assertEqual(self.client.get('/ops').status_code, 301)
 
@@ -139,12 +139,12 @@ class WorkspaceTests(TestCase):
         self.assertEqual(self.client.post('/ops/switch/',{'membership':self.imm.pk}).status_code,404)
         self.assertEqual(self.client.post('/ops/switch/',{'membership':'bad'}).status_code,404)
         self.assertEqual(self.client.post('/ops/switch/',{'membership':second.pk}).status_code,302)
-        self.assertContains(self.client.get('/ops/'), '只读成员')
+        self.assertEqual(self.client.get('/').status_code,403)
         self.assertEqual(self.client.get('/ops/team/').status_code,403)
         # Legacy global ManagerProfile cannot turn a viewer membership into manager access.
         self.assertEqual(self.client.get('/api/zones-payload/').status_code,403)
         second.active=False;second.save()
-        self.assertContains(self.client.get('/ops/'), '选择团队身份')
+        self.assertContains(self.client.get('/'), '当前团队身份不可用',status_code=403)
         self.assertEqual(self.client.get('/ops/locations/').status_code,403)
 
     def test_matching_legacy_manager_retains_irrigation_api(self):
@@ -169,7 +169,7 @@ class WorkspaceTests(TestCase):
         self.assertEqual(Membership.objects.get(user=user).team_id,self.pt.pk)
         self.client.force_login(user)
         self.assertEqual(self.client.get('/ops/team/').status_code,200)
-        self.assertEqual(self.client.get('/api/zones-payload/').status_code,403)
+        self.assertEqual(self.client.get('/api/zones-payload/').status_code,200)
 
     def test_link_code_collision_is_reported_without_partial_link_or_zone_change(self):
         another=Zone.objects.create(code='NATIVE-COLLISION',name='Source')
@@ -202,10 +202,10 @@ class WorkspaceTests(TestCase):
         anonymous=Client()
         self.assertContains(anonymous.get('/login/'),'FOS 现场作业')
         self.assertNotContains(anonymous.get('/login/'),'申请加入')
-        self.assertEqual(self.client.get('/manifest.webmanifest').json()['start_url'],'/ops/')
+        self.assertEqual(self.client.get('/manifest.webmanifest').json()['start_url'],'/')
         self.assertEqual(self.client.get('/service-worker.js').status_code,200)
         self.assertEqual(self.client.get('/offline/').status_code,200)
-        self.assertRedirects(self.client.get('/app/'),'/ops/',fetch_redirect_response=False)
+        self.assertRedirects(self.client.get('/app/'),'/',fetch_redirect_response=False)
 
     def test_bootstrap_is_idempotent_and_never_reactivates_or_grants_new_team_legacy_access(self):
         self.imm.active=False;self.imm.save()

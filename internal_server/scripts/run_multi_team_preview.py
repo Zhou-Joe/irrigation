@@ -77,7 +77,7 @@ def main():
     Location.objects.get_or_create(owner_team=pt, code='TRAP-017', defaults={
         'name':'外围监测点 017','kind':'monitoring','latitude':'31.1484000','longitude':'121.6546000'})
     catalog, _ = import_reference(ROOT / 'PM管理_层级结构整理版.md', pt.business)
-    print(f'LOCAL PILOT: http://127.0.0.1:{options.port}/ops/', flush=True)
+    print(f'LOCAL PILOT: http://127.0.0.1:{options.port}/', flush=True)
     print('Demo accounts: ' + ', '.join(users), flush=True)
     print('Local demo password: ' + password, flush=True)
     print(f'Reference nodes: {catalog.nodes.count()}; isolated DB: {PREVIEW / "db.sqlite3"}', flush=True)

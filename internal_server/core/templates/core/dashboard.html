@@ -2,7 +2,7 @@
 
 {% load static %}
 
-{% block title %}灌溉区域总览{% endblock %}
+{% block title %}{% if pest_mode %}植保区域总览{% else %}灌溉区域总览{% endif %}{% endblock %}
 {% block nav_dashboard %}active{% endblock %}
 
 {% block viewport %}width=device-width, initial-scale=1.0, viewport-fit=cover{% endblock %}
@@ -48,7 +48,7 @@
 <link rel="stylesheet" href="{% static 'css/genie_arrival.css' %}?v=20261107engenie1">
 {% endblock %}
 
-{% block content %}
+{% block content %}{% if pest_mode %}{% include 'operations/_pest_map.html' %}{% else %}
 <!-- Announcement popup (unacknowledged global notifications). Shown only when
      there are active announcements the current user has not yet acknowledged.
      Not dismissable without acknowledging — no backdrop-click / Esc close. -->
@@ -421,9 +421,9 @@
 <script id="announcements-data" type="application/json">
     {{ announcements_json|safe }}
 </script>
-{% endblock %}
+{% endif %}{% endblock %}
 
-{% block extra_js %}
+{% block extra_js %}{% if pest_mode %}<script src="{% static 'vendor/leaflet/leaflet.js' %}"></script><script src="{% static 'js/map-runtime.js' %}"></script><script src="{% static 'operations/workorder-chips.js' %}?v=20261108chips3"></script><script src="{% static 'operations/pest-map.js' %}?v=20261108chips3"></script>{% else %}
 <!-- Leaflet JS -->
 <script src="{% static 'vendor/leaflet/leaflet.js' %}?v=1.9.4"></script>
 <!-- Map Config -->
@@ -498,4 +498,4 @@ window.fillPmTask = function (gwoId) {
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', load); else load();
 })();
 </script>
-{% endblock %}
+{% endif %}{% endblock %}
