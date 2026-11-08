@@ -1,5 +1,5 @@
-{% if can_pest_manage %}
-<section id="mapLocationCreate" class="pest-location-editor" data-team="{{ workspace_membership.team_id }}" aria-labelledby="mapCreateTitle" hidden>
+{% if can_pest_manage or can_manage %}
+<section id="mapLocationCreate" class="pest-location-editor" data-team="{% if membership %}{{ membership.team_id }}{% else %}{{ workspace_membership.team_id }}{% endif %}" aria-labelledby="mapCreateTitle" hidden>
   <form action="{% url 'operations:location_batch' %}" method="post">
     {% csrf_token %}
     <header><strong id="mapCreateTitle">新增地点</strong><button type="button" data-create-close aria-label="结束新增"><svg class="ui-icon"><use href="#pwa-close"/></svg></button></header>
