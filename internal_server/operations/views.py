@@ -12,6 +12,7 @@ from .access import (memberships, active_membership, require_member, visible_loc
                      can_manage_location, audit, has_irrigation_access)
 from .forms import LocationForm
 from .models import Team, Membership, Location, LocationGrant, ReferenceCatalog
+from .map_data import location_map_data
 
 
 def number(value):
@@ -144,10 +145,7 @@ def location_geometry(request):
     result = []
     for location in visible_locations(member.team):
         # Never include legacy remarks, work counts, worker details or histories.
-        result.append({'id': str(location.pk), 'name': location.name, 'code': location.code,
-                       'kind': location.kind, 'boundary': location.boundary,
-                       'latitude': location.latitude, 'longitude': location.longitude,
-                       'source': location.boundary_source})
+        result.append(location_map_data(location))
     response = JsonResponse({'locations': result})
     response['Cache-Control'] = 'private, no-store'
     return response

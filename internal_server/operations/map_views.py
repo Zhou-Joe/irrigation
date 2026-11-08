@@ -16,6 +16,7 @@ from core.models import WorkReport
 from core.submissions import submission
 from .access import active_membership, require_member, visible_locations, audit
 from .models import ReferenceCatalog, PestWorkData
+from .map_data import location_map_data
 
 
 def is_pest(request):
@@ -69,16 +70,9 @@ def pest_map_data(request):
     member = require_member(request)
     if member.team.business.code != 'pest-control':
         raise PermissionDenied
-    from core.views import get_zone_center
     result = []
     for location in visible_locations(member.team):
-        center = get_zone_center(location.boundary)
-        if not center and location.latitude is not None:
-            center = {'lat':float(location.latitude), 'lng':float(location.longitude)}
-        result.append({'id':str(location.pk), 'name':location.name, 'code':location.code,
-            'kind':location.kind, 'kind_label':location.get_kind_display(), 'boundary':location.boundary,
-            'center':center, 'source':location.boundary_source,
-            'shared':location.owner_team_id != member.team_id})
+        result.append({**location_map_data(location), 'shared':location.owner_team_id != member.team_id})
     response = JsonResponse({'business':'pest-control', 'locations':result,
         'records':[{'id':r.pk, 'number':r.display_number, 'date':r.date.isoformat(),
                     'locations':[str(p.pk) for p in r.pest_data.locations.all()]}

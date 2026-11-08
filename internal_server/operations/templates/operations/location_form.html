@@ -1,1 +1,17 @@
-{% extends 'operations/base.html' %}{% load static %}{% block head %}<link rel="stylesheet" href="{% static 'vendor/leaflet/leaflet.css' %}">{% endblock %}{% block content %}<section class="op-card op-form-card"><a href="{% url 'operations:locations' %}">返回地点列表</a><h2>{% if location.created_at %}编辑地点{% else %}新增地点{% endif %}</h2><p class="op-muted">建筑、楼层、房间与监测点都可单独登记。编号和地图定位为可选项。</p><form method="post" data-edit-form>{% csrf_token %}{{ form.non_field_errors }}{% for field in form %}<div class="op-field">{{ field.label_tag }}{{ field }}{{ field.errors }}</div>{% endfor %}{% if not location.legacy_zone_id %}<p class="op-muted">可点击地图填写定位点，也可直接填写坐标。</p><div id="opPointMap" class="op-map op-map-small"></div>{% endif %}<div class="op-actions"><button class="op-btn">保存地点</button><a href="{% url 'operations:locations' %}" class="op-btn op-secondary">取消</a></div></form></section>{% endblock %}{% block scripts %}{% if not location.legacy_zone_id %}<script src="{% static 'vendor/leaflet/leaflet.js' %}"></script><script>var m=L.map('opPointMap').setView([31.143,121.658],17);L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:22,maxNativeZoom:19,attribution:'Esri'}).addTo(m);var pin;function point(lat,lng){if(pin)m.removeLayer(pin);pin=L.marker([lat,lng]).addTo(m)}var a=document.getElementById('id_latitude'),b=document.getElementById('id_longitude');if(a.value&&b.value){point(Number(a.value),Number(b.value));m.setView([Number(a.value),Number(b.value)],18)}m.on('click',function(e){a.value=e.latlng.lat.toFixed(7);b.value=e.latlng.lng.toFixed(7);point(e.latlng.lat,e.latlng.lng);window.opsDirty=true});</script>{% endif %}{% endblock %}
+{% extends 'operations/base.html' %}{% load static %}
+{% block head %}{% include 'operations/_location_map_head.html' %}{% endblock %}
+{% block content %}
+<section class="op-card op-form-card">
+  <a href="{% url 'operations:locations' %}">返回地点列表</a>
+  <h2>{% if location.created_at %}编辑地点{% else %}新增地点{% endif %}</h2>
+  <p class="op-muted">建筑、楼层、房间与监测点都可单独登记。编号和地图定位为可选项；图钉只表示大致位置。</p>
+  <form method="post" data-edit-form>{% csrf_token %}{{ form.non_field_errors }}
+    {% for field in form %}<div class="op-field">{{ field.label_tag }}{{ field }}{% if field.help_text %}<small>{{ field.help_text }}</small>{% endif %}{{ field.errors }}</div>{% endfor %}
+    {% if not location.legacy_zone_id %}<p class="op-muted">点击地图放置图钉，再点一次可调整位置；也可直接填写坐标。未定位时仍可登记和填写工单。</p><div id="opPointMap" class="op-map op-map-small"></div>{% endif %}
+    <div class="op-actions"><button class="op-btn">保存地点</button><a href="{% url 'operations:locations' %}" class="op-btn op-secondary">取消</a></div>
+  </form>
+</section>
+{% endblock %}
+{% block scripts %}{% if not location.legacy_zone_id %}
+<script src="{% static 'vendor/leaflet/leaflet.js' %}"></script><script src="{% static 'operations/map-markers.js' %}?v=20261108pins1"></script><script src="{% static 'operations/location-editor.js' %}?v=20261108pins1"></script>
+{% endif %}{% endblock %}

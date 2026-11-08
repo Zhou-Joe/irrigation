@@ -42,11 +42,13 @@ class Membership(models.Model):
 class Location(models.Model):
     KINDS = [('zone', '室外区域'), ('building', '建筑'), ('floor', '楼层'), ('room', '房间'),
              ('monitoring', '监测点'), ('other', '其他地点')]
+    MAP_DISPLAYS = [('auto', '自动（边界优先，无边界用图钉）'), ('pin', '图钉标注（无需精确边界）')]
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     owner_team = models.ForeignKey(Team, on_delete=models.PROTECT, related_name='owned_locations')
     name = models.CharField(max_length=150)
     code = models.CharField(max_length=100, blank=True)
     kind = models.CharField(max_length=20, choices=KINDS, default='zone')
+    map_display = models.CharField(max_length=12, choices=MAP_DISPLAYS, default='auto')
     parent = models.ForeignKey('self', null=True, blank=True, on_delete=models.PROTECT, related_name='children')
     description = models.TextField(blank=True)
     latitude = models.DecimalField(max_digits=10, decimal_places=7, null=True, blank=True)
