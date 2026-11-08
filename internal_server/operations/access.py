@@ -29,7 +29,13 @@ def active_membership(request):
     if not hasattr(request, '_business_membership'):
         selected = request.session.get('operations_membership')
         qs = memberships(request.user)
-        current = qs.filter(pk=selected).first() if selected else qs.order_by('team__name', 'id').first()
+        if selected:
+            current = qs.filter(pk=selected).first()
+        else:
+            # Adding another team must not change an existing irrigation user's
+            # initial workspace because of alphabetical team-name ordering.
+            current = (qs.filter(team__business__code='irrigation',team__legacy_irrigation_access=True).order_by('id').first()
+                       or qs.order_by('team__name','id').first())
         # A revoked selection must not silently become authority in a different team.
         request._business_membership = current
     return request._business_membership

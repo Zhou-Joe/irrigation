@@ -349,8 +349,9 @@ def user_login(request):
 
             from django.conf import settings
             if settings.MULTI_TEAM_ENABLED:
-                from operations.access import memberships
-                if memberships(user).exists():
+                from operations.access import active_membership
+                member = active_membership(request)
+                if member and member.team.business.code == 'pest-control':
                     redirect_url = '/'
 
             # Check if dept user - redirect to requests page (water requests focus)

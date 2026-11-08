@@ -214,6 +214,44 @@ class WorkspaceTests(TestCase):
         self.imm.refresh_from_db();self.assertFalse(self.imm.active)
         self.assertFalse(Membership.objects.filter(user=self.pm,team=self.it).exists())
 
+    def test_existing_irrigation_default_is_stable_when_another_team_is_added(self):
+        member=Membership.objects.create(user=self.im,team=self.pt,role='manager')
+        self.client.force_login(self.im)
+        self.assertContains(self.client.get('/'),'js/map.js')
+        self.assertNotContains(self.client.get('/'),'operations/pest-map.js')
+        self.client.post('/ops/switch/',{'membership':member.pk})
+        self.assertContains(self.client.get('/'),'operations/pest-map.js')
+
+    def test_legacy_staff_preserves_django_admin_but_pest_context_cannot_enter(self):
+        user=get_user_model().objects.create_user('legacy-staff',password='fixture',is_staff=True)
+        Membership.objects.create(user=user,team=self.it,role='manager')
+        pest=Membership.objects.create(user=user,team=self.pt,role='manager')
+        self.client.force_login(user)
+        self.assertEqual(self.client.get('/admin/').status_code,200)
+        self.client.post('/ops/switch/',{'membership':pest.pk})
+        self.assertEqual(self.client.get('/admin/').status_code,403)
+
+    def test_new_legacy_registration_approval_includes_irrigation_access(self):
+        from core.models import RegistrationRequest
+        from core.registration_service import approve
+        from django.contrib.auth.hashers import make_password
+        for role,expected in [('manager','manager'),('field_worker','field'),('dept_user','requester')]:
+            reg=RegistrationRequest.objects.create(username='approved-'+role,full_name='New colleague',
+                password=make_password('registration-fixture'),phone='123456789',requested_role=role)
+            approved=approve(reg.pk,self.admin)
+            self.assertEqual(Membership.objects.get(user=approved.created_user,team=self.it).role,expected)
+            self.client.force_login(approved.created_user)
+            self.assertEqual(self.client.get('/').status_code,200)
+
+    def test_legacy_department_login_still_opens_water_requests(self):
+        from core.models import DepartmentUserProfile
+        user=get_user_model().objects.create_user('legacy-dept',password='fixture')
+        DepartmentUserProfile.objects.create(user=user,employee_id='DEP-NEW',full_name='Department colleague')
+        Membership.objects.create(user=user,team=self.it,role='requester')
+        self.client.logout()
+        self.assertRedirects(self.client.post('/login/',{'username':user.username,'password':'fixture'}),
+                             '/requests/',fetch_redirect_response=False)
+
     @override_settings(MULTI_TEAM_ENABLED=False)
     def test_feature_off_hides_new_routes_and_keeps_legacy_behavior(self):
         self.assertEqual(self.client.get('/ops/').status_code,404)
