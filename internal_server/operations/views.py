@@ -32,8 +32,7 @@ def page(request, template, **context):
 @login_required
 @require_GET
 def home(request):
-    member = active_membership(request)
-    return page(request, 'home', location_count=visible_locations(member.team).count() if member else 0)
+    return redirect('core:dashboard')
 
 
 @login_required
@@ -42,7 +41,7 @@ def switch(request):
     member = get_object_or_404(memberships(request.user), pk=number(request.POST.get('membership')))
     request.session['operations_membership'] = member.pk
     audit(request, member.team, 'workspace.switch', member.pk)
-    return redirect('operations:home')
+    return redirect('core:dashboard')
 
 
 @login_required

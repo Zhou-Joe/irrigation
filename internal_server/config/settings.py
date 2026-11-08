@@ -76,6 +76,7 @@ TEMPLATES = [
                 'core.context_processors.notifications',
                 'core.context_processors.user_role',
                 'core.pwa.navigation',
+                'operations.context.workspace',
             ],
         },
     },

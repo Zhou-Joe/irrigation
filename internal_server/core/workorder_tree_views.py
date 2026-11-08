@@ -1306,8 +1306,15 @@ def _calc_hours(start, end, headcount):
 # ── view ────────────────────────────────────────────────────────────────────
 
 @login_required(login_url='core:login')
-@submission('workorder')
 def workorder_tree_form(request, report_id=None):
+    from operations.map_views import is_pest, pest_workorder
+    if is_pest(request):
+        return pest_workorder(request, report_id)
+    return _irrigation_tree_form(request, report_id)
+
+
+@submission('workorder')
+def _irrigation_tree_form(request, report_id=None):
     from .business_rules import require_workorder_user
     require_workorder_user(request.user)
     report = None

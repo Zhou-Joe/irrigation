@@ -5,6 +5,7 @@ from django.core.validators import MinValueValidator, MaxValueValidator
 from django.utils import timezone
 from datetime import date
 from mptt.models import MPTTModel, TreeForeignKey
+from .report_scope import IrrigationReportManager
 
 
 # Role constants
@@ -1296,6 +1297,11 @@ class ZoneEquipment(models.Model):
 # (removed: WorkCategory)
 class WorkReport(models.Model):
     """维修工作日报 - daily maintenance work record."""
+
+    objects = IrrigationReportManager()
+    all_businesses = models.Manager()
+    business_team = models.ForeignKey('operations.Team', null=True, blank=True,
+        on_delete=models.PROTECT, related_name='execution_records', help_text='留空为历史灌溉记录')
 
     SHIFT_CHOICES = [
         ('早班', '早班'),

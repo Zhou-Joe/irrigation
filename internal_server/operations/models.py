@@ -117,7 +117,7 @@ class ReferenceCatalog(models.Model):
     version = models.CharField(max_length=64)
     source_name = models.CharField(max_length=255)
     imported_at = models.DateTimeField(auto_now_add=True)
-    # Reference only: publication as an executable procedure is a later reviewed step.
+    # Versioned hierarchy for work-content selection; does not schedule PM automatically.
 
     class Meta:
         constraints = [models.UniqueConstraint(fields=['business', 'version'], name='ops_catalog_business_version')]
@@ -134,3 +134,12 @@ class ReferenceNode(models.Model):
     class Meta:
         ordering = ['order']
         constraints = [models.UniqueConstraint(fields=['catalog', 'source_line'], name='ops_catalog_source_line')]
+
+
+class PestWorkData(models.Model):
+    report = models.OneToOneField('core.WorkReport', on_delete=models.CASCADE, related_name='pest_data')
+    catalog = models.ForeignKey(ReferenceCatalog, on_delete=models.PROTECT)
+    locations = models.ManyToManyField(Location, related_name='pest_records')
+    # Issued catalogue wording and place names remain stable when reference data changes.
+    selections = models.JSONField(default=list)
+    location_labels = models.JSONField(default=list)

@@ -13,6 +13,12 @@ from .role_utils import is_admin
 
 def navigation(request):
     if getattr(request, 'operations_shell', False):
+        from operations.map_views import is_pest
+        if is_pest(request):
+            return {'pwa_modules':[
+                dict(name='dashboard',label='区域地图',description='团队地点与图层',icon='map',url='/'),
+                dict(name='work_reports',label='工单记录',description='植保作业记录',icon='clipboard',url='/work-reports/')
+            ]}
         return {}
     if not request.user.is_authenticated:
         return {}
@@ -64,8 +70,8 @@ def manifest(request):
     response = JsonResponse({
         'id': '/app/', 'name': 'FOS · 现场作业' if multi else '灌溉管理 · 现场工作台',
         'short_name': 'FOS' if multi else '灌溉管理',
-        'description': '团队工作台、地点与共享区域、工作参考目录。' if multi else '现场工单、PM任务、区域地图、用水需求与库存管理。',
-        'lang': 'zh-CN', 'start_url': '/ops/' if multi else '/app/', 'scope': '/', 'display': 'standalone',
+        'description': '团队地图、现场工单与作业记录。' if multi else '现场工单、PM任务、区域地图、用水需求与库存管理。',
+        'lang': 'zh-CN', 'start_url': '/' if multi else '/app/', 'scope': '/', 'display': 'standalone',
         'background_color': '#F5F7F3', 'theme_color': '#1B4332',
         'categories': ['productivity', 'utilities'],
         'icons': [
@@ -73,7 +79,7 @@ def manifest(request):
             {'src': static('pwa/icon-512.png'), 'sizes': '512x512', 'type': 'image/png', 'purpose': 'any'},
             {'src': static('pwa/icon-maskable-512.png'), 'sizes': '512x512', 'type': 'image/png', 'purpose': 'maskable'},
         ],
-        'shortcuts': ([{'name':'团队工作台','url':'/ops/'}, {'name':'地点与共享区域','url':'/ops/locations/'}] if multi else [
+        'shortcuts': ([{'name':'区域地图','url':'/'}, {'name':'工单记录','url':'/work-reports/'}] if multi else [
             {'name': '新建工单', 'url': '/?action=workorder'},
             {'name': 'PM任务', 'url': '/work-reports/?tab=pm'},
             {'name': '区域地图', 'url': '/'},
