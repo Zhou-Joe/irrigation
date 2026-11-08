@@ -347,10 +347,17 @@ def user_login(request):
             # Determine redirect based on role
             redirect_url = 'core:dashboard'
 
+            from django.conf import settings
+            if settings.MULTI_TEAM_ENABLED:
+                from operations.access import memberships
+                if memberships(user).exists():
+                    redirect_url = '/ops/'
+
             # Check if dept user - redirect to requests page (water requests focus)
             try:
                 DepartmentUserProfile.objects.get(user=user, active=True)
-                redirect_url = 'core:water_requests'
+                if redirect_url != '/ops/':
+                    redirect_url = 'core:water_requests'
             except DepartmentUserProfile.DoesNotExist:
                 pass
 
@@ -367,7 +374,8 @@ def user_login(request):
         else:
             messages.error(request, '用户名或密码错误')
 
-    return render(request, 'core/login.html')
+    from django.conf import settings
+    return render(request, 'core/login.html', {'multi_team_login': settings.MULTI_TEAM_ENABLED})
 
 
 def user_logout(request):

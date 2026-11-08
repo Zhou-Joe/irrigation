@@ -14,7 +14,11 @@ class SessionGuardMiddleware:
         self.get_response=get_response
 
     def __call__(self, request):
-        if request.user.is_authenticated and get_user_role(request.user) is None:
+        from django.conf import settings
+        from operations.access import memberships
+        team_account = (settings.MULTI_TEAM_ENABLED and request.user.is_authenticated
+                        and memberships(request.user).exists())
+        if request.user.is_authenticated and get_user_role(request.user) is None and not team_account:
             logout(request)
             if wants_json(request):
                 return JsonResponse({'success':False,'error':'账号已停用，请联系管理员','message':'账号已停用，请联系管理员'},status=401)

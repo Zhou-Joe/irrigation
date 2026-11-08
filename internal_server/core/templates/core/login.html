@@ -1,6 +1,6 @@
 {% extends 'core/base.html' %}
 {% load static %}
-{% block title %}登录 - 灌溉管理系统{% endblock %}
+{% block title %}登录 - {% if multi_team_login %}FOS 现场作业{% else %}灌溉管理系统{% endif %}{% endblock %}
 {% block extra_ui_css %}
 <link rel="stylesheet" href="{% static 'css/auth.css' %}?v=20261024auth4">
 {% endblock %}
@@ -42,7 +42,7 @@
         <div class="auth-brand">
           <img src="{% static 'pwa/brand.svg' %}" width="128" height="128" alt="">
           <div class="auth-brand-name">
-            <strong>灌溉管理系统</strong>
+            <strong>{% if multi_team_login %}FOS 现场作业{% else %}灌溉管理系统{% endif %}</strong>
             <span class="auth-brand-subtitle">FOS · Horticulture</span>
             <span class="auth-brand-version">v2.0</span>
           </div>
@@ -89,7 +89,7 @@
             <svg class="ui-icon auth-submit-arrow" aria-hidden="true" focusable="false"><use href="#pwa-arrow"/></svg>
           </button>
         </form>
-        <div class="auth-register">还没有账号？<a href="{% url 'core:register' %}">申请加入<svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-arrow"/></svg></a></div>
+        <div class="auth-register">{% if multi_team_login %}需要加入团队？请联系团队管理员。{% else %}还没有账号？<a href="{% url 'core:register' %}">申请加入<svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-arrow"/></svg></a>{% endif %}</div>
       </section>
     </div>
   </div>

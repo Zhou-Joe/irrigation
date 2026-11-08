@@ -6,6 +6,7 @@ from django.contrib.staticfiles.urls import staticfiles_urlpatterns
 from core.ai_storage import media_file
 
 urlpatterns = [
+    path('ops/', include('operations.urls')),
     path('admin/', admin.site.urls),
     path('', include('core.urls')),
 ]
