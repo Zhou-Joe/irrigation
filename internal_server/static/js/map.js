@@ -330,7 +330,7 @@
         map.on('moveend', function () {
             if (map.getZoom() < map.getMaxZoom()) return;
             clearTimeout(_valveRelayoutT);
-            _valveRelayoutT = setTimeout(layoutValveLabels, 250);
+            _valveRelayoutT = effects.timeout(layoutValveLabels, 250);
         });
         // Re-cull labels to the viewport after panning so only on-screen labels render.
         map.on('moveend', _cullLabelsToViewportDebounced);
@@ -691,7 +691,7 @@
         let t = null;
         return function () {
             clearTimeout(t);
-            t = setTimeout(() => { fn.apply(null, arguments); }, wait);
+            t = effects.timeout(() => { fn.apply(null, arguments); }, wait);
         };
     }
     // Wrapper: run the heavy re-layout, THEN drop the .map-zooming flag set at zoomstart.

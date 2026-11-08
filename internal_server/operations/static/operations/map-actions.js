@@ -9,6 +9,25 @@
             timeout(callback,delay){const id=setTimeout(()=>{if(!stopped)callback();},delay);cleanup.push(()=>clearTimeout(id));return id;},
             destroy(){stopped=true;cleanup.splice(0).forEach(fn=>fn());}};
     };
+    // A disposed form must not write a late response into its replacement.
+    window.FOSScopedRequests=function () {
+        let epoch=0,stopped=false,writes=0;const pending=new Set();
+        const aborted=()=>Object.assign(new Error('Form context changed'),{name:'AbortError'});
+        function reset(){epoch++;for(const controller of pending)controller.abort();pending.clear();}
+        return {busy:()=>writes>0,reset,destroy(){stopped=true;reset();},
+            async fetch(url,options={}) {
+                if(stopped)throw aborted();
+                const version=epoch,controller=new AbortController(),write=!/^(GET|HEAD)$/i.test(options.method||'GET');
+                pending.add(controller);if(write)writes++;let released=false;
+                const release=()=>{if(released)return;released=true;pending.delete(controller);if(write)writes--;};
+                try {
+                    const response=await window.fetch(url,{...options,signal:controller.signal});
+                    const json=response.json.bind(response);
+                    response.json=()=>json().then(data=>{if(stopped||epoch!==version)throw aborted();return data;}).finally(release);
+                    return response;
+                } catch(error){release();throw error;}
+            }};
+    };
     function mount(items) {
         if(current)current.destroy();
         const desktop=!matchMedia('(max-width:768px)').matches;
