@@ -9,11 +9,13 @@
     }).addTo(map);
     const runtime = window.IrrigationMapRuntime;
     const markers = window.FOSMapMarkers;
+    const layers=L.layerGroup().addTo(map);let initialized=false;
     markers.enableLabels(map);
     async function load() {
         status.textContent = '正在加载授权地点…';
         try {
-            const data = await runtime.fetchJSON(el.dataset.endpoint, {cache: 'no-store'});
+            const data = await runtime.fetchJSON(el.dataset.endpoint+location.search, {cache: 'no-store'});
+            layers.clearLayers();
             const points = [];
             let count = 0;
             for (const location of data.locations) {
@@ -25,19 +27,20 @@
                 const shape = markers.presentation(location,rings);
                 if (shape.mode === 'boundary') {
                     for (const ring of rings) {
-                        L.polygon(ring, {color:markers.descriptor(location.kind).color, weight:2, fillOpacity:0.14}).bindPopup(popup.cloneNode(true)).addTo(map);
+                        L.polygon(ring, {color:markers.descriptor(location.kind).color, weight:2, fillOpacity:0.14}).bindPopup(popup.cloneNode(true)).addTo(layers);
                         points.push(...ring);
                     }
                     count++;
                 } else if (shape.mode === 'pin') {
-                    markers.marker(L,location,shape.center).bindPopup(popup).addTo(map); points.push(shape.center); count++;
+                    markers.marker(L,location,shape.center).bindPopup(popup).addTo(layers); points.push(shape.center); count++;
                 }
             }
-            if (points.length) map.fitBounds(L.latLngBounds(points).pad(0.15), {maxZoom:19});
+            if (!initialized&&points.length) {map.fitBounds(L.latLngBounds(points).pad(0.15), {maxZoom:19});initialized=true;}
             status.textContent = count ? '已显示 ' + count + ' 个地点的边界或定位点。' : '这些地点尚无边界或定位点，仍可从列表进入详情。';
         } catch (_) {
             status.textContent = '地图数据加载失败，请检查连接后刷新页面。';
         }
     }
     load();
+    window.FOSLocationMap={refresh:load};
 })();

@@ -17,8 +17,8 @@
 </section>
 <div class="op-map" data-location-map data-location="{{ location.pk }}" data-endpoint="{% url 'operations:location_geometry' %}"></div><p class="op-muted" id="opMapStatus" role="status">正在加载地点标注…</p>
 {% if manage %}<section class="op-card"><h2>共享到其他团队</h2><p>接收团队可查看本地点及边界，不会获得本团队的业务记录或编辑权限。</p>
-  <ul class="op-sharing">{% for grant in grants %}<li>{{ grant.team.name }}<form method="post" action="{% url 'operations:sharing' location.pk %}">{% csrf_token %}<input type="hidden" name="team" value="{{ grant.team_id }}"><input type="hidden" name="action" value="revoke"><button class="op-btn op-secondary">取消共享</button></form></li>{% empty %}<li>尚未共享。</li>{% endfor %}</ul>
-  <form method="post" action="{% url 'operations:sharing' location.pk %}" class="op-actions">{% csrf_token %}<input type="hidden" name="action" value="grant"><label for="shareTeam">接收团队</label><select name="team" id="shareTeam" required>{% for team in other_teams %}<option value="{{ team.pk }}">{{ team.name }}</option>{% endfor %}</select><button class="op-btn">共享地点</button></form>
+  <ul class="op-sharing">{% for grant in grants %}<li>{{ grant.team.name }}<form method="post" data-location-share action="{% url 'operations:sharing' location.pk %}">{% csrf_token %}<input type="hidden" name="team" value="{{ grant.team_id }}"><input type="hidden" name="action" value="revoke"><button class="op-btn op-secondary">取消共享</button></form></li>{% empty %}<li>尚未共享。</li>{% endfor %}</ul>
+  <form method="post" data-location-share action="{% url 'operations:sharing' location.pk %}" class="op-actions">{% csrf_token %}<input type="hidden" name="action" value="grant"><label for="shareTeam">接收团队</label><select name="team" id="shareTeam" required>{% for team in other_teams %}<option value="{{ team.pk }}">{{ team.name }}</option>{% endfor %}</select><button class="op-btn">共享地点</button></form>
 </section>{% endif %}
 {% endblock %}
 {% block scripts %}{% include 'operations/_location_map_scripts.html' %}{% endblock %}

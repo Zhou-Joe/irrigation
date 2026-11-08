@@ -5,7 +5,7 @@
   <a href="{% url 'operations:locations' %}">返回地点列表</a>
   <h2>{% if location.created_at %}编辑地点{% else %}新增地点{% endif %}</h2>
   <p class="op-muted">建筑、楼层、房间与监测点都可单独登记。编号和地图定位为可选项；图钉只表示大致位置。</p>
-  <form method="post" data-edit-form>{% csrf_token %}{{ form.non_field_errors }}
+  <form method="post" data-edit-form data-location-edit>{% csrf_token %}{{ form.non_field_errors }}<p data-batch-status role="status"></p>
     {% for field in form %}<div class="op-field">{{ field.label_tag }}{{ field }}{% if field.help_text %}<small>{{ field.help_text }}</small>{% endif %}{{ field.errors }}</div>{% endfor %}
     {% if not location.legacy_zone_id %}<p class="op-muted">点击地图放置图钉，再点一次可调整位置；也可直接填写坐标。未定位时仍可登记和填写工单。</p><div id="opPointMap" class="op-map op-map-small"></div>{% endif %}
     <div class="op-actions"><button class="op-btn">保存地点</button><a href="{% url 'operations:locations' %}" class="op-btn op-secondary">取消</a></div>

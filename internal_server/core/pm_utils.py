@@ -123,11 +123,11 @@ def crew_worker(crew):
     return crew.members.filter(active=True).order_by('id').first()
 
 
-def visible_orders(user):
+def visible_orders(user, *, field_view=False):
     """Central permission scope for PM details, extensions and completion."""
     from django.db.models import Q
     from .role_utils import is_admin, get_worker_for_user
-    if is_admin(user):
+    if is_admin(user) and not field_view:
         return GeneratedWorkOrder.objects.all()
     worker = get_worker_for_user(user)
     if not worker or not worker.active:

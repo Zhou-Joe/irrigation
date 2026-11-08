@@ -3561,4 +3561,5 @@
         var d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML;
     }
 
+    window.FOSWorkorderModalLifecycle={refreshRole(){window.closeV2Modal?.();_formDataCache={workorder:null,water_request:null};},destroy(){clearTimeout(_closeTimeout);document.getElementById('pmTaskPanel')?.remove();document.querySelectorAll('.v2-sheet-overlay').forEach(el=>el.remove());}};
 })();

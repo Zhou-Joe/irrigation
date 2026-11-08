@@ -36,7 +36,7 @@ class PestMapWorkflowTests(TestCase):
                 self.assertEqual(response.status_code,200)
                 self.assertContains(response,'id="map"')
                 self.assertContains(response,'operations/pest-map.js')
-                self.assertContains(response,'创建工单')
+                self.assertContains(response,'植保作业工单')
                 self.assertNotContains(response,'工作参考目录')
                 self.assertNotContains(response,'团队工作台')
                 self.assertNotContains(response,'js/dashboard-modal.js')
@@ -47,9 +47,9 @@ class PestMapWorkflowTests(TestCase):
                 for label in ('病媒昆虫','蚊类控制','蜜蜂','白蚁监测','报封堵工单'):
                     self.assertIn(label,serialized_tree)
                 self.assertIn('pestWorkorderForm',data['form_html'])
-                for component in ('v2-chip-group','pestCategoryChips','pestPlaceChips','pestWorkLevels','work_start_time','third_party_count'):
+                for component in ('v2-chip-group','pestCategoryChips','pestPlaceTrigger','pestWorkLevels','work_start_time','third_party_count'):
                     self.assertIn(component,data['form_html'])
-                for replaced_format in ('<details','type="checkbox"',' multiple','<fieldset'):
+                for replaced_format in ('<details','type="checkbox"',' multiple','<fieldset','pestPlaceChips','data-place='):
                     self.assertNotIn(replaced_format,data['form_html'])
 
     def test_same_map_endpoint_is_business_scoped_and_irrigation_keeps_old_layers(self):

@@ -13,7 +13,7 @@ test('map requests can bypass cached JSON and retain the response revision',asyn
 });
 test('revision checks update changed geometry while leaving unchanged or hidden maps alone',async()=>{
     const code=fs.readFileSync(path.join(__dirname,'../../static/js/map.js'),'utf8');
-    const part=code.slice(code.indexOf('async function checkZoneRevision()'),code.indexOf("window.addEventListener?.('pageshow'"));
+    const part=code.slice(code.indexOf('async function checkZoneRevision()'),code.indexOf("effects.listen(window,'pageshow'"));
     let loads=0,value='old';
     const ctx={map:{},zonesLoading:false,zoneRevisionChecking:false,zoneRevision:'old',document:{visibilityState:'visible'},
         runtime:{fetchJSON:async()=>({revision:value})},loadZones:()=>loads++,console};

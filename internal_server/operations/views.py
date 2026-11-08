@@ -4,11 +4,12 @@ from django.contrib.auth.decorators import login_required
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction, IntegrityError
+from django.db.models import Q
 from django.http import JsonResponse
 from django.shortcuts import render, redirect, get_object_or_404
 from django.views.decorators.http import require_POST, require_GET, require_http_methods
 
-from .access import (memberships, active_membership, require_member, visible_locations,
+from .access import (memberships, active_membership, require_member, visible_locations, preview_teams, admin_preview_role,
                      can_manage_location, audit, has_irrigation_access)
 from .forms import LocationForm
 from .models import Team, Membership, Location, LocationGrant, ReferenceCatalog
@@ -26,7 +27,7 @@ def page(request, template, **context):
     member = active_membership(request)
     return render(request, 'operations/' + template + '.html', {
         'membership': member, 'memberships': memberships(request.user).order_by('team__name'),
-        'can_manage': bool(member and (member.role == 'manager' or request.user.is_superuser)),
+        'can_manage': bool(member and (member.role == 'manager' or request.user.is_superuser) and admin_preview_role(request) != 'field'),
         'has_irrigation': has_irrigation_access(request.user), **context})
 
 
@@ -39,10 +40,38 @@ def home(request):
 @login_required
 @require_POST
 def switch(request):
+    if 'admin_view' in request.POST:
+        if not request.user.is_superuser:
+            raise PermissionDenied('只有平台管理员可以切换角色视图。')
+        value=request.POST.get('admin_view','')
+        if value=='admin':
+            request.session.pop('operations_admin_view',None)
+            request.session.pop('operations_membership',None)
+            request.__dict__.pop('_business_membership',None)
+            member=active_membership(request)
+            if member:audit(request,member.team,'workspace.preview.exit',request.user.pk)
+        else:
+            parts=value.split(':')
+            if len(parts)!=2 or not parts[0].isdigit() or parts[1] not in ('manager','field'):
+                return JsonResponse({'error':'角色视图无效。'},status=400)
+            team=get_object_or_404(preview_teams(),pk=number(parts[0]))
+            request.session['operations_admin_view']={'team':team.pk,'role':parts[1]}
+            audit(request,team,'workspace.preview',request.user.pk,role=parts[1])
+        return switch_response(request)
     member = get_object_or_404(memberships(request.user), pk=number(request.POST.get('membership')))
+    request.session.pop('operations_admin_view',None)
     request.session['operations_membership'] = member.pk
     audit(request, member.team, 'workspace.switch', member.pk)
-    return redirect('core:dashboard')
+    return switch_response(request)
+
+
+def switch_response(request):
+    if request.headers.get('X-Requested-With')!='XMLHttpRequest':
+        return redirect('core:dashboard')
+    request.__dict__.pop('_business_membership',None)
+    member=active_membership(request)
+    return JsonResponse({'success':True,'business':member.team.business.code if member else 'irrigation',
+                         'preview':bool(admin_preview_role(request))})
 
 
 @login_required
@@ -55,7 +84,8 @@ def locations(request):
         from django.db.models import Q
         qs = qs.filter(Q(name__icontains=query) | Q(code__icontains=query))
     from django.core.paginator import Paginator
-    return page(request, 'locations', locations=Paginator(qs, 30).get_page(request.GET.get('page')), query=query)
+    return page(request, 'locations', locations=Paginator(qs, 30).get_page(request.GET.get('page')), query=query,
+                other_teams=Team.objects.filter(active=True,business__active=True).exclude(pk=member.team_id))
 
 
 @login_required
@@ -82,10 +112,16 @@ def location_edit(request, pk=None):
             with transaction.atomic():
                 location = form.save()
                 audit(request, member.team, 'location.save', location.pk)
+            if request.headers.get('X-Requested-With')=='XMLHttpRequest':
+                return JsonResponse({'success':True,'message':'地点已保存。','location':location_map_data(location),
+                                     'edit_url':f'/ops/locations/{location.pk}/edit/'})
             messages.success(request, '地点已保存。')
             return redirect('operations:location_detail', pk=location.pk)
         except IntegrityError:
             form.add_error('code', '本团队已有相同编号，请使用其他编号或留空。')
+    if request.method=='POST' and request.headers.get('X-Requested-With')=='XMLHttpRequest':
+        return JsonResponse({'success':False,'message':'；'.join(str(error) for errors in form.errors.values() for error in errors),
+                             'errors':form.errors.get_json_data()},status=400)
     return page(request, 'location_form', form=form, location=instance)
 
 
@@ -93,10 +129,14 @@ def location_edit(request, pk=None):
 @require_http_methods(['GET', 'POST'])
 def link_irrigation(request):
     member = require_member(request, manager=True)
-    if member.team.business.code != 'irrigation':
+    if member.team.business.code != 'irrigation' and not request.user.is_superuser:
         raise PermissionDenied('请由灌溉团队经理选择并共享区域。')
+    owner=member.team if member.team.business.code=='irrigation' else get_object_or_404(
+        Team,business__code='irrigation',legacy_irrigation_access=True,active=True)
     from core.models import Zone
     if request.method == 'POST':
+        if member.team_id!=owner.pk:
+            raise PermissionDenied('请使用批量共享入口选择原区域与接收团队。')
         zone = get_object_or_404(Zone, pk=number(request.POST.get('zone')))
         try:
             with transaction.atomic():
@@ -111,11 +151,14 @@ def link_irrigation(request):
             return redirect('operations:link_irrigation')
         return redirect('operations:location_detail', pk=location.pk)
     query = request.GET.get('q', '').strip()[:100]
-    zones = Zone.objects.filter(shared_location__isnull=True)
+    zones = Zone.objects.all()
     from django.db.models import Q
     if query:
         zones = zones.filter(Q(code__icontains=query) | Q(name__icontains=query))
-    return page(request, 'link_irrigation', zones=zones.only('id', 'code', 'name').order_by('code')[:50], query=query)
+    from django.core.paginator import Paginator
+    return page(request, 'link_irrigation', zones=Paginator(zones.only('id','code','name').order_by('code'),50).get_page(request.GET.get('page')),query=query,
+                other_teams=Team.objects.filter(active=True,business__active=True).exclude(pk=owner.pk),
+                suggested_target=member.team_id if member.team_id!=owner.pk else None)
 
 
 @login_required
@@ -135,6 +178,8 @@ def sharing(request, pk):
         else:
             LocationGrant.objects.filter(location=location, team=target).delete()
         audit(request, member.team, 'location.' + action, location.pk, target_team=target.pk)
+    if request.headers.get('X-Requested-With')=='XMLHttpRequest':
+        return JsonResponse({'success':True,'message':'共享设置已更新。'})
     return redirect('operations:location_detail', pk=pk)
 
 
@@ -143,7 +188,10 @@ def sharing(request, pk):
 def location_geometry(request):
     member = require_member(request)
     result = []
-    for location in visible_locations(member.team):
+    places=visible_locations(member.team)
+    query=request.GET.get('q','').strip()[:150]
+    if query:places=places.filter(Q(name__icontains=query)|Q(code__icontains=query))
+    for location in places:
         # Never include legacy remarks, work counts, worker details or histories.
         result.append(location_map_data(location))
     response = JsonResponse({'locations': result})

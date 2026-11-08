@@ -109,22 +109,6 @@
                 summary.append(list);
             }
         }
-        const places = new Set();
-        const placeButtons = [...form.querySelectorAll('[data-place]')];
-        const allowedPlaces = new Set(placeButtons.map(button => button.dataset.place));
-        for (const id of presetPlaces.map(String)) if (allowedPlaces.has(id)) places.add(id);
-        function renderPlaces() {
-            for (const button of placeButtons) {
-                const active = places.has(button.dataset.place);
-                button.classList.toggle('active', active); button.setAttribute('aria-pressed', String(active));
-            }
-            form.querySelector('#pestPlaceValues').replaceChildren(...[...places].map(id => hidden('locations', id)));
-        }
-        for (const button of placeButtons) button.onclick = () => {
-            const id = button.dataset.place;
-            if (places.has(id)) places.delete(id); else places.add(id);
-            renderPlaces(); onChange();
-        };
         const shiftButtons = [...form.querySelectorAll('[data-shift]')];
         for (const button of shiftButtons) button.onclick = () => {
             form.elements.shift.value = button.dataset.shift;
@@ -134,7 +118,7 @@
             }
             onChange();
         };
-        render(); renderPlaces();
+        render();
         return state;
     }
     return {createState, mount};

@@ -4,6 +4,7 @@
  */
 (function () {
     'use strict';
+    var effects=window.FOSScopedEffects();
 
     // ── Zone Data ──
     // Kept as var at IIFE top level; also exposed on window for map.js
@@ -62,7 +63,7 @@
 
     function initSyncAgent() {
         fetchAgentStatus();
-        window._syncRefreshTimer = setInterval(fetchAgentStatus, 5 * 60 * 1000);
+        window._syncRefreshTimer = effects.interval(fetchAgentStatus, 5 * 60 * 1000);
     }
 
     function initMobileLayout() {
@@ -306,7 +307,7 @@
             document.querySelectorAll('#filterPanel .filter-chip').forEach(function (chip, i) {
                 chip.style.opacity = '0';
                 chip.style.transform = 'translateY(6px) scale(0.85)';
-                setTimeout(function () {
+                effects.timeout(function () {
                     chip.style.transition = 'opacity 0.35s cubic-bezier(0.22,1,0.36,1), transform 0.35s cubic-bezier(0.22,1,0.36,1)';
                     chip.style.opacity = '1';
                     chip.style.transform = '';
@@ -387,7 +388,7 @@
     }
 
     // Click outside to close filter panel
-    document.addEventListener('click', function (e) {
+    effects.listen(document,'click', function (e) {
         var widget = document.getElementById('mapFilterWidget');
         if (filterPanelOpen && widget && !widget.contains(e.target)) {
             toggleFilterPanel();
@@ -395,7 +396,7 @@
     });
 
     // Escape to close filter panel
-    document.addEventListener('keydown', function (e) {
+    effects.listen(document,'keydown', function (e) {
         if (e.key === 'Escape' && filterPanelOpen) {
             toggleFilterPanel();
         }
@@ -464,7 +465,7 @@
     }
 
     // Click outside to close plant dropdown
-    document.addEventListener('click', function (e) {
+    effects.listen(document,'click', function (e) {
         var wrap = document.getElementById('plantDropdownBtn');
         wrap = wrap ? wrap.parentElement : null;
         if (wrap && !wrap.contains(e.target)) {
@@ -505,7 +506,7 @@
             expandBtn.classList.remove('visible');
             if (isMobile && overlay) overlay.classList.add('visible');
         }
-        setTimeout(function () { if (window._map) window._map.invalidateSize(); }, 300);
+        effects.timeout(function () { if (window._map) window._map.invalidateSize(); }, 300);
     }
 
     // ── Sync Agent Status ──
@@ -618,145 +619,26 @@
     // ── Mobile FAB Menu ──
 
     function initFabMenu() {
-        // Width-only, matching the CSS breakpoint and ai-chat.js: touch-capable
-        // wide screens (tablets, landscape phones, touch laptops) must keep the
-        // desktop control layout — the mobile button cluster is display:none there.
-        var isDesktop = !window.matchMedia('(max-width:768px)').matches;
-
-        // Action map — replaces eval()
-        var fabActions = {
-            workorder: function () { if (typeof window.openV2Modal === 'function') window.openV2Modal('workorder'); },
-            pm: function () { if (typeof window.openPmTaskPanel === 'function') window.openPmTaskPanel(); },
-            water_request: function () { if (typeof window.openV2Modal === 'function') window.openV2Modal('water_request'); },
-            inventory: function () { if (typeof window.openV2Modal === 'function') window.openV2Modal('inventory'); }
-        };
-
-        var fabWrap = document.createElement('div');
-        fabWrap.className = 'fab-mobile-wrap';
-        fabWrap.style.cssText = 'position:relative;z-index:999;';
-
-        // Menu items: a centered horizontal row on screen (independent of the FAB position)
-        var menuContainer = document.createElement('div');
-        menuContainer.id = 'mapShortcuts';
-        menuContainer.className = 'map-shortcut-menu';
-
-        var menuItems = [
-            { icon: 'clipboard', label: '工单提交', key: 'workorder' },
-            { icon: 'calendar', label: 'PM安排', key: 'pm' },
-            { icon: 'drop', label: '浇水需求', key: 'water_request' },
-            { icon: 'box', label: '库存管理', key: 'inventory' },
-            { icon: 'folder', label: '历史记录', url: window.HISTORY_URL || '#' },
-        ];
-
-        // Options are visible by default (shown above the FAB on page load).
-        // The FAB toggles between expanded (options visible) and collapsed (options hidden).
-        var open = isDesktop;
-        menuContainer.hidden = !open;
-
-        var menuEls = [];
-        menuItems.forEach(function (item) {
-            var a = document.createElement('a');
-            if (item.url) {
-                a.href = item.url;
-            } else {
-                a.href = 'javascript:void(0)';
-                a.onclick = function (e) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    if (fabActions[item.key]) fabActions[item.key]();
-                };
-            }
-            a.innerHTML = '<span class="map-action-icon">' + window.uiIcon(item.icon) + '</span><span style="font-size:0.75em;margin-top:2px">' + item.label + '</span>';
-            a.style.cssText = 'display:flex;flex-direction:column;align-items:center;justify-content:center;width:60px;height:60px;border-radius:14px;background:#fff;color:#222;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,0.12);opacity:1;transform:translateY(0);transition:opacity 0.2s,transform 0.2s;pointer-events:auto;';
-            menuContainer.appendChild(a);
-            menuEls.push(a);
-        });
-
-        var fab = document.createElement('button');
-        fab.className = 'fab-btn map-tool-btn' + (open ? ' active' : '');
-        fab.type = 'button';
-        fab.setAttribute('aria-controls', 'mapShortcuts');
-        fab.setAttribute('aria-expanded', String(open));
-        fab.innerHTML = window.uiIcon('menu');
-        fab.title = '功能菜单';
-
-        fab.addEventListener('click', function () {
-            open = !open;
-            menuContainer.hidden = !open;
-            fab.setAttribute('aria-expanded', String(open));
-            if (open) {
-                fab.classList.add('active');
-            } else {
-                fab.classList.remove('active');
-            }
-            menuEls.forEach(function (el, i) {
-                if (open) {
-                    el.style.opacity = '1';
-                    el.style.transform = 'translateY(0)';
-                    el.style.transitionDelay = (i * 0.05) + 's';
-                    el.style.pointerEvents = 'auto';
-                } else {
-                    el.style.opacity = '0';
-                    el.style.transform = 'translateY(-10px)';
-                    el.style.transitionDelay = ((menuEls.length - 1 - i) * 0.03) + 's';
-                    el.style.pointerEvents = 'none';
-                }
-            });
-        });
-
-        fabWrap.appendChild(fab);
-        fabWrap.appendChild(menuContainer);
-
-        if (isDesktop) {
-            // Desktop: FAB fixed to bottom-right; menu stays fixed centered-top
-            fabWrap.style.cssText = 'position:fixed;right:24px;bottom:24px;z-index:999;';
-            document.body.appendChild(fabWrap);
-            // menuContainer is already position:fixed centered-top, mount it on body too
-            // (it lives inside fabWrap but its own fixed positioning keeps it visible)
-        } else {
-            document.body.appendChild(fabWrap);
-        }
-
-        document.addEventListener('click', function (e) {
-            if (open && !fabWrap.contains(e.target)) {
-                fab.click();
-            }
-        });
-
-        // Rearrange buttons into top-right cluster on mobile
-        if (!isDesktop) {
-            var cluster = document.getElementById('mobileBtnCluster');
-            if (cluster) {
-                var layerPanel = document.getElementById('mapLayerPanel');
-                if (layerPanel) cluster.appendChild(layerPanel);
-                var filterWidget = document.getElementById('mapFilterWidget');
-                if (filterWidget) cluster.appendChild(filterWidget);
-                cluster.appendChild(fabWrap);
-                // Move locate button into cluster (after Leaflet creates it)
-                function moveLocateBtn() {
-                    var locateBtn = document.querySelector('.locate-btn');
-                    var slot = document.getElementById('mobileLocateSlot');
-                    if (locateBtn && slot && !slot.contains(locateBtn)) {
-                        slot.appendChild(locateBtn);
-                        locateBtn.style.margin = '0';
-                    }
-                }
-                moveLocateBtn();
-                setTimeout(moveLocateBtn, 500);
-                setTimeout(moveLocateBtn, 1500);
-            }
-        }
+        window.FOSMapActions.mount([
+            {icon:'clipboard',label:'工单提交',action:()=>window.openV2Modal?.('workorder')},
+            {icon:'calendar',label:'PM安排',action:()=>window.openPmTaskPanel?.()},
+            {icon:'drop',label:'浇水需求',action:()=>window.openV2Modal?.('water_request')},
+            {icon:'box',label:'库存管理',action:()=>window.openV2Modal?.('inventory')},
+            {icon:'folder',label:'历史记录',url:window.HISTORY_URL||'#'}
+        ]);
     }
 
     // ── Single DOMContentLoaded Listener ──
 
-    document.addEventListener('DOMContentLoaded', function () {
+    function initializeDashboard() {
         initZoneData();
         initPlantFilter();
         initSyncAgent();
         initMobileLayout();
         initFabMenu();
-    });
+    }
+    if(document.readyState==='loading') effects.listen(document,'DOMContentLoaded',initializeDashboard,{once:true});else initializeDashboard();
+    window.FOSDashboardLifecycle={destroy(){effects.destroy();window.FOSMapActions.destroy();}};
 
     // ── Expose Public API on window ──
 

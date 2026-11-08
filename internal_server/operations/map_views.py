@@ -14,7 +14,7 @@ from django.views.decorators.http import require_GET
 
 from core.models import WorkReport
 from core.submissions import submission
-from .access import active_membership, require_member, visible_locations, audit
+from .access import active_membership, require_member, visible_locations, audit, admin_preview_role
 from .models import ReferenceCatalog, PestWorkData
 from .map_data import location_map_data
 
@@ -36,7 +36,7 @@ def require_writer(request):
 def records(request):
     member = require_member(request)
     qs = WorkReport.all_businesses.filter(business_team=member.team, pest_data__isnull=False)
-    if member.role != 'manager' and not request.user.is_superuser:
+    if member.role != 'manager' and (not request.user.is_superuser or admin_preview_role(request)):
         qs = qs.filter(worker__user=request.user)
     return qs.select_related('worker', 'pest_data').order_by('-id')
 
@@ -62,7 +62,8 @@ def chip_tree(roots):
 def pest_dashboard(request):
     member = require_member(request)
     return render(request, 'core/dashboard.html', {
-        'pest_mode':True, 'can_pest_submit':member.role in ('manager','field') or request.user.is_superuser})
+        'pest_mode':True, 'can_pest_submit':member.role in ('manager','field') or request.user.is_superuser,
+        'can_pest_manage':member.role=='manager' or (request.user.is_superuser and admin_preview_role(request)!='field')})
 
 
 @require_GET
@@ -92,8 +93,10 @@ def pest_form_data(request):
     start_minutes=now.hour*60+now.minute//15*15
     clock=lambda minutes:f'{(minutes%1440)//60:02d}:{minutes%60:02d}'
     tree=chip_tree(roots_for(catalog))
+    options=[{'id':str(p.pk),'name':p.name,'code':p.code,'kind':p.kind,'parent':str(p.parent_id) if p.parent_id else ''}
+             for p in visible_locations(member.team)]
     html = render_to_string('operations/_pest_workorder_form.html', {
-        'catalog':catalog, 'work_tree':tree, 'locations':visible_locations(member.team),
+        'catalog':catalog, 'work_tree':tree, 'location_options':options,
         'team':member.team, 'today':today.isoformat(), 'dates':[(today-timedelta(days=n)).isoformat() for n in range(90)],
         'time_options':[clock(n) for n in range(0,1440,15)], 'start_time':clock(start_minutes), 'end_time':clock(start_minutes+15),
         'shifts':[value for value,_ in WorkReport.SHIFT_CHOICES],

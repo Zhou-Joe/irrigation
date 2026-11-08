@@ -1,0 +1,54 @@
+{% load static %}
+    {% if user.is_authenticated %}
+    <nav class="top-nav">
+        <div class="top-nav-left">
+            <a href="{% if pest_mode %}{% url 'core:dashboard' %}{% else %}{% url 'core:app_home' %}{% endif %}" class="top-nav-brand"><img class="project-brand-mark" src="{% static 'pwa/brand.svg' %}?v=20261024brand" width="24" height="24" alt="">{% if pest_mode %}植保作业{% else %}灌溉管理系统{% endif %}</a>
+            <button type="button" class="mobile-hamburger" id="mobileHamburger" onclick="toggleMobileNav()" aria-label="打开全部功能" aria-haspopup="dialog"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-menu"/></svg></button>
+            <div class="top-nav-links" id="topNavLinks">
+                {% if pest_mode %}<a href="/">地图总览</a><a href="/work-reports/">工单记录</a>{% if is_admin %}<a href="{% url 'operations:locations' %}">区域管理</a><a href="{% url 'operations:team' %}">用户管理</a>{% endif %}{% else %}
+                <a href="{% url 'core:dashboard' %}" class="{% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}">地图总览</a>
+                <a href="{% url 'core:work_reports' %}" class="{% if request.resolver_match.url_name == 'work_reports' %}active{% endif %}">维修日志</a>
+                <a href="{% url 'core:water_requests' %}" class="{% if request.resolver_match.url_name == 'water_requests' %}active{% endif %}">需求</a>
+                <a href="{% url 'core:stats_dashboard' %}" class="{% if request.resolver_match.url_name == 'stats_dashboard' %}active{% endif %}">数据报表</a>
+                <a href="{% url 'core:irrigation_dashboard' %}" class="{% if request.resolver_match.url_name == 'irrigation_dashboard' %}active{% endif %}">灌溉数据</a>
+                <a href="{% url 'core:inventory_management' %}" class="{% if request.resolver_match.url_name == 'inventory_management' %}active{% endif %}">库存管理</a>
+                <a href="{% url 'core:settings' %}" class="{% if request.resolver_match.url_name == 'settings' %}active{% endif %}">区域管理</a>
+                {% if is_admin %}
+                <a href="{% url 'core:project_management' %}" class="{% if request.resolver_match.url_name == 'project_management' %}active{% endif %}">项目管理</a>
+                <a href="{% url 'core:user_management' %}" class="{% if request.resolver_match.url_name == 'user_management' %}active{% endif %}">
+                    用户管理{% if pending_registrations %}<span style="background:var(--color-warning);color:#fff;padding:1px 6px;border-radius:10px;font-size:0.7rem;margin-left:4px;">{{ pending_registrations }}</span>{% endif %}
+                </a>
+                <a href="{% url 'core:pm_management' %}" class="{% if request.resolver_match.url_name == 'pm_management' %}active{% endif %}">作业计划</a>
+                {% endif %}
+                {% endif %}
+            </div>
+        </div>
+        <div class="top-nav-right">
+            {% include 'operations/_workspace_switch.html' %}
+            {% if not pest_mode %}<button type="button" class="top-nav-notif" id="navNotifBtn" title="通知与PM任务" aria-label="查看通知和PM任务" aria-haspopup="dialog" aria-controls="notifPopup" aria-expanded="false" onclick="reopenNotifPopup()">
+                <svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-bell"/></svg>
+                <span class="notif-count" id="navNotifCount" aria-hidden="true">0</span>
+            </button>{% endif %}
+            {% if not pest_mode or is_platform_admin %}<a href="{% url 'core:profile' %}" class="top-nav-user"{% if is_platform_admin %} title="平台管理员"{% endif %}>{{ user.get_full_name|default:user.username }}</a>{% endif %}
+            <a href="{% url 'core:logout' %}" class="top-nav-logout">退出</a>
+        </div>
+    </nav>
+    <div class="mobile-nav-overlay" id="mobileNavOverlay" onclick="toggleMobileNav()"></div>
+    <div class="mobile-nav-dropdown" id="mobileNavDropdown">{% if pest_mode %}<a href="/">地图总览</a><a href="/work-reports/">工单记录</a>{% if is_admin %}<a href="/ops/locations/">区域管理</a><a href="/ops/team/">用户管理</a>{% endif %}<a href="/logout/">退出</a>{% else %}
+        <a href="{% url 'core:dashboard' %}" class="{% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}">地图总览</a>
+        <a href="{% url 'core:work_reports' %}" class="{% if request.resolver_match.url_name == 'work_reports' %}active{% endif %}">维修日志</a>
+        <a href="{% url 'core:water_requests' %}" class="{% if request.resolver_match.url_name == 'water_requests' %}active{% endif %}">需求</a>
+        <a href="{% url 'core:stats_dashboard' %}" class="{% if request.resolver_match.url_name == 'stats_dashboard' %}active{% endif %}">数据报表</a>
+        <a href="{% url 'core:irrigation_dashboard' %}" class="{% if request.resolver_match.url_name == 'irrigation_dashboard' %}active{% endif %}">灌溉数据</a>
+        <a href="{% url 'core:inventory_management' %}" class="{% if request.resolver_match.url_name == 'inventory_management' %}active{% endif %}">库存管理</a>
+        <a href="{% url 'core:settings' %}" class="{% if request.resolver_match.url_name == 'settings' %}active{% endif %}">区域管理</a>
+        {% if is_admin %}
+        <a href="{% url 'core:project_management' %}" class="{% if request.resolver_match.url_name == 'project_management' %}active{% endif %}">项目管理</a>
+        <a href="{% url 'core:user_management' %}" class="{% if request.resolver_match.url_name == 'user_management' %}active{% endif %}">用户管理</a>
+        <a href="{% url 'core:pm_management' %}" class="{% if request.resolver_match.url_name == 'pm_management' %}active{% endif %}">作业计划</a>
+        {% endif %}
+        <a href="{% url 'core:profile' %}">{{ user.get_full_name|default:user.username }}</a>
+        <a href="{% url 'core:logout' %}">退出</a>
+    {% endif %}</div>
+    {% endif %}
+

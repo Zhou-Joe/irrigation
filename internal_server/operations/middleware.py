@@ -31,6 +31,8 @@ class BusinessAccessMiddleware:
             from core.role_utils import get_django_user
             user = get_django_user(resolve_token_user(request))
         if user and user.is_authenticated:
+            if user.is_superuser and (request.path.startswith('/admin/') or request.path=='/profile/'):
+                return self.get_response(request)
             from .access import active_membership
             from django.shortcuts import render
             member = active_membership(request) if request.user.is_authenticated else None
