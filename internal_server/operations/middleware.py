@@ -46,7 +46,7 @@ class BusinessAccessMiddleware:
                     response['Cache-Control'] = 'private, no-store'
                     response['Vary'] = 'Cookie'
                     return response
-            admin_blocked = request.path.startswith('/admin/') and not user.is_superuser
+            admin_blocked = request.path.startswith('/admin/') and not (user.is_staff or user.is_superuser)
             if admin_blocked or pest or not has_irrigation_access(user):
                 if request.path == '/' and request.method == 'GET':
                     request.operations_shell = True

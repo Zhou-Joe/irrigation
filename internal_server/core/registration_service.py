@@ -45,6 +45,15 @@ def approve(registration_id, actor):
                 fields.update(department=reg.department or ('ENT' if model is DepartmentUserProfile else ''),
                     department_other=reg.department_other if reg.department=='其他' else '')
             model.objects.create(**fields)
+            from django.conf import settings
+            if settings.MULTI_TEAM_ENABLED:
+                from operations.models import Team, Membership
+                team=Team.objects.filter(code='irrigation',business__code='irrigation',
+                    legacy_irrigation_access=True,active=True,business__active=True).first()
+                if team is None:
+                    raise ValueError('灌溉团队尚未启用，无法完成注册审批')
+                Membership.objects.create(user=user,team=team,
+                    role={'manager':'manager','field_worker':'field','dept_user':'requester'}[reg.requested_role])
             reg.status='approved';reg.employee_id=employee;reg.created_user=user
             reg.save(update_fields=['status','employee_id','created_user','processed_at'])
             return reg
