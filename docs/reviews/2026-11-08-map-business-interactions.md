@@ -12,4 +12,10 @@ Manager modules in the pest PWA launcher follow actual membership permissions. T
 
 Validation: full Django regression 384 cases (383 passed, one existing skip), followed by 13 focused account/business/map-placement/shared-layer checks, all passed. Node 96 cases passed, including coordinate validation, consecutive placement, receipt reuse after a failed request and an in-flight duplicate guard. UI acceptance is left to the user; no browser visual checks were performed. This update requires no schema migration.
 
-Production rollout details will be appended after verification.
+Production is running application commit `b7ea88bfa2d6a5756974d22c59597cbde882deda` on `codex/multi-team-foundation`. The fresh private checkpoint is `/home/noname/irrigation/deployment_backups/map-interactions-20261108-225538/`, with the previous tracked-source archive, environment/service/cron configuration, verified online backups of all three databases and fresh stopped-service cutover backups. No schema migration, account reset or membership rewrite was applied.
+
+The candidate was rehearsed against a restored current production database. Two real business choices, actual account permissions, consecutive point creation with receipt retries, sharing into irrigation and revocation all passed. Temporary rehearsal pins and grants existed only in the database copy and were rolled back. Static assets were collected before stopping the application.
+
+Live checks verified admin access in both businesses, the new point-creation controls for the pest manager and their absence for the field account, both existing test accounts' map/work-order endpoints, and exact shared-location visibility against existing grants. Temporary verification session/audit writes were rolled back. All original table contents matched the fresh pre-cutover hashes exactly.
+
+All six application cron entries were restored. `horticulture` is active/running with `ExecMainStatus=0`. Public HTTPS login, manifest and updated JavaScript returned HTTP 200; SHA-256 hashes of map placement, shared layer, pest map, business switching and associated scripts match the tested application commit. The isolated local preview on port 8786 was also restarted. Visual/interaction acceptance remains with the user.
