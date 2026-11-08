@@ -462,6 +462,7 @@ window.fillPmTask = function (gwoId) {
 <!-- Announcement popup driver -->
 <script>
 (function () {
+    var mounted=document.getElementById('dashboardWorkspace');
     var queue = [];
     window.__annQueue = queue;
     function load() {
@@ -471,6 +472,7 @@ window.fillPmTask = function (gwoId) {
         showCurrent();
     }
     function showCurrent() {
+        if(!mounted?.isConnected)return;
         if (!queue.length) { document.getElementById('annPopup').style.display = 'none'; return; }
         var a = queue[0];
         document.getElementById('annTitle').textContent = a.title;

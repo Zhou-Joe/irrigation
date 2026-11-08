@@ -38,7 +38,7 @@
     document.addEventListener('submit',async event=>{
         const form=event.target;if(!form.matches('.business-switch'))return;
         event.preventDefault();if(changing)return;
-        if(window.FOSPestMap?.busy?.()){window.alert('正在提交工单，请完成后再切换。');return;}
+        if(window.FOSPestMap?.busy?.()||window.FOSWorkorderModalLifecycle?.busy?.()){window.alert('正在提交，请完成后再切换。');return;}
         const modalOpen=[...document.querySelectorAll('.v2-modal-container.open,.v2-map-action-bar')].some(el=>el.getClientRects().length);
         if((modalOpen||window.FOSPestMap?.dirty?.()||window.IrrigationPWA?.hasUnsavedChanges?.())&&!confirm('当前表单尚未提交，切换视图会关闭表单。是否继续？'))return;
         changing=true;const button=form.querySelector('button[type=submit]'),label=button.textContent;button.disabled=true;button.textContent='切换中…';
