@@ -423,7 +423,7 @@
 </script>
 {% endif %}{% endblock %}
 
-{% block extra_js %}{% if pest_mode %}<script src="{% static 'vendor/leaflet/leaflet.js' %}"></script><script src="{% static 'js/map-runtime.js' %}"></script><script src="{% static 'operations/workorder-chips.js' %}?v=20261108chips3"></script><script src="{% static 'operations/pest-map.js' %}?v=20261108chips3"></script>{% else %}
+{% block extra_js %}{% if pest_mode %}<script src="{% static 'vendor/leaflet/leaflet.js' %}"></script><script src="{% static 'js/map-runtime.js' %}"></script><script src="{% static 'operations/map-markers.js' %}?v=20261108pins1"></script><script src="{% static 'operations/workorder-chips.js' %}?v=20261108chips3"></script><script src="{% static 'operations/pest-map.js' %}?v=20261108pins1"></script>{% else %}
 <!-- Leaflet JS -->
 <script src="{% static 'vendor/leaflet/leaflet.js' %}?v=1.9.4"></script>
 <!-- Map Config -->

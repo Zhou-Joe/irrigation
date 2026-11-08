@@ -66,7 +66,7 @@ class WorkspaceTests(TestCase):
         self.assertEqual(len(data), 1)
         self.assertEqual(data[0]['boundary'], self.zone.dxf_boundary_points)
         self.assertNotIn('private-irrigation-note', json.dumps(data))
-        self.assertEqual(set(data[0]), {'id','name','code','kind','boundary','latitude','longitude','source'})
+        self.assertEqual(set(data[0]), {'id','name','code','kind','kind_label','map_display','center','boundary','latitude','longitude','source'})
         self.zone.boundary_source = 'manual'
         self.zone.save()
         self.assertEqual(self.client.get('/ops/locations.geojson').json()['locations'][0]['boundary'], self.zone.boundary_points)

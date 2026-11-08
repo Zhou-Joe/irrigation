@@ -8,6 +8,8 @@
         attribution: 'Esri', maxZoom: 22, maxNativeZoom: 19
     }).addTo(map);
     const runtime = window.IrrigationMapRuntime;
+    const markers = window.FOSMapMarkers;
+    markers.enableLabels(map);
     async function load() {
         status.textContent = '正在加载授权地点…';
         try {
@@ -20,15 +22,15 @@
                 popup.href = '/ops/locations/' + location.id + '/';
                 popup.textContent = location.name + (location.code ? ' · ' + location.code : '');
                 const rings = runtime.boundaryRings(location.boundary);
-                if (rings.length) {
+                const shape = markers.presentation(location,rings);
+                if (shape.mode === 'boundary') {
                     for (const ring of rings) {
-                        L.polygon(ring, {color:'#2d6a4f', weight:2, fillOpacity:0.14}).bindPopup(popup.cloneNode(true)).addTo(map);
+                        L.polygon(ring, {color:markers.descriptor(location.kind).color, weight:2, fillOpacity:0.14}).bindPopup(popup.cloneNode(true)).addTo(map);
                         points.push(...ring);
                     }
                     count++;
-                } else if (location.latitude !== null && location.longitude !== null) {
-                    const p = runtime.point([location.latitude, location.longitude]);
-                    if (p) {L.marker(p).bindPopup(popup).addTo(map); points.push(p); count++;}
+                } else if (shape.mode === 'pin') {
+                    markers.marker(L,location,shape.center).bindPopup(popup).addTo(map); points.push(shape.center); count++;
                 }
             }
             if (points.length) map.fitBounds(L.latLngBounds(points).pad(0.15), {maxZoom:19});

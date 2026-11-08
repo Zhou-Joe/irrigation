@@ -62,6 +62,7 @@ class PestMapWorkflowTests(TestCase):
         self.assertNotContains(response,'operations/pest-map.js')
         self.assertNotContains(response,'operations/workorder-chips.js')
         self.assertNotContains(response,'operations/pest-map.css')
+        self.assertNotContains(response,'operations/map-markers.js')
         self.assertIsInstance(self.client.get('/api/zones-payload/').json(),list)
         self.assertEqual(self.client.get('/app/').status_code,200)
 
@@ -158,3 +159,48 @@ class PestMapWorkflowTests(TestCase):
         self.leaf.label='Changed reference';self.leaf.save()
         self.assertContains(self.client.get(f'/work-reports/{report_id}/'),'报封堵工单')
         self.assertNotContains(self.client.get(f'/work-reports/{report_id}/'),'Changed reference')
+
+    def test_building_pin_needs_no_boundary_or_irrigation_station(self):
+        response=self.client.post('/ops/locations/new/',{'name':'Visitor centre','code':'VISITOR',
+            'kind':'building','map_display':'pin','latitude':'31.125','longitude':'121.25'})
+        self.assertEqual(response.status_code,302)
+        place=Location.objects.get(code='VISITOR')
+        self.assertEqual(place.map_display,'pin')
+        self.assertIsNone(place.legacy_zone_id)
+        data=next(p for p in self.client.get('/api/zones-payload/').json()['locations'] if p['id']==str(place.pk))
+        self.assertEqual(data['map_display'],'pin')
+        self.assertEqual(data['kind'],'building')
+        self.assertEqual(data['center'],{'lat':31.125,'lng':121.25})
+        self.assertEqual(data['boundary'],[])
+        # Existing location clients can omit the new option without resetting it.
+        self.client.post(f'/ops/locations/{place.pk}/edit/',{'name':'Visitor centre','code':'VISITOR','kind':'building',
+            'latitude':'31.125','longitude':'121.25'})
+        place.refresh_from_db();self.assertEqual(place.map_display,'pin')
+        self.assertContains(self.client.get(f'/ops/locations/{place.pk}/'),'图钉标注')
+        self.assertContains(self.client.get('/ops/locations/new/'),'operations/location-editor.js')
+
+    def test_pin_display_keeps_shared_source_boundary_and_permissions(self):
+        old=self.zone.active_boundary_points
+        response=self.client.post(f'/ops/locations/{self.shared.pk}/edit/',{'name':self.shared.name,'kind':'zone','map_display':'pin'})
+        self.assertEqual(response.status_code,404)
+        self.client.force_login(self.im)
+        response=self.client.post(f'/ops/locations/{self.shared.pk}/edit/',{
+            'name':self.shared.name,'code':self.shared.code,'kind':'zone','map_display':'pin'})
+        self.assertEqual(response.status_code,302)
+        self.zone.refresh_from_db();self.assertEqual(self.zone.active_boundary_points,old)
+        self.client.force_login(self.pm)
+        for endpoint in ('/api/zones-payload/','/ops/locations.geojson'):
+            data=next(p for p in self.client.get(endpoint).json()['locations'] if p['id']==str(self.shared.pk))
+            self.assertEqual(data['map_display'],'pin')
+            self.assertEqual(data['boundary'],old)
+            self.assertIsNotNone(data['center'])
+
+    def test_pin_position_stays_optional_and_invalid_display_mode_rejected(self):
+        response=self.client.post('/ops/locations/new/',{'name':'Room without GPS','kind':'room','map_display':'pin'})
+        self.assertEqual(response.status_code,302)
+        room=Location.objects.get(name='Room without GPS')
+        data=next(p for p in self.client.get('/api/zones-payload/').json()['locations'] if p['id']==str(room.pk))
+        self.assertIsNone(data['center'])
+        self.assertEqual(data['boundary'],[])
+        self.assertEqual(self.client.post('/ops/locations/new/',{'name':'Bad style','kind':'building','map_display':'untrusted'}).status_code,200)
+        self.assertFalse(Location.objects.filter(name='Bad style').exists())

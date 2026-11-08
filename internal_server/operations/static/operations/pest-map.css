@@ -5,6 +5,7 @@
 .pest-location-row{width:100%;border:0;border-bottom:1px solid #edf0ed;background:white;text-align:left;padding:12px 16px;color:#244534;cursor:pointer;font:inherit}
 .pest-location-row:hover{background:#edf5ee}
 .pest-location-row small{display:block;color:#718176;margin-top:4px}
+.pest-location-row .op-kind-icon{margin-right:7px}
 .pest-map-notice{position:absolute;left:50%;top:12px;transform:translateX(-50%);padding:8px 14px;background:#fffffff0;color:#234a35;border-radius:8px;z-index:500;max-width:70%;font-size:13px}
 .pest-create{position:absolute;right:20px;bottom:24px;z-index:600;display:flex;align-items:center;gap:8px;padding:12px 20px;font:inherit;cursor:pointer}
 .pest-modal[hidden],#woModalBackdrop[hidden],#mapLayerBody[hidden]{display:none!important}

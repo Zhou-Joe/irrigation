@@ -4,9 +4,11 @@
     ready(function () {
         const byId = id => document.getElementById(id);
         const runtime = window.IrrigationMapRuntime;
+        const markers = window.FOSMapMarkers;
         const canSubmit = byId('pestCanSubmit').dataset.value === 'yes';
         const map = L.map('map', {preferCanvas:true, zoomControl:false}).setView([31.143,121.658],16);
         window._map = map;
+        markers.enableLabels(map);
         L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
             maxZoom:22,maxNativeZoom:19,attribution:'Esri'}).addTo(map);
         L.control.zoom({zoomInText:window.uiIcon('plus'),zoomOutText:window.uiIcon('minus')}).addTo(map);
@@ -22,7 +24,7 @@
         function popup(p) {
             const div=document.createElement('div');div.className='pest-place-popup';
             const title=document.createElement('h3');title.textContent=p.name;div.append(title);
-            const detail=document.createElement('p');detail.textContent=[p.code,p.kind_label,p.source].filter(Boolean).join(' · ');div.append(detail);
+            const detail=document.createElement('p');detail.textContent=[p.code,p.kind_label,p.source,p.map_display==='pin'?'图钉标注':''].filter(Boolean).join(' · ');div.append(detail);
             if(canSubmit) {const button=document.createElement('button');button.textContent='创建工单';button.onclick=()=>openForm([p.id]);div.append(button);}
             return div;
         }
@@ -42,15 +44,17 @@
                 const row=document.createElement('button');row.type='button';row.className='pest-location-row';
                 const name=document.createElement('strong');name.textContent=p.name;
                 const sub=document.createElement('small');sub.textContent=[p.code,p.kind_label,p.shared?'共享地点':'本团队'].filter(Boolean).join(' · ');
-                row.append(name,sub);row.onclick=()=>focusPlace(p);list.append(row);
-                const color=key==='monitoring'?'#ba741b':key==='buildings'?'#3e75a3':'#2d6a4f';
+                const type=markers.descriptor(p.kind);
+                const icon=document.createElement('span');icon.className='op-kind-icon';icon.style.color=type.color;icon.append(markers.glyph(p.kind));
+                row.append(icon,name,sub);row.onclick=()=>focusPlace(p);list.append(row);
+                const color=type.color;
                 const rings=runtime.boundaryRings(p.boundary);
-                if(rings.length)for(const ring of rings) {
+                const shape=markers.presentation(p,rings);
+                if(shape.mode==='boundary')for(const ring of rings) {
                     L.polygon(ring,{color,weight:2,fillOpacity:.18}).bindPopup(popup(p)).addTo(groups[key]);points.push(...ring);
-                } else if(p.center) {
-                    const point=[p.center.lat,p.center.lng];points.push(point);
-                    L.circleMarker(point,{radius:key==='monitoring'?7:9,color,fillColor:color,fillOpacity:.85,weight:2})
-                        .bindPopup(popup(p)).addTo(groups[key]);
+                } else if(shape.mode==='pin') {
+                    points.push(shape.center);
+                    markers.marker(L,p,shape.center).bindPopup(popup(p)).addTo(groups[key]);
                 }
             }
             if(!list.children.length) {const empty=document.createElement('p');empty.textContent='暂无符合条件的地点';empty.style.padding='16px';list.append(empty);}
@@ -74,6 +78,12 @@
             render();
         }));
         byId('mapLayerToggleBtn').onclick=()=>{byId('mapLayerBody').hidden=!byId('mapLayerBody').hidden;};
+        const legend=document.createElement('div');legend.className='op-marker-legend';
+        legend.setAttribute('aria-label','图钉类型');byId('mapLayerBody').append(legend);
+        for(const kind of ['zone','building','floor','room','monitoring','other']) {
+            const type=markers.descriptor(kind), item=document.createElement('span'), icon=markers.glyph(kind);
+            icon.style.color=type.color;item.append(icon,document.createTextNode(type.label));legend.append(item);
+        }
         byId('zoneSearch').addEventListener('input',render);
         function toggleSidebar() {
             if(matchMedia('(max-width:768px)').matches)byId('mapContainer').classList.toggle('pest-sidebar-open');
