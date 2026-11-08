@@ -1,5 +1,7 @@
 # Admin views, batch locations and component updates
 
+The role-preview selector and import-first map creation described here are superseded by `2026-11-08-map-business-interactions.md`; this file retains the initial rollout record.
+
 This follow-up keeps the irrigation interface and the map as the primary page. Pest control uses the same map action layout, form shell, common fields and work-category chips. Location selection uses a searchable, paginated list with type filtering and map selection rather than a chip for every location.
 
 ## Account correction

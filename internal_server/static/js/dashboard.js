@@ -4,7 +4,7 @@
  */
 (function () {
     'use strict';
-    var effects=window.FOSScopedEffects();
+    var effects=window.FOSScopedEffects(),sharedLocations;
 
     // ── Zone Data ──
     // Kept as var at IIFE top level; also exposed on window for map.js
@@ -636,9 +636,10 @@
         initSyncAgent();
         initMobileLayout();
         initFabMenu();
+        sharedLocations=window.FOSSharedLocationLayer?.mount({map:window._map,checkbox:document.getElementById('sharedLocationToggle'),status:document.getElementById('sharedLocationStatus'),retry:document.getElementById('sharedLocationRetry')});
     }
     if(document.readyState==='loading') effects.listen(document,'DOMContentLoaded',initializeDashboard,{once:true});else initializeDashboard();
-    window.FOSDashboardLifecycle={destroy(){effects.destroy();window.FOSMapActions.destroy();}};
+    window.FOSDashboardLifecycle={refresh(){return sharedLocations?.refresh();},destroy(){sharedLocations?.destroy();effects.destroy();window.FOSMapActions.destroy();}};
 
     // ── Expose Public API on window ──
 

@@ -49,7 +49,7 @@
         toast('当前离线，尚未提交。请保持此页面，恢复网络后再试。');
         return false;
     }
-    window.IrrigationPWA = {openLauncher: openLauncher, canSubmit: canSubmit,hasUnsavedChanges:()=>dirty,
+    window.IrrigationPWA = {notify:toast,openLauncher: openLauncher, canSubmit: canSubmit,hasUnsavedChanges:()=>dirty,
         markClean: function () { setDirty(false); }, markDirty: function () { setDirty(true); }};
     // The native dialog supersedes the old CSS-only dropdown; remove its
     // off-screen links from keyboard focus and accessibility navigation.

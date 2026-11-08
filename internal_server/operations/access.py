@@ -5,7 +5,7 @@ from django.db.models import Q
 from .models import Membership, Location, AuditEvent, Team
 
 
-def preview_teams():
+def business_teams():
     return Team.objects.filter(active=True,business__active=True).filter(
         Q(business__code='pest-control') |
         Q(business__code='irrigation',legacy_irrigation_access=True)).select_related('business').order_by('business__code','name')
@@ -32,37 +32,49 @@ def has_irrigation_access(user):
                team__legacy_irrigation_access=True, role=role).exists())
 
 
+def business_options(user):
+    """Business selection never changes the account's role or permissions."""
+    if not user or not user.is_authenticated or not user.is_active:
+        return []
+    teams=business_teams()
+    if not user.is_superuser:
+        teams=teams.filter(memberships__in=memberships(user))
+    available=set(teams.values_list('business__code',flat=True))
+    if not user.is_superuser and not has_irrigation_access(user):
+        available.discard('irrigation')
+    return [{'code':code,'label':label} for code,label in
+            (('irrigation','灌溉'),('pest-control','植保')) if code in available]
+
+
 def active_membership(request):
     if not hasattr(request, '_business_membership'):
-        preview = request.session.get('operations_admin_view')
-        if settings.MULTI_TEAM_ENABLED and request.user.is_superuser and preview:
-            team_id = preview.get('team') if isinstance(preview,dict) else None
-            team = preview_teams().filter(pk=team_id).first() if type(team_id) is int and team_id>0 else None
-            role = preview.get('role') if isinstance(preview,dict) else None
-            current = Membership(user=request.user,team=team,role=role) if team and role in ('manager','field') else None
-            if current is not None:
-                current._admin_preview = True
-            request._business_membership = current
-            return current
-        selected = request.session.get('operations_membership')
-        qs = memberships(request.user)
-        if selected:
-            current = qs.filter(pk=selected).first()
+        qs=memberships(request.user)
+        business=request.session.get('operations_business') if settings.MULTI_TEAM_ENABLED else None
+        # Existing sessions retain their selected business, never an impersonated role.
+        legacy=request.session.get('operations_admin_view')
+        if not business and settings.MULTI_TEAM_ENABLED and request.user.is_superuser and isinstance(legacy,dict):
+            team_id=legacy.get('team')
+            if type(team_id) is int:
+                business=business_teams().filter(pk=team_id).values_list('business__code',flat=True).first()
+        if business:
+            if request.user.is_superuser:
+                team=business_teams().filter(business__code=business).first()
+                current=(qs.filter(team=team).first() or Membership(user=request.user,team=team,role='manager')) if team else None
+            else:
+                current=qs.filter(team__business__code=business).order_by('id').first()
         else:
-            # Adding another team must not change an existing irrigation user's
-            # initial workspace because of alphabetical team-name ordering.
-            current = (qs.filter(team__business__code='irrigation',team__legacy_irrigation_access=True).order_by('id').first()
-                       or qs.order_by('team__name','id').first())
+            selected=request.session.get('operations_membership')
+            if selected:
+                current=qs.filter(pk=selected).first()
+            else:
+                current=(qs.filter(team__business__code='irrigation',team__legacy_irrigation_access=True).order_by('id').first()
+                         or qs.order_by('team__name','id').first())
+                if current is None and request.user.is_superuser:
+                    team=business_teams().first()
+                    if team:current=Membership(user=request.user,team=team,role='manager')
         # A revoked selection must not silently become authority in a different team.
-        request._business_membership = current
+        request._business_membership=current
     return request._business_membership
-
-
-def admin_preview_role(request):
-    if not settings.MULTI_TEAM_ENABLED or not request.user.is_superuser:
-        return None
-    member = active_membership(request)
-    return member.role if member and getattr(member,'_admin_preview',False) else None
 
 
 def require_member(request, *, manager=False):

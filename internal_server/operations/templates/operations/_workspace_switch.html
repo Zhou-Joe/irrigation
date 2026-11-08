@@ -1,12 +1,10 @@
+{% if business_choices %}
 {% if request.path != '/' %}
-{% if is_platform_admin or workspace_choices %}<a href="/" class="{% if in_operations %}op-btn op-secondary{% else %}top-nav-logout{% endif %}">{% if is_platform_admin %}角色视图{% else %}切换团队{% endif %}</a>{% endif %}
-{% elif is_platform_admin %}
+<a href="/" class="{% if in_operations %}op-btn op-secondary{% else %}top-nav-logout{% endif %}">切换业务</a>
+{% else %}
 <form action="{% url 'operations:switch' %}" method="post" class="business-switch" data-team-switch style="display:flex;gap:4px;align-items:center;margin:0">
-  {% csrf_token %}<select name="admin_view" aria-label="管理员角色视图" title="切换显示视图，账号仍为平台管理员" style="max-width:170px;min-width:0;border:1px solid #d0ddd4;border-radius:6px;padding:5px;background:#fff;color:#1b4332;font:inherit">
-    <option value="admin" {% if admin_view_selected == 'admin' %}selected{% endif %}>平台管理员</option>
-    {% for group in admin_view_groups %}<optgroup label="{{ group.name }}">{% for option in group.choices %}<option value="{{ option.value }}" {% if option.value == admin_view_selected %}selected{% endif %}>{{ option.label }}视图</option>{% endfor %}</optgroup>{% endfor %}
-  </select><button type="submit" class="{% if in_operations %}op-btn op-secondary{% else %}top-nav-logout{% endif %}"{% if not in_operations %} style="border:0;background:transparent;cursor:pointer"{% endif %}>切换视图</button>
+  {% csrf_token %}<select name="business" aria-label="业务视图" style="max-width:110px;min-width:0;border:1px solid #d0ddd4;border-radius:6px;padding:5px;background:#fff;color:#1b4332;font:inherit">
+    {% for item in business_choices %}<option value="{{ item.code }}" {% if item.code == business_selected %}selected{% endif %}>{{ item.label }}</option>{% endfor %}
+  </select><button type="submit" class="{% if in_operations %}op-btn op-secondary{% else %}top-nav-logout{% endif %}"{% if not in_operations %} style="border:0;background:transparent;cursor:pointer"{% endif %}>切换</button>
 </form>
-{% elif workspace_choices %}
-<form action="{% url 'operations:switch' %}" method="post" class="business-switch" data-team-switch style="display:flex;gap:4px;align-items:center;margin:0">{% csrf_token %}<select name="membership" aria-label="当前团队身份" style="max-width:170px;min-width:0;border:1px solid #ffffff50;border-radius:6px;padding:5px;background:#fff;color:#1b4332;font:inherit">{% for item in workspace_choices %}<option value="{{ item.pk }}" {% if item.pk == workspace_membership.pk %}selected{% endif %}>{{ item.team.name }} · {{ item.get_role_display }}</option>{% endfor %}</select><button class="{% if in_operations %}op-btn op-secondary{% else %}top-nav-logout{% endif %}" type="submit"{% if not in_operations %} style="border:0;background:transparent;cursor:pointer"{% endif %}>切换</button></form>
-{% endif %}
+{% endif %}{% endif %}

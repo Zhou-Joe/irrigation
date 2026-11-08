@@ -9,7 +9,7 @@ from django.http import JsonResponse
 from django.shortcuts import render, redirect, get_object_or_404
 from django.views.decorators.http import require_POST, require_GET, require_http_methods
 
-from .access import (memberships, active_membership, require_member, visible_locations, preview_teams, admin_preview_role,
+from .access import (memberships, active_membership, require_member, visible_locations, business_options,
                      can_manage_location, audit, has_irrigation_access)
 from .forms import LocationForm
 from .models import Team, Membership, Location, LocationGrant, ReferenceCatalog
@@ -27,7 +27,7 @@ def page(request, template, **context):
     member = active_membership(request)
     return render(request, 'operations/' + template + '.html', {
         'membership': member, 'memberships': memberships(request.user).order_by('team__name'),
-        'can_manage': bool(member and (member.role == 'manager' or request.user.is_superuser) and admin_preview_role(request) != 'field'),
+        'can_manage': bool(member and (member.role == 'manager' or request.user.is_superuser)),
         'has_irrigation': has_irrigation_access(request.user), **context})
 
 
@@ -40,28 +40,27 @@ def home(request):
 @login_required
 @require_POST
 def switch(request):
-    if 'admin_view' in request.POST:
-        if not request.user.is_superuser:
-            raise PermissionDenied('只有平台管理员可以切换角色视图。')
-        value=request.POST.get('admin_view','')
-        if value=='admin':
-            request.session.pop('operations_admin_view',None)
-            request.session.pop('operations_membership',None)
-            request.__dict__.pop('_business_membership',None)
-            member=active_membership(request)
-            if member:audit(request,member.team,'workspace.preview.exit',request.user.pk)
-        else:
-            parts=value.split(':')
-            if len(parts)!=2 or not parts[0].isdigit() or parts[1] not in ('manager','field'):
-                return JsonResponse({'error':'角色视图无效。'},status=400)
-            team=get_object_or_404(preview_teams(),pk=number(parts[0]))
-            request.session['operations_admin_view']={'team':team.pk,'role':parts[1]}
-            audit(request,team,'workspace.preview',request.user.pk,role=parts[1])
-        return switch_response(request)
-    member = get_object_or_404(memberships(request.user), pk=number(request.POST.get('membership')))
-    request.session.pop('operations_admin_view',None)
-    request.session['operations_membership'] = member.pk
-    audit(request, member.team, 'workspace.switch', member.pk)
+    if 'business' in request.POST:
+        business=request.POST.get('business','')
+        if business not in ('irrigation','pest-control'):
+            return JsonResponse({'error':'业务视图无效。'},status=400)
+        if business not in {item['code'] for item in business_options(request.user)}:
+            raise PermissionDenied('当前账号无权访问该业务。')
+        request.session['operations_business']=business
+        request.session.pop('operations_admin_view',None)
+        request.session.pop('operations_membership',None)
+        request.__dict__.pop('_business_membership',None)
+        member=active_membership(request)
+        audit(request,member.team,'workspace.switch',member.team_id,business=business)
+    elif 'membership' in request.POST:
+        # Compatibility for already-open clients; only actual account memberships.
+        member=get_object_or_404(memberships(request.user),pk=number(request.POST.get('membership')))
+        request.session.pop('operations_admin_view',None)
+        request.session.pop('operations_business',None)
+        request.session['operations_membership']=member.pk
+        audit(request,member.team,'workspace.switch',member.pk)
+    else:
+        return JsonResponse({'error':'请选择灌溉或植保。'},status=400)
     return switch_response(request)
 
 
@@ -70,8 +69,7 @@ def switch_response(request):
         return redirect('core:dashboard')
     request.__dict__.pop('_business_membership',None)
     member=active_membership(request)
-    return JsonResponse({'success':True,'business':member.team.business.code if member else 'irrigation',
-                         'preview':bool(admin_preview_role(request))})
+    return JsonResponse({'success':True,'business':member.team.business.code if member else 'irrigation'})
 
 
 @login_required
@@ -189,11 +187,13 @@ def location_geometry(request):
     member = require_member(request)
     result = []
     places=visible_locations(member.team)
+    shared=request.GET.get('shared')=='1'
+    if shared:places=places.exclude(owner_team=member.team)
     query=request.GET.get('q','').strip()[:150]
     if query:places=places.filter(Q(name__icontains=query)|Q(code__icontains=query))
     for location in places:
         # Never include legacy remarks, work counts, worker details or histories.
-        result.append(location_map_data(location))
+        result.append({**location_map_data(location),**({'owner_team':location.owner_team.name} if shared else {})})
     response = JsonResponse({'locations': result})
     response['Cache-Control'] = 'private, no-store'
     return response
