@@ -21,6 +21,8 @@ def notifications(request):
       any template but retained; the unread_notifications channel above is what
       the popup actually consumes.
     """
+    if getattr(request, 'operations_shell', False):
+        return {}
     notifications_list = []
     unread_notifications_json = '[]'
     pm_tasks_json = '[]'
@@ -52,6 +54,8 @@ def notifications(request):
 
 def user_role(request):
     """Add user role information to template context."""
+    if getattr(request, 'operations_shell', False):
+        return {}
     if not request.user.is_authenticated:
         return {
             'is_admin': False,
@@ -104,6 +108,10 @@ def user_role(request):
     # tile can place it on its own line for readability.
     watermark_warning = '仅限内部沟通，严禁外传' if watermark_text else ''
 
+    from django.conf import settings
+    from operations.access import memberships
+    multi_team_available = settings.MULTI_TEAM_ENABLED and memberships(user).exists()
+
     return {
         'is_admin': admin,
         'is_manager': role == 'manager',
@@ -113,4 +121,5 @@ def user_role(request):
         'pending_registrations': pending_reg,
         'watermark_text': watermark_text,
         'watermark_warning': watermark_warning,
+        'multi_team_available': multi_team_available,
     }

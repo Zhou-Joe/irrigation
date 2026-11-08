@@ -38,6 +38,7 @@ INSTALLED_APPS = [
     'corsheaders',
     'mptt',
     'core.apps.CoreConfig',
+    'operations.apps.OperationsConfig',
 ]
 
 MIDDLEWARE = [
@@ -54,6 +55,7 @@ MIDDLEWARE = [
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'core.session_guard.SessionGuardMiddleware',
+    'operations.middleware.BusinessAccessMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
@@ -80,6 +82,9 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = 'config.wsgi.application'
+
+# Opt-in pilot; existing deployments retain their current behavior until bootstrapped.
+MULTI_TEAM_ENABLED = os.environ.get('MULTI_TEAM_ENABLED', 'False') == 'True'
 
 DATABASES = {
     'default': {

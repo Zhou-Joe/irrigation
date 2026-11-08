@@ -12,6 +12,8 @@ from .role_utils import is_admin
 
 
 def navigation(request):
+    if getattr(request, 'operations_shell', False):
+        return {}
     if not request.user.is_authenticated:
         return {}
     # The same destinations as the site's navigation, including manager tools.
@@ -57,10 +59,13 @@ def app_home(request):
 @require_GET
 def manifest(request):
     from django.templatetags.static import static
+    from django.conf import settings
+    multi = settings.MULTI_TEAM_ENABLED
     response = JsonResponse({
-        'id': '/app/', 'name': '灌溉管理 · 现场工作台', 'short_name': '灌溉管理',
-        'description': '现场工单、PM任务、区域地图、用水需求与库存管理。',
-        'lang': 'zh-CN', 'start_url': '/app/', 'scope': '/', 'display': 'standalone',
+        'id': '/app/', 'name': 'FOS · 现场作业' if multi else '灌溉管理 · 现场工作台',
+        'short_name': 'FOS' if multi else '灌溉管理',
+        'description': '团队工作台、地点与共享区域、工作参考目录。' if multi else '现场工单、PM任务、区域地图、用水需求与库存管理。',
+        'lang': 'zh-CN', 'start_url': '/ops/' if multi else '/app/', 'scope': '/', 'display': 'standalone',
         'background_color': '#F5F7F3', 'theme_color': '#1B4332',
         'categories': ['productivity', 'utilities'],
         'icons': [
@@ -68,11 +73,11 @@ def manifest(request):
             {'src': static('pwa/icon-512.png'), 'sizes': '512x512', 'type': 'image/png', 'purpose': 'any'},
             {'src': static('pwa/icon-maskable-512.png'), 'sizes': '512x512', 'type': 'image/png', 'purpose': 'maskable'},
         ],
-        'shortcuts': [
+        'shortcuts': ([{'name':'团队工作台','url':'/ops/'}, {'name':'地点与共享区域','url':'/ops/locations/'}] if multi else [
             {'name': '新建工单', 'url': '/?action=workorder'},
             {'name': 'PM任务', 'url': '/work-reports/?tab=pm'},
             {'name': '区域地图', 'url': '/'},
-        ],
+        ]),
     }, json_dumps_params={'ensure_ascii': False}, content_type='application/manifest+json')
     response['Cache-Control'] = 'public, max-age=3600'
     return response
