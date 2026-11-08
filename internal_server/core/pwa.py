@@ -32,7 +32,8 @@ def navigation(request):
         ('irrigation_dashboard', '灌溉数据', '用水分析与区域热力图', 'activity'),
         ('settings', '区域管理', '区域、设备与地图配置', 'layers'),
     ]
-    if is_admin(request.user):
+    from operations.access import admin_preview_role
+    if is_admin(request.user) and admin_preview_role(request) != 'field':
         modules += [
             ('pm_management', '作业计划', 'Job Plan、PM轮转与派工', 'calendar'),
             ('project_management', '项目管理', '项目、预算与采购记录', 'folder'),
@@ -52,13 +53,15 @@ def navigation(request):
 @login_required(login_url='core:login')
 def app_home(request):
     from .views import _pm_gwo_queryset, _serialize_pm_tasks
-    tasks = _pm_gwo_queryset(request.user, is_admin(request.user)).order_by('deadline', 'scheduled_date', 'id')
+    from operations.access import admin_preview_role
+    manager_view=is_admin(request.user) and admin_preview_role(request)!='field'
+    tasks = _pm_gwo_queryset(request.user, manager_view,field_view=admin_preview_role(request)=='field').order_by('deadline', 'scheduled_date', 'id')
     today = timezone.localdate()
     return render(request, 'core/app_home.html', {
         'app_today': today,
         'app_weekday': '星期' + '一二三四五六日'[today.weekday()],
         'app_task_count': tasks.count(),
-        'app_tasks': _serialize_pm_tasks(list(tasks[:4]), is_admin(request.user)),
+        'app_tasks': _serialize_pm_tasks(list(tasks[:4]), manager_view),
     })
 
 

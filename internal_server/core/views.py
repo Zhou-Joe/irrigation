@@ -451,6 +451,16 @@ def profile_page(request):
             'email': user.email,
         }
 
+    # Worker rows are also attribution records for administrators' work orders.
+    # Keep the profile used for contact edits, but label the real account role.
+    from core.role_utils import get_user_role, ROLE_SUPER_ADMIN, ROLE_MANAGER
+    account_role=get_user_role(user)
+    if account_role==ROLE_SUPER_ADMIN:
+        profile_data.update(type='超级管理员',is_super_admin=True,
+                            can_approve_registrations=True,can_approve_work_orders=True)
+    elif account_role==ROLE_MANAGER:
+        profile_data['type']='管理员'
+
     if request.method == 'POST':
         action = request.POST.get('action')
 
@@ -1326,6 +1336,13 @@ def dashboard(request):
         except Worker.DoesNotExist:
             pass
 
+    from operations.access import admin_preview_role
+    preview_role=admin_preview_role(request)
+    if preview_role:
+        is_admin=is_manager=preview_role=='manager'
+        is_field_worker=preview_role=='field'
+        is_dept_user=False
+
     zones_list = _build_dashboard_sidebar_zones()
 
     # Group zones by Land → common-name (zone.name) for sidebar display
@@ -1528,7 +1545,7 @@ def dashboard(request):
     # PM tasks for the dashboard FAB "PM安排" panel: the logged-in worker's
     # crew's dispatched/overdue tasks (managers see all). Capped for the panel.
     try:
-        pm_tasks_qs = _pm_gwo_queryset(request.user, is_admin or is_manager)
+        pm_tasks_qs = _pm_gwo_queryset(request.user, is_admin or is_manager,field_view=preview_role=='field')
         context['pm_tasks_data'] = _serialize_pm_tasks(pm_tasks_qs[:50], is_admin or is_manager)
         context['pm_tasks_total'] = pm_tasks_qs.count()
     except Exception:
@@ -6211,6 +6228,16 @@ def user_management(request):
 
     # Build user list
     users_list = []
+    from core.role_utils import get_user_role
+    role_labels={ROLE_SUPER_ADMIN:'超级管理员',ROLE_MANAGER:'管理员',ROLE_FIELD_WORKER:'灌溉一线',ROLE_DEPT_USER:'部门用户'}
+    account_roles={}
+
+    def account_role(profile,fallback):
+        if not profile.user_id or fallback==ROLE_SUPER_ADMIN:
+            return fallback
+        if profile.user_id not in account_roles:
+            account_roles[profile.user_id]=get_user_role(profile.user)
+        return account_roles[profile.user_id] or fallback
 
     for mp in ManagerProfile.objects.select_related('user').all():
         users_list.append({
@@ -6222,8 +6249,8 @@ def user_management(request):
             'employee_id': mp.employee_id,
             'phone': mp.phone,
             'department': '',
-            'role': ROLE_SUPER_ADMIN if mp.is_super_admin else ROLE_MANAGER,
-            'role_display': '超级管理员' if mp.is_super_admin else '管理员',
+            'role': account_role(mp,ROLE_SUPER_ADMIN if mp.is_super_admin else ROLE_MANAGER),
+            'role_display': role_labels[account_role(mp,ROLE_SUPER_ADMIN if mp.is_super_admin else ROLE_MANAGER)],
             'active': mp.active,
             'drawn_zones': draw_counts.get(mp.user.id, 0) if mp.user else 0,
         })
@@ -6238,8 +6265,8 @@ def user_management(request):
             'employee_id': dup.employee_id,
             'phone': dup.phone,
             'department': dup.get_department_display_name() if hasattr(dup, 'get_department_display_name') else (dup.department_other or dup.department),
-            'role': ROLE_DEPT_USER,
-            'role_display': '部门用户',
+            'role': account_role(dup,ROLE_DEPT_USER),
+            'role_display': role_labels[account_role(dup,ROLE_DEPT_USER)],
             'active': dup.active,
             'drawn_zones': draw_counts.get(dup.user.id, 0) if dup.user else 0,
         })
@@ -6254,8 +6281,8 @@ def user_management(request):
             'employee_id': w.employee_id,
             'phone': w.phone,
             'department': w.get_department_display_name() if hasattr(w, 'get_department_display_name') else (w.department_other or w.department),
-            'role': ROLE_FIELD_WORKER,
-            'role_display': '灌溉一线',
+            'role': account_role(w,ROLE_FIELD_WORKER),
+            'role_display': role_labels[account_role(w,ROLE_FIELD_WORKER)],
             'active': w.active,
             'drawn_zones': draw_counts.get(w.user.id, 0) if w.user else 0,
         })
@@ -9425,7 +9452,7 @@ def work_report_project_restore(request):
 
 
 
-def _pm_gwo_queryset(user, is_mgr, include_done=False):
+def _pm_gwo_queryset(user, is_mgr, include_done=False, *, field_view=False):
     """Return the GWO queryset visible to this user for the PM tab.
 
     By default only dispatched/overdue tasks (today's to-do). With
@@ -9436,9 +9463,9 @@ def _pm_gwo_queryset(user, is_mgr, include_done=False):
     from django.utils import timezone as _tz
     today = _tz.localdate()
     if include_done:
-        qs = visible_orders(user)
+        qs = visible_orders(user,field_view=field_view)
     else:
-        qs = visible_orders(user).filter(
+        qs = visible_orders(user,field_view=field_view).filter(
             status__in=['dispatched', 'overdue'], scheduled_date__lte=today,
         )
     return qs.select_related('pm_order__worker', 'plan__job_plan', 'crew', 'worker').prefetch_related(
@@ -9532,9 +9559,11 @@ def work_reports_pm_tasks(request):
     JobPlanTemplate id to filter one JP sub-tab; ``done`` — include history.
     """
     from core.role_utils import is_admin
-    admin = is_admin(request.user)
+    from operations.access import admin_preview_role
+    field_view=admin_preview_role(request)=='field'
+    admin = is_admin(request.user) and not field_view
     include_done = request.GET.get('done') in ('1', 'true', 'True')
-    qs = _pm_gwo_queryset(request.user, admin, include_done=include_done)
+    qs = _pm_gwo_queryset(request.user, admin, include_done=include_done,field_view=field_view)
     jp = request.GET.get('jp', '').strip()
     if jp and jp.isdigit():
         qs = qs.filter(plan__job_plan_id=int(jp))
@@ -11560,11 +11589,12 @@ def workorder_modal_data(request):
         report = get_object_or_404(PMWorkOrder, pk=pm_order_id,
                                   gwo_id__in=visible_orders(request.user).values('id'))
 
+    from operations.access import admin_preview_role
     payload = {
         'work_tree': serialize_workitem_tree(),
         'projects': serialize_projects(),
         'irrigation_subcategories': IRRIGATION_SUBCATEGORIES(),
-        'can_create_project': role in (ROLE_MANAGER, ROLE_SUPER_ADMIN),
+        'can_create_project': role in (ROLE_MANAGER, ROLE_SUPER_ADMIN) and admin_preview_role(request) != 'field',
         'sorted_shifts': sorted_shifts,
         'today': date.today().isoformat(),
         'now_time': now.strftime('%H:%M'),

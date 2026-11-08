@@ -134,6 +134,7 @@ function mapHarness() {
     const context={window,document,L,localStorage:{getItem:()=>null,setItem(){}},console,setTimeout,clearTimeout,setInterval:()=>0,
         requestAnimationFrame:setImmediate,performance,Set,Map,CustomEvent:class{}};
     vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../../static/js/ui-icons.js'),'utf8'),context);
+    vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../../operations/static/operations/map-actions.js'),'utf8'),context);
     vm.runInNewContext(source,context);
     window.__test.setState(map,groups);
     return {window,map,groups,api:window.__test,context,elements};

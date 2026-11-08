@@ -5,6 +5,8 @@
 
 (function() {
     'use strict';
+    const effects=window.FOSScopedEffects();
+    let destroyed=false;
     const runtime = window.IrrigationMapRuntime;
     let labelsVisible = true;
     let watermarkCache = null;
@@ -353,6 +355,7 @@
      * shown over the map until the zones render.
      */
     function applyZones(zones) {
+        if(destroyed)return Promise.resolve();
         if (!Array.isArray(zones)) throw new Error('Invalid zone payload');
         window.zonesData = zones;
         window._zoneById = {};
@@ -377,6 +380,7 @@
     }
 
     function loadZones() {
+        if(destroyed)return;
         if (zonesLoading) return;
         zonesLoading = true;
         var overlay = document.getElementById('zone-loading-overlay');
@@ -398,6 +402,7 @@
                 onResponse:response => { receivedRevision = response.headers.get('X-Zone-Revision'); }});
         request.then(applyZones).then(() => { zoneRevision = receivedRevision; })
             .catch(function (err) {
+                if(destroyed)return;
                 console.error('Failed to load zones:', err);
                 if (spinner) spinner.hidden = true;
                 if (message) message.textContent = '区域加载失败，请检查网络后重试。';
@@ -898,6 +903,7 @@
      * Render zones on the map (supports multi-polygon format)
      */
     function renderZones(zones) {
+        if(destroyed)return Promise.resolve();
         zonesLayerGroup.clearLayers();
         labelsLayerGroup.clearLayers();
         if (leaderLinesLayerGroup) leaderLinesLayerGroup.clearLayers();
@@ -906,6 +912,7 @@
         watermarkCache = null;
 
         return runtime.renderBatches(zones, zone => {
+            if(destroyed)return;
             if (!zone.boundary_points || zone.boundary_points.length === 0) {
                 return;
             }
@@ -991,6 +998,7 @@
             const message = document.getElementById('zoneLoadingMessage');
             if (message) message.textContent = '绘制区域 ' + done + ' / ' + total + '…';
         }}).then(() => {
+        if(destroyed)return;
         // Apply initial label visibility based on current zoom.
         updateLabelSizes();
         if (window.applyMapFilters) window.applyMapFilters();
@@ -1606,7 +1614,7 @@
      * data (kept for any page still embedding it).
      */
     function loadPipelines() {
-        if (pipelinesLoading) return;
+        if (destroyed || pipelinesLoading) return;
         const el = document.getElementById('pipelines-data');
         if (!el) return;
         const notice = document.getElementById('pipelineLoadNotice');
@@ -1624,12 +1632,14 @@
         pipelinesLoading = true;
         runtime.fetchJSON('/api/pipelines-payload/')
             .then(d => {
+                if(destroyed)return;
                 renderPipelines(d.pipelines || []);
                 renderCadReference(d.cad_reference || []);
                 applyValveLabelMode(true);   // fresh markers — force rebind
                 updatePipeOverlayTiers();    // valve dots follow the current zoom
             })
             .catch(err => {
+                if(destroyed)return;
                 console.error('pipelines payload fetch failed', err);
                 if (notice) notice.hidden = false;
             }).finally(() => { pipelinesLoading = false; });
@@ -1702,6 +1712,7 @@
      * on the latest irrigation day).
      */
     function renderPipelines(pipelines) {
+        if(destroyed)return;
         pipelinesLayerGroup.clearLayers();
         valveMarkersForLabels = [];   // rebuilt as valve markers are created below
 
@@ -1839,6 +1850,7 @@
     }
 
     function renderCadReference(batches) {
+        if(destroyed)return;
         cadReferenceLayerGroup.clearLayers();
         cadNotesLayerGroup.clearLayers();
         cadUnmatchedLayerGroup.clearLayers();
@@ -1955,6 +1967,7 @@
         }
         if (!isAuto) locationFeedback('正在定位…请在手机提示中允许访问位置。', false);
         return runtime.requestLocation(navigator.geolocation).then(position => {
+            if(destroyed)return;
             const lat = position.coords.latitude, lng = position.coords.longitude;
             const accuracy = position.coords.accuracy;
             if (!runtime.point([lat, lng]) || !Number.isFinite(accuracy) || accuracy < 0) throw new Error('invalid location');
@@ -2005,7 +2018,7 @@
 
     // Initialize when DOM is ready
     if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', () => {
+        effects.listen(document,'DOMContentLoaded', () => {
             initMap();
             setupSidebarInteraction();
             addLocateButton();
@@ -2026,10 +2039,10 @@
         } catch (error) { console.warn('Zone update check failed:', error); }
         finally { zoneRevisionChecking = false; }
     }
-    window.addEventListener?.('pageshow', event => { if (event.persisted) checkZoneRevision(); });
-    window.addEventListener?.('focus', checkZoneRevision);
-    document.addEventListener('visibilitychange', checkZoneRevision);
-    setInterval(checkZoneRevision, 30000);
+    effects.listen(window,'pageshow', event => { if (event.persisted) checkZoneRevision(); });
+    effects.listen(window,'focus', checkZoneRevision);
+    effects.listen(document,'visibilitychange', checkZoneRevision);
+    effects.interval(checkZoneRevision, 30000);
 
     /**
      * Apply combined map filters (priority + plant)
@@ -2194,4 +2207,5 @@
             if (landmarkLabels.length > 0) updateLabelSizes();
         } catch (e) {}
     }
+    window.FOSMapLifecycle={destroy(){destroyed=true;effects.destroy();style.remove();map?.remove();}};
 })();

@@ -1,7 +1,14 @@
 from django.core.exceptions import PermissionDenied
+from django.conf import settings
 from django.db.models import Q
 
-from .models import Membership, Location, AuditEvent
+from .models import Membership, Location, AuditEvent, Team
+
+
+def preview_teams():
+    return Team.objects.filter(active=True,business__active=True).filter(
+        Q(business__code='pest-control') |
+        Q(business__code='irrigation',legacy_irrigation_access=True)).select_related('business').order_by('business__code','name')
 
 
 def memberships(user):
@@ -27,6 +34,16 @@ def has_irrigation_access(user):
 
 def active_membership(request):
     if not hasattr(request, '_business_membership'):
+        preview = request.session.get('operations_admin_view')
+        if settings.MULTI_TEAM_ENABLED and request.user.is_superuser and preview:
+            team_id = preview.get('team') if isinstance(preview,dict) else None
+            team = preview_teams().filter(pk=team_id).first() if type(team_id) is int and team_id>0 else None
+            role = preview.get('role') if isinstance(preview,dict) else None
+            current = Membership(user=request.user,team=team,role=role) if team and role in ('manager','field') else None
+            if current is not None:
+                current._admin_preview = True
+            request._business_membership = current
+            return current
         selected = request.session.get('operations_membership')
         qs = memberships(request.user)
         if selected:
@@ -39,6 +56,13 @@ def active_membership(request):
         # A revoked selection must not silently become authority in a different team.
         request._business_membership = current
     return request._business_membership
+
+
+def admin_preview_role(request):
+    if not settings.MULTI_TEAM_ENABLED or not request.user.is_superuser:
+        return None
+    member = active_membership(request)
+    return member.role if member and getattr(member,'_admin_preview',False) else None
 
 
 def require_member(request, *, manager=False):

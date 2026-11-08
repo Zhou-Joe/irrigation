@@ -248,7 +248,7 @@
     </div>
     {% endif %}
 
-    {% if profile_type == 'manager' %}
+    {% if profile_type == 'manager' or user.is_superuser %}
     <!-- 管理员权限 -->
     <div class="profile-section">
         <h2 class="section-title">管理员权限</h2>

@@ -73,8 +73,9 @@
             }
             return;
         }
-        const controller = create(win, nav.dataset.userId, doc.referrer);
+        let controller = create(win, nav.dataset.userId, doc.referrer);
         if (!controller) return;
+        win.addEventListener('fos:workspace-changed',()=>{controller=create(win,nav.dataset.userId,doc.referrer);});
         nav.querySelectorAll('a[data-pwa-nav]').forEach(link => link.addEventListener('click', event => {
             if (event.defaultPrevented || event.button || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
             if (controller.navigate(link.href)) event.preventDefault();
