@@ -31,11 +31,19 @@ class BusinessAccessMiddleware:
             from core.role_utils import get_django_user
             user = get_django_user(resolve_token_user(request))
         if user and user.is_authenticated:
+            if (user.is_staff or user.is_superuser) and request.path.startswith(('/api/ai/','/ai/files/')):
+                return self.get_response(request)
             if user.is_superuser and (request.path.startswith('/admin/') or request.path=='/profile/'):
                 return self.get_response(request)
             from .access import active_membership
             from django.shortcuts import render
             member = active_membership(request) if request.user.is_authenticated else None
+            selected = request.session.get('operations_business') or request.session.get('operations_membership')
+            if request.user.is_authenticated and selected and not member:
+                request.operations_shell = True
+                if request.path == '/' and request.method == 'GET':
+                    return render(request,'operations/no_membership.html',status=403)
+                return JsonResponse({'error':'当前业务身份不可用，请重新选择业务。'},status=403)
             pest = member and member.team.business.code == 'pest-control'
             if pest:
                 request.operations_shell = True

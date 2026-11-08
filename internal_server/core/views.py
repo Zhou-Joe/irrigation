@@ -1336,13 +1336,6 @@ def dashboard(request):
         except Worker.DoesNotExist:
             pass
 
-    from operations.access import admin_preview_role
-    preview_role=admin_preview_role(request)
-    if preview_role:
-        is_admin=is_manager=preview_role=='manager'
-        is_field_worker=preview_role=='field'
-        is_dept_user=False
-
     zones_list = _build_dashboard_sidebar_zones()
 
     # Group zones by Land → common-name (zone.name) for sidebar display
@@ -1545,7 +1538,7 @@ def dashboard(request):
     # PM tasks for the dashboard FAB "PM安排" panel: the logged-in worker's
     # crew's dispatched/overdue tasks (managers see all). Capped for the panel.
     try:
-        pm_tasks_qs = _pm_gwo_queryset(request.user, is_admin or is_manager,field_view=preview_role=='field')
+        pm_tasks_qs = _pm_gwo_queryset(request.user, is_admin or is_manager)
         context['pm_tasks_data'] = _serialize_pm_tasks(pm_tasks_qs[:50], is_admin or is_manager)
         context['pm_tasks_total'] = pm_tasks_qs.count()
     except Exception:
@@ -9452,7 +9445,7 @@ def work_report_project_restore(request):
 
 
 
-def _pm_gwo_queryset(user, is_mgr, include_done=False, *, field_view=False):
+def _pm_gwo_queryset(user, is_mgr, include_done=False):
     """Return the GWO queryset visible to this user for the PM tab.
 
     By default only dispatched/overdue tasks (today's to-do). With
@@ -9463,9 +9456,9 @@ def _pm_gwo_queryset(user, is_mgr, include_done=False, *, field_view=False):
     from django.utils import timezone as _tz
     today = _tz.localdate()
     if include_done:
-        qs = visible_orders(user,field_view=field_view)
+        qs = visible_orders(user)
     else:
-        qs = visible_orders(user,field_view=field_view).filter(
+        qs = visible_orders(user).filter(
             status__in=['dispatched', 'overdue'], scheduled_date__lte=today,
         )
     return qs.select_related('pm_order__worker', 'plan__job_plan', 'crew', 'worker').prefetch_related(
@@ -9559,11 +9552,9 @@ def work_reports_pm_tasks(request):
     JobPlanTemplate id to filter one JP sub-tab; ``done`` — include history.
     """
     from core.role_utils import is_admin
-    from operations.access import admin_preview_role
-    field_view=admin_preview_role(request)=='field'
-    admin = is_admin(request.user) and not field_view
+    admin = is_admin(request.user)
     include_done = request.GET.get('done') in ('1', 'true', 'True')
-    qs = _pm_gwo_queryset(request.user, admin, include_done=include_done,field_view=field_view)
+    qs = _pm_gwo_queryset(request.user, admin, include_done=include_done)
     jp = request.GET.get('jp', '').strip()
     if jp and jp.isdigit():
         qs = qs.filter(plan__job_plan_id=int(jp))
@@ -11589,12 +11580,11 @@ def workorder_modal_data(request):
         report = get_object_or_404(PMWorkOrder, pk=pm_order_id,
                                   gwo_id__in=visible_orders(request.user).values('id'))
 
-    from operations.access import admin_preview_role
     payload = {
         'work_tree': serialize_workitem_tree(),
         'projects': serialize_projects(),
         'irrigation_subcategories': IRRIGATION_SUBCATEGORIES(),
-        'can_create_project': role in (ROLE_MANAGER, ROLE_SUPER_ADMIN) and admin_preview_role(request) != 'field',
+        'can_create_project': role in (ROLE_MANAGER, ROLE_SUPER_ADMIN),
         'sorted_shifts': sorted_shifts,
         'today': date.today().isoformat(),
         'now_time': now.strftime('%H:%M'),

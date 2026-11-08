@@ -52,7 +52,7 @@ class WorkspaceTests(TestCase):
 
     def test_membership_does_not_leak_irrigation_status_in_shell(self):
         response = self.client.get('/')
-        self.assertContains(response, '植保团队')
+        self.assertEqual(response.context['workspace_membership'].team_id,self.pt.pk)
         self.assertNotContains(response, 'private-irrigation-note')
         self.assertNotContains(response, 'id="navNotifBtn"')
         self.assertIn('no-store', response['Cache-Control'])

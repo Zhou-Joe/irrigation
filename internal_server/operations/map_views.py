@@ -14,7 +14,7 @@ from django.views.decorators.http import require_GET
 
 from core.models import WorkReport
 from core.submissions import submission
-from .access import active_membership, require_member, visible_locations, audit, admin_preview_role
+from .access import active_membership, require_member, visible_locations, audit
 from .models import ReferenceCatalog, PestWorkData
 from .map_data import location_map_data
 
@@ -36,7 +36,7 @@ def require_writer(request):
 def records(request):
     member = require_member(request)
     qs = WorkReport.all_businesses.filter(business_team=member.team, pest_data__isnull=False)
-    if member.role != 'manager' and (not request.user.is_superuser or admin_preview_role(request)):
+    if member.role != 'manager' and not request.user.is_superuser:
         qs = qs.filter(worker__user=request.user)
     return qs.select_related('worker', 'pest_data').order_by('-id')
 
@@ -63,7 +63,7 @@ def pest_dashboard(request):
     member = require_member(request)
     return render(request, 'core/dashboard.html', {
         'pest_mode':True, 'can_pest_submit':member.role in ('manager','field') or request.user.is_superuser,
-        'can_pest_manage':member.role=='manager' or (request.user.is_superuser and admin_preview_role(request)!='field')})
+        'can_pest_manage':member.role=='manager' or request.user.is_superuser})
 
 
 @require_GET

@@ -15,10 +15,18 @@ def navigation(request):
     if getattr(request, 'operations_shell', False):
         from operations.map_views import is_pest
         if is_pest(request):
-            return {'pwa_modules':[
+            from operations.access import active_membership
+            member=active_membership(request)
+            modules=[
                 dict(name='dashboard',label='区域地图',description='团队地点与图层',icon='map',url='/'),
                 dict(name='work_reports',label='工单记录',description='植保作业记录',icon='clipboard',url='/work-reports/')
-            ]}
+            ]
+            if request.user.is_superuser or member.role=='manager':
+                modules += [
+                    dict(name='locations',label='区域管理',description='地点与共享区域',icon='layers',url='/ops/locations/'),
+                    dict(name='team',label='用户管理',description='团队成员与权限',icon='users',url='/ops/team/')
+                ]
+            return {'pwa_modules':modules}
         return {}
     if not request.user.is_authenticated:
         return {}
@@ -32,8 +40,7 @@ def navigation(request):
         ('irrigation_dashboard', '灌溉数据', '用水分析与区域热力图', 'activity'),
         ('settings', '区域管理', '区域、设备与地图配置', 'layers'),
     ]
-    from operations.access import admin_preview_role
-    if is_admin(request.user) and admin_preview_role(request) != 'field':
+    if is_admin(request.user):
         modules += [
             ('pm_management', '作业计划', 'Job Plan、PM轮转与派工', 'calendar'),
             ('project_management', '项目管理', '项目、预算与采购记录', 'folder'),
@@ -53,9 +60,8 @@ def navigation(request):
 @login_required(login_url='core:login')
 def app_home(request):
     from .views import _pm_gwo_queryset, _serialize_pm_tasks
-    from operations.access import admin_preview_role
-    manager_view=is_admin(request.user) and admin_preview_role(request)!='field'
-    tasks = _pm_gwo_queryset(request.user, manager_view,field_view=admin_preview_role(request)=='field').order_by('deadline', 'scheduled_date', 'id')
+    manager_view=is_admin(request.user)
+    tasks = _pm_gwo_queryset(request.user, manager_view).order_by('deadline', 'scheduled_date', 'id')
     today = timezone.localdate()
     return render(request, 'core/app_home.html', {
         'app_today': today,

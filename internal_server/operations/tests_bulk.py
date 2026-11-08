@@ -79,14 +79,14 @@ class LocationBatchTests(TestCase):
 
     def test_platform_admin_can_bulk_share_to_pest_without_changing_view_or_memberships(self):
         self.client.force_login(self.admin)
-        self.client.post('/ops/switch/',{'admin_view':f'{self.pt.pk}:manager'})
+        self.client.post('/ops/switch/',{'business':'pest-control'})
         before=list(Membership.objects.filter(user=self.admin).values())
         response=self.client.post('/ops/locations/batch-sharing/',{'team':self.pt.pk,'source':'irrigation',
             'zones':[self.zone.pk],'targets':[self.pt.pk]})
         self.assertEqual(response.status_code,200,response.content)
         self.assertTrue(LocationGrant.objects.filter(location=self.shared,team=self.pt).exists())
         self.assertEqual(before,list(Membership.objects.filter(user=self.admin).values()))
-        self.assertEqual(self.client.session['operations_admin_view']['team'],self.pt.pk)
+        self.assertEqual(self.client.session['operations_business'],'pest-control')
         self.assertContains(self.client.get('/ops/locations/link-irrigation/'),'批量共享灌溉区域')
 
     def test_all_matching_is_owned_and_filtered_and_can_be_revoked(self):

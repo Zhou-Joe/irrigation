@@ -11,6 +11,7 @@
 <!-- Leaflet CSS -->
 <link rel="stylesheet" href="{% static 'vendor/leaflet/leaflet.css' %}?v=1.9.4" />
 <link rel="stylesheet" href="{% static 'css/dashboard.css' %}?v=20261023map4" />
+<link rel="stylesheet" href="{% static 'operations/map-markers.css' %}?v=20261108pins1">
 <!-- Dashboard JS needs Django URL, set before external scripts -->
 <style>
 /* Announcement popup */
@@ -48,7 +49,7 @@
 <link rel="stylesheet" href="{% static 'css/genie_arrival.css' %}?v=20261107engenie1">
 {% endblock %}
 
-{% block content %}<div id="dashboardWorkspace" data-business="{% if pest_mode %}pest-control{% else %}irrigation{% endif %}">{% if pest_mode %}{% include 'operations/_pest_map.html' %}{% else %}
+{% block content %}<div id="dashboardWorkspace" data-ai="{% if user.is_staff or user.is_superuser %}yes{% else %}no{% endif %}" data-business="{% if pest_mode %}pest-control{% else %}irrigation{% endif %}">{% if pest_mode %}{% include 'operations/_pest_map.html' %}{% else %}
 <!-- Announcement popup (unacknowledged global notifications). Shown only when
      there are active announcements the current user has not yet acknowledged.
      Not dismissable without acknowledging — no backdrop-click / Esc close. -->
@@ -208,6 +209,10 @@
             <button class="map-layer-toggle-btn map-tool-btn" id="mapLayerToggleBtn" onclick="toggleLayerPanel()" title="图层控制"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-layers"/></svg></button>
             <div class="map-layer-body" id="mapLayerBody" style="display:none;">
                 <div class="map-layer-title">图层控制</div>
+                {% if multi_team_enabled %}<label class="map-layer-item">
+                    <input type="checkbox" id="sharedLocationToggle" checked>
+                    <span class="map-layer-checkmark"></span><span>共享地点</span>
+                </label><div style="padding:0 8px 8px;font-size:12px;color:#607269"><span id="sharedLocationStatus" role="status"></span> <button id="sharedLocationRetry" type="button" class="btn-sm btn-secondary" hidden>重试</button></div>{% endif %}
                 <label class="map-layer-item">
                     <input type="checkbox" checked onchange="toggleLayer('zones', this.checked)">
                     <span class="map-layer-checkmark"></span>
@@ -423,19 +428,21 @@
 </script>
 {% endif %}</div>{% endblock %}
 
-{% block extra_js %}<div id="dashboardScripts" hidden>{% if pest_mode %}<script src="{% static 'vendor/leaflet/leaflet.js' %}"></script><script src="{% static 'operations/map-actions.js' %}?v=20261108workspace2"></script><script src="{% static 'js/map-runtime.js' %}"></script><script src="{% static 'operations/map-markers.js' %}?v=20261108pins1"></script><script src="{% static 'operations/location-picker.js' %}?v=20261108workspace2"></script><script src="{% static 'operations/workorder-chips.js' %}?v=20261108workspace2"></script><script src="{% static 'operations/pest-map.js' %}?v=20261108workspace2"></script>{% else %}
+{% block extra_js %}<div id="dashboardScripts" hidden>{% if pest_mode %}<script src="{% static 'vendor/leaflet/leaflet.js' %}"></script><script src="{% static 'operations/map-actions.js' %}?v=20261108business1"></script><script src="{% static 'js/map-runtime.js' %}"></script><script src="{% static 'operations/map-markers.js' %}?v=20261108pins1"></script><script src="{% static 'operations/location-picker.js' %}?v=20261108business1"></script><script src="{% static 'operations/workorder-chips.js' %}?v=20261108business1"></script><script src="{% static 'operations/map-location-create.js' %}?v=20261108business1"></script><script src="{% static 'operations/pest-map.js' %}?v=20261108business1"></script>{% else %}
 <!-- Leaflet JS -->
 <script src="{% static 'vendor/leaflet/leaflet.js' %}?v=1.9.4"></script>
+<script src="{% static 'operations/map-markers.js' %}?v=20261108pins1"></script>
+<script src="{% static 'operations/shared-location-layer.js' %}?v=20261108business1"></script>
 <!-- Map Config -->
-<script src="{% static 'operations/map-actions.js' %}?v=20261108workspace2"></script>
+<script src="{% static 'operations/map-actions.js' %}?v=20261108business1"></script>
 <script src="{% static 'js/map-config.js' %}?v=20260908"></script>
 <script>window.MAP_STYLE_CONFIG = {{ map_style_json|safe }} || {};</script>
 <script id="pending-water-requests" type="application/json">{{ pending_water_requests_json|safe }}</script>
 <script id="pending-remarks" type="application/json">{{ pending_remarks_json|safe }}</script>
 <!-- Custom Map JS -->
 <script src="{% static 'js/map-runtime.js' %}?v=20261106boundaries"></script>
-<script src="{% static 'js/map.js' %}?v=20261108workspace2"></script>
-<script src="{% static 'js/dashboard-modal.js' %}?v=20261108workspace2"></script>
+<script src="{% static 'js/map.js' %}?v=20261108business1"></script>
+<script src="{% static 'js/dashboard-modal.js' %}?v=20261108business1"></script>
 <script>
 // Override the notification popup's PM-task "填写" handler: on the dashboard we
 // can open the assigned PM task directly; other pages navigate with its GWO id.
@@ -450,15 +457,7 @@ window.fillPmTask = function (gwoId) {
 </script>
 <!-- Dashboard JS — pass Django URL to external script -->
 <script>window.HISTORY_URL = '{% url "core:work_reports" %}';</script>
-<script src="{% static 'js/dashboard.js' %}?v=20261108workspace2"></script>
-<!-- AI data-analyst chat widget (deferred: non-blocking load, auto-mounts on DOMContentLoaded) -->
-{% if not admin_role_preview %}
-<script defer src="{% static 'vendor/marked/marked.min.js' %}?v=12.0.2"></script>
-<script defer src="{% static 'vendor/dompurify/purify.min.js' %}?v=3.4.17"></script>
-<script defer src="{% static 'js/ai-chat-core.js' %}?v=20261026daily1"></script>
-<script defer src="{% static 'js/genie_arrival.js' %}?v=20261107engenie1"></script>
-<script defer src="{% static 'js/ai-chat.js' %}?v=20261107engenie1" data-mascot-base="{% static 'ai/engenie/' %}"></script>
-{% endif %}
+<script src="{% static 'js/dashboard.js' %}?v=20261108business1"></script>
 <!-- Announcement popup driver -->
 <script>
 (function () {
@@ -503,4 +502,12 @@ window.fillPmTask = function (gwoId) {
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', load); else load();
 })();
 </script>
-{% endif %}</div>{% endblock %}
+{% endif %}<!-- AI data-analyst chat widget (deferred: non-blocking load, auto-mounts on DOMContentLoaded) -->
+{% if user.is_staff or user.is_superuser %}
+<script defer src="{% static 'vendor/marked/marked.min.js' %}?v=12.0.2"></script>
+<script defer src="{% static 'vendor/dompurify/purify.min.js' %}?v=3.4.17"></script>
+<script defer src="{% static 'js/ai-chat-core.js' %}?v=20261026daily1"></script>
+<script defer src="{% static 'js/genie_arrival.js' %}?v=20261107engenie1"></script>
+<script defer src="{% static 'js/ai-chat.js' %}?v=20261107engenie1" data-mascot-base="{% static 'ai/engenie/' %}"></script>
+{% endif %}
+</div>{% endblock %}
