@@ -2739,6 +2739,7 @@ class EmailReportConfig(models.Model):
     # before multi-select). New configs populate report_types (JSON list) and
     # leave report_type mirroring the first item. effective_report_types()
     # resolves both into the list actually used at send time.
+    delivery_profile = models.ForeignKey('EmailDeliveryProfile', on_delete=models.PROTECT, null=True, blank=True, related_name='report_configs', verbose_name='发送配置')
     report_type = models.CharField('报表', max_length=40, choices=REPORT_CHOICES, blank=True)
     # Multi-select report types: a list of REPORT_CHOICES keys. One attachment
     # per entry is built and attached to a single outgoing email.
@@ -2845,6 +2846,25 @@ class EmailReportConfig(models.Model):
         return out
 
 
+class EmailDeliveryProfile(models.Model):
+    name = models.CharField('配置名称', max_length=100, unique=True)
+    delivery_method = models.CharField('发送方式', max_length=16, choices=[('smtp','SMTP'),('workflow','Microsoft 365 Workflow')], default='smtp')
+    workflow_url = models.TextField('Workflow HTTP 链接', blank=True)
+    download_base_url = models.URLField('报表下载站点', max_length=500, blank=True)
+    host = models.CharField('SMTP 服务器', max_length=200, blank=True)
+    port = models.IntegerField('端口', default=465)
+    username = models.CharField('账号', max_length=200, blank=True)
+    password = models.TextField('密码', blank=True)
+    use_ssl = models.BooleanField('使用 SSL', default=True)
+    use_tls = models.BooleanField('使用 TLS', default=False)
+    from_email = models.CharField('发件人地址', max_length=200, blank=True)
+    use_environment = models.BooleanField('沿用服务器邮件设置', default=False)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return self.name
+
+
 class EmailSmtpSetting(models.Model):
     """系统级 SMTP 配置（单例，固定 id=1）。
 
@@ -2854,6 +2874,7 @@ class EmailSmtpSetting(models.Model):
     经理/超管可访问，且管理员本就能访问服务器，与同类 CMS 做法一致。
     """
 
+    default_profile = models.ForeignKey('EmailDeliveryProfile', on_delete=models.PROTECT, null=True, blank=True, related_name='+')
     delivery_method = models.CharField('发送方式', max_length=16, choices=[('smtp','SMTP'),('workflow','Microsoft 365 Workflow')], default='smtp')
     workflow_url = models.TextField('Workflow HTTP 链接', blank=True)
     download_base_url = models.URLField('报表下载站点', max_length=500, blank=True)

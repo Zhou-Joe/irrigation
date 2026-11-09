@@ -1,6 +1,7 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from core import dxf_views, views
+from core import mail_profile_views
 from core import mail_delivery
 from core import pwa
 from core import ai_storage
@@ -203,6 +204,9 @@ urlpatterns = [
     path('email-configs/list/', views.email_config_list, name='email_config_list'),
     path('email-configs/<int:pk>/delete/', views.email_config_delete, name='email_config_delete'),
     path('email-configs/<int:pk>/test/', views.email_config_test, name='email_config_test'),
+    path('email-configs/delivery-profiles/',mail_profile_views.profiles,name='email_delivery_profiles'),
+    path('email-configs/delivery-profiles/save/',mail_profile_views.save,name='email_delivery_profile_save'),
+    path('email-configs/delivery-profiles/<int:pk>/delete/',mail_profile_views.delete,name='email_delivery_profile_delete'),
     path('email-configs/smtp/', views.email_smtp_get, name='email_smtp_get'),
     path('email-configs/smtp/save/', views.email_smtp_save, name='email_smtp_save'),
     path('work-reports/tree/<int:report_id>/edit/', workorder_tree_form, name='workorder_tree_form_edit'),
