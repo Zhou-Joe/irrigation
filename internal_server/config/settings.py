@@ -226,3 +226,13 @@ DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', EMAIL_HOST_USER or 'no
 # Optional deployment override; normally captured automatically from the public app.
 EMAIL_REPORT_PUBLIC_BASE_URL = os.environ.get('EMAIL_REPORT_PUBLIC_BASE_URL', '').strip()
 PASSWORD_RESET_TIMEOUT = 3600
+
+# Account delivery events contain profile IDs and sanitized results, never tokens.
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'handlers': {'account_mail_console': {'class': 'logging.StreamHandler'}},
+    'loggers': {'core.account_mail': {
+        'handlers': ['account_mail_console'], 'level': 'INFO', 'propagate': False,
+    }},
+}
