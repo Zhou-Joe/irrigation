@@ -2854,6 +2854,10 @@ class EmailSmtpSetting(models.Model):
     经理/超管可访问，且管理员本就能访问服务器，与同类 CMS 做法一致。
     """
 
+    delivery_method = models.CharField('发送方式', max_length=16, choices=[('smtp','SMTP'),('workflow','Microsoft 365 Workflow')], default='smtp')
+    workflow_url = models.TextField('Workflow HTTP 链接', blank=True)
+    download_base_url = models.URLField('报表下载站点', max_length=500, blank=True)
+
     host = models.CharField('SMTP 服务器', max_length=200, blank=True,
                             help_text='如 smtp.qq.com')
     port = models.IntegerField('端口', default=465)
@@ -2884,6 +2888,14 @@ class EmailSmtpSetting(models.Model):
         return bool(self.host)
 
 
+
+
+class EmailReportFile(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    filename = models.CharField(max_length=255)
+    token_hash = models.CharField(max_length=64)
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField(db_index=True)
 
 
 class SiteCalibration(models.Model):

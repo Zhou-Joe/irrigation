@@ -1858,15 +1858,15 @@ def email_config_test(request, pk):
     """
     from core.models import EmailReportConfig
     from django.core.mail import EmailMessage
-    from core.smtp_utils import is_smtp_configured, get_email_connection, resolve_from_email
+    from core.mail_delivery import is_configured, send_report
     if not _email_config_perm(request):
         return JsonResponse({'success': False, 'message': '无权限'}, status=403)
 
     cfg = get_object_or_404(EmailReportConfig, pk=pk)
-    if not is_smtp_configured():
+    if not is_configured():
         return JsonResponse({
             'success': False,
-            'message': 'SMTP 未配置，请先在本页「SMTP 设置」卡片填写 SMTP 服务器信息',
+            'message': '请先在本页「邮件发送设置」配置 SMTP 或 Microsoft 365 Workflow',
         }, status=400)
 
     recipients = cfg.recipient_list
@@ -1899,17 +1899,12 @@ def email_config_test(request, pk):
         report_labels = [lbl for (_, _, lbl) in built]
         subject, body = render_subject_body(cfg, report_labels, period)
         subject = '【测试】' + subject   # prefix so a test is distinguishable
-        msg = EmailMessage(subject=subject, body=body,
-                           from_email=resolve_from_email(), to=recipients,
-                           connection=get_email_connection())
-        for fname, buf, _ in built:
-            msg.attach(fname, buf.getvalue(), XLSX_CT)
-        msg.send(fail_silently=False)
+        delivery = send_report(subject,body,recipients,[(fname,buf.getvalue(),XLSX_CT) for fname,buf,_ in built])
         cfg.last_sent_at = timezone.now()
-        cfg.last_status = 'success (test)'
+        cfg.last_status = ('accepted' if delivery['status']=='accepted' else 'success')+' (test)'
         cfg.save(update_fields=['last_sent_at', 'last_status'])
         return JsonResponse({'success': True,
-                             'message': f'测试邮件已发送至 {len(recipients)} 个收件人（{len(built)} 个附件）'})
+                             'message': delivery['message']+f' · {len(recipients)} 个收件人，{len(built)} 份报表'})
     except Exception as e:
         cfg.last_sent_at = timezone.now()
         cfg.last_status = f'failed (test): {e}'[:200]
@@ -1947,6 +1942,10 @@ def email_smtp_get(request):
     s = EmailSmtpSetting.get_solo()
     return JsonResponse({
         'success': True,
+        'delivery_method': s.delivery_method,
+        'has_workflow_url': bool(s.workflow_url),
+        'download_base_url': s.download_base_url,
+        'delivery_configured': bool(s.workflow_url) if s.delivery_method=='workflow' else s.is_configured,
         'host': s.host,
         'port': s.port,
         'username': s.username,
@@ -1972,26 +1971,41 @@ def email_smtp_save(request):
         return JsonResponse({'success': False, 'message': '无权限'}, status=403)
 
     s = EmailSmtpSetting.get_solo()
-    s.host = (request.POST.get('host') or '').strip()
-    port_raw = (request.POST.get('port') or '465').strip()
+    from core.mail_delivery import validate_workflow_url, validate_download_base
+    from django.core.exceptions import ValidationError
+    method=request.POST.get('delivery_method',s.delivery_method)
+    if method not in ('smtp','workflow'):
+        return JsonResponse({'success':False,'message':'发送方式无效'},status=400)
+    workflow=(request.POST.get('workflow_url') or '').strip() or s.workflow_url
+    base=(request.POST.get('download_base_url',s.download_base_url) or '').strip()
     try:
-        s.port = int(port_raw)
-    except ValueError:
-        s.port = 465
-    s.username = (request.POST.get('username') or '').strip()
-    # Password: empty submission = keep existing; non-empty = replace.
-    new_pw = request.POST.get('password') or ''
-    if new_pw != '':
-        s.password = new_pw
-    # Encryption is a single mutually-exclusive radio (ssl / tls / none).
-    encryption = (request.POST.get('encryption') or '').strip()
-    s.use_ssl = encryption == 'ssl'
-    s.use_tls = encryption == 'tls'
-    s.from_email = (request.POST.get('from_email') or '').strip()
+        if workflow:validate_workflow_url(workflow)
+        if base:validate_download_base(base)
+        if method=='workflow' and not workflow:raise ValidationError('请填写 Workflow 的 HTTP 触发链接。')
+    except (ValidationError,ValueError):
+        return JsonResponse({'success':False,'message':'请填写有效的 Microsoft Workflow HTTPS 触发链接，以及 HTTPS 下载站点地址。'},status=400)
+    s.delivery_method=method;s.workflow_url=workflow;s.download_base_url=base
+    if method=='smtp':
+        s.host = (request.POST.get('host') or '').strip()
+        port_raw = (request.POST.get('port') or '465').strip()
+        try:
+            s.port = int(port_raw)
+        except ValueError:
+            s.port = 465
+        s.username = (request.POST.get('username') or '').strip()
+        # Password: empty submission = keep existing; non-empty = replace.
+        new_pw = request.POST.get('password') or ''
+        if new_pw != '':
+            s.password = new_pw
+        # Encryption is a single mutually-exclusive radio (ssl / tls / none).
+        encryption = (request.POST.get('encryption') or '').strip()
+        s.use_ssl = encryption == 'ssl'
+        s.use_tls = encryption == 'tls'
+        s.from_email = (request.POST.get('from_email') or '').strip()
     s.save()
     return JsonResponse({
         'success': True,
-        'message': 'SMTP 配置已保存',
+        'message': '邮件发送设置已保存',
         'is_configured': s.is_configured,
         'has_password': bool(s.password),
     })

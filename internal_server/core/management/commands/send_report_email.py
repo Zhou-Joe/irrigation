@@ -115,15 +115,16 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         from core.models import EmailDispatch
         from django.db import IntegrityError, transaction
-        from core.smtp_utils import is_smtp_configured, get_email_connection, resolve_from_email
+        from core.mail_delivery import is_configured, send_report, purge_expired_files
         import uuid
         dry=options['dry_run'];force_id=options['config_id']
-        if not dry and not is_smtp_configured():
-            self.stdout.write('SMTP 未配置，未发送邮件。')
+        if not dry:purge_expired_files()
+        if not dry and not is_configured():
+            self.stdout.write('邮件发送方式未配置，未发送邮件。')
             return
         now=timezone.localtime();today=now.date()
         configs=EmailReportConfig.objects.filter(pk=force_id) if force_id else EmailReportConfig.objects.filter(is_active=True)
-        totals={'sent':0,'failed':0,'skipped':0,'partial':0}
+        totals={'sent':0,'submitted':0,'failed':0,'skipped':0,'partial':0}
         for cfg in configs.order_by('frequency','name'):
             if not force_id and not _is_due_now(cfg,now):
                 totals['skipped']+=1;continue
@@ -149,13 +150,12 @@ class Command(BaseCommand):
                 if dry:
                     self.stdout.write(f'[dry] {cfg.name}: {len(built)} 附件，{len(failures)} 失败')
                     continue
-                msg=EmailMessage(subject=subject,body=body,from_email=resolve_from_email(),to=recipients,connection=get_email_connection())
-                for filename,buffer,label in built:msg.attach(filename,buffer.getvalue(),XLSX_CT)
-                if msg.send(fail_silently=False)!=1:raise ValueError('邮件未确认发送成功')
-                state='partial_success' if failures else 'success'
+                delivery=send_report(subject,body,recipients,[(filename,buffer.getvalue(),XLSX_CT) for filename,buffer,label in built])
+                accepted=delivery['status']=='accepted'
+                state=('partial_accepted' if failures else 'accepted') if accepted else ('partial_success' if failures else 'success')
                 self._record(cfg,state+('：'+'；'.join(failures) if failures else ''),False)
-                EmailDispatch.objects.filter(pk=dispatch.pk).update(status=state,details={'attachments':[x[0] for x in built],'failures':failures},updated_at=timezone.now())
-                totals['partial' if failures else 'sent']+=1
+                EmailDispatch.objects.filter(pk=dispatch.pk).update(status=state,details={'attachments':[x[0] for x in built],'failures':failures,'delivery_method':delivery['method']},updated_at=timezone.now())
+                totals['partial' if failures else 'submitted' if accepted else 'sent']+=1
             except Exception as exc:
                 # Isolate configuration errors, including bad format strings.
                 self._record(cfg,'failed: '+str(exc),dry)

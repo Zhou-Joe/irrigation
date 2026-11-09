@@ -1,6 +1,7 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from core import dxf_views, views
+from core import mail_delivery
 from core import pwa
 from core import ai_storage
 from core import submissions
@@ -197,6 +198,7 @@ urlpatterns = [
     path('announcements/<int:pk>/delete/', views.announcement_delete, name='announcement_delete'),
     path('api/announcements/<int:pk>/acknowledge/', views.announcement_acknowledge, name='announcement_acknowledge'),
     path('api/announcements/<int:pk>/unacked/', views.announcement_unacked_api, name='announcement_unacked_api'),
+    path('email-download/<uuid:file_id>/<str:token>/', mail_delivery.download, name='email_report_download'),
     path('email-configs/save/', views.email_config_save, name='email_config_save'),
     path('email-configs/list/', views.email_config_list, name='email_config_list'),
     path('email-configs/<int:pk>/delete/', views.email_config_delete, name='email_config_delete'),

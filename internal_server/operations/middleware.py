@@ -19,6 +19,8 @@ class BusinessAccessMiddleware:
             response['Cache-Control'] = 'private, no-store'
             response['Vary'] = 'Cookie'
             return response
+        if request.path.startswith('/email-download/'):
+            return self.get_response(request)
         if request.path in ('/login/', '/logout/', '/register/'):
             request.operations_shell = True
             return self.get_response(request)

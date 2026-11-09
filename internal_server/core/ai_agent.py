@@ -1624,7 +1624,7 @@ def export_work_reports_excel(start_date: str = "", end_date: str = "", runtime:
 @tool
 def send_report_email(report_type: str, start_date: str, end_date: str,
                       recipients: str, runtime: ToolRuntime = None) -> str:
-    """生成指定类型的 Excel 报表并通过 SMTP 邮件发送给收件人。
+    """生成指定类型的 Excel 报表并按系统所选 SMTP / Microsoft 365 Workflow 发送给收件人。
 
     覆盖全部 7 种报表类型，与 export_work_reports_excel（仅维修工单、仅生成文件）
     互补：本工具覆盖全部类型并直接发送邮件。
@@ -1651,10 +1651,7 @@ def send_report_email(report_type: str, start_date: str, end_date: str,
     """
     import re
     from core.report_export import REPORT_TYPES, REPORT_TYPE_LABELS, build_report
-    from core.smtp_utils import (
-        is_smtp_configured, get_email_connection, resolve_from_email,
-    )
-    from django.core.mail import EmailMessage
+    from core.mail_delivery import is_configured, send_report
 
     if report_type not in REPORT_TYPES:
         return json.dumps({
@@ -1674,9 +1671,9 @@ def send_report_email(report_type: str, start_date: str, end_date: str,
     if not rcpt_list:
         return json.dumps({'error': '未提供收件人邮箱'}, ensure_ascii=False)
 
-    if not is_smtp_configured():
+    if not is_configured():
         return json.dumps({
-            'error': 'SMTP 未配置，无法发送邮件。请先在「用户管理 → 邮件报表」配置 SMTP 服务器。',
+            'error': '发送方式未配置，请先在「用户管理 → 邮件报表」配置邮件发送设置。',
         }, ensure_ascii=False)
 
     label = REPORT_TYPE_LABELS.get(report_type, report_type)
@@ -1691,19 +1688,16 @@ def send_report_email(report_type: str, start_date: str, end_date: str,
     body = (f'您好，\n\n这是由 AI 助手生成的报表邮件。\n'
             f'报表类型：{label}\n数据范围：{period}\n\n请见附件。')
     try:
-        msg = EmailMessage(
-            subject=subject, body=body,
-            from_email=resolve_from_email(), to=rcpt_list,
-            connection=get_email_connection(),
-        )
-        msg.attach(fname, buf.getvalue(),
-                   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-        msg.send(fail_silently=False)
+        delivery=send_report(subject,body,rcpt_list,[(fname,buf.getvalue(),'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')])
     except Exception as e:
         return json.dumps({'error': f'邮件发送失败: {e}'}, ensure_ascii=False)
 
     return json.dumps({
-        'sent': True,
+        'sent': delivery['status']=='sent',
+        'submitted': True,
+        'delivery_method': delivery['method'],
+        'status': delivery['status'],
+        'message': delivery['message'],
         'report_type': report_type,
         'label': label,
         'filename': fname,

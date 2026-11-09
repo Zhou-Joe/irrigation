@@ -715,11 +715,11 @@
 
       <!-- SMTP status card (summary — click to open modal) -->
       <div class="am-card">
-        <h2>SMTP 邮件服务器设置
+        <h2>邮件发送设置
           <span id="smtpStatusDot" style="font-size:0.75rem;font-weight:600;margin-left:8px;"></span>
         </h2>
         <p id="smtpStatusSummary" style="font-size:0.85rem;color:var(--color-text-muted);margin:0 0 12px;">加载中…</p>
-        <button type="button" class="btn btn-primary" onclick="openSmtpModal()">配置 / 修改 SMTP</button>
+        <button type="button" class="btn btn-primary" onclick="openSmtpModal()">配置发送方式</button>
       </div>
 
       <!-- Config list (toolbar + rows rendered by JS) -->
@@ -729,7 +729,7 @@
           <button type="button" class="btn btn-primary" onclick="openEmailConfigModal()">+ 新建</button>
         </h2>
         <p style="font-size:0.8rem;color:var(--color-text-muted);margin:0 0 12px;">
-          定时任务每天早 7:00 运行，按频率自动发送（每日=每天，每周=周一，每月=1号）。配置好 SMTP 后点「测试发送」可立即验证。
+          定时任务每天早 7:00 运行，按频率自动发送（每日=每天，每周=周一，每月=1号）。可选择 SMTP 或 Microsoft 365 Workflow，按配置的时间发送。
         </p>
         <div id="emailConfigList"></div>
       </div>
@@ -738,12 +738,18 @@
     <!-- SMTP settings modal -->
     <div class="modal-overlay" id="smtpModal">
       <div class="modal" style="max-width:520px;">
-        <h3>SMTP 邮件服务器设置</h3>
+        <h3>邮件发送设置</h3>
         <p style="font-size:0.78rem;color:var(--color-text-muted);margin:0 0 14px;">
           常见：QQ邮箱 <code>smtp.qq.com:465</code>（SSL），163邮箱 <code>smtp.163.com:465</code>（SSL），Gmail <code>smtp.gmail.com:587</code>（TLS）。密码框留空表示不修改原密码。
         </p>
         <form id="smtpForm" class="am-form" onsubmit="return false;">
-          <div class="am-field">
+          <div class="am-field"><label>发送方式</label><select id="mailDeliveryMethod" onchange="toggleMailDeliveryFields()"><option value="smtp">SMTP（邮件附件）</option><option value="workflow">Microsoft 365 Workflow（正文下载链接）</option></select></div>
+          <div id="workflowFields" hidden>
+            <div class="am-field"><label>Workflow HTTP 链接</label><input id="mailWorkflowUrl" type="password" autocomplete="new-password" placeholder="粘贴 HTTP 触发器链接；留空保留已设置链接"></div>
+            <div class="am-field"><label>报表下载站点（可选）</label><input id="mailDownloadBase" type="url" placeholder="https://irrigation.zctestbench.asia"></div>
+            <p style="font-size:12px;color:var(--color-text-muted)">Workflow 接收 JSON：t = 收件人，s = 主题，b = HTML 正文。正文列出全部报表下载链接，有效期 7 天。Workflow 无需配置附件。</p>
+          </div>
+          <div id="smtpFields"><div class="am-field">
             <label>SMTP 服务器</label>
             <input type="text" id="smtpHost" placeholder="如 smtp.qq.com" maxlength="200">
           </div>
@@ -770,7 +776,7 @@
           <div class="am-field">
             <label>发件人地址（可选）</label>
             <input type="text" id="smtpFromEmail" placeholder="留空则用账号邮箱" maxlength="200">
-          </div>
+          </div></div>
           <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px;">
             <button type="button" class="btn btn-secondary" onclick="closeModal('smtpModal')">取消</button>
             <button type="button" class="btn btn-primary" id="smtpSaveBtn" onclick="saveSmtp()">保存</button>
@@ -790,7 +796,7 @@
             <input type="text" id="ecName" required maxlength="100" placeholder="如：每日维修工单-发经理">
           </div>
           <div class="am-field">
-            <label>报表 *（可多选，每种报表各生成一个附件）</label>
+            <label>报表 *（可多选，每种报表生成一个 Excel 文件）</label>
             <div class="ec-report-checkboxes" id="ecReportTypes" style="display:flex;flex-wrap:wrap;gap:6px 14px;max-height:120px;overflow:auto;border:1px solid var(--color-border,#ddd);border-radius:6px;padding:8px;">
               {% for code, rlabel in report_choices %}
               <label style="display:flex;align-items:center;gap:4px;font-size:0.85rem;font-weight:400;margin:0;">
@@ -1011,19 +1017,27 @@ function closeModal(id) { var m = document.getElementById(id); if (m) m.classLis
 });
 
 // ── SMTP ──
+function toggleMailDeliveryFields() {
+    var workflow=document.getElementById('mailDeliveryMethod').value==='workflow';
+    document.getElementById('workflowFields').hidden=!workflow;
+    document.getElementById('smtpFields').hidden=workflow;
+}
 function refreshSmtpStatus() {
     fetch('/email-configs/smtp/', { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
         .then(function (r) { return r.json(); }).then(function (d) {
             if (!d.success) return;
             var dot = document.getElementById('smtpStatusDot');
             var summary = document.getElementById('smtpStatusSummary');
-            if (d.is_configured) {
+            if(d.delivery_method==='workflow') {
+                dot.textContent=d.has_workflow_url?'Workflow · 已配置':'Workflow · 未配置';dot.style.color=d.has_workflow_url?'#2e7d32':'#999';
+                summary.textContent='Microsoft 365 Workflow · t / s / b · 报表以 7 天有效下载链接放入正文';
+            } else if (d.is_configured) {
                 dot.textContent = '● 已配置'; dot.style.color = '#2e7d32';
                 summary.textContent = d.host + ':' + d.port + ' · ' + d.username +
                     (d.has_password ? ' · 密码已设置' : ' · 密码未设置');
             } else {
                 dot.textContent = '○ 未配置'; dot.style.color = '#999';
-                summary.textContent = '尚未配置 SMTP，定时邮件和测试发送将无法工作。';
+                summary.textContent = '可配置 SMTP 邮件服务器，或切换至 Microsoft 365 Workflow。';
             }
         });
 }
@@ -1031,6 +1045,11 @@ function openSmtpModal() {
     fetch('/email-configs/smtp/', { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
         .then(function (r) { return r.json(); }).then(function (d) {
             if (!d.success) return;
+            document.getElementById('mailDeliveryMethod').value=d.delivery_method||'smtp';
+            document.getElementById('mailWorkflowUrl').value='';
+            document.getElementById('mailWorkflowUrl').placeholder=d.has_workflow_url?'已设置（留空保留）':'粘贴 Workflow HTTP 触发链接';
+            document.getElementById('mailDownloadBase').value=d.download_base_url||'';
+            toggleMailDeliveryFields();
             document.getElementById('smtpHost').value = d.host || '';
             document.getElementById('smtpPort').value = d.port || 465;
             document.getElementById('smtpUsername').value = d.username || '';
@@ -1047,6 +1066,9 @@ function saveSmtp() {
     var btn = document.getElementById('smtpSaveBtn');
     var enc = (document.querySelector('input[name="smtpEncryption"]:checked') || {}).value || 'none';
     var fd = new FormData();
+    fd.append('delivery_method',document.getElementById('mailDeliveryMethod').value);
+    fd.append('workflow_url',document.getElementById('mailWorkflowUrl').value);
+    fd.append('download_base_url',document.getElementById('mailDownloadBase').value);
     fd.append('host', document.getElementById('smtpHost').value);
     fd.append('port', document.getElementById('smtpPort').value);
     fd.append('username', document.getElementById('smtpUsername').value);
