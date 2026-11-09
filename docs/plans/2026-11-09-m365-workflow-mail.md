@@ -13,3 +13,12 @@ HTTP 2xx 记录为 accepted（已提交 Workflow），不表示邮箱已经投�
 Microsoft references:
 - https://learn.microsoft.com/en-us/power-automate/oauth-authentication
 - https://learn.microsoft.com/en-us/connectors/office365/
+
+
+## 可复用发送配置
+
+邮件报表页维护命名配置列表，可保存多套 SMTP、Workflow，并为每条报表独立选择。默认配置仅用于新建报表和 AI 临时发送，不自动替换已有报表的绑定。保存与列表更新均在页内完成。
+
+迁移自动将原 SMTP 和已有 Workflow 分别保留为命名配置，按原来选中的发送方式绑定所有既有报表。SMTP 若原先来自服务器环境，继续沿用环境配置。密码、Workflow 链接仍是只写字段，留空保留；引用中的配置与默认配置受到删除保护。
+
+定时发送与手动测试使用报表绑定的配置；某套配置未完善不会阻止其他报表发送。按用户此前要求，不进行额外测试、界面验收或实际试发。

@@ -15,7 +15,7 @@ from django.utils import timezone
 from django.utils.html import escape, format_html
 from django.views.decorators.http import require_safe
 
-from .models import EmailSmtpSetting, EmailReportFile
+from .models import EmailSmtpSetting, EmailReportFile, EmailDeliveryProfile
 from .report_export import XLSX_CT
 
 RETENTION_DAYS = 7
@@ -36,9 +36,17 @@ def validate_download_base(value):
         raise ValidationError('下载站点请填写 HTTPS 网站地址，不包含查询参数。')
 
 
-def is_configured():
-    setting=EmailSmtpSetting.get_solo()
+def resolve_profile(profile=None):
+    if profile is not None:return profile
+    legacy=EmailSmtpSetting.get_solo()
+    return legacy.default_profile or legacy
+
+
+def is_configured(profile=None):
+    setting=resolve_profile(profile)
     if setting.delivery_method=='workflow':return bool(setting.workflow_url)
+    if isinstance(setting,EmailDeliveryProfile):
+        return bool(getattr(settings,'EMAIL_HOST','')) if setting.use_environment else bool(setting.host)
     from .smtp_utils import is_smtp_configured
     return is_smtp_configured()
 
@@ -72,9 +80,9 @@ def _download_link(filename,content,base):
     return base.rstrip('/')+reverse('core:email_report_download',args=[record.pk,token])
 
 
-def send_report(subject,body,recipients,attachments):
+def send_report(subject,body,recipients,attachments,*,profile=None):
     """attachments: iterable of (filename, bytes, MIME type). No automatic send retries."""
-    setting=EmailSmtpSetting.get_solo()
+    setting=resolve_profile(profile)
     recipients=list(dict.fromkeys(value.strip() for value in recipients if value.strip()))
     if not recipients:raise ValueError('未提供收件人')
     for recipient in recipients:validate_email(recipient)
@@ -82,7 +90,13 @@ def send_report(subject,body,recipients,attachments):
     if setting.delivery_method!='workflow':
         from django.core.mail import EmailMessage
         from .smtp_utils import get_email_connection, resolve_from_email
-        message=EmailMessage(subject=subject,body=body,from_email=resolve_from_email(),to=recipients,connection=get_email_connection())
+        if isinstance(setting,EmailDeliveryProfile):
+            from django.core.mail import get_connection
+            if not is_configured(setting):raise ValueError('所选 SMTP 发送配置尚未完善')
+            connection=get_connection() if setting.use_environment else get_connection(host=setting.host,port=setting.port,username=setting.username or None,password=setting.password or None,use_ssl=setting.use_ssl,use_tls=setting.use_tls,timeout=getattr(settings,'EMAIL_TIMEOUT',30))
+            sender=(getattr(settings,'DEFAULT_FROM_EMAIL','') if setting.use_environment else setting.from_email or setting.username or getattr(settings,'DEFAULT_FROM_EMAIL',''))
+        else:connection=get_email_connection();sender=resolve_from_email()
+        message=EmailMessage(subject=subject,body=body,from_email=sender,to=recipients,connection=connection)
         for filename,content,mime in attachments:message.attach(filename,content,mime)
         if message.send(fail_silently=False)!=1:raise ValueError('邮件未确认发送成功')
         return {'method':'smtp','status':'sent','message':'邮件已发送'}

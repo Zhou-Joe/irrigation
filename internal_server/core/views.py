@@ -1679,6 +1679,8 @@ def _email_config_json(cfg):
     return {
         'id': cfg.id,
         'name': cfg.name,
+        'delivery_profile_id': cfg.delivery_profile_id,
+        'delivery_profile_name': cfg.delivery_profile.name if cfg.delivery_profile_id else '默认发送配置',
         'recipients': cfg.recipients,
         'report_type': cfg.report_type,
         'report_type_display': cfg.get_report_type_display(),
@@ -1711,11 +1713,18 @@ def email_config_save(request):
     Returns JSON (AJAX): the modal submits via fetch and re-renders the list
     on success instead of a full-page reload.
     """
-    from core.models import EmailReportConfig
+    from core.models import EmailReportConfig, EmailDeliveryProfile, EmailSmtpSetting
     if not _email_config_perm(request):
         return JsonResponse({'success': False, 'message': '无权限'}, status=403)
 
     cid = request.POST.get('id', '').strip()
+    profile_id=request.POST.get('delivery_profile_id')
+    if profile_id is not None:
+        delivery_profile=EmailDeliveryProfile.objects.filter(pk=int(profile_id)).first() if profile_id.isdigit() else None
+        if delivery_profile is None:return JsonResponse({'success':False,'message':'请选择已保存的发送配置'},status=400)
+    elif cid:
+        delivery_profile=get_object_or_404(EmailReportConfig,pk=cid).delivery_profile or EmailSmtpSetting.get_solo().default_profile
+    else:delivery_profile=EmailSmtpSetting.get_solo().default_profile
     name = (request.POST.get('name') or '').strip()
     frequency = (request.POST.get('frequency') or 'daily').strip()
     recipients = (request.POST.get('recipients') or '').strip()
@@ -1806,6 +1815,7 @@ def email_config_save(request):
     report_type = report_types[0]
     if cid:
         cfg = get_object_or_404(EmailReportConfig, pk=cid)
+        cfg.delivery_profile=delivery_profile
         cfg.name = name
         cfg.report_type = report_type
         cfg.report_types = report_types
@@ -1823,7 +1833,7 @@ def email_config_save(request):
         msg = f'邮件报表配置已更新：{cfg.name}'
     else:
         cfg = EmailReportConfig.objects.create(
-            name=name, report_type=report_type, report_types=report_types,
+            delivery_profile=delivery_profile, name=name, report_type=report_type, report_types=report_types,
             ccu_ids=ccu_ids, email_subject=email_subject, email_body=email_body,
             frequency=frequency,
             recipients=recipients, is_active=is_active, created_by=request.user,
@@ -1863,7 +1873,7 @@ def email_config_test(request, pk):
         return JsonResponse({'success': False, 'message': '无权限'}, status=403)
 
     cfg = get_object_or_404(EmailReportConfig, pk=pk)
-    if not is_configured():
+    if not is_configured(cfg.delivery_profile):
         return JsonResponse({
             'success': False,
             'message': '请先在本页「邮件发送设置」配置 SMTP 或 Microsoft 365 Workflow',
@@ -1899,7 +1909,7 @@ def email_config_test(request, pk):
         report_labels = [lbl for (_, _, lbl) in built]
         subject, body = render_subject_body(cfg, report_labels, period)
         subject = '【测试】' + subject   # prefix so a test is distinguishable
-        delivery = send_report(subject,body,recipients,[(fname,buf.getvalue(),XLSX_CT) for fname,buf,_ in built])
+        delivery = send_report(subject,body,recipients,[(fname,buf.getvalue(),XLSX_CT) for fname,buf,_ in built],profile=cfg.delivery_profile)
         cfg.last_sent_at = timezone.now()
         cfg.last_status = ('accepted' if delivery['status']=='accepted' else 'success')+' (test)'
         cfg.save(update_fields=['last_sent_at', 'last_status'])
@@ -1922,7 +1932,7 @@ def email_config_list(request):
     from core.models import EmailReportConfig
     if not _email_config_perm(request):
         return JsonResponse({'success': False, 'message': '无权限'}, status=403)
-    qs = EmailReportConfig.objects.order_by('frequency', 'name')
+    qs = EmailReportConfig.objects.select_related('delivery_profile').order_by('frequency', 'name')
     return JsonResponse({
         'success': True,
         'configs': [_email_config_json(c) for c in qs],
@@ -1936,16 +1946,19 @@ def email_smtp_get(request):
     Never returns the password — only a boolean has_password flag, so the modal
     can show "已设置/未设置" without round-tripping the secret.
     """
+    from django.conf import settings
     from core.models import EmailSmtpSetting
     if not _email_config_perm(request):
         return JsonResponse({'success': False, 'message': '无权限'}, status=403)
-    s = EmailSmtpSetting.get_solo()
+    legacy = EmailSmtpSetting.get_solo()
+    s = legacy.default_profile or legacy
+    smtp_ready=bool(s.host) or (getattr(s,'use_environment',False) and bool(getattr(settings,'EMAIL_HOST','')))
     return JsonResponse({
         'success': True,
         'delivery_method': s.delivery_method,
         'has_workflow_url': bool(s.workflow_url),
         'download_base_url': s.download_base_url,
-        'delivery_configured': bool(s.workflow_url) if s.delivery_method=='workflow' else s.is_configured,
+        'delivery_configured': bool(s.workflow_url) if s.delivery_method=='workflow' else smtp_ready,
         'host': s.host,
         'port': s.port,
         'username': s.username,
@@ -1953,7 +1966,7 @@ def email_smtp_get(request):
         'use_ssl': s.use_ssl,
         'use_tls': s.use_tls,
         'has_password': bool(s.password),
-        'is_configured': s.is_configured,
+        'is_configured': smtp_ready,
     })
 
 
@@ -1971,6 +1984,10 @@ def email_smtp_save(request):
         return JsonResponse({'success': False, 'message': '无权限'}, status=403)
 
     s = EmailSmtpSetting.get_solo()
+    profile=s.default_profile
+    shared_fields=('delivery_method','workflow_url','download_base_url','host','port','username','password','use_ssl','use_tls','from_email')
+    if profile:
+        for key in shared_fields:setattr(s,key,getattr(profile,key))
     from core.mail_delivery import validate_workflow_url, validate_download_base
     from django.core.exceptions import ValidationError
     method=request.POST.get('delivery_method',s.delivery_method)
@@ -2003,6 +2020,10 @@ def email_smtp_save(request):
         s.use_tls = encryption == 'tls'
         s.from_email = (request.POST.get('from_email') or '').strip()
     s.save()
+    if profile:
+        for key in shared_fields:setattr(profile,key,getattr(s,key))
+        if profile.host:profile.use_environment=False
+        profile.save()
     return JsonResponse({
         'success': True,
         'message': '邮件发送设置已保存',

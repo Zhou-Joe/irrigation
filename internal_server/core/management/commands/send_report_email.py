@@ -119,13 +119,10 @@ class Command(BaseCommand):
         import uuid
         dry=options['dry_run'];force_id=options['config_id']
         if not dry:purge_expired_files()
-        if not dry and not is_configured():
-            self.stdout.write('邮件发送方式未配置，未发送邮件。')
-            return
         now=timezone.localtime();today=now.date()
         configs=EmailReportConfig.objects.filter(pk=force_id) if force_id else EmailReportConfig.objects.filter(is_active=True)
         totals={'sent':0,'submitted':0,'failed':0,'skipped':0,'partial':0}
-        for cfg in configs.order_by('frequency','name'):
+        for cfg in configs.select_related('delivery_profile').order_by('frequency','name'):
             if not force_id and not _is_due_now(cfg,now):
                 totals['skipped']+=1;continue
             dispatch=None
@@ -137,6 +134,7 @@ class Command(BaseCommand):
                 except IntegrityError:
                     totals['skipped']+=1;continue
             try:
+                if not dry and not is_configured(cfg.delivery_profile):raise ValueError('所选发送配置尚未完善')
                 recipients=cfg.recipient_list
                 if not recipients:raise ValueError('无有效收件人')
                 types=cfg.effective_report_types()
@@ -150,11 +148,11 @@ class Command(BaseCommand):
                 if dry:
                     self.stdout.write(f'[dry] {cfg.name}: {len(built)} 附件，{len(failures)} 失败')
                     continue
-                delivery=send_report(subject,body,recipients,[(filename,buffer.getvalue(),XLSX_CT) for filename,buffer,label in built])
+                delivery=send_report(subject,body,recipients,[(filename,buffer.getvalue(),XLSX_CT) for filename,buffer,label in built],profile=cfg.delivery_profile)
                 accepted=delivery['status']=='accepted'
                 state=('partial_accepted' if failures else 'accepted') if accepted else ('partial_success' if failures else 'success')
                 self._record(cfg,state+('：'+'；'.join(failures) if failures else ''),False)
-                EmailDispatch.objects.filter(pk=dispatch.pk).update(status=state,details={'attachments':[x[0] for x in built],'failures':failures,'delivery_method':delivery['method']},updated_at=timezone.now())
+                EmailDispatch.objects.filter(pk=dispatch.pk).update(status=state,details={'attachments':[x[0] for x in built],'failures':failures,'delivery_method':delivery['method'],'delivery_profile_id':cfg.delivery_profile_id},updated_at=timezone.now())
                 totals['partial' if failures else 'submitted' if accepted else 'sent']+=1
             except Exception as exc:
                 # Isolate configuration errors, including bad format strings.
