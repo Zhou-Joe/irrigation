@@ -563,6 +563,10 @@
             </div>
 
             <div class="form-group">
+                <label for="registrationEmail">邮箱{% if registration_email_required %} *{% else %}（用于找回密码，选填）{% endif %}</label>
+                <div class="input-wrapper"><input type="email" id="registrationEmail" name="email" autocomplete="email" placeholder="请输入邮箱" value="{{ request.POST.email|default:'' }}" {% if registration_email_required %}required{% endif %}></div>
+            </div>
+            <div class="form-group">
                 <label for="phone">手机号 *</label>
                 <div class="input-wrapper">
                     <input type="tel" id="phone" name="phone" placeholder="请输入手机号" required>
@@ -625,7 +629,7 @@
             </button>
         </form>
 
-        <div class="footer-links">
+        <div class="footer-links">{% if registration_email_required %}<a href="{% url 'core:account_registration_resend' %}">未收到确认邮件？重发</a>{% endif %}
             <a href="{% url 'core:login' %}">已有账户？登录</a>
         </div>
 

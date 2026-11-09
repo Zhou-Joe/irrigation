@@ -28,6 +28,8 @@ def approve(registration_id, actor):
             if not RegistrationRequest.objects.filter(pk=registration_id, status='pending').update(processed_at=timezone.now()):
                 raise ValueError('注册申请已处理或不存在')
             reg=RegistrationRequest.objects.get(pk=registration_id)
+            if reg.email_confirmation_required and not reg.email_verified_at:
+                raise ValueError('该申请尚未完成邮箱确认，暂不能批准')
             role_map={'manager':(ManagerProfile,'ADM'),'dept_user':(DepartmentUserProfile,'DEPT'),'field_worker':(Worker,'EMP')}
             model,prefix=role_map[reg.requested_role]
             if User.objects.filter(username=reg.username).exists():
@@ -39,7 +41,7 @@ def approve(registration_id, actor):
                 employee=f'{prefix}{max(numbers,default=0)+1:03d}'
             if any(m.objects.filter(employee_id=employee).exists() for m in (Worker,ManagerProfile,DepartmentUserProfile)):
                 raise ValueError('工号已存在，请修改注册申请中的工号')
-            user=User.objects.create(username=reg.username,password=reg.password,first_name=reg.full_name)
+            user=User.objects.create(username=reg.username,password=reg.password,first_name=reg.full_name,email=reg.email)
             fields=dict(user=user,employee_id=employee,full_name=reg.full_name,phone=reg.phone)
             if model is not ManagerProfile:
                 fields.update(department=reg.department or ('ENT' if model is DepartmentUserProfile else ''),

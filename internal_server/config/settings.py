@@ -222,3 +222,7 @@ EMAIL_USE_TLS = os.environ.get('EMAIL_USE_TLS', 'False').lower() in ('true', '1'
 EMAIL_TIMEOUT = int(os.environ.get('EMAIL_TIMEOUT', '30'))
 DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', EMAIL_HOST_USER or 'noreply@maxicom.local')
 
+
+# Optional deployment override; normally captured automatically from the public app.
+EMAIL_REPORT_PUBLIC_BASE_URL = os.environ.get('EMAIL_REPORT_PUBLIC_BASE_URL', '').strip()
+PASSWORD_RESET_TIMEOUT = 3600

@@ -757,6 +757,9 @@ class RegistrationRequest(models.Model):
         (STATUS_REJECTED, '已拒绝'),
     ]
 
+    email = models.EmailField('邮箱', blank=True)
+    email_confirmation_required = models.BooleanField(default=False)
+    email_verified_at = models.DateTimeField(null=True, blank=True)
     full_name = models.CharField(max_length=255)
     phone = models.CharField(max_length=20)
     username = models.CharField(max_length=150, unique=True, blank=True, null=True, help_text='登录用户名')
@@ -2909,6 +2912,16 @@ class EmailSmtpSetting(models.Model):
         return bool(self.host)
 
 
+
+
+class AccountEmailSetting(models.Model):
+    registration_profile = models.ForeignKey(EmailDeliveryProfile,on_delete=models.PROTECT,null=True,blank=True,related_name='+')
+    password_reset_profile = models.ForeignKey(EmailDeliveryProfile,on_delete=models.PROTECT,null=True,blank=True,related_name='+')
+    updated_at = models.DateTimeField(auto_now=True)
+
+    @classmethod
+    def get_solo(cls):
+        return cls.objects.get_or_create(pk=1)[0]
 
 
 class EmailReportFile(models.Model):

@@ -36,6 +36,24 @@ def validate_download_base(value):
         raise ValidationError('下载站点请填写 HTTPS 网站地址，不包含查询参数。')
 
 
+def public_download_base(request=None):
+    """System-owned public origin, shared by cron and interactive account/report mail."""
+    configured=getattr(settings,'EMAIL_REPORT_PUBLIC_BASE_URL','').strip()
+    if configured:
+        validate_download_base(configured);return configured.rstrip('/')
+    if request is not None:
+        import ipaddress
+        host=request.get_host();hostname=(urlsplit('https://'+host).hostname or '').lower()
+        try:public=ipaddress.ip_address(hostname).is_global
+        except ValueError:public='.' in hostname and not hostname.endswith(('.localhost','.local'))
+        if public:return 'https://'+host
+    stored=EmailSmtpSetting.get_solo().download_base_url
+    if stored:
+        try:validate_download_base(stored);return stored.rstrip('/')
+        except ValidationError:pass
+    return 'https://irrigation.zctestbench.asia'
+
+
 def resolve_profile(profile=None):
     if profile is not None:return profile
     legacy=EmailSmtpSetting.get_solo()
@@ -80,7 +98,7 @@ def _download_link(filename,content,base):
     return base.rstrip('/')+reverse('core:email_report_download',args=[record.pk,token])
 
 
-def send_report(subject,body,recipients,attachments,*,profile=None):
+def send_report(subject,body,recipients,attachments,*,profile=None,html_body=None):
     """attachments: iterable of (filename, bytes, MIME type). No automatic send retries."""
     setting=resolve_profile(profile)
     recipients=list(dict.fromkeys(value.strip() for value in recipients if value.strip()))
@@ -96,19 +114,22 @@ def send_report(subject,body,recipients,attachments,*,profile=None):
             connection=get_connection() if setting.use_environment else get_connection(host=setting.host,port=setting.port,username=setting.username or None,password=setting.password or None,use_ssl=setting.use_ssl,use_tls=setting.use_tls,timeout=getattr(settings,'EMAIL_TIMEOUT',30))
             sender=(getattr(settings,'DEFAULT_FROM_EMAIL','') if setting.use_environment else setting.from_email or setting.username or getattr(settings,'DEFAULT_FROM_EMAIL',''))
         else:connection=get_email_connection();sender=resolve_from_email()
-        message=EmailMessage(subject=subject,body=body,from_email=sender,to=recipients,connection=connection)
+        if html_body is not None:
+            from django.core.mail import EmailMultiAlternatives
+            message=EmailMultiAlternatives(subject=subject,body=body,from_email=sender,to=recipients,connection=connection);message.attach_alternative(html_body,'text/html')
+        else:message=EmailMessage(subject=subject,body=body,from_email=sender,to=recipients,connection=connection)
         for filename,content,mime in attachments:message.attach(filename,content,mime)
         if message.send(fail_silently=False)!=1:raise ValueError('邮件未确认发送成功')
         return {'method':'smtp','status':'sent','message':'邮件已发送'}
     if not setting.workflow_url:raise ValueError('请先配置 Microsoft 365 Workflow HTTP 链接')
     validate_workflow_url(setting.workflow_url)
-    base=setting.download_base_url or getattr(settings,'EMAIL_REPORT_PUBLIC_BASE_URL','https://irrigation.zctestbench.asia')
+    base=public_download_base()
     validate_download_base(base);purge_expired_files()
     links=[]
     for filename,content,mime in attachments:
         url=_download_link(filename,content,base)
         links.append(str(format_html('<li style="margin:10px 0"><a href="{}">{}</a> <span style="color:#607269">({} KB)</span></li>',url,filename,max(1,round(len(content)/1024)))))
-    text=escape(body.replace('请见附件','请使用下方报表下载链接')).replace('\n','<br>')
+    text=html_body if html_body is not None else escape(body.replace('请见附件','请使用下方报表下载链接')).replace('\n','<br>')
     html='<div style="font:14px/1.7 Arial,sans-serif;color:#243d30">'+text
     if links:html+='<h3 style="margin-top:24px">报表下载</h3><ul>'+''.join(links)+'</ul><p style="color:#607269">下载链接自发送起 7 天内有效。</p>'
     html+='</div>'
