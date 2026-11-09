@@ -9,7 +9,7 @@ from django.shortcuts import get_object_or_404
 from django.views.decorators.http import require_GET, require_POST
 
 from .models import EmailDeliveryProfile, EmailSmtpSetting
-from .mail_delivery import is_configured, validate_workflow_url, validate_download_base
+from .mail_delivery import is_configured, validate_workflow_url, public_download_base
 
 
 def permitted(request):
@@ -22,7 +22,7 @@ def serialize(profile,default_id):
         'host':profile.host,'port':profile.port,'username':profile.username,'from_email':profile.from_email,
         'use_ssl':profile.use_ssl,'use_tls':profile.use_tls,'use_environment':profile.use_environment,
         'has_password':bool(profile.password),'has_workflow_url':bool(profile.workflow_url),
-        'download_base_url':profile.download_base_url,'is_default':profile.pk==default_id,
+        'is_default':profile.pk==default_id,
         'is_configured':is_configured(profile)}
 
 
@@ -51,8 +51,7 @@ def save(request):
             profile.workflow_url=(request.POST.get('workflow_url') or '').strip() or profile.workflow_url
             if not profile.workflow_url:raise ValidationError('请填写 Workflow HTTP 链接。')
             validate_workflow_url(profile.workflow_url)
-            profile.download_base_url=(request.POST.get('download_base_url') or '').strip()
-            if profile.download_base_url:validate_download_base(profile.download_base_url)
+            profile.download_base_url=''
         else:
             profile.host=(request.POST.get('host') or '').strip()
             if not profile.host and not profile.use_environment:raise ValidationError('请填写 SMTP 服务器。')
@@ -70,8 +69,10 @@ def save(request):
         with transaction.atomic():
             profile.save()
             setting=EmailSmtpSetting.get_solo()
+            setting.download_base_url=public_download_base(request)
             if request.POST.get('set_default')=='1' or not setting.default_profile_id:
-                setting.default_profile=profile;setting.save(update_fields=['default_profile'])
+                setting.default_profile=profile
+            setting.save(update_fields=['default_profile','download_base_url'])
         return JsonResponse({'success':True,'message':'发送配置已保存','profile':serialize(profile,setting.default_profile_id)})
     except (ValidationError,ValueError) as error:
         message='；'.join(error.messages) if isinstance(error,ValidationError) else '请检查端口和链接格式。'
@@ -86,5 +87,5 @@ def delete(request,pk):
     profile=get_object_or_404(EmailDeliveryProfile,pk=pk)
     try:profile.delete()
     except ProtectedError:
-        return JsonResponse({'success':False,'message':'该配置是默认配置或正被报表使用，请先改选其他配置。'},status=409)
+        return JsonResponse({'success':False,'message':'该配置是默认配置，或被报表、账户邮件使用，请先改选其他配置。'},status=409)
     return JsonResponse({'success':True,'message':'发送配置已删除'})

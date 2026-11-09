@@ -89,6 +89,7 @@
             <svg class="ui-icon auth-submit-arrow" aria-hidden="true" focusable="false"><use href="#pwa-arrow"/></svg>
           </button>
         </form>
+        <div class="auth-register"><a href="{% url 'core:account_password_request' %}">忘记密码？</a></div>
         <div class="auth-register">{% if multi_team_login %}需要加入团队？请联系团队管理员。{% else %}还没有账号？<a href="{% url 'core:register' %}">申请加入<svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-arrow"/></svg></a>{% endif %}</div>
       </section>
     </div>

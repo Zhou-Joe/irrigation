@@ -352,7 +352,7 @@
         <div class="request-card {{ request.status }}">
             <div class="request-header">
                 <div class="request-info">
-                    <h3>{{ request.full_name }}</h3>
+                    <h3>{{ request.full_name }}</h3>{% if request.email %}<p>{{ request.email }}{% if request.email_verified_at %} · 邮箱已确认{% elif request.email_confirmation_required %} · 等待邮箱确认{% endif %}</p>{% endif %}
                     <div class="meta">
                         <span class="role-badge {{ request.requested_role }}">{{ request.get_requested_role_display }}</span>
                         {% if request.department %}

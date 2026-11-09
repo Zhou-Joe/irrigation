@@ -1,0 +1,26 @@
+{% extends 'core/base.html' %}{% load static %}
+{% block title %}{{ title }} · FOS{% endblock %}
+{% block extra_ui_css %}<link rel="stylesheet" href="{% static 'css/auth.css' %}?v=20261024auth4"><style>
+.account-mail-card input{width:100%;box-sizing:border-box;padding:11px 12px;border:1px solid #d4dfd7;border-radius:10px;background:#fff;font:inherit;color:#244534}.account-mail-card .errorlist{color:#a43232;font-size:12px;padding-left:18px}.account-mail-card .helptext{display:block;color:#64796c;font-size:12px;margin:6px 0}.account-mail-card .helptext ul{padding-left:18px}.account-mail-note{font-size:14px;line-height:1.6;color:#607269}.account-mail-result{font-size:14px;line-height:1.6;color:#24643e}.account-mail-result.error{color:#a43232}
+</style>{% endblock %}
+{% block content %}
+<main class="auth-shell"><div class="auth-scene" aria-hidden="true"><div class="auth-light auth-light-one"></div><div class="auth-light auth-light-two"></div></div><div class="auth-content"><div class="auth-layout">
+  <section class="auth-story"><div class="auth-brand"><img src="{% static 'pwa/brand.svg' %}" width="128" height="128" alt=""><div class="auth-brand-name"><strong>FOS 现场作业</strong><span class="auth-brand-subtitle">FOS · Horticulture</span><span class="auth-brand-version">v2.0</span></div></div></section>
+  <section class="auth-card account-mail-card"><div class="auth-card-heading"><h1>{{ title }}</h1></div>
+  {% if mode == 'confirm' and not validlink %}<p class="account-mail-note">重置链接无效或已过期，请重新申请。</p><a href="{% url 'core:account_password_request' %}">重新申请重置密码</a>
+  {% else %}
+    {% if note %}<p class="account-mail-note">{{ note }}</p>{% endif %}
+    {% if form or mode == 'verify' %}
+    <form method="post" {% if mode == 'request' %}data-account-mail-request{% endif %}>{% csrf_token %}{{ form.non_field_errors }}
+      {% for field in form %}<div class="auth-field">{{ field.label_tag }}{{ field }}{{ field.errors }}{% if field.help_text %}<small class="helptext">{{ field.help_text|safe }}</small>{% endif %}</div>{% endfor %}
+      <button class="auth-submit" type="submit">{% if mode == 'verify' %}确认邮箱{% elif mode == 'confirm' %}保存新密码{% else %}发送邮件{% endif %}</button>
+    </form><p class="account-mail-result" data-account-mail-result role="status" aria-live="polite"></p>
+    {% endif %}
+    {% if resend %}<a href="{% url 'core:account_registration_resend' %}">重发确认邮件</a>{% endif %}
+  {% endif %}
+  <div class="auth-register"><a href="{% url 'core:login' %}">返回登录</a></div></section>
+</div></div></main>
+{% endblock %}
+{% block extra_js %}<script>
+(function(){const form=document.querySelector('[data-account-mail-request]');if(!form)return;form.onsubmit=async function(event){event.preventDefault();const button=form.querySelector('button[type=submit]'),data=new FormData(form),result=document.querySelector('[data-account-mail-result]');if(button.disabled)return;button.disabled=true;button.textContent='正在提交…';try{const response=await fetch(location.href,{method:'POST',body:data,credentials:'same-origin',headers:{'X-Requested-With':'XMLHttpRequest'}}),value=await response.json();result.textContent=value.message;result.classList.toggle('error',!value.success);if(value.success)form.hidden=true;}catch(_){result.textContent='请求未完成，请稍后重试。';result.classList.add('error');}finally{button.disabled=false;button.textContent='发送邮件';}};})();
+</script>{% endblock %}

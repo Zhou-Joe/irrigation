@@ -10,6 +10,7 @@ from django.db.models import Count, Q, Avg, Sum, F, Max
 from django.db.models.functions import Coalesce
 from django.views.decorators.http import require_POST
 from django.views.decorators.csrf import ensure_csrf_cookie
+from django.views.decorators.debug import sensitive_post_parameters
 from django.http import HttpResponse, JsonResponse
 from django.urls import reverse
 from django.utils import timezone
@@ -1988,13 +1989,13 @@ def email_smtp_save(request):
     shared_fields=('delivery_method','workflow_url','download_base_url','host','port','username','password','use_ssl','use_tls','from_email')
     if profile:
         for key in shared_fields:setattr(s,key,getattr(profile,key))
-    from core.mail_delivery import validate_workflow_url, validate_download_base
+    from core.mail_delivery import validate_workflow_url, validate_download_base, public_download_base
     from django.core.exceptions import ValidationError
     method=request.POST.get('delivery_method',s.delivery_method)
     if method not in ('smtp','workflow'):
         return JsonResponse({'success':False,'message':'发送方式无效'},status=400)
     workflow=(request.POST.get('workflow_url') or '').strip() or s.workflow_url
-    base=(request.POST.get('download_base_url',s.download_base_url) or '').strip()
+    base=public_download_base(request)
     try:
         if workflow:validate_workflow_url(workflow)
         if base:validate_download_base(base)
@@ -6022,6 +6023,7 @@ def equipment_catalog_autocomplete(request):
 
 
 # (removed: requests_page, request_detail, update_request_status — legacy request-approval views)
+@sensitive_post_parameters('password')
 def register(request):
     """
     User registration page - submit request for admin approval.
@@ -6035,7 +6037,18 @@ def register(request):
     from django.contrib.auth.hashers import make_password
     from django.contrib.auth.models import User
 
+    from core.models import AccountEmailSetting
+    from django.core.validators import validate_email
+    from django.core.exceptions import ValidationError
+    mail_setting=AccountEmailSetting.get_solo()
+    email_required=bool(mail_setting.registration_profile_id)
     if request.method == 'POST':
+        email=request.POST.get('email','').strip()
+        email_error=''
+        if email:
+            try:validate_email(email)
+            except ValidationError:email_error='请填写有效邮箱'
+        elif email_required:email_error='请填写用于注册确认的邮箱'
         full_name = request.POST.get('full_name', '').strip()
         username = request.POST.get('username', '').strip()
         password = request.POST.get('password', '').strip()
@@ -6058,7 +6071,9 @@ def register(request):
         valid_roles = [ROLE_FIELD_WORKER, ROLE_DEPT_USER, ROLE_MANAGER]
 
         # Validation
-        if not full_name:
+        if email_error:
+            messages.error(request,email_error)
+        elif not full_name:
             messages.error(request, '请输入姓名')
         elif not username:
             messages.error(request, '请输入用户名')
@@ -6090,7 +6105,8 @@ def register(request):
                 department = ''
                 department_other = ''
 
-            RegistrationRequest.objects.create(
+            reg=RegistrationRequest.objects.create(
+                email=email,email_confirmation_required=email_required,
                 full_name=full_name,
                 username=username,
                 password=make_password(password),  # Hash the password
@@ -6100,10 +6116,14 @@ def register(request):
                 department_other=department_other if department == '其他' else '',
                 requested_role=requested_role,
             )
-            messages.success(request, '注册申请已提交，请等待管理员审批')
+            if email_required:
+                from core.account_mail import send_registration
+                transaction.on_commit(lambda:send_registration(request,reg,mail_setting.registration_profile_id))
+                messages.success(request,'注册申请已保存，请查收邮件并确认邮箱，之后等待管理员审批。未收到可使用下方重发入口。')
+            else:messages.success(request, '注册申请已提交，请等待管理员审批')
             return redirect('core:register')
 
-    return render(request, 'core/register.html')
+    return render(request, 'core/register.html',{'registration_email_required':email_required})
 
 
 @login_required(login_url='core:login')

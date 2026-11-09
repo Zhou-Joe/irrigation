@@ -1,6 +1,8 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from core import dxf_views, views
+from core import account_mail
+from django.views.generic import TemplateView
 from core import mail_profile_views
 from core import mail_delivery
 from core import pwa
@@ -64,6 +66,13 @@ urlpatterns = [
     path('profile/', views.profile_page, name='profile'),
     path('api-docs/', views.api_docs_page, name='api_docs'),
     path('register/', views.register, name='register'),
+    path('account-mail/settings/',account_mail.settings_view,name='account_email_settings'),
+    path('account-mail/forgot-password/',account_mail.password_request,name='account_password_request'),
+    path('account-mail/password/sent/',TemplateView.as_view(template_name='core/account_mail.html',extra_context={'title':'请查收邮件','note':'如该邮箱对应有效账号，重置邮件将发送至邮箱。'}),name='account_password_sent'),
+    path('account-mail/password/complete/',TemplateView.as_view(template_name='core/account_mail.html',extra_context={'title':'密码已更新','note':'请使用新密码登录。'}),name='account_password_complete'),
+    path('account-mail/password/<uidb64>/<token>/',account_mail.ResetConfirmView.as_view(),name='account_password_confirm'),
+    path('account-mail/resend-confirmation/',account_mail.resend_confirmation,name='account_registration_resend'),
+    path('account-mail/verify/<str:token>/',account_mail.verify_registration,name='account_registration_verify'),
     path('registration-approval/', views.registration_approval, name='registration_approval'),
     path('user-management/', views.user_management, name='user_management'),
     path('user-management/<str:profile_type>/<int:profile_id>/edit/', views.user_edit, name='user_edit'),

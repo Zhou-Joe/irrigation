@@ -418,6 +418,21 @@
 .toast.show { opacity: 1; }
 .toast.success { background: var(--color-success); }
 .toast.error { background: var(--color-error); }
+
+#smtpModal{z-index:4100;padding:max(12px,env(safe-area-inset-top)) 12px max(12px,env(safe-area-inset-bottom));background:#102e234d;backdrop-filter:blur(3px)}
+#smtpModal .mail-profile-dialog{display:flex;flex-direction:column;width:100%;max-width:570px;max-height:calc(100dvh - 32px);padding:0;border:1px solid #dce5df;border-radius:18px;background:#fff;box-shadow:0 20px 70px #102d2330;overflow:hidden;font:14px/1.5 var(--font-body,system-ui,sans-serif)}
+#smtpModal .mail-profile-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:20px 22px 16px;border-bottom:1px solid #e8eee9;background:#f8faf8}
+#smtpModal h3{margin:0;color:#204b36;font-size:18px;font-weight:650}#smtpModal .mail-profile-head p{margin:5px 0 0;color:#6b7c71;font-size:12px}
+#smtpModal .mail-profile-close{display:grid;place-items:center;flex:0 0 32px;width:32px;height:32px;border:0;border-radius:8px;background:transparent;color:#65776b;cursor:pointer}#smtpModal .mail-profile-close:hover{background:#e7eee8}
+#smtpForm{display:flex;flex-direction:column;min-height:0;overflow:hidden}#smtpModal .mail-profile-body{padding:18px 22px;overflow:auto;min-height:0}#smtpModal .am-field{margin:0 0 14px}#smtpModal .am-field>label,#smtpModal .mail-profile-label{display:block;color:#344e3d;font-size:12px;font-weight:600;margin-bottom:6px}#smtpModal label span{font-weight:400;color:#718276}
+#smtpModal .am-field input{min-height:40px;padding:9px 11px;font-size:14px;border:1px solid #d6e0d8;border-radius:9px}#smtpModal .am-field input:focus{outline:2px solid #bdd7c5;outline-offset:1px;border-color:#7fa98b}#smtpModal .am-field small{display:block;color:#78877c;font-size:11px;margin-top:5px}
+#smtpModal .mail-methods{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:18px}#smtpModal .mail-methods button{display:flex;align-items:center;gap:10px;padding:12px;border:1px solid #dce5de;border-radius:11px;background:#fff;color:#607668;text-align:left;cursor:pointer;font:inherit}#smtpModal .mail-methods button[aria-pressed=true]{border-color:#3d7a52;background:#edf5ef;color:#245238;box-shadow:inset 0 0 0 1px #3d7a52}#smtpModal .mail-methods svg{width:24px;height:24px;flex:0 0 24px}#smtpModal .mail-methods strong{display:block;font-size:13px;font-weight:600}#smtpModal .mail-methods small{display:block;margin-top:2px;font-size:11px;color:#718276}
+#smtpModal .mail-host-grid{display:grid;grid-template-columns:minmax(0,1fr) 100px;gap:12px}#smtpModal .mail-profile-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}#smtpModal .mail-security{display:flex;gap:8px}#smtpModal .mail-security label{display:flex;align-items:center;justify-content:center;gap:6px;flex:1;margin:0;padding:8px;border:1px solid #dce5de;border-radius:8px;font-size:12px}#smtpModal .mail-security input,#smtpModal .mail-profile-default input{width:15px;min-width:15px;height:15px;min-height:15px;margin:0;accent-color:#2d6a4f}
+#smtpModal .mail-profile-note{padding:11px 12px;margin-bottom:16px;border-radius:9px;background:#f1f6f2;color:#607267;font-size:12px;line-height:1.65}#smtpModal .mail-profile-default{display:flex;align-items:flex-start;gap:9px;padding:12px;margin:0;border:1px solid #e3eae4;border-radius:10px;background:#fafbf9}#smtpModal .mail-profile-default input{margin-top:3px}#smtpModal .mail-profile-default span{color:#344e3d;font-size:13px}#smtpModal .mail-profile-default small{display:block;font-size:11px;color:#7a887f;margin-top:3px}
+#smtpModal .mail-profile-footer{display:flex;justify-content:flex-end;gap:9px;flex:0 0 auto;padding:14px 22px;border-top:1px solid #e8eee9;background:#fff}#smtpModal .mail-profile-footer button{min-height:38px;padding:8px 18px;border-radius:9px;font:inherit}#smtpModal [hidden]{display:none!important}
+.account-mail-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.account-mail-grid label{display:block;font-size:13px;color:#344e3d}.account-mail-grid select{display:block;width:100%;box-sizing:border-box;margin-top:6px;padding:9px 10px;border:1px solid #d6e0d8;border-radius:9px;background:#fff;font:inherit}
+@media(max-width:480px){#smtpModal .mail-profile-dialog{max-height:calc(100dvh - 24px);border-radius:14px}#smtpModal .mail-profile-head{padding:16px}#smtpModal .mail-profile-body{padding:16px}#smtpModal .mail-profile-footer{padding:12px 16px}#smtpModal .mail-profile-grid,.account-mail-grid{grid-template-columns:1fr}#smtpModal .mail-methods{gap:7px}#smtpModal .mail-methods button{padding:10px 8px;gap:7px}#smtpModal .mail-methods svg{width:20px;height:20px;flex-basis:20px}}
+
 </style>
 {% endblock %}
 
@@ -457,6 +472,7 @@
 
     <!-- Tab 1: User List -->
     <div id="tab-users" class="app-tab-content {% if active_tab == 'users' %}active{% endif %}">
+      <section class="am-card"><h2>账户邮件</h2><p class="am-row-meta" style="margin-bottom:14px">为注册邮箱确认、忘记密码分别选择已保存的发送配置。注册确认后仍需管理员审批。</p><div class="account-mail-grid"><label>注册邮箱确认<select id="accountRegistrationProfile"></select></label><label>密码重置邮件<select id="accountPasswordProfile"></select></label></div><div style="display:flex;align-items:center;gap:12px;margin-top:14px"><button type="button" class="btn btn-primary" id="accountMailSave" onclick="saveAccountMailSettings()">保存账户邮件设置</button><span id="accountMailStatus" role="status" style="font-size:12px;color:#607269"></span></div></section>
         <div class="stats-bar">
             <div class="stat-card">
                 <div class="stat-number">{{ total_users }}</div>
@@ -551,7 +567,7 @@
             <div class="request-card {{ req.status }}">
                 <div class="request-header">
                     <div class="request-info">
-                        <h3>{{ req.full_name }}</h3>
+                        <h3>{{ req.full_name }}</h3>{% if req.email %}<div class="am-row-meta">{{ req.email }}{% if req.email_verified_at %} · 邮箱已确认{% elif req.email_confirmation_required %} · 等待邮箱确认{% endif %}</div>{% endif %}
                         <div class="meta">
                             <span class="role-badge {{ req.requested_role }}">{{ req.get_requested_role_display }}</span>
                             {% if req.department %}
@@ -736,56 +752,34 @@
       </div>
     </div>
 
-    <!-- SMTP settings modal -->
     <div class="modal-overlay" id="smtpModal">
-      <div class="modal" style="max-width:520px;">
-        <h3 id="smtpModalTitle">新增发送配置</h3>
-        <p style="font-size:0.78rem;color:var(--color-text-muted);margin:0 0 14px;">
-          常见：QQ邮箱 <code>smtp.qq.com:465</code>（SSL），163邮箱 <code>smtp.163.com:465</code>（SSL），Gmail <code>smtp.gmail.com:587</code>（TLS）。密码框留空表示不修改原密码。
-        </p>
+      <section class="modal mail-profile-dialog" role="dialog" aria-modal="true" aria-labelledby="smtpModalTitle">
+        <header class="mail-profile-head"><div><h3 id="smtpModalTitle">新增发送配置</h3><p>保存后，可在报表和账户邮件中选择使用。</p></div><button type="button" class="mail-profile-close" onclick="closeModal('smtpModal')" aria-label="关闭"><svg class="ui-icon"><use href="#pwa-close"/></svg></button></header>
         <form id="smtpForm" class="am-form" onsubmit="return false;">
-          <input type="hidden" id="smtpProfileId"><div class="am-field"><label>配置名称 *</label><input id="smtpProfileName" required maxlength="100" placeholder="如：公司 M365、项目 QQ 邮箱"></div>
-          <div class="am-field"><label>发送方式</label><select id="mailDeliveryMethod" onchange="toggleMailDeliveryFields()"><option value="smtp">SMTP（邮件附件）</option><option value="workflow">Microsoft 365 Workflow（正文下载链接）</option></select></div>
-          <div id="workflowFields" hidden>
-            <div class="am-field"><label>Workflow HTTP 链接</label><input id="mailWorkflowUrl" type="password" autocomplete="new-password" placeholder="粘贴 HTTP 触发器链接；留空保留已设置链接"></div>
-            <div class="am-field"><label>报表下载站点（可选）</label><input id="mailDownloadBase" type="url" placeholder="https://irrigation.zctestbench.asia"></div>
-            <p style="font-size:12px;color:var(--color-text-muted)">Workflow 接收 JSON：t = 收件人，s = 主题，b = HTML 正文。正文列出全部报表下载链接，有效期 7 天。Workflow 无需配置附件。</p>
+          <div class="mail-profile-body">
+            <input type="hidden" id="smtpProfileId">
+            <div class="am-field"><label for="smtpProfileName">配置名称</label><input id="smtpProfileName" required maxlength="100" placeholder="如：公司 M365、项目邮箱"></div>
+            <label class="mail-profile-label">发送方式</label>
+            <div class="mail-methods">
+              <button type="button" data-mail-method="smtp" aria-pressed="true" onclick="selectMailDelivery('smtp')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="m4 7 8 6 8-6"/></svg><span><strong>SMTP</strong><small>邮箱直发 · 文件附件</small></span></button>
+              <button type="button" data-mail-method="workflow" aria-pressed="false" onclick="selectMailDelivery('workflow')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="2" y="3" width="7" height="6" rx="2"/><rect x="15" y="15" width="7" height="6" rx="2"/><path d="M6 9v7a2 2 0 0 0 2 2h7M9 6h7a2 2 0 0 1 2 2v7"/></svg><span><strong>Microsoft 365</strong><small>Workflow · 下载链接</small></span></button>
+            </div>
+            <select id="mailDeliveryMethod" hidden aria-label="发送方式"><option value="smtp">SMTP</option><option value="workflow">Workflow</option></select>
+            <div id="workflowFields" hidden>
+              <div class="am-field"><label for="mailWorkflowUrl">Workflow HTTP 链接</label><input id="mailWorkflowUrl" type="password" autocomplete="new-password" placeholder="粘贴 HTTP 触发链接"><small>已设置的链接可留空保留。</small></div>
+              <div class="mail-profile-note">参数固定为 <code>t</code> 收件人、<code>s</code> 主题、<code>b</code> 正文。报表下载链接由系统自动生成，7 天内有效。</div>
+            </div>
+            <div id="smtpFields">
+              <div class="mail-host-grid"><div class="am-field"><label for="smtpHost">SMTP 服务器</label><input type="text" id="smtpHost" placeholder="smtp.qq.com" maxlength="200"></div><div class="am-field"><label for="smtpPort">端口</label><input type="number" id="smtpPort" value="465" min="1" max="65535"></div></div>
+              <div class="mail-profile-grid"><div class="am-field"><label for="smtpUsername">邮箱账号</label><input type="text" id="smtpUsername" placeholder="发件邮箱" maxlength="200"></div><div class="am-field"><label for="smtpPassword">密码 / 授权码</label><input type="password" id="smtpPassword" placeholder="邮箱授权码" autocomplete="new-password"></div></div>
+              <div class="am-field"><label>加密方式</label><div class="mail-security"><label><input type="radio" name="smtpEncryption" value="ssl">SSL</label><label><input type="radio" name="smtpEncryption" value="tls">TLS</label><label><input type="radio" name="smtpEncryption" value="none">无加密</label></div></div>
+              <div class="am-field"><label for="smtpFromEmail">发件人地址 <span>选填</span></label><input type="text" id="smtpFromEmail" placeholder="留空使用邮箱账号" maxlength="200"></div>
+            </div>
+            <label class="mail-profile-default"><input type="checkbox" id="smtpProfileDefault"><span>设为默认配置<small>用于新建报表及 AI 临时邮件，不更换已有绑定。</small></span></label>
           </div>
-          <div id="smtpFields"><div class="am-field">
-            <label>SMTP 服务器</label>
-            <input type="text" id="smtpHost" placeholder="如 smtp.qq.com" maxlength="200">
-          </div>
-          <div class="am-field">
-            <label>端口</label>
-            <input type="number" id="smtpPort" value="465" placeholder="465">
-          </div>
-          <div class="am-field">
-            <label>账号</label>
-            <input type="text" id="smtpUsername" placeholder="发件邮箱地址" maxlength="200">
-          </div>
-          <div class="am-field">
-            <label>密码 / 授权码</label>
-            <input type="password" id="smtpPassword" placeholder="请输入密码或邮箱授权码" autocomplete="new-password">
-          </div>
-          <div class="am-field">
-            <label>加密方式</label>
-            <label style="margin:0;font-weight:normal;"><input type="radio" name="smtpEncryption" value="ssl"> SSL（465 常用）</label>
-            &nbsp;&nbsp;
-            <label style="margin:0;font-weight:normal;"><input type="radio" name="smtpEncryption" value="tls"> TLS（587 常用）</label>
-            &nbsp;&nbsp;
-            <label style="margin:0;font-weight:normal;"><input type="radio" name="smtpEncryption" value="none"> 无加密</label>
-          </div>
-          <div class="am-field">
-            <label>发件人地址（可选）</label>
-            <input type="text" id="smtpFromEmail" placeholder="留空则用账号邮箱" maxlength="200">
-          </div></div>
-          <label style="display:flex;align-items:center;gap:8px"><input type="checkbox" id="smtpProfileDefault">设为默认（新建报表及 AI 临时发送）</label>
-          <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px;">
-            <button type="button" class="btn btn-secondary" onclick="closeModal('smtpModal')">取消</button>
-            <button type="button" class="btn btn-primary" id="smtpSaveBtn" onclick="saveSmtp()">保存</button>
-          </div>
+          <footer class="mail-profile-footer"><button type="button" class="btn btn-secondary" onclick="closeModal('smtpModal')">取消</button><button type="button" class="btn btn-primary" id="smtpSaveBtn" onclick="saveSmtp()">保存配置</button></footer>
         </form>
-      </div>
+      </section>
     </div>
 
     <!-- Email config create/edit modal -->
@@ -1024,7 +1018,9 @@ function toggleMailDeliveryFields() {
     var workflow=document.getElementById('mailDeliveryMethod').value==='workflow';
     document.getElementById('workflowFields').hidden=!workflow;
     document.getElementById('smtpFields').hidden=workflow;
+    document.querySelectorAll('[data-mail-method]').forEach(function(button){button.setAttribute('aria-pressed',String(button.dataset.mailMethod===(workflow?'workflow':'smtp')));});
 }
+function selectMailDelivery(value){document.getElementById('mailDeliveryMethod').value=value;toggleMailDeliveryFields();}
 var _deliveryProfiles=[],_defaultDeliveryProfileId=null;
 function renderDeliveryProfiles() {
     var list=document.getElementById('deliveryProfileList');list.replaceChildren();
@@ -1046,8 +1042,14 @@ function refreshSmtpStatus() {
         _deliveryProfiles=d.profiles||[];_defaultDeliveryProfileId=d.default_profile_id;
         document.getElementById('smtpStatusDot').textContent=_deliveryProfiles.length+' 套';
         document.getElementById('smtpStatusSummary').textContent='预先保存多套发送配置，再为每条报表分别选择。修改默认配置不会更换已有报表的发送配置。';
-        renderDeliveryProfiles();return d;
+        renderDeliveryProfiles();refreshAccountMailSettings();return d;
     }).catch(function(error){showToast(error.message||'加载发送配置失败',true);return null;});
+}
+function refreshAccountMailSettings(){
+    fetch('/account-mail/settings/',{headers:{'X-Requested-With':'XMLHttpRequest'}}).then(function(r){return r.json();}).then(function(d){if(!d.success)return;[['accountRegistrationProfile',d.registration_profile_id],['accountPasswordProfile',d.password_reset_profile_id]].forEach(function(pair){var select=document.getElementById(pair[0]);select.replaceChildren();var off=document.createElement('option');off.value='';off.textContent='不启用';select.append(off);_deliveryProfiles.forEach(function(profile){var option=document.createElement('option');option.value=profile.id;option.textContent=profile.name+' · '+(profile.delivery_method==='workflow'?'M365 Workflow':'SMTP');select.append(option);});select.value=pair[1]?String(pair[1]):'';});}).catch(function(){document.getElementById('accountMailStatus').textContent='设置暂未加载，请稍后再试。';});
+}
+function saveAccountMailSettings(){
+    var button=document.getElementById('accountMailSave'),status=document.getElementById('accountMailStatus'),data=new FormData();data.append('registration_profile',document.getElementById('accountRegistrationProfile').value);data.append('password_reset_profile',document.getElementById('accountPasswordProfile').value);button.disabled=true;status.textContent='正在保存…';fetch('/account-mail/settings/',{method:'POST',credentials:'same-origin',headers:{'X-Requested-With':'XMLHttpRequest','X-CSRFToken':_emailCsrf()},body:data}).then(function(r){return r.json();}).then(function(d){status.textContent=d.message;}).catch(function(){status.textContent='保存失败，请重试。';}).finally(function(){button.disabled=false;});
 }
 function fillDeliveryChoices(selected) {
     var select=document.getElementById('ecDeliveryProfile');select.replaceChildren();
@@ -1063,7 +1065,6 @@ function openSmtpModal(id) {
         document.getElementById('smtpModalTitle').textContent=id?'编辑发送配置':'新增发送配置';
         document.getElementById('mailDeliveryMethod').value=p.delivery_method||'smtp';
         document.getElementById('mailWorkflowUrl').value='';document.getElementById('mailWorkflowUrl').placeholder=p.has_workflow_url?'已设置（留空保留）':'粘贴 Workflow HTTP 触发链接';
-        document.getElementById('mailDownloadBase').value=p.download_base_url||'';
         document.getElementById('smtpHost').value=p.host||'';document.getElementById('smtpHost').placeholder=p.use_environment?'留空沿用服务器设置':'如 smtp.qq.com';
         document.getElementById('smtpPort').value=p.port||465;document.getElementById('smtpUsername').value=p.username||'';
         document.getElementById('smtpFromEmail').value=p.from_email||'';document.getElementById('smtpPassword').value='';
@@ -1078,14 +1079,14 @@ function saveSmtp() {
     var btn=document.getElementById('smtpSaveBtn'),fd=new FormData();
     fd.append('id',document.getElementById('smtpProfileId').value);fd.append('name',document.getElementById('smtpProfileName').value);
     fd.append('delivery_method',document.getElementById('mailDeliveryMethod').value);fd.append('workflow_url',document.getElementById('mailWorkflowUrl').value);
-    fd.append('download_base_url',document.getElementById('mailDownloadBase').value);fd.append('host',document.getElementById('smtpHost').value);
+    fd.append('host',document.getElementById('smtpHost').value);
     fd.append('port',document.getElementById('smtpPort').value);fd.append('username',document.getElementById('smtpUsername').value);
     fd.append('password',document.getElementById('smtpPassword').value);fd.append('from_email',document.getElementById('smtpFromEmail').value);
     fd.append('encryption',(document.querySelector('input[name="smtpEncryption"]:checked')||{}).value||'ssl');
     fd.append('set_default',document.getElementById('smtpProfileDefault').checked?'1':'0');btn.disabled=true;btn.textContent='保存中…';
     fetch('/email-configs/delivery-profiles/save/',{method:'POST',headers:{'X-Requested-With':'XMLHttpRequest','X-CSRFToken':_emailCsrf()},body:fd}).then(function(r){return r.json();}).then(function(d){
         showToast(d.message,!d.success);if(d.success){closeModal('smtpModal');refreshSmtpStatus();refreshEmailConfigList();}
-    }).catch(function(){showToast('网络错误',true);}).finally(function(){btn.disabled=false;btn.textContent='保存';});
+    }).catch(function(){showToast('网络错误',true);}).finally(function(){btn.disabled=false;btn.textContent='保存配置';});
 }
 function deleteDeliveryProfile(id) {
     fetch('/email-configs/delivery-profiles/'+id+'/delete/',{method:'POST',headers:{'X-Requested-With':'XMLHttpRequest','X-CSRFToken':_emailCsrf()}}).then(function(r){return r.json();}).then(function(d){showToast(d.message,!d.success);if(d.success)refreshSmtpStatus();}).catch(function(){showToast('网络错误',true);});
