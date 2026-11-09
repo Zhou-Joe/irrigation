@@ -4,6 +4,7 @@ import logging
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
+from functools import wraps
 
 from django import forms
 from django.contrib.auth.decorators import login_required
@@ -15,8 +16,10 @@ from django.core.cache import cache
 from django.db import close_old_connections
 from django.http import JsonResponse
 from django.shortcuts import render, redirect
+from django.template.defaultfilters import date as format_date
 from django.urls import reverse, reverse_lazy
-from django.utils import timezone
+from django.utils import timezone, translation
+from django.utils.decorators import method_decorator
 from django.utils.encoding import force_bytes
 from django.utils.html import format_html
 from django.utils.http import urlsafe_base64_encode
@@ -32,6 +35,19 @@ _slots=threading.BoundedSemaphore(64)
 SALT='core.registration-email'
 
 
+def _chinese_view(view):
+    @wraps(view)
+    def localized(request,*args,**kwargs):
+        with translation.override('zh-hans'):
+            response=view(request,*args,**kwargs)
+            # Auth class views return a lazy TemplateResponse. Render before
+            # leaving the locale so labels, validators and errors all translate.
+            if hasattr(response,'render') and not response.is_rendered:response.render()
+            response['Content-Language']='zh-Hans'
+            return response
+    return localized
+
+
 class EmailRequestForm(forms.Form):
     email=forms.EmailField(label='账号邮箱',widget=forms.EmailInput(attrs={'autocomplete':'email','placeholder':'请输入账号中登记的邮箱'}))
 
@@ -40,48 +56,96 @@ class ConfirmationRequestForm(EmailRequestForm):
     username=forms.CharField(label='注册用户名',max_length=150)
 
 
-def _worker(function,args):
+def _record(profile_id,purpose,status,message):
+    record={'purpose':'密码重置' if purpose=='reset' else '注册邮箱确认',
+        'status':status,'message':message,
+        'time':format_date(timezone.localtime(),'Y-m-d H:i:s')}
+    try:cache.set('account-mail-status:'+str(profile_id),record,86400)
+    except Exception:logger.warning('Account email status storage unavailable')
+    logger.info('Account email purpose=%s profile=%s status=%s message=%s',purpose,profile_id,status,message)
+
+
+def _failure_message(error):
+    # Keep secret webhook URLs, SMTP credentials and reset tokens out of diagnostics.
+    from smtplib import SMTPAuthenticationError, SMTPRecipientsRefused, SMTPResponseException
+    if isinstance(error,SMTPAuthenticationError):return 'SMTP 登录失败，请检查邮箱及授权码。'
+    if isinstance(error,SMTPRecipientsRefused):return 'SMTP 拒绝收件人，请检查收件地址及邮箱服务限制。'
+    if isinstance(error,SMTPResponseException):return f'SMTP 返回错误 {error.smtp_code}，请检查邮箱服务设置。'
+    if isinstance(error,ValueError):
+        text=str(error)
+        if text.startswith(('Workflow 返回 HTTP ','Workflow 连接失败或响应超时','所选 SMTP 发送配置尚未完善','请先配置 Microsoft 365 Workflow','邮件未确认发送成功')):
+            return text
+    return f'邮件发送未完成（{type(error).__name__}），请检查发送配置及服务器日志。'
+
+
+def _worker(function,args,profile_id,purpose):
     close_old_connections()
-    try:function(*args)
-    except Exception as error:logger.warning('Account email delivery failed (%s/%s)',function.__name__,type(error).__name__)
+    try:
+        _record(profile_id,purpose,'sending','正在连接邮件发送服务。')
+        result=function(*args)
+        _record(profile_id,purpose,result['status'],result['message'])
+    except Exception as error:
+        message=_failure_message(error)
+        _record(profile_id,purpose,'failed',message)
+        logger.warning('Account email delivery failed (%s/%s): %s',function.__name__,type(error).__name__,message)
     finally:close_old_connections();_slots.release()
 
 
-def _queue(request,purpose,email,function,*args):
+def _queue(request,purpose,email,function,*args,profile_id):
     digest=hashlib.sha256(email.casefold().encode()).hexdigest()
-    if not cache.add('account-mail:'+purpose+':'+digest,True,300):return
     ip=hashlib.sha256(request.META.get('REMOTE_ADDR','').encode()).hexdigest()
     key='account-mail-ip:'+ip+':'+str(int(time.time())//60)
     cache.add(key,0,90)
     try:count=cache.incr(key)
     except ValueError:count=1
-    if count>20 or not _slots.acquire(blocking=False):return
-    try:_pool.submit(_worker,function,args)
-    except Exception:_slots.release();logger.warning('Account email queue unavailable')
+    if count>20 or not _slots.acquire(blocking=False):return 'busy'
+    cooldown='account-mail:'+purpose+':'+digest
+    if not cache.add(cooldown,True,300):
+        _slots.release();return 'cooldown'
+    try:
+        _record(profile_id,purpose,'queued','申请已排队，等待发送。')
+        _pool.submit(_worker,function,args,profile_id,purpose)
+    except Exception:
+        _slots.release();cache.delete(cooldown)
+        _record(profile_id,purpose,'failed','发送队列暂时不可用，请稍后重新申请。')
+        return 'busy'
+    return 'queued'
+
+
+def _queue_response(request,result):
+    if result=='queued':return None
+    message='同一邮箱每 5 分钟可申请一次，请稍后重试。' if result=='cooldown' else '邮件请求较多，暂未受理，请稍后重试。'
+    if request.headers.get('X-Requested-With')=='XMLHttpRequest':
+        response=JsonResponse({'success':False,'message':message},status=429)
+        response['Retry-After']='300' if result=='cooldown' else '60'
+        return response
+    return render(request,'core/account_mail.html',{'title':'请稍后重试','note':message},status=429)
 
 
 def _registration_message(registration_id,profile_id,base):
     reg=RegistrationRequest.objects.filter(pk=registration_id,status='pending',email_confirmation_required=True,email_verified_at__isnull=True).first()
-    if not reg:return
+    if not reg:return {'status':'skipped','message':'没有待确认的有效注册申请，未发送邮件。'}
     token=signing.dumps({'registration':reg.pk,'email':reg.email},salt=SALT,compress=True)
     link=base+reverse('core:account_registration_verify',args=[token])
     text=f'请确认注册账号 {reg.username} 使用的邮箱：\n{link}\n\n链接 24 小时有效。确认后仍需管理员审批。非本人申请可忽略。'
     html=format_html('<p>您好，{}：</p><p>请确认注册账号 <strong>{}</strong> 使用的邮箱。</p><p><a href="{}">确认邮箱</a></p><p>链接 24 小时有效，确认后仍需管理员审批。非本人申请可忽略。</p>',reg.full_name,reg.username,link)
-    send_report('FOS · 注册邮箱确认',text,[reg.email],[],profile=EmailDeliveryProfile.objects.get(pk=profile_id),html_body=html)
+    return send_report('FOS · 注册邮箱确认',text,[reg.email],[],profile=EmailDeliveryProfile.objects.get(pk=profile_id),html_body=html)
 
 
 def send_registration(request,reg,profile_id):
-    _queue(request,'registration',reg.email,_registration_message,reg.pk,profile_id,public_download_base(request))
+    return _queue(request,'registration',reg.email,_registration_message,reg.pk,profile_id,public_download_base(request),profile_id=profile_id)
 
 
 def _reset_message(email,profile_id,base):
     profile=EmailDeliveryProfile.objects.get(pk=profile_id)
+    result={'status':'skipped','message':'邮箱未匹配到可重置密码的有效账号，未发送邮件。'}
     for user in PasswordResetForm().get_users(email):
         uid=urlsafe_base64_encode(force_bytes(user.pk));token=default_token_generator.make_token(user)
         link=base+reverse('core:account_password_confirm',kwargs={'uidb64':uid,'token':token})
         text=f'账号 {user.get_username()} 的密码重置链接：\n{link}\n\n链接 1 小时有效，使用后失效。非本人申请可忽略。'
         html=format_html('<p>您好：</p><p>您可以为账号 <strong>{}</strong> 设置新密码。</p><p><a href="{}">重置密码</a></p><p>链接 1 小时有效，使用后失效。非本人申请可忽略。</p>',user.get_username(),link)
-        send_report('FOS · 重置密码',text,[user.email],[],profile=profile,html_body=html)
+        result=send_report('FOS · 重置密码',text,[user.email],[],profile=profile,html_body=html)
+    return result
 
 
 @login_required(login_url='core:login')
@@ -101,20 +165,29 @@ def settings_view(request):
         for field,value in values.items():setattr(config,field,value)
         config.save()
         system=EmailSmtpSetting.get_solo();system.download_base_url=public_download_base(request);system.save(update_fields=['download_base_url'])
+    statuses=[]
+    for profile_id in dict.fromkeys((config.registration_profile_id,config.password_reset_profile_id)):
+        if profile_id:
+            record=cache.get('account-mail-status:'+str(profile_id))
+            if record:statuses.append({**record,'profile_id':profile_id})
     return JsonResponse({'success':True,'message':'账户邮件设置已保存',
-        'registration_profile_id':config.registration_profile_id,'password_reset_profile_id':config.password_reset_profile_id})
+        'registration_profile_id':config.registration_profile_id,'password_reset_profile_id':config.password_reset_profile_id,
+        'delivery_status':statuses})
 
 
 @never_cache
 @require_http_methods(['GET','POST'])
+@_chinese_view
 def password_request(request):
     config=AccountEmailSetting.get_solo();enabled=bool(config.password_reset_profile_id and is_configured(config.password_reset_profile))
     form=EmailRequestForm(request.POST if request.method=='POST' else None)
     message=''
     if request.method=='POST' and enabled and form.is_valid():
         email=form.cleaned_data['email']
-        _queue(request,'reset',email,_reset_message,email,config.password_reset_profile_id,public_download_base(request))
-        message='如该邮箱对应有效账号，重置邮件将发送至邮箱。请查收；未收到可稍后重试。'
+        queued=_queue(request,'reset',email,_reset_message,email,config.password_reset_profile_id,public_download_base(request),profile_id=config.password_reset_profile_id)
+        response=_queue_response(request,queued)
+        if response is not None:return response
+        message='请求已受理。如邮箱对应有效账号，系统将发送重置邮件；此提示不代表邮件已投递。未收到请联系管理员查看发送状态。'
         if request.headers.get('X-Requested-With')=='XMLHttpRequest':return JsonResponse({'success':True,'message':message})
         return redirect('core:account_password_sent')
     if request.method=='POST' and request.headers.get('X-Requested-With')=='XMLHttpRequest':
@@ -125,6 +198,7 @@ def password_request(request):
 
 @never_cache
 @require_http_methods(['GET','POST'])
+@_chinese_view
 def resend_confirmation(request):
     config=AccountEmailSetting.get_solo();enabled=bool(config.registration_profile_id and is_configured(config.registration_profile))
     form=ConfirmationRequestForm(request.POST if request.method=='POST' else None)
@@ -132,10 +206,12 @@ def resend_confirmation(request):
         # Lookup also stays in the background: response does not disclose registrations.
         def send_if_pending(username,email,profile_id,base):
             reg=RegistrationRequest.objects.filter(username=username,email__iexact=email,status='pending',email_confirmation_required=True,email_verified_at__isnull=True).first()
-            if reg:_registration_message(reg.pk,profile_id,base)
+            return _registration_message(reg.pk,profile_id,base) if reg else {'status':'skipped','message':'没有待确认的有效注册申请，未发送邮件。'}
         email=form.cleaned_data['email']
-        _queue(request,'registration',email,send_if_pending,form.cleaned_data['username'],email,config.registration_profile_id,public_download_base(request))
-        message='如信息对应待确认的注册申请，确认邮件将发送至邮箱。请查收；未收到可稍后重试。'
+        queued=_queue(request,'registration',email,send_if_pending,form.cleaned_data['username'],email,config.registration_profile_id,public_download_base(request),profile_id=config.registration_profile_id)
+        response=_queue_response(request,queued)
+        if response is not None:return response
+        message='请求已受理。如信息对应待确认的注册申请，系统将发送确认邮件；此提示不代表邮件已投递。未收到请联系管理员查看发送状态。'
         if request.headers.get('X-Requested-With')=='XMLHttpRequest':return JsonResponse({'success':True,'message':message})
         return render(request,'core/account_mail.html',{'title':'确认邮件已申请','note':message})
     if request.method=='POST' and request.headers.get('X-Requested-With')=='XMLHttpRequest':
@@ -163,6 +239,7 @@ def verify_registration(request,token):
     return response
 
 
+@method_decorator(_chinese_view,name='dispatch')
 class ResetConfirmView(PasswordResetConfirmView):
     template_name='core/account_mail.html'
     success_url=reverse_lazy('core:account_password_complete')
