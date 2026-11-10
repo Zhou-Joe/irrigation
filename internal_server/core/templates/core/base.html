@@ -234,7 +234,9 @@
 <body class="ui-system {% if user.is_authenticated %}pwa-authenticated{% endif %}" data-page="{{ request.resolver_match.url_name }}">
     <div id="appNavigation">{% include "core/_navigation.html" %}</div>
 
+    <!--fos-page-content-start-->
     {% block content %}{% endblock %}
+    <!--fos-page-content-end-->
 
     {% include 'core/_watermark.html' %}
 
@@ -415,6 +417,6 @@
     <script src="{% static 'js/ui-icons.js' %}?v=20261023icons"></script>
     {% block extra_js %}{% endblock %}
     {% include 'core/pwa_shell.html' %}
-    {% if multi_team_enabled %}<script src="{% static 'operations/bulk-ui.js' %}?v=20261111locations2" defer></script><script src="{% static 'operations/workspace.js' %}?v=20261111locations2" defer></script>{% endif %}
+    {% if multi_team_enabled %}<script src="{% static 'operations/bulk-ui.js' %}?v=20261111locations2" defer></script><script src="{% static 'operations/workspace.js' %}?v=20261111switch3" defer></script>{% endif %}
 </body>
 </html>
