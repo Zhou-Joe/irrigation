@@ -4,7 +4,7 @@ from django.contrib.auth.decorators import login_required
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction, IntegrityError
-from django.db.models import Q
+from django.db.models import Q, Count, Prefetch
 from django.http import JsonResponse
 from django.shortcuts import render, redirect, get_object_or_404
 from django.views.decorators.http import require_POST, require_GET, require_http_methods
@@ -15,6 +15,7 @@ from .access import (memberships, active_membership, require_member, visible_loc
 from .forms import LocationForm
 from .models import Team, Membership, Location, LocationGrant, ReferenceCatalog
 from .map_data import location_map_data
+from .location_filters import filter_values, matching_locations, positioned_ids
 
 
 def number(value):
@@ -77,13 +78,24 @@ def switch_response(request):
 @require_GET
 def locations(request):
     member = require_member(request)
-    qs = visible_locations(member.team)
-    query = request.GET.get('q', '').strip()[:150]
-    if query:
-        from django.db.models import Q
-        qs = qs.filter(Q(name__icontains=query) | Q(code__icontains=query))
+    visible = visible_locations(member.team)
+    positioned=positioned_ids(visible)
+    counts=visible.aggregate(total=Count('pk',distinct=True),
+        owned=Count('pk',filter=Q(owner_team=member.team),distinct=True),
+        shared=Count('pk',filter=~Q(owner_team=member.team),distinct=True))
+    counts['positioned']=len(positioned)
+    counts['unpositioned']=counts['total']-counts['positioned']
+    qs = matching_locations(visible,member.team,request.GET,positioned=positioned)
+    shareable_count=qs.filter(owner_team=member.team).count()
+    # A shared child does not imply access to its unshared parent's metadata.
+    qs=qs.prefetch_related(Prefetch('parent',queryset=visible.select_related(None)), 'grants__team')
     from django.core.paginator import Paginator
-    return page(request, 'locations', locations=Paginator(qs, 30).get_page(request.GET.get('page')), query=query,
+    location_page=Paginator(qs,30).get_page(request.GET.get('page'))
+    for location in location_page:
+        location.visible_parent_name=location.parent.name if location.parent else ''
+        location.has_map_position=location.pk in positioned
+    return page(request, 'locations', locations=location_page,
+                **filter_values(request.GET),counts=counts,location_kinds=Location.KINDS,shareable_count=shareable_count,
                 other_teams=Team.objects.filter(active=True,business__active=True).exclude(pk=member.team_id))
 
 
@@ -190,8 +202,7 @@ def location_geometry(request):
     places=visible_locations(member.team)
     shared=request.GET.get('shared')=='1'
     if shared:places=places.exclude(owner_team=member.team)
-    query=request.GET.get('q','').strip()[:150]
-    if query:places=places.filter(Q(name__icontains=query)|Q(code__icontains=query))
+    places=matching_locations(places,member.team,request.GET)
     for location in places:
         # Never include legacy remarks, work counts, worker details or histories.
         result.append({**location_map_data(location),**({'owner_team':location.owner_team.name} if shared else {})})
@@ -270,8 +281,9 @@ def team(request):
     from .models import AuditEvent
     from .management_views import render_page
     qs=Membership.objects.filter(team=target_team).select_related('user').order_by('-active','user__username')
-    counts=qs.aggregate(total=Count('pk'),active=Count('pk',filter=Q(active=True,user__is_active=True)),
+    counts=qs.aggregate(total=Count('pk'),enabled_count=Count('pk',filter=Q(active=True,user__is_active=True)),
         managers=Count('pk',filter=Q(role='manager',active=True)),field=Count('pk',filter=Q(role='field',active=True)))
+    counts['active']=counts.pop('enabled_count')
     query=request.GET.get('q','').strip()[:150]
     if query:qs=qs.filter(Q(user__username__icontains=query)|Q(user__first_name__icontains=query)|Q(user__email__icontains=query))
     role_filter=request.GET.get('role','')

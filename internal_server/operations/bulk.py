@@ -13,6 +13,7 @@ from django.views.decorators.http import require_POST
 from core.submissions import submission
 from .access import require_member, visible_locations, audit
 from .models import Location, LocationGrant, Team, Membership
+from .location_filters import matching_locations
 
 
 def failure(message, status=400, **extra):
@@ -160,10 +161,12 @@ def _share(request):
         else:
             zones=[]
             if request.POST.get('all_matching')=='1':
-                qs=Location.objects.filter(owner_team=member.team)
-                query=request.POST.get('q','').strip()[:150]
-                if query:qs=qs.filter(Q(code__icontains=query)|Q(name__icontains=query))
+                # Apply precisely the same filters as the list and map. Starting
+                # from owned locations excludes read-only shared places without
+                # ever changing another team's grants.
+                qs=matching_locations(Location.objects.filter(owner_team=member.team),member.team,request.POST)
                 places=list(qs[:1001])
+                if not places:raise ValueError('当前筛选结果中没有本团队拥有的可共享地点。')
         if not 1<=len(zones)+len(places)<=1000:raise ValueError('每批选择 1–1000 个地点或区域。')
         # Preflight all references and code collisions before the first write.
         codes=set(Location.objects.filter(owner_team=member.team).exclude(code='').values_list('code',flat=True))
