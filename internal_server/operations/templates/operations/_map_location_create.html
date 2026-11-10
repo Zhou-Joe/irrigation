@@ -5,7 +5,7 @@
     <header><strong id="mapCreateTitle">新增地点</strong><button type="button" data-create-close aria-label="结束新增"><svg class="ui-icon"><use href="#pwa-close"/></svg></button></header>
     <p data-create-position>在地图上点选位置</p>
     <div class="pest-create-fields"><label>名称<input class="v2-input" name="name" required maxlength="150" placeholder="如：游客中心、A 栋、监测点"></label><label>类型<select class="v2-select" name="kind"><option value="building">建筑</option><option value="zone">室外区域</option><option value="floor">楼层</option><option value="room">房间</option><option value="monitoring">监测点</option><option value="other">其他地点</option></select></label></div>
-    <details><summary>地点编号（可选）</summary><input class="v2-input" name="code" maxlength="100" placeholder="可留空"></details>
+    <details open><summary>地点编号（可选）</summary><input class="v2-input" name="code" maxlength="100" placeholder="可留空"></details>
     <footer><span data-create-status role="status"></span><button class="v2-btn-submit" type="submit">保存并继续</button></footer>
   </form>
 </section>
