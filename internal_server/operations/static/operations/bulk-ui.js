@@ -32,6 +32,8 @@
             const doc=new DOMParser().parseFromString(await response.text(),'text/html'),next=doc.getElementById('opLocationResults');
             if(!next)throw Error('地点列表暂不可用，请重新选择业务视图。');
             if(sequence!==generation)return;
+            const controls=document.getElementById('locationControls'),newControls=doc.getElementById('locationControls');
+            if(controls&&newControls)controls.replaceWith(newControls);
             panel.replaceWith(next);if(historyUpdate)history.replaceState(history.state,'',url);
             updateSelections();document.dispatchEvent(new CustomEvent('fos:locations-rendered'));
             if(maps)await window.FOSLocationMap?.refresh({fit});
@@ -86,8 +88,31 @@
         catch(error){announce(form,error.message||'网络异常，请保留内容重试。',true);}finally{delete form.dataset.busy;if(button)button.disabled=false;}
     });
     document.addEventListener('click',async event=>{
+        const scope=event.target.closest('a[data-location-scope]');
+        if(scope&&!event.ctrlKey&&!event.metaKey&&!event.shiftKey&&!event.altKey){
+            event.preventDefault();const target=new URL(scope.href,location.href),url=new URL(location.href);
+            for(const key of ['ownership','source_team','visibility','page'])url.searchParams.delete(key);
+            url.searchParams.set('scope',target.searchParams.get('scope')||'team');
+            try{await refreshList({url:url.href,historyUpdate:true,fit:true});}catch(error){feedback(error.message,true);}return;
+        }
         const link=event.target.closest('#opLocationResults .op-pagination a');if(!link||event.ctrlKey||event.metaKey||event.shiftKey||event.altKey)return;event.preventDefault();
         try{await refreshList({url:link.href,historyUpdate:true,maps:false});}catch(error){feedback(error.message,true);}
+    });
+    document.addEventListener('submit',async event=>{
+        const form=event.target;if(!form.matches('[data-location-team-visibility]'))return;
+        event.preventDefault();if(form.dataset.busy)return;form.dataset.busy='1';
+        const data=new FormData(form),key=form.querySelector('[name=submission_key]');
+        if(key){if(!key.value)key.value=token();data.set('submission_key',key.value);}
+        const button=event.submitter;if(button)button.disabled=true;announce(form,'正在更新本团队可见范围…');
+        try{
+            const response=await fetch(form.getAttribute('action'),{method:'POST',credentials:'same-origin',body:data,headers:{'X-Requested-With':'XMLHttpRequest'}}),result=await reply(response);
+            if(!response.ok||!result.success)throw Error(result.message||'操作未完成。');
+            feedback(result.message);window.IrrigationPWA?.markClean();
+            const page=await fetch(location.href,{credentials:'same-origin',cache:'no-store'}),doc=new DOMParser().parseFromString(await page.text(),'text/html');
+            const old=document.getElementById('locationTeamVisibility'),next=doc.getElementById('locationTeamVisibility');if(old&&next)old.replaceWith(next);
+            await window.FOSLocationMap?.refresh();
+        }catch(error){announce(form,error.message||'网络异常，请重试。',true);}
+        finally{delete form.dataset.busy;if(button)button.disabled=false;}
     });
     if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',updateSelections,{once:true});else updateSelections();
 })();

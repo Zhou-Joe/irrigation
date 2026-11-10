@@ -31,4 +31,7 @@ class Command(BaseCommand):
                 if role:
                     _, created = Membership.objects.get_or_create(user=user, team=team, defaults={'role': role})
                     count += created
+        if settings.MULTI_TEAM_ENABLED:
+            from operations.registry import sync_irrigation_locations
+            sync_irrigation_locations()
         self.stdout.write(self.style.SUCCESS(f'Workspaces ready; {count} legacy memberships added. Existing memberships unchanged.'))

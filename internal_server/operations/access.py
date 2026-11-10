@@ -91,6 +91,22 @@ def visible_locations(team):
         'owner_team__business', 'legacy_zone').distinct()
 
 
+def can_browse_location_catalog(member,user):
+    return bool(member and (member.role=='manager' or user.is_superuser))
+
+
+def browsable_locations(member,user):
+    """Managers inspect location metadata; team grants still govern field use.
+
+    This intentionally does not widen visible_locations(), which is also used by
+    map/work-order adapters and must keep requiring the receiving team's grant.
+    """
+    if can_browse_location_catalog(member,user):
+        return Location.objects.filter(owner_team__active=True,owner_team__business__active=True).select_related(
+            'owner_team__business','legacy_zone')
+    return visible_locations(member.team)
+
+
 def can_manage_location(member, location, user):
     return location.owner_team_id == member.team_id and (member.role == 'manager' or user.is_superuser)
 

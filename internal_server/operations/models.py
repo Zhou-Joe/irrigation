@@ -57,6 +57,7 @@ class Location(models.Model):
     longitude = models.DecimalField(max_digits=11, decimal_places=7, null=True, blank=True)
     legacy_zone = models.OneToOneField('core.Zone', on_delete=models.PROTECT, null=True, blank=True,
                                      related_name='shared_location')
+    registry_generated = models.BooleanField(default=False,db_default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -121,6 +122,7 @@ class AuditEvent(models.Model):
             'location.save':'保存地点','location.link_irrigation':'引入灌溉区域','location.grant':'共享地点',
             'location.revoke':'取消地点共享','location.batch_create':'批量创建地点','location.batch_grant':'批量共享地点',
             'location.batch_revoke':'批量取消共享','catalog.add':'新增工作条目','catalog.edit':'编辑工作条目',
+            'location.team_visibility.add':'加入本团队区域','location.team_visibility.remove':'移出本团队区域',
             'catalog.delete':'删除工作条目','catalog.activate':'切换目录版本','pest.plan.save':'保存周期计划',
             'pest.plan.toggle':'调整计划启用状态','pest.plan.dispatch':'派发周期任务','pest.task.assign':'调整任务负责人员',
             'pest.task.skip':'跳过任务','pest.workorder.submit':'提交植保工单','pest.workorder.edit':'编辑植保工单',

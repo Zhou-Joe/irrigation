@@ -1,5 +1,5 @@
 from django.urls import path
-from . import views,bulk,management_views
+from . import views,bulk,management_views,team_visibility
 
 app_name = 'operations'
 urlpatterns = [
@@ -9,6 +9,7 @@ urlpatterns = [
     path('locations/new/', views.location_edit, name='location_new'),
     path('locations/batch/',bulk.create,name='location_batch'),
     path('locations/batch-sharing/',bulk.share,name='location_batch_sharing'),
+    path('locations/team-visibility/',team_visibility.update,name='location_team_visibility'),
     path('locations/link-irrigation/', views.link_irrigation, name='link_irrigation'),
     path('locations/<uuid:pk>/', views.location_detail, name='location_detail'),
     path('locations/<uuid:pk>/edit/', views.location_edit, name='location_edit'),

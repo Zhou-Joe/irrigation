@@ -30,7 +30,7 @@
         if(disposed)return;layers.clearLayers();shapes.clear();
         for(const place of places){
             if(el.dataset.location&&el.dataset.location!==place.id)continue;
-            const popup=document.createElement('div'),link=document.createElement('a');link.href='/ops/locations/'+place.id+'/';link.textContent=place.name;popup.append(link);
+            const popup=document.createElement('div'),link=document.createElement('a');link.href='/ops/locations/'+place.id+'/'+(new URL(location.href).searchParams.get('scope')==='catalog'?'?scope=catalog':'');link.textContent=place.name;popup.append(link);
             const description=document.createElement('p');description.textContent=[place.code,place.kind_label,place.source].filter(Boolean).join(' · ');popup.append(description);
             const rings=runtime.boundaryRings(place.boundary),shape=markers.presentation(place,rings),items=[],points=[];
             if(shape.mode==='boundary')for(const ring of rings){items.push(L.polygon(ring,{color:markers.descriptor(place.kind).color,weight:2,fillOpacity:.14}).bindPopup(popup.cloneNode(true)).addTo(layers));points.push(...ring);}
@@ -44,7 +44,12 @@
     }
     async function load({fit:fitView=false}={}){
         if(disposed)return;const current=++generation;notice('正在加载地点…');
-        try{const data=await runtime.fetchJSON(el.dataset.endpoint+location.search,{cache:'no-store'});if(disposed||current!==generation)return;places=data.locations;render({fitView});}
+        try{
+            const url=new URL(el.dataset.endpoint,location.href);
+            for(const [key,value]of new URL(location.href).searchParams)if(key!=='scope'||!url.searchParams.has('scope'))url.searchParams.set(key,value);
+            if(el.dataset.location)url.searchParams.set('location',el.dataset.location);
+            const data=await runtime.fetchJSON(url.href,{cache:'no-store'});if(disposed||current!==generation)return;places=data.locations;render({fitView});
+        }
         catch(_){if(!disposed&&current===generation){notice('地图数据暂不可用，请重试。',true);const retry=document.createElement('button');retry.type='button';retry.className='btn-sm btn-secondary';retry.textContent='重新加载';retry.onclick=()=>load();status.append(' ',retry);}}
     }
     async function focus(id){
@@ -55,8 +60,8 @@
     const creator=window.FOSMapLocationCreate.mount({map,panel:document.getElementById('mapLocationCreate'),markers,L,
         onOpen(){
             initialized=true;mobileView('map');host?.classList.add('is-creating');
-            const url=new URL(location.href);for(const key of ['q','kind','ownership','positioned','page'])url.searchParams.delete(key);history.replaceState(history.state,'',url);
-            const search=document.querySelector('[data-location-search]');if(search)for(const field of search.elements){if(field.name==='q')field.value='';else if(['kind','ownership','positioned'].includes(field.name))field.value='all';}
+            const url=new URL(location.href);for(const key of ['q','kind','ownership','positioned','page','source_team','visibility','scope'])url.searchParams.delete(key);history.replaceState(history.state,'',url);
+            const search=document.querySelector('[data-location-search]');if(search)for(const field of search.elements){if(field.name==='q')field.value='';else if(field.name==='scope')field.value='team';else if(['kind','ownership','positioned','source_team','visibility'].includes(field.name))field.value='all';}
             Promise.all([load(),window.FOSBulkLocations?.refreshResults?.({maps:false})]).catch(()=>notice('列表暂未更新，地图仍可继续点选。'));
             el.scrollIntoView({block:'nearest',behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});
         },
@@ -110,6 +115,8 @@
     }
     document.addEventListener('click',click);document.addEventListener('fos:location-saved',saved);
     const observer=typeof ResizeObserver==='function'?new ResizeObserver(()=>{if(!disposed)map.invalidateSize({pan:false});}):null;observer?.observe(el);
-    window.FOSLocationMap={refresh:load,focus,startCreation:()=>creator.open(),getView:()=>({center:map.getCenter(),zoom:map.getZoom()}),destroy(){disposed=true;generation++;closeEditor();dialog?.remove();observer?.disconnect();document.removeEventListener('click',click);document.removeEventListener('fos:location-saved',saved);creator.destroy();map.remove();}};
+    function resume(event){if(event.persisted&&document.getElementById('opLocationResults'))window.FOSBulkLocations?.refreshResults().catch(()=>notice('地点列表暂未更新，请重新查询。'));}
+    window.addEventListener('pageshow',resume);
+    window.FOSLocationMap={refresh:load,focus,startCreation:()=>creator.open(),getView:()=>({center:map.getCenter(),zoom:map.getZoom()}),destroy(){disposed=true;generation++;closeEditor();dialog?.remove();observer?.disconnect();document.removeEventListener('click',click);document.removeEventListener('fos:location-saved',saved);window.removeEventListener('pageshow',resume);creator.destroy();map.remove();}};
     let preferred='list';try{preferred=sessionStorage.getItem('fos-location-view')||'list';}catch(_){}mobileView(preferred==='map'?'map':'list',false);load();
 })();
