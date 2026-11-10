@@ -118,6 +118,10 @@ def main():
             new_zones.append(z)
     if new_zones:
         Zone.objects.bulk_create(new_zones)
+        from django.conf import settings
+        if settings.MULTI_TEAM_ENABLED:
+            from operations.registry import sync_irrigation_locations
+            sync_irrigation_locations(zone_ids=[zone.pk for zone in new_zones])
         print(f"Created {len(new_zones)} new zones")
 
     # Refresh zone_map

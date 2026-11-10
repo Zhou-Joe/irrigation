@@ -1,6 +1,6 @@
 {% extends 'operations/base.html' %}{% load static %}
 {% block title %}{% if location.created_at %}编辑地点{% else %}新增地点{% endif %}{% endblock %}
-{% block head %}{% include 'operations/_location_map_head.html' %}<link rel="stylesheet" href="{% static 'operations/location-management.css' %}?v=20261111locations2">{% endblock %}
+{% block head %}{% include 'operations/_location_map_head.html' %}<link rel="stylesheet" href="{% static 'operations/location-management.css' %}?v=20261111visibility4">{% endblock %}
 {% block ops_content %}
 <div class="loc-form-page"><header class="app-head"><div><a class="loc-back-link" href="{% url 'operations:locations' %}"><svg class="ui-icon loc-left-chevron" aria-hidden="true"><use href="#pwa-chevron-right"/></svg>区域管理</a><h1>{% if location.created_at %}编辑地点{% else %}新增地点{% endif %}</h1><p class="app-subtitle">填写名称、选择类型，在地图上点选位置即可。</p></div></header>
 <section class="op-form-card">

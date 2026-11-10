@@ -11,11 +11,12 @@ from django.views.decorators.http import require_POST, require_GET, require_http
 from django.views.decorators.debug import sensitive_post_parameters
 
 from .access import (memberships, active_membership, require_member, visible_locations, business_options,
-                     can_manage_location, audit, has_irrigation_access)
+                     can_manage_location, audit, has_irrigation_access, browsable_locations,
+                     can_browse_location_catalog)
 from .forms import LocationForm
 from .models import Team, Membership, Location, LocationGrant, ReferenceCatalog
 from .map_data import location_map_data
-from .location_filters import filter_values, matching_locations, positioned_ids
+from .location_filters import filter_values, matching_locations, positioned_ids, with_team_visibility
 
 
 def number(value):
@@ -78,17 +79,26 @@ def switch_response(request):
 @require_GET
 def locations(request):
     member = require_member(request)
-    visible = visible_locations(member.team)
+    catalog=request.GET.get('scope')=='catalog'
+    can_catalog=can_browse_location_catalog(member,request.user)
+    if catalog and not can_catalog:raise PermissionDenied('只有管理员或团队经理可以浏览其他团队区域。')
+    visible = browsable_locations(member,request.user) if catalog else visible_locations(member.team)
+    visible=with_team_visibility(visible,member.team)
     positioned=positioned_ids(visible)
     counts=visible.aggregate(total=Count('pk',distinct=True),
         owned=Count('pk',filter=Q(owner_team=member.team),distinct=True),
-        shared=Count('pk',filter=~Q(owner_team=member.team),distinct=True))
+        shared=Count('pk',filter=~Q(owner_team=member.team),distinct=True),
+        team_visible_count=Count('pk',filter=Q(is_team_visible=True),distinct=True))
+    counts['team_visible']=counts.pop('team_visible_count')
+    counts['hidden']=counts['total']-counts['team_visible']
     counts['positioned']=len(positioned)
     counts['unpositioned']=counts['total']-counts['positioned']
     qs = matching_locations(visible,member.team,request.GET,positioned=positioned)
-    shareable_count=qs.filter(owner_team=member.team).count()
+    shareable_count=qs.exclude(owner_team=member.team).count() if catalog else qs.filter(owner_team=member.team).count()
+    self_visibility_count=qs.exclude(owner_team=member.team).count()
     # A shared child does not imply access to its unshared parent's metadata.
-    qs=qs.prefetch_related(Prefetch('parent',queryset=visible.select_related(None)), 'grants__team')
+    parents=browsable_locations(member,request.user)
+    qs=qs.prefetch_related(Prefetch('parent',queryset=parents.select_related(None)), 'grants__team')
     from django.core.paginator import Paginator
     location_page=Paginator(qs,30).get_page(request.GET.get('page'))
     for location in location_page:
@@ -96,6 +106,9 @@ def locations(request):
         location.has_map_position=location.pk in positioned
     return page(request, 'locations', locations=location_page,
                 **filter_values(request.GET),counts=counts,location_kinds=Location.KINDS,shareable_count=shareable_count,
+                is_location_catalog=catalog,selected_scope='catalog' if catalog else 'team',
+                can_browse_catalog=can_catalog,self_visibility_count=self_visibility_count,
+                source_teams=Team.objects.filter(active=True,business__active=True).select_related('business').order_by('name','pk'),
                 other_teams=Team.objects.filter(active=True,business__active=True).exclude(pk=member.team_id))
 
 
@@ -103,12 +116,17 @@ def locations(request):
 @require_GET
 def location_detail(request, pk):
     member = require_member(request)
-    location = get_object_or_404(visible_locations(member.team), pk=pk)
-    parent = (visible_locations(member.team).filter(pk=location.parent_id).first() if location.parent_id else None)
+    places=with_team_visibility(browsable_locations(member,request.user),member.team)
+    location = get_object_or_404(places, pk=pk)
+    parent = (places.filter(pk=location.parent_id).first() if location.parent_id else None)
     manage = can_manage_location(member, location, request.user)
     grants = location.grants.select_related('team') if manage else []
     others = Team.objects.filter(active=True, business__active=True).exclude(pk=location.owner_team_id) if manage else []
-    return page(request, 'location_detail', location=location, parent=parent, manage=manage, grants=grants, other_teams=others)
+    return page(request, 'location_detail', location=location, parent=parent, manage=manage, grants=grants, other_teams=others,
+        is_team_visible=location.is_team_visible,
+        can_browse_catalog=can_browse_location_catalog(member,request.user),
+        selected_scope='catalog' if request.GET.get('scope')=='catalog' and can_browse_location_catalog(member,request.user) else 'team',
+        can_curate_team_visibility=can_browse_location_catalog(member,request.user) and location.owner_team_id!=member.team_id)
 
 
 @login_required
@@ -121,6 +139,10 @@ def location_edit(request, pk=None):
     if request.method == 'POST' and form.is_valid():
         try:
             with transaction.atomic():
+                # Explicit metadata edits belong to this team from now on;
+                # automatic legacy-zone registry maintenance must not replace them.
+                location_field_names={field.name for field in instance._meta.concrete_fields}
+                if 'registry_generated' in location_field_names:instance.registry_generated=False
                 location = form.save()
                 audit(request, member.team, 'location.save', location.pk)
             if request.headers.get('X-Requested-With')=='XMLHttpRequest':
@@ -199,13 +221,25 @@ def sharing(request, pk):
 def location_geometry(request):
     member = require_member(request)
     result = []
-    places=visible_locations(member.team)
+    catalog=request.GET.get('scope')=='catalog'
+    if catalog and not can_browse_location_catalog(member,request.user):
+        raise PermissionDenied('只有管理员或团队经理可以浏览其他团队区域。')
+    single=request.GET.get('location','')
+    places=browsable_locations(member,request.user) if catalog or single else visible_locations(member.team)
+    places=with_team_visibility(places,member.team)
+    if single:
+        import uuid
+        try:places=places.filter(pk=uuid.UUID(single))
+        except (ValueError,TypeError):return JsonResponse({'error':'地点编号无效。'},status=400)
+        if not places.exists():return JsonResponse({'error':'地点不存在或当前账号无权查看。'},status=404)
     shared=request.GET.get('shared')=='1'
     if shared:places=places.exclude(owner_team=member.team)
     places=matching_locations(places,member.team,request.GET)
     for location in places:
         # Never include legacy remarks, work counts, worker details or histories.
-        result.append({**location_map_data(location),**({'owner_team':location.owner_team.name} if shared else {})})
+        result.append({**location_map_data(location),'owner_team':location.owner_team.name,
+            'owner_team_id':location.owner_team_id,'team_visible':location.is_team_visible,
+            'can_edit':can_manage_location(member,location,request.user)})
     response = JsonResponse({'locations': result})
     response['Cache-Control'] = 'private, no-store'
     return response

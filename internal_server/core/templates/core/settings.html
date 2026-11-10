@@ -26,6 +26,7 @@
         <div class="header-content">
             <h1>区域管理</h1>
             <p class="subtitle">管理灌溉区域和系统配置</p>
+            {% if multi_team_enabled and is_admin %}<a class="btn-sm btn-secondary" href="{% url 'operations:locations' %}?scope=catalog" style="margin-top:8px">团队区域与共享</a>{% endif %}
         </div>
     </div>
 

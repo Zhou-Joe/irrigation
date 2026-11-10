@@ -4121,7 +4121,15 @@ def zone_delete(request, zone_id):
 
     zone = get_object_or_404(Zone, pk=zone_id)
     zone_name = zone.name
-    zone.delete()
+    from operations.registry import delete_unused_zone_links
+    from django.db.models.deletion import ProtectedError
+    try:
+        with transaction.atomic():
+            delete_unused_zone_links([zone.pk])
+            zone.delete()
+    except (ValueError,ProtectedError):
+        messages.error(request,'此区域已被团队地点、共享范围或业务记录引用，请先处理关联后再删除。')
+        return redirect('core:settings')
     messages.success(request, f'Zone "{zone_name}" deleted successfully.')
     return redirect('core:settings')
 
@@ -5948,7 +5956,14 @@ def batch_delete_zone(request):
     if not is_admin:
         return JsonResponse({'error': '无权限'}, status=403)
 
-    count, _ = Zone.objects.filter(pk__in=ids).delete()
+    from operations.registry import delete_unused_zone_links
+    from django.db.models.deletion import ProtectedError
+    try:
+        with transaction.atomic():
+            delete_unused_zone_links(ids)
+            count, _ = Zone.objects.filter(pk__in=ids).delete()
+    except (ValueError,ProtectedError):
+        return JsonResponse({'success':False,'error':'所选区域已有团队地点、共享范围或业务记录引用，请先处理关联后再删除。'},status=409)
     messages.success(request, f'已删除 {count} 个区域')
     return JsonResponse({'success': True, 'deleted': count})
 
