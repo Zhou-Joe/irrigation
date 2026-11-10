@@ -17,17 +17,12 @@ def navigation(request):
         if is_pest(request):
             from operations.access import active_membership
             member=active_membership(request)
-            modules=[
-                dict(name='dashboard',label='区域地图',description='团队地点与图层',icon='map',url='/'),
-                dict(name='work_reports',label='工单记录',description='植保作业记录',icon='clipboard',url='/work-reports/')
-            ]
-            if request.user.is_superuser or member.role=='manager':
-                modules += [
-                    dict(name='locations',label='区域管理',description='地点与共享区域',icon='layers',url='/ops/locations/'),
-                    dict(name='team',label='用户管理',description='团队成员与权限',icon='users',url='/ops/team/')
-                ]
+            from operations.navigation import pest_modules
+            modules=pest_modules(request.user.is_superuser or member.role=='manager')
+            modules.append(dict(name='pest_profile',label='我的账号',description='个人资料与密码',icon='user',url='/ops/profile/'))
             return {'pwa_modules':modules}
-        return {}
+        from operations.access import has_irrigation_access
+        if not has_irrigation_access(request.user):return {}
     if not request.user.is_authenticated:
         return {}
     # The same destinations as the site's navigation, including manager tools.

@@ -1,0 +1,3 @@
+{% extends 'operations/base.html' %}{% block title %}植保数据报表{% endblock %}{% block ops_content %}
+<header class="app-head"><div><h1>数据报表</h1><p class="app-subtitle">{{ membership.team.name }} · {% if can_manage %}团队工作量、工时与作业覆盖{% else %}本人工作量与作业记录{% endif %}</p></div><a class="btn-sm btn-primary" data-ops-export="{% url 'operations:report_export' %}" href="{% url 'operations:report_export' %}"><svg class="ui-icon"><use href="#pwa-download"/></svg>导出 Excel</a></header>
+<div id="opsResults">{% include 'operations/_statistics_results.html' %}</div>{% endblock %}

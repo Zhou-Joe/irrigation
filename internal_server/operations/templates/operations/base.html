@@ -1,6 +1,19 @@
-{% load static %}<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>{% block title %}团队工作台{% endblock %} · FOS</title><link rel="stylesheet" href="{% static 'css/design-system.css' %}"><link rel="stylesheet" href="{% static 'operations/workspace.css' %}?v=20261108fixes2"><link rel="stylesheet" href="{% static 'operations/bulk-ui.css' %}?v=20261108fixes2">{% block head %}{% endblock %}</head><body>
-<header class="op-header"><a class="op-brand" href="{% url 'operations:home' %}"><img src="{% static 'pwa/brand.svg' %}" width="28" height="28" alt="">FOS <span>现场作业</span></a><div class="op-account"><span>{{ request.user.get_full_name|default:request.user.username }}</span><a href="{% url 'core:logout' %}">退出</a></div></header>
-<div class="op-shell"><section class="op-context" aria-label="团队身份"><div><span class="op-eyebrow">当前业务团队</span><h1>{{ membership.team.name|default:'选择团队身份' }}</h1>{% if membership %}<p>{{ membership.team.business.name }} <span class="op-badge">{% if is_platform_admin %}平台管理员{% else %}{{ membership.get_role_display }}{% endif %}</span></p>{% endif %}</div>{% include 'operations/_workspace_switch.html' with in_operations=True %}</section>
-<nav class="op-nav" aria-label="团队导航"><a href="{% url 'core:dashboard' %}">地图总览</a>{% if membership %}<a href="{% url 'core:work_reports' %}">工单记录</a><a href="{% url 'operations:locations' %}">地点与共享区域</a>{% if can_manage %}<a href="{% url 'operations:team' %}">团队成员</a>{% endif %}{% endif %}</nav>
-{% for message in messages %}<p class="op-notice" role="status">{{ message }}</p>{% endfor %}<main>{% block content %}{% endblock %}</main><footer class="op-footer">FOS · 多团队试点</footer></div>
-<script>window.opsDirty=false;document.querySelectorAll('[data-edit-form]').forEach(function(f){f.addEventListener('change',function(){window.opsDirty=true});f.addEventListener('submit',function(){window.opsDirty=false})});</script><script src="{% static 'operations/location-form.js' %}?v=20261108fixes2" defer></script><script src="{% static 'operations/bulk-ui.js' %}?v=20261108fixes2" defer></script>{% block scripts %}{% endblock %}</body></html>
+{% extends 'core/base.html' %}{% load static %}
+{% block title %}植保管理{% endblock %}
+{% block extra_ui_css %}
+<link rel="stylesheet" href="{% static 'operations/workspace.css' %}?v=20261111management1">
+<link rel="stylesheet" href="{% static 'operations/management.css' %}?v=20261111management1">
+{% block head %}{% endblock %}
+{% endblock %}
+{% block content %}
+<main class="app-wrap wide ops-page" data-ops-page>
+  {% for message in messages %}<div class="msg {% if message.tags == 'error' %}msg-error{% else %}msg-success{% endif %}" role="status">{{ message }}</div>{% endfor %}
+  <p class="ops-feedback" id="opsFeedback" role="status" aria-live="polite" hidden></p>
+  {% block ops_content %}{% endblock %}
+</main>
+{% endblock %}
+{% block extra_js %}
+<script src="{% static 'operations/location-form.js' %}?v=20261108fixes2" defer></script>
+<script src="{% static 'operations/management.js' %}?v=20261111management1" defer></script>
+{% block scripts %}{% endblock %}
+{% endblock %}

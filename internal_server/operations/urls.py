@@ -1,5 +1,5 @@
 from django.urls import path
-from . import views,bulk
+from . import views,bulk,management_views
 
 app_name = 'operations'
 urlpatterns = [
@@ -16,4 +16,15 @@ urlpatterns = [
     path('locations.geojson', views.location_geometry, name='location_geometry'),
     path('team/', views.team, name='team'),
     path('catalog/', views.catalog, name='catalog'),
+    path('business-data/',management_views.business_data,name='business_data'),
+    path('business-data/data/',management_views.catalog_data,name='catalog_data'),
+    path('business-data/save/',management_views.catalog_save,name='catalog_save'),
+    path('reports/',management_views.statistics,name='reports'),
+    path('reports/export/',management_views.report_export,name='report_export'),
+    path('reports/<int:pk>/action/',management_views.report_action,name='report_action'),
+    path('plans/',management_views.plans,name='plans'),
+    path('plans/save/',management_views.plan_save,name='plan_save'),
+    path('plans/dispatch/',management_views.dispatch,name='dispatch'),
+    path('tasks/<int:pk>/action/',management_views.task_action,name='task_action'),
+    path('profile/',management_views.profile,name='profile'),
 ]

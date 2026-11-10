@@ -1,0 +1,1 @@
+{% for module in pest_navigation %}<a href="{{ module.url }}" class="{% if request.resolver_match.url_name == module.name %}active{% endif %}">{{ module.label }}</a>{% endfor %}

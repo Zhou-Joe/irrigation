@@ -32,5 +32,5 @@
     });
     map.on('click',event=>creator.pick(event.latlng));
     document.querySelector('[data-map-create-open]')?.addEventListener('click',()=>creator.open());
-    window.FOSLocationMap={refresh:load,startCreation:()=>creator.open()};load();
+    window.FOSLocationMap={refresh:load,startCreation:()=>creator.open(),destroy(){generation++;creator.destroy();map.remove();}};load();
 })();

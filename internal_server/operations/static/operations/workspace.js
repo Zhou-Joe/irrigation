@@ -1,14 +1,16 @@
 /* Refresh business-dependent components in place; never navigate/reload the document. */
 (function () {
     'use strict';
-    if(!document.getElementById('dashboardWorkspace'))return;
+    if(!document.getElementById('dashboardWorkspace')&&!document.querySelector('[data-ops-page]'))return;
     let changing=false;
     const notify=(form,message)=>{if(window.IrrigationPWA?.notify)window.IrrigationPWA.notify(message);else form.title=message;};
     const path=script=>new URL(script.src,location.href).pathname;
     const loaded=new Set([...document.scripts].filter(s=>s.src).map(path));
-    const repeat=/\/(map\.js|dashboard\.js|dashboard-modal\.js|pest-map\.js)$/;
+    const repeat=/\/(map\.js|dashboard\.js|dashboard-modal\.js|pest-map\.js|workorder-chips\.js)$/;
     async function runScripts(doc) {
-        const holder=document.getElementById('dashboardScripts');holder.replaceChildren();
+        let holder=document.getElementById('dashboardScripts');
+        if(!holder){holder=document.createElement('div');holder.id='dashboardScripts';holder.hidden=true;document.body.append(holder);}
+        holder.replaceChildren();
         for(const original of doc.querySelectorAll('#dashboardScripts > script')) {
             if(original.type==='application/json'){holder.append(document.importNode(original,true));continue;}
             if(original.src) {
@@ -28,6 +30,8 @@
             for(const link of old.querySelectorAll('[data-pwa-nav]')){const counterpart=next.querySelector('[data-pwa-nav="'+link.dataset.pwaNav+'"]');link.hidden=!counterpart||counterpart.hidden;}}
         const list=document.querySelector('.pwa-module-list'),newList=doc.querySelector('.pwa-module-list');
         if(list&&newList)list.replaceChildren(...[...newList.childNodes].map(n=>document.importNode(n,true)));
+        for(const link of document.querySelectorAll('[data-pwa-nav]')){if(link.dataset.pwaNav==='map')link.setAttribute('aria-current','page');else link.removeAttribute('aria-current');}
+        document.querySelector('.pwa-bottom-nav [data-pwa-launcher]')?.removeAttribute('aria-current');
         for(const id of ['unread-notifications-data','pm-tasks-data']){const current=document.getElementById(id),value=doc.getElementById(id);if(current&&value)current.textContent=value.textContent;}
         window.FOSRefreshNotifications?.();
         document.title=doc.title;
@@ -38,15 +42,28 @@
     document.addEventListener('submit',async event=>{
         const form=event.target;if(!form.matches('.business-switch'))return;
         event.preventDefault();if(changing)return;
-        if(window.FOSPestMap?.busy?.()||window.FOSWorkorderModalLifecycle?.busy?.()){notify(form,'正在保存，请完成后再切换。');return;}
+        if(window.FOSPestMap?.busy?.()||window.FOSWorkorderModalLifecycle?.busy?.()||document.querySelector('[data-ops-page] form[data-busy]')){notify(form,'正在保存，请完成后再切换。');return;}
         changing=true;const button=form.querySelector('button[type=submit]'),label=button.textContent;button.disabled=true;button.textContent='切换中…';
         try {
             const response=await fetch(form.action,{method:'POST',credentials:'same-origin',body:new FormData(form),headers:{'X-Requested-With':'XMLHttpRequest'}});
             const result=await response.json();if(!response.ok||!result.success)throw Error(result.message||result.error||'切换失败');
             const page=await fetch('/',{credentials:'same-origin',cache:'no-store',headers:{'X-Requested-With':'XMLHttpRequest'}});
             if(!page.ok)throw Error('视图暂不可用，请重试切换。');
-            const doc=new DOMParser().parseFromString(await page.text(),'text/html'),next=doc.getElementById('dashboardWorkspace'),current=document.getElementById('dashboardWorkspace');
+            const doc=new DOMParser().parseFromString(await page.text(),'text/html'),next=doc.getElementById('dashboardWorkspace');
+            let current=document.getElementById('dashboardWorkspace');
             if(!next)throw Error('地图组件不可用，请重试。');
+            if(!current){
+                current=document.querySelector('[data-ops-page]');
+                if(!current)throw Error('页面组件不可用，请重试。');
+                // Management pages use the same shell; mount the destination map
+                // and its styles in place instead of redirecting the document.
+                for(const style of doc.querySelectorAll('head link[rel="stylesheet"],head style')){
+                    const present=style.tagName==='LINK'?[...document.querySelectorAll('head link[rel="stylesheet"]')].some(s=>s.href===style.href):[...document.querySelectorAll('head style')].some(s=>s.textContent===style.textContent);
+                    if(!present)document.head.append(document.importNode(style,true));
+                }
+                window.FOSLocationMap?.destroy?.();
+                history.replaceState(history.state,'','/');
+            }
             const mounted=current.dataset.business==='pest-control'?window.FOSPestMap:window.FOSDashboardLifecycle&&window.FOSMapLifecycle;
             const same=current.dataset.business===next.dataset.business&&current.dataset.mounted!=='no'&&!!mounted;
             updateShell(doc);

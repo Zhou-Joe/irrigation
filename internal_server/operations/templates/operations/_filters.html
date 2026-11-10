@@ -1,0 +1,12 @@
+<section class="filter-card">
+  <div class="preset-row"><button type="button" class="preset-pill" data-ops-days="7">近 7 天</button><button type="button" class="preset-pill" data-ops-days="30">近 30 天</button><button type="button" class="preset-pill" data-ops-days="90">近 90 天</button></div>
+  <form method="get" id="opsFilter" class="filter-row" data-ops-filter data-today="{% now 'Y-m-d' %}">
+    <input type="hidden" name="tab" value="{{ active_tab|default:'records' }}">
+    <div class="ff"><label for="dateFrom">开始日期</label><input type="date" id="dateFrom" name="date_from" value="{{ date_from }}" required></div>
+    <div class="ff"><label for="dateTo">结束日期</label><input type="date" id="dateTo" name="date_to" value="{{ date_to }}" required></div>
+    <div class="ff"><label for="opsLocation">地点</label><select name="location" id="opsLocation"><option value="">全部地点</option>{% for place in places %}<option value="{{ place.pk }}" {% if selected_location == place.pk|stringformat:'s' %}selected{% endif %}>{{ place.name }}{% if place.code %} · {{ place.code }}{% endif %}</option>{% endfor %}</select></div>
+    <div class="ff"><label for="opsCategory">工作类别</label><select name="category" id="opsCategory"><option value="">全部类别</option>{% for category in categories %}<option value="{{ category.label }}" {% if selected_category == category.label %}selected{% endif %}>{{ category.label }}</option>{% endfor %}</select></div>
+    {% if can_manage %}<div class="ff"><label for="opsWorker">处理人</label><select name="worker" id="opsWorker"><option value="">全部人员</option>{% for person in staff %}<option value="{{ person.user_id }}" {% if selected_worker == person.user_id|stringformat:'s' %}selected{% endif %}>{{ person.user.get_full_name|default:person.user.username }}</option>{% endfor %}</select></div>{% endif %}
+    <div class="ff"><label for="opsQuery">关键词</label><input type="text" id="opsQuery" name="q" value="{{ query }}" placeholder="工单号、地点或工作内容"></div><button class="btn-sm btn-primary" type="submit">查询</button>
+  </form>{% if filter_error %}<p class="op-error" role="alert">{{ filter_error }}</p>{% endif %}
+</section>

@@ -1,4 +1,4 @@
-{% extends 'operations/base.html' %}{% block content %}
+{% extends 'operations/base.html' %}{% block ops_content %}
 {% if membership %}<section class="op-intro"><h2>{{ membership.team.business.name }}工作台</h2><p>在当前团队身份下查看授权地点、共享区域和工作参考目录。</p></section><div class="op-grid"><a class="op-card op-card-link" href="{% url 'operations:locations' %}"><span class="op-eyebrow">地点与区域</span><strong class="op-metric">{{ location_count }}</strong><p>包含本团队地点和已获共享授权的区域。</p></a><a class="op-card op-card-link" href="{% url 'operations:catalog' %}"><span class="op-eyebrow">工作参考目录</span><h3>按对象与场景浏览</h3><p>保留原有层级与附属步骤，供试点团队确认。</p></a>{% if can_manage %}<a class="op-card op-card-link" href="{% url 'operations:team' %}"><span class="op-eyebrow">团队成员</span><h3>人员与角色</h3><p>团队身份独立管理，一人可加入多个团队。</p></a>{% endif %}</div>
 <section class="op-card"><h2>试点范围</h2><p>本批已开放团队身份、地点管理、区域共享与目录浏览。植保案件、巡查填报、定期派工与专用报表将在后续批次接入。</p><p class="op-muted">共享地点只开放地点资料与当前边界，不附带开放其他团队的工单、备注或照片。</p></section>
 {% else %}<section class="op-card"><h2>请确认团队身份</h2><p>当前选择的身份可能已停用。可从上方切换至其他有效身份；若没有可选团队，请联系管理员。</p></section>{% endif %}{% endblock %}

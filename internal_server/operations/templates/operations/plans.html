@@ -1,0 +1,3 @@
+{% extends 'operations/base.html' %}{% block title %}植保作业计划{% endblock %}{% block ops_content %}
+<header class="app-head"><div><h1>作业计划</h1><p class="app-subtitle">周期安排、地点轮转与任务派发</p></div><div class="ops-actions"><a class="btn-sm btn-secondary" href="/work-reports/?tab=tasks">查看任务</a>{% if can_manage %}<button class="btn-sm btn-primary" type="button" data-plan-edit>新增计划</button>{% endif %}</div></header><div id="opsResults">{% include 'operations/_plan_results.html' %}</div>
+{% endblock %}

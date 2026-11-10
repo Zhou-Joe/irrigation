@@ -1,6 +1,6 @@
 {% extends 'operations/base.html' %}{% load static %}
 {% block head %}{% include 'operations/_location_map_head.html' %}{% endblock %}
-{% block content %}
+{% block ops_content %}
 <section class="op-card op-form-card">
   <a href="{% url 'operations:locations' %}">返回地点列表</a>
   <h2>{% if location.created_at %}编辑地点{% else %}新增地点{% endif %}</h2>

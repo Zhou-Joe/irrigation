@@ -1,7 +1,7 @@
 {% extends 'operations/base.html' %}
 {% block title %}地点与共享区域{% endblock %}
 {% block head %}{% include 'operations/_location_map_head.html' %}{% endblock %}
-{% block content %}
+{% block ops_content %}
 <div class="op-title-row"><div><h2>地点与共享区域</h2><p class="op-muted">在地图上点选位置、输入名称，可连续添加建筑、房间或监测点。</p></div>{% if can_manage %}<div class="op-actions"><button class="op-btn" type="button" data-map-create-open>批量新建</button>{% if membership.team.business.code == 'irrigation' or request.user.is_superuser %}<a class="op-btn op-secondary" href="{% url 'operations:link_irrigation' %}">批量共享灌溉区域</a>{% endif %}</div>{% endif %}</div>
 <div class="op-map-workspace"><div class="op-map" data-location-map data-endpoint="{% url 'operations:location_geometry' %}"></div>{% include 'operations/_map_location_create.html' %}</div><p class="op-muted" id="opMapStatus" role="status">正在加载授权地点…</p>
 <form class="op-search" method="get" data-location-search><label for="q">搜索地点</label><input id="q" name="q" value="{{ query }}" placeholder="名称或编号"><button class="op-btn op-secondary">搜索</button></form>

@@ -1,7 +1,7 @@
 {% extends 'operations/base.html' %}
 {% block title %}{{ location.name }}{% endblock %}
 {% block head %}{% include 'operations/_location_map_head.html' %}{% endblock %}
-{% block content %}
+{% block ops_content %}
 <div class="op-title-row"><div><a href="{% url 'operations:locations' %}">返回地点列表</a><h2>{{ location.name }}</h2></div>{% if manage %}<a class="op-btn op-secondary" href="{% url 'operations:location_edit' location.pk %}">编辑地点资料</a>{% endif %}</div>
 <section class="op-card">
   <dl class="op-details">
