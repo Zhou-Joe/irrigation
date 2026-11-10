@@ -1,17 +1,22 @@
 {% extends 'operations/base.html' %}{% load static %}
-{% block head %}{% include 'operations/_location_map_head.html' %}{% endblock %}
+{% block title %}{% if location.created_at %}编辑地点{% else %}新增地点{% endif %}{% endblock %}
+{% block head %}{% include 'operations/_location_map_head.html' %}<link rel="stylesheet" href="{% static 'operations/location-management.css' %}?v=20261111locations2">{% endblock %}
 {% block ops_content %}
-<section class="op-card op-form-card">
-  <a href="{% url 'operations:locations' %}">返回地点列表</a>
-  <h2>{% if location.created_at %}编辑地点{% else %}新增地点{% endif %}</h2>
-  <p class="op-muted">建筑、楼层、房间与监测点都可单独登记。编号和地图定位为可选项；图钉只表示大致位置。</p>
-  <form method="post" data-edit-form data-location-edit>{% csrf_token %}{{ form.non_field_errors }}
-    {% for field in form %}<div class="op-field">{{ field.label_tag }}{{ field }}{% if field.help_text %}<small>{{ field.help_text }}</small>{% endif %}{{ field.errors }}</div>{% endfor %}
-    {% if not location.legacy_zone_id %}<p class="op-muted">点击地图放置图钉，再点一次可调整位置；也可直接填写坐标。未定位时仍可登记和填写工单。</p><div id="opPointMap" class="op-map op-map-small"></div>{% endif %}
-    <div class="op-actions"><button type="submit" class="op-btn" data-location-save>保存地点</button><a href="{% url 'operations:locations' %}" class="op-btn op-secondary">取消</a></div><p class="op-save-status" data-location-status role="status" aria-live="polite"></p>
+<div class="loc-form-page"><header class="app-head"><div><a class="loc-back-link" href="{% url 'operations:locations' %}"><svg class="ui-icon loc-left-chevron" aria-hidden="true"><use href="#pwa-chevron-right"/></svg>区域管理</a><h1>{% if location.created_at %}编辑地点{% else %}新增地点{% endif %}</h1><p class="app-subtitle">填写名称、选择类型，在地图上点选位置即可。</p></div></header>
+<section class="op-form-card">
+  <form class="loc-location-form" method="post" action="{% if location.created_at %}{% url 'operations:location_edit' location.pk %}{% else %}{% url 'operations:location_new' %}{% endif %}" data-edit-form data-location-edit>{% csrf_token %}{{ form.non_field_errors }}
+    <div class="loc-form-grid"><section class="loc-form-section"><div class="loc-section-label"><span>01</span><h2>地点资料</h2></div>
+      <div class="op-field">{{ form.name.label_tag }}{{ form.name }}{{ form.name.errors }}</div>
+      <div class="op-field">{{ form.kind.label_tag }}{{ form.kind }}{{ form.kind.errors }}</div>
+      <div class="op-field">{{ form.map_display.label_tag }}{{ form.map_display }}{{ form.map_display.errors }}<small>自动显示会优先使用边界；建筑、房间可选择图钉。</small></div>
+      <details class="loc-form-details" {% if form.code.errors or form.parent.errors %}open{% endif %}><summary><span>编号与上级地点</span><small>选填</small><svg class="ui-icon" aria-hidden="true"><use href="#pwa-chevron-right"/></svg></summary><div><div class="op-field">{{ form.code.label_tag }}{{ form.code }}{{ form.code.errors }}</div><div class="op-field">{{ form.parent.label_tag }}{{ form.parent }}{{ form.parent.errors }}<small>如楼层属于建筑、房间属于楼层，也可留空。</small></div></div></details>
+      <div class="op-field loc-description-field">{{ form.description.label_tag }}{{ form.description }}{{ form.description.errors }}</div>
+    </section><section class="loc-form-section loc-form-map-section"><div class="loc-section-label"><span>02</span><h2>地图位置</h2><small>选填</small></div>
+      {% if not location.legacy_zone_id %}<p class="loc-field-help">点击地图放置图钉，再点一次可调整。暂不定位也可以保存地点。</p><div id="opPointMap" class="op-map op-map-small" aria-label="点选地点位置"></div>{% else %}<div class="loc-source-notice"><svg class="ui-icon" aria-hidden="true"><use href="#pwa-layers"/></svg><div><strong>引用灌溉区域边界</strong><p>当前使用 {{ location.boundary_source }}。切换图钉显示不会修改原区域轮廓。</p></div></div>{% endif %}
+      <details class="loc-form-details" {% if form.latitude.errors or form.longitude.errors %}open{% endif %}><summary><span>手动输入坐标</span><small>选填</small><svg class="ui-icon" aria-hidden="true"><use href="#pwa-chevron-right"/></svg></summary><div class="loc-coordinate-grid"><div class="op-field">{{ form.latitude.label_tag }}{{ form.latitude }}{{ form.latitude.errors }}</div><div class="op-field">{{ form.longitude.label_tag }}{{ form.longitude }}{{ form.longitude.errors }}</div></div></details>
+    </section></div>
+    <footer class="loc-form-footer"><p class="op-save-status" data-location-status role="status" aria-live="polite"></p><div class="ops-actions"><a class="btn-sm btn-secondary loc-page-cancel" href="{% url 'operations:locations' %}">返回列表</a><button class="btn-sm btn-secondary loc-modal-cancel" type="button" data-location-editor-close>取消</button><button type="submit" class="btn-sm btn-primary" data-location-save>保存地点</button></div></footer>
   </form>
-</section>
+</section></div>
 {% endblock %}
-{% block scripts %}{% if not location.legacy_zone_id %}
-<script src="{% static 'vendor/leaflet/leaflet.js' %}"></script><script src="{% static 'operations/map-markers.js' %}?v=20261108pins1"></script><script src="{% static 'operations/location-editor.js' %}?v=20261108pins1"></script>
-{% endif %}{% endblock %}
+{% block scripts %}{% if not location.legacy_zone_id %}<script src="{% static 'vendor/leaflet/leaflet.js' %}"></script><script src="{% static 'operations/map-markers.js' %}?v=20261108pins1"></script><script src="{% static 'operations/location-editor.js' %}?v=20261111locations2"></script>{% endif %}{% endblock %}

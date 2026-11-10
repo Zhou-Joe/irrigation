@@ -62,6 +62,7 @@
                     if(!present)document.head.append(document.importNode(style,true));
                 }
                 window.FOSLocationMap?.destroy?.();
+                window.FOSLocationEditor?.destroyAll?.();
                 history.replaceState(history.state,'','/');
             }
             const mounted=current.dataset.business==='pest-control'?window.FOSPestMap:window.FOSDashboardLifecycle&&window.FOSMapLifecycle;

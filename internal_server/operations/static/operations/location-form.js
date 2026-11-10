@@ -4,6 +4,7 @@
     const say=(form,message,error=false)=>{const el=status(form);if(el){el.textContent=message;el.classList.toggle('op-error',error);}};
     document.addEventListener('invalid',event=>{
         const form=event.target.closest('[data-location-edit]');if(!form)return;
+        const section=event.target.closest('details');if(section)section.open=true;
         say(form,(event.target.labels?.[0]?.textContent||'表单内容')+'：'+event.target.validationMessage,true);
         window.opsDirty=true;
     },true);
