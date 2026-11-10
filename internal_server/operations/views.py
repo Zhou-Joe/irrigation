@@ -8,6 +8,7 @@ from django.db.models import Q
 from django.http import JsonResponse
 from django.shortcuts import render, redirect, get_object_or_404
 from django.views.decorators.http import require_POST, require_GET, require_http_methods
+from django.views.decorators.debug import sensitive_post_parameters
 
 from .access import (memberships, active_membership, require_member, visible_locations, business_options,
                      can_manage_location, audit, has_irrigation_access)
@@ -201,14 +202,19 @@ def location_geometry(request):
 
 @login_required
 @require_http_methods(['GET', 'POST'])
+@sensitive_post_parameters('new_password')
 def team(request):
     member = require_member(request, manager=True)
     team_id = request.POST.get('team') if request.method == 'POST' else request.GET.get('team')
     target_team = get_object_or_404(Team, pk=number(team_id)) if team_id else member.team
     if target_team.pk != member.team_id and not request.user.is_superuser:
         raise PermissionDenied('只能管理自己的团队。')
+    if target_team.business_id!=member.team.business_id:
+        raise PermissionDenied('请先切换至对应业务视图。')
     error = ''
     if request.method == 'POST':
+        if request.POST.get('context_team',str(member.team_id))!=str(member.team_id):
+            return JsonResponse({'success':False,'message':'业务视图已变化，请重新打开用户管理。'},status=409)
         role = request.POST.get('role', '')
         username = request.POST.get('username', '').strip()
         action = request.POST.get('action', 'save')
@@ -224,11 +230,20 @@ def team(request):
                     user = get_user_model().objects.filter(username=username, is_active=True).first()
                     if user is None:
                         password = request.POST.get('new_password', '')
-                        if not request.user.is_superuser or action != 'save' or not password:
-                            raise ValidationError('请输入已启用的账号；新建账号由平台管理员设置初始密码。')
-                        user = get_user_model()(username=username)
+                        if get_user_model().objects.filter(username=username).exists():
+                            raise ValidationError('此账号已停用，请由平台管理员处理。')
+                        if action != 'save' or not password:
+                            raise ValidationError('新增账号请设置初始密码；添加已有账号时无需填写密码。')
+                        if target_team.business.code!='pest-control' and not request.user.is_superuser:
+                            raise ValidationError('当前业务的新账号仍由平台管理员创建。')
+                        if len(username)<3:raise ValidationError('用户名至少需要 3 个字符。')
+                        user = get_user_model()(username=username,first_name=request.POST.get('full_name','').strip(),
+                            email=request.POST.get('email','').strip())
                         user.full_clean(exclude=['password'])
-                        validate_password(password, user)
+                        from django.utils import translation
+                        with translation.override('zh-hans'):
+                            try:validate_password(password, user)
+                            except ValidationError as invalid:raise ValidationError([str(message) for message in invalid.messages])
                         user.set_password(password)
                         user.save()
                     existing = Membership.objects.filter(user=user, team=target_team).first()
@@ -236,23 +251,46 @@ def team(request):
                         raise ValidationError('经理身份的变更由平台管理员处理。')
                     if user.pk == request.user.pk and action == 'disable':
                         raise ValidationError('不能在这里停用自己的团队身份。')
+                    if existing and existing.active and existing.role=='manager' and (action=='disable' or role!='manager'):
+                        if not Membership.objects.filter(team=target_team,role='manager',active=True,user__is_active=True).exclude(pk=existing.pk).exists():
+                            raise ValidationError('请先安排另一位团队经理，再调整当前经理身份。')
                     obj, _ = Membership.objects.update_or_create(user=user, team=target_team,
                                                                 defaults={'role': role, 'active': action == 'save'})
                     audit(request, target_team, 'membership.' + action, obj.pk, role=role)
+                if request.headers.get('X-Requested-With')=='XMLHttpRequest':
+                    return JsonResponse({'success':True,'message':'团队成员已更新，其他团队的身份保持不变。','refresh':True})
                 messages.success(request, '团队成员身份已更新。')
                 return redirect(request.path + '?team=' + str(target_team.pk))
             except (ValidationError, IntegrityError) as exc:
                 error = '；'.join(exc.messages) if isinstance(exc, ValidationError) else '账号或成员身份已存在，请刷新后重试。'
-    return page(request, 'team', managed_team=target_team, error=error,
-                team_members=Membership.objects.filter(team=target_team).select_related('user'),
-                all_teams=Team.objects.filter(active=True, business__active=True) if request.user.is_superuser else [],
-                roles=Membership.ROLES)
+        if request.headers.get('X-Requested-With')=='XMLHttpRequest':
+            return JsonResponse({'success':False,'message':error},status=400)
+    from django.core.paginator import Paginator
+    from django.db.models import Count
+    from .models import AuditEvent
+    from .management_views import render_page
+    qs=Membership.objects.filter(team=target_team).select_related('user').order_by('-active','user__username')
+    counts=qs.aggregate(total=Count('pk'),active=Count('pk',filter=Q(active=True,user__is_active=True)),
+        managers=Count('pk',filter=Q(role='manager',active=True)),field=Count('pk',filter=Q(role='field',active=True)))
+    query=request.GET.get('q','').strip()[:150]
+    if query:qs=qs.filter(Q(user__username__icontains=query)|Q(user__first_name__icontains=query)|Q(user__email__icontains=query))
+    role_filter=request.GET.get('role','')
+    if role_filter in dict(Membership.ROLES):qs=qs.filter(role=role_filter)
+    context={'membership':member,'can_manage':True,'managed_team':target_team,'error':error,
+        'team_members':Paginator(qs,30).get_page(request.GET.get('page')),'counts':counts,'query':query,
+        'selected_role':role_filter,'roles':Membership.ROLES,
+        'all_teams':Team.objects.filter(active=True,business=member.team.business) if request.user.is_superuser else [],
+        'audit_events':AuditEvent.objects.filter(team=target_team).select_related('actor').order_by('-pk')[:50]}
+    return render_page(request,'operations/team.html',context,'operations/_team_results.html')
 
 
 @login_required
 @require_GET
 def catalog(request):
     member = require_member(request)
+    if member.team.business.code=='pest-control':
+        from .management_views import business_data
+        return business_data(request)
     current = ReferenceCatalog.objects.filter(business=member.team.business).order_by('-imported_at', '-id').first()
     roots = []
     if current:

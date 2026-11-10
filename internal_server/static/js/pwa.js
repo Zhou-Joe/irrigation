@@ -68,7 +68,7 @@
     });
     if (launcher) document.getElementById('pwaModuleSearch').addEventListener('input', function (event) { filterModules(event.target.value); });
     var pathname = window.location.pathname;
-    var active = pathname === '/app/' ? 'home' : pathname === '/' ? 'map' : pathname.indexOf('/work-reports/') === 0 ? 'work' : pathname.indexOf('/inventory/') === 0 ? 'stock' : null;
+    var active = pathname === '/app/' ? 'home' : pathname === '/' ? 'map' : pathname.indexOf('/work-reports/') === 0 ? 'work' : pathname.indexOf('/inventory/') === 0 ? 'stock' : pathname.indexOf('/ops/reports/') === 0 ? 'pest-data' : null;
     document.querySelectorAll('[data-pwa-nav]').forEach(function (link) {
         if (link.dataset.pwaNav === active) link.setAttribute('aria-current', 'page');
     });

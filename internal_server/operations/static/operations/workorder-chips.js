@@ -55,7 +55,7 @@
         };
     }
 
-    function mount(form, tree, presetPlaces = [], onChange = () => {}) {
+    function mount(form, tree, presetNodes = [], onChange = () => {}) {
         const doc = form.ownerDocument;
         const state = createState(tree);
         const categories = form.querySelector('#pestCategoryChips');
@@ -118,6 +118,7 @@
             }
             onChange();
         };
+        for (const id of presetNodes) state.choose(id);
         render();
         return state;
     }

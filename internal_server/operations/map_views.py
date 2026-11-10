@@ -16,6 +16,7 @@ from core.models import WorkReport
 from core.submissions import submission
 from .access import active_membership, require_member, visible_locations, audit
 from .models import ReferenceCatalog, PestWorkData
+from .catalog_service import current_catalog, selection_snapshot
 from .map_data import location_map_data
 
 
@@ -38,7 +39,7 @@ def records(request):
     qs = WorkReport.all_businesses.filter(business_team=member.team, pest_data__isnull=False)
     if member.role != 'manager' and not request.user.is_superuser:
         qs = qs.filter(worker__user=request.user)
-    return qs.select_related('worker', 'pest_data').order_by('-id')
+    return qs.select_related('worker', 'pest_data').order_by('-date','-id')
 
 
 def roots_for(catalog):
@@ -74,7 +75,9 @@ def pest_map_data(request):
     result = []
     for location in visible_locations(member.team):
         result.append({**location_map_data(location), 'shared':location.owner_team_id != member.team_id})
-    response = JsonResponse({'business':'pest-control', 'locations':result,
+    from .planning import task_scope
+    pending=task_scope(request,member).filter(status='pending',scheduled_date__lte=timezone.localdate()).count()
+    response = JsonResponse({'business':'pest-control', 'locations':result,'pending_tasks':pending,
         'records':[{'id':r.pk, 'number':r.display_number, 'date':r.date.isoformat(),
                     'locations':[str(p.pk) for p in r.pest_data.locations.all()]}
                    for r in records(request)[:50].prefetch_related('pest_data__locations')]})
@@ -85,23 +88,39 @@ def pest_map_data(request):
 @require_GET
 def pest_form_data(request):
     member = require_writer(request)
-    catalog = ReferenceCatalog.objects.filter(business=member.team.business).order_by('-imported_at','-id').first()
+    from .models import PestTask
+    from .planning import task_scope
+    report=None;task=None
+    if request.GET.get('report_id','').isdigit():report=get_object_or_404(records(request),pk=int(request.GET['report_id']))
+    if request.GET.get('pest_task','').isdigit():task=get_object_or_404(task_scope(request,member),pk=int(request.GET['pest_task']),status='pending')
+    if report and task:return JsonResponse({'error':'请分别打开工单编辑或 PM 任务。'},status=400)
+    catalog=report.pest_data.catalog if report else task.catalog if task else current_catalog(member.team)
     if not catalog:
         return JsonResponse({'error':'尚未导入本团队的作业层级，请联系管理员。'}, status=400)
     today=timezone.localdate()
     now=timezone.localtime()
     start_minutes=now.hour*60+now.minute//15*15
     clock=lambda minutes:f'{(minutes%1440)//60:02d}:{minutes%60:02d}'
+    time_options={clock(n) for n in range(0,1440,15)}
+    if report:
+        time_options.update(value.strftime('%H:%M') for value in (report.work_start_time,report.work_end_time) if value)
     tree=chip_tree(roots_for(catalog))
     options=[{'id':str(p.pk),'name':p.name,'code':p.code,'kind':p.kind,'parent':str(p.parent_id) if p.parent_id else ''}
-             for p in visible_locations(member.team)]
+             for p in visible_locations(member.team).select_related(None).only('id','name','code','kind','parent_id')]
     html = render_to_string('operations/_pest_workorder_form.html', {
         'catalog':catalog, 'work_tree':tree, 'location_options':options,
-        'team':member.team, 'today':today.isoformat(), 'dates':[(today-timedelta(days=n)).isoformat() for n in range(90)],
-        'time_options':[clock(n) for n in range(0,1440,15)], 'start_time':clock(start_minutes), 'end_time':clock(start_minutes+15),
+        'team':member.team, 'today':today.isoformat(), 'report':report,'task':task,
+        'dates':list(dict.fromkeys(([report.date.isoformat()] if report else [])+[(today-timedelta(days=n)).isoformat() for n in range(90)])),
+        'selected_date':report.date.isoformat() if report else today.isoformat(),
+        'selected_shift':report.shift if report and report.shift else WorkReport.SHIFT_CHOICES[0][0],
+        'preset_nodes':[s['node_id'] for s in (report.pest_data.selections if report else task.selections if task else [])],
+        'preset_locations':[str(p.pk) for p in report.pest_data.locations.all()] if report else [str(task.location_id)] if task else [],
+        'time_options':sorted(time_options),
+        'start_time':report.work_start_time.strftime('%H:%M') if report and report.work_start_time else clock(start_minutes),
+        'end_time':report.work_end_time.strftime('%H:%M') if report and report.work_end_time else clock(start_minutes+15),
         'shifts':[value for value,_ in WorkReport.SHIFT_CHOICES],
         'submission_key':str(uuid.uuid4())},request=request)
-    return JsonResponse({'business':'pest-control', 'form_html':html})
+    return JsonResponse({'business':'pest-control', 'form_html':html,'form_title':'编辑植保工单' if report else '完成植保 PM 任务' if task else '植保作业工单'})
 
 
 def pest_workorder(request, report_id=None):
@@ -113,14 +132,25 @@ def pest_workorder(request, report_id=None):
     # Validate context before idempotency replay as well as before writes.
     if request.POST.get('team') != str(member.team_id):
         return JsonResponse({'success':False,'message':'团队身份已变化，请重新打开工单。'},status=409)
-    if report_id or request.POST.get('report_id'):
-        return JsonResponse({'success':False,'message':'此入口用于新建植保工单。'},status=400)
+    if report_id and str(report_id)!=request.POST.get('report_id'):
+        return JsonResponse({'success':False,'message':'工单编号不一致，请重新打开。'},status=400)
     return _save_pest_workorder(request)
 
 
 @submission('pest-workorder')
 def _save_pest_workorder(request):
     member = require_writer(request)
+    from .models import PestTask
+    from .planning import task_scope
+    report=None;task=None
+    report_id=request.POST.get('report_id','');task_id=request.POST.get('pest_task','')
+    if report_id:
+        if not report_id.isdigit():return JsonResponse({'success':False,'message':'工单编号无效。'},status=400)
+        report=get_object_or_404(records(request),pk=int(report_id))
+        task=PestTask.objects.filter(report=report,team=member.team).first()
+    elif task_id:
+        if not task_id.isdigit():return JsonResponse({'success':False,'message':'任务编号无效。'},status=400)
+        task=get_object_or_404(task_scope(request,member),pk=int(task_id),status='pending')
     try:
         day = parse_date(request.POST.get('date',''))
         if not day or day > timezone.localdate():
@@ -139,6 +169,8 @@ def _save_pest_workorder(request):
         if bool(start_raw)!=bool(end_raw) or (start_raw and (start is None or end is None)):
             raise ValueError('请核对开始和完成时间。')
         catalog = ReferenceCatalog.objects.get(pk=int(request.POST.get('catalog','0')),business=member.team.business)
+        if catalog.owner_team_id not in (None,member.team_id):raise ValueError('目录不属于当前团队。')
+        if report and report.pest_data.catalog_id!=catalog.pk:raise ValueError('工单目录版本不一致。')
         ids = {int(value) for value in request.POST.getlist('nodes')}
         if not ids:
             raise ValueError('请从作业层级中选择至少一项工作内容。')
@@ -149,43 +181,59 @@ def _save_pest_workorder(request):
         locations = list(visible_locations(member.team).filter(pk__in=location_ids))
         if not locations or len(locations) != len(location_ids):
             raise ValueError('请选择当前团队有权使用的地点。')
+        if task and (catalog.pk!=task.catalog_id or task.location_id not in location_ids or
+                     not {s['node_id'] for s in task.selections}.issubset(ids)):
+            raise ValueError('请保留任务要求的地点和工作内容。')
+        remark=request.POST.get('remark','').strip()
+        if len(remark)>10000:raise ValueError('备注最多支持 10000 字。')
     except (ValueError,TypeError,ReferenceCatalog.DoesNotExist):
         # Do not disclose other teams' node/place identifiers.
         return JsonResponse({'success':False,'message':'请核对日期、人数、地点和作业内容；地点或目录不可用时请重新打开表单。'},status=400)
-    by_id = {n.pk:n for n in catalog.nodes.all()}
-    selections = []
-    for node in nodes:
-        path, current = [], node
-        while current:
-            path.append(current.label)
-            current = by_id.get(current.parent_id)
-        selections.append({'node_id':node.pk,'path':list(reversed(path)),'kind':node.kind})
+    selections=selection_snapshot(catalog,ids)
     from core.role_utils import resolve_or_create_worker
     from core.workorder_tree_views import _calc_hours
     with transaction.atomic():
         worker, _ = resolve_or_create_worker(request.user)
-        report = WorkReport.all_businesses.create(date=day,worker=worker,business_team=member.team,
-            team_size=size,third_party_count=third_party,shift=shift,work_start_time=start,work_end_time=end,
+        editing=report is not None
+        if task and not editing:
+            task=get_object_or_404(task_scope(request,member).select_for_update(),pk=task.pk,status='pending')
+        values=dict(date=day,team_size=size,third_party_count=third_party,shift=shift,work_start_time=start,work_end_time=end,
             team_hours=_calc_hours(start,end,size),third_party_hours=_calc_hours(start,end,third_party),
-            zone_names='、'.join(p.name for p in locations),remark=request.POST.get('remark','').strip(),
+            zone_names='、'.join(p.name for p in locations),remark=remark,
             work_content='\n'.join(' / '.join(s['path']) for s in selections))
-        report.ticket_number=f'PPC-{report.pk}'
-        report.save(update_fields=['ticket_number'])
-        detail=PestWorkData.objects.create(report=report,catalog=catalog,selections=selections,
-            location_labels=[{'id':str(p.pk),'name':p.name,'code':p.code} for p in locations])
+        if editing:
+            for field,value in values.items():setattr(report,field,value)
+            report.save(update_fields=[*values,'updated_at'])
+            from core.models import WorkReportEditLog
+            WorkReportEditLog.objects.create(work_report=report,editor=worker,note='编辑植保作业记录')
+        else:
+            report=WorkReport.all_businesses.create(worker=worker,business_team=member.team,is_pm=bool(task),**values)
+            report.ticket_number=f'PPC-PM-{task.pk}' if task else f'PPC-{report.pk}'
+            report.save(update_fields=['ticket_number'])
+        detail,_=PestWorkData.objects.update_or_create(report=report,defaults=dict(catalog=catalog,selections=selections,
+            location_labels=[{'id':str(p.pk),'name':p.name,'code':p.code} for p in locations]))
         detail.locations.set(locations)
-        audit(request,member.team,'pest.workorder.submit',report.pk)
-    return JsonResponse({'success':True,'report_id':report.pk,'number':report.display_number,'message':'植保工单已提交。'})
+        if task and not editing:
+            changed=PestTask.objects.filter(pk=task.pk,status='pending',assignee_id=task.assignee_id).update(
+                report=report,status='completed',updated_at=timezone.now())
+            if not changed:
+                transaction.set_rollback(True)
+                return JsonResponse({'success':False,'message':'任务状态已有变化，请重新打开任务。'},status=409)
+        audit(request,member.team,'pest.workorder.edit' if editing else 'pest.workorder.submit',report.pk)
+    return JsonResponse({'success':True,'report_id':report.pk,'number':report.display_number,'message':'植保工单已保存。'})
 
 
 @require_GET
 def pest_reports(request):
-    from django.core.paginator import Paginator
-    page=Paginator(records(request),30).get_page(request.GET.get('page'))
-    return render(request,'operations/pest_reports.html',{'pest_mode':True,'reports':page})
+    from .management_views import report_list
+    return report_list(request)
 
 
 @require_GET
 def pest_report_detail(request, report_id):
-    report=get_object_or_404(records(request),pk=report_id)
-    return render(request,'operations/pest_report_detail.html',{'pest_mode':True,'report':report})
+    from .management_views import render_page
+    member=require_member(request)
+    report=get_object_or_404(records(request).prefetch_related('comments__author','edit_logs__editor'),pk=report_id)
+    context={'membership':member,'report':report,'can_manage':member.role=='manager' or request.user.is_superuser,
+             'can_submit':member.role in ('manager','field') or request.user.is_superuser}
+    return render_page(request,'operations/pest_report_detail.html',context,'operations/_pest_report_detail.html')
