@@ -1022,7 +1022,7 @@ def report_export_api(request, report_type=None):
 
     ``GET /api/report-exports/<report_type>/?start=YYYY-MM-DD&end=YYYY-MM-DD``
 
-    * ``report_type`` ∈ the 7 supported types (see ``report_export.REPORT_TYPES``).
+    * ``report_type`` ∈ the supported types (see ``report_export.REPORT_TYPES``).
     * ``start`` / ``end`` are optional ``YYYY-MM-DD`` query params. When both are
       omitted the window defaults to the last 30 days. Dateless reports
       (zones / inventory_catalog / purchase_orders) ignore the window.

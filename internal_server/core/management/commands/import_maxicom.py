@@ -149,18 +149,14 @@ class Command(BaseCommand):
 
     def _import_weather_stations(self, conn):
         """Import WETHR_CF -> MaxicomWeatherStation"""
+        from core.maxicom_weather import station_defaults
+        from core.flow_import import latest_config
         cursor = conn.execute('SELECT * FROM WETHR_CF')
         ws_map = {}
-        for row in cursor.fetchall():
-            r = dict(row)
-            idx = r['IndexNumber']
-            ws, _ = MaxicomWeatherStation.objects.get_or_create(
+        for idx, r in latest_config(dict(row) for row in cursor.fetchall()).items():
+            ws, _ = MaxicomWeatherStation.objects.update_or_create(
                 mdb_index=idx,
-                defaults={
-                    'name': (r.get('IndexName') or '').strip(),
-                    'default_et': r.get('WeatherDefaultET'),
-                    'time_zone': r.get('WeatherTimeZone', 'China') or 'China',
-                }
+                defaults=station_defaults(r, idx),
             )
             ws_map[idx] = ws
         return ws_map
@@ -276,27 +272,24 @@ class Command(BaseCommand):
         return count
 
     def _import_weather_logs(self, conn, ws_map):
-        """Import XA_WETHR -> MaxicomWeatherLog"""
+        """Import hourly XA_WETHR using the same SI boundary as Linux sync."""
+        from core.maxicom_weather import parse_weather_row, WEATHER_FIELDS
         cursor = conn.execute('SELECT * FROM XA_WETHR')
         batch = []
         count = 0
         for row in cursor.fetchall():
             r = dict(row)
-            ws_idx = r.get('XactIndex')
+            normalized = parse_weather_row(r)
+            if normalized is None:
+                continue
+            ws_idx = normalized['source_index']
             ws = ws_map.get(ws_idx)
             if not ws:
                 continue
             batch.append(MaxicomWeatherLog(
                 weather_station=ws,
-                timestamp=r.get('XactStamp', '') or '',
-                temperature=r.get('Temperature'),
-                max_temp=r.get('MaxTemp'),
-                min_temp=r.get('MinTemp'),
-                solar_radiation=r.get('SolarRadiation'),
-                rainfall=r.get('RainFall'),
-                humidity=r.get('Humidity'),
-                wind_run=r.get('WindRun'),
-                et=r.get('ET'),
+                timestamp=normalized['timestamp'],
+                **{field: normalized[field] for field in WEATHER_FIELDS},
             ))
             count += 1
             if len(batch) >= 1000:

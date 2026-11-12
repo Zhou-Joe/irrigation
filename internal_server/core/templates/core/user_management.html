@@ -801,7 +801,7 @@
               </label>
               {% endfor %}
             </div>
-            <div style="font-size:0.74rem;color:var(--color-text-muted);margin-top:3px;">勾选日期类报表（维修工单/灌溉/出入库）后，下方会出现各自的时间范围设置。</div>
+            <div style="font-size:0.74rem;color:var(--color-text-muted);margin-top:3px;">日期类报表可分别设置时间范围。灌溉运行报表含首页用水量汇总；灌溉气象日报按气象站分表。</div>
           </div>
           {% comment %}Per-report time windows: rendered dynamically by JS (toggleEcWindows)
              based on which date-windowed reports are checked. Kept OUT of the
@@ -809,7 +809,7 @@
           <div class="am-field" id="ecWindowsField" style="display:none;">
             <label>各报表时间范围 *（相对发送时刻）</label>
             <div id="ecReportWindows" style="display:flex;flex-direction:column;gap:8px;"></div>
-            <div style="font-size:0.74rem;color:var(--color-text-muted);margin-top:3px;">"前N天" = 发送日往前 N 天（0=当天, 1=前一天）。灌溉可精确到小时；维修工单/出入库只到日期。</div>
+            <div style="font-size:0.74rem;color:var(--color-text-muted);margin-top:3px;">“前N天”以发送日为准（0=当天，1=前一天）。灌溉可精确到秒，新建默认前一天08:00至当天08:00；气象按日期统计，默认最近30天，截止前一天。</div>
           </div>
           <div class="am-field" id="ecCcuField" style="display:none;">
             <label>灌溉 CCU 范围 — 可选（留空=全部）</label>
@@ -1150,7 +1150,7 @@ function toggleEcCcuField() {
 var _EC_LABELS = {
     {% for code, rlabel in report_choices %}'{{ code }}': '{{ rlabel }}',{% endfor %}
 };
-var _EC_WINDOWED = ['work_reports', 'difficult_workorders', 'irrigation', 'inventory_txn'];
+var _EC_WINDOWED = ['work_reports', 'difficult_workorders', 'irrigation', 'maxicom_weather', 'inventory_txn'];
 // Called whenever a report checkbox toggles: refresh CCU picker + window inputs.
 function ecOnReportToggle() {
     toggleEcCcuField();
@@ -1173,18 +1173,18 @@ function toggleEcWindows() {
     container.innerHTML = checked.map(function (code) {
         var lbl = _EC_LABELS[code] || code;
         var isIrrig = code === 'irrigation';
-        var ds = prev['win_' + code + '_days_start'] || '';
-        var de = prev['win_' + code + '_days_end'] || '';
+        var ds = prev['win_' + code + '_days_start'] != null ? prev['win_' + code + '_days_start'] : (isIrrig ? '1' : code === 'maxicom_weather' ? '30' : '');
+        var de = prev['win_' + code + '_days_end'] != null ? prev['win_' + code + '_days_end'] : (isIrrig ? '0' : code === 'maxicom_weather' ? '1' : '');
         var numStyle = 'width:48px;padding:2px 4px;font-size:0.78rem;border:1px solid var(--color-border,#ddd);border-radius:4px;';
         var dayPart = '前 <input type="number" min="0" name="win_' + code + '_days_start" value="' + ds + '" style="' + numStyle + '" placeholder="N"> 天';
         if (isIrrig) {
-            var hs = prev['win_' + code + '_hour_start'] != null ? prev['win_' + code + '_hour_start'] : '';
-            dayPart += ' <input type="number" min="0" max="23" name="win_' + code + '_hour_start" value="' + hs + '" style="width:40px;' + numStyle.replace('width:48px;', '') + '" placeholder="时">:00';
+            var startTime = prev['win_' + code + '_start_time'] || '08:00:00';
+            dayPart += ' <input type="time" step="1" name="win_' + code + '_start_time" value="' + startTime + '" aria-label="灌溉开始时间" style="' + numStyle.replace('width:48px;', 'width:112px;') + '">';
         }
         var endPart = '到 前 <input type="number" min="0" name="win_' + code + '_days_end" value="' + de + '" style="' + numStyle + '" placeholder="N"> 天';
         if (isIrrig) {
-            var he = prev['win_' + code + '_hour_end'] != null ? prev['win_' + code + '_hour_end'] : '';
-            endPart += ' <input type="number" min="0" max="23" name="win_' + code + '_hour_end" value="' + he + '" style="width:40px;' + numStyle.replace('width:48px;', '') + '" placeholder="时">:59';
+            var endTime = prev['win_' + code + '_end_time'] || '08:00:00';
+            endPart += ' <input type="time" step="1" name="win_' + code + '_end_time" value="' + endTime + '" aria-label="灌溉结束时间" style="' + numStyle.replace('width:48px;', 'width:112px;') + '">';
         }
         return '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:0.82rem;">'
             + '<span style="font-weight:600;min-width:90px;">' + lbl + '</span>'
@@ -1198,7 +1198,17 @@ function _setEcWindows(windows) {
         var w = windows[code] || {};
         var n = function (k) { var el = document.querySelector('#ecReportWindows [name="win_' + code + '_' + k + '"]'); if (el) el.value = (w[k] != null) ? w[k] : ''; };
         n('days_start'); n('days_end');
-        if (code === 'irrigation') { n('hour_start'); n('hour_end'); }
+        if (code === 'irrigation') {
+            ['start', 'end'].forEach(function (suffix) {
+                var el = document.querySelector('#ecReportWindows [name="win_irrigation_' + suffix + '_time"]');
+                if (!el) return;
+                var legacy = !['minute_start','minute_end','second_start','second_end'].some(function (key) { return w[key] != null; });
+                var parts = [w['hour_' + suffix] != null ? w['hour_' + suffix] : (legacy ? (suffix === 'start' ? 0 : 23) : 8),
+                    w['minute_' + suffix] != null ? w['minute_' + suffix] : (legacy && suffix === 'end' ? 59 : 0),
+                    w['second_' + suffix] != null ? w['second_' + suffix] : (legacy && suffix === 'end' ? 59 : 0)];
+                el.value = parts.map(function (v) { return String(v).padStart(2, '0'); }).join(':');
+            });
+        }
     });
 }
 // Check the report-type / CCU checkboxes whose value is in `vals`, uncheck others.
@@ -1215,6 +1225,7 @@ function openEmailConfigModal(id,profilesReady) {
     document.getElementById('ecId').value = id || '';
     document.getElementById('emailConfigModalTitle').textContent = id ? '编辑邮件报表配置' : '新建邮件报表配置';
     document.getElementById('ecSaveBtn').textContent = id ? '保存修改' : '创建';
+    document.getElementById('ecReportWindows').innerHTML = '';
     if (id) {
         fetch('/email-configs/list/', { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
             .then(function (r) { return r.json(); }).then(function (d) {
@@ -1250,7 +1261,7 @@ function openEmailConfigModal(id,profilesReady) {
         document.getElementById('ecFrequency').value = 'daily';
         document.getElementById('ecRecipients').value = '';
         document.getElementById('ecIsActive').checked = true;
-        document.getElementById('ecSendHour').value = '7';
+        document.getElementById('ecSendHour').value = '9';
         document.getElementById('ecWeekday').value = '0';
         document.getElementById('ecMonthDay').value = '';
         toggleEcTriggerFields();
@@ -1279,7 +1290,7 @@ function saveEmailConfig() {
     fd.append('is_active', document.getElementById('ecIsActive').checked ? '1' : '');
     fd.append('send_hour', document.getElementById('ecSendHour').value);
     // Per-report time windows (win_<type>_* inputs, rendered in #ecReportWindows).
-    document.querySelectorAll('#ecReportWindows input[type=number]').forEach(function (inp) {
+    document.querySelectorAll('#ecReportWindows input').forEach(function (inp) {
         if (inp.value.trim()) fd.append(inp.name, inp.value);
     });
     if (document.getElementById('ecFrequency').value === 'weekly')
