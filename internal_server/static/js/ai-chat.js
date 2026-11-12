@@ -9,6 +9,11 @@
     let historyDay = null, historyTimer = null, historyDeadline = null;
     let panelMotion = null, motionVersion = 0;
     let workspaceAvailable=true,repositionLauncher=()=>{};
+    let pendingAttachments = [], attachmentGeneration = 0, uploadWorkerGeneration = null, attachmentSequence = 0;
+    let historyRestoreVersion = 0, restoringHistory = false;
+    const responseViews = new Map();
+    const attachmentLimit = 5, attachmentMaxSize = 10 * 1024 * 1024;
+    const attachmentAccept = '.txt,.md,.log,.json,.csv,.xlsx,.docx,.pdf,.png,.jpg,.jpeg,.webp';
     const byId = id => document.getElementById(id);
     const icon = name => window.uiIcon(name);
     const node = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
@@ -82,24 +87,129 @@
     function syncQuoteAccess() {
         const allowed = quotesAllowed();
         window.EnGenieQuotes?.setEnabled(allowed);
-        const tools = byId('aiChatQuoteTools'); if (tools) tools.hidden = !allowed;
+        responseViews.forEach(view => view.refresh());
         sendingState();
     }
     function quoteBusy() { return window.EnGenieQuotes?.isBlocking() === true; }
-    function startQuote(file = null) {
-        if (!quotesAllowed() || !window.EnGenieQuotes) return;
-        if (quoteBusy()) { say('请先完成当前报价的提取或确认。'); return; }
-        byId('aiChatWelcome')?.remove(); resetFollow();
-        const box = byId('aiChatMessages'), user = node('article','ai-msg ai-msg-user');
-        user.append(node('div','ai-user-text',file ? '上传报价：' + file.name : '导入报价')); box.append(user);
-        const article = node('article','ai-msg ai-msg-assistant'), heading = node('div','ai-turn-head'), avatar = node('span','ai-turn-avatar');
-        avatar.append(mascot()); heading.append(avatar,node('span','ai-turn-status','EnGenie · 报价提取与核对')); article.append(heading); box.append(article);
-        window.EnGenieQuotes.mount({host:article,csrf:getCSRF,file,onChange:()=>scrollLatest(false),onStatus:say,onBusy:sendingState});
-        scrollLatest(true); resizeInput();
+    function attachmentInfo(file) {
+        if (!file || typeof file.id !== 'string') return null;
+        const url = core.safeLink(file.url, window.location.origin);
+        const safe = url && url.origin === window.location.origin && /^\/api\/ai\/attachments\/u\d+-[0-9a-f]{8,32}\/[0-9a-f-]{32,36}\/?$/i.test(url.pathname);
+        return {id:file.id, name:String(file.name || '附件').slice(0,240), size:Number(file.size) || 0,
+            kind:String(file.kind || 'document'), mime:String(file.mime || ''), url:safe ? url.href : ''};
+    }
+    function attachmentLink(file, className = 'ai-sent-attachment') {
+        const item = node(file.url ? 'a' : 'span', className);
+        if (file.url) { item.href = file.url; item.download = file.name; item.target = '_blank'; item.rel = 'noopener noreferrer'; }
+        const glyph = node('span','ai-attachment-glyph'); glyph.innerHTML = icon('file');
+        const text = node('span','ai-attachment-info'); text.append(node('strong','',file.name),node('small','',core.formatBytes(file.size)));
+        item.append(glyph,text); return item;
+    }
+    function attachmentsBlocked() { return pendingAttachments.some(item => item.status !== 'ready'); }
+    function clearAttachments() {
+        attachmentGeneration++;
+        pendingAttachments.forEach(item => item.controller?.abort()); pendingAttachments = [];
+        const message = byId('aiChatAttachmentMessage'); if (message) { message.textContent = ''; message.hidden = true; }
+        renderPendingAttachments();
+    }
+    function pauseUploads() {
+        attachmentGeneration++;
+        pendingAttachments.forEach(item => {
+            item.controller?.abort();
+            if (item.status === 'uploading') item.status = 'queued';
+        });
+        renderPendingAttachments();
+    }
+    function renderPendingAttachments() {
+        const host = byId('aiChatAttachments'); if (!host) return;
+        host.replaceChildren(); host.hidden = !pendingAttachments.length;
+        for (const item of pendingAttachments) {
+            const chip = node('div','ai-pending-attachment'); chip.dataset.status = item.status;
+            const glyph = node('span','ai-attachment-glyph');
+            glyph.innerHTML = item.status === 'uploading' || item.status === 'queued' ? '<span class="ai-spin-ring"></span>' : icon(item.status === 'ready' ? 'check' : 'alert');
+            const info = node('div','ai-attachment-info');
+            const name = node(item.attachment?.url ? 'a' : 'strong','ai-pending-file-name',item.attachment?.name || item.file.name);
+            if (item.attachment?.url) { name.href = item.attachment.url; name.download = item.attachment.name; name.target = '_blank'; name.rel = 'noopener noreferrer'; }
+            const labels = {queued:workspaceAvailable ? '等待上传' : '等待返回对话后上传',uploading:'正在上传…',ready:'已上传',error:item.error || '上传失败'};
+            info.append(name,node('small','',core.formatBytes(item.attachment?.size ?? item.file.size) + ' · ' + labels[item.status]));
+            const actions = node('div','ai-attachment-actions');
+            if (item.status === 'error') {
+                const retry = node('button','ai-attachment-retry','重试'); retry.type = 'button'; retry.disabled = !workspaceAvailable || !!activeRun || restoringHistory;
+                retry.onclick = () => { item.status = 'queued'; item.error = ''; renderPendingAttachments(); uploadAttachments(); }; actions.append(retry);
+            }
+            const remove = node('button','ai-attachment-remove'); remove.type = 'button'; remove.innerHTML = icon('close'); remove.setAttribute('aria-label','移除附件：' + (item.attachment?.name || item.file.name));
+            remove.onclick = () => { item.controller?.abort(); pendingAttachments = pendingAttachments.filter(other => other !== item); renderPendingAttachments(); };
+            actions.append(remove); chip.append(glyph,info,actions); host.append(chip);
+        }
+        sendingState();
+    }
+    function addAttachments(files) {
+        if (!workspaceAvailable || activeRun || restoringHistory) { say('请等待当前回复或对话加载完成，再添加附件。'); return; }
+        if (historyDeadline !== null && performance.now() >= historyDeadline) {
+            if (!newConversation()) return;
+            loadHistory();
+        }
+        const errors = [];
+        for (const file of files) {
+            if (pendingAttachments.length >= attachmentLimit) { errors.push('每条消息最多添加 5 个附件。'); break; }
+            if (!/\.(txt|md|log|json|csv|xlsx|docx|pdf|png|jpe?g|webp)$/i.test(file.name)) { errors.push(file.name + '：暂不支持此格式。'); continue; }
+            if (file.size > attachmentMaxSize) { errors.push(file.name + '：单个附件不能超过 10 MB。'); continue; }
+            if (!file.size) { errors.push(file.name + '：文件为空。'); continue; }
+            pendingAttachments.push({localId:++attachmentSequence, file, status:'queued', attachment:null, error:'', controller:null});
+        }
+        const message = byId('aiChatAttachmentMessage');
+        if (message) { message.textContent = [...new Set(errors)].join(' '); message.hidden = !errors.length; }
+        if (errors.length) say(errors.join(' '));
+        renderPendingAttachments(); uploadAttachments();
+    }
+    async function uploadAttachments() {
+        const generation = attachmentGeneration;
+        if (!workspaceAvailable || activeRun || restoringHistory || uploadWorkerGeneration === generation) return;
+        uploadWorkerGeneration = generation;
+        try {
+            while (generation === attachmentGeneration && workspaceAvailable && !activeRun && !restoringHistory) {
+                const item = pendingAttachments.find(value => value.status === 'queued'); if (!item) break;
+                item.status = 'uploading'; item.controller = new AbortController(); renderPendingAttachments();
+                const body = new FormData(), requestedThread = threadId;
+                body.append('files', item.file); if (requestedThread) body.append('thread_id', requestedThread);
+                try {
+                    const response = await fetch('/api/ai/attachments', {method:'POST', credentials:'same-origin', signal:item.controller.signal,
+                        headers:{'X-CSRFToken':getCSRF()}, body});
+                    let data;
+                    try { data = await response.json(); }
+                    catch (_) { throw new Error(response.status === 413 ? '附件超过服务器允许的大小，请选择较小的文件。' : '未收到有效上传结果，请检查登录或网络状态后重试。'); }
+                    if (generation !== attachmentGeneration || !pendingAttachments.includes(item)) continue;
+                    if (!response.ok || !data.success) throw new Error(data.error || data.message || '上传失败，请重试。');
+                    if (!/^u\d+-[0-9a-f]{8,32}$/.test(data.thread_id || '') || requestedThread && data.thread_id !== requestedThread) throw new Error('附件所属对话已变化，请重新添加。');
+                    const attachment = attachmentInfo(data.attachments?.[0]);
+                    if (!attachment) throw new Error('未收到有效附件信息，请重试。');
+                    threadId = data.thread_id; item.attachment = attachment; item.status = 'ready';
+                    setHistoryPolicy(data); say(attachment.name + ' 已上传');
+                } catch (error) {
+                    if (generation !== attachmentGeneration || !pendingAttachments.includes(item)) continue;
+                    item.status = 'error'; item.error = error.name === 'AbortError' ? '上传已取消，可重试。' : error.message || '网络连接中断，请重试。';
+                    say(item.file.name + '：' + item.error);
+                } finally {
+                    if (generation === attachmentGeneration) { item.controller = null; renderPendingAttachments(); }
+                }
+            }
+        } finally {
+            if (uploadWorkerGeneration === generation) uploadWorkerGeneration = null;
+            if (generation === attachmentGeneration) { sendingState(); loadHistory(); }
+        }
+    }
+    function restageAttachments(files, ownerThread) {
+        if (!ownerThread || ownerThread !== threadId) { say('原附件属于另一个对话，请重新添加附件。'); return; }
+        for (const file of files) {
+            if (pendingAttachments.length >= attachmentLimit) break;
+            if (!pendingAttachments.some(item => item.attachment?.id === file.id)) pendingAttachments.push({localId:++attachmentSequence,file:null,status:'ready',attachment:file,error:'',controller:null});
+        }
+        renderPendingAttachments();
     }
     function welcome({preserveQuotes = false} = {}) {
         const quotes = window.EnGenieQuotes?.retainPending(preserveQuotes) || [];
         const box = byId('aiChatMessages'); box.replaceChildren();
+        responseViews.forEach((view, article) => { if (!quotes.includes(article)) responseViews.delete(article); });
         const empty = node('div','ai-welcome'); empty.id = 'aiChatWelcome';
         const art = node('div','ai-welcome-icon'); art.append(mascot('welcome'));
         const title = node('h3','', 'EnGenie');
@@ -150,10 +260,16 @@
         target.replaceChildren(fragment);
     }
     const duration = (start,end) => ((end-start)/1000).toFixed(1) + ' 秒';
-    function responseView(requestText) {
+    function responseView(requestText, attachments = [], ownerThread = threadId, restore = false) {
         byId('aiChatWelcome')?.remove();
         const box = byId('aiChatMessages');
-        const user = node('article','ai-msg ai-msg-user'); user.append(node('div','ai-user-text',requestText)); box.append(user);
+        const user = node('article','ai-msg ai-msg-user'), userContent = node('div','ai-user-content');
+        if (requestText) userContent.append(node('div','ai-user-text',requestText));
+        if (attachments.length) {
+            const files = node('div','ai-sent-attachments'); files.setAttribute('aria-label','本条消息的附件');
+            attachments.forEach(file => files.append(attachmentLink(file))); userContent.append(files);
+        }
+        user.append(userContent); box.append(user);
         const turn = core.createTurn();
         const article = node('article','ai-msg ai-msg-assistant'); article.setAttribute('aria-label','EnGenie 回复');
         const heading = node('div','ai-turn-head'), avatar = node('span','ai-turn-avatar'); avatar.append(mascot());
@@ -163,9 +279,23 @@
         const work = node('details','ai-work'); work.hidden = true;
         const summary = node('summary','ai-work-summary'), toolList = node('div','ai-tool-list'); work.append(summary,toolList);
         summary.onclick = () => { work.dataset.keepOpen = String(!work.open); };
-        const content = node('div','ai-answer'), artifacts = node('div','ai-artifacts'), note = node('div','ai-response-note'); note.hidden = true;
-        article.append(heading,work,content,artifacts,note); box.append(article);
-        const rows = new Map(), cards = new Set(); let frame = null, initialTools = true;
+        const content = node('div','ai-answer'), artifacts = node('div','ai-artifacts'), quotes = node('div','ai-quote-drafts'), note = node('div','ai-response-note'); note.hidden = true;
+        article.append(heading,work,content,artifacts,quotes,note); box.append(article);
+        const rows = new Map(), cards = new Set(), quoteCards = new Set(); let frame = null, initialTools = true;
+        function renderQuotes() {
+            const drafts = turn.quoteDrafts || [];
+            if (!drafts.length) return;
+            if (!quotesAllowed() || !window.EnGenieQuotes) {
+                if (!quotes.querySelector('.ai-quote-unavailable')) quotes.prepend(node('p','ai-quote-unavailable','当前业务视图不支持库存报价确认，请切换至有权限的灌溉业务后处理。'));
+                return;
+            }
+            quotes.querySelector('.ai-quote-unavailable')?.remove();
+            for (const draft of drafts) {
+                if (!draft?.submission_key || quoteCards.has(draft.submission_key)) continue;
+                quoteCards.add(draft.submission_key);
+                window.EnGenieQuotes.mount({host:quotes,csrf:getCSRF,draft,restore,onChange:()=>scrollLatest(false),onStatus:say,onBusy:sendingState});
+            }
+        }
         function renderTools() {
             if (!turn.tools.length) return;
             work.hidden = false;
@@ -210,31 +340,37 @@
             const label = phases[turn.phase] || '正在处理'; article.dataset.phase = turn.phase;
             status.textContent = label + (turn.ended !== null ? ' · ' + duration(turn.started,turn.ended) : ''); say(label); copy.hidden = !turn.text;
             if (turn.text) renderMarkdown(content,turn.text,turn.files,turn.ended !== null);
-            renderTools(); renderFiles();
+            renderTools(); renderFiles(); renderQuotes();
             if (turn.phase === 'error' || turn.phase === 'stopped') {
                 note.hidden = false; note.replaceChildren(node('p','',turn.error || '已请求停止任务，后台正在收尾。请稍候再发起新任务。'));
-                const edit = node('button','ai-edit-request','重新编辑请求'); edit.type = 'button'; edit.onclick = () => { byId('aiChatInput').value = requestText; resizeInput(); byId('aiChatInput').focus(); }; note.append(edit);
+                const edit = node('button','ai-edit-request','重新编辑请求'); edit.type = 'button'; edit.onclick = () => {
+                    byId('aiChatInput').value = requestText;
+                    if (attachments.length) restageAttachments(attachments,ownerThread);
+                    resizeInput(); byId('aiChatInput').focus();
+                }; note.append(edit);
             }
             if (follow) scrollLatest(false); else box.scrollTop = previousScroll;
         }
         render(); scrollLatest(true);
-        return {turn, refresh:render, event(event) { core.applyEvent(turn,event); if (!frame) frame = requestAnimationFrame(render); },
+        const view = {turn, refresh:render, event(event) { core.applyEvent(turn,event); if (!frame) frame = requestAnimationFrame(render); },
             finish(phase,message) { if (frame) cancelAnimationFrame(frame); frame = null; core.finishTurn(turn,phase,message); render(); }};
+        responseViews.set(article,view); return view;
     }
     function resizeInput() {
         const input = byId('aiChatInput'); if (!input) return;
         input.style.height = 'auto'; input.style.height = Math.min(input.scrollHeight + 2,144) + 'px';
         const latest = byId('aiChatLatest'), composer = document.querySelector('#aiChatPanel .ai-composer');
         if (latest && composer) latest.style.bottom = (composer.offsetHeight + 12) + 'px';
-        const button = byId('aiChatSend'); if (button) button.disabled = !activeRun && !input.value.trim();
+        const button = byId('aiChatSend');
+        if (button) button.disabled = !activeRun && (!workspaceAvailable || restoringHistory || attachmentsBlocked() || !input.value.trim() && !pendingAttachments.length);
     }
     function sendingState() {
         const button = byId('aiChatSend'); if (!button) return;
         button.innerHTML = icon(activeRun ? 'stop' : 'send'); button.title = activeRun ? '停止任务' : '发送'; button.setAttribute('aria-label',button.title); button.dataset.sending = String(!!activeRun); resizeInput();
         const busy = quoteBusy();
-        if(byId('aiChatHistory'))byId('aiChatHistory').disabled=!!activeRun || busy;
+        if(byId('aiChatHistory'))byId('aiChatHistory').disabled=!!activeRun || busy || restoringHistory;
         if(byId('aiChatNew'))byId('aiChatNew').disabled=busy;
-        document.querySelectorAll('#aiChatQuoteTools button').forEach(button => { button.disabled = busy; });
+        const add = byId('aiChatAddAttachment'); if (add) add.disabled = !workspaceAvailable || !!activeRun || restoringHistory || pendingAttachments.length >= attachmentLimit;
     }
     function stop() { if (activeRun) {
         if (threadId) fetch('/api/ai/cancel',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-CSRFToken':getCSRF()},body:JSON.stringify({thread_id:threadId})}).catch(()=>{});
@@ -271,28 +407,46 @@
     async function restoreHistory(id) {
         if(!id||activeRun)return;
         if (quoteBusy()) { byId('aiChatHistory').value = threadId || ''; say('当前报价还在处理中，请先完成确认再切换对话。'); return; }
+        const version = ++historyRestoreVersion; pauseUploads(); restoringHistory = true; sendingState();
         try{const response=await fetch('/api/ai/conversations?thread_id='+encodeURIComponent(id),{credentials:'same-origin',cache:'no-store'});
+            if (version !== historyRestoreVersion) return;
             if(response.status===404) { newConversation(); loadHistory(); throw new Error('会话已过期，历史记录仅保留当天。'); }
             if(!response.ok)throw new Error('会话暂时无法恢复');
             const data=await response.json();
+            if (version !== historyRestoreVersion) return;
             if (quoteBusy()) { byId('aiChatHistory').value = threadId || ''; say('当前报价还在处理中，请先完成确认再切换对话。'); return; }
-            welcome();threadId=id;byId('aiChatSnapshot').textContent='历史回复 · 再次发送时更新数据快照';
-            for(const turn of data.turns||[]){const view=responseView(turn.question);view.event({event:'token',text:turn.answer||''});for(const file of turn.files||[])view.event({event:'file',...file});view.finish('done');}
+            clearAttachments(); welcome();threadId=id;setHistoryPolicy(data);byId('aiChatSnapshot').textContent='历史回复 · 再次发送时更新数据快照';
+            for(const turn of data.turns||[]){
+                const files = (turn.attachments || []).map(attachmentInfo).filter(Boolean);
+                const view=responseView(turn.question,files,id,true);view.event({event:'token',text:turn.answer||''});
+                for(const file of turn.files||[])view.event({event:'file',...file});
+                for(const draft of turn.quote_drafts||[])view.event({event:'quote_draft',draft});
+                view.finish('done');
+            }
             resetFollow();scrollLatest(true);
-        }catch(error){say(error.message);}
+        }catch(error){if (version === historyRestoreVersion) { byId('aiChatHistory').value = threadId || ''; say(error.message); }}
+        finally { if (version === historyRestoreVersion) { restoringHistory = false; sendingState(); uploadAttachments(); } }
     }
     function resetFollow() { follow = true; byId('aiChatLatest').hidden = true; }
     function newConversation() {
         if (quoteBusy()) { say('当前报价还在处理中，请先完成确认再新建对话。'); return false; }
+        historyRestoreVersion++; restoringHistory = false; clearAttachments();
         stop(); sequence++; activeRun = null; threadId = null; sendingState(); welcome(); resetFollow();byId('aiChatHistory').value='';byId('aiChatSnapshot').textContent=''; say('已开启新对话'); return true;
     }
     async function send() {
-        const input = byId('aiChatInput'); if (!input || activeRun) return;
-        if (historyDeadline !== null && performance.now() >= historyDeadline) { newConversation(); loadHistory(); }
-        const text = input.value.trim(); if (!text) return; input.value = ''; resetFollow();
-        const run = {id:++sequence, controller:new AbortController(), view:responseView(text)}; activeRun = run; sendingState(); let completed = false;
+        const input = byId('aiChatInput'); if (!input || activeRun || restoringHistory || !workspaceAvailable) return;
+        if (historyDeadline !== null && performance.now() >= historyDeadline) {
+            if (pendingAttachments.length) { newConversation(); loadHistory(); say('对话附件已跨天过期，请重新添加后发送。'); return; }
+            newConversation(); loadHistory();
+        }
+        if (attachmentsBlocked()) { say('请等待附件上传完成；失败的附件请重试或移除。'); return; }
+        const attachments = pendingAttachments.map(item => item.attachment).filter(Boolean);
+        const text = input.value.trim() || (attachments.length ? '请查看这些附件。' : ''); if (!text) return;
+        input.value = ''; pendingAttachments = []; renderPendingAttachments(); resetFollow();
+        const attachmentMessage = byId('aiChatAttachmentMessage'); if (attachmentMessage) { attachmentMessage.hidden = true; attachmentMessage.textContent = ''; }
+        const run = {id:++sequence, controller:new AbortController(), view:responseView(text,attachments,threadId)}; activeRun = run; sendingState(); let completed = false;
         try {
-            const response = await fetch('/api/ai/chat',{method:'POST',credentials:'same-origin',signal:run.controller.signal,headers:{'Content-Type':'application/json','X-CSRFToken':getCSRF()},body:JSON.stringify({message:text,thread_id:threadId})});
+            const response = await fetch('/api/ai/chat',{method:'POST',credentials:'same-origin',signal:run.controller.signal,headers:{'Content-Type':'application/json','X-CSRFToken':getCSRF()},body:JSON.stringify({message:text,thread_id:threadId,attachment_ids:attachments.map(file=>file.id)})});
             if (!response.ok) {
                 let message = '请求失败 (HTTP ' + response.status + ')'; try { const data = await response.json(); if (data.error) message = String(data.error); } catch (_) {} throw new Error(message);
             }
@@ -301,7 +455,7 @@
             const parser = core.createParser(event => {
                 if (sequence !== run.id || run.controller.signal.aborted) return;
                 if (event.event === 'thread') {
-                    if (event.reset) { run.view.finish('stopped'); welcome({preserveQuotes:true}); run.view=responseView(text); }
+                    if (event.reset) { run.view.finish('stopped'); welcome({preserveQuotes:true}); run.view=responseView(text,attachments,event.thread_id); }
                     if (/^u\d+-[0-9a-f]{8,32}$/.test(event.thread_id || '')) threadId = event.thread_id;
                     setHistoryPolicy(event); return;
                 }
@@ -346,16 +500,25 @@
         history.add(new Option('当天对话（上海时间）',''));history.onchange=()=>restoreHistory(history.value);
         panel.querySelector('.ai-chat-header').after(history);
         const snapshot=document.createElement('p');snapshot.id='aiChatSnapshot';snapshot.className='ai-composer-hint';panel.querySelector('.ai-composer').append(snapshot);
-        if (window.EnGenieQuotes) {
-            const tools = node('div','ai-quote-tools'); tools.id = 'aiChatQuoteTools';
-            const upload = node('button','ai-quote-tool'), paste = node('button','ai-quote-tool'), file = node('input');
-            upload.type = paste.type = 'button'; upload.innerHTML = icon('upload'); upload.append(node('span','','上传报价')); upload.title = '上传报价，在当前对话内提取并核对';
-            paste.innerHTML = icon('file'); paste.append(node('span','','报价')); paste.title = '粘贴报价，在当前对话内提取并核对';
-            file.type = 'file'; file.accept = '.xlsx,.csv,.txt,.pdf'; file.tabIndex = -1; file.setAttribute('aria-label','上传报价文件');
-            upload.onclick = () => file.click(); paste.onclick = () => startQuote();
-            file.onchange = () => { const selected = file.files[0]; file.value = ''; if (selected) startQuote(selected); };
-            tools.append(upload,paste,file); panel.querySelector('.ai-composer').prepend(tools); syncQuoteAccess();
-        }
+        const attachments = node('div','ai-pending-attachments'); attachments.id = 'aiChatAttachments'; attachments.hidden = true;
+        attachments.setAttribute('aria-label','待发送附件');
+        const attachmentMessage = node('p','ai-attachment-message'); attachmentMessage.id = 'aiChatAttachmentMessage'; attachmentMessage.hidden = true; attachmentMessage.setAttribute('role','status');
+        const attach = node('button','ai-add-attachment'); attach.id = 'aiChatAddAttachment'; attach.type = 'button'; attach.innerHTML = icon('paperclip');
+        attach.title = '添加附件 · 最多 5 个，每个不超过 10 MB'; attach.setAttribute('aria-label','添加附件');
+        const fileInput = node('input'); fileInput.type = 'file'; fileInput.accept = attachmentAccept; fileInput.multiple = true; fileInput.hidden = true;
+        fileInput.setAttribute('aria-label','选择附件'); attach.onclick = () => fileInput.click();
+        fileInput.onchange = () => { const files = [...fileInput.files]; fileInput.value = ''; addAttachments(files); };
+        const composer = panel.querySelector('.ai-composer'); composer.prepend(attachments,attachmentMessage);
+        panel.querySelector('.ai-composer-box').prepend(attach,fileInput); syncQuoteAccess();
+        const dropHint = node('div','ai-drop-hint','松开即可添加附件'); dropHint.setAttribute('aria-hidden','true'); panel.append(dropHint);
+        let dragDepth = 0;
+        const hasFiles = event => [...(event.dataTransfer?.types || [])].includes('Files');
+        panel.addEventListener('dragenter', event => { if (!hasFiles(event)) return; event.preventDefault(); dragDepth++; panel.classList.add('is-dropping'); });
+        panel.addEventListener('dragover', event => { if (!hasFiles(event)) return; event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; });
+        panel.addEventListener('dragleave', event => { if (!hasFiles(event)) return; if (--dragDepth <= 0) { dragDepth = 0; panel.classList.remove('is-dropping'); } });
+        panel.addEventListener('drop', event => {
+            if (!hasFiles(event)) return; event.preventDefault(); dragDepth = 0; panel.classList.remove('is-dropping'); addAttachments([...(event.dataTransfer?.files || [])]);
+        });
         loadHistory();
         document.addEventListener('visibilitychange', () => { if (!document.hidden) loadHistory(); });
         fitViewport();
@@ -365,6 +528,11 @@
         byId('aiChatExpand').onclick = () => { expanded = !expanded; panel.classList.toggle('is-expanded',expanded); byId('aiChatExpand').innerHTML = icon(expanded ? 'collapse' : 'expand'); byId('aiChatExpand').setAttribute('aria-label',expanded ? '收起对话' : '展开对话'); byId('aiChatExpand').title = expanded ? '收起对话' : '展开对话'; placeLauncher(); };
         byId('aiChatSend').onclick = () => activeRun ? stop() : send();
         const input = byId('aiChatInput'); input.addEventListener('input',resizeInput);
+        input.addEventListener('paste', event => {
+            const files = [...(event.clipboardData?.files || [])]; if (!files.length) return;
+            if (!event.clipboardData.getData('text/plain')) event.preventDefault();
+            addAttachments(files);
+        });
         input.addEventListener('keydown',event => { if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) { event.preventDefault(); send(); } });
         const box = byId('aiChatMessages'); box.addEventListener('scroll',() => { follow = box.scrollHeight-box.scrollTop-box.clientHeight < 80; byId('aiChatLatest').hidden = follow; },{passive:true});
         byId('aiChatLatest').onclick = () => { follow = true; scrollLatest(true); byId('aiChatLatest').hidden = true; };
@@ -382,6 +550,7 @@
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded',mountIfAvailable); else mountIfAvailable();
     window.AIChat = {open:()=>setOpen(true),toggle,close:()=>setOpen(false),
         beforeWorkspaceChange(){
+            pauseUploads();
             window.EnGenieQuotes?.setEnabled(false);
             setOpen(false,{immediate:true,focus:false});
             const launcher=byId('aiChatLauncher');if(launcher&&launcher.parentElement!==document.body)document.body.append(launcher);
@@ -389,5 +558,6 @@
         afterWorkspaceChange(){
             workspaceAvailable=byId('dashboardWorkspace')?.dataset.ai==='yes';
             repositionLauncher();setOpen(false,{immediate:true,focus:false});syncQuoteAccess();
+            renderPendingAttachments(); if (workspaceAvailable) uploadAttachments();
         }};
 })();

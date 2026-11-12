@@ -78,7 +78,7 @@
         wrap.append(input, list); return wrap;
     }
 
-    function mount({host, csrf, onChange = () => {}, onStatus = () => {}, onBusy = () => {}, file = null}) {
+    function mount({host, csrf, onChange = () => {}, onStatus = () => {}, onBusy = () => {}, file = null, draft = null, restore = false}) {
         const card = el('section', 'ivq-card'); card.setAttribute('aria-label', 'EnGenie 报价提取与确认');
         const title = el('div', 'ivq-heading'); title.append(symbol('file'), el('strong', '', '报价提取'));
         const status = el('div', 'ivq-status'); status.setAttribute('role', 'status'); status.setAttribute('aria-live', 'polite');
@@ -101,8 +101,8 @@
             card.inert = !enabled; pause.hidden = enabled;
             sourceFields.disabled = !enabled || state.phase === 'extracting';
             const fields = review.querySelector('fieldset');
-            if (fields) fields.disabled = !enabled || state.phase === 'saving' || state.phase === 'uncertain';
-            if (confirmButton) confirmButton.disabled = !enabled || state.phase === 'saving';
+            if (fields) fields.disabled = !enabled || ['saving','uncertain','checking'].includes(state.phase);
+            if (confirmButton) confirmButton.disabled = !enabled || state.phase === 'saving' || state.phase === 'checking';
         }
         async function request(url, body, signal) {
             let response;
@@ -168,14 +168,7 @@
             try {
                 const data = await request('/inventory/quotes/extract/', body, state.controller.signal);
                 if (disposed || state.phase !== 'extracting') return;
-                if (!data.token || !data.submission_key || !Array.isArray(data.items) || !data.items.length) throw new Error('没有提取到可核对的报价项目，请检查原文或文件。');
-                state.token = data.token; state.key = data.submission_key; state.payload = null;
-                state.catalog = Array.isArray(data.catalog) ? data.catalog : [];
-                const parts = new Set(state.catalog.filter(item => item.node_type === 'part').map(item => String(item.id)));
-                state.rows = data.items.map(item => ({...item, action:item.category_id && parts.has(String(item.category_id)) ? 'existing' : 'new',
-                    category_id:item.category_id || '', parent_id:'', name:String(item.name || ''), code:String(item.code || ''), unit:String(item.unit || ''), unit_price:String(item.unit_price ?? '')}));
-                source.hidden = true; abortButton.hidden = true; renderReview(data);
-                phase('review'); syncEnabled(); setStatus('提取完成，请核对每一行；尚未写入库存。', 'success');
+                acceptDraft(data);
                 review.querySelector('input')?.focus(); notify();
             } catch (error) {
                 if (disposed || error.name === 'AbortError' || state.phase !== 'extracting') return;
@@ -188,6 +181,16 @@
             const item = el('input'); item.type = type; item.value = value || ''; item.required = required; return item;
         }
         let summary, confirmButton, editSource, supplier, quoteDate;
+        function acceptDraft(data) {
+            if (!data.token || !data.submission_key || !Array.isArray(data.items) || !data.items.length) throw new Error('没有可核对的报价项目，请在对话中说明需要重新提取。');
+            state.token = data.token; state.key = data.submission_key; state.payload = null;
+            state.catalog = Array.isArray(data.catalog) ? data.catalog : [];
+            const parts = new Set(state.catalog.filter(item => item.node_type === 'part').map(item => String(item.id)));
+            state.rows = data.items.map(item => ({...item, action:item.category_id && parts.has(String(item.category_id)) ? 'existing' : 'new',
+                category_id:item.category_id || '', parent_id:'', name:String(item.name || ''), code:String(item.code || ''), unit:String(item.unit || ''), unit_price:String(item.unit_price ?? '')}));
+            source.hidden = true; abortButton.hidden = true; renderReview(data);
+            phase('review'); syncEnabled(); setStatus('提取完成，请核对每一行；点击确认前不会写入库存。', 'success');
+        }
         function countSummary() {
             if (!summary) return;
             const existing = state.rows.filter(row => row.action === 'existing').length, fresh = state.rows.filter(row => row.action === 'new').length;
@@ -210,6 +213,7 @@
             const rows = el('div', 'ivq-rows'); state.rows.forEach((row, index) => rows.append(renderRow(row, index))); fields.append(rows);
             const warning = el('p', 'ivq-commit-note', '请核对供应商、日期、部件与单价。下方按钮会正式新建部件并记录报价。');
             const actions = el('div', 'ivq-actions'); editSource = button('更换报价内容'); const discard = button('取消'); confirmButton = button('确认写入', true); confirmButton.type = 'submit';
+            editSource.hidden = !!draft;
             editSource.onclick = () => { review.hidden = true; source.hidden = false; phase('source'); setStatus('可更换报价内容并重新提取；原预览未写入。'); syncEnabled(); notify(); };
             discard.onclick = cancelDraft; actions.append(discard, editSource);
             fields.append(actions); review.append(fields, warning, confirmButton); countSummary();
@@ -269,6 +273,50 @@
             return {token:state.token, submission_key:state.key, supplier:supplier.value.trim(), quote_date:quoteDate.value, confirmed:'yes',
                 items:JSON.stringify(state.rows.map(row => ({row_id:row.row_id, action:row.action, category_id:row.category_id || '', parent_id:row.parent_id || '', name:row.name.trim(), code:row.code.trim(), unit:row.unit.trim(), unit_price:row.unit_price.trim()})))};
         }
+        function displayResult(data, refresh = true) {
+            phase('success'); review.hidden = true; source.hidden = true; result.hidden = false; result.replaceChildren();
+            setStatus(data.message || '报价已写入库存。', 'success');
+            const created = Array.isArray(data.created_parts) ? data.created_parts : [];
+            result.append(el('p', 'ivq-summary', '新增部件 ' + (created.length || data.created_parts_count || 0) + ' · 添加报价 ' + (data.prices_added || 0) + ' · 已有报价 ' + (data.duplicate_prices || 0)));
+            const roots = created.filter(part => !part.parent_id);
+            if (roots.length) {
+                result.append(el('p', 'ivq-hint', '以下部件创建时位于根层，可展开查看并关联目录。'));
+                roots.forEach(part => {
+                    const line = el('div', 'ivq-created-part'); line.append(el('strong', '', part.name)); result.append(line);
+                    if (window.FOSInventoryMove) {
+                        const organize = button('关联目录'), host = el('div'); host.hidden = true;
+                        let control = null; line.append(organize, host);
+                        organize.onclick = () => {
+                            host.hidden = !host.hidden; organize.textContent = host.hidden ? '关联目录' : '收起目录选择';
+                            if (!control) control = window.FOSInventoryMove.mount(host, {partId:part.id, onMoved:notify});
+                            notify();
+                        };
+                        moveControls.push(() => control?.destroy());
+                    }
+                });
+            }
+            if (refresh) {
+                document.dispatchEvent(new CustomEvent('inventory:catalog-changed', {detail:{source:'quote', created_parts:created}}));
+                if (window.ivJstree) window.ivJstree.jstree(true).refresh();
+                if (window._ivCurrentPartId && typeof window.ivJstreeLoadDetail === 'function') window.ivJstreeLoadDetail(window._ivCurrentPartId);
+            }
+            notify();
+        }
+        async function readReceipt() {
+            const response = await fetch('/api/submissions/' + encodeURIComponent(state.key) + '/', {credentials:'same-origin', cache:'no-store'});
+            const receipt = response.ok ? await response.json() : null;
+            return receipt?.found && receipt.kind === 'inventory.quote.confirm' && receipt.result?.success ? receipt.result : null;
+        }
+        async function restoreResult() {
+            phase('checking'); syncEnabled(); setStatus('正在读取这份报价的确认状态…', 'busy');
+            try {
+                const data = await readReceipt(); if (disposed || state.phase !== 'checking') return;
+                if (data) displayResult(data, false);
+                else { phase('review'); setStatus('这份报价尚未找到确认记录。草稿仅保留 1 小时，过期后请在对话中要求重新提取。'); }
+            } catch (_) {
+                if (!disposed && state.phase === 'checking') { phase('review'); setStatus('确认状态暂时无法读取；提交时会按原编号核对，避免重复写入。'); }
+            } finally { if (!disposed) { syncEnabled(); notify(); } }
+        }
         async function confirm() {
             if (!enabled || state.phase === 'saving') return;
             const retry = state.phase === 'uncertain';
@@ -279,42 +327,15 @@
             confirmButton.textContent = '正在确认写入…'; setStatus('正在确认报价，请稍候…', 'busy');
             try {
                 let data = null;
-                if (retry) {
+                if (retry || restore) {
                     // A committed receipt remains useful even after the extraction draft expires.
                     try {
-                        const response = await fetch('/api/submissions/' + encodeURIComponent(state.key) + '/', {credentials:'same-origin', cache:'no-store'});
-                        const receipt = response.ok ? await response.json() : null;
-                        if (receipt?.found && receipt.kind === 'inventory.quote.confirm' && receipt.result?.success) data = receipt.result;
+                        data = await readReceipt();
                     } catch (_) { /* Replay the unchanged submission if its receipt is not available. */ }
                 }
                 if (!data) data = await request('/inventory/quotes/confirm/', body);
                 if (disposed) return;
-                phase('success'); review.hidden = true; source.hidden = true; result.hidden = false; result.replaceChildren();
-                setStatus(data.message || '报价已写入库存。', 'success');
-                const created = Array.isArray(data.created_parts) ? data.created_parts : [];
-                result.append(el('p', 'ivq-summary', '新增部件 ' + (created.length || data.created_parts_count || 0) + ' · 添加报价 ' + (data.prices_added || 0) + ' · 已有报价 ' + (data.duplicate_prices || 0)));
-                const roots = created.filter(part => !part.parent_id);
-                if (roots.length) {
-                    result.append(el('p', 'ivq-hint', '以下新部件已建在根层，可在这里选择目录，也可稍后整理。'));
-                    roots.forEach(part => {
-                        const line = el('div', 'ivq-created-part'); line.append(el('strong', '', part.name)); result.append(line);
-                        if (window.FOSInventoryMove) {
-                            const organize = button('关联目录'), host = el('div'); host.hidden = true;
-                            let control = null; line.append(organize, host);
-                            organize.onclick = () => {
-                                host.hidden = !host.hidden; organize.textContent = host.hidden ? '关联目录' : '收起目录选择';
-                                if (!control) control = window.FOSInventoryMove.mount(host, {partId:part.id, onMoved:notify});
-                                notify();
-                            };
-                            moveControls.push(() => control?.destroy());
-                        }
-                    });
-                }
-                document.dispatchEvent(new CustomEvent('inventory:catalog-changed', {detail:{source:'quote', created_parts:created}}));
-                // This also works when the inventory panel happens to be mounted in the same document.
-                if (window.ivJstree) window.ivJstree.jstree(true).refresh();
-                if (window._ivCurrentPartId && typeof window.ivJstreeLoadDetail === 'function') window.ivJstreeLoadDetail(window._ivCurrentPartId);
-                notify();
+                displayResult(data);
             } catch (error) {
                 if (disposed) return;
                 phase(error.uncertain ? 'uncertain' : 'review');
@@ -336,20 +357,23 @@
             destroy() { disposed = true; state.controller?.abort(); moveControls.forEach(destroy => destroy()); sessions.delete(session); }
         };
         sessions.add(session); phase('source'); syncEnabled();
-        if (file && enabled) extract();
+        if (draft) {
+            try { acceptDraft(draft); if (restore) restoreResult(); }
+            catch (error) { source.hidden = true; phase('cancelled'); setStatus(error.message, 'error'); }
+        } else if (file && enabled) extract();
         else if (enabled) text.focus();
         return session;
     }
     window.EnGenieQuotes = {
         mount,
-        isBlocking:() => [...sessions].some(session => ['extracting','saving','uncertain'].includes(session.phase)),
+        isBlocking:() => [...sessions].some(session => ['extracting','saving','uncertain','checking'].includes(session.phase)),
         retainPending(all = false) {
-            const keep = [];
+            const keep = new Set();
             for (const session of sessions) {
-                if (all || session.phase === 'saving' || session.phase === 'uncertain') keep.push(session.card.closest('.ai-msg') || session.card);
-                else session.destroy();
+                if (all || session.phase === 'saving' || session.phase === 'uncertain') keep.add(session.card.closest('.ai-msg') || session.card);
             }
-            return keep;
+            for (const session of sessions) if (!keep.has(session.card.closest('.ai-msg') || session.card)) session.destroy();
+            return [...keep];
         },
         setEnabled(value) { enabled = !!value; sessions.forEach(session => session.setEnabled(enabled)); }
     };

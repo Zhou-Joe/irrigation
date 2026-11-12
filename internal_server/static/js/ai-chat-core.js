@@ -13,7 +13,9 @@
         query_pm_plans:'查询 PM 计划', query_inventory:'查询库存', query_inventory_transactions:'查询库存流水',
         query_purchase_orders:'查询采购订单', query_crews_workers:'查询班组人员', query_geo_assets:'查询地理设备',
         generate_weekly_report:'生成周报', get_weekly_report_material:'准备周报数据', build_weekly_report:'编排周报',
-        export_work_reports_excel:'导出维修报表', send_report_email:'发送报表邮件', run_python_code:'分析数据与生成文件'
+        export_work_reports_excel:'导出维修报表', send_report_email:'发送报表邮件', run_python_code:'分析数据与生成文件',
+        list_chat_attachments:'查看对话附件', read_chat_attachment:'读取附件内容',
+        search_inventory_parts:'匹配部件与历史报价', prepare_inventory_quote:'提取报价并匹配目录'
     };
     function toolLabel(name) { return labels[name] || String(name || '工具').replace(/[_-]/g,' ').slice(0,80); }
     function formatBytes(value) {
@@ -60,7 +62,7 @@
         };
     }
     function createTurn(now = Date.now()) {
-        return {phase:'preparing', text:'', tools:[], files:[], error:'', started:now, ended:null};
+        return {phase:'preparing', text:'', tools:[], files:[], quoteDrafts:[], error:'', started:now, ended:null};
     }
     function applyEvent(turn, event, now = Date.now()) {
         if (turn.ended !== null) return;
@@ -88,6 +90,11 @@
             turn.phase = turn.tools.some(item => item.status === 'running') ? 'tool' : 'thinking';
         } else if (event.event === 'file') {
             if (!turn.files.some(file => file.url === event.url)) turn.files.push({...event});
+        } else if (event.event === 'quote_draft' && event.draft && typeof event.draft === 'object') {
+            turn.quoteDrafts = turn.quoteDrafts || [];
+            if (event.draft.submission_key && !turn.quoteDrafts.some(draft => draft.submission_key === event.draft.submission_key)) {
+                turn.quoteDrafts.push(event.draft);
+            }
         } else if (event.event === 'error') {
             finishTurn(turn, 'error', String(event.message || '本次回复未完成。'), now);
         } else if (event.event === 'done') {
@@ -98,7 +105,7 @@
         if (turn.ended !== null) return;
         turn.phase = phase; turn.ended = now; turn.error = message;
         turn.tools.forEach(tool => { if (tool.status === 'running') { tool.status = 'interrupted'; tool.ended = now; } });
-        if (phase === 'done' && !turn.text.trim() && !turn.files.length) {
+        if (phase === 'done' && !turn.text.trim() && !turn.files.length && !turn.quoteDrafts?.length) {
             turn.phase = 'error'; turn.error = '本次未返回内容，请重新编辑请求后发送。';
         }
     }

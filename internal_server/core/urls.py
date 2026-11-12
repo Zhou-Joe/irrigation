@@ -7,6 +7,7 @@ from core import mail_profile_views
 from core import mail_delivery
 from core import pwa
 from core import ai_storage
+from core import ai_attachments
 from core import submissions
 from core.sync_views import sync_status, agent_status
 from core.ai_views import ai_chat, ai_status, ai_cancel, ai_conversations
@@ -264,6 +265,8 @@ urlpatterns = [
     path('api/sync/agent-status', agent_status, name='agent_status'),
     path('api/submissions/<uuid:key>/', submissions.result, name='submission_result'),
     path('api/ai/chat', ai_chat, name='ai_chat'),
+    path('api/ai/attachments', ai_attachments.upload, name='ai_attachment_upload'),
+    path('api/ai/attachments/<str:thread_id>/<uuid:attachment_id>/', ai_attachments.download, name='ai_attachment_download'),
     path('ai/files/<str:thread_id>/<str:name>', ai_storage.download, name='ai_artifact'),
     path('api/ai/status', ai_status, name='ai_status'),
     path('api/ai/cancel', ai_cancel, name='ai_cancel'),

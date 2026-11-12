@@ -95,6 +95,28 @@ body.ai-chat-modal-open { overflow:hidden; }
 #aiChatSend { display:flex;align-items:center;justify-content:center;flex-shrink:0;width:34px;height:34px;min-width:34px;border:0;border-radius:10px;background:#355d3c;color:#fff;cursor:pointer; }
 #aiChatSend:disabled { background:#e9eee3;color:#acb8a1;cursor:default; }#aiChatSend[data-sending="true"] { background:#f0f3ea;color:#54704b; }
 .ai-composer-hint { margin:6px 3px 0;font-size:10px;color:#a1ab97;text-align:center; }
+/* General attachments share the composer; business previews remain inline turns. */
+#aiChatPanel .ai-add-attachment { display:flex;align-items:center;justify-content:center;flex:none;width:34px;height:34px;padding:0;border:0;border-radius:9px;background:transparent;color:#7b9273;cursor:pointer; }
+#aiChatPanel .ai-add-attachment:hover:not(:disabled) { background:#eef4e8;color:#385e41; }#aiChatPanel .ai-add-attachment:disabled { color:#b8c3af;cursor:default; }
+.ai-composer-box input[type=file][hidden],.ai-pending-attachments[hidden],.ai-attachment-message[hidden] { display:none!important; }
+.ai-pending-attachments { display:grid;gap:6px;max-height:154px;margin:0 0 8px;overflow:auto;overscroll-behavior:contain; }
+.ai-pending-attachment { display:flex;align-items:center;gap:8px;min-width:0;padding:7px 8px;border:1px solid #e0e8db;border-radius:10px;background:#f8fbf5; }
+.ai-attachment-glyph { display:inline-flex;align-items:center;justify-content:center;flex:none;width:23px;min-height:25px;color:#7b9b6c; }
+.ai-attachment-info { display:flex;flex:1;flex-direction:column;gap:2px;min-width:0;line-height:1.45; }
+.ai-attachment-info>strong,.ai-pending-file-name { display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;font-weight:550;color:#4f6d4a;text-decoration:none; }
+a.ai-pending-file-name:hover { text-decoration:underline; }.ai-attachment-info>small { color:#93a089;font-size:10px;overflow-wrap:anywhere; }
+.ai-pending-attachment[data-status=error] { border-color:#e7d9c8;background:#fdf9f3; }.ai-pending-attachment[data-status=error] .ai-attachment-info>small { color:#a16e4d; }
+.ai-pending-attachment[data-status=error] .ai-attachment-glyph { color:#a57553; }.ai-attachment-actions { display:flex;align-items:center;gap:3px;flex:none; }
+#aiChatPanel :is(.ai-attachment-remove,.ai-attachment-retry) { display:inline-flex;align-items:center;justify-content:center;min-width:27px;min-height:28px;padding:3px;border:0;border-radius:7px;background:transparent;color:#88977d;font:11px var(--font-body,system-ui,sans-serif);cursor:pointer; }
+#aiChatPanel .ai-attachment-remove>.ui-icon { width:15px;height:15px; }#aiChatPanel .ai-attachment-retry { padding-inline:6px;color:#926f4e; }#aiChatPanel :is(.ai-attachment-remove,.ai-attachment-retry):hover { background:#eaf0e4; }
+.ai-attachment-message { margin:0 0 7px;font-size:11px;color:#a17554;line-height:1.5; }
+.ai-user-content { display:flex;flex-direction:column;align-items:flex-end;gap:7px;min-width:0;max-width:92%; }.ai-user-content>.ai-user-text { max-width:100%;box-sizing:border-box; }
+.ai-sent-attachments { display:grid;gap:6px;width:100%;min-width:0;max-width:310px; }
+#aiChatPanel .ai-sent-attachment { display:flex;align-items:center;gap:7px;padding:8px 10px;border:1px solid #dfe7d8;border-radius:11px;background:#fafcf7;text-decoration:none;color:#56744f; }
+#aiChatPanel a.ai-sent-attachment:hover { background:#f0f6e9;border-color:#bfd1b4; }.ai-sent-attachment .ai-attachment-info>strong { overflow-wrap:anywhere;white-space:normal; }
+.ai-quote-drafts { display:grid;gap:12px;margin-top:12px; }.ai-quote-drafts:empty { display:none; }.ai-quote-unavailable { padding:10px 12px;border:1px solid #e8dfcd;border-radius:9px;background:#fcfaf4;color:#8a7857;font-size:12px; }
+.ai-drop-hint { display:none;position:absolute;inset:75px 12px 12px;z-index:30;align-items:center;justify-content:center;border:2px dashed #7eaa78;border-radius:14px;background:#f2f8eced;color:#446e43;font-size:15px;font-weight:600;pointer-events:none; }
+#aiChatPanel.is-dropping .ai-drop-hint { display:flex; }
 .ai-latest { position:absolute;bottom:108px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:5px;white-space:nowrap;padding:7px 12px;border:1px solid #dce5d4;border-radius:20px;background:#fff;color:#6d835d;box-shadow:0 3px 12px #2443291c;font:11px var(--font-body,system-ui,sans-serif);cursor:pointer; }
 @keyframes ai-chat-orbit { to { transform:rotate(360deg); } }
 @keyframes ai-chat-breathe { 50% { opacity:.7; } }
@@ -110,6 +132,7 @@ body.ai-chat-modal-open { overflow:hidden; }
     .ai-answer,.ai-user-text { font-size:15px; }.ai-tool-name { font-size:11px; }.ai-tool-duration { font-size:9px; }
     #aiChatPanel .ai-composer { padding:10px 11px 8px; }#aiChatPanel #aiChatInput { font-size:16px !important; }
     .ai-composer-hint { display:none; }#aiChatSend { width:40px;height:40px; }.ai-latest { bottom:90px; }
+    #aiChatPanel .ai-add-attachment { width:38px;height:40px; }#aiChatPanel :is(.ai-attachment-remove,.ai-attachment-retry) { min-width:32px;min-height:32px; }.ai-pending-attachments { max-height:143px; }
 }
 @media (prefers-reduced-motion:reduce) {
     #aiChatPanel *,#aiChatPanel *::after { animation:none !important;scroll-behavior:auto !important; }
