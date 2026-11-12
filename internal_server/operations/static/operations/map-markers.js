@@ -11,6 +11,8 @@
         floor: {label:'楼层', color:'#5268a8', path:'m12 3 10 5-10 5L2 8Zm-10 9 10 5 10-5M2 16l10 5 10-5'},
         room: {label:'房间', color:'#8060a3', path:'M4 21h16M6 21V3h12v18M10 21V7h5v14m-2-7h.01'},
         monitoring: {label:'监测点', color:'#a76815', path:'M12 2v3m0 14v3M2 12h3m14 0h3', circle:true},
+        trap_cage: {label:'诱捕笼', color:'#74629a', path:'M4 7h16v14H4ZM9 7V3h6v4M8 7v14m8-14v14M4 12h16M4 17h4m8 0h4M10 21v-9h4v9m-2-5h.01'},
+        beehive: {label:'蜂箱', color:'#b17a24', path:'m3 7 3-4h12l3 4ZM5 7v13h14V7M5 12h14M5 16h14M9 20v-2h6v2M3 21h18'},
         other: {label:'其他地点', color:'#61736b', path:'M12 8v4m0 4h.01', outline:true},
     };
     const descriptor = kind => Object.prototype.hasOwnProperty.call(types, kind) ? types[kind] : types.other;
@@ -24,12 +26,13 @@
     }
     function presentation(location, rings) {
         const anchor = point([location.latitude,location.longitude]);
-        let center = location.map_display === 'pin' ? anchor || point(location.center) : point(location.center) || anchor;
+        const pin = location.map_display === 'pin' || location.kind === 'trap_cage' || location.kind === 'beehive';
+        let center = pin ? anchor || point(location.center) : point(location.center) || anchor;
         if (!center && rings.length) {
             const points = rings.flat();
             center = [points.reduce((sum,p)=>sum+p[0],0)/points.length,points.reduce((sum,p)=>sum+p[1],0)/points.length];
         }
-        return {mode:location.map_display !== 'pin' && rings.length ? 'boundary' : center ? 'pin' : 'none', center};
+        return {mode:!pin && rings.length ? 'boundary' : center ? 'pin' : 'none', center};
     }
     function glyph(kind, doc = document) {
         const type = descriptor(kind);
@@ -59,5 +62,5 @@
         const update = () => map.getContainer().classList.toggle('op-labels-hidden',map.getZoom()<18);
         map.on('zoomend',update); update();
     }
-    return {descriptor,presentation,glyph,marker,enableLabels};
+    return {descriptor,presentation,glyph,marker,enableLabels,kinds:Object.keys(types)};
 });

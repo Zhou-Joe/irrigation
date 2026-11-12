@@ -22,6 +22,7 @@ from core.api import (
 from core.views import equipment_catalog_autocomplete
 from core import workitem_manage_views
 from core import inventory_tree_views
+from core import inventory_quotes
 from core.workorder_tree_views import (
     workorder_tree_form, project_create_api, planned_maintenance_pending,
     project_management, project_save, project_delete,
@@ -179,6 +180,9 @@ urlpatterns = [
     path('inventory/tree.json', inventory_tree_views.inventory_tree_json, name='inventory_tree_json'),
     path('inventory/node/<int:cat_id>/detail/', inventory_tree_views.inventory_node_detail, name='inventory_node_detail'),
     path('inventory/node/<int:cat_id>/save/', inventory_tree_views.inventory_node_save, name='inventory_node_save'),
+    path('inventory/node/<int:cat_id>/move/', inventory_tree_views.inventory_node_move, name='inventory_node_move'),
+    path('inventory/quotes/extract/', inventory_quotes.quote_extract, name='inventory_quote_extract'),
+    path('inventory/quotes/confirm/', inventory_quotes.quote_confirm, name='inventory_quote_confirm'),
     path('inventory/node/<int:cat_id>/price/add/', inventory_tree_views.inventory_price_add, name='inventory_price_add'),
     path('inventory/price/<int:record_id>/edit/', inventory_tree_views.inventory_price_edit, name='inventory_price_edit'),
     path('inventory/price/<int:record_id>/delete/', inventory_tree_views.inventory_price_delete, name='inventory_price_delete'),

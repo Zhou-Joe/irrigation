@@ -4,6 +4,7 @@
     const core = window.AIChatCore;
     if (!core) return;
     const mascotBaseURL = document.currentScript?.dataset.mascotBase || '/static/ai/engenie/';
+    const quotesDefault = document.currentScript?.dataset.quotesEnabled === 'yes';
     let threadId = null, activeRun = null, sequence = 0, panelOpen = false, expanded = false, follow = true;
     let historyDay = null, historyTimer = null, historyDeadline = null;
     let panelMotion = null, motionVersion = 0;
@@ -73,7 +74,31 @@
         else if(focus&&workspaceAvailable)launcher?.focus();
     }
     function toggle() { setOpen(!panelOpen); }
-    function welcome() {
+    function quotesAllowed() {
+        const workspace = byId('dashboardWorkspace');
+        const permission = workspace?.dataset.quotesEnabled;
+        return workspaceAvailable && workspace?.dataset.business !== 'pest-control' && (permission == null ? quotesDefault : permission === 'yes');
+    }
+    function syncQuoteAccess() {
+        const allowed = quotesAllowed();
+        window.EnGenieQuotes?.setEnabled(allowed);
+        const tools = byId('aiChatQuoteTools'); if (tools) tools.hidden = !allowed;
+        sendingState();
+    }
+    function quoteBusy() { return window.EnGenieQuotes?.isBlocking() === true; }
+    function startQuote(file = null) {
+        if (!quotesAllowed() || !window.EnGenieQuotes) return;
+        if (quoteBusy()) { say('请先完成当前报价的提取或确认。'); return; }
+        byId('aiChatWelcome')?.remove(); resetFollow();
+        const box = byId('aiChatMessages'), user = node('article','ai-msg ai-msg-user');
+        user.append(node('div','ai-user-text',file ? '上传报价：' + file.name : '导入报价')); box.append(user);
+        const article = node('article','ai-msg ai-msg-assistant'), heading = node('div','ai-turn-head'), avatar = node('span','ai-turn-avatar');
+        avatar.append(mascot()); heading.append(avatar,node('span','ai-turn-status','EnGenie · 报价提取与核对')); article.append(heading); box.append(article);
+        window.EnGenieQuotes.mount({host:article,csrf:getCSRF,file,onChange:()=>scrollLatest(false),onStatus:say,onBusy:sendingState});
+        scrollLatest(true); resizeInput();
+    }
+    function welcome({preserveQuotes = false} = {}) {
+        const quotes = window.EnGenieQuotes?.retainPending(preserveQuotes) || [];
         const box = byId('aiChatMessages'); box.replaceChildren();
         const empty = node('div','ai-welcome'); empty.id = 'aiChatWelcome';
         const art = node('div','ai-welcome-icon'); art.append(mascot('welcome'));
@@ -85,7 +110,7 @@
             const b = node('button','ai-prompt',text); b.type = 'button';
             b.onclick = () => { byId('aiChatInput').value = text; resizeInput(); byId('aiChatInput').focus(); }; prompts.append(b);
         });
-        empty.append(prompts); box.append(empty);
+        empty.append(prompts); box.append(empty,...quotes); if (quotes.length) empty.remove();
     }
     async function copyText(text, button) {
         try {
@@ -206,7 +231,10 @@
     function sendingState() {
         const button = byId('aiChatSend'); if (!button) return;
         button.innerHTML = icon(activeRun ? 'stop' : 'send'); button.title = activeRun ? '停止任务' : '发送'; button.setAttribute('aria-label',button.title); button.dataset.sending = String(!!activeRun); resizeInput();
-        if(byId('aiChatHistory'))byId('aiChatHistory').disabled=!!activeRun;
+        const busy = quoteBusy();
+        if(byId('aiChatHistory'))byId('aiChatHistory').disabled=!!activeRun || busy;
+        if(byId('aiChatNew'))byId('aiChatNew').disabled=busy;
+        document.querySelectorAll('#aiChatQuoteTools button').forEach(button => { button.disabled = busy; });
     }
     function stop() { if (activeRun) {
         if (threadId) fetch('/api/ai/cancel',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-CSRFToken':getCSRF()},body:JSON.stringify({thread_id:threadId})}).catch(()=>{});
@@ -217,7 +245,10 @@
         try{const data=await fetch('/api/ai/conversations',{credentials:'same-origin',cache:'no-store'}).then(r=>r.ok?r.json():{});
             if (!data.day) return;
             if (historyDay && data.day < historyDay) return;
-            if (historyDay && historyDay !== data.day) { newConversation(); say('已切换到新的一天，聊天记录和附件仅保留当天。'); }
+            if (historyDay && historyDay !== data.day) {
+                if (quoteBusy()) { clearTimeout(historyTimer); historyTimer = setTimeout(loadHistory,60000); return; }
+                newConversation(); say('已切换到新的一天，聊天记录和附件仅保留当天。');
+            }
             setHistoryPolicy(data);
             select.replaceChildren(new Option('当天对话（上海时间）',''));
             for(const item of data.conversations||[])select.add(new Option(item.title||'未命名对话',item.id));
@@ -231,6 +262,7 @@
         historyDeadline = performance.now() + delay;
         clearTimeout(historyTimer);
         historyTimer = setTimeout(() => {
+            if (quoteBusy()) { historyTimer = setTimeout(loadHistory,60000); return; }
             newConversation(); historyDay = null;
             say('已切换到新的一天，聊天记录和附件仅保留当天。');
             loadHistory();
@@ -238,16 +270,22 @@
     }
     async function restoreHistory(id) {
         if(!id||activeRun)return;
+        if (quoteBusy()) { byId('aiChatHistory').value = threadId || ''; say('当前报价还在处理中，请先完成确认再切换对话。'); return; }
         try{const response=await fetch('/api/ai/conversations?thread_id='+encodeURIComponent(id),{credentials:'same-origin',cache:'no-store'});
             if(response.status===404) { newConversation(); loadHistory(); throw new Error('会话已过期，历史记录仅保留当天。'); }
             if(!response.ok)throw new Error('会话暂时无法恢复');
-            const data=await response.json();welcome();threadId=id;byId('aiChatSnapshot').textContent='历史回复 · 再次发送时更新数据快照';
+            const data=await response.json();
+            if (quoteBusy()) { byId('aiChatHistory').value = threadId || ''; say('当前报价还在处理中，请先完成确认再切换对话。'); return; }
+            welcome();threadId=id;byId('aiChatSnapshot').textContent='历史回复 · 再次发送时更新数据快照';
             for(const turn of data.turns||[]){const view=responseView(turn.question);view.event({event:'token',text:turn.answer||''});for(const file of turn.files||[])view.event({event:'file',...file});view.finish('done');}
             resetFollow();scrollLatest(true);
         }catch(error){say(error.message);}
     }
     function resetFollow() { follow = true; byId('aiChatLatest').hidden = true; }
-    function newConversation() { stop(); sequence++; activeRun = null; threadId = null; sendingState(); welcome(); resetFollow();byId('aiChatHistory').value='';byId('aiChatSnapshot').textContent=''; say('已开启新对话'); }
+    function newConversation() {
+        if (quoteBusy()) { say('当前报价还在处理中，请先完成确认再新建对话。'); return false; }
+        stop(); sequence++; activeRun = null; threadId = null; sendingState(); welcome(); resetFollow();byId('aiChatHistory').value='';byId('aiChatSnapshot').textContent=''; say('已开启新对话'); return true;
+    }
     async function send() {
         const input = byId('aiChatInput'); if (!input || activeRun) return;
         if (historyDeadline !== null && performance.now() >= historyDeadline) { newConversation(); loadHistory(); }
@@ -263,7 +301,7 @@
             const parser = core.createParser(event => {
                 if (sequence !== run.id || run.controller.signal.aborted) return;
                 if (event.event === 'thread') {
-                    if (event.reset) { run.view.finish('stopped'); welcome(); run.view=responseView(text); }
+                    if (event.reset) { run.view.finish('stopped'); welcome({preserveQuotes:true}); run.view=responseView(text); }
                     if (/^u\d+-[0-9a-f]{8,32}$/.test(event.thread_id || '')) threadId = event.thread_id;
                     setHistoryPolicy(event); return;
                 }
@@ -308,6 +346,16 @@
         history.add(new Option('当天对话（上海时间）',''));history.onchange=()=>restoreHistory(history.value);
         panel.querySelector('.ai-chat-header').after(history);
         const snapshot=document.createElement('p');snapshot.id='aiChatSnapshot';snapshot.className='ai-composer-hint';panel.querySelector('.ai-composer').append(snapshot);
+        if (window.EnGenieQuotes) {
+            const tools = node('div','ai-quote-tools'); tools.id = 'aiChatQuoteTools';
+            const upload = node('button','ai-quote-tool'), paste = node('button','ai-quote-tool'), file = node('input');
+            upload.type = paste.type = 'button'; upload.innerHTML = icon('upload'); upload.append(node('span','','上传报价')); upload.title = '上传报价，在当前对话内提取并核对';
+            paste.innerHTML = icon('file'); paste.append(node('span','','报价')); paste.title = '粘贴报价，在当前对话内提取并核对';
+            file.type = 'file'; file.accept = '.xlsx,.csv,.txt,.pdf'; file.tabIndex = -1; file.setAttribute('aria-label','上传报价文件');
+            upload.onclick = () => file.click(); paste.onclick = () => startQuote();
+            file.onchange = () => { const selected = file.files[0]; file.value = ''; if (selected) startQuote(selected); };
+            tools.append(upload,paste,file); panel.querySelector('.ai-composer').prepend(tools); syncQuoteAccess();
+        }
         loadHistory();
         document.addEventListener('visibilitychange', () => { if (!document.hidden) loadHistory(); });
         fitViewport();
@@ -323,7 +371,7 @@
         panel.addEventListener('keydown',event => {
             if (event.key === 'Escape') { event.preventDefault(); setOpen(false); }
             if (event.key !== 'Tab' || !modalMode()) return;
-            const focusable = [...panel.querySelectorAll('button,a[href],textarea,select,summary,[tabindex="0"]')].filter(item => !item.disabled && item.getClientRects().length);
+            const focusable = [...panel.querySelectorAll('button,a[href],input:not([type="file"]),textarea,select,summary,[tabindex="0"]')].filter(item => !item.matches(':disabled') && !item.closest('[inert]') && item.getClientRects().length);
             const first = focusable[0], last = focusable[focusable.length-1];
             if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
             else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
@@ -334,11 +382,12 @@
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded',mountIfAvailable); else mountIfAvailable();
     window.AIChat = {open:()=>setOpen(true),toggle,close:()=>setOpen(false),
         beforeWorkspaceChange(){
+            window.EnGenieQuotes?.setEnabled(false);
             setOpen(false,{immediate:true,focus:false});
             const launcher=byId('aiChatLauncher');if(launcher&&launcher.parentElement!==document.body)document.body.append(launcher);
         },
         afterWorkspaceChange(){
             workspaceAvailable=byId('dashboardWorkspace')?.dataset.ai==='yes';
-            repositionLauncher();setOpen(false,{immediate:true,focus:false});
+            repositionLauncher();setOpen(false,{immediate:true,focus:false});syncQuoteAccess();
         }};
 })();
