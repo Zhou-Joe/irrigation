@@ -497,6 +497,7 @@ function pdxfCalDrawMarkers() {
   if (pdxfCal.markers) pdxfMap.removeLayer(pdxfCal.markers);
   pdxfCal.cadMarkers = L.layerGroup().addTo(pdxfCadMap);
   pdxfCal.markers = L.layerGroup().addTo(pdxfMap);
+  if (pdxfUsePlacement()) return;
   function marker(point, i, pending) {
     var icon = L.divIcon({
       className: "",
@@ -579,12 +580,14 @@ function pdxfCalSave() {
       }
       var refresh = new FormData();
       refresh.append("token", pdxfToken);
+      refresh.append("import_mode", "aligned");
       refresh.append("calibration_id", d.calibration.id);
       return pdxfPost(window.__DXF__.urls.analyze, refresh).then(
         function (data) {
           pdxfCalInfo = data.calibration;
           pdxfData = data;
           pdxfAlignmentDirty = false;
+          pdxfPreviewKey = pdxfPreviewTransformKey();
         },
       );
     })

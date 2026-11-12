@@ -1,5 +1,6 @@
 """Versioned calibration and signed preview state for CAD imports."""
 import math
+import uuid
 from copy import deepcopy
 
 from django.conf import settings
@@ -165,20 +166,32 @@ def require_alignment(snapshot):
         raise ValueError(status['error'])
 
 
-def sign_preview(token, snapshot, user_id=None):
-    return signing.dumps({'token': token, 'calibration': snapshot, 'user_id': user_id},
+def import_mode(value='aligned'):
+    if value not in ('aligned', 'direct'):
+        raise ValueError('请选择直接导入或选点校准导入')
+    return value
+
+
+def sign_preview(token, snapshot, user_id=None, mode='aligned', submission_key=None):
+    return signing.dumps({'token': token, 'calibration': snapshot, 'user_id': user_id,
+                          'import_mode': import_mode(mode),
+                          'submission_key': submission_key or str(uuid.uuid4())},
                          salt=PREVIEW_SALT, compress=True)
 
 
-def read_preview(preview_token, token=None, user_id=None):
+def read_preview(preview_token, token=None, user_id=None, mode=None):
     try:
         state = signing.loads(preview_token, salt=PREVIEW_SALT, max_age=PREVIEW_MAX_AGE)
     except signing.BadSignature as exc:
         raise ValueError('预览已过期或无效，请重新解析图纸') from exc
+    if not isinstance(state, dict) or not isinstance(state.get('calibration'), dict) or not state.get('token'):
+        raise ValueError('预览内容无效，请重新解析图纸')
     if token and state['token'] != token:
         raise ValueError('文件与预览不一致，请重新解析图纸')
-    if state.get('user_id') is not None and state['user_id'] != user_id:
+    if state.get('user_id') != user_id:
         raise ValueError('预览不属于当前用户，请重新解析图纸')
+    if mode is not None and state.get('import_mode', 'aligned') != import_mode(mode):
+        raise ValueError('导入方式与预览不一致，请重新确认地图预览')
     return state
 
 

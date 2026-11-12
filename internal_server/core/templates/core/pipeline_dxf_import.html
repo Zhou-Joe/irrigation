@@ -3,7 +3,7 @@
 {% block title %}导入管网 - 灌溉管理系统{% endblock %}
 {% block extra_css %}
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-<link rel="stylesheet" href="{% static 'css/dxf-import.css' %}?v=20261106placement">
+<link rel="stylesheet" href="{% static 'css/dxf-import.css' %}?v=20261112direct1">
 {% endblock %}
 {% block content %}
 <div class="pdxf-app">
@@ -12,12 +12,12 @@
     <nav class="pdxf-steps" aria-label="导入步骤">
       <button id="pdxfStep1" class="pdxf-step on" onclick="pdxfGoStep(1)"><span>1</span>上传</button>
       <button id="pdxfStep2" class="pdxf-step" onclick="pdxfGoStep(2)" disabled><span>2</span>选择</button>
-      <button id="pdxfStep3" class="pdxf-step" onclick="pdxfGoStep(3)" disabled><span>3</span>对齐</button>
+      <button id="pdxfStep3" class="pdxf-step" onclick="pdxfGoStep(3)" disabled><span>3</span>定位</button>
       <button id="pdxfStep4" class="pdxf-step" onclick="pdxfGoStep(4)" disabled><span>4</span>导入</button>
     </nav>
     <div class="pdxf-panels">
       <section data-step="1" id="pdxfUploadCard" class="pdxf-card open" aria-labelledby="pdxfUploadTitle">
-        <h2 id="pdxfUploadTitle">选择 CAD 图纸</h2><p class="pdxf-hint">上传 .dxf 文件，直接叠到地图上预览，再选择内容和对齐位置。</p>
+        <h2 id="pdxfUploadTitle">选择 CAD 图纸</h2><p class="pdxf-hint">上传 .dxf 文件，叠到地图上选择内容。可按当前预览直接导入，也可精确对齐后导入。</p>
         <div class="pdxf-drop" id="pdxfDropZone"><span class="pdxf-file-icon" aria-hidden="true">↥</span><strong>拖放 DXF 文件到这里</strong><span>或选择本地文件</span><input type="file" id="pdxfFile" accept=".dxf" aria-label="选择 DXF 文件" onchange="pdxfFileChanged()"></div>
         <div id="pdxfFileInfo" class="pdxf-file-info" hidden></div>
         <button type="button" class="pdxf-btn pdxf-btn-primary pdxf-wide" id="pdxfAnalyzeBtn" onclick="pdxfAnalyze()" disabled>解析并叠到地图</button>
@@ -36,10 +36,10 @@
         <details class="pdxf-diagnostics"><summary>解析说明与未支持的实体</summary><div id="pdxfDiagnostics"></div></details>
       </section>
       <section data-step="3" id="pdxfCalCard" class="pdxf-card" hidden aria-labelledby="pdxfAlignmentTitle">
-        <h2 id="pdxfAlignmentTitle">对齐到卫星地图</h2><p class="pdxf-hint">只调整整张图的比例、旋转和位置，保持 CAD 的形状与相对尺寸。</p>
-        <div id="pdxfPositionMode" class="pdxf-coarse"><p class="pdxf-hint">选点校准为可选项。也可以直接使用地图上摆放好的位置。</p><div class="pdxf-pick-role"><label><input id="pdxfPositionCalibrated" type="radio" name="pdxfPositionMode" value="calibrated" checked onchange="pdxfPositionModeChanged(false)">选点校准</label><label><input type="radio" name="pdxfPositionMode" value="placement" onchange="pdxfPositionModeChanged(true)">按当前摆放位置导入</label></div></div><div id="pdxfCalCurrent" class="pdxf-note"></div>
-        <details class="pdxf-coarse" open><summary>先把 CAD 大致摆到对应位置</summary><p class="pdxf-hint">初步叠图用于辨认线条。可移动、旋转、等比缩放；选点校准时会锁定粗调；按当前摆放导入时可继续调整。</p><div class="pdxf-action-row"><button class="pdxf-btn pdxf-btn-secondary" id="pdxfMoveBtn" onclick="pdxfPlacementToggle()">移动 CAD</button><button class="pdxf-btn pdxf-btn-secondary" data-placement onclick="pdxfPlacementCenter()">放到地图中心</button></div><div class="pdxf-action-row"><button class="pdxf-btn pdxf-btn-secondary" data-placement onclick="pdxfPlacementAdjust(5,1)">↶ 5°</button><button class="pdxf-btn pdxf-btn-secondary" data-placement onclick="pdxfPlacementAdjust(-5,1)">↷ 5°</button><button class="pdxf-btn pdxf-btn-secondary" data-placement onclick="pdxfPlacementAdjust(0,1/1.1)">缩小 CAD</button><button class="pdxf-btn pdxf-btn-secondary" data-placement onclick="pdxfPlacementAdjust(0,1.1)">放大 CAD</button></div><p id="pdxfPlacementHint" class="pdxf-muted"></p></details>
-        <div id="pdxfPreciseControls"><ol class="pdxf-alignment-guide"><li>在地图上的 CAD 叠图中选角点或设备点。</li><li>CAD 会临时隐藏，再点卫星图中的同一位置。</li><li>叠图随对应点更新。至少选 <b>3 个对齐点</b>和 <b>1 个独立检查点</b>，再验证保存。</li></ol>
+        <h2 id="pdxfAlignmentTitle">选择定位方式</h2><p class="pdxf-hint">只调整整张图的比例、旋转和位置，保持 CAD 的形状与相对尺寸。</p>
+        <div id="pdxfPositionMode" class="pdxf-position-mode"><div class="pdxf-position-options" role="radiogroup" aria-label="导入定位方式"><label><input id="pdxfPositionDirect" type="radio" name="pdxfPositionMode" value="direct" checked onchange="pdxfPositionModeChanged(true)"><span><b>按当前预览直接导入</b><small>无需对齐点与检查点，使用地图上当前的位置、角度和比例。</small></span></label><label><input id="pdxfPositionCalibrated" type="radio" name="pdxfPositionMode" value="aligned" onchange="pdxfPositionModeChanged(false)"><span><b>精确对齐后导入</b><small>至少 3 个对齐点与 1 个独立检查点，通过精度验证后导入。</small></span></label></div><div id="pdxfPositionStatus" class="pdxf-status" role="status" aria-live="polite"></div></div><div id="pdxfCalCurrent" class="pdxf-note" hidden></div>
+        <details class="pdxf-coarse" open><summary>先把 CAD 大致摆到对应位置</summary><p class="pdxf-hint">可移动、旋转、等比缩放。直接导入将保留当前预览位置；精确对齐开始选点后锁定粗调。</p><div class="pdxf-action-row"><button class="pdxf-btn pdxf-btn-secondary" id="pdxfMoveBtn" onclick="pdxfPlacementToggle()">移动 CAD</button><button class="pdxf-btn pdxf-btn-secondary" data-placement onclick="pdxfPlacementCenter()">放到地图中心</button></div><div class="pdxf-action-row"><button class="pdxf-btn pdxf-btn-secondary" data-placement onclick="pdxfPlacementAdjust(5,1)">↶ 5°</button><button class="pdxf-btn pdxf-btn-secondary" data-placement onclick="pdxfPlacementAdjust(-5,1)">↷ 5°</button><button class="pdxf-btn pdxf-btn-secondary" data-placement onclick="pdxfPlacementAdjust(0,1/1.1)">缩小 CAD</button><button class="pdxf-btn pdxf-btn-secondary" data-placement onclick="pdxfPlacementAdjust(0,1.1)">放大 CAD</button></div><p id="pdxfPlacementHint" class="pdxf-muted"></p></details>
+        <div id="pdxfPreciseControls" hidden><ol class="pdxf-alignment-guide"><li>在地图上的 CAD 叠图中选角点或设备点。</li><li>CAD 会临时隐藏，再点卫星图中的同一位置。</li><li>叠图随对应点更新。至少选 <b>3 个对齐点</b>和 <b>1 个独立检查点</b>，再验证保存。</li></ol>
         <div class="pdxf-pick-role"><label><input type="radio" name="pdxfPickRole" value="control" checked onchange="pdxfCalRoleChanged()">对齐点</label><label><input type="radio" name="pdxfPickRole" value="check" onchange="pdxfCalRoleChanged()">独立检查点</label></div>
         <div class="pdxf-action-row"><button class="pdxf-btn pdxf-btn-primary" id="pdxfCalStartBtn" onclick="pdxfCalStart()">开始选点</button><button class="pdxf-btn pdxf-btn-secondary" id="pdxfCalStopBtn" onclick="pdxfCalStop()" hidden>暂停选点</button><button class="pdxf-btn pdxf-btn-secondary" id="pdxfCalRetryBtn" onclick="pdxfCalRoleChanged()" hidden>重选此点</button><button class="pdxf-btn pdxf-btn-secondary" onclick="pdxfCalClearDraft()">重新选点</button></div>
         <div id="pdxfCalStep" class="pdxf-pick-step" role="status" aria-live="polite">先在同一张地图上粗调 CAD，再选择对应点。</div>
@@ -54,7 +54,7 @@
       <section data-step="4" id="pdxfImportCard" class="pdxf-card" hidden aria-labelledby="pdxfReviewTitle">
         <h2 id="pdxfReviewTitle">检查并导入</h2><p class="pdxf-hint">核对卫星图中的位置与所选内容，再创建管网。</p><div id="pdxfReviewSummary" class="pdxf-review"></div>
         <label class="pdxf-review-check"><input type="checkbox" id="pdxfReviewConfirmed" onchange="pdxfUpdateWorkflow()">我已核对管线位置、设备和标注</label>
-        <button type="button" class="pdxf-btn pdxf-btn-primary pdxf-wide" id="pdxfImportBtn" onclick="pdxfImport()" disabled>确认导入管网</button><div id="pdxfImportStatus" class="pdxf-status" role="status" aria-live="polite"></div><div id="pdxfResultBox"></div>
+        <button type="button" class="pdxf-btn pdxf-btn-primary pdxf-wide" id="pdxfImportBtn" onclick="pdxfImport()" disabled>按当前预览直接导入</button><div id="pdxfImportStatus" class="pdxf-status" role="status" aria-live="polite"></div><div id="pdxfResultBox"></div>
       </section>
 
     </div>
@@ -64,7 +64,7 @@
     <div class="pdxf-workspace-head"><div><strong id="pdxfDrawingName">CAD 原图与地图</strong><span id="pdxfMapStatus">等待上传图纸</span></div><a class="pdxf-btn pdxf-btn-secondary" href="{% url 'core:settings' %}">管网管理</a></div>
     <div class="pdxf-map-tools" aria-label="预览显示"><label><input id="pdxfShowOverlay" type="checkbox" checked onchange="pdxfToggleOverlay()">CAD 叠图</label><label><input id="pdxfShowReference" type="checkbox" checked onchange="pdxfRefreshMap()">原图参考线</label><label><input id="pdxfShowDevices" type="checkbox" checked onchange="pdxfRefreshMap()">设备</label><label><input id="pdxfShowNotes" type="checkbox" onchange="pdxfRefreshMap()">标注（放大显示）</label><label><input id="pdxfShowExisting" type="checkbox" onchange="pdxfShowExisting()">已有管网（虚线）</label><label class="pdxf-opacity">叠图透明度<input id="pdxfOpacity" type="range" min="20" max="100" value="70" oninput="pdxfRefreshMap()"></label><button class="pdxf-btn pdxf-btn-secondary" onclick="pdxfFitDrawing()">查看全图</button><button class="pdxf-btn pdxf-btn-secondary" onclick="pdxfOpenOriginal()">查看 CAD 原图</button></div>
     <div class="pdxf-map-grid">
-      <section class="pdxf-map-panel"><div class="pdxf-map-caption"><b>CAD + 卫星地图</b><span id="pdxfSatelliteHint">解析后先显示初步叠图，再选点对齐</span></div><div class="pdxf-map-area"><div id="pdxfMap"></div><div id="pdxfCadEmpty" class="pdxf-empty"><b>在同一张地图上对齐 CAD</b><span>解析后会立即显示初步叠图，可先粗调位置，再选择对应点。</span></div></div></section>
+      <section class="pdxf-map-panel"><div class="pdxf-map-caption"><b>CAD + 卫星地图</b><span id="pdxfSatelliteHint">按当前预览直接导入，或选择精确对齐</span></div><div class="pdxf-map-area"><div id="pdxfMap"></div><div id="pdxfCadEmpty" class="pdxf-empty"><b>在地图上预览 CAD</b><span>解析后调整叠图位置，可直接导入，也可选择精确对齐。</span></div></div></section>
     </div>
   </main>
 </div>
@@ -80,9 +80,9 @@ window.__DXF__ = {urls: {
   calSave: '{% url 'core:pipeline_dxf_calibration_save' %}', calClear: '{% url 'core:pipeline_dxf_calibration_clear' %}', calApply: '{% url 'core:pipeline_dxf_calibration_apply' %}'},
   placementPoints: {{ dxf_placement_points_json|safe }}, cal: {{ dxf_calibration_json|safe }}, zones: {{ ref_zones_json|safe }}, pipelines: {{ ref_pipelines_json|safe }} };
 </script>
-<script src="{% static 'js/dxf-import/dxf-core.js' %}?v=20261106placement"></script>
-<script src="{% static 'js/dxf-import/dxf-cal-math.js' %}?v=20261106placement"></script>
-<script src="{% static 'js/dxf-import/dxf-placement.js' %}?v=20261106placement"></script>
-<script src="{% static 'js/dxf-import/dxf-cal.js' %}?v=20261106placement"></script>
+<script src="{% static 'js/dxf-import/dxf-core.js' %}?v=20261112direct1"></script>
+<script src="{% static 'js/dxf-import/dxf-cal-math.js' %}?v=20261112direct1"></script>
+<script src="{% static 'js/dxf-import/dxf-placement.js' %}?v=20261112direct1"></script>
+<script src="{% static 'js/dxf-import/dxf-cal.js' %}?v=20261112direct1"></script>
 <script>pdxfInitMap();</script>
 {% endblock %}
