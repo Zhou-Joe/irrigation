@@ -1295,6 +1295,7 @@ def dashboard(request):
     Main dashboard view with interactive map showing irrigation zones.
     """
     from operations.map_views import is_pest, pest_dashboard
+    from core.ai_access import can_use_assistant
     if is_pest(request):
         return pest_dashboard(request)
     from datetime import date, timedelta
@@ -1525,6 +1526,7 @@ def dashboard(request):
         'lands_json': json.dumps(lands_list),
         'is_admin': is_admin,
         'is_manager': is_manager,
+        'can_use_ai': can_use_assistant(request),
         'is_dept_user': is_dept_user,
         'is_field_worker': is_field_worker,
         'pending_counts': pending_counts,

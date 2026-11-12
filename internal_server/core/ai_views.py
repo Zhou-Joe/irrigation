@@ -28,13 +28,9 @@ from django.views.decorators.http import require_POST
 from django.views.decorators.cache import never_cache
 
 from core.models import AISettings
-from core.role_utils import get_user_role, ROLE_SUPER_ADMIN, ROLE_MANAGER
+from core.ai_access import can_use_assistant
 
 logger = logging.getLogger(__name__)
-
-# Roles allowed to use the AI assistant. Only managers and super-admins.
-_ALLOWED_ROLES = {ROLE_SUPER_ADMIN, ROLE_MANAGER}
-
 
 def _sse(event_type: str, data: dict) -> str:
     """Format one Server-Sent Event frame."""
@@ -42,6 +38,7 @@ def _sse(event_type: str, data: dict) -> str:
 
 
 @login_required(login_url='core:login')
+@never_cache
 def ai_status(request):
     """GET -> whether the AI assistant is available to the current user.
 
@@ -50,18 +47,17 @@ def ai_status(request):
       - they are a manager or super-admin (role), AND
       - the feature is enabled AND fully configured (base_url/key/model) in admin.
     """
-    role = get_user_role(request.user)
+    if not can_use_assistant(request):
+        return JsonResponse({'available': False})
     cfg = AISettings.get_settings()
     configured = bool(cfg.enabled and cfg.api_base_url and cfg.api_key and cfg.model_name)
-    available = role in _ALLOWED_ROLES and configured
-    return JsonResponse({'available': available})
+    return JsonResponse({'available': configured})
 
 
 @login_required(login_url='core:login')
 @require_POST
 def ai_chat(request):
-    role = get_user_role(request.user)
-    if role not in _ALLOWED_ROLES:
+    if not can_use_assistant(request):
         return JsonResponse({'error': '无权限使用 AI 助手'}, status=403)
     cfg = AISettings.get_settings()
     if not (cfg.enabled and cfg.api_base_url and cfg.api_key and cfg.model_name):
@@ -342,7 +338,7 @@ def ai_cancel(request):
 @login_required(login_url='core:login')
 @never_cache
 def ai_conversations(request):
-    if get_user_role(request.user) not in _ALLOWED_ROLES:
+    if not can_use_assistant(request):
         return JsonResponse({'error': '无权限'}, status=403)
     maybe_prune_history()
     thread_id = request.GET.get('thread_id')

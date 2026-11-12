@@ -96,6 +96,12 @@
                 if(window.FOSMapInitialView&&window._map)window._map.setView(window.FOSMapInitialView.center,window.FOSMapInitialView.zoom);
                 window.FOSMapInitialView=null;
             } else {
+                // The map stays mounted, but account capabilities may have
+                // changed. Chat reads these attributes after the switch.
+                for(const name of ['data-ai','data-quotes-enabled']){
+                    const value=next.getAttribute(name);
+                    if(value===null)current.removeAttribute(name);else current.setAttribute(name,value);
+                }
                 window.FOSWorkorderModalLifecycle?.refreshRole();
                 const oldBatch=document.getElementById('fosBatchDialog'),newBatch=doc.getElementById('fosBatchDialog');
                 oldBatch?.remove();if(newBatch)document.getElementById('dashboardWorkspace').append(document.importNode(newBatch,true));
@@ -104,7 +110,7 @@
                 await window.FOSDashboardLifecycle?.refresh?.();
                 // Load newly available account tools without rebuilding the map.
                 for(const script of doc.querySelectorAll('#dashboardScripts > script[src]'))
-                    if(/\/(marked\.min|purify\.min|ai-chat-core|genie_arrival|ai-chat)\.js$/.test(path(script))&&!loaded.has(path(script))) {
+                    if(/\/(marked\.min|purify\.min|ai-chat-core|genie_arrival|inventory-move|inventory-quotes|ai-chat)\.js$/.test(path(script))&&!loaded.has(path(script))) {
                         await new Promise((resolve,reject)=>{const el=document.createElement('script');el.src=script.src;for(const a of script.attributes)if(a.name.startsWith('data-'))el.setAttribute(a.name,a.value);el.onload=()=>{loaded.add(path(script));resolve();};el.onerror=reject;document.getElementById('dashboardScripts').append(el);});
                     }
             }
