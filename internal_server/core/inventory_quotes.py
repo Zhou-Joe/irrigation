@@ -261,17 +261,17 @@ def _catalog():
             item = ancestry.get(item['parent_id'])
         return ' / '.join(reversed(names))
     return [{'id': c.pk, 'name': c.name_zh, 'code': c.code, 'path': path_for(c),
-             'node_type': c.node_type} for c in categories]
+             'unit': c.unit, 'node_type': c.node_type} for c in categories]
 
 
-def _rows_and_matches(extracted, catalog):
+def _rows_and_matches(extracted, catalog, *, legacy_matching=True):
     raw = extracted.get('items')
     if not isinstance(raw, list) or not raw:
         raise QuoteError('没有识别到具体部件，请检查报价内容后重试。')
     if len(raw) > MAX_ROWS:
         raise QuoteError('每次最多提取 200 个部件，请拆分后重试。')
     code_map, name_map = defaultdict(list), defaultdict(list)
-    parts = [p for p in catalog if p['node_type'] == 'part']
+    parts = [p for p in catalog if p['node_type'] == 'part'] if legacy_matching else []
     part_names = [(part, _normalized(part['name'])) for part in parts]
     for part in parts:
         code_map[_normalized(part['code'], code=True)].append(part)
@@ -297,6 +297,9 @@ def _rows_and_matches(extracted, catalog):
         if currency and _normalized(currency) not in {'cny', 'rmb', '人民币', '元', 'cn¥', '¥', '￥'}:
             row['unit_price'] = ''
             warnings.append(f'第 {number} 项「{row["name"]}」原币种为 {currency}，单价已留空；系统价格为人民币，请换算核对后再填。')
+        if not legacy_matching:
+            rows.append({**row, 'category_id': None, 'candidates': [], 'match_label': '待匹配现有部件'})
+            continue
         exact = code_map.get(_normalized(row['code'], code=True), []) if row['code'] else []
         label = '编码匹配'
         if not exact:
@@ -304,6 +307,13 @@ def _rows_and_matches(extracted, catalog):
             label = '名称匹配'
         candidate = exact[0] if len(exact) == 1 else None
         suggestions = list(exact[:5]) if len(exact) > 1 else []
+        if candidate:
+            # Preserve this parser's return contract, but exact text alone does
+            # not override an explicit model, size or unit contradiction.
+            from .inventory_quote_matching import _guard
+            blocked = _guard(row, candidate)
+            if blocked:
+                suggestions, candidate = [candidate], None
         if not candidate and not suggestions:
             scores = []
             needle = _normalized(row['name'])
@@ -313,8 +323,8 @@ def _rows_and_matches(extracted, catalog):
                     scores.append((ratio, part))
             suggestions = [part for _, part in sorted(scores, key=lambda pair: pair[0], reverse=True)[:5]]
         rows.append({**row, 'category_id': candidate['id'] if candidate else None,
-                     'match_label': label if candidate else '待人工匹配' if suggestions else '未匹配，默认放在最外层',
-                     'candidates': [{key: p[key] for key in ('id', 'name', 'code', 'path')} for p in suggestions]})
+                     'match_label': label if candidate else '待人工匹配' if suggestions else '未匹配，请选择已有部件或明确新建',
+                     'candidates': [{key: p.get(key, '') for key in ('id', 'name', 'code', 'path', 'unit')} for p in suggestions]})
     return rows, warnings
 
 
@@ -330,7 +340,7 @@ def build_quote_draft(user, document, source='聊天报价', *, images=None):
     try:
         extracted = _extract(document, images=images)
         catalog = _catalog()
-        rows, warnings = _rows_and_matches(extracted, catalog)
+        rows, warnings = _rows_and_matches(extracted, catalog, legacy_matching=False)
         supplier = _text(extracted.get('supplier'), 200, '供应商')
         quote_date = _text(extracted.get('quote_date'), 30, '报价日期')
         if quote_date:
@@ -343,6 +353,10 @@ def build_quote_draft(user, document, source='聊天报价', *, images=None):
             warnings.append('未识别到供应商，请根据原件补充。')
         if not quote_date:
             warnings.append('请填写报价单上的日期，不会自动使用今天。')
+        from .inventory_quote_matching import match_quote_rows
+        matching = match_quote_rows(rows, catalog, supplier, quote_date)
+        rows = matching['items']
+        warnings.extend(matching.pop('warnings'))
         draft_id = str(uuid.uuid4())
         original_rows = [{key: row[key] for key in ('row_id', 'name', 'code', 'unit', 'unit_price', 'source_path')} for row in rows]
         token = signing.dumps({'owner': get_django_user(user).pk, 'draft': draft_id,
@@ -351,8 +365,7 @@ def build_quote_draft(user, document, source='聊天报价', *, images=None):
             raise QuoteError('提取结果过长，请拆分报价单后重试。')
         warnings.append('来源层级仅供核对，不会自动创建或移动系统目录；确认前不会写入部件或价格。')
         return {'success': True, 'token': token, 'submission_key': draft_id,
-                'supplier': supplier, 'quote_date': quote_date, 'items': rows,
-                'catalog': catalog, 'warnings': warnings}
+                **matching, 'quote_date': quote_date, 'catalog': catalog, 'warnings': warnings}
     finally:
         _extraction_slots.release()
 
