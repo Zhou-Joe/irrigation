@@ -43,7 +43,8 @@ class Membership(models.Model):
 
 class Location(models.Model):
     KINDS = [('zone', '室外区域'), ('building', '建筑'), ('floor', '楼层'), ('room', '房间'),
-             ('monitoring', '监测点'), ('other', '其他地点')]
+             ('monitoring', '监测点'), ('trap_cage', '诱捕笼'), ('beehive', '蜂箱'), ('other', '其他地点')]
+    POINT_KINDS = frozenset({'trap_cage', 'beehive'})
     MAP_DISPLAYS = [('auto', '自动（边界优先，无边界用图钉）'), ('pin', '图钉标注（无需精确边界）')]
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     owner_team = models.ForeignKey(Team, on_delete=models.PROTECT, related_name='owned_locations')

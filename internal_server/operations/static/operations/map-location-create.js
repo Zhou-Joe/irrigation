@@ -2,7 +2,7 @@
     const api=factory();if(typeof module==='object'&&module.exports)module.exports=api;else root.FOSMapLocationCreate=api;
 })(typeof globalThis!=='undefined'?globalThis:this,function(){
     'use strict';
-    const kinds=new Set(['zone','building','floor','room','monitoring','other']);
+    const kinds=new Set(['zone','building','floor','room','monitoring','trap_cage','beehive','other']);
     function draft(values,point){
         const name=String(values.name||'').trim(),code=String(values.code||'').trim(),kind=values.kind||'building';
         if(!name||name.length>150)throw Error('请填写地点名称（最多 150 字）。');

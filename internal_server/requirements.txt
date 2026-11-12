@@ -8,6 +8,7 @@ whitenoise>=6.0
 Pillow>=10.0               # photo thumbnail generation for workorder uploads
 ezdxf>=1.1,<2.0            # DXF land-plan drawing export
 reportlab>=4.0             # PDF report generation
+pypdf>=5.0,<7.0            # text-only quotation PDF extraction
 shapely>=2.0               # zone/landmark polygon geometry
 python-dateutil>=2.8       # PM scheduling rrule / relativedelta
 

@@ -10,7 +10,7 @@ class LocationForm(forms.ModelForm):
                   'map_display': '地图显示方式', 'description': '位置说明',
                   'latitude': '纬度（选填）', 'longitude': '经度（选填）'}
         help_texts = {'kind': '图钉的图标和颜色按地点类型区分。',
-                      'map_display': '建筑等地点只需一个大致位置，可在下方地图点选，不需要绘制轮廓。未定位的地点仍可用于工单。'}
+                      'map_display': '建筑等地点可在下方地图点选；诱捕笼和蜂箱使用专用图钉。未定位的地点仍可用于工单。'}
         widgets = {'description': forms.Textarea(attrs={'rows': 3})}
 
     def __init__(self, *args, parents, **kwargs):
@@ -23,6 +23,8 @@ class LocationForm(forms.ModelForm):
             self.fields['longitude'].disabled = True
 
     def clean_map_display(self):
+        if self.cleaned_data.get('kind') in Location.POINT_KINDS:
+            return 'pin'
         return self.cleaned_data.get('map_display') or self.instance.map_display or 'auto'
 
     def clean(self):

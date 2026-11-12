@@ -1,5 +1,6 @@
 from django.conf import settings
 from .access import active_membership, business_options
+from .models import Location
 
 
 def workspace(request):
@@ -10,6 +11,7 @@ def workspace(request):
     pest=bool(member and member.team.business.code=='pest-control')
     data={'workspace_membership':member,'business_choices':business_options(request.user),
           'active_business_key':f'business:{member.team_id}' if member else '',
+          'location_kind_choices':Location.KINDS,
           'pest_mode':pest,'is_platform_admin':platform_admin,'multi_team_enabled':True,
           'business_selected':member.team.business.code if member else ''}
     if platform_admin:

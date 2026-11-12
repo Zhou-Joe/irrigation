@@ -10,10 +10,12 @@ The existing inventory_category_create/edit/delete/reorder endpoints are
 reused as-is for the jsTree contextmenu actions.
 """
 from django.contrib.auth.decorators import login_required
-from django.db import transaction
+from django.db import IntegrityError, OperationalError, transaction
+from django.db.models import Max
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
 from django.views.decorators.http import require_POST
+from mptt.exceptions import InvalidMove
 
 from core.models import InventoryCategory, InventoryPriceRecord, InventoryTransactionLine
 from core.role_utils import is_admin
@@ -198,6 +200,73 @@ def inventory_node_save(request, cat_id):
         'success': True,
         'message': f'已更新「{cat.name_zh}」',
         'node': _iv_to_jstree_node(cat),
+    })
+
+
+@require_POST
+@login_required(login_url='core:login')
+def inventory_node_move(request, cat_id):
+    """Move an existing catalog node without changing its identity or stock."""
+    if not is_admin(request.user):
+        return JsonResponse({'success': False, 'message': '无权限'}, status=403)
+    if 'parent_id' not in request.POST:
+        return JsonResponse({'success': False, 'message': '请选择目标目录'}, status=400)
+    raw_parent = (request.POST.get('parent_id') or '').strip()
+    try:
+        parent_id = None if raw_parent in ('', '#') else int(raw_parent)
+        if parent_id is not None and parent_id <= 0:
+            raise ValueError
+    except (ValueError, TypeError):
+        return JsonResponse({'success': False, 'message': '目标目录无效'}, status=400)
+
+    try:
+        with transaction.atomic():
+            # Moving a root can renumber the whole forest. Lock in stable order
+            # before reading MPTT coordinates, including inactive descendants.
+            list(InventoryCategory.objects.select_for_update().order_by('pk')
+                 .values_list('pk', flat=True))
+            cat = get_object_or_404(InventoryCategory, pk=cat_id, active=True)
+            parent = None
+            if parent_id is not None:
+                parent = InventoryCategory.objects.filter(pk=parent_id, active=True).first()
+                if parent is None:
+                    return JsonResponse({'success': False, 'message': '目标目录不存在或已停用'}, status=400)
+                if parent.pk == cat.pk or parent.is_descendant_of(cat):
+                    return JsonResponse({'success': False, 'message': '不能移动到自身或自己的下级目录'}, status=400)
+                if parent.node_type != 'category':
+                    return JsonResponse({'success': False, 'message': '目标必须是目录，不能放在部件下'}, status=400)
+
+            changed = cat.parent_id != parent_id
+            if changed:
+                last_order = (InventoryCategory.objects.filter(parent_id=parent_id)
+                              .exclude(pk=cat.pk).aggregate(value=Max('order'))['value'])
+                cat.parent = parent
+                cat.order = (last_order if last_order is not None else -1) + 1
+                # MPTT save updates the nested set and honors sibling ordering.
+                # Restrict user fields so stock, code and all other attributes
+                # are never rewritten by a structural move.
+                cat.save(update_fields=['parent', 'order', 'updated_at'])
+                cat.refresh_from_db()
+            ancestors = list(cat.get_ancestors().values_list('name_zh', flat=True))
+            path = ' / '.join(['库存目录', *ancestors, cat.name_zh or cat.code])
+            destination = ' / '.join(['库存目录', *ancestors])
+            node = _iv_to_jstree_node(cat)
+    except InvalidMove:
+        return JsonResponse({'success': False, 'message': '不能移动到自身或自己的下级目录'}, status=400)
+    except OperationalError as exc:
+        if 'locked' not in str(exc).lower():
+            raise
+        return JsonResponse({'success': False, 'message': '目录正在更新，请重试'}, status=409)
+    except IntegrityError:
+        return JsonResponse({'success': False, 'message': '目录正在更新，请重试'}, status=409)
+
+    return JsonResponse({
+        'success': True,
+        'changed': changed,
+        'message': f'已移至「{destination}」' if changed else '已在当前目录，无需移动',
+        'node': node,
+        'parent_id': cat.parent_id,
+        'path': path,
     })
 
 

@@ -9,13 +9,14 @@
         window._map=map;markers.enableLabels(map);
         L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:22,maxNativeZoom:19,attribution:'Esri'}).addTo(map);
         L.control.zoom({zoomInText:window.uiIcon('plus'),zoomOutText:window.uiIcon('minus')}).addTo(map);
-        const groups=Object.fromEntries(['shared','zones','buildings','monitoring','records'].map(k=>[k,L.layerGroup().addTo(map)]));
+        const groups=Object.fromEntries(['shared','zones','buildings','monitoring','traps','beehives','records'].map(k=>[k,L.layerGroup().addTo(map)]));
         const visible=new Set(Object.keys(groups));let locations=[],recent=[],initialized=!!initial,dirty=false,busy=false,picker=null,picking=false,gpsMarker=null,formGeneration=0;
         const shapes=new Map();
         const notice=message=>{const el=byId('pestMapNotice');if(el)el.textContent=message;};
-        const layerKey=p=>p.shared?'shared':p.kind==='monitoring'?'monitoring':['building','floor','room'].includes(p.kind)?'buildings':'zones';
+        const equipmentLayer=p=>p.kind==='trap_cage'?'traps':p.kind==='beehive'?'beehives':null;
+        const layerKey=p=>p.shared?'shared':equipmentLayer(p)|| (p.kind==='monitoring'?'monitoring':['building','floor','room'].includes(p.kind)?'buildings':'zones');
         function changed(){dirty=true;window.IrrigationPWA?.markDirty();}
-        function actions(){return [...(canSubmit?[{icon:'clipboard',label:'工单提交',action:()=>openForm()}]:[]),...(canManage?[{icon:'plus',label:'新增地点',action:()=>creator.open()},{icon:'layers',label:'地点管理',url:'/ops/locations/'}]:[]),{icon:'folder',label:'历史记录',url:'/work-reports/'}];}
+        function actions(){return [...(canSubmit?[{icon:'clipboard',label:'工单提交',action:()=>openForm()}]:[]),...(canManage?[{icon:'plus',label:'新增地点/设施',action:()=>creator.open()},{icon:'layers',label:'区域管理',url:'/ops/locations/'}]:[]),{icon:'folder',label:'历史记录',url:'/work-reports/'}];}
         function popup(p){const div=document.createElement('div');div.className='pest-place-popup';const title=document.createElement('h3');title.textContent=p.name;const detail=document.createElement('p');detail.textContent=[p.code,p.kind_label,p.source].filter(Boolean).join(' · ');div.append(title,detail);if(canSubmit){const button=document.createElement('button');button.textContent='创建工单';button.onclick=()=>openForm([p.id]);div.append(button);}return div;}
         function selectStyle(){for(const [id,layers] of shapes)for(const layer of layers){const active=picking&&picker?.state.has(id);layer.setStyle?.({weight:active?4:2,fillOpacity:active?.35:.18});layer.getElement?.()?.classList.toggle('op-location-pin-selected',!!active);}}
         function pick(p){picker.state.toggle(p.id);picker.sync();changed();selectStyle();byId('pestPickInfo').textContent=`已选 ${picker.state.selected().length} 个地点`;}
@@ -23,7 +24,7 @@
         function render(){
             Object.values(groups).forEach(group=>group.clearLayers());shapes.clear();
             const q=byId('zoneSearch').value.trim().toLowerCase(),kind=byId('pestMapKind').value,list=byId('pestLocationList');list.replaceChildren();const points=[];
-            for(const p of locations){if(q&&!(p.name+' '+p.code).toLowerCase().includes(q)||kind&&p.kind!==kind)continue;const key=layerKey(p);if(!visible.has(key))continue;
+            for(const p of locations){if(q&&!(p.name+' '+p.code).toLowerCase().includes(q)||kind&&p.kind!==kind)continue;const key=layerKey(p),equipment=equipmentLayer(p);if(!visible.has(key)||(equipment&&!visible.has(equipment)))continue;
                 const row=document.createElement('button');row.type='button';row.className='pest-location-row';const symbol=document.createElement('span');symbol.className='op-kind-icon';symbol.style.color=markers.descriptor(p.kind).color;symbol.append(markers.glyph(p.kind));const name=document.createElement('strong');name.textContent=p.name;const sub=document.createElement('small');sub.textContent=[p.code,p.kind_label,p.shared?'共享地点':'本团队'].filter(Boolean).join(' · ');row.append(symbol,name,sub);row.onclick=()=>focus(p);list.append(row);
                 const rings=runtime.boundaryRings(p.boundary),shape=markers.presentation(p,rings),layers=[];
                 if(shape.mode==='boundary')for(const ring of rings){layers.push(L.polygon(ring,{color:markers.descriptor(p.kind).color,weight:2,fillOpacity:.18}).addTo(groups[key]));points.push(...ring);}
@@ -33,7 +34,7 @@
             if(!list.children.length){const empty=document.createElement('p');empty.textContent='暂无符合条件的地点';list.append(empty);}
             byId('zoneCount').textContent=locations.length+' 个地点';
             if(!initialized&&points.length){map.fitBounds(L.latLngBounds(points).pad(.2),{maxZoom:18});initialized=true;}
-            for(const record of recent)for(const id of record.locations){const p=locations.find(item=>item.id===id);if(!p?.center)continue;const link=document.createElement('a');link.href='/work-reports/'+record.id+'/';link.textContent=record.number+' · '+record.date;L.circleMarker(p.center,{radius:5,color:'#69549a',fillOpacity:.9,weight:2}).bindPopup(link).addTo(groups.records);}
+            for(const record of recent)for(const id of record.locations){const p=locations.find(item=>item.id===id);if(!p?.center||!shapes.has(id))continue;const link=document.createElement('a');link.href='/work-reports/'+record.id+'/';link.textContent=record.number+' · '+record.date;L.circleMarker(p.center,{radius:5,color:'#69549a',fillOpacity:.9,weight:2}).bindPopup(link).addTo(groups.records);}
             selectStyle();
         }
         async function refresh(){try{const data=await runtime.fetchJSON('/api/zones-payload/',{cache:'no-store'});if(effects.stopped)return;if(data.business!=='pest-control'){notice('当前团队已变化，请使用顶部视图选择更新。');return;}const badge=document.querySelector('.top-nav-notif[href*="tab=tasks"] .notif-count');if(badge){badge.textContent=data.pending_tasks>99?'99+':String(data.pending_tasks||0);badge.classList.toggle('show',!!data.pending_tasks);}locations=data.locations;recent=data.records;render();notice('植保地图 · '+locations.length+' 个授权地点');}catch(_){if(!effects.stopped)notice('地图数据暂不可用，请重试。');}}
@@ -51,7 +52,7 @@
         if(matchMedia('(max-width:768px)').matches){byId('sidebar').classList.add('collapsed');byId('sidebarExpandBtn').classList.add('visible');}
         const locate=L.control({position:'topright'});locate.onAdd=()=>{const button=L.DomUtil.create('button','locate-btn map-tool-btn');button.type='button';button.title='定位我';button.innerHTML=window.uiIcon('pin');L.DomEvent.disableClickPropagation(button);button.onclick=async()=>{button.disabled=true;notice('正在定位…');try{const p=await runtime.requestLocation(navigator.geolocation);if(effects.stopped)return;if(gpsMarker)map.removeLayer(gpsMarker);gpsMarker=L.marker([p.coords.latitude,p.coords.longitude]).addTo(map);map.flyTo(gpsMarker.getLatLng(),18);notice('已定位，精度约 '+Math.round(p.coords.accuracy)+' 米。');}catch(_){notice('定位未成功，请检查定位权限或手机定位服务。');}finally{button.disabled=false;}};return button;};locate.addTo(map);
         window.FOSMapActions.mount(actions());
-        const legend=document.createElement('div');legend.className='op-marker-legend';legend.setAttribute('aria-label','图钉类型');for(const kind of ['zone','building','floor','room','monitoring','other']){const item=document.createElement('span'),icon=markers.glyph(kind);icon.style.color=markers.descriptor(kind).color;item.append(icon,document.createTextNode(markers.descriptor(kind).label));legend.append(item);}byId('mapLayerBody').append(legend);
+        const legend=document.createElement('div');legend.className='op-marker-legend';legend.setAttribute('aria-label','图钉类型');for(const kind of markers.kinds||['zone','building','floor','room','monitoring','trap_cage','beehive','other']){const item=document.createElement('span'),icon=markers.glyph(kind);icon.style.color=markers.descriptor(kind).color;item.append(icon,document.createTextNode(markers.descriptor(kind).label));legend.append(item);}byId('mapLayerBody').append(legend);
         function finishPick(){picking=false;byId('pestPickActions').hidden=true;byId('pestPickInfo').hidden=true;byId('woModalContainer').hidden=false;byId('woModalBackdrop').hidden=false;picker?.sync();selectStyle();}
         function enterMap(){picking=true;picker.close();byId('woModalContainer').hidden=true;byId('woModalBackdrop').hidden=true;byId('pestPickActions').hidden=false;byId('pestPickInfo').hidden=false;byId('pestPickInfo').textContent=`已选 ${picker.state.selected().length} 个地点`;map.closePopup();selectStyle();}
         byId('pestPickDone').onclick=finishPick;byId('pestPickList').onclick=()=>{finishPick();picker.open();};byId('pestPickClear').onclick=()=>{picker.state.clear();picker.sync();changed();selectStyle();byId('pestPickInfo').textContent='已选 0 个地点';};
