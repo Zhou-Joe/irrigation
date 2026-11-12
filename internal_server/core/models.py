@@ -2703,6 +2703,7 @@ class EmailReportConfig(models.Model):
         ('work_reports', '维修工单记录'),
         ('difficult_workorders', '疑难问题跟进报表'),
         ('irrigation', '灌溉运行报表'),
+        ('maxicom_weather', '灌溉气象日报'),
         ('projects', '项目管理'),
         ('inventory_catalog', '库存目录'),
         ('inventory_txn', '库存出入库流水'),

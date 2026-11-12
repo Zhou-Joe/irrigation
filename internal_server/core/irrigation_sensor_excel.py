@@ -12,7 +12,7 @@ from core.models import MaxicomController
 from core.sensor_flow import sensor_window
 
 
-def add_sensor_sheet(workbook, date_from, date_to, ccu_ids=None):
+def add_sensor_sheet(workbook, date_from, date_to, ccu_ids=None, summary_rows=None):
     """Keep source Sites independent, including whole meters shared by CCUs."""
     data = sensor_window(date_from, date_to)
     associations = defaultdict(set)
@@ -48,7 +48,7 @@ def add_sensor_sheet(workbook, date_from, date_to, ccu_ids=None):
     for cell in ('B2', 'E2', 'B3'):
         ws[cell].number_format = 'yyyy-mm-dd hh:mm:ss'
     ws.merge_cells('A4:G4')
-    ws['A4'] = '上海时间（24小时制）。来源：Rain Bird 实际流量传感器。总表、分表分别列示，不重复相加。'
+    ws['A4'] = '上海时间（24小时制）。来源：Rain Bird 实际流量传感器。总表、分表分别列示；首页按约定口径汇总。'
     ws.merge_cells('A5:G5')
     warning = data.get('notice') or data.get('coverage_note')
     if not sites and not warning:
@@ -89,6 +89,13 @@ def add_sensor_sheet(workbook, date_from, date_to, ccu_ids=None):
             if not sensor['complete']:
                 ws.cell(row, 6).font = Font(name='Arial', size=10, color='9A5A0A')
             ws.row_dimensions[row].height = 34 if len(sensor['name']) > 30 or len(site['name']) > 29 or len(codes) > 2 else 24
+            if summary_rows is not None:
+                summary_rows.append({
+                    'site_number': site['number'], 'site_key': site['key'],
+                    'channel': sensor['channel'], 'name': sensor['name'],
+                    'row': row, 'value': sensor['value'],
+                    'complete': sensor['complete'], 'enabled': sensor['enabled'],
+                })
             row += 1
 
     for line in (2, 3, 4, 5):

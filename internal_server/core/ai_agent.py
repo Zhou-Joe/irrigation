@@ -1634,13 +1634,14 @@ def send_report_email(report_type: str, start_date: str, end_date: str,
                       recipients: str, runtime: ToolRuntime = None) -> str:
     """生成指定类型的 Excel 报表并按系统所选 SMTP / Microsoft 365 Workflow 发送给收件人。
 
-    覆盖全部 7 种报表类型，与 export_work_reports_excel（仅维修工单、仅生成文件）
+    覆盖系统全部报表类型，与 export_work_reports_excel（仅维修工单、仅生成文件）
     互补：本工具覆盖全部类型并直接发送邮件。
 
     支持的 report_type：
       - work_reports      维修工单记录
       - difficult_workorders 疑难问题跟进报表
       - irrigation        灌溉运行报表
+      - maxicom_weather   灌溉气象日报（Maxicom 实测气象，按站点分表）
       - projects          项目管理
       - inventory_catalog 库存目录
       - inventory_txn     库存出入库流水

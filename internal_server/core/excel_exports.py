@@ -386,6 +386,7 @@ def build_irrigation_report_excel(date_from, date_to, ccu_ids=None):
     orphan_font = Font(color='C62828', bold=True)
 
     wb = Workbook()
+    summary_runtime_cells = {}
     # remove the default sheet (we add per-CCU sheets)
     default_ws = wb.active
 
@@ -461,17 +462,45 @@ def build_irrigation_report_excel(date_from, date_to, ccu_ids=None):
             ws.column_dimensions[get_column_letter(2 + ci)].width = 11
         ws.freeze_panes = 'B5'
 
+        # Only the three specified, actually configured stations are used for
+        # pump-volume estimates. Resolve their displayed matrix cells once.
+        configured = {(ctrl_map[st.controller_number].name, st.controller_channel)
+                      for st in station_metadata.get(ccu.id, [])
+                      if st.controller_number in ctrl_map}
+        target_channels = {('CCU3', 5): (15,), ('CCU38', 1): (6, 13)}
+        for ctrl in ctrl_map.values():
+            if ctrl.site_id != ccu.id or ctrl.name not in controllers:
+                continue
+            wanted_channels = target_channels.get((str(ccu.code).upper(), ctrl.link_channel), ())
+            if not wanted_channels:
+                continue
+            ci, name = controllers.index(ctrl.name), ctrl.name
+            for ri, r in enumerate(rows):
+                key = f'{str(ccu.code).upper().removeprefix("CCU")}-{ctrl.link_channel}-{r["channel"]}'
+                if r['channel'] in wanted_channels and (name, r['channel']) in configured:
+                    cell = ws.cell(header_row + 1 + ri, 2 + ci)
+                    summary_runtime_cells[key] = {'sheet': ws.title, 'cell': cell.coordinate,
+                                                  'value': r['values'][ci] or 0}
+
     # Same query window for actual sensor liters and runtime, shared by web,
     # scheduled mail, manual downloads and the report API.
     from core.irrigation_sensor_excel import add_sensor_sheet
-    add_sensor_sheet(wb, date_from, date_to, ccu_ids=ccu_ids)
+    sensor_rows = []
+    add_sensor_sheet(wb, date_from, date_to, ccu_ids=ccu_ids, summary_rows=sensor_rows)
+    from core.irrigation_water_rules import classify_sensor
+    from core.irrigation_water_summary import add_water_summary, save_workbook_with_cached_summary
+    for sensor in sensor_rows:
+        sensor['group'] = classify_sensor(sensor['site_number'], sensor['channel'])
+    scope = '、'.join(c.code for c in ccus) if ccu_ids else '全部 CCU'
+    cached_values = add_water_summary(wb, date_from, date_to, sensor_rows,
+                                     summary_runtime_cells, scope_label=scope)
 
     # remove default empty sheet
     if default_ws is not None and default_ws.title in wb.sheetnames and len(wb.sheetnames) > 1:
         wb.remove(default_ws)
 
     buf = io.BytesIO()
-    wb.save(buf)
+    save_workbook_with_cached_summary(wb, buf, cached_values)
     buf.seek(0)
     fname = f'irrigation_report_{date_from}_{date_to}.xlsx'
     return fname, buf

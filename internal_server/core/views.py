@@ -1787,7 +1787,7 @@ def email_config_save(request):
     # _hour_start / _days_end / _hour_end per checked windowed type (irrigation
     # carries hours; work_reports/inventory_txn are day-only). Dateless types
     # (zones/inventory_catalog/purchase_orders/projects) have no window.
-    WINDOWED = {'work_reports', 'difficult_workorders', 'irrigation', 'inventory_txn'}
+    WINDOWED = {'work_reports', 'difficult_workorders', 'irrigation', 'maxicom_weather', 'inventory_txn'}
     # Which windowed types are actually selected? Each needs a window entry.
     selected_windowed = [rt for rt in report_types if rt in WINDOWED]
     report_windows = {}
@@ -1799,17 +1799,37 @@ def email_config_save(request):
             except ValueError:
                 return None
         ds = _wint('days_start'); de = _wint('days_end')
-        if ds is None or de is None or ds < 0 or de < 0:
+        if ds is None or de is None or not (0 <= de <= ds <= 36500):
             return JsonResponse({'success': False,
                                  'message': f'请填写「{dict(EmailReportConfig.REPORT_CHOICES).get(rt, rt)}」的时间范围（前N天）'}, status=400)
         entry = {'days_start': ds, 'days_end': de}
         if rt == 'irrigation':
-            hs = _wint('hour_start'); he = _wint('hour_end')
-            if hs is None or he is None or not (0 <= hs <= 23) or not (0 <= he <= 23):
-                return JsonResponse({'success': False,
-                                     'message': '请填写灌溉的时间范围小时（0-23）'}, status=400)
-            entry['hour_start'] = hs
-            entry['hour_end'] = he
+            for suffix in ('start', 'end'):
+                raw_time = (request.POST.get(f'win_{rt}_{suffix}_time') or '').strip()
+                if raw_time:
+                    try:
+                        parts = [int(v) for v in raw_time.split(':')]
+                        if len(parts) == 2:
+                            parts.append(0)
+                        if len(parts) != 3 or not (0 <= parts[0] <= 23 and
+                                0 <= parts[1] <= 59 and 0 <= parts[2] <= 59):
+                            raise ValueError
+                    except ValueError:
+                        return JsonResponse({'success': False, 'message': '请填写有效的灌溉起止时间'}, status=400)
+                    for field, value in zip(('hour', 'minute', 'second'), parts):
+                        entry[f'{field}_{suffix}'] = value
+                else:
+                    # Older clients submit hours only, including the complete
+                    # ending hour. Preserve that meaning on the new endpoint.
+                    hour = _wint('hour_' + suffix)
+                    if hour is None or not 0 <= hour <= 23:
+                        return JsonResponse({'success': False, 'message': '请填写灌溉起止时间'}, status=400)
+                    entry['hour_' + suffix] = hour
+            try:
+                from core.report_windows import irrigation_email_window
+                irrigation_email_window(entry, timezone.localtime(timezone.now()))
+            except ValueError as exc:
+                return JsonResponse({'success': False, 'message': str(exc)}, status=400)
         report_windows[rt] = entry
 
     # report_type mirrors the first selection for back-compat display.

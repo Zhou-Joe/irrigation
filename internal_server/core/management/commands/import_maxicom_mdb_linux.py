@@ -292,6 +292,8 @@ class Command(BaseCommand):
         ))
 
         self._import_flow(mdb_path)
+        from core.maxicom_weather import import_weather
+        import_weather(mdb_path, _mdb_rows, stdout=self.stdout)
         self.stdout.write(self.style.SUCCESS(
             f'Done: {Patch.objects.count()} patches, '
             f'{MaxicomRuntime.objects.count()} runtime rows'

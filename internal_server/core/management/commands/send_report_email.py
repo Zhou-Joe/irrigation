@@ -185,6 +185,8 @@ class Command(BaseCommand):
             from core.irrig_time import irrigation_day_bounds
             df, dt = irrigation_day_bounds(start, end)
             return build_fn(df, dt)
+        if report_type == 'maxicom_weather':
+            return build_fn(start, end)
         if report_type in {'work_reports', 'difficult_workorders'}:
             from django.contrib.auth import get_user_model
             User = get_user_model()
