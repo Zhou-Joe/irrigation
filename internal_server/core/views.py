@@ -13284,6 +13284,7 @@ def zone_dxf_import(request):
         transform_shape, transform_group_to_boundary,
         shapes_to_geojson_preview, auto_calibrate,
 )
+    from .zone_dxf_batch import handle_batch_action, invalidate_drawing, zone_state
 
     is_admin = request.user.is_superuser or request.user.is_staff
     if not is_admin:
@@ -13302,6 +13303,8 @@ def zone_dxf_import(request):
 
     if request.method == 'POST':
         action = request.POST.get('action', '')
+        if action in ('auto_match', 'batch_assign', 'batch_switch_source'):
+            return handle_batch_action(request, action)
 
         # ── Upload DXF ──
         if action == 'upload_dxf':
@@ -13326,6 +13329,8 @@ def zone_dxf_import(request):
             # Clear previous anchors/transformed data
             request.session.pop('dxf_anchors', None)
             request.session.pop('dxf_transformed', None)
+            request.session.pop('dxf_preview_transformed', None)
+            invalidate_drawing(request.session)
 
             preview = shapes_to_geojson_preview(shapes, groups)
 
@@ -13377,6 +13382,8 @@ def zone_dxf_import(request):
 
             request.session['dxf_anchors'] = anchors
             request.session['dxf_transformed'] = transformed
+            request.session.pop('dxf_preview_transformed', None)
+            invalidate_drawing(request.session)
 
             return JsonResponse({
                 'success': True,
@@ -13404,6 +13411,10 @@ def zone_dxf_import(request):
                 return JsonResponse({'success': False, 'message': transform_fn}, status=400)
 
             transformed = [transform_shape(s, transform_fn) for s in shapes]
+            # Retain the server-generated preview as an allowed placement base;
+            # the browser may only translate these rings during batch matching.
+            request.session['dxf_preview_transformed'] = transformed
+            invalidate_drawing(request.session)
             return JsonResponse({
                 'success': True,
                 'transformed': transformed,
@@ -13500,7 +13511,8 @@ def zone_dxf_import(request):
 
             zone.dxf_boundary_source = filename
             zone.boundary_source = 'dxf'
-            zone.save()
+            zone.save(update_fields=['dxf_boundary_points', 'dxf_boundary_source', 'boundary_source', 'area_sqm', 'updated_at'])
+            invalidate_drawing(request.session)
 
             group_label = f'{len(target_groups)}个图形组' if len(target_groups) > 1 else '图形'
             return JsonResponse({
@@ -13512,6 +13524,7 @@ def zone_dxf_import(request):
                 'boundary_source': zone.boundary_source,
                 'dxf_boundary_points': zone.dxf_boundary_points,
                 'area_display': zone.area_display,
+                'zones': [zone_state(zone)],
             })
 
         # ── Switch boundary source ──
@@ -13531,7 +13544,7 @@ def zone_dxf_import(request):
                 return JsonResponse({'success': False, 'message': f'区域 {zone_code} 没有DXF边界数据'}, status=400)
 
             zone.boundary_source = source
-            zone.save()
+            zone.save(update_fields=['boundary_source', 'area_sqm', 'updated_at'])
 
             label = 'DXF导入' if source == 'dxf' else '手动绘制'
             return JsonResponse({
@@ -13540,33 +13553,22 @@ def zone_dxf_import(request):
                 'zone_code': zone.code,
                 'boundary_source': zone.boundary_source,
                 'area_display': zone.area_display,
+                'zones': [zone_state(zone)],
             })
 
         return JsonResponse({'success': False, 'message': '未知操作'}, status=400)
 
     # ── GET: render page ──
-    all_zones = []
-    for z in Zone.objects.select_related('patch').order_by('code').only(
-        'id', 'code', 'name', 'patch_id', 'patch__name',
-        'boundary_source', 'dxf_boundary_points',
-    ):
-        all_zones.append({
-            'id': z.id,
-            'code': z.code,
-            'name': z.name,
-            'patch_name': z.patch.name if z.patch else '',
-            'boundary_source': z.boundary_source,
-            'has_dxf_boundary': bool(z.dxf_boundary_points),
-        })
-
-    # All drawn zones for reference layer (use active boundary)
-    all_drawn_zones = []
-    for z in Zone.objects.select_related('patch').only(
+    zones = list(Zone.objects.select_related('patch').order_by('code').only(
         'id', 'code', 'name', 'boundary_points', 'dxf_boundary_points',
-        'boundary_color', 'boundary_source',
+        'boundary_color', 'boundary_source', 'dxf_boundary_source', 'area_sqm',
         'label_lat', 'label_lng', 'label_scale', 'label_angle',
         'smooth_override', 'ring_display_modes', 'patch_id', 'patch__name'
-    ):
+    ))
+    all_zones = [zone_state(zone) for zone in zones]
+    # Reuse the same fetched rows; area_display must never trigger deferred queries.
+    all_drawn_zones = []
+    for z in zones:
         active_bp = z.active_boundary_points
         if not active_bp:
             continue
@@ -13599,9 +13601,11 @@ def zone_dxf_import(request):
         }
 
     context = {
-        'all_zones_json': json.dumps(all_zones),
-        'all_drawn_zones_json': json.dumps(all_drawn_zones),
-        'map_style_json': json.dumps(MapStyleSettings.get_style()),
-        'session_dxf_json': json.dumps(session_dxf) if session_dxf else 'null',
+        'all_zones_json': json_html_safe(all_zones),
+        'all_drawn_zones_json': json_html_safe(all_drawn_zones),
+        'map_style_json': json_html_safe(MapStyleSettings.get_style()),
+        'session_dxf_json': json_html_safe(session_dxf) if session_dxf else 'null',
+        'can_manage_zone_dxf': is_admin,
+        'can_batch_dxf': is_admin,
     }
     return render(request, 'core/zone_dxf_import.html', context)

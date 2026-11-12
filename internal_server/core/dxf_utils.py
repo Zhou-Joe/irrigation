@@ -373,61 +373,74 @@ def _centroid(vertices):
 
 def detect_nesting(shapes):
     """
-    Detect nesting relationships among shapes.
+    Detect complete polygon containment without changing original CAD rings.
     Returns a list of groups, each containing:
         {id, outer: shape_index, holes: [shape_indices], shape_ids: [...]}
-    Outer shapes with no holes form their own group with empty holes list.
+    Even nesting depths are outer groups; their direct odd-depth children are
+    holes. Islands inside holes therefore become independent groups. Invalid
+    contours remain independent groups for the caller to diagnose explicitly.
     """
     if not shapes:
         return []
 
+    from shapely.errors import GEOSException
+    from shapely.geometry import Polygon
+    from shapely.strtree import STRtree
+
     n = len(shapes)
-    # Compute centroids
-    centroids = [_centroid(s['vertices']) for s in shapes]
-
-    # Compute areas (shoelace formula) for containment ordering
-    def polygon_area(vertices):
-        area = 0
-        nv = len(vertices)
-        for i in range(nv):
-            j = (i + 1) % nv
-            area += vertices[i][0] * vertices[j][1]
-            area -= vertices[j][0] * vertices[i][1]
-        return abs(area) / 2.0
-
-    areas = [polygon_area(s['vertices']) for s in shapes]
-
-    # Build containment: shape i is contained by shape j if centroid[i] is inside polygon[j]
-    # and area[i] < area[j]
-    contained_by = [None] * n  # contained_by[i] = index of smallest shape that contains i
-    for i in range(n):
-        best_container = None
-        best_area = float('inf')
-        for j in range(n):
-            if i == j:
+    valid_indices, polygons = [], []
+    for index, shape in enumerate(shapes):
+        try:
+            # Never buffer/make-valid/simplify a source shape. A repaired
+            # containment tree could silently turn a bad contour into a hole.
+            vertices = shape['vertices']
+            coordinates = [(float(point[0]), float(point[1])) for point in vertices]
+            if len(set(coordinates)) < 3 or any(not math.isfinite(value) for point in coordinates for value in point):
                 continue
-            if areas[i] >= areas[j]:
+            polygon = Polygon(coordinates)
+            if polygon.is_empty or not polygon.is_valid or not math.isfinite(polygon.area) or polygon.area <= 0:
                 continue
-            cx, cy = centroids[i]
-            if _point_in_polygon(cx, cy, shapes[j]['vertices']):
-                if areas[j] < best_area:
-                    best_area = areas[j]
-                    best_container = j
-        contained_by[i] = best_container
+            valid_indices.append(index)
+            polygons.append(polygon)
+        except (KeyError, TypeError, ValueError, IndexError, OverflowError, GEOSException):
+            continue
 
-    # Build groups: find top-level shapes (not contained by anything)
-    # and their direct children (holes)
-    # For simplicity: only one level of nesting (outer + holes)
-    # If a hole contains another shape, that inner shape is ignored (would need recursive grouping)
-    top_level = [i for i in range(n) if contained_by[i] is None]
+    parents = [None] * n
+    if polygons:
+        tree = STRtree(polygons)
+        for local_index, polygon in enumerate(polygons):
+            candidates = [int(other) for other in tree.query(polygon)
+                          if int(other) != local_index and polygons[int(other)].area > polygon.area]
+            candidates.sort(key=lambda other: (polygons[other].area, valid_indices[other]))
+            for other in candidates:
+                # Proper containment excludes partial overlap and boundary
+                # contact. A centroid inside another shape proves neither.
+                if polygons[other].contains_properly(polygon):
+                    parents[valid_indices[local_index]] = valid_indices[other]
+                    break
+
+    # Parent area strictly increases, so the graph has no cycles. Resolve
+    # depths iteratively to handle deep CAD nesting without recursion limits.
+    depths = [None] * n
+    for index in range(n):
+        path, current = [], index
+        while current is not None and depths[current] is None:
+            path.append(current)
+            current = parents[current]
+        depth = depths[current] if current is not None else -1
+        for child in reversed(path):
+            depth += 1
+            depths[child] = depth
+    children = [[] for _ in shapes]
+    for child, parent in enumerate(parents):
+        if parent is not None:
+            children[parent].append(child)
 
     groups = []
-    for outer_idx in top_level:
-        holes = []
-        # Find shapes directly contained by this outer
-        for i in range(n):
-            if contained_by[i] == outer_idx:
-                holes.append(i)
+    for outer_idx, depth in enumerate(depths):
+        if depth % 2:
+            continue
+        holes = children[outer_idx]
         groups.append({
             'id': f'group_{len(groups)}',
             'outer': outer_idx,
