@@ -9,6 +9,8 @@
     let historyDay = null, historyTimer = null, historyDeadline = null;
     let panelMotion = null, motionVersion = 0;
     let workspaceAvailable=true,repositionLauncher=()=>{};
+    let availabilityRequest = null;
+    let availabilityVersion = 0;
     let pendingAttachments = [], attachmentGeneration = 0, uploadWorkerGeneration = null, attachmentSequence = 0;
     let historyRestoreVersion = 0, restoringHistory = false;
     const responseViews = new Map();
@@ -546,8 +548,23 @@
         });
         welcome();
     }
-    function mountIfAvailable() { fetch('/api/ai/status',{credentials:'same-origin'}).then(response => response.ok ? response.json() : null).then(data => { if (data?.available) mount(data.preview === true); }).catch(() => {}); }
+    function mountIfAvailable() {
+        if (byId('aiChatPanel') || byId('dashboardWorkspace')?.dataset.ai !== 'yes') return;
+        if (availabilityRequest) return availabilityRequest;
+        const version = availabilityVersion;
+        availabilityRequest = fetch('/api/ai/status',{credentials:'same-origin',cache:'no-store'})
+            .then(response => response.ok ? response.json() : null)
+            .then(data => {
+                // A business switch may finish while this read is in flight.
+                if (version === availabilityVersion && data?.available && byId('dashboardWorkspace')?.dataset.ai === 'yes') mount(data.preview === true);
+            }).catch(() => {}).finally(() => {
+                availabilityRequest = null;
+                if (version !== availabilityVersion) mountIfAvailable();
+            });
+        return availabilityRequest;
+    }
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded',mountIfAvailable); else mountIfAvailable();
+    window.addEventListener('pageshow',mountIfAvailable);
     window.AIChat = {open:()=>setOpen(true),toggle,close:()=>setOpen(false),
         beforeWorkspaceChange(){
             pauseUploads();
@@ -556,8 +573,10 @@
             const launcher=byId('aiChatLauncher');if(launcher&&launcher.parentElement!==document.body)document.body.append(launcher);
         },
         afterWorkspaceChange(){
+            availabilityVersion += 1;
             workspaceAvailable=byId('dashboardWorkspace')?.dataset.ai==='yes';
             repositionLauncher();setOpen(false,{immediate:true,focus:false});syncQuoteAccess();
             renderPendingAttachments(); if (workspaceAvailable) uploadAttachments();
+            if (workspaceAvailable) mountIfAvailable();
         }};
 })();

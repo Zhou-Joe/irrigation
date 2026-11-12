@@ -61,8 +61,10 @@ def chip_tree(roots):
 
 
 def pest_dashboard(request):
+    from core.ai_access import can_use_assistant
     member = require_member(request)
     return render(request, 'core/dashboard.html', {
+        'can_use_ai': can_use_assistant(request),
         'pest_mode':True, 'can_pest_submit':member.role in ('manager','field') or request.user.is_superuser,
         'can_pest_manage':member.role=='manager' or request.user.is_superuser})
 
