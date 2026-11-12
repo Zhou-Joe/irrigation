@@ -1,5 +1,14 @@
-/* Placement is importable only when the user explicitly chooses that mode. */
-var pdxfPlacementMode = false;
+/* New imports default to the current preview; existing batches stay strict. */
+var pdxfPlacementMode = true;
+function pdxfImportMode() {
+  return pdxfPlacementMode && !pdxfBatchMode ? "direct" : "aligned";
+}
+function pdxfFitWithScale(fit) {
+  return fit ? Object.assign({}, fit, {
+    scale: Math.hypot(fit.a, fit.b),
+    rotation_deg: Math.atan2(-fit.b, fit.a) * 180 / Math.PI,
+  }) : null;
+}
 function pdxfUsePlacement() {
   return !!(pdxfPlacementMode && pdxfData && !pdxfBatchMode);
 }
@@ -12,15 +21,18 @@ function pdxfPlacementValid() {
 function pdxfPositionModeChanged(manual) {
   if (pdxfBusy || pdxfImported || pdxfBatchMode) return;
   if (manual && !pdxfPlacementMode) {
-    pdxfPlacementFit = Object.assign({}, pdxfOverlayFit());
+    pdxfPlacementFit = pdxfFitWithScale(pdxfOverlayFit());
   }
   pdxfCalStop();
   pdxfPlacementMode = manual;
+  pdxfEl("pdxfPositionDirect").checked = manual;
+  pdxfEl("pdxfPositionCalibrated").checked = !manual;
   pdxfEl("pdxfPreciseControls").hidden = manual;
   pdxfEl("pdxfCalCurrent").hidden = manual;
-  pdxfEl("pdxfReviewConfirmed").checked = false;
+  pdxfInvalidatePreview();
   pdxfRefreshMap();
   pdxfUpdateWorkflow();
+  if (pdxfToken) pdxfRebuildPreview();
 }
 var pdxfPlacementFit = null,
   pdxfPlacementCenterPoint = null;
@@ -28,10 +40,11 @@ var pdxfPlacementMoving = false,
   pdxfPlacementHandle = null;
 
 function pdxfPlacementReset() {
-  pdxfPlacementMode = false;
-  pdxfEl("pdxfPositionCalibrated").checked = true;
-  pdxfEl("pdxfPreciseControls").hidden = false;
-  pdxfEl("pdxfCalCurrent").hidden = false;
+  pdxfPlacementMode = !pdxfBatchMode;
+  pdxfEl("pdxfPositionDirect").checked = pdxfPlacementMode;
+  pdxfEl("pdxfPositionCalibrated").checked = !pdxfPlacementMode;
+  pdxfEl("pdxfPreciseControls").hidden = pdxfPlacementMode;
+  pdxfEl("pdxfCalCurrent").hidden = pdxfPlacementMode;
   pdxfEl("pdxfPositionMode").hidden = pdxfBatchMode;
   pdxfPlacementFit = null;
   pdxfPlacementCenterPoint = null;
@@ -65,7 +78,7 @@ function pdxfPlacementSeed() {
     info.method === "similarity" && info.quality && info.quality.valid
       ? info.points
       : window.__DXF__.placementPoints;
-  var fit = info.source === "placement" && info.fit ? info.fit : pdxfCalFitPairs(
+  var fit = info.source === "placement" && info.fit ? pdxfFitWithScale(info.fit) : pdxfCalFitPairs(
     (points || []).map(function (p) {
       return { dxfX: p.dxf_x, dxfY: p.dxf_y, satLat: p.lat, satLng: p.lng };
     }),
@@ -178,11 +191,13 @@ function pdxfPlacementToggle() {
     }),
   }).addTo(pdxfMap);
   pdxfPlacementHandle.on("drag", function (event) {
+    if (pdxfBusy || !pdxfPlacementAllowed()) return;
     var target = event.target.getLatLng();
     pdxfPlacementFit = pdxfMoveFit(pdxfPlacementFit, pdxfPlacementCenterPoint, [
       target.lat,
       target.lng,
     ]);
+    pdxfInvalidatePreview();
     pdxfRefreshMap();
   });
 }
@@ -208,6 +223,7 @@ function pdxfPlacementAdjust(degrees, factor) {
   pdxfRefreshPlacement();
 }
 function pdxfRefreshPlacement() {
+  pdxfInvalidatePreview();
   if (pdxfPlacementHandle)
     pdxfPlacementHandle.setLatLng(
       pdxfProjectPoint(pdxfPlacementFit, pdxfPlacementCenterPoint),

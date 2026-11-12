@@ -9,6 +9,7 @@ from django.http import JsonResponse
 from django.shortcuts import redirect, render
 from django.views.decorators.http import require_POST
 from django.views.decorators.csrf import ensure_csrf_cookie
+from core.submissions import submission
 
 from core.views import _invalidate_cached, _get_reference_map_data, json_html_safe
 
@@ -66,8 +67,20 @@ def pipeline_dxf_analyze(request):
     if f and not f.name.lower().endswith('.dxf'):
         return JsonResponse({'success': False, 'error': '请上传 .dxf 文件'}, status=400)
     try:
+        import json
+        from .dxf_state import import_mode as valid_import_mode
+        mode = valid_import_mode(request.POST.get('import_mode') or 'aligned')
+        placement_fit = None
+        if request.POST.get('placement_fit'):
+            try:
+                placement_fit = json.loads(request.POST['placement_fit'])
+            except (ValueError, TypeError) as exc:
+                raise ValueError('当前摆放参数无效，请重新摆放图纸') from exc
         return JsonResponse(analyze_dxf_pipelines(f or None, token=token or None, user_id=request.user.pk,
-                    calibration_id=request.POST.get('calibration_id') or None))
+                    calibration_id=request.POST.get('calibration_id') or None,
+                    import_mode=mode, placement_fit=placement_fit))
+    except ValueError as exc:
+        return JsonResponse({'success': False, 'error': str(exc)}, status=400)
     except Exception:
         import logging
         logging.getLogger(__name__).exception('DXF analyze failed')
@@ -233,7 +246,6 @@ def pipeline_dxf_import_submit(request):
     (JSON list — which text layers may name valves).
     """
     import json as _json
-    from core.dxf_pipeline_utils import import_dxf_pipelines
     if not _pipeline_dxf_gate(request.user):
         return JsonResponse({'success': False, 'error': '无权限'}, status=403)
     f = request.FILES.get('file')   # 可选：有解析缓存 token 时不需重传文件
@@ -266,28 +278,40 @@ def pipeline_dxf_import_submit(request):
     if offset != (0.0, 0.0):
         return JsonResponse({'success': False, 'error': '拖动偏移定位已停用，请使用控制点重新对齐'}, status=400)
     try:
-        from .dxf_state import read_preview, require_alignment
-        state = read_preview(preview_token, token, request.user.pk)
-        mode = request.POST.get('positioning_mode') or 'calibrated'
+        from .dxf_state import read_preview, require_alignment, import_mode as valid_import_mode
+        # The new switch reuses the existing placement workflow. The old field
+        # remains understood, but a frozen preview must authorize the same mode.
+        legacy_mode = request.POST.get('positioning_mode') or 'calibrated'
+        mode = valid_import_mode(request.POST.get('import_mode') or
+                                 ('direct' if legacy_mode == 'placement' else 'aligned'))
+        state = read_preview(preview_token, token, request.user.pk, mode=mode)
+        import uuid
+        try:
+            key = str(uuid.UUID(request.POST.get('submission_key') or ''))
+            if state.get('submission_key') != key:
+                raise ValueError
+            header_key = request.headers.get('X-Submission-Key')
+            if header_key and str(uuid.UUID(header_key)) != key:
+                raise ValueError
+        except (ValueError, TypeError, AttributeError) as exc:
+            raise ValueError('导入编号与预览不一致，请重新确认地图预览') from exc
         placement_fit = None
-        if mode == 'placement':
+        if mode == 'direct' and request.POST.get('placement_fit'):
             from .dxf_state import placement_snapshot
             try:
                 placement_fit = _json.loads(request.POST.get('placement_fit') or '')
             except (_json.JSONDecodeError, TypeError) as exc:
                 raise ValueError('当前摆放参数无效，请重新摆放图纸') from exc
             placement_fit = placement_snapshot(placement_fit)['fit']
-        elif mode == 'calibrated':
+        elif mode == 'aligned':
             require_alignment(state['calibration'])
-        else:
-            raise ValueError('请选择有效的定位方式')
-        result = import_dxf_pipelines(
+        response = _pipeline_dxf_import_commit(request,
             layer_specs, block_specs, uploaded_file=f,
             label_layers=label_layers, offset=offset, token=token, preview_token=preview_token,
             batch_name=(f.name if f and f.name
                         else (request.POST.get('filename') or 'DXF导入')),
             imported_by=request.user if request.user.is_authenticated else None,
-            placement_fit=placement_fit)
+            placement_fit=placement_fit, import_mode=mode)
     except ValueError as exc:
         return JsonResponse({'success': False, 'error': str(exc)}, status=400)
     except Exception:
@@ -295,6 +319,14 @@ def pipeline_dxf_import_submit(request):
         import logging
         logging.getLogger(__name__).exception('DXF pipeline import failed')
         return JsonResponse({'success': False, 'error': '导入失败，请检查图纸格式后重试'}, status=400)
+    return response
+
+
+@submission('pipeline.dxf.import')
+def _pipeline_dxf_import_commit(request, layer_specs, block_specs, **kwargs):
+    """Retrying the same frozen preview cannot create a second import batch."""
+    from core.dxf_pipeline_utils import import_dxf_pipelines
+    result = import_dxf_pipelines(layer_specs, block_specs, **kwargs)
     _invalidate_cached('dashboard:pipelines')
     return JsonResponse({'success': True, **result})
 

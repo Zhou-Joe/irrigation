@@ -17,7 +17,11 @@ var pdxfRefLayer = null,
   pdxfDraftFit = null,
   pdxfAlignmentDirty = false;
 var pdxfBatchMode = false,
-  pdxfEdit = null;
+  pdxfEdit = null,
+  pdxfPreviewKey = null,
+  pdxfPreviewGeneration = 0,
+  pdxfImportBody = null,
+  pdxfImportRetry = false;
 var pdxfCal = {
   on: false,
   phase: "cad",
@@ -88,7 +92,11 @@ function pdxfPost(url, body) {
       return r.json();
     })
     .then(function (d) {
-      if (!d.success) throw new Error(d.error || "操作失败，请重试");
+      if (!d.success) {
+        var error = new Error(d.error || d.message || "操作失败，请重试");
+        error.uncertain = !!d.uncertain;
+        throw error;
+      }
       return d;
     });
 }
@@ -104,6 +112,65 @@ function pdxfVerified() {
     !pdxfAlignmentDirty
   );
 }
+function pdxfPreviewTransformKey() {
+  var fit = pdxfPlacementFit || {};
+  return JSON.stringify(pdxfImportMode() === "direct"
+    ? ["direct", fit.a, fit.b, fit.c, fit.d, fit.iso_k]
+    : ["aligned", pdxfCalInfo && pdxfCalInfo.id]);
+}
+function pdxfPreviewMatches() {
+  return !!(pdxfData && pdxfData.preview_token && pdxfData.submission_key &&
+    pdxfData.import_mode === pdxfImportMode() &&
+    pdxfPreviewKey === pdxfPreviewTransformKey());
+}
+function pdxfInvalidatePreview() {
+  pdxfPreviewGeneration++;
+  pdxfImportBody = null;
+  pdxfImportRetry = false;
+  pdxfPreviewKey = null;
+  if (pdxfData) { pdxfData.preview_token = null; pdxfData.submission_key = null; }
+  pdxfEl("pdxfReviewConfirmed").checked = false;
+}
+function pdxfRebuildPreview() {
+  if (!pdxfData || !pdxfToken || pdxfBusy || pdxfBatchMode) return Promise.resolve(false);
+  var mode = pdxfImportMode();
+  var generation = pdxfPreviewGeneration, token = pdxfToken;
+  if (mode === "direct" && !pdxfPlacementValid()) {
+    pdxfStatus("pdxfPositionStatus", "当前预览位置无效，请先调整图纸位置。", true);
+    return Promise.resolve(false);
+  }
+  var fd = new FormData();
+  fd.append("token", pdxfToken);
+  fd.append("import_mode", mode);
+  if (mode === "direct") fd.append("placement_fit", JSON.stringify(pdxfPlacementFit));
+  else if (pdxfCalInfo && pdxfCalInfo.id) fd.append("calibration_id", pdxfCalInfo.id);
+  pdxfBusy = true;
+  pdxfUpdateWorkflow();
+  pdxfStatus("pdxfPositionStatus", "正在更新当前预览…");
+  return pdxfPost(window.__DXF__.urls.analyze, fd).then(function (data) {
+    if (generation !== pdxfPreviewGeneration || token !== pdxfToken || mode !== pdxfImportMode()) return false;
+    if (data.import_mode !== mode || !data.preview_token || !data.submission_key || (mode === "direct" && !data.direct_ready)) {
+      throw new Error("未能确认当前预览，请重试。");
+    }
+    pdxfData = data;
+    if (mode === "aligned") {
+      pdxfCalInfo = data.calibration;
+      if (!pdxfCal.pairs.length && !pdxfAlignmentDirty) pdxfCalSeed();
+      else pdxfCalRenderCurrent();
+    }
+    pdxfPreviewKey = pdxfPreviewTransformKey();
+    pdxfRefreshMap();
+    pdxfStatus("pdxfPositionStatus", mode === "direct"
+      ? "将按当前预览直接导入，未进行精度校验。"
+      : "精确对齐模式：通过对齐点与独立检查后可导入。");
+    return true;
+  }).catch(function (error) {
+    if (generation !== pdxfPreviewGeneration || token !== pdxfToken) return false;
+    pdxfInvalidatePreview();
+    pdxfStatus("pdxfPositionStatus", error.message || "预览更新失败，请重试。", true);
+    return false;
+  }).finally(function () { pdxfBusy = false; pdxfUpdateWorkflow(); });
+}
 function pdxfToggle(id) {
   pdxfEl(id).classList.toggle("open");
 }
@@ -113,6 +180,10 @@ function pdxfGoStep(n) {
   if (n > 1 && !pdxfData) return;
   if (n === 2 && pdxfBatchMode) return;
   if (n === 4 && (!pdxfReady() || pdxfBatchMode)) return;
+  if (n === 4 && !pdxfPreviewMatches()) {
+    pdxfRebuildPreview().then(function (ready) { if (ready) pdxfGoStep(4); });
+    return;
+  }
   if (pdxfCal.on && n !== 3) pdxfCalStop();
   if (n !== 3) pdxfPlacementMoving = false;
   pdxfStep = n;
@@ -184,7 +255,7 @@ function pdxfUpdateWorkflow() {
     !pdxfEl("pdxfReviewConfirmed").checked;
   pdxfEl("pdxfNextBtn").textContent =
     pdxfStep === 2
-      ? "下一步：对齐位置"
+      ? "下一步：定位方式"
       : pdxfStep === 3
         ? "下一步：检查并导入"
         : "下一步";
@@ -196,9 +267,11 @@ function pdxfUpdateWorkflow() {
         ? "未选择的原图内容仍会保留作参考"
         : pdxfStep === 3
           ? ready
-            ? pdxfUsePlacement() ? "按当前摆放位置导入，未做选点校准" : "对齐与独立检查已通过"
-            : "可按当前摆放导入，或选点校准位置"
+            ? pdxfUsePlacement() ? "按当前预览直接导入，无需对齐点与检查点" : "对齐与独立检查已通过"
+            : pdxfUsePlacement() ? "请先调整到有效的预览位置" : "精确对齐需至少 3 个对齐点及 1 个独立检查点"
           : "勾选确认后创建管网";
+  if (!pdxfBusy && !pdxfImported) pdxfEl("pdxfImportBtn").textContent =
+    pdxfImportRetry ? "重试本次导入" : pdxfUsePlacement() ? "按当前预览直接导入" : "按精确对齐结果导入";
   pdxfPlacementControls();
 }
 function pdxfFileChanged() {
@@ -213,6 +286,7 @@ function pdxfFileChanged() {
   pdxfStatus("pdxfAnalyzeStatus", "");
 }
 function pdxfInvalidateDrawing() {
+  pdxfPreviewGeneration++;
   if (pdxfCal.on) pdxfCalStop();
   pdxfData = null;
   pdxfToken = null;
@@ -220,6 +294,9 @@ function pdxfInvalidateDrawing() {
   pdxfImported = false;
   pdxfDraftFit = null;
   pdxfAlignmentDirty = false;
+  pdxfPreviewKey = null;
+  pdxfImportBody = null;
+  pdxfImportRetry = false;
   pdxfCal.pairs = [];
   pdxfCal.pending = null;
   pdxfPlacementReset();
@@ -243,7 +320,8 @@ function pdxfInvalidateDrawing() {
   pdxfEl("pdxfCadEmpty").hidden = false;
   pdxfEl("pdxfDrawingName").textContent = "CAD 原图与地图";
   pdxfEl("pdxfMapStatus").textContent = "等待上传图纸";
-  pdxfEl("pdxfSatelliteHint").textContent = "解析后先显示初步叠图，再选点对齐";
+  pdxfEl("pdxfSatelliteHint").textContent = "按当前预览直接导入，或选择精确对齐";
+  pdxfStatus("pdxfPositionStatus", "");
   pdxfEl("pdxfResultBox").innerHTML = "";
   pdxfEl("pdxfImportBtn").textContent = "确认导入管网";
   pdxfGoStep(1);
@@ -362,13 +440,17 @@ function pdxfAnalyze() {
   pdxfEl("pdxfAnalyzeBtn").textContent = "正在解析…";
   pdxfStatus("pdxfAnalyzeStatus", "正在提取管线、设备和完整标注…");
   var fd = new FormData();
+  var generation = pdxfPreviewGeneration;
   fd.append("file", pdxfFile);
+  fd.append("import_mode", pdxfImportMode());
   pdxfPost(window.__DXF__.urls.analyze, fd)
     .then(function (d) {
+      if (generation !== pdxfPreviewGeneration) return;
       pdxfData = d;
       pdxfToken = d.token;
       pdxfCalInfo = d.calibration;
       pdxfPlacementSeed();
+      pdxfInvalidatePreview();
       pdxfDbChanged = false;
       pdxfEl("pdxfDrawingName").textContent = pdxfFile.name;
       pdxfEl("pdxfCadEmpty").hidden = true;
@@ -584,7 +666,7 @@ function pdxfSelectionCounts() {
 }
 function pdxfMappingChanged() {
   if (!pdxfData) return;
-  pdxfEl("pdxfReviewConfirmed").checked = false;
+  pdxfInvalidatePreview();
   var c = pdxfSelectionCounts();
   pdxfEl("pdxfSelectionSummary").innerHTML =
     "<span><b>" +
@@ -797,7 +879,7 @@ function pdxfRenderReview() {
     ["管线", c.layers + " 层 · " + c.paths + " 段源线"],
     ["设备候选", c.devices + " 个，未匹配设备将保留"],
     ["完整标注", c.labels + " 条"],
-    ["定位方式", pdxfUsePlacement() ? "当前摆放位置（未做选点校准）" : "选点校准"],
+    ["定位方式", pdxfUsePlacement() ? "按当前预览直接导入（未做精度校验）" : "精确对齐后导入"],
   ];
   if (!pdxfUsePlacement()) rows = rows.concat([
     ["对齐点", a.control_count + " 个"],
@@ -827,6 +909,10 @@ function pdxfImport() {
     !pdxfEl("pdxfReviewConfirmed").checked
   )
     return;
+  if (!pdxfPreviewMatches()) {
+    pdxfRebuildPreview().then(function (ready) { if (ready) pdxfImport(); });
+    return;
+  }
   pdxfBusy = true;
   pdxfUpdateWorkflow();
   pdxfEl("pdxfImportBtn").textContent = "正在创建管网…";
@@ -836,15 +922,16 @@ function pdxfImport() {
   if (pdxfFile) fd.append("file", pdxfFile);
   fd.append("token", pdxfToken);
   fd.append("preview_token", pdxfData.preview_token);
+  fd.append("submission_key", pdxfData.submission_key);
+  fd.append("import_mode", pdxfImportMode());
   fd.append("filename", pdxfFile ? pdxfFile.name : "DXF导入");
   fd.append("layers_json", JSON.stringify(specs.layers));
   fd.append("blocks_json", JSON.stringify(specs.blocks));
   fd.append("label_layers", JSON.stringify(specs.labelLayers));
-  if (pdxfUsePlacement()) {
-    fd.append("positioning_mode", "placement");
-    fd.append("placement_fit", JSON.stringify(pdxfPlacementFit));
-  }
-  pdxfPost(window.__DXF__.urls.importSubmit, fd)
+  // Network/receipt retries reuse the exact frozen preview and mapping body.
+  // Only an explicit geometry, mode or mapping change creates a fresh attempt.
+  if (!pdxfImportBody) pdxfImportBody = fd;
+  pdxfPost(window.__DXF__.urls.importSubmit, pdxfImportBody)
     .then(function (d) {
       pdxfImported = true;
       pdxfEdit = null;
@@ -872,6 +959,7 @@ function pdxfImport() {
       document.querySelector(".pdxf-panels").scrollTop = 0;
     })
     .catch(function (err) {
+      pdxfImportRetry = true;
       pdxfStatus("pdxfImportStatus", err.message || "导入失败，请重试", true);
       pdxfEl("pdxfImportBtn").textContent = "重试导入";
     })

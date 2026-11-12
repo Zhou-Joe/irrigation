@@ -797,7 +797,8 @@ def _crossed_zone_ids(line, zone_rings):
 
 # ── analyze：图纸概览 + 预览几何 ───────────────────────────────────────
 
-def analyze_dxf_pipelines(uploaded_file=None, token=None, user_id=None, calibration_id=None):
+def analyze_dxf_pipelines(uploaded_file=None, token=None, user_id=None, calibration_id=None,
+                          import_mode='aligned', placement_fit=None):
     """解析 DXF，始终返回原始 CAD 坐标；位置验证通过后才附加经纬度。
 
     额外返回 ``token``（内容 hash）——导入阶段凭它复用本次解析结果。
@@ -817,10 +818,43 @@ def analyze_dxf_pipelines(uploaded_file=None, token=None, user_id=None, calibrat
     else:
         return {'success': False, 'error': '请上传 .dxf 文件或提供解析 token'}
 
-    from core.dxf_state import calibration_snapshot, sign_preview, alignment_status
-    snapshot = calibration_snapshot(token, calibration_id)
+    from core.dxf_state import (calibration_snapshot, sign_preview, alignment_status,
+                                require_quality, import_mode as valid_import_mode, read_preview)
+    valid_import_mode(import_mode)
+    if placement_fit is not None:
+        from core.dxf_state import placement_snapshot
+        if import_mode != 'direct':
+            raise ValueError('摆放位置仅用于直接导入，请先确认导入方式')
+        snapshot = placement_snapshot(placement_fit)
+    else:
+        snapshot = calibration_snapshot(token, calibration_id)
     alignment = alignment_status(snapshot)
-    to_latlng, meters_per_unit = _local_to_latlng_fn(snapshot) if alignment['ready'] else (None, None)
+    direct_ready = False
+    direct_error = ''
+    if import_mode == 'direct':
+        # Direct import explicitly accepts the preview transform, without claiming
+        # independent control/check-point verification or activating calibration.
+        try:
+            require_quality(snapshot)
+            to_latlng, meters_per_unit = _local_to_latlng_fn(snapshot)
+            if to_latlng is None:
+                raise ValueError('当前没有有效的位置转换，请先在地图上摆放 CAD')
+            for bucket in layers.values():
+                for path in bucket['polys']:
+                    for x, y in path:
+                        to_latlng(x, y)
+            for item in valves + labels:
+                to_latlng(item['x'], item['y'])
+            direct_ready = True
+        except ValueError as exc:
+            if placement_fit is not None:
+                raise
+            # Keep raw CAD available for explicit placement. Never invent a CRS
+            # or accept a guessed geographic transform on the server.
+            to_latlng, meters_per_unit = None, None
+            direct_error = str(exc)
+    else:
+        to_latlng, meters_per_unit = _local_to_latlng_fn(snapshot) if alignment['ready'] else (None, None)
     def preview_point(x, y):
         point = {'dxf_x': x, 'dxf_y': y}
         if to_latlng:
@@ -895,12 +929,19 @@ def analyze_dxf_pipelines(uploaded_file=None, token=None, user_id=None, calibrat
     coord_info = ''
     if extents:
         xs = [p[0] for p in extents]; ys = [p[1] for p in extents]
-        coord_info = f'本地坐标 X[{min(xs):.0f}..{max(xs):.0f}] Y[{min(ys):.0f}..{max(ys):.0f}]' + ('，已验证对齐' if alignment['ready'] else '，尚未定位')
+        coord_info = f'本地坐标 X[{min(xs):.0f}..{max(xs):.0f}] Y[{min(ys):.0f}..{max(ys):.0f}]' + ('，按当前预览位置导入' if direct_ready else '，已验证对齐' if alignment['ready'] else '，尚未定位')
+
+    preview_token = sign_preview(token, snapshot, user_id, mode=import_mode)
+    frozen = read_preview(preview_token, token, user_id, mode=import_mode)
 
     return {
         'success': True,
         'token': token,
-        'preview_token': sign_preview(token, snapshot, user_id),
+        'preview_token': preview_token,
+        'submission_key': frozen['submission_key'],
+        'import_mode': import_mode,
+        'direct_ready': direct_ready,
+        'direct_error': direct_error,
         'calibration': active_calibration_info(snapshot),
         'metadata': metadata,
         'alignment': alignment,
@@ -1038,7 +1079,7 @@ def import_dxf_pipelines(layer_specs, block_specs, uploaded_file=None,
                          label_layers=None, valve_name_from_label=True,
                          offset=(0.0, 0.0), token=None, content=None,
                          batch_name=None, imported_by=None, preview_token=None,
-                         placement_fit=None):
+                         placement_fit=None, import_mode='aligned'):
     """按映射创建 Pipeline + PipeValve。
 
     ``layer_specs``: {layer: {'include', 'diameter', 'type'}}
@@ -1053,18 +1094,25 @@ def import_dxf_pipelines(layer_specs, block_specs, uploaded_file=None,
     from core.models import Pipeline, PipeValve, PipelineImportBatch
     from core.pipe_utils import _auto_pipeline_name_code
 
-    from core.dxf_state import calibration_snapshot, read_preview, require_quality
+    from core.dxf_state import (calibration_snapshot, read_preview, require_quality,
+                                require_alignment, import_mode as valid_import_mode, same_transform)
+    valid_import_mode(import_mode)
     if preview_token:
-        state = read_preview(preview_token, token, getattr(imported_by, 'pk', None))
+        state = read_preview(preview_token, token, getattr(imported_by, 'pk', None), mode=import_mode)
         token = state['token']
         snapshot = state['calibration']
     else:
         snapshot = calibration_snapshot(token)
     if placement_fit is not None:
         from core.dxf_state import placement_snapshot
-        if not preview_token:
+        if not preview_token or import_mode != 'direct':
             raise ValueError('请先解析图纸并确认预览')
-        snapshot = placement_snapshot(placement_fit)
+        if not same_transform(snapshot, placement_snapshot(placement_fit)):
+            raise ValueError('摆放位置与冻结预览不一致，请重新确认地图预览')
+    if import_mode == 'aligned':
+        require_alignment(snapshot)
+    elif not preview_token:
+        raise ValueError('直接导入需要当前用户确认的地图预览')
     require_quality(snapshot)
     to_latlng, meters_per_unit = _local_to_latlng_fn(snapshot)
     if to_latlng is None:
@@ -1075,7 +1123,7 @@ def import_dxf_pipelines(layer_specs, block_specs, uploaded_file=None,
             raise ValueError('文件与预览不一致，请重新解析图纸')
     layers, valves, labels, metadata = _resolve_parsed_geometry(None, token, content)
     token = token or metadata['file_hash']
-    if placement_fit is not None:
+    if import_mode == 'direct':
         # Retained reference layers and notes use this same placement, even when
         # they are not selected for creation. Reject an unusable map atomically.
         for bucket in layers.values():
@@ -1111,7 +1159,8 @@ def import_dxf_pipelines(layer_specs, block_specs, uploaded_file=None,
             source_geometry={'layers': layers, 'valves': valves, 'labels': labels,
                              'metadata': metadata},
             import_options={'layers': layer_specs, 'blocks': block_specs,
-                            'label_layers': label_layers, 'offset': [off_lat, off_lng]},
+                            'label_layers': label_layers, 'offset': [off_lat, off_lng],
+                            'import_mode': import_mode},
         )
         for layer, spec in layer_specs.items():
             if not isinstance(spec, dict):
