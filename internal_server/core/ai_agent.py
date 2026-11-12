@@ -1898,7 +1898,8 @@ def prepare_inventory_quote(attachment_id: str = '', attachment_ids: list[str] |
     """用户明确要求提取、匹配或导入报价时，准备人工确认卡片，绝不写业务数据库。
 
     attachment_id/attachment_ids必须是本对话附件ID。未传ID时使用本轮附件，或用户本轮原始文字。
-    保留原单供应商、日期、部件及来源层级，匹配库存历史身份；不匹配的默认根层。
+    保留原单供应商、日期、部件及来源层级，优先推荐已有供应商与部件候选。
+    未确定的项目由用户选择关联、新建或跳过；只有用户明确选择新建时才放入指定目录或根层。
     不自动导入目录；必须等待用户点击卡片上的确认按钮。普通总结附件不要调用此工具。
     """
     try:
@@ -1952,11 +1953,13 @@ def prepare_inventory_quote(attachment_id: str = '', attachment_ids: list[str] |
         if len(document) > MAX_DOCUMENT:
             raise ValueError('本次报价全文合计超过 60,000 字，请拆分后处理。')
         draft = build_quote_draft(user, document, source, images=images)
-        matched = sum(1 for row in draft['items'] if row.get('category_id'))
+        matched = sum(1 for row in draft['items'] if row.get('category_id') or row.get('suggested_category_id'))
+        candidates = sum(1 for row in draft['items'] if row.get('candidates'))
         summary = {'status': 'awaiting_user_confirmation', 'items': len(draft['items']),
                    'matched_parts': matched, 'unmatched_parts': len(draft['items']) - matched,
+                   'parts_with_candidates': candidates, 'default_new_parts': 0,
                    'supplier': draft['supplier'], 'quote_date': draft['quote_date'],
-                   'message': '报价确认卡片已准备好。尚未写入部件或价格，请用户核对后点击确认写入。'}
+                   'message': '报价确认卡片已准备好，优先展示已有供应商与部件候选。待选择项不会默认新建；请用户核对并选择后点击确认写入。'}
         return json.dumps(summary, ensure_ascii=False), {'type': 'inventory_quote_draft', 'draft': draft}
     except Exception as exc:
         fallback = ('报价图片未成功识别，当前模型可能不支持图片；请改用支持视觉的模型，或粘贴报价文字。'
@@ -2101,7 +2104,7 @@ def build_agent():
         '- CSV/XLSX/JSON 附件的 analysis_name 是私有计算工作区相对文件名，可用 run_python_code 的 pd.read_csv/read_excel 或 json 读取，不能猜测服务器路径。\n'
         '- 用户明确要求提取、导入或匹配报价时才调用 prepare_inventory_quote；可先用 search_inventory_parts 按编码、名称、目录、供应商和报价日期查看真实部件及历史价格。\n'
         '- prepare_inventory_quote 只生成待确认卡片，不写业务数据库。用户必须亲自点击卡片确认按钮。你没有最终确认写入工具，也不能用其他工具、代码或HTTP绕过确认。\n'
-        '- 原报价目录只作为来源层级；已有部件沿用系统目录，未匹配部件默认根层，用户可在卡片选择目录，或确认后整理。缺失供应商、日期、金额不能猜。\n'
+        '- 优先核对卡片中的已有供应商与部件候选及匹配理由；未确定项保持待选择，不能将其描述为默认新建。原报价层级只供核对，已有部件沿用系统目录；仅用户明确选择新建时，才使用其选择的目录或根层。缺失供应商、日期、金额不能猜。\n'
     )
     # 时间块插在系统提示词最前面，保证模型一开始就知道当前日期。
     agent = create_agent(
