@@ -1,0 +1,40 @@
+.batch-container { font-family:var(--font-body,system-ui,sans-serif);height:calc(100dvh - 52px); }
+.batch-sidebar { width:400px; }
+.zdm-panel { font-size:12px;line-height:1.6;color:var(--color-text,#304b39); }
+.zdm-hint,.zdm-source,.zdm-metrics,.zdm-overwrite,.zdm-warning,.zdm-count { margin:6px 0;font-size:11px;overflow-wrap:anywhere; }
+.zdm-hint,.zdm-source,.zdm-count { color:var(--color-text-secondary,#758373); }
+.zdm-top-actions,.zdm-select-actions { display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin:9px 0; }
+.zdm-filters { display:grid;grid-template-columns:minmax(0,1fr) 125px;gap:7px;margin:9px 0; }
+.zdm-filters input,.zdm-filters select,.zdm-candidate-label select { box-sizing:border-box;min-width:0;width:100%;min-height:35px;padding:7px 8px;border:1px solid #d7e1d4;border-radius:7px;background:#fff;color:#36513d;font:inherit; }
+.zdm-filters input:focus,.zdm-filters select:focus,.zdm-candidate-label select:focus { outline:2px solid #79a77b50;outline-offset:1px; }
+.zdm-select-actions button,.zdm-retry { padding:3px 0;border:0;background:none;color:var(--color-primary,#2d6a4f);font:inherit;font-size:11px;cursor:pointer; }
+.zdm-select-actions button:disabled { opacity:.45;cursor:default; }
+.zdm-retry { display:block;margin-top:5px;text-decoration:underline; }
+.zdm-status { margin:8px 0;color:#426f4a;font-size:12px;overflow-wrap:anywhere; }
+.zdm-status:empty { display:none; }
+.zdm-status[data-error="1"],.zdm-warning { color:#a15c3b; }
+.zdm-list { max-height:min(54dvh,620px);overflow:auto;padding:1px;scrollbar-width:thin; }
+.zdm-row { margin-bottom:7px;padding:10px;border:1px solid #e0e7dc;border-radius:10px;background:#fff; }
+.zdm-row.is-focused { border-color:#6b9d72;box-shadow:0 0 0 1px #6b9d7220; }
+.zdm-row.is-selected { background:#f5faf1; }
+.zdm-row-head { display:flex;align-items:flex-start;gap:7px; }
+.zdm-row-head>input,.zdm-review input { flex:none;margin:5px 0 0;accent-color:#2d6a4f; }
+.zdm-focus { display:flex;align-items:baseline;gap:7px;flex:1;min-width:0;padding:0;border:0;background:none;color:#304e39;text-align:left;font:inherit;cursor:pointer; }
+.zdm-focus b { flex:none;font-size:12px;font-weight:650; }
+.zdm-focus span { min-width:0;font-size:11px;overflow-wrap:anywhere; }
+.zdm-tag { flex:none;padding:1px 6px;border-radius:5px;background:#f0f2ed;color:#7a8878;font-size:10px;white-space:nowrap; }
+.zdm-tag.is-good { background:#e6f3e6;color:#45704b; }.zdm-tag.is-review { background:#fff1dc;color:#947140; }
+.zdm-candidate-label { display:grid;gap:3px;margin-top:8px;color:#73826d;font-size:11px; }
+.zdm-candidate-label select { font-size:11px; }.zdm-metrics { color:#536f57; }
+.zdm-detail { color:#7c8975;font-size:11px; }.zdm-detail summary { cursor:pointer; }.zdm-detail p { margin:5px 0; }
+.zdm-review { display:flex;align-items:flex-start;gap:6px;color:#6e764f;font-size:11px; }
+.zdm-overwrite { padding:5px 7px;border-radius:6px;background:#f8f2e6;color:#91764c; }
+.zdm-batch-actions { position:sticky;bottom:0;margin-top:8px;padding:8px 0 0;border-top:1px solid #dce5d6;background:var(--color-surface-alt,#fff); }
+.zdm-batch-actions>div { display:flex;gap:6px;flex-wrap:wrap;margin:6px 0; }.zdm-batch-actions .btn { flex:1; }
+.zdm-empty { padding:12px 6px;color:#87917e;text-align:center; }
+.zdm-legend { display:flex;flex-wrap:wrap;gap:10px;padding-top:7px;color:#78846e;font-size:10px; }.zdm-legend[hidden] { display:none; }
+.zdm-legend span::before { content:'';display:inline-block;width:18px;margin-right:5px;vertical-align:middle;border-top:2px solid; }
+.zdm-manual::before { border-color:#85907b!important;border-top-style:dashed!important; }.zdm-candidate::before { border-color:#36a66b!important; }.zdm-existing::before { border-color:#d5a24e!important;border-top-style:dotted!important; }
+.zdm-map-label { padding:2px 5px;border:0;background:#fffef0e8;color:#33533e;box-shadow:0 1px 4px #233b2930;font:11px/1.5 var(--font-body,system-ui,sans-serif); }
+@media (max-width:850px) { .batch-sidebar { width:350px; } }
+@media (max-width:650px) { .batch-container { height:auto;min-height:calc(100dvh - 52px); }.batch-body { flex-direction:column; }.batch-map-area { position:sticky;top:52px;z-index:450;height:40dvh;min-height:235px;flex:none; }#editMap { min-height:235px; }.batch-sidebar { width:auto;overflow:visible;border-left:0; }.sidebar-scroll { overflow:visible; }.zdm-list { max-height:58dvh; }.zdm-batch-actions { position:static; } }

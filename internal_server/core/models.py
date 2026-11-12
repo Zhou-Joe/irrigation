@@ -300,44 +300,22 @@ class Zone(models.Model):
             return abs(area) / 2.0
 
         first = pts[0]
-        # Detect nested multi-group format: [[[{lat,lng},...], [{lat,lng},...]], ...]
-        # pts[0] is a group = [ring1, ring2, ...], pts[0][0] is a ring = [{lat,lng}, ...]
-        # pts[0][0][0] is a point => flat multi-ring
-        # pts[0][0] is an array of points => need to check one more level
-        is_multi_group = False
-        if isinstance(first, list) and len(first) > 0:
-            inner = first[0]
-            if isinstance(inner, list) and len(inner) > 0:
-                innermost = inner[0]
-                if isinstance(innermost, (list, dict)) and not is_point(innermost):
-                    # inner[0] is an array of points → this is a nested multi-group
-                    is_multi_group = True
+        if is_point(first):
+            groups = [[pts]]  # One outer ring.
+        elif isinstance(first, list) and first and is_point(first[0]):
+            groups = [pts]  # One outer ring with optional holes.
+        elif (isinstance(first, list) and first and isinstance(first[0], list)
+              and first[0] and is_point(first[0][0])):
+            groups = pts  # Multiple islands, each with its own holes.
+        else:
+            self.area_sqm = None
+            return
 
         total = 0.0
-        if is_multi_group:
-            # Multi-group: [[outer1, hole1a, ...], [outer2, hole2a, ...]]
-            for group in pts:
-                for ring_idx, ring in enumerate(group):
-                    ring_area = calc_ring_area(ring)
-                    if ring_idx == 0:
-                        total += ring_area      # outer
-                    else:
-                        total -= ring_area      # hole
-        else:
-            # Flat multi-ring or single-ring: [outer, hole1, hole2, ...]
-            if isinstance(first, list) and len(first) > 0 and isinstance(first[0], (list, dict)):
-                rings = pts
-            elif isinstance(first, (dict, list)):
-                rings = [pts]
-            else:
-                self.area_sqm = None
-                return
-            for ring_idx, ring in enumerate(rings):
+        for group in groups:
+            for ring_idx, ring in enumerate(group):
                 ring_area = calc_ring_area(ring)
-                if ring_idx == 0:
-                    total += ring_area
-                else:
-                    total -= ring_area
+                total += ring_area if ring_idx == 0 else -ring_area
         self.area_sqm = total if total > 0 else None
 
     # ── Maxicom linkage ─────────────────────────────────────────────
