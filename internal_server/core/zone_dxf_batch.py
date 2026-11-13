@@ -19,9 +19,13 @@ MATCH_TTL = 30 * 60
 CACHE_PREFIX = 'zone-dxf:match:v1:'
 MAX_SHAPES = 5000
 MAX_POINTS = 250000
-REVISION_FIELDS = ('boundary_points', 'dxf_boundary_points', 'boundary_source', 'dxf_boundary_source')
+MAX_TRANSLATION_METERS = 1000
+MAX_TRANSLATION_DEGREES = 0.02
+REVISION_FIELDS = ('boundary_points', 'dxf_boundary_points', 'boundary_source', 'dxf_boundary_source',
+                   'label_lat', 'label_lng')
 ZONE_FIELDS = ('id', 'code', 'name', 'patch_id', 'patch__name', 'boundary_points',
-               'dxf_boundary_points', 'boundary_source', 'dxf_boundary_source', 'area_sqm', 'updated_at')
+               'dxf_boundary_points', 'boundary_source', 'dxf_boundary_source', 'label_lat', 'label_lng',
+               'area_sqm', 'updated_at')
 
 
 class BatchError(ValueError):
@@ -40,7 +44,7 @@ def _digest(value):
 
 
 def zone_revision(zone):
-    """Only boundary data participates; unrelated label edits never get overwritten."""
+    """Guard geometry and its custom label position, not unrelated label styling."""
     return _digest({field: getattr(zone, field) for field in REVISION_FIELDS})
 
 
@@ -52,6 +56,7 @@ def zone_state(zone):
             'manual_boundary_points': zone.boundary_points,
             'dxf_boundary_points': zone.dxf_boundary_points,
             'dxf_boundary_source': zone.dxf_boundary_source,
+            'label_lat': zone.label_lat, 'label_lng': zone.label_lng,
             'expected_revision': zone_revision(zone), 'area_display': zone.area_display}
 
 
@@ -70,9 +75,15 @@ def _drawing_identity(session):
 
 
 def _coordinate(value, label):
-    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise BatchError(f'{label}必须是有限数值。')
-    return float(value)
+    try:
+        number = float(value)
+    except (OverflowError, ValueError):
+        raise BatchError(f'{label}必须是有限数值。') from None
+    if not math.isfinite(number):
+        raise BatchError(f'{label}必须是有限数值。')
+    return number
 
 
 def _normalized_transform(shapes, transformed):
@@ -387,6 +398,110 @@ def _boundary(frozen, group_ids):
     return boundary
 
 
+def _read_translation(value):
+    """Only a bounded rigid offset is accepted; clients never submit new vertices."""
+    if value is None:
+        return {'lat': 0.0, 'lng': 0.0}
+    if not isinstance(value, dict) or set(value) != {'lat', 'lng'}:
+        raise BatchError('位置调整需要同时提供纬度和经度偏移。')
+    delta = {key: _coordinate(value[key], '位置偏移') for key in ('lat', 'lng')}
+    if any(abs(number) > MAX_TRANSLATION_DEGREES for number in delta.values()):
+        raise BatchError('单个区域的位置微调过大，请将每个方向的偏移限制在 0.02 度以内。')
+    return delta
+
+
+def _has_translation(delta):
+    return delta['lat'] != 0 or delta['lng'] != 0
+
+
+def _translated_geometry(boundary, delta, *, allow_empty=False, minimum_points=3):
+    """Copy and offset coordinates without interpreting or rebuilding ring topology.
+
+    Legacy hand-drawn lists may represent islands rather than outer/hole pairs.
+    A rigid translation must preserve that distinction, all point metadata and
+    the original closure, instead of passing old geometry through a new parser.
+    """
+    if boundary is None and allow_empty:
+        return boundary
+    if not isinstance(boundary, (list, tuple)):
+        raise BatchError('区域边界结构无效，无法进行位置微调。')
+    if boundary and not isinstance(boundary[0], (list, tuple, dict)):
+        raise BatchError('区域边界需要轮廓点列表，无法进行位置微调。')
+    count, reference_lat = 0, None
+
+    def shift(lat, lng):
+        nonlocal count, reference_lat
+        lat, lng = _coordinate(lat, '边界纬度'), _coordinate(lng, '边界经度')
+        if not -90 <= lat <= 90 or not -180 <= lng <= 180:
+            raise BatchError('区域原边界超出有效经纬度范围，无法微调。')
+        count += 1
+        if count > MAX_POINTS:
+            raise BatchError('区域边界顶点过多，请拆分处理。')
+        if reference_lat is None:
+            reference_lat = lat
+        moved_lat, moved_lng = lat + delta['lat'], lng + delta['lng']
+        if not -90 <= moved_lat <= 90 or not -180 <= moved_lng <= 180:
+            raise BatchError('位置调整后的边界超出有效经纬度范围。')
+        return moved_lat, moved_lng
+
+    def walk(value, depth=0):
+        if depth > 8:
+            raise BatchError('区域边界层级过深，无法进行位置微调。')
+        if isinstance(value, dict):
+            lat_keys = [key for key in ('lat', 'latitude') if key in value]
+            lng_keys = [key for key in ('lng', 'longitude') if key in value]
+            if not lat_keys or not lng_keys:
+                raise BatchError('区域边界点缺少经纬度，无法进行位置微调。')
+            lat = _coordinate(value[lat_keys[0]], '边界纬度')
+            lng = _coordinate(value[lng_keys[0]], '边界经度')
+            if (any(_coordinate(value[key], '边界纬度') != lat for key in lat_keys[1:])
+                    or any(_coordinate(value[key], '边界经度') != lng for key in lng_keys[1:])):
+                raise BatchError('区域边界点包含不一致的经纬度别名，无法微调。')
+            moved_lat, moved_lng = shift(lat, lng)
+            return {**value, **{key: moved_lat for key in lat_keys},
+                    **{key: moved_lng for key in lng_keys}}
+        if not isinstance(value, (list, tuple)):
+            raise BatchError('区域边界点结构无效，无法进行位置微调。')
+        # Numeric coordinate pairs can carry an optional third coordinate or
+        # other point metadata. Preserve it rather than flattening the ring.
+        if len(value) >= 2 and not isinstance(value[0], (list, tuple, dict)):
+            moved_lat, moved_lng = shift(value[0], value[1])
+            values = [moved_lat, moved_lng, *value[2:]]
+        else:
+            point_children = [isinstance(item, dict) or (isinstance(item, (list, tuple))
+                and len(item) >= 2 and not isinstance(item[0], (list, tuple, dict))) for item in value]
+            if any(point_children) and not all(point_children):
+                raise BatchError('区域边界的点与轮廓层级混合，无法进行位置微调。')
+            values = [walk(item, depth + 1) for item in value]
+        return tuple(values) if isinstance(value, tuple) else values
+
+    result = walk(boundary)
+    if not count:
+        if allow_empty:
+            return boundary
+        raise BatchError('没有可微调的 DXF 边界。')
+    if count < minimum_points:
+        raise BatchError('区域边界有效顶点不足，无法进行位置微调。')
+    distance = 111320 * math.hypot(delta['lat'], delta['lng'] * math.cos(math.radians(reference_lat)))
+    if distance > MAX_TRANSLATION_METERS:
+        raise BatchError('单个区域的位置微调不能超过 1 公里，请先核对选中的区域。')
+    # Zero offsets must preserve the saved JSON exactly, including number types.
+    return result if _has_translation(delta) else boundary
+
+
+def _prepare_translation(zone, boundary, delta):
+    """Prepare both boundary variants and custom label before any DB write."""
+    if not _has_translation(delta):
+        return boundary, zone.boundary_points, None
+    dxf = _translated_geometry(boundary, delta)
+    manual = _translated_geometry(zone.boundary_points, delta, allow_empty=True)
+    label = None
+    if zone.label_lat is not None and zone.label_lng is not None:
+        point = _translated_geometry([{'lat': zone.label_lat, 'lng': zone.label_lng}], delta, minimum_points=1)[0]
+        label = (point['lat'], point['lng'])
+    return dxf, manual, label
+
+
 def _invalidate_reference():
     # Home/neutral-location geometry is read from Zone directly. Only the CAD
     # reference-map variants have a separate short-lived cache to invalidate.
@@ -433,22 +548,86 @@ def _assign_submission(request, frozen):
                     if group in used and used[group] != zone.pk:
                         raise BatchError(f'同一个 CAD 图形组不能分配给多个区域，请核对 {zone.code} 的候选。', status=409)
                     used[group] = zone.pk
-                prepared.append((zone, groups, _boundary(frozen, groups)))
+                delta = _read_translation(row.get('translation'))
+                boundary, manual, label = _prepare_translation(zone, _boundary(frozen, groups), delta)
+                prepared.append((zone, groups, boundary, manual, label, delta))
             changed, assignments = [], []
-            for zone, groups, boundary in prepared:
+            for zone, groups, boundary, manual, label, delta in prepared:
                 zone.dxf_boundary_points = boundary
                 zone.dxf_boundary_source = frozen['filename']
                 fields = ['dxf_boundary_points', 'dxf_boundary_source', 'area_sqm', 'updated_at']
+                if _has_translation(delta) and manual != zone.boundary_points:
+                    zone.boundary_points = manual
+                    fields.append('boundary_points')
+                if label is not None:
+                    zone.label_lat, zone.label_lng = label
+                    fields.extend(['label_lat', 'label_lng'])
                 if mode == 'save_and_activate':
                     zone.boundary_source = 'dxf'
                     fields.append('boundary_source')
                 zone.save(update_fields=fields)
                 changed.append(zone_state(zone))
-                assignments.append({'zone_id': zone.pk, 'group_ids': groups})
+                assignments.append({'zone_id': zone.pk, 'group_ids': groups, 'translation': delta})
             transaction.on_commit(_invalidate_reference)
         return JsonResponse({'success': True, 'message': f'已保存 {len(changed)} 个区域的 CAD 边界。',
             'zones': changed, 'changed_ids': [zone['zone_id'] for zone in changed], 'mode': mode,
             'match_id': frozen['id'], 'assignments': assignments})
+    except BatchError as exc:
+        return _response_error(exc)
+
+
+@submission('zone.dxf.batch_translate')
+def _translate_submission(request):
+    """Tune saved DXF zones independently, using only their locked DB geometry."""
+    try:
+        rows = _request_rows(request, 'zones')
+        mode = request.POST.get('mode', 'save_only')
+        if mode not in ('save_only', 'save_and_activate'):
+            raise BatchError('请选择保存边界或保存并启用。')
+        with transaction.atomic():
+            zones = _lock_zones(rows)
+            prepared = []
+            for row in rows:
+                zone = zones[row['zone_id']]
+                delta = _read_translation(row.get('translation'))
+                # Validate coordinates without changing legacy holes/islands or
+                # applying the current drawing's transform to an unrelated zone.
+                boundary = _translated_geometry(zone.dxf_boundary_points, delta)
+                if _has_translation(delta):
+                    manual = _translated_geometry(zone.boundary_points, delta, allow_empty=True)
+                    label = None
+                    if zone.label_lat is not None and zone.label_lng is not None:
+                        point = _translated_geometry([{'lat': zone.label_lat, 'lng': zone.label_lng}], delta,
+                                                     minimum_points=1)[0]
+                        label = (point['lat'], point['lng'])
+                else:
+                    manual, label = zone.boundary_points, None
+                prepared.append((zone, boundary, manual, label, delta))
+            changed, translations, any_changed = [], [], False
+            for zone, boundary, manual, label, delta in prepared:
+                fields = []
+                if _has_translation(delta):
+                    zone.dxf_boundary_points = boundary
+                    fields.append('dxf_boundary_points')
+                    if manual != zone.boundary_points:
+                        zone.boundary_points = manual
+                        fields.append('boundary_points')
+                    if label is not None:
+                        zone.label_lat, zone.label_lng = label
+                        fields.extend(['label_lat', 'label_lng'])
+                if mode == 'save_and_activate' and zone.boundary_source != 'dxf':
+                    zone.boundary_source = 'dxf'
+                    fields.append('boundary_source')
+                if fields:
+                    zone.save(update_fields=[*fields, 'area_sqm', 'updated_at'])
+                    any_changed = True
+                changed.append(zone_state(zone))
+                translations.append({'zone_id': zone.pk, 'translation': delta})
+            if any_changed:
+                transaction.on_commit(_invalidate_reference)
+        return JsonResponse({'success': True, 'message': f'已保存 {len(changed)} 个区域的位置调整。',
+            'zones': changed, 'changed_ids': [zone['zone_id'] for zone in changed], 'mode': mode,
+            'translations': translations})
     except BatchError as exc:
         return _response_error(exc)
 
@@ -491,6 +670,8 @@ def handle_batch_action(request, action):
         _require_key(request)
         if action == 'batch_assign':
             return _assign_submission(request, _read_match(request))
+        if action == 'batch_translate':
+            return _translate_submission(request)
         if action == 'batch_switch_source':
             return _switch_submission(request)
         raise BatchError('未知批量操作。')

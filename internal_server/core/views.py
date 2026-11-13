@@ -13325,7 +13325,7 @@ def zone_dxf_import(request):
 
     if request.method == 'POST':
         action = request.POST.get('action', '')
-        if action in ('auto_match', 'batch_assign', 'batch_switch_source'):
+        if action in ('auto_match', 'batch_assign', 'batch_switch_source', 'batch_translate'):
             return handle_batch_action(request, action)
 
         # ── Upload DXF ──
