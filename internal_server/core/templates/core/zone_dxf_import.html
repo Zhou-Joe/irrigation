@@ -157,7 +157,7 @@
     .cad-modes button { flex:1; min-height:36px; }
     .cad-modes button[aria-pressed="true"] { background:var(--color-primary); color:white; }
 </style>
-<link rel="stylesheet" href="{% static 'css/zone-dxf-matches.css' %}?v=20261112matches1">
+<link rel="stylesheet" href="{% static 'css/zone-dxf-matches.css' %}?v=20261113zonetune1">
 {% endblock %}
 
 {% block content %}
@@ -227,8 +227,10 @@
 
                 {% if can_batch_dxf %}<section class="panel zdm-panel" id="zoneDxfMatchPanel" aria-labelledby="zdmTitle">
                     <div class="panel-title"><svg class="ui-icon" aria-hidden="true"><use href="#pwa-layers"/></svg><span id="zdmTitle">区域边界匹配</span></div>
-                    <p class="zdm-hint">上传并配准后自动匹配。点击区域单独对照，勾选多个区域可同时查看。</p>
+                    <p class="zdm-hint">上传并配准后自动匹配。点击区域单独对照，勾选多个区域可同时查看；进入微调后，拖动地图上的平移手柄，可同步移动当前区域的手绘与 DXF 轮廓。</p>
                     <div class="zdm-top-actions"><button type="button" class="btn btn-primary btn-sm" id="zdmRun" disabled>计算匹配</button><button type="button" class="btn btn-secondary btn-sm" id="zdmShowAll">显示全部</button></div>
+                    <div class="zdm-tune-actions" role="group" aria-label="所选区域位置微调"><button type="button" class="btn btn-secondary btn-sm" id="zdmMove" aria-pressed="false" disabled>微调区域</button><button type="button" class="btn btn-secondary btn-sm" id="zdmUndo" disabled>撤销上次</button><button type="button" class="btn btn-secondary btn-sm" id="zdmReset" disabled>取消本次微调</button></div>
+                    <p id="zdmMoveHint" class="zdm-hint" role="status" aria-live="polite">点击区域对照后，可单独微调位置；保存前不会修改边界。</p>
                     <div id="zdmStatus" class="zdm-status" role="status" aria-live="polite"></div>
                     <div class="zdm-filters"><input type="search" id="zdmSearch" aria-label="搜索区域编号或名称" placeholder="搜索区域编号或名称…"><select id="zdmFilter" aria-label="筛选匹配状态"><option value="all">全部区域</option><option value="high">高可信匹配</option><option value="review">待核对候选</option><option value="unmatched">未匹配</option><option value="existing">已有 DXF</option><option value="saved">本次已保存</option></select></div>
                     <div class="zdm-select-actions"><button type="button" id="zdmSelectSafe">全选当前筛选的可靠新匹配</button><button type="button" id="zdmSelectExisting">选中当前筛选的已有 DXF</button><button type="button" id="zdmClear">清空选择</button></div>
@@ -315,6 +317,15 @@
         dxfGeometryVersion++;
         if (dirty) dxfTransformDirty = true;
         if (window.ZoneDxfMatches) window.ZoneDxfMatches.invalidate(reason);
+    }
+    function blockZoneDraftChange() {
+        if (!window.ZoneDxfMatches?.hasDrafts?.()) return false;
+        const text = '仍有未保存的区域微调，请先保存或取消微调，再更改图纸、配准或边界来源。';
+        const status = document.getElementById('zdmStatus');
+        if (status) { status.textContent = text; status.dataset.error = '1'; }
+        const hint = document.getElementById('cadModeHint');
+        if (hint) hint.textContent = text;
+        return true;
     }
     let selectedGroupIds = new Set();   // multi-select support
     let assignedGroupIds = new Set();   // groups already assigned to a zone → hidden on map
@@ -454,18 +465,21 @@
     let dxfOrigLatLngs = null;  // snapshot of polygon positions at drag start
     let dxfMoveEnabled = false;
     let dxfAssignmentBusy = false;
+    let dxfScopedDragging = false;
     let cancelDxfDrag = null;
 
     window.setDxfMoveMode = function(enabled) {
         if (cancelDxfDrag) cancelDxfDrag();
+        if (enabled && blockZoneDraftChange()) enabled = false;
+        if (enabled && (dxfCompareActive || dxfScopedDragging)) enabled = false;
         if (enabled && !dxfMoveEnabled && !dxfAssignmentBusy) invalidateMatches('已切换整体平移，请摆放完成后重新匹配。');
         dxfMoveEnabled = !!enabled && !!dxfTransformed && assignedGroupIds.size === 0 && !dxfAssignmentBusy;
-        document.getElementById('cadMoveMode').disabled = !dxfTransformed || assignedGroupIds.size > 0 || dxfAssignmentBusy;
+        document.getElementById('cadMoveMode').disabled = !dxfTransformed || assignedGroupIds.size > 0 || dxfAssignmentBusy || dxfCompareActive || dxfScopedDragging || !!window.ZoneDxfMatches?.hasDrafts?.();
         document.getElementById('cadBindMode').disabled = dxfAssignmentBusy;
         document.getElementById('cadMoveMode').setAttribute('aria-pressed', String(dxfMoveEnabled));
         document.getElementById('cadBindMode').setAttribute('aria-pressed', String(!dxfMoveEnabled));
         document.getElementById('resetDxfOffsetBtn').disabled = !dxfMoveEnabled;
-        document.getElementById('cadModeHint').textContent = dxfAssignmentBusy ? '正在绑定区域，整体位置已锁定。' : assignedGroupIds.size
+        document.getElementById('cadModeHint').textContent = dxfAssignmentBusy ? '正在绑定区域，整体位置已锁定。' : dxfCompareActive || dxfScopedDragging ? '正在对照区域，整体平移已锁定；可使用区域微调手柄。' : window.ZoneDxfMatches?.hasDrafts?.() ? '仍有未保存的区域微调，请先保存或取消；整体位置已锁定。' : assignedGroupIds.size
             ? '已分配区域，整体位置已锁定。继续点击其余图形进行绑定。'
             : dxfMoveEnabled ? '拖动 CAD 图形可整体平移；到位后切换「绑定勿动」。'
             : '整体位置已锁定，点击图形可选择区域。';
@@ -521,7 +535,7 @@
             if (svgEl) {
                 svgEl.style.cursor = dxfMoveEnabled ? 'grab' : 'pointer';
                 svgEl.addEventListener('mousedown', function(domE) {
-                    if (domE.button !== 0 || !dxfMoveEnabled || mapClickMode === 'anchor' || assignedGroupIds.size) return;
+                    if (domE.button !== 0 || !dxfMoveEnabled || dxfAssignmentBusy || dxfCompareActive || dxfScopedDragging || mapClickMode === 'anchor' || assignedGroupIds.size) return;
                     domE.stopPropagation();  // prevent map drag
                     _suppressNextMapClick = true;  // ignore the click that follows (don't deselect)
 
@@ -641,6 +655,10 @@
                     const marker = L.marker([lat, lng], { draggable: true }).addTo(anchorLayerGroup);
                     marker.bindPopup('锚点 ' + (idx + 1));
                     marker.on('dragend', function() {
+                        if (blockZoneDraftChange()) {
+                            marker.setLatLng([parseFloat(latInput.value), parseFloat(lngInput.value)]);
+                            return;
+                        }
                         const pos = marker.getLatLng();
                         latInput.value = pos.lat.toFixed(7);
                         lngInput.value = pos.lng.toFixed(7);
@@ -670,6 +688,7 @@
 
     function uploadDxf() {
         if (dxfAssignmentBusy) return;
+        if (blockZoneDraftChange()) { fileInput.value = ''; return; }
         if (!fileInput.files || fileInput.files.length === 0) return;
         if (dxfUploadBusy) return;
         dxfUploadBusy = true;
@@ -747,6 +766,7 @@
 
     // ── Anchor management ──
     window.addAnchorRow = function() {
+        if (blockZoneDraftChange()) return;
         if (dxfAssignmentBusy) return;
         const container = document.getElementById('anchorContainer');
         const idx = container.querySelectorAll('.anchor-row').length;
@@ -767,14 +787,14 @@
         container.appendChild(row);
         if (dxfTransformed) invalidateMatches('锚点已更改，请重新配准并匹配。', true);
     };
-    window.removeAnchorRow = function(button) { if (dxfAssignmentBusy) return; button.closest('.anchor-row').remove(); renderAnchors(); invalidateMatches('锚点已更改，请重新配准并匹配。', true); };
-    document.getElementById('anchorContainer').addEventListener('input', function() { invalidateMatches('锚点已更改，请重新配准并匹配。', true); });
+    window.removeAnchorRow = function(button) { if (dxfAssignmentBusy || blockZoneDraftChange()) return; button.closest('.anchor-row').remove(); renderAnchors(); invalidateMatches('锚点已更改，请重新配准并匹配。', true); };
+    document.getElementById('anchorContainer').addEventListener('input', function() { if (!blockZoneDraftChange()) invalidateMatches('锚点已更改，请重新配准并匹配。', true); });
 
     // Highlight the row currently being picked
     let activePickRow = null;
 
     window.startPickLatLng = function(btn) {
-        if (dxfAssignmentBusy || dxfUploadBusy) return;
+        if (dxfAssignmentBusy || dxfUploadBusy || blockZoneDraftChange()) return;
         if (window.ZoneDxfMatches) window.ZoneDxfMatches.showAll();
         setDxfMoveMode(false);
         const row = btn.closest('.anchor-row');
@@ -847,7 +867,7 @@
 
     // ── Preview / Confirm anchors ──
     window.previewTransform = function() {
-        if (dxfAssignmentBusy || dxfUploadBusy) return;
+        if (dxfAssignmentBusy || dxfUploadBusy || blockZoneDraftChange()) return;
         const anchors = getAnchors();
         if (anchors.length < 2) {
             document.getElementById('geoRefStatus').innerHTML = '<div class="status-msg error">需要至少2个完整锚点</div>';
@@ -879,7 +899,7 @@
     };
 
     window.confirmAnchors = function() {
-        if (dxfAssignmentBusy || dxfUploadBusy) return;
+        if (dxfAssignmentBusy || dxfUploadBusy || blockZoneDraftChange()) return;
         const anchors = getAnchors();
         if (anchors.length < 2) {
             document.getElementById('geoRefStatus').innerHTML = '<div class="status-msg error">需要至少2个完整锚点</div>';
@@ -1104,7 +1124,7 @@
 
     // ── Assign shape ──
     window.assignSelectedShape = function() {
-        if (dxfAssignmentBusy) return;
+        if (dxfAssignmentBusy || blockZoneDraftChange()) return;
         setDxfMoveMode(false);
         const zoneCode = zoneInput.value.trim();
         if (!zoneCode) {
@@ -1199,6 +1219,7 @@
     }
 
     window.confirmSave = function() {
+        if (blockZoneDraftChange()) return;
         var btn = document.getElementById('saveRow').querySelector('button');
         var orig = btn.textContent;
         btn.disabled = true;
@@ -1245,6 +1266,7 @@
     };
 
     window.switchDxfSource = function(code, source) {
+        if (dxfAssignmentBusy || blockZoneDraftChange()) return;
         var fd = new FormData();
         fd.append('action', 'switch_source');
         fd.append('zone_code', code);
@@ -1266,6 +1288,7 @@
     };
 
     window.switchSource = function(zoneCode, source) {
+        if (dxfAssignmentBusy || blockZoneDraftChange()) return;
         const fd = new FormData();
         fd.append('action', 'switch_source');
         fd.append('zone_code', zoneCode);
@@ -1289,6 +1312,11 @@
         map: map, zones: allZones, csrf: getCSRF,
         state: function() { return {ready: !!(dxfTransformed && dxfGroups && !dxfTransformDirty && !dxfUploadBusy), busy: dxfAssignmentBusy || dxfUploadBusy, version: dxfGeometryVersion, transformed: dxfTransformed}; },
         lock: function() { setDxfMoveMode(false); cancelPick(); },
+        scopedDragging: function(value) {
+            if (value) { setDxfMoveMode(false); cancelPick(); }
+            dxfScopedDragging = !!value;
+            setDxfMoveMode(false);
+        },
         busy: function(value) {
             dxfAssignmentBusy = value;
             fileInput.disabled = value;
@@ -1299,6 +1327,7 @@
         },
         comparison: function(active) {
             dxfCompareActive = active;
+            setDxfMoveMode(false);
             if (active) {
                 [refLayerGroup, refLabelLayer, dxfLayerGroup, anchorLayerGroup].forEach(function(layer) { if (map.hasLayer(layer)) map.removeLayer(layer); });
             } else {
@@ -1328,7 +1357,11 @@
                 var reference = allDrawnZones.find(function(z) { return String(z.id) === String(zone.id); });
                 var boundary = zone.boundary_source === 'dxf' ? zone.dxf_boundary_points : zone.manual_boundary_points;
                 if (!reference && boundary && boundary.length) { reference = {id:zone.id,code:zone.code,name:zone.name}; allDrawnZones.push(reference); }
-                if (reference && boundary) reference.boundary_points = boundary;
+                if (reference && boundary) {
+                    reference.boundary_points = boundary;
+                    reference.label_lat = zone.label_lat;
+                    reference.label_lng = zone.label_lng;
+                }
             });
             (usedGroups || []).forEach(function(id) { assignedGroupIds.add(id); });
             renderRefZones(); renderDxfShapes(false); renderGroupsList();
@@ -1343,5 +1376,5 @@
 
 })();
 </script>
-<script src="{% static 'js/zone-dxf-matches.js' %}?v=20261112matches1"></script>
+<script src="{% static 'js/zone-dxf-matches.js' %}?v=20261113zonetune1"></script>
 {% endblock %}
