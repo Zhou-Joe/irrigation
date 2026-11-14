@@ -12,16 +12,15 @@ from zoneinfo import ZoneInfo
 from django.db import transaction
 
 from .models import MaxicomWeatherLog, MaxicomWeatherStation
+from .et0_estimate import MODEL_LABEL, MODEL_VERSION, SOURCE_NOTE, estimate_days, profile_for_station
 
 SHANGHAI = ZoneInfo('Asia/Shanghai')
 INCH_MM = 25.4
 MILE_KM = 1.609344
 WEATHER_FIELDS = ('temperature', 'max_temp', 'min_temp', 'solar_radiation',
                   'rainfall', 'humidity', 'wind_run', 'et')
-# Audited source: hourly ET is unpopulated, XA_ET is a monthly reference, and
-# Site soil-checkbook ET is not proven reference ET0. Preserve observed hourly
-# values in storage, but never present them as verified daily ET0 in the report.
-REPORT_ET0_VERIFIED = False
+# Raw ET remains untouched. CR1000 weather sources do not supply hourly ET;
+# the report's distinct, labelled estimate is calculated from observed weather.
 
 
 def _clean(value):
@@ -136,7 +135,7 @@ def _day_record(rows):
     """Hourly min/max, mean humidity, and additive observed interval totals."""
     output, missing = {}, []
     for field in ('min_temp', 'max_temp', 'humidity', 'solar_radiation', 'wind_run', 'rainfall', 'et'):
-        if field == 'et' and not REPORT_ET0_VERIFIED:
+        if field == 'et':
             output[field] = None
             continue
         values = [row[field] for row in rows if _number(row.get(field)) is not None]
@@ -162,8 +161,6 @@ def _day_record(rows):
         notes.append(f'部分记录：{hours}/24 小时')
     if missing:
         notes.append('部分小时缺少' + '、'.join(missing))
-    if not REPORT_ET0_VERIFIED:
-        notes.append('ET0 缺少可核实数据')
     output['notes'] = '；'.join(notes)
     output['observed_hours'] = hours
     output['complete'] = hours == 24 and not missing
@@ -175,23 +172,37 @@ def weather_report_data(start, end):
     """Return per-station daily metric values; never combine different stations."""
     local_start = datetime(start.year, start.month, start.day, tzinfo=SHANGHAI)
     local_end = datetime(end.year, end.month, end.day, tzinfo=SHANGHAI) + timedelta(days=1)
-    stamp_from = local_start.astimezone(datetime_timezone.utc).strftime('%Y%m%d%H%M%S')
+    # Prior-day afternoon observations initialize nighttime cloud correction.
+    # Loading them independently of the requested range keeps a day's estimate
+    # identical in the page, dashboard, exports and single-day queries.
+    stamp_from = (local_start - timedelta(days=2)).astimezone(datetime_timezone.utc).strftime('%Y%m%d%H%M%S')
     stamp_to = local_end.astimezone(datetime_timezone.utc).strftime('%Y%m%d%H%M%S')
     rows = MaxicomWeatherLog.objects.filter(timestamp__gte=stamp_from, timestamp__lt=stamp_to).order_by('timestamp', 'pk')
     grouped = defaultdict(dict)
+    source_rows = defaultdict(dict)
     for row in rows.values('weather_station_id', 'timestamp', *WEATHER_FIELDS):
         try:
             day = _local_stamp(row['timestamp']).date()
         except (ValueError, TypeError):
             continue
         # A retained legacy duplicate of the same stamp is never counted twice.
-        grouped[(row['weather_station_id'], day)][row['timestamp']] = row
+        source_rows[row['weather_station_id']][row['timestamp']] = row
+        if start <= day <= end:
+            grouped[(row['weather_station_id'], day)][row['timestamp']] = row
     by_station = defaultdict(dict)
     for (station, day), values in grouped.items():
         by_station[station][day] = _day_record(list(values.values()))
     stations = []
     for station in MaxicomWeatherStation.objects.filter(pk__in=by_station).order_by('mdb_index'):
         days = by_station[station.pk]
+        profile = profile_for_station(station.mdb_index)
+        estimates = estimate_days(list(source_rows[station.pk].values()), profile)
+        for day, record in days.items():
+            estimate = estimates.get(day, {'et': None, 'et_source': 'unavailable',
+                'et_method': MODEL_VERSION, 'et_valid_hours': 0,
+                'et_note': 'ET₀留空：未配置复算参数'})
+            record.update(estimate)
+            record['notes'] = '；'.join(filter(None, (record['notes'], estimate['et_note'])))
         partial = sum(1 for row in days.values() if not row['complete'])
         count = (end - start).days + 1
         notice = f'所选 {count} 天中有 {len(days)} 天实际记录'
@@ -200,8 +211,10 @@ def weather_report_data(start, end):
         if len(days) < count:
             notice += '；其余日期缺测留空'
         stations.append({'id': station.pk, 'mdb_index': station.mdb_index,
-                         'name': station.name, 'days': days, 'notice': notice + '。'})
+                         'name': station.name, 'days': days, 'notice': notice + '。',
+                         'et_profile': profile})
     return {'stations': stations,
+        'et_label': MODEL_LABEL, 'et_method': MODEL_VERSION,
         'notice': '' if stations else '所选日期没有 Maxicom 实际天气记录；空白不表示无降雨或 ET0 为 0。',
         'source_note': '来源：Rain Bird Maxicom 实际小时气象记录，按上海自然日汇总。低温取小时最低值，高温取小时最高值，湿度取有效小时均值；光照、风程、降雨累计小时值。原始 °F/英寸/英里在导入时统一换算为 °C/mm/km，光照保留 Ly。'
-            + ('ET0 由已核实的实际来源累计。' if REPORT_ET0_VERIFIED else '原数据没有可核实的 ET0，该列留空；未用默认值、月参考值、土壤账本或重新计算值补齐。')}
+            + SOURCE_NOTE + '未配置复算参数的气象站没有可核实的 ET0，该列留空。'}

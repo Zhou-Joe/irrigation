@@ -10,8 +10,12 @@
     <button class="btn btn-secondary" name="format" value="xlsx">导出气象日报</button>
   </form>
   <p>{{ source_note }}</p><p>{{ notice|default:'' }}</p>
+  <details><summary>ET₀复算参数</summary>
+    <p>使用各小时的温度、湿度、光照及风程近似计算，再累计当日24小时。降雨用于补水判断，不从天气ET₀中直接扣除。</p>
+    {% for station in et_stations %}<p><strong>{{ station.name }}</strong>：{% if station.et_profile %}{{ station.et_profile.note }}{% else %}未配置复算参数，ET₀留空。{% endif %}</p>{% endfor %}
+  </details>
   <div style="overflow:auto;"><table class="card-table">
-    <thead><tr><th>日期</th><th>气象站</th><th>最低温°C</th><th>最高温°C</th><th>湿度%</th><th>光照Ly</th><th>风程km</th><th>降雨mm</th><th>ET₀ mm</th><th>实际小时数</th><th>数据说明</th></tr></thead>
+    <thead><tr><th>日期</th><th>气象站</th><th>最低温°C</th><th>最高温°C</th><th>湿度%</th><th>光照Ly</th><th>风程km</th><th>降雨mm</th><th>ET₀估算 mm</th><th>实际小时数</th><th>数据说明</th></tr></thead>
     <tbody>{% for row in rows %}<tr>
       <td>{{ row.date|date:'Y-m-d' }}</td><td>{{ row.station }}</td>
       <td>{{ row.min_temp|floatformat:2|default:'—' }}</td><td>{{ row.max_temp|floatformat:2|default:'—' }}</td>

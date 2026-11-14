@@ -37,6 +37,9 @@ def daily_page(request):
         return FileResponse(stream, as_attachment=True, filename=name)
     data, rows = daily_rows(start, end)
     if request.headers.get('Accept') == 'application/json':
-        return JsonResponse({'success': True, 'start': start, 'end': end, 'rows': rows, 'source_note': data['source_note']})
+        return JsonResponse({'success': True, 'start': start, 'end': end, 'rows': rows,
+            'source_note': data['source_note'], 'et_label': data['et_label'], 'et_method': data['et_method'],
+            'et_parameters': [{'station': station['name'], 'mdb_index': station['mdb_index'],
+                               'profile': station['et_profile']} for station in data['stations']]})
     return render(request, 'core/weather_daily.html', {'rows': rows, 'source_note': data['source_note'],
-        'notice': data.get('notice'), 'start': start, 'end': end})
+        'notice': data.get('notice'), 'start': start, 'end': end, 'et_stations': data['stations']})

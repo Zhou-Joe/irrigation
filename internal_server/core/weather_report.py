@@ -61,7 +61,7 @@ def _header(sheet, station, year):
         sheet.merge_cells(area)
     values = {'A2': 'Date', 'B2': 'Temperature (°C)', 'B3': 'Low', 'C3': 'High',
               'D2': 'Humidity (%)', 'E2': 'Solar Radiation (Ly)', 'F2': 'Wind Run (Km)',
-              'G2': 'Rainfall (mm)', 'H2': 'ET0 (mm)', 'I2': 'Mark'}
+              'G2': 'Rainfall (mm)', 'H2': 'ET₀估算 (mm)', 'I2': 'Mark'}
     for address, value in values.items():
         _literal(sheet[address], value)
     for row in sheet.iter_rows(min_row=2, max_row=3, max_col=9):
@@ -156,6 +156,8 @@ def _station_year(book, station, year, start, end, source_note, cache):
              '温湿度累加仅按原模板统计；平均值按各指标实际有值的每日记录计算，年均值不平均各月均值。', source_note]
     if station.get('notice'):
         notes.insert(0, station['notice'])
+    if station.get('et_profile'):
+        notes.append('ET₀复算参数：' + station['et_profile']['note'])
     if len(station['name']) > 72:
         notes.insert(0, '气象站：' + station['name'])
     for note in notes:

@@ -6579,7 +6579,9 @@ def maxicom_dashboard_api(request):
             'date': latest_day.isoformat(), 'period': 'day', **latest})
         for day, values in sorted(station['days'].items()):
             et_trend.append({'date': day.isoformat(), 'station': station['name'],
-                'total_et': values['et'], 'avg_et': None, 'count': values['observed_hours'], 'notes': values['notes']})
+                'total_et': values['et'], 'avg_et': None, 'count': values['observed_hours'], 'notes': values['notes'],
+                'et_source': values['et_source'], 'et_method': values['et_method'],
+                'et_valid_hours': values['et_valid_hours']})
 
     # Station status breakdown
     station_status = {
@@ -6609,6 +6611,7 @@ def maxicom_dashboard_api(request):
         'recent_events': recent_events,
         'weather_summary': weather_summary,
         'weather_period': 'day', 'weather_source_note': weather_data['source_note'],
+        'et_label': weather_data['et_label'], 'et_method': weather_data['et_method'],
         'et_trend': et_trend,
         'station_status': station_status,
         'top_sites': top_sites,
