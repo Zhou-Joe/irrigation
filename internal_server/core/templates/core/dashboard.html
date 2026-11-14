@@ -39,7 +39,7 @@
     /* Map: full pan + pinch-zoom handed to Leaflet. */
     .map-container, #map, .leaflet-container { touch-action: none; }
 }
-    /* 水管覆盖物的缩放层级显示：阀门圆点在第二层级（z17+）出现；
+    /* 管道覆盖物的缩放层级显示：阀门圆点在第二层级（z17+）出现；
        阀门 label 在最大层级由 applyValveLabelMode 常显 */
     .hide-pipe-valves .pipe-valve-marker { display: none; }
 </style>
@@ -232,10 +232,11 @@
                     <span>连线</span>
                 </label>
                 <label class="map-layer-item">
-                    <input type="checkbox" checked onchange="toggleLayer('pipelines', this.checked)">
+                    <input type="checkbox" id="pipelineLayerAll" checked onchange="toggleLayer('pipelines', this.checked)">
                     <span class="map-layer-checkmark"></span>
-                    <span>水管</span>
+                    <span>管道（全部）</span>
                 </label>
+                <div id="pipelineTypeLayers" style="padding-left:18px;"></div>
                 <label class="map-layer-item">
                     <input type="checkbox" onchange="toggleLayer('cad_reference', this.checked)">
                     <span class="map-layer-checkmark"></span><span>CAD 参考线</span>
@@ -444,7 +445,7 @@
 <script id="pending-remarks" type="application/json">{{ pending_remarks_json|safe }}</script>
 <!-- Custom Map JS -->
 <script src="{% static 'js/map-runtime.js' %}?v=20261106boundaries"></script>
-<script src="{% static 'js/map.js' %}?v=20261108fixes2"></script>
+<script src="{% static 'js/map.js' %}?v=20261114pipeline"></script>
 <script src="{% static 'js/dashboard-modal.js' %}?v=20261108fixes2"></script>
 <script>
 // Override the notification popup's PM-task "填写" handler: on the dashboard we

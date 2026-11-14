@@ -7,6 +7,13 @@ from .models import RegistrationRequest, WaterRequest
 from .role_utils import get_user_role, is_admin, is_field_worker, is_dept_user
 
 
+def pipeline_options(request):
+    if request.path.startswith(('/settings/', '/pipelines/')):
+        from .pipeline_management import type_options
+        return {'pipeline_types': type_options()}
+    return {}
+
+
 def notifications(request):
     """
     Provide notification data to all templates.

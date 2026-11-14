@@ -73,6 +73,7 @@
 {% endblock %}
 {% block extra_js %}
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+{{ pipeline_types|json_script:'pipeline-type-options' }}
 <script>
 window.__DXF__ = {urls: {
   analyze: '{% url 'core:pipeline_dxf_analyze' %}', importSubmit: '{% url 'core:pipeline_dxf_import_submit' %}',
@@ -80,7 +81,7 @@ window.__DXF__ = {urls: {
   calSave: '{% url 'core:pipeline_dxf_calibration_save' %}', calClear: '{% url 'core:pipeline_dxf_calibration_clear' %}', calApply: '{% url 'core:pipeline_dxf_calibration_apply' %}'},
   placementPoints: {{ dxf_placement_points_json|safe }}, cal: {{ dxf_calibration_json|safe }}, zones: {{ ref_zones_json|safe }}, pipelines: {{ ref_pipelines_json|safe }} };
 </script>
-<script src="{% static 'js/dxf-import/dxf-core.js' %}?v=20261112direct1"></script>
+<script src="{% static 'js/dxf-import/dxf-core.js' %}?v=20261114types"></script>
 <script src="{% static 'js/dxf-import/dxf-cal-math.js' %}?v=20261112direct1"></script>
 <script src="{% static 'js/dxf-import/dxf-placement.js' %}?v=20261112direct1"></script>
 <script src="{% static 'js/dxf-import/dxf-cal.js' %}?v=20261112direct1"></script>

@@ -24,6 +24,7 @@ from core.views import equipment_catalog_autocomplete
 from core import workitem_manage_views
 from core import inventory_tree_views
 from core import inventory_quotes
+from core import pipeline_management, purchase_import, weather_views
 from core.workorder_tree_views import (
     workorder_tree_form, project_create_api, planned_maintenance_pending,
     project_management, project_save, project_delete,
@@ -97,6 +98,10 @@ urlpatterns = [
     path('settings/zone/quick-draw/mobile/', views.zone_quick_draw_mobile, name='zone_quick_draw_mobile'),
     path('settings/zone/dxf-import/', views.zone_dxf_import, name='zone_dxf_import'),
     path('settings/map-style/', views.map_style_editor, name='map_style_editor'),
+    path('settings/pipeline-types/save/', pipeline_management.save_type, name='pipeline_type_save'),
+    path('settings/pipelines/bulk-update/', pipeline_management.bulk_update, name='pipeline_bulk_update'),
+    path('purchase-orders/import-preview/', purchase_import.preview, name='purchase_order_import_preview'),
+    path('weather/daily/', weather_views.daily_page, name='weather_daily'),
     path('settings/pipeline/new/', views.pipeline_new, name='pipeline_new'),
     path('settings/pipeline/<int:pipeline_id>/', views.pipeline_edit, name='pipeline_edit'),
     path('settings/pipeline/<int:pipeline_id>/delete/', views.pipeline_delete, name='pipeline_delete'),

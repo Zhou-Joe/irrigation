@@ -687,6 +687,27 @@ def get_weather(request):
 
 
 class PipelineSerializer(serializers.ModelSerializer):
+    def validate_line_weight(self, value):
+        from .pipeline_management import style_values
+        try:
+            return style_values({'line_weight': value})['line_weight']
+        except ValueError as exc:
+            raise serializers.ValidationError(str(exc))
+
+    def validate_pipeline_type(self, value):
+        from .pipeline_management import style_values
+        try:
+            return style_values({'pipeline_type': value})['pipeline_type']
+        except ValueError as exc:
+            raise serializers.ValidationError(str(exc))
+
+    def validate_color(self, value):
+        from .pipeline_management import style_values
+        try:
+            return style_values({'color': value})['color']
+        except ValueError as exc:
+            raise serializers.ValidationError(str(exc))
+
     line_color = serializers.ReadOnlyField()
     pipeline_type_display = serializers.CharField(source='get_pipeline_type_display', read_only=True)
     flow_direction_display = serializers.CharField(source='get_flow_direction_display', read_only=True)
@@ -698,7 +719,7 @@ class PipelineSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'name', 'code', 'description',
             'pipeline_type', 'pipeline_type_display',
-            'line_points', 'line_color', 'line_weight',
+            'line_points', 'line_color', 'line_weight', 'color', 'line_weight_custom',
             'main_diameter', 'flow_direction', 'flow_direction_display', 'source_label',
             'zones', 'zone_names', 'valves',
             'created_at', 'updated_at'
@@ -732,10 +753,14 @@ class PipelineViewSet(viewsets.ModelViewSet):
         _invalidate_cached('dashboard:pipelines')
 
     def perform_create(self, serializer):
+        if 'line_weight' in serializer.validated_data and 'line_weight_custom' not in serializer.validated_data:
+            serializer.validated_data['line_weight_custom'] = True
         super().perform_create(serializer)
         self._bust_dash_cache()
 
     def perform_update(self, serializer):
+        if 'line_weight' in serializer.validated_data and 'line_weight_custom' not in serializer.validated_data:
+            serializer.validated_data['line_weight_custom'] = True
         super().perform_update(serializer)
         self._bust_dash_cache()
 

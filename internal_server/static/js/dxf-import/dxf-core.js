@@ -58,6 +58,10 @@ var LINE_TYPE_LABELS = {
   control: "控制线",
   comm: "通讯线",
 };
+try {
+  const options = JSON.parse(document.getElementById('pipeline-type-options')?.textContent || '[]');
+  options.forEach(kind => { LINE_TYPE_LABELS[kind.code] = kind.name; });
+} catch (error) { console.warn('管道类型加载失败', error); }
 function pdxfEl(id) {
   return document.getElementById(id);
 }
@@ -518,7 +522,7 @@ function pdxfRenderTables() {
               '"' +
               (l.type_guess === t ? " selected" : "") +
               ">" +
-              LINE_TYPE_LABELS[t] +
+              pdxfEsc(LINE_TYPE_LABELS[t]) +
               "</option>"
             );
           })
@@ -590,7 +594,7 @@ function pdxfRenderTables() {
   pdxfEl("pdxfSymbolHint").textContent =
     pdxfData.layers.length -
     pipes.length +
-    " 个块符号图层保留为 CAD 参考，不作为水管导入。";
+    " 个块符号图层保留为 CAD 参考，不作为管道导入。";
   pdxfEl("pdxfPipeTab").textContent = "管线 " + pipes.length;
   pdxfEl("pdxfDeviceTab").textContent = "设备 " + pdxfData.blocks.length;
   pdxfEl("pdxfNoteTab").textContent = "标注 " + pdxfData.labels.length;

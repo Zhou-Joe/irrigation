@@ -1,0 +1,113 @@
+<style>
+.pipeline-controls select,.pipeline-controls input:not([type=checkbox]):not([type=color]){min-height:36px;padding:6px 8px;border:1px solid var(--color-border,#d8e1d7);border-radius:6px;font:inherit;box-sizing:border-box;max-width:100%;}
+.pipeline-controls label{display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;}
+.pipeline-controls input[type=color]{height:36px;width:52px;padding:2px;border:1px solid var(--color-border,#d8e1d7);border-radius:6px;}
+.pipeline-controls summary{cursor:pointer;padding:6px 0;}
+</style>
+<div class="pipeline-controls" style="display:flex;gap:12px;align-items:end;flex-wrap:wrap;padding:12px 0;">
+  <label>按管道类型筛选 <select id="pipelineTypeFilter"><option value="">全部类型</option>{% for kind in pipeline_types %}<option value="{{ kind.code }}">{{ kind.name }}</option>{% endfor %}</select></label>
+  <span id="pipelineFilterCount" role="status"></span>
+  <details style="width:100%;"><summary>批量调整管道样式与类型</summary>
+    <div style="display:flex;gap:12px;flex-wrap:wrap;padding:10px 0;align-items:end;">
+      <label>操作范围 <select id="pipelineBulkScope"><option value="selected">已勾选管道</option><option value="type">当前筛选类型的全部管道</option></select></label>
+      <label>修改类型 <select id="pipelineBulkType"><option value="">保持原类型</option>{% for kind in pipeline_types %}<option value="{{ kind.code }}">{{ kind.name }}</option>{% endfor %}</select></label>
+      <label><input type="checkbox" id="pipelineBulkColorEnabled">修改颜色 <input type="color" id="pipelineBulkColor" value="#2d6a4f"></label>
+      <label>线宽 <input type="number" id="pipelineBulkWeight" min="1" max="10" placeholder="保持原值" style="width:80px;"></label>
+      <button type="button" class="btn btn-primary" id="pipelineBulkApply">应用调整</button>
+    </div>
+  </details>
+  <details style="width:100%;"><summary>新增或维护管道类型</summary>
+    <div style="display:flex;gap:12px;flex-wrap:wrap;padding:10px 0;align-items:end;">
+      <label>类型 <select id="pipelineTypeEdit"><option value="">新增类型</option>{% for kind in pipeline_types %}<option value="{{ kind.code }}" data-name="{{ kind.name }}" data-color="{{ kind.color }}">{{ kind.name }}</option>{% endfor %}</select></label>
+      <label>类型名称 <input id="pipelineTypeName" maxlength="80" placeholder="例如：再生水主管"></label>
+      <label>默认颜色 <input type="color" id="pipelineTypeColor" value="#2d6a4f"></label>
+      <button type="button" class="btn btn-secondary" id="pipelineTypeSave">保存类型</button>
+    </div>
+  </details>
+</div>
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const byId = id => document.getElementById(id);
+  const rows = () => Array.from(document.querySelectorAll('.pipeline-row'));
+  const filter = byId('pipelineTypeFilter');
+  function applyFilter() {
+    let count = 0;
+    rows().forEach(row => {
+      row.hidden = !!filter.value && row.dataset.type !== filter.value;
+      if (!row.hidden) count++;
+      else row.querySelector('.pipeline-checkbox').checked = false;
+    });
+    byId('pipelineFilterCount').textContent = '显示 ' + count + ' 条管道';
+    if (byId('pipelineSelectAll')) byId('pipelineSelectAll').checked = false;
+  }
+  window.refreshPipelineFilter = applyFilter;
+  filter.addEventListener('change', applyFilter);
+  byId('pipelineSelectAll')?.addEventListener('change', event => {
+    rows().forEach(row => { row.querySelector('.pipeline-checkbox').checked = !row.hidden && event.target.checked; });
+  });
+  const notify = (message, error=false) => showToast(message, error ? 'error' : 'success');
+  async function post(url, body) {
+    const response = await fetch(url, {method:'POST', body, headers:{'X-CSRFToken':getCsrfToken(), 'X-Requested-With':'XMLHttpRequest', 'Accept':'application/json'}});
+    const data = (response.headers.get('content-type') || '').includes('application/json') ? await response.json() : {};
+    if (!response.ok || !data.success) throw new Error(data.error || data.message || '服务器返回异常（HTTP ' + response.status + '）');
+    return data;
+  }
+  byId('pipelineBulkApply').addEventListener('click', async event => {
+    const body = new FormData();
+    if (byId('pipelineBulkScope').value === 'type') {
+      if (!filter.value) return notify('请先选择需要整体调整的管道类型', true);
+      body.set('scope_type', filter.value);
+    } else {
+      const selected = rows().filter(row => !row.hidden && row.querySelector('.pipeline-checkbox').checked).map(row => Number(row.dataset.id));
+      if (!selected.length) return notify('请先勾选管道', true);
+      body.set('ids', JSON.stringify(selected));
+    }
+    if (byId('pipelineBulkType').value) body.set('pipeline_type', byId('pipelineBulkType').value);
+    if (byId('pipelineBulkColorEnabled').checked) body.set('color', byId('pipelineBulkColor').value);
+    if (byId('pipelineBulkWeight').value) body.set('line_weight', byId('pipelineBulkWeight').value);
+    const button = event.currentTarget; button.disabled = true;
+    try {
+      const data = await post('/settings/pipelines/bulk-update/', body);
+      data.pipelines.forEach(pipe => {
+        const row = document.querySelector('.pipeline-row[data-id="' + pipe.id + '"]'); if (!row) return;
+        row.dataset.type = pipe.pipeline_type; row.dataset.colorOverride = pipe.color_override;
+        const badge = row.querySelector('.type-badge'); badge.textContent = pipe.type_name;
+        badge.style.backgroundColor = pipe.color + '20'; badge.style.color = pipe.color;
+      });
+      applyFilter(); notify('已调整 ' + data.count + ' 条管道，地图下次读取时显示最新样式');
+    } catch (error) { notify(error.message, true); }
+    finally { button.disabled = false; }
+  });
+  byId('pipelineTypeEdit').addEventListener('change', event => {
+    const option = event.target.selectedOptions[0];
+    byId('pipelineTypeName').value = option.dataset.name || '';
+    byId('pipelineTypeColor').value = option.dataset.color || '#2d6a4f';
+  });
+  byId('pipelineTypeSave').addEventListener('click', async event => {
+    const body = new FormData(); body.set('code', byId('pipelineTypeEdit').value);
+    body.set('name', byId('pipelineTypeName').value); body.set('color', byId('pipelineTypeColor').value);
+    const button = event.currentTarget; button.disabled = true;
+    try {
+      const data = await post('/settings/pipeline-types/save/', body);
+      for (const id of ['pipelineTypeFilter', 'pipelineBulkType', 'pipelineTypeEdit']) {
+        const select = byId(id), selected = select.value;
+        while (select.options.length > 1) select.remove(1);
+        data.types.forEach(kind => {
+          const option = new Option(kind.name, kind.code); option.dataset.name = kind.name; option.dataset.color = kind.color; select.add(option);
+        });
+        select.value = selected;
+      }
+      rows().forEach(row => {
+        const kind = data.types.find(item => item.code === row.dataset.type);
+        if (kind) {
+          const badge = row.querySelector('.type-badge'); badge.textContent = kind.name;
+          if (!row.dataset.colorOverride) { badge.style.color = kind.color; badge.style.backgroundColor = kind.color + '20'; }
+        }
+      });
+      notify('管道类型已保存');
+    } catch (error) { notify(error.message, true); }
+    finally { button.disabled = false; }
+  });
+  applyFilter();
+});
+</script>

@@ -425,6 +425,21 @@ class ZoneLandmarkAssignment(models.Model):
         return f'{self.zone.code} → {self.landmark.name}'
 
 
+class PipelineType(models.Model):
+    """可维护的管道类型；已有类型代码保持不变。"""
+    code = models.CharField(max_length=20, unique=True)
+    name = models.CharField('类型名称', max_length=80, unique=True)
+    color = models.CharField('默认颜色', max_length=7, default='#2D6A4F')
+
+    class Meta:
+        ordering = ['id']
+        verbose_name = '管道类型'
+        verbose_name_plural = '管道类型'
+
+    def __str__(self):
+        return self.name
+
+
 class Pipeline(models.Model):
     """Represents a water pipeline (irrigation or flush).
 
@@ -467,7 +482,6 @@ class Pipeline(models.Model):
     description = models.TextField(blank=True)
     pipeline_type = models.CharField(
         max_length=20,
-        choices=TYPE_CHOICES,
         default=TYPE_IRRIGATION,
         help_text='线类型：灌溉主管/冲洗主管/冲厕主管/过路套管/控制线/通讯线'
     )
@@ -479,7 +493,9 @@ class Pipeline(models.Model):
                                     help_text='Original CAD [x,y] vertices; never reverse-fit map coordinates')
     source_map_points = models.JSONField(default=list, blank=True,
                                         help_text='Last derived geometry, before manual corrections')
+    color = models.CharField('自定义颜色', max_length=7, blank=True, default='')
     line_weight = models.IntegerField(default=3, help_text='Line thickness in pixels')
+    line_weight_custom = models.BooleanField(default=False, help_text='Explicit line width overrides diameter scaling')
     main_diameter = models.FloatField(
         '主管径(mm)', null=True, blank=True,
         help_text='整条主管的公称直径，用于地图线宽映射。支管变径在阀门上记口径。'
@@ -493,7 +509,7 @@ class Pipeline(models.Model):
         help_text='如：接市政水 DN80 / 接 CCU1 主泵'
     )
     zones = models.ManyToManyField(Zone, blank=True, related_name='pipelines')
-    # 来源批次：DXF 导入时盖上的分组章（手动创建为 NULL）。水管管理页按它
+    # 来源批次：DXF 导入时盖上的分组章（手动创建为 NULL）。管道管理页按它
     # 分组展示并提供整批删除。
     import_batch = models.ForeignKey(
         'PipelineImportBatch', on_delete=models.SET_NULL, null=True, blank=True,
@@ -501,16 +517,14 @@ class Pipeline(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    def get_pipeline_type_display(self):
+        from .pipeline_management import type_options
+        return next((item['name'] for item in type_options() if item['code'] == self.pipeline_type), self.pipeline_type)
+
     @property
     def line_color(self):
-        return {
-            self.TYPE_IRRIGATION: '#CC3333',
-            self.TYPE_FLUSH: '#3366CC',
-            self.TYPE_TOILET: '#9B59B6',
-            self.TYPE_CASING: '#95A5A6',
-            self.TYPE_CONTROL: '#E67E22',
-            self.TYPE_COMM: '#1ABC9C',
-        }.get(self.pipeline_type, '#CC3333')
+        from .pipeline_management import type_options
+        return self.color or next((item['color'] for item in type_options() if item['code'] == self.pipeline_type), '#CC3333')
 
     def __str__(self):
         return f"{self.name} ({self.get_pipeline_type_display()})"
@@ -2040,6 +2054,7 @@ class PurchaseOrderLine(models.Model):
         verbose_name='物料',
     )
     quantity = models.PositiveIntegerField('计划数量', default=1)
+    supplier = models.CharField('供应商', max_length=200, blank=True, default='')
     unit_price = models.DecimalField('采购单价', max_digits=12, decimal_places=2, null=True, blank=True)
     unit = models.CharField('单位', max_length=20, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -2948,7 +2963,7 @@ class SiteCalibration(models.Model):
 class PipelineImportBatch(models.Model):
     """DXF 导入批次 — 一次导入 submit 一行，管道挂到批次上分组管理。
 
-    手动创建的管道 import_batch 为 NULL（显示「手动」）。删除走水管管理
+    手动创建的管道 import_batch 为 NULL（显示「手动」）。删除走管道管理
     页的整批删除端点（先备份坐标再删）。
     """
     name = models.CharField('批次名/DXF文件名', max_length=200)
@@ -2965,8 +2980,8 @@ class PipelineImportBatch(models.Model):
 
     class Meta:
         ordering = ['-id']
-        verbose_name = '水管导入批次'
-        verbose_name_plural = '水管导入批次'
+        verbose_name = '管道导入批次'
+        verbose_name_plural = '管道导入批次'
 
     def __str__(self):
         return f'{self.name} · {self.imported_at:%Y-%m-%d %H:%M}'

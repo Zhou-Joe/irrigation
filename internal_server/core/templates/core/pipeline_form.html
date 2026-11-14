@@ -2,7 +2,7 @@
 
 {% load static %}
 
-{% block title %}{% if pipeline %}编辑水管{% else %}新建水管{% endif %} - 灌溉管理{% endblock %}
+{% block title %}{% if pipeline %}编辑管道{% else %}新建管道{% endif %} - 灌溉管理{% endblock %}
 {% block nav_settings %}active{% endblock %}
 
 {% block extra_css %}
@@ -29,7 +29,7 @@
 {% block content %}
 <div class="form-container">
     <div class="form-header">
-        <h1>{% if pipeline %}编辑水管: {{ pipeline.name }}{% else %}新建水管{% endif %}</h1>
+        <h1>{% if pipeline %}编辑管道: {{ pipeline.name }}{% else %}新建管道{% endif %}</h1>
         <a href="{% url 'core:settings' %}" class="btn btn-secondary">← 返回设置</a>
     </div>
 
@@ -47,26 +47,26 @@
         {% csrf_token %}
 
         <div class="form-section">
-            <h2>水管配置</h2>
+            <h2>管道配置</h2>
 
             <div class="form-row">
                 <div class="form-group">
-                    <label for="pipeline_type">水管类型 *</label>
+                    <label for="pipeline_type">管道类型 *</label>
                     <select id="pipeline_type" name="pipeline_type">
-                        <option value="irrigation" {% if pipeline and pipeline.pipeline_type == 'irrigation' %}selected{% endif %}>灌溉主管</option>
-                        <option value="flush" {% if pipeline and pipeline.pipeline_type == 'flush' %}selected{% endif %}>冲洗主管</option>
-                        <option value="toilet" {% if pipeline and pipeline.pipeline_type == 'toilet' %}selected{% endif %}>冲厕主管</option>
-                        <option value="casing" {% if pipeline and pipeline.pipeline_type == 'casing' %}selected{% endif %}>过路套管</option>
-                        <option value="control" {% if pipeline and pipeline.pipeline_type == 'control' %}selected{% endif %}>控制线</option>
-                        <option value="comm" {% if pipeline and pipeline.pipeline_type == 'comm' %}selected{% endif %}>通讯线</option>
+                        {% for kind in pipeline_types %}
+                        <option value="{{ kind.code }}" data-color="{{ kind.color }}" {% if pipeline.pipeline_type == kind.code %}selected{% endif %}>{{ kind.name }}</option>
+                        {% endfor %}
                     </select>
-                    <small>灌溉水管显示为红色，冲洗水管显示为蓝色</small>
+                    <small>类型可在管道管理中维护；颜色可单独调整</small>
                 </div>
 
                 <div class="form-group">
+                    <label for="color">管道颜色</label>
+                    <input type="color" id="color" name="color" value="{% if pipeline %}{{ pipeline.line_color }}{% else %}#CC3333{% endif %}">
                     <label for="line_weight">线条粗细</label>
                     <input type="number" id="line_weight" name="line_weight" min="1" max="10" value="{% if pipeline %}{{ pipeline.line_weight }}{% else %}3{% endif %}">
-                    <small>像素值，1-10。设了主管径后会自动覆盖。</small>
+                    <small>像素值，1-10；自定义线宽优先于主管径。
+                    <label><input type="checkbox" name="auto_line_weight" value="1" {% if not pipeline.line_weight_custom %}checked{% endif %}>按主管径自动计算线宽</label></small>
                 </div>
             </div>
 
@@ -303,7 +303,7 @@
 
         <div class="form-actions">
             <button type="submit" class="btn btn-primary">
-                {% if pipeline %}保存修改{% else %}创建水管{% endif %}
+                {% if pipeline %}保存修改{% else %}创建管道{% endif %}
             </button>
             <a href="{% url 'core:settings' %}" class="btn btn-secondary">取消</a>
         </div>
@@ -351,13 +351,20 @@
         toilet: ['冲厕主管', 'TOL'], casing: ['过路套管', 'CAS'],
         control: ['控制线', 'CTL'], comm: ['通讯线', 'COM'],
     };
+    document.querySelectorAll('#pipeline_type option').forEach(option => {
+        TYPE_COLORS[option.value] = option.dataset.color;
+        if (!TYPE_META[option.value]) TYPE_META[option.value] = [option.textContent, option.value.toUpperCase().slice(0, 8)];
+    });
+    document.getElementById('color').addEventListener('input', () => { updatePolyline(); updateMarkerColors(); });
     function getLineStyle() {
         const typeSelect = document.getElementById('pipeline_type');
         const t = typeSelect ? typeSelect.value : 'irrigation';
         const weightInput = document.getElementById('line_weight');
-        const weight = weightInput ? parseInt(weightInput.value) || 3 : 3;
+        let weight = weightInput ? parseInt(weightInput.value) || 3 : 3;
+        const diameter = Number(document.getElementById('main_diameter')?.value);
+        if (document.querySelector('[name=auto_line_weight]').checked && diameter > 0) weight = Math.max(3, Math.min(10, 2 + diameter / 15));
         return {
-            color: TYPE_COLORS[t] || '#CC3333',
+            color: document.getElementById('color').value || TYPE_COLORS[t] || '#CC3333',
             weight: weight,
             opacity: 0.9
         };
@@ -1028,13 +1035,17 @@
 
         // Type change updates line color and marker colors
         document.getElementById('pipeline_type').addEventListener('change', function() {
+            document.getElementById('color').value = this.selectedOptions[0].dataset.color || '#CC3333';
             updatePolyline();
             updateMarkerColors();
             updateAutoInfo();
         });
 
+        document.querySelector('[name=auto_line_weight]').addEventListener('change', updatePolyline);
+        document.getElementById('main_diameter')?.addEventListener('input', updatePolyline);
         // Weight change updates line thickness
         document.getElementById('line_weight').addEventListener('input', function() {
+            document.querySelector('[name=auto_line_weight]').checked = false;
             updatePolyline();
         });
 
@@ -1099,7 +1110,7 @@
             return;
         }
 
-        // Name: zone names + type, e.g., "东区花园、西区花园 - 灌溉水管"
+        // Name: zone names + type, e.g., "东区花园、西区花园 - 灌溉管道"
         const name = zoneNames.join('、') + ' - ' + typeLabel;
 
         // Code: type prefix + zone codes, e.g., "IRR-EAST-WEST"

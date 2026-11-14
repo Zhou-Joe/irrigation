@@ -66,7 +66,7 @@
         <button type="button" class="app-tab active" data-tab="zones" onclick="settingsSwitchTab('zones')">灌溉区域</button>
         <button type="button" class="app-tab" data-tab="patches" onclick="settingsSwitchTab('patches')">片区管理</button>
         <button type="button" class="app-tab" data-tab="regions" onclick="settingsSwitchTab('regions')">大区管理</button>
-        <button type="button" class="app-tab" data-tab="pipelines" onclick="settingsSwitchTab('pipelines')">水管管理</button>
+        <button type="button" class="app-tab" data-tab="pipelines" onclick="settingsSwitchTab('pipelines')">管道管理</button>
         <button type="button" class="app-tab" data-tab="landmarks" onclick="settingsSwitchTab('landmarks')">地标管理</button>
     </div>
 
@@ -306,12 +306,12 @@
     </div>
     </div><!-- /#tabRegions -->
 
-    <!-- 水管管理 -->
+    <!-- 管道管理 -->
     <div class="app-tab-content" id="tabPipelines">
     <div class="settings-grid">
         <div class="settings-card">
             <div class="settings-card-header" onclick="toggleCardBody(this, 'pipelineBody', 'pipelineIndicator')">
-                <h2>{% include "core/_section_toggle.html" with control_id="pipelineIndicator" target_id="pipelineBody" label="水管管理" %} 水管管理</h2>
+                <h2>{% include "core/_section_toggle.html" with control_id="pipelineIndicator" target_id="pipelineBody" label="管道管理" %} 管道管理</h2>
                 <div class="header-actions" onclick="event.stopPropagation()">
                     <a href="{% url 'core:pipeline_new' %}" class="btn btn-sm btn-primary" target="_blank">+ 新建</a>
                     <a href="{% url 'core:pipeline_dxf_import' %}" class="btn btn-sm btn-secondary" target="_blank"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-upload"/></svg> DXF导入</a>
@@ -336,7 +336,7 @@
                                 <td>{{ b.valve_count }}</td>
                                 <td>
                                     <button type="button" class="btn btn-sm btn-danger"
-                                            onclick="deletePipelineBatch({{ b.id }}, '{{ b.name|escapejs }}', {{ b.pipe_count }}, {{ b.valve_count }})">
+                                            data-pipeline-batch="{{ b.id }}" onclick="deletePipelineBatch({{ b.id }}, '{{ b.name|escapejs }}', {{ b.pipe_count }}, {{ b.valve_count }})">
                                         整批删除
                                     </button>
                                 </td>
@@ -347,6 +347,7 @@
                     <div style="font-size:.72rem;color:#8B9A8F;margin-top:4px;">整批删除前会自动备份全部坐标到服务器 JSON 文件（internal_server/pipeline_backups/），删错可找管理员回滚。</div>
                 </div>
                 {% endif %}
+                {% include "core/_pipeline_management.html" %}
                 {% if pipelines %}
                 <table class="card-table" id="pipelineTable">
                     <thead>
@@ -361,7 +362,7 @@
                     </thead>
                     <tbody>
                         {% for pipeline in pipelines %}
-                        <tr class="pipeline-row" data-id="{{ pipeline.id }}">
+                        <tr class="pipeline-row" data-id="{{ pipeline.id }}" data-color-override="{{ pipeline.color }}" data-type="{{ pipeline.pipeline_type }}" data-batch="{{ pipeline.import_batch_id|default_if_none:'' }}">
                             <td><input type="checkbox" class="pipeline-checkbox" data-id="{{ pipeline.id }}" onclick="event.stopPropagation()"></td>
                             <td><code class="zone-code-cell">{{ pipeline.code }}</code></td>
                             <td><strong>{{ pipeline.name }}</strong></td>
@@ -388,12 +389,13 @@
                     <button type="button" class="btn btn-sm btn-danger" onclick="batchDeletePipelines()">批量删除 (<span id="pipelineSelectedCount">0</span>)</button>
                 </div>
                 {% else %}
-                <div class="card-empty"><p>暂无水管（上方批次里的已整批删除）</p></div>
+                <div class="card-empty"><p>暂无管道（上方批次里的已整批删除）</p></div>
                 {% endif %}
             </div>
             {% else %}
             <div class="card-empty" id="pipelineBody">
-                <p>暂无水管</p>
+                {% include "core/_pipeline_management.html" %}
+                <p>暂无管道</p>
                 <a href="{% url 'core:pipeline_new' %}" class="btn btn-sm btn-primary" target="_blank">创建</a>
             </div>
             {% endif %}
@@ -797,25 +799,29 @@ function showToast(msg, type) {
 
 window.batchDeletePipelines = function() {
     const ids = Array.from(document.querySelectorAll('.pipeline-checkbox:checked')).map(cb => cb.dataset.id);
-    if (!confirm('确定删除选中的 ' + ids.length + ' 条水管?')) return;
+    if (!confirm('确定删除选中的 ' + ids.length + ' 条管道?')) return;
     deleteItems('/settings/batch-delete-pipeline/', ids, 'pipeline');
 };
 
 // 整批删除一个 DXF 导入批次（服务端先备份坐标再删；成功后刷新页面重建表格/批次区）
-window.deletePipelineBatch = function(batchId, name, pipeCount, valveCount) {
-    if (!confirm('整批删除「' + name + '」？\n· 将删除该批次全部 ' + pipeCount + ' 条管道 / ' + valveCount + ' 个阀门\n· 删除前自动备份坐标到服务器 JSON（可回滚）')) return;
-    fetch('/settings/pipeline-batch/' + batchId + '/delete/', {
-        method: 'POST',
-        headers: { 'X-CSRFToken': getCsrfToken(), 'X-Requested-With': 'XMLHttpRequest' },
-    }).then(r => r.json()).then(data => {
-        if (data.success) {
-            showToast('已删除批次「' + name + '」：' + data.pipelines + ' 条管道 / ' + data.valves + ' 个阀门' +
-                      (data.backup ? '（备份 ' + data.backup + '）' : ''), 'success');
-            setTimeout(() => location.reload(), 900);
-        } else {
-            showToast('删除失败: ' + (data.error || '未知错误'), 'error');
-        }
-    }).catch(err => showToast('网络错误: ' + err, 'error'));
+window.deletePipelineBatch = async function(batchId, name, pipeCount, valveCount) {
+    if (!confirm('整批删除「' + name + '」？删除前将备份该批次全部管道和阀门坐标。')) return;
+    const button = document.querySelector('[data-pipeline-batch="' + batchId + '"]');
+    if (button) button.disabled = true;
+    try {
+        const response = await fetch('/settings/pipeline-batch/' + batchId + '/delete/', {
+            method:'POST', headers:{'X-CSRFToken':getCsrfToken(), 'X-Requested-With':'XMLHttpRequest', 'Accept':'application/json'}
+        });
+        const isJSON = (response.headers.get('content-type') || '').includes('application/json');
+        const data = isJSON ? await response.json() : null;
+        if (!response.ok || !data?.success) throw new Error(data?.error || data?.message ||
+            (response.redirected ? '登录已过期，请重新登录' : '服务器未返回有效结果（HTTP ' + response.status + '），请刷新列表核对后重试'));
+        document.querySelectorAll('.pipeline-row[data-batch="' + batchId + '"]').forEach(row => row.remove());
+        button?.closest('tr')?.remove();
+        window.refreshPipelineFilter?.();
+        showToast('已删除「' + name + '」：' + data.pipelines + '条管道、' + data.valves + '个阀门' + (data.backup ? '；已保存坐标备份' : ''), 'success');
+    } catch (error) { showToast(error.message, 'error'); }
+    finally { if (button?.isConnected) button.disabled = false; }
 };
 
 // Generic batch delete — removes the affected rows in place (by data-id), no

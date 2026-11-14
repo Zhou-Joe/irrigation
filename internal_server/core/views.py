@@ -292,7 +292,7 @@ def _get_reference_map_data(exclude_zone_id=None, exclude_pipeline_id=None):
                 'pipeline_type': p.pipeline_type,
                 'line_points': p.line_points,
                 'line_color': p.line_color,
-                'line_weight': p.line_weight,
+                'line_weight': p.line_weight, 'line_weight_custom': p.line_weight_custom,
                 'main_diameter': p.main_diameter,
             })
 
@@ -919,7 +919,7 @@ def _build_pipelines_list_module():
             'pipeline_type': p.pipeline_type,
             'pipeline_type_display': p.get_pipeline_type_display(),
             'line_points': p.line_points, 'line_color': p.line_color,
-            'line_weight': p.line_weight,
+            'line_weight': p.line_weight, 'line_weight_custom': p.line_weight_custom,
             'main_diameter': p.main_diameter,
             'flow_direction': p.flow_direction,
             'flow_direction_display': p.get_flow_direction_display(),
@@ -2480,6 +2480,7 @@ def zone_import_confirm(request):
 
 
 @login_required(login_url='core:login')
+@ensure_csrf_cookie
 def settings_page(request):
     """
     Settings page to manage zones and system configuration.
@@ -2490,7 +2491,7 @@ def settings_page(request):
     zones = Zone.objects.all().order_by('code')
     from core.models import PipelineImportBatch
     pipelines = Pipeline.objects.select_related('import_batch').order_by('code')
-    # 导入批次列表（水管管理 tab：来源列 + 整批删除）
+    # 导入批次列表（管道管理 tab：来源列 + 整批删除）
     pipeline_batches = list(
         PipelineImportBatch.objects
         .annotate(pipe_count=Count('pipelines', distinct=True),
@@ -5146,13 +5147,16 @@ def pipeline_new(request):
             pass
 
     if not is_admin:
-        messages.error(request, '无权限创建水管')
+        messages.error(request, '无权限创建管道')
         return redirect('core:dashboard')
 
     if request.method == 'POST':
         pipeline_type = request.POST.get('pipeline_type', Pipeline.TYPE_IRRIGATION)
-        if pipeline_type not in dict(Pipeline.TYPE_CHOICES):
-            pipeline_type = Pipeline.TYPE_IRRIGATION
+        from .pipeline_management import style_values
+        try:
+            pipe_style = style_values(request.POST)
+        except ValueError as exc:
+            return JsonResponse({'success': False, 'error': str(exc)}, status=400)
         manual_zone_ids = request.POST.getlist('zones')
 
         line_json = request.POST.get('line_points', '[]')
@@ -5184,7 +5188,9 @@ def pipeline_new(request):
             code=code,
             description=request.POST.get('description', ''),
             pipeline_type=pipeline_type,
-            line_weight=_safe_int(request.POST.get('line_weight'), 3),
+            color=pipe_style.get('color', ''),
+            line_weight=pipe_style.get('line_weight', 3),
+            line_weight_custom='auto_line_weight' not in request.POST,
             flow_direction=(request.POST.get('flow_direction')
                             if request.POST.get('flow_direction') in dict(Pipeline.FLOW_CHOICES)
                             else Pipeline.FLOW_FORWARD),
@@ -5198,7 +5204,7 @@ def pipeline_new(request):
         valves_count = _save_pipeline_valves(pipeline, request.POST.get('valves_json', '[]'))
         _invalidate_cached('dashboard:pipelines')
 
-        messages.success(request, f'水管 "{pipeline.name}" 创建成功（关联 {len(merged_zone_ids)} 个区域，{valves_count} 个阀门）')
+        messages.success(request, f'管道 "{pipeline.name}" 创建成功（关联 {len(merged_zone_ids)} 个区域，{valves_count} 个阀门）')
         return redirect('core:settings')
 
     ref_zones_json, ref_pipelines_json = _get_reference_map_data()
@@ -5230,13 +5236,18 @@ def pipeline_edit(request, pipeline_id):
             pass
 
     if not is_admin:
-        messages.error(request, '无权限修改水管')
+        messages.error(request, '无权限修改管道')
         return redirect('core:dashboard')
 
     pipeline = get_object_or_404(Pipeline, pk=pipeline_id)
 
     if request.method == 'POST':
-        pipeline_type = request.POST.get('pipeline_type', pipeline.pipeline_type)
+        from .pipeline_management import style_values
+        try:
+            pipe_style = style_values(request.POST, fallback_type=pipeline.pipeline_type)
+        except ValueError as exc:
+            return JsonResponse({'success': False, 'error': str(exc)}, status=400)
+        pipeline_type = pipe_style.get('pipeline_type', pipeline.pipeline_type)
         manual_zone_ids = request.POST.getlist('zones')
 
         line_json = request.POST.get('line_points', '[]')
@@ -5255,7 +5266,9 @@ def pipeline_edit(request, pipeline_id):
             pipeline.name = name
             pipeline.code = code
         pipeline.pipeline_type = pipeline_type
-        pipeline.line_weight = int(request.POST.get('line_weight', pipeline.line_weight))
+        pipeline.line_weight = pipe_style.get('line_weight', pipeline.line_weight)
+        pipeline.line_weight_custom = 'auto_line_weight' not in request.POST
+        pipeline.color = pipe_style.get('color', pipeline.color)
         pipeline.flow_direction = request.POST.get('flow_direction', pipeline.flow_direction)
         pipeline.source_label = request.POST.get('source_label', '')
         pipeline.main_diameter = _parse_float(request.POST.get('main_diameter'))
@@ -5266,7 +5279,7 @@ def pipeline_edit(request, pipeline_id):
         valves_count = _save_pipeline_valves(pipeline, request.POST.get('valves_json', '[]'))
         _invalidate_cached('dashboard:pipelines')
 
-        messages.success(request, f'水管 "{pipeline.name}" 更新成功（关联 {len(merged_zone_ids)} 个区域，{valves_count} 个阀门）')
+        messages.success(request, f'管道 "{pipeline.name}" 更新成功（关联 {len(merged_zone_ids)} 个区域，{valves_count} 个阀门）')
         return redirect('core:settings')
 
     ref_zones_json, ref_pipelines_json = _get_reference_map_data(exclude_pipeline_id=pipeline.id)
@@ -5307,80 +5320,22 @@ def pipeline_delete(request, pipeline_id):
             pass
 
     if not is_admin:
-        messages.error(request, '无权限删除水管')
+        messages.error(request, '无权限删除管道')
         return redirect('core:dashboard')
 
     pipeline = get_object_or_404(Pipeline, pk=pipeline_id)
     pipeline_name = pipeline.name
     pipeline.delete()
     _invalidate_cached('dashboard:pipelines')
-    messages.success(request, f'水管 "{pipeline_name}" 删除成功')
+    messages.success(request, f'管道 "{pipeline_name}" 删除成功')
     return redirect('core:settings')
 
 
 @require_POST
 @login_required(login_url='core:login')
 def pipeline_batch_delete(request, batch_id):
-    """整批删除一个 DXF 导入批次（水管管理页）。
-
-    先把该批次全部管道/阀门坐标备份成 JSON 文件（internal_server/
-    pipeline_backups/，删错可回滚），事务内删管道（阀门级联）+ 批次行。
-    """
-    import json as _json
-    import os
-    from django.conf import settings as _dj_settings
-    from django.db import transaction as _db_txn
-    from django.utils import timezone as _tz
-    from .dxf_views import _pipeline_dxf_gate   # 4aff3dce 把闸门挪到了 dxf_views
-    from .models import PipelineImportBatch, Pipeline, PipeValve
-
-    if not _pipeline_dxf_gate(request.user):
-        return JsonResponse({'success': False, 'error': '无权限'}, status=403)
-
-    batch = PipelineImportBatch.objects.filter(pk=batch_id).first()
-    if not batch:
-        return JsonResponse({'success': False, 'error': '批次不存在'}, status=404)
-    # prefetch 消掉备份 + valve_ids 两轮的每管道阀门查询（N+1）
-    pipelines = list(batch.pipelines.prefetch_related('valves', 'zones'))
-    valve_ids = [v.id for p in pipelines for v in p.valves.all()]
-    if not pipelines and not valve_ids:
-        batch.delete()   # 空批次直接清掉
-        _invalidate_cached('dashboard:pipelines')
-        return JsonResponse({'success': True, 'pipelines': 0, 'valves': 0, 'backup': ''})
-
-    # 坐标备份（回滚用）
-    backup_dir = os.path.join(_dj_settings.BASE_DIR, 'pipeline_backups')
-    os.makedirs(backup_dir, exist_ok=True)
-    ts = _tz.localtime().strftime('%Y%m%d_%H%M%S')
-    backup_path = os.path.join(backup_dir, f'batchdel_{batch.id}_{ts}.json')
-    with open(backup_path, 'w', encoding='utf-8') as bf:
-        _json.dump({
-            'batch': {'id': batch.id, 'name': batch.name, 'imported_at': batch.imported_at.isoformat()},
-            'deleted_at': _tz.now().isoformat(),
-            'pipelines': [{'id': p.id, 'name': p.name, 'code': p.code,
-                           'pipeline_type': p.pipeline_type, 'main_diameter': p.main_diameter,
-                           'flow_direction': p.flow_direction, 'source_label': p.source_label,
-                           'description': p.description, 'line_weight': p.line_weight,
-                           'line_points': p.line_points,
-                           'zone_ids': list(p.zones.values_list('id', flat=True)),
-                           'valves': [{'id': v.id, 'name': v.name, 'point': v.point,
-                                       'valve_type': v.valve_type, 'diameter': v.diameter,
-                                       'order': v.order,
-                                       'zone_id': v.zone_id, 'station_id': v.station_id}
-                                      for v in p.valves.all()]}
-                          for p in pipelines],
-        }, bf, ensure_ascii=False)
-
-    with _db_txn.atomic():
-        for p in pipelines:
-            p.delete()
-        batch.delete()
-    _invalidate_cached('dashboard:pipelines')
-    return JsonResponse({
-        'success': True,
-        'pipelines': len(pipelines), 'valves': len(valve_ids),
-        'backup': os.path.basename(backup_path),
-    })
+    from .pipeline_management import delete_batch
+    return delete_batch(request, batch_id)
 
 
 @require_POST
@@ -6014,7 +5969,7 @@ def batch_delete_pipeline(request):
     count, _ = Pipeline.objects.filter(pk__in=ids).delete()
     if count:
         _invalidate_cached('dashboard:pipelines')
-    messages.success(request, f'已删除 {count} 条水管')
+    messages.success(request, f'已删除 {count} 条管道')
     return JsonResponse({'success': True, 'deleted': count})
 
 
@@ -6611,60 +6566,20 @@ def maxicom_dashboard_api(request):
             'text': ev.text,
         })
 
-    # Weather summary: latest reading per station. Previously this ran one
-    # `readings.order_by('-timestamp').first()` query PER station (N+1). Now a
-    # single query fetches the latest-timestamp log per station via a Max()
-    # subquery, then we read those rows. (weather_station,timestamp) is indexed.
-    weather_summary = []
-    stations = list(MaxicomWeatherStation.objects.all())
-    if stations:
-        from django.db.models import Max as _Max
-        latest_per_station = {}
-        for log in (MaxicomWeatherLog.objects
-                    .filter(weather_station__in=stations,
-                            timestamp__in=MaxicomWeatherLog.objects
-                                .filter(weather_station__in=stations)
-                                .values('weather_station')
-                                .annotate(lt=_Max('timestamp'))
-                                .values('lt'))
-                    .select_related('weather_station')):
-            # Keep only the first (latest) per station in case of timestamp ties.
-            ws_id = log.weather_station_id
-            if ws_id not in latest_per_station:
-                latest_per_station[ws_id] = log
-        for ws in stations:
-            latest = latest_per_station.get(ws.id)
-            if latest:
-                weather_summary.append({
-                    'station': ws.name,
-                    'timestamp': latest.timestamp,
-                    'temperature': latest.temperature,
-                    'humidity': latest.humidity,
-                    'rainfall': latest.rainfall,
-                    'et': latest.et,
-                    'wind_run': latest.wind_run,
-                    'solar_radiation': latest.solar_radiation,
-                })
-
-    # ET trend: last 30 days of ET readings aggregated by day
-    et_trend = []
-    et_readings = MaxicomWeatherLog.objects.order_by('-timestamp')[:720]  # ~30 days * 24hrs
-    et_by_date = {}
-    for r in et_readings:
-        ts = r.timestamp or ''
-        if len(ts) >= 8:
-            date_str = ts[:8]  # YYYYMMDD
-            if date_str not in et_by_date:
-                et_by_date[date_str] = []
-            if r.et is not None:
-                et_by_date[date_str].append(r.et)
-    for date_str in sorted(et_by_date.keys()):
-        vals = et_by_date[date_str]
-        et_trend.append({
-            'date': f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:8]}",
-            'avg_et': round(sum(vals) / len(vals), 3) if vals else 0,
-            'count': len(vals),
-        })
+    # The daily page, API and workbook share the same observed-day aggregation.
+    from datetime import timedelta
+    from .maxicom_weather import weather_report_data
+    weather_end = timezone.localdate() - timedelta(days=1)
+    weather_data = weather_report_data(weather_end - timedelta(days=29), weather_end)
+    weather_summary, et_trend = [], []
+    for station in weather_data['stations']:
+        latest_day = max(station['days'])
+        latest = station['days'][latest_day]
+        weather_summary.append({'station': station['name'], 'timestamp': latest_day.strftime('%Y%m%d'),
+            'date': latest_day.isoformat(), 'period': 'day', **latest})
+        for day, values in sorted(station['days'].items()):
+            et_trend.append({'date': day.isoformat(), 'station': station['name'],
+                'total_et': values['et'], 'avg_et': None, 'count': values['observed_hours'], 'notes': values['notes']})
 
     # Station status breakdown
     station_status = {
@@ -6693,6 +6608,7 @@ def maxicom_dashboard_api(request):
         'sites': sites,
         'recent_events': recent_events,
         'weather_summary': weather_summary,
+        'weather_period': 'day', 'weather_source_note': weather_data['source_note'],
         'et_trend': et_trend,
         'station_status': station_status,
         'top_sites': top_sites,
@@ -12885,6 +12801,7 @@ def _po_planned_lines_batch(po_ids, cat_paths):
             'path': cat_paths.get(cat.id, cat.name_zh),
             'qty': ln.quantity, 'unit': ln.unit or cat.unit,
             'unit_price': str(ln.unit_price) if ln.unit_price is not None else '',
+            'supplier': ln.supplier,
         })
     return out
 
@@ -12916,15 +12833,19 @@ def _po_upsert_planned_lines(po, lines_raw):
         # Older clients omit the field; preserve an existing order's price.
         supplied=next(row for row in raw if int(row['category'])==ln['category'])
         price=prices[ln['category']] if 'unit_price' in supplied else (previous.unit_price if previous else None)
-        changed=price is not None and (previous is None or previous.unit_price!=price or previous.unit!=ln['unit'])
+        supplier = supplied.get('supplier', previous.supplier if previous else '')
+        if not isinstance(supplier, str) or len(supplier.strip()) > 200:
+            raise ValueError('供应商名称最多支持200个字符')
+        supplier = supplier.strip()
+        changed=price is not None and (previous is None or previous.unit_price!=price or previous.unit!=ln['unit'] or previous.supplier!=supplier)
         line,_=PurchaseOrderLine.objects.update_or_create(purchase_order=po,category_id=ln['category'],
-            defaults={'quantity':ln['quantity'],'unit':ln['unit'],'unit_price':price})
+            defaults={'quantity':ln['quantity'],'unit':ln['unit'],'unit_price':price,'supplier':supplier})
         if changed:
             unit=line.unit or line.category.unit
             if len(unit)>10:raise ValueError('采购价格的单位最多支持10个字符')
             InventoryPriceRecord.objects.filter(category_id=line.category_id,is_current=True).update(is_current=False)
             InventoryPriceRecord.objects.create(category_id=line.category_id,date=timezone.localdate(),
-                unit_price=price,unit=unit,is_current=True,note=f'采购订单：{po.order_number}'[:200])
+                unit_price=price,unit=unit,supplier=supplier,is_current=True,note=f'采购订单：{po.order_number}'[:200])
     from core.inventory_service import reconcile_purchase_order
     reconcile_purchase_order(po.pk)
 

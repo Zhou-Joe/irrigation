@@ -153,6 +153,9 @@ def _day_record(rows):
             output[field] = sum(values) / len(values)
         else:
             output[field] = sum(values)
+    temperatures = [_number(row.get('temperature')) for row in rows]
+    temperatures = [value for value in temperatures if value is not None]
+    output['temperature'] = sum(temperatures) / len(temperatures) if temperatures else None
     hours = len({_local_stamp(row['timestamp']).strftime('%Y%m%d%H') for row in rows})
     notes = []
     if hours < 24:

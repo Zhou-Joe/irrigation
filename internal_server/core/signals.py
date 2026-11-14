@@ -17,9 +17,10 @@ def _build_key_index():
     Built lazily (models must be ready) and keyed by the model class itself, so
     it can never drift from Django's actual model_name/app_label conventions.
     """
-    from core.models import Pipeline, Plant, Landmark, ZoneLandmarkAssignment, Patch, MapStyleSettings
+    from core.models import Pipeline, PipelineType, Plant, Landmark, ZoneLandmarkAssignment, Patch, MapStyleSettings
     return {
         Pipeline: ['dashboard:pipelines'],
+        PipelineType: ['pipeline:type-options:v1', 'dashboard:pipelines'],
         Plant: ['dashboard:plant_names'],
         Landmark: ['dashboard:landmarks'],
         ZoneLandmarkAssignment: ['dashboard:landmarks'],

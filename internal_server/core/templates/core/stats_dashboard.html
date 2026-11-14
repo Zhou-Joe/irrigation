@@ -246,6 +246,8 @@ table.excel-preview tbody tr:hover td { background:#e8f5e9; }
 {% endblock %}
 
 {% block content %}
+<a class="btn btn-secondary" href="{% url 'core:weather_daily' %}">气象日记录 / 24小时汇总</a>
+
 <div class="sh-container">
     {# ════════ Left sidebar: date range + heatmap controls + ranked table ════════ #}
     <aside class="sh-sidebar" id="shSidebar">

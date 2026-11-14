@@ -372,7 +372,9 @@ def _auto_pipeline_name_code(zone_ids, pipeline_type, exclude_pk=None):
         'control': ('控制线', 'CTL'),
         'comm': ('通讯线', 'COM'),
     }
-    type_label, type_prefix = type_meta.get(pipeline_type, ('灌溉主管', 'IRR'))
+    from .pipeline_management import type_options
+    custom_label = next((item['name'] for item in type_options() if item['code'] == pipeline_type), pipeline_type)
+    type_label, type_prefix = type_meta.get(pipeline_type, (custom_label, pipeline_type.upper()[:8]))
 
     zones = Zone.objects.filter(id__in=zone_ids).order_by('code')
     zone_names = list(zones.values_list('name', flat=True))

@@ -1,0 +1,24 @@
+{% extends 'core/base.html' %}
+{% block title %}气象日记录{% endblock %}
+{% block content %}
+<div class="page-header"><h1>气象日记录</h1><p>每日 DB 的 XA_WETHR 实际小时记录，按上海时间 00:00–24:00 汇总；各气象站独立统计。</p></div>
+<div class="card" style="padding:16px;">
+  <form method="get" style="display:flex;gap:12px;flex-wrap:wrap;align-items:end;">
+    <label>开始日期 <input type="date" name="start" value="{{ start|date:'Y-m-d' }}" required></label>
+    <label>结束日期 <input type="date" name="end" value="{{ end|date:'Y-m-d' }}" required></label>
+    <button class="btn btn-primary">查询日记录</button>
+    <button class="btn btn-secondary" name="format" value="xlsx">导出气象日报</button>
+  </form>
+  <p>{{ source_note }}</p><p>{{ notice|default:'' }}</p>
+  <div style="overflow:auto;"><table class="card-table">
+    <thead><tr><th>日期</th><th>气象站</th><th>最低温°C</th><th>最高温°C</th><th>湿度%</th><th>光照Ly</th><th>风程km</th><th>降雨mm</th><th>ET₀ mm</th><th>实际小时数</th><th>数据说明</th></tr></thead>
+    <tbody>{% for row in rows %}<tr>
+      <td>{{ row.date|date:'Y-m-d' }}</td><td>{{ row.station }}</td>
+      <td>{{ row.min_temp|floatformat:2|default:'—' }}</td><td>{{ row.max_temp|floatformat:2|default:'—' }}</td>
+      <td>{{ row.humidity|floatformat:2|default:'—' }}</td><td>{{ row.solar_radiation|floatformat:2|default:'—' }}</td>
+      <td>{{ row.wind_run|floatformat:2|default:'—' }}</td><td>{{ row.rainfall|floatformat:2|default:'—' }}</td>
+      <td>{{ row.et|floatformat:2|default:'—' }}</td><td>{{ row.observed_hours|default:'0' }}/24</td><td>{{ row.notes }}</td>
+    </tr>{% empty %}<tr><td colspan="11">该日期范围没有实际气象记录。缺测不代表数值为零。</td></tr>{% endfor %}</tbody>
+  </table></div>
+</div>
+{% endblock %}

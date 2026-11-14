@@ -32,6 +32,7 @@ def navigation(request):
         ('water_requests', '用水需求', '浇水申请与协调进度', 'drop'),
         ('inventory_management', '库存管理', '入库、出库、借用与归还', 'box'),
         ('stats_dashboard', '数据报表', '工作统计、分析与导出', 'chart'),
+        ('weather_daily', '气象日记录', '实际气象24小时汇总与ET₀来源', 'chart'),
         ('irrigation_dashboard', '灌溉数据', '用水分析与区域热力图', 'activity'),
         ('settings', '区域管理', '区域、设备与地图配置', 'layers'),
     ]

@@ -42,6 +42,9 @@
 
     // Pipeline layers group
     let pipelinesLayerGroup;
+    const pipelineTypeGroups = new Map();
+    const hiddenPipelineTypes = new Set();
+    let pipelinesVisible = true;
     let cadReferenceLayerGroup;
     let cadNotesLayerGroup;
     let cadUnmatchedLayerGroup;
@@ -1711,11 +1714,39 @@
      * per-valve markers (colored by whether the valve's Maxicom station watered
      * on the latest irrigation day).
      */
+    function setPipelineTypeVisibility(code, visible) {
+        const group = pipelineTypeGroups.get(code);
+        if (visible) { hiddenPipelineTypes.delete(code); if (group) pipelinesLayerGroup.addLayer(group); }
+        else { hiddenPipelineTypes.add(code); if (group) pipelinesLayerGroup.removeLayer(group); }
+        const inputs = Array.from(document.querySelectorAll('#pipelineTypeLayers input'));
+        const checked = inputs.filter(input => input.checked).length;
+        pipelinesVisible = checked > 0;
+        const master = document.getElementById('pipelineLayerAll');
+        if (master) { master.checked = checked === inputs.length && checked > 0; master.indeterminate = checked > 0 && checked < inputs.length; }
+        if (pipelinesVisible) map.addLayer(pipelinesLayerGroup);
+        else map.removeLayer(pipelinesLayerGroup);
+    }
+
     function renderPipelines(pipelines) {
         if(destroyed)return;
         pipelinesLayerGroup.clearLayers();
+        pipelineTypeGroups.clear();
         valveMarkersForLabels = [];   // rebuilt as valve markers are created below
 
+        const controls = document.getElementById('pipelineTypeLayers');
+        if (controls) {
+            controls.replaceChildren();
+            const kinds = new Map(pipelines.map(pipe => [pipe.pipeline_type, pipe.pipeline_type_display]));
+            kinds.forEach((name, code) => {
+                if (!pipelinesVisible) hiddenPipelineTypes.add(code);
+                const label = document.createElement('label'); label.className = 'map-layer-item';
+                const input = document.createElement('input'); input.type = 'checkbox'; input.checked = !hiddenPipelineTypes.has(code);
+                input.addEventListener('change', () => setPipelineTypeVisibility(code, input.checked));
+                const check = document.createElement('span'); check.className = 'map-layer-checkmark';
+                const title = document.createElement('span'); title.textContent = name;
+                label.append(input, check, title); controls.appendChild(label);
+            });
+        }
         pipelines.forEach(pipeline => {
             if (!pipeline.line_points || pipeline.line_points.length < 2) {
                 return;
@@ -1734,7 +1765,7 @@
 
             // Weight: map main_diameter (mm) to pixel weight; fall back to line_weight.
             let baseWeight = pipeline.line_weight || 3;
-            if (pipeline.main_diameter) {
+            if (pipeline.main_diameter && !pipeline.line_weight_custom) {
                 baseWeight = Math.max(3, Math.min(10, 2 + pipeline.main_diameter / 15));
             }
 
@@ -1795,7 +1826,13 @@
                 this.setStyle({ weight: baseWeight, opacity: 0.9 });
             });
 
-            pipelinesLayerGroup.addLayer(polyline);
+            let typeGroup = pipelineTypeGroups.get(pipeline.pipeline_type);
+            if (!typeGroup) {
+                typeGroup = L.layerGroup();
+                pipelineTypeGroups.set(pipeline.pipeline_type, typeGroup);
+                if (!hiddenPipelineTypes.has(pipeline.pipeline_type)) pipelinesLayerGroup.addLayer(typeGroup);
+            }
+            typeGroup.addLayer(polyline);
 
             // ── Valve markers (DOM divIcon squares — always render above canvas,
             //    clearly visible against zone fills. Green=filled=watered, gray
@@ -1844,7 +1881,7 @@
                 vm._tipContent = tipContent;   // for zoom-driven permanent toggle
                 vm._watered = watered;          // 未浇水阀门最大层级不常显 label（仍可悬停查看）
                 valveMarkersForLabels.push(vm);
-                pipelinesLayerGroup.addLayer(vm);
+                typeGroup.addLayer(vm);
             });
         });
     }
@@ -2136,6 +2173,15 @@
             const z = map.getZoom();
             syncMultiBoundaryDisplay(labelsVisible && z >= LABEL_MIN_ZOOM, z);
         } else if (layer === 'pipelines') {
+            pipelinesVisible = visible;
+            hiddenPipelineTypes.clear();
+            pipelineTypeGroups.forEach((group, code) => {
+                if (visible) pipelinesLayerGroup.addLayer(group);
+                else { hiddenPipelineTypes.add(code); pipelinesLayerGroup.removeLayer(group); }
+            });
+            const master = document.getElementById('pipelineLayerAll');
+            if (master) { master.checked = visible; master.indeterminate = false; }
+            document.querySelectorAll('#pipelineTypeLayers input').forEach(input => { input.checked = visible; });
             if (visible) {
                 if (!map.hasLayer(pipelinesLayerGroup)) map.addLayer(pipelinesLayerGroup);
             } else {

@@ -75,6 +75,7 @@ TEMPLATES = [
                 'django.contrib.messages.context_processors.messages',
                 'core.context_processors.notifications',
                 'core.context_processors.user_role',
+                'core.context_processors.pipeline_options',
                 'core.pwa.navigation',
                 'operations.context.workspace',
             ],

@@ -1177,7 +1177,8 @@ def import_dxf_pipelines(layer_specs, block_specs, uploaded_file=None,
             if diameter is not None and (not math.isfinite(diameter) or diameter <= 0):
                 raise ValueError(f'图层 {layer} 的管径需为正数')
             ptype = spec.get('type') or 'irrigation'
-            if ptype not in dict(Pipeline.TYPE_CHOICES):
+            from .pipeline_management import type_options
+            if ptype not in {item['code'] for item in type_options()}:
                 raise ValueError(f'图层 {layer} 的管线类型无效')
             paths = _decompose_paths(bucket['polys'], JOIN_TOL_M, meters_per_unit or 1.0)
             n_paths = 0
