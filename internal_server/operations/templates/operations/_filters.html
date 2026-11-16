@@ -1,7 +1,9 @@
 <section class="filter-card">
   <div class="preset-row"><button type="button" class="preset-pill" data-ops-days="7">近 7 天</button><button type="button" class="preset-pill" data-ops-days="30">近 30 天</button><button type="button" class="preset-pill" data-ops-days="90">近 90 天</button></div>
+  <div class="preset-row"><a href="?history=1" class="preset-pill" data-ops-refresh>全部导入历史</a>{% if historical_only %}<a href="?tab=records" class="preset-pill" data-ops-refresh>近期作业</a>{% endif %}</div>
   <form method="get" id="opsFilter" class="filter-row" data-ops-filter data-today="{% now 'Y-m-d' %}">
     <input type="hidden" name="tab" value="{{ active_tab|default:'records' }}">
+    {% if historical_only %}<input type="hidden" name="history" value="1">{% endif %}
     <div class="ff"><label for="dateFrom">开始日期</label><input type="date" id="dateFrom" name="date_from" value="{{ date_from }}" required></div>
     <div class="ff"><label for="dateTo">结束日期</label><input type="date" id="dateTo" name="date_to" value="{{ date_to }}" required></div>
     <div class="ff"><label for="opsLocation">地点</label><select name="location" id="opsLocation"><option value="">全部地点</option>{% for place in places %}<option value="{{ place.pk }}" {% if selected_location == place.pk|stringformat:'s' %}selected{% endif %}>{{ place.name }}{% if place.code %} · {{ place.code }}{% endif %}</option>{% endfor %}</select></div>

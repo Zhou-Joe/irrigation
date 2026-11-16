@@ -146,6 +146,7 @@ MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 AI_PRIVATE_ROOT = BASE_DIR / 'private_ai'
 FEEDBACK_PRIVATE_ROOT = Path(os.environ.get('FEEDBACK_PRIVATE_ROOT', str(BASE_DIR / 'private_feedback')))
+PEST_WORKORDER_PRIVATE_ROOT = Path(os.environ.get('PEST_WORKORDER_PRIVATE_ROOT', str(BASE_DIR / 'private_pest_workorders')))
 AI_EXECUTOR_BINARY = os.environ.get('AI_EXECUTOR_BINARY', 'docker')
 AI_EXECUTOR_IMAGE = os.environ.get('AI_EXECUTOR_IMAGE', '')
 

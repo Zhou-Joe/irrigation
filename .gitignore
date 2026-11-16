@@ -94,3 +94,5 @@ internal_server/private_ai/
 
 internal_server/private_email_reports/
 internal_server/private_feedback/
+internal_server/private_pest_workorders/
+/outputs/

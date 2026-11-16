@@ -18,6 +18,8 @@ from .access import active_membership, require_member, visible_locations, audit
 from .models import ReferenceCatalog, PestWorkData
 from .catalog_service import current_catalog, selection_snapshot
 from .map_data import location_map_data
+from . import workorder_media
+from .work_parameters import form_schema, parameter_snapshot
 
 
 def is_pest(request):
@@ -39,7 +41,7 @@ def records(request):
     qs = WorkReport.all_businesses.filter(business_team=member.team, pest_data__isnull=False)
     if member.role != 'manager' and not request.user.is_superuser:
         qs = qs.filter(worker__user=request.user)
-    return qs.select_related('worker', 'pest_data').order_by('-date','-id')
+    return qs.select_related('worker', 'pest_data', 'history_source__batch').order_by('-date','-id')
 
 
 def roots_for(catalog):
@@ -107,19 +109,24 @@ def pest_form_data(request):
     if report:
         time_options.update(value.strftime('%H:%M') for value in (report.work_start_time,report.work_end_time) if value)
     tree=chip_tree(roots_for(catalog))
+    places=list(visible_locations(member.team).select_related(None).only('id','name','code','kind','parent_id','parameters'))
     options=[{'id':str(p.pk),'name':p.name,'code':p.code,'kind':p.kind,'parent':str(p.parent_id) if p.parent_id else ''}
-             for p in visible_locations(member.team).select_related(None).only('id','name','code','kind','parent_id')]
+             for p in places]
+    historical=bool(report and hasattr(report,'history_source'))
     html = render_to_string('operations/_pest_workorder_form.html', {
         'catalog':catalog, 'work_tree':tree, 'location_options':options,
         'team':member.team, 'today':today.isoformat(), 'report':report,'task':task,
+        'report_media':workorder_media.media_items(report) if report else [],
+        'parameter_schema':form_schema(catalog,places,report.pest_data.parameters if report else None),
+        'historical_record':historical,
         'dates':list(dict.fromkeys(([report.date.isoformat()] if report else [])+[(today-timedelta(days=n)).isoformat() for n in range(90)])),
         'selected_date':report.date.isoformat() if report else today.isoformat(),
-        'selected_shift':report.shift if report and report.shift else WorkReport.SHIFT_CHOICES[0][0],
+        'selected_shift':report.shift if report else WorkReport.SHIFT_CHOICES[0][0],
         'preset_nodes':[s['node_id'] for s in (report.pest_data.selections if report else task.selections if task else [])],
         'preset_locations':[str(p.pk) for p in report.pest_data.locations.all()] if report else [str(task.location_id)] if task else [],
         'time_options':sorted(time_options),
-        'start_time':report.work_start_time.strftime('%H:%M') if report and report.work_start_time else clock(start_minutes),
-        'end_time':report.work_end_time.strftime('%H:%M') if report and report.work_end_time else clock(start_minutes+15),
+        'start_time':report.work_start_time.strftime('%H:%M') if report and report.work_start_time else '' if historical else clock(start_minutes),
+        'end_time':report.work_end_time.strftime('%H:%M') if report and report.work_end_time else '' if historical else clock(start_minutes+15),
         'shifts':[value for value,_ in WorkReport.SHIFT_CHOICES],
         'submission_key':str(uuid.uuid4())},request=request)
     return JsonResponse({'business':'pest-control', 'form_html':html,'form_title':'编辑植保工单' if report else '完成植保 PM 任务' if task else '植保作业工单'})
@@ -136,7 +143,26 @@ def pest_workorder(request, report_id=None):
         return JsonResponse({'success':False,'message':'团队身份已变化，请重新打开工单。'},status=409)
     if report_id and str(report_id)!=request.POST.get('report_id'):
         return JsonResponse({'success':False,'message':'工单编号不一致，请重新打开。'},status=400)
-    return _save_pest_workorder(request)
+    try:
+        # Reject oversized batches before the durable receipt hashes the files.
+        workorder_media.check_upload_limits(request.FILES.getlist('report_media'))
+    except ValueError as exc:
+        return JsonResponse({'success':False,'message':str(exc)},status=400)
+    try:
+        response = _save_pest_workorder(request)
+    except (ValueError, OSError):
+        workorder_media.cleanup_unattached(request)
+        return JsonResponse({'success':False,'message':'附件无法保存，请检查文件后重试；工单尚未提交。'},status=400)
+    except Exception:
+        workorder_media.cleanup_unattached(request)
+        raise
+    if response.status_code >= 400:
+        workorder_media.cleanup_unattached(request)
+    elif getattr(request, '_pest_created_media', []):
+        # A receipt race may replay a different successful request after this
+        # request's transaction rolled back. Its unattached files must not leak.
+        workorder_media.cleanup_unattached(request)
+    return response
 
 
 @submission('pest-workorder')
@@ -159,7 +185,8 @@ def _save_pest_workorder(request):
             raise ValueError('请填写有效的作业日期，不能晚于今天。')
         size = int(request.POST.get('team_size','1'))
         third_party=int(request.POST.get('third_party_count','0'))
-        if not (0 <= size <= 99 and 0 <= third_party <= 99 and size+third_party > 0):
+        historical=bool(report and hasattr(report,'history_source'))
+        if not (0 <= size <= 99 and 0 <= third_party <= 99 and (size+third_party > 0 or historical)):
             raise ValueError('请核对作业人数。')
         shift=request.POST.get('shift','')
         if shift and shift not in dict(WorkReport.SHIFT_CHOICES):
@@ -191,6 +218,18 @@ def _save_pest_workorder(request):
     except (ValueError,TypeError,ReferenceCatalog.DoesNotExist):
         # Do not disclose other teams' node/place identifiers.
         return JsonResponse({'success':False,'message':'请核对日期、人数、地点和作业内容；地点或目录不可用时请重新打开表单。'},status=400)
+    try:
+        raw_parameters=request.POST.get('parameters')
+        if raw_parameters is None and report:
+            old=report.pest_data.parameters
+            raw_parameters={section:[{key:item[key] for key in ('key','value','location_id') if key in item}
+                           for item in old.get(section,[])] for section in ('work','locations')}
+        parameter_values=parameter_snapshot(catalog,ids,locations,raw_parameters,
+            available_locations=visible_locations(member.team).select_related(None),
+            previous=report.pest_data.parameters if report else None)
+        media_plan = workorder_media.plan_submission(request, report)
+    except (ValueError,TypeError) as exc:
+        return JsonResponse({'success':False,'message':str(exc)},status=400)
     selections=selection_snapshot(catalog,ids)
     from core.role_utils import resolve_or_create_worker
     from core.workorder_tree_views import _calc_hours
@@ -212,7 +251,7 @@ def _save_pest_workorder(request):
             report=WorkReport.all_businesses.create(worker=worker,business_team=member.team,is_pm=bool(task),**values)
             report.ticket_number=f'PPC-PM-{task.pk}' if task else f'PPC-{report.pk}'
             report.save(update_fields=['ticket_number'])
-        detail,_=PestWorkData.objects.update_or_create(report=report,defaults=dict(catalog=catalog,selections=selections,
+        detail,_=PestWorkData.objects.update_or_create(report=report,defaults=dict(catalog=catalog,selections=selections,parameters=parameter_values,
             location_labels=[{'id':str(p.pk),'name':p.name,'code':p.code} for p in locations]))
         detail.locations.set(locations)
         if task and not editing:
@@ -221,6 +260,7 @@ def _save_pest_workorder(request):
             if not changed:
                 transaction.set_rollback(True)
                 return JsonResponse({'success':False,'message':'任务状态已有变化，请重新打开任务。'},status=409)
+        workorder_media.apply_submission(request, report, media_plan)
         audit(request,member.team,'pest.workorder.edit' if editing else 'pest.workorder.submit',report.pk)
     return JsonResponse({'success':True,'report_id':report.pk,'number':report.display_number,'message':'植保工单已保存。'})
 
@@ -236,6 +276,7 @@ def pest_report_detail(request, report_id):
     from .management_views import render_page
     member=require_member(request)
     report=get_object_or_404(records(request).prefetch_related('comments__author','edit_logs__editor'),pk=report_id)
-    context={'membership':member,'report':report,'can_manage':member.role=='manager' or request.user.is_superuser,
+    context={'membership':member,'report':report,'report_media':workorder_media.media_items(report),
+             'can_manage':member.role=='manager' or request.user.is_superuser,
              'can_submit':member.role in ('manager','field') or request.user.is_superuser}
     return render_page(request,'operations/pest_report_detail.html',context,'operations/_pest_report_detail.html')
