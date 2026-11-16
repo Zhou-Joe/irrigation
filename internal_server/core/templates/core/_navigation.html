@@ -25,6 +25,7 @@
         </div>
         <div class="top-nav-right">
             {% include 'operations/_workspace_switch.html' %}
+            <a href="{% url 'core:feedback' %}" class="top-nav-feedback{% if request.resolver_match.url_name == 'feedback' %} active{% endif %}" title="反馈与建议" aria-label="反馈与建议"><svg class="ui-icon" aria-hidden="true"><use href="#pwa-message"/></svg><span>反馈</span></a>
             {% if pest_mode %}<a class="top-nav-notif" href="/work-reports/?tab=tasks" title="待完成的植保任务" aria-label="查看植保待办任务"><svg class="ui-icon" aria-hidden="true"><use href="#pwa-bell"/></svg><span class="notif-count{% if pest_pending_task_count %} show{% endif %}" aria-hidden="true">{% if pest_pending_task_count > 99 %}99+{% else %}{{ pest_pending_task_count }}{% endif %}</span></a>{% else %}<button type="button" class="top-nav-notif" id="navNotifBtn" title="通知与PM任务" aria-label="查看通知和PM任务" aria-haspopup="dialog" aria-controls="notifPopup" aria-expanded="false" onclick="reopenNotifPopup()">
                 <svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-bell"/></svg>
                 <span class="notif-count" id="navNotifCount" aria-hidden="true">0</span>
@@ -34,7 +35,7 @@
         </div>
     </nav>
     <div class="mobile-nav-overlay" id="mobileNavOverlay" onclick="toggleMobileNav()"></div>
-    <div class="mobile-nav-dropdown" id="mobileNavDropdown">{% if pest_mode %}{% include 'operations/_navigation_links.html' %}<a href="{% url 'operations:profile' %}">我的账号</a><a href="/logout/">退出</a>{% else %}
+    <div class="mobile-nav-dropdown" id="mobileNavDropdown"><a href="{% url 'core:feedback' %}">反馈与建议</a>{% if pest_mode %}{% include 'operations/_navigation_links.html' %}<a href="{% url 'operations:profile' %}">我的账号</a><a href="/logout/">退出</a>{% else %}
         <a href="{% url 'core:dashboard' %}" class="{% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}">地图总览</a>
         <a href="{% url 'core:work_reports' %}" class="{% if request.resolver_match.url_name == 'work_reports' %}active{% endif %}">维修日志</a>
         <a href="{% url 'core:water_requests' %}" class="{% if request.resolver_match.url_name == 'water_requests' %}active{% endif %}">需求</a>

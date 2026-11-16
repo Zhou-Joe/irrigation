@@ -32,6 +32,25 @@ from core.ai_access import can_use_assistant
 
 logger = logging.getLogger(__name__)
 
+
+def _confirmed_quote_receipt(request, key):
+    """Read the existing save receipt; chat/model text can never authorize a write."""
+    from .models import SubmissionReceipt
+    from .role_utils import is_admin
+    from operations.map_views import is_pest
+    if not is_admin(request.user) or is_pest(request):
+        raise ValueError('当前账号或业务视图无权确认库存报价')
+    try:
+        if not isinstance(key, str) or str(uuid.UUID(key)) != key:
+            raise ValueError
+    except (ValueError, TypeError, AttributeError):
+        raise ValueError('报价确认编号无效') from None
+    item = SubmissionReceipt.objects.filter(owner=request.user, key=key, kind='inventory.quote.confirm',
+        status_code__gte=200, status_code__lt=300).first()
+    if item is None or item.response.get('success') is not True:
+        raise ValueError('未找到这份报价的成功写入回执，请先在报价卡片中确认或核对保存结果')
+    return {'submission_key': key, 'result': item.response}
+
 def _sse(event_type: str, data: dict) -> str:
     """Format one Server-Sent Event frame."""
     return f"data: {json.dumps({'event': event_type, **data}, ensure_ascii=False)}\n\n"
@@ -103,6 +122,8 @@ def ai_chat(request):
             if any(item not in available for item in attachment_ids):
                 raise ValueError('附件不属于当前对话、已过期或不存在，请重新上传')
             attachments = [available[item] for item in attachment_ids]
+        quote_receipt = (_confirmed_quote_receipt(request, body['quote_receipt'])
+                         if 'quote_receipt' in body else None)
     except json.JSONDecodeError:
         return JsonResponse({'error': '消息或会话格式无效'}, status=400)
     except ValueError as exc:
@@ -132,7 +153,8 @@ def ai_chat(request):
         try:
             yield _sse('thread', {'thread_id': thread_id, 'reset': reset, **policy()})
             started[0] = True
-            yield from _stream_via_queue(message.strip(), thread_id, request.user.pk, attachments)
+            kwargs = {'quote_receipt': quote_receipt} if quote_receipt else {}
+            yield from _stream_via_queue(message.strip(), thread_id, request.user.pk, attachments, **kwargs)
         finally:
             release_or_cancel()
     resp = StreamingHttpResponse(event_stream(), content_type='text/event-stream')
@@ -166,7 +188,7 @@ def _human_with_attachments(message, thread_id, user_id, attachments):
         'original_question': message, 'attachments': safe_attachments})
 
 
-def _stream_via_queue(message: str, thread_id: str, user_id=None, attachments=None):
+def _stream_via_queue(message: str, thread_id: str, user_id=None, attachments=None, *, quote_receipt=None):
     q = queue.Queue(maxsize=128)
     stopped = threading.Event()
     sentinel = object()
@@ -185,8 +207,6 @@ def _stream_via_queue(message: str, thread_id: str, user_id=None, attachments=No
         context = {}
         try:
             from core.ai_agent import build_agent, ensure_workspace
-            ensure_workspace(thread_id, refresh=True)
-            put(('snapshot', {'at': timezone.localtime().isoformat()}))
             agent = build_agent()
             config = {'configurable': {'thread_id': thread_id}, 'recursion_limit': 30}
             context = {'thread_id': thread_id, 'user_id': user_id, 'cancel_event': stopped,
@@ -195,6 +215,21 @@ def _stream_via_queue(message: str, thread_id: str, user_id=None, attachments=No
                        'requested_image_ids': [], 'image_cache': {}, 'images_sent_to_model': False}
             seen = {}
             human = _human_with_attachments(message, thread_id, user_id, attachments)
+            if quote_receipt:
+                from langchain_core.messages import AIMessage
+                result = quote_receipt['result']
+                answer = (f'报价已保存：新增 {int(result.get("created_parts_count", 0))} 个部件、'
+                          f'{int(result.get("prices_added", 0))} 条供应商报价记录，'
+                          f'跳过 {int(result.get("duplicate_prices", 0))} 条重复价格。')
+                # Persist the verified outcome so later questions know the save
+                # succeeded. A fresh model call cannot contradict the receipt.
+                agent.update_state(config, {'messages': [human, AIMessage(content=answer,
+                    additional_kwargs={'quote_receipt': quote_receipt})]}, as_node='model')
+                put(('token', {'text': answer}))
+                AIConversation.objects.filter(pk=thread_id).update(updated_at=timezone.now())
+                return
+            ensure_workspace(thread_id, refresh=True)
+            put(('snapshot', {'at': timezone.localtime().isoformat()}))
             stream = agent.stream({'messages': [human]}, config=config,
                 context=context, stream_mode='messages')
             try:

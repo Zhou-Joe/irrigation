@@ -93,3 +93,4 @@ internal_server/media/ai_checkpoints.sqlite3*
 internal_server/private_ai/
 
 internal_server/private_email_reports/
+internal_server/private_feedback/

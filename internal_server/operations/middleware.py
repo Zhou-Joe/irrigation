@@ -12,6 +12,9 @@ class BusinessAccessMiddleware:
     def __call__(self, request):
         is_ops = request.path == '/ops' or request.path.startswith('/ops/')
         request.operations_shell = is_ops
+        # Feedback has its own active-team and photo-visibility checks.
+        if request.path == '/feedback/' or request.path.startswith('/feedback/photos/'):
+            return self.get_response(request)
         if not settings.MULTI_TEAM_ENABLED:
             return HttpResponseNotFound() if is_ops else self.get_response(request)
         if is_ops:

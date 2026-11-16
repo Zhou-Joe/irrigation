@@ -41,6 +41,29 @@ class Membership(models.Model):
         constraints = [models.UniqueConstraint(fields=['user', 'team'], name='ops_one_membership_per_team')]
 
 
+class Feedback(models.Model):
+    """One feedback stream, attributed to the submitting team."""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    team = models.ForeignKey(Team, on_delete=models.PROTECT, related_name='feedback')
+    author = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL,
+                               related_name='feedback')
+    message = models.TextField(max_length=5000)
+    submission_key = models.UUIDField(default=uuid.uuid4, editable=False)
+    fingerprint = models.CharField(max_length=64, editable=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at', '-pk']
+        indexes = [models.Index(fields=['team', '-created_at'], name='ops_feedback_team_date')]
+        constraints = [models.UniqueConstraint(fields=['author', 'submission_key'], name='ops_feedback_submission')]
+
+
+class FeedbackPhoto(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    feedback = models.ForeignKey(Feedback, on_delete=models.CASCADE, related_name='photos')
+    storage_name = models.CharField(max_length=120)
+
+
 class Location(models.Model):
     KINDS = [('zone', '室外区域'), ('building', '建筑'), ('floor', '楼层'), ('room', '房间'),
              ('monitoring', '监测点'), ('trap_cage', '诱捕笼'), ('beehive', '蜂箱'), ('other', '其他地点')]

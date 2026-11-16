@@ -19,6 +19,24 @@
     };
     let sequence = 0, enabled = true;
     const normalized = value => String(value || '').normalize('NFKC').trim().replace(/\s+/g, ' ').toLocaleLowerCase();
+    function isConfirmation(message) {
+        if (typeof message !== 'string' || message.length > 100) return false;
+        const text = message.normalize('NFKC').toLowerCase().replace(/\s+/g, '').replace(/[。.!！]+$/, '').replace(/^请/, '').replace(/吧$/, '');
+        return /^(?:确认|确定|(?:确认|确定|同意)?(?:写入|保存|导入|更新)(?:(?:这份|当前|本次)?(?:报价|价格)(?:记录)?)?|(?:确认|确定|同意)(?:这份|当前|本次)?(?:报价|价格)(?:记录)?)$/.test(text) ||
+            /^(?:please)?(?:confirm|(?:confirm|save|import|record|update)(?:the|this|current)?(?:quote|quotation|prices|pricerecords))$/.test(text);
+    }
+    async function confirmFromChat(message, threadId) {
+        if (!enabled || !threadId || !isConfirmation(message)) return null;
+        const owned = [...sessions].filter(session => session.threadId === threadId && session.key);
+        const pending = owned.filter(session => !['success','cancelled'].includes(session.phase));
+        if (pending.length > 1) return {handled:true, success:false, message:'当前对话有多份待确认报价，请点击需要保存的那份卡片上的“确认写入”，避免保存错单。'};
+        const session = pending[0] || owned.filter(session => session.phase === 'success').at(-1);
+        if (!session) return null;
+        if (!['review','uncertain','success'].includes(session.phase)) return {handled:true, success:false, message:'报价仍在处理中，请稍后再确认。'};
+        const result = session.result || await session.confirm();
+        return {handled:true, ...(result || {success:false, message:session.status || '请先补全报价卡片中的供应商、日期与部件选择，再确认写入。'}),
+            submission_key: result?.success ? session.key : null};
+    }
     function historyText(record) {
         if (!record || typeof record !== 'object') return '';
         const price = record.unit_price == null || record.unit_price === '' ? '' : '¥' + String(record.unit_price) + (record.unit ? ' / ' + record.unit : '');
@@ -88,7 +106,7 @@
         wrap.append(input, list); return wrap;
     }
 
-    function mount({host, csrf, onChange = () => {}, onStatus = () => {}, onBusy = () => {}, file = null, draft = null, restore = false}) {
+    function mount({host, csrf, onChange = () => {}, onStatus = () => {}, onBusy = () => {}, file = null, draft = null, restore = false, threadId = null}) {
         const card = el('section', 'ivq-card'); card.setAttribute('aria-label', 'EnGenie 报价提取与确认');
         const title = el('div', 'ivq-heading'); title.append(symbol('file'), el('strong', '', '报价提取'));
         const status = el('div', 'ivq-status'); status.setAttribute('role', 'status'); status.setAttribute('aria-live', 'polite');
@@ -99,9 +117,10 @@
         card.append(title, status, pause, source, review, result); host.append(card);
         const state = {phase:'source', controller:null, payload:null, token:null, key:null, rows:[], catalog:[],
             supplierChoice:'pending', supplierName:'', sourceMode:file ? 'file' : 'text'};
-        let disposed = false, selectedFile = file;
+        let disposed = false, selectedFile = file, lastMessage = '', savedResult = null;
         const notify = () => { if (!disposed) { onChange(); onBusy(); } };
         function setStatus(message, kind = '') {
+            lastMessage = message;
             status.className = 'ivq-status' + (kind ? ' is-' + kind : ''); status.replaceChildren();
             if (kind === 'busy') { const spinner = el('span', 'ai-spin-ring'); spinner.setAttribute('aria-hidden', 'true'); status.append(spinner); }
             else if (kind) status.append(symbol(kind === 'success' ? 'check' : 'alert'));
@@ -420,7 +439,7 @@
             renderBody(); article.append(heading, sourcePath, sourceInfo, body); return article;
         }
         function snapshot() {
-            if (!review.reportValidity()) return null;
+            if (!review.reportValidity()) { setStatus('请先补全报价卡片中的必填项，再确认写入。', 'error'); return null; }
             if (!supplier.value.trim() || state.supplierChoice === 'pending') { setStatus('请先选择历史供应商，或明确按填写的名称记录。','error'); supplier.focus(); return null; }
             const rows = state.rows.filter(row => row.action !== 'skip');
             if (!rows.length) { setStatus('请至少保留一项报价。', 'error'); return null; }
@@ -437,6 +456,7 @@
                 items:JSON.stringify(state.rows.map(row => ({row_id:row.row_id, action:row.action, category_id:row.category_id || '', parent_id:row.parent_id || '', name:row.name.trim(), code:row.code.trim(), unit:row.unit.trim(), unit_price:row.unit_price.trim()})))};
         }
         function displayResult(data, refresh = true) {
+            savedResult = data;
             phase('success'); review.hidden = true; source.hidden = true; result.hidden = false; result.replaceChildren();
             setStatus(data.message || '报价已写入库存。', 'success');
             const created = Array.isArray(data.created_parts) ? data.created_parts : [];
@@ -499,17 +519,20 @@
                 if (!data) data = await request('/inventory/quotes/confirm/', body);
                 if (disposed) return;
                 displayResult(data);
+                return data;
             } catch (error) {
                 if (disposed) return;
                 phase(error.uncertain ? 'uncertain' : 'review');
                 setStatus(error.uncertain ? '连接中断，写入结果尚未确定。已保留本次内容和提交编号，请点“重试确认结果”，避免重新导入。' : error.message || '未能保存，请核对后再确认。', 'error');
                 confirmButton.textContent = error.uncertain ? '重试确认结果' : '确认写入';
                 if (!error.uncertain) state.payload = null;
+                return {success:false, uncertain:!!error.uncertain, message:lastMessage};
             } finally { if (!disposed) { confirmButton.disabled = !enabled; syncEnabled(); notify(); } }
         }
         const moveControls = [];
         const session = {
             card, get phase() { return state.phase; },
+            threadId, get key() { return state.key; }, get status() { return lastMessage; }, get result() { return savedResult; }, confirm,
             setEnabled(value) {
                 if (!value && state.phase === 'extracting') {
                     state.controller?.abort(); phase('source'); abortButton.hidden = true;
@@ -528,7 +551,7 @@
         return session;
     }
     window.EnGenieQuotes = {
-        mount,
+        mount, isConfirmation, confirmFromChat,
         isBlocking:() => [...sessions].some(session => ['extracting','saving','uncertain','checking'].includes(session.phase)),
         retainPending(all = false) {
             const keep = new Set();
