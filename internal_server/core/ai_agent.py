@@ -1900,7 +1900,7 @@ def prepare_inventory_quote(attachment_id: str = '', attachment_ids: list[str] |
     attachment_id/attachment_ids必须是本对话附件ID。未传ID时使用本轮附件，或用户本轮原始文字。
     保留原单供应商、日期、部件及来源层级，优先推荐已有供应商与部件候选。
     未确定的项目由用户选择关联、新建或跳过；只有用户明确选择新建时才放入指定目录或根层。
-    不自动导入目录；必须等待用户点击卡片上的确认按钮。普通总结附件不要调用此工具。
+    不自动导入目录；等待用户核对卡片后点击确认，或在聊天中明确输入“确认写入”。普通总结附件不要调用此工具。
     """
     try:
         from core.ai_attachments import list_attachments, read_attachment, image_attachment
@@ -1959,7 +1959,7 @@ def prepare_inventory_quote(attachment_id: str = '', attachment_ids: list[str] |
                    'matched_parts': matched, 'unmatched_parts': len(draft['items']) - matched,
                    'parts_with_candidates': candidates, 'default_new_parts': 0,
                    'supplier': draft['supplier'], 'quote_date': draft['quote_date'],
-                   'message': '报价确认卡片已准备好，优先展示已有供应商与部件候选。待选择项不会默认新建；请用户核对并选择后点击确认写入。'}
+                   'message': '报价确认卡片已准备好。请用户核对供应商、日期与部件选择后，点击卡片确认，或在聊天中输入“确认写入”。待选择项不会默认新建。'}
         return json.dumps(summary, ensure_ascii=False), {'type': 'inventory_quote_draft', 'draft': draft}
     except Exception as exc:
         fallback = ('报价图片未成功识别，当前模型可能不支持图片；请改用支持视觉的模型，或粘贴报价文字。'
@@ -2103,7 +2103,8 @@ def build_agent():
         '- 图片由系统实际传入视觉消息；历史图片追问可先 read_chat_attachment 对应图片ID，系统会在下一次模型调用提供图片。只看元数据不能声称看过图。\n'
         '- CSV/XLSX/JSON 附件的 analysis_name 是私有计算工作区相对文件名，可用 run_python_code 的 pd.read_csv/read_excel 或 json 读取，不能猜测服务器路径。\n'
         '- 用户明确要求提取、导入或匹配报价时才调用 prepare_inventory_quote；可先用 search_inventory_parts 按编码、名称、目录、供应商和报价日期查看真实部件及历史价格。\n'
-        '- prepare_inventory_quote 只生成待确认卡片，不写业务数据库。用户必须亲自点击卡片确认按钮。你没有最终确认写入工具，也不能用其他工具、代码或HTTP绕过确认。\n'
+        '- prepare_inventory_quote 生成待确认卡片。用户核对并补全供应商、日期、部件选择后，可以点击卡片“确认写入”，也可以在当前对话明确输入“确认写入”或“确认保存报价”；聊天界面会通过同一个有权限校验的报价确认入口保存，成功后提供真实回执。对有权限的用户，不要把该流程误说成没有写入工具或只能分析；若服务端明确返回权限错误，则如实说明原因。\n'
+        '- 正式保存由用户确认操作执行，不能用代码、HTTP或其他工具绕过；没有成功回执时不得声称已保存。存在待选择项时，说明需核对哪项并引导补全卡片；多份待确认报价须由用户选择对应卡片，不能猜测保存哪份。\n'
         '- 优先核对卡片中的已有供应商与部件候选及匹配理由；未确定项保持待选择，不能将其描述为默认新建。原报价层级只供核对，已有部件沿用系统目录；仅用户明确选择新建时，才使用其选择的目录或根层。缺失供应商、日期、金额不能猜。\n'
     )
     # 时间块插在系统提示词最前面，保证模型一开始就知道当前日期。

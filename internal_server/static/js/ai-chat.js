@@ -295,7 +295,7 @@
             for (const draft of drafts) {
                 if (!draft?.submission_key || quoteCards.has(draft.submission_key)) continue;
                 quoteCards.add(draft.submission_key);
-                window.EnGenieQuotes.mount({host:quotes,csrf:getCSRF,draft,restore,onChange:()=>scrollLatest(false),onStatus:say,onBusy:sendingState});
+                window.EnGenieQuotes.mount({host:quotes,csrf:getCSRF,draft,restore,threadId:ownerThread || threadId,onChange:()=>scrollLatest(false),onStatus:say,onBusy:sendingState});
             }
         }
         function renderTools() {
@@ -448,7 +448,14 @@
         const attachmentMessage = byId('aiChatAttachmentMessage'); if (attachmentMessage) { attachmentMessage.hidden = true; attachmentMessage.textContent = ''; }
         const run = {id:++sequence, controller:new AbortController(), view:responseView(text,attachments,threadId)}; activeRun = run; sendingState(); let completed = false;
         try {
-            const response = await fetch('/api/ai/chat',{method:'POST',credentials:'same-origin',signal:run.controller.signal,headers:{'Content-Type':'application/json','X-CSRFToken':getCSRF()},body:JSON.stringify({message:text,thread_id:threadId,attachment_ids:attachments.map(file=>file.id)})});
+            // A real user's explicit confirmation submits the same reviewed card
+            // as its button. The model never receives a general database write tool.
+            const confirmation = !attachments.length && quotesAllowed() ? await window.EnGenieQuotes?.confirmFromChat(text,threadId) : null;
+            if (run.controller.signal.aborted || sequence !== run.id) return;
+            if (confirmation?.handled && !confirmation.success) {
+                run.view.event({event:'token',text:confirmation.message}); run.view.finish('done'); return;
+            }
+            const response = await fetch('/api/ai/chat',{method:'POST',credentials:'same-origin',signal:run.controller.signal,headers:{'Content-Type':'application/json','X-CSRFToken':getCSRF()},body:JSON.stringify({message:text,thread_id:threadId,attachment_ids:attachments.map(file=>file.id),quote_receipt:confirmation?.submission_key || undefined})});
             if (!response.ok) {
                 let message = '请求失败 (HTTP ' + response.status + ')'; try { const data = await response.json(); if (data.error) message = String(data.error); } catch (_) {} throw new Error(message);
             }
