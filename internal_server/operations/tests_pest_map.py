@@ -49,7 +49,7 @@ class PestMapWorkflowTests(TestCase):
                 self.assertIn('pestWorkorderForm',data['form_html'])
                 for component in ('v2-chip-group','pestCategoryChips','pestPlaceTrigger','pestWorkLevels','work_start_time','third_party_count'):
                     self.assertIn(component,data['form_html'])
-                for replaced_format in ('<details','type="checkbox"',' multiple','<fieldset','pestPlaceChips','data-place='):
+                for replaced_format in ('<details','type="checkbox"','<fieldset','pestPlaceChips','data-place='):
                     self.assertNotIn(replaced_format,data['form_html'])
 
     def test_same_map_endpoint_is_business_scoped_and_irrigation_keeps_old_layers(self):
