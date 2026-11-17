@@ -26,4 +26,10 @@
 
 ## 上线
 
-执行 `python manage.py migrate` 应用 `core.0144_worker_types` 和 `operations.0010_landscaping_workspace`。后者创建绿化业务与默认团队。随后执行 `python manage.py collectstatic --noinput` 并重启应用。建筑方位沿用现有参数字段。本次修改仍在本地工作区，生产环境部署待执行。
+2026-11-17 已在生产部署功能提交 `089af89c`。应用 `core.0144_worker_types` 和 `operations.0010_landscaping_workspace`，创建绿化业务与默认团队，并更新静态文件、重启应用。建筑方位沿用现有参数字段。
+
+生产 Python 3.14.4 的隔离回归同样通过 155 项。生产数据库副本先演练两项迁移，正式切换时核对 112 张原有表的原始列数据，内容一致。数据库完整性检查通过，6 条原有应用定时任务已完整恢复。
+
+`horticulture` 为 active/running，`ExecMainStatus=0`。生产账号下的 13 项只读页面检查覆盖灌溉、植保、绿化和经理／一线权限，数据库写入数为零。经阿里云入口验证登录、注册、manifest 均返回 200，五项更新的脚本及反馈样式与提交内容的 SHA-256 一致。
+
+私有回滚备份位于生产机 `/home/noname/irrigation/deployment_backups/feedback-directions-20261117-134901/`，包含切换前源码、配置、数据库和静态文件。
