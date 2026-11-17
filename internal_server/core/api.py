@@ -104,6 +104,7 @@ def worker_login(request):
                 'full_name': worker.full_name,
                 'phone': worker.phone,
                 'role': 'field_worker',
+                'worker_type': worker.worker_type,
                 'department': worker.department,
                 'department_other': worker.department_other,
             }
@@ -278,7 +279,7 @@ class WorkerSerializer(serializers.ModelSerializer):
         model = Worker
         fields = [
             'id', 'user', 'employee_id', 'full_name', 'phone',
-            'active', 'created_at', 'updated_at'
+            'worker_type', 'active', 'created_at', 'updated_at'
         ]
         read_only_fields = ['created_at', 'updated_at']
 

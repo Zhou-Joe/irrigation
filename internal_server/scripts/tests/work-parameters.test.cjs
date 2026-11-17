@@ -31,3 +31,12 @@ test('a required work binding makes its building field required',()=>{
     const copy=structuredClone(schema);copy.nodes[0].parameters[1].required=true;
     assert.equal(activeFields(copy,['bird-leaf'],['a']).locations[0].required,true);
 });
+test('two work bindings share one building field and retain any required constraint',()=>{
+    const copy=structuredClone(schema);
+    copy.nodes.push({id:'a-required',parent:'',parameters:[{key:'direction',label:'另一名称',type:'location',required:true}]});
+    for(const ids of [['bird-leaf','a-required'],['a-required','bird-leaf']]){
+        const fields=activeFields(copy,ids,['a']);
+        assert.equal(fields.locations.length,1);
+        assert.equal(fields.locations[0].required,true);
+    }
+});

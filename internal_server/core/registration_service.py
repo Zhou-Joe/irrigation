@@ -31,6 +31,8 @@ def approve(registration_id, actor):
             if reg.email_confirmation_required and not reg.email_verified_at:
                 raise ValueError('该申请尚未完成邮箱确认，暂不能批准')
             role_map={'manager':(ManagerProfile,'ADM'),'dept_user':(DepartmentUserProfile,'DEPT'),'field_worker':(Worker,'EMP')}
+            if reg.requested_role == 'field_worker' and reg.worker_type not in dict(Worker.WORKER_TYPE_CHOICES):
+                raise ValueError('请选择有效的一线种类')
             model,prefix=role_map[reg.requested_role]
             if User.objects.filter(username=reg.username).exists():
                 raise ValueError('用户名已存在，请先处理重复申请')
@@ -43,6 +45,8 @@ def approve(registration_id, actor):
                 raise ValueError('工号已存在，请修改注册申请中的工号')
             user=User.objects.create(username=reg.username,password=reg.password,first_name=reg.full_name,email=reg.email)
             fields=dict(user=user,employee_id=employee,full_name=reg.full_name,phone=reg.phone)
+            if model is Worker:
+                fields['worker_type'] = reg.worker_type
             if model is not ManagerProfile:
                 fields.update(department=reg.department or ('ENT' if model is DepartmentUserProfile else ''),
                     department_other=reg.department_other if reg.department=='其他' else '')
@@ -50,10 +54,16 @@ def approve(registration_id, actor):
             from django.conf import settings
             if settings.MULTI_TEAM_ENABLED:
                 from operations.models import Team, Membership
-                team=Team.objects.filter(code='irrigation',business__code='irrigation',
-                    legacy_irrigation_access=True,active=True,business__active=True).first()
+                business = reg.worker_type if model is Worker else Worker.TYPE_IRRIGATION
+                teams = Team.objects.filter(business__code=business, active=True, business__active=True)
+                if business == Worker.TYPE_IRRIGATION:
+                    teams = teams.filter(legacy_irrigation_access=True)
+                team = teams.filter(code=business).first()
+                if team is None and teams.count() == 1:
+                    team = teams.first()
                 if team is None:
-                    raise ValueError('灌溉团队尚未启用，无法完成注册审批')
+                    label = dict(Worker.WORKER_TYPE_CHOICES)[business]
+                    raise ValueError(f'{label}对应团队尚未启用或默认团队不明确，无法完成注册审批')
                 Membership.objects.create(user=user,team=team,
                     role={'manager':'manager','field_worker':'field','dept_user':'requester'}[reg.requested_role])
             reg.status='approved';reg.employee_id=employee;reg.created_user=user

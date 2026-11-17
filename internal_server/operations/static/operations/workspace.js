@@ -37,7 +37,7 @@
         const nav=doc.getElementById('appNavigation');if(nav)document.getElementById('appNavigation').replaceChildren(...[...nav.childNodes].map(n=>document.importNode(n,true)));
         const old=document.querySelector('.pwa-bottom-nav'),next=doc.querySelector('.pwa-bottom-nav');
         if(old&&next){old.dataset.userId=next.dataset.userId;old.style.cssText=next.style.cssText;
-            for(const link of old.querySelectorAll('[data-pwa-nav]')){const counterpart=next.querySelector('[data-pwa-nav="'+link.dataset.pwaNav+'"]');link.hidden=!counterpart||counterpart.hidden;}}
+            for(const link of old.querySelectorAll('[data-pwa-nav]')){const counterpart=next.querySelector('[data-pwa-nav="'+link.dataset.pwaNav+'"]');link.hidden=!counterpart||counterpart.hidden;if(counterpart){link.href=counterpart.href;link.innerHTML=counterpart.innerHTML;}}}
         const list=document.querySelector('.pwa-module-list'),newList=doc.querySelector('.pwa-module-list');
         if(list&&newList)list.replaceChildren(...[...newList.childNodes].map(n=>document.importNode(n,true)));
         for(const link of document.querySelectorAll('[data-pwa-nav]')){if(link.dataset.pwaNav==='map')link.setAttribute('aria-current','page');else link.removeAttribute('aria-current');}
@@ -66,6 +66,10 @@
             const doc=new DOMParser().parseFromString(await page.text(),'text/html'),next=doc.getElementById('dashboardWorkspace');
             let current=document.getElementById('dashboardWorkspace');
             if(!next)throw Error('地图组件不可用，请重试。');
+            for(const style of doc.querySelectorAll('head link[rel="stylesheet"],head style')){
+                const present=style.tagName==='LINK'?[...document.querySelectorAll('head link[rel="stylesheet"]')].some(s=>s.href===style.href):[...document.querySelectorAll('head style')].some(s=>s.textContent===style.textContent);
+                if(!present)document.head.append(document.importNode(style,true));
+            }
             if(!current){
                 current=document.querySelector('[data-ops-page]');
                 if(!current){
@@ -76,21 +80,18 @@
                 }
                 // Management pages use the same shell; mount the destination map
                 // and its styles in place instead of redirecting the document.
-                for(const style of doc.querySelectorAll('head link[rel="stylesheet"],head style')){
-                    const present=style.tagName==='LINK'?[...document.querySelectorAll('head link[rel="stylesheet"]')].some(s=>s.href===style.href):[...document.querySelectorAll('head style')].some(s=>s.textContent===style.textContent);
-                    if(!present)document.head.append(document.importNode(style,true));
-                }
                 window.FOSLocationMap?.destroy?.();
                 window.FOSLocationEditor?.destroyAll?.();
                 history.replaceState(history.state,'','/');
             }
-            const mounted=current.dataset.business==='pest-control'?window.FOSPestMap:window.FOSDashboardLifecycle&&window.FOSMapLifecycle;
+            const mounted=current.dataset.business==='landscaping'||(current.dataset.business==='pest-control'?window.FOSPestMap:window.FOSDashboardLifecycle&&window.FOSMapLifecycle);
             const same=current.dataset.business===next.dataset.business&&current.dataset.mounted!=='no'&&!!mounted;
             updateShell(doc);
             if(!same) {
                 const map=window._map;window.FOSMapInitialView=map?{center:map.getCenter(),zoom:map.getZoom()}:null;
                 window.FOSPestMap?.destroy();window.FOSWorkorderModalLifecycle?.destroy();window.FOSDashboardLifecycle?.destroy();window.FOSMapLifecycle?.destroy();window.FOSMapActions?.destroy();
                 window.FOSPestMap=window.FOSMapLifecycle=window.FOSDashboardLifecycle=window.FOSWorkorderModalLifecycle=null;
+                window._map=null;
                 window.zonesData=[];window._zoneById={};window._dashboardZonesLayer=null;
                 const replacement=document.importNode(next,true);replacement.dataset.mounted='no';current.replaceWith(replacement);await runScripts(doc);replacement.dataset.mounted='yes';
                 if(window.FOSMapInitialView&&window._map)window._map.setView(window.FOSMapInitialView.center,window.FOSMapInitialView.zoom);

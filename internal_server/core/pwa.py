@@ -13,6 +13,14 @@ from .role_utils import is_admin
 
 def navigation(request):
     if getattr(request, 'operations_shell', False):
+        from operations.access import active_membership
+        member = active_membership(request) if request.user.is_authenticated else None
+        if member and member.team.business.code == 'landscaping':
+            return {'pwa_modules': [
+                dict(name='dashboard', label='绿化', description='绿化板块首页', icon='home', url='/'),
+                dict(name='profile', label='我的账号', description='个人资料与密码', icon='user', url='/ops/profile/'),
+                dict(name='feedback', label='反馈与建议', description='分享想法与问题', icon='message', url='/feedback/'),
+            ]}
         from operations.map_views import is_pest
         if is_pest(request):
             from operations.access import active_membership

@@ -62,7 +62,8 @@ class PestMapWorkflowTests(TestCase):
         self.assertNotContains(response,'operations/pest-map.js')
         self.assertNotContains(response,'operations/workorder-chips.js')
         self.assertNotContains(response,'operations/pest-map.css')
-        self.assertNotContains(response,'operations/map-markers.js')
+        self.assertContains(response,'operations/map-markers.js')
+        self.assertContains(response,'operations/shared-location-layer.js')
         self.assertIsInstance(self.client.get('/api/zones-payload/').json(),list)
         self.assertEqual(self.client.get('/app/').status_code,200)
 

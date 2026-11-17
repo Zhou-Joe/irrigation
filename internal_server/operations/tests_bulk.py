@@ -52,42 +52,41 @@ class LocationBatchTests(TestCase):
         self.client.post('/ops/switch/',{'membership':member.pk})
         self.assertEqual(self.client.post('/ops/locations/batch/',payload).status_code,409)
 
-    def test_owner_can_link_and_share_many_irrigation_zones_in_one_operation(self):
+    def test_owner_cannot_use_retired_irrigation_zone_batch(self):
         self.client.force_login(self.im)
         other=Zone.objects.create(code='7-8-9',name='Another')
         payload={'team':self.it.pk,'source':'irrigation','zones':[self.zone.pk,other.pk],'targets':[self.pt.pk],
                  'submission_key':str(uuid.uuid4()),'action':'grant'}
         response=self.client.post('/ops/locations/batch-sharing/',payload)
-        self.assertEqual(response.status_code,200,response.content)
-        self.assertEqual(response.json()['count'],2);self.assertEqual(LocationGrant.objects.count(),2)
-        self.assertEqual(self.client.post('/ops/locations/batch-sharing/',payload).status_code,200)
-        self.assertEqual(LocationGrant.objects.count(),2)
+        self.assertEqual(response.status_code,410,response.content)
+        self.assertEqual(LocationGrant.objects.count(),0)
+        self.assertFalse(Location.objects.filter(legacy_zone=other).exists())
         self.zone.refresh_from_db();self.assertEqual(self.zone.boundary_source,'dxf')
         self.client.force_login(self.pm)
-        self.assertEqual(len(self.client.get('/api/zones-payload/').json()['locations']),2)
+        self.assertEqual(len(self.client.get('/api/zones-payload/').json()['locations']),0)
         self.assertEqual(self.client.post('/ops/locations/batch-sharing/',{'team':self.pt.pk,'locations':[str(self.shared.pk)],'targets':[self.it.pk]}).status_code,403)
 
-    def test_zone_code_collision_rolls_back_the_entire_share_batch(self):
+    def test_retired_zone_share_payload_cannot_create_locations_or_grants(self):
         self.client.force_login(self.im)
         z=Zone.objects.create(code='COLLIDE',name='Conflict')
         Location.objects.create(owner_team=self.it,code='COLLIDE',name='Unrelated')
         response=self.client.post('/ops/locations/batch-sharing/',{'team':self.it.pk,'zones':[self.zone.pk,z.pk],
              'source':'irrigation','targets':[self.pt.pk]})
-        self.assertEqual(response.status_code,400,response.content)
+        self.assertEqual(response.status_code,410,response.content)
         self.assertEqual(LocationGrant.objects.count(),0)
         self.assertFalse(Location.objects.filter(legacy_zone=z).exists())
 
-    def test_platform_admin_can_bulk_share_to_pest_without_changing_view_or_memberships(self):
+    def test_platform_admin_curates_pest_visibility_without_the_retired_irrigation_flow(self):
         self.client.force_login(self.admin)
         self.client.post('/ops/switch/',{'business':'pest-control'})
         before=list(Membership.objects.filter(user=self.admin).values())
-        response=self.client.post('/ops/locations/batch-sharing/',{'team':self.pt.pk,'source':'irrigation',
-            'zones':[self.zone.pk],'targets':[self.pt.pk]})
+        response=self.client.post('/ops/locations/team-visibility/',{'team':self.pt.pk,'scope':'catalog',
+            'locations':[str(self.shared.pk)],'action':'add','submission_key':str(uuid.uuid4())})
         self.assertEqual(response.status_code,200,response.content)
         self.assertTrue(LocationGrant.objects.filter(location=self.shared,team=self.pt).exists())
         self.assertEqual(before,list(Membership.objects.filter(user=self.admin).values()))
         self.assertEqual(self.client.session['operations_business'],'pest-control')
-        self.assertContains(self.client.get('/ops/locations/link-irrigation/'),'批量共享灌溉区域')
+        self.assertEqual(self.client.get('/ops/locations/link-irrigation/').status_code,404)
 
     def test_all_matching_is_owned_and_filtered_and_can_be_revoked(self):
         own=Location.objects.create(owner_team=self.pt,name='Match building',code='A')

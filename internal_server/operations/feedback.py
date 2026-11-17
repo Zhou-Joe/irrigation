@@ -28,7 +28,8 @@ class PhotoInput(forms.ClearableFileInput):
 
 class PhotosField(forms.ImageField):
     def __init__(self, **kwargs):
-        super().__init__(widget=PhotoInput(attrs={'accept': 'image/jpeg,image/png,image/webp,image/gif,image/bmp'}), **kwargs)
+        super().__init__(widget=PhotoInput(attrs={'accept': 'image/jpeg,image/png,image/webp,image/gif,image/bmp',
+            'aria-describedby': 'feedbackPhotoHelp'}), **kwargs)
 
     def clean(self, data, initial=None):
         files = data if isinstance(data, (list, tuple)) else [data] if data else []
@@ -42,7 +43,8 @@ class PhotosField(forms.ImageField):
 
 class FeedbackForm(forms.Form):
     message = forms.CharField(label='反馈内容', max_length=5000, strip=True,
-        widget=forms.Textarea(attrs={'rows': 7, 'placeholder': '描述遇到的问题，或希望改进的地方。也可以附上照片说明。'}))
+        widget=forms.Textarea(attrs={'rows': 7, 'placeholder': '描述遇到的问题，或希望改进的地方。也可以附上照片说明。',
+            'aria-describedby': 'feedbackMessageHelp feedbackMessageCount'}))
     photos = PhotosField(label='添加照片', required=False)
     submission_key = forms.UUIDField(widget=forms.HiddenInput)
     context_team = forms.IntegerField(widget=forms.HiddenInput)

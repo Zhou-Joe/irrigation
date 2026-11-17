@@ -6,13 +6,12 @@ import uuid
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import ValidationError, PermissionDenied
 from django.db import transaction, IntegrityError
-from django.db.models import Q
 from django.http import JsonResponse
 from django.views.decorators.http import require_POST
 
 from core.submissions import submission
 from .access import require_member, visible_locations, audit
-from .models import Location, LocationGrant, Team, Membership
+from .models import Location, LocationGrant, Team
 from .location_filters import matching_locations
 
 
@@ -124,18 +123,14 @@ def _create(request,preview):
 def share(request):
     member,error=scope(request)
     if error:return error
-    if request.POST.get('source')=='irrigation' and member.team.business.code!='irrigation' and request.user.is_superuser:
-        owner=Team.objects.filter(business__code='irrigation',legacy_irrigation_access=True,active=True,business__active=True).first()
-        if owner is None:return failure('灌溉所属团队不可用。')
-        request._bulk_source_owner=owner
+    if request.POST.get('source')=='irrigation' or request.POST.getlist('zones'):
+        return failure('旧的共享灌溉区域功能已停用，请通过“其他团队区域”选择需要加入本团队的地点。',410)
     return _share(request)
 
 
 @submission('location-batch-sharing')
 def _share(request):
     member=require_member(request,manager=True)
-    if getattr(request,'_bulk_source_owner',None):
-        member=Membership(user=request.user,team=request._bulk_source_owner,role='manager')
     try:
         targets={int(value) for value in request.POST.getlist('targets')}
         teams=list(Team.objects.filter(pk__in=targets,active=True,business__active=True).exclude(pk=member.team_id))
@@ -145,44 +140,14 @@ def _share(request):
         ids={uuid.UUID(value) for value in request.POST.getlist('locations')}
         places=list(Location.objects.filter(pk__in=ids,owner_team=member.team))
         if len(places)!=len(ids):raise PermissionDenied('只能批量共享或取消自己团队拥有的地点。')
-        from core.models import Zone
-        zone_ids={int(value) for value in request.POST.getlist('zones')}
-        source=request.POST.get('source','locations')
-        if zone_ids or source=='irrigation':
-            if member.team.business.code!='irrigation' or not member.team.legacy_irrigation_access:
-                raise PermissionDenied('请由灌溉团队经理选择共享原区域。')
-            zones=Zone.objects.all()
-            if request.POST.get('all_matching')=='1':
-                query=request.POST.get('q','').strip()[:150]
-                if query:zones=zones.filter(Q(code__icontains=query)|Q(name__icontains=query))
-            else:zones=zones.filter(pk__in=zone_ids)
-            zones=list(zones.select_related('shared_location')[:1001])
-            if request.POST.get('all_matching')!='1' and len(zones)!=len(zone_ids):raise ValueError('部分区域不存在。')
-        else:
-            zones=[]
-            if request.POST.get('all_matching')=='1':
-                # Apply precisely the same filters as the list and map. Starting
-                # from owned locations excludes read-only shared places without
-                # ever changing another team's grants.
-                qs=matching_locations(Location.objects.filter(owner_team=member.team),member.team,request.POST)
-                places=list(qs[:1001])
-                if not places:raise ValueError('当前筛选结果中没有本团队拥有的可共享地点。')
-        if not 1<=len(zones)+len(places)<=1000:raise ValueError('每批选择 1–1000 个地点或区域。')
-        # Preflight all references and code collisions before the first write.
-        codes=set(Location.objects.filter(owner_team=member.team).exclude(code='').values_list('code',flat=True))
-        linked=[];new=[]
-        for zone in zones:
-            location=getattr(zone,'shared_location',None)
-            if location:
-                if location.owner_team_id!=member.team_id:raise PermissionDenied('区域引用属于其他团队。')
-                linked.append(location)
-            elif action=='grant':
-                if zone.code and zone.code in codes:raise ValueError(f'编号 {zone.code} 已被其他地点使用。')
-                if zone.code:codes.add(zone.code)
-                new.append(Location(owner_team=member.team,legacy_zone=zone,code=zone.code,name=zone.name or zone.code))
+        if request.POST.get('all_matching')=='1':
+            qs=matching_locations(Location.objects.filter(owner_team=member.team),member.team,request.POST)
+            excluded={uuid.UUID(value) for value in request.POST.getlist('excluded_locations')}
+            if len(excluded)>1000:raise ValueError('每批最多排除 1000 个地点。')
+            places=list(qs.exclude(pk__in=excluded)[:1001])
+            if not places:raise ValueError('当前筛选结果中没有本团队拥有的可共享地点。')
+        if not 1<=len(places)<=1000:raise ValueError('每批选择 1–1000 个地点。')
         with transaction.atomic():
-            Location.objects.bulk_create(new)
-            places=list({p.pk:p for p in [*places,*linked,*new]}.values())
             if action=='grant':
                 LocationGrant.objects.bulk_create([LocationGrant(location=p,team=t,created_by=request.user) for p in places for t in teams],ignore_conflicts=True)
             else:LocationGrant.objects.filter(location__in=places,team__in=teams).delete()

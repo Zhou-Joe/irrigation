@@ -435,7 +435,7 @@ def profile_page(request):
             worker = Worker.objects.get(user=user, active=True)
             profile_type = 'worker'
             profile_data = {
-                'type': '灌溉一线',
+                'type': worker.get_worker_type_display(),
                 'employee_id': worker.employee_id,
                 'full_name': worker.full_name,
                 'phone': worker.phone,
@@ -1296,6 +1296,12 @@ def dashboard(request):
     """
     from operations.map_views import is_pest, pest_dashboard
     from core.ai_access import can_use_assistant
+    from django.conf import settings
+    if settings.MULTI_TEAM_ENABLED:
+        from operations.access import active_membership
+        member = active_membership(request)
+        if member and member.team.business.code == 'landscaping':
+            return render(request, 'operations/landscaping.html')
     if is_pest(request):
         return pest_dashboard(request)
     from datetime import date, timedelta
@@ -2096,7 +2102,7 @@ def announcement_unacked_api(request, pk):
             continue
         users.append({
             'name': _user_display_name(u),
-            'role': label_map.get(role, '—'),
+            'role': u.worker_profile.get_worker_type_display() if role == ROLE_FIELD_WORKER else label_map.get(role, '—'),
         })
     return JsonResponse({'success': True, 'count': len(users), 'users': users})
 
@@ -6025,7 +6031,7 @@ def register(request):
     - 园艺经理 (manager) → Manager
     - 其他部门 (dept_user) → Department User (requires sub-department selection)
     """
-    from core.models import RegistrationRequest, ROLE_FIELD_WORKER, ROLE_DEPT_USER, ROLE_MANAGER
+    from core.models import RegistrationRequest, Worker, ROLE_FIELD_WORKER, ROLE_DEPT_USER, ROLE_MANAGER
     from django.contrib.auth.hashers import make_password
     from django.contrib.auth.models import User
 
@@ -6050,6 +6056,7 @@ def register(request):
         requested_role = request.POST.get('requested_role', ROLE_FIELD_WORKER).strip()
         department = request.POST.get('department', '').strip()
         department_other = request.POST.get('department_other', '').strip()
+        worker_type = request.POST.get('worker_type', Worker.TYPE_IRRIGATION).strip()
 
         # Map department_type to role if needed
         if department_type == 'field_worker':
@@ -6083,6 +6090,8 @@ def register(request):
             messages.error(request, '请选择部门')
         elif requested_role not in valid_roles:
             messages.error(request, '请选择有效的角色')
+        elif requested_role == ROLE_FIELD_WORKER and worker_type not in dict(Worker.WORKER_TYPE_CHOICES):
+            messages.error(request, '请选择有效的一线种类')
         elif department_type == 'dept_user' and not department:
             messages.error(request, '请选择所属部门')
         elif department == '其他' and not department_other:
@@ -6107,6 +6116,7 @@ def register(request):
                 department=department,
                 department_other=department_other if department == '其他' else '',
                 requested_role=requested_role,
+                worker_type=worker_type if requested_role == ROLE_FIELD_WORKER else Worker.TYPE_IRRIGATION,
             )
             if email_required:
                 from core.account_mail import send_registration
@@ -6115,7 +6125,9 @@ def register(request):
             else:messages.success(request, '注册申请已提交，请等待管理员审批')
             return redirect('core:register')
 
-    return render(request, 'core/register.html',{'registration_email_required':email_required})
+    return render(request, 'core/register.html',{'registration_email_required':email_required,
+        'worker_type_choices': Worker.WORKER_TYPE_CHOICES,
+        'selected_worker_type': request.POST.get('worker_type', Worker.TYPE_IRRIGATION)})
 
 
 @login_required(login_url='core:login')
@@ -6291,7 +6303,7 @@ def user_management(request):
             'department': '',
             'role': account_role(mp,ROLE_SUPER_ADMIN if mp.is_super_admin else ROLE_MANAGER),
             'role_display': role_labels[account_role(mp,ROLE_SUPER_ADMIN if mp.is_super_admin else ROLE_MANAGER)],
-            'active': mp.active,
+            'active': mp.active and (mp.user is None or mp.user.is_active),
             'drawn_zones': draw_counts.get(mp.user.id, 0) if mp.user else 0,
         })
 
@@ -6305,9 +6317,11 @@ def user_management(request):
             'employee_id': dup.employee_id,
             'phone': dup.phone,
             'department': dup.get_department_display_name() if hasattr(dup, 'get_department_display_name') else (dup.department_other or dup.department),
+            'department_code': dup.department,
+            'department_other': dup.department_other,
             'role': account_role(dup,ROLE_DEPT_USER),
             'role_display': role_labels[account_role(dup,ROLE_DEPT_USER)],
-            'active': dup.active,
+            'active': dup.active and (dup.user is None or dup.user.is_active),
             'drawn_zones': draw_counts.get(dup.user.id, 0) if dup.user else 0,
         })
 
@@ -6321,9 +6335,12 @@ def user_management(request):
             'employee_id': w.employee_id,
             'phone': w.phone,
             'department': w.get_department_display_name() if hasattr(w, 'get_department_display_name') else (w.department_other or w.department),
+            'department_code': w.department,
+            'department_other': w.department_other,
             'role': account_role(w,ROLE_FIELD_WORKER),
-            'role_display': role_labels[account_role(w,ROLE_FIELD_WORKER)],
-            'active': w.active,
+            'role_display': w.get_worker_type_display() if account_role(w,ROLE_FIELD_WORKER) == ROLE_FIELD_WORKER else role_labels[account_role(w,ROLE_FIELD_WORKER)],
+            'worker_type': w.worker_type,
+            'active': w.active and (w.user is None or w.user.is_active),
             'drawn_zones': draw_counts.get(w.user.id, 0) if w.user else 0,
         })
 
@@ -6394,6 +6411,7 @@ def user_management(request):
         # codes/ids match what the export filters on.
         'email_ccus': _ccu_queryset(),
         'smtp_setting': smtp_setting,
+        'worker_type_choices': Worker.WORKER_TYPE_CHOICES,
     }
 
     return render(request, 'core/user_management.html', context)
@@ -6421,6 +6439,12 @@ def user_edit(request, profile_type, profile_id):
         return JsonResponse({'error': 'Invalid profile type'}, status=400)
 
     profile = get_object_or_404(model_class, pk=profile_id)
+
+    if profile_type == 'worker' and 'worker_type' in request.POST:
+        worker_type = request.POST['worker_type']
+        if worker_type not in dict(Worker.WORKER_TYPE_CHOICES):
+            return JsonResponse({'error': '请选择有效的一线种类'}, status=400)
+        profile.worker_type = worker_type
 
     if 'full_name' in request.POST:
         profile.full_name = request.POST['full_name']

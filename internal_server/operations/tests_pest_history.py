@@ -11,6 +11,7 @@ from django.test import TestCase, override_settings
 
 from core.models import WorkReport, Worker
 from .history_import import import_history
+from .forms import LocationForm
 from .models import (BusinessArea, Location, PestHistoryImport, PestHistoryRecord,
                      ReferenceCatalog, ReferenceNode, Team)
 
@@ -172,6 +173,22 @@ class PestHistoryImportTests(TestCase):
         foreign.refresh_from_db()
         self.assertEqual(foreign.name, 'Foreign building')
         self.assertEqual(Location.objects.filter(code='TEST-BLDG').count(), 2)
+
+    def test_ordinary_building_edit_does_not_block_history_import_with_source_directions(self):
+        building = Location.objects.create(owner_team=self.team, kind='building', code='TEST-BLDG', name='Existing')
+        initial = LocationForm(instance=building, parents=Location.objects.none()).initial
+        form = LocationForm({'name':'Renamed','kind':'building','code':'TEST-BLDG','parameters':'[]',
+                             'orientation_options':initial['orientation_options'].replace('\n','\r\n')},
+                            instance=building, parents=Location.objects.none())
+        self.assertTrue(form.is_valid(), form.errors)
+        form.save()
+        self.assertEqual(import_history(self.path, self.team)['new_records'], 1)
+        result = import_history(self.path, self.team, apply=True)
+        self.assertEqual(result['new_records'], 1)
+        building.refresh_from_db()
+        self.assertEqual(building.name, 'Renamed')
+        self.assertEqual([choice['value'] for choice in building.parameters[0]['options']],
+                         self.manifest['controlled_options']['side_of_building'])
 
     def test_dry_run_detects_existing_catalog_conflicts_before_any_write(self):
         catalog = ReferenceCatalog.objects.create(business=self.team.business, owner_team=self.team,

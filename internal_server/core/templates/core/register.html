@@ -588,11 +588,21 @@
                 <div class="input-wrapper">
                     <select name="department_type" id="department_type" required onchange="toggleSubDepartment()">
                         <option value="">请选择部门</option>
-                        <option value="field_worker">园艺一线</option>
-                        <option value="manager">园艺经理</option>
-                        <option value="dept_user">其他部门</option>
+                        <option value="field_worker" {% if request.POST.department_type == 'field_worker' %}selected{% endif %}>园艺一线</option>
+                        <option value="manager" {% if request.POST.department_type == 'manager' %}selected{% endif %}>园艺经理</option>
+                        <option value="dept_user" {% if request.POST.department_type == 'dept_user' %}selected{% endif %}>其他部门</option>
                     </select>
                     <span class="input-icon"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-building"/></svg></span>
+                </div>
+            </div>
+
+            <div class="form-group sub-department" id="workerTypeGroup">
+                <label for="worker_type">一线种类 *</label>
+                <div class="input-wrapper">
+                    <select name="worker_type" id="worker_type">
+                        {% for value,label in worker_type_choices %}<option value="{{ value }}" {% if selected_worker_type == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+                    </select>
+                    <span class="input-icon"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-users"/></svg></span>
                 </div>
             </div>
 
@@ -656,8 +666,13 @@ function toggleSubDepartment() {
     var subDept = document.getElementById('subDepartment');
     var deptSelect = document.getElementById('department');
     var roleInput = document.getElementById('requested_role');
+    var workerTypeGroup = document.getElementById('workerTypeGroup');
+    var workerType = document.getElementById('worker_type');
 
     roleInput.value = deptType;
+    workerTypeGroup.classList.toggle('show', deptType === 'field_worker');
+    workerType.required = deptType === 'field_worker';
+    workerType.disabled = deptType !== 'field_worker';
 
     if (deptType === 'dept_user') {
         subDept.classList.add('show');
@@ -685,5 +700,6 @@ document.getElementById('department').addEventListener('change', function() {
         otherDeptInput.value = '';
     }
 });
+toggleSubDepartment();
 </script>
 {% endblock %}

@@ -613,6 +613,15 @@ class Plant(models.Model):
 class Worker(models.Model):
     """Represents a worker/employee."""
 
+    TYPE_IRRIGATION = 'irrigation'
+    TYPE_PEST_CONTROL = 'pest-control'
+    TYPE_LANDSCAPING = 'landscaping'
+    WORKER_TYPE_CHOICES = [
+        (TYPE_IRRIGATION, '灌溉一线'),
+        (TYPE_PEST_CONTROL, '植保一线'),
+        (TYPE_LANDSCAPING, '绿化一线'),
+    ]
+
     DEPARTMENT_CHOICES = [
         ('FES', 'FES'),
         ('FAM', 'FAM'),
@@ -624,6 +633,7 @@ class Worker(models.Model):
     employee_id = models.CharField(max_length=50, unique=True)
     full_name = models.CharField(max_length=255)
     phone = models.CharField(max_length=20, blank=True)
+    worker_type = models.CharField('一线种类', max_length=20, choices=WORKER_TYPE_CHOICES, default=TYPE_IRRIGATION)
     department = models.CharField(max_length=20, choices=DEPARTMENT_CHOICES, blank=True)
     department_other = models.CharField(max_length=50, blank=True, help_text='其他部门名称')
     api_token = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
@@ -763,6 +773,8 @@ class RegistrationRequest(models.Model):
         choices=ROLE_CHOICES,
         default=ROLE_FIELD_WORKER
     )
+    worker_type = models.CharField('一线种类', max_length=20, choices=Worker.WORKER_TYPE_CHOICES,
+                                   default=Worker.TYPE_IRRIGATION)
     employee_id = models.CharField(max_length=50, blank=True, help_text='工号，审批通过后自动生成')
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_PENDING)
     status_notes = models.TextField(blank=True, help_text='审批备注')
@@ -783,6 +795,11 @@ class RegistrationRequest(models.Model):
 
     def __str__(self):
         return f"注册申请 - {self.full_name} ({self.get_requested_role_display()})"
+
+    def get_requested_role_display(self):
+        if self.requested_role == ROLE_FIELD_WORKER:
+            return self.get_worker_type_display()
+        return dict(ROLE_CHOICES).get(self.requested_role, self.requested_role)
 
 
 # (removed: WorkOrder)

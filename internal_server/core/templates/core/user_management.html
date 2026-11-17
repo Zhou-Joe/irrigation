@@ -505,7 +505,7 @@
             </thead>
             <tbody>
                 {% for u in users_list %}
-                <tr data-profile-type="{{ u.profile_type }}" data-profile-id="{{ u.profile_id }}" data-user-id="{{ u.user_id }}">
+                <tr data-profile-type="{{ u.profile_type }}" data-profile-id="{{ u.profile_id }}" data-user-id="{{ u.user_id }}" data-worker-type="{{ u.worker_type|default:'' }}" data-department="{{ u.department_code|default:'' }}" data-department-other="{{ u.department_other|default:'' }}">
                     <td>{{ u.full_name }}</td>
                     <td>{{ u.username }}</td>
                     <td class="text-mono">{{ u.employee_id }}</td>
@@ -934,12 +934,19 @@
         <div class="form-group" id="dept_group">
             <label>部门</label>
             <select id="edit_department">
+                <option value="">未填写</option>
                 <option value="FES">FES</option>
                 <option value="FAM">FAM</option>
                 <option value="ENT">ENT</option>
                 <option value="其他">其他</option>
             </select>
             <input type="text" id="edit_department_other" placeholder="其他部门名称" style="display:none; margin-top:8px; width:100%; padding:8px 12px; border:1px solid var(--color-surface-dark); border-radius:var(--radius-md); font-size:0.875rem;">
+        </div>
+        <div class="form-group" id="edit_worker_type_group" hidden>
+            <label for="edit_worker_type">一线种类</label>
+            <select id="edit_worker_type">
+                {% for value,label in worker_type_choices %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+            </select>
         </div>
         <div class="form-group">
             <label>
@@ -1442,31 +1449,23 @@ function editUser(btn) {
     var cells = row.querySelectorAll('td');
     document.getElementById('edit_full_name').value = cells[0].textContent.trim();
     document.getElementById('edit_phone').value = cells[5].textContent.trim() === '-' ? '' : cells[5].textContent.trim();
-    document.getElementById('edit_active').checked = cells[6].querySelector('.status-active') !== null;
+    document.getElementById('edit_active').checked = row.querySelector('.status-active') !== null;
+    document.getElementById('edit_active').dataset.initial = String(document.getElementById('edit_active').checked);
+    document.getElementById('edit_worker_type_group').hidden = editProfileType !== 'worker';
+    document.getElementById('edit_worker_type').value = row.dataset.workerType || 'irrigation';
 
     var deptGroup = document.getElementById('dept_group');
     if (editProfileType === 'manager') {
         deptGroup.style.display = 'none';
     } else {
         deptGroup.style.display = 'block';
-        var deptText = cells[4].textContent.trim();
         var deptSelect = document.getElementById('edit_department');
-        var matched = false;
-        for (var i = 0; i < deptSelect.options.length; i++) {
-            if (deptSelect.options[i].value === deptText || deptSelect.options[i].textContent === deptText) {
-                deptSelect.value = deptSelect.options[i].value;
-                matched = true;
-                break;
-            }
-        }
-        if (!matched) {
-            deptSelect.value = '其他';
-            document.getElementById('edit_department_other').value = deptText;
-            document.getElementById('edit_department_other').style.display = 'block';
-        } else {
-            document.getElementById('edit_department_other').style.display = 'none';
-            document.getElementById('edit_department_other').value = '';
-        }
+        deptSelect.value = row.dataset.department || '';
+        deptSelect.dataset.initial = deptSelect.value;
+        var deptOther = document.getElementById('edit_department_other');
+        deptOther.value = row.dataset.departmentOther || '';
+        deptOther.dataset.initial = deptOther.value;
+        deptOther.style.display = deptSelect.value === '其他' ? 'block' : 'none';
     }
 
     document.getElementById('editModal').classList.add('show');
@@ -1623,11 +1622,19 @@ function saveEdit() {
     var data = new FormData();
     data.append('full_name', document.getElementById('edit_full_name').value);
     data.append('phone', document.getElementById('edit_phone').value);
-    data.append('active', document.getElementById('edit_active').checked ? 'true' : 'false');
+    var active = document.getElementById('edit_active');
+    if (String(active.checked) !== active.dataset.initial) {
+        data.append('active', String(active.checked));
+    }
+    if (editProfileType === 'worker') {
+        data.append('worker_type', document.getElementById('edit_worker_type').value);
+    }
     if (editProfileType !== 'manager') {
-        data.append('department', document.getElementById('edit_department').value);
-        if (document.getElementById('edit_department').value === '其他') {
-            data.append('department_other', document.getElementById('edit_department_other').value);
+        var department = document.getElementById('edit_department');
+        var other = document.getElementById('edit_department_other');
+        if (department.value !== department.dataset.initial || other.value !== other.dataset.initial) {
+            data.append('department', department.value);
+            if (department.value === '其他') data.append('department_other', other.value);
         }
     }
 

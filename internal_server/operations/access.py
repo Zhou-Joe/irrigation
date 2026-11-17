@@ -7,7 +7,7 @@ from .models import Membership, Location, AuditEvent, Team
 
 def business_teams():
     return Team.objects.filter(active=True,business__active=True).filter(
-        Q(business__code='pest-control') |
+        Q(business__code__in=('pest-control', 'landscaping')) |
         Q(business__code='irrigation',legacy_irrigation_access=True)).select_related('business').order_by('business__code','name')
 
 
@@ -43,7 +43,7 @@ def business_options(user):
     if not user.is_superuser and not has_irrigation_access(user):
         available.discard('irrigation')
     return [{'code':code,'label':label} for code,label in
-            (('irrigation','灌溉'),('pest-control','植保')) if code in available]
+            (('irrigation','灌溉'),('pest-control','植保'),('landscaping','绿化')) if code in available]
 
 
 def active_membership(request):

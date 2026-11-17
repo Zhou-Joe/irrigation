@@ -2,6 +2,13 @@
     'use strict';
     const status=form=>form.querySelector('[data-location-status]');
     const say=(form,message,error=false)=>{const el=status(form);if(el){el.textContent=message;el.classList.toggle('op-error',error);}};
+    function buildingFields(form){
+        const group=form.querySelector('[data-building-orientations]');if(!group)return;
+        const building=form.elements.kind.value==='building';group.hidden=!building;
+        const input=form.elements.orientation_options;if(input)input.disabled=!building;
+    }
+    document.querySelectorAll('[data-location-edit]').forEach(buildingFields);
+    document.addEventListener('change',event=>{const form=event.target.closest('[data-location-edit]');if(form&&event.target.name==='kind')buildingFields(form);});
     document.addEventListener('invalid',event=>{
         const form=event.target.closest('[data-location-edit]');if(!form)return;
         const section=event.target.closest('details');if(section)section.open=true;

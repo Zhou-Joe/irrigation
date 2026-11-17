@@ -169,6 +169,8 @@ class BusinessOperationsTests(TestCase):
                 {'IndexNumber':'902','StationSiteNumber':'44','StationControllerNumber':'502','StationControllerChannel':'20'},
                 {'IndexNumber':'903','StationSiteNumber':'999','StationControllerNumber':'503','StationControllerChannel':'21'}],
             'XA_LOG':[{'SignalType':'M','SignalTable':'S','XactIndex':'901','XactStamp':'20261025100000','SignalValue':'20'}],
+            'WETHR_CF':[],
+            'XA_WETHR':[],
         }
         with patch(module+'._mdb_rows',side_effect=lambda _path,table:iter(tables[table])), \
                 patch(module+'.os.path.exists',return_value=True),patch(module+'.Command._import_flow'):

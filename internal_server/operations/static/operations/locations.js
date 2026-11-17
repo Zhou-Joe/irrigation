@@ -15,9 +15,28 @@
         if(remember)try{sessionStorage.setItem('fos-location-view',view);}catch(_){}
         requestAnimationFrame(()=>{if(!disposed){map.invalidateSize({pan:false});if(pendingFit)fit();}});
     }
+    function updateSelection(){
+        const state=window.FOSBulkLocations?.getSelection?.()||{ids:[],excludedIds:[],allMatching:false,count:0,catalog:false,busy:false},ids=new Set(state.ids),excluded=new Set(state.excludedIds);
+        for(const [id,shape]of shapes){
+            const checked=shape.canSelect&&state.catalog&&(state.allMatching?!excluded.has(id):ids.has(id)),focused=id===focusId;
+            for(const item of shape.items){
+                item.setStyle?.({color:checked?'#f6b83d':shape.color,fillColor:checked?'#f6b83d':shape.color,weight:checked?4:focused?3:2,fillOpacity:checked ? .4 : focused ? .24 : .14});
+                const marker=item.getElement?.();marker?.classList.toggle('op-location-pin-selected',focused);marker?.classList.toggle('op-location-pin-checked',checked);
+                if(marker&&shape.canSelect){marker.setAttribute('aria-pressed',String(checked));marker.setAttribute('aria-label',shape.name+(checked?'，已选择':'，未选择'));}
+            }
+        }
+        const toolbar=document.querySelector('[data-map-selection-toolbar]');
+        if(toolbar){
+            toolbar.hidden=!state.catalog||!state.count;toolbar.querySelector('[data-map-selected-count]').textContent=String(state.count);
+            if(toolbar.hidden)toolbar.querySelector('[data-map-batch-status]').textContent='';
+            toolbar.querySelectorAll('button,select').forEach(control=>control.disabled=state.busy);
+            toolbar.querySelector('[data-map-selection-action]').value=state.action||'add';
+        }
+        const instructions=document.querySelector('[data-location-map-instructions]');
+        if(instructions)instructions.textContent=state.catalog?'点击地图区域可多选，再加入或移出本团队；再次点击取消选择。':'点选列表中的定位按钮，可在地图查看地点。';
+    }
     function focusRow(id){
-        focusId=id;document.querySelectorAll('[data-location-row]').forEach(row=>row.classList.toggle('is-focused',row.dataset.locationRow===id));
-        for(const [key,shape]of shapes)for(const item of shape.items){item.setStyle?.({weight:key===id?3:2,fillOpacity:key===id ? .24 : .14});item.getElement?.()?.classList.toggle('op-location-pin-selected',key===id);}
+        focusId=id;document.querySelectorAll('[data-location-row]').forEach(row=>row.classList.toggle('is-focused',row.dataset.locationRow===id));updateSelection();
     }
     function fit(){
         if(!el.clientWidth||!el.clientHeight){pendingFit=true;return false;}
@@ -35,15 +54,19 @@
             const rings=runtime.boundaryRings(place.boundary),shape=markers.presentation(place,rings),items=[],points=[];
             if(shape.mode==='boundary')for(const ring of rings){items.push(L.polygon(ring,{color:markers.descriptor(place.kind).color,weight:2,fillOpacity:.14}).bindPopup(popup.cloneNode(true)).addTo(layers));points.push(...ring);}
             else if(shape.mode==='pin'){items.push(markers.marker(L,place,shape.center).bindPopup(popup).addTo(layers));points.push(shape.center);}
-            if(items.length)shapes.set(place.id,{items,points,center:shape.center});
-            for(const layer of items)layer.on('click',event=>{if(creator.active()){L.DomEvent.stopPropagation(event);creator.pick(event.latlng||{lat:shape.center[0],lng:shape.center[1]});layer.closePopup();}else focusRow(place.id);});
+            if(items.length)shapes.set(place.id,{items,points,center:shape.center,canSelect:!!place.can_select,color:markers.descriptor(place.kind).color,name:place.name});
+            for(const layer of items)layer.on('click',event=>{
+                if(creator.active()){L.DomEvent.stopPropagation(event);creator.pick(event.latlng||{lat:shape.center[0],lng:shape.center[1]});layer.closePopup();}
+                else if(place.can_select&&window.FOSBulkLocations?.toggleLocation?.(place.id)){layer.closePopup();focusRow(place.id);}
+                else focusRow(place.id);
+            });
         }
         if((!initialized||fitView)&&shapes.size)initialized=fit();
-        if(focusId)focusRow(focusId);
-        notice(shapes.size?'地图显示 '+shapes.size+' 个地点 · 点击列表中的定位图标可快速查看。':'当前没有已定位地点，可在地图上连续新建，或编辑地点后点选位置。');
+        if(focusId)focusRow(focusId);else updateSelection();
+        notice(shapes.size?'地图显示 '+shapes.size+' 个地点。':'当前没有已定位地点，可在地图上连续新建，或编辑地点后点选位置。');
     }
     async function load({fit:fitView=false}={}){
-        if(disposed)return;const current=++generation;notice('正在加载地点…');
+        if(disposed)return;const current=++generation;places=[];layers.clearLayers();shapes.clear();notice('正在加载地点…');
         try{
             const url=new URL(el.dataset.endpoint,location.href);
             for(const [key,value]of new URL(location.href).searchParams)if(key!=='scope'||!url.searchParams.has('scope'))url.searchParams.set(key,value);
@@ -106,6 +129,8 @@
         }catch(_){if(feedback)feedback.textContent='地点已保存，列表暂未更新，请重新查询。';}
     }
     function click(event){
+        if(event.target.closest('[data-map-selection-clear]')){window.FOSBulkLocations?.clearSelection();return;}
+        if(event.target.closest('[data-map-selection-apply]')){window.FOSBulkLocations?.applySelection(document.querySelector('[data-map-selection-action]').value);return;}
         const create=event.target.closest('[data-map-create-open]');if(create){event.preventDefault();creator.open();return;}
         const view=event.target.closest('[data-location-view]');if(view){mobileView(view.dataset.locationView);return;}
         const target=event.target.closest('[data-location-focus]');if(target){event.preventDefault();focus(target.dataset.locationFocus);return;}
@@ -113,10 +138,11 @@
         const edit=event.target.closest('[data-location-edit-open]');if(edit){event.preventDefault();openEditor(edit.dataset.locationEditOpen||edit.getAttribute('href'));return;}
         if(event.target.closest('[data-location-editor-close]')){event.preventDefault();if(!dialog?.querySelector('form[data-busy]'))closeEditor();}
     }
-    document.addEventListener('click',click);document.addEventListener('fos:location-saved',saved);
+    function change(event){if(event.target.matches('[data-map-selection-action]'))window.FOSBulkLocations?.setAction(event.target.value);}
+    document.addEventListener('click',click);document.addEventListener('change',change);document.addEventListener('fos:location-saved',saved);document.addEventListener('fos:location-selection',updateSelection);
     const observer=typeof ResizeObserver==='function'?new ResizeObserver(()=>{if(!disposed)map.invalidateSize({pan:false});}):null;observer?.observe(el);
     function resume(event){if(event.persisted&&document.getElementById('opLocationResults'))window.FOSBulkLocations?.refreshResults().catch(()=>notice('地点列表暂未更新，请重新查询。'));}
     window.addEventListener('pageshow',resume);
-    window.FOSLocationMap={refresh:load,focus,startCreation:()=>creator.open(),getView:()=>({center:map.getCenter(),zoom:map.getZoom()}),destroy(){disposed=true;generation++;closeEditor();dialog?.remove();observer?.disconnect();document.removeEventListener('click',click);document.removeEventListener('fos:location-saved',saved);window.removeEventListener('pageshow',resume);creator.destroy();map.remove();}};
+    window.FOSLocationMap={refresh:load,focus,selectableIds:()=>places.filter(place=>place.can_select).map(place=>String(place.id)),startCreation:()=>creator.open(),getView:()=>({center:map.getCenter(),zoom:map.getZoom()}),destroy(){disposed=true;generation++;closeEditor();dialog?.remove();observer?.disconnect();document.removeEventListener('click',click);document.removeEventListener('change',change);document.removeEventListener('fos:location-saved',saved);document.removeEventListener('fos:location-selection',updateSelection);window.removeEventListener('pageshow',resume);creator.destroy();map.remove();}};
     let preferred='list';try{preferred=sessionStorage.getItem('fos-location-view')||'list';}catch(_){}mobileView(preferred==='map'?'map':'list',false);load();
 })();

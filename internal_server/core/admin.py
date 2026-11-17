@@ -22,7 +22,7 @@ from .role_utils import get_worker_profile
 @admin.register(RegistrationRequest)
 class RegistrationRequestAdmin(admin.ModelAdmin):
     list_display = ('full_name', 'phone', 'department_display', 'requested_role_display', 'status', 'created_at', 'processed_at')
-    list_filter = ('status', 'requested_role', 'department', 'created_at')
+    list_filter = ('status', 'requested_role', 'worker_type', 'department', 'created_at')
     search_fields = ('full_name', 'phone', 'employee_id')
     readonly_fields = ('created_at', 'processed_at', 'processed_by', 'created_user', 'username')
     actions = ['approve_requests', 'reject_requests']
@@ -31,7 +31,7 @@ class RegistrationRequestAdmin(admin.ModelAdmin):
             'fields': ('full_name', 'phone', 'username', 'department', 'department_other', 'employee_id')
         }),
         ('角色申请', {
-            'fields': ('requested_role', 'status_notes')
+            'fields': ('requested_role', 'worker_type', 'status_notes')
         }),
         ('审批状态', {
             'fields': ('status', 'processed_at', 'processed_by')
@@ -53,61 +53,14 @@ class RegistrationRequestAdmin(admin.ModelAdmin):
     requested_role_display.short_description = '申请角色'
 
     def approve_requests(self, request, queryset):
-        from .models import ROLE_FIELD_WORKER, ROLE_MANAGER, ROLE_DEPT_USER
-
+        from .registration_service import approve
         for reg in queryset.filter(status='pending'):
-            role = reg.requested_role
-
-            # Use submitted username (generate employee_id for profile only)
-            employee_id = f'{prefix}{next_num:03d}'
-            username = reg.username
-
-            # Create Django User with submitted credentials
-            user = User.objects.create_user(
-                username=username,
-                password=reg.password,  # Already hashed during submission
-                first_name=reg.full_name
-            )
-
-            # Create profile based on role
-            if role == ROLE_MANAGER:
-                profile = ManagerProfile.objects.create(
-                    user=user,
-                    employee_id=employee_id,
-                    full_name=reg.full_name,
-                    phone=reg.phone,
-                    active=True
-                )
-            elif role == ROLE_DEPT_USER:
-                profile = DepartmentUserProfile.objects.create(
-                    user=user,
-                    employee_id=employee_id,
-                    full_name=reg.full_name,
-                    phone=reg.phone,
-                    department=reg.department,
-                    department_other=reg.department_other,
-                    active=True
-                )
-            else:
-                profile = Worker.objects.create(
-                    user=user,
-                    employee_id=employee_id,
-                    full_name=reg.full_name,
-                    phone=reg.phone,
-                    department=reg.department,
-                    department_other=reg.department_other,
-                    active=True
-                )
-
-            # Update registration request
-            reg.status = 'approved'
-            reg.employee_id = employee_id  # Store generated employee_id
-            reg.processed_at = timezone.now()
-            reg.processed_by = get_worker_profile(request.user)
-            reg.created_user = user
-            reg.save()
-
-            self.message_user(request, f'已批准 {reg.full_name} 的注册申请，用户名：{username}，工号：{employee_id}')
+            try:
+                approved = approve(reg.pk, request.user)
+            except ValueError as exc:
+                self.message_user(request, str(exc), level='error')
+                continue
+            self.message_user(request, f'已批准 {approved.full_name} 的注册申请，用户名：{approved.username}，工号：{approved.employee_id}')
     approve_requests.short_description = '批准选中的注册申请'
 
     def reject_requests(self, request, queryset):
@@ -280,8 +233,8 @@ class PlantAdmin(admin.ModelAdmin):
 
 @admin.register(Worker)
 class WorkerAdmin(admin.ModelAdmin):
-    list_display = ('full_name', 'employee_id', 'phone', 'department_display', 'department_other', 'api_token', 'active', 'created_at', 'updated_at')
-    list_filter = ('active', 'department', 'created_at')
+    list_display = ('full_name', 'employee_id', 'worker_type', 'phone', 'department_display', 'department_other', 'api_token', 'active', 'created_at', 'updated_at')
+    list_filter = ('active', 'worker_type', 'department', 'created_at')
     search_fields = ('full_name', 'employee_id', 'phone')
     readonly_fields = ('created_at', 'updated_at')
 

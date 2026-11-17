@@ -19,6 +19,8 @@ class Command(BaseCommand):
         team, _ = Team.objects.get_or_create(code='irrigation', defaults={
             'business': irrigation, 'name': '灌溉团队', 'legacy_irrigation_access': True})
         Team.objects.get_or_create(code='pest-control', defaults={'business': pest, 'name': '植保团队'})
+        landscaping, _ = BusinessArea.objects.get_or_create(code='landscaping', defaults={'name': '绿化'})
+        Team.objects.get_or_create(code='landscaping', defaults={'business': landscaping, 'name': '绿化团队'})
         count = 0
         if options['assign_legacy']:
             from django.contrib.auth import get_user_model

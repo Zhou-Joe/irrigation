@@ -60,24 +60,32 @@ class WorkspaceTests(TestCase):
 
     def test_only_explicit_place_sharing_exposes_live_geometry_not_work_data(self):
         self.assertEqual(self.client.get('/ops/locations.geojson').json()['locations'], [])
+        self.assertEqual(self.client.get(f'/ops/locations/{self.shared.pk}/').status_code, 200)
+        self.client.force_login(self.field)
         self.assertEqual(self.client.get(f'/ops/locations/{self.shared.pk}/').status_code, 404)
         LocationGrant.objects.create(location=self.shared, team=self.pt, created_by=self.im)
         data = self.client.get('/ops/locations.geojson').json()['locations']
         self.assertEqual(len(data), 1)
         self.assertEqual(data[0]['boundary'], self.zone.dxf_boundary_points)
         self.assertNotIn('private-irrigation-note', json.dumps(data))
-        self.assertEqual(set(data[0]), {'id','name','code','kind','kind_label','map_display','center','boundary','latitude','longitude','source'})
+        self.assertEqual(set(data[0]), {'id','name','code','kind','kind_label','map_display','center','boundary',
+            'latitude','longitude','source','owner_team','owner_team_id','team_visible','can_select','can_edit'})
+        self.assertFalse(data[0]['can_select'] or data[0]['can_edit'])
         self.zone.boundary_source = 'manual'
         self.zone.save()
         self.assertEqual(self.client.get('/ops/locations.geojson').json()['locations'][0]['boundary'], self.zone.boundary_points)
         LocationGrant.objects.all().delete()
         self.assertEqual(self.client.get(f'/ops/locations/{self.shared.pk}/').status_code, 404)
+        self.assertEqual(self.client.get('/ops/locations.geojson').json()['locations'], [])
+        self.client.force_login(self.pm)
+        self.assertEqual(self.client.get(f'/ops/locations/{self.shared.pk}/').status_code, 200)
+        self.assertEqual(self.client.get('/ops/locations.geojson').json()['locations'], [])
 
     def test_recipient_cannot_edit_regrant_or_import_irrigation_even_as_manager(self):
         LocationGrant.objects.create(location=self.shared, team=self.pt)
         self.assertEqual(self.client.post(f'/ops/locations/{self.shared.pk}/edit/', {'name':'Wrong'}).status_code, 404)
         self.assertEqual(self.client.post(f'/ops/locations/{self.shared.pk}/sharing/', {'team':self.pt.pk,'action':'grant'}).status_code, 404)
-        self.assertEqual(self.client.post('/ops/locations/link-irrigation/', {'zone':self.zone.pk}).status_code, 403)
+        self.assertEqual(self.client.post('/ops/locations/link-irrigation/', {'zone':self.zone.pk}).status_code, 404)
         self.shared.refresh_from_db()
         self.assertEqual(self.shared.name, 'Shared bed')
 
@@ -112,6 +120,10 @@ class WorkspaceTests(TestCase):
     def test_team_manager_cannot_promote_self_or_other_team(self):
         response = self.client.post('/ops/team/', {'username':self.field.username,'role':'manager'})
         self.assertContains(response, '经理角色由平台管理员授予')
+        response = self.client.post('/ops/team/', {'username':self.field.username,'role':'manager'},
+                                   HTTP_X_REQUESTED_WITH='XMLHttpRequest')
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()['message'], '经理角色由平台管理员授予。')
         self.fm.refresh_from_db();self.assertEqual(self.fm.role,'field')
         self.assertEqual(self.client.post('/ops/team/', {'team':self.it.pk,'username':self.im.username,'role':'field'}).status_code,403)
         self.assertEqual(self.client.get('/ops/team/?team='+str(self.it.pk)).status_code,403)
@@ -151,7 +163,7 @@ class WorkspaceTests(TestCase):
         self.client.force_login(self.im)
         self.assertEqual(self.client.get('/api/zones-payload/').status_code,200)
         response=self.client.post('/ops/locations/link-irrigation/',{'zone':self.zone.pk})
-        self.assertEqual(response.status_code,302)
+        self.assertEqual(response.status_code,404)
         self.assertEqual(Location.objects.filter(legacy_zone=self.zone).count(),1)
         self.client.post(f'/ops/locations/{self.shared.pk}/sharing/', {'team':self.pt.pk,'action':'grant'})
         self.assertTrue(LocationGrant.objects.filter(location=self.shared,team=self.pt).exists())
@@ -159,8 +171,12 @@ class WorkspaceTests(TestCase):
 
     def test_platform_admin_creates_account_without_global_manager_or_staff(self):
         self.client.force_login(self.admin)
-        response=self.client.post('/ops/team/', {'team':self.pt.pk,'username':'new-pest-manager',
-            'role':'manager','new_password':'Local-only-strong-test!2026'})
+        payload = {'team':self.pt.pk,'username':'new-pest-manager',
+                   'role':'manager','new_password':'Local-only-strong-test!2026'}
+        self.assertEqual(self.client.post('/ops/team/', payload).status_code, 403)
+        self.assertFalse(get_user_model().objects.filter(username=payload['username']).exists())
+        self.assertEqual(self.client.post('/ops/switch/', {'business':'pest-control'}).status_code, 302)
+        response=self.client.post('/ops/team/', payload)
         self.assertEqual(response.status_code,302,response.content)
         user=get_user_model().objects.get(username='new-pest-manager')
         self.assertFalse(user.is_staff)
@@ -171,19 +187,22 @@ class WorkspaceTests(TestCase):
         self.assertEqual(self.client.get('/ops/team/').status_code,200)
         self.assertEqual(self.client.get('/api/zones-payload/').status_code,200)
 
-    def test_link_code_collision_is_reported_without_partial_link_or_zone_change(self):
+    def test_retired_link_cannot_create_a_reference_or_change_a_zone(self):
         another=Zone.objects.create(code='NATIVE-COLLISION',name='Source')
         Location.objects.create(owner_team=self.it,code=another.code,name='Different native place')
         self.client.force_login(self.im)
         response=self.client.post('/ops/locations/link-irrigation/',{'zone':another.pk})
-        self.assertRedirects(response,'/ops/locations/link-irrigation/')
+        self.assertEqual(response.status_code,404)
         self.assertFalse(Location.objects.filter(legacy_zone=another).exists())
         another.refresh_from_db();self.assertEqual(another.name,'Source')
 
     def test_scope_ignores_posted_business_and_hides_unshared_parent_name(self):
         own=Location.objects.create(owner_team=self.pt,name='Own room',parent=self.private)
+        self.assertContains(self.client.get(f'/ops/locations/{own.pk}/'), 'Private building')
+        self.client.force_login(self.field)
         response=self.client.get(f'/ops/locations/{own.pk}/')
         self.assertNotContains(response,'Private building')
+        self.client.force_login(self.pm)
         self.client.post('/ops/locations/new/',{'name':'Scoped location','kind':'room',
             'business':self.irrigation.pk,'team':self.it.pk})
         self.assertEqual(Location.objects.get(name='Scoped location').owner_team_id,self.pt.pk)
@@ -191,12 +210,23 @@ class WorkspaceTests(TestCase):
     def test_locations_escape_labels_and_reference_is_business_scoped(self):
         from .models import ReferenceCatalog,ReferenceNode
         catalog=ReferenceCatalog.objects.create(business=self.pest,name='Pest',version='fixture',source_name='fixture.md')
-        ReferenceNode.objects.create(catalog=catalog,label='<img src=x onerror=alert(1)>',kind='node',source_line=1,order=0)
+        label = '<img src=x onerror=alert(1)>'
+        node = ReferenceNode.objects.create(catalog=catalog,label=label,kind='node',source_line=1,order=0)
         response=self.client.get('/ops/catalog/')
-        self.assertContains(response,'&lt;img')
+        self.assertContains(response,'data-endpoint="/ops/business-data/data/"')
         self.assertNotContains(response,'<img src=x')
+        data = self.client.get('/ops/business-data/data/').json()
+        self.assertEqual(data['catalog_id'], catalog.pk)
+        self.assertEqual(next(item['label'] for item in data['nodes'] if item['id'] == node.pk), label)
         self.client.force_login(self.im)
         self.assertNotContains(self.client.get('/ops/catalog/'),'&lt;img')
+        self.assertEqual(self.client.get('/ops/business-data/data/').status_code, 403)
+        irrigation_catalog = ReferenceCatalog.objects.create(business=self.irrigation,name='Irrigation',
+            version='escape',source_name='fixture.md')
+        ReferenceNode.objects.create(catalog=irrigation_catalog,label=label,kind='node',source_line=1,order=0)
+        response = self.client.get('/ops/catalog/')
+        self.assertContains(response,'&lt;img')
+        self.assertNotContains(response,'<img src=x')
 
     def test_common_login_and_pwa_shell_are_available_without_irrigation_access(self):
         anonymous=Client()

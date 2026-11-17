@@ -13,6 +13,11 @@ from datetime import date, time
 
 PARAMETER_TYPES = frozenset({'text', 'choice', 'integer', 'number', 'date', 'time', 'location'})
 EMPTY_VALUES = {'work': [], 'locations': []}
+IMPACT_DIRECTION = 'impact_direction'
+DEFAULT_DIRECTIONS = [
+    {'value': 'E', 'label': '东'}, {'value': 'S', 'label': '南'},
+    {'value': 'W', 'label': '西'}, {'value': 'N', 'label': '北'},
+]
 
 
 def definitions(value, *, allow_location=True):
@@ -68,24 +73,59 @@ def definitions(value, *, allow_location=True):
     return result
 
 
+def location_schema(locations):
+    places = {str(p.pk): {'id': str(p.pk), 'parent': str(p.parent_id or ''), 'name': p.name,
+                         'kind': p.kind, 'parameters': definitions(p.parameters, allow_location=False)}
+              for p in locations}
+    # Resolve parents first so an unconfigured annex inherits its building's
+    # existing field, including the field owner used by issued work orders.
+    for place in sorted(places.values(), key=lambda item: len(_path(places, item['id']))):
+        if place['kind'] == 'building' and not any(
+                field['key'] == IMPACT_DIRECTION for field in _inherited(places, place['id'])):
+            place['parameters'].append({'key': IMPACT_DIRECTION, 'label': '撞击方向', 'type': 'choice',
+                                        'required': False, 'options': [dict(option) for option in DEFAULT_DIRECTIONS]})
+    return places
+
+
+def location_definitions(location, *, available_locations=()):
+    places = {str(p.pk): p for p in available_locations}
+    places[str(location.pk)] = location
+    return _inherited(location_schema(places.values()), location.pk)
+
+
 def form_schema(catalog, locations, values=None):
     """Only pass locations visible to the active team, including no private parents."""
-    return {'nodes': [{'id': str(n.pk), 'parent': str(n.parent_id or ''), 'name': n.label,
-                       'parameters': definitions(n.parameters)} for n in catalog.nodes.all()],
-            'locations': [{'id': str(p.pk), 'parent': str(p.parent_id or ''), 'name': p.name,
-                           'parameters': definitions(p.parameters, allow_location=False)} for p in locations],
+    nodes = [{'id': str(n.pk), 'parent': str(n.parent_id or ''), 'name': n.label,
+              'parameters': definitions(n.parameters)} for n in catalog.nodes.all()]
+    by_id = {node['id']: node for node in nodes}
+    for node in nodes:
+        path = []; seen = set(); current = node
+        while current and current['id'] not in seen:
+            path.append(current); seen.add(current['id']); current = by_id.get(current['parent'])
+        names = ' '.join(item['name'] for item in path).lower()
+        bird_collision = ('鸟' in names or 'bird' in names) and any(word in names for word in ('撞', 'strike', 'collision'))
+        configured = any(field['key'] == IMPACT_DIRECTION for item in path for field in item['parameters'])
+        if bird_collision and not configured:
+            node['parameters'].append({'key': IMPACT_DIRECTION, 'label': '撞击方向',
+                                       'type': 'location', 'required': False})
+    return {'nodes': nodes,
+            'locations': list(location_schema(locations).values()),
             'values': values or {'work': [], 'locations': []}}
 
 
-def _inherited(items, identifier):
+def _path(items, identifier):
     path = []; seen = set(); item = items.get(str(identifier))
     while item:
         if item['id'] in seen:
             raise ValueError('参数层级存在循环。')
         seen.add(item['id']); path.insert(0, item)
         item = items.get(str(item.get('parent', '')))
+    return path
+
+
+def _inherited(items, identifier):
     fields = {}
-    for item in path:
+    for item in _path(items, identifier):
         for field in item['parameters']:
             fields[field['key']] = {**field, 'owner_id': item['id'], 'owner_label': item['name']}
     return list(fields.values())
@@ -98,6 +138,11 @@ def applicable_fields(schema, node_ids, location_ids):
         for field in _inherited(nodes, identifier):
             target = bindings if field['type'] == 'location' else work
             previous = target.get(field['key'])
+            if previous and field['type'] == 'location':
+                # Bindings request the same location field even when work
+                # branches use different captions or required settings.
+                target[field['key']] = {**previous, 'required': previous['required'] or field['required']}
+                continue
             # Different requested work items must not silently overwrite one another.
             if previous and {k: v for k, v in previous.items() if not k.startswith('owner_')} != {
                 k: v for k, v in field.items() if not k.startswith('owner_')}:

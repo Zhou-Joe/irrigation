@@ -30,11 +30,13 @@ def _update(request,member):
         scope=request.POST.get('scope','catalog')
         if scope not in ('team','catalog'):raise ValueError('区域视图已变化，请重新打开区域管理。')
         places=browsable_locations(member,request.user).select_related(None).exclude(owner_team=member.team)
+        if scope=='team':
+            places=places.filter(pk__in=visible_locations(member.team).values('pk'))
+        places=matching_locations(places,member.team,request.POST)
         if request.POST.get('all_matching')=='1':
-            if scope=='team':
-                places=places.filter(pk__in=visible_locations(member.team).values('pk'))
-            places=matching_locations(places,member.team,request.POST)
-            selected=list(places.values_list('pk',flat=True)[:10001])
+            excluded={uuid.UUID(value) for value in request.POST.getlist('excluded_locations')}
+            if len(excluded)>10000:raise ValueError('每批最多排除 10000 个地点。')
+            selected=list(places.exclude(pk__in=excluded).values_list('pk',flat=True)[:10001])
         else:
             try:identifiers={uuid.UUID(value) for value in request.POST.getlist('locations')}
             except (ValueError,TypeError,AttributeError):raise ValueError('所选地点编号无效，请重新选择。')

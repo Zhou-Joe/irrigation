@@ -45,7 +45,7 @@ def home(request):
 def switch(request):
     if 'business' in request.POST:
         business=request.POST.get('business','')
-        if business not in ('irrigation','pest-control'):
+        if business not in ('irrigation','pest-control','landscaping'):
             return JsonResponse({'error':'业务视图无效。'},status=400)
         if business not in {item['code'] for item in business_options(request.user)}:
             raise PermissionDenied('当前账号无权访问该业务。')
@@ -63,7 +63,7 @@ def switch(request):
         request.session['operations_membership']=member.pk
         audit(request,member.team,'workspace.switch',member.pk)
     else:
-        return JsonResponse({'error':'请选择灌溉或植保。'},status=400)
+        return JsonResponse({'error':'请选择业务视图。'},status=400)
     return switch_response(request)
 
 
@@ -122,7 +122,11 @@ def location_detail(request, pk):
     manage = can_manage_location(member, location, request.user)
     grants = location.grants.select_related('team') if manage else []
     others = Team.objects.filter(active=True, business__active=True).exclude(pk=location.owner_team_id) if manage else []
+    from .work_parameters import location_definitions, IMPACT_DIRECTION
+    direction = next((field for field in location_definitions(location, available_locations=places)
+                      if field['key'] == IMPACT_DIRECTION and field['type'] == 'choice'), None) if location.kind == 'building' else None
     return page(request, 'location_detail', location=location, parent=parent, manage=manage, grants=grants, other_teams=others,
+        location_directions=direction['options'] if direction else [],
         is_team_visible=location.is_team_visible,
         can_browse_catalog=can_browse_location_catalog(member,request.user),
         selected_scope='catalog' if request.GET.get('scope')=='catalog' and can_browse_location_catalog(member,request.user) else 'team',
@@ -156,42 +160,6 @@ def location_edit(request, pk=None):
         return JsonResponse({'success':False,'message':'；'.join(str(error) for errors in form.errors.values() for error in errors),
                              'errors':form.errors.get_json_data()},status=400)
     return page(request, 'location_form', form=form, location=instance)
-
-
-@login_required
-@require_http_methods(['GET', 'POST'])
-def link_irrigation(request):
-    member = require_member(request, manager=True)
-    if member.team.business.code != 'irrigation' and not request.user.is_superuser:
-        raise PermissionDenied('请由灌溉团队经理选择并共享区域。')
-    owner=member.team if member.team.business.code=='irrigation' else get_object_or_404(
-        Team,business__code='irrigation',legacy_irrigation_access=True,active=True)
-    from core.models import Zone
-    if request.method == 'POST':
-        if member.team_id!=owner.pk:
-            raise PermissionDenied('请使用批量共享入口选择原区域与接收团队。')
-        zone = get_object_or_404(Zone, pk=number(request.POST.get('zone')))
-        try:
-            with transaction.atomic():
-                location, created = Location.objects.get_or_create(legacy_zone=zone, defaults={
-                    'owner_team': member.team, 'name': zone.name or zone.code, 'code': zone.code})
-                if location.owner_team_id != member.team_id:
-                    raise PermissionDenied('该区域已由其他团队管理，请联系地点负责人。')
-                if created:
-                    audit(request, member.team, 'location.link_irrigation', location.pk, zone_id=zone.pk)
-        except IntegrityError:
-            messages.error(request, '本团队已有相同编号的地点，请先调整该地点编号后再引入此区域。')
-            return redirect('operations:link_irrigation')
-        return redirect('operations:location_detail', pk=location.pk)
-    query = request.GET.get('q', '').strip()[:100]
-    zones = Zone.objects.all()
-    from django.db.models import Q
-    if query:
-        zones = zones.filter(Q(code__icontains=query) | Q(name__icontains=query))
-    from django.core.paginator import Paginator
-    return page(request, 'link_irrigation', zones=Paginator(zones.only('id','code','name').order_by('code'),50).get_page(request.GET.get('page')),query=query,
-                other_teams=Team.objects.filter(active=True,business__active=True).exclude(pk=owner.pk),
-                suggested_target=member.team_id if member.team_id!=owner.pk else None)
 
 
 @login_required
@@ -239,6 +207,7 @@ def location_geometry(request):
         # Never include legacy remarks, work counts, worker details or histories.
         result.append({**location_map_data(location),'owner_team':location.owner_team.name,
             'owner_team_id':location.owner_team_id,'team_visible':location.is_team_visible,
+            'can_select':bool(catalog and can_browse_location_catalog(member,request.user) and location.owner_team_id!=member.team_id),
             'can_edit':can_manage_location(member,location,request.user)})
     response = JsonResponse({'locations': result})
     response['Cache-Control'] = 'private, no-store'

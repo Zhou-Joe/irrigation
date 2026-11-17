@@ -39,7 +39,7 @@ class BusinessViewTests(TestCase):
             page=self.client.get('/')
             self.assertTrue(page.context['is_admin'])
             self.assertEqual(page.context['workspace_membership'].team_id,team.pk)
-            self.assertEqual(page.context['business_choices'],[{'code':'irrigation','label':'灌溉'},{'code':'pest-control','label':'植保'}])
+            self.assertEqual(page.context['business_choices'],[{'code':'irrigation','label':'灌溉'},{'code':'pest-control','label':'植保'},{'code':'landscaping','label':'绿化'}])
             self.assertContains(page,'name="business"')
             self.assertNotContains(page,'name="admin_view"')
             self.assertNotContains(page,'经理视图')

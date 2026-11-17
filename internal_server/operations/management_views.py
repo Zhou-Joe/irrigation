@@ -363,7 +363,7 @@ def task_action(request,pk):
 @require_http_methods(['GET','POST'])
 @sensitive_post_parameters('old_password','new_password','confirm_password')
 def profile(request):
-    member=pest_member(request);user=request.user
+    member=require_member(request);user=request.user
     if request.method=='POST':
         try:
             action=request.POST.get('action','details')

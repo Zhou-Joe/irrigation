@@ -18,6 +18,11 @@ class BusinessAccessMiddleware:
         if not settings.MULTI_TEAM_ENABLED:
             return HttpResponseNotFound() if is_ops else self.get_response(request)
         if is_ops:
+            if request.user.is_authenticated:
+                from .access import active_membership
+                member = active_membership(request)
+                if member and member.team.business.code == 'landscaping' and request.path not in ('/ops/', '/ops/switch/', '/ops/profile/'):
+                    return JsonResponse({'error': '绿化功能待开发。', 'workspace_url': '/'}, status=403)
             response = self.get_response(request)
             response['Cache-Control'] = 'private, no-store'
             response['Vary'] = 'Cookie'
@@ -50,6 +55,16 @@ class BusinessAccessMiddleware:
                     return render(request,'operations/no_membership.html',status=403)
                 return JsonResponse({'error':'当前业务身份不可用，请重新选择业务。'},status=403)
             pest = member and member.team.business.code == 'pest-control'
+            if member and member.team.business.code == 'landscaping':
+                request.operations_shell = True
+                if request.path == '/app/' and request.method == 'GET':
+                    return redirect('core:dashboard')
+                if request.path == '/' and request.method == 'GET':
+                    response = self.get_response(request)
+                    response['Cache-Control'] = 'private, no-store'
+                    response['Vary'] = 'Cookie'
+                    return response
+                return JsonResponse({'error': '绿化功能待开发。', 'workspace_url': '/'}, status=403)
             if pest:
                 request.operations_shell = True
                 if request.path == '/app/' and request.method == 'GET':
