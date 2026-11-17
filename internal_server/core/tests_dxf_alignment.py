@@ -55,10 +55,15 @@ class AlignmentWorkflowTests(TestCase):
         self.assertEqual(Pipeline.objects.count(), 0)
 
     def placement_import(self, data, **extra):
-        params = {'token': data['token'], 'preview_token': data['preview_token'],
+        fit=json.dumps({'a':2e-6,'b':-7e-6,'c':31.1,'d':104.3,'iso_k':.86})
+        preview=self.client.post('/pipelines/dxf/analyze/',{'token':data['token'],
+            'import_mode':'direct','placement_fit':fit})
+        self.assertEqual(preview.status_code,200,preview.content[:500])
+        frozen=preview.json()
+        params = {'token': data['token'], 'preview_token': frozen['preview_token'],
+                  'submission_key': frozen['submission_key'], 'import_mode':'direct',
                   'layers_json': json.dumps({'100': {'include': True}}),
-                  'positioning_mode': 'placement', 'placement_fit': json.dumps({
-                      'a': 2e-6, 'b': -7e-6, 'c': 31.1, 'd': 104.3, 'iso_k': .86})}
+                  'positioning_mode': 'placement', 'placement_fit': fit}
         params.update(extra)
         return self.client.post('/pipelines/dxf/import/', params)
 
@@ -95,7 +100,7 @@ class AlignmentWorkflowTests(TestCase):
     def test_placement_still_requires_matching_authenticated_signed_preview(self):
         data = self.analyze_raw()
         for extra in ({'preview_token': ''}, {'preview_token': data['preview_token']+'bad'},
-                      {'token': 'another-drawing'}, {'positioning_mode': 'unknown'}):
+                      {'token': 'another-drawing'}, {'import_mode': 'unknown'}):
             self.assertEqual(self.placement_import(data, **extra).status_code, 400)
         self.assertEqual(Pipeline.objects.count(), 0)
 
@@ -224,9 +229,10 @@ class AlignmentWorkflowTests(TestCase):
         self.assertTrue(SiteCalibration.objects.filter(pk=row.id).exists())
 
     def test_reposition_removes_old_drag_offset_and_preserves_manual_correction(self):
-        data = self.analyze_raw()
+        data = self.validated_preview()
         utils.import_dxf_pipelines({'100': {'include': True}}, {}, token=data['token'],
-                                   offset=(.0004, -.0003), imported_by=self.user)
+                                   offset=(.0004, -.0003), imported_by=self.user,
+                                   preview_token=data['preview_token'])
         pipe = Pipeline.objects.get()
         pipe.line_points[0]['lat'] += .00001
         pipe.save(update_fields=['line_points'])
@@ -296,5 +302,5 @@ class AlignmentWorkflowTests(TestCase):
         original_dialog = html.split('<dialog id="pdxfOriginalDialog"', 1)[1].split('</dialog>', 1)[0]
         self.assertIn('id="pdxfCadMap"', original_dialog)
         self.assertContains(response, 'dxf-placement.js')
-        self.assertContains(response, '初步叠图用于辨认线条')
+        self.assertContains(response, '按当前预览直接导入')
         self.assertContains(response, 'CAD 会临时隐藏')

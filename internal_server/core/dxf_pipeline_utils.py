@@ -5,7 +5,7 @@
     ``WD``（疏水/放水）、``AD-I-LL/ML``（支管/主管）等关键词层；
   * 阀门是 INSERT 块，块名 ``WID_Val-*`` 的后缀编码阀门类型，插入点
     几乎总落在管道线上；块内画着的线条几何另展开到 ``块·<块名>``
-    虚拟图层（默认不勾选，可当管线导入）；
+    虚拟图层，保留为地图默认显示的 CAD 块符号；
   * 文字标注（MTEXT/TEXT，多在 ``设备编号``/``POC`` 层）是最近的阀门/
     设备编号，如 ``9-GV6``。
 
@@ -89,12 +89,19 @@ def _guess_line_type(layer_name):
 
 
 def _guess_block_type(block_name):
-    low = block_name.lower()
+    low = re.sub(r'[_-]+', ' ', block_name).lower()
     for t, pat in BLOCK_TYPE_KEYWORDS:
         if re.search(pat, low, re.I):
             return t
-    suffix = low.rsplit('-', 1)[-1] if '-' in low else ''
+    suffix = block_name.lower().rsplit('-', 1)[-1] if '-' in block_name else ''
     return DEFAULT_VALVE_TYPE_BY_SUFFIX.get(suffix, 'gate')
+
+
+def _block_include_guess(name):
+    """Recognize device names beyond one supplier's WID_Val block convention."""
+    return bool(re.search(
+        r'阀|拉线|牵引|取水|冲洗|\b(?:VALVE|SOLENOID|QCV|WASHDOWN|PULLBOX|GV|AV|WD|CF|PB)\b|WID\s+VAL',
+        re.sub(r'[_-]+', ' ', name), re.I))
 
 
 def _layer_diameter_guess(name):
@@ -455,7 +462,7 @@ def _entity_polyline(e):
     return None
 
 
-# INSERT 块内线条几何展开到的虚拟图层前缀（默认不勾选，用户按需导入）
+# INSERT 块内线条几何展开到的虚拟图层前缀（保留图形，不生成额外管道）
 INSERT_EXPLODE_PREFIX = '块·'
 # 嵌套块展开深度上限（防自引用块递归）
 INSERT_EXPLODE_DEPTH = 3
@@ -855,11 +862,11 @@ def analyze_dxf_pipelines(uploaded_file=None, token=None, user_id=None, calibrat
             direct_error = str(exc)
     else:
         to_latlng, meters_per_unit = _local_to_latlng_fn(snapshot) if alignment['ready'] else (None, None)
-    def preview_point(x, y):
+    def preview_point(x, y, precision=6):
         point = {'dxf_x': x, 'dxf_y': y}
         if to_latlng:
             lat, lng = to_latlng(x, y)
-            point.update(lat=round(lat, 6), lng=round(lng, 6))
+            point.update(lat=round(lat, precision), lng=round(lng, precision))
         return point
 
     layer_infos = []
@@ -897,7 +904,7 @@ def analyze_dxf_pipelines(uploaded_file=None, token=None, user_id=None, calibrat
             'attrs': sorted(info['attrs']),
             'valve_type_guess': _guess_block_type(name),
             'samples': info['samples'],
-            'include_guess': name.startswith('WID_Val') or bool(re.search(r'拉线|QCV|\bWD\b', name, re.I)),
+            'include_guess': _block_include_guess(name),
         })
 
     label_layers = defaultdict(lambda: {'count': 0, 'samples': [], 'points': []})
@@ -914,8 +921,9 @@ def analyze_dxf_pipelines(uploaded_file=None, token=None, user_id=None, calibrat
     for info in previewable:
         pts_list = layers[info['layer']]['polys']
         paths = []
+        precision = 8 if info['layer'].startswith(INSERT_EXPLODE_PREFIX) else 6
         for pts in pts_list:
-            paths.append([preview_point(x, y) for x, y in pts])
+            paths.append([preview_point(x, y, precision) for x, y in pts])
         preview_layers.append({'layer': info['layer'], 'paths': paths})
     preview_valves = []
     for v in valves:
@@ -1250,14 +1258,15 @@ def build_cad_reference_payload():
         if fn is None:
             continue
         off_lat, off_lng = batch.import_options.get('offset', [0, 0])
-        def point(x, y):
+        def point(x, y, precision=6):
             lat, lng = fn(x, y)
-            return {'lat': round(lat + off_lat, 6), 'lng': round(lng + off_lng, 6)}
+            return {'lat': round(lat + off_lat, precision), 'lng': round(lng + off_lng, precision)}
         source = batch.source_geometry
         result.append({
             'batch_id': batch.id, 'name': batch.name,
-            'layers': [{'layer': name, 'paths': [[point(x, y) for x, y in path]
-                         for path in bucket['polys']]}
+            'layers': [{'layer': name, 'paths': [
+                [point(x, y, 8 if name.startswith(INSERT_EXPLODE_PREFIX) else 6) for x, y in path]
+                for path in bucket['polys']]}
                        for name, bucket in source.get('layers', {}).items()],
             'labels': [dict(lb, **point(lb['x'], lb['y'])) for lb in source.get('labels', [])],
             'unmatched_valves': [dict(v, **point(v['x'], v['y']))

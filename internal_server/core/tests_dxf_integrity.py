@@ -41,6 +41,14 @@ def checks_for(points, method='sim'):
 
 
 class GeometryIntegrityTests(SimpleTestCase):
+    def test_common_valve_block_names_are_selected_without_selecting_other_cad_blocks(self):
+        for name,kind in [('WID_Val-cf','solenoid'),('GV_50','gate'),('AV-25','angle'),
+                          ('WD_40','washdown'),('QCV_15','qcv'),('拉线箱','pullbox'),('闸阀 DN50','gate')]:
+            self.assertTrue(utils._block_include_guess(name),name)
+            self.assertEqual(utils._guess_block_type(name),kind,name)
+        for name in ('TitleBlock','ZONE_BORDER','*U42','POC','C-L-BUILDING'):
+            self.assertFalse(utils._block_include_guess(name),name)
+
     def test_plain_text_insert_is_supported(self):
         doc = ezdxf.new()
         doc.modelspace().add_text('Valve 1', dxfattribs={'insert': (100, 200)})
@@ -116,6 +124,7 @@ class ImportIntegrityTests(TestCase):
     def import_preview(self, data):
         return self.client.post('/pipelines/dxf/import/', {
             'token': data['token'], 'preview_token': data['preview_token'],
+            'submission_key': data['submission_key'], 'import_mode': 'aligned',
             'layers_json': json.dumps({'100': {'include': True}}),
             'blocks_json': '{}', 'label_layers': '[]'})
 
@@ -148,6 +157,25 @@ class ImportIntegrityTests(TestCase):
         self.assertEqual(len(previews['100']), 601)
         self.assertIn('块·VALVE', previews)
         self.assertEqual(previews['100'][0][0]['dxf_x'], 18100)
+
+    def test_small_block_outlines_survive_preview_import_and_dashboard_reference(self):
+        def build(doc):
+            doc.modelspace().add_line((18100,-10100),(18120,-10100),dxfattribs={'layer':'100'})
+            block=doc.blocks.new('GV_50')
+            block.add_lwpolyline([(-.01,0),(.01,.01),(.01,-.01)],close=True)
+            doc.modelspace().add_blockref('GV_50',(18110,-10100),dxfattribs={'rotation':30})
+        data=self.analyze(drawing(build))
+        self.assertTrue(data['blocks'][0]['include_guess'])
+        outline=next(layer for layer in data['preview']['layers'] if layer['layer']=='块·GV_50')['paths'][0]
+        self.assertGreater(len({(point['lat'],point['lng']) for point in outline}),1)
+        result=utils.import_dxf_pipelines({'100':{'include':True}},
+            {'GV_50':{'include':True,'valve_type':'gate'}},token=data['token'],
+            preview_token=data['preview_token'],imported_by=self.user)
+        self.assertEqual((result['pipelines'],result['valves']),(1,1))
+        reference=utils.build_cad_reference_payload()
+        saved=next(layer for layer in reference[0]['layers'] if layer['layer']=='块·GV_50')['paths'][0]
+        self.assertEqual(saved,[{'lat':point['lat'],'lng':point['lng']} for point in outline])
+        self.assertEqual(Pipeline.objects.count(),1,'Block outlines must not become extra pipes')
 
     def test_import_uses_reviewed_calibration_and_persists_source(self):
         a = SiteCalibration.objects.create(points=translated(0), method='sim')
@@ -361,6 +389,7 @@ class ImportIntegrityTests(TestCase):
         data = self.analyze()
         self.assertEqual(self.import_preview(data).status_code, 200)
         first = Pipeline.objects.get()
+        data = self.analyze()  # A second intentional import needs its own reviewed submission.
         self.assertEqual(self.import_preview(data).status_code, 200)
         second = Pipeline.objects.exclude(pk=first.pk).get()
         before = second.line_points

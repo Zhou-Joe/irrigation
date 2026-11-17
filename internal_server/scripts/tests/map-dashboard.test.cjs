@@ -128,8 +128,9 @@ function mapHarness() {
     const L={tileLayer:()=>({}),layerGroup:()=>new Group(),divIcon:o=>o,latLng:(lat,lng)=>({lat,lng}),
         marker:(p,o)=>new Layer(p,o),polygon:(p,o)=>new Layer(p,o),polyline:(p,o)=>new Layer(p,o)};
     let source=fs.readFileSync(path.join(__dirname,'../../static/js/map.js'),'utf8');
-    const hook=`window.__test={renderZones,loadZones,loadPipelines,locateUser,updateLabelSizes,_cullLabelsToViewport,buildCardHtml,_refreshZonePolygons,
-        labels:()=>zoneLabels, setState(m,g){map=m;[zonesLayerGroup,labelsLayerGroup,leaderLinesLayerGroup,ringLabelsLayerGroup,landmarksLayerGroup]=g;}};`;
+    const hook=`window.__test={renderZones,loadZones,loadPipelines,renderCadReference,locateUser,updateLabelSizes,_cullLabelsToViewport,buildCardHtml,_refreshZonePolygons,
+        labels:()=>zoneLabels, setState(m,g){map=m;[zonesLayerGroup,labelsLayerGroup,leaderLinesLayerGroup,ringLabelsLayerGroup,landmarksLayerGroup]=g;},
+        setCadState(g){[cadReferenceLayerGroup,cadSymbolsLayerGroup,cadNotesLayerGroup,cadUnmatchedLayerGroup]=g;}};`;
     source=source.replace(/\}\)\(\);\s*$/,hook+'})();');
     const context={window,document,L,localStorage:{getItem:()=>null,setItem(){}},console,setTimeout,clearTimeout,setInterval:()=>0,
         requestAnimationFrame:setImmediate,performance,Set,Map,CustomEvent:class{}};
@@ -137,7 +138,9 @@ function mapHarness() {
     vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../../operations/static/operations/map-actions.js'),'utf8'),context);
     vm.runInNewContext(source,context);
     window.__test.setState(map,groups);
-    return {window,map,groups,api:window.__test,context,elements};
+    const cad=Array.from({length:4},()=>new Group());cad[1].addTo(map);cad[3].addTo(map);
+    window.__test.setCadState(cad);
+    return {window,map,groups,cad,api:window.__test,context,elements};
 }
 function zone(id,patch=1,lng=121) {
     return {id,code:`${id}-1-1`,name:'Map zone',land_name:'Land',patch_id:patch,
@@ -193,6 +196,23 @@ test('pipeline failure is visible and does not clear successfully drawn zones', 
     assert.equal(h.elements.pipelineLoadNotice.hidden,false);
     assert.equal(h.groups[0].layers.size,1);
     assert.equal(typeof h.elements.pipelineLoadingRetry.onclick,'function');
+});
+test('CAD block outlines remain visible independently of unselected reference lines', () => {
+    const h=mapHarness(),path=ring.map(([lat,lng])=>({lat,lng}));
+    const batches=[{name:'Drawing <1>.dxf',layers:[
+        {layer:'100',paths:[path]},{layer:'块·GV_50',paths:[path,path.slice(0,2)]}
+    ]}];
+    h.api.renderCadReference(batches);
+    assert.equal(h.cad[0].layers.size,1);assert.equal(h.map.hasLayer(h.cad[0]),false);
+    assert.equal(h.cad[1].layers.size,2);assert.equal(h.map.hasLayer(h.cad[1]),true);
+    assert.ok([...h.cad[1].layers][0].tooltip.includes('&lt;1&gt;'));
+    h.window.setLayerVisibility('cad_symbols',false);
+    h.api.renderCadReference(batches);
+    assert.equal(h.map.hasLayer(h.cad[1]),false);assert.equal(h.cad[1].layers.size,2);
+    h.window.setLayerVisibility('cad_reference',true);
+    assert.equal(h.map.hasLayer(h.cad[0]),true);assert.equal(h.map.hasLayer(h.cad[1]),false);
+    h.window.setLayerVisibility('cad_symbols',true);
+    assert.equal(h.map.hasLayer(h.cad[1]),true);assert.equal(h.cad[0].layers.size,1);
 });
 test('changing smoothing keeps popup metadata and never creates invisible overview labels', async () => {
     const h=mapHarness();const data={...zone(1),sprinkler_type:'Rotor',equipment_maintenance_notes:'[]',smooth_override:0};

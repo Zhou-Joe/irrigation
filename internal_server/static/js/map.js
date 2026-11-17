@@ -46,6 +46,7 @@
     const hiddenPipelineTypes = new Set();
     let pipelinesVisible = true;
     let cadReferenceLayerGroup;
+    let cadSymbolsLayerGroup;
     let cadNotesLayerGroup;
     let cadUnmatchedLayerGroup;
     // Rendered valve markers + their tooltip content, so a zoomend handler can
@@ -297,6 +298,7 @@
         // Initialize pipelines layer group
         pipelinesLayerGroup = L.layerGroup().addTo(map);
         cadReferenceLayerGroup = L.layerGroup();
+        cadSymbolsLayerGroup = L.layerGroup().addTo(map);
         cadNotesLayerGroup = L.layerGroup();
         cadUnmatchedLayerGroup = L.layerGroup().addTo(map);
 
@@ -1889,15 +1891,18 @@
     function renderCadReference(batches) {
         if(destroyed)return;
         cadReferenceLayerGroup.clearLayers();
+        cadSymbolsLayerGroup.clearLayers();
         cadNotesLayerGroup.clearLayers();
         cadUnmatchedLayerGroup.clearLayers();
         batches.forEach(batch => {
             (batch.layers || []).forEach(layer => {
+                const symbol = layer.layer.startsWith('块·');
                 (layer.paths || []).forEach(path => {
                     L.polyline(path.map(p => [p.lat, p.lng]), {
-                        color: '#d6a544', weight: 1.5, opacity: 0.7
+                        color: symbol ? '#ad6142' : '#d6a544',
+                        weight: symbol ? 2 : 1.5, opacity: symbol ? 0.9 : 0.7
                     }).bindTooltip(escapeHtml(batch.name + ' · ' + layer.layer))
-                        .addTo(cadReferenceLayerGroup);
+                        .addTo(symbol ? cadSymbolsLayerGroup : cadReferenceLayerGroup);
                 });
             });
             (batch.labels || []).forEach(note => {
@@ -2187,8 +2192,9 @@
             } else {
                 if (map.hasLayer(pipelinesLayerGroup)) map.removeLayer(pipelinesLayerGroup);
             }
-        } else if (layer === 'cad_reference' || layer === 'cad_notes' || layer === 'cad_unmatched') {
+        } else if (layer === 'cad_reference' || layer === 'cad_symbols' || layer === 'cad_notes' || layer === 'cad_unmatched') {
             const group = layer === 'cad_reference' ? cadReferenceLayerGroup
+                : layer === 'cad_symbols' ? cadSymbolsLayerGroup
                 : layer === 'cad_notes' ? cadNotesLayerGroup : cadUnmatchedLayerGroup;
             if (visible) map.addLayer(group); else map.removeLayer(group);
         } else if (layer === 'landmarks') {

@@ -238,6 +238,10 @@
                 </label>
                 <div id="pipelineTypeLayers" style="padding-left:18px;"></div>
                 <label class="map-layer-item">
+                    <input type="checkbox" checked onchange="toggleLayer('cad_symbols', this.checked)">
+                    <span class="map-layer-checkmark"></span><span>CAD 块符号</span>
+                </label>
+                <label class="map-layer-item">
                     <input type="checkbox" onchange="toggleLayer('cad_reference', this.checked)">
                     <span class="map-layer-checkmark"></span><span>CAD 参考线</span>
                 </label>
@@ -445,7 +449,7 @@
 <script id="pending-remarks" type="application/json">{{ pending_remarks_json|safe }}</script>
 <!-- Custom Map JS -->
 <script src="{% static 'js/map-runtime.js' %}?v=20261106boundaries"></script>
-<script src="{% static 'js/map.js' %}?v=20261114pipeline"></script>
+<script src="{% static 'js/map.js' %}?v=20261117blocks"></script>
 <script src="{% static 'js/dashboard-modal.js' %}?v=20261108fixes2"></script>
 <script>
 // Override the notification popup's PM-task "填写" handler: on the dashboard we

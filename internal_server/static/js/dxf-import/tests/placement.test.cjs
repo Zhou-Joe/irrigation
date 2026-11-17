@@ -4,7 +4,7 @@ const path = require("node:path");
 const vm = require("node:vm");
 const { test } = require("node:test");
 
-function workspace() {
+function workspace({aligned=true}={}) {
   const elements = new Map();
   const context = vm.createContext({
     window: { __DXF__: { cal: null, placementPoints: [] } },
@@ -29,6 +29,8 @@ function workspace() {
       context,
     );
   }
+  // Alignment scenarios explicitly select the precise mode; new imports default to direct.
+  if(aligned)context.pdxfPlacementMode=false;
   return context;
 }
 function close(actual, expected, tolerance = 1e-10) {
@@ -68,6 +70,23 @@ function fixture(c) {
   });
   return { fit, pairs };
 }
+
+test("selected block outlines and alignment points survive hiding reference lines", () => {
+  const c=workspace(),specs={layers:{'100':{include:true}},blocks:{'GV_50':{include:true}}};
+  assert.equal(c.pdxfLayerState('块·GV_50',specs,false,true).selected,true);
+  assert.equal(c.pdxfLayerState('块·GV_50',specs,false,false),null);
+  assert.equal(c.pdxfLayerState('块·OTHER',specs,false,true),null);
+  assert.equal(c.pdxfLayerState('块·OTHER',specs,true,true).selected,false);
+  assert.equal(c.pdxfLayerState('100',specs,false,false).selected,true);
+  const pipe={dxf_x:1,dxf_y:2},symbol={dxf_x:3,dxf_y:4},other={dxf_x:5,dxf_y:6};
+  c.pdxfCollectSpecs=()=>specs;
+  c.pdxfData={preview:{layers:[{layer:'100',paths:[[pipe]]},{layer:'块·GV_50',paths:[[symbol]]},
+    {layer:'块·OTHER',paths:[[other]]}],valves:[]}};
+  c.pdxfEl('pdxfShowReference').checked=false;
+  assert.deepEqual(Array.from(c.pdxfCalCandidates()),[pipe,symbol]);
+  c.pdxfEl('pdxfShowDevices').checked=false;
+  assert.deepEqual(Array.from(c.pdxfCalCandidates()),[pipe]);
+});
 
 test("coarse move, rotation and uniform scale preserve shape and original coordinates", () => {
   const c = workspace(),
@@ -209,6 +228,7 @@ test("unknown source coordinates get a visible shape-preserving initial overlay 
     preview: { layers: [{ paths: [points] }] },
   };
   c.pdxfPlacementSeed();
+  c.pdxfPlacementMode=false;
   for (const p of points) {
     const [lat, lng] = c.pdxfGeographic(p);
     assert.ok(view.contains({ lat, lng }));
@@ -243,13 +263,14 @@ test("explicit placement uses the displayed fit, supports adjustments, and keeps
   c.pdxfCalStop = () => { c.pdxfCal.on = false; };
   c.pdxfRefreshMap = () => {};
   c.pdxfUpdateWorkflow = () => {};
-  const displayed = JSON.stringify(c.pdxfOverlayFit());
+  const signature=()=>JSON.stringify(['a','b','c','d','iso_k'].map(key=>c.pdxfOverlayFit()[key]));
+  const displayed = signature();
   assert.equal(c.pdxfReady(), false);
   c.pdxfPositionModeChanged(true);
   assert.equal(c.pdxfReady(), true);
   assert.equal(c.pdxfVerified(), false);
   assert.equal(c.pdxfPlacementAllowed(), true);
-  assert.equal(JSON.stringify(c.pdxfOverlayFit()), displayed);
+  assert.equal(signature(), displayed);
   const point = { dxf_x: 50, dxf_y: -25, lat: -80, lng: -100 };
   assert.equal(JSON.stringify(c.pdxfGeographic(point)),
     JSON.stringify(c.pdxfProjectPoint(c.pdxfPlacementFit, point)));
@@ -259,7 +280,7 @@ test("explicit placement uses the displayed fit, supports adjustments, and keeps
   assert.equal(c.pdxfPlacementAllowed(), false);
   c.pdxfPositionModeChanged(false);
   assert.equal(c.pdxfReady(), false);
-  assert.equal(JSON.stringify(c.pdxfOverlayFit()), displayed);
+  assert.equal(signature(), displayed);
   c.pdxfPositionModeChanged(true);
   c.pdxfBatchMode = true;
   assert.equal(c.pdxfUsePlacement(), false);
@@ -277,6 +298,6 @@ test("new drawing resets manual positioning and invalid fits cannot enable impor
   c.pdxfPlacementFit = fit;
   assert.equal(c.pdxfReady(), true);
   c.pdxfPlacementReset();
-  assert.equal(c.pdxfUsePlacement(), false);
+  assert.equal(c.pdxfUsePlacement(), true);
   assert.equal(c.pdxfReady(), false);
 });

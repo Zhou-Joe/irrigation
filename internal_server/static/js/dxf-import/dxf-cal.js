@@ -139,13 +139,10 @@ function pdxfCalCandidates() {
   var points = [];
   if (!pdxfData) return points;
   var specs = pdxfCollectSpecs(),
-    reference = pdxfEl("pdxfShowReference").checked;
+    reference = pdxfEl("pdxfShowReference").checked,
+    devices = pdxfEl("pdxfShowDevices").checked;
   pdxfData.preview.layers.forEach(function (layer) {
-    if (
-      !(specs.layers[layer.layer] && specs.layers[layer.layer].include) &&
-      !reference
-    )
-      return;
+    if (!pdxfLayerState(layer.layer, specs, reference, devices)) return;
     layer.paths.forEach(function (path) {
       path.forEach(function (point) {
         points.push(point);

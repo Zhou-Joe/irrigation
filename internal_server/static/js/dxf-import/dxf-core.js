@@ -594,7 +594,7 @@ function pdxfRenderTables() {
   pdxfEl("pdxfSymbolHint").textContent =
     pdxfData.layers.length -
     pipes.length +
-    " 个块符号图层保留为 CAD 参考，不作为管道导入。";
+    " 个 Block 图层将保留原形，显示在地图的“CAD 块符号”中；在“设备”页选择阀门类型。";
   pdxfEl("pdxfPipeTab").textContent = "管线 " + pipes.length;
   pdxfEl("pdxfDeviceTab").textContent = "设备 " + pdxfData.blocks.length;
   pdxfEl("pdxfNoteTab").textContent = "标注 " + pdxfData.labels.length;
@@ -695,6 +695,13 @@ function pdxfGeographic(point) {
     return [point.lat, point.lng];
   return pdxfProjectPoint(pdxfOverlayFit(), point);
 }
+function pdxfLayerState(name, specs, reference, devices) {
+  var symbol = name.startsWith("块·"),
+    spec = symbol ? specs.blocks[name.slice(2)] : specs.layers[name],
+    selected = !!(spec && spec.include);
+  if ((symbol && !devices) || (!selected && !reference)) return null;
+  return { selected: selected, symbol: symbol };
+}
 function pdxfRefreshMap() {
   if (!pdxfMap || !pdxfData) return;
   pdxfClearGroups(pdxfCadMap, pdxfCadLayers);
@@ -707,10 +714,10 @@ function pdxfRefreshMap() {
     notes = pdxfEl("pdxfShowNotes").checked,
     opacity = Number(pdxfEl("pdxfOpacity").value) / 100;
   pdxfData.preview.layers.forEach(function (layer) {
-    var selected = !!(
-      specs.layers[layer.layer] && specs.layers[layer.layer].include
-    );
-    if (!selected && !reference) return;
+    var state = pdxfLayerState(layer.layer, specs, reference, devices);
+    if (!state) return;
+    var selected = state.selected,
+      color = state.symbol ? "#ad6142" : pdxfColorOf[layer.layer];
     var raw = L.featureGroup().addTo(pdxfCadMap),
       geo = L.featureGroup().addTo(pdxfMap);
     layer.paths.forEach(function (path) {
@@ -719,7 +726,7 @@ function pdxfRefreshMap() {
           return [p.dxf_y, p.dxf_x];
         }),
         {
-          color: selected ? pdxfColorOf[layer.layer] : "#a1b8aa",
+          color: selected ? color : "#a1b8aa",
           weight: selected ? 2 : 1,
           opacity: selected ? 0.9 : 0.4,
           interactive: false,
@@ -728,7 +735,7 @@ function pdxfRefreshMap() {
       var ll = path.map(pdxfGeographic);
       if (ll.length && ll.every(Boolean))
         L.polyline(ll, {
-          color: selected ? pdxfColorOf[layer.layer] : "#b9c7bd",
+          color: selected ? color : "#b9c7bd",
           weight: selected ? 3 : 1,
           opacity: selected ? opacity : 0.3,
           interactive: false,
