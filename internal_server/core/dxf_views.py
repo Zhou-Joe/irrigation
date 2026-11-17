@@ -255,14 +255,14 @@ def pipeline_dxf_import_submit(request):
     try:
         layer_specs = _json.loads(request.POST.get('layers_json') or '{}')
         block_specs = _json.loads(request.POST.get('blocks_json') or '{}')
+        shape_specs = _json.loads(request.POST.get('shapes_json') or '{}')
         label_layers = _json.loads(request.POST.get('label_layers') or '[]')
     except (_json.JSONDecodeError, TypeError):
         return JsonResponse({'success': False, 'error': '映射参数格式无效'}, status=400)
-    if not isinstance(layer_specs, dict) or not any(
-            isinstance(spec, dict) and spec.get('include') for spec in layer_specs.values()):
-        return JsonResponse({'success': False, 'error': '请至少选择一个管道图层'}, status=400)
-    if not isinstance(block_specs, dict) or not isinstance(label_layers, list):
+    if not isinstance(layer_specs,dict) or not isinstance(block_specs,dict) or not isinstance(shape_specs,dict) or not isinstance(label_layers,list):
         return JsonResponse({'success': False, 'error': '映射参数格式无效'}, status=400)
+    if not any(isinstance(spec,dict) and spec.get('include') for mapping in (layer_specs,block_specs,shape_specs) for spec in mapping.values()):
+        return JsonResponse({'success':False,'error':'请至少选择一个管道图层或设备'},status=400)
     if any(layer.startswith('块·') and isinstance(spec, dict) and spec.get('include')
            for layer, spec in layer_specs.items()):
         return JsonResponse({'success': False, 'error': '块符号仅作为 CAD 参考，请在设备页选择阀门类型'}, status=400)
@@ -310,7 +310,7 @@ def pipeline_dxf_import_submit(request):
             label_layers=label_layers, offset=offset, token=token, preview_token=preview_token,
             batch_name=(f.name if f and f.name
                         else (request.POST.get('filename') or 'DXF导入')),
-            imported_by=request.user if request.user.is_authenticated else None,
+            imported_by=request.user if request.user.is_authenticated else None, shape_specs=shape_specs,
             placement_fit=placement_fit, import_mode=mode)
     except ValueError as exc:
         return JsonResponse({'success': False, 'error': str(exc)}, status=400)

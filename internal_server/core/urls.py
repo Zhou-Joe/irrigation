@@ -1,6 +1,7 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from core import dxf_views, views
+from core import dxf_symbol_views
 from core import account_mail
 from django.views.generic import TemplateView
 from core import mail_profile_views
@@ -121,6 +122,7 @@ urlpatterns = [
     path('settings/pipeline/auto-valves/', views.pipeline_auto_valves, name='pipeline_auto_valves'),
     path('pipelines/dxf/', dxf_views.pipeline_dxf_import, name='pipeline_dxf_import'),
     path('pipelines/dxf/analyze/', dxf_views.pipeline_dxf_analyze, name='pipeline_dxf_analyze'),
+    path('pipelines/dxf/symbol-templates/', dxf_symbol_views.templates, name='pipeline_dxf_symbol_templates'),
     path('pipelines/dxf/calibration/save/', dxf_views.pipeline_dxf_calibration_save, name='pipeline_dxf_calibration_save'),
     path('pipelines/dxf/calibration/clear/', dxf_views.pipeline_dxf_calibration_clear, name='pipeline_dxf_calibration_clear'),
     path('pipelines/dxf/calibration/apply/', dxf_views.pipeline_dxf_calibration_apply, name='pipeline_dxf_calibration_apply'),

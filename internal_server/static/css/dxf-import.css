@@ -649,6 +649,30 @@
   border-radius: 3px;
   padding: 2px 4px;
 }
+.pdxf-symbol-inline{display:block;width:max-content;transform:translate(-50%,-50%);white-space:nowrap;font-size:11px;font-weight:600;color:#80482f;text-shadow:0 0 2px #fff,0 0 2px #fff}
+.pdxf-shape-section{margin-top:24px;border-top:1px solid #dce6dd;padding-top:18px}
+.pdxf-shape-section h3{font-size:14px;margin:0 0 8px}
+.pdxf-shape-tools{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin:10px 0}
+.pdxf-shape-tools>label{display:flex;align-items:center;gap:5px;font-size:12px;min-height:36px}
+.pdxf-shape-tools>select{flex:1;min-width:130px;width:auto}
+.pdxf-shape-scroll{max-height:360px;overflow:auto;scrollbar-gutter:stable}
+.pdxf-shape-scroll thead{position:sticky;top:0;background:#f4f8f2;z-index:1}
+.pdxf-shape-check{display:grid;place-items:center;min-height:40px;min-width:26px;cursor:pointer}
+.pdxf-shape-table td:last-child{min-width:112px}
+.pdxf-shape-warning{font-size:12px;line-height:1.6;color:#985e21;background:#fff5e7;padding:9px;border-radius:7px}
+.pdxf-saved-shapes{font-size:12px;margin-top:12px}
+.pdxf-saved-shapes ul{list-style:none;padding:0;margin:10px 0}
+.pdxf-saved-shapes li{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #e4eae3}
+.pdxf-saved-shapes li>span{flex:1;min-width:0;overflow-wrap:anywhere}
+.pdxf-saved-shapes small{display:block;color:#788d7d;margin-top:3px}
+.pdxf-template-delete{border:1px solid #e0d7d0;border-radius:6px;color:#965746;background:#fff;padding:7px 9px;font:inherit;cursor:pointer}
+.pdxf-sample-panel{padding:12px;border:1px solid #d6e3d6;border-radius:8px;background:#f5f9f2;margin-bottom:12px}
+.pdxf-sample-panel[hidden]{display:none}
+.pdxf-sample-fields{display:flex;align-items:end;gap:8px;flex-wrap:wrap}
+.pdxf-sample-fields>label{flex:1;min-width:150px;font-size:12px;display:grid;gap:5px}
+.pdxf-sampling .pdxf-original-map{height:min(50dvh,430px)}
+.pdxf-sampling #pdxfCadMap{cursor:crosshair}
+@media(max-width:600px){.pdxf-sample-fields>label{min-width:120px}.pdxf-sample-fields>.pdxf-btn{min-height:44px}.pdxf-original-dialog{width:calc(100vw - 24px)}.pdxf-shape-check,.pdxf-template-delete{min-height:44px}.pdxf-shape-scroll{max-height:340px}}
 .pdxf-anchor {
   width: 20px;
   height: 20px;

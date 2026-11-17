@@ -3,7 +3,7 @@
 {% block title %}导入管网 - 灌溉管理系统{% endblock %}
 {% block extra_css %}
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-<link rel="stylesheet" href="{% static 'css/dxf-import.css' %}?v=20261112direct1">
+<link rel="stylesheet" href="{% static 'css/dxf-import.css' %}?v=20261117symbols3">
 {% endblock %}
 {% block content %}
 <div class="pdxf-app">
@@ -31,7 +31,19 @@
         <div class="pdxf-tabs" role="tablist" aria-label="内容类型"><button id="pdxfPipeTab" role="tab" aria-selected="true" aria-controls="pdxfPipePanel" onclick="pdxfMappingTab('pipes')">管线</button><button id="pdxfDeviceTab" role="tab" aria-selected="false" aria-controls="pdxfDevicePanel" onclick="pdxfMappingTab('devices')">设备</button><button id="pdxfNoteTab" role="tab" aria-selected="false" aria-controls="pdxfNotePanel" onclick="pdxfMappingTab('notes')">标注</button></div>
         <input id="pdxfMappingSearch" class="pdxf-input pdxf-search" type="search" aria-label="搜索图层或设备" placeholder="搜索图层或设备名称…" oninput="pdxfFilterMapping()">
         <div id="pdxfPipePanel" role="tabpanel" aria-labelledby="pdxfPipeTab"><p class="pdxf-hint">选择管线图层，并核对管径与用途。点击名称可在叠图中定位。</p><div class="pdxf-table-scroll"><table class="pdxf-table"><thead><tr><th>导入</th><th>图层 / 段数</th><th>管径 mm</th><th>用途</th></tr></thead><tbody id="pdxfLayerBody"></tbody></table></div><p id="pdxfSymbolHint" class="pdxf-muted"></p></div>
-        <div id="pdxfDevicePanel" role="tabpanel" aria-labelledby="pdxfDeviceTab" hidden><p class="pdxf-hint">块实例作为设备导入。距离管线过远的设备会保留待挂接。</p><div class="pdxf-table-scroll"><table class="pdxf-table"><thead><tr><th>导入</th><th>设备 / 数量</th><th>设备类型</th></tr></thead><tbody id="pdxfBlockBody"></tbody></table></div></div>
+        <div id="pdxfDevicePanel" role="tabpanel" aria-labelledby="pdxfDeviceTab" hidden>
+          <p class="pdxf-hint">核对 Block 和多段线阀门的类型。设备会挂接到所选管线；未找到管线时保留待挂接。WD 等内部短标识随符号一起显示。</p>
+          <div id="pdxfBlockTable" class="pdxf-table-scroll"><table class="pdxf-table"><thead><tr><th>导入</th><th>Block / 数量</th><th>设备类型</th></tr></thead><tbody id="pdxfBlockBody"></tbody></table></div>
+          <section class="pdxf-shape-section" aria-labelledby="pdxfShapeCount"><h3 id="pdxfShapeCount">多段线候选</h3>
+            <p class="pdxf-hint">识别会适应不同位置、角度、镜像和尺寸。点击候选名称可定位；先核对类型，再选中导入。</p>
+            <div id="pdxfShapeTools" class="pdxf-shape-tools"><label><input id="pdxfShapeAll" type="checkbox" aria-label="选择全部多段线候选" onchange="pdxfSelectAllShapes(this.checked)">全选</label><select id="pdxfShapeBulkType" class="pdxf-select" aria-label="批量设置候选类型"></select><button type="button" class="pdxf-btn pdxf-btn-secondary" onclick="pdxfApplyShapeType()">应用并选中</button></div>
+            <p id="pdxfShapeReviewNotice" class="pdxf-shape-warning" role="status" hidden></p>
+            <div class="pdxf-table-scroll pdxf-shape-scroll"><table class="pdxf-table pdxf-shape-table"><thead><tr><th>导入</th><th>识别候选</th><th>设备类型</th></tr></thead><tbody id="pdxfShapeBody"></tbody></table></div>
+            <div class="pdxf-action-row"><button type="button" class="pdxf-btn pdxf-btn-secondary" onclick="pdxfStartShapeLearning()">圈选阀门样本，查找同类</button><button type="button" class="pdxf-btn pdxf-btn-secondary" onclick="pdxfRefreshShapeCandidates().catch(function(e){pdxfStatus('pdxfShapeStatus',e.message,true)})">重新识别</button></div>
+            <div id="pdxfShapeStatus" class="pdxf-status" role="status" aria-live="polite"></div>
+            <details class="pdxf-saved-shapes"><summary>可跨图纸复用的阀门图形</summary><ul id="pdxfSavedShapeList"></ul></details>
+          </section>
+        </div>
         <div id="pdxfNotePanel" role="tabpanel" aria-labelledby="pdxfNoteTab" hidden><p class="pdxf-hint">完整标注始终保留。选择哪些标注层用于查找设备名称。</p><div id="pdxfLabelBox" class="pdxf-label-options"></div></div>
         <details class="pdxf-diagnostics"><summary>解析说明与未支持的实体</summary><div id="pdxfDiagnostics"></div></details>
       </section>
@@ -69,21 +81,30 @@
   </main>
 </div>
 <dialog id="pdxfApplyDialog" class="pdxf-dialog" aria-labelledby="pdxfApplyDialogTitle"><h2 id="pdxfApplyDialogTitle">确认重新定位</h2><p id="pdxfApplyDialogBatch"></p><p id="pdxfApplyDialogMessage"></p><div class="pdxf-action-row"><button id="pdxfApplyCancel" class="pdxf-btn pdxf-btn-secondary">取消</button><button id="pdxfApplyConfirm" class="pdxf-btn pdxf-btn-primary">确认重新定位</button></div></dialog>
-<dialog id="pdxfOriginalDialog" class="pdxf-dialog pdxf-original-dialog" aria-labelledby="pdxfOriginalTitle"><div class="pdxf-workspace-head"><h2 id="pdxfOriginalTitle">CAD 原图（辅助查看）</h2><button class="pdxf-btn pdxf-btn-secondary" onclick="pdxfEl('pdxfOriginalDialog').close()">关闭原图</button></div><p class="pdxf-hint">原始坐标与形状保持不变。主要对齐操作在卫星地图的 CAD 叠图上完成。</p><div class="pdxf-original-map"><div id="pdxfCadMap"></div></div></dialog>
+<dialog id="pdxfOriginalDialog" class="pdxf-dialog pdxf-original-dialog" aria-labelledby="pdxfOriginalTitle">
+  <div class="pdxf-workspace-head"><h2 id="pdxfOriginalTitle">CAD 原图（辅助查看）</h2><button class="pdxf-btn pdxf-btn-secondary" onclick="pdxfEl('pdxfOriginalDialog').close()">关闭原图</button></div>
+  <p class="pdxf-hint">原始坐标与形状保持不变。圈选样本时，点击范围的两个对角，只框入组成阀门的图形。</p>
+  <section id="pdxfSamplePanel" class="pdxf-sample-panel" aria-label="保存阀门图形样本" hidden>
+    <div class="pdxf-sample-fields"><label>图形名称<input id="pdxfSampleName" class="pdxf-input" maxlength="100" placeholder="例如：圆形 WD 阀"></label><label>设备类型<select id="pdxfSampleType" class="pdxf-select"></select></label><button id="pdxfSampleSave" type="button" class="pdxf-btn pdxf-btn-primary" onclick="pdxfSaveShapeTemplate()" disabled>保存样本并查找同类</button><button type="button" class="pdxf-btn pdxf-btn-secondary" onclick="pdxfStartShapeLearning()">重新圈选</button></div>
+    <div id="pdxfSampleStatus" class="pdxf-status" role="status" aria-live="polite"></div>
+  </section>
+  <div class="pdxf-original-map"><div id="pdxfCadMap"></div></div>
+</dialog>
 {% endblock %}
 {% block extra_js %}
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 {{ pipeline_types|json_script:'pipeline-type-options' }}
 <script>
 window.__DXF__ = {urls: {
-  analyze: '{% url 'core:pipeline_dxf_analyze' %}', importSubmit: '{% url 'core:pipeline_dxf_import_submit' %}',
+  analyze: '{% url 'core:pipeline_dxf_analyze' %}', importSubmit: '{% url 'core:pipeline_dxf_import_submit' %}', symbolTemplates:'{% url 'core:pipeline_dxf_symbol_templates' %}',
   dashboard: '{% url 'core:dashboard' %}', settings: '{% url 'core:settings' %}', editData: '{% url 'core:pipeline_edit_data' %}',
   calSave: '{% url 'core:pipeline_dxf_calibration_save' %}', calClear: '{% url 'core:pipeline_dxf_calibration_clear' %}', calApply: '{% url 'core:pipeline_dxf_calibration_apply' %}'},
   placementPoints: {{ dxf_placement_points_json|safe }}, cal: {{ dxf_calibration_json|safe }}, zones: {{ ref_zones_json|safe }}, pipelines: {{ ref_pipelines_json|safe }} };
 </script>
-<script src="{% static 'js/dxf-import/dxf-core.js' %}?v=20261117blocks"></script>
+<script src="{% static 'js/dxf-import/dxf-core.js' %}?v=20261117symbols3"></script>
 <script src="{% static 'js/dxf-import/dxf-cal-math.js' %}?v=20261112direct1"></script>
 <script src="{% static 'js/dxf-import/dxf-placement.js' %}?v=20261112direct1"></script>
-<script src="{% static 'js/dxf-import/dxf-cal.js' %}?v=20261117blocks"></script>
-<script>pdxfInitMap();</script>
+<script src="{% static 'js/dxf-import/dxf-cal.js' %}?v=20261117symbols3"></script>
+<script src="{% static 'js/dxf-import/dxf-symbols.js' %}?v=20261117symbols3"></script>
+<script>pdxfInitMap();pdxfSymbolsInit();</script>
 {% endblock %}

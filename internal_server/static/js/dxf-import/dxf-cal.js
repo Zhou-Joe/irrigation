@@ -154,6 +154,8 @@ function pdxfCalCandidates() {
       if ((specs.blocks[v.block] && specs.blocks[v.block].include) || reference)
         points.push(v);
     });
+  if(devices)(pdxfData.shape_candidates||[]).forEach(function(item){if(specs.shapes&&specs.shapes[item.id]&&specs.shapes[item.id].include)
+    points.push(Object.assign({dxf_x:item.x,dxf_y:item.y},item));});
   return points;
 }
 function pdxfCalCadClick(event) {

@@ -66,7 +66,7 @@ LAYER_TYPE_KEYWORDS = [
     ('flush', r'冲洗|疏水|放水|\bWD\b|WASH|FLUSH'),
     # 灌溉主干/支管命名（AD-I-LL/ML、LATERAL 等）——层名常不带管径数字，
     # 命中即默认勾选，不再整层漏导入
-    ('irrigation', r'灌溉|喷灌|滴灌|IRRIG|\bLL\b|\bML\b|\bWL\b|LATERAL|MAINLINE'),
+    ('irrigation', r'灌溉|喷灌|滴灌|IRRIG|\bIRR\b|\bIR\b|\bLL\b|\bML\b|\bWL\b|LATERAL|MAINLINE'),
 ]
 
 # 端点吸附容差（米）——判定两条折线相接
@@ -78,7 +78,7 @@ LABEL_RADIUS_M = 2.5
 # 解析缓存 TTL（秒）——analyze → import 之间复用
 PARSE_CACHE_TTL = 15 * 60
 # 缓存 key 前缀带解析器版本：解析逻辑升级后旧缓存立即失效
-PARSE_CACHE_KEY_PREFIX = 'dxf:parse:v3:'
+PARSE_CACHE_KEY_PREFIX = 'dxf:parse:v4:'
 
 
 def _guess_line_type(layer_name):
@@ -290,7 +290,7 @@ def _parse_dxf_geometry(content_bytes):
 
 
 def _parse_cache():
-    """``dxf:parse:v3:*`` 缓存句柄 —— FileBasedCache，跨 gunicorn worker 共享。
+    """``dxf:parse:v4:*`` 缓存句柄 —— FileBasedCache，跨 gunicorn worker 共享。
 
     不能用默认 LocMemCache（每 worker 一份内存）：analyze 落在哪个 worker，
     缓存就只在那个 worker 里；token 免重传的「保存并预览」/导入请求再落到
@@ -482,7 +482,9 @@ def _entity_label(e, layer=None, source_id='', block=''):
         raise ValueError('标注包含非有限坐标')
     return {'layer': layer or e.dxf.layer, 'text': plain,
             'x': float(pos[0]), 'y': float(pos[1]),
-            'source_id': source_id, 'block': block}
+            'source_id': source_id, 'block': block,
+            'height':float(e.dxf.char_height if e.dxftype()=='MTEXT' else e.dxf.height),
+            'rotation':float(e.get_rotation() if e.dxftype()=='MTEXT' else e.dxf.get('rotation',0))}
 
 
 def _add_geometry(e, layer, layers, source_id, diagnostics):
@@ -495,7 +497,7 @@ def _add_geometry(e, layer, layers, source_id, diagnostics):
             raise ValueError('线条包含非有限坐标')
         bucket = layers.setdefault(layer, {'polys': [], 'closed': 0, 'entities': []})
         bucket['polys'].append(pts)
-        bucket['entities'].append({'source_id': source_id, 'type': e.dxftype(),
+        bucket['entities'].append({'source_id': source_id, 'type': e.dxftype(), 'closed':closed,
                                    'layer': e.dxf.layer})
         bucket['closed'] += int(closed)
     except Exception as exc:
@@ -888,6 +890,8 @@ def analyze_dxf_pipelines(uploaded_file=None, token=None, user_id=None, calibrat
         })
 
     blocks = defaultdict(lambda: {'count': 0, 'attrs': set(), 'samples': []})
+    from .dxf_symbols import block_hints, inline_text, recognize, load_templates
+    hints=block_hints(valves,labels)
     for v in valves:
         blk = blocks[v['block']]
         blk['count'] += 1
@@ -902,9 +906,10 @@ def analyze_dxf_pipelines(uploaded_file=None, token=None, user_id=None, calibrat
             'block': name,
             'count': info['count'],
             'attrs': sorted(info['attrs']),
-            'valve_type_guess': _guess_block_type(name),
+            'valve_type_guess': hints[name][0]['type'] if hints[name] and len({h['type'] for h in hints[name]})==1 else _guess_block_type(name),
             'samples': info['samples'],
-            'include_guess': _block_include_guess(name),
+            'include_guess': _block_include_guess(name) or bool(hints[name]),
+            'symbol_texts': sorted({h['text'] for h in hints[name]}),
         })
 
     label_layers = defaultdict(lambda: {'count': 0, 'samples': [], 'points': []})
@@ -913,8 +918,9 @@ def analyze_dxf_pipelines(uploaded_file=None, token=None, user_id=None, calibrat
         b['count'] += 1
         if len(b['samples']) < 6:
             b['samples'].append(lb['text'])
-        b['points'].append(dict(preview_point(lb['x'], lb['y']), text=lb['text'],
-                                source_id=lb.get('source_id', '')))
+        b['points'].append(dict(preview_point(lb['x'], lb['y'],8 if inline_text(lb) else 6), text=lb['text'],
+                                source_id=lb.get('source_id', ''), block=lb.get('block',''),
+                                inline_symbol=inline_text(lb),height=lb.get('height'),rotation=lb.get('rotation',0)))
 
     previewable = layer_infos
     preview_layers = []
@@ -924,7 +930,8 @@ def analyze_dxf_pipelines(uploaded_file=None, token=None, user_id=None, calibrat
         precision = 8 if info['layer'].startswith(INSERT_EXPLODE_PREFIX) else 6
         for pts in pts_list:
             paths.append([preview_point(x, y, precision) for x, y in pts])
-        preview_layers.append({'layer': info['layer'], 'paths': paths})
+        preview_layers.append({'layer': info['layer'], 'paths': paths,
+                               'entities':layers[info['layer']].get('entities',[])})
     preview_valves = []
     for v in valves:
         preview_valves.append(dict(preview_point(v['x'], v['y']), block=v['block'],
@@ -941,6 +948,8 @@ def analyze_dxf_pipelines(uploaded_file=None, token=None, user_id=None, calibrat
 
     preview_token = sign_preview(token, snapshot, user_id, mode=import_mode)
     frozen = read_preview(preview_token, token, user_id, mode=import_mode)
+    shape_candidates=recognize(layers,labels,load_templates())
+    for item in shape_candidates:item.update(preview_point(item['x'],item['y'],8))
 
     return {
         'success': True,
@@ -960,6 +969,7 @@ def analyze_dxf_pipelines(uploaded_file=None, token=None, user_id=None, calibrat
         'coord_info': coord_info,
         'layers': layer_infos,
         'blocks': block_infos,
+        'shape_candidates': shape_candidates,
         'labels': [{'layer': k, 'count': v['count'], 'samples': v['samples'],
                     'points': v['points']} for k, v in label_layers.items()],
         'preview': {'layers': preview_layers, 'valves': preview_valves},
@@ -1034,7 +1044,8 @@ def _attach_valves(valves, block_specs, all_paths, to_latlng,
                 best = (d, pi)
         if best is None:
             skipped_valves += 1
-            unmatched.append(dict(v, reason='距所选管线超过 1.5 m，待人工挂接'))
+            unmatched.append(dict(v, block=v.get('display_name',v['block']),
+                                  reason='距所选管线超过 1.5 m，待人工挂接'))
             continue
         _, pi = best
         pts, diameter, pipe = all_paths[pi]
@@ -1042,7 +1053,7 @@ def _attach_valves(valves, block_specs, all_paths, to_latlng,
         lat += off_lat; lng += off_lng
         if not (math.isfinite(lat) and math.isfinite(lng) and -90 <= lat <= 90 and -180 <= lng <= 180):
             raise ValueError('阀门坐标无效或超界，请重新校准')
-        name = next((value for tag, value in v['attrs'].items()
+        name = v.get('name') or next((value for tag, value in v['attrs'].items()
                      if tag.upper() in ('ID', 'NAME', 'NUMBER', 'VALVE_ID', '设备编号') and value), '')
         if name:
             labeled_valves += 1
@@ -1069,12 +1080,13 @@ def _attach_valves(valves, block_specs, all_paths, to_latlng,
             pipeline=pipe,
             zone_id=zid,
             station_id=station_id,
-            name=name[:50] or f"{v['block'].rsplit('-', 1)[-1].upper()}·{v['x']:.0f},{v['y']:.0f}"[:50],
+            name=name[:50] or v.get('fallback_name','')[:50] or f"{v['block'].rsplit('-', 1)[-1].upper()}·{v['x']:.0f},{v['y']:.0f}"[:50],
             point=[{'lat': round(lat, 6), 'lng': round(lng, 6)}],
             source_point=[v['x'], v['y']],
             source_map_point=[{'lat': round(lat, 6), 'lng': round(lng, 6)}],
             source_attributes={'tags': v['attrs'], 'block': v['block'],
-                               'source_id': v.get('source_id', '')},
+                               'source_id': v.get('source_id', ''),
+                               **v.get('source_attributes',{})},
             notes='\n'.join(f'{tag}: {value}' for tag, value in v['attrs'].items()),
             valve_type=vtype,
             diameter=vdia,
@@ -1087,7 +1099,7 @@ def import_dxf_pipelines(layer_specs, block_specs, uploaded_file=None,
                          label_layers=None, valve_name_from_label=True,
                          offset=(0.0, 0.0), token=None, content=None,
                          batch_name=None, imported_by=None, preview_token=None,
-                         placement_fit=None, import_mode='aligned'):
+                         placement_fit=None, import_mode='aligned', shape_specs=None):
     """按映射创建 Pipeline + PipeValve。
 
     ``layer_specs``: {layer: {'include', 'diameter', 'type'}}
@@ -1131,6 +1143,20 @@ def import_dxf_pipelines(layer_specs, block_specs, uploaded_file=None,
             raise ValueError('文件与预览不一致，请重新解析图纸')
     layers, valves, labels, metadata = _resolve_parsed_geometry(None, token, content)
     token = token or metadata['file_hash']
+    from . import dxf_symbols as symbols
+    candidates=symbols.recognize(layers,labels,symbols.load_templates()) if shape_specs else []
+    selected_shapes=symbols.review_selections(candidates,shape_specs,dict(PipeValve.VALVE_TYPE_CHOICES))
+    working_polys=symbols.pipe_geometry(layers,layer_specs,selected_shapes)
+    shape_valves=[]
+    attach_specs=dict(block_specs or {})
+    for item in selected_shapes:
+        attach_specs[item['id']]={'include':True,'valve_type':item['valve_type']}
+        shape_valves.append({'block':item['id'],'x':item['x'],'y':item['y'],
+            'source_id':item['id'],'name':item['text'],'fallback_name':item['template_name'],
+            'display_name':item['text'] or item['template_name'],
+            'attrs':{'图形样本':item['template_name'],**({'标识':item['text']} if item['text'] else {})},
+            'source_attributes':{'source_kind':'polyline','block':'','source_refs':item['source_refs'],
+                'template_id':item['template_id'],'recognition_score':item['confidence'],'symbol_text':item['text']}})
     if import_mode == 'direct':
         # Retained reference layers and notes use this same placement, even when
         # they are not selected for creation. Reject an unusable map atomically.
@@ -1165,10 +1191,11 @@ def import_dxf_pipelines(layer_specs, block_specs, uploaded_file=None,
             imported_by=imported_by, source_token=token or '',
             calibration_snapshot=snapshot, applied_calibration=snapshot,
             source_geometry={'layers': layers, 'valves': valves, 'labels': labels,
-                             'metadata': metadata},
+                             'metadata': metadata, 'recognized_shapes':selected_shapes,
+                             'symbol_label_refs':sorted({ref for shape in candidates if shape['text'] for ref in shape['label_refs']})},
             import_options={'layers': layer_specs, 'blocks': block_specs,
                             'label_layers': label_layers, 'offset': [off_lat, off_lng],
-                            'import_mode': import_mode},
+                            'import_mode': import_mode, 'shape_specs':shape_specs or {}},
         )
         for layer, spec in layer_specs.items():
             if not isinstance(spec, dict):
@@ -1188,7 +1215,7 @@ def import_dxf_pipelines(layer_specs, block_specs, uploaded_file=None,
             from .pipeline_management import type_options
             if ptype not in {item['code'] for item in type_options()}:
                 raise ValueError(f'图层 {layer} 的管线类型无效')
-            paths = _decompose_paths(bucket['polys'], JOIN_TOL_M, meters_per_unit or 1.0)
+            paths = _decompose_paths(working_polys[layer], JOIN_TOL_M, meters_per_unit or 1.0)
             n_paths = 0
             for pts in paths:
                 ll = [{'lat': round(la + off_lat, 6), 'lng': round(ln + off_lng, 6)}
@@ -1227,7 +1254,7 @@ def import_dxf_pipelines(layer_specs, block_specs, uploaded_file=None,
                                 'segments': len(bucket['polys'])})
 
         valve_rows, labeled_valves, skipped_valves, unmatched = _attach_valves(
-            valves, block_specs, all_paths, to_latlng, off_lat, off_lng,
+            [*valves,*shape_valves], attach_specs, all_paths, to_latlng, off_lat, off_lng,
             meters_per_unit, usable_labels, zone_rings, zone_info)
         batch.source_geometry['unmatched_valves'] = unmatched
         batch.save(update_fields=['source_geometry'])
@@ -1262,13 +1289,22 @@ def build_cad_reference_payload():
             lat, lng = fn(x, y)
             return {'lat': round(lat + off_lat, precision), 'lng': round(lng + off_lng, precision)}
         source = batch.source_geometry
+        from .dxf_symbols import inline_text
+        recognized=source.get('recognized_shapes',[])
+        removed={(ref['layer'],ref['index']) for shape in recognized for ref in shape['source_refs']}
+        symbol_labels={ref for shape in recognized for ref in shape.get('label_refs',[])}|set(source.get('symbol_label_refs',[]))
         result.append({
             'batch_id': batch.id, 'name': batch.name,
             'layers': [{'layer': name, 'paths': [
                 [point(x, y, 8 if name.startswith(INSERT_EXPLODE_PREFIX) else 6) for x, y in path]
-                for path in bucket['polys']]}
+                for index,path in enumerate(bucket['polys']) if (name,index) not in removed]}
                        for name, bucket in source.get('layers', {}).items()],
-            'labels': [dict(lb, **point(lb['x'], lb['y'])) for lb in source.get('labels', [])],
+            'symbols':[{'id':shape['id'],'name':shape.get('text') or shape['template_name'],
+                'paths':[[point(x,y,8) for x,y in source['layers'][ref['layer']]['polys'][ref['index']]]
+                         for ref in shape['source_refs']]} for shape in recognized],
+            'labels': [dict(lb, **point(lb['x'], lb['y'],8 if inline_text(lb) or lb.get('source_id') in symbol_labels else 6),
+                            inline_symbol=inline_text(lb) or lb.get('source_id') in symbol_labels)
+                       for lb in source.get('labels', [])],
             'unmatched_valves': [dict(v, **point(v['x'], v['y']))
                                  for v in source.get('unmatched_valves', [])],
             'unsupported': source.get('metadata', {}).get('diagnostics', []),

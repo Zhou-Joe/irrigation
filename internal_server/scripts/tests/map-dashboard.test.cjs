@@ -115,7 +115,7 @@ function mapHarness() {
         eachLayer(fn){[...this.layers].forEach(fn);} addTo(m){m.addLayer(this);return this;}
     }
     const groups=Array.from({length:6},()=>new Group());
-    const map={zoom:15,west:120,east:122,layers:new Set(groups),getZoom(){return this.zoom;},getBounds(){return {
+    const map={zoom:15,west:120,east:122,layers:new Set(groups),events:[],on(event,handler){this.events.push({event,handler});return this;},getZoom(){return this.zoom;},getBounds(){return {
         pad(){return this;},contains:p=>p.lng>=map.west&&p.lng<=map.east,intersects:()=>true
     };},hasLayer(l){return this.layers.has(l);},addLayer(l){this.layers.add(l);},removeLayer(l){this.layers.delete(l);}};
     const elements={map:{dataset:{}},zoneLoadingMessage:{textContent:''},zoneLoadingSpinner:{},zoneLoadingRetry:{},
@@ -125,10 +125,10 @@ function mapHarness() {
         addEventListener(){},dispatchEvent(){},getElementById:id=>elements[id]||null,querySelectorAll:()=>[],querySelector:()=>null};
     const window={IrrigationMapRuntime:{...runtime,
         renderBatches:(items,render,opts)=>runtime.renderBatches(items,render,{...opts,frame:setImmediate})}, __wmLayer:groups[5]};
-    const L={tileLayer:()=>({}),layerGroup:()=>new Group(),divIcon:o=>o,latLng:(lat,lng)=>({lat,lng}),
+    const L={tileLayer:()=>({}),map:()=>map,control:{zoom:()=>({addTo(){}})},latLngBounds:()=>({contains:()=>true}),layerGroup:()=>new Group(),divIcon:o=>o,latLng:(lat,lng)=>({lat,lng}),
         marker:(p,o)=>new Layer(p,o),polygon:(p,o)=>new Layer(p,o),polyline:(p,o)=>new Layer(p,o)};
     let source=fs.readFileSync(path.join(__dirname,'../../static/js/map.js'),'utf8');
-    const hook=`window.__test={renderZones,loadZones,loadPipelines,renderCadReference,locateUser,updateLabelSizes,_cullLabelsToViewport,buildCardHtml,_refreshZonePolygons,
+    const hook=`window.__test={initMap,renderZones,loadZones,loadPipelines,renderCadReference,updateCadSymbolText,locateUser,updateLabelSizes,_cullLabelsToViewport,buildCardHtml,_refreshZonePolygons,
         labels:()=>zoneLabels, setState(m,g){map=m;[zonesLayerGroup,labelsLayerGroup,leaderLinesLayerGroup,ringLabelsLayerGroup,landmarksLayerGroup]=g;},
         setCadState(g){[cadReferenceLayerGroup,cadSymbolsLayerGroup,cadNotesLayerGroup,cadUnmatchedLayerGroup]=g;}};`;
     source=source.replace(/\}\)\(\);\s*$/,hook+'})();');
@@ -146,6 +146,15 @@ function zone(id,patch=1,lng=121) {
     return {id,code:`${id}-1-1`,name:'Map zone',land_name:'Land',patch_id:patch,
         boundary_points:ring.map(([lat,x])=>[lat,x+lng-121]),priority:'medium',plant_names:[]};
 }
+test('map initialization registers CAD symbol zoom updates with Leaflet and loads both payloads', async () => {
+    const h=mapHarness();const requested=[];
+    h.window.IrrigationMapRuntime.fetchJSON=async url=>{requested.push(url);return url.includes('zones')?[]:{pipelines:[],cad_reference:[]};};
+    h.api.initMap();
+    for(let i=0;i<10&&h.elements.map.dataset.zonesState==='loading';i++)await new Promise(setImmediate);
+    assert.ok(h.map.events.some(({event,handler})=>event==='zoomend'&&handler===h.api.updateCadSymbolText));
+    assert.deepEqual(requested,['/api/zones-payload/','/api/pipelines-payload/']);
+    assert.equal(h.elements.map.dataset.zonesState,'ready');
+});
 test('overview renders all boundaries while attaching zero hidden zone labels', async () => {
     const h=mapHarness();
     await h.api.renderZones(Array.from({length:2508},(_,i)=>zone(i+1)));
@@ -213,6 +222,22 @@ test('CAD block outlines remain visible independently of unselected reference li
     assert.equal(h.map.hasLayer(h.cad[0]),true);assert.equal(h.map.hasLayer(h.cad[1]),false);
     h.window.setLayerVisibility('cad_symbols',true);
     assert.equal(h.map.hasLayer(h.cad[1]),true);assert.equal(h.cad[0].layers.size,1);
+});
+test('short symbol text and recognized polyline outlines follow the symbol layer independently of ordinary notes',()=>{
+    const h=mapHarness(),path=ring.map(([lat,lng])=>({lat,lng}));
+    h.map.zoom=19;
+    h.api.renderCadReference([{name:'WD drawing',layers:[],symbols:[{name:'Polyline valve',paths:[path]}],labels:[
+        {text:'WD',lat:31,lng:121,inline_symbol:true},
+        {text:'<svg onload=bad>',lat:31,lng:121,inline_symbol:true},
+        {text:'Ordinary note',lat:31,lng:121,inline_symbol:false}
+    ]}]);
+    assert.equal(h.cad[1].layers.size,3);assert.equal(h.cad[2].layers.size,1);
+    assert.equal(h.map.hasLayer(h.cad[1]),true);assert.equal(h.map.hasLayer(h.cad[2]),false);
+    const texts=[...h.cad[1].layers].filter(layer=>layer.options.icon);
+    assert.ok(texts.some(layer=>layer.options.icon.html.includes('WD')));
+    assert.ok(texts.some(layer=>layer.options.icon.html.includes('&lt;svg')));
+    h.map.zoom=16;h.api.updateCadSymbolText();
+    assert.ok(texts.every(layer=>layer.getElement().style.display==='none'));
 });
 test('changing smoothing keeps popup metadata and never creates invisible overview labels', async () => {
     const h=mapHarness();const data={...zone(1),sprinkler_type:'Rotor',equipment_maintenance_notes:'[]',smooth_override:0};

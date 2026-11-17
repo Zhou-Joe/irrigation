@@ -215,16 +215,16 @@ function pdxfSetStep(n) {
 function pdxfUpdateWorkflow() {
   var specs = pdxfData
     ? pdxfCollectSpecs()
-    : { layers: {}, blocks: {}, labelLayers: [] };
-  var selected = Object.values(specs.layers).some(function (s) {
-    return s.include;
-  });
+    : { layers: {}, blocks: {}, shapes: {}, labelLayers: [] };
+  var selected = [specs.layers,specs.blocks,specs.shapes||{}].some(function(mapping){return Object.values(mapping).some(function(s){return s.include;});});
+  var invalidShapes=Object.values(specs.shapes||{}).filter(function(s){return s.include&&!s.valve_type;}).length;
+  var shapeNotice=pdxfEl('pdxfShapeReviewNotice');if(shapeNotice){shapeNotice.textContent=invalidShapes?'请为 '+invalidShapes+' 个已选候选选择设备类型。':'';shapeNotice.hidden=!invalidShapes;}
   var ready = pdxfReady();
   pdxfEl("pdxfStep1").disabled = pdxfBusy;
   pdxfEl("pdxfStep2").disabled = pdxfBusy || !pdxfData || pdxfBatchMode;
   pdxfEl("pdxfStep3").disabled = pdxfBusy || !pdxfData;
   pdxfEl("pdxfStep4").disabled =
-    pdxfBusy || !ready || !selected || pdxfBatchMode;
+    pdxfBusy || !ready || !selected || invalidShapes>0 || pdxfBatchMode;
   pdxfEl("pdxfBackBtn").disabled = pdxfBusy;
   pdxfEl("pdxfFile").disabled = pdxfBusy;
   pdxfEl("pdxfCalBatch").disabled = pdxfBusy;
@@ -249,13 +249,14 @@ function pdxfUpdateWorkflow() {
     pdxfBusy ||
     pdxfImported ||
     !pdxfData ||
-    (pdxfStep === 2 && !selected) ||
+    (pdxfStep === 2 && (!selected||invalidShapes>0)) ||
     (pdxfStep === 3 && !ready);
   pdxfEl("pdxfImportBtn").disabled =
     pdxfBusy ||
     pdxfImported ||
     !ready ||
     !selected ||
+    invalidShapes>0 ||
     !pdxfEl("pdxfReviewConfirmed").checked;
   pdxfEl("pdxfNextBtn").textContent =
     pdxfStep === 2
@@ -290,6 +291,7 @@ function pdxfFileChanged() {
   pdxfStatus("pdxfAnalyzeStatus", "");
 }
 function pdxfInvalidateDrawing() {
+  if(typeof pdxfResetShapes==='function')pdxfResetShapes();
   pdxfPreviewGeneration++;
   if (pdxfCal.on) pdxfCalStop();
   pdxfData = null;
@@ -401,10 +403,10 @@ function pdxfInitMap() {
   pdxfCadMap.on("click", pdxfCalCadClick);
   pdxfMap.on("click", pdxfCalSatClick);
   pdxfCadMap.on("zoomend", function () {
-    if (pdxfData && pdxfEl("pdxfShowNotes").checked) pdxfRefreshMap();
+    if (pdxfData && (pdxfEl("pdxfShowNotes").checked || typeof pdxfHasInlineSymbols==='function'&&pdxfHasInlineSymbols())) pdxfRefreshMap();
   });
   pdxfMap.on("zoomend", function () {
-    if (pdxfData && pdxfEl("pdxfShowNotes").checked) pdxfRefreshMap();
+    if (pdxfData && (pdxfEl("pdxfShowNotes").checked || typeof pdxfHasInlineSymbols==='function'&&pdxfHasInlineSymbols())) pdxfRefreshMap();
   });
   window.addEventListener("resize", function () {
     pdxfMap.invalidateSize();
@@ -549,6 +551,7 @@ function pdxfRenderTables() {
         b.count +
         " 个" +
         (b.attrs.length ? " · " + pdxfEsc(b.attrs.join(", ")) : "") +
+        (b.symbol_texts&&b.symbol_texts.length?' · 标识 '+pdxfEsc(b.symbol_texts.join(', ')):'') +
         '</span></td><td><select aria-label="' +
         name +
         ' 设备类型" class="pdxf-select pdxf-block-type" data-block="' +
@@ -571,6 +574,8 @@ function pdxfRenderTables() {
       );
     })
     .join("");
+  if(typeof pdxfRenderShapes==='function')pdxfRenderShapes();
+  var blockTable=pdxfEl('pdxfBlockTable');if(blockTable)blockTable.hidden=!pdxfData.blocks.length;
   pdxfEl("pdxfLabelBox").innerHTML = pdxfData.labels
     .map(function (l, i) {
       var name = pdxfEsc(l.layer);
@@ -596,7 +601,7 @@ function pdxfRenderTables() {
     pipes.length +
     " 个 Block 图层将保留原形，显示在地图的“CAD 块符号”中；在“设备”页选择阀门类型。";
   pdxfEl("pdxfPipeTab").textContent = "管线 " + pipes.length;
-  pdxfEl("pdxfDeviceTab").textContent = "设备 " + pdxfData.blocks.length;
+  pdxfEl("pdxfDeviceTab").textContent = "设备 " + (pdxfData.blocks.length+(pdxfData.shape_candidates||[]).length);
   pdxfEl("pdxfNoteTab").textContent = "标注 " + pdxfData.labels.length;
   pdxfEl("pdxfMappingSearch").value = "";
   pdxfMappingTab("pipes");
@@ -641,6 +646,7 @@ function pdxfCollectSpecs() {
   return {
     layers: layers,
     blocks: blocks,
+    shapes: typeof pdxfCollectShapeSpecs==='function'?pdxfCollectShapeSpecs():{},
     labelLayers: Array.from(
       document.querySelectorAll(".pdxf-label-use:checked"),
     ).map(function (cb) {
@@ -666,6 +672,9 @@ function pdxfSelectionCounts() {
     if (specs.blocks[b.block] && specs.blocks[b.block].include)
       count.devices += b.count;
   });
+  (pdxfData.shape_candidates||[]).forEach(function(item){if(specs.shapes[item.id]&&specs.shapes[item.id].include){
+    count.devices++;item.source_refs.forEach(function(ref){if(specs.layers[ref.layer]&&specs.layers[ref.layer].include)count.paths--;});
+  }});
   return count;
 }
 function pdxfMappingChanged() {
@@ -713,14 +722,17 @@ function pdxfRefreshMap() {
     devices = pdxfEl("pdxfShowDevices").checked,
     notes = pdxfEl("pdxfShowNotes").checked,
     opacity = Number(pdxfEl("pdxfOpacity").value) / 100;
+  var shapeParts=typeof pdxfShapePartLookup==='function'?pdxfShapePartLookup(specs.shapes):{};
   pdxfData.preview.layers.forEach(function (layer) {
     var state = pdxfLayerState(layer.layer, specs, reference, devices);
-    if (!state) return;
-    var selected = state.selected,
-      color = state.symbol ? "#ad6142" : pdxfColorOf[layer.layer];
+    var hasShapes=Object.keys(shapeParts).some(function(key){return key.startsWith(layer.layer+'\u0000');});
+    if (!state&&!hasShapes) return;
     var raw = L.featureGroup().addTo(pdxfCadMap),
       geo = L.featureGroup().addTo(pdxfMap);
-    layer.paths.forEach(function (path) {
+    layer.paths.forEach(function (path,index) {
+      var shape=shapeParts[layer.layer+'\u0000'+index];
+      if(shape&&!devices||!shape&&!state)return;
+      var selected=!!shape||state.selected,color=shape||state.symbol?'#ad6142':pdxfColorOf[layer.layer];
       L.polyline(
         path.map(function (p) {
           return [p.dxf_y, p.dxf_x];
@@ -781,25 +793,29 @@ function pdxfRefreshMap() {
     pdxfCadLayers.valves = raw;
     pdxfLayers.valves = geo;
   }
-  if (notes) {
+  if(typeof pdxfDrawShapeCandidates==='function')pdxfDrawShapeCandidates(specs);
+  if (notes || typeof pdxfHasInlineSymbols==='function'&&pdxfHasInlineSymbols()) {
     var raw = L.layerGroup().addTo(pdxfCadMap),
       geo = L.layerGroup().addTo(pdxfMap);
     pdxfData.labels.forEach(function (layer) {
       layer.points.forEach(function (p) {
+        var inline=typeof pdxfInlineSymbolLabel==='function'&&pdxfInlineSymbolLabel(p,specs,reference,devices);
+        if(!notes&&!inline)return;
         var icon = L.divIcon({
           className: "",
+          iconSize:[0,0],
           html:
-            '<span class="pdxf-symbol-label">' +
+            '<span class="'+(inline?'pdxf-symbol-inline':'pdxf-symbol-label')+'">' +
             pdxfEsc(p.text.length > 28 ? p.text.slice(0, 28) + "…" : p.text) +
             "</span>",
         });
         var options = { icon: icon, interactive: !pdxfCal.on };
-        if (pdxfCadMap.getZoom() >= 0)
+        if (inline||pdxfCadMap.getZoom() >= 0)
           L.marker([p.dxf_y, p.dxf_x], options)
             .bindPopup(pdxfEsc(p.text).replace(/\n/g, "<br>"))
             .addTo(raw);
         var ll = pdxfGeographic(p);
-        if (ll && pdxfMap.getZoom() >= 19)
+        if (ll && pdxfMap.getZoom() >= (inline?18:19))
           L.marker(ll, Object.assign({}, options, { pane: "pdxfPreview" }))
             .bindPopup(pdxfEsc(p.text).replace(/\n/g, "<br>"))
             .addTo(geo);
@@ -938,6 +954,7 @@ function pdxfImport() {
   fd.append("filename", pdxfFile ? pdxfFile.name : "DXF导入");
   fd.append("layers_json", JSON.stringify(specs.layers));
   fd.append("blocks_json", JSON.stringify(specs.blocks));
+  fd.append("shapes_json", JSON.stringify(specs.shapes));
   fd.append("label_layers", JSON.stringify(specs.labelLayers));
   // Network/receipt retries reuse the exact frozen preview and mapping body.
   // Only an explicit geometry, mode or mapping change creates a fresh attempt.
@@ -1069,6 +1086,7 @@ function pdxfLoadBatch() {
           dxf_x: lb.x,
           dxf_y: lb.y,
           text: lb.text,
+          source_id:lb.source_id,block:lb.block,inline_symbol:!!lb.block&&lb.text.length<=16,
         });
       });
       pdxfData = {
@@ -1077,6 +1095,7 @@ function pdxfLoadBatch() {
         metadata: source.metadata || { units: 0, diagnostics: [] },
         layers: layers,
         blocks: blocks,
+        shape_candidates: [],
         labels: Object.keys(labels).map(function (name) {
           return {
             layer: name,

@@ -2977,6 +2977,22 @@ class SiteCalibration(models.Model):
         return f'标定 #{self.id} · {len(self.points)}点 · {self.created_at:%Y-%m-%d %H:%M}'
 
 
+class DxfValveShapeTemplate(models.Model):
+    """Reviewed, location-free CAD symbol examples shared by irrigation managers."""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name = models.CharField(max_length=100)
+    valve_type = models.CharField(max_length=20, choices=PipeValve.VALVE_TYPE_CHOICES)
+    definition = models.JSONField(default=dict)
+    fingerprint = models.CharField(max_length=64)
+    created_by = models.ForeignKey(User, null=True, on_delete=models.SET_NULL)
+    created_at = models.DateTimeField(auto_now_add=True)
+    active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ['name', 'pk']
+        constraints = [models.UniqueConstraint(fields=['fingerprint','valve_type'],condition=models.Q(active=True),name='unique_dxf_valve_shape_type')]
+
+
 class PipelineImportBatch(models.Model):
     """DXF 导入批次 — 一次导入 submit 一行，管道挂到批次上分组管理。
 

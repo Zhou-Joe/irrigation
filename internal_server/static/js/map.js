@@ -47,6 +47,7 @@
     let pipelinesVisible = true;
     let cadReferenceLayerGroup;
     let cadSymbolsLayerGroup;
+    let cadSymbolLabels = [];
     let cadNotesLayerGroup;
     let cadUnmatchedLayerGroup;
     // Rendered valve markers + their tooltip content, so a zoomend handler can
@@ -299,6 +300,7 @@
         pipelinesLayerGroup = L.layerGroup().addTo(map);
         cadReferenceLayerGroup = L.layerGroup();
         cadSymbolsLayerGroup = L.layerGroup().addTo(map);
+        map.on('zoomend',updateCadSymbolText);
         cadNotesLayerGroup = L.layerGroup();
         cadUnmatchedLayerGroup = L.layerGroup().addTo(map);
 
@@ -1892,6 +1894,7 @@
         if(destroyed)return;
         cadReferenceLayerGroup.clearLayers();
         cadSymbolsLayerGroup.clearLayers();
+        cadSymbolLabels = [];
         cadNotesLayerGroup.clearLayers();
         cadUnmatchedLayerGroup.clearLayers();
         batches.forEach(batch => {
@@ -1906,11 +1909,20 @@
                 });
             });
             (batch.labels || []).forEach(note => {
-                L.marker([note.lat, note.lng], {
-                    icon: L.divIcon({ className: 'cad-note',
-                        html: `<span style="font-size:10px;background:rgba(255,255,255,.85);white-space:nowrap;">${escapeHtml(note.text)}</span>` })
+                const inline=!!note.inline_symbol;
+                const marker=L.marker([note.lat, note.lng], {
+                    icon: L.divIcon({ className: inline ? 'cad-symbol-text' : 'cad-note',iconSize:[0,0],
+                        html: inline
+                            ? `<span style="display:block;transform:translate(-50%,-50%);width:max-content;font-size:11px;font-weight:600;color:#80482f;white-space:nowrap;text-shadow:0 0 2px #fff,0 0 2px #fff;">${escapeHtml(note.text)}</span>`
+                            : `<span style="font-size:10px;background:rgba(255,255,255,.85);white-space:nowrap;">${escapeHtml(note.text)}</span>` })
                 }).bindPopup(`<div style="white-space:pre-wrap;">${escapeHtml(note.text)}</div><small>${escapeHtml(batch.name + ' · ' + note.layer)}</small>`)
-                    .addTo(cadNotesLayerGroup);
+                    .addTo(inline ? cadSymbolsLayerGroup : cadNotesLayerGroup);
+                if(inline)cadSymbolLabels.push(marker);
+            });
+            (batch.symbols || []).forEach(symbol => {
+                (symbol.paths || []).forEach(path => L.polyline(path.map(p=>[p.lat,p.lng]),{
+                    color:'#ad6142',weight:2,opacity:.9
+                }).bindTooltip(escapeHtml(symbol.name)).addTo(cadSymbolsLayerGroup));
             });
             (batch.unmatched_valves || []).forEach(valve => {
                 L.circleMarker([valve.lat, valve.lng], {
@@ -1919,6 +1931,12 @@
                     .addTo(cadUnmatchedLayerGroup);
             });
         });
+        updateCadSymbolText();
+    }
+
+    function updateCadSymbolText() {
+        const visible=map&&map.getZoom()>=18;
+        cadSymbolLabels.forEach(marker=>{const element=marker.getElement();if(element)element.style.display=visible?'':'none';});
     }
 
     // Minimal HTML-escape for user-entered strings placed into popups/tooltips.
@@ -2197,6 +2215,7 @@
                 : layer === 'cad_symbols' ? cadSymbolsLayerGroup
                 : layer === 'cad_notes' ? cadNotesLayerGroup : cadUnmatchedLayerGroup;
             if (visible) map.addLayer(group); else map.removeLayer(group);
+            if(layer==='cad_symbols')updateCadSymbolText();
         } else if (layer === 'landmarks') {
             if (visible) {
                 if (!map.hasLayer(landmarksLayerGroup)) {
