@@ -1,15 +1,15 @@
 {% if report.history_source %}
 {% with source=report.history_source %}
-<section class="op-card">
+<section class="zd-card">
   <h2>历史观测记录</h2>
   <p class="ops-quiet">原表未提供作业人数、作业时段与处置完成情况；发现时间和鸟类状态保留为事件观测数据。</p>
-  <dl class="op-details">
-    <div><dt>原始序号</dt><dd>{{ source.original.source_no|default:source.source_key }}</dd></div>
-    <div><dt>观测对象</dt><dd>{{ source.observations.object_name|default:'未识别' }}</dd></div>
-    <div><dt>原始发现时间</dt><dd>{% if source.observations.observed_date %}{{ source.observations.observed_date }}{% else %}{{ report.date|date:'Y-m-d' }}{% endif %} {{ source.observations.observed_time|default:'时间未记录' }}</dd></div>
-    <div><dt>原始报告人</dt><dd>{{ source.observations.reported_by|default:'未记录' }}</dd></div>
-    <div><dt>原始鸟类状态</dt><dd>{{ source.observations.status|default:'未记录' }}</dd></div>
-    <div><dt>来源</dt><dd>{{ source.batch.source_name }} · {{ source.source_sheet }} · 第 {{ source.source_row }} 行</dd></div>
+  <dl class="zd-prop">
+    <div class="p"><dt class="k">原始序号</dt><dd class="v">{{ source.original.source_no|default:source.source_key }}</dd></div>
+    <div class="p"><dt class="k">观测对象</dt><dd class="v">{{ source.observations.object_name|default:'未识别' }}</dd></div>
+    <div class="p"><dt class="k">原始发现时间</dt><dd class="v">{% if source.observations.observed_date %}{{ source.observations.observed_date }}{% else %}{{ report.date|date:'Y-m-d' }}{% endif %} {{ source.observations.observed_time|default:'时间未记录' }}</dd></div>
+    <div class="p"><dt class="k">原始报告人</dt><dd class="v">{{ source.observations.reported_by|default:'未记录' }}</dd></div>
+    <div class="p"><dt class="k">原始鸟类状态</dt><dd class="v">{{ source.observations.status|default:'未记录' }}</dd></div>
+    <div class="p"><dt class="k">来源</dt><dd class="v">{{ source.batch.source_name }} · {{ source.source_sheet }} · 第 {{ source.source_row }} 行</dd></div>
   </dl>
   {% if source.original.warnings %}<details><summary>数据核对说明</summary><ul>{% for warning in source.original.warnings %}<li>{{ warning }}</li>{% endfor %}</ul></details>{% endif %}
 </section>

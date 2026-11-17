@@ -89,10 +89,6 @@
                 const choices = doc.createElement('div'); choices.className = 'v2-chip-group';
                 choices.append(...parent.children.map(chip)); section.append(label, choices); levels.append(section);
             }
-            if (!state.branches().length) {
-                const hint = doc.createElement('p'); hint.className = 'pest-chip-hint';
-                hint.textContent = '先选择工作类别，再逐级选择工作内容。'; levels.append(hint);
-            }
             summary.replaceChildren();
             if (state.selected().length) {
                 const label = doc.createElement('div'); label.className = 'v2-fl';
