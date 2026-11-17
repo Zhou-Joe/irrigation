@@ -1,2 +1,18 @@
-/* Map controls, sidebar states and mobile layout use the irrigation CSS directly. */
+/* Bound the pest list independently from its fixed search and sidebar header. */
+#mapContainer[data-business="pest-control"]{position:relative;min-height:0}
 #mapContainer[data-business="pest-control"] .map-container{min-width:0}
+#mapContainer[data-business="pest-control"] .sidebar{min-height:0}
+#mapContainer[data-business="pest-control"] .sidebar-body{min-height:0;overflow:hidden}
+#mapContainer[data-business="pest-control"] :is(.pest-search-label,.pest-search){flex-shrink:0}
+#pestLocationList{flex:1 1 0;min-height:0;overflow-x:hidden;overflow-y:scroll;overscroll-behavior-y:contain;scrollbar-gutter:stable;scrollbar-width:thin;scrollbar-color:#75947d #e7eee5;-webkit-overflow-scrolling:touch;touch-action:pan-y;padding-bottom:12px}
+#pestLocationList::-webkit-scrollbar{width:9px}
+#pestLocationList::-webkit-scrollbar-track{background:#e7eee5}
+#pestLocationList::-webkit-scrollbar-thumb{background:#75947d;border:2px solid #e7eee5;border-radius:8px;min-height:36px}
+#pestLocationList:focus-visible{outline:2px solid #52b788;outline-offset:-2px}
+@media(max-width:768px){
+    /* The irrigation phone layout hides its sidebar; pest locations need a drawer. */
+    #mapContainer[data-business="pest-control"] .sidebar{display:flex!important;position:absolute;inset:0 auto 0 0;width:min(300px,calc(100vw - 56px));min-width:0;height:100%;max-height:100%;box-sizing:border-box;z-index:1600;transform:translateX(0);transition:transform .2s ease,opacity .2s ease}
+    #mapContainer[data-business="pest-control"] .sidebar.collapsed{transform:translateX(-100%);opacity:0;pointer-events:none}
+    #mapContainer[data-business="pest-control"] .sidebar-expand-btn.visible{display:flex!important;top:12px;bottom:auto;left:12px;transform:none;z-index:1100}
+    #dashboardWorkspace[data-business="pest-control"] #mobileOverlay.visible{display:block!important;position:fixed;inset:var(--pwa-header-height,52px) 0 var(--pwa-nav-height,0px);z-index:1500;background:#173c354d}
+}
