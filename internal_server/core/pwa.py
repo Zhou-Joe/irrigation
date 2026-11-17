@@ -20,6 +20,7 @@ def navigation(request):
             from operations.navigation import pest_modules
             modules=pest_modules(request.user.is_superuser or member.role=='manager')
             modules.append(dict(name='pest_profile',label='我的账号',description='个人资料与密码',icon='user',url='/ops/profile/'))
+            modules.append(dict(name='feedback',label='反馈与建议',description='分享想法、问题与说明照片',icon='message',url=reverse('core:feedback')))
             return {'pwa_modules':modules}
         from operations.access import has_irrigation_access
         if not has_irrigation_access(request.user):return {}
@@ -46,6 +47,7 @@ def navigation(request):
     if is_dept_user(request.user):
         modules = [m for m in modules if m[0] in ('dashboard', 'water_requests')]
     modules.append(('profile', '我的账号', '个人资料与账号设置', 'user'))
+    modules.append(('feedback', '反馈与建议', '分享想法、问题与说明照片', 'message'))
     return {'pwa_modules': [dict(name=name, label=label, description=desc,
                                  icon=icon, url=reverse('core:' + name))
                             for name, label, desc, icon in modules]}

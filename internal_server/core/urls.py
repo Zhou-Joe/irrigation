@@ -9,6 +9,7 @@ from core import pwa
 from core import ai_storage
 from core import ai_attachments
 from core import submissions
+from operations import feedback
 from core.sync_views import sync_status, agent_status
 from core.ai_views import ai_chat, ai_status, ai_cancel, ai_conversations
 from core.api import (
@@ -48,6 +49,8 @@ router.register(r'locations', LocationViewSet, basename='location')
 router.register(r'work-reports', WorkReportViewSet, basename='workreport')
 
 urlpatterns = [
+    path('feedback/', feedback.board, name='feedback'),
+    path('feedback/photos/<uuid:photo_id>/', feedback.photo, name='feedback_photo'),
     path('app/', pwa.app_home, name='app_home'),
     path('manifest.webmanifest', pwa.manifest, name='pwa_manifest'),
     path('service-worker.js', pwa.service_worker, name='pwa_service_worker'),

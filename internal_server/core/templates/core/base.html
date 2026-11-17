@@ -104,6 +104,9 @@
         }
 
         /* Mobile hamburger */
+        .top-nav-feedback { display:inline-flex;align-items:center;gap:5px;color:#fff;text-decoration:none;font-size:13px;white-space:nowrap;padding:7px;border-radius:6px; }
+        .top-nav-feedback:hover,.top-nav-feedback.active { background:rgba(255,255,255,.14); }
+        @media(max-width:1100px) { .top-nav-feedback span { display:none; } }
         .mobile-hamburger {
             display: none;
             background: none; border: none; color: white; font-size: 1.4rem;

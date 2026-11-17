@@ -11,7 +11,7 @@ from django.core.validators import validate_email
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.paginator import Paginator
 from django.db import transaction
-from django.db.models import Count, Sum, Q, F
+from django.db.models import Count, Sum, Q, F, Min
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, render
 from django.template.loader import render_to_string
@@ -87,7 +87,8 @@ def catalog_save(request):
         else:
             version,selected=revise_catalog(member.team,request.POST.get('catalog',''),action,
                 request.POST.get('id'),label=request.POST.get('label'),parent=request.POST.get('parent'),
-                kind=request.POST.get('kind'),order=request.POST.get('order') or 0)
+                kind=request.POST.get('kind'),order=request.POST.get('order') or 0,
+                **({'parameters':request.POST['parameters']} if 'parameters' in request.POST else {}))
         audit(request,member.team,'catalog.'+action,version.pk)
         member.team.refresh_from_db()
         return JsonResponse({'success':True,'message':'工作目录已更新，历史工单与已派任务保持原有内容。',
@@ -99,13 +100,17 @@ def catalog_save(request):
 def filtered_records(request):
     from .map_views import records
     qs=records(request);today=timezone.localdate()
+    historical=request.GET.get('history')=='1'
+    if historical:
+        qs=qs.filter(history_source__isnull=False)
+    earliest=qs.aggregate(day=Min('date'))['day'] if historical and not request.GET.get('date_from') else None
     error=''
     try:
-        start=parse_date(request.GET.get('date_from','')) or today-timedelta(days=29)
+        start=parse_date(request.GET.get('date_from','')) or earliest or today-timedelta(days=29)
         end=parse_date(request.GET.get('date_to','')) or today
     except ValueError:
         start=end=today;error='请填写有效的查询日期。';qs=qs.none()
-    if start>end or (end-start).days>366:
+    if start>end or (not historical and (end-start).days>366):
         error='查询时间范围应为连续 1–367 天。';qs=qs.none()
     qs=qs.filter(date__range=(start,end));query=request.GET.get('q','').strip()[:150]
     if query:qs=qs.filter(Q(ticket_number__icontains=query)|Q(zone_names__icontains=query)|
@@ -114,7 +119,20 @@ def filtered_records(request):
     if worker.isdigit():qs=qs.filter(worker__user_id=int(worker))
     place=request.GET.get('location','')
     if place:
-        try:qs=qs.filter(pest_data__locations__pk=uuid.UUID(place))
+        try:
+            selected=uuid.UUID(place)
+            locations=list(visible_locations(pest_member(request).team).values_list('pk','parent_id'))
+            visible={identifier for identifier,_ in locations}
+            descendants={selected} if selected in visible else set()
+            children={}
+            for identifier,parent in locations:
+                children.setdefault(parent,[]).append(identifier)
+            pending=list(descendants)
+            while pending:
+                for child in children.get(pending.pop(),[]):
+                    if child not in descendants:
+                        descendants.add(child);pending.append(child)
+            qs=qs.filter(pest_data__locations__pk__in=descendants).distinct()
         except ValueError:qs=qs.none()
     category=request.GET.get('category','')[:255]
     if category:
@@ -125,7 +143,8 @@ def filtered_records(request):
     if tab=='pending':qs=qs.filter(is_pending_repair=True)
     elif tab=='difficult':qs=qs.filter(is_difficult=True,is_difficult_resolved=False)
     return qs.order_by('-date','-pk'),{'date_from':start.isoformat(),'date_to':end.isoformat(),
-        'query':query,'selected_worker':worker,'selected_location':place,'selected_category':category,'active_tab':tab,'filter_error':error}
+        'query':query,'selected_worker':worker,'selected_location':place,'selected_category':category,'active_tab':tab,'filter_error':error,
+        'historical_only':historical}
 
 
 def filter_options(request,member):

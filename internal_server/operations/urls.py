@@ -1,5 +1,5 @@
 from django.urls import path
-from . import views,bulk,management_views,team_visibility
+from . import views,bulk,management_views,team_visibility,workorder_media
 
 app_name = 'operations'
 urlpatterns = [
@@ -27,5 +27,6 @@ urlpatterns = [
     path('plans/save/',management_views.plan_save,name='plan_save'),
     path('plans/dispatch/',management_views.dispatch,name='dispatch'),
     path('tasks/<int:pk>/action/',management_views.task_action,name='task_action'),
+    path('workorders/<int:report_id>/media/<str:name>/',workorder_media.serve,name='workorder_media'),
     path('profile/',management_views.profile,name='profile'),
 ]

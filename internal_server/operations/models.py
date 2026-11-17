@@ -41,6 +41,29 @@ class Membership(models.Model):
         constraints = [models.UniqueConstraint(fields=['user', 'team'], name='ops_one_membership_per_team')]
 
 
+class Feedback(models.Model):
+    """One feedback stream, attributed to the submitting team."""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    team = models.ForeignKey(Team, on_delete=models.PROTECT, related_name='feedback')
+    author = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL,
+                               related_name='feedback')
+    message = models.TextField(max_length=5000)
+    submission_key = models.UUIDField(default=uuid.uuid4, editable=False)
+    fingerprint = models.CharField(max_length=64, editable=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at', '-pk']
+        indexes = [models.Index(fields=['team', '-created_at'], name='ops_feedback_team_date')]
+        constraints = [models.UniqueConstraint(fields=['author', 'submission_key'], name='ops_feedback_submission')]
+
+
+class FeedbackPhoto(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    feedback = models.ForeignKey(Feedback, on_delete=models.CASCADE, related_name='photos')
+    storage_name = models.CharField(max_length=120)
+
+
 class Location(models.Model):
     KINDS = [('zone', '室外区域'), ('building', '建筑'), ('floor', '楼层'), ('room', '房间'),
              ('monitoring', '监测点'), ('trap_cage', '诱捕笼'), ('beehive', '蜂箱'), ('other', '其他地点')]
@@ -54,6 +77,7 @@ class Location(models.Model):
     map_display = models.CharField(max_length=12, choices=MAP_DISPLAYS, default='auto')
     parent = models.ForeignKey('self', null=True, blank=True, on_delete=models.PROTECT, related_name='children')
     description = models.TextField(blank=True)
+    parameters = models.JSONField(default=list, blank=True)
     latitude = models.DecimalField(max_digits=10, decimal_places=7, null=True, blank=True)
     longitude = models.DecimalField(max_digits=11, decimal_places=7, null=True, blank=True)
     legacy_zone = models.OneToOneField('core.Zone', on_delete=models.PROTECT, null=True, blank=True,
@@ -129,6 +153,7 @@ class AuditEvent(models.Model):
             'pest.task.skip':'跳过任务','pest.workorder.submit':'提交植保工单','pest.workorder.edit':'编辑植保工单',
             'pest.report.comment':'添加跟进说明','pest.report.pending':'标记待跟进','pest.report.resolve':'完成跟进',
             'pest.report.difficult':'标记疑难问题','pest.report.resolve_difficult':'解决疑难问题',
+            'pest.history.import':'导入历史观测记录',
             'account.details':'更新账号资料','account.password':'更新密码',
         }.get(self.action,'更新业务记录')
 
@@ -154,6 +179,7 @@ class ReferenceNode(models.Model):
     kind = models.CharField(max_length=12, choices=[('node', '目录节点'), ('note', '附属步骤')])
     source_line = models.PositiveIntegerField()
     order = models.PositiveIntegerField()
+    parameters = models.JSONField(default=list, blank=True)
 
     class Meta:
         ordering = ['order']
@@ -167,6 +193,7 @@ class PestWorkData(models.Model):
     # Issued catalogue wording and place names remain stable when reference data changes.
     selections = models.JSONField(default=list)
     location_labels = models.JSONField(default=list)
+    parameters = models.JSONField(default=dict, blank=True)
 
 
 class PestMaintenancePlan(models.Model):
@@ -214,3 +241,36 @@ class PestTask(models.Model):
         ordering = ['deadline', 'scheduled_date', 'pk']
         constraints = [models.UniqueConstraint(fields=['plan', 'location', 'cycle_start'], name='ops_pest_task_cycle')]
         indexes = [models.Index(fields=['team', 'status', 'deadline'], name='ops_pest_task_queue')]
+
+
+class PestHistoryImport(models.Model):
+    """A reproducible historical-source import, independent of current work dispatch."""
+    team = models.ForeignKey(Team, on_delete=models.PROTECT, related_name='history_imports')
+    dataset = models.SlugField(max_length=64)
+    source_name = models.CharField(max_length=255)
+    source_sha256 = models.CharField(max_length=64)
+    input_digest = models.CharField(max_length=64)
+    provenance = models.JSONField(default=dict)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['team', 'dataset', 'source_sha256'],
+                                              name='ops_history_source_batch')]
+
+
+class PestHistoryRecord(models.Model):
+    report = models.OneToOneField('core.WorkReport', on_delete=models.PROTECT,
+                                 related_name='history_source')
+    team = models.ForeignKey(Team, on_delete=models.PROTECT, related_name='history_records')
+    batch = models.ForeignKey(PestHistoryImport, on_delete=models.PROTECT, related_name='records')
+    dataset = models.SlugField(max_length=64)
+    source_key = models.CharField(max_length=100)
+    content_digest = models.CharField(max_length=64)
+    source_sheet = models.CharField(max_length=128)
+    source_row = models.PositiveIntegerField()
+    observations = models.JSONField(default=dict)
+    original = models.JSONField(default=dict)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['team', 'dataset', 'source_key'],
+                                              name='ops_history_external_record')]

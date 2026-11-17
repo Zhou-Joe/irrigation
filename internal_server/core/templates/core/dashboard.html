@@ -432,7 +432,7 @@
 </script>
 {% endif %}</div>{% endblock %}
 
-{% block extra_js %}<div id="dashboardScripts" hidden>{% if pest_mode %}<script src="{% static 'vendor/leaflet/leaflet.js' %}"></script><script src="{% static 'operations/map-actions.js' %}?v=20261108fixes2"></script><script src="{% static 'js/map-runtime.js' %}"></script><script src="{% static 'operations/map-markers.js' %}?v=20261112equipment1"></script><script src="{% static 'operations/location-picker.js' %}?v=20261112equipment1"></script><script src="{% static 'operations/workorder-chips.js' %}?v=20261111management1"></script><script src="{% static 'operations/map-location-create.js' %}?v=20261112equipment1"></script><script src="{% static 'operations/pest-map.js' %}?v=20261112equipment1"></script>{% else %}
+{% block extra_js %}<div id="dashboardScripts" hidden>{% if pest_mode %}<script src="{% static 'vendor/leaflet/leaflet.js' %}"></script><script src="{% static 'operations/map-actions.js' %}?v=20261108fixes2"></script><script src="{% static 'js/map-runtime.js' %}"></script><script src="{% static 'operations/map-markers.js' %}?v=20261112equipment1"></script><script src="{% static 'operations/location-picker.js' %}?v=20261112equipment1"></script><script src="{% static 'operations/workorder-chips.js' %}?v=20261111management1"></script><script src="{% static 'operations/map-location-create.js' %}?v=20261112equipment1"></script><script src="{% static 'operations/workorder-media.js' %}?v=20261117media1"></script><script src="{% static 'operations/work-parameters.js' %}?v=20261117parameters1"></script><script src="{% static 'operations/pest-map.js' %}?v=20261117media1"></script>{% else %}
 <!-- Leaflet JS -->
 <script src="{% static 'vendor/leaflet/leaflet.js' %}?v=1.9.4"></script>
 <script src="{% static 'operations/map-markers.js' %}?v=20261112equipment1"></script>
@@ -513,7 +513,7 @@ window.fillPmTask = function (gwoId) {
 <script defer src="{% static 'js/ai-chat-core.js' %}?v=20261112attachments1"></script>
 <script defer src="{% static 'js/genie_arrival.js' %}?v=20261107engenie1"></script>
 <script defer src="{% static 'js/inventory-move.js' %}?v=20261112quotes1"></script>
-<script defer src="{% static 'js/inventory-quotes.js' %}?v=20261113candidates1"></script>
-<script defer data-quotes-enabled="{% if not pest_mode and is_admin %}yes{% else %}no{% endif %}" src="{% static 'js/ai-chat.js' %}?v=20261113managerai1" data-mascot-base="{% static 'ai/engenie/' %}"></script>
+<script defer src="{% static 'js/inventory-quotes.js' %}?v=20261116chatconfirm1"></script>
+<script defer data-quotes-enabled="{% if not pest_mode and is_admin %}yes{% else %}no{% endif %}" src="{% static 'js/ai-chat.js' %}?v=20261116chatconfirm1" data-mascot-base="{% static 'ai/engenie/' %}"></script>
 {% endif %}
 </div>{% endblock %}

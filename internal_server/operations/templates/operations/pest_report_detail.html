@@ -1,3 +1,3 @@
-{% extends 'operations/base.html' %}{% block title %}{{ report.display_number }} · 植保工单{% endblock %}{% block ops_content %}
+{% extends 'operations/base.html' %}{% load static %}{% block extra_css %}{{ block.super }}<link rel="stylesheet" href="{% static 'operations/workorder-media.css' %}?v=20261117media1">{% endblock %}{% block title %}{{ report.display_number }} · 植保工单{% endblock %}{% block ops_content %}
 <header class="app-head"><div><h1>{{ report.display_number }}</h1><p class="app-subtitle">植保作业记录</p></div><div class="ops-actions"><a class="btn-sm btn-secondary" href="{% url 'core:work_reports' %}">返回工单记录</a>{% if can_submit %}<a class="btn-sm btn-primary" href="/?action=workorder&amp;report_id={{ report.pk }}">编辑工单</a>{% endif %}</div></header><div id="opsResults">{% include 'operations/_pest_report_detail.html' %}</div>
 {% endblock %}

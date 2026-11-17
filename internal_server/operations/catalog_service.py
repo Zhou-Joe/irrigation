@@ -19,7 +19,7 @@ def selectable_catalogs(team):
 
 
 def node_rows(catalog):
-    return [{'id':n.pk, 'parent':n.parent_id, 'label':n.label, 'kind':n.kind, 'order':n.order}
+    return [{'id':n.pk, 'parent':n.parent_id, 'label':n.label, 'kind':n.kind, 'order':n.order, 'parameters':n.parameters}
             for n in catalog.nodes.all()] if catalog else []
 
 
@@ -78,7 +78,9 @@ def revise_catalog(team, expected_version, action, identifier=None, **values):
         if not 0<=order<=100000:raise ValueError('排序应在 0–100000 之间。')
         if not item:
             item={'id':'new'};rows.append(item)
-        item.update(parent=int(parent) if parent else None,label=label,kind=kind,order=order)
+        from .work_parameters import definitions
+        parameters=definitions(values.get('parameters', item.get('parameters', [])))
+        item.update(parent=int(parent) if parent else None,label=label,kind=kind,order=order,parameters=parameters)
     if len(rows)>2000:raise ValueError('工作目录最多支持 2000 个条目。')
     version=ReferenceCatalog.objects.create(business=team.business,owner_team=team,
         name='植保作业目录',version=uuid.uuid4().hex,source_name='业务数据维护')
@@ -87,7 +89,7 @@ def revise_catalog(team, expected_version, action, identifier=None, **values):
         ready=[row for row in pending if not row['parent'] or str(row['parent']) in mapping]
         if not ready:raise ValueError('工作目录中有无效的父子关系。')
         nodes=[ReferenceNode(catalog=version,parent=mapping.get(str(row['parent'])),label=row['label'],
-            kind=row['kind'],source_line=rows.index(row)+1,order=row['order']) for row in ready]
+            kind=row['kind'],source_line=rows.index(row)+1,order=row['order'],parameters=row.get('parameters',[])) for row in ready]
         ReferenceNode.objects.bulk_create(nodes)
         for row,node in zip(ready,nodes):mapping[str(row['id'])]=node;pending.remove(row)
     team.work_catalog=version;team.save(update_fields=['work_catalog'])
