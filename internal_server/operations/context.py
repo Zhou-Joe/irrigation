@@ -1,6 +1,6 @@
 from django.conf import settings
 from .access import active_membership, business_options
-from .models import Location
+from .models import Location, Membership
 
 
 def workspace(request):
@@ -16,7 +16,7 @@ def workspace(request):
           'pest_mode':pest,'landscaping_mode':landscaping,'is_platform_admin':platform_admin,'multi_team_enabled':True,
           'business_selected':member.team.business.code if member else ''}
     if platform_admin:
-        data.update(account_role_label='平台管理员',user_role='super_admin')
+        data.update(account_role_label='超级管理员',user_role='super_admin')
     if pest:
         manager=platform_admin or member.role=='manager'
         from .navigation import pest_modules
@@ -27,12 +27,12 @@ def workspace(request):
                     unread_notifications_data=[],pm_tasks_data=[],pending_registrations=0,
                     watermark_text=request.user.get_full_name() or request.user.username,
                     watermark_warning='仅限内部沟通，严禁外传',pest_navigation=pest_modules(manager),
-                    account_role_label='平台管理员' if platform_admin else '植保'+dict(member.ROLES).get(member.role,''),
+                    account_role_label='超级管理员' if platform_admin else dict(Membership.display_role_choices('pest-control')).get(member.role,''),
                     pest_pending_task_count=task_count)
     elif landscaping:
         data.update(is_admin=platform_admin,is_manager=False,is_field_worker=False,
                     unread_notifications_data=[],pm_tasks_data=[],pending_registrations=0,
-                    account_role_label='平台管理员' if platform_admin else '绿化'+dict(member.ROLES).get(member.role,''),
+                    account_role_label='超级管理员' if platform_admin else dict(Membership.display_role_choices('landscaping')).get(member.role,''),
                     watermark_text=request.user.get_full_name() or request.user.username,
                     watermark_warning='仅限内部沟通，严禁外传')
     elif not member and not platform_admin:

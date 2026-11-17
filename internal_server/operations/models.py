@@ -37,6 +37,21 @@ class Membership(models.Model):
     active = models.BooleanField(default=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    @classmethod
+    def display_role_choices(cls, business_code):
+        from core.models import ROLE_CHOICES, ROLE_MANAGER, ROLE_DEPT_USER, Worker
+        account_labels = dict(ROLE_CHOICES)
+        labels = dict(cls.ROLES)
+        labels.update(manager=account_labels[ROLE_MANAGER], requester=account_labels[ROLE_DEPT_USER],
+                      field=dict(Worker.WORKER_TYPE_CHOICES).get(business_code, labels['field']))
+        return [(value, labels[value]) for value, _ in cls.ROLES]
+
+    def get_role_display(self):
+        from core.models import ROLE_CHOICES, ROLE_SUPER_ADMIN
+        if self.user_id and self.user.is_superuser:
+            return dict(ROLE_CHOICES)[ROLE_SUPER_ADMIN]
+        return dict(self.display_role_choices(self.team.business.code)).get(self.role, self.role)
+
     class Meta:
         constraints = [models.UniqueConstraint(fields=['user', 'team'], name='ops_one_membership_per_team')]
 
@@ -144,7 +159,7 @@ class AuditEvent(models.Model):
     def action_label(self):
         return {
             'workspace.switch':'切换业务视图','membership.save':'保存团队成员','membership.disable':'停用团队身份',
-            'location.save':'保存地点','location.link_irrigation':'引入灌溉区域','location.grant':'共享地点',
+            'location.save':'保存地点','location.delete':'删除地点','location.link_irrigation':'引入灌溉区域','location.grant':'共享地点',
             'location.revoke':'取消地点共享','location.batch_create':'批量创建地点','location.batch_grant':'批量共享地点',
             'location.batch_revoke':'批量取消共享','catalog.add':'新增工作条目','catalog.edit':'编辑工作条目',
             'location.team_visibility.add':'加入本团队区域','location.team_visibility.remove':'移出本团队区域',

@@ -4,11 +4,13 @@ from django.contrib.auth.decorators import login_required
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction, IntegrityError
-from django.db.models import Q, Count, Prefetch
+from django.db.models import Q, Count, Prefetch, F
+from django.db.models.deletion import ProtectedError
 from django.http import JsonResponse
 from django.shortcuts import render, redirect, get_object_or_404
 from django.views.decorators.http import require_POST, require_GET, require_http_methods
 from django.views.decorators.debug import sensitive_post_parameters
+from core.submissions import submission
 
 from .access import (memberships, active_membership, require_member, visible_locations, business_options,
                      can_manage_location, audit, has_irrigation_access, browsable_locations,
@@ -164,6 +166,41 @@ def location_edit(request, pk=None):
 
 @login_required
 @require_POST
+def location_delete(request, pk):
+    member = require_member(request, manager=True)
+    if request.POST.get('team') != str(member.team_id):
+        return JsonResponse({'success':False,'message':'当前业务团队已变化，请重新打开区域管理。'},status=409)
+    if request.POST.get('location') != str(pk):
+        return JsonResponse({'success':False,'message':'地点编号不一致，请重新选择。'},status=400)
+    return _delete_location(request, member, pk)
+
+
+@submission('location-delete')
+def _delete_location(request, member, pk):
+    try:
+        with transaction.atomic():
+            places = Location.objects.filter(pk=pk, owner_team=member.team)
+            # Reserve the SQLite write before checking references. Row locks
+            # serialize the same operation on databases that support them.
+            places.update(registry_generated=F('registry_generated'))
+            location = get_object_or_404(places.select_for_update())
+            if location.legacy_zone_id:
+                return JsonResponse({'success':False,'message':'该地点关联灌溉原区域，请在灌溉区域管理中处理原区域。'},status=409)
+            references = [('children','下级地点'),('pest_records','工单'),('pest_plans','作业计划'),('pest_tasks','任务')]
+            blockers = [label for related, label in references if getattr(location, related).exists()]
+            if blockers:
+                related_names = '、'.join(blockers)
+                return JsonResponse({'success':False,'message':f'该地点仍有关联的{related_names}，请先调整关联后再删除。'},status=409)
+            name = location.name
+            location.delete()
+            audit(request, member.team, 'location.delete', pk, name=name)
+    except ProtectedError:
+        return JsonResponse({'success':False,'message':'该地点仍有关联记录，请刷新并处理关联后再删除。'},status=409)
+    return JsonResponse({'success':True,'id':str(pk),'message':f'已删除地点「{name}」。','redirect_url':'/ops/locations/'})
+
+
+@login_required
+@require_POST
 def sharing(request, pk):
     member = require_member(request, manager=True)
     location = get_object_or_404(Location, pk=pk, owner_team=member.team)
@@ -235,7 +272,7 @@ def team(request):
         if role not in dict(Membership.ROLES) or action not in ('save', 'disable'):
             error = '请选择有效的角色和操作。'
         elif role == 'manager' and not request.user.is_superuser:
-            error = '经理角色由平台管理员授予。'
+            error = '管理员角色由超级管理员授予。'
         else:
             try:
                 with transaction.atomic():
@@ -262,12 +299,12 @@ def team(request):
                         user.save()
                     existing = Membership.objects.filter(user=user, team=target_team).first()
                     if existing and existing.role == 'manager' and not request.user.is_superuser:
-                        raise ValidationError('经理身份的变更由平台管理员处理。')
+                        raise ValidationError('管理员身份的变更由超级管理员处理。')
                     if user.pk == request.user.pk and action == 'disable':
                         raise ValidationError('不能在这里停用自己的团队身份。')
                     if existing and existing.active and existing.role=='manager' and (action=='disable' or role!='manager'):
                         if not Membership.objects.filter(team=target_team,role='manager',active=True,user__is_active=True).exclude(pk=existing.pk).exists():
-                            raise ValidationError('请先安排另一位团队经理，再调整当前经理身份。')
+                            raise ValidationError('请先安排另一位管理员，再调整当前管理员身份。')
                     obj, _ = Membership.objects.update_or_create(user=user, team=target_team,
                                                                 defaults={'role': role, 'active': action == 'save'})
                     audit(request, target_team, 'membership.' + action, obj.pk, role=role)
@@ -283,7 +320,7 @@ def team(request):
     from django.db.models import Count
     from .models import AuditEvent
     from .management_views import render_page
-    qs=Membership.objects.filter(team=target_team).select_related('user').order_by('-active','user__username')
+    qs=Membership.objects.filter(team=target_team).select_related('user','team__business').order_by('-active','user__username')
     counts=qs.aggregate(total=Count('pk'),enabled_count=Count('pk',filter=Q(active=True,user__is_active=True)),
         managers=Count('pk',filter=Q(role='manager',active=True)),field=Count('pk',filter=Q(role='field',active=True)))
     counts['active']=counts.pop('enabled_count')
@@ -293,7 +330,8 @@ def team(request):
     if role_filter in dict(Membership.ROLES):qs=qs.filter(role=role_filter)
     context={'membership':member,'can_manage':True,'managed_team':target_team,'error':error,
         'team_members':Paginator(qs,30).get_page(request.GET.get('page')),'counts':counts,'query':query,
-        'selected_role':role_filter,'roles':Membership.ROLES,
+        'selected_role':role_filter,'roles':Membership.display_role_choices(target_team.business.code),
+        'role_labels':dict(Membership.display_role_choices(target_team.business.code)),
         'all_teams':Team.objects.filter(active=True,business=member.team.business) if request.user.is_superuser else [],
         'audit_events':AuditEvent.objects.filter(team=target_team).select_related('actor').order_by('-pk')[:50]}
     return render_page(request,'operations/team.html',context,'operations/_team_results.html')

@@ -38,3 +38,10 @@ test('clear removes explicit and select-all selections',()=>{
     assert.equal(selection.count(100),0);selection.all(true);selection.clear();
     assert.deepEqual(selection.snapshot(),{ids:[],excludedIds:[],allMatching:false});
 });
+test('deleting one location retains other choices and removes obsolete exclusions',()=>{
+    const selection=createSelection();selection.use('team');selection.page(['a','b'],true);
+    selection.forget('a');assert.deepEqual(selection.snapshot().ids,['b']);
+    selection.all(true);selection.set('b',false);selection.forget('b');
+    assert.deepEqual(selection.snapshot().excludedIds,[]);
+    assert.equal(selection.count(1),1);
+});

@@ -2,9 +2,11 @@ import uuid
 
 from django.contrib.auth.models import User
 from django.test import TestCase, override_settings
+from django.utils import timezone
 
-from core.models import Zone
-from .models import BusinessArea, Location, LocationGrant, Membership, Team
+from core.models import Zone, Worker, WorkReport
+from .models import (AuditEvent, BusinessArea, Location, LocationGrant, Membership, Team,
+                     ReferenceCatalog, PestWorkData, PestMaintenancePlan, PestTask)
 
 
 @override_settings(MULTI_TEAM_ENABLED=True, PASSWORD_HASHERS=['django.contrib.auth.hashers.MD5PasswordHasher'])
@@ -104,3 +106,73 @@ class LocationSelectionTests(TestCase):
         self.assertContains(page, '应用到本团队')
         self.assertEqual(self.client.get('/ops/locations/link-irrigation/').status_code, 404)
         self.assertEqual(self.client.post('/ops/locations/link-irrigation/', {'zone': self.zone.pk}).status_code, 404)
+
+    def delete_payload(self, place=None, **values):
+        return {'team':str(self.team.pk),'location':str((place or self.own).pk),
+                'submission_key':str(uuid.uuid4()),**values}
+
+    def test_manager_deletes_native_building_and_grants_once_with_retry(self):
+        LocationGrant.objects.create(location=self.own, team=self.other)
+        url = f'/ops/locations/{self.own.pk}/delete/'
+        data = self.delete_payload()
+        self.assertContains(self.client.get('/ops/locations/'), 'data-location-delete=')
+        self.assertContains(self.client.get(f'/ops/locations/{self.own.pk}/'), '删除地点')
+        response = self.client.post(url, data)
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertFalse(Location.objects.filter(pk=self.own.pk).exists())
+        self.assertFalse(LocationGrant.objects.filter(location_id=self.own.pk).exists())
+        replay = self.client.post(url, data)
+        self.assertEqual(replay.json(), response.json())
+        self.assertEqual(AuditEvent.objects.filter(action='location.delete').count(), 1)
+        self.assertEqual(self.client.get(f'/ops/locations/{self.own.pk}/').status_code, 404)
+        ids = {place['id'] for place in self.client.get('/ops/locations.geojson').json()['locations']}
+        self.assertNotIn(str(self.own.pk), ids)
+        self.assertTrue(Location.objects.filter(pk=self.foreign.pk).exists())
+
+    def test_delete_requires_ownership_manager_csrf_and_matching_team_and_location(self):
+        from django.test import Client
+        url = f'/ops/locations/{self.own.pk}/delete/'
+        self.assertEqual(self.client.get(url).status_code, 405)
+        self.assertEqual(self.client.post(url, self.delete_payload(team=str(self.other.pk))).status_code, 409)
+        self.assertEqual(self.client.post(url, self.delete_payload(location=str(self.foreign.pk))).status_code, 400)
+        self.assertEqual(self.client.post(f'/ops/locations/{self.foreign.pk}/delete/', self.delete_payload(self.foreign)).status_code, 404)
+        csrf = Client(enforce_csrf_checks=True); csrf.force_login(self.manager)
+        self.assertEqual(csrf.post(url, self.delete_payload()).status_code, 403)
+        self.client.force_login(self.field)
+        self.assertEqual(self.client.post(url, self.delete_payload()).status_code, 403)
+        self.assertNotContains(self.client.get('/ops/locations/'), 'data-location-delete=')
+        self.assertTrue(Location.objects.filter(pk=self.own.pk).exists())
+
+    def test_delete_reports_children_work_plans_and_tasks_without_losing_links(self):
+        url = f'/ops/locations/{self.own.pk}/delete/'
+        child = Location.objects.create(owner_team=self.team, parent=self.own, name='下级房间', kind='room')
+        response = self.client.post(url, self.delete_payload())
+        self.assertEqual(response.status_code, 409)
+        self.assertIn('下级地点', response.json()['message'])
+        child.delete()
+        catalog = ReferenceCatalog.objects.create(business=self.team.business, owner_team=self.team,
+            name='目录', version='delete-test', source_name='fixture')
+        worker = Worker.objects.create(user=self.manager, employee_id='DELETE-WORKER', full_name='测试')
+        report = WorkReport.all_businesses.create(worker=worker, date=timezone.localdate(), business_team=self.team)
+        detail = PestWorkData.objects.create(report=report, catalog=catalog)
+        detail.locations.add(self.own)
+        response = self.client.post(url, self.delete_payload())
+        self.assertEqual(response.status_code, 409)
+        self.assertIn('工单', response.json()['message'])
+        self.assertTrue(detail.locations.filter(pk=self.own.pk).exists())
+        detail.locations.clear()
+        today = timezone.localdate()
+        plan = PestMaintenancePlan.objects.create(team=self.team,name='周期计划',catalog=catalog,anchor_date=today,next_cycle=today)
+        plan.locations.add(self.own)
+        response = self.client.post(url, self.delete_payload())
+        self.assertEqual(response.status_code, 409)
+        self.assertIn('作业计划', response.json()['message'])
+        self.assertTrue(plan.locations.filter(pk=self.own.pk).exists())
+        plan.locations.clear()
+        PestTask.objects.create(team=self.team,plan=plan,title='任务',catalog=catalog,location=self.own,
+            location_label=self.own.name,cycle_start=today,scheduled_date=today,deadline=today)
+        response = self.client.post(url, self.delete_payload())
+        self.assertEqual(response.status_code, 409)
+        self.assertIn('任务', response.json()['message'])
+        self.assertTrue(Location.objects.filter(pk=self.own.pk).exists())
+        self.assertFalse(AuditEvent.objects.filter(action='location.delete').exists())

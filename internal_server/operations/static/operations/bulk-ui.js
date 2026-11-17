@@ -15,6 +15,7 @@
             page(values,checked){for(const id of values)set(id,checked);},
             all(checked){all=!!checked;ids.clear();excluded.clear();},
             clear(){ids.clear();excluded.clear();all=false;},
+            forget(id){ids.delete(String(id));excluded.delete(String(id));},
             count(total){return all?Math.max(0,Number(total||0)-excluded.size):ids.size;},
             snapshot(){return {ids:[...ids],excludedIds:[...excluded],allMatching:all};}
         };
@@ -87,6 +88,7 @@
             selected.set(id,!selected.has(id));selection(form);return true;
         },
         clearSelection(){const form=document.querySelector('[data-batch-share]');if(form&&!form.dataset.busy){useSelection(form);selected.clear();selection(form);}},
+        forgetLocation(id){const form=document.querySelector('[data-batch-share]');if(form){useSelection(form);selected.forget(id);selection(form);}},
         setAction(action){const form=document.querySelector('[data-batch-share]');if(form&&!form.dataset.busy&&['add','remove'].includes(action)&&getSelection().catalog){selectionAction=action;selection(form);}},
         applySelection(action){const form=document.querySelector('[data-batch-share]');if(form&&!form.dataset.busy&&getSelection().catalog){this.setAction(action);form.requestSubmit();}}
     });

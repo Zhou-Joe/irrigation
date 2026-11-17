@@ -38,6 +38,7 @@ class BusinessViewTests(TestCase):
             self.assertRedirects(response,'/',fetch_redirect_response=False)
             page=self.client.get('/')
             self.assertTrue(page.context['is_admin'])
+            self.assertEqual(page.context['account_role_label'], '超级管理员')
             self.assertEqual(page.context['workspace_membership'].team_id,team.pk)
             self.assertEqual(page.context['business_choices'],[{'code':'irrigation','label':'灌溉'},{'code':'pest-control','label':'植保'},{'code':'landscaping','label':'绿化'}])
             self.assertContains(page,'name="business"')
@@ -48,6 +49,14 @@ class BusinessViewTests(TestCase):
             self.assertEqual(self.client.get('/admin/').status_code,200)
             self.assertEqual(self.client.get('/profile/').context['profile_data']['type'],'超级管理员')
             if code=='irrigation':self.assertTrue(self.client.get('/api/modal/workorder-data/').json()['can_create_project'])
+            if code=='pest-control':
+                team_page = self.client.get('/ops/team/')
+                labels = dict(team_page.context['roles'])
+                self.assertEqual(labels, {'field':'植保一线','manager':'管理员','viewer':'只读成员','requester':'部门用户'})
+                self.assertContains(team_page, '<option value="manager">管理员</option>', html=True)
+                rows = {item.user_id:item.get_role_display() for item in team_page.context['team_members']}
+                self.assertEqual(rows[self.pm.pk], '管理员')
+                self.assertEqual(rows[self.field.pk], '植保一线')
         self.assertEqual(before,list(Membership.objects.filter(user=self.admin).values()))
         self.admin.refresh_from_db();self.assertTrue(self.admin.is_superuser and self.admin.is_staff)
 

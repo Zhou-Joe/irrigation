@@ -1,6 +1,6 @@
 {% extends 'operations/base.html' %}{% load static %}
 {% block title %}{% if location.created_at %}编辑地点{% else %}新增地点{% endif %}{% endblock %}
-{% block head %}{% include 'operations/_location_map_head.html' %}<link rel="stylesheet" href="{% static 'operations/location-management.css' %}?v=20261117mapselection">{% endblock %}
+{% block head %}{% include 'operations/_location_map_head.html' %}<link rel="stylesheet" href="{% static 'operations/location-management.css' %}?v=20261117locationdelete">{% endblock %}
 {% block ops_content %}
 <div class="loc-form-page"><header class="app-head"><div><a class="loc-back-link" href="{% url 'operations:locations' %}"><svg class="ui-icon loc-left-chevron" aria-hidden="true"><use href="#pwa-chevron-right"/></svg>区域管理</a><h1>{% if location.created_at %}编辑地点{% else %}新增地点{% endif %}</h1><p class="app-subtitle">填写名称、选择类型，在地图上点选位置即可。</p></div></header>
 <section class="op-form-card">
@@ -17,7 +17,7 @@
       {% if not location.legacy_zone_id %}<p class="loc-field-help">点击地图放置图钉，再点一次可调整。暂不定位也可以保存地点。</p><div id="opPointMap" class="op-map op-map-small" aria-label="点选地点位置"></div>{% else %}<div class="loc-source-notice"><svg class="ui-icon" aria-hidden="true"><use href="#pwa-layers"/></svg><div><strong>引用灌溉区域边界</strong><p>当前使用 {{ location.boundary_source }}。切换图钉显示不会修改原区域轮廓。</p></div></div>{% endif %}
       <details class="loc-form-details" {% if form.latitude.errors or form.longitude.errors %}open{% endif %}><summary><span>手动输入坐标</span><small>选填</small><svg class="ui-icon" aria-hidden="true"><use href="#pwa-chevron-right"/></svg></summary><div class="loc-coordinate-grid"><div class="op-field">{{ form.latitude.label_tag }}{{ form.latitude }}{{ form.latitude.errors }}</div><div class="op-field">{{ form.longitude.label_tag }}{{ form.longitude }}{{ form.longitude.errors }}</div></div></details>
     </section></div>
-    <footer class="loc-form-footer"><p class="op-save-status" data-location-status role="status" aria-live="polite"></p><div class="ops-actions"><a class="btn-sm btn-secondary loc-page-cancel" href="{% url 'operations:locations' %}">返回列表</a><button class="btn-sm btn-secondary loc-modal-cancel" type="button" data-location-editor-close>取消</button><button type="submit" class="btn-sm btn-primary" data-location-save>保存地点</button></div></footer>
+    <footer class="loc-form-footer"><p class="op-save-status" data-location-status role="status" aria-live="polite"></p><div class="ops-actions">{% include 'operations/_location_delete_button.html' %}<a class="btn-sm btn-secondary loc-page-cancel" href="{% url 'operations:locations' %}">返回列表</a><button class="btn-sm btn-secondary loc-modal-cancel" type="button" data-location-editor-close>取消</button><button type="submit" class="btn-sm btn-primary" data-location-save>保存地点</button></div></footer>
   </form>
 </section></div>
 {% endblock %}

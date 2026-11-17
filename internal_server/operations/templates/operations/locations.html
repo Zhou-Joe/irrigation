@@ -1,6 +1,6 @@
 {% extends 'operations/base.html' %}{% load static %}
 {% block title %}区域管理{% endblock %}
-{% block head %}{% include 'operations/_location_map_head.html' %}<link rel="stylesheet" href="{% static 'operations/location-management.css' %}?v=20261117mapselection">{% endblock %}
+{% block head %}{% include 'operations/_location_map_head.html' %}<link rel="stylesheet" href="{% static 'operations/location-management.css' %}?v=20261117locationdelete">{% endblock %}
 {% block ops_content %}
 <div class="ops-locations" data-location-layout data-location-mobile="list">
   <header class="app-head loc-page-head"><div><h1>区域管理</h1><p class="app-subtitle">区域、建筑、诱捕笼与蜂箱，统一在地图上管理。</p></div>{% if can_manage %}<div class="ops-actions"><button class="btn-sm btn-primary" type="button" data-map-create-open><svg class="ui-icon" aria-hidden="true"><use href="#pwa-plus"/></svg>在地图上连续新建</button></div>{% endif %}</header>

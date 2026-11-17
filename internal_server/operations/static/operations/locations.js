@@ -139,10 +139,11 @@
         if(event.target.closest('[data-location-editor-close]')){event.preventDefault();if(!dialog?.querySelector('form[data-busy]'))closeEditor();}
     }
     function change(event){if(event.target.matches('[data-map-selection-action]'))window.FOSBulkLocations?.setAction(event.target.value);}
-    document.addEventListener('click',click);document.addEventListener('change',change);document.addEventListener('fos:location-saved',saved);document.addEventListener('fos:location-selection',updateSelection);
+    function deleted(event){closeEditor();if(focusId===event.detail.id)focusId=null;}
+    document.addEventListener('click',click);document.addEventListener('change',change);document.addEventListener('fos:location-saved',saved);document.addEventListener('fos:location-deleted',deleted);document.addEventListener('fos:location-selection',updateSelection);
     const observer=typeof ResizeObserver==='function'?new ResizeObserver(()=>{if(!disposed)map.invalidateSize({pan:false});}):null;observer?.observe(el);
     function resume(event){if(event.persisted&&document.getElementById('opLocationResults'))window.FOSBulkLocations?.refreshResults().catch(()=>notice('地点列表暂未更新，请重新查询。'));}
     window.addEventListener('pageshow',resume);
-    window.FOSLocationMap={refresh:load,focus,selectableIds:()=>places.filter(place=>place.can_select).map(place=>String(place.id)),startCreation:()=>creator.open(),getView:()=>({center:map.getCenter(),zoom:map.getZoom()}),destroy(){disposed=true;generation++;closeEditor();dialog?.remove();observer?.disconnect();document.removeEventListener('click',click);document.removeEventListener('change',change);document.removeEventListener('fos:location-saved',saved);document.removeEventListener('fos:location-selection',updateSelection);window.removeEventListener('pageshow',resume);creator.destroy();map.remove();}};
+    window.FOSLocationMap={refresh:load,focus,selectableIds:()=>places.filter(place=>place.can_select).map(place=>String(place.id)),startCreation:()=>creator.open(),getView:()=>({center:map.getCenter(),zoom:map.getZoom()}),destroy(){disposed=true;generation++;closeEditor();dialog?.remove();observer?.disconnect();document.removeEventListener('click',click);document.removeEventListener('change',change);document.removeEventListener('fos:location-saved',saved);document.removeEventListener('fos:location-deleted',deleted);document.removeEventListener('fos:location-selection',updateSelection);window.removeEventListener('pageshow',resume);creator.destroy();map.remove();}};
     let preferred='list';try{preferred=sessionStorage.getItem('fos-location-view')||'list';}catch(_){}mobileView(preferred==='map'?'map':'list',false);load();
 })();

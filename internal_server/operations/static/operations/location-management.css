@@ -36,3 +36,5 @@
 .op-location-pin-checked .op-pin-body::after{content:'✓';position:absolute;right:-3px;top:-3px;display:grid;place-items:center;width:24px;height:24px;border:2px solid #fff;border-radius:50%;background:#f6b83d;color:#3c2b08;font:700 16px/1 system-ui;box-shadow:0 1px 4px #0005}
 
 [data-building-orientations][hidden]{display:none!important}
+.loc-delete-button{color:#a23b36!important}.loc-delete-status{flex-basis:100%;font-size:.8rem;line-height:1.5;margin:8px 0 0}
+@media(max-width:600px){.loc-location-row{grid-template-columns:16px 31px minmax(0,1fr) 44px}.loc-location-row.is-readonly{grid-template-columns:31px minmax(0,1fr) 44px}.loc-delete-button{min-width:44px;min-height:44px}}

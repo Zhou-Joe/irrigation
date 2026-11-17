@@ -30,7 +30,7 @@
                 <svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-bell"/></svg>
                 <span class="notif-count" id="navNotifCount" aria-hidden="true">0</span>
             </button>{% endif %}
-            <a href="{% if pest_mode or landscaping_mode %}{% url 'operations:profile' %}{% else %}{% url 'core:profile' %}{% endif %}" class="top-nav-user"{% if is_platform_admin %} title="平台管理员"{% endif %}>{{ user.get_full_name|default:user.username }}</a>
+            <a href="{% if pest_mode or landscaping_mode %}{% url 'operations:profile' %}{% else %}{% url 'core:profile' %}{% endif %}" class="top-nav-user"{% if is_platform_admin %} title="超级管理员"{% endif %}>{{ user.get_full_name|default:user.username }}</a>
             <a href="{% url 'core:logout' %}" class="top-nav-logout">退出</a>
         </div>
     </nav>

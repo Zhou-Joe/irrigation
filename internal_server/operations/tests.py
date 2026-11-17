@@ -119,11 +119,11 @@ class WorkspaceTests(TestCase):
 
     def test_team_manager_cannot_promote_self_or_other_team(self):
         response = self.client.post('/ops/team/', {'username':self.field.username,'role':'manager'})
-        self.assertContains(response, '经理角色由平台管理员授予')
+        self.assertContains(response, '管理员角色由超级管理员授予')
         response = self.client.post('/ops/team/', {'username':self.field.username,'role':'manager'},
                                    HTTP_X_REQUESTED_WITH='XMLHttpRequest')
         self.assertEqual(response.status_code, 400)
-        self.assertEqual(response.json()['message'], '经理角色由平台管理员授予。')
+        self.assertEqual(response.json()['message'], '管理员角色由超级管理员授予。')
         self.fm.refresh_from_db();self.assertEqual(self.fm.role,'field')
         self.assertEqual(self.client.post('/ops/team/', {'team':self.it.pk,'username':self.im.username,'role':'field'}).status_code,403)
         self.assertEqual(self.client.get('/ops/team/?team='+str(self.it.pk)).status_code,403)

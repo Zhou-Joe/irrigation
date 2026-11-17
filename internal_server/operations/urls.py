@@ -12,6 +12,7 @@ urlpatterns = [
     path('locations/team-visibility/',team_visibility.update,name='location_team_visibility'),
     path('locations/<uuid:pk>/', views.location_detail, name='location_detail'),
     path('locations/<uuid:pk>/edit/', views.location_edit, name='location_edit'),
+    path('locations/<uuid:pk>/delete/', views.location_delete, name='location_delete'),
     path('locations/<uuid:pk>/sharing/', views.sharing, name='sharing'),
     path('locations.geojson', views.location_geometry, name='location_geometry'),
     path('team/', views.team, name='team'),
