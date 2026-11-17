@@ -13,6 +13,23 @@
 .pest-modal .v2-modal-header h2{color:inherit}
 .pest-modal .v2-form-row>*{min-width:0}
 .pest-modal .v2-chip{font-family:inherit;text-align:left;overflow-wrap:anywhere}
+#pestWorkorderForm{--pest-control-size:13px}
+#pestWorkorderForm :is(.v2-chip,.v2-input,.v2-select,.v2-textarea,.v2-direction-chip span){box-sizing:border-box;font-family:inherit;font-size:var(--pest-control-size);line-height:1.5}
+#pestWorkorderForm :is(.v2-input,.v2-select,.v2-textarea){padding:7px 10px;min-height:36px;color:#2a3f30}
+/* The shared phone styles force 16px controls; keep this form at chip size. */
+#pestWorkorderForm :is(.v2-input,.v2-select,.v2-textarea){font-size:var(--pest-control-size)!important}
+#pestWorkorderForm .v2-fl{font-size:12px}
+#pestWorkorderForm .v2-direction-chip span{min-width:42px;min-height:36px;padding:6px 12px}
+.pest-parameter-combo{position:relative}
+#pestWorkorderForm .pest-parameter-combo>.v2-input{padding-right:38px}
+.pest-combo-toggle{position:absolute;top:0;right:0;width:36px;height:36px;border:0;border-radius:0 8px 8px 0;background:transparent;color:#526950;cursor:pointer;display:flex;align-items:center;justify-content:center}
+.pest-combo-toggle .ui-icon{width:15px;height:15px}
+.pest-combo-toggle:focus-visible{outline:2px solid #52b788;outline-offset:-3px}
+.pest-combo-options{position:absolute;top:calc(100% + 3px);left:0;right:0;max-height:200px;overflow:auto;overscroll-behavior:contain;z-index:5;background:#fff;border:1px solid #cfdac8;border-radius:8px;box-shadow:0 4px 12px #253e2c15;padding:4px}
+.pest-combo-options[hidden]{display:none}
+.pest-combo-options [role=option]{display:block;width:100%;padding:8px;border:0;border-radius:5px;background:#fff;color:#2a3f30;font:13px/1.5 var(--font-body);text-align:left;cursor:pointer;overflow-wrap:anywhere}
+.pest-combo-options [role=option]:is(:hover,[aria-selected=true]){background:#edf5ee}
+.pest-combo-empty{padding:8px;color:#718176;font-size:12px}
 .pest-chip-level{margin-bottom:12px}
 .pest-chip-hint{font-size:.85em;color:#888;margin:4px 0}
 .pest-chip-summary{padding-top:2px}

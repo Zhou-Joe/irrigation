@@ -1,15 +1,18 @@
 import json
+import re
 import uuid
+from html import unescape
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
 from django.utils import timezone
 
-from core.models import WorkReport
+from core.models import WorkReport, WeatherData
 from .access import visible_locations
 from .catalog_service import revise_catalog
 from .forms import LocationForm
-from .models import BusinessArea, Team, Membership, Location, ReferenceCatalog, ReferenceNode
+from .models import (BusinessArea, Team, Membership, Location, ReferenceCatalog, ReferenceNode,
+                     PestHistoryImport, PestHistoryRecord, PestWorkData)
 from .work_parameters import definitions, form_schema, applicable_fields, parameter_snapshot
 
 
@@ -241,3 +244,133 @@ class WorkParameterTests(TestCase):
         with self.assertRaisesMessage(ValueError, '请填写'):
             parameter_snapshot(self.catalog, [self.leaf.pk, second.pk], [self.room], {},
                                available_locations=visible_locations(self.team))
+
+    def bird_form_fields(self):
+        self.branch.parameters=definitions([
+            {'key':'object_name','label':'鸟类对象','type':'choice','options':['斑鸠','乌鸫']},
+            {'key':'species_alpha_code','label':'物种代码','type':'text'},
+            {'key':'status','label':'发现状态','type':'choice','options':['Alive','Dead']},
+            {'key':'reported_by','label':'原报告人','type':'text'},
+            {'key':'weather','label':'天气','type':'text'},
+            {'key':'notes','label':'观察备注','type':'text'},
+            {'key':'impact_direction','label':'撞击朝向','type':'location'}])
+        self.branch.save()
+
+    def bird_parameters(self, **values):
+        data={'object_name':'斑鸠','species_alpha_code':'','status':'Dead',**values}
+        return json.dumps({'work':[{'key':key,'value':value} for key,value in data.items()],
+                           'locations':[{'key':'impact_direction','location_id':str(self.a.pk),'value':'N'}]})
+
+    def test_bird_dropdowns_accept_custom_names_codes_and_keep_status_strict(self):
+        self.bird_form_fields()
+        self.branch.parameters[1]={'key':'species_alpha_code','label':'代码','type':'choice','options':['KNOWN']}
+        self.branch.save()
+        for name,code in (('乌鸫','KNOWN'),('测试鸟种','CUSTOM-123')):
+            response=self.client.post('/mobile/workorder/v2/',self.payload(
+                parameters=self.bird_parameters(object_name=name,species_alpha_code=code)))
+            self.assertEqual(response.status_code,200,response.content)
+            report=WorkReport.all_businesses.get(pk=response.json()['report_id'])
+            saved={item['key']:item['value'] for item in report.pest_data.parameters['work']}
+            self.assertEqual((saved['object_name'],saved['species_alpha_code']),(name,code))
+        response=self.client.post('/mobile/workorder/v2/',self.payload(parameters=self.bird_parameters(status='not-a-status')))
+        self.assertEqual(response.status_code,400)
+        response=self.client.post('/mobile/workorder/v2/',self.payload(parameters=self.bird_parameters(object_name='x'*2001)))
+        self.assertEqual(response.status_code,400)
+        self.assertEqual(WorkReport.all_businesses.count(),2)
+
+    def test_submitter_and_weather_are_automatic_and_notes_have_one_saved_home(self):
+        self.bird_form_fields()
+        self.user.first_name='实际提交人';self.user.save()
+        now=timezone.localtime()
+        WeatherData.objects.create(latitude=31,longitude=121,date=now.date(),
+            hourly_data=[{'hour':now.hour,'code':3,'temp':21}])
+        response=self.client.post('/mobile/workorder/v2/',self.payload(remark='补充说明',
+            parameters=self.bird_parameters(reported_by='伪造报告人',weather='伪造天气',notes='现场观察')))
+        self.assertEqual(response.status_code,200,response.content)
+        report=WorkReport.all_businesses.get(pk=response.json()['report_id'])
+        values={item['key']:item['value'] for item in report.pest_data.parameters['work']}
+        self.assertEqual(values['reported_by'],'实际提交人')
+        self.assertEqual(values['weather'],report.weather)
+        self.assertEqual(report.weather,'阴天, 21°C')
+        self.assertEqual(report.remark,'现场观察\n补充说明')
+        self.assertNotIn('notes',values)
+        self.assertNotContains(self.client.get(f'/work-reports/{report.pk}/'),'观察备注')
+
+    def test_edit_keeps_original_submitter_weather_and_does_not_duplicate_notes(self):
+        self.bird_form_fields()
+        response=self.client.post('/mobile/workorder/v2/',self.payload(
+            parameters=self.bird_parameters(notes='现场观察')))
+        self.assertEqual(response.status_code,200,response.content)
+        report=WorkReport.all_businesses.get(pk=response.json()['report_id'])
+        original_reporter=report.worker.full_name
+        other=get_user_model().objects.create_user('other-editor',first_name='编辑人')
+        Membership.objects.create(user=other,team=self.team,role='manager')
+        self.client.force_login(other)
+        now=timezone.localtime()
+        WeatherData.objects.create(latitude=31,longitude=121,date=now.date(),hourly_data=[{'hour':now.hour,'code':0,'temp':30}])
+        response=self.client.post('/mobile/workorder/v2/',self.payload(report_id=str(report.pk),remark='现场观察\n补充说明',
+            parameters=self.bird_parameters(reported_by='编辑人',weather='新天气',notes='现场观察')))
+        self.assertEqual(response.status_code,200,response.content)
+        report.refresh_from_db();report.pest_data.refresh_from_db()
+        values={item['key']:item['value'] for item in report.pest_data.parameters['work']}
+        self.assertEqual(values['reported_by'],original_reporter)
+        self.assertEqual(report.weather,'');self.assertIsNone(values['weather'])
+        self.assertEqual(report.remark,'现场观察\n补充说明')
+        self.assertNotIn('notes',values)
+        # The unified remark can be cleared without resurrecting the old note.
+        response=self.client.post('/mobile/workorder/v2/',self.payload(report_id=str(report.pk),remark='',parameters=self.bird_parameters()))
+        self.assertEqual(response.status_code,200,response.content)
+        report.refresh_from_db();self.assertEqual(report.remark,'')
+
+    def test_historical_form_merges_old_note_without_changing_source_attribution(self):
+        self.bird_form_fields()
+        response=self.client.post('/mobile/workorder/v2/',self.payload(parameters=self.bird_parameters()))
+        report=WorkReport.all_businesses.get(pk=response.json()['report_id'])
+        report.weather='原表天气';report.remark='原有备注';report.save()
+        data=report.pest_data
+        for item in data.parameters['work']:
+            if item['key']=='reported_by':item.update(value='HORT',value_label='HORT')
+            if item['key']=='weather':item.update(value='原表天气',value_label='原表天气')
+        data.parameters['work'].append({'key':'notes','label':'观察备注','type':'text','value':'原观察备注','value_label':'原观察备注'})
+        data.save()
+        batch=PestHistoryImport.objects.create(team=self.team,dataset='test-history',source_name='fixture.xlsx',source_sha256='a'*64,input_digest='b'*64)
+        source=PestHistoryRecord.objects.create(team=self.team,report=report,batch=batch,dataset='test-history',source_key='1',
+            source_sheet='Records',source_row=4,content_digest='c'*64,observations={'reported_by':'HORT','notes':'原观察备注'},original={'source_no':1})
+        html=self.client.get('/api/modal/workorder-data/',{'report_id':report.pk}).json()['form_html']
+        remark=unescape(re.search(r'<textarea[^>]*id="pestRemark"[^>]*>(.*?)</textarea>',html,re.S)[1])
+        self.assertEqual(remark,'原观察备注\n原有备注')
+        self.assertGreater(html.index('id="pestRemark"'),html.index('id="pestReportMedia"'))
+        response=self.client.post('/mobile/workorder/v2/',self.payload(report_id=str(report.pk),remark=remark,parameters=self.bird_parameters()))
+        self.assertEqual(response.status_code,200,response.content)
+        report.refresh_from_db();report.pest_data.refresh_from_db();source.refresh_from_db()
+        values={item['key']:item['value'] for item in report.pest_data.parameters['work']}
+        self.assertEqual(values['reported_by'],'HORT');self.assertEqual(report.weather,'原表天气')
+        self.assertEqual(report.remark,remark);self.assertNotIn('notes',values)
+        self.assertEqual(source.observations,{'reported_by':'HORT','notes':'原观察备注'})
+
+    def test_form_hides_managed_fields_and_suggests_only_visible_previous_values(self):
+        self.bird_form_fields()
+        response=self.client.post('/mobile/workorder/v2/',self.payload(parameters=self.bird_parameters(object_name='自填鸟类',species_alpha_code='MY-CODE')))
+        report=WorkReport.all_businesses.get(pk=response.json()['report_id'])
+        other=Team.objects.create(business=self.business,code='private-team',name='Other')
+        catalog=ReferenceCatalog.objects.create(business=self.business,owner_team=other,name='Private',version='private',source_name='fixture')
+        hidden=WorkReport.all_businesses.create(worker=report.worker,business_team=other,date=report.date)
+        PestWorkData.objects.create(report=hidden,catalog=catalog,parameters={'work':[{'key':'object_name','value':'私有鸟类'},
+            {'key':'species_alpha_code','value':'PRIVATE-CODE'}]})
+        html=self.client.get('/api/modal/workorder-data/').json()['form_html']
+        schema=json.loads(re.search(r'<script[^>]*id="pest-parameter-schema"[^>]*>(.*?)</script>',html,re.S)[1])
+        fields={field['key']:field for node in schema['nodes'] if node['id']==str(self.branch.pk) for field in node['parameters']}
+        for key in ('reported_by','weather','notes'):self.assertTrue(fields[key]['hidden'])
+        for key in ('object_name','species_alpha_code'):self.assertTrue(fields[key]['allow_custom'])
+        self.assertIn('自填鸟类',[item['value'] for item in fields['object_name']['options']])
+        self.assertIn('MY-CODE',[item['value'] for item in fields['species_alpha_code']['options']])
+        self.assertNotIn('私有鸟类',json.dumps(schema,ensure_ascii=False))
+        self.assertNotIn('PRIVATE-CODE',json.dumps(schema))
+
+    def test_multipart_line_endings_do_not_duplicate_a_multiline_observation(self):
+        self.bird_form_fields()
+        response=self.client.post('/mobile/workorder/v2/',self.payload(remark='第一行\r\n第二行\r\n补充说明',
+            parameters=self.bird_parameters(notes='第一行\n第二行')))
+        self.assertEqual(response.status_code,200,response.content)
+        report=WorkReport.all_businesses.get(pk=response.json()['report_id'])
+        self.assertEqual(report.remark,'第一行\n第二行\n补充说明')

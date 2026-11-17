@@ -19,7 +19,8 @@ from .models import ReferenceCatalog, PestWorkData
 from .catalog_service import current_catalog, selection_snapshot
 from .map_data import location_map_data
 from . import workorder_media
-from .work_parameters import form_schema, parameter_snapshot
+from .work_parameters import (form_schema, parameter_snapshot, parameter_suggestions,
+                              parse_values, merged_remark, report_remark)
 
 
 def is_pest(request):
@@ -113,11 +114,14 @@ def pest_form_data(request):
     options=[{'id':str(p.pk),'name':p.name,'code':p.code,'kind':p.kind,'parent':str(p.parent_id) if p.parent_id else ''}
              for p in places]
     historical=bool(report and hasattr(report,'history_source'))
+    suggestions=parameter_suggestions(records(request).values_list('pest_data__parameters',flat=True)[:200])
     html = render_to_string('operations/_pest_workorder_form.html', {
         'catalog':catalog, 'work_tree':tree, 'location_options':options,
         'team':member.team, 'today':today.isoformat(), 'report':report,'task':task,
         'report_media':workorder_media.media_items(report) if report else [],
-        'parameter_schema':form_schema(catalog,places,report.pest_data.parameters if report else None),
+        'parameter_schema':form_schema(catalog,places,report.pest_data.parameters if report else None,
+                                       suggestions=suggestions),
+        'remark':report_remark(report),
         'historical_record':historical,
         'dates':list(dict.fromkeys(([report.date.isoformat()] if report else [])+[(today-timedelta(days=n)).isoformat() for n in range(90)])),
         'selected_date':report.date.isoformat() if report else today.isoformat(),
@@ -224,9 +228,28 @@ def _save_pest_workorder(request):
             old=report.pest_data.parameters
             raw_parameters={section:[{key:item[key] for key in ('key','value','location_id') if key in item}
                            for item in old.get(section,[])] for section in ('work','locations')}
+        raw_parameters=parse_values(raw_parameters)
+        submitted_work=raw_parameters.get('work',[])
+        if not isinstance(submitted_work,list):raise ValueError('参数内容无效。')
+        notes=next((item.get('value') for item in submitted_work
+                    if isinstance(item,dict) and item.get('key')=='notes'),None)
+        remark=merged_remark(remark,notes)
+        if len(remark)>10000:raise ValueError('备注最多支持 10000 字。')
+        if report:
+            previous={item['key']:item.get('value') for item in report.pest_data.parameters.get('work',[])}
+            reporter=previous.get('reported_by')
+            if not historical and not reporter:reporter=report.worker.full_name
+            weather=report.weather
+        else:
+            from core.role_utils import get_django_user
+            from core.workorder_tree_views import weather_snapshot_at
+            author=get_django_user(request.user)
+            reporter=author.get_full_name() or author.username
+            weather=weather_snapshot_at()
         parameter_values=parameter_snapshot(catalog,ids,locations,raw_parameters,
             available_locations=visible_locations(member.team).select_related(None),
-            previous=report.pest_data.parameters if report else None)
+            previous=report.pest_data.parameters if report else None,
+            automatic_values={'reported_by':reporter,'weather':weather or None},remark=remark)
         media_plan = workorder_media.plan_submission(request, report)
     except (ValueError,TypeError) as exc:
         return JsonResponse({'success':False,'message':str(exc)},status=400)
@@ -248,7 +271,7 @@ def _save_pest_workorder(request):
             from core.models import WorkReportEditLog
             WorkReportEditLog.objects.create(work_report=report,editor=worker,note='编辑植保作业记录')
         else:
-            report=WorkReport.all_businesses.create(worker=worker,business_team=member.team,is_pm=bool(task),**values)
+            report=WorkReport.all_businesses.create(worker=worker,business_team=member.team,is_pm=bool(task),weather=weather,**values)
             report.ticket_number=f'PPC-PM-{task.pk}' if task else f'PPC-{report.pk}'
             report.save(update_fields=['ticket_number'])
         detail,_=PestWorkData.objects.update_or_create(report=report,defaults=dict(catalog=catalog,selections=selections,parameters=parameter_values,
@@ -277,6 +300,9 @@ def pest_report_detail(request, report_id):
     member=require_member(request)
     report=get_object_or_404(records(request).prefetch_related('comments__author','edit_logs__editor'),pk=report_id)
     context={'membership':member,'report':report,'report_media':workorder_media.media_items(report),
+             'display_remark':report_remark(report),
+             'work_parameters':[item for item in report.pest_data.parameters.get('work',[]) if item['key']!='notes'],
+             'location_parameters':report.pest_data.parameters.get('locations',[]),
              'can_manage':member.role=='manager' or request.user.is_superuser,
              'can_submit':member.role in ('manager','field') or request.user.is_superuser}
     return render_page(request,'operations/pest_report_detail.html',context,'operations/_pest_report_detail.html')

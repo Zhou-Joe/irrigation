@@ -14,6 +14,9 @@ from datetime import date, time
 PARAMETER_TYPES = frozenset({'text', 'choice', 'integer', 'number', 'date', 'time', 'location'})
 EMPTY_VALUES = {'work': [], 'locations': []}
 IMPACT_DIRECTION = 'impact_direction'
+EDITABLE_BIRD_FIELDS = frozenset({'object_name', 'species_alpha_code'})
+AUTOMATIC_WORK_FIELDS = frozenset({'reported_by', 'weather'})
+HIDDEN_FORM_FIELDS = AUTOMATIC_WORK_FIELDS | {'notes'}
 DEFAULT_DIRECTIONS = [
     {'value': 'E', 'label': '东'}, {'value': 'S', 'label': '南'},
     {'value': 'W', 'label': '西'}, {'value': 'N', 'label': '北'},
@@ -93,10 +96,22 @@ def location_definitions(location, *, available_locations=()):
     return _inherited(location_schema(places.values()), location.pk)
 
 
-def form_schema(catalog, locations, values=None):
+def form_schema(catalog, locations, values=None, *, suggestions=None):
     """Only pass locations visible to the active team, including no private parents."""
     nodes = [{'id': str(n.pk), 'parent': str(n.parent_id or ''), 'name': n.label,
               'parameters': definitions(n.parameters)} for n in catalog.nodes.all()]
+    for node in nodes:
+        for field in node['parameters']:
+            if field['key'] in EDITABLE_BIRD_FIELDS and field['type'] in ('text', 'choice'):
+                field['allow_custom'] = True
+                choices = list(field.get('options', []))
+                known = {choice['value'] for choice in choices}
+                for choice in (suggestions or {}).get(field['key'], []):
+                    if choice['value'] not in known:
+                        choices.append(choice); known.add(choice['value'])
+                field['options'] = choices[:100]
+            if field['key'] in HIDDEN_FORM_FIELDS:
+                field['hidden'] = True
     by_id = {node['id']: node for node in nodes}
     for node in nodes:
         path = []; seen = set(); current = node
@@ -111,6 +126,35 @@ def form_schema(catalog, locations, values=None):
     return {'nodes': nodes,
             'locations': list(location_schema(locations).values()),
             'values': values or {'work': [], 'locations': []}}
+
+
+def parameter_suggestions(snapshots):
+    """Reuse bounded, caller-visible bird names/codes without changing catalogues."""
+    choices = {key: {} for key in EDITABLE_BIRD_FIELDS}
+    for snapshot in snapshots:
+        for item in (snapshot or {}).get('work', []):
+            key = item.get('key'); value = item.get('value')
+            if key in choices and isinstance(value, str) and value.strip() and len(value) <= 2000:
+                choices[key].setdefault(value, {'value': value, 'label': item.get('value_label') or value})
+    return {key: list(values.values())[:100] for key, values in choices.items()}
+
+
+def merged_remark(remark, notes):
+    remark = (remark or '').replace('\r\n', '\n').replace('\r', '\n').strip()
+    if notes is None or notes == '':
+        return remark
+    if not isinstance(notes, str) or len(notes) > 2000:
+        raise ValueError('观察备注最多支持 2000 字。')
+    notes = notes.replace('\r\n', '\n').replace('\r', '\n').strip()
+    return remark if not notes or notes in remark else '\n'.join(part for part in (notes, remark) if part)
+
+
+def report_remark(report):
+    if report is None:
+        return ''
+    notes = next((item.get('value') for item in report.pest_data.parameters.get('work', [])
+                  if item.get('key') == 'notes'), None)
+    return merged_remark(report.remark, notes)
 
 
 def _path(items, identifier):
@@ -181,6 +225,8 @@ def _clean_value(field, value):
         for option in field['options']:
             if value == option['value']:
                 return value, option['label']
+        if field['key'] in EDITABLE_BIRD_FIELDS:
+            return _clean_value({**field, 'type': 'text'}, value)
         raise ValueError(f'请重新选择{field["label"]}。')
     if kind in ('integer', 'number'):
         if isinstance(value, bool):
@@ -208,8 +254,7 @@ def _clean_value(field, value):
     return clean, clean
 
 
-def parameter_snapshot(catalog, node_ids, locations, raw_values, *, available_locations, previous=None):
-    """Validate against visible definitions; labels are supplied exclusively by server."""
+def parse_values(raw_values):
     if isinstance(raw_values, str):
         if len(raw_values) > 100000:
             raise ValueError('参数内容过长。')
@@ -221,6 +266,13 @@ def parameter_snapshot(catalog, node_ids, locations, raw_values, *, available_lo
         raw_values = {'work': [], 'locations': []}
     if not isinstance(raw_values, dict) or set(raw_values) - {'work', 'locations'}:
         raise ValueError('参数格式无效。')
+    return raw_values
+
+
+def parameter_snapshot(catalog, node_ids, locations, raw_values, *, available_locations, previous=None,
+                       automatic_values=None, remark=None):
+    """Validate visible fields; trusted submission data supplies automatic values."""
+    raw_values = parse_values(raw_values)
     schema = form_schema(catalog, available_locations)
     active = applicable_fields(schema, node_ids, [p.pk for p in locations])
     saved = {'work': [], 'locations': []}
@@ -244,6 +296,13 @@ def parameter_snapshot(catalog, node_ids, locations, raw_values, *, available_lo
             location_id = field['owner_id'] if section == 'locations' else ''
             key = (location_id, field['key']); accepted.add(key)
             value = by_key.get(key)
+            if section == 'work' and remark is not None and field['key'] == 'notes':
+                _clean_value({**field, 'required': False}, value)
+                if field['required'] and not remark.strip():
+                    raise ValueError('请填写备注。')
+                continue
+            if section == 'work' and automatic_values is not None and field['key'] in AUTOMATIC_WORK_FIELDS:
+                value = automatic_values[field['key']]
             try:
                 clean, label = _clean_value(field, value)
             except ValueError:

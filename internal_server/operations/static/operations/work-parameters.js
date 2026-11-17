@@ -18,6 +18,40 @@
         for(const id of [...locationIds].map(String).sort())for(const field of inherited(places,id))if(bindings.has(field.key))locations.set(field.owner_id+':'+field.key,{...field,required:!!(field.required||bindings.get(field.key).required)});
         return {work:[...work.values()],locations:[...locations.values()]};
     }
+    function editableChoice(doc,input,id,field){
+        const wrap=doc.createElement('div'),toggle=doc.createElement('button'),list=doc.createElement('div');
+        wrap.className='pest-parameter-combo';toggle.type='button';toggle.className='pest-combo-toggle';
+        toggle.setAttribute('aria-label','展开'+field.label+'选项');toggle.setAttribute('aria-controls',id+'Options');
+        toggle.innerHTML='<svg class="ui-icon" aria-hidden="true"><use href="#pwa-chevron-down"/></svg>';
+        list.id=id+'Options';list.className='pest-combo-options';list.hidden=true;list.setAttribute('role','listbox');list.setAttribute('aria-label',field.label+'选项');
+        input.setAttribute('role','combobox');input.setAttribute('aria-autocomplete','list');input.setAttribute('aria-expanded','false');input.setAttribute('aria-controls',list.id);input.autocomplete='off';
+        const choices=field.options||[];let matches=[],active=-1;
+        function close(){list.hidden=true;input.setAttribute('aria-expanded','false');input.removeAttribute('aria-activedescendant');active=-1;}
+        function choose(choice){input.value=choice.value;input.dispatchEvent(new doc.defaultView.Event('input',{bubbles:true}));input.focus();close();}
+        function open(all=false){
+            const query=input.value.trim().toLocaleLowerCase();active=-1;list.replaceChildren();input.removeAttribute('aria-activedescendant');
+            matches=choices.filter(choice=>all||!query||(choice.value+' '+choice.label).toLocaleLowerCase().includes(query));
+            matches.forEach((choice,index)=>{
+                const option=doc.createElement('button');option.type='button';option.tabIndex=-1;option.id=id+'Option'+index;option.setAttribute('role','option');option.setAttribute('aria-selected','false');option.textContent=choice.label;
+                option.addEventListener('pointerdown',event=>event.preventDefault());option.addEventListener('click',()=>choose(choice));list.append(option);
+            });
+            if(!matches.length){const empty=doc.createElement('div');empty.className='pest-combo-empty';empty.textContent='暂无已有选项';list.append(empty);}
+            list.hidden=false;input.setAttribute('aria-expanded','true');
+        }
+        input.addEventListener('focus',()=>open(true));input.addEventListener('input',()=>open());
+        input.addEventListener('keydown',event=>{
+            if(event.isComposing)return;
+            if(event.key==='Escape'&&!list.hidden){event.preventDefault();event.stopPropagation();close();}
+            else if(event.key==='ArrowDown'||event.key==='ArrowUp'){
+                event.preventDefault();if(list.hidden)open(true);if(!matches.length)return;
+                active=active<0?(event.key==='ArrowUp'?matches.length-1:0):Math.max(0,Math.min(matches.length-1,active+(event.key==='ArrowDown'?1:-1)));
+                [...list.querySelectorAll('[role=option]')].forEach((option,index)=>{option.setAttribute('aria-selected',String(index===active));if(index===active){input.setAttribute('aria-activedescendant',option.id);option.scrollIntoView?.({block:'nearest'});}});
+            }else if(event.key==='Enter'&&!list.hidden&&active>=0){event.preventDefault();choose(matches[active]);}
+        });
+        toggle.addEventListener('click',()=>{const expand=list.hidden;input.focus();if(expand)open(true);else close();});
+        wrap.addEventListener('focusout',event=>{if(!wrap.contains(event.relatedTarget))close();});
+        wrap.append(input,toggle,list);return wrap;
+    }
     function mount(form,schema,onChange=()=>{}){
         const host=form.querySelector('#pestParameters');if(!host)return {sync(){},destroy(){}};
         const doc=form.ownerDocument,values=new Map(),controls=new Map();let fingerprint='';
@@ -40,10 +74,11 @@
             if(controls.size)serialize();fingerprint=next;host.replaceChildren();controls.clear();
             let count=0;
             for(const section of ['work','locations'])for(const field of fields[section]){
+                if(section==='work'&&field.hidden)continue;
                 const chips=field.type==='choice'&&field.key==='impact_direction';
                 const row=doc.createElement(chips?'fieldset':'div');row.className=chips?'v2-fg v2-direction-field':'v2-fg';
                 const label=doc.createElement(chips?'legend':'label');label.className='v2-fl';label.textContent=(section==='locations'?field.owner_label+' · ':'')+field.label+(field.unit?'（'+field.unit+'）':'');
-                const old=values.get(key(section,field)),id='pestParameter'+(++count);let input,readValue=null,readLabel=null;
+                const old=values.get(key(section,field)),id='pestParameter'+(++count);let input,widget,readValue=null,readLabel=null;
                 if(chips){
                     input=doc.createElement('div');input.className='v2-direction-options';
                     const options=field.required?[...field.options]:[{value:'',label:'未记录'},...field.options];
@@ -55,6 +90,10 @@
                     }
                     readValue=()=>input.querySelector('input:checked')?.value||'';
                     readLabel=()=>input.querySelector('input:checked')?.dataset.choiceLabel||'';
+                }else if(field.allow_custom){
+                    input=doc.createElement('input');input.type='text';input.className='v2-input';input.maxLength=2000;
+                    widget=editableChoice(doc,input,id,field);
+                    readLabel=()=>field.options.find(choice=>choice.value===input.value)?.label||input.value;
                 }else if(field.type==='choice'){
                     input=doc.createElement('select');input.className='v2-select';
                     const blank=doc.createElement('option');blank.value='';blank.textContent=field.required?'请选择':'未记录 / 未选择';input.append(blank);
@@ -66,7 +105,7 @@
                 }
                 input.id=id;if(!chips){input.required=!!field.required;input.value=old?.value??'';label.htmlFor=input.id;}
                 input.addEventListener('input',()=>{serialize();onChange();});input.addEventListener('change',()=>{serialize();onChange();});
-                row.append(label,input);host.append(row);controls.set(key(section,field),{section,field,input,readValue,readLabel});
+                row.append(label,widget||input);host.append(row);controls.set(key(section,field),{section,field,input,readValue,readLabel});
             }
             host.hidden=!count;serialize();
         }
