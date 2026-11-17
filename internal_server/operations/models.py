@@ -65,6 +65,9 @@ class Feedback(models.Model):
     message = models.TextField(max_length=5000)
     submission_key = models.UUIDField(default=uuid.uuid4, editable=False)
     fingerprint = models.CharField(max_length=64, editable=False)
+    STATUS_CHOICES = [('open', '未完成'), ('completed', '已完成')]
+    status = models.CharField(max_length=12, choices=STATUS_CHOICES, default='open', db_default='open')
+    deleted_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -77,6 +80,18 @@ class FeedbackPhoto(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     feedback = models.ForeignKey(Feedback, on_delete=models.CASCADE, related_name='photos')
     storage_name = models.CharField(max_length=120)
+
+
+class FeedbackAttachment(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    feedback = models.ForeignKey(Feedback, on_delete=models.CASCADE, related_name='attachments')
+    storage_name = models.CharField(max_length=120)
+    original_name = models.CharField(max_length=255)
+    size = models.PositiveIntegerField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['created_at', 'pk']
 
 
 class Location(models.Model):
@@ -169,6 +184,7 @@ class AuditEvent(models.Model):
             'pest.report.comment':'添加跟进说明','pest.report.pending':'标记待跟进','pest.report.resolve':'完成跟进',
             'pest.report.difficult':'标记疑难问题','pest.report.resolve_difficult':'解决疑难问题',
             'pest.history.import':'导入历史观测记录',
+            'feedback.status':'修改反馈状态','feedback.delete':'删除反馈','feedback.file.delete':'删除反馈附件',
             'account.details':'更新账号资料','account.password':'更新密码',
         }.get(self.action,'更新业务记录')
 
