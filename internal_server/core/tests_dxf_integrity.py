@@ -43,7 +43,7 @@ def checks_for(points, method='sim'):
 class GeometryIntegrityTests(SimpleTestCase):
     def test_common_valve_block_names_are_selected_without_selecting_other_cad_blocks(self):
         for name,kind in [('WID_Val-cf','solenoid'),('GV_50','gate'),('AV-25','angle'),
-                          ('WD_40','washdown'),('QCV_15','qcv'),('拉线箱','pullbox'),('闸阀 DN50','gate')]:
+                          ('WD_40','washdown'),('QCV_15','qcv'),('QCV150','qcv'),('拉线箱','pullbox'),('闸阀 DN50','gate')]:
             self.assertTrue(utils._block_include_guess(name),name)
             self.assertEqual(utils._guess_block_type(name),kind,name)
         for name in ('TitleBlock','ZONE_BORDER','*U42','POC','C-L-BUILDING'):

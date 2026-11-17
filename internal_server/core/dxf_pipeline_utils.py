@@ -100,7 +100,7 @@ def _guess_block_type(block_name):
 def _block_include_guess(name):
     """Recognize device names beyond one supplier's WID_Val block convention."""
     return bool(re.search(
-        r'阀|拉线|牵引|取水|冲洗|\b(?:VALVE|SOLENOID|QCV|WASHDOWN|PULLBOX|GV|AV|WD|CF|PB)\b|WID\s+VAL',
+        r'阀|拉线|牵引|取水|冲洗|QCV|\b(?:VALVE|SOLENOID|WASHDOWN|PULLBOX|GV|AV|WD|CF|PB)\b|WID\s+VAL',
         re.sub(r'[_-]+', ' ', name), re.I))
 
 
