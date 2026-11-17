@@ -10,6 +10,7 @@
 .pest-create{position:absolute;right:20px;bottom:24px;z-index:600;display:flex;align-items:center;gap:8px;padding:12px 20px;font:inherit;cursor:pointer}
 .pest-modal[hidden],#woModalBackdrop[hidden],#mapLayerBody[hidden]{display:none!important}
 #pestFilterPanel[hidden],#pestPickActions[hidden],#pestPickInfo[hidden]{display:none!important}
+.pest-modal .v2-modal-header h2{color:inherit}
 .pest-modal .v2-form-row>*{min-width:0}
 .pest-modal .v2-chip{font-family:inherit;text-align:left;overflow-wrap:anywhere}
 .pest-chip-level{margin-bottom:12px}
