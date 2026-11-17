@@ -1,3 +1,4 @@
+from .administration import is_general
 """Team feedback, private attachments and owner/administrator actions."""
 import hashlib
 import io
@@ -104,11 +105,11 @@ def visible_feedback(request, member, *, include_deleted=False):
     qs = Feedback.objects.select_related('author', 'team__business').prefetch_related('photos', 'attachments')
     if not include_deleted:
         qs = qs.filter(deleted_at__isnull=True)
-    return qs if request.user.is_superuser or request.user.is_staff else qs.filter(team=member.team)
+    return qs if is_general(request.user) or request.user.is_staff else qs.filter(team=member.team)
 
 
 def can_manage(request, member, item):
-    return (item.author_id == request.user.pk or request.user.is_superuser or request.user.is_staff or
+    return (item.author_id == request.user.pk or is_general(request.user) or request.user.is_staff or
             item.team_id == member.team_id and member.role == 'manager')
 
 
@@ -246,7 +247,7 @@ def board(request):
     selected = request.GET.get('team', '')
     if selected:
         allowed = (selected.isdigit() and (Team.objects.filter(pk=int(selected)).exists()
-                   if request.user.is_superuser or request.user.is_staff else int(selected) == member.team_id))
+                   if is_general(request.user) or request.user.is_staff else int(selected) == member.team_id))
         if not allowed:
             raise Http404
         qs = qs.filter(team_id=int(selected))

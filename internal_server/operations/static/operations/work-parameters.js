@@ -9,7 +9,9 @@
     function activeFields(schema,nodeIds,locationIds){
         const nodes=new Map(schema.nodes.map(n=>[String(n.id),n])),places=new Map(schema.locations.map(p=>[String(p.id),p]));
         const work=new Map(),bindings=new Map(),locations=new Map();
-        for(const id of [...nodeIds].map(String).sort())for(const field of inherited(nodes,id)){
+        const requested=new Set([...nodeIds].map(String));
+        for(const id of [...requested]){let node=nodes.get(id);const seen=new Set();while(node&&!seen.has(String(node.id))){seen.add(String(node.id));for(const item of node.related_forms||[])requested.add(String(item.id));node=nodes.get(String(node.parent||''));}}
+        for(const id of [...requested].sort())for(const field of inherited(nodes,id)){
             if(field.type==='location'){
                 const previous=bindings.get(field.key);
                 bindings.set(field.key,{...field,required:!!(field.required||previous?.required)});
@@ -69,10 +71,13 @@
         }
         function sync(){
             const ids=name=>[...form.querySelectorAll('input[name="'+name+'"]')].map(input=>input.value);
-            const fields=activeFields(schema,ids('nodes'),ids('locations')),next=JSON.stringify(fields);
+            const fields=activeFields(schema,ids('nodes'),ids('locations')),next=JSON.stringify([fields,ids('nodes')]);
             if(next===fingerprint){serialize();return;}
             if(controls.size)serialize();fingerprint=next;host.replaceChildren();controls.clear();
             let count=0;
+            const related=new Map(),nodes=new Map(schema.nodes.map(n=>[String(n.id),n]));
+            for(const id of ids('nodes')){let node=nodes.get(id);const seen=new Set();while(node&&!seen.has(String(node.id))){seen.add(String(node.id));for(const item of node.related_forms||[])related.set(item.id,item);node=nodes.get(String(node.parent||''));}}
+            for(const item of related.values()){const prompt=doc.createElement('p');prompt.className='pest-related-form-prompt';prompt.setAttribute('role','note');prompt.textContent=item.prompt;host.append(prompt);}
             for(const section of ['work','locations'])for(const field of fields[section]){
                 if(section==='work'&&field.hidden)continue;
                 const chips=field.type==='choice'&&field.key==='impact_direction';

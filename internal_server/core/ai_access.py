@@ -6,6 +6,8 @@ from .role_utils import get_user_role, ROLE_MANAGER, ROLE_SUPER_ADMIN
 
 def can_use_assistant(request):
     user = request.user
+    from operations.administration import restricted_business
+    if restricted_business(user) not in (None,'irrigation'):return False
     if get_user_role(user) not in (ROLE_MANAGER, ROLE_SUPER_ADMIN):
         return False
     # Staff retain the existing cross-business AI access. Ordinary managers

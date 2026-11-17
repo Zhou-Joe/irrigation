@@ -40,3 +40,12 @@ test('two work bindings share one building field and retain any required constra
         assert.equal(fields.locations[0].required,true);
     }
 });
+test('dead-bird collision selections expose a linked observation form without selecting another work item',()=>{
+    const copy=structuredClone(schema);
+    copy.nodes.push({id:'dead',parent:'',name:'死鸟',parameters:[],related_forms:[{id:'bird-leaf',label:'撞击事件记录'}]});
+    const selected=['dead'];
+    const fields=activeFields(copy,selected,['room']);
+    assert.deepEqual(fields.work.map(f=>f.key),['species']);
+    assert.deepEqual(fields.locations.map(f=>f.owner_id),['a']);
+    assert.deepEqual(selected,['dead']);
+});

@@ -1,3 +1,4 @@
+from .administration import is_general
 """Management adapters for the shared web/PWA shell, scoped to the active team."""
 import uuid
 from collections import Counter
@@ -58,7 +59,7 @@ def catalogue_data(member):
 def business_data(request):
     member=pest_member(request)
     return render(request,'operations/business_data.html',{'membership':member,
-        'can_manage':member.role=='manager' or request.user.is_superuser,'location_kinds':Location.KINDS})
+        'can_manage':member.role=='manager' or is_general(request.user),'location_kinds':Location.KINDS})
 
 
 @login_required
@@ -103,16 +104,19 @@ def filtered_records(request):
     historical=request.GET.get('history')=='1'
     if historical:
         qs=qs.filter(history_source__isnull=False)
-    earliest=qs.aggregate(day=Min('date'))['day'] if historical and not request.GET.get('date_from') else None
+    period=request.GET.get('period','all' if historical and not any(request.GET.get(key) for key in ('date_from','date_to')) else 'custom')
+    if period not in ('all','year','custom'):period='custom'
     error=''
     try:
-        start=parse_date(request.GET.get('date_from','')) or earliest or today-timedelta(days=29)
-        end=parse_date(request.GET.get('date_to','')) or today
+        start=(today-timedelta(days=364)) if period=='year' else parse_date(request.GET.get('date_from','')) or today-timedelta(days=29)
+        end=today if period=='year' else parse_date(request.GET.get('date_to','')) or today
     except ValueError:
         start=end=today;error='请填写有效的查询日期。';qs=qs.none()
-    if start>end or (not historical and (end-start).days>366):
-        error='查询时间范围应为连续 1–367 天。';qs=qs.none()
-    qs=qs.filter(date__range=(start,end));query=request.GET.get('q','').strip()[:150]
+    if period=='all':start=end=None
+    elif start>end:
+        error='开始日期不能晚于结束日期。';qs=qs.none()
+    if start is not None:qs=qs.filter(date__range=(start,end))
+    query=request.GET.get('q','').strip()[:150]
     if query:qs=qs.filter(Q(ticket_number__icontains=query)|Q(zone_names__icontains=query)|
         Q(work_content__icontains=query)|Q(remark__icontains=query)|Q(worker__full_name__icontains=query))
     worker=request.GET.get('worker','')
@@ -142,7 +146,7 @@ def filtered_records(request):
     tab=request.GET.get('tab','records')
     if tab=='pending':qs=qs.filter(is_pending_repair=True)
     elif tab=='difficult':qs=qs.filter(is_difficult=True,is_difficult_resolved=False)
-    return qs.order_by('-date','-pk'),{'date_from':start.isoformat(),'date_to':end.isoformat(),
+    return qs.order_by('-date','-pk'),{'date_from':start.isoformat() if start else '','date_to':end.isoformat() if end else '', 'period':period,
         'query':query,'selected_worker':worker,'selected_location':place,'selected_category':category,'active_tab':tab,'filter_error':error,
         'historical_only':historical}
 
@@ -152,7 +156,7 @@ def filter_options(request,member):
     return {'places':visible_locations(member.team).select_related(None).only('id','name','code'),
         'staff':Membership.objects.filter(team=member.team,user__is_active=True).select_related('user'),
         'categories':catalog.nodes.filter(parent__isnull=True) if catalog else [],
-        'membership':member,'can_manage':member.role=='manager' or request.user.is_superuser}
+        'membership':member,'can_manage':member.role=='manager' or is_general(request.user)}
 
 
 def record_context(request):
@@ -222,7 +226,8 @@ def report_export(request):
         sheet.append(row)
     output=BytesIO();workbook.save(output)
     response=HttpResponse(output.getvalue(),content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-    response['Content-Disposition']=content_disposition_header(True,f'植保工单_{filters["date_from"]}_{filters["date_to"]}.xlsx')
+    window='全部' if filters['period']=='all' else f'{filters["date_from"]}_{filters["date_to"]}'
+    response['Content-Disposition']=content_disposition_header(True,f'植保工单_{window}.xlsx')
     response['Cache-Control']='private, no-store'
     return response
 

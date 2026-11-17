@@ -140,7 +140,7 @@ class Command(BaseCommand):
                 types=cfg.effective_report_types()
                 if not types:raise ValueError('未选择报表类型')
                 attachments=_build_all_attachments(types,cfg.frequency,today,
-                    report_windows=cfg.report_windows or None,ccu_ids=cfg.ccu_ids or None)
+                    report_windows=cfg.report_windows or None,ccu_ids=cfg.ccu_ids or None,**({'business_team':cfg.business_team} if cfg.business_team_id else {}))
                 built=[item for item in attachments if item[0] is not None and not item[2].startswith('FAILED:')]
                 failures=[item[2] for item in attachments if item[2].startswith('FAILED:')]
                 if not built:raise ValueError('生成报表失败：'+'；'.join(failures))

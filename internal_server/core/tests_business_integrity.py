@@ -238,7 +238,7 @@ class BusinessIntegrityTests(TestCase):
         cfg=EmailReportConfig.objects.create(name='Mail',recipients='fixture@example.invalid',
             report_types=['zones','irrigation'],send_hour=timezone.localtime().hour)
         def attachments(*args,**kwargs):return [('fixture.xlsx',BytesIO(b'fixture'),'Zone'),(None,None,'FAILED:irrigation:fixture')]
-        with patch('core.smtp_utils.is_smtp_configured',return_value=True),patch('core.management.commands.send_report_email._build_all_attachments',side_effect=attachments),\
+        with patch('core.mail_delivery.is_configured',return_value=True),patch('core.management.commands.send_report_email._build_all_attachments',side_effect=attachments),\
              patch('core.smtp_utils.get_email_connection',return_value=None),patch('core.smtp_utils.resolve_from_email',return_value='fixture@example.invalid'),\
              patch('django.core.mail.EmailMessage.send',return_value=1) as send:
             call_command('send_report_email',stdout=StringIO());call_command('send_report_email',stdout=StringIO())

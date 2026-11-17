@@ -431,6 +431,7 @@
 #smtpModal .mail-profile-note{padding:11px 12px;margin-bottom:16px;border-radius:9px;background:#f1f6f2;color:#607267;font-size:12px;line-height:1.65}#smtpModal .mail-profile-default{display:flex;align-items:flex-start;gap:9px;padding:12px;margin:0;border:1px solid #e3eae4;border-radius:10px;background:#fafbf9}#smtpModal .mail-profile-default input{margin-top:3px}#smtpModal .mail-profile-default span{color:#344e3d;font-size:13px}#smtpModal .mail-profile-default small{display:block;font-size:11px;color:#7a887f;margin-top:3px}
 #smtpModal .mail-profile-footer{display:flex;justify-content:flex-end;gap:9px;flex:0 0 auto;padding:14px 22px;border-top:1px solid #e8eee9;background:#fff}#smtpModal .mail-profile-footer button{min-height:38px;padding:8px 18px;border-radius:9px;font:inherit}#smtpModal [hidden]{display:none!important}
 .account-mail-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.account-mail-grid label{display:block;font-size:13px;color:#344e3d}.account-mail-grid select{display:block;width:100%;box-sizing:border-box;margin-top:6px;padding:9px 10px;border:1px solid #d6e0d8;border-radius:9px;background:#fff;font:inherit}
+#editModal .modal{width:calc(100vw - 32px);max-width:520px;box-sizing:border-box;max-height:calc(100dvh - 32px);overflow-y:auto}#editModal [hidden]{display:none!important}
 @media(max-width:480px){#smtpModal .mail-profile-dialog{max-height:calc(100dvh - 24px);border-radius:14px}#smtpModal .mail-profile-head{padding:16px}#smtpModal .mail-profile-body{padding:16px}#smtpModal .mail-profile-footer{padding:12px 16px}#smtpModal .mail-profile-grid,.account-mail-grid{grid-template-columns:1fr}#smtpModal .mail-methods{gap:7px}#smtpModal .mail-methods button{padding:10px 8px;gap:7px}#smtpModal .mail-methods svg{width:20px;height:20px;flex-basis:20px}}
 
 </style>
@@ -472,7 +473,8 @@
 
     <!-- Tab 1: User List -->
     <div id="tab-users" class="app-tab-content {% if active_tab == 'users' %}active{% endif %}">
-      <section class="am-card"><h2>账户邮件</h2><p class="am-row-meta" style="margin-bottom:14px">为注册邮箱确认、忘记密码分别选择已保存的发送配置。注册确认后仍需管理员审批。</p><div class="account-mail-grid"><label>注册邮箱确认<select id="accountRegistrationProfile"></select></label><label>密码重置邮件<select id="accountPasswordProfile"></select></label></div><div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:14px"><button type="button" class="btn btn-primary" id="accountMailSave" onclick="saveAccountMailSettings()">保存账户邮件设置</button><button type="button" class="btn btn-secondary" onclick="refreshAccountMailStatus(this)">刷新发送状态</button><span id="accountMailStatus" role="status" style="font-size:12px;color:#607269"></span></div><div id="accountMailDeliveryStatus" role="status" aria-live="polite" style="margin-top:12px;font-size:12px;line-height:1.7;color:#607269"></div></section>
+      {% if can_manage_account_mail %}<section class="am-card"><h2>账户邮件</h2><p class="am-row-meta" style="margin-bottom:14px">为注册邮箱确认、忘记密码分别选择已保存的发送配置。注册确认后仍需管理员审批。</p><div class="account-mail-grid"><label>注册邮箱确认<select id="accountRegistrationProfile"></select></label><label>密码重置邮件<select id="accountPasswordProfile"></select></label></div><div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:14px"><button type="button" class="btn btn-primary" id="accountMailSave" onclick="saveAccountMailSettings()">保存账户邮件设置</button><button type="button" class="btn btn-secondary" onclick="refreshAccountMailStatus(this)">刷新发送状态</button><span id="accountMailStatus" role="status" style="font-size:12px;color:#607269"></span></div><div id="accountMailDeliveryStatus" role="status" aria-live="polite" style="margin-top:12px;font-size:12px;line-height:1.7;color:#607269"></div></section>
+        {% endif %}
         <div class="stats-bar">
             <div class="stat-card">
                 <div class="stat-number">{{ total_users }}</div>
@@ -505,7 +507,7 @@
             </thead>
             <tbody>
                 {% for u in users_list %}
-                <tr data-profile-type="{{ u.profile_type }}" data-profile-id="{{ u.profile_id }}" data-user-id="{{ u.user_id }}" data-worker-type="{{ u.worker_type|default:'' }}" data-department="{{ u.department_code|default:'' }}" data-department-other="{{ u.department_other|default:'' }}">
+                <tr data-profile-type="{{ u.profile_type }}" data-profile-id="{{ u.profile_id }}" data-user-id="{{ u.user_id }}" data-worker-type="{{ u.worker_type|default:'' }}" data-admin-business="{{ u.admin_business }}" data-administrator="{{ u.is_administrator|yesno:'yes,no' }}" data-department="{{ u.department_code|default:'' }}" data-department-other="{{ u.department_other|default:'' }}">
                     <td>{{ u.full_name }}</td>
                     <td>{{ u.username }}</td>
                     <td class="text-mono">{{ u.employee_id }}</td>
@@ -526,7 +528,7 @@
                         <span class="status-inactive">停用</span>
                         {% endif %}
                     </td>
-                    <td><button class="btn btn-sm btn-secondary" onclick="editUser(this)">编辑</button></td>
+                    <td><button class="btn btn-sm btn-secondary" onclick="editUser(this)" {% if not u.can_edit %}disabled title="此账号由通用管理员维护"{% endif %}>编辑</button></td>
                 </tr>
                 {% endfor %}
             </tbody>
@@ -702,13 +704,13 @@
               <td>{{ c.leader.full_name|default:'—' }}</td>
               <td>{{ c.members.count }} 人</td>
               <td>
-                {% for l in c.lands.all %}{{ l.name }}{% if not forloop.last %}、{% endif %}{% endfor %}
+                {% for place in c.locations.all %}{{ place.name }}{% if not forloop.last %}、{% endif %}{% endfor %}{% for l in c.lands.all %}{{ l.name }}{% if not forloop.last %}、{% endif %}{% endfor %}
                 {% if c.patches.all %}
                   <div style="font-size:.78em;color:#475569;margin-top:2px;">
                     CCU：{% for p in c.patches.all %}{{ p.code }}{% if not forloop.last %}、{% endif %}{% endfor %}
                   </div>
                 {% endif %}
-                {% if not c.lands.all and not c.patches.all %}—{% endif %}
+                {% if not c.lands.all and not c.patches.all and not c.locations.all %}—{% endif %}
               </td>
               <td>{% if c.active %}<span class="status-active">启用</span>{% else %}<span class="status-inactive">停用</span>{% endif %}</td>
               <td><button class="btn btn-sm btn-secondary" onclick="openCrewModal({{ c.id }})">编辑</button></td>
@@ -897,10 +899,10 @@
             <div id="crew_members" class="crew-chk-group"></div>
         </div>
         <div class="form-group">
-            <label>负责区域 (Land)</label>
+            <label>{% if management_team %}负责地点{% else %}负责区域 (Land){% endif %}</label>
             <div id="crew_lands" class="crew-chk-group"></div>
         </div>
-        <div class="form-group">
+        <div class="form-group" {% if management_team %}hidden{% endif %}>
             <label>负责CCU <span style="font-size:.72em;color:#aaa;">（CCU/SAT级PM优先按CCU匹配班组）</span></label>
             <div id="crew_patches" class="crew-chk-group"></div>
         </div>
@@ -923,6 +925,7 @@
 <div class="modal-overlay" id="editModal">
     <div class="modal">
         <h3>编辑用户</h3>
+        <div class="form-group" id="admin_business_group" hidden><label for="edit_admin_business">管理员范围</label><select id="edit_admin_business" {% if not can_edit_admin_scope %}disabled{% endif %}><option value="general">通用管理员</option>{% for code,name in admin_business_choices %}<option value="{{ code }}">{{ name }}管理员</option>{% endfor %}</select></div>
         <div class="form-group">
             <label>姓名</label>
             <input type="text" id="edit_full_name">
@@ -1040,7 +1043,7 @@ function renderDeliveryProfiles() {
         main.append(title,detail);var buttons=document.createElement('div');buttons.className='am-inline';
         var edit=document.createElement('button');edit.type='button';edit.className='btn btn-secondary';edit.textContent='编辑';edit.onclick=function(){openSmtpModal(profile.id);};
         var remove=document.createElement('button');remove.type='button';remove.className='btn btn-secondary';remove.textContent='删除';remove.onclick=function(){deleteDeliveryProfile(profile.id);};
-        buttons.append(edit,remove);row.append(main,buttons);list.append(row);
+        if(profile.can_edit!==false)buttons.append(edit,remove);row.append(main,buttons);list.append(row);
     });
 }
 function refreshSmtpStatus() {
@@ -1053,6 +1056,7 @@ function refreshSmtpStatus() {
     }).catch(function(error){showToast(error.message||'加载发送配置失败',true);return null;});
 }
 function refreshAccountMailSettings(){
+    if(!document.getElementById('accountRegistrationProfile'))return;
     fetch('/account-mail/settings/',{headers:{'X-Requested-With':'XMLHttpRequest'}}).then(function(r){return r.json();}).then(function(d){if(!d.success)return;[['accountRegistrationProfile',d.registration_profile_id],['accountPasswordProfile',d.password_reset_profile_id]].forEach(function(pair){var select=document.getElementById(pair[0]);select.replaceChildren();var off=document.createElement('option');off.value='';off.textContent='不启用';select.append(off);_deliveryProfiles.forEach(function(profile){var option=document.createElement('option');option.value=profile.id;option.textContent=profile.name+' · '+(profile.delivery_method==='workflow'?'M365 Workflow':'SMTP');select.append(option);});select.value=pair[1]?String(pair[1]):'';});renderAccountMailStatus(d);}).catch(function(){document.getElementById('accountMailStatus').textContent='设置暂未加载，请稍后再试。';});
 }
 function renderAccountMailStatus(d){
@@ -1086,7 +1090,7 @@ function openSmtpModal(id) {
         document.getElementById('smtpFromEmail').value=p.from_email||'';document.getElementById('smtpPassword').value='';
         document.getElementById('smtpPassword').placeholder=p.has_password?'已设置（留空保留）':'请输入密码或授权码';
         var enc=id?(p.use_ssl?'ssl':p.use_tls?'tls':'none'):'ssl';document.querySelector('input[name="smtpEncryption"][value="'+enc+'"]').checked=true;
-        document.getElementById('smtpProfileDefault').checked=!!p.is_default;document.getElementById('smtpProfileDefault').disabled=!!p.is_default;
+        document.getElementById('smtpProfileDefault').checked=!!p.is_default;document.getElementById('smtpProfileDefault').disabled=!!p.is_default||!{{ can_manage_account_mail|yesno:'true,false' }};
         toggleMailDeliveryFields();document.getElementById('smtpModal').classList.add('show');
     });
 }
@@ -1445,17 +1449,19 @@ function editUser(btn) {
     var row = btn.closest('tr');
     editProfileType = row.dataset.profileType;
     editProfileId = row.dataset.profileId;
+    document.getElementById('admin_business_group').hidden=row.dataset.administrator!=='yes';
+    document.getElementById('edit_admin_business').value=row.dataset.adminBusiness||'general';
 
     var cells = row.querySelectorAll('td');
     document.getElementById('edit_full_name').value = cells[0].textContent.trim();
     document.getElementById('edit_phone').value = cells[5].textContent.trim() === '-' ? '' : cells[5].textContent.trim();
     document.getElementById('edit_active').checked = row.querySelector('.status-active') !== null;
     document.getElementById('edit_active').dataset.initial = String(document.getElementById('edit_active').checked);
-    document.getElementById('edit_worker_type_group').hidden = editProfileType !== 'worker';
+    document.getElementById('edit_worker_type_group').hidden = editProfileType !== 'worker'||row.dataset.administrator==='yes';
     document.getElementById('edit_worker_type').value = row.dataset.workerType || 'irrigation';
 
     var deptGroup = document.getElementById('dept_group');
-    if (editProfileType === 'manager') {
+    if (editProfileType === 'manager'||editProfileType==='account'||row.dataset.administrator==='yes') {
         deptGroup.style.display = 'none';
     } else {
         deptGroup.style.display = 'block';
@@ -1501,14 +1507,13 @@ function _crewUrlEdit(id) { return '/settings/crew/' + id + '/'; }
 function _renderCrewCheckboxes(containerId, options, selectedIds) {
     var sel = {};
     (selectedIds || []).forEach(function(id) { sel[id] = true; });
-    var html = '';
-    options.forEach(function(o) {
-        var label = o.label || (o.code ? (o.code + ' ' + (o.name || '')) : o.name);
-        html += '<label class="crew-chk"><input type="checkbox" value="' + o.id + '"'
-              + (sel[o.id] ? ' checked' : '') + '> ' + label + '</label>';
+    var el=document.getElementById(containerId);el.replaceChildren();
+    options.forEach(function(o){
+        var row=document.createElement('label'),input=document.createElement('input');row.className='crew-chk';input.type='checkbox';input.value=o.id;input.checked=!!sel[o.id];
+        row.append(input,document.createTextNode(' '+(o.label||(o.code?o.code+' '+(o.name||''):o.name))));el.append(row);
     });
-    var el = document.getElementById(containerId);
-    el.innerHTML = html || '<span style="color:#aaa;font-size:.82rem;">无可用选项</span>';
+    if(!options.length){var empty=document.createElement('span');empty.textContent='无可用选项';el.append(empty);}
+
 }
 
 function openCrewModal(crewId) {
@@ -1529,14 +1534,10 @@ function openCrewModal(crewId) {
         .then(function(d) {
             document.getElementById('crew_name').value = d.name || '';
             var leadSel = document.getElementById('crew_leader');
-            var leadHtml = '<option value="">— 不指定 —</option>';
-            d.workers.forEach(function(w) {
-                leadHtml += '<option value="' + w.id + '"' + (d.leader_id == w.id ? ' selected' : '') + '>'
-                          + w.label + '</option>';
-            });
-            leadSel.innerHTML = leadHtml;
+            leadSel.replaceChildren(new Option('— 不指定 —',''));
+            d.workers.forEach(function(w){leadSel.add(new Option(w.label,String(w.id),false,d.leader_id==w.id));});
             _renderCrewCheckboxes('crew_members', d.workers, d.members);
-            _renderCrewCheckboxes('crew_lands', d.lands_all, d.lands);
+            _renderCrewCheckboxes('crew_lands', d.locations_all?.length?d.locations_all:d.lands_all, {{ management_team|yesno:'true,false' }}?d.locations:d.lands);
             _renderCrewCheckboxes('crew_patches', d.patches_all, d.patches);
             document.getElementById('crew_active').checked = d.active !== false;
         })
@@ -1590,7 +1591,7 @@ function saveCrew() {
     if (leader) data.append('leader', leader);
     if (document.getElementById('crew_active').checked) data.append('active', 'true');
     document.querySelectorAll('#crew_members input:checked').forEach(function(cb) { data.append('members', cb.value); });
-    document.querySelectorAll('#crew_lands input:checked').forEach(function(cb) { data.append('lands', cb.value); });
+    document.querySelectorAll('#crew_lands input:checked').forEach(function(cb) { data.append('{% if management_team %}locations{% else %}lands{% endif %}', cb.value); });
     document.querySelectorAll('#crew_patches input:checked').forEach(function(cb) { data.append('patches', cb.value); });
 
     fetch(url, {
@@ -1620,16 +1621,17 @@ function showToast(msg, type) {
 
 function saveEdit() {
     var data = new FormData();
+    if(!document.getElementById('admin_business_group').hidden&&!document.getElementById('edit_admin_business').disabled)data.append('admin_business',document.getElementById('edit_admin_business').value);
     data.append('full_name', document.getElementById('edit_full_name').value);
     data.append('phone', document.getElementById('edit_phone').value);
     var active = document.getElementById('edit_active');
     if (String(active.checked) !== active.dataset.initial) {
         data.append('active', String(active.checked));
     }
-    if (editProfileType === 'worker') {
+    if (editProfileType === 'worker' && document.getElementById('admin_business_group').hidden) {
         data.append('worker_type', document.getElementById('edit_worker_type').value);
     }
-    if (editProfileType !== 'manager') {
+    if (editProfileType !== 'manager' && document.getElementById('dept_group').style.display!=='none') {
         var department = document.getElementById('edit_department');
         var other = document.getElementById('edit_department_other');
         if (department.value !== department.dataset.initial || other.value !== other.dataset.initial) {
@@ -1648,6 +1650,7 @@ function saveEdit() {
         if (data.success) {
             closeEditModal();
             showToast(data.message, 'success');
+            if(data.reload){location.href='/user-management/';return;}
             _refreshUsersTab();
         } else {
             showToast(data.error || '更新失败', 'error');

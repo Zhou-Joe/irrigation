@@ -198,7 +198,7 @@ def build_report(report_type, start=None, end=None, user=None, ccu_ids=None):
 
 
 def build_all_attachments(report_types, frequency, today, report_windows=None,
-                          ccu_ids=None):
+                          ccu_ids=None,business_team=None):
     """Build every selected report as an Excel attachment for ONE email.
 
     Returns a list of ``(filename, BytesIO, label)`` tuples — one per report
@@ -235,7 +235,12 @@ def build_all_attachments(report_types, frequency, today, report_windows=None,
             continue
         try:
             win = report_windows.get(rt) or {}
-            if rt == 'irrigation':
+            if business_team is not None:
+                from operations.report_exports import build_business_report
+                ds=int(win.get('days_start',1));de=int(win.get('days_end',0))
+                if not 0<=de<=ds<=36500:raise ValueError('报表日期范围无效')
+                fname,buf,label=build_business_report(business_team,rt,today-timedelta(days=ds),today-timedelta(days=de))
+            elif rt == 'irrigation':
                 # Hour-precise window relative to the send instant.
                 from core.report_windows import irrigation_email_window
                 if not win:

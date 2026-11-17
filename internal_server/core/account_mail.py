@@ -153,6 +153,9 @@ def _reset_message(email,profile_id,base):
 def settings_view(request):
     from .views import _email_config_perm
     if not _email_config_perm(request):return JsonResponse({'success':False,'message':'无权限'},status=403)
+    from django.conf import settings
+    from operations.administration import is_general
+    if settings.MULTI_TEAM_ENABLED and not is_general(request.user):return JsonResponse({'success':False,'message':'账户邮件由通用管理员维护'},status=403)
     config=AccountEmailSetting.get_solo()
     if request.method=='POST':
         values={}

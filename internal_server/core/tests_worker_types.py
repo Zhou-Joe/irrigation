@@ -51,7 +51,7 @@ class WorkerTypeTests(TestCase):
                     self.assertEqual(dashboard.context['business_selected'], kind)
         self.client.force_login(self.admin)
         rows = self.client.get('/user-management/').context['users_list']
-        self.assertEqual({row['role_display'] for row in rows}, {label for _, label in Worker.WORKER_TYPE_CHOICES})
+        self.assertEqual({row['role_display'] for row in rows},{'灌溉一线','通用管理员'})
 
     def test_registration_defaults_to_irrigation_and_rejects_invalid_type(self):
         self.assertEqual(Client().post('/register/', self.registration()).status_code, 302)
@@ -84,7 +84,7 @@ class WorkerTypeTests(TestCase):
         Worker.objects.create(user=user, employee_id='TYPE-W', full_name='经理', worker_type=Worker.TYPE_PEST_CONTROL)
         self.client.force_login(self.admin)
         rows = self.client.get('/user-management/').context['users_list']
-        self.assertTrue(all(row['role_display'] == '管理员' for row in rows if row['user_id'] == user.pk))
+        self.assertTrue(all(row['role_display'] == '通用管理员' for row in rows if row['user_id'] == user.pk))
 
     def test_django_admin_approval_uses_the_same_type_and_password_handling(self):
         Client().post('/register/', self.registration(worker_type=Worker.TYPE_LANDSCAPING))
@@ -142,7 +142,7 @@ class WorkerTypeTests(TestCase):
         announcement = Announcement.objects.create(title='测试', body='正文')
         self.client.force_login(self.admin)
         users = self.client.get(f'/api/announcements/{announcement.pk}/unacked/').json()['users']
-        self.assertEqual({row['name']:row['role'] for row in users if row['name'] in names}, names)
+        self.assertEqual({row['name']:row['role'] for row in users if row['name'] in names}, {'irrigation':'灌溉一线'})
 
     def test_missing_or_ambiguous_destination_team_rolls_back_registration_approval(self):
         self.pest_team.delete()

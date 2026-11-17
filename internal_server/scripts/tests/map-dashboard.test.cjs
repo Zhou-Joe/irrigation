@@ -6,6 +6,13 @@ const vm = require('node:vm');
 const runtime = require('../../static/js/map-runtime.js');
 const ring = [[31,121],[31.01,121],[31,121.01]];
 
+test('irrigation and pest maps share the same park limits and reject an outside initial center',()=>{
+    assert.deepEqual(runtime.parkView(),{center:[31.145663,121.655407],bounds:[[31.118663,121.623407],[31.172663,121.687407]],minZoom:15,maxZoom:22,maxBoundsViscosity:1});
+    assert.equal(runtime.withinPark([31.145,121.655]),true);
+    assert.equal(runtime.withinPark([31,121]),false);
+    assert.equal(runtime.withinPark([Infinity,121.65]),false);
+});
+
 test('legacy, multi-ring and nested CAD formats retain every coordinate', () => {
     const objects = ring.map(([lat,lng]) => ({lat,lng}));
     for (const input of [ring, objects, [ring], [[objects]], [[],ring]]) {

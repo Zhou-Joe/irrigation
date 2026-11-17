@@ -21,6 +21,17 @@ DEFAULT_DIRECTIONS = [
     {'value': 'E', 'label': '东'}, {'value': 'S', 'label': '南'},
     {'value': 'W', 'label': '西'}, {'value': 'N', 'label': '北'},
 ]
+DIRECTION_LABELS = {'E':'东','S':'南','W':'西','N':'北','NE':'东北','NW':'西北','SE':'东南','SW':'西南',
+                    'EAST':'东','SOUTH':'南','WEST':'西','NORTH':'北','NORTHEAST':'东北','NORTHWEST':'西北','SOUTHEAST':'东南','SOUTHWEST':'西南'}
+
+
+def direction_label(value):
+    return DIRECTION_LABELS.get(str(value or '').strip().upper(), value)
+
+
+def display_parameters(items):
+    return [dict(item,value_label=direction_label(item.get('value_label') or item.get('value')))
+            if item.get('key')==IMPACT_DIRECTION else item for item in items]
 
 
 def definitions(value, *, allow_location=True):
@@ -72,6 +83,8 @@ def definitions(value, *, allow_location=True):
             clean['options'] = choices
         elif 'options' in item:
             raise ValueError('只有 choice 类型可设置 options。')
+        if key == IMPACT_DIRECTION and kind == 'choice':
+            clean['options'] = [dict(option,label=direction_label(option['label'])) for option in clean['options']]
         result.append(clean); keys.add(key)
     return result
 
@@ -123,6 +136,12 @@ def form_schema(catalog, locations, values=None, *, suggestions=None):
         if bird_collision and not configured:
             node['parameters'].append({'key': IMPACT_DIRECTION, 'label': '撞击方向',
                                        'type': 'location', 'required': False})
+    event = next((node for node in nodes if node['name'].strip() == '撞击事件记录'), None)
+    if event:
+        for node in nodes:
+            names = ' '.join(item['name'] for item in _path(by_id,node['id']))
+            if node['id'] != event['id'] and '鸟' in names and '撞' in names and ('死' in names or '死亡' in names):
+                node['related_forms'] = [{'id':event['id'],'label':'撞击事件记录','prompt':'发现撞击死亡鸟类，请补充撞击事件记录。'}]
     return {'nodes': nodes,
             'locations': list(location_schema(locations).values()),
             'values': values or {'work': [], 'locations': []}}
@@ -178,7 +197,11 @@ def _inherited(items, identifier):
 def applicable_fields(schema, node_ids, location_ids):
     nodes = {n['id']: n for n in schema['nodes']}; places = {p['id']: p for p in schema['locations']}
     work = {}; bindings = {}
-    for identifier in sorted(str(n) for n in node_ids):
+    requested = {str(n) for n in node_ids}
+    for identifier in list(requested):
+        for node in _path(nodes,identifier):
+            requested.update(str(item['id']) for item in node.get('related_forms',[]))
+    for identifier in sorted(requested):
         for field in _inherited(nodes, identifier):
             target = bindings if field['type'] == 'location' else work
             previous = target.get(field['key'])

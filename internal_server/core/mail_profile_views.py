@@ -10,6 +10,23 @@ from django.views.decorators.http import require_GET, require_POST
 
 from .models import EmailDeliveryProfile, EmailSmtpSetting
 from .mail_delivery import is_configured, validate_workflow_url, public_download_base
+from operations.administration import is_general,management_team
+from operations.access import active_membership
+from django.conf import settings
+from django.db.models import Q
+
+
+def profile_team(request):
+    member=active_membership(request) if settings.MULTI_TEAM_ENABLED else None
+    return member.team if member else None
+
+
+def visible_profiles(request):
+    return EmailDeliveryProfile.objects.filter(Q(business_team__isnull=True)|Q(business_team=profile_team(request)))
+
+
+def editable_profiles(request):
+    return visible_profiles(request) if is_general(request.user) or not settings.MULTI_TEAM_ENABLED else EmailDeliveryProfile.objects.filter(business_team=profile_team(request)).exclude(business_team__isnull=True)
 
 
 def permitted(request):
@@ -32,7 +49,7 @@ def profiles(request):
     if not permitted(request):return JsonResponse({'success':False,'message':'无权限'},status=403)
     default_id=EmailSmtpSetting.get_solo().default_profile_id
     return JsonResponse({'success':True,'default_profile_id':default_id,
-        'profiles':[serialize(p,default_id) for p in EmailDeliveryProfile.objects.order_by('name','id')]})
+        'profiles':[dict(serialize(p,default_id),can_edit=is_general(request.user) or not settings.MULTI_TEAM_ENABLED or p.business_team_id==getattr(profile_team(request),'pk',None)) for p in visible_profiles(request).order_by('name','id')]})
 
 
 @login_required(login_url='core:login')
@@ -40,7 +57,7 @@ def profiles(request):
 def save(request):
     if not permitted(request):return JsonResponse({'success':False,'message':'无权限'},status=403)
     identifier=request.POST.get('id','').strip()
-    profile=get_object_or_404(EmailDeliveryProfile,pk=identifier) if identifier.isdigit() else EmailDeliveryProfile()
+    profile=get_object_or_404(editable_profiles(request),pk=identifier) if identifier.isdigit() else EmailDeliveryProfile(business_team=profile_team(request))
     if identifier and not identifier.isdigit():return JsonResponse({'success':False,'message':'发送配置无效'},status=400)
     profile.name=(request.POST.get('name') or '').strip()
     profile.delivery_method=request.POST.get('delivery_method','smtp')
@@ -69,10 +86,10 @@ def save(request):
         with transaction.atomic():
             profile.save()
             setting=EmailSmtpSetting.get_solo()
-            setting.download_base_url=public_download_base(request)
-            if request.POST.get('set_default')=='1' or not setting.default_profile_id:
-                setting.default_profile=profile
-            setting.save(update_fields=['default_profile','download_base_url'])
+            if is_general(request.user) or not settings.MULTI_TEAM_ENABLED:
+                setting.download_base_url=public_download_base(request)
+                if request.POST.get('set_default')=='1' or not setting.default_profile_id:setting.default_profile=profile
+                setting.save(update_fields=['default_profile','download_base_url'])
         return JsonResponse({'success':True,'message':'发送配置已保存','profile':serialize(profile,setting.default_profile_id)})
     except (ValidationError,ValueError) as error:
         message='；'.join(error.messages) if isinstance(error,ValidationError) else '请检查端口和链接格式。'
@@ -84,7 +101,7 @@ def save(request):
 @require_POST
 def delete(request,pk):
     if not permitted(request):return JsonResponse({'success':False,'message':'无权限'},status=403)
-    profile=get_object_or_404(EmailDeliveryProfile,pk=pk)
+    profile=get_object_or_404(editable_profiles(request),pk=pk)
     try:profile.delete()
     except ProtectedError:
         return JsonResponse({'success':False,'message':'该配置是默认配置，或被报表、账户邮件使用，请先改选其他配置。'},status=409)

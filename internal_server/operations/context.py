@@ -7,7 +7,8 @@ def workspace(request):
     if not settings.MULTI_TEAM_ENABLED or not request.user.is_authenticated:
         return {}
     member=active_membership(request)
-    platform_admin=request.user.is_superuser
+    from .administration import is_general, restricted_business
+    platform_admin=is_general(request.user)
     pest=bool(member and member.team.business.code=='pest-control')
     landscaping=bool(member and member.team.business.code=='landscaping')
     data={'workspace_membership':member,'business_choices':business_options(request.user),
@@ -29,8 +30,12 @@ def workspace(request):
                     watermark_warning='仅限内部沟通，严禁外传',pest_navigation=pest_modules(manager),
                     account_role_label='超级管理员' if platform_admin else dict(Membership.display_role_choices('pest-control')).get(member.role,''),
                     pest_pending_task_count=task_count)
+        if manager:
+            from .administration import registrations
+            data['pending_registrations']=registrations(request).filter(status='pending').count()
     elif landscaping:
-        data.update(is_admin=platform_admin,is_manager=False,is_field_worker=False,
+        manager=platform_admin or member.role=='manager'
+        data.update(is_admin=manager,is_manager=manager,is_field_worker=not manager and member.role=='field',
                     unread_notifications_data=[],pm_tasks_data=[],pending_registrations=0,
                     account_role_label='超级管理员' if platform_admin else dict(Membership.display_role_choices('landscaping')).get(member.role,''),
                     watermark_text=request.user.get_full_name() or request.user.username,
@@ -44,4 +49,9 @@ def workspace(request):
         data.update(is_admin=manager,is_manager=manager,is_field_worker=is_field_worker(request.user),
             watermark_text=request.user.get_full_name() or request.user.username,
             watermark_warning='仅限内部沟通，严禁外传')
+    limited=restricted_business(request.user)
+    if limited:
+        data.update(account_role_label=request.user.administrator_scope.business.name+'管理员',user_role='manager')
+    elif platform_admin:
+        data['account_role_label']='通用管理员'
     return data

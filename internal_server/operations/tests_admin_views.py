@@ -27,7 +27,7 @@ class BusinessViewTests(TestCase):
         rows=self.client.get('/user-management/').context['users_list']
         row=next(item for item in rows if item['user_id']==self.admin.pk)
         self.assertEqual(row['role'],'super_admin')
-        self.assertEqual(row['role_display'],'超级管理员')
+        self.assertEqual(row['role_display'],'通用管理员')
         self.assertFalse(ManagerProfile.objects.filter(user=self.admin).exists())
         self.assertTrue(Worker.objects.filter(pk=self.attribution.pk).exists())
 
@@ -38,7 +38,7 @@ class BusinessViewTests(TestCase):
             self.assertRedirects(response,'/',fetch_redirect_response=False)
             page=self.client.get('/')
             self.assertTrue(page.context['is_admin'])
-            self.assertEqual(page.context['account_role_label'], '超级管理员')
+            self.assertEqual(page.context['account_role_label'], '通用管理员')
             self.assertEqual(page.context['workspace_membership'].team_id,team.pk)
             self.assertEqual(page.context['business_choices'],[{'code':'irrigation','label':'灌溉'},{'code':'pest-control','label':'植保'},{'code':'landscaping','label':'绿化'}])
             self.assertContains(page,'name="business"')

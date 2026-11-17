@@ -492,6 +492,31 @@ class WorkerViewSet(viewsets.ModelViewSet):
     authentication_classes = [TokenAuthentication, authentication.SessionAuthentication]
     permission_classes = [IsAdminOrReadOnly]
 
+    def get_queryset(self):
+        from operations.administration import restricted_business,audience_users
+        from core.role_utils import get_django_user
+        user=get_django_user(self.request.user)
+        if not restricted_business(user):return super().get_queryset()
+        from django.db.models import Q
+        return super().get_queryset().filter(Q(user__in=audience_users(self.request))|Q(user__isnull=True,worker_type=restricted_business(user)))
+
+    def _validate_business(self,serializer):
+        from operations.administration import restricted_business,editable_account
+        from core.role_utils import get_django_user
+        user=get_django_user(self.request.user);business=restricted_business(user)
+        if not business:return
+        target=serializer.validated_data.get('user',getattr(serializer.instance,'user',None))
+        kind=serializer.validated_data.get('worker_type',getattr(serializer.instance,'worker_type','irrigation'))
+        if kind!=business or target and not editable_account(self.request,target):
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied('不能修改其他业务的人员。')
+
+    def perform_create(self,serializer):
+        self._validate_business(serializer);serializer.save()
+
+    def perform_update(self,serializer):
+        self._validate_business(serializer);serializer.save()
+
 
 # (removed: WorkOrderViewSet)
 # (removed: EventViewSet)

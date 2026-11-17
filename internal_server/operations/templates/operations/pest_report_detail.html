@@ -1,5 +1,5 @@
 {% extends 'operations/base.html' %}{% load static %}
 {% block title %}{{ report.display_number }} · 植保工单{% endblock %}
-{% block head %}<link rel="stylesheet" href="{% static 'css/work-report-detail.css' %}?v=20261117detail"><link rel="stylesheet" href="{% static 'operations/report-detail.css' %}?v=20261117detail">{% endblock %}
+{% block head %}<link rel="stylesheet" href="{% static 'css/work-report-detail.css' %}?v=20261117pestalign1"><link rel="stylesheet" href="{% static 'operations/report-detail.css' %}?v=20261117pestalign1">{% endblock %}
 {% block content %}<main class="zd-wrap ops-page pest-detail" data-ops-page><p class="ops-feedback" id="opsFeedback" role="status" aria-live="polite" hidden></p><div id="opsResults">{% include 'operations/_pest_report_detail.html' %}</div></main>{% endblock %}
 {% block scripts %}<script src="{% static 'operations/report-detail.js' %}?v=20261117detail" defer></script>{% endblock %}

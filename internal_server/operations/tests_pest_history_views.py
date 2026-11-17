@@ -44,7 +44,8 @@ class HistoricalWorkorderViewTests(TestCase):
         self.assertContains(response, '历史观测')
         self.assertContains(response, '人数与工时未记录')
         self.assertEqual(response.context['totals']['total'], 1)
-        self.assertEqual(response.context['date_from'], '2021-02-20')
+        self.assertEqual(response.context['period'],'all')
+        self.assertEqual(response.context['date_from'],'')
         self.assertNotContains(response, '查询时间范围应为')
 
     def test_detail_preserves_source_observer_and_discovery_time_without_fabricated_hours(self):

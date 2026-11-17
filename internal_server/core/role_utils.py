@@ -30,6 +30,9 @@ def get_user_role(user):
     if isinstance(user, DepartmentUserProfile):
         return ROLE_DEPT_USER
     # Django User
+    from operations.administration import restricted_business,administrator
+    if restricted_business(user) and administrator(user):
+        return ROLE_MANAGER
     if getattr(user, 'is_superuser', False) or getattr(user, 'is_staff', False):
         return ROLE_SUPER_ADMIN
     if ManagerProfile.objects.filter(user=user, active=True).exists():

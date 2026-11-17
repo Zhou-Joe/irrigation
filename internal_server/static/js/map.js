@@ -240,13 +240,10 @@
      */
     function initMap() {
         // Center point adjusted ~1.07km north-east, bounds (3km radius)
-        const centerLat = 31.145663;
-        const centerLng = 121.655407;
-        const latOffset = 0.027; // ~3km in latitude
-        const lngOffset = 0.032; // ~3km in longitude at lat 31°
-
-        const southWest = L.latLng(centerLat - latOffset, centerLng - lngOffset);
-        const northEast = L.latLng(centerLat + latOffset, centerLng + lngOffset);
+        const park=runtime.parkView();
+        const [centerLat,centerLng]=park.center;
+        const southWest = L.latLng(...park.bounds[0]);
+        const northEast = L.latLng(...park.bounds[1]);
         const bounds = L.latLngBounds(southWest, northEast);
         const viewKey = 'irrigation-map-view:' + (document.querySelector('.pwa-bottom-nav')?.dataset.userId || '');
         let savedView = null;
@@ -260,10 +257,10 @@
         map = L.map('map', {
             center: savedView?.center || [centerLat, centerLng],
             zoom: savedView?.zoom || 15,
-            maxZoom: 22,
-            minZoom: 15,
+            maxZoom: park.maxZoom,
+            minZoom: park.minZoom,
             maxBounds: bounds,
-            maxBoundsViscosity: 1.0,
+            maxBoundsViscosity: park.maxBoundsViscosity,
             layers: [satelliteLayer],
             zoomControl: false,
             preferCanvas: true,
@@ -773,8 +770,7 @@
         const entries = [];
         if (showLabels) {
             const wm = computeWatermarks();
-            const size = zoom < 17 ? Math.round(baseSize * 0.7)
-                : Math.max(Math.round(baseSize * 1.2), Math.round(getLabelFontSize(17) * 1.2));
+            const size=runtime.landLabelSize(zoom,_lCfg.fontSize||25);
             Object.entries(wm.landWm).forEach(([text, center]) => entries.push({text, center, size}));
             if (zoom > 18) Object.entries(wm.nameWm).forEach(([text, info]) => {
                 entries.push({text, center:info.center, size:Math.round(size * 0.49)});

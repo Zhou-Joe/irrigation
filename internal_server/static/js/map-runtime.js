@@ -5,6 +5,17 @@
     else root.IrrigationMapRuntime = api;
 })(typeof window !== 'undefined' ? window : this, function () {
     'use strict';
+    function parkView() {
+        return {center:[31.145663,121.655407],bounds:[[31.118663,121.623407],[31.172663,121.687407]],minZoom:15,maxZoom:22,maxBoundsViscosity:1};
+    }
+    function withinPark(value) {
+        const p=point(value),b=parkView().bounds;
+        return !!p&&p[0]>=b[0][0]&&p[0]<=b[1][0]&&p[1]>=b[0][1]&&p[1]<=b[1][1];
+    }
+    function landLabelSize(zoom,base=25) {
+        const size=zoom<=16?base*5:zoom===17?base*3:Math.max(5,Math.round(base*Math.pow(.7,19-zoom)));
+        return zoom<17?Math.round(size*.7):Math.max(Math.round(size*1.2),Math.round(base*3*1.2));
+    }
     function point(value) {
         const lat = Array.isArray(value) ? value[0] : value?.lat;
         const lng = Array.isArray(value) ? value[1] : value?.lng;
@@ -83,5 +94,5 @@
             return center && Number.isInteger(value.zoom) && value.zoom >= 15 && value.zoom <= 22 ? {center, zoom:value.zoom} : null;
         } catch (_) { return null; }
     }
-    return { point, boundaryRings, boundaryObjects, renderBatches, matchesPatch, fetchJSON, requestLocation, readView };
+    return { parkView, withinPark, landLabelSize, point, boundaryRings, boundaryObjects, renderBatches, matchesPatch, fetchJSON, requestLocation, readView };
 });

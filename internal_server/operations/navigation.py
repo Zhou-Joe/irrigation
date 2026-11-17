@@ -7,5 +7,5 @@ def pest_modules(manager):
         dict(name='locations',label='区域管理',description='建筑、监测点与共享区域',icon='layers',url='/ops/locations/'),
         dict(name='plans',label='作业计划',description='周期计划、轮转与任务跟进',icon='calendar',url='/ops/plans/'),
     ]
-    if manager:modules.append(dict(name='team',label='用户管理',description='团队账号、角色与权限',icon='users',url='/ops/team/'))
+    if manager:modules.append(dict(name='team',label='用户管理',description='用户、审批、通知、班组与邮件报表',icon='users',url='/user-management/'))
     return modules

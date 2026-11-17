@@ -54,3 +54,5 @@
 .v2-direction-chip span{box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;min-width:52px;min-height:44px;padding:9px 14px;border:1px solid #d4dfd7;border-radius:22px;background:#fff;color:#42634e;font:500 14px/1.5 var(--font-body,system-ui,sans-serif);overflow-wrap:anywhere}
 .v2-direction-chip input:checked+span{background:#24583d;border-color:#24583d;color:#fff}
 .v2-direction-chip input:focus-visible+span{outline:3px solid #91bea1;outline-offset:3px}
+
+.pest-related-form-prompt{grid-column:1/-1;margin:0;padding:10px 12px;border-left:3px solid #2d6a4f;border-radius:6px;background:#edf5ef;color:#244d36;font-size:13px;line-height:1.6}

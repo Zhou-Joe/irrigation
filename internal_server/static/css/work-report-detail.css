@@ -11,6 +11,8 @@
 
 /* ── Header ── */
 .zd-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.ui-system .zd-head { flex-wrap:nowrap; }
+.zd-head > :first-child { flex:1;min-width:0; }
 .zd-title { font-size: 1.25rem; font-weight: 700; color: var(--color-primary, #1B4332); margin: 0 0 4px; display: flex; align-items: center; gap: 6px; }
 .zd-desc { font-size: 0.85rem; color: var(--color-text-secondary, #4A6355); margin: 0 0 6px; }
 .zd-badges { display: flex; flex-wrap: wrap; gap: 5px; }
@@ -26,7 +28,7 @@
 .zd-wx-txt { display: flex; flex-direction: column; line-height: 1.2; }
 .zd-wx-desc { font-size: 0.74rem; font-weight: 600; color: var(--color-text-muted, #8B9A8F); }
 .zd-wx-temp { font-size: 0.92rem; font-weight: 700; color: var(--color-primary-light, #2D6A4F); }
-@media (max-width: 480px) { .zd-wx-icon { font-size: 1.3rem; } .zd-weather { padding: 5px 10px 5px 8px; } }
+@media (max-width: 480px) { .zd-head-right { flex-direction:column;align-items:flex-end; }.zd-wx-icon { font-size: 1.3rem; } .zd-weather { padding: 5px 10px 5px 8px; } }
 
 /* ── Buttons ── */
 .zd-btn { padding: 6px 14px; border: none; border-radius: 8px; font-size: 0.8rem; font-weight: 600; cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; gap: 5px; transition: opacity .15s; }

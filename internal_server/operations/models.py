@@ -1,3 +1,4 @@
+from .administration import is_general
 """Neutral identities and explicit team grants; legacy geometry stays authoritative."""
 import uuid
 
@@ -29,6 +30,13 @@ class Team(models.Model):
         return self.name
 
 
+class AdministratorScope(models.Model):
+    """A null business is an explicitly granted general administrator."""
+    user = models.OneToOneField(settings.AUTH_USER_MODEL,on_delete=models.CASCADE,related_name='administrator_scope')
+    business = models.ForeignKey(BusinessArea,null=True,blank=True,on_delete=models.PROTECT,related_name='administrators')
+    updated_at = models.DateTimeField(auto_now=True)
+
+
 class Membership(models.Model):
     ROLES = [('field', '一线人员'), ('manager', '团队经理'), ('viewer', '只读成员'), ('requester', '需求提交人')]
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='team_memberships')
@@ -48,7 +56,7 @@ class Membership(models.Model):
 
     def get_role_display(self):
         from core.models import ROLE_CHOICES, ROLE_SUPER_ADMIN
-        if self.user_id and self.user.is_superuser:
+        if self.user_id and is_general(self.user):
             return dict(ROLE_CHOICES)[ROLE_SUPER_ADMIN]
         return dict(self.display_role_choices(self.team.business.code)).get(self.role, self.role)
 

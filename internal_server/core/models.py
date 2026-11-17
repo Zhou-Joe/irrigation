@@ -775,6 +775,7 @@ class RegistrationRequest(models.Model):
     )
     worker_type = models.CharField('一线种类', max_length=20, choices=Worker.WORKER_TYPE_CHOICES,
                                    default=Worker.TYPE_IRRIGATION)
+    admin_business = models.CharField('管理员范围',max_length=40,default='irrigation')
     employee_id = models.CharField(max_length=50, blank=True, help_text='工号，审批通过后自动生成')
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_PENDING)
     status_notes = models.TextField(blank=True, help_text='审批备注')
@@ -799,6 +800,8 @@ class RegistrationRequest(models.Model):
     def get_requested_role_display(self):
         if self.requested_role == ROLE_FIELD_WORKER:
             return self.get_worker_type_display()
+        if self.requested_role==ROLE_MANAGER:
+            return {'general':'通用管理员','irrigation':'灌溉管理员','pest-control':'植保管理员','landscaping':'绿化管理员'}.get(self.admin_business,'管理员')
         return dict(ROLE_CHOICES).get(self.requested_role, self.requested_role)
 
 
@@ -1508,6 +1511,7 @@ class Announcement(models.Model):
     """
 
     title = models.CharField('标题', max_length=200)
+    business_team = models.ForeignKey('operations.Team',null=True,blank=True,on_delete=models.PROTECT,related_name='announcements')
     body = models.TextField('内容')
     active = models.BooleanField('启用', default=True,
                                  help_text='取消勾选则不再向任何人弹出（已确认记录保留）')
@@ -2417,6 +2421,8 @@ class Crew(models.Model):
     """
 
     name = models.CharField('班组名称', max_length=100)
+    business_team = models.ForeignKey('operations.Team',null=True,blank=True,on_delete=models.PROTECT,related_name='crews')
+    locations = models.ManyToManyField('operations.Location',blank=True,related_name='crews')
     leader = models.ForeignKey(
         Worker, on_delete=models.SET_NULL, null=True, blank=True,
         related_name='led_crews', verbose_name='组长',
@@ -2749,6 +2755,7 @@ class EmailReportConfig(models.Model):
     ]
 
     name = models.CharField('配置名称', max_length=100)
+    business_team = models.ForeignKey('operations.Team',null=True,blank=True,on_delete=models.PROTECT,related_name='email_report_configs')
     # report_type is kept for backward-compat (single-report configs created
     # before multi-select). New configs populate report_types (JSON list) and
     # leave report_type mirroring the first item. effective_report_types()
@@ -2862,6 +2869,7 @@ class EmailReportConfig(models.Model):
 
 class EmailDeliveryProfile(models.Model):
     name = models.CharField('配置名称', max_length=100, unique=True)
+    business_team = models.ForeignKey('operations.Team',null=True,blank=True,on_delete=models.PROTECT,related_name='email_delivery_profiles')
     delivery_method = models.CharField('发送方式', max_length=16, choices=[('smtp','SMTP'),('workflow','Microsoft 365 Workflow')], default='smtp')
     workflow_url = models.TextField('Workflow HTTP 链接', blank=True)
     download_base_url = models.URLField('报表下载站点', max_length=500, blank=True)

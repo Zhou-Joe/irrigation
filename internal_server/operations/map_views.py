@@ -1,3 +1,4 @@
+from .administration import is_general
 """Business adapters for the existing map, modal and work-record URLs."""
 import uuid
 from datetime import timedelta
@@ -32,7 +33,7 @@ def is_pest(request):
 
 def require_writer(request):
     member = require_member(request)
-    if member.role not in ('field', 'manager') and not request.user.is_superuser:
+    if member.role not in ('field', 'manager') and not is_general(request.user):
         raise PermissionDenied('当前团队身份不能提交工单。')
     return member
 
@@ -40,7 +41,7 @@ def require_writer(request):
 def records(request):
     member = require_member(request)
     qs = WorkReport.all_businesses.filter(business_team=member.team, pest_data__isnull=False)
-    if member.role != 'manager' and not request.user.is_superuser:
+    if member.role != 'manager' and not is_general(request.user):
         qs = qs.filter(worker__user=request.user)
     return qs.select_related('worker', 'pest_data', 'history_source__batch').order_by('-date','-id')
 
@@ -65,15 +66,19 @@ def chip_tree(roots):
 
 def pest_dashboard(request):
     from core.ai_access import can_use_assistant
+    from core.models import MapStyleSettings
+    from core.views import _unacked_announcements_for
     member = require_member(request)
     return render(request, 'core/dashboard.html', {
         'can_use_ai': can_use_assistant(request),
-        'pest_mode':True, 'can_pest_submit':member.role in ('manager','field') or request.user.is_superuser,
-        'can_pest_manage':member.role=='manager' or request.user.is_superuser})
+        'announcements':_unacked_announcements_for(request.user,member.team),'pest_map_style':MapStyleSettings.get_style(),
+        'pest_mode':True, 'can_pest_submit':member.role in ('manager','field') or is_general(request.user),
+        'can_pest_manage':member.role=='manager' or is_general(request.user)})
 
 
 @require_GET
 def pest_map_data(request):
+    from .map_reference import region_labels
     member = require_member(request)
     if member.team.business.code != 'pest-control':
         raise PermissionDenied
@@ -82,7 +87,7 @@ def pest_map_data(request):
         result.append({**location_map_data(location), 'shared':location.owner_team_id != member.team_id})
     from .planning import task_scope
     pending=task_scope(request,member).filter(status='pending',scheduled_date__lte=timezone.localdate()).count()
-    response = JsonResponse({'business':'pest-control', 'locations':result,'pending_tasks':pending,
+    response = JsonResponse({'business':'pest-control', 'locations':result,'pending_tasks':pending,'region_labels':region_labels(),
         'records':[{'id':r.pk, 'number':r.display_number, 'date':r.date.isoformat(),
                     'locations':[str(p.pk) for p in r.pest_data.locations.all()]}
                    for r in records(request)[:50].prefetch_related('pest_data__locations')]})
@@ -296,13 +301,18 @@ def pest_reports(request):
 
 @require_GET
 def pest_report_detail(request, report_id):
+    from core.workorder_tree_views import weather_snapshot_at
+    from .work_parameters import display_parameters
     from .management_views import render_page
     member=require_member(request)
     report=get_object_or_404(records(request).prefetch_related('comments__author','edit_logs__editor'),pk=report_id)
+    weather_display=report.weather or ('' if hasattr(report,'history_source') else weather_snapshot_at(report.created_at))
+    weather_desc,separator,weather_temp=weather_display.partition(',')
     context={'membership':member,'report':report,'report_media':workorder_media.media_items(report),
              'display_remark':report_remark(report),
              'work_parameters':[item for item in report.pest_data.parameters.get('work',[]) if item['key']!='notes'],
-             'location_parameters':report.pest_data.parameters.get('locations',[]),
-             'can_manage':member.role=='manager' or request.user.is_superuser,
-             'can_submit':member.role in ('manager','field') or request.user.is_superuser}
+             'location_parameters':display_parameters(report.pest_data.parameters.get('locations',[])),
+             'weather_display':weather_display,'weather_desc':weather_desc.strip(),'weather_temp':weather_temp.strip(),
+             'can_manage':member.role=='manager' or is_general(request.user),
+             'can_submit':member.role in ('manager','field') or is_general(request.user)}
     return render_page(request,'operations/pest_report_detail.html',context,'operations/_pest_report_detail.html')

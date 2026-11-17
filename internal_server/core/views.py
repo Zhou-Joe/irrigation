@@ -24,6 +24,7 @@ from core.authentication import TokenAuthentication as _TokenAuth
 from core.authentication import token_or_session
 from core.business_rules import atomic_operation, inventory_scope, require_inventory_edit, material_lines, integer_quantity, water_window
 from django.db import transaction
+from operations.administration import owned, management_team
 from django.core.exceptions import PermissionDenied
 
 def auto_close_boundary_points(boundary_data):
@@ -1301,7 +1302,7 @@ def dashboard(request):
         from operations.access import active_membership
         member = active_membership(request)
         if member and member.team.business.code == 'landscaping':
-            return render(request, 'operations/landscaping.html')
+            return render(request,'operations/landscaping.html',{'announcements':_unacked_announcements_for(request.user,member.team)})
     if is_pest(request):
         return pest_dashboard(request)
     from datetime import date, timedelta
@@ -1569,10 +1570,11 @@ def _announcement_eligible(user):
     from core.role_utils import get_user_role
     if not user or not getattr(user, 'is_authenticated', False):
         return False
-    return get_user_role(user) in (ROLE_FIELD_WORKER, ROLE_MANAGER, ROLE_SUPER_ADMIN)
+    from operations.access import memberships
+    return get_user_role(user) in (ROLE_FIELD_WORKER,ROLE_MANAGER,ROLE_SUPER_ADMIN) or memberships(user).filter(role__in=('manager','field')).exists()
 
 
-def _unacked_announcements_for(user):
+def _unacked_announcements_for(user,team=None):
     """Active announcements the user hasn't acknowledged, newest-first.
 
     Returns a list of plain dicts (JSON-serializable) for the dashboard popup.
@@ -1582,7 +1584,7 @@ def _unacked_announcements_for(user):
     if not _announcement_eligible(user):
         return []
     acked_ids = AnnouncementAcknowledgment.objects.filter(user=user).values_list('announcement_id', flat=True)
-    qs = (Announcement.objects.filter(active=True).exclude(id__in=acked_ids)
+    qs = (Announcement.objects.filter(active=True,business_team=team).exclude(id__in=acked_ids)
           .order_by('-created_at'))
     return [
         {
@@ -1595,12 +1597,12 @@ def _unacked_announcements_for(user):
     ]
 
 
-def _unacked_count_for(user):
+def _unacked_count_for(user,team=None):
     from core.models import Announcement, AnnouncementAcknowledgment
     if not _announcement_eligible(user):
         return 0
     acked_ids = AnnouncementAcknowledgment.objects.filter(user=user).values_list('announcement_id', flat=True)
-    return Announcement.objects.filter(active=True).exclude(id__in=acked_ids).count()
+    return Announcement.objects.filter(active=True,business_team=team).exclude(id__in=acked_ids).count()
 
 
 @require_POST
@@ -1613,21 +1615,19 @@ def announcement_acknowledge(request, pk):
     if not _announcement_eligible(request.user):
         return JsonResponse({'success': False, 'message': '无权限'}, status=403)
     from core.models import Announcement, AnnouncementAcknowledgment
-    ann = get_object_or_404(Announcement, pk=pk, active=True)
+    from operations.administration import owned,management_team
+    ann = get_object_or_404(owned(Announcement,request),pk=pk,active=True)
     AnnouncementAcknowledgment.objects.get_or_create(announcement=ann, user=request.user)
-    return JsonResponse({'success': True, 'remaining': _unacked_count_for(request.user)})
+    return JsonResponse({'success':True,'remaining':_unacked_count_for(request.user,management_team(request))})
 
 
 @login_required(login_url='core:login')
 def announcement_save(request):
     """Create or update an Announcement (manager / super-admin only)."""
     from core.models import Announcement
+    from operations.administration import require_management,owned,management_team
+    require_management(request)
     from core.role_utils import get_user_role, ROLE_MANAGER, ROLE_SUPER_ADMIN
-    role = get_user_role(request.user)
-    if role not in (ROLE_MANAGER, ROLE_SUPER_ADMIN):
-        messages.error(request, '无权限')
-        return redirect('core:dashboard')
-
     pid = request.POST.get('id', '').strip()
     title = (request.POST.get('title') or '').strip()
     body = (request.POST.get('body') or '').strip()
@@ -1637,7 +1637,7 @@ def announcement_save(request):
         return redirect(f"{reverse('core:user_management')}?tab=announcements")
 
     if pid:
-        ann = get_object_or_404(Announcement, pk=pid)
+        ann = get_object_or_404(owned(Announcement,request),pk=pid)
         ann.title = title
         ann.body = body
         ann.active = active
@@ -1645,7 +1645,7 @@ def announcement_save(request):
         messages.success(request, f'通知已更新：{ann.title}')
     else:
         ann = Announcement.objects.create(
-            title=title, body=body, active=active, created_by=request.user,
+            title=title,body=body,active=active,created_by=request.user,business_team=management_team(request),
         )
         messages.success(request, f'通知已发布：{ann.title}')
     return redirect(f"{reverse('core:user_management')}?tab=announcements")
@@ -1656,13 +1656,10 @@ def announcement_save(request):
 def announcement_delete(request, pk):
     """Delete an Announcement (manager / super-admin only)."""
     from core.models import Announcement
+    from operations.administration import require_management,owned
+    require_management(request)
     from core.role_utils import get_user_role, ROLE_MANAGER, ROLE_SUPER_ADMIN
-    role = get_user_role(request.user)
-    if role not in (ROLE_MANAGER, ROLE_SUPER_ADMIN):
-        messages.error(request, '无权限')
-        return redirect('core:dashboard')
-
-    ann = get_object_or_404(Announcement, pk=pk)
+    ann = get_object_or_404(owned(Announcement,request),pk=pk)
     title = ann.title
     ann.delete()
     messages.success(request, f'通知已删除：{title}')
@@ -1677,8 +1674,8 @@ def announcement_delete(request, pk):
 
 def _email_config_perm(request):
     """Manager/super-admin gate shared by all email-config actions."""
-    from core.role_utils import get_user_role, ROLE_MANAGER, ROLE_SUPER_ADMIN
-    return get_user_role(request.user) in (ROLE_MANAGER, ROLE_SUPER_ADMIN)
+    from operations.administration import can_manage
+    return can_manage(request)
 
 
 def _email_config_json(cfg):
@@ -1729,10 +1726,11 @@ def email_config_save(request):
     cid = request.POST.get('id', '').strip()
     profile_id=request.POST.get('delivery_profile_id')
     if profile_id is not None:
-        delivery_profile=EmailDeliveryProfile.objects.filter(pk=int(profile_id)).first() if profile_id.isdigit() else None
+        from core.mail_profile_views import visible_profiles
+        delivery_profile=visible_profiles(request).filter(pk=int(profile_id)).first() if profile_id.isdigit() else None
         if delivery_profile is None:return JsonResponse({'success':False,'message':'请选择已保存的发送配置'},status=400)
     elif cid:
-        delivery_profile=get_object_or_404(EmailReportConfig,pk=cid).delivery_profile or EmailSmtpSetting.get_solo().default_profile
+        delivery_profile=get_object_or_404(owned(EmailReportConfig,request),pk=cid).delivery_profile or EmailSmtpSetting.get_solo().default_profile
     else:delivery_profile=EmailSmtpSetting.get_solo().default_profile
     name = (request.POST.get('name') or '').strip()
     frequency = (request.POST.get('frequency') or 'daily').strip()
@@ -1740,7 +1738,7 @@ def email_config_save(request):
     is_active = request.POST.get('is_active') in ('1', 'on', 'true', 'True')
     # Multi-select report types (checkboxes). Also accept the legacy single
     # report_type for any older submit path. Dedupe + validate against choices.
-    valid_reports = {c for c, _ in EmailReportConfig.REPORT_CHOICES}
+    valid_reports = {'work_reports','difficult_workorders','zones'} if management_team(request) else {c for c,_ in EmailReportConfig.REPORT_CHOICES}
     report_types = [r for r in request.POST.getlist('report_types') if r in valid_reports]
     legacy = (request.POST.get('report_type') or '').strip()
     if not report_types and legacy in valid_reports:
@@ -1843,7 +1841,7 @@ def email_config_save(request):
     # report_type mirrors the first selection for back-compat display.
     report_type = report_types[0]
     if cid:
-        cfg = get_object_or_404(EmailReportConfig, pk=cid)
+        cfg = get_object_or_404(owned(EmailReportConfig,request), pk=cid)
         cfg.delivery_profile=delivery_profile
         cfg.name = name
         cfg.report_type = report_type
@@ -1862,7 +1860,7 @@ def email_config_save(request):
         msg = f'邮件报表配置已更新：{cfg.name}'
     else:
         cfg = EmailReportConfig.objects.create(
-            delivery_profile=delivery_profile, name=name, report_type=report_type, report_types=report_types,
+            business_team=management_team(request),delivery_profile=delivery_profile, name=name, report_type=report_type, report_types=report_types,
             ccu_ids=ccu_ids, email_subject=email_subject, email_body=email_body,
             frequency=frequency,
             recipients=recipients, is_active=is_active, created_by=request.user,
@@ -1881,7 +1879,7 @@ def email_config_delete(request, pk):
     if not _email_config_perm(request):
         return JsonResponse({'success': False, 'message': '无权限'}, status=403)
 
-    cfg = get_object_or_404(EmailReportConfig, pk=pk)
+    cfg = get_object_or_404(owned(EmailReportConfig,request), pk=pk)
     name = cfg.name
     cfg.delete()
     return JsonResponse({'success': True, 'message': f'邮件报表配置已删除：{name}'})
@@ -1901,7 +1899,7 @@ def email_config_test(request, pk):
     if not _email_config_perm(request):
         return JsonResponse({'success': False, 'message': '无权限'}, status=403)
 
-    cfg = get_object_or_404(EmailReportConfig, pk=pk)
+    cfg = get_object_or_404(owned(EmailReportConfig,request), pk=pk)
     if not is_configured(cfg.delivery_profile):
         return JsonResponse({
             'success': False,
@@ -1927,7 +1925,7 @@ def email_config_test(request, pk):
         attachments = build_all_attachments(
             report_types, cfg.frequency, today,
             report_windows=cfg.report_windows or None,
-            ccu_ids=cfg.ccu_ids or None)
+            ccu_ids=cfg.ccu_ids or None,**({'business_team':cfg.business_team} if cfg.business_team_id else {}))
         built = [(f, b, lbl) for (f, b, lbl) in attachments
                  if f is not None and not lbl.startswith('FAILED:')]
         if not built:
@@ -1961,7 +1959,7 @@ def email_config_list(request):
     from core.models import EmailReportConfig
     if not _email_config_perm(request):
         return JsonResponse({'success': False, 'message': '无权限'}, status=403)
-    qs = EmailReportConfig.objects.select_related('delivery_profile').order_by('frequency', 'name')
+    qs = owned(EmailReportConfig,request).select_related('delivery_profile').order_by('frequency','name')
     return JsonResponse({
         'success': True,
         'configs': [_email_config_json(c) for c in qs],
@@ -1976,6 +1974,8 @@ def email_smtp_get(request):
     can show "已设置/未设置" without round-tripping the secret.
     """
     from django.conf import settings
+    from operations.administration import is_general
+    if settings.MULTI_TEAM_ENABLED and not is_general(request.user):return JsonResponse({'success':False,'message':'系统默认邮件配置由通用管理员维护'},status=403)
     from core.models import EmailSmtpSetting
     if not _email_config_perm(request):
         return JsonResponse({'success': False, 'message': '无权限'}, status=403)
@@ -2009,6 +2009,9 @@ def email_smtp_save(request):
     round-trip the secret), while a non-empty value replaces it.
     """
     from core.models import EmailSmtpSetting
+    from django.conf import settings
+    from operations.administration import is_general
+    if settings.MULTI_TEAM_ENABLED and not is_general(request.user):return JsonResponse({'success':False,'message':'系统默认邮件配置由通用管理员维护'},status=403)
     if not _email_config_perm(request):
         return JsonResponse({'success': False, 'message': '无权限'}, status=403)
 
@@ -2073,11 +2076,9 @@ def announcement_unacked_api(request, pk):
         Announcement, ROLE_SUPER_ADMIN, ROLE_MANAGER, ROLE_FIELD_WORKER, ROLE_DEPT_USER,
     )
     from core.role_utils import get_user_role
-    role = get_user_role(request.user)
-    if role not in (ROLE_MANAGER, ROLE_SUPER_ADMIN):
-        return JsonResponse({'error': '无权限'}, status=403)
-
-    ann = get_object_or_404(Announcement, pk=pk)
+    from operations.administration import owned,audience_users,require_management
+    require_management(request)
+    ann = get_object_or_404(owned(Announcement,request),pk=pk)
     acked_user_ids = set(ann.acknowledgments.values_list('user_id', flat=True))
     # The announcement audience is 灌溉一线 + 管理员/经理 only; department users and
     # other accounts are never tracked here. Resolve each to a display name + role.
@@ -2092,7 +2093,7 @@ def announcement_unacked_api(request, pk):
     # queries for the whole panel). select_related turns each into an in-memory
     # attribute read with zero extra queries.
     User = get_user_model()
-    for u in (User.objects.filter(is_active=True)
+    for u in (audience_users(request).filter(is_active=True)
               .order_by('username')
               .select_related('worker_profile', 'manager_profile', 'dept_profile')):
         role = _role_from_prefetched(u)
@@ -2567,7 +2568,7 @@ def _is_crew_ajax(request):
             or request.GET.get('json') == '1')
 
 
-def _crew_form_payload(crew):
+def _crew_form_payload(crew,request=None):
     """Build the JSON payload describing a Crew for the in-page modal.
 
     Includes the crew's own state (name/leader/members/lands/patches) plus the
@@ -2575,6 +2576,16 @@ def _crew_form_payload(crew):
     checkboxes dynamically for both new and edit.
     """
     from .models import Worker, Land, Patch
+    if request is not None:
+        from operations.crew_management import options
+        data=options(request)
+        return {'crew_id':crew.pk if crew else None,'name':crew.name if crew else '',
+            'leader_id':crew.leader_id if crew else None,'active':crew.active if crew else True,
+            **{key:list(getattr(crew,key).values_list('pk',flat=True)) if crew else [] for key in ('members','lands','patches','locations')},
+            'workers':[{'id':p.pk,'label':f'{p.full_name} ({p.employee_id})'} for p in data['workers']],
+            'lands_all':[{'id':p.pk,'name':p.name} for p in data['lands']],
+            'patches_all':[{'id':p.pk,'code':p.code,'name':p.name} for p in data['patches']],
+            'locations_all':[{'id':str(p.pk),'name':p.name} for p in data['locations']]}
     ccu_patches = Patch.objects.filter(code__regex=r'^CCU[0-9]+$').order_by('code')
     if crew is None:
         return {
@@ -2617,7 +2628,8 @@ def crew_new(request):
     - Full page (legacy/crew_form.html): unchanged redirect behaviour.
     """
     from .role_utils import is_admin
-    if not is_admin(request.user):
+    from operations.administration import can_manage,management_team
+    if not can_manage(request):
         messages.error(request, '无权限执行此操作')
         return redirect('/user-management/?tab=crews')
     from .models import Crew
@@ -2629,14 +2641,15 @@ def crew_new(request):
                 return JsonResponse({'success': False, 'error': '班组名称不能为空'}, status=400)
             messages.error(request, '班组名称不能为空')
             return redirect('/user-management/?tab=crews')
+        from operations.crew_management import selections
+        try:chosen=selections(request)
+        except (ValueError,TypeError):return JsonResponse({'success':False,'error':'请核对当前业务的班组成员与地点'},status=400)
         crew = Crew.objects.create(
             name=name,
-            leader_id=request.POST.get('leader') or None,
+            leader_id=chosen['leader'],business_team=management_team(request),
             active=bool(request.POST.get('active')),
         )
-        crew.members.set([v for v in request.POST.getlist('members') if v])
-        crew.lands.set([v for v in request.POST.getlist('lands') if v])
-        crew.patches.set([v for v in request.POST.getlist('patches') if v])
+        for key in ('members','lands','patches','locations'):getattr(crew,key).set(chosen[key])
         msg = f'班组「{crew.name}」已创建'
         if ajax:
             return JsonResponse({'success': True, 'message': msg, 'crew_id': crew.id})
@@ -2644,7 +2657,7 @@ def crew_new(request):
         return redirect('/user-management/?tab=crews')
     # GET — new crew
     if ajax:
-        return JsonResponse(_crew_form_payload(None))
+        return JsonResponse(_crew_form_payload(None,request))
     from .models import Worker, Land, Patch
     context = {'crew': None, 'workers': Worker.objects.filter(active=True).order_by('full_name'),
                'lands': Land.objects.order_by('order', 'name'),
@@ -2659,11 +2672,12 @@ def crew_edit(request, crew_id):
     Supports two modes (see ``crew_new``): AJAX JSON or full page.
     """
     from .role_utils import is_admin
-    if not is_admin(request.user):
+    from operations.administration import can_manage,owned
+    if not can_manage(request):
         messages.error(request, '无权限执行此操作')
         return redirect('/user-management/?tab=crews')
     from .models import Crew
-    crew = get_object_or_404(Crew, pk=crew_id)
+    crew = get_object_or_404(owned(Crew,request),pk=crew_id)
     ajax = _is_crew_ajax(request)
     if request.method == 'POST':
         name = request.POST.get('name', '').strip()
@@ -2672,13 +2686,14 @@ def crew_edit(request, crew_id):
                 return JsonResponse({'success': False, 'error': '班组名称不能为空'}, status=400)
             messages.error(request, '班组名称不能为空')
             return redirect('/user-management/?tab=crews')
+        from operations.crew_management import selections
+        try:chosen=selections(request)
+        except (ValueError,TypeError):return JsonResponse({'success':False,'error':'请核对当前业务的班组成员与地点'},status=400)
         crew.name = name
-        crew.leader_id = request.POST.get('leader') or None
+        crew.leader_id = chosen['leader']
         crew.active = bool(request.POST.get('active'))
         crew.save()
-        crew.members.set([v for v in request.POST.getlist('members') if v])
-        crew.lands.set([v for v in request.POST.getlist('lands') if v])
-        crew.patches.set([v for v in request.POST.getlist('patches') if v])
+        for key in ('members','lands','patches','locations'):getattr(crew,key).set(chosen[key])
         msg = f'班组「{crew.name}」已更新'
         if ajax:
             return JsonResponse({'success': True, 'message': msg, 'crew_id': crew.id})
@@ -2686,7 +2701,7 @@ def crew_edit(request, crew_id):
         return redirect('/user-management/?tab=crews')
     # GET — edit crew
     if ajax:
-        return JsonResponse(_crew_form_payload(crew))
+        return JsonResponse(_crew_form_payload(crew,request))
     from .models import Worker, Land, Patch
     context = {'crew': crew, 'workers': Worker.objects.filter(active=True).order_by('full_name'),
                'lands': Land.objects.order_by('order', 'name'),
@@ -6057,6 +6072,7 @@ def register(request):
         department = request.POST.get('department', '').strip()
         department_other = request.POST.get('department_other', '').strip()
         worker_type = request.POST.get('worker_type', Worker.TYPE_IRRIGATION).strip()
+        admin_business=request.POST.get('admin_business','irrigation').strip()
 
         # Map department_type to role if needed
         if department_type == 'field_worker':
@@ -6092,6 +6108,8 @@ def register(request):
             messages.error(request, '请选择有效的角色')
         elif requested_role == ROLE_FIELD_WORKER and worker_type not in dict(Worker.WORKER_TYPE_CHOICES):
             messages.error(request, '请选择有效的一线种类')
+        elif requested_role==ROLE_MANAGER and admin_business not in ('general',*dict(Worker.WORKER_TYPE_CHOICES)):
+            messages.error(request,'请选择有效的管理员范围')
         elif department_type == 'dept_user' and not department:
             messages.error(request, '请选择所属部门')
         elif department == '其他' and not department_other:
@@ -6117,6 +6135,7 @@ def register(request):
                 department_other=department_other if department == '其他' else '',
                 requested_role=requested_role,
                 worker_type=worker_type if requested_role == ROLE_FIELD_WORKER else Worker.TYPE_IRRIGATION,
+                admin_business=admin_business if requested_role==ROLE_MANAGER else 'irrigation',
             )
             if email_required:
                 from core.account_mail import send_registration
@@ -6127,7 +6146,8 @@ def register(request):
 
     return render(request, 'core/register.html',{'registration_email_required':email_required,
         'worker_type_choices': Worker.WORKER_TYPE_CHOICES,
-        'selected_worker_type': request.POST.get('worker_type', Worker.TYPE_IRRIGATION)})
+        'selected_worker_type':request.POST.get('worker_type',Worker.TYPE_IRRIGATION),
+        'selected_admin_business':request.POST.get('admin_business','irrigation')})
 
 
 @login_required(login_url='core:login')
@@ -6213,6 +6233,8 @@ def user_management(request):
     User management page with two tabs: User List and Registration Approval.
     """
     from django.contrib.auth.models import User
+    from django.conf import settings
+    from operations.models import BusinessArea
     from core.models import (
         RegistrationRequest, ManagerProfile, DepartmentUserProfile, Worker,
         ROLE_MANAGER, ROLE_FIELD_WORKER, ROLE_DEPT_USER,
@@ -6220,7 +6242,8 @@ def user_management(request):
 )
     from core.role_utils import is_admin
 
-    if not is_admin(request.user):
+    from operations import administration as administration
+    if not administration.can_manage(request):
         messages.error(request, '无权限访问此页面')
         return redirect('core:dashboard')
 
@@ -6235,7 +6258,7 @@ def user_management(request):
         reason = request.POST.get('reason', '')
 
         try:
-            reg = RegistrationRequest.objects.get(pk=request_id, status='pending')
+            reg = administration.registrations(request).get(pk=request_id, status='pending')
 
             if action == 'approve':
                 from core.registration_service import approve
@@ -6344,44 +6367,49 @@ def user_management(request):
             'drawn_zones': draw_counts.get(w.user.id, 0) if w.user else 0,
         })
 
-    users_list.sort(key=lambda x: x['full_name'])
+    users_list=administration.user_rows(request,users_list)
+    shown_users={row['user_id'] for row in users_list}
+    drawn_zone_map={key:value for key,value in drawn_zone_map.items() if key in shown_users}
+    if administration.management_team(request):
+        drawn_zone_map={}
+        for row in users_list:row['drawn_zones']=0
 
     # Registration approval data
     if filter_status == 'all':
-        requests_qs = RegistrationRequest.objects.all()
+        requests_qs = administration.registrations(request)
     else:
-        requests_qs = RegistrationRequest.objects.filter(status=filter_status)
+        requests_qs = administration.registrations(request).filter(status=filter_status)
     requests_qs = requests_qs.order_by('-created_at')
 
     stats = {
-        'pending': RegistrationRequest.objects.filter(status='pending').count(),
-        'approved': RegistrationRequest.objects.filter(status='approved').count(),
-        'rejected': RegistrationRequest.objects.filter(status='rejected').count(),
+        'pending': administration.registrations(request).filter(status='pending').count(),
+        'approved': administration.registrations(request).filter(status='approved').count(),
+        'rejected': administration.registrations(request).filter(status='rejected').count(),
     }
 
     # Announcement data for the 通知管理 tab (manager-visible under 用户管理).
     from core.models import Announcement
-    announcements = (Announcement.objects.all()
+    announcements = (administration.owned(Announcement,request)
                      .annotate(ack_count=Count('acknowledgments'))
                      .order_by('-created_at'))
     edit_obj = None
     edit_id = request.GET.get('edit')
     if edit_id:
-        edit_obj = get_object_or_404(Announcement, pk=edit_id)
+        edit_obj = get_object_or_404(administration.owned(Announcement,request), pk=edit_id)
 
     # Crew data for the 班组管理 tab (manager-visible under 用户管理).
     from core.models import Crew
-    crews = Crew.objects.all().prefetch_related('leader', 'members', 'lands', 'patches').order_by('name')
+    crews = administration.owned(Crew,request).prefetch_related('leader','members','lands','patches','locations').order_by('name')
 
     # Email-report configs for the 邮件报表 tab (manager-visible under 用户管理).
     from core.models import EmailReportConfig, EmailSmtpSetting
-    email_configs = EmailReportConfig.objects.all().order_by('frequency', 'name')
+    email_configs = administration.owned(EmailReportConfig,request).order_by('frequency','name')
     # System SMTP setting (singleton) — password is never sent to the template.
     smtp_setting = EmailSmtpSetting.get_solo()
     email_edit_obj = None
     email_edit_id = request.GET.get('email_edit')
     if email_edit_id:
-        email_edit_obj = get_object_or_404(EmailReportConfig, pk=email_edit_id)
+        email_edit_obj = get_object_or_404(administration.owned(EmailReportConfig,request), pk=email_edit_id)
 
     context = {
         'active_tab': active_tab,
@@ -6398,7 +6426,7 @@ def user_management(request):
         'crews': crews,
         'email_configs': email_configs,
         'email_edit_obj': email_edit_obj,
-        'report_choices': EmailReportConfig.REPORT_CHOICES,
+        'report_choices': [('work_reports',management_team(request).business.name+'工单记录'),('difficult_workorders','疑难问题跟进报表'),('zones','区域/地点目录')] if management_team(request) else EmailReportConfig.REPORT_CHOICES,
         # Report types that honour a DAY-based window (the other 4 are dateless;
         # irrigation is hour-based and gets its own input). Drives which report
         # checkboxes show a "范围(天)" input in the email-config modal.
@@ -6412,18 +6440,26 @@ def user_management(request):
         'email_ccus': _ccu_queryset(),
         'smtp_setting': smtp_setting,
         'worker_type_choices': Worker.WORKER_TYPE_CHOICES,
+        'admin_business_choices':list(BusinessArea.objects.filter(active=True).values_list('code','name')),
+        'can_edit_admin_scope':administration.is_general(request.user),
+        'can_manage_account_mail':administration.is_general(request.user) or not settings.MULTI_TEAM_ENABLED,
+        'management_team':administration.management_team(request),
     }
 
     return render(request, 'core/user_management.html', context)
 
 
 @login_required(login_url='core:login')
+@transaction.atomic
 def user_edit(request, profile_type, profile_id):
     """Edit user profile via AJAX."""
     from core.role_utils import is_admin
     from core.models import ManagerProfile, DepartmentUserProfile, Worker
+    from django.contrib.auth import get_user_model
+    from django.conf import settings
 
-    if not is_admin(request.user):
+    from operations import administration
+    if not administration.can_manage(request):
         return JsonResponse({'error': '无权限'}, status=403)
 
     if request.method != 'POST':
@@ -6433,17 +6469,54 @@ def user_edit(request, profile_type, profile_id):
         'manager': ManagerProfile,
         'dept_user': DepartmentUserProfile,
         'worker': Worker,
+        'account':get_user_model(),
     }
     model_class = model_map.get(profile_type)
     if not model_class:
         return JsonResponse({'error': 'Invalid profile type'}, status=400)
 
     profile = get_object_or_404(model_class, pk=profile_id)
+    account=profile if profile_type=='account' else profile.user
+    if account and not administration.editable_account(request,account):
+        return JsonResponse({'error':'不能编辑其他业务或通用管理员的账号'},status=403)
+    if not account and not administration.is_general(request.user):return JsonResponse({'error':'无权限'},status=403)
+    if len(request.POST.get('full_name',''))>255 or len(request.POST.get('phone',''))>20:
+        return JsonResponse({'error':'姓名或电话过长'},status=400)
+    scope_changed=False
+    if 'admin_business' in request.POST:
+        from operations.models import AdministratorScope,BusinessArea
+        if not account or not administration.administrator(account):return JsonResponse({'error':'该账号不是管理员'},status=400)
+        value=request.POST['admin_business'];grant=administration.scope(account)
+        old=grant.business.code if grant and grant.business_id else 'general'
+        if value!=old:
+            if not administration.is_general(request.user):return JsonResponse({'error':'只有通用管理员能更改管理员范围'},status=403)
+            business=None if value=='general' else BusinessArea.objects.filter(code=value,active=True).first()
+            if value!='general' and business is None:return JsonResponse({'error':'请选择有效的管理员范围'},status=400)
+            AdministratorScope.objects.update_or_create(user=account,defaults={'business':business});scope_changed=True
+            if account.pk==request.user.pk and business:
+                request.session['operations_business']=business.code
+                request.session.pop('operations_membership',None);request.session.pop('operations_admin_view',None)
+    if profile_type=='account':
+        if 'full_name' in request.POST:profile.first_name=request.POST['full_name'][:150];profile.last_name=''
+        profile.save(update_fields=['first_name','last_name'])
+        if 'active' in request.POST:
+            from core.session_guard import set_account_enabled
+            set_account_enabled(profile,request.POST['active'] in ('true','1','True'))
+        return JsonResponse({'success':True,'message':'账户已更新','reload':scope_changed and account.pk==request.user.pk})
 
-    if profile_type == 'worker' and 'worker_type' in request.POST:
+    destination=None
+    if profile_type == 'worker' and 'worker_type' in request.POST and not administration.administrator(account):
         worker_type = request.POST['worker_type']
         if worker_type not in dict(Worker.WORKER_TYPE_CHOICES):
             return JsonResponse({'error': '请选择有效的一线种类'}, status=400)
+        limited=administration.restricted_business(request.user)
+        if limited and worker_type!=limited:return JsonResponse({'error':'不能将成员调整至其他业务'},status=403)
+        if worker_type!=profile.worker_type and account and settings.MULTI_TEAM_ENABLED:
+            from operations.models import Team
+            teams=Team.objects.filter(business__code=worker_type,active=True,business__active=True)
+            if worker_type==Worker.TYPE_IRRIGATION:teams=teams.filter(legacy_irrigation_access=True)
+            destination=teams.filter(code=worker_type).first() or (teams.first() if teams.count()==1 else None)
+            if destination is None:return JsonResponse({'error':'目标业务尚未启用或默认团队不明确'},status=400)
         profile.worker_type = worker_type
 
     if 'full_name' in request.POST:
@@ -6461,10 +6534,14 @@ def user_edit(request, profile_type, profile_id):
             profile.department_other = ''
 
     profile.save()
+    if destination:
+        from operations.models import Membership
+        Membership.objects.filter(user=account,role='field').exclude(team__business=destination.business).update(active=False)
+        Membership.objects.update_or_create(user=account,team=destination,defaults={'role':'field','active':profile.active and account.is_active})
     if 'active' in request.POST and profile.user_id:
         from core.session_guard import set_account_enabled
         set_account_enabled(profile.user, profile.active)
-    return JsonResponse({'success': True, 'message': f'已更新 {profile.full_name}'})
+    return JsonResponse({'success':True,'message':f'已更新 {profile.full_name}','reload':scope_changed and account and account.pk==request.user.pk})
 
 
 @token_or_session(require_manager=True)

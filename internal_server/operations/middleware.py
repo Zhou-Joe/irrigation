@@ -41,9 +41,13 @@ class BusinessAccessMiddleware:
             from core.role_utils import get_django_user
             user = get_django_user(resolve_token_user(request))
         if user and user.is_authenticated:
-            if (user.is_staff or user.is_superuser) and request.path.startswith(('/api/ai/','/ai/files/')):
+            from .administration import restricted_business, is_general
+            limited=restricted_business(user)
+            if (user.is_staff or user.is_superuser) and not limited and request.path.startswith(('/api/ai/','/ai/files/')):
                 return self.get_response(request)
-            if user.is_superuser and (request.path.startswith('/admin/') or request.path=='/profile/'):
+            if limited and request.path.startswith('/admin/'):
+                return JsonResponse({'error':'业务管理员不能访问系统管理。'},status=403)
+            if user.is_superuser and not limited and (request.path.startswith('/admin/') or request.path=='/profile/'):
                 return self.get_response(request)
             from .access import active_membership
             from django.shortcuts import render
@@ -55,6 +59,13 @@ class BusinessAccessMiddleware:
                     return render(request,'operations/no_membership.html',status=403)
                 return JsonResponse({'error':'当前业务身份不可用，请重新选择业务。'},status=403)
             pest = member and member.team.business.code == 'pest-control'
+            management=(request.path.startswith(('/user-management/','/announcements/','/email-configs/','/settings/crew/')) or
+                        re.fullmatch(r'/api/announcements/\d+/(unacked|acknowledge)/',request.path))
+            if member and management:
+                request.operations_shell=member.team.business.code!='irrigation'
+                from .administration import require_management
+                if not request.path.endswith('/acknowledge/'):require_management(request)
+                response=self.get_response(request);response['Cache-Control']='private, no-store';response['Vary']='Cookie';return response
             if member and member.team.business.code == 'landscaping':
                 request.operations_shell = True
                 if request.path == '/app/' and request.method == 'GET':
@@ -70,7 +81,7 @@ class BusinessAccessMiddleware:
                 if request.path == '/app/' and request.method == 'GET':
                     return redirect('core:dashboard')
                 shared = {'/', '/api/zones-payload/', '/api/modal/workorder-data/',
-                          '/mobile/workorder/v2/', '/work-reports/', '/work-reports/tree/new/'}
+                          '/mobile/workorder/v2/', '/work-reports/', '/work-reports/tree/new/','/user-management/'}
                 if request.path in shared or re.fullmatch(r'/work-reports/\d+/',request.path):
                     response = self.get_response(request)
                     response['Cache-Control'] = 'private, no-store'

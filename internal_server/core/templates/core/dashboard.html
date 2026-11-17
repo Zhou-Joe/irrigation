@@ -10,25 +10,11 @@
 {% block extra_css %}
 <!-- Leaflet CSS -->
 <link rel="stylesheet" href="{% static 'vendor/leaflet/leaflet.css' %}?v=1.9.4" />
-<link rel="stylesheet" href="{% static 'css/dashboard.css' %}?v=20261023map4" />
+<link rel="stylesheet" href="{% static 'css/dashboard.css' %}?v=20261023map4" /><link rel="stylesheet" href="{% static 'css/announcement-popup.css' %}?v=20261117pestalign1">
 <link rel="stylesheet" href="{% static 'operations/map-markers.css' %}?v=20261108pins1">
 <link rel="stylesheet" href="{% static 'operations/map-location-create.css' %}?v=20261108fixes2">
 <!-- Dashboard JS needs Django URL, set before external scripts -->
 <style>
-/* Announcement popup */
-.ann-popup { position: fixed; inset: 0; background: rgba(0,0,0,0.55); z-index: 4000; display: flex; align-items: center; justify-content: center; padding: 16px; }
-.ann-card { background: #fff; border-radius: 14px; max-width: 460px; width: 100%; max-height: 86vh; overflow-y: auto; padding: 22px 24px; box-shadow: 0 12px 40px rgba(0,0,0,0.25); }
-.ann-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
-.ann-badge { font-size: 0.82rem; font-weight: 600; color: #1565c0; background: #e3f2fd; padding: 3px 10px; border-radius: 12px; }
-.ann-counter { font-size: 0.78rem; color: #999; }
-.ann-title { font-size: 1.12rem; font-weight: 700; color: #222; margin: 0 0 4px; }
-.ann-time { font-size: 0.76rem; color: #aaa; margin: 0 0 12px; }
-.ann-body { font-size: 0.92rem; color: #333; line-height: 1.6; white-space: pre-wrap; word-break: break-word; margin-bottom: 18px; }
-.ann-actions { display: flex; justify-content: flex-end; }
-.ann-btn { background: var(--color-primary, #2D6A4F); color: #fff; border: none; border-radius: 8px; padding: 9px 26px; font-size: 0.9rem; font-weight: 600; cursor: pointer; }
-.ann-btn:active { transform: scale(0.97); }
-.ann-btn:disabled { opacity: 0.6; cursor: default; }
-
 /* Let Leaflet own gestures on the map while forms retain accessible page zoom. */
 @media (max-width: 768px) {
     .top-nav, .sidebar, .sidebar-header, .sidebar-body, .zone-search,
@@ -52,25 +38,7 @@
 <link rel="stylesheet" href="{% static 'css/genie_arrival.css' %}?v=20261107engenie1">
 {% endblock %}
 
-{% block content %}<div id="dashboardWorkspace" data-quotes-enabled="{% if not pest_mode and is_admin %}yes{% else %}no{% endif %}" data-ai="{% if can_use_ai %}yes{% else %}no{% endif %}" data-business="{% if pest_mode %}pest-control{% else %}irrigation{% endif %}">{% if pest_mode %}{% include 'operations/_pest_map.html' %}{% else %}
-<!-- Announcement popup (unacknowledged global notifications). Shown only when
-     there are active announcements the current user has not yet acknowledged.
-     Not dismissable without acknowledging — no backdrop-click / Esc close. -->
-<div id="annPopup" class="ann-popup" style="display:none;">
-    <div class="ann-card">
-        <div class="ann-header">
-            <span class="ann-badge"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-bell"/></svg> 通知</span>
-            <span class="ann-counter" id="annCounter"></span>
-        </div>
-        <h3 class="ann-title" id="annTitle"></h3>
-        <p class="ann-time" id="annTime"></p>
-        <div class="ann-body" id="annBody"></div>
-        <div class="ann-actions">
-            <button type="button" class="ann-btn" id="annAckBtn" onclick="ackAnnouncement()">我已知晓</button>
-        </div>
-    </div>
-</div>
-
+{% block content %}<div id="dashboardWorkspace" data-quotes-enabled="{% if not pest_mode and is_admin %}yes{% else %}no{% endif %}" data-ai="{% if can_use_ai %}yes{% else %}no{% endif %}" data-business="{% if pest_mode %}pest-control{% else %}irrigation{% endif %}">{% include 'core/_announcement_popup.html' %}{% if pest_mode %}{{ announcements|json_script:'announcements-data' }}{% include 'operations/_pest_map.html' %}{% else %}
 <!-- Map View Container -->
 <div class="mobile-overlay" id="mobileOverlay" onclick="toggleSidebar()"></div>
 
@@ -436,7 +404,7 @@
 </script>
 {% endif %}</div>{% endblock %}
 
-{% block extra_js %}<div id="dashboardScripts" hidden>{% if pest_mode %}<script src="{% static 'vendor/leaflet/leaflet.js' %}"></script><script src="{% static 'operations/map-actions.js' %}?v=20261108fixes2"></script><script src="{% static 'js/map-runtime.js' %}"></script><script src="{% static 'operations/map-markers.js' %}?v=20261112equipment1"></script><script src="{% static 'operations/location-picker.js' %}?v=20261112equipment1"></script><script src="{% static 'operations/workorder-chips.js' %}?v=20261117formui"></script><script src="{% static 'operations/map-location-create.js' %}?v=20261112equipment1"></script><script src="{% static 'operations/workorder-media.js' %}?v=20261117formui"></script><script src="{% static 'operations/work-parameters.js' %}?v=20261117pestfields2"></script><script src="{% static 'operations/pest-map.js' %}?v=20261117formui"></script>{% else %}
+{% block extra_js %}<div id="dashboardScripts" hidden>{% if pest_mode %}{{ pest_map_style|json_script:'pest-map-style' }}<script>window.MAP_STYLE_CONFIG=JSON.parse(document.getElementById('pest-map-style').textContent);</script><script src="{% static 'vendor/leaflet/leaflet.js' %}"></script><script src="{% static 'operations/map-actions.js' %}?v=20261108fixes2"></script><script src="{% static 'js/map-runtime.js' %}?v=20261117pestalign1"></script><script src="{% static 'operations/map-markers.js' %}?v=20261112equipment1"></script><script src="{% static 'operations/location-picker.js' %}?v=20261112equipment1"></script><script src="{% static 'operations/workorder-chips.js' %}?v=20261117formui"></script><script src="{% static 'operations/map-location-create.js' %}?v=20261112equipment1"></script><script src="{% static 'operations/workorder-media.js' %}?v=20261117formui"></script><script src="{% static 'operations/work-parameters.js' %}?v=20261117pestalign1"></script><script src="{% static 'operations/pest-map.js' %}?v=20261117pestalign1"></script>{% else %}
 <!-- Leaflet JS -->
 <script src="{% static 'vendor/leaflet/leaflet.js' %}?v=1.9.4"></script>
 <script src="{% static 'operations/map-markers.js' %}?v=20261112equipment1"></script>
@@ -448,8 +416,8 @@
 <script id="pending-water-requests" type="application/json">{{ pending_water_requests_json|safe }}</script>
 <script id="pending-remarks" type="application/json">{{ pending_remarks_json|safe }}</script>
 <!-- Custom Map JS -->
-<script src="{% static 'js/map-runtime.js' %}?v=20261106boundaries"></script>
-<script src="{% static 'js/map.js' %}?v=20261117symbols3"></script>
+<script src="{% static 'js/map-runtime.js' %}?v=20261117pestalign1"></script>
+<script src="{% static 'js/map.js' %}?v=20261117pestalign1"></script>
 <script src="{% static 'js/dashboard-modal.js' %}?v=20261108fixes2"></script>
 <script>
 // Override the notification popup's PM-task "填写" handler: on the dashboard we
@@ -466,51 +434,7 @@ window.fillPmTask = function (gwoId) {
 <!-- Dashboard JS — pass Django URL to external script -->
 <script>window.HISTORY_URL = '{% url "core:work_reports" %}';</script>
 <script src="{% static 'js/dashboard.js' %}?v=20261108fixes2"></script>
-<!-- Announcement popup driver -->
-<script>
-(function () {
-    var mounted=document.getElementById('dashboardWorkspace');
-    var queue = [];
-    window.__annQueue = queue;
-    function load() {
-        var el = document.getElementById('announcements-data');
-        if (!el) return;
-        try { queue = window.__annQueue = JSON.parse(el.textContent || '[]'); } catch (e) { queue = []; }
-        showCurrent();
-    }
-    function showCurrent() {
-        if(!mounted?.isConnected)return;
-        if (!queue.length) { document.getElementById('annPopup').style.display = 'none'; return; }
-        var a = queue[0];
-        document.getElementById('annTitle').textContent = a.title;
-        document.getElementById('annTime').textContent = a.time || '';
-        document.getElementById('annBody').textContent = a.body;
-        document.getElementById('annCounter').textContent = queue.length > 1 ? (queue.length + ' 条待确认') : '';
-        document.getElementById('annAckBtn').disabled = false;
-        document.getElementById('annPopup').style.display = 'flex';
-    }
-    window.ackAnnouncement = function () {
-        if (!queue.length) return;
-        var a = queue[0];
-        var btn = document.getElementById('annAckBtn');
-        btn.disabled = true;
-        var csrf = (document.cookie.split('; ').find(function (c) { return c.indexOf('csrftoken=') === 0; }) || '').split('=')[1] || '';
-        fetch('/api/announcements/' + a.id + '/acknowledge/', {
-            method: 'POST',
-            headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRFToken': csrf },
-        }).then(function (r) { return r.json(); }).then(function (d) {
-            queue.shift();            // remove the acknowledged one locally
-            window.__annQueue = queue;
-            showCurrent();           // show next or hide
-        }).catch(function () {
-            btn.disabled = false;
-            alert('网络错误，请重试');
-        });
-    };
-    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', load); else load();
-})();
-</script>
-{% endif %}<!-- AI data-analyst chat widget (deferred: non-blocking load, auto-mounts on DOMContentLoaded) -->
+{% endif %}<script src="{% static 'js/announcement-popup.js' %}?v=20261117pestalign"></script><!-- AI data-analyst chat widget (deferred: non-blocking load, auto-mounts on DOMContentLoaded) -->
 {% if can_use_ai %}
 <script defer src="{% static 'vendor/marked/marked.min.js' %}?v=12.0.2"></script>
 <script defer src="{% static 'vendor/dompurify/purify.min.js' %}?v=3.4.17"></script>

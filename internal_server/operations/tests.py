@@ -40,7 +40,7 @@ class WorkspaceTests(TestCase):
 
     def test_new_manager_cannot_read_legacy_pages_apis_ai_exports_or_media(self):
         for path in [f'/zone/{self.zone.pk}/detail/', '/irrigation/',
-                     '/user-management/', '/admin/', '/media/workreport/1/photo.jpg', '/ai/status/', '/stats/excel/']:
+                     '/admin/', '/media/workreport/1/photo.jpg', '/ai/status/', '/stats/excel/']:
             with self.subTest(path=path):
                 self.assertEqual(self.client.get(path).status_code, 403)
         self.assertContains(self.client.get('/'), 'data-business="pest-control"')

@@ -175,7 +175,7 @@ class WorkParameterTests(TestCase):
         self.assertTrue(form.is_valid(),form.errors)
         form.save();self.a.refresh_from_db()
         direction=next(field for field in self.a.parameters if field['key']=='impact_direction')
-        self.assertEqual([choice['label'] for choice in direction['options']],['N','S','东南','东北'])
+        self.assertEqual([choice['label'] for choice in direction['options']],['北','南','东南','东北'])
         self.assertTrue(any(field['key']=='window_count' for field in self.a.parameters))
         saved=self.snapshot(self.raw('东北'))
         self.assertEqual(saved['locations'][0]['value_label'],'东北')
@@ -200,7 +200,7 @@ class WorkParameterTests(TestCase):
         self.assertEqual(response.status_code, 200, response.content)
         report.pest_data.refresh_from_db()
         self.assertEqual(report.pest_data.parameters, old)
-        self.assertContains(self.client.get(f'/ops/locations/{self.room.pk}/'), 'N、S')
+        self.assertContains(self.client.get(f'/ops/locations/{self.room.pk}/'), '北、南')
 
     def test_building_rename_preserves_empty_or_complex_direction_configuration(self):
         for options in (None, [{'value':'NE_GATE','label':'东北，入口'}, {'value':'SW','label':'西南'}],
@@ -240,7 +240,7 @@ class WorkParameterTests(TestCase):
         for nodes in ([self.leaf.pk, second.pk], [second.pk, self.leaf.pk]):
             result = parameter_snapshot(self.catalog, nodes, [self.room], raw, available_locations=visible_locations(self.team))
             self.assertEqual(len(result['locations']), 1)
-            self.assertEqual(result['locations'][0]['value_label'], 'N')
+            self.assertEqual(result['locations'][0]['value_label'], '北')
         with self.assertRaisesMessage(ValueError, '请填写'):
             parameter_snapshot(self.catalog, [self.leaf.pk, second.pk], [self.room], {},
                                available_locations=visible_locations(self.team))

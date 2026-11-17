@@ -1,3 +1,4 @@
+from .administration import is_general
 """Pest dispatch uses its own rotation pools and cannot move irrigation schedules."""
 import calendar
 from datetime import date, timedelta
@@ -39,7 +40,7 @@ def eligible_members(team):
 
 def task_scope(request,member):
     qs=PestTask.objects.filter(team=member.team).select_related('plan','location','assignee','report','catalog')
-    if member.role!='manager' and not request.user.is_superuser:qs=qs.filter(assignee=request.user)
+    if member.role!='manager' and not is_general(request.user):qs=qs.filter(assignee=request.user)
     return qs
 
 

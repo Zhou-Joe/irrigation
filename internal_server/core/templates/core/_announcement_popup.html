@@ -1,0 +1,18 @@
+<!-- Announcement popup (unacknowledged global notifications). Shown only when
+     there are active announcements the current user has not yet acknowledged.
+     Not dismissable without acknowledging — no backdrop-click / Esc close. -->
+<div id="annPopup" class="ann-popup" style="display:none;">
+    <div class="ann-card">
+        <div class="ann-header">
+            <span class="ann-badge"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-bell"/></svg> 通知</span>
+            <span class="ann-counter" id="annCounter"></span>
+        </div>
+        <h3 class="ann-title" id="annTitle"></h3>
+        <p class="ann-time" id="annTime"></p>
+        <div class="ann-body" id="annBody"></div>
+        <div class="ann-actions">
+            <button type="button" class="ann-btn" id="annAckBtn" onclick="ackAnnouncement()">我已知晓</button>
+        </div>
+    </div>
+</div>
+

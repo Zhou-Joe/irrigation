@@ -8,12 +8,16 @@ from django.core.exceptions import PermissionDenied
 
 def require_approver(user):
     profile = get_manager_profile(user)
-    if not is_admin(user) or (get_user_role(user) != ROLE_SUPER_ADMIN and profile and not profile.can_approve_registrations and not profile.is_super_admin):
+    from operations.access import memberships
+    if (not is_admin(user) and not memberships(user).filter(role='manager').exists()) or (get_user_role(user) != ROLE_SUPER_ADMIN and profile and not profile.can_approve_registrations and not profile.is_super_admin):
         raise PermissionDenied('无注册审批权限')
 
 
 def reject(registration_id, actor, reason=''):
     require_approver(actor)
+    from operations.administration import can_approve
+    reg=RegistrationRequest.objects.get(pk=registration_id)
+    if not can_approve(actor,reg):raise PermissionDenied('不能审批其他业务的注册申请。')
     if not RegistrationRequest.objects.filter(pk=registration_id,status='pending').update(
             status='rejected',status_notes=reason,processed_at=timezone.now()):
         raise ValueError('注册申请已处理或不存在')
@@ -28,6 +32,8 @@ def approve(registration_id, actor):
             if not RegistrationRequest.objects.filter(pk=registration_id, status='pending').update(processed_at=timezone.now()):
                 raise ValueError('注册申请已处理或不存在')
             reg=RegistrationRequest.objects.get(pk=registration_id)
+            from operations.administration import can_approve
+            if not can_approve(actor,reg):raise PermissionDenied('不能审批其他业务的注册申请。')
             if reg.email_confirmation_required and not reg.email_verified_at:
                 raise ValueError('该申请尚未完成邮箱确认，暂不能批准')
             role_map={'manager':(ManagerProfile,'ADM'),'dept_user':(DepartmentUserProfile,'DEPT'),'field_worker':(Worker,'EMP')}
@@ -54,7 +60,16 @@ def approve(registration_id, actor):
             from django.conf import settings
             if settings.MULTI_TEAM_ENABLED:
                 from operations.models import Team, Membership
-                business = reg.worker_type if model is Worker else Worker.TYPE_IRRIGATION
+                business = reg.worker_type if model is Worker else reg.admin_business if model is ManagerProfile else Worker.TYPE_IRRIGATION
+                if model is ManagerProfile:
+                    from operations.models import AdministratorScope,BusinessArea
+                    area=None if business=='general' else BusinessArea.objects.filter(code=business,active=True).first()
+                    if business!='general' and area is None:raise ValueError('管理员对应的业务尚未启用')
+                    AdministratorScope.objects.create(user=user,business=area)
+                    if business=='general':
+                        reg.status='approved';reg.employee_id=employee;reg.created_user=user
+                        reg.save(update_fields=['status','employee_id','created_user','processed_at'])
+                        return reg
                 teams = Team.objects.filter(business__code=business, active=True, business__active=True)
                 if business == Worker.TYPE_IRRIGATION:
                     teams = teams.filter(legacy_irrigation_access=True)

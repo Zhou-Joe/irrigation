@@ -1,3 +1,4 @@
+from .administration import is_general
 from django.contrib import messages
 from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required
@@ -32,7 +33,7 @@ def page(request, template, **context):
     member = active_membership(request)
     return render(request, 'operations/' + template + '.html', {
         'membership': member, 'memberships': memberships(request.user).order_by('team__name'),
-        'can_manage': bool(member and (member.role == 'manager' or request.user.is_superuser)),
+        'can_manage': bool(member and (member.role == 'manager' or is_general(request.user))),
         'has_irrigation': has_irrigation_access(request.user), **context})
 
 
@@ -258,7 +259,7 @@ def team(request):
     member = require_member(request, manager=True)
     team_id = request.POST.get('team') if request.method == 'POST' else request.GET.get('team')
     target_team = get_object_or_404(Team, pk=number(team_id)) if team_id else member.team
-    if target_team.pk != member.team_id and not request.user.is_superuser:
+    if target_team.pk != member.team_id and not is_general(request.user):
         raise PermissionDenied('只能管理自己的团队。')
     if target_team.business_id!=member.team.business_id:
         raise PermissionDenied('请先切换至对应业务视图。')
@@ -271,7 +272,7 @@ def team(request):
         action = request.POST.get('action', 'save')
         if role not in dict(Membership.ROLES) or action not in ('save', 'disable'):
             error = '请选择有效的角色和操作。'
-        elif role == 'manager' and not request.user.is_superuser:
+        elif role == 'manager' and not is_general(request.user):
             error = '管理员角色由超级管理员授予。'
         else:
             try:
@@ -285,7 +286,7 @@ def team(request):
                             raise ValidationError('此账号已停用，请由平台管理员处理。')
                         if action != 'save' or not password:
                             raise ValidationError('新增账号请设置初始密码；添加已有账号时无需填写密码。')
-                        if target_team.business.code!='pest-control' and not request.user.is_superuser:
+                        if target_team.business.code!='pest-control' and not is_general(request.user):
                             raise ValidationError('当前业务的新账号仍由平台管理员创建。')
                         if len(username)<3:raise ValidationError('用户名至少需要 3 个字符。')
                         user = get_user_model()(username=username,first_name=request.POST.get('full_name','').strip(),
@@ -298,7 +299,7 @@ def team(request):
                         user.set_password(password)
                         user.save()
                     existing = Membership.objects.filter(user=user, team=target_team).first()
-                    if existing and existing.role == 'manager' and not request.user.is_superuser:
+                    if existing and existing.role == 'manager' and not is_general(request.user):
                         raise ValidationError('管理员身份的变更由超级管理员处理。')
                     if user.pk == request.user.pk and action == 'disable':
                         raise ValidationError('不能在这里停用自己的团队身份。')
@@ -332,7 +333,7 @@ def team(request):
         'team_members':Paginator(qs,30).get_page(request.GET.get('page')),'counts':counts,'query':query,
         'selected_role':role_filter,'roles':Membership.display_role_choices(target_team.business.code),
         'role_labels':dict(Membership.display_role_choices(target_team.business.code)),
-        'all_teams':Team.objects.filter(active=True,business=member.team.business) if request.user.is_superuser else [],
+        'all_teams':Team.objects.filter(active=True,business=member.team.business) if is_general(request.user) else [],
         'audit_events':AuditEvent.objects.filter(team=target_team).select_related('actor').order_by('-pk')[:50]}
     return render_page(request,'operations/team.html',context,'operations/_team_results.html')
 

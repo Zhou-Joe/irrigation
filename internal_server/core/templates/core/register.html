@@ -606,6 +606,7 @@
                 </div>
             </div>
 
+            <div class="form-group sub-department" id="adminBusinessGroup"><label for="admin_business">管理员范围 *</label><div class="input-wrapper"><select name="admin_business" id="admin_business"><option value="general" {% if selected_admin_business == 'general' %}selected{% endif %}>通用管理员</option>{% for code,label in worker_type_choices %}<option value="{{ code }}" {% if selected_admin_business == code %}selected{% endif %}>{% if code == 'irrigation' %}灌溉{% elif code == 'pest-control' %}植保{% else %}绿化{% endif %}管理员</option>{% endfor %}</select><span class="input-icon"><svg class="ui-icon"><use href="#pwa-users"/></svg></span></div></div>
             <!-- Sub-department for "其他部门" -->
             <div class="form-group sub-department" id="subDepartment">
                 <label for="department">所属部门 *</label>
@@ -673,6 +674,9 @@ function toggleSubDepartment() {
     workerTypeGroup.classList.toggle('show', deptType === 'field_worker');
     workerType.required = deptType === 'field_worker';
     workerType.disabled = deptType !== 'field_worker';
+    document.getElementById('adminBusinessGroup').classList.toggle('show',deptType==='manager');
+    document.getElementById('admin_business').disabled=deptType!=='manager';
+    document.getElementById('admin_business').required=deptType==='manager';
 
     if (deptType === 'dept_user') {
         subDept.classList.add('show');

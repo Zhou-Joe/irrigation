@@ -16,11 +16,13 @@ def navigation(request):
         from operations.access import active_membership
         member = active_membership(request) if request.user.is_authenticated else None
         if member and member.team.business.code == 'landscaping':
-            return {'pwa_modules': [
+            modules=[
                 dict(name='dashboard', label='绿化', description='绿化板块首页', icon='home', url='/'),
                 dict(name='profile', label='我的账号', description='个人资料与密码', icon='user', url='/ops/profile/'),
                 dict(name='feedback', label='反馈与建议', description='分享想法与问题', icon='message', url='/feedback/'),
-            ]}
+            ]
+            if member.role=='manager':modules.append(dict(name='user_management',label='用户管理',description='用户、审批、通知、班组与邮件报表',icon='users',url='/user-management/'))
+            return {'pwa_modules':modules}
         from operations.map_views import is_pest
         if is_pest(request):
             from operations.access import active_membership
