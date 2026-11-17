@@ -35,11 +35,12 @@ def workspace(request):
             data['pending_registrations']=registrations(request).filter(status='pending').count()
     elif landscaping:
         manager=platform_admin or member.role=='manager'
+        from .navigation import landscaping_modules
         data.update(is_admin=manager,is_manager=manager,is_field_worker=not manager and member.role=='field',
                     unread_notifications_data=[],pm_tasks_data=[],pending_registrations=0,
                     account_role_label='超级管理员' if platform_admin else dict(Membership.display_role_choices('landscaping')).get(member.role,''),
                     watermark_text=request.user.get_full_name() or request.user.username,
-                    watermark_warning='仅限内部沟通，严禁外传')
+                    watermark_warning='仅限内部沟通，严禁外传', landscaping_navigation=landscaping_modules(manager))
     elif not member and not platform_admin:
         data.update(is_admin=False,is_manager=False,is_field_worker=False)
     elif not pest and getattr(request,'operations_shell',False):

@@ -1,4 +1,6 @@
 from .administration import is_general
+from .landscaping_models import (LandscapingSpecies, LandscapingAsset,
+                                LandscapingWorkOrder, LandscapingDelivery)
 """Neutral identities and explicit team grants; legacy geometry stays authoritative."""
 import uuid
 

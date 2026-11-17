@@ -1,5 +1,5 @@
 from django.urls import path
-from . import views,bulk,management_views,team_visibility,workorder_media
+from . import views,bulk,management_views,team_visibility,workorder_media,landscaping
 
 app_name = 'operations'
 urlpatterns = [
@@ -29,4 +29,19 @@ urlpatterns = [
     path('tasks/<int:pk>/action/',management_views.task_action,name='task_action'),
     path('workorders/<int:report_id>/media/<str:name>/',workorder_media.serve,name='workorder_media'),
     path('profile/',management_views.profile,name='profile'),
+    path('landscaping/map-data/', landscaping.map_data, name='green_map_data'),
+    path('landscaping/assets/', landscaping.assets, name='green_assets'),
+    path('landscaping/assets/new/', landscaping.asset_edit, name='green_asset_new'),
+    path('landscaping/assets/<int:pk>/', landscaping.asset_detail, name='green_asset'),
+    path('landscaping/assets/<int:pk>/edit/', landscaping.asset_edit, name='green_asset_edit'),
+    path('landscaping/species/', landscaping.species, name='green_species'),
+    path('landscaping/species/new/', landscaping.species_edit, name='green_species_new'),
+    path('landscaping/species/<int:pk>/edit/', landscaping.species_edit, name='green_species_edit'),
+    path('landscaping/workorders/', landscaping.workorders, name='green_workorders'),
+    path('landscaping/workorders/new/', landscaping.workorder_new, name='green_workorder_new'),
+    path('landscaping/workorders/<int:pk>/', landscaping.workorder_detail, name='green_workorder'),
+    path('landscaping/workorders/<int:pk>/action/', landscaping.workorder_action, name='green_workorder_action'),
+    path('landscaping/deliveries/', landscaping.deliveries, name='green_deliveries'),
+    path('landscaping/deliveries/new/', landscaping.delivery_edit, name='green_delivery_new'),
+    path('landscaping/deliveries/<int:pk>/edit/', landscaping.delivery_edit, name='green_delivery_edit'),
 ]

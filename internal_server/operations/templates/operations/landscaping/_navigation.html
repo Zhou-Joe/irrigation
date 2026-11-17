@@ -1,0 +1,1 @@
+{% for module in landscaping_navigation %}<a href="{{ module.url }}" class="{% if request.resolver_match.url_name == module.name %}active{% endif %}"{% if request.resolver_match.url_name == module.name %} aria-current="page"{% endif %}>{{ module.label }}</a>{% endfor %}

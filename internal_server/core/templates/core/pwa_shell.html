@@ -6,12 +6,12 @@
 {% if user.is_authenticated %}
 <nav class="pwa-bottom-nav" aria-label="手机主导航" {% if pest_mode or landscaping_mode %}style="grid-template-columns:repeat(4,1fr)"{% endif %} data-user-id="{{ user.pk }}{% if active_business_key %}:{{ active_business_key }}{% endif %}">
     <a href="{% url 'core:app_home' %}" data-pwa-nav="home" {% if pest_mode or landscaping_mode %}hidden{% endif %}><svg><use href="#pwa-home"/></svg><span>工作台</span></a>
-    <a href="{% url 'core:dashboard' %}" data-pwa-nav="map"><svg><use href="{% if landscaping_mode %}#pwa-home{% else %}#pwa-map{% endif %}"/></svg><span>{% if landscaping_mode %}绿化{% else %}地图{% endif %}</span></a>
+    <a href="{% url 'core:dashboard' %}" data-pwa-nav="map"><svg><use href="#pwa-map"/></svg><span>{% if landscaping_mode %}绿化{% else %}地图{% endif %}</span></a>
     <a href="{% url 'core:work_reports' %}" data-pwa-nav="work" {% if landscaping_mode %}hidden{% endif %}><svg><use href="#pwa-clipboard"/></svg><span>工单</span></a>
     <a href="{% url 'core:inventory_management' %}" data-pwa-nav="stock" {% if pest_mode or landscaping_mode %}hidden{% endif %}><svg><use href="#pwa-box"/></svg><span>库存</span></a>
     <a href="/ops/reports/" data-pwa-nav="pest-data" {% if not pest_mode %}hidden{% endif %}><svg><use href="#pwa-chart"/></svg><span>数据</span></a>
-    <a href="{% url 'core:feedback' %}" data-pwa-nav="green-feedback" {% if not landscaping_mode %}hidden{% endif %}><svg><use href="#pwa-message"/></svg><span>反馈</span></a>
-    <a href="{% url 'operations:profile' %}" data-pwa-nav="green-profile" {% if not landscaping_mode %}hidden{% endif %}><svg><use href="#pwa-user"/></svg><span>账号</span></a>
+    <a href="/ops/landscaping/assets/" data-pwa-nav="green-assets" {% if not landscaping_mode %}hidden{% endif %}><svg><use href="#pwa-layers"/></svg><span>档案</span></a>
+    <a href="/ops/landscaping/workorders/" data-pwa-nav="green-work" {% if not landscaping_mode %}hidden{% endif %}><svg><use href="#pwa-clipboard"/></svg><span>工单</span></a>
     <button type="button" data-pwa-launcher aria-haspopup="dialog"><svg><use href="#pwa-grid"/></svg><span>全部</span></button>
 </nav>
 <dialog id="pwaLauncher" class="pwa-dialog" aria-labelledby="pwaLauncherTitle">

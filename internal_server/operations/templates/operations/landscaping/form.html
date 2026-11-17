@@ -1,0 +1,7 @@
+{% extends 'operations/landscaping/base.html' %}
+{% block title %}{{ page_title }}{% endblock %}{% block green_content %}
+<header class="app-head"><div><a href="{{ back_url }}">‹ 返回列表</a><h1>{{ page_title }}</h1></div></header>
+<form class="op-card green-form" method="post">{% csrf_token %}<input type="hidden" name="submission_key" value="{{ submission_key }}">{{ form.non_field_errors }}
+<div class="green-form-grid">{% for field in form %}<div class="op-field{% if field.name == 'notes' or field.name == 'instructions' or field.name == 'species' or field.name == 'assets' %} is-wide{% endif %}">{{ field.label_tag }}{{ field }}{{ field.errors }}{% if field.help_text %}<small>{{ field.help_text }}</small>{% endif %}</div>{% endfor %}</div>
+<div class="op-actions"><button class="btn-sm btn-primary" type="submit">保存</button><a class="btn-sm" href="{{ back_url }}">返回</a></div></form>
+{% endblock %}

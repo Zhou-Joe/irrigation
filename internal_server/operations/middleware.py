@@ -21,7 +21,9 @@ class BusinessAccessMiddleware:
             if request.user.is_authenticated:
                 from .access import active_membership
                 member = active_membership(request)
-                if member and member.team.business.code == 'landscaping' and request.path not in ('/ops/', '/ops/switch/', '/ops/profile/'):
+                green_allowed = (request.path in ('/ops/', '/ops/switch/', '/ops/profile/', '/ops/locations.geojson') or
+                                 request.path.startswith(('/ops/landscaping/', '/ops/locations/')))
+                if member and member.team.business.code == 'landscaping' and not green_allowed:
                     return JsonResponse({'error': '绿化功能待开发。', 'workspace_url': '/'}, status=403)
             response = self.get_response(request)
             response['Cache-Control'] = 'private, no-store'

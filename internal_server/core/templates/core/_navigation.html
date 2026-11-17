@@ -5,7 +5,7 @@
             <a href="{% if pest_mode or landscaping_mode %}{% url 'core:dashboard' %}{% else %}{% url 'core:app_home' %}{% endif %}" class="top-nav-brand"><img class="project-brand-mark" src="{% static 'pwa/brand.svg' %}?v=20261024brand" width="24" height="24" alt="">{% if landscaping_mode %}绿化{% elif pest_mode %}植保作业{% else %}灌溉管理系统{% endif %}</a>
             <button type="button" class="mobile-hamburger" id="mobileHamburger" onclick="toggleMobileNav()" aria-label="打开全部功能" aria-haspopup="dialog"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-menu"/></svg></button>
             <div class="top-nav-links" id="topNavLinks">
-                {% if landscaping_mode %}<a href="/" class="active">绿化首页</a>{% if is_admin %}<a href="/user-management/">用户管理</a>{% endif %}{% elif pest_mode %}{% include 'operations/_navigation_links.html' %}{% else %}
+                {% if landscaping_mode %}{% include 'operations/landscaping/_navigation.html' %}{% elif pest_mode %}{% include 'operations/_navigation_links.html' %}{% else %}
                 <a href="{% url 'core:dashboard' %}" class="{% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}">地图总览</a>
                 <a href="{% url 'core:work_reports' %}" class="{% if request.resolver_match.url_name == 'work_reports' %}active{% endif %}">维修日志</a>
                 <a href="{% url 'core:water_requests' %}" class="{% if request.resolver_match.url_name == 'water_requests' %}active{% endif %}">需求</a>
@@ -35,7 +35,7 @@
         </div>
     </nav>
     <div class="mobile-nav-overlay" id="mobileNavOverlay" onclick="toggleMobileNav()"></div>
-    <div class="mobile-nav-dropdown" id="mobileNavDropdown"><a href="{% url 'core:feedback' %}">反馈与建议</a>{% if landscaping_mode %}<a href="/">绿化首页</a>{% if is_admin %}<a href="/user-management/">用户管理</a>{% endif %}<a href="{% url 'operations:profile' %}">我的账号</a><a href="/logout/">退出</a>{% elif pest_mode %}{% include 'operations/_navigation_links.html' %}<a href="{% url 'operations:profile' %}">我的账号</a><a href="/logout/">退出</a>{% else %}
+    <div class="mobile-nav-dropdown" id="mobileNavDropdown"><a href="{% url 'core:feedback' %}">反馈与建议</a>{% if landscaping_mode %}{% include 'operations/landscaping/_navigation.html' %}<a href="{% url 'operations:profile' %}">我的账号</a><a href="/logout/">退出</a>{% elif pest_mode %}{% include 'operations/_navigation_links.html' %}<a href="{% url 'operations:profile' %}">我的账号</a><a href="/logout/">退出</a>{% else %}
         <a href="{% url 'core:dashboard' %}" class="{% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}">地图总览</a>
         <a href="{% url 'core:work_reports' %}" class="{% if request.resolver_match.url_name == 'work_reports' %}active{% endif %}">维修日志</a>
         <a href="{% url 'core:water_requests' %}" class="{% if request.resolver_match.url_name == 'water_requests' %}active{% endif %}">需求</a>

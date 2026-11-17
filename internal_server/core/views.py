@@ -1302,7 +1302,8 @@ def dashboard(request):
         from operations.access import active_membership
         member = active_membership(request)
         if member and member.team.business.code == 'landscaping':
-            return render(request,'operations/landscaping.html',{'announcements':_unacked_announcements_for(request.user,member.team)})
+            from operations.landscaping import dashboard as landscaping_dashboard
+            return landscaping_dashboard(request)
     if is_pest(request):
         return pest_dashboard(request)
     from datetime import date, timedelta

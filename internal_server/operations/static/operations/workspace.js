@@ -16,7 +16,7 @@
     const notify=(form,message)=>{if(window.IrrigationPWA?.notify)window.IrrigationPWA.notify(message);else form.title=message;};
     const path=script=>new URL(script.src,location.href).pathname;
     const loaded=new Set([...document.scripts].filter(s=>s.src).map(path));
-    const repeat=/\/(map\.js|dashboard\.js|dashboard-modal\.js|pest-map\.js|workorder-chips\.js)$/;
+    const repeat=/\/(map\.js|dashboard\.js|dashboard-modal\.js|pest-map\.js|landscaping-map\.js|workorder-chips\.js)$/;
     async function runScripts(doc) {
         let holder=document.getElementById('dashboardScripts');
         if(!holder){holder=document.createElement('div');holder.id='dashboardScripts';holder.hidden=true;document.body.append(holder);}
@@ -84,12 +84,13 @@
                 window.FOSLocationEditor?.destroyAll?.();
                 history.replaceState(history.state,'','/');
             }
-            const mounted=current.dataset.business==='landscaping'||(current.dataset.business==='pest-control'?window.FOSPestMap:window.FOSDashboardLifecycle&&window.FOSMapLifecycle);
+            const mounted=current.dataset.business==='landscaping'?window.FOSLandscapingMap:(current.dataset.business==='pest-control'?window.FOSPestMap:window.FOSDashboardLifecycle&&window.FOSMapLifecycle);
             const same=current.dataset.business===next.dataset.business&&current.dataset.mounted!=='no'&&!!mounted;
             updateShell(doc);
             if(!same) {
                 const map=window._map;window.FOSMapInitialView=map?{center:map.getCenter(),zoom:map.getZoom()}:null;
-                window.FOSPestMap?.destroy();window.FOSWorkorderModalLifecycle?.destroy();window.FOSDashboardLifecycle?.destroy();window.FOSMapLifecycle?.destroy();window.FOSMapActions?.destroy();
+                window.FOSLandscapingMap?.destroy();window.FOSPestMap?.destroy();window.FOSWorkorderModalLifecycle?.destroy();window.FOSDashboardLifecycle?.destroy();window.FOSMapLifecycle?.destroy();window.FOSMapActions?.destroy();
+                window.FOSLandscapingMap=null;
                 window.FOSPestMap=window.FOSMapLifecycle=window.FOSDashboardLifecycle=window.FOSWorkorderModalLifecycle=null;
                 window._map=null;
                 window.zonesData=[];window._zoneById={};window._dashboardZonesLayer=null;
@@ -108,6 +109,7 @@
                 oldBatch?.remove();if(newBatch)document.getElementById('dashboardWorkspace').append(document.importNode(newBatch,true));
                 window.FOSPestMap?.updateRole(doc.getElementById('pestCanSubmit')?.dataset);
                 await window.FOSPestMap?.refresh();
+                await window.FOSLandscapingMap?.refresh();
                 await window.FOSDashboardLifecycle?.refresh?.();
                 // Load newly available account tools without rebuilding the map.
                 for(const script of doc.querySelectorAll('#dashboardScripts > script[src]'))
