@@ -137,6 +137,7 @@
                 </div>
             </div>
 
+            {% if zone %}<p class="form-help" role="note">正在编辑首页当前生效的{% if boundary_edit_source == 'dxf' %} DXF 边界{% if zone.dxf_boundary_source %}（{{ zone.dxf_boundary_source }}）{% endif %}{% else %}手绘边界{% endif %}。保存将更新此版本，另一份边界保留。</p><input type="hidden" name="boundary_edit_source" value="{{ boundary_edit_source }}">{% endif %}
             <div class="map-toolbar">
                 <button type="button" id="completeShape" class="btn btn-sm btn-primary" disabled>完成当前区域</button>
                 <button type="button" id="clearBoundary" class="btn btn-sm btn-danger">清除全部</button>

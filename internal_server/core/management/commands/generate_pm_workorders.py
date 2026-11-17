@@ -64,6 +64,12 @@ class Command(BaseCommand):
                    f'{summary["not_due"]} not due, {summary["unassignable"]} unassignable, '
                    f'{summary["failed"]} failed. (non-generated counts are plans)')
         self.stdout.write(f'\nDone: {message}')
+        from django.conf import settings
+        if settings.MULTI_TEAM_ENABLED:
+            from operations.planning import generate_due
+            pest=generate_due(today=today,dry=dry)
+            self.stdout.write(f'Pest dispatch: {pest["generated"]} tasks, {len(pest["errors"])} issues.')
+            for issue in pest['errors']:self.stderr.write(issue)
         if summary['failed']:
             raise CommandError(f'PM dispatch partially failed: {message}')
 

@@ -76,6 +76,10 @@ class Command(BaseCommand):
                 # Code doesn't follow A-B-C (e.g. legacy or manually-named);
                 # leave whatever's already stored untouched.
                 continue
+            # Standard hardware codes must not retain a stale mapping when
+            # a controller/station is removed or moves to a different source Site.
+            z.maxicom_runtime = []
+            to_update.append(z)
             ccu_num = int(m.group(1))
             sat_link = int(m.group(2))
             channel = int(m.group(3))
@@ -94,7 +98,6 @@ class Command(BaseCommand):
                 continue
 
             z.maxicom_runtime = list(stn_ids)
-            to_update.append(z)
             mapped += 1
 
         # ── Persist (idempotent — overwrites prior values) ────────────────

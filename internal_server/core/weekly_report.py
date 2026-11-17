@@ -12,6 +12,7 @@ space runs, charts 5900000 EMU wide, jpg Content-Types default, photo rels
 from rId103). Do NOT "simplify" the XML recipes — they reproduce the official
 Weekly Report template byte-for-byte in structure.
 """
+from core.ai_storage import artifact_url
 import json
 import os
 import re
@@ -120,14 +121,10 @@ def last_full_week(today=None):
 
 
 def _irr_day(ts):
-    """Irrigation day for a YYYYMMDDHHMMSS string (>=22:00 belongs to next day)."""
-    if len(ts) >= 13 and ts[8:] >= '220000':
-        try:
-            return date(int(ts[:4]), int(ts[4:6]), int(ts[6:8])) + timedelta(days=1)
-        except ValueError:
-            return None
+    """Local irrigation day for a compact UTC runtime timestamp."""
+    from core.irrig_time import irrigation_day_for_utc
     try:
-        return date(int(ts[:4]), int(ts[4:6]), int(ts[6:8]))
+        return irrigation_day_for_utc(ts)
     except ValueError:
         return None
 
@@ -174,8 +171,8 @@ def _week_data(d0, d1):
     d['pm_done'] = pm_done
 
     # runtime per irrigation day
-    from core.irrig_time import irrigation_day_bounds
-    f14, t14 = irrigation_day_bounds(d0, d1)
+    from core.irrig_time import irrigation_day_utc_bounds
+    f14, t14 = irrigation_day_utc_bounds(d0, d1)
     day_min = Counter()
     sites = set()
     runs = 0
@@ -194,7 +191,7 @@ def _week_data(d0, d1):
     # flow per irrigation day (flow_day is a YYYYMMDD string)
     day_lit = Counter()
     for fd, lit in MaxicomFlowDaily.objects.filter(
-            flow_day__gte=d0.strftime('%Y%m%d'), flow_day__lte=d1.strftime('%Y%m%d')
+            flow_day__gte=d0.strftime('%Y%m%d'), flow_day__lte=d1.strftime('%Y%m%d'), zone__join_site=True
     ).values_list('flow_day', 'liters'):
         try:
             day_lit[date(int(fd[:4]), int(fd[4:6]), int(fd[6:8]))] += (lit or 0)
@@ -340,12 +337,12 @@ def _charts(D, workdir):
 
     tot_flow = sum(flow_m3)
     tot_min = sum(D['day_min'].values())
-    t1 = ('Irrigation Water Use & Station Runtime (%s %d-%d, %d) | week total %s m3 / %s station-min'
+    t1 = ('FLO WATCH Reference & Station Runtime (%s %d-%d, %d) | %s k source units / %s station-min'
           % (MONTHS[D['d0'].month - 1], D['d0'].day, D['d1'].day, D['d1'].year,
              '{:,.0f}'.format(tot_flow), '{:,}'.format(tot_min)))
     fig, ax1 = plt.subplots(figsize=(8.3, 2.0), dpi=200)
     ax1.bar(days, flow_m3, color=C_BAR, width=0.62)
-    ax1.set_ylabel('m3', color='#5B7285')
+    ax1.set_ylabel('k source units', color='#5B7285')
     ax1.set_ylim(0, (max(flow_m3) or 1) * 1.15)
     ax2 = ax1.twinx()
     ax2.spines['right'].set_visible(True)
@@ -448,7 +445,7 @@ def _content(D, man):
                                    ', '.join('%s %d' % (MONTHS[k.month - 1], k.day) for k, _ in rains)))
             if rains else 'no rain')
     blocks.append({'type': 'item', 'lead': 'Weekly irrigation: ', 'text':
-                   '%s m³ total water use (daily %s–%s m³); %s station-run minutes across %s runs at %s sites; %d work reports logged (%.1f team hours + %.1f third-party hours, %d workers).%s'
+                   'FLO WATCH reference %s thousand source units (daily %s–%s thousand; physical volume unverified, not sensor liters); %s station-run minutes across %s runs at %s sites; %d work reports logged (%.1f team hours + %.1f third-party hours, %d workers).%s'
                    % ('{:,.0f}'.format(tot_flow),
                       '{:,.0f}'.format(min(flows) / 1000.0) if flows else '0',
                       '{:,.0f}'.format(max(flows) / 1000.0) if flows else '0',
@@ -673,11 +670,11 @@ def build_weekly_report(d0, d1, out_dir):
         warnings.append('浇水量数据只到 %s（Maxicom 导入滞后），周期末几天流量可能偏小' % D['flow_max_day'])
     return {
         'file': {'name': fname, 'size': size,
-                 'url': '%sai_workspaces/%s/%s' % (settings.MEDIA_URL, os.path.basename(out_dir.rstrip('/')), fname)},
+                 'url': artifact_url(os.path.basename(out_dir.rstrip('/')), fname)},
         'period': [d0.isoformat(), d1.isoformat()],
         'stats': {
             '工单数': D['reports'], '灌溉组工时': D['team_hours'], '第三方工时': D['third_hours'],
-            '运行分钟': sum(D['day_min'].values()), '浇水量m3': round(sum(D['day_lit'].values()) / 1000.0),
+            '运行分钟': sum(D['day_min'].values()), 'FLO WATCH参考值（源单位）': sum(D['day_lit'].values()),
             'PM状态': D['pm'],
         },
         'photos': {g: len(v) for g, v in man.items() if v},
@@ -802,8 +799,8 @@ def material_digest(d0, d1):
                   'entries_total': D['entries'],
                   'sections': dict(D['sec']), 'pm_status': D['pm'],
                   'runtime_minutes_total': sum(D['day_min'].values()),
-                  'flow_liters_total': sum(D['day_lit'].values())},
-        'daily': {'runtime_min': run_days, 'flow_liters': flow_days, 'weather': wx},
+                  'flow_watch_raw_total': sum(D['day_lit'].values()), 'flow_unit_verified': False},
+        'daily': {'runtime_min': run_days, 'flow_watch_reference': flow_days, 'weather': wx},
         'work_items': entries,
         'sample_entry_texts': sample_texts,
         'notable_reports': notable,
@@ -909,8 +906,7 @@ def build_with_blocks(d0, d1, blocks, out_dir):
         warnings.append('已忽略无效 blocks: %s' % '; '.join(dropped[:5]))
     return {
         'file': {'name': fname, 'size': size,
-                 'url': '%sai_workspaces/%s/%s' % (settings.MEDIA_URL,
-                                                   os.path.basename(out_dir.rstrip('/')), fname)},
+                 'url': artifact_url(os.path.basename(out_dir.rstrip('/')), fname)},
         'period': [d0.isoformat(), d1.isoformat()],
         'blocks_rendered': len(valid),
         'photos': {g: len(v) for g, v in man.items() if v},

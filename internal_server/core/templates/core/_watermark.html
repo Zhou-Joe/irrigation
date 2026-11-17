@@ -1,0 +1,13 @@
+{% if user.is_authenticated and watermark_text %}
+<div class="anti-leak-watermark" data-site-watermark data-identity="{{ watermark_text }}" data-warning="{{ watermark_warning }}" aria-hidden="true" inert>
+  <svg class="watermark-canvas" xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" focusable="false">
+    <defs><pattern id="siteWatermarkFallback" width="360" height="240" patternUnits="userSpaceOnUse">
+      <g transform="translate(180 120) rotate(-22)" text-anchor="middle" font-family="sans-serif" fill="#293d30" fill-opacity=".13" stroke="#fff" stroke-opacity=".25" stroke-width=".5" paint-order="stroke">
+        <text y="-8" font-size="12">用户 {{ user.pk }}</text>
+        <text y="12" font-size="11">{{ watermark_warning }}</text>
+      </g>
+    </pattern></defs>
+    <rect width="100%" height="100%" fill="url(#siteWatermarkFallback)"/>
+  </svg>
+</div>
+{% endif %}

@@ -1,0 +1,4 @@
+{% extends 'operations/base.html' %}{% block title %}植保工单记录{% endblock %}{% block ops_content %}
+<header class="app-head"><div><h1>工单记录</h1><p class="app-subtitle">{{ membership.team.name }} · {% if can_manage %}团队作业记录与任务跟进{% else %}本人作业记录与待办任务{% endif %}</p></div><div class="ops-actions"><a class="btn-sm btn-secondary" data-ops-export="{% url 'operations:report_export' %}" href="{% url 'operations:report_export' %}"><svg class="ui-icon"><use href="#pwa-download"/></svg>导出 Excel</a>{% if membership.role == 'field' or can_manage %}<a class="btn-sm btn-primary" href="/?action=workorder">创建工单</a>{% endif %}</div></header>
+<div id="opsResults">{% include 'operations/_pest_report_results.html' %}</div>
+{% endblock %}

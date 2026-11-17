@@ -1,0 +1,15 @@
+{% if sensor_data.notice %}<div class="chart-empty" role="status">{{ sensor_data.notice }}</div>{% endif %}
+{% if sensor_data.coverage_note %}<p class="flow-note" role="status">{{ sensor_data.coverage_note }}</p>{% endif %}
+{% for site in sensor_data.sites %}
+<details class="flow-site"{% if sensor_data.sites|length == 1 %} open{% endif %}>
+  <summary><span>{{ site.label }} · {{ site.name }}</span><span>{{ site.sensors|length }} 个传感器</span></summary>
+  <div class="flow-table-scroll"><table class="matrix-table">
+    <thead><tr><th>通道</th><th>传感器</th><th>水量 (L)</th><th>记录状态</th></tr></thead>
+    <tbody>{% for sensor in site.sensors %}<tr>
+      <td>{{ sensor.channel|default_if_none:'—' }}</td><td>{{ sensor.name }}</td><td>{{ sensor.formatted }}</td>
+      <td>{% if not sensor.complete %}覆盖不完整{% elif not sensor.enabled %}已停用{% else %}实际记录{% endif %}</td>
+    </tr>{% endfor %}</tbody>
+  </table></div>
+</details>
+{% endfor %}
+<p class="flow-note">按各传感器实际脉冲和记录时的倍率换算为升。总表、分表可能重叠，分别列出，不合并相加。0 表示备份覆盖时段内没有该传感器的流量记录；— 表示无法确认。</p>

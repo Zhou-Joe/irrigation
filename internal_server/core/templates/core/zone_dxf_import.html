@@ -153,7 +153,11 @@
         margin-bottom: 8px;
     }
     .coord-info-box .label { color: var(--color-text-secondary); margin-bottom: 2px; }
+    .cad-modes { display:flex; gap:6px; margin:10px 0 6px; }
+    .cad-modes button { flex:1; min-height:36px; }
+    .cad-modes button[aria-pressed="true"] { background:var(--color-primary); color:white; }
 </style>
+<link rel="stylesheet" href="{% static 'css/zone-dxf-matches.css' %}?v=20261113zonetune1">
 {% endblock %}
 
 {% block content %}
@@ -173,6 +177,16 @@
         <!-- Sidebar -->
         <div class="batch-sidebar">
             <div class="sidebar-scroll">
+                <div class="panel">
+                    <label style="display:flex;align-items:center;gap:8px;font-size:.85rem;">
+                        <input type="checkbox" id="showRefZones" onchange="toggleReferenceZones()"> 显示已有区域边界和标签
+                    </label>
+                    <div class="cad-modes" role="group" aria-label="CAD 操作模式">
+                        <button type="button" id="cadMoveMode" class="btn btn-secondary btn-sm" aria-pressed="false" onclick="setDxfMoveMode(true)" disabled>整体平移</button>
+                        <button type="button" id="cadBindMode" class="btn btn-secondary btn-sm" aria-pressed="true" onclick="setDxfMoveMode(false)">绑定勿动</button>
+                    </div>
+                    <div id="cadModeHint" role="status" style="font-size:.78rem;color:var(--color-text-secondary);">整体位置已锁定，点击图形可选择区域。</div>
+                </div>
 
                 <!-- Step 1: Upload -->
                 <div class="panel" id="panelUpload">
@@ -180,7 +194,7 @@
                         <span class="step-badge">1</span> 上传 DXF 文件
                     </div>
                     <div class="upload-zone" id="uploadZone" onclick="document.getElementById('dxfFileInput').click()">
-                        <div class="upload-icon">📄</div>
+                        <div class="upload-icon"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-file"/></svg></div>
                         <p>点击或拖拽上传 .dxf 文件</p>
                     </div>
                     <input type="file" id="dxfFileInput" class="dxf-input" accept=".dxf">
@@ -203,22 +217,36 @@
                         <div id="geoRefStatus"></div>
                     </div>
                     <div id="autoGeoRef" style="display:none;">
-                        <div class="status-msg success">坐标已自动配准 — 拖拽图形可微调位置</div>
+                        <div class="status-msg success">坐标已自动配准；如需微调，请先切换到「整体平移」。</div>
                         <div style="margin-top:6px;display:flex;gap:6px;align-items:center;">
-                            <button class="btn btn-secondary btn-sm" onclick="resetDxfOffset()">重置位置</button>
+                            <button class="btn btn-secondary btn-sm" id="resetDxfOffsetBtn" onclick="resetDxfOffset()" disabled>重置位置</button>
                             <span id="offsetInfo" style="font-size:0.78rem;color:var(--color-text-secondary);"></span>
                         </div>
                     </div>
                 </div>
 
-                <!-- Step 3: Assign -->
+                {% if can_batch_dxf %}<section class="panel zdm-panel" id="zoneDxfMatchPanel" aria-labelledby="zdmTitle">
+                    <div class="panel-title"><svg class="ui-icon" aria-hidden="true"><use href="#pwa-layers"/></svg><span id="zdmTitle">区域边界匹配</span></div>
+                    <p class="zdm-hint">上传并配准后自动匹配。点击区域单独对照，勾选多个区域可同时查看；进入微调后，拖动地图上的平移手柄，可同步移动当前区域的手绘与 DXF 轮廓。</p>
+                    <div class="zdm-top-actions"><button type="button" class="btn btn-primary btn-sm" id="zdmRun" disabled>计算匹配</button><button type="button" class="btn btn-secondary btn-sm" id="zdmShowAll">显示全部</button></div>
+                    <div class="zdm-tune-actions" role="group" aria-label="所选区域位置微调"><button type="button" class="btn btn-secondary btn-sm" id="zdmMove" aria-pressed="false" disabled>微调区域</button><button type="button" class="btn btn-secondary btn-sm" id="zdmUndo" disabled>撤销上次</button><button type="button" class="btn btn-secondary btn-sm" id="zdmReset" disabled>取消本次微调</button></div>
+                    <p id="zdmMoveHint" class="zdm-hint" role="status" aria-live="polite">点击区域对照后，可单独微调位置；保存前不会修改边界。</p>
+                    <div id="zdmStatus" class="zdm-status" role="status" aria-live="polite"></div>
+                    <div class="zdm-filters"><input type="search" id="zdmSearch" aria-label="搜索区域编号或名称" placeholder="搜索区域编号或名称…"><select id="zdmFilter" aria-label="筛选匹配状态"><option value="all">全部区域</option><option value="high">高可信匹配</option><option value="review">待核对候选</option><option value="unmatched">未匹配</option><option value="existing">已有 DXF</option><option value="saved">本次已保存</option></select></div>
+                    <div class="zdm-select-actions"><button type="button" id="zdmSelectSafe">全选当前筛选的可靠新匹配</button><button type="button" id="zdmSelectExisting">选中当前筛选的已有 DXF</button><button type="button" id="zdmClear">清空选择</button></div>
+                    <p id="zdmCount" class="zdm-count" aria-live="polite"></p>
+                    <div id="zdmList" class="zdm-list"></div><button type="button" id="zdmMore" class="btn btn-secondary btn-sm" hidden>显示更多区域</button>
+                    <div class="zdm-batch-actions"><p id="zdmSelectionHint" class="zdm-hint"></p><div><button type="button" id="zdmSave" class="btn btn-secondary btn-sm" disabled>保存所选 DXF</button><button type="button" id="zdmSaveActive" class="btn btn-primary btn-sm" disabled>保存并启用 DXF</button></div><div><button type="button" id="zdmActivate" class="btn btn-secondary btn-sm" disabled>启用已有 DXF</button><button type="button" id="zdmManual" class="btn btn-secondary btn-sm" disabled>恢复手绘</button></div></div>
+                    <div class="zdm-legend" id="zdmLegend" hidden><span class="zdm-manual">手绘边界</span><span class="zdm-candidate">候选 CAD</span><span class="zdm-existing">当前保存 DXF</span></div>
+                </section>
+                {% endif %}<!-- Optional single-zone assignment remains available. -->
                 <div class="panel disabled" id="panelAssign">
                     <div class="panel-title">
                         <span class="step-badge">3</span> 分配图形
                     </div>
                     <div id="groupsList" style="max-height:320px; overflow-y:auto; padding-right:4px;"></div>
                     <div id="suggestedZones" style="display:none; margin-top:8px;">
-                        <div style="font-size:0.78rem; color:#888; margin-bottom:4px;">💡 建议匹配区域（按距离排序）</div>
+                        <div style="font-size:0.78rem; color:#888; margin-bottom:4px;"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-bulb"/></svg> 建议匹配区域（按距离排序）</div>
                         <div id="suggestedZonesList"></div>
                     </div>
                     <div class="zone-input-wrapper" style="margin-top:10px;">
@@ -244,7 +272,7 @@
 
                 <!-- DXF Import History -->
                 <div class="panel">
-                    <div class="panel-title">📋 DXF导入记录</div>
+                    <div class="panel-title"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-clipboard"/></svg> DXF导入记录</div>
                     <select id="dxfHistorySelect" style="width:100%;padding:6px 8px;border:1px solid var(--color-surface-dark);border-radius:6px;font-size:0.82rem;background:var(--color-surface);" onchange="showDxfHistory()">
                         <option value="">-- 选择已导入的区域 --</option>
                     </select>
@@ -284,6 +312,21 @@
     let dxfGroups = null;
     let dxfTransformed = null;
     let dxfCoordInfo = null;
+    let dxfGeometryVersion = 0, dxfTransformDirty = false, dxfUploadBusy = false, dxfCompareActive = false;
+    function invalidateMatches(reason, dirty) {
+        dxfGeometryVersion++;
+        if (dirty) dxfTransformDirty = true;
+        if (window.ZoneDxfMatches) window.ZoneDxfMatches.invalidate(reason);
+    }
+    function blockZoneDraftChange() {
+        if (!window.ZoneDxfMatches?.hasDrafts?.()) return false;
+        const text = '仍有未保存的区域微调，请先保存或取消微调，再更改图纸、配准或边界来源。';
+        const status = document.getElementById('zdmStatus');
+        if (status) { status.textContent = text; status.dataset.error = '1'; }
+        const hint = document.getElementById('cadModeHint');
+        if (hint) hint.textContent = text;
+        return true;
+    }
     let selectedGroupIds = new Set();   // multi-select support
     let assignedGroupIds = new Set();   // groups already assigned to a zone → hidden on map
 
@@ -340,9 +383,15 @@
     function renderRefZones() {
         refLayerGroup.clearLayers();
         refLabelLayer.clearLayers();
+        if (dxfCompareActive) return;
+        if (!map.hasLayer(refLayerGroup)) map.addLayer(refLayerGroup);
+        if (!document.getElementById('showRefZones').checked) {
+            updateRefLabelVisibility();
+            return;
+        }
         allDrawnZones.forEach(function(zone) {
             if (!zone.boundary_points || zone.boundary_points.length === 0) return;
-            const style = { color: '#fff', weight: 2, opacity: 0.6, fillOpacity: 0.03, dashArray: '6 4' };
+            const style = { color: '#fff', weight: 2, opacity: 0.6, fillOpacity: 0.03, dashArray: '6 4', interactive: false };
             var labelLatLng = null;
             var rings = flattenBoundaryRings(zone.boundary_points);
             rings.forEach(function(ring, ri) {
@@ -377,7 +426,7 @@
     }
 
     function updateRefLabelVisibility() {
-        var show = map.getZoom() >= 19;
+        var show = !dxfCompareActive && document.getElementById('showRefZones').checked && map.getZoom() >= 19;
         if (show) {
             if (!map.hasLayer(refLabelLayer)) map.addLayer(refLabelLayer);
         } else {
@@ -386,6 +435,7 @@
     }
 
     map.on('zoomend', updateRefLabelVisibility);
+    window.toggleReferenceZones = renderRefZones;
 
     renderRefZones();
 
@@ -413,11 +463,35 @@
     let _suppressNextMapClick = false;  // set on polygon mousedown → ignore the synthesized map click
     let dxfDragging = false;
     let dxfOrigLatLngs = null;  // snapshot of polygon positions at drag start
+    let dxfMoveEnabled = false;
+    let dxfAssignmentBusy = false;
+    let dxfScopedDragging = false;
+    let cancelDxfDrag = null;
+
+    window.setDxfMoveMode = function(enabled) {
+        if (cancelDxfDrag) cancelDxfDrag();
+        if (enabled && blockZoneDraftChange()) enabled = false;
+        if (enabled && (dxfCompareActive || dxfScopedDragging)) enabled = false;
+        if (enabled && !dxfMoveEnabled && !dxfAssignmentBusy) invalidateMatches('已切换整体平移，请摆放完成后重新匹配。');
+        dxfMoveEnabled = !!enabled && !!dxfTransformed && assignedGroupIds.size === 0 && !dxfAssignmentBusy;
+        document.getElementById('cadMoveMode').disabled = !dxfTransformed || assignedGroupIds.size > 0 || dxfAssignmentBusy || dxfCompareActive || dxfScopedDragging || !!window.ZoneDxfMatches?.hasDrafts?.();
+        document.getElementById('cadBindMode').disabled = dxfAssignmentBusy;
+        document.getElementById('cadMoveMode').setAttribute('aria-pressed', String(dxfMoveEnabled));
+        document.getElementById('cadBindMode').setAttribute('aria-pressed', String(!dxfMoveEnabled));
+        document.getElementById('resetDxfOffsetBtn').disabled = !dxfMoveEnabled;
+        document.getElementById('cadModeHint').textContent = dxfAssignmentBusy ? '正在绑定区域，整体位置已锁定。' : dxfCompareActive || dxfScopedDragging ? '正在对照区域，整体平移已锁定；可使用区域微调手柄。' : window.ZoneDxfMatches?.hasDrafts?.() ? '仍有未保存的区域微调，请先保存或取消；整体位置已锁定。' : assignedGroupIds.size
+            ? '已分配区域，整体位置已锁定。继续点击其余图形进行绑定。'
+            : dxfMoveEnabled ? '拖动 CAD 图形可整体平移；到位后切换「绑定勿动」。'
+            : '整体位置已锁定，点击图形可选择区域。';
+        dxfPolygons.forEach(function(p) { var el=p.getElement(); if(el) el.style.cursor=dxfMoveEnabled?'grab':'pointer'; });
+    };
 
     function renderDxfShapes(fit) {
+        if (cancelDxfDrag) cancelDxfDrag();
         dxfLayerGroup.clearLayers();
         dxfPolygons = [];
         if (!dxfTransformed) return;
+        if (!dxfCompareActive && !map.hasLayer(dxfLayerGroup)) map.addLayer(dxfLayerGroup);
         const colors = ['#3A86FF', '#FF006E', '#8338EC', '#FB5607', '#FFBE0B', '#06D6A0'];
 
         function shapeById(id) { for (var i = 0; i < dxfTransformed.length; i++) { if (dxfTransformed[i].id === id) return dxfTransformed[i]; } return null; }
@@ -449,13 +523,19 @@
             poly._groupId = it.groupId;
             poly._outerId = it.outerId;
             dxfPolygons.push(poly);
+            poly.on('click', function(e) {
+                if (mapClickMode === 'anchor') return;
+                L.DomEvent.stopPropagation(e);
+                if (dxfMoveEnabled) return;
+                if (it.groupId) selectGroup(it.groupId);
+            });
 
             // Combined click + drag via DOM-level mousedown
             var svgEl = poly.getElement();
             if (svgEl) {
-                svgEl.style.cursor = 'grab';
+                svgEl.style.cursor = dxfMoveEnabled ? 'grab' : 'pointer';
                 svgEl.addEventListener('mousedown', function(domE) {
-                    if (domE.button !== 0) return;
+                    if (domE.button !== 0 || !dxfMoveEnabled || dxfAssignmentBusy || dxfCompareActive || dxfScopedDragging || mapClickMode === 'anchor' || assignedGroupIds.size) return;
                     domE.stopPropagation();  // prevent map drag
                     _suppressNextMapClick = true;  // ignore the click that follows (don't deselect)
 
@@ -472,7 +552,7 @@
                         var cur = map.mouseEventToLatLng(ev);
                         var dlat = cur.lat - startLL.lat;
                         var dlng = cur.lng - startLL.lng;
-                        if (!clicked && (Math.abs(dlat) > 1e-8 || Math.abs(dlng) > 1e-8)) {
+                        if (!clicked && Math.hypot(ev.clientX - domE.clientX, ev.clientY - domE.clientY) >= 6) {
                             clicked = true; // it's a drag, not a click
                         }
                         if (clicked) {
@@ -487,6 +567,8 @@
                     function onDocUp() {
                         document.removeEventListener('mousemove', onDocMove);
                         document.removeEventListener('mouseup', onDocUp);
+                        cancelDxfDrag = null;
+                        _suppressNextMapClick = false;
 
                         if (clicked) {
                             // Was a drag — commit offset (reference the first polygon's outer ring)
@@ -502,29 +584,26 @@
                                 });
                             });
                             updateOffsetInfo(offLat, offLng);
+                            invalidateMatches('CAD 位置已改变，请重新计算匹配。');
                             // Refresh zone suggestions with new position
                             computeSuggestions();
-                        } else {
-                            // Was a click — select/deselect group
-                            if (it.groupId) {
-                                selectGroup(it.groupId);
-                            } else if (dxfGroups) {
-                                for (var gi = 0; gi < dxfGroups.length; gi++) {
-                                    if (getGroupShapeIds(dxfGroups[gi]).includes(it.outerId)) {
-                                        selectGroup(dxfGroups[gi].id);
-                                        return;
-                                    }
-                                }
-                            }
                         }
                     }
+                    cancelDxfDrag = function() {
+                        document.removeEventListener('mousemove', onDocMove);
+                        document.removeEventListener('mouseup', onDocUp);
+                        dxfPolygons.forEach(function(p, pi) { p.setLatLngs(dxfOrigLatLngs[pi]); });
+                        cancelDxfDrag = null;
+                        _suppressNextMapClick = false;
+                    };
                     document.addEventListener('mousemove', onDocMove);
                     document.addEventListener('mouseup', onDocUp);
                 });
             }
         });
         // Fit map to show all shapes (only when explicitly requested — not after assign)
-        if (fit !== false && dxfTransformed.length > 0) {
+        if (dxfCompareActive && map.hasLayer(dxfLayerGroup)) map.removeLayer(dxfLayerGroup);
+        if (!dxfCompareActive && fit !== false && dxfTransformed.length > 0) {
             const allBounds = L.latLngBounds([]);
             dxfTransformed.forEach(function(ts) {
                 ts.vertices_latlng.forEach(function(p) { allBounds.extend([p.lat, p.lng]); });
@@ -545,7 +624,7 @@
         }
     }
     window.resetDxfOffset = function() {
-        if (!dxfTransformed || _cumulOffLat === 0 && _cumulOffLng === 0) return;
+        if (!dxfMoveEnabled || assignedGroupIds.size || !dxfTransformed || _cumulOffLat === 0 && _cumulOffLng === 0) return;
         dxfTransformed.forEach(function(ts) {
             ts.vertices_latlng = ts.vertices_latlng.map(function(p) {
                 return { lat: p.lat - _cumulOffLat, lng: p.lng - _cumulOffLng };
@@ -554,6 +633,7 @@
         _cumulOffLat = 0; _cumulOffLng = 0;
         var el = document.getElementById('offsetInfo');
         if (el) el.textContent = '';
+        invalidateMatches('CAD 位置已重置，请重新计算匹配。');
         renderDxfShapes();
     };
 
@@ -575,9 +655,14 @@
                     const marker = L.marker([lat, lng], { draggable: true }).addTo(anchorLayerGroup);
                     marker.bindPopup('锚点 ' + (idx + 1));
                     marker.on('dragend', function() {
+                        if (blockZoneDraftChange()) {
+                            marker.setLatLng([parseFloat(latInput.value), parseFloat(lngInput.value)]);
+                            return;
+                        }
                         const pos = marker.getLatLng();
                         latInput.value = pos.lat.toFixed(7);
                         lngInput.value = pos.lng.toFixed(7);
+                        invalidateMatches('锚点已更改，请重新配准并匹配。', true);
                     });
                 }
             }
@@ -602,7 +687,12 @@
     fileInput.addEventListener('change', uploadDxf);
 
     function uploadDxf() {
+        if (dxfAssignmentBusy) return;
+        if (blockZoneDraftChange()) { fileInput.value = ''; return; }
         if (!fileInput.files || fileInput.files.length === 0) return;
+        if (dxfUploadBusy) return;
+        dxfUploadBusy = true;
+        invalidateMatches('正在解析新图纸，旧匹配已清除。');
         const file = fileInput.files[0];
         document.getElementById('uploadStatus').innerHTML = '<div class="status-msg info">上传解析中...</div>';
 
@@ -614,12 +704,21 @@
             .then(function(r) { return r.json(); })
             .then(function(data) {
                 if (data.success) {
+                    if (cancelDxfDrag) cancelDxfDrag();
+                    assignedGroupIds.clear(); selectedGroupIds.clear(); assignedItems.length = 0;
+                    _cumulOffLat = 0; _cumulOffLng = 0;
+                    dxfTransformed = null;
+                    dxfLayerGroup.clearLayers(); dxfPolygons = [];
+                    document.getElementById('offsetInfo').textContent = '';
+                    document.getElementById('panelAssign').classList.add('disabled');
+                    renderAssignedList();
                     document.getElementById('uploadStatus').innerHTML =
                         '<div class="status-msg success">' + data.message + '</div>';
 
                     dxfShapes = data.shapes;
                     dxfGroups = data.groups;
                     dxfCoordInfo = data.coord_info;
+                    dxfTransformDirty = false;
 
                     // (shape detail cards removed — the selectable 组N list in Step 3 covers this)
 
@@ -641,6 +740,7 @@
                         dxfTransformed = data.transformed;
                         document.getElementById('panelAssign').classList.remove('disabled');
                         renderDxfShapes();
+                        renderGroupsList();
                     } else {
                         // Manual mode
                         document.getElementById('manualGeoRef').style.display = 'block';
@@ -650,6 +750,9 @@
                         addAnchorRow();
                         addAnchorRow();
                     }
+                    setDxfMoveMode(false);
+                    dxfUploadBusy = false;
+                    if (window.ZoneDxfMatches) window.ZoneDxfMatches.geometryReady(true);
                 } else {
                     document.getElementById('uploadStatus').innerHTML =
                         '<div class="status-msg error">' + (data.message || '上传失败') + '</div>';
@@ -658,11 +761,13 @@
             .catch(function(err) {
                 document.getElementById('uploadStatus').innerHTML =
                     '<div class="status-msg error">网络错误: ' + err.message + '</div>';
-            });
+            }).finally(function() { dxfUploadBusy = false; if (window.ZoneDxfMatches) window.ZoneDxfMatches.geometryReady(false); });
     }
 
     // ── Anchor management ──
     window.addAnchorRow = function() {
+        if (blockZoneDraftChange()) return;
+        if (dxfAssignmentBusy) return;
         const container = document.getElementById('anchorContainer');
         const idx = container.querySelectorAll('.anchor-row').length;
         const row = document.createElement('div');
@@ -677,15 +782,21 @@
             '<input class="anchor-lat" placeholder="纬度" style="width:90px;padding:3px 5px;background:#f0f7f4;" readonly>' +
             '<input class="anchor-lng" placeholder="经度" style="width:90px;padding:3px 5px;background:#f0f7f4;" readonly>' +
             '<button class="btn btn-sm btn-secondary" style="padding:3px 7px;" onclick="startPickLatLng(this)" title="在地图上点击选取坐标"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-pin"/></svg></button>' +
-            '<span class="anchor-row-remove" onclick="this.closest(\'.anchor-row\').remove();renderAnchors();" style="cursor:pointer;color:#9B2226;font-size:1rem;">✕</span>' +
+            '<span class="anchor-row-remove" onclick="removeAnchorRow(this)" style="cursor:pointer;color:#9B2226;font-size:1rem;"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-close"/></svg></span>' +
             '</div>';
         container.appendChild(row);
+        if (dxfTransformed) invalidateMatches('锚点已更改，请重新配准并匹配。', true);
     };
+    window.removeAnchorRow = function(button) { if (dxfAssignmentBusy || blockZoneDraftChange()) return; button.closest('.anchor-row').remove(); renderAnchors(); invalidateMatches('锚点已更改，请重新配准并匹配。', true); };
+    document.getElementById('anchorContainer').addEventListener('input', function() { if (!blockZoneDraftChange()) invalidateMatches('锚点已更改，请重新配准并匹配。', true); });
 
     // Highlight the row currently being picked
     let activePickRow = null;
 
     window.startPickLatLng = function(btn) {
+        if (dxfAssignmentBusy || dxfUploadBusy || blockZoneDraftChange()) return;
+        if (window.ZoneDxfMatches) window.ZoneDxfMatches.showAll();
+        setDxfMoveMode(false);
         const row = btn.closest('.anchor-row');
         // If clicking the same button, cancel
         if (activePickRow === row) {
@@ -732,6 +843,7 @@
         const lng = e.latlng.lng.toFixed(7);
         activePickRow.querySelector('.anchor-lat').value = lat;
         activePickRow.querySelector('.anchor-lng').value = lng;
+        invalidateMatches('锚点已更改，请重新配准并匹配。', true);
         activePickRow.style.background = '';
         activePickRow = null;
         mapClickMode = null;
@@ -755,6 +867,7 @@
 
     // ── Preview / Confirm anchors ──
     window.previewTransform = function() {
+        if (dxfAssignmentBusy || dxfUploadBusy || blockZoneDraftChange()) return;
         const anchors = getAnchors();
         if (anchors.length < 2) {
             document.getElementById('geoRefStatus').innerHTML = '<div class="status-msg error">需要至少2个完整锚点</div>';
@@ -764,13 +877,21 @@
         const fd = new FormData();
         fd.append('action', 'preview_transform');
         fd.append('anchors', JSON.stringify(anchors));
+        invalidateMatches('正在更新配准，旧匹配已清除。', true);
+        const version = dxfGeometryVersion;
         fetch('', { method: 'POST', body: fd, headers: { 'X-CSRFToken': getCSRF() } })
             .then(function(r) { return r.json(); })
             .then(function(data) {
+                if (version !== dxfGeometryVersion) return;
                 if (data.success) {
                     dxfTransformed = data.transformed;
+                    dxfTransformDirty = false;
+                    _cumulOffLat = 0; _cumulOffLng = 0;
+                    setDxfMoveMode(false);
+                    document.getElementById('offsetInfo').textContent = '';
                     renderDxfShapes();
                     document.getElementById('geoRefStatus').innerHTML = '<div class="status-msg success">预览已更新</div>';
+                    if (window.ZoneDxfMatches) window.ZoneDxfMatches.geometryReady(true);
                 } else {
                     document.getElementById('geoRefStatus').innerHTML = '<div class="status-msg error">' + data.message + '</div>';
                 }
@@ -778,6 +899,7 @@
     };
 
     window.confirmAnchors = function() {
+        if (dxfAssignmentBusy || dxfUploadBusy || blockZoneDraftChange()) return;
         const anchors = getAnchors();
         if (anchors.length < 2) {
             document.getElementById('geoRefStatus').innerHTML = '<div class="status-msg error">需要至少2个完整锚点</div>';
@@ -787,15 +909,23 @@
         const fd = new FormData();
         fd.append('action', 'set_anchors');
         fd.append('anchors', JSON.stringify(anchors));
+        invalidateMatches('正在更新配准，旧匹配已清除。', true);
+        const version = dxfGeometryVersion;
         fetch('', { method: 'POST', body: fd, headers: { 'X-CSRFToken': getCSRF() } })
             .then(function(r) { return r.json(); })
             .then(function(data) {
+                if (version !== dxfGeometryVersion) return;
                 if (data.success) {
                     dxfTransformed = data.transformed;
+                    dxfTransformDirty = false;
+                    _cumulOffLat = 0; _cumulOffLng = 0;
+                    setDxfMoveMode(false);
+                    document.getElementById('offsetInfo').textContent = '';
                     renderDxfShapes();
                     document.getElementById('panelAssign').classList.remove('disabled');
                     document.getElementById('geoRefStatus').innerHTML = '<div class="status-msg success">配准成功！可以分配图形了</div>';
                     renderGroupsList();
+                    if (window.ZoneDxfMatches) window.ZoneDxfMatches.geometryReady(true);
                 } else {
                     document.getElementById('geoRefStatus').innerHTML = '<div class="status-msg error">' + data.message + '</div>';
                 }
@@ -816,7 +946,7 @@
             var onclick = isAssigned ? '' : ' onclick="selectGroup(\'' + g.id + '\')"';
             html += '<div class="shape-card" style="' + cardStyle + selected + '"' + onclick + '>';
             html += '<div class="shape-card-header">';
-            var prefix = isAssigned ? '✅ 已分配 ' : (isSelected ? '✅ ' : '⬜ ');
+            var prefix = isAssigned ? '已分配 ' : (isSelected ? '已选 ' : '未选 ');
             html += prefix + '<span class="shape-type">组 ' + (parseInt(g.id.replace('group_', '')) + 1) + '</span>';
             html += '<span class="shape-layer">' + (outerShape.entity_type || '?') + ' · ' + (outerShape.layer || '?') + '</span>';
             html += '<span class="shape-verts">' + (outerShape.vertex_count || '?') + '点</span>';
@@ -943,6 +1073,7 @@
     }
 
     window.selectGroup = function(gid) {
+        setDxfMoveMode(false);
         if (selectedGroupIds.has(gid)) {
             selectedGroupIds.delete(gid);
         } else {
@@ -993,6 +1124,8 @@
 
     // ── Assign shape ──
     window.assignSelectedShape = function() {
+        if (dxfAssignmentBusy || blockZoneDraftChange()) return;
+        setDxfMoveMode(false);
         const zoneCode = zoneInput.value.trim();
         if (!zoneCode) {
             document.getElementById('assignStatus').innerHTML = '<div class="status-msg error">请输入区域编号</div>';
@@ -1002,6 +1135,9 @@
             document.getElementById('assignStatus').innerHTML = '<div class="status-msg error">请先选择至少一个图形组</div>';
             return;
         }
+        dxfAssignmentBusy = true;
+        setDxfMoveMode(false);
+        document.getElementById('assignBtn').disabled = true;
         document.getElementById('assignStatus').innerHTML = '<div class="status-msg info">分配中...</div>';
         const fd = new FormData();
         fd.append('action', 'assign_shape');
@@ -1015,11 +1151,13 @@
             .then(function(r) { return r.json(); })
             .then(function(data) {
                 if (data.success) {
+                    if (window.ZoneDxfMatches) window.ZoneDxfMatches.legacyUpdated(data);
                     document.getElementById('assignStatus').innerHTML = '<div class="status-msg success">' + data.message + '</div>';
                     addAssignedItem(data);
                     // Mark the just-assigned groups as done (hidden on map), clear selection,
                     // and re-render WITHOUT refitting/zooming so the user can keep assigning others.
                     selectedGroupIds.forEach(function(gid) { assignedGroupIds.add(gid); });
+                    setDxfMoveMode(false);
                     selectedGroupIds.clear();
                     zoneInput.value = '';
                     renderDxfShapes(false);
@@ -1028,6 +1166,14 @@
                 } else {
                     document.getElementById('assignStatus').innerHTML = '<div class="status-msg error">' + data.message + '</div>';
                 }
+            }).catch(function(err) {
+                document.getElementById('assignStatus').innerHTML = '<div class="status-msg error">绑定失败，请重新尝试。</div>';
+                console.error(err);
+            }).finally(function() {
+                dxfAssignmentBusy = false;
+                document.getElementById('assignBtn').disabled = false;
+                setDxfMoveMode(false);
+                if (window.ZoneDxfMatches) window.ZoneDxfMatches.geometryReady(false);
             });
     };
 
@@ -1073,6 +1219,7 @@
     }
 
     window.confirmSave = function() {
+        if (blockZoneDraftChange()) return;
         var btn = document.getElementById('saveRow').querySelector('button');
         var orig = btn.textContent;
         btn.disabled = true;
@@ -1119,6 +1266,7 @@
     };
 
     window.switchDxfSource = function(code, source) {
+        if (dxfAssignmentBusy || blockZoneDraftChange()) return;
         var fd = new FormData();
         fd.append('action', 'switch_source');
         fd.append('zone_code', code);
@@ -1127,6 +1275,7 @@
             .then(function(r) { return r.json(); })
             .then(function(data) {
                 if (data.success) {
+                    if (window.ZoneDxfMatches) window.ZoneDxfMatches.legacyUpdated(data);
                     // Update local data
                     var z = allZones.find(function(z) { return z.code === code; });
                     if (z) z.boundary_source = source;
@@ -1139,6 +1288,7 @@
     };
 
     window.switchSource = function(zoneCode, source) {
+        if (dxfAssignmentBusy || blockZoneDraftChange()) return;
         const fd = new FormData();
         fd.append('action', 'switch_source');
         fd.append('zone_code', zoneCode);
@@ -1147,6 +1297,7 @@
             .then(function(r) { return r.json(); })
             .then(function(data) {
                 if (data.success) {
+                    if (window.ZoneDxfMatches) window.ZoneDxfMatches.legacyUpdated(data);
                     const item = assignedItems.find(function(a) { return a.zone_code === zoneCode; });
                     if (item) {
                         item.source = source;
@@ -1156,9 +1307,74 @@
             });
     };
 
+    // The batch-review module shares the existing map and never reloads this page.
+    window.ZoneDxfBridge = {
+        map: map, zones: allZones, csrf: getCSRF,
+        state: function() { return {ready: !!(dxfTransformed && dxfGroups && !dxfTransformDirty && !dxfUploadBusy), busy: dxfAssignmentBusy || dxfUploadBusy, version: dxfGeometryVersion, transformed: dxfTransformed}; },
+        lock: function() { setDxfMoveMode(false); cancelPick(); },
+        scopedDragging: function(value) {
+            if (value) { setDxfMoveMode(false); cancelPick(); }
+            dxfScopedDragging = !!value;
+            setDxfMoveMode(false);
+        },
+        busy: function(value) {
+            dxfAssignmentBusy = value;
+            fileInput.disabled = value;
+            document.getElementById('assignBtn').disabled = value;
+            document.querySelectorAll('#panelGeoRef input, #panelGeoRef button').forEach(function(el) { el.disabled = value; });
+            anchorLayerGroup.eachLayer(function(layer) { if (layer.dragging) { if (value) layer.dragging.disable(); else layer.dragging.enable(); } });
+            setDxfMoveMode(false);
+        },
+        comparison: function(active) {
+            dxfCompareActive = active;
+            setDxfMoveMode(false);
+            if (active) {
+                [refLayerGroup, refLabelLayer, dxfLayerGroup, anchorLayerGroup].forEach(function(layer) { if (map.hasLayer(layer)) map.removeLayer(layer); });
+            } else {
+                renderRefZones(); renderDxfShapes(false);
+                if (!map.hasLayer(anchorLayerGroup)) map.addLayer(anchorLayerGroup);
+            }
+        },
+        groupBoundary: function(ids) {
+            var polygons = [];
+            (ids || []).forEach(function(id) {
+                var group = (dxfGroups || []).find(function(item) { return item.id === id; });
+                if (!group) return;
+                var shapeIds = Array.from(new Set(getGroupShapeIds(group))), rings = [];
+                shapeIds.forEach(function(shapeId) {
+                    var shape = (dxfTransformed || []).find(function(item) { return item.id === shapeId; });
+                    if (shape) rings.push(shape.vertices_latlng.map(function(point) { return [point.lat, point.lng]; }));
+                });
+                if (rings.length) polygons.push(rings);
+            });
+            return polygons;
+        },
+        update: function(rows, usedGroups) {
+            (rows || []).forEach(function(item) {
+                var zone = allZones.find(function(z) { return String(z.id) === String(item.zone_id || item.id); });
+                if (!zone) return;
+                Object.assign(zone, item, {has_dxf_boundary: !!(item.has_dxf || item.has_dxf_boundary || item.dxf_boundary_points && item.dxf_boundary_points.length)});
+                var reference = allDrawnZones.find(function(z) { return String(z.id) === String(zone.id); });
+                var boundary = zone.boundary_source === 'dxf' ? zone.dxf_boundary_points : zone.manual_boundary_points;
+                if (!reference && boundary && boundary.length) { reference = {id:zone.id,code:zone.code,name:zone.name}; allDrawnZones.push(reference); }
+                if (reference && boundary) {
+                    reference.boundary_points = boundary;
+                    reference.label_lat = zone.label_lat;
+                    reference.label_lng = zone.label_lng;
+                }
+            });
+            (usedGroups || []).forEach(function(id) { assignedGroupIds.add(id); });
+            renderRefZones(); renderDxfShapes(false); renderGroupsList();
+            var historyCode = document.getElementById('dxfHistorySelect').value;
+            populateDxfHistory(); document.getElementById('dxfHistorySelect').value = historyCode; showDxfHistory();
+            setDxfMoveMode(false);
+        }
+    };
+
     // (Session DXF auto-restore on page load removed — it confused users. Each
     //  visit starts fresh; re-upload the DXF to resume.)
 
 })();
 </script>
+<script src="{% static 'js/zone-dxf-matches.js' %}?v=20261113zonetune1"></script>
 {% endblock %}

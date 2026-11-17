@@ -108,8 +108,8 @@
 #ivTreeV2 .jstree-anchor .jstree-icon { background-image:none !important; background-position:0 0 !important;
                                          width:18px !important; height:18px !important;
                                          font-size:1rem; line-height:18px; }
-#ivTreeV2 .iv-folder > .jstree-anchor .jstree-icon::before { content:'📂'; }
-#ivTreeV2 .iv-leaf   > .jstree-anchor .jstree-icon::before { content:'🏷️'; }
+#ivTreeV2 .iv-folder > .jstree-anchor .jstree-icon::before { content:''; }
+#ivTreeV2 .iv-leaf   > .jstree-anchor .jstree-icon::before { content:''; }
 #ivTreeV2 .jstree-node > .jstree-icon { background-image:none !important;
                                          width:16px !important; height:16px !important;
                                          color:#6b7280; font-size:.7rem; line-height:16px;
@@ -251,6 +251,8 @@
 .po-planned-name { font-size: .88rem; color: #333; }
 .po-planned-path { font-size: .72rem; color: #aaa; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .po-planned-controls { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.po-planned-row { flex-wrap:wrap; }
+.po-planned-controls { flex-wrap:wrap; margin-left:auto; }
 .po-planned-qty { width: 56px; padding: 4px 6px; border: 1px solid #d8d8d8; border-radius: 6px; font-size: .82rem; text-align: center; }
 .po-planned-unit-ro { font-size: .8rem; color: #888; white-space: nowrap; }
 .po-planned-del { width: 24px; height: 24px; border: none; background: #f0f0f0; border-radius: 50%; color: #c0392b; cursor: pointer; font-size: .95rem; line-height: 1; flex-shrink: 0; }
@@ -399,17 +401,18 @@ table.iv-ledger .lvl-tag.warn { background: #fdf6ec; color: #cc7722; }
 
   {# ── Tab switcher ── #}
   <div class="app-tabs">
-    <button type="button" class="app-tab active" data-tab="ledger" onclick="ivSwitchTab('ledger')">出入库记录</button>
+    <button type="button" class="app-tab {% if active_tab == 'ledger' %}active{% endif %}" data-tab="ledger" onclick="ivSwitchTab('ledger')">出入库记录</button>
     {% if is_full_access %}
-    <button type="button" class="app-tab" data-tab="alert" onclick="ivSwitchTab('alert')">库存警告</button>
-    <button type="button" class="app-tab" data-tab="tree" onclick="ivSwitchTab('tree')">库存目录</button>
-    <button type="button" class="app-tab" data-tab="orders" onclick="ivSwitchTab('orders')">采购订单</button>
+    <button type="button" class="app-tab {% if active_tab == 'alert' %}active{% endif %}" data-tab="alert" onclick="ivSwitchTab('alert')">库存警告</button>
+    <button type="button" class="app-tab {% if active_tab == 'tree' %}active{% endif %}" data-tab="tree" onclick="ivSwitchTab('tree')">库存目录</button>
+    <button type="button" class="app-tab {% if active_tab == 'orders' %}active{% endif %}" data-tab="orders" onclick="ivSwitchTab('orders')">采购订单</button>
     {% endif %}
-    <button type="button" class="app-tab" data-tab="estimate" onclick="ivSwitchTab('estimate')">预估消耗确认{% if pending_estimates %}<span class="app-tab-badge">{{ pending_estimates|length }}</span>{% endif %}</button>
+    <button type="button" class="app-tab {% if active_tab == 'estimate' %}active{% endif %}" data-tab="estimate" onclick="ivSwitchTab('estimate')">预估消耗确认{% if estimate_count %}<span class="app-tab-badge">{{ estimate_count }}</span>{% endif %}</button>
   </div>
 
   {# ── Tab 1: transactions ledger (all 出入库 records in range) ── #}
-  <div class="app-tab-content active" id="ivTabLedger">
+  {% include 'core/_pagination.html' %}
+  <div class="app-tab-content {% if active_tab == 'ledger' %}active{% endif %}" id="ivTabLedger">
   {% if is_full_access %}
   {# ── 待确认流水（一线提交、待经理台账确认）—— 固定在最顶部：经理要处理的队列排在历史记录前面 ── #}
   <div class="iv-ledger-card" id="ivPendingCard" style="border-left:3px solid #f0ad4e;">
@@ -463,9 +466,9 @@ table.iv-ledger .lvl-tag.warn { background: #fdf6ec; color: #cc7722; }
   <div class="iv-ledger-card"{% if is_full_access %} style="margin-top:12px;"{% endif %}>
     <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:4px;">
       <h2 style="margin:0;">出入库记录</h2>
-      {% if is_full_access %}<a href="{% url 'core:inventory_transactions_export' %}?from={{ date_from }}&to={{ date_to }}" class="export-btn">⬇ 导出Excel</a>{% endif %}
+      {% if is_full_access %}<a href="{% url 'core:inventory_transactions_export' %}?from={{ date_from }}&to={{ date_to }}" class="export-btn"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-download"/></svg> 导出Excel</a>{% endif %}
     </div>
-    <p class="iv-hint">{% if is_full_access %}范围 {{ date_from }} ~ {{ date_to }} · 共 {{ txns|length }} 条流水{% else %}仅显示你提交的出入库记录 · {{ date_from }} ~ {{ date_to }} · 共 {{ txns|length }} 条{% endif %} · 点击「记录范围」日期可切换</p>
+    <p class="iv-hint">{% if is_full_access %}范围 {{ date_from }} ~ {{ date_to }} · 本页 {{ txns|length }} 条流水{% else %}仅显示你提交的出入库记录 · {{ date_from }} ~ {{ date_to }} · 本页 {{ txns|length }} 条{% endif %} · 点击「记录范围」日期可切换</p>
 
     {# Reuse the same date-range filter to reload the page with a new window. #}
     <div class="iv-range">
@@ -603,7 +606,7 @@ table.iv-ledger .lvl-tag.warn { background: #fdf6ec; color: #cc7722; }
   </div>{# /#ivTabLedger #}
 
   {# ── Tab 2: stock alert (warning / alert levels with slider) ── #}
-  <div class="app-tab-content" id="ivTabAlert">
+  <div class="app-tab-content {% if active_tab == 'alert' %}active{% endif %}" id="ivTabAlert">
   <div class="iv-alert-card">
     <h2>库存警告</h2>
     <div class="iv-alert-ctrl">
@@ -635,7 +638,7 @@ table.iv-ledger .lvl-tag.warn { background: #fdf6ec; color: #cc7722; }
   </div>{# /#ivTabAlert #}
 
   {# ── Tab 3: inventory tree (stock editing) ── #}
-  <div class="app-tab-content" id="ivTabTree">
+  <div class="app-tab-content {% if active_tab == 'tree' %}active{% endif %}" id="ivTabTree">
   <div class="iv-card">
     <div class="iv-card-head">
       <h2>库存目录</h2>
@@ -644,9 +647,9 @@ table.iv-ledger .lvl-tag.warn { background: #fdf6ec; color: #cc7722; }
         {% if is_full_access %}
         <button type="button" class="btn-sm btn-secondary" onclick="ivJstreeOpenCreate(null)">+ 新建根目录</button>
         {% endif %}
-        <a href="{% url 'core:inventory_export_excel' %}" class="btn-sm btn-secondary" style="text-decoration:none;">⬇ 导出Excel</a>
+        <a href="{% url 'core:inventory_export_excel' %}" class="btn-sm btn-secondary" style="text-decoration:none;"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-download"/></svg> 导出Excel</a>
         {% if is_full_access %}
-        <button type="button" class="btn-sm btn-secondary" onclick="ivImportOpen()">⬆ 导入Excel</button>
+        <button type="button" class="btn-sm btn-secondary" onclick="ivImportOpen()"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-upload"/></svg> 导入Excel</button>
         {% endif %}
       </div>
     </div>
@@ -665,10 +668,10 @@ table.iv-ledger .lvl-tag.warn { background: #fdf6ec; color: #cc7722; }
   </div>{# /#ivTabTree #}
 
   {# ── Tab 4: 采购订单 ── #}
-  <div class="app-tab-content" id="ivTabOrders">
+  <div class="app-tab-content {% if active_tab == 'orders' %}active{% endif %}" id="ivTabOrders">
     <div class="po-top">
-      <input type="text" id="poSearch" class="po-search" placeholder="搜索 灌溉订单编号 / PO号 / 项目名称…">
-      <a href="{% url 'core:purchase_order_export_excel' %}" class="btn-sm btn-secondary">⬇ 导出Excel</a>
+      <input type="text" id="poSearch" class="po-search" value="{{ po_query }}" placeholder="筛选本页；按 Enter 搜索全部订单">
+      <a href="{% url 'core:purchase_order_export_excel' %}" class="btn-sm btn-secondary"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-download"/></svg> 导出Excel</a>
       <button type="button" class="btn-sm btn-primary" onclick="poOpenCreate()" style="margin-left:auto;">+ 新建订单</button>
     </div>
     <div id="poList"></div>
@@ -676,7 +679,7 @@ table.iv-ledger .lvl-tag.warn { background: #fdf6ec; color: #cc7722; }
   </div>
 
   {# ── Tab 5: 预估消耗确认 (pending estimated-consumption transactions) ── #}
-  <div class="app-tab-content" id="ivTabEstimate">
+  <div class="app-tab-content {% if active_tab == 'estimate' %}active{% endif %}" id="ivTabEstimate">
   <div class="iv-ledger-card">
     <h2 style="margin:0 0 4px;">预估消耗确认</h2>
     <p class="iv-hint">此处显示提交为「预估消耗」的出库-项目流水。确认时可调整各物料实际数量：经理确认后立即扣减库存并计入项目，一线确认后仍需经理在台账确认才扣；作废则直接删除。</p>
@@ -744,6 +747,7 @@ table.iv-ledger .lvl-tag.warn { background: #fdf6ec; color: #cc7722; }
       <input type="hidden" id="poFproject_name">
       <input type="hidden" id="poFproject_code">
       <label class="iv-field">计划采购物料</label>
+      <p style="font-size:.78rem;color:var(--color-text-muted);">单价选填；保存后同步为库存目录当前价格，并保留历史。留空不更新目录价格，请保持相同计价单位及含税／未税口径。</p>
       <div id="poPlannedList"></div>
       <div id="poAddTrigger" style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border:1px dashed #bbb;border-radius:8px;cursor:pointer;background:#fff;font-size:.9rem;margin-top:6px;">
         <span style="color:#2D6A4F;">+ 添加物料</span><span style="font-size:.8em;color:#999;">▶</span>
@@ -767,8 +771,8 @@ table.iv-ledger .lvl-tag.warn { background: #fdf6ec; color: #cc7722; }
       <div id="ivCreateParentLabel" style="font-size:.8rem;color:#999;margin-bottom:10px;"></div>
       <label>类型</label>
       <div class="iv-create-type-row">
-        <button type="button" class="iv-create-type active" data-type="category" onclick="ivSetCreateType('category')">📁 目录</button>
-        <button type="button" class="iv-create-type" data-type="part" onclick="ivSetCreateType('part')">🔹 部件</button>
+        <button type="button" class="iv-create-type active" data-type="category" onclick="ivSetCreateType('category')"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-folder"/></svg> 目录</button>
+        <button type="button" class="iv-create-type" data-type="part" onclick="ivSetCreateType('part')"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-box"/></svg> 部件</button>
       </div>
       <label>名称</label>
       <input type="text" id="ivCreateName" placeholder="名称" autocomplete="off">
@@ -902,6 +906,7 @@ function ivAlertRefresh() {
 
 // Tab switching (出入库记录 / 库存警告 / 库存目录 / 采购订单 / 预估消耗确认).
 function ivSwitchTab(tab) {
+    if (tab !== '{{ active_tab|escapejs }}') { var url = new URL(location.href); url.searchParams.set('tab',tab); location.assign(url.href); return; }
     document.querySelectorAll('.app-tab').forEach(function (t) { t.classList.toggle('active', t.dataset.tab === tab); });
     document.querySelectorAll('.app-tab-content').forEach(function (c) {
         c.classList.toggle('active', c.id === 'ivTab' + tab.charAt(0).toUpperCase() + tab.slice(1));
@@ -1251,7 +1256,7 @@ function poOpenEdit(id) {
     document.getElementById('poFproject_code').value = p.project_code;
     // Hydrate the planned-materials cart from the PO's planned_lines.
     _poPlannedCart = (p.planned_lines || []).map(function (ln) {
-        return { id: ln.category_id, name: ln.name, path: ln.path, quantity: ln.qty, unit: ln.unit || '' };
+        return { id: ln.category_id, name: ln.name, path: ln.path, quantity: ln.qty, unit: ln.unit || '', unit_price: ln.unit_price || '' };
     });
     _poRenderPlanned();
     document.getElementById('poMask').classList.add('open');
@@ -1270,7 +1275,7 @@ function poSubmit() {
     fd.append('project_id', document.getElementById('poFproject').value.trim());
     // Planned-materials cart → JSON lines (same contract as the 入库 cart).
     var lines = _poPlannedCart.filter(function (c) { return (c.quantity || 0) > 0; })
-        .map(function (c) { return { category: c.id, quantity: c.quantity, unit: c.unit || '' }; });
+        .map(function (c) { return { category: c.id, quantity: c.quantity, unit: c.unit || '', unit_price: c.unit_price ?? '' }; });
     fd.append('lines', JSON.stringify(lines));
     var url = _poEditingId ? '/purchase-orders/' + _poEditingId + '/edit/' : '/purchase-orders/create/';
     var btn = document.getElementById('poDlgSubmit');
@@ -1335,6 +1340,7 @@ function _poRenderPlanned() {
                 (c.path && c.path !== c.name ? '<div class="po-planned-path">' + _poEsc(c.path) + '</div>' : '') +
             '</div>' +
             '<div class="po-planned-controls">' +
+                '<label style="font-size:.75rem;">单价 <input aria-label="采购单价" type="number" min="0" step="0.01" placeholder="选填" class="po-planned-price po-planned-qty" style="width:86px;" value="' + _poEsc(c.unit_price ?? '') + '" data-idx="' + idx + '"></label>' +
                 '<input type="number" min="1" step="1" class="po-planned-qty" value="' + c.quantity + '" data-idx="' + idx + '">' +
                 '<span class="po-planned-unit-ro">' + _poEsc(c.unit || '—') + '</span>' +
                 '<button type="button" class="po-planned-del" data-idx="' + idx + '">×</button>' +
@@ -1342,7 +1348,10 @@ function _poRenderPlanned() {
         '</div>';
     }).join('');
     box.querySelectorAll('.po-planned-qty').forEach(function (inp) {
-        inp.addEventListener('input', function () { _poPlannedCart[this.dataset.idx].quantity = parseInt(this.value, 10) || 0; });
+        inp.addEventListener('input', function () {
+            if(this.classList.contains('po-planned-price')) _poPlannedCart[this.dataset.idx].unit_price=this.value;
+            else _poPlannedCart[this.dataset.idx].quantity = parseInt(this.value, 10) || 0;
+        });
     });
     box.querySelectorAll('.po-planned-del').forEach(function (btn) {
         btn.addEventListener('click', function () { _poPlannedCart.splice(this.dataset.idx, 1); _poRenderPlanned(); });
@@ -1379,7 +1388,7 @@ function poOpenTreeSheet(path) {
         var isLeaf = n.node_type === 'part' || (!n.children || !n.children.length);
         var row = document.createElement('div');
         row.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:12px 10px;border-bottom:1px solid #f5f5f5;cursor:pointer;';
-        row.innerHTML = '<span style="font-size:0.95em;">' + (isLeaf ? '🔹 ' : '📁 ') + _poEsc(n.name) +
+        row.innerHTML = '<span style="font-size:0.95em;">' + (isLeaf ? '<svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-box"/></svg> ' : '<svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-folder"/></svg> ') + _poEsc(n.name) +
             (isLeaf ? ' <span style="font-size:0.72em;color:#999;">库存 ' + (n.current_stock || 0) + '</span>' : '') + '</span>' +
             (isLeaf ? '<span style="font-size:0.8em;color:#2D6A4F;font-weight:600;">+ 选择</span>' : '<span style="color:#bbb;">▶</span>');
         row.addEventListener('click', function () {
@@ -1421,6 +1430,7 @@ function _poNodePath(id) {
 }
 
 document.getElementById('poSearch').addEventListener('input', poApplyFilter);
+document.getElementById('poSearch').addEventListener('keydown', function(e) { if (e.key === 'Enter') { var u=new URL(location.href);u.searchParams.set('po_q',this.value);u.searchParams.delete('orders_page');location.assign(u.href); } });
 document.getElementById('poAddTrigger').addEventListener('click', function () { poOpenTreeSheet([]); });
 document.getElementById('poMask').addEventListener('click', function (e) {
     if (e.target === this) poCloseModal();
@@ -1702,7 +1712,7 @@ function ivJstreeRenderDetail(d) {
   var panel = document.getElementById('ivDetail');
   var isMgr = {% if is_full_access %}true{% else %}false{% endif %};
   var lowAttr = n.is_low ? ' data-low="1"' : '';
-  var lowWarn = n.is_low ? '<div class="iv-low-warn">⚠ 库存低于最低量</div>' : '';
+  var lowWarn = n.is_low ? '<div class="iv-low-warn"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-alert"/></svg> 库存低于最低量</div>' : '';
   var mainTag = n.is_main_material ? '<span class="iv-detail-main-tag">主材</span>' : '';
   var txnRows = txns.map(function (t) {
     var cls = t.quantity >= 0 ? 'pos' : 'neg';
@@ -1940,7 +1950,7 @@ function ivImportRenderPreview(d) {
       '<span style="color:#9ca3af;margin-left:6px;">' + esc(parts.join(' · ')) + '</span></div>';
   }).join('');
   var errs = (s.errors || []).map(function (e) {
-    return '<div style="color:#b3261e;padding:2px 0;">⚠ ' + esc(e) + '</div>';
+    return '<div style="color:#b3261e;padding:2px 0;"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-alert"/></svg> ' + esc(e) + '</div>';
   }).join('');
   document.getElementById('ivImportChanges').innerHTML = html + errs || '<div style="color:#9ca3af;">无变更</div>';
   // Move to step 2 + show confirm button.

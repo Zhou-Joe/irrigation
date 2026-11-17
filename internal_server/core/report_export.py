@@ -25,7 +25,7 @@ XLSX_CT = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
 
 # All supported report types (mirrors EmailReportConfig.REPORT_CHOICES keys).
 REPORT_TYPES = [
-    'work_reports', 'irrigation', 'projects', 'inventory_catalog',
+    'work_reports', 'difficult_workorders', 'irrigation', 'maxicom_weather', 'projects', 'inventory_catalog',
     'inventory_txn', 'purchase_orders', 'zones',
 ]
 
@@ -33,7 +33,9 @@ REPORT_TYPES = [
 # command's _resolve_builder table. Used for email subjects and API error text.
 REPORT_TYPE_LABELS = {
     'work_reports': '维修工单记录',
+    'difficult_workorders': '疑难问题跟进报表',
     'irrigation': '灌溉运行报表',
+    'maxicom_weather': '灌溉气象日报',
     'projects': '项目管理',
     'inventory_catalog': '库存目录',
     'inventory_txn': '库存出入库流水',
@@ -56,9 +58,13 @@ def resolve_builder(report_type):
     ``excel_exports`` never blocks Django from booting.
     """
     from core import excel_exports as ex
+    from core.difficult_report import build_difficult_workorders_excel
+    from core.weather_report import build_maxicom_weather_excel
     table = {
         'work_reports': (ex.build_work_reports_excel, '维修工单记录'),
+        'difficult_workorders': (build_difficult_workorders_excel, '疑难问题跟进报表'),
         'irrigation': (ex.build_irrigation_report_excel, '灌溉运行报表'),
+        'maxicom_weather': (build_maxicom_weather_excel, '灌溉气象日报'),
         'projects': (ex.build_project_export_excel, '项目管理'),
         'inventory_catalog': (ex.build_inventory_catalog_excel, '库存目录'),
         'inventory_txn': (ex.build_inventory_transactions_excel, '库存出入库流水'),
@@ -150,6 +156,15 @@ def build_report(report_type, start=None, end=None, user=None, ccu_ids=None):
     if report_type in DATELESS_REPORT_TYPES:
         return build_fn()
 
+    if report_type == 'maxicom_weather':
+        if start is None and end is None:
+            return build_fn()  # Latest 30 complete calendar days.
+        if start is None:
+            start = end - timedelta(days=29)
+        if end is None:
+            end = start
+        return build_fn(start, end)
+
     # Default to last 30 days when no window supplied (matches dashboard).
     if start is None and end is None:
         end = timezone.localdate()
@@ -165,7 +180,7 @@ def build_report(report_type, start=None, end=None, user=None, ccu_ids=None):
         from core.irrig_time import irrigation_day_bounds
         df, dt = irrigation_day_bounds(start, end)
         return build_fn(df, dt, ccu_ids=ccu_ids)
-    if report_type == 'work_reports':
+    if report_type in {'work_reports', 'difficult_workorders'}:
         if user is None:
             from django.contrib.auth import get_user_model
             User = get_user_model()
@@ -192,9 +207,10 @@ def build_all_attachments(report_types, frequency, today, report_windows=None,
     ``report_windows`` is a ``{report_type: {days_start,[hour_start],days_end,
     [hour_end]}}`` map — each date-windowed report's own start/end, expressed
     RELATIVE to the send instant:
-      * irrigation       → hour-precise: [send_now - days_start days, hour_start:00]
-                                         to [send_now - days_end days, hour_end:59]
-                           (compact YYYYMMDDHHMM strings)
+      * irrigation       → explicit local start/end times, default yesterday
+                           08:00 -> today 08:00. Legacy hour-only settings keep
+                           their inclusive ending hour (…:59:59).
+      * maxicom_weather  → daily weather dates, last 30 days through yesterday
       * work_reports     → day-granular (its data has no hour): date objects
                            [today - days_start, today - days_end]
       * inventory_txn    → day-granular ISO date strings
@@ -221,14 +237,19 @@ def build_all_attachments(report_types, frequency, today, report_windows=None,
             win = report_windows.get(rt) or {}
             if rt == 'irrigation':
                 # Hour-precise window relative to the send instant.
-                ds = int(win.get('days_start', 1)); hs = int(win.get('hour_start', 0))
-                de = int(win.get('days_end', 0)); he = int(win.get('hour_end', 23))
-                start_dt = (now - timedelta(days=ds)).replace(hour=hs, minute=0, second=0, microsecond=0)
-                end_dt = (now - timedelta(days=de)).replace(hour=he, minute=59, second=0, microsecond=0)
-                df = start_dt.strftime('%Y%m%d%H%M')
-                dt = end_dt.strftime('%Y%m%d%H%M')
+                from core.report_windows import irrigation_email_window
+                if not win:
+                    # Only newly saved configurations take the 08:00 default.
+                    # Existing configs with no stored window used whole hours.
+                    win = {'days_start': 1, 'hour_start': 0, 'days_end': 0, 'hour_end': 23}
+                df, dt = irrigation_email_window(win, now)
                 fname, buf = build_fn(df, dt, ccu_ids=ccu_ids)
-            elif rt == 'work_reports':
+            elif rt == 'maxicom_weather':
+                ds = int(win.get('days_start', 30)); de = int(win.get('days_end', 1))
+                if not 0 <= de <= ds <= 36500:
+                    raise ValueError('气象报表日期范围无效')
+                fname, buf = build_fn(today - timedelta(days=ds), today - timedelta(days=de))
+            elif rt in {'work_reports', 'difficult_workorders'}:
                 # Day-granular: WorkReport.date is a DateField, hours are ignored.
                 ds = int(win.get('days_start', 1)); de = int(win.get('days_end', 0))
                 start_d = today - timedelta(days=ds)

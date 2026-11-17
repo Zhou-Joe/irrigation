@@ -1,0 +1,123 @@
+{
+  "ai_thread_owner": {
+    "another_user_thread_accepted": true
+  },
+  "ai_checkpoint_media": {
+    "field_worker_downloaded_fake_checkpoint": true,
+    "status": 200
+  },
+  "water_api_global_context": {
+    "create_status": 201,
+    "legacy_zone_id": null,
+    "admin_context_raises": "AttributeError"
+  },
+  "api_workreports": "Invalid field name(s) given in select_related: 'info_source', 'work_category'. Choices are: worker, location, zone_location, resolved_by_pm, parent_work_report, pm_generation",
+  "registration_atomicity": {
+    "user_exists_after_profile_failure": true,
+    "request_status": "pending"
+  },
+  "fractional_inventory": {
+    "input": 1.5,
+    "stored_line": 1,
+    "raw_stock": 98.5,
+    "expected_from_stored_line": 99
+  },
+  "landmark_write_acl": {
+    "department_user_deleted_map_landmark": true,
+    "status": 200
+  },
+  "workreport_edit_acl": {
+    "department_edits_other_worker": true,
+    "status": 302
+  },
+  "inactive_user_token": {
+    "django_user_active": false,
+    "token_accepted": true
+  },
+  "email_duplicate_slot": {
+    "runs_in_same_slot": 2,
+    "simulated_sends": 2,
+    "real_emails_sent": 0
+  },
+  "email_partial_failure": {
+    "requested_attachments": 2,
+    "built": 1,
+    "failed": 1,
+    "recorded_status": "success",
+    "real_emails_sent": 0
+  },
+  "inventory_confirmation_interleaving": {
+    "schedule": "two pending SELECTs, then two serialized writes",
+    "stored_quantity": 5,
+    "stock_after": 90,
+    "expected_stock": 95
+  },
+  "landmark_active_dxf": {
+    "identical_active_zone_and_landmark_polygons": true,
+    "assignments": 0
+  },
+  "water_api_dept": {
+    "missing_worker_profile_causes_error": true
+  },
+  "po_removed_receipt": {
+    "completed": true,
+    "receipt_status": "removed"
+  },
+  "project_pending_count": {
+    "counted_qty": 5,
+    "ledger_status": "pending",
+    "stock": 100
+  },
+  "ai_python_isolation": {
+    "read_parent_directory_sentinel": true,
+    "real_secrets_accessed": false
+  },
+  "patch_api_n_plus_one": {
+    "patches": 8,
+    "additional_region_queries": 8,
+    "total_queries": 11
+  },
+  "water_reverse_time": {
+    "accepted": true,
+    "end_before_start": true
+  },
+  "settings_n_plus_one": {
+    "added_patches": 12,
+    "patches_including_migration_seeds": 40,
+    "individual_child_count_queries": 40,
+    "total_view_queries_without_template": 47
+  },
+  "water_self_approval": {
+    "status": "approved",
+    "approver_id": null,
+    "processed_at": "None"
+  },
+  "inventory_edit_acl": {
+    "other_worker_changed_confirmed_txn": true,
+    "stock": 91,
+    "confirmation": "confirmed"
+  },
+  "pwa_role_navigation": {
+    "department_offered_inventory": true,
+    "destination_status": 302,
+    "redirect": "/"
+  },
+  "workreport_cursor": {
+    "rows": 31,
+    "first": 30,
+    "second": 0,
+    "missed": 31
+  },
+  "inventory_estimate_acl": {
+    "other_worker_deleted_estimate": true
+  },
+  "zone_geo": {
+    "valid_manual_boundary": true,
+    "returned_zones": []
+  },
+  "zone_partial_update": {
+    "status": 200,
+    "before_points": 4,
+    "after_points": 0
+  }
+}

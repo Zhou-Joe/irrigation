@@ -49,7 +49,7 @@
         toast('当前离线，尚未提交。请保持此页面，恢复网络后再试。');
         return false;
     }
-    window.IrrigationPWA = {openLauncher: openLauncher, canSubmit: canSubmit,
+    window.IrrigationPWA = {notify:toast,openLauncher: openLauncher, canSubmit: canSubmit,hasUnsavedChanges:()=>dirty,
         markClean: function () { setDirty(false); }, markDirty: function () { setDirty(true); }};
     // The native dialog supersedes the old CSS-only dropdown; remove its
     // off-screen links from keyboard focus and accessibility navigation.
@@ -68,7 +68,7 @@
     });
     if (launcher) document.getElementById('pwaModuleSearch').addEventListener('input', function (event) { filterModules(event.target.value); });
     var pathname = window.location.pathname;
-    var active = pathname === '/app/' ? 'home' : pathname === '/' ? 'map' : pathname.indexOf('/work-reports/') === 0 ? 'work' : pathname.indexOf('/inventory/') === 0 ? 'stock' : null;
+    var active = pathname === '/app/' ? 'home' : pathname === '/' ? 'map' : pathname.indexOf('/work-reports/') === 0 ? 'work' : pathname.indexOf('/inventory/') === 0 ? 'stock' : pathname.indexOf('/ops/reports/') === 0 ? 'pest-data' : null;
     document.querySelectorAll('[data-pwa-nav]').forEach(function (link) {
         if (link.dataset.pwaNav === active) link.setAttribute('aria-current', 'page');
     });
@@ -128,7 +128,7 @@
         if (installCard) installCard.hidden = true;
     }
     function offerUpdate() {
-        if (registration && registration.waiting && navigator.serviceWorker.controller) document.getElementById('pwaUpdate').hidden = false;
+        document.getElementById('pwaUpdate').hidden = !(registration && registration.waiting && navigator.serviceWorker.controller);
     }
     if ('serviceWorker' in navigator && window.isSecureContext) {
         navigator.serviceWorker.register('/service-worker.js', {scope: '/', updateViaCache: 'none'}).then(function (reg) {
@@ -150,6 +150,7 @@
             setShellStatus('当前浏览器无法启用离线提示，请保持网络连接。');
         });
         navigator.serviceWorker.addEventListener('controllerchange', function () {
+            offerUpdate();
             if (reloadAfterUpdate) { reloadAfterUpdate = false; window.location.reload(); }
         });
         // Recheck on return from a shift break without a polling timer.
@@ -158,7 +159,7 @@
         });
     } else setShellStatus('当前环境不支持离线提示。请通过 HTTPS 在手机浏览器中打开。');
     document.getElementById('pwaUpdateBtn').addEventListener('click', function () {
-        if (!registration || !registration.waiting) return;
+        if (!registration || !registration.waiting) { offerUpdate();return; }
         if (window._woInflight) { toast('工单正在提交，请等待结果后再更新。'); return; }
         if (dirty && !window.confirm('有尚未提交的内容或照片，更新会关闭当前页面。确认放弃并更新？')) return;
         setDirty(false); reloadAfterUpdate = true; registration.waiting.postMessage({type: 'ACTIVATE_UPDATE'});

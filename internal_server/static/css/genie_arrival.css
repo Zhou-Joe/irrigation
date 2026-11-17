@@ -1,0 +1,6 @@
+[data-genie-arrival]{animation:genie-idle-float 4s ease-in-out infinite}
+[data-genie-arrival].is-arriving{animation:none!important}
+@keyframes genie-idle-float{50%{transform:translateY(-5px) rotate(2deg)}}
+@media(prefers-reduced-motion:reduce){[data-genie-arrival]{animation:none!important}}
+
+[data-genie-arrival].is-arriving [data-genie-idle]{visibility:hidden}

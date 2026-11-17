@@ -1,0 +1,43 @@
+{% extends 'core/base.html' %}{% load static %}
+{% block title %}反馈与建议 · FOS{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'css/feedback.css' %}?v=20261116">{% endblock %}
+{% block content %}
+<main class="feedback-page">
+  <header class="feedback-header"><span class="feedback-eyebrow">一起改进工作体验</span><h1>反馈与建议</h1><p>遇到的问题、希望增加的功能，都可以在这里告诉我们。</p></header>
+  {% for message in messages %}<div class="feedback-notice" role="status">{{ message }}</div>{% endfor %}
+  <div class="feedback-layout">
+    <section class="feedback-compose" aria-labelledby="feedbackComposeTitle">
+      <div class="feedback-compose-heading"><svg aria-hidden="true"><use href="#pwa-message"/></svg><h2 id="feedbackComposeTitle">分享你的想法</h2></div>
+      <p class="feedback-team-label">提交至 <strong>{{ feedback_team.business.name }} · {{ feedback_team.name }}</strong></p>
+      <form method="post" enctype="multipart/form-data" data-feedback-form>
+        {% csrf_token %}{{ feedback_form.submission_key }}{{ feedback_form.context_team }}
+        {% for error in feedback_form.non_field_errors %}<p class="feedback-error" role="alert">{{ error }}</p>{% endfor %}
+        <label for="{{ feedback_form.message.id_for_label }}">想反馈什么？</label>{{ feedback_form.message }}
+        {% for error in feedback_form.message.errors %}<p class="feedback-error" role="alert">{{ error }}</p>{% endfor %}
+        <div class="feedback-compose-meta"><span>无需选择类型，直接描述即可。</span><span data-feedback-count>0 / 5000</span></div>
+        <div class="feedback-upload"><label for="{{ feedback_form.photos.id_for_label }}"><svg aria-hidden="true"><use href="#pwa-camera"/></svg>添加照片 <span>（可选）</span></label>{{ feedback_form.photos }}<small>最多 5 张，每张不超过 10 MB；支持 JPG、PNG、WebP 等图片。</small></div>
+        {% for error in feedback_form.photos.errors %}<p class="feedback-error" role="alert">{{ error }}</p>{% endfor %}
+        <div class="feedback-previews" data-feedback-previews aria-live="polite"></div>
+        <button class="feedback-submit" type="submit">提交反馈 <span aria-hidden="true">↗</span></button>
+      </form>
+    </section>
+    <section class="feedback-stream" aria-labelledby="feedbackStreamTitle">
+      <div class="feedback-stream-heading"><h2 id="feedbackStreamTitle">团队反馈</h2><span>{{ feedback_page.paginator.count }} 条</span></div>
+      <nav class="feedback-filters" aria-label="按团队查看反馈">
+        <a href="{% url 'core:feedback' %}" class="{% if not selected_team %}is-selected{% endif %}" {% if not selected_team %}aria-current="page"{% endif %}>全部可见团队</a>
+        {% for team in feedback_teams %}<a href="?team={{ team.team_id }}" class="{% if selected_team == team.team_id|stringformat:'s' %}is-selected{% endif %}" {% if selected_team == team.team_id|stringformat:'s' %}aria-current="page"{% endif %}>{{ team.team__business__name }} · {{ team.team__name }} <span>{{ team.total }}</span></a>{% endfor %}
+      </nav>
+      {% for item in feedback_page %}
+      <article class="feedback-entry" id="feedback-{{ item.pk }}">
+        <header><span class="feedback-team-chip">{{ item.team.business.name }} · {{ item.team.name }}</span><time datetime="{{ item.created_at|date:'c' }}">{{ item.created_at|date:'Y-m-d H:i' }}</time></header>
+        <p class="feedback-entry-text">{{ item.message }}</p>
+        {% if item.photos.all %}<div class="feedback-photos">{% for photo in item.photos.all %}<a href="{% url 'core:feedback_photo' photo.pk %}" target="_blank" rel="noopener" aria-label="查看第 {{ forloop.counter }} 张反馈照片"><img src="{% url 'core:feedback_photo' photo.pk %}" alt="反馈说明照片 {{ forloop.counter }}" loading="lazy" width="180" height="130"></a>{% endfor %}</div>{% endif %}
+        <footer><svg aria-hidden="true"><use href="#pwa-user"/></svg>{% if item.author %}{{ item.author.get_full_name|default:item.author.username }}{% else %}已删除的账号{% endif %}</footer>
+      </article>
+      {% empty %}<div class="feedback-empty"><svg aria-hidden="true"><use href="#pwa-message"/></svg><h3>每一个建议，都值得被听见</h3><p>还没有反馈。分享一个想法，让日常工作更顺手。</p></div>{% endfor %}
+      {% if feedback_page.has_other_pages %}<nav class="feedback-pagination" aria-label="反馈分页">{% if feedback_page.has_previous %}<a href="?team={{ selected_team }}&amp;page={{ feedback_page.previous_page_number }}">上一页</a>{% endif %}<span>{{ feedback_page.number }} / {{ feedback_page.paginator.num_pages }}</span>{% if feedback_page.has_next %}<a href="?team={{ selected_team }}&amp;page={{ feedback_page.next_page_number }}">下一页</a>{% endif %}</nav>{% endif %}
+    </section>
+  </div>
+</main>
+{% endblock %}
+{% block extra_js %}<script src="{% static 'js/feedback.js' %}?v=20261116" defer></script>{% endblock %}

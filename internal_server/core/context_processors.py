@@ -21,6 +21,8 @@ def notifications(request):
       any template but retained; the unread_notifications channel above is what
       the popup actually consumes.
     """
+    if getattr(request, 'operations_shell', False):
+        return {}
     notifications_list = []
     unread_notifications_json = '[]'
     pm_tasks_json = '[]'
@@ -40,27 +42,6 @@ def notifications(request):
             pm_tasks_data = pm_tasks_for_field_worker(request.user)
             pm_tasks_json = json.dumps(pm_tasks_data, ensure_ascii=False)
 
-        # Legacy admin digest (retained for backward compat).
-        if is_admin(request.user):
-            for reg in RegistrationRequest.objects.filter(status='pending').order_by('-created_at')[:5]:
-                notifications_list.append({
-                    'type': 'registration',
-                    'id': reg.id,
-                    'title': f'新注册申请: {reg.full_name}',
-                    'description': f'{reg.get_requested_role_display()} - {reg.phone}',
-                    'url': '/user-management/?tab=approval',
-                    'created_at': reg.created_at,
-                })
-            for req in WaterRequest.objects.filter(status='submitted').order_by('-created_at')[:5]:
-                notifications_list.append({
-                    'type': 'water',
-                    'id': req.id,
-                    'title': f'浇水协调需求: {req.zone.name}',
-                    'description': f'{req.get_request_type_display()} - {req.user_type}',
-                    'url': f'/requests/water/{req.id}/',
-                    'created_at': req.created_at,
-                })
-
     return {
         'notifications_list': notifications_list,
         'notification_count': len(notifications_list),
@@ -73,6 +54,8 @@ def notifications(request):
 
 def user_role(request):
     """Add user role information to template context."""
+    if getattr(request, 'operations_shell', False):
+        return {}
     if not request.user.is_authenticated:
         return {
             'is_admin': False,
@@ -125,6 +108,10 @@ def user_role(request):
     # tile can place it on its own line for readability.
     watermark_warning = '仅限内部沟通，严禁外传' if watermark_text else ''
 
+    from django.conf import settings
+    from operations.access import memberships
+    multi_team_available = settings.MULTI_TEAM_ENABLED and memberships(user).exists()
+
     return {
         'is_admin': admin,
         'is_manager': role == 'manager',
@@ -134,4 +121,5 @@ def user_role(request):
         'pending_registrations': pending_reg,
         'watermark_text': watermark_text,
         'watermark_warning': watermark_warning,
+        'multi_team_available': multi_team_available,
     }

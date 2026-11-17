@@ -1,0 +1,2 @@
+/* Map controls, sidebar states and mobile layout use the irrigation CSS directly. */
+#mapContainer[data-business="pest-control"] .map-container{min-width:0}

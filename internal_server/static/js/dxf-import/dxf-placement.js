@@ -1,10 +1,51 @@
-/* Initial overlay and coarse placement are visual aids, never import authorization. */
+/* New imports default to the current preview; existing batches stay strict. */
+var pdxfPlacementMode = true;
+function pdxfImportMode() {
+  return pdxfPlacementMode && !pdxfBatchMode ? "direct" : "aligned";
+}
+function pdxfFitWithScale(fit) {
+  return fit ? Object.assign({}, fit, {
+    scale: Math.hypot(fit.a, fit.b),
+    rotation_deg: Math.atan2(-fit.b, fit.a) * 180 / Math.PI,
+  }) : null;
+}
+function pdxfUsePlacement() {
+  return !!(pdxfPlacementMode && pdxfData && !pdxfBatchMode);
+}
+function pdxfPlacementValid() {
+  var f = pdxfPlacementFit;
+  return !!f && [f.a, f.b, f.c, f.d, f.iso_k].every(Number.isFinite) &&
+    f.iso_k > 0 && f.iso_k <= 1 && Math.hypot(f.a, f.b) > 1e-12 &&
+    Math.hypot(f.a, f.b) < 1;
+}
+function pdxfPositionModeChanged(manual) {
+  if (pdxfBusy || pdxfImported || pdxfBatchMode) return;
+  if (manual && !pdxfPlacementMode) {
+    pdxfPlacementFit = pdxfFitWithScale(pdxfOverlayFit());
+  }
+  pdxfCalStop();
+  pdxfPlacementMode = manual;
+  pdxfEl("pdxfPositionDirect").checked = manual;
+  pdxfEl("pdxfPositionCalibrated").checked = !manual;
+  pdxfEl("pdxfPreciseControls").hidden = manual;
+  pdxfEl("pdxfCalCurrent").hidden = manual;
+  pdxfInvalidatePreview();
+  pdxfRefreshMap();
+  pdxfUpdateWorkflow();
+  if (pdxfToken) pdxfRebuildPreview();
+}
 var pdxfPlacementFit = null,
   pdxfPlacementCenterPoint = null;
 var pdxfPlacementMoving = false,
   pdxfPlacementHandle = null;
 
 function pdxfPlacementReset() {
+  pdxfPlacementMode = !pdxfBatchMode;
+  pdxfEl("pdxfPositionDirect").checked = pdxfPlacementMode;
+  pdxfEl("pdxfPositionCalibrated").checked = !pdxfPlacementMode;
+  pdxfEl("pdxfPreciseControls").hidden = pdxfPlacementMode;
+  pdxfEl("pdxfCalCurrent").hidden = pdxfPlacementMode;
+  pdxfEl("pdxfPositionMode").hidden = pdxfBatchMode;
   pdxfPlacementFit = null;
   pdxfPlacementCenterPoint = null;
   pdxfPlacementMoving = false;
@@ -37,7 +78,7 @@ function pdxfPlacementSeed() {
     info.method === "similarity" && info.quality && info.quality.valid
       ? info.points
       : window.__DXF__.placementPoints;
-  var fit = pdxfCalFitPairs(
+  var fit = info.source === "placement" && info.fit ? pdxfFitWithScale(info.fit) : pdxfCalFitPairs(
     (points || []).map(function (p) {
       return { dxfX: p.dxf_x, dxfY: p.dxf_y, satLat: p.lat, satLng: p.lng };
     }),
@@ -53,7 +94,7 @@ function pdxfPlacementSeed() {
   });
   var view = pdxfMap.getBounds(),
     usable = fit && fit.scale > 1e-12 && projected.every(Boolean);
-  if (usable) {
+  if (usable && !(pdxfBatchMode && info.source === "placement")) {
     var extent = L.latLngBounds(projected);
     var ratio = Math.max(
       (extent.getNorth() - extent.getSouth()) /
@@ -86,6 +127,7 @@ function pdxfPlacementSeed() {
   pdxfPlacementControls();
 }
 function pdxfOverlayFit() {
+  if (pdxfUsePlacement()) return pdxfPlacementFit;
   if (pdxfDraftFit) return pdxfDraftFit;
   var controls = pdxfCal.pairs.filter(function (p) {
     return p.role === "control";
@@ -107,7 +149,8 @@ function pdxfOverlayFit() {
 }
 function pdxfPlacementAllowed() {
   return (
-    !!pdxfPlacementFit && !pdxfBusy && !pdxfReady() && !pdxfCal.pairs.length
+    !!pdxfPlacementFit && !pdxfBusy && !pdxfImported && pdxfStep !== 4 &&
+    (pdxfUsePlacement() || (!pdxfVerified() && !pdxfCal.pairs.length))
   );
 }
 function pdxfPlacementControls() {
@@ -120,9 +163,11 @@ function pdxfPlacementControls() {
   pdxfEl("pdxfMoveBtn").textContent = pdxfPlacementMoving
     ? "完成移动"
     : "移动 CAD";
-  pdxfEl("pdxfPlacementHint").textContent = pdxfCal.pairs.length
+  pdxfEl("pdxfPlacementHint").textContent = pdxfUsePlacement()
+    ? "将按地图上当前的位置、角度和比例导入，无需选择对齐点。请核对位置后继续。"
+    : pdxfCal.pairs.length
     ? "已开始选点，粗调已锁定。重新选点可再次粗调。"
-    : "初步摆放尚未验证，不会作为最终导入位置。";
+    : "可继续选点校准，也可选择按当前摆放位置导入。";
   if (!pdxfPlacementMoving && pdxfPlacementHandle) {
     pdxfMap.removeLayer(pdxfPlacementHandle);
     pdxfPlacementHandle = null;
@@ -146,11 +191,13 @@ function pdxfPlacementToggle() {
     }),
   }).addTo(pdxfMap);
   pdxfPlacementHandle.on("drag", function (event) {
+    if (pdxfBusy || !pdxfPlacementAllowed()) return;
     var target = event.target.getLatLng();
     pdxfPlacementFit = pdxfMoveFit(pdxfPlacementFit, pdxfPlacementCenterPoint, [
       target.lat,
       target.lng,
     ]);
+    pdxfInvalidatePreview();
     pdxfRefreshMap();
   });
 }
@@ -176,6 +223,7 @@ function pdxfPlacementAdjust(degrees, factor) {
   pdxfRefreshPlacement();
 }
 function pdxfRefreshPlacement() {
+  pdxfInvalidatePreview();
   if (pdxfPlacementHandle)
     pdxfPlacementHandle.setLatLng(
       pdxfProjectPoint(pdxfPlacementFit, pdxfPlacementCenterPoint),

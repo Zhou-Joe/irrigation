@@ -108,8 +108,8 @@
 #wiTree .jstree-anchor .jstree-icon { background-image:none !important; background-position:0 0 !important;
                                        width:18px !important; height:18px !important;
                                        font-size:1rem; line-height:18px; }
-#wiTree .wj-folder > .jstree-anchor .jstree-icon::before { content:'📂'; }
-#wiTree .wj-leaf   > .jstree-anchor .jstree-icon::before { content:'🏷️'; }
+#wiTree .wj-folder > .jstree-anchor .jstree-icon::before { content:''; }
+#wiTree .wj-leaf   > .jstree-anchor .jstree-icon::before { content:''; }
 /* disclosure triangle */
 #wiTree .jstree-node > .jstree-icon { background-image:none !important;
                                        width:16px !important; height:16px !important;
@@ -813,8 +813,8 @@ window.togglePmOrders = function (planId) {
             tr.innerHTML = '<td colspan="8" style="padding:0;"><div class="pm-orders-detail"><table class="pm-orders-table">' +
                 '<thead><tr><th>派发日期</th><th>计划执行</th><th>状态</th><th>关联工单</th><th>执行班组</th><th>填报人</th><th>区域</th><th>工作内容</th></tr></thead><tbody>' +
                 d.orders.map(function(o) {
-                    var st = o.status === 'dispatched' ? '<span style=\"color:#d97706;\">🟡待填</span>'
-                           : o.status === 'completed' ? '<span style=\"color:#40916C;\">✅已完成</span>'
+                    var st = o.status === 'dispatched' ? '<span style=\"color:#d97706;\">待填写</span>'
+                           : o.status === 'completed' ? '<span style=\"color:#40916C;\"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-check"/></svg>已完成</span>'
                            : o.status === 'skipped' ? '<span style=\"color:#aaa;\">⏭跳过</span>' : o.status;
                     var wr = o.pm_order_id ? '<a href=\"/?pm_order_id=' + o.pm_order_id + '\" target=\"_blank\" rel=\"noopener\">' + esc(o.report_number) + '</a>' : '<span style=\"color:#aaa;\">未填</span>';
                     var wc = o.entry_count ? o.entry_count + ' 项' : (o.work_content ? esc(o.work_content) : '<span style=\"color:#ccc;\">未填</span>');
@@ -1348,7 +1348,7 @@ function wjRenderDetail(d) {
   var entryRows = entries.map(function (e) {
     var cnt = e.count;
     var cls = cnt > 0 ? '' : ' zero';
-    var meta = [e.project_name, e.date, e.status, e.text_value, e.has_photos ? '📎' : '']
+    var meta = [e.project_name, e.date, e.status, e.text_value, e.has_photos ? '含附件' : '']
                  .filter(Boolean).join(' · ');
     return '<div class="wj-entry-row">' +
              '<span class="wj-entry-owner">' + wjEsc(e.owner_label || '—') + '</span>' +

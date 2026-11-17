@@ -192,19 +192,19 @@
     <!-- Context menu for clicked zones on map -->
     <div id="mapContextMenu" class="map-context-menu">
         <div class="menu-zone-code" id="menuZoneCode"></div>
-        <div class="menu-item edit-item" id="menuEditBtn">✏️ 编辑边界</div>
-        <div class="menu-item" id="menuCopyShapeBtn">⧉ 复制形状</div>
+        <div class="menu-item edit-item" id="menuEditBtn"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-edit"/></svg> 编辑边界</div>
+        <div class="menu-item" id="menuCopyShapeBtn"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-copy"/></svg> 复制形状</div>
         <div class="menu-item" id="menuColorBtn" style="display:flex;align-items:center;gap:8px;">
-            🎨 修改颜色
+            <svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-palette"/></svg> 修改颜色
             <input type="color" id="menuColorPicker" value="#52B788" style="width:28px;height:24px;padding:0;border:none;cursor:pointer;margin-left:auto;" onclick="event.stopPropagation();">
         </div>
         <div class="menu-item" id="menuRingDisplayMode" style="display:none;">
-            <span id="menuRingDisplayModeText">🏷️ 切换为子标签</span>
+            <span id="menuRingDisplayModeText"> 切换为子标签</span>
         </div>
         <div class="menu-item" id="menuAllRingDisplayMode" style="display:none;">
-            <span id="menuAllRingDisplayModeText">🏷️ 全部切换为子标签</span>
+            <span id="menuAllRingDisplayModeText"> 全部切换为子标签</span>
         </div>
-        <div class="menu-item delete-item" id="menuDeleteBtn">🗑️ 删除边界</div>
+        <div class="menu-item delete-item" id="menuDeleteBtn"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-trash"/></svg> 删除边界</div>
     </div>
 
     <div class="batch-body">
@@ -306,6 +306,7 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script id="all-drawn-zones-data" type="application/json">{{ all_drawn_zones_json|safe }}</script>
 <script id="all-zones-data" type="application/json">{{ all_zones_json|safe }}</script>
+<script src="{% static 'js/map-runtime.js' %}?v=20261024drawing"></script>
 <script>window.MAP_STYLE_CONFIG = {{ map_style_json|safe }} || {};</script>
 <script>
 // Stats dropdown
@@ -515,14 +516,7 @@ window.showToast = function(msg, type) {
     }
 
     function normalizeBoundaryData(data) {
-        if (!data || data.length === 0) return [];
-        if (Array.isArray(data[0]) && (Array.isArray(data[0][0]) || (data[0].length > 0 && data[0][0].lat !== undefined))) {
-            return data;
-        }
-        if (data[0].lat !== undefined || data[0].lng !== undefined || (Array.isArray(data[0]) && data[0].length === 2 && typeof data[0][0] === 'number')) {
-            return [data.map(p => p.lat !== undefined ? {lat: p.lat, lng: p.lng} : {lat: p[0], lng: p[1]})];
-        }
-        return [];
+        return window.IrrigationMapRuntime.boundaryObjects(data);
     }
 
     function getZoneCode() {
@@ -874,11 +868,11 @@ window.showToast = function(msg, type) {
         if (shapesList && shapes.length > 0) {
             shapesList.innerHTML = shapes.map((s, i) => {
                 const ptCount = s.points.length;
-                const copyBtn = editingZoneId ? '<button class="copy-shape-btn" data-idx="' + i + '" title="复制此区域" style="background:none;border:none;color:#2D6A4F;cursor:pointer;font-size:0.82rem;padding:2px 4px;">⧉</button>' : '';
+                const copyBtn = editingZoneId ? '<button class="copy-shape-btn" data-idx="' + i + '" title="复制此区域" style="background:none;border:none;color:#2D6A4F;cursor:pointer;font-size:0.82rem;padding:2px 4px;"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-copy"/></svg></button>' : '';
                 return '<div class="shape-list-item">' +
                     '<span class="shape-label">区域 ' + (i+1) + ' (' + ptCount + '点) <span style="color:var(--color-text-secondary);font-size:0.72rem;">可直接拖动顶点</span></span>' +
                     copyBtn +
-                    '<button class="delete-shape-btn" data-idx="' + i + '" title="删除此区域">✕</button>' +
+                    '<button class="delete-shape-btn" data-idx="' + i + '" title="删除此区域"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-close"/></svg></button>' +
                     '</div>';
             }).join('');
             shapesList.querySelectorAll('.delete-shape-btn').forEach(btn => {
@@ -1152,11 +1146,11 @@ window.showToast = function(msg, type) {
         if (isMulti) {
             const currentMode = (z.ring_display_modes || {})[String(contextMenuRingIndex)] || 'line';
             document.getElementById('menuRingDisplayModeText').textContent =
-                currentMode === 'sublabel' ? '🔗 切换为引导线' : '🏷️ 切换为子标签';
+                currentMode === 'sublabel' ? ' 切换为引导线' : ' 切换为子标签';
             const allCurrent = (z.ring_display_modes || {});
             const allLine = polys.every((_, i) => (allCurrent[String(i)] || 'line') === 'line');
             document.getElementById('menuAllRingDisplayModeText').textContent =
-                allLine ? '🏷️ 全部切换为子标签' : '🔗 全部切换为引导线';
+                allLine ? ' 全部切换为子标签' : ' 全部切换为引导线';
         }
 
         const mapRect = editMap.getContainer().getBoundingClientRect();

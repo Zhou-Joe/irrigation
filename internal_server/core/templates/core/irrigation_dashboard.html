@@ -8,6 +8,20 @@
 {% block extra_css %}
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <style>
+.irrig-scope-note { margin:0 0 12px;font-size:13px;color:var(--color-text-muted); }
+.irrig-scope-note strong { color:var(--color-primary); }
+.flow-site { border:1px solid var(--color-border,#dce3df); border-radius:10px; margin:8px 0; overflow:hidden; }
+.flow-site summary { display:flex; align-items:center; gap:10px; padding:11px 12px; cursor:pointer; font-size:.85rem; list-style:none; }
+.flow-site summary::-webkit-details-marker { display:none; }
+.flow-site summary::before { content:''; width:6px; height:6px; flex:0 0 6px; border-right:1.5px solid currentColor; border-bottom:1.5px solid currentColor; transform:rotate(-45deg); }
+.flow-site[open] summary::before { transform:rotate(45deg); }
+.flow-site summary span { flex:1; min-width:0; overflow-wrap:anywhere; }
+.flow-site summary strong { white-space:nowrap; font-variant-numeric:tabular-nums; }
+.flow-table-scroll { overflow-x:auto; border-top:1px solid var(--color-border,#dce3df); }
+.flow-site .matrix-table { width:100%; min-width:440px; }
+.flow-site .matrix-table th, .flow-site .matrix-table td { padding:8px 10px; font-size:.8rem; }
+.flow-site .matrix-table td:nth-child(2) { white-space:normal; text-align:left; }
+.flow-note { font-size:.75rem; line-height:1.6; color:var(--color-text-muted,#777); margin:8px 0 0; }
 .page-header {
     display: flex;
     justify-content: space-between;
@@ -61,6 +75,11 @@
 }
 .filter-bar button:hover { background: var(--color-primary-light); }
 .filter-bar .hint { font-size: 0.75rem; color: var(--color-text-muted); }
+.filter-bar .sync-range-options { grid-column:1/-1; flex:1 0 100%; display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:6px; }
+.filter-bar .sync-range-options button { min-width:0; min-height:36px; padding:6px 8px; font-size:.8rem; border:1px solid var(--color-border,#dce3df); background:var(--color-surface,#f5f8f6); color:var(--color-primary); }
+.filter-bar .sync-range-options button:first-child { grid-column:1/-1; }
+.filter-bar .sync-range-options button:hover { background:#e8f2ec; }
+.filter-bar .sync-range-options button[aria-pressed="true"] { background:var(--color-primary); color:white; border-color:var(--color-primary); }
 
 .summary-cards {
     display: grid;
@@ -167,6 +186,12 @@
 
 /* CCU pager — shown only in 全部 mode (one clean matrix per CCU). */
 .ccu-pager {
+    position:sticky;
+    top:0;
+    z-index:10;
+    padding:8px;
+    border-radius:10px;
+    background:var(--color-surface,#fff);
     display: flex;
     align-items: center;
     gap: 8px;
@@ -213,7 +238,28 @@
     color: var(--color-text-inverse);
     border-color: var(--color-primary);
 }
+#ccuPager .page-pill.active,#ccuPager .page-pill.active:hover,#ccuPager .page-pill.active:focus-visible {
+    background:var(--color-primary);color:var(--color-text-inverse);border-color:var(--color-primary);
+}
 .ccu-pager-count { color: var(--color-text-muted); font-size: 0.8rem; margin-left: 4px; }
+#ccuPager[hidden] { display:none !important; }
+@media (max-width:768px) {
+    .flow-site .matrix-table { min-width:0;table-layout:fixed; }
+    .flow-site .matrix-table th:nth-child(1) { width:12%; }
+    .flow-site .matrix-table th:nth-child(2) { width:32%; }
+    .flow-site .matrix-table th:nth-child(3),.flow-site .matrix-table th:nth-child(4) { width:28%; }
+    .flow-site .matrix-table th,.flow-site .matrix-table td { white-space:normal;overflow-wrap:anywhere; }
+    .flow-site .matrix-table td:nth-child(1) { white-space:nowrap;padding-inline:4px; }
+    .flow-site .matrix-table td:nth-child(3) { white-space:nowrap; }
+    .irrig-fullscreen.chart-mode .irrig-chart-view { padding-top:64px; }
+    .ccu-pager { display:grid !important;grid-template-columns:36px minmax(0,1fr) 36px;top:60px;gap:6px; }
+    .ccu-pager-pills { min-width:0;overflow-x:auto;flex-wrap:nowrap;scrollbar-width:thin; }
+    .ccu-pager .page-pill { flex-shrink:0;min-height:40px;white-space:nowrap; }
+    #ccuPagerPrev,#ccuPagerNext { padding:0;min-height:40px;font-size:0; }
+    #ccuPagerPrev::after { content:'‹';font-size:22px; }
+    #ccuPagerNext::after { content:'›';font-size:22px; }
+    .ccu-pager-count { grid-column:1/-1;text-align:center;font-size:11px; }
+}
 
 /* Per-CCU matrix pages — only the .active one is visible. */
 .ccu-table-page { display: none; }
@@ -307,7 +353,7 @@
 .irrig-search-toggle:hover { background: #fff; }
 .irrig-search-box {
     position: absolute;
-    top: 56px;              /* sit below the 🔍 toggle so it can't cover the input */
+    top: 56px;              /* sit below the search toggle so it can't cover the input */
     left: 60px;
     z-index: 1000;
     display: flex;
@@ -823,21 +869,21 @@
     <aside class="irrig-sidebar" id="irrigSidebar">
         <div class="irrig-sidebar-header">
             <h1>灌溉运行数据</h1>
-            <button class="irrig-sidebar-close" onclick="toggleIrrigSidebar()" title="收起侧边栏">✕</button>
+            <button class="irrig-sidebar-close" onclick="toggleIrrigSidebar()" title="收起侧边栏"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-close"/></svg></button>
         </div>
         <div class="irrig-sidebar-body">
             <div class="irrig-topbar">
                 <div class="view-toggle" role="tablist" aria-label="视图切换">
                     <button class="irrig-view-pill" data-view="chart"
-                            onclick="switchIrrigView('chart')" role="tab">📊 表格</button>
+                            onclick="switchIrrigView('chart')" role="tab"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-chart"/></svg> 表格</button>
                     <button class="irrig-view-pill active" data-view="heatmap"
-                            onclick="switchIrrigView('heatmap')" role="tab">🗺️ 热力图</button>
+                            onclick="switchIrrigView('heatmap')" role="tab"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-map"/></svg> 热力图</button>
                 </div>
                 <div class="export-dropdown" id="exportDropdown">
-                    <button onclick="toggleExportMenu(event)" style="background:var(--color-accent);color:#fff;border:none;border-radius:6px;padding:8px 16px;cursor:pointer;font-weight:600;font-size:0.9rem;">⬇ 导出 ▾</button>
+                    <button class="btn-sm btn-secondary" onclick="toggleExportMenu(event)"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-download"/></svg> 导出 ▾</button>
                     <div class="export-menu" id="exportMenu">
-                        <a href="javascript:void(0)" onclick="exportPDF()">📄 PDF 报告（每CCU一页）</a>
-                        <a href="javascript:void(0)" onclick="exportExcel()">📊 Excel 表格（每CCU一表）</a>
+                        <a href="javascript:void(0)" onclick="exportPDF()"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-file"/></svg> PDF 报告（每CCU一页）</a>
+                        <a href="javascript:void(0)" onclick="exportExcel()"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-chart"/></svg> Excel 表格（每CCU一表）</a>
                     </div>
                 </div>
             </div>
@@ -846,11 +892,11 @@
                 <!-- Filters -->
                 <div class="filter-bar">
                     <div class="field">
-                        <label>CCU 片区</label>
+                        <label for="ccuSelect">CCU 片区（时间与水量共用）</label>
                         <select id="ccuSelect">
                             <option value="">全部 CCU</option>
                             {% for ccu in ccus %}
-                            <option value="{{ ccu.id }}" {% if selected_ccu and selected_ccu.id == ccu.id %}selected{% endif %}>
+                            <option value="{{ ccu.id }}" data-ccu="{{ ccu.code }}" {% if selected_ccu and selected_ccu.id == ccu.id %}selected{% endif %}>
                                 {{ ccu.code }} ({{ ccu.name }})
                             </option>
                             {% endfor %}
@@ -858,15 +904,22 @@
                     </div>
                     <div class="field">
                         <label>开始时间</label>
-                        <input type="datetime-local" id="dateFrom" value="{{ datetime_from_iso }}" step="60">
+                        <input type="datetime-local" id="dateFrom" value="{{ datetime_from_iso }}" step="1">
                     </div>
                     <div class="field">
                         <label>结束时间</label>
-                        <input type="datetime-local" id="dateTo" value="{{ datetime_to_iso }}" step="60">
+                        <input type="datetime-local" id="dateTo" value="{{ datetime_to_iso }}" step="1">
                     </div>
-                    <button onclick="applyFilters()">查询</button>
-                    <button onclick="resetFilters()" style="background:var(--color-surface-dark);">重置</button>
-                    <span class="hint">数据范围: {{ data_span.0 }} ~ {{ data_span.1 }}</span>
+                    <button class="btn-sm btn-primary" onclick="applyFilters()">查询</button>
+                    <div class="sync-range-options" role="group" aria-label="同步时间快捷范围">
+                        {% for days in sync_days_options %}
+                        <button type="button" class="btn-sm" data-sync-days="{{ days }}"
+                                aria-pressed="{% if selected_sync_days == days %}true{% else %}false{% endif %}"
+                                onclick="applySyncRange({{ days }})"
+                                title="以最近成功同步时间为终点，查询前 {{ days }} 天">同步前{% if days == 1 %}24h{% else %}{{ days }}天{% endif %}</button>
+                        {% endfor %}
+                    </div>
+                    <span class="hint">{% if data_span.0 %}数据范围: {{ data_span.0 }} ~ {{ data_span.1 }}{% else %}暂无可用运行数据{% endif %}</span>
                 </div>
 
                 <!-- Summary (chart view only — heatmap has its own legend) -->
@@ -890,9 +943,9 @@
             <div class="irrig-legend-panel" id="irrigLegendPanel">
                 <div class="irrig-metric-toggle" role="tablist" aria-label="指标切换">
                     <button class="irrig-metric-pill active" data-metric="time"
-                            onclick="switchIrrigMetric('time')" role="tab">⏱ 运行时间</button>
+                            onclick="switchIrrigMetric('time')" role="tab"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-activity"/></svg> 运行时间</button>
                     <button class="irrig-metric-pill" data-metric="volume"
-                            onclick="switchIrrigMetric('volume')" role="tab">💧 灌水量</button>
+                            onclick="switchIrrigMetric('volume')" role="tab"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-drop"/></svg> 灌水量</button>
                 </div>
                 <div class="irrig-legend-title" id="irrigLegendTitle">区域灌溉运行分钟</div>
                 <div class="heat-legend">
@@ -901,6 +954,8 @@
                     <span>多</span>
                 </div>
                 <div id="irrigHeatMaxLabel" class="irrig-legend-max">最大: 0 分钟</div>
+                <div id="irrigHeatScaleLabels" class="irrig-legend-note"></div>
+                <div id="irrigMapCoverage" class="irrig-legend-note" aria-live="polite"></div>
                 <div style="display:flex;align-items:center;gap:5px;margin-top:6px;font-size:0.78rem;color:var(--color-text-muted,#888);">
                     <span>色阶上限</span>
                     <input type="number" id="irrigHeatUserMax" min="0" step="1" placeholder="自动"
@@ -915,8 +970,8 @@
             <div class="irrig-unmapped-panel" id="irrigUnmappedPanel">
                 <button type="button" class="irrig-unmapped-header"
                         onclick="toggleIrrigUnmapped()" aria-expanded="false">
-                    <span>⚠ 未绘制边界区域 <span id="irrigUnmappedCount" class="irrig-unmapped-badge">0</span></span>
-                    <span id="irrigUnmappedArrow" class="irrig-unmapped-arrow">▶</span>
+                    <span><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-alert"/></svg> 未绘制边界区域 <span id="irrigUnmappedCount" class="irrig-unmapped-badge">0</span></span>
+                    <span id="irrigUnmappedArrow" class="irrig-unmapped-arrow"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-chevron-right"/></svg></span>
                 </button>
                 <div class="irrig-unmapped-body" id="irrigUnmappedBody">
                     <div class="irrig-unmapped-note">
@@ -935,8 +990,8 @@
             <div class="irrig-excluded-panel" id="irrigExcludedPanel">
                 <button type="button" class="irrig-excluded-header"
                         onclick="toggleIrrigExcluded()" aria-expanded="false">
-                    <span>🚫 已排除区域 <span id="irrigExcludedCount" class="irrig-excluded-badge zero">0</span></span>
-                    <span id="irrigExcludedArrow" class="irrig-excluded-arrow">▶</span>
+                    <span><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-minus"/></svg> 已排除区域 <span id="irrigExcludedCount" class="irrig-excluded-badge zero">0</span></span>
+                    <span id="irrigExcludedArrow" class="irrig-excluded-arrow"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-chevron-right"/></svg></span>
                 </button>
                 <div class="irrig-excluded-body" id="irrigExcludedBody">
                     <div class="irrig-excluded-note">
@@ -952,20 +1007,20 @@
     <!-- Sidebar expand handle — outside both panels so it works in chart AND
          heatmap modes. Anchored to the .irrig-fullscreen left edge. -->
     <button class="irrig-sidebar-expand" id="irrigSidebarExpand"
-            onclick="toggleIrrigSidebar()" title="展开侧边栏">侧边栏 ▶</button>
+            onclick="toggleIrrigSidebar()" title="展开侧边栏"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-menu"/></svg><span class="pwa-sr-only">展开侧边栏</span></button>
 
     <!-- Map area (heatmap mode) -->
     <div class="irrig-map-area">
         <div id="irrigHeatMap" data-is-manager="{{ is_admin|yesno:'1,0' }}"></div>
         <!-- Collapsed by default: click 🔍 to expand the search panel -->
         <button id="irrigSearchToggle" class="irrig-search-toggle"
-                onclick="toggleIrrigSearch()" title="搜索区域">🔍</button>
+                onclick="toggleIrrigSearch()" title="搜索区域"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-search"/></svg></button>
         <div id="irrigSearchPanel" class="irrig-search-box" style="display:none;">
             <div class="irrig-search-row">
                 <input type="text" id="irrigZoneSearch" placeholder="搜索 zone（代码或名称，如 1-1-5 或 BOH）"
                        oninput="searchIrrigZone()">
                 <button onclick="document.getElementById('irrigZoneSearch').value=''; searchIrrigZone('');"
-                        title="清除">✕</button>
+                        title="清除"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-close"/></svg></button>
                 <span id="irrigZoneSearchStatus" class="irrig-search-status"></span>
             </div>
             <div id="irrigZoneResults" class="irrig-search-results"></div>
@@ -974,38 +1029,50 @@
 
     <!-- Chart view (pivot) — chart mode only -->
     <div class="irrig-chart-view">
-        <div class="section-title">站点 × 卫星控制器 运行时间矩阵（分钟）</div>
+        <p class="irrig-scope-note" id="irrigationCcuScope" aria-live="polite"></p>
         <!-- CCU pager (全部 mode only — one clean matrix per CCU). Hidden by
              default; renderPivot() shows it when the response carries >1 CCU. -->
-        <div class="ccu-pager" id="ccuPager" style="display:none;">
+        <nav class="ccu-pager" id="ccuPager" aria-label="运行时间与浇水量共用 CCU 筛选" hidden style="display:none;">
             <button type="button" id="ccuPagerPrev" onclick="goToCcuPage(currentCcuPage - 1, true)"
                     title="上一页">◀ 上一页</button>
             <div class="ccu-pager-pills" id="ccuPagerPills"></div>
             <button type="button" id="ccuPagerNext" onclick="goToCcuPage(currentCcuPage + 1, true)"
                     title="下一页">下一页 ▶</button>
             <span class="ccu-pager-count" id="ccuPagerCount"></span>
-        </div>
+        </nav>
+        <div class="section-title">站点 × 卫星控制器 运行时间矩阵（分钟）</div>
         <div class="pivot-wrap">
             <div id="pivotContent">
                 {% include 'core/_irrigation_pivot.html' %}
             </div>
         </div>
 
-        <!-- 浇水量：mdb 流量计（XA_FLOZO 导入）+ 站点运行估算（运行分钟×
-             站点系数），合计 = Maxicom 桌面端口径。随筛选 AJAX 刷新。 -->
-        <div style="margin-top:14px;">
-            <div class="section-title">💧 浇水量（升）— 流量计 + 站点估算</div>
+        <p class="flow-note" id="irrigationTimeSummary" aria-live="polite">查询时段（上海时间，24 小时制）：{{ datetime_from_iso }} → {{ datetime_to_iso }}</p>
+        <section style="margin-top:14px;" aria-label="实际流量传感器">
+            <div class="section-title"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-drop"/></svg> 实际传感器水量（升）</div>
+            <p class="flow-note">FS Low / FS High / WP / WD / Toilet 等传感器，与上方运行分钟分别统计。</p>
+            <p class="flow-note">最近成功同步（上海时间）：{{ import_status.last_sync_display|default:'暂无记录' }}{% if import_status.source %} · {{ import_status.source }}{% endif %}{% if import_status.latest_status == 'failed' %} · 最近一次导入失败{% endif %}</p>
+            <div id="sensorContent">{% include 'core/_irrigation_sensors.html' %}</div>
+        </section>
+        <details style="margin-top:14px;">
+            <summary class="section-title">FLO WATCH 区域参考记录</summary>
+            <p class="flow-note">这是流量区记录，独立于上述实体传感器；保留源数值供参考，单位和采样口径尚待核准。</p>
             <div id="flowContent">
                 {% include 'core/_irrigation_flow.html' %}
             </div>
-        </div>
+        </details>
     </div>
 </div>
 {% endblock %}
 
 {% block extra_js %}
+{{ flow_data|json_script:"initial-flow-data" }}
+{{ sensor_data|json_script:"initial-sensor-data" }}
+{{ ccu_navigation|json_script:"initial-ccu-navigation" }}
+<script src="{% static 'js/irrigation-scope.js' %}?v=20261027ccu1"></script>
+<script src="{% static 'js/irrigation-colors.js' %}?v=20261027quantile1"></script>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="{% static 'js/irrig-heatmap.js' %}?v=16"></script>
+<script src="{% static 'js/irrig-heatmap.js' %}?v=20261027quantile1"></script>
 <script>
 function toggleExportMenu(event) {
     event.stopPropagation();
@@ -1018,9 +1085,11 @@ document.addEventListener('click', () => {
 // <input type="datetime-local"> yields YYYY-MM-DDTHH:MM; strip non-digits to the
 // compact YYYYMMDDHHMM form the backend expects (it pads to YYYYMMDDHHmmSS, so
 // any precision from day down to minute works).
-function _compactDt(v) { return (v || '').replace(/[^0-9]/g, ''); }
+function _compactDt(v) { return window.IrrigationScope.compactInput(v, false); }
 function _fromParam() { return _compactDt(document.getElementById('dateFrom').value); }
-function _toParam()   { return _compactDt(document.getElementById('dateTo').value); }
+function _toParam()   {
+    return window.IrrigationScope.compactInput(document.getElementById('dateTo').value, true);
+}
 
 function _exportParams() {
     const from = _fromParam();
@@ -1039,130 +1108,162 @@ function exportExcel() {
     window.location.href = '{% url "core:irrigation_report_excel" %}?' + _exportParams();
 }
 
-// 浇水量表格 — 与服务端 partial _irrigation_flow.html 保持同一结构。
-// 全部 CCU：每 CCU 一行（流量计/估算/合计）；选中单个 CCU（下拉筛选或点
-// CCU 分页 pill）：主表切换为该 CCU 的流量区明细，头部汇总行给三项合计。
-// flowZonesByCcu 缓存全部模式下各 CCU 的 zone 明细，点 pill 即时切换免请求。
-let flowRowsCache = [], flowZonesByCcu = {};
-const _flowNote = '<p style="font-size:.74rem;color:var(--color-text-muted,#888);margin:6px 0 0;">' +
-    '流量计 = mdb XA_FLOZO 按灌溉日聚合（随 maxicom 导入更新）；站点估算 = 运行分钟 × 站点流量系数；' +
-    '合计与 Maxicom 桌面端「浇水量」口径一致（系数为 0 的主阀不计）。选单个 CCU 或点分页 pill 切换为该 CCU 的流量区明细。</p>';
-function _flowZoneHtml(s, zones, backLink) {
-    const n = x => (x || 0).toLocaleString('en-US');
-    let html = '<div style="font-size:.82rem;margin-bottom:6px;">' +
-        (backLink ? '<a href="javascript:void(0)" onclick="renderFlowAll()" ' +
-            'style="color:var(--color-primary,#2D6A4F);margin-right:6px;">« 返回全部 CCU</a>' : '') +
-        s.ccu + '（' + s.name + '）：' +
-        '流量计 <b>' + n(s.meter_l) + '</b> L · 站点估算 <b>' + n(s.est_l) + '</b> L · ' +
-        '合计 <b>' + n(s.total_l) + '</b> L</div>' +
-        '<div style="overflow-x:auto;"><table class="matrix-table">' +
-        '<thead><tr><th>Zone</th><th>流量区名称</th><th>浇水量 (L)</th></tr></thead><tbody>';
-    let tm = 0;
-    for (const z of zones) {
-        tm += z.liters;
-        html += '<tr><td class="sticky-col-sub">z' + z.zone + '</td>' +
-            '<td class="sticky-col-sub">' + z.name + '</td>' +
-            '<td class="cell">' + n(z.liters) + '</td></tr>';
+let flowData = JSON.parse(document.getElementById('initial-flow-data').textContent);
+let sensorData = JSON.parse(document.getElementById('initial-sensor-data').textContent);
+const ccuScope = window.IrrigationScope;
+let activeCcuCode = null;
+function visibleWaterSites(data) { return ccuScope.sites(data, activeCcuCode, ccuTablesCache.map(t => t.ccu_code)); }
+function renderSensorSelection() {
+    const root = document.getElementById('sensorContent');
+    root.replaceChildren();
+    for (const message of [sensorData.notice, sensorData.coverage_note]) {
+        if (!message) continue;
+        const note = document.createElement('p'); note.className = 'flow-note'; note.textContent = message;
+        root.append(note);
     }
-    html += '</tbody><tfoot><tr><th colspan="2">流量计合计</th><th>' + n(tm) +
-        '</th></tr></tfoot></table></div>' + _flowNote;
-    return html;
-}
-function renderFlowAll() {
-    const el = document.getElementById('flowContent');
-    if (!el) return;
-    const n = x => (x || 0).toLocaleString('en-US');
-    if (!flowRowsCache.length) {
-        el.innerHTML = '<div class="chart-empty">该窗口无浇水量数据（等待 maxicom 导入或调整时间范围）</div>';
-        return;
+    const sites = visibleWaterSites(sensorData);
+    if (!sites.length && !sensorData.notice) {
+        const empty = document.createElement('p'); empty.className = 'chart-empty'; empty.textContent = '当前 CCU 暂无实际传感器记录。'; root.append(empty);
     }
-    let tm = 0, te = 0;
-    let html = '<div style="overflow-x:auto;"><table class="matrix-table"><thead><tr>' +
-        '<th>CCU</th><th>名称</th><th>流量计 (L)</th><th>站点估算 (L)</th><th>合计 (L)</th>' +
-        '</tr></thead><tbody>';
-    for (const r of flowRowsCache) {
-        tm += r.meter_l; te += r.est_l;
-        html += '<tr><td class="sticky-col-sub">' + r.ccu + '</td>' +
-            '<td class="sticky-col-sub">' + r.name + '</td>' +
-            '<td class="cell">' + n(r.meter_l) + '</td>' +
-            '<td class="cell">' + n(r.est_l) + '</td>' +
-            '<td class="row-total">' + n(r.total_l) + '</td></tr>';
-    }
-    html += '</tbody><tfoot><tr><th colspan="2">合计</th><th>' + n(tm) + '</th><th>' + n(te) +
-        '</th><th>' + n(tm + te) + '</th></tr></tfoot></table></div>' + _flowNote;
-    el.innerHTML = html;
-}
-function renderFlowForCcu(ccuId, withBackLink) {
-    const el = document.getElementById('flowContent');
-    if (!el) return;
-    const s = flowRowsCache.find(r => r.ccu_id === ccuId);
-    const zones = flowZonesByCcu[String(ccuId)] || [];
-    if (!s || !zones.length) {
-        if (s) {
-            // 有汇总无 zone 明细（该 CCU 无流量计数据）——仍显示汇总行
-            el.innerHTML = _flowZoneHtml(s, [], !!withBackLink);
-        } else {
-            renderFlowAll();
+    for (const site of sites) {
+        const detail = document.createElement('details'); detail.className = 'flow-site';
+        detail.open = true;
+        const summary = document.createElement('summary');
+        const title = document.createElement('span'); title.textContent = ccuScope.label(site);
+        const count = document.createElement('span'); count.textContent = site.sensors.length + ' 个传感器';
+        summary.append(title, count);
+        const scroll = document.createElement('div'); scroll.className = 'flow-table-scroll';
+        const table = document.createElement('table'); table.className = 'matrix-table';
+        const head = table.createTHead().insertRow();
+        for (const label of ['通道', '传感器', '水量 (L)', '记录状态']) {
+            const cell = document.createElement('th'); cell.textContent = label; head.append(cell);
         }
-        return;
+        const body = table.createTBody();
+        for (const sensor of site.sensors) {
+            const row = body.insertRow();
+            for (const value of [sensor.channel ?? '—', sensor.name, sensor.formatted,
+                !sensor.complete ? '覆盖不完整' : !sensor.enabled ? '已停用' : '实际记录']) row.insertCell().textContent = value;
+        }
+        scroll.append(table); detail.append(summary, scroll); root.append(detail);
     }
-    el.innerHTML = _flowZoneHtml(s, zones, !!withBackLink);
+    const note = document.createElement('p'); note.className = 'flow-note';
+    note.textContent = '按实际脉冲及记录时的倍率换算为升。总表与分表分别保留，不合并相加。0 表示备份覆盖时段内无流量日志；— 表示无法确认。';
+    root.append(note);
 }
-function renderFlow(d) {
-    flowRowsCache = d.flow_rows || [];
-    flowZonesByCcu = d.flow_zones_by_ccu || {};
-    const el = document.getElementById('flowContent');
-    if (!el) return;
-    if (!flowRowsCache.length) {
-        el.innerHTML = '<div class="chart-empty">该窗口无浇水量数据（等待 maxicom 导入或调整时间范围）</div>';
+function showQueryWindow(d) {
+    function format(value, end) {
+        let s = value || '';
+        if (!s) return '';
+        if ([8, 10, 12].includes(s.length)) s += (end ? '235959' : '000000').slice(s.length - 8);
+        return s.slice(0,4) + '-' + s.slice(4,6) + '-' + s.slice(6,8) + ' ' + s.slice(8,10) + ':' + s.slice(10,12) + ':' + s.slice(12,14);
+    }
+    document.getElementById('irrigationTimeSummary').textContent = '查询时段（上海时间，24 小时制）：' + format(d.date_from, false) + ' → ' + format(d.date_to, true);
+    document.getElementById('dateFrom').value = format(d.date_from, false).replace(' ', 'T');
+    document.getElementById('dateTo').value = format(d.date_to, true).replace(' ', 'T');
+    showSyncPreset(d.sync_days);
+}
+function showSyncPreset(days) {
+    document.querySelectorAll('[data-sync-days]').forEach(button => {
+        button.setAttribute('aria-pressed', Number(button.dataset.syncDays) === days ? 'true' : 'false');
+    });
+}
+showQueryWindow({date_from: '{{ date_from|escapejs }}', date_to: '{{ date_to|escapejs }}', sync_days: {{ selected_sync_days|default:'null' }}});
+for (const id of ['dateFrom', 'dateTo']) document.getElementById(id).addEventListener('input', () => showSyncPreset(null));
+function renderFlowSelection() {
+    const root = document.getElementById('flowContent');
+    root.replaceChildren();
+    if (flowData.notice) {
+        const note = document.createElement('div');
+        note.className = 'chart-empty';
+        note.textContent = flowData.notice;
+        root.append(note);
         return;
     }
-    if (d.flow_zone_rows && d.flow_zone_rows.length) {
-        // 下拉选中单个 CCU：zone 明细为主表（无返回链接——筛选本身就是单 CCU）
-        flowZonesByCcu[String(flowRowsCache[0].ccu_id)] = d.flow_zone_rows;
-        el.innerHTML = _flowZoneHtml(flowRowsCache[0], d.flow_zone_rows, false);
-    } else {
-        renderFlowAll();
+    const sites = visibleWaterSites(flowData);
+    if (!sites.length) {
+        const empty = document.createElement('p'); empty.className = 'chart-empty'; empty.textContent = '当前 CCU 暂无 FLO WATCH 参考记录。'; root.append(empty);
     }
+    for (const site of sites) {
+        const detail = document.createElement('details');
+        detail.className = 'flow-site';
+        detail.open = true;
+        const summary = document.createElement('summary');
+        const title = document.createElement('span');
+        title.textContent = ccuScope.label(site);
+        const amount = document.createElement('strong');
+        amount.textContent = site.formatted;
+        summary.append(title, amount);
+        const scroll = document.createElement('div');
+        scroll.className = 'flow-table-scroll';
+        const table = document.createElement('table');
+        table.className = 'matrix-table';
+        const head = table.createTHead().insertRow();
+        for (const label of ['流量区', '记录名称', '源记录参考值', '站点汇总']) {
+            const cell = document.createElement('th'); cell.textContent = label; head.append(cell);
+        }
+        const body = table.createTBody();
+        for (const zone of site.zones) {
+            const row = body.insertRow();
+            for (const value of [zone.counter === null ? 'z' + zone.index : zone.counter,
+                                 zone.name, zone.formatted, zone.included ? '计入' : '仅明细']) {
+                row.insertCell().textContent = value;
+            }
+        }
+        scroll.append(table); detail.append(summary, scroll); root.append(detail);
+    }
+    const note = document.createElement('p');
+    note.className = 'flow-note';
+    note.textContent = '与运行时间共用当前 CCU 筛选。站点汇总按 Rain Bird 的计入设置计算；总表与分表分别保留，请勿再次相加。— 表示无记录，不叠加运行估算。';
+    root.append(note);
 }
 
-function applyFilters() {
+let querySequence = 0;
+function applyFilters(syncDays) {
+    const query = ++querySequence;
     const ccu = document.getElementById('ccuSelect').value;
     const from = _fromParam();
     const to = _toParam();
     const params = new URLSearchParams();
     if (ccu) params.set('ccu', ccu);
-    if (from) params.set('from', from);
-    if (to) params.set('to', to);
+    if ([1, 3, 7, 14, 30].includes(syncDays)) {
+        params.set('sync_days', syncDays);
+    } else {
+        if (from) params.set('from', from);
+        if (to) params.set('to', to);
+    }
+    showSyncPreset(syncDays || null);
 
     // Always refresh the chart data (pivot table + sidebar summary cards) so
     // 运行站点数 / 控制器数 / 总运行分钟 follow the filter even when the heatmap
     // is the active view. The page defaults to heatmap mode; the old code
     // returned early there and left these stats stale until a mode switch.
-    document.getElementById('pivotContent').innerHTML = '<div class="loading-overlay">加载中…</div>';
+    for (const id of ['pivotContent','sensorContent','flowContent']) document.getElementById(id).innerHTML = '<div class="chart-empty" role="status">加载中…</div>';
+    for (const id of ['sumStations','sumControllers','sumRuntime']) document.getElementById(id).textContent = '—';
+    document.getElementById('ccuPager').hidden = true;
     fetch('{% url "core:irrigation_dashboard" %}?' + params.toString(), {
         headers: { 'X-Requested-With': 'XMLHttpRequest' }
     })
-    .then(r => r.json())
-    .then(d => { renderPivot(d); renderFlow(d); })
+    .then(r => { if (!r.ok) throw new Error('查询失败'); return r.json(); })
+    .then(d => {
+        if (query !== querySequence) return;
+        flowData = d.flow_data || {sites: [], notice: '该时段暂无流量记录。'};
+        sensorData = d.sensor_data || {sites: [], notice: '实际流量传感器尚未同步。'};
+        renderPivot(d); showQueryWindow(d);
+        const root = document.getElementById('irrigFullscreen');
+        if (root && root.classList.contains('heatmap-mode') && typeof window.loadIrrigHeatmap === 'function') window.loadIrrigHeatmap();
+    })
     .catch(err => {
-        document.getElementById('pivotContent').innerHTML = '<div class="chart-empty">加载失败</div>';
+        if (query !== querySequence) return;
+        showSyncPreset(null);
+        for (const id of ['pivotContent','sensorContent','flowContent']) document.getElementById(id).innerHTML = '<div class="chart-empty" role="status">加载失败，请重新查询。</div>';
         console.error(err);
     });
 
-    // If the heatmap is visible, refresh it too (separate API).
-    const root = document.getElementById('irrigFullscreen');
-    if (root && root.classList.contains('heatmap-mode') &&
-        typeof window.loadIrrigHeatmap === 'function') {
-        window.loadIrrigHeatmap();
-    }
 }
 
-function resetFilters() {
-    document.getElementById('ccuSelect').value = '';
-    document.getElementById('dateFrom').value = '{{ data_span_dt.0 }}';
-    document.getElementById('dateTo').value = '{{ data_span_dt.1 }}';
-    applyFilters();
+function applySyncRange(days) {
+    // Resolve the latest sync on each click, retaining the current CCU scope.
+    applyFilters(days);
 }
 
 function heatColor(v, max) {
@@ -1200,7 +1301,7 @@ function _matrixTableHTML(t, showCcuCol) {
         const orphanVals = r.orphan_values || [];
         const labelCls = r.orphan ? 'sticky-col orphan-label' : 'sticky-col';
         const labelTitle = r.orphan ? ' title="该行所有运行单元均无 Zone 对应（未映射到任何景观区域）"' : '';
-        const labelSuffix = r.orphan ? ' ⚠' : '';
+        const labelSuffix = r.orphan ? ' [未匹配]' : '';
         html += `<tr><td class="${labelCls}"${labelTitle}>${r.station}${labelSuffix}</td>`;
         if (showCcuCol) html += `<td class="sticky-col-sub">${r.site}</td>`;
         r.values.forEach((v, ci) => {
@@ -1228,18 +1329,40 @@ function _matrixTableHTML(t, showCcuCol) {
 }
 
 const _matrixLegend = '<div class="legend"><span>少</span><div class="scale"></div><span>多</span>'
-    + '<span style="margin-left:12px;">列 = 卫星控制器（如 AI 7-1），每站24通道；单元格 = 运行分钟数</span>'
-    + '<span style="margin-left:12px;color:#C62828;">⚠ 红色行 = 该站点无 Zone 对应（运行数据真实，但未映射到任何景观区域）</span></div>';
+    + '<span style="margin-left:12px;">列 = 卫星控制器（如 AI 7-1），行 = 站点通道；单元格 = 运行分钟数</span>'
+    + '<span style="margin-left:12px;color:#C62828;"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-alert"/></svg> 红色行 = 该站点无 Zone 对应（运行数据真实，但未映射到任何景观区域）</span></div>';
 
 // 全部 mode paging state. -1 = not in 全部 mode (single table).
 let currentCcuPage = -1;
 let ccuTablesCache = [];
 
+function renderCurrentCcu() {
+    const label = document.getElementById('irrigationCcuScope');
+    const table = ccuTablesCache.find(t => t.ccu_code === activeCcuCode);
+    label.textContent = '当前范围：' + (table ? (table.ccu_code === 'other' ? '其他站点' : table.ccu_code + ' · ' + table.ccu_name) : activeCcuCode || '全部 CCU') + ' · 运行时间与浇水量同步切换';
+    renderSensorSelection(); renderFlowSelection();
+}
+
+function buildCcuPager() {
+    const pills = document.getElementById('ccuPagerPills'); pills.replaceChildren();
+    ccuTablesCache.forEach((table, index) => {
+        const button = document.createElement('button'); button.type = 'button'; button.className = 'page-pill';
+        button.textContent = table.ccu_code === 'other' ? '其他站点' : table.ccu_code;
+        button.title = table.ccu_name; button.onclick = () => goToCcuPage(index, true); pills.append(button);
+        if (table.ccu_code === 'other' && !document.querySelector('#pivotContent [data-ccu="other"]')) {
+            const page = document.createElement('div'); page.className = 'ccu-table-page'; page.dataset.ccu = 'other';
+            const empty = document.createElement('p'); empty.className = 'chart-empty'; empty.textContent = '这些站点尚无对应的运行时间 CCU，水量记录保留在下方。';
+            page.append(empty); document.querySelector('#pivotContent .ccu-table-pages')?.append(page);
+        }
+    });
+    const pager = document.getElementById('ccuPager'); pager.hidden = false; pager.style.display = 'flex';
+}
+
 // Update summary cards to reflect a single CCU's table (per "current CCU only").
 function _setSummaryForCcu(t) {
-    document.getElementById('sumStations').textContent = t.total_stations;
-    document.getElementById('sumControllers').textContent = t.controllers.length;
-    document.getElementById('sumRuntime').textContent = t.grand_total;
+    document.getElementById('sumStations').textContent = t.total_stations ?? '—';
+    document.getElementById('sumControllers').textContent = t.ccu_code === 'other' ? '—' : t.controllers.length;
+    document.getElementById('sumRuntime').textContent = t.grand_total ?? '—';
 }
 
 function goToCcuPage(i, fromUser) {
@@ -1247,6 +1370,8 @@ function goToCcuPage(i, fromUser) {
     if (!n) return;
     if (i < 0 || i >= n) return;
     currentCcuPage = i;
+    activeCcuCode = ccuTablesCache[i].ccu_code;
+    if (fromUser) document.getElementById('ccuSelect').value = ccuTablesCache[i].ccu_id || '';
     // Toggle which page div is visible.
     document.querySelectorAll('#pivotContent .ccu-table-page').forEach((el, idx) => {
         el.classList.toggle('active', idx === i);
@@ -1254,24 +1379,25 @@ function goToCcuPage(i, fromUser) {
     // Update pills + counter + prev/next disabled state.
     document.querySelectorAll('#ccuPagerPills .page-pill').forEach((el, idx) => {
         el.classList.toggle('active', idx === i);
+        el.setAttribute('aria-pressed', String(idx === i));
+        if (idx === i && fromUser) el.scrollIntoView({block:'nearest',inline:'nearest'});
     });
     document.getElementById('ccuPagerCount').textContent = `${i + 1} / ${n}`;
     document.getElementById('ccuPagerPrev').disabled = (i === 0);
     document.getElementById('ccuPagerNext').disabled = (i === n - 1);
     // Summary cards reflect the visible CCU (user chose "current CCU only").
     _setSummaryForCcu(ccuTablesCache[i]);
-    // 浇水量表同步切到该 CCU 的流量区明细——仅用户点击（renderPivot 播种
-    // goToCcuPage(0) 不带 fromUser，保持全部 CCU 汇总首屏）。数据已在
-    // flowZonesByCcu 缓存，点击即时切换不发请求；表头带返回链接。
-    if (fromUser) renderFlowForCcu(ccuTablesCache[i].ccu_id, true);
+    renderCurrentCcu();
 }
 
 function renderPivot(d) {
     const pager = document.getElementById('ccuPager');
+    pager.hidden = false;
 
     // 全部 mode: one clean matrix per CCU, paged client-side.
     if (d.ccu_tables && d.ccu_tables.length) {
-        ccuTablesCache = d.ccu_tables;
+        const previousCode = activeCcuCode;
+        ccuTablesCache = ccuScope.pages(d.ccu_tables, [sensorData, flowData]);
 
         // Render every CCU's table up front; paging just toggles visibility,
         // so flipping pages is instant (no extra fetches).
@@ -1286,21 +1412,18 @@ function renderPivot(d) {
         document.getElementById('pivotContent').innerHTML = html;
 
         // Build the pager pills (one per CCU, labelled with the CCU code).
-        const pills = d.ccu_tables.map((t, idx) =>
-            `<button type="button" class="page-pill${idx === 0 ? ' active' : ''}" `
-            + `onclick="goToCcuPage(${idx}, true)" title="${t.ccu_code} (${t.ccu_name})">${t.ccu_code}</button>`
-        ).join('');
-        document.getElementById('ccuPagerPills').innerHTML = pills;
-        pager.style.display = 'flex';
+        buildCcuPager();
         // Seed page 1 — also sets the summary cards for that CCU.
-        goToCcuPage(0);
+        goToCcuPage(Math.max(0, ccuTablesCache.findIndex(t => t.ccu_code === previousCode)));
         return;
     }
 
     // Single-CCU / single-table path (specific CCU selected, or 1-CCU system).
     pager.style.display = 'none';
+    pager.hidden = true;
     ccuTablesCache = [];
     currentCcuPage = -1;
+    activeCcuCode = d.selected_ccu_code || null;
 
     // update summary
     document.getElementById('sumStations').textContent = d.total_stations;
@@ -1309,6 +1432,19 @@ function renderPivot(d) {
 
     document.getElementById('pivotContent').innerHTML =
         _matrixTableHTML(d, !!d.show_ccu_col) + _matrixLegend;
+    renderCurrentCcu();
+}
+
+// The first paint already contains the matrices. Bootstrap only the small
+// navigation metadata; do not refetch or duplicate every runtime cell in JSON.
+const initialCcuPages = JSON.parse(document.getElementById('initial-ccu-navigation').textContent);
+if (initialCcuPages.length) {
+    ccuTablesCache = ccuScope.pages(initialCcuPages, [sensorData, flowData]);
+    buildCcuPager(); goToCcuPage(0);
+} else {
+    document.getElementById('ccuPager').hidden = true;
+    activeCcuCode = '{{ selected_ccu.code|escapejs }}' || null;
+    renderCurrentCcu();
 }
 </script>
 {% endblock %}

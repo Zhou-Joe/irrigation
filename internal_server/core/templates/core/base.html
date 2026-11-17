@@ -15,6 +15,7 @@
     <link rel="stylesheet" href="{% static 'css/app.css' %}?v=20260705">
 
     {% block extra_css %}{% endblock %}
+    {% if multi_team_enabled %}<link rel="stylesheet" href="{% static 'operations/bulk-ui.css' %}?v=20261108fixes2">{% endif %}
 
     <style>
         body {
@@ -103,6 +104,9 @@
         }
 
         /* Mobile hamburger */
+        .top-nav-feedback { display:inline-flex;align-items:center;gap:5px;color:#fff;text-decoration:none;font-size:13px;white-space:nowrap;padding:7px;border-radius:6px; }
+        .top-nav-feedback:hover,.top-nav-feedback.active { background:rgba(255,255,255,.14); }
+        @media(max-width:1100px) { .top-nav-feedback span { display:none; } }
         .mobile-hamburger {
             display: none;
             background: none; border: none; color: white; font-size: 1.4rem;
@@ -145,39 +149,10 @@
             .top-nav-brand { font-size: 0.95rem !important; }
             /* Hide the inline desktop link row on phones — it would wrap into a
                messy stack. The hamburger already opens the clean mobile dropdown
-               (mobile-nav-dropdown) with the same links, so tap ☰ to expand. */
+               (mobile-nav-dropdown) with the same links, so tap the menu to expand. */
             .top-nav-links { display: none; }
             /* Keep only the essentials visible in the bar itself on phones. */
             .top-nav-right .top-nav-user { display: none; }
-        }
-
-        /* ── Anti-leak watermark ───────────────────────────────────────────────
-           A full-screen, repeating, diagonal overlay showing the viewer's name +
-           phone + department so any screenshot leaks are traceable to the account,
-           plus a second line "仅限内部沟通，严禁外传" warning (甲方要求).
-           Sits ABOVE everything (incl. modals/toasts) so it's captured in every
-           screenshot; pointer-events:none so it never blocks clicks. The SVG tile
-           is data-URI-encoded inline; identity + warning are injected into two
-           <text> lines. Tile widened to fit 姓名·手机·部门 without truncation. */
-        .anti-leak-watermark {
-            position: fixed;
-            inset: 0;
-            z-index: 2147483000;          /* near int32 max — always on top */
-            pointer-events: none;
-            opacity: 0.55;
-            /* White text with a dark stroke so it stays legible over BOTH the dark
-               satellite map AND the light UI. Two rotated <text> lines: identity
-               then warning. Tile widened (680px) so the longer identity string
-               (姓名·手机·部门) isn't clipped. */
-            background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='680' height='680'><text x='-90' y='610' fill='%23ffffff' stroke='%23000000' stroke-width='0.6' stroke-opacity='0.35' font-size='22' font-family='sans-serif' transform='rotate(-40)' text-anchor='start'>{{ watermark_text|urlencode }}</text><text x='-90' y='650' fill='%23ffffff' stroke='%23000000' stroke-width='0.6' stroke-opacity='0.35' font-size='20' font-family='sans-serif' transform='rotate(-40)' text-anchor='start'>{{ watermark_warning|urlencode }}</text></svg>");
-            background-repeat: repeat;
-        }
-        /* Phones: sparser (halved) — the identity + warning pair per larger tile. */
-        @media (max-width: 768px) {
-            .anti-leak-watermark {
-                opacity: 0.6;
-                background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='460' height='520'><text x='-80' y='440' fill='%23ffffff' stroke='%23000000' stroke-width='0.6' stroke-opacity='0.35' font-size='19' font-family='sans-serif' transform='rotate(-40)' text-anchor='start'>{{ watermark_text|urlencode }}</text><text x='-80' y='475' fill='%23ffffff' stroke='%23000000' stroke-width='0.6' stroke-opacity='0.35' font-size='18' font-family='sans-serif' transform='rotate(-40)' text-anchor='start'>{{ watermark_warning|urlencode }}</text><text x='200' y='230' fill='%23ffffff' stroke='%23000000' stroke-width='0.6' stroke-opacity='0.35' font-size='19' font-family='sans-serif' transform='rotate(-40)' text-anchor='start'>{{ watermark_text|urlencode }}</text><text x='200' y='265' fill='%23ffffff' stroke='%23000000' stroke-width='0.6' stroke-opacity='0.35' font-size='18' font-family='sans-serif' transform='rotate(-40)' text-anchor='start'>{{ watermark_warning|urlencode }}</text></svg>");
-            }
         }
 
         /* ── Notification popup (shared, all authenticated pages) ────────────
@@ -252,66 +227,21 @@
     <link rel="stylesheet" href="{% static 'css/pwa.css' %}?v=20261023icons2">
     <link rel="stylesheet" href="{% static 'css/compact-ui.css' %}?v=20261023responsive">
     <link rel="stylesheet" href="{% static 'css/responsive-ui.css' %}?v=20261023controls2">
-    <script src="{% static 'js/pwa.js' %}?v=20261023tabs" defer></script>
-    <script src="{% static 'js/pwa-navigation.js' %}?v=20261023tabs" defer></script>
-    <script src="{% static 'js/responsive-ui.js' %}?v=20261023responsive" defer></script>
+    <link rel="stylesheet" href="{% static 'css/page-ui.css' %}?v=20261024pages6">
+    {% block extra_ui_css %}{% endblock %}
+    <script src="{% static 'js/submissions.js' %}?v=20261026business1" defer></script>
+    <script src="{% static 'js/pwa.js' %}?v=20261111management1" defer></script>
+    <script src="{% static 'js/pwa-navigation.js' %}?v=20261108fixes2" defer></script>
+    <script src="{% static 'js/responsive-ui.js' %}?v=20261024pages6" defer></script>
 </head>
-<body class="{% if user.is_authenticated %}pwa-authenticated{% endif %}" data-page="{{ request.resolver_match.url_name }}">
-    {% if user.is_authenticated %}
-    <nav class="top-nav">
-        <div class="top-nav-left">
-            <a href="{% url 'core:app_home' %}" class="top-nav-brand">灌溉管理系统</a>
-            <button type="button" class="mobile-hamburger" id="mobileHamburger" onclick="toggleMobileNav()" aria-label="打开全部功能" aria-haspopup="dialog">☰</button>
-            <div class="top-nav-links" id="topNavLinks">
-                <a href="{% url 'core:dashboard' %}" class="{% block nav_dashboard %}{% endblock %}">地图总览</a>
-                <a href="{% url 'core:work_reports' %}" class="{% block nav_work_reports %}{% endblock %}">维修日志</a>
-                <a href="{% url 'core:water_requests' %}" class="{% block nav_water_requests %}{% endblock %}">需求</a>
-                <a href="{% url 'core:stats_dashboard' %}" class="{% block nav_stats %}{% endblock %}">数据报表</a>
-                <a href="{% url 'core:irrigation_dashboard' %}" class="{% block nav_irrigation %}{% endblock %}">灌溉数据</a>
-                <a href="{% url 'core:inventory_management' %}" class="{% block nav_inventory_mgmt %}{% endblock %}">库存管理</a>
-                <a href="{% url 'core:settings' %}" class="{% block nav_settings %}{% endblock %}">区域管理</a>
-                {% if is_admin %}
-                <a href="{% url 'core:project_management' %}" class="{% block nav_projects %}{% endblock %}">项目管理</a>
-                <a href="{% url 'core:user_management' %}" class="{% block nav_user_mgmt %}{% endblock %}">
-                    用户管理{% if pending_registrations %}<span style="background:var(--color-warning);color:#fff;padding:1px 6px;border-radius:10px;font-size:0.7rem;margin-left:4px;">{{ pending_registrations }}</span>{% endif %}
-                </a>
-                <a href="{% url 'core:pm_management' %}" class="{% block nav_pm %}{% endblock %}">作业计划</a>
-                {% endif %}
-            </div>
-        </div>
-        <div class="top-nav-right">
-            <button type="button" class="top-nav-notif" id="navNotifBtn" title="通知与PM任务" aria-label="查看通知和PM任务" aria-haspopup="dialog" aria-controls="notifPopup" aria-expanded="false" onclick="reopenNotifPopup()">
-                <svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-bell"/></svg>
-                <span class="notif-count" id="navNotifCount" aria-hidden="true">0</span>
-            </button>
-            <a href="{% url 'core:profile' %}" class="top-nav-user">{{ user.get_full_name|default:user.username }}</a>
-            <a href="{% url 'core:logout' %}" class="top-nav-logout">退出</a>
-        </div>
-    </nav>
-    <div class="mobile-nav-overlay" id="mobileNavOverlay" onclick="toggleMobileNav()"></div>
-    <div class="mobile-nav-dropdown" id="mobileNavDropdown">
-        <a href="{% url 'core:dashboard' %}" class="{% block nav_dashboard_m %}{% endblock %}">地图总览</a>
-        <a href="{% url 'core:work_reports' %}" class="{% block nav_work_reports_m %}{% endblock %}">维修日志</a>
-        <a href="{% url 'core:water_requests' %}" class="{% block nav_water_requests_m %}{% endblock %}">需求</a>
-        <a href="{% url 'core:stats_dashboard' %}" class="{% block nav_stats_m %}{% endblock %}">数据报表</a>
-        <a href="{% url 'core:irrigation_dashboard' %}" class="{% block nav_irrigation_m %}{% endblock %}">灌溉数据</a>
-        <a href="{% url 'core:inventory_management' %}" class="{% block nav_inventory_mgmt_m %}{% endblock %}">库存管理</a>
-        <a href="{% url 'core:settings' %}" class="{% block nav_settings_m %}{% endblock %}">区域管理</a>
-        {% if is_admin %}
-        <a href="{% url 'core:project_management' %}" class="{% block nav_projects_m %}{% endblock %}">项目管理</a>
-        <a href="{% url 'core:user_management' %}" class="{% block nav_user_mgmt_m %}{% endblock %}">用户管理</a>
-        <a href="{% url 'core:pm_management' %}" class="{% block nav_pm_m %}{% endblock %}">作业计划</a>
-        {% endif %}
-        <a href="{% url 'core:profile' %}">{{ user.get_full_name|default:user.username }}</a>
-        <a href="{% url 'core:logout' %}">退出</a>
-    </div>
-    {% endif %}
+<body class="ui-system {% if user.is_authenticated %}pwa-authenticated{% endif %}" data-page="{{ request.resolver_match.url_name }}">
+    <div id="appNavigation">{% include "core/_navigation.html" %}</div>
 
+    <!--fos-page-content-start-->
     {% block content %}{% endblock %}
+    <!--fos-page-content-end-->
 
-    {% if user.is_authenticated and watermark_text %}
-    <div class="anti-leak-watermark" aria-hidden="true"></div>
-    {% endif %}
+    {% include 'core/_watermark.html' %}
 
     {# ── Per-user notification popup (shared, all authed pages) ── #}
     {% if user.is_authenticated %}
@@ -354,6 +284,7 @@
             // badge still counts them so the user knows to click.
             if (queue.length && !autoShown) { autoShown = true; openPopup(); }
         }
+        window.FOSRefreshNotifications = load;
         function updateBadge() {
             var b = document.getElementById('navNotifCount');
             if (!b) return;
@@ -375,7 +306,7 @@
                 return escDiv.innerHTML;
             }
             list.innerHTML = pmTasks.map(function (t) {
-                var dueText = t.overdue ? '⚠️ 已逾期' : '待完成';
+                var dueText = t.overdue ? '已逾期' : '待完成';
                 if (t.deadline) dueText += ' · 截止 ' + esc(t.deadline);
                 var zoneInfo = t.zone_count > 0
                     ? (t.zone_preview ? t.zone_count + ' zones (' + esc(t.zone_preview) + '…)' : t.zone_count + ' zones')
@@ -455,7 +386,7 @@
         window.closeNotifPopup = function () {
             var popup = document.getElementById('notifPopup');
             if (popup) popup.style.display = 'none';
-            document.getElementById('navNotifBtn').setAttribute('aria-expanded', 'false');
+            document.getElementById('navNotifBtn')?.setAttribute('aria-expanded', 'false');
         };
         document.addEventListener('keydown', function (e) {
             if (e.key === 'Escape') { window.closeNotifPopup(); }
@@ -489,5 +420,6 @@
     <script src="{% static 'js/ui-icons.js' %}?v=20261023icons"></script>
     {% block extra_js %}{% endblock %}
     {% include 'core/pwa_shell.html' %}
+    {% if multi_team_enabled %}<script src="{% static 'operations/bulk-ui.js' %}?v=20261111visibility4" defer></script><script src="{% static 'operations/workspace.js' %}?v=20261113managerai1" defer></script>{% endif %}
 </body>
 </html>

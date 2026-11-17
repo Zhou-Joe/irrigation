@@ -1,0 +1,7 @@
+{% if business_choices %}
+<form action="{% url 'operations:switch' %}" method="post" class="business-switch" data-team-switch data-current-business="{{ business_selected }}" style="display:flex;align-items:center;margin:0">
+  {% csrf_token %}<select name="business" aria-label="业务视图" style="max-width:110px;min-width:0;border:1px solid #d0ddd4;border-radius:6px;padding:5px;background:#fff;color:#1b4332;font:inherit">
+    {% for item in business_choices %}<option value="{{ item.code }}" {% if item.code == business_selected %}selected{% endif %}>{{ item.label }}</option>{% endfor %}
+  </select><span class="pwa-sr-only" data-business-status role="status" aria-live="polite"></span>
+</form>
+{% endif %}

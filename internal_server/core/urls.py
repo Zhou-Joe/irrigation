@@ -1,9 +1,17 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from core import dxf_views, views
+from core import account_mail
+from django.views.generic import TemplateView
+from core import mail_profile_views
+from core import mail_delivery
 from core import pwa
+from core import ai_storage
+from core import ai_attachments
+from core import submissions
+from operations import feedback
 from core.sync_views import sync_status, agent_status
-from core.ai_views import ai_chat, ai_status
+from core.ai_views import ai_chat, ai_status, ai_cancel, ai_conversations
 from core.api import (
     ZoneViewSet, PlantViewSet, WorkerViewSet,
     WaterRequestViewSet,
@@ -16,6 +24,7 @@ from core.api import (
 from core.views import equipment_catalog_autocomplete
 from core import workitem_manage_views
 from core import inventory_tree_views
+from core import inventory_quotes
 from core.workorder_tree_views import (
     workorder_tree_form, project_create_api, planned_maintenance_pending,
     project_management, project_save, project_delete,
@@ -39,6 +48,8 @@ router.register(r'locations', LocationViewSet, basename='location')
 router.register(r'work-reports', WorkReportViewSet, basename='workreport')
 
 urlpatterns = [
+    path('feedback/', feedback.board, name='feedback'),
+    path('feedback/photos/<uuid:photo_id>/', feedback.photo, name='feedback_photo'),
     path('app/', pwa.app_home, name='app_home'),
     path('manifest.webmanifest', pwa.manifest, name='pwa_manifest'),
     path('service-worker.js', pwa.service_worker, name='pwa_service_worker'),
@@ -48,6 +59,7 @@ urlpatterns = [
     path('stats/excel/', views.work_reports_excel, name='work_reports_excel'),
     path('irrigation/', views.irrigation_dashboard, name='irrigation_dashboard'),
     path('api/irrigation/zone-heatmap/', views.irrigation_zone_heatmap, name='irrigation_zone_heatmap'),
+    path('api/zones-revision/', views.zone_revision_api, name='zone_revision'),
     path('api/irrigation/zone/<int:zone_id>/exclude/', views.irrigation_zone_exclude, name='irrigation_zone_exclude'),
     path('api/irrigation/zone/<int:zone_id>/restore/', views.irrigation_zone_restore, name='irrigation_zone_restore'),
     path('api/stats/zone-heatmap/', views.stats_zone_heatmap, name='stats_zone_heatmap'),
@@ -59,6 +71,13 @@ urlpatterns = [
     path('profile/', views.profile_page, name='profile'),
     path('api-docs/', views.api_docs_page, name='api_docs'),
     path('register/', views.register, name='register'),
+    path('account-mail/settings/',account_mail.settings_view,name='account_email_settings'),
+    path('account-mail/forgot-password/',account_mail.password_request,name='account_password_request'),
+    path('account-mail/password/sent/',TemplateView.as_view(template_name='core/account_mail.html',extra_context={'title':'请查收邮件','note':'如该邮箱对应有效账号，重置邮件将发送至邮箱。'}),name='account_password_sent'),
+    path('account-mail/password/complete/',TemplateView.as_view(template_name='core/account_mail.html',extra_context={'title':'密码已更新','note':'请使用新密码登录。'}),name='account_password_complete'),
+    path('account-mail/password/<uidb64>/<token>/',account_mail.ResetConfirmView.as_view(),name='account_password_confirm'),
+    path('account-mail/resend-confirmation/',account_mail.resend_confirmation,name='account_registration_resend'),
+    path('account-mail/verify/<str:token>/',account_mail.verify_registration,name='account_registration_verify'),
     path('registration-approval/', views.registration_approval, name='registration_approval'),
     path('user-management/', views.user_management, name='user_management'),
     path('user-management/<str:profile_type>/<int:profile_id>/edit/', views.user_edit, name='user_edit'),
@@ -165,6 +184,9 @@ urlpatterns = [
     path('inventory/tree.json', inventory_tree_views.inventory_tree_json, name='inventory_tree_json'),
     path('inventory/node/<int:cat_id>/detail/', inventory_tree_views.inventory_node_detail, name='inventory_node_detail'),
     path('inventory/node/<int:cat_id>/save/', inventory_tree_views.inventory_node_save, name='inventory_node_save'),
+    path('inventory/node/<int:cat_id>/move/', inventory_tree_views.inventory_node_move, name='inventory_node_move'),
+    path('inventory/quotes/extract/', inventory_quotes.quote_extract, name='inventory_quote_extract'),
+    path('inventory/quotes/confirm/', inventory_quotes.quote_confirm, name='inventory_quote_confirm'),
     path('inventory/node/<int:cat_id>/price/add/', inventory_tree_views.inventory_price_add, name='inventory_price_add'),
     path('inventory/price/<int:record_id>/edit/', inventory_tree_views.inventory_price_edit, name='inventory_price_edit'),
     path('inventory/price/<int:record_id>/delete/', inventory_tree_views.inventory_price_delete, name='inventory_price_delete'),
@@ -194,10 +216,14 @@ urlpatterns = [
     path('announcements/<int:pk>/delete/', views.announcement_delete, name='announcement_delete'),
     path('api/announcements/<int:pk>/acknowledge/', views.announcement_acknowledge, name='announcement_acknowledge'),
     path('api/announcements/<int:pk>/unacked/', views.announcement_unacked_api, name='announcement_unacked_api'),
+    path('email-download/<uuid:file_id>/<str:token>/', mail_delivery.download, name='email_report_download'),
     path('email-configs/save/', views.email_config_save, name='email_config_save'),
     path('email-configs/list/', views.email_config_list, name='email_config_list'),
     path('email-configs/<int:pk>/delete/', views.email_config_delete, name='email_config_delete'),
     path('email-configs/<int:pk>/test/', views.email_config_test, name='email_config_test'),
+    path('email-configs/delivery-profiles/',mail_profile_views.profiles,name='email_delivery_profiles'),
+    path('email-configs/delivery-profiles/save/',mail_profile_views.save,name='email_delivery_profile_save'),
+    path('email-configs/delivery-profiles/<int:pk>/delete/',mail_profile_views.delete,name='email_delivery_profile_delete'),
     path('email-configs/smtp/', views.email_smtp_get, name='email_smtp_get'),
     path('email-configs/smtp/save/', views.email_smtp_save, name='email_smtp_save'),
     path('work-reports/tree/<int:report_id>/edit/', workorder_tree_form, name='workorder_tree_form_edit'),
@@ -240,6 +266,12 @@ urlpatterns = [
     path('api/maxicom-dashboard', views.maxicom_dashboard_api, name='maxicom_dashboard_api'),
     path('api/sync/status', sync_status, name='sync_status'),
     path('api/sync/agent-status', agent_status, name='agent_status'),
+    path('api/submissions/<uuid:key>/', submissions.result, name='submission_result'),
     path('api/ai/chat', ai_chat, name='ai_chat'),
+    path('api/ai/attachments', ai_attachments.upload, name='ai_attachment_upload'),
+    path('api/ai/attachments/<str:thread_id>/<uuid:attachment_id>/', ai_attachments.download, name='ai_attachment_download'),
+    path('ai/files/<str:thread_id>/<str:name>', ai_storage.download, name='ai_artifact'),
     path('api/ai/status', ai_status, name='ai_status'),
+    path('api/ai/cancel', ai_cancel, name='ai_cancel'),
+    path('api/ai/conversations', ai_conversations, name='ai_conversations'),
 ]

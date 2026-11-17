@@ -38,6 +38,7 @@ INSTALLED_APPS = [
     'corsheaders',
     'mptt',
     'core.apps.CoreConfig',
+    'operations.apps.OperationsConfig',
 ]
 
 MIDDLEWARE = [
@@ -53,6 +54,8 @@ MIDDLEWARE = [
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'core.session_guard.SessionGuardMiddleware',
+    'operations.middleware.BusinessAccessMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
@@ -73,12 +76,16 @@ TEMPLATES = [
                 'core.context_processors.notifications',
                 'core.context_processors.user_role',
                 'core.pwa.navigation',
+                'operations.context.workspace',
             ],
         },
     },
 ]
 
 WSGI_APPLICATION = 'config.wsgi.application'
+
+# Opt-in pilot; existing deployments retain their current behavior until bootstrapped.
+MULTI_TEAM_ENABLED = os.environ.get('MULTI_TEAM_ENABLED', 'False') == 'True'
 
 DATABASES = {
     'default': {
@@ -137,6 +144,11 @@ DXF_CALIBRATION_MAX_RMS_M = float(os.environ.get('DXF_CALIBRATION_MAX_RMS_M', '5
 
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
+AI_PRIVATE_ROOT = BASE_DIR / 'private_ai'
+FEEDBACK_PRIVATE_ROOT = Path(os.environ.get('FEEDBACK_PRIVATE_ROOT', str(BASE_DIR / 'private_feedback')))
+PEST_WORKORDER_PRIVATE_ROOT = Path(os.environ.get('PEST_WORKORDER_PRIVATE_ROOT', str(BASE_DIR / 'private_pest_workorders')))
+AI_EXECUTOR_BINARY = os.environ.get('AI_EXECUTOR_BINARY', 'docker')
+AI_EXECUTOR_IMAGE = os.environ.get('AI_EXECUTOR_IMAGE', '')
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
@@ -212,3 +224,17 @@ EMAIL_USE_TLS = os.environ.get('EMAIL_USE_TLS', 'False').lower() in ('true', '1'
 EMAIL_TIMEOUT = int(os.environ.get('EMAIL_TIMEOUT', '30'))
 DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', EMAIL_HOST_USER or 'noreply@maxicom.local')
 
+
+# Optional deployment override; normally captured automatically from the public app.
+EMAIL_REPORT_PUBLIC_BASE_URL = os.environ.get('EMAIL_REPORT_PUBLIC_BASE_URL', '').strip()
+PASSWORD_RESET_TIMEOUT = 3600
+
+# Account delivery events contain profile IDs and sanitized results, never tokens.
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'handlers': {'account_mail_console': {'class': 'logging.StreamHandler'}},
+    'loggers': {'core.account_mail': {
+        'handlers': ['account_mail_console'], 'level': 'INFO', 'propagate': False,
+    }},
+}

@@ -343,9 +343,8 @@ def build_irrigation_report_excel(date_from, date_to, ccu_ids=None):
 
     Mirrors the former inline body of ``views.irrigation_report_excel`` (after
     the request param parsing). ``date_from`` / ``date_to`` are the compact
-    Maxicom timestamp strings (``YYYYMMDDHHMM`` / ``YYYYMMDDHH`` etc.) exactly
-    as the dashboard uses — they are embedded verbatim in the filename and
-    padded to 14 chars for the timestamp range filter.
+    local timestamp strings used by the dashboard. They are embedded in the
+    filename; database filters use the common explicit local-to-UTC conversion.
 
     ``ccu_ids`` (optional) restricts the export to a subset of CCU Patch ids —
     used by the scheduled-email feature to distribute specific CCUs to the
@@ -357,8 +356,8 @@ def build_irrigation_report_excel(date_from, date_to, ccu_ids=None):
     from core.views import (_irrig_data_span, _mapped_station_ids,
                             _ccu_queryset, _build_ccu_matrix)
 
-    ts_from = date_from.ljust(14, '0')[:14] if date_from else ''
-    ts_to = date_to.ljust(14, '9')[:14] if date_to else ''
+    from core.irrig_time import runtime_window_bounds
+    ts_from, ts_to = runtime_window_bounds(date_from, date_to)
 
     ctrl_map = {c.mdb_index: c for c in MaxicomController.objects.exclude(name__icontains='CCU')}
     rt_qs = MaxicomRuntime.objects.select_related('station', 'station__parent', 'site')
@@ -366,9 +365,8 @@ def build_irrigation_report_excel(date_from, date_to, ccu_ids=None):
         rt_qs = rt_qs.filter(timestamp__gte=ts_from)
     if ts_to:
         rt_qs = rt_qs.filter(timestamp__lte=ts_to)
-    rt_by_site = defaultdict(list)
-    for rt in rt_qs:
-        rt_by_site[rt.site_id].append(rt)
+    from core.irrigation_queries import runtime_buckets
+    rt_by_site, station_metadata = runtime_buckets(rt_qs)
 
     # Station Patch IDs claimed by at least one Zone — rows whose station is
     # NOT in this set are flagged red as orphan (no Zone backing = un-attributable).
@@ -388,6 +386,7 @@ def build_irrigation_report_excel(date_from, date_to, ccu_ids=None):
     orphan_font = Font(color='C62828', bold=True)
 
     wb = Workbook()
+    summary_runtime_cells = {}
     # remove the default sheet (we add per-CCU sheets)
     default_ws = wb.active
 
@@ -399,7 +398,7 @@ def build_irrigation_report_excel(date_from, date_to, ccu_ids=None):
         ccus = [c for c in ccus if c.id in wanted]
 
     for idx, ccu in enumerate(ccus):
-        m = _build_ccu_matrix(ccu, rt_by_site.get(ccu.id, []), ctrl_map, mapped_station_ids)
+        m = _build_ccu_matrix(ccu, rt_by_site.get(ccu.id, []), ctrl_map, mapped_station_ids, stations=station_metadata.get(ccu.id, []))
         controllers = m['controllers']
         rows = m['rows']
         col_totals = m['col_totals']
@@ -435,7 +434,7 @@ def build_irrigation_report_excel(date_from, date_to, ccu_ids=None):
             c.alignment = center
             c.border = border
 
-        # 24 station rows (no per-row 合计 cell)
+        # All configured station channels (no per-row 合计 cell).
         for ri, r in enumerate(rows):
             rownum = header_row + 1 + ri
             sc = ws.cell(row=rownum, column=1, value=r['station'])
@@ -463,12 +462,45 @@ def build_irrigation_report_excel(date_from, date_to, ccu_ids=None):
             ws.column_dimensions[get_column_letter(2 + ci)].width = 11
         ws.freeze_panes = 'B5'
 
+        # Only the three specified, actually configured stations are used for
+        # pump-volume estimates. Resolve their displayed matrix cells once.
+        configured = {(ctrl_map[st.controller_number].name, st.controller_channel)
+                      for st in station_metadata.get(ccu.id, [])
+                      if st.controller_number in ctrl_map}
+        target_channels = {('CCU3', 5): (15,), ('CCU38', 1): (6, 13)}
+        for ctrl in ctrl_map.values():
+            if ctrl.site_id != ccu.id or ctrl.name not in controllers:
+                continue
+            wanted_channels = target_channels.get((str(ccu.code).upper(), ctrl.link_channel), ())
+            if not wanted_channels:
+                continue
+            ci, name = controllers.index(ctrl.name), ctrl.name
+            for ri, r in enumerate(rows):
+                key = f'{str(ccu.code).upper().removeprefix("CCU")}-{ctrl.link_channel}-{r["channel"]}'
+                if r['channel'] in wanted_channels and (name, r['channel']) in configured:
+                    cell = ws.cell(header_row + 1 + ri, 2 + ci)
+                    summary_runtime_cells[key] = {'sheet': ws.title, 'cell': cell.coordinate,
+                                                  'value': r['values'][ci] or 0}
+
+    # Same query window for actual sensor liters and runtime, shared by web,
+    # scheduled mail, manual downloads and the report API.
+    from core.irrigation_sensor_excel import add_sensor_sheet
+    sensor_rows = []
+    add_sensor_sheet(wb, date_from, date_to, ccu_ids=ccu_ids, summary_rows=sensor_rows)
+    from core.irrigation_water_rules import classify_sensor
+    from core.irrigation_water_summary import add_water_summary, save_workbook_with_cached_summary
+    for sensor in sensor_rows:
+        sensor['group'] = classify_sensor(sensor['site_number'], sensor['channel'])
+    scope = '、'.join(c.code for c in ccus) if ccu_ids else '全部 CCU'
+    cached_values = add_water_summary(wb, date_from, date_to, sensor_rows,
+                                     summary_runtime_cells, scope_label=scope)
+
     # remove default empty sheet
     if default_ws is not None and default_ws.title in wb.sheetnames and len(wb.sheetnames) > 1:
         wb.remove(default_ws)
 
     buf = io.BytesIO()
-    wb.save(buf)
+    save_workbook_with_cached_summary(wb, buf, cached_values)
     buf.seek(0)
     fname = f'irrigation_report_{date_from}_{date_to}.xlsx'
     return fname, buf
@@ -507,7 +539,7 @@ def build_inventory_catalog_excel():
         # column — pending (awaiting manager) and removed stay out of stats.
         for ln in (InventoryTransactionLine.objects
                    .filter(category_id__in=part_ids,
-                           transaction__confirm_status='confirmed')
+                           transaction__confirm_status='confirmed', transaction__consumption_mode='actual')
                    .select_related('transaction')
                    .order_by('-transaction__date', '-id')):
             txn_map.setdefault(ln.category_id, []).append(ln)
@@ -682,7 +714,7 @@ def build_inventory_transactions_excel(date_from=None, date_to=None):
 
     txns = (InventoryTransaction.objects
             .filter(date__gte=date_from, date__lte=date_to)
-            .exclude(confirm_status='removed')   # removed stays out of exports too
+            .filter(confirm_status='confirmed', consumption_mode='actual')   # same scope as accepted ledger
             .select_related('worker', 'related_project', 'zone', 'work_report')
             .prefetch_related('lines__category')
             .order_by('-date', '-id'))
@@ -1043,8 +1075,7 @@ def build_project_detail_excel(project):
         txns = (InventoryTransaction.objects
                 .filter(work_report_id__in=wr_ids, related_project=project,
                         operation='出库', entry_subtype='项目',
-                        consumption_mode='actual')
-                .exclude(confirm_status='removed')
+                        consumption_mode='actual', confirm_status='confirmed')
                 .prefetch_related('lines__category'))
         for t in txns:
             cell = mat_by_wr.setdefault(t.work_report_id, [])

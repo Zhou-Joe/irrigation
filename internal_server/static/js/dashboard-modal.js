@@ -2,6 +2,7 @@
 (function () {
     'use strict';
 
+    var effects=window.FOSScopedEffects(),requests=window.FOSScopedRequests(),fetch=requests.fetch;
     var _currentModal = null;
     var _mapMode = false;
     var _selectedZoneCodes = new Set();
@@ -98,12 +99,21 @@
         formEl.insertBefore(input, formEl.firstChild);
     }
 
+    function notifyFormReady(body) {
+        effects.timeout(function () {
+            var form = body.querySelector('form'); if (!form) return;
+            var kind = form.id === 'invModalForm' ? 'inventory' : form.id === 'wrModalForm' ? 'water_request' : 'workorder';
+            var editing = kind === 'inventory' ? !!_editingTxnId : kind === 'workorder' && !!(_pendingEdit || _editingReportId || _editingPmOrderId || _pmGwoId);
+            document.dispatchEvent(new CustomEvent('irrigation:form-open', {detail:{kind:kind,editing:editing}}));
+        }, 0);
+    }
+
     function showToast(msg, type) {
         var t = $('v2ModalToast');
         if (!t) return;
         t.textContent = msg;
         t.className = 'show ' + (type || '');
-        setTimeout(function () { t.className = ''; }, 3000);
+        effects.timeout(function () { t.className = ''; }, 3000);
     }
 
     // P1-4: Shared helper to create selection overlay for a zone code
@@ -143,6 +153,7 @@
     }
 
     window.openV2Modal = function (type) {
+        if (window.IrrigationSubmissions) window.IrrigationSubmissions.begin(type);
         // Cancel any pending hide timeout from a previous close
         if (_closeTimeout) { clearTimeout(_closeTimeout); _closeTimeout = null; }
         if (_currentModal) closeV2Modal(_currentModal);
@@ -174,7 +185,7 @@
                 .then(function (data) {
                     if (isValidFormData(type, data)) _formDataCache[type] = data;
                 })
-                .catch(function () {});
+                .catch(function (error) { if (error?.name === 'AbortError') return;});
         }
 
         // Inventory opens the form directly (no zone-first step). The zone is an
@@ -197,7 +208,7 @@
                         if (isValidFormData('inventory', data)) { _formDataCache.inventory = data; showInv(); }
                         else { showToast('加载库存数据失败', 'error'); }
                     })
-                    .catch(function () { showToast('加载库存数据失败', 'error'); });
+                    .catch(function (error) { if (error?.name === 'AbortError') return; showToast('加载库存数据失败', 'error'); });
             }
             return;
         }
@@ -251,7 +262,7 @@
                     _formDataCache.workorder = data;
                     showForm();
                 })
-                .catch(function () { showToast('加载表单失败', 'error'); });
+                .catch(function (error) { if (error?.name === 'AbortError') return; showToast('加载表单失败', 'error'); });
         }
     };
 
@@ -331,7 +342,7 @@
                     _formDataCache.workorder = data;
                 });
         }
-        Promise.all([seedP, formP]).then(showForm).catch(function (err) {
+        Promise.all([seedP, formP]).then(showForm).catch(function (err) { if (err?.name === 'AbortError') return;
             if (_currentModal === 'workorder' && _pmGwoId === String(gwoId)) {
                 closeV2Modal('workorder');
                 showToast(err.message || '加载PM任务失败，请重试', 'error');
@@ -385,7 +396,7 @@
                 syncSelectionOverlays();   // paint red on the map for the report's zones
                 if (sb) sb.disabled = false;
             })
-            .catch(function () { showToast('加载工单失败', 'error'); if (sb) { sb.disabled = false; sb.textContent = '保存'; } });
+            .catch(function (error) { if (error?.name === 'AbortError') return; showToast('加载工单失败', 'error'); if (sb) { sb.disabled = false; sb.textContent = '保存'; } });
     };
 
     // Merge mode: open the survivor's edit form (prefilled with all its data —
@@ -398,7 +409,7 @@
         window.openV2ModalForEdit(survivorId);
         // Override the button label after the edit form opens (openV2ModalForEdit
         // sets it to "保存"; we want "合并保存"). Defer a tick so the DOM is ready.
-        setTimeout(function () {
+        effects.timeout(function () {
             var sb = $('woSubmitBtn');
             if (sb) sb.textContent = '合并保存';
         }, 200);
@@ -446,7 +457,7 @@
                 syncSelectionOverlays();
                 if (sb) sb.disabled = false;
             })
-            .catch(function () { showToast('加载工单失败', 'error'); if (sb) { sb.disabled = false; sb.textContent = '保存'; } });
+            .catch(function (error) { if (error?.name === 'AbortError') return; showToast('加载工单失败', 'error'); if (sb) { sb.disabled = false; sb.textContent = '保存'; } });
     };
 
     // Write the existing report's values into the modal form built by
@@ -693,7 +704,7 @@
                 _editingTxnId = txnId;
                 if (sb) sb.disabled = false;
             })
-            .catch(function () { showToast('加载库存记录失败', 'error'); if (sb) { sb.disabled = false; sb.textContent = '保存'; } });
+            .catch(function (error) { if (error?.name === 'AbortError') return; showToast('加载库存记录失败', 'error'); if (sb) { sb.disabled = false; sb.textContent = '保存'; } });
     };
 
     // Write the existing txn's values into the inventory modal built by
@@ -786,7 +797,7 @@
         var container = $(p + 'ModalContainer');
         if (container) container.classList.remove('open');
         if (_closeTimeout) clearTimeout(_closeTimeout);
-        _closeTimeout = setTimeout(function () {
+        _closeTimeout = effects.timeout(function () {
             if (backdrop) backdrop.style.display = 'none';
             if (container) container.style.display = 'none';
             _closeTimeout = null;
@@ -1986,6 +1997,7 @@
         });
 
         injectCSRF(body.querySelector('form'));
+        notifyFormReady(body);
         initWorkorderBehaviors(data);
         body.scrollTop = 0;
         var zoneButton = document.querySelector('#woModalFooter .v2-btn-map');
@@ -2130,7 +2142,7 @@
                 if (data.error) { showToast(data.error, 'error'); return; }
                 _woProjects.push(data);
                 pickWoProject(root, subLabel, { id: data.id, name: data.name });
-            }).catch(function () { showToast('创建项目失败', 'error'); });
+            }).catch(function (error) { if (error?.name === 'AbortError') return; showToast('创建项目失败', 'error'); });
         }
         if (catPrimary) {
             // Custom display order for 工作类别 (3 per row): the rest appended after.
@@ -2224,7 +2236,7 @@
                 } else {
                     compressPhoto(f, 1600, 0.8).then(function (comp) {
                         addOnePhotoFile(comp || f, false);
-                    }).catch(function () { addOnePhotoFile(f, false); });
+                    }).catch(function (error) { if (error?.name === 'AbortError') return; addOnePhotoFile(f, false); });
                 }
             });
         }
@@ -2363,7 +2375,7 @@
         fetch('/api/planned-maintenance/pending/?zones=' + encodeURIComponent(zones), { credentials: 'same-origin' })
             .then(function (r) { return r.json(); })
             .then(function (data) { renderPlannedListInner(node, (data && data.reports) || []); })
-            .catch(function () { renderPlannedListInner(node, []); });
+            .catch(function (error) { if (error?.name === 'AbortError') return; renderPlannedListInner(node, []); });
     }
 
     function renderPlannedListInner(node, reports) {
@@ -2915,11 +2927,12 @@
         body.innerHTML = '<form id="wrModalForm" style="display:contents;">' +
             '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;"><span style="font-size:0.85em;color:#888;">' + data.today + ' ' + data.now_time + '</span><span style="font-size:0.85em;color:#888;">' + data.user_name + '</span></div>' +
             '<div class="v2-fg"><div class="v2-fl">需求类型</div><div class="v2-chip-group">' + typeChips + '</div><input type="hidden" name="request_type" id="wrTypeInput" value="' + data.request_type_choices[0][0] + '"></div>' +
-            '<div class="v2-fg"><div class="v2-form-row"><div><div class="v2-fl">开始日期</div><select name="start_date" id="wrStartDate" class="v2-select">' + dateOptionsHTML(7, data.today) + '</select></div><div><div class="v2-fl">结束日期</div><select name="end_date" id="wrEndDate" class="v2-select">' + dateOptionsHTML(7, data.today) + '</select></div></div></div>' +
+            '<div class="v2-fg"><div class="v2-form-row"><div><label class="v2-fl" for="wrStartDate">开始日期</label><input type="date" name="start_date" id="wrStartDate" class="v2-input" value="' + data.today + '"></div><div><label class="v2-fl" for="wrEndDate">结束日期</label><input type="date" name="end_date" id="wrEndDate" class="v2-input" value="' + data.today + '"></div></div></div>' +
             '<div class="v2-fg"><div class="v2-form-row"><div><div class="v2-fl">开始时间</div><select name="start_time" id="wrStart" class="v2-select"><option value="">--</option></select></div><div><div class="v2-fl">结束时间</div><select name="end_time" id="wrEnd" class="v2-select"><option value="">--</option></select></div></div></div>' +
             '<div class="v2-fg"><div class="v2-fl">备注</div><textarea name="remark" class="v2-textarea" placeholder="可选备注..." rows="2"></textarea></div>' +
             '<div class="v2-fg"><div class="v2-fl">已绘制区域</div><div id="wrShapeList"></div></div></form>';
         injectCSRF(body.querySelector('form'));
+        notifyFormReady(body);
         // Populate time selects with 30-min intervals
         var pad = function (n) { return String(n).padStart(2, '0'); };
         function populateTime30(sel, def) {
@@ -2929,14 +2942,16 @@
             }
             if (def) sel.value = def;
         }
-        var now = new Date();
+        var now = new Date(data.today + 'T' + data.now_time);
         var curM = now.getMinutes();
         var snapM = curM < 30 ? '00' : '30';
         var defStart = pad(now.getHours()) + ':' + snapM;
-        var endH = now.getHours() + 2; if (endH >= 24) endH -= 24;
+        var endH = now.getHours() + 2;
+        if (endH >= 24) { endH -= 24; var nextDay = new Date(now); nextDay.setDate(nextDay.getDate()+1); $('wrEndDate').value = _ymd(nextDay); }
         var defEnd = pad(endH) + ':' + snapM;
         populateTime30($('wrStart'), defStart);
         populateTime30($('wrEnd'), defEnd);
+        $('wrStartDate').addEventListener('change',function(){if($('wrEndDate').value < this.value)$('wrEndDate').value=this.value;});
         document.querySelectorAll('.modal-req-chip').forEach(function (chip) {
             chip.addEventListener('click', function () { document.querySelectorAll('.modal-req-chip').forEach(function (c) { c.classList.remove('active'); }); chip.classList.add('active'); $('wrTypeInput').value = chip.dataset.val; });
         });
@@ -2964,7 +2979,7 @@
                 var sec = document.getElementById('pmExtSection');
                 if (sec) sec.innerHTML = '<div style="padding:6px;color:#40916C;font-size:.85rem;">' + window.uiIcon('check') + ' 延期申请已提交，等待经理审批</div>';
             }
-        }).catch(function() { showToast('网络错误', 'error'); });
+        }).catch(function(error) { if (error?.name === 'AbortError') return; showToast('网络错误', 'error'); });
     };
 
     window.submitV2Workorder = function () {
@@ -3037,12 +3052,12 @@
                     // PM task completion (create): after closing, navigate to the
                     // work-reports PM tab so the worker sees the task marked done.
                     if (_pmGwoId) {
-                        setTimeout(function () {
+                        effects.timeout(function () {
                             closeV2Modal('workorder');
                             window.location.href = '/work-reports/?tab=pm';
                         }, 1500);
                     } else {
-                        setTimeout(function () { closeV2Modal('workorder'); }, 1500);
+                        effects.timeout(function () { closeV2Modal('workorder'); }, 1500);
                     }
                 }
                 else if (data.confirm) {
@@ -3064,7 +3079,7 @@
                     }
                 }
                 else { showToast(data.message, 'error'); btn.disabled = false; btn.textContent = '提交'; }
-            }).catch(function () { showToast('网络异常，提交结果未确认。请保持页面，联网后先核对维修日志再重试。', 'error'); btn.disabled = false; btn.textContent = '提交'; })
+            }).catch(function (error) { if (error?.name === 'AbortError') return; showToast('网络异常，提交结果未确认。请保持页面，联网后先核对维修日志再重试。', 'error'); btn.disabled = false; btn.textContent = '提交'; })
               .finally(function () { window._woInflight = false; });
     };
 
@@ -3110,7 +3125,7 @@
             '<div class="v2-fg"><div class="v2-form-row"><div><div class="v2-fl">日期</div><select name="date" id="invDate" class="v2-select">' + dateOptionsHTML(7, data.today) + '</select></div></div></div>' +
             '<div class="v2-fg" id="invOrderRow" style="display:none;"><div class="v2-fl">订单号</div><input type="text" name="order_no" id="invOrderNo" class="v2-input" list="invOrderList" placeholder="选择或输入采购订单号"><datalist id="invOrderList">' + (data.purchase_orders || []).map(function (o) { return '<option value="' + _esc(o) + '">'; }).join('') + '</datalist></div>' +
             '<div class="v2-fg" id="invProjCatRow" style="display:none;"><div class="v2-fl">项目类别</div><div class="v2-chip-group" id="invProjCatChips"></div><div class="v2-fl" style="margin-top:10px;">项目名称</div><div class="v2-chip-group" id="invProjNameChips"><div class="v2-chip" style="opacity:0.5;cursor:default;">先选类别</div></div></div>' +
-            '<div class="v2-fg" id="invConsumeModeRow" style="display:none;"><div class="v2-fl">消耗类型</div><div class="v2-chip-group"><div class="v2-chip inv-cmode-chip active" data-val="actual">实际消耗</div><div class="v2-chip inv-cmode-chip" data-val="estimated">预估消耗</div></div><div style="font-size:0.72em;color:#999;margin-top:4px;" id="invCmodeHint">实际消耗提交后立即扣减库存；预估消耗仅作提醒，确认后才扣库存。</div></div>' +
+            '<div class="v2-fg" id="invConsumeModeRow" style="display:none;"><div class="v2-fl">消耗类型</div><div class="v2-chip-group"><div class="v2-chip inv-cmode-chip active" data-val="actual">实际消耗</div><div class="v2-chip inv-cmode-chip" data-val="estimated">预估消耗</div></div><div style="font-size:0.72em;color:#999;margin-top:4px;" id="invCmodeHint">实际消耗经经理确认后计入台账和库存；预估消耗仅作提醒。</div></div>' +
             '<div class="v2-fg" id="invCpRow" style="display:none;"><div class="v2-fl">借用方</div><input type="text" name="counterparty" id="invCounterparty" class="v2-input" list="invBorrowerList" placeholder="选择或输入借用方"><datalist id="invBorrowerList">' + (data.borrowers || []).map(function (b) { return '<option value="' + _esc(b) + '">'; }).join('') + '</datalist></div>' +
             '<div class="v2-fg"><div class="v2-fl">物料清单</div>' +
                 '<div id="invCartList"></div>' +
@@ -3120,6 +3135,7 @@
             '<input type="hidden" name="lines" id="invLinesInput" value="[]"></form>';
 
         injectCSRF(body.querySelector('form'));
+        notifyFormReady(body);
         var sb = $('invSubmitBtn'); if (sb) { sb.disabled = false; sb.textContent = '提交'; }
 
         // Main operation selection (入库/出库) → rebuild subtype chips.
@@ -3347,11 +3363,11 @@
                     showToast(data.message, 'success');
                     btn.disabled = false; btn.textContent = '提交';
                     _invCart = []; _editingTxnId = null;
-                    setTimeout(function () { closeV2Modal('inventory'); }, 1500);
+                    effects.timeout(function () { closeV2Modal('inventory'); }, 1500);
                 } else {
                     showToast(data.message, 'error'); btn.disabled = false; btn.textContent = isEdit ? '保存' : '提交';
                 }
-            }).catch(function () { showToast('网络异常，提交结果未确认。请联网后先核对库存记录再重试。', 'error'); btn.disabled = false; btn.textContent = isEdit ? '保存' : '提交'; });
+            }).catch(function (error) { if (error?.name === 'AbortError') return; showToast('网络异常，提交结果未确认。请联网后先核对库存记录再重试。', 'error'); btn.disabled = false; btn.textContent = isEdit ? '保存' : '提交'; });
     };
 
     window.submitV2WaterRequest = function () {
@@ -3362,21 +3378,22 @@
         if (!startTime || !endTime) { showToast('请填写需求时间段', 'error'); return; }
         var form = $('wrModalForm'), fd = form ? new FormData(form) : new FormData();
         fd.set('zone_codes', JSON.stringify(codes));
-        // Combine the separate start/end date selects with their times into full
+        // Combine the separate date inputs with their times into full
         // datetimes for the server. Back-dating lets a user file a 需求 for a
         // span that already started; spans may cross midnight (start_date < end_date).
         var todayStr = _ymd(new Date());
         var startDate = fd.get('start_date') || todayStr;
         var endDate = fd.get('end_date') || startDate;
+        if (endDate + 'T' + endTime <= startDate + 'T' + startTime) { showToast('结束时间必须晚于开始时间；跨午夜请选择次日结束。','error'); $('wrEndDate').focus(); return; }
         fd.set('start_datetime', startDate + 'T' + startTime);
         fd.set('end_datetime', endDate + 'T' + endTime);
         fd.delete('start_date'); fd.delete('end_date'); fd.delete('start_time'); fd.delete('end_time');
         var btn = $('wrSubmitBtn'); btn.disabled = true; btn.textContent = '提交中...';
         fetch('/mobile/water-request/v2/', { method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest' } })
             .then(function (r) { return r.json(); }).then(function (data) {
-                if (data.success) { document.dispatchEvent(new Event('pwa:submitted')); showToast(data.message, 'success'); setTimeout(function () { closeV2Modal('water_request'); }, 1500); }
+                if (data.success) { document.dispatchEvent(new Event('pwa:submitted')); showToast(data.message, 'success'); effects.timeout(function () { closeV2Modal('water_request'); }, 1500); }
                 else { showToast(data.message, 'error'); btn.disabled = false; btn.textContent = '提交'; }
-            }).catch(function () { showToast('网络异常，提交结果未确认。请联网后先核对需求记录再重试。', 'error'); btn.disabled = false; btn.textContent = '提交'; });
+            }).catch(function (error) { if (error?.name === 'AbortError') return; showToast('网络异常，提交结果未确认。请联网后先核对需求记录再重试。', 'error'); btn.disabled = false; btn.textContent = '提交'; });
     };
 
     // Auto-open a modal in edit mode when the dashboard is reached via a
@@ -3398,7 +3415,7 @@
                 }
                 // Small delay lets the map finish initializing so the zone summary
                 // highlights correctly.
-                setTimeout(function () {
+                effects.timeout(function () {
                     window.openV2ModalForEdit(woId);
                     if (_mergeDupIds) {
                         var sb = $('woSubmitBtn');
@@ -3411,24 +3428,24 @@
             // seeded to complete that GeneratedWorkOrder.
             var pmGwoId = params.get('pm_gwo_id');
             if (pmGwoId && /^\d+$/.test(pmGwoId)) {
-                setTimeout(function () { window.openV2ModalForPm(pmGwoId); }, 600);
+                effects.timeout(function () { window.openV2ModalForPm(pmGwoId); }, 600);
                 return;
             }
             // PM task view/edit: ?pm_order_id=<id> opens the existing PMWorkOrder.
             var pmOrderId = params.get('pm_order_id');
             if (pmOrderId && /^\d+$/.test(pmOrderId)) {
-                setTimeout(function () { window.openV2ModalForPmEdit(pmOrderId); }, 600);
+                effects.timeout(function () { window.openV2ModalForPmEdit(pmOrderId); }, 600);
                 return;
             }
             var invId = params.get('edit_inventory');
             if (invId && /^\d+$/.test(invId)) {
-                setTimeout(function () { window.openV2ModalForEditInv(invId); }, 600);
+                effects.timeout(function () { window.openV2ModalForEditInv(invId); }, 600);
                 return;
             }
             // Home-screen and manifest shortcuts reuse the complete live forms.
             var action = params.get('action');
             if (['workorder', 'water_request', 'inventory'].indexOf(action) !== -1) {
-                setTimeout(function () { window.openV2Modal(action); }, 600);
+                effects.timeout(function () { window.openV2Modal(action); }, 600);
             }
         } catch (e) { /* URLSearchParams unsupported — no-op */ }
     }
@@ -3545,4 +3562,5 @@
         var d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML;
     }
 
+    window.FOSWorkorderModalLifecycle={busy:requests.busy,refreshRole(){requests.reset();window.closeV2Modal?.();_formDataCache={workorder:null,water_request:null};},destroy(){requests.destroy();effects.destroy();clearTimeout(_closeTimeout);document.getElementById('pmTaskPanel')?.remove();document.querySelectorAll('.v2-sheet-overlay').forEach(el=>el.remove());}};
 })();

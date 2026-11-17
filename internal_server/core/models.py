@@ -5,6 +5,7 @@ from django.core.validators import MinValueValidator, MaxValueValidator
 from django.utils import timezone
 from datetime import date
 from mptt.models import MPTTModel, TreeForeignKey
+from .report_scope import IrrigationReportManager
 
 
 # Role constants
@@ -19,6 +20,56 @@ ROLE_CHOICES = [
     (ROLE_FIELD_WORKER, '灌溉一线'),
     (ROLE_DEPT_USER, '部门用户'),
 ]
+
+
+class AIConversation(models.Model):
+    id = models.CharField(primary_key=True, max_length=64)
+    owner = models.ForeignKey(User, on_delete=models.CASCADE, related_name='ai_conversations')
+    title = models.CharField(max_length=120, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+
+class AIExecutionLease(models.Model):
+    conversation = models.OneToOneField(AIConversation, on_delete=models.CASCADE, primary_key=True)
+    owner = models.OneToOneField(User, on_delete=models.CASCADE)
+    token = models.UUIDField(default=uuid.uuid4)
+    expires_at = models.DateTimeField()
+    cancel_requested = models.BooleanField(default=False)
+
+
+class SubmissionReceipt(models.Model):
+    owner = models.ForeignKey(User, on_delete=models.CASCADE)
+    key = models.UUIDField()
+    kind = models.CharField(max_length=40)
+    fingerprint = models.CharField(max_length=64)
+    response = models.JSONField(default=dict)
+    status_code = models.PositiveSmallIntegerField(default=200)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['owner', 'key'], name='unique_user_submission')]
+
+
+class EmailDispatch(models.Model):
+    config = models.ForeignKey('EmailReportConfig', on_delete=models.CASCADE)
+    slot = models.CharField(max_length=40)
+    status = models.CharField(max_length=24, default='sending')
+    details = models.JSONField(default=dict)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['config', 'slot'], name='unique_email_dispatch_slot')]
+
+
+class DataImportRun(models.Model):
+    source = models.CharField(max_length=255, blank=True)
+    flow_only = models.BooleanField(default=False)
+    status = models.CharField(max_length=20, default='running')
+    details = models.JSONField(default=dict)
+    started_at = models.DateTimeField(default=timezone.now)
+    finished_at = models.DateTimeField(null=True)
 
 
 class Region(models.Model):
@@ -249,44 +300,22 @@ class Zone(models.Model):
             return abs(area) / 2.0
 
         first = pts[0]
-        # Detect nested multi-group format: [[[{lat,lng},...], [{lat,lng},...]], ...]
-        # pts[0] is a group = [ring1, ring2, ...], pts[0][0] is a ring = [{lat,lng}, ...]
-        # pts[0][0][0] is a point => flat multi-ring
-        # pts[0][0] is an array of points => need to check one more level
-        is_multi_group = False
-        if isinstance(first, list) and len(first) > 0:
-            inner = first[0]
-            if isinstance(inner, list) and len(inner) > 0:
-                innermost = inner[0]
-                if isinstance(innermost, (list, dict)) and not is_point(innermost):
-                    # inner[0] is an array of points → this is a nested multi-group
-                    is_multi_group = True
+        if is_point(first):
+            groups = [[pts]]  # One outer ring.
+        elif isinstance(first, list) and first and is_point(first[0]):
+            groups = [pts]  # One outer ring with optional holes.
+        elif (isinstance(first, list) and first and isinstance(first[0], list)
+              and first[0] and is_point(first[0][0])):
+            groups = pts  # Multiple islands, each with its own holes.
+        else:
+            self.area_sqm = None
+            return
 
         total = 0.0
-        if is_multi_group:
-            # Multi-group: [[outer1, hole1a, ...], [outer2, hole2a, ...]]
-            for group in pts:
-                for ring_idx, ring in enumerate(group):
-                    ring_area = calc_ring_area(ring)
-                    if ring_idx == 0:
-                        total += ring_area      # outer
-                    else:
-                        total -= ring_area      # hole
-        else:
-            # Flat multi-ring or single-ring: [outer, hole1, hole2, ...]
-            if isinstance(first, list) and len(first) > 0 and isinstance(first[0], (list, dict)):
-                rings = pts
-            elif isinstance(first, (dict, list)):
-                rings = [pts]
-            else:
-                self.area_sqm = None
-                return
-            for ring_idx, ring in enumerate(rings):
+        for group in groups:
+            for ring_idx, ring in enumerate(group):
                 ring_area = calc_ring_area(ring)
-                if ring_idx == 0:
-                    total += ring_area
-                else:
-                    total -= ring_area
+                total += ring_area if ring_idx == 0 else -ring_area
         self.area_sqm = total if total > 0 else None
 
     # ── Maxicom linkage ─────────────────────────────────────────────
@@ -706,6 +735,9 @@ class RegistrationRequest(models.Model):
         (STATUS_REJECTED, '已拒绝'),
     ]
 
+    email = models.EmailField('邮箱', blank=True)
+    email_confirmation_required = models.BooleanField(default=False)
+    email_verified_at = models.DateTimeField(null=True, blank=True)
     full_name = models.CharField(max_length=255)
     phone = models.CharField(max_length=20)
     username = models.CharField(max_length=150, unique=True, blank=True, null=True, help_text='登录用户名')
@@ -927,17 +959,24 @@ class MaxicomSchedule(models.Model):
 
 class MaxicomFlowZone(models.Model):
     """Flow monitoring zone from Maxicom2 system."""
-    site = models.ForeignKey(Patch, on_delete=models.CASCADE, related_name='flow_zones')
+    site = models.ForeignKey(Patch, on_delete=models.SET_NULL, related_name='flow_zones',
+                             null=True, blank=True)
     mdb_index = models.IntegerField()
     name = models.CharField(max_length=255)
     join_site = models.BooleanField(default=False)
+    source_site_index = models.IntegerField(null=True, blank=True, db_index=True)
+    source_site_number = models.IntegerField(null=True, blank=True)
+    source_site_name = models.CharField(max_length=255, blank=True)
+    source_counter = models.IntegerField(null=True, blank=True)
+    is_active = models.BooleanField(default=True)
 
     class Meta:
         verbose_name = 'Maxicom流量区域'
         verbose_name_plural = 'Maxicom流量区域'
 
     def __str__(self):
-        return f"{self.name} @ {self.site.name}"
+        label = self.source_site_name or (self.site.name if self.site_id else '未关联站点')
+        return f"{self.name} @ {label}"
 
 
 class MaxicomWeatherStation(models.Model):
@@ -1099,14 +1138,11 @@ class MaxicomRuntime(models.Model):
 
 
 class MaxicomFlowDaily(models.Model):
-    """ mdb XA_FLOZO 按灌溉日聚合的浇水量（升）。
+    """Source flow-zone values by local irrigation day, with lossless timed samples.
 
-    XA_FLOZO 每次轮询一行（FlowZoneValue × FlowZoneMultiplier = 本次轮询
-    内的升数）；导入时按灌溉日窗口 [D-1 22:00 → D 21:59] 聚合成一天一行
-    ——与灌溉数据页/PDF/Excel 的日窗口完全一致，页面任意日期范围查询
-    直接按天求和即可。zone 指向既有 MaxicomFlowZone（FLOZO_CF 字典，
-    mdb_index=FLOZO IndexNumber）。Maxicom 桌面端的"浇水量"= 本表流量计
-    值 + 站点运行估算（MaxicomRuntime × MaxicomStationFlowFactor）。
+    Whole days use the cached sum; partial windows filter the original timestamps.
+    Values retain the import's existing scale. They never include station-runtime
+    estimates. Zone source identity and join_site determine source Site summaries.
     """
     flow_day = models.CharField('灌溉日 YYYYMMDD', max_length=8, db_index=True)
     zone = models.ForeignKey(MaxicomFlowZone, on_delete=models.CASCADE, related_name='daily')
@@ -1114,6 +1150,7 @@ class MaxicomFlowDaily(models.Model):
                              related_name='flow_daily', verbose_name='CCU')
     liters = models.IntegerField('浇水量(升)')
     minutes = models.IntegerField('有流量的分钟数', default=0)
+    samples = models.BinaryField(null=True, blank=True, editable=False)
 
     class Meta:
         verbose_name = 'Maxicom浇水量(日)'
@@ -1125,13 +1162,45 @@ class MaxicomFlowDaily(models.Model):
         return f'{self.flow_day} z{self.zone.mdb_index} {self.liters}L'
 
 
-class MaxicomStationFlowFactor(models.Model):
-    """ mdb STATN_CF.StationFlowFactor 快照 — 每站流量系数（升/分钟）。
+class MaxicomFlowSensor(models.Model):
+    """Physical DCODE_CF flow meter; distinct from a FLO WATCH zone."""
+    mdb_index = models.IntegerField(unique=True)
+    name = models.CharField(max_length=255)
+    source_site_index = models.IntegerField(db_index=True)
+    source_site_number = models.IntegerField(null=True, blank=True)
+    source_site_name = models.CharField(max_length=255, blank=True)
+    controller_number = models.IntegerField(null=True, blank=True)
+    channel = models.IntegerField(null=True, blank=True)
+    is_active = models.BooleanField(default=True)
+    is_enabled = models.BooleanField(default=True)
+    coverage_start = models.CharField(max_length=14, blank=True)
+    coverage_end = models.CharField(max_length=14, blank=True)
 
-    站点估算浇水量 = Σ(运行分钟 × 系数)。主阀(MV)等未配置的站系数为 0，
-    与 Maxicom 桌面端口径一致（其差值即来自 MV/未配置站）。每次 mdb 导入
-    全量重建；station_raw 即 STATN_CF.IndexNumber，与
-    MaxicomRuntime.station_id_raw 对应。
+    def __str__(self):
+        return f'{self.name} @ Site {self.source_site_number}'
+
+
+class MaxicomSensorDaily(models.Model):
+    """XA_LOG D/F pulses × logged calibration, retained at microliter precision.
+
+    Samples use the same seconds/int64 encoding as FLO WATCH, in microliters.
+    They must never be combined with FLO WATCH or station flow estimates.
+    """
+    sensor = models.ForeignKey(MaxicomFlowSensor, on_delete=models.CASCADE, related_name='daily')
+    flow_day = models.CharField(max_length=8, db_index=True)
+    microliters = models.BigIntegerField()
+    sample_count = models.PositiveIntegerField()
+    samples = models.BinaryField(editable=False)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['sensor', 'flow_day'], name='uniq_sensor_flow_day')]
+
+
+class MaxicomStationFlowFactor(models.Model):
+    """Legacy latest station-factor snapshot; not used to calculate flow records.
+
+    Raw station-factor units and effective dates require separate validation.
+    FS/WD/Toilet sensor records come from XA_LOG D/F, independently of this.
     """
     station_raw = models.IntegerField('STATN_CF IndexNumber', primary_key=True)
     factor = models.FloatField('流量系数 L/min', default=0)
@@ -1209,6 +1278,11 @@ class ZoneEquipment(models.Model):
 # (removed: WorkCategory)
 class WorkReport(models.Model):
     """维修工作日报 - daily maintenance work record."""
+
+    objects = IrrigationReportManager()
+    all_businesses = models.Manager()
+    business_team = models.ForeignKey('operations.Team', null=True, blank=True,
+        on_delete=models.PROTECT, related_name='execution_records', help_text='留空为历史灌溉记录')
 
     SHIFT_CHOICES = [
         ('早班', '早班'),
@@ -1966,6 +2040,7 @@ class PurchaseOrderLine(models.Model):
         verbose_name='物料',
     )
     quantity = models.PositiveIntegerField('计划数量', default=1)
+    unit_price = models.DecimalField('采购单价', max_digits=12, decimal_places=2, null=True, blank=True)
     unit = models.CharField('单位', max_length=20, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -2105,8 +2180,9 @@ class AISettings(models.Model):
         '**Maxicom 灌溉自控数据**（从 Maxicom2 中央控制系统每日导入）：\n'
         '- **运行时长 MaxicomRuntime**：每条 = 一次站点运行记录，run_time 单位分钟。'
         '**灌溉日窗口 = 前日 22:00 → 当日 21:59**（跨夜灌溉归次日），所有日统计用它。\n'
-        '- **浇水量 MaxicomFlowDaily**：流量计按灌溉日聚合的读数（升）。导入约滞后 1-2 天，'
-        '最近一两天数据可能偏小或缺数。\n'
+        '- **实际传感器 MaxicomSensorDaily**：XA_LOG D/F 脉冲按当时倍率换算为升；总表与分表可能重叠，不相加。'
+        '**MaxicomFlowDaily** 是独立的 FLO WATCH 区域参考值，单位尚未核准，不当成 FS 实体传感器升数。'
+        '备份导入可能滞后 1-2 天。\n'
         '- 设备台账（控制器/计划/流量区域/气象站/事件）与地理层级：大区 Region → 片区/CCU Patch → '
         '卫星控制器 Satellite(SAT) → 区域 Zone；Patch 另有 station-N 站点层（阀门站）。\n'
         '\n'
@@ -2138,7 +2214,7 @@ class AISettings(models.Model):
         '|---|---|\n'
         '| **query_irrigation_overview** | 系统总览（片区/控制器/站点/气象站/事件数） |\n'
         '| **query_irrigation_runtime** | 灌溉运行时长（逐日分钟/次数/活跃站点 + 按CCU分布，灌溉日窗口） |\n'
-        '| **query_flow_daily** | 每日浇水量（逐日升数 + 按流量区域分布） |\n'
+        '| **query_flow_daily** | 实际传感器逐日升数（按Site/通道独立列出，不合并总分表） |\n'
         '| **query_geo_assets** | 地理资产层级（大区/CCU/SAT/站点/管线；传编号查详情） |\n'
         '| **query_work_reports** | 工单明细列表（日期/处理人/位置/班次/工时/内容） |\n'
         '| **query_work_report_stats** | 工单统计汇总（总数/总工时/按班次·章节·处理人分布/疑难/待修数） |\n'
@@ -2172,7 +2248,7 @@ class AISettings(models.Model):
         'pd.read_csv 加载）：**work_reports.csv**(工单)、**work_entries.csv**(工单明细)、'
         '**zones.csv**(全部区域)、**projects.csv**(全部项目+预算+费率)、**water_requests.csv**(浇水需求)、'
         '**weather.csv**(气象)、**project_consumption.csv**(出库-项目消耗)、**pm_workorders.csv**(PM完成工单)、'
-        '**irrigation_daily.csv**(逐日运行分钟/次数/站点数/浇水量)、**pm_orders.csv**(PM派发工单)。'
+        '**irrigation_daily.csv**(运行分钟/次数/站点数/FLO WATCH参考值)、**water_sensors_daily.csv**(实际传感器升数)、**pm_orders.csv**(PM派发工单)。'
         '生成文件保存到当前目录(.xlsx/.csv/.json/.txt)，自动提供给用户下载 |\n'
         '\n'
         '## 选工具的决策规则\n'
@@ -2625,7 +2701,9 @@ class EmailReportConfig(models.Model):
 
     REPORT_CHOICES = [
         ('work_reports', '维修工单记录'),
+        ('difficult_workorders', '疑难问题跟进报表'),
         ('irrigation', '灌溉运行报表'),
+        ('maxicom_weather', '灌溉气象日报'),
         ('projects', '项目管理'),
         ('inventory_catalog', '库存目录'),
         ('inventory_txn', '库存出入库流水'),
@@ -2643,6 +2721,7 @@ class EmailReportConfig(models.Model):
     # before multi-select). New configs populate report_types (JSON list) and
     # leave report_type mirroring the first item. effective_report_types()
     # resolves both into the list actually used at send time.
+    delivery_profile = models.ForeignKey('EmailDeliveryProfile', on_delete=models.PROTECT, null=True, blank=True, related_name='report_configs', verbose_name='发送配置')
     report_type = models.CharField('报表', max_length=40, choices=REPORT_CHOICES, blank=True)
     # Multi-select report types: a list of REPORT_CHOICES keys. One attachment
     # per entry is built and attached to a single outgoing email.
@@ -2749,6 +2828,25 @@ class EmailReportConfig(models.Model):
         return out
 
 
+class EmailDeliveryProfile(models.Model):
+    name = models.CharField('配置名称', max_length=100, unique=True)
+    delivery_method = models.CharField('发送方式', max_length=16, choices=[('smtp','SMTP'),('workflow','Microsoft 365 Workflow')], default='smtp')
+    workflow_url = models.TextField('Workflow HTTP 链接', blank=True)
+    download_base_url = models.URLField('报表下载站点', max_length=500, blank=True)
+    host = models.CharField('SMTP 服务器', max_length=200, blank=True)
+    port = models.IntegerField('端口', default=465)
+    username = models.CharField('账号', max_length=200, blank=True)
+    password = models.TextField('密码', blank=True)
+    use_ssl = models.BooleanField('使用 SSL', default=True)
+    use_tls = models.BooleanField('使用 TLS', default=False)
+    from_email = models.CharField('发件人地址', max_length=200, blank=True)
+    use_environment = models.BooleanField('沿用服务器邮件设置', default=False)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return self.name
+
+
 class EmailSmtpSetting(models.Model):
     """系统级 SMTP 配置（单例，固定 id=1）。
 
@@ -2757,6 +2855,11 @@ class EmailSmtpSetting(models.Model):
     （见 core.smtp_utils.get_email_connection）。密码以明文存储 —— 该面板仅
     经理/超管可访问，且管理员本就能访问服务器，与同类 CMS 做法一致。
     """
+
+    default_profile = models.ForeignKey('EmailDeliveryProfile', on_delete=models.PROTECT, null=True, blank=True, related_name='+')
+    delivery_method = models.CharField('发送方式', max_length=16, choices=[('smtp','SMTP'),('workflow','Microsoft 365 Workflow')], default='smtp')
+    workflow_url = models.TextField('Workflow HTTP 链接', blank=True)
+    download_base_url = models.URLField('报表下载站点', max_length=500, blank=True)
 
     host = models.CharField('SMTP 服务器', max_length=200, blank=True,
                             help_text='如 smtp.qq.com')
@@ -2788,6 +2891,24 @@ class EmailSmtpSetting(models.Model):
         return bool(self.host)
 
 
+
+
+class AccountEmailSetting(models.Model):
+    registration_profile = models.ForeignKey(EmailDeliveryProfile,on_delete=models.PROTECT,null=True,blank=True,related_name='+')
+    password_reset_profile = models.ForeignKey(EmailDeliveryProfile,on_delete=models.PROTECT,null=True,blank=True,related_name='+')
+    updated_at = models.DateTimeField(auto_now=True)
+
+    @classmethod
+    def get_solo(cls):
+        return cls.objects.get_or_create(pk=1)[0]
+
+
+class EmailReportFile(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    filename = models.CharField(max_length=255)
+    token_hash = models.CharField(max_length=64)
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField(db_index=True)
 
 
 class SiteCalibration(models.Model):

@@ -45,6 +45,11 @@
             frame(next);
         });
     }
+    function boundaryObjects(boundary) {
+        // Drawing tools and their label centroids consume {lat,lng}, while
+        // imported multi-ring CAD boundaries may contain numeric pairs.
+        return boundaryRings(boundary).map(ring => ring.map(([lat,lng]) => ({lat,lng})));
+    }
     function matchesPatch(zone, touched, selected) {
         if (!touched) return true;
         const id = zone.patchId ?? zone.patch_id;
@@ -54,8 +59,9 @@
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), options.timeout ?? 30000);
         try {
-            const response = await (options.fetcher || fetch)(url, { credentials:'same-origin', signal:controller.signal });
+            const response = await (options.fetcher || fetch)(url, { credentials:'same-origin', signal:controller.signal, cache:options.cache || 'default' });
             if (!response.ok) throw new Error('HTTP ' + response.status);
+            options.onResponse?.(response);
             return await response.json();
         } finally { clearTimeout(timer); }
     }
@@ -77,5 +83,5 @@
             return center && Number.isInteger(value.zoom) && value.zoom >= 15 && value.zoom <= 22 ? {center, zoom:value.zoom} : null;
         } catch (_) { return null; }
     }
-    return { point, boundaryRings, renderBatches, matchesPatch, fetchJSON, requestLocation, readView };
+    return { point, boundaryRings, boundaryObjects, renderBatches, matchesPatch, fetchJSON, requestLocation, readView };
 });

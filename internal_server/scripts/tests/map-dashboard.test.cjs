@@ -19,6 +19,19 @@ test('bad points and empty groups cannot break another valid boundary', () => {
     assert.equal(runtime.point([[31],[121]]), null);
     assert.deepEqual(runtime.point({lat:'31.123456789',lng:'121.123456789'}), [31.123456789,121.123456789]);
 });
+test('drawing labels receive finite object coordinates for imported multi-ring boundaries', () => {
+    const input = [[], [ring, ring.map(([lat,lng])=>({lat,lng}))]];
+    const before = JSON.stringify(input);
+    const rings = runtime.boundaryObjects(input);
+    assert.equal(rings.length,2);
+    for (const points of rings) {
+        const center = points.reduce((sum,p)=>({lat:sum.lat+p.lat,lng:sum.lng+p.lng}),{lat:0,lng:0});
+        assert.ok(Number.isFinite(center.lat/points.length));
+        assert.ok(Number.isFinite(center.lng/points.length));
+        assert.deepEqual(points,ring.map(([lat,lng])=>({lat,lng})));
+    }
+    assert.equal(JSON.stringify(input),before);
+});
 test('patch filters agree for polygon and raw label records, including unassigned zones', () => {
     const chosen = new Set(['7']);
     assert.equal(runtime.matchesPatch({patchId:7},true,chosen),true);
@@ -118,9 +131,10 @@ function mapHarness() {
     const hook=`window.__test={renderZones,loadZones,loadPipelines,locateUser,updateLabelSizes,_cullLabelsToViewport,buildCardHtml,_refreshZonePolygons,
         labels:()=>zoneLabels, setState(m,g){map=m;[zonesLayerGroup,labelsLayerGroup,leaderLinesLayerGroup,ringLabelsLayerGroup,landmarksLayerGroup]=g;}};`;
     source=source.replace(/\}\)\(\);\s*$/,hook+'})();');
-    const context={window,document,L,localStorage:{getItem:()=>null,setItem(){}},console,setTimeout,clearTimeout,
+    const context={window,document,L,localStorage:{getItem:()=>null,setItem(){}},console,setTimeout,clearTimeout,setInterval:()=>0,
         requestAnimationFrame:setImmediate,performance,Set,Map,CustomEvent:class{}};
     vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../../static/js/ui-icons.js'),'utf8'),context);
+    vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../../operations/static/operations/map-actions.js'),'utf8'),context);
     vm.runInNewContext(source,context);
     window.__test.setState(map,groups);
     return {window,map,groups,api:window.__test,context,elements};

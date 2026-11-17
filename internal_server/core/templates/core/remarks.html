@@ -42,7 +42,7 @@
 <div class="rm-wrap">
   <div class="rm-head">
     <div>
-      <h1>📝 待确认备注</h1>
+      <h1><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-edit"/></svg> 待确认备注</h1>
       <span class="rm-total">共 {{ total }} 条待确认 · 确认与跟进请在「疑难跟进」处理</span>
     </div>
     <a class="rm-nav-btn" href="/work-reports/?tab=repairs">前往 疑难跟进 →</a>
@@ -52,8 +52,8 @@
     {% for g in groups %}
     <div class="rm-card" id="remark-{{ g.key }}">
       <div class="rm-meta">
-        <span>📅 {{ g.remark.date|default:"无日期" }}</span>
-        <span>👤 {{ g.remark.author|default:"未知" }}</span>
+        <span><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-calendar"/></svg> {{ g.remark.date|default:"无日期" }}</span>
+        <span><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-user"/></svg> {{ g.remark.author|default:"未知" }}</span>
         {% if g.is_grouped %}<span class="rm-wo-badge">工单 #{{ g.remark.workorder_id }}</span>{% endif %}
       </div>
       <div class="rm-meta" style="margin-bottom:2px;">
@@ -69,7 +69,7 @@
     </div>
     {% endfor %}
   {% else %}
-    <div class="rm-empty">暂无待确认备注 🎉</div>
+    <div class="rm-empty">暂无待确认备注 <svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-check"/></svg></div>
   {% endif %}
 </div>
 {% endblock %}
