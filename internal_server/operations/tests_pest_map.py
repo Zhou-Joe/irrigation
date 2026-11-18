@@ -8,7 +8,7 @@ from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
 from django.utils import timezone
 
-from core.models import WorkReport
+from core.models import SubmissionReceipt, WorkReport
 from . import tests as fixtures
 from .models import Membership, Team, Location, LocationGrant, ReferenceCatalog, PestWorkData
 from .catalog_import import import_reference
@@ -103,6 +103,29 @@ class PestMapWorkflowTests(TestCase):
         member=Membership.objects.create(user=self.pm,team=other,role='manager')
         self.client.post('/ops/switch/',{'membership':member.pk})
         self.assertNotContains(self.client.get('/work-reports/'),f'PPC-{own}')
+
+    def test_receipt_lookup_is_scoped_to_author_business_and_current_team(self):
+        payload = self.payload()
+        saved = self.client.post('/mobile/workorder/v2/', payload).json()
+        url = f"/api/submissions/{payload['submission_key']}/"
+        result = self.client.get(url)
+        self.assertEqual(result.json()['result']['report_id'], saved['report_id'])
+        self.assertIn('no-store', result['Cache-Control'])
+        self.assertFalse(self.client.get(f'/api/submissions/{uuid.uuid4()}/').json()['found'])
+        self.assertIn(self.client.post(url).status_code, (403, 405))
+        irrigation_key = uuid.uuid4()
+        SubmissionReceipt.objects.create(owner=self.pm, key=irrigation_key, kind='inventory', response={'success': True})
+        self.assertFalse(self.client.get(f'/api/submissions/{irrigation_key}/').json()['found'])
+        self.client.force_login(self.field)
+        self.assertFalse(self.client.get(url).json()['found'])
+        self.client.force_login(self.pm)
+        other = Team.objects.create(business=self.pest, code='receipt-pest', name='Other team')
+        membership = Membership.objects.create(user=self.pm, team=other, role='manager')
+        self.client.post('/ops/switch/', {'membership': membership.pk})
+        self.assertFalse(self.client.get(url).json()['found'])
+        irrigation = Membership.objects.create(user=self.pm, team=self.it, role='manager')
+        self.client.post('/ops/switch/', {'membership': irrigation.pk})
+        self.assertFalse(self.client.get(url).json()['found'])
 
     def test_retry_is_idempotent_and_stale_team_rejected_before_replay(self):
         payload=self.payload()

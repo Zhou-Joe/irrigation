@@ -11,7 +11,7 @@ from openpyxl import load_workbook
 
 from core.excel_exports import build_irrigation_report_excel
 from core.flow_data import SAMPLE, encode_samples, sample_offset_for_hour
-from core.models import (EmailReportConfig, MaxicomController, MaxicomFlowSensor,
+from core.models import (EmailDeliveryProfile, EmailReportConfig, MaxicomController, MaxicomFlowSensor,
                          MaxicomSensorDaily, Patch)
 from core.sensor_flow import pulse_microliters
 from core.tests_sensor_flow import SIGNALS
@@ -52,7 +52,7 @@ class IrrigationSensorExcelTests(TestCase):
 
     def test_original_operator_sensor_values_are_numeric_and_share_exact_runtime_window(self):
         book=self.workbook(ccus=[self.ccu3.pk]);ws=book['传感器水量']
-        self.assertEqual(book.active.title,'传感器水量')
+        self.assertEqual(book.active.title,'用水量汇总')
         self.assertEqual(self.readings(book),{'15: Flow Sensor Low':2380,'16: Flow Sensor High':0,'17: Flow Sensor WP':34200})
         self.assertEqual(ws['B2'].value,datetime(2026,10,24,15,32))
         self.assertEqual(ws['E2'].value,datetime(2026,10,25,15,32))
@@ -92,15 +92,12 @@ class IrrigationSensorExcelTests(TestCase):
         self.assertEqual(ws['B8'].data_type,'s');self.assertEqual(ws['B3'].value,'暂无同步')
 
     def test_daily_dispatch_attaches_sensor_sheet_using_existing_7am_to_65959_window(self):
-        from django.core.mail import get_connection
-        cfg=EmailReportConfig.objects.create(name='每日推送',frequency='daily',send_hour=9,
+        profile=EmailDeliveryProfile.objects.create(name='本地报表测试',delivery_method='smtp',host='smtp.example.invalid',from_email='sender@example.invalid')
+        cfg=EmailReportConfig.objects.create(name='每日推送',delivery_profile=profile,frequency='daily',send_hour=9,
             report_types=['irrigation'],recipients='fixture@example.invalid',
             report_windows={'irrigation':{'days_start':1,'days_end':0,'hour_start':7,'hour_end':6}})
         now=datetime(2026,10,26,1,0,tzinfo=dt_timezone.utc)
-        with patch('core.report_export.timezone.now',return_value=now), \
-                patch('core.smtp_utils.is_smtp_configured',return_value=True), \
-                patch('core.smtp_utils.get_email_connection',return_value=get_connection('django.core.mail.backends.locmem.EmailBackend')), \
-                patch('core.smtp_utils.resolve_from_email',return_value='sender@example.invalid'):
+        with patch('core.report_export.timezone.now',return_value=now):
             call_command('send_report_email',config_id=cfg.pk,stdout=io.StringIO())
         self.assertEqual(len(mail.outbox),1)
         attachment=mail.outbox[0].attachments[0]

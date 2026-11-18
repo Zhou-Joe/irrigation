@@ -551,7 +551,7 @@
             if (p.id === 'statsHoursPill') {
                 p.classList.toggle('active', isHours);
             } else {
-                p.classList.toggle('active', p.dataset.metric === metric && !isHours);
+                if (p.dataset.metric) p.setAttribute('aria-pressed', String(p.classList.toggle('active', p.dataset.metric === metric && !isHours)));
             }
         });
         // Update hours pill label + dropdown active item.
@@ -559,7 +559,7 @@
             var pill = document.getElementById('statsHoursPill');
             if (pill) pill.textContent = hoursLabels[metric] + ' ▾';
             document.querySelectorAll('.sh-dropdown-item').forEach(function (it) {
-                it.classList.toggle('active', it.dataset.sub === metric);
+                it.setAttribute('aria-pressed', String(it.classList.toggle('active', it.dataset.sub === metric)));
             });
         }
         closeHoursDropdown();
@@ -568,19 +568,23 @@
 
     function toggleHoursDropdown(e) {
         if (e) e.stopPropagation();
-        var menu = document.getElementById('statsHoursMenu');
-        if (menu) menu.classList.toggle('open');
+        const menu = document.getElementById('statsHoursMenu');
+        if (menu?.hasAttribute('popover')) return;
+        if (menu) document.getElementById('statsHoursPill').setAttribute('aria-expanded', String(menu.classList.toggle('open')));
+        closeWorkerDropdown();
     }
     function closeHoursDropdown() {
-        var menu = document.getElementById('statsHoursMenu');
-        if (menu) menu.classList.remove('open');
+        const menu = document.getElementById('statsHoursMenu');
+        if (menu?.hasAttribute('popover')) menu.hidePopover();
+        else menu?.classList.remove('open');
+        document.getElementById('statsHoursPill')?.setAttribute('aria-expanded', 'false');
     }
     function selectHoursMetric(e, sub) {
         if (e) e.stopPropagation();
         switchMetric(sub);
+        document.getElementById('statsHoursPill').focus();
     }
     // Close the dropdown when clicking elsewhere.
-    document.addEventListener('click', function () { closeHoursDropdown(); });
 
     // ── Filter toggling (疑难 / 待修) ──────────────────────────────────────
     function toggleHeatFilter() {
@@ -600,7 +604,7 @@
     function switchGranularity(gran) {
         currentGranularity = gran;
         document.querySelectorAll('.sh-gran-pill').forEach(function (p) {
-            p.classList.toggle('active', p.dataset.gran === gran);
+            p.setAttribute('aria-pressed', String(p.classList.toggle('active', p.dataset.gran === gran)));
         });
         renderHeatZones();
     }
@@ -658,14 +662,16 @@
 
     function toggleWorkerDropdown(e) {
         if (e) e.stopPropagation();
-        var menu = document.getElementById('statsWorkerMenu');
-        if (menu) menu.classList.toggle('open');
-        // Close other dropdowns.
+        const menu = document.getElementById('statsWorkerMenu');
+        if (menu?.hasAttribute('popover')) return;
+        if (menu) document.getElementById('statsWorkerPill').setAttribute('aria-expanded', String(menu.classList.toggle('open')));
         closeHoursDropdown();
     }
     function closeWorkerDropdown() {
-        var menu = document.getElementById('statsWorkerMenu');
-        if (menu) menu.classList.remove('open');
+        const menu = document.getElementById('statsWorkerMenu');
+        if (menu?.hasAttribute('popover')) menu.hidePopover();
+        else menu?.classList.remove('open');
+        document.getElementById('statsWorkerPill')?.setAttribute('aria-expanded', 'false');
     }
     function selectAllWorkers(e) {
         if (e) e.stopPropagation();
@@ -690,7 +696,16 @@
     window.onWorkerChange = onWorkerChange;
 
     // Close dropdowns when clicking outside.
-    document.addEventListener('click', function () { closeHoursDropdown(); closeWorkerDropdown(); });
+    document.addEventListener('click', function (event) {
+        if (!event.target.closest('.sh-dropdown')) { closeHoursDropdown(); closeWorkerDropdown(); }
+    });
+    document.addEventListener('keydown', function (event) {
+        const button = document.querySelector('.sh-dropdown button[aria-expanded="true"]');
+        if (event.key !== 'Escape' || !button || button.hasAttribute('popovertarget')) return;
+        closeHoursDropdown();
+        closeWorkerDropdown();
+        button.focus();
+    });
 
     document.addEventListener('DOMContentLoaded', function () {
         initMap();

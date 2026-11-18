@@ -255,3 +255,35 @@
     .ui-field-error { color: CanvasText; }
     .ui-system :is(a, button, input, select, textarea, summary, [tabindex]):focus-visible { outline-color: Highlight !important; }
 }
+
+#submissionUncertain { padding: 10px 14px; background: #fff7df; color: #554512; border: 1px solid #dbc88a; }
+body > #submissionUncertain { position: fixed; inset-inline: 12px; bottom: calc(76px + env(safe-area-inset-bottom)); z-index: 15000; border-radius: 10px; }
+#submissionUncertain button, #submissionUncertain a { margin-inline-start: .4em; }
+#plantDropdownPanel[hidden] { display: none; }
+#woCatTrigger, #woContentTrigger, #invAddTrigger, button.wo-zone-search-item { width: 100%; text-align: start; }
+button.wo-zone-search-item { font: inherit; color: inherit; background: transparent; border: 0; }
+button.v2-draw-tab { border: 0; font-family: inherit; }
+label.v2-chip:focus-within { outline: 2px solid #276b50; outline-offset: 2px; }
+button.zone-item { width: 100%; font-family: inherit; text-align: start; color: inherit; }
+
+/* Native multi-select filter panels anchor to their invoking buttons. */
+#plantDropdownBtn { anchor-name: --plant-filter; }
+#statsHoursPill { anchor-name: --hours-filter; }
+#statsWorkerPill { anchor-name: --worker-filter; }
+#plantDropdownPanel[popover] { position-anchor: --plant-filter; --panel-width: anchor-size(width); }
+#statsHoursMenu[popover] { position-anchor: --hours-filter; --panel-width: 10rem; }
+#statsWorkerMenu[popover] { position-anchor: --worker-filter; --panel-width: 14rem; }
+:is(#plantDropdownPanel, #statsHoursMenu, #statsWorkerMenu)[popover] {
+    position: fixed;
+    inset: auto;
+    top: anchor(bottom);
+    left: clamp(4px, anchor(left), calc(100vw - var(--panel-width) - 4px));
+    width: var(--panel-width);
+    max-width: calc(100vw - 8px);
+    max-height: min(40dvh, 260px);
+    position-try-fallbacks: flip-block;
+    margin: 4px 0 0;
+    overflow: auto;
+    box-sizing: border-box;
+}
+:is(#plantDropdownPanel, #statsHoursMenu, #statsWorkerMenu)[popover]:popover-open { display: block; }

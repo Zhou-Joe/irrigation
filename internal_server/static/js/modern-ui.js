@@ -3,7 +3,7 @@
 (() => {
     'use strict';
     const fields = 'input, select, textarea';
-    const groups = '.ff, .form-group, .pm-field, .jp-field, .crew-field, .wo-field, .op-field, .auth-field, .field, .pd-field, .builder-group, .ctrl-row, .iv-field, .wj-field, .app-grid > div';
+    const groups = '.ff, .form-group, .pm-field, .jp-field, .crew-field, .wo-field, .op-field, .auth-field, .field, .pd-field, .builder-group, .ctrl-row, .iv-field, .wj-field, .app-grid > div, .v2-form-row > div, .v2-fg';
     const initialized = new WeakSet();
     const edited = new WeakSet();
     const errors = new WeakMap();
@@ -34,7 +34,7 @@
         }
         const group = field.closest(groups);
         if (!group) return;
-        const labels = [...group.querySelectorAll('label, .ctrl-label')].filter(label => label.closest(groups) === group && !label.querySelector(fields));
+        const labels = [...group.querySelectorAll('label, .ctrl-label, .v2-fl')].filter(label => label.closest(groups) === group && !label.querySelector(fields));
         if (labels.length !== 1) return;
         const label = labels[0];
         const controls = [...group.querySelectorAll(fields)].filter(control => control.type !== 'hidden' && control.closest(groups) === group);
@@ -169,10 +169,7 @@
         host.append(overlay);
         hosts.set(overlay, host);
         const locked = overlay.classList.contains('ann-popup');
-        if (locked) {
-            host.setAttribute('closedby', 'none');
-            host.addEventListener('cancel', event => event.preventDefault());
-        }
+        if (locked) host.setAttribute('closedby', 'none');
         const visible = () => !overlay.hidden && getComputedStyle(overlay).display !== 'none' && getComputedStyle(overlay).visibility !== 'hidden';
         const sync = () => {
             if (visible() && !host.open && host.isConnected) {
@@ -183,19 +180,15 @@
             }
             else if (!visible() && host.open) host.close();
         };
-        host.addEventListener('close', () => {
-            host.returnValue = '';
-            if (!host.isConnected || !host.contains(overlay) || !visible()) return;
-            // Use existing close actions, which also clean selection and form
-            // state. Never synthesize a submit or acknowledge a notification.
-            const close = overlay.querySelector('[data-ui-close], .notif-x, .lb-close, .fu-modal-close, .iv-modal-close, .wj-modal-close, .app-dlg-close, .modal-close, .v2-modal-close, button[aria-label^="关闭"], button[onclick*="close" i]');
-            if (close) close.click();
-            else if (split) document.getElementById(overlay.id.replace('Container', 'Backdrop'))?.click();
-            else overlay.click();
-            if (visible()) {
-                overlay.classList.remove('open', 'show', 'visible', 'active');
-                if (visible()) overlay.style.display = 'none';
-            }
+        host.addEventListener('cancel', event => {
+            // The owner may refuse to close while saving or wait for an animation.
+            event.preventDefault();
+            if (locked || !visible()) return;
+            const close = overlay.querySelector('[data-ui-close], [data-picker-close], .notif-x, .lb-close, .fu-modal-close, .iv-modal-close, .wj-modal-close, .app-dlg-close, .modal-close, .v2-modal-close, button[aria-label^="关闭"], button[onclick*="close" i]') ||
+                [...overlay.querySelectorAll('button[type="button"]')].find(button => /^(取消选择|取消|关闭|×|✕)$/.test(button.textContent.trim()));
+            if (close) { close.click(); return; }
+            if (split) { document.getElementById(overlay.id.replace('Container', 'Backdrop'))?.click(); return; }
+            overlay.click();
         });
         if (split) host.addEventListener('click', event => {
             if (event.target === host) document.getElementById(overlay.id.replace('Container', 'Backdrop'))?.click();
@@ -215,7 +208,7 @@
         removalObserver.observe(host, {childList: true});
         sync();
     }
-    const disclosureSelector = '.settings-card-header[onclick], .zone-section-header[onclick], .section-title.collapsible[onclick], .drill-head[onclick], .region-header[onclick], .patch-header[onclick], .wr-expand-hint';
+    const disclosureSelector = '.settings-card-header[onclick], .zone-section-header[onclick], .section-title.collapsible[onclick], .drill-head[onclick], .region-header[onclick], .patch-header[onclick], .zone-picker-header[onclick], .wr-expand-hint';
     const disclosures = new WeakSet();
     function enhanceDisclosure(header) {
         if (disclosures.has(header) || header.matches('button, summary')) return;
@@ -236,7 +229,10 @@
             title.prepend(button);
         }
         const sync = () => {
-            const expanded = !panel.hidden && getComputedStyle(panel).display !== 'none';
+            const group = header.closest('.region-group, .patch-group, .zone-picker-group');
+            const tree = group && header.matches('.region-header, .patch-header, .zone-picker-header');
+            const expanded = !panel.hidden && getComputedStyle(panel).display !== 'none' && !(tree && group.classList.contains('collapsed'));
+            if (tree) panel.inert = !expanded;
             button.setAttribute('aria-expanded', String(expanded));
             if (card) button.textContent = expanded ? '收起详情' : '展开详情';
         };
@@ -249,11 +245,18 @@
         for (const node of new Set([panel, card || header, header.parentElement].filter(Boolean))) observer.observe(node, {attributes: true, attributeFilter: ['class', 'style', 'hidden']});
         sync();
     }
-    const actions = '.pm-switch[onclick], .zd-switch[onclick], .iv-switch[onclick], .wr-thumb-wrap[onclick], .wr-photo-wrap[onclick], .wq-photo-thumb[onclick], .zd-photo-thumb[onclick]';
+    const toggles = 'button.v2-chip[data-val], button.v2-chip[data-name], button.v2-chip[data-land-id], button.v2-chip[data-dest], button.v2-chip[data-pcat], button.v2-chip[data-pid], button.modal-draw-chip, button.v2-draw-tab';
+    const actions = toggles + ', .pm-switch[onclick], .zd-switch[onclick], .iv-switch[onclick], .wr-thumb-wrap[onclick], .wr-photo-wrap[onclick], .wq-photo-thumb[onclick], .zd-photo-thumb[onclick]';
     const actionControls = new WeakSet();
     function enhanceAction(control) {
         if (actionControls.has(control)) return;
         actionControls.add(control);
+        if (control.matches(toggles)) {
+            const sync = () => control.setAttribute('aria-pressed', control.classList.contains('partial') ? 'mixed' : String(control.classList.contains('active')));
+            new MutationObserver(sync).observe(control, {attributes:true, attributeFilter:['class']});
+            sync();
+            return;
+        }
         const isSwitch = control.matches('.pm-switch, .zd-switch, .iv-switch');
         control.setAttribute('role', isSwitch ? 'switch' : 'button');
         if (control.matches('.iv-switch')) control.setAttribute('aria-label', '确认库存流水，' + (control.title || '开启后扣减库存并计入统计'));
@@ -267,14 +270,28 @@
             }
         };
         control.addEventListener('keydown', event => {
-            if (event.target !== control || event.isComposing || !['Enter', ' '].includes(event.key)) return;
+            if (event.target !== control || event.isComposing || event.keyCode === 229 || !['Enter', ' '].includes(event.key)) return;
             event.preventDefault();
             if (!control.classList.contains('disabled') && !event.repeat) control.click();
         });
         if (isSwitch) new MutationObserver(sync).observe(control, {attributes: true, subtree: true, attributeFilter: ['class']});
         sync();
     }
+    function enhanceFilter(button) {
+        if (button.hasAttribute('popovertarget') || !HTMLElement.prototype.showPopover ||
+            !CSS.supports('top: anchor(bottom)') || !CSS.supports('width: anchor-size(width)')) return;
+        const panel = document.getElementById(button.getAttribute('aria-controls'));
+        if (!panel) return;
+        panel.popover = 'auto';
+        panel.hidden = false;
+        button.setAttribute('popovertarget', panel.id);
+        panel.addEventListener('beforetoggle', event => {
+            button.setAttribute('aria-expanded', String(event.newState === 'open'));
+        });
+    }
     function enhance(root) {
+        if (root.matches?.('[data-filter-popover]')) enhanceFilter(root);
+        root.querySelectorAll('[data-filter-popover]').forEach(enhanceFilter);
         if (root.matches?.(fields)) enhanceField(root);
         root.querySelectorAll(fields).forEach(enhanceField);
         if (root.matches?.(overlays)) enhanceOverlay(root);

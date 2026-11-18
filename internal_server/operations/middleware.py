@@ -84,7 +84,9 @@ class BusinessAccessMiddleware:
                     return redirect('core:dashboard')
                 shared = {'/', '/api/zones-payload/', '/api/modal/workorder-data/',
                           '/mobile/workorder/v2/', '/work-reports/', '/work-reports/tree/new/','/user-management/'}
-                if request.path in shared or re.fullmatch(r'/work-reports/\d+/',request.path):
+                receipt_lookup = request.method == 'GET' and re.fullmatch(
+                    r'/api/submissions/[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}/', request.path)
+                if request.path in shared or receipt_lookup or re.fullmatch(r'/work-reports/\d+/',request.path):
                     response = self.get_response(request)
                     response['Cache-Control'] = 'private, no-store'
                     response['Vary'] = 'Cookie'

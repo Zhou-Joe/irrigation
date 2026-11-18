@@ -194,6 +194,7 @@ class MaxicomImportTests(TestCase):
 
     def _run_import(self, flow_exit=0):
         tables = {
+            'WETHR_CF': [], 'XA_WETHR': [],
             'SITE_CF': [{'IndexNumber': '7', 'SiteNumber': '7', 'IndexName': 'Site Seven'}],
             'CTROL_CF': [{'IndexNumber': '900707', 'IndexName': 'SAT 7-1',
                           'ControllerSiteNumber': '7', 'ControllerLinkChannel': '1'}],
@@ -252,6 +253,7 @@ class CrossNamedControllerTests(TestCase):
     @classmethod
     def run_import(cls):
         tables = {
+            'WETHR_CF': [], 'XA_WETHR': [],
             'SITE_CF': [{'IndexNumber': '12', 'SiteNumber': '14'},
                         {'IndexNumber': '15', 'SiteNumber': '37'}],
             'CTROL_CF': [{'IndexNumber': '213', 'IndexName': 'LR37-4',

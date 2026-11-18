@@ -6,6 +6,8 @@ from functools import wraps
 from django.db import transaction, IntegrityError, OperationalError
 from django.http import JsonResponse, HttpResponse
 from django.contrib.auth.decorators import login_required
+from django.views.decorators.cache import never_cache
+from django.views.decorators.http import require_GET
 from .models import SubmissionReceipt
 from .role_utils import get_django_user
 
@@ -47,7 +49,7 @@ def submission(kind):
                 item=SubmissionReceipt.objects.filter(owner=owner,key=key).first()
                 if item:
                     if item.kind!=kind or item.fingerprint!=signature:
-                        return JsonResponse({'success':False,'message':'此编号已有提交结果；当前修改尚未保存，请先核对原记录。'},status=409)
+                        return JsonResponse({'success':False,'uncertain':True,'message':'此编号已有提交结果；当前修改尚未保存，请先核对原记录。'},status=409)
                     return replay(item)
             previous=existing()
             if previous:return previous
@@ -70,7 +72,7 @@ def submission(kind):
                         item.save(update_fields=['response','status_code'])
                     return response
             except IntegrityError:
-                return existing() or JsonResponse({'success':False,'message':'提交正在处理中，请用相同内容重试。'},status=409)
+                return existing() or JsonResponse({'success':False,'uncertain':True,'message':'提交正在处理中，请用相同内容重试。'},status=409)
             except OperationalError as exc:
                 if 'locked' not in str(exc).lower():raise
                 return JsonResponse({'success':False,'uncertain':True,'message':'提交结果待确认，请保留表单并核对记录。'},status=409)
@@ -78,8 +80,18 @@ def submission(kind):
     return decorate
 
 
+@never_cache
 @login_required(login_url='core:login')
-def result(request,key):
-    item=SubmissionReceipt.objects.filter(owner=get_django_user(request.user),key=key).first()
-    if not item:return JsonResponse({'found':False,'message':'暂未找到已完成结果，请稍后核对或用原内容重试。'})
-    return JsonResponse({'found':True,'kind':item.kind,'result':item.response,'status':item.status_code})
+@require_GET
+def result(request, key):
+    from operations.map_views import is_pest, records
+    receipts = SubmissionReceipt.objects.filter(owner=get_django_user(request.user), key=key)
+    if is_pest(request):
+        item = receipts.filter(kind='pest-workorder').first()
+        if item and not records(request).filter(pk=item.response.get('report_id')).exists():
+            item = None
+    else:
+        item = receipts.exclude(kind__startswith='pest-').exclude(kind__startswith='green.').first()
+    if not item:
+        return JsonResponse({'found': False, 'message': '暂未查到已完成的提交。'})
+    return JsonResponse({'found': True, 'kind': item.kind, 'result': item.response, 'status': item.status_code})

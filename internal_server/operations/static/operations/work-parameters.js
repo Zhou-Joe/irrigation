@@ -48,7 +48,7 @@
                 event.preventDefault();if(list.hidden)open(true);if(!matches.length)return;
                 active=active<0?(event.key==='ArrowUp'?matches.length-1:0):Math.max(0,Math.min(matches.length-1,active+(event.key==='ArrowDown'?1:-1)));
                 [...list.querySelectorAll('[role=option]')].forEach((option,index)=>{option.setAttribute('aria-selected',String(index===active));if(index===active){input.setAttribute('aria-activedescendant',option.id);option.scrollIntoView?.({block:'nearest'});}});
-            }else if(event.key==='Enter'&&!list.hidden&&active>=0){event.preventDefault();choose(matches[active]);}
+            }else if(event.key==='Enter'&&!event.isComposing&&event.keyCode!==229&&!list.hidden&&active>=0){event.preventDefault();choose(matches[active]);}
         });
         toggle.addEventListener('click',()=>{const expand=list.hidden;input.focus();if(expand)open(true);else close();});
         wrap.addEventListener('focusout',event=>{if(!wrap.contains(event.relatedTarget))close();});

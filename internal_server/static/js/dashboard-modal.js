@@ -9,6 +9,8 @@
     var _selectionLayerGroup = null;
     var _selectionOverlays = {};
     var _closeTimeout = null;
+    var modalToast = document.getElementById('v2ModalToast');
+    var toastTimer;
 
     var _drawMode = null;
     var _drawPoints = [];
@@ -109,11 +111,15 @@
     }
 
     function showToast(msg, type) {
-        var t = $('v2ModalToast');
+        var t = modalToast;
         if (!t) return;
+        const openDialogs = document.querySelectorAll('dialog[open]');
+        const parent = openDialogs[openDialogs.length - 1] || $('dashboardWorkspace');
+        if (parent && t.parentElement !== parent) parent.append(t);
         t.textContent = msg;
         t.className = 'show ' + (type || '');
-        effects.timeout(function () { t.className = ''; }, 3000);
+        clearTimeout(toastTimer);
+        toastTimer = effects.timeout(function () { t.className = ''; }, 3000);
     }
 
     // P1-4: Shared helper to create selection overlay for a zone code
@@ -153,7 +159,6 @@
     }
 
     window.openV2Modal = function (type) {
-        if (window.IrrigationSubmissions) window.IrrigationSubmissions.begin(type);
         // Cancel any pending hide timeout from a previous close
         if (_closeTimeout) { clearTimeout(_closeTimeout); _closeTimeout = null; }
         if (_currentModal) closeV2Modal(_currentModal);
@@ -663,7 +668,7 @@
             _woCatNode = chosen.id;
             _woProject = null;
             setDisplay(chosen === root ? root.name : (root.name + ' › ' + chosen.name));
-            setContentRow(!!(chosen.children && chosen.children.length));
+            setContentRow(chosen.value_type !== 'group' || !!chosen.children?.length);
         }
         if (typeof updateWoMatDest === 'function') updateWoMatDest();
         updateWoTrigger();
@@ -1062,7 +1067,8 @@
         hint.textContent = '点击Land选中其下全部区域（可多选）';
         container.appendChild(hint);
         lands.forEach(function (land) {
-            var chip = document.createElement('div');
+            var chip = document.createElement('button');
+            chip.type = 'button';
             chip.className = 'v2-chip';
             chip.style.cssText = 'font-size:0.85em;padding:5px 10px;';
             chip.dataset.landId = land.id;
@@ -1245,11 +1251,13 @@
 
         matches.forEach(function (z) {
             var selected = _selectedZoneCodes.has(z.code);
-            var item = document.createElement('div');
+            var item = document.createElement('button');
+            item.type = 'button';
+            item.setAttribute('aria-pressed', String(selected));
             item.className = 'wo-zone-search-item' + (selected ? ' selected' : '');
             item.innerHTML =
-                '<span><span class="wo-zs-code">' + z.code + '</span>' +
-                (z.name ? '<span class="wo-zs-name">' + z.name + '</span>' : '') + '</span>' +
+                '<span><span class="wo-zs-code">' + escHtml(z.code) + '</span>' +
+                (z.name ? '<span class="wo-zs-name">' + escHtml(z.name) + '</span>' : '') + '</span>' +
                 '<span class="wo-zs-check">' + (selected ? window.uiIcon('check') : '') + '</span>';
             item.addEventListener('click', function () {
                 toggleWoZone(z.code, ! _selectedZoneCodes.has(z.code));
@@ -1322,7 +1330,8 @@
         hint.textContent = '点击Land选择其中的通用名称';
         container.appendChild(hint);
         lands.forEach(function (land) {
-            var chip = document.createElement('div');
+            var chip = document.createElement('button');
+            chip.type = 'button';
             chip.className = 'v2-chip';
             chip.style.cssText = 'font-size:0.85em;padding:5px 10px;';
             setWoLandChipState(chip, land.id);
@@ -1369,7 +1378,7 @@
               '<div style="width:36px;height:4px;background:#ccc;border-radius:2px;margin:10px auto 0;"></div>' +
               '<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid #f0f0f0;flex-shrink:0;">' +
                 '<span id="woLandNameTitle" style="font-weight:600;"></span>' +
-                '<button type="button" id="woLandNameClose" style="width:32px;height:32px;border:none;background:#f0f0f0;border-radius:50%;font-size:1.1em;cursor:pointer;">' + window.uiIcon('close') + '</button>' +
+                '<button type="button" data-ui-close aria-label="关闭选择器" id="woLandNameClose" style="width:32px;height:32px;border:none;background:#f0f0f0;border-radius:50%;font-size:1.1em;cursor:pointer;">' + window.uiIcon('close') + '</button>' +
               '</div>' +
               // Use the same flowing chip-group layout as the level-1 tab (flex-wrap) so the
               // 通用名称 chips arrange themselves across rows instead of one-per-line.
@@ -1395,7 +1404,8 @@
             body.innerHTML = '<div style="font-size:0.85em;color:#aaa;padding:8px;">该Land下无通用名称</div>';
         }
         names.forEach(function (nm) {
-            var chip = document.createElement('div');
+            var chip = document.createElement('button');
+            chip.type = 'button';
             chip.className = 'v2-chip' + (isWoNameSelectedInLand(nm, land.id) ? ' active' : '');
             chip.style.cssText = 'font-size:0.85em;padding:5px 10px;';
             chip.textContent = nm;
@@ -1960,25 +1970,25 @@
             }, data || {});
         }
         var shiftChips = data.sorted_shifts.map(function (s, i) {
-            return '<div class="v2-chip' + (i === 0 ? ' active' : '') + '" data-val="' + s + '"><input type="radio" name="shift" value="' + s + '" style="display:none;"' + (i === 0 ? ' checked' : '') + '>' + s + '</div>';
+            return '<label class="v2-chip' + (i === 0 ? ' active' : '') + '" data-val="' + s + '"><input type="radio" name="shift" value="' + s + '" class="ui-visually-hidden"' + (i === 0 ? ' checked' : '') + '>' + s + '</label>';
         }).join('');
 
         body.innerHTML =
             '<form id="woModalForm" style="display:contents;"><input type="hidden" name="date" id="woDateHidden" value="' + data.today + '">' +
             '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;"><span style="font-size:0.85em;color:#888;" id="woHeaderDate">' + data.today + ' ' + data.now_time + '</span><span style="font-size:0.85em;color:#888;">' + data.worker_name + '</span></div>' +
-            '<div class="v2-fg"><div class="v2-form-row"><div><div class="v2-fl">日期</div><select name="wo_date" id="woDate" class="v2-select">' + dateOptionsHTML(90, data.today) + '</select></div><div style="flex:1.2;"><div class="v2-fl">班次</div><div class="v2-chip-group">' + shiftChips + '</div></div></div></div>' +
+            '<div class="v2-fg"><div class="v2-form-row"><div><div class="v2-fl">日期</div><select name="wo_date" id="woDate" class="v2-select">' + dateOptionsHTML(90, data.today) + '</select></div><div style="flex:1.2;"><div class="v2-fl">班次</div><div class="v2-chip-group" role="radiogroup" aria-label="班次">' + shiftChips + '</div></div></div></div>' +
             '<div class="v2-fg"><div class="v2-form-row"><div style="flex:1.2;"><div class="v2-fl">灌溉组人数</div><input type="number" name="team_size" value="1" min="0" max="99" class="v2-input" style="text-align:center;"></div><div style="flex:1.2;"><div class="v2-fl">第三方人数</div><input type="number" name="third_party_count" value="0" min="0" max="99" class="v2-input" style="text-align:center;"></div></div><div id="woHours" style="margin-top:2px;font-size:0.85em;color:#888;"></div></div>' +
             '<div class="v2-fg"><div class="v2-form-row"><div><div class="v2-fl">开始时间</div><select name="work_start_time" id="woStart" class="v2-select"><option value="">--</option></select></div><div><div class="v2-fl">完成时间</div><select name="work_end_time" id="woEnd" class="v2-select"><option value="">--</option></select></div></div></div>' +
-            '<div class="v2-fg"><div class="v2-fl">工作类别</div><div id="woCatTrigger" style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border:1px solid #ddd;border-radius:8px;cursor:pointer;background:#fff;font-size:16px;"><span id="woCatDisplay" style="color:#bbb;">选择</span><span style="font-size:0.8em;color:#999;">' + window.uiIcon('chevron-right') + '</span></div></div>' +
-            '<div class="v2-fg"><div class="v2-fl">工作内容</div><div id="woContentTrigger" style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border:1px solid #ddd;border-radius:8px;cursor:pointer;background:#fff;font-size:16px;"><span id="woContentDisplay" style="color:#bbb;">选择</span><span style="font-size:0.8em;color:#999;">' + window.uiIcon('chevron-right') + '</span></div></div>' +
-            '<div class="v2-fg"><div class="v2-form-row"><div style="flex:0.8;"><div class="v2-fl">待修</div><div class="v2-chip-group"><div class="v2-chip active" data-val=""><input type="radio" name="is_pending_repair" value="" style="display:none;" checked>否</div><div class="v2-chip" data-val="1"><input type="radio" name="is_pending_repair" value="1" style="display:none;">是</div></div></div><div style="flex:1.2;"><div class="v2-fl">疑难</div><div class="v2-chip-group"><div class="v2-chip active" data-val=""><input type="radio" name="is_difficult" value="" style="display:none;" checked>否</div><div class="v2-chip" data-val="1"><input type="radio" name="is_difficult" value="1" style="display:none;">是</div></div></div><div><div class="v2-fl">已处理</div><div class="v2-chip-group"><div class="v2-chip active" data-val=""><input type="radio" name="is_difficult_resolved" value="" style="display:none;" checked>否</div><div class="v2-chip" data-val="1"><input type="radio" name="is_difficult_resolved" value="1" style="display:none;">是</div></div></div></div></div>' +
+            '<div class="v2-fg"><div class="v2-fl" id="woCatLabel">工作类别</div><button type="button" aria-haspopup="dialog" id="woCatTrigger" aria-labelledby="woCatLabel woCatDisplay" style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border:1px solid #ddd;border-radius:8px;cursor:pointer;background:#fff;font-size:16px;"><span id="woCatDisplay" style="color:#bbb;">选择</span><span style="font-size:0.8em;color:#999;">' + window.uiIcon('chevron-right') + '</span></button></div>' +
+            '<div class="v2-fg"><div class="v2-fl" id="woContentLabel">工作内容</div><button type="button" aria-haspopup="dialog" id="woContentTrigger" aria-labelledby="woContentLabel woContentDisplay" style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border:1px solid #ddd;border-radius:8px;cursor:pointer;background:#fff;font-size:16px;"><span id="woContentDisplay" style="color:#bbb;">选择</span><span style="font-size:0.8em;color:#999;">' + window.uiIcon('chevron-right') + '</span></button></div>' +
+            '<div class="v2-fg"><div class="v2-form-row"><div style="flex:0.8;"><div class="v2-fl">待修</div><div class="v2-chip-group" role="radiogroup" aria-label="待修"><label class="v2-chip active" data-val=""><input type="radio" name="is_pending_repair" value="" class="ui-visually-hidden" checked>否</label><label class="v2-chip" data-val="1"><input type="radio" name="is_pending_repair" value="1" class="ui-visually-hidden">是</label></div></div><div style="flex:1.2;"><div class="v2-fl">疑难</div><div class="v2-chip-group" role="radiogroup" aria-label="疑难"><label class="v2-chip active" data-val=""><input type="radio" name="is_difficult" value="" class="ui-visually-hidden" checked>否</label><label class="v2-chip" data-val="1"><input type="radio" name="is_difficult" value="1" class="ui-visually-hidden">是</label></div></div><div><div class="v2-fl">已处理</div><div class="v2-chip-group" role="radiogroup" aria-label="已处理"><label class="v2-chip active" data-val=""><input type="radio" name="is_difficult_resolved" value="" class="ui-visually-hidden" checked>否</label><label class="v2-chip" data-val="1"><input type="radio" name="is_difficult_resolved" value="1" class="ui-visually-hidden">是</label></div></div></div></div>' +
             '<div class="v2-fg"><div class="v2-fl">备注</div><textarea name="remark" class="v2-textarea" placeholder="可选备注..." rows="2"></textarea></div>' +
-            '<div class="v2-fg"><div class="v2-fl">照片/视频 (最多12个)</div><div class="v2-photo-area" id="woPhotoArea"><div class="v2-photo-add v2-photo-camera" id="woPhotoCamera" title="拍摄">' + window.uiIcon('camera') + '</div><div class="v2-photo-add" id="woPhotoAdd" title="从相册选择">' + window.uiIcon('plus') + '</div></div><input type="file" id="woPhotoInput" accept="image/*,video/*" multiple style="display:none;"><input type="file" id="woPhotoCameraInput" accept="image/*,video/*" capture="environment" style="display:none;"></div>' +
+            '<div class="v2-fg"><div class="v2-fl">照片/视频 (最多12个)</div><div class="v2-photo-area" id="woPhotoArea"><button type="button" class="v2-photo-add v2-photo-camera" id="woPhotoCamera" aria-label="拍摄照片或视频" title="拍摄">' + window.uiIcon('camera') + '</button><button type="button" class="v2-photo-add" id="woPhotoAdd" aria-label="从相册添加照片或视频" title="从相册选择">' + window.uiIcon('plus') + '</button></div><input type="file" id="woPhotoInput" accept="image/*,video/*" multiple style="display:none;"><input type="file" id="woPhotoCameraInput" accept="image/*,video/*" capture="environment" style="display:none;"></div>' +
             '<div class="v2-fg"><div class="v2-fl">材料消耗 / 出库 <span style="font-size:0.78em;color:#aaa;font-weight:400;">(可选，提交时扣减库存)</span></div><div id="woMatDestRow" style="display:none;margin-bottom:8px;"><div style="font-size:0.8em;color:#888;margin-bottom:4px;">出库去向 <span id="woMatDestAuto" style="color:#2D6A4F;"></span></div><div class="v2-chip-group" id="woMatDestChips"></div><div id="woMatDestProject" style="display:none;margin-top:6px;"></div><div id="woMatDestCp" style="display:none;margin-top:6px;"><input type="text" id="woMatDestCpInput" placeholder="借用方" class="v2-input" style="font-size:0.88em;"></div><div id="woMatDestOther" style="display:none;margin-top:6px;"><input type="text" id="woMatDestOtherInput" placeholder="请填写去向" class="v2-input" style="font-size:0.88em;"></div></div><div id="woMatCart"></div><button type="button" id="woMatAdd" style="margin-top:4px;width:100%;padding:9px;border:1px dashed #2D6A4F;border-radius:8px;background:#fff;color:#2D6A4F;font-size:0.9em;font-weight:600;cursor:pointer;">+ 添加材料</button><div id="woMatRecommend" style="display:none;margin-top:8px;"></div></div>' +
             '<input type="hidden" name="entries" id="woEntriesInput" value="[]"><input type="hidden" name="pm_resolved" id="woPmResolved" value=""><input type="hidden" name="materials" id="woMaterialsInput" value="[]"></form>' +
-            '<div id="woCatModal" class="v2-sheet-overlay"><div class="v2-sheet"><div style="width:36px;height:4px;background:#ccc;border-radius:2px;margin:10px auto 0;"></div><div style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px 10px;border-bottom:1px solid #f0f0f0;flex-shrink:0;"><span style="font-weight:600;">选择工作类别</span><button type="button" onclick="document.getElementById(\'woCatModal\').style.display=\'none\'" style="width:32px;height:32px;border:none;background:#f0f0f0;border-radius:50%;font-size:1.1em;cursor:pointer;">' + window.uiIcon('close') + '</button></div><div style="padding:16px;overflow-y:auto;-webkit-overflow-scrolling:touch;touch-action:pan-y;flex:1;min-height:0;"><div style="font-size:0.85em;color:#999;margin-bottom:6px;">类别</div><div class="v2-chip-group" id="woCatPrimary"></div><div id="woCatSubDivider" style="display:none;border-top:1px solid #e0e0e0;margin:12px 0;"></div><div id="woCatSubLabel" style="display:none;font-size:0.85em;color:#999;margin-bottom:6px;">子类别</div><div class="v2-chip-group" id="woCatSub"></div></div></div></div>' +
-            '<div id="woTreeModal" class="v2-sheet-overlay"><div class="v2-sheet"><div style="width:36px;height:4px;background:#ccc;border-radius:2px;margin:10px auto 0;"></div><div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid #f0f0f0;flex-shrink:0;"><span style="font-weight:600;">工作内容</span><button type="button" onclick="document.getElementById(\'woTreeModal\').style.display=\'none\'" style="width:32px;height:32px;border:none;background:#f0f0f0;border-radius:50%;font-size:1.1em;cursor:pointer;">' + window.uiIcon('close') + '</button></div><div id="woBreadcrumb" class="v2-wo-bc"></div><div id="woSheetBody" style="flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;touch-action:pan-y;padding:8px 16px;min-height:0;"></div><div style="padding:12px 16px;border-top:1px solid #f0f0f0;flex-shrink:0;"><button type="button" onclick="document.getElementById(\'woTreeModal\').style.display=\'none\'" style="width:100%;padding:12px;border:none;border-radius:10px;font-size:0.95em;font-weight:600;cursor:pointer;background:#2D6A4F;color:#fff;">完成</button></div></div></div>' +
-            '<div id="woLeafModal" class="v2-sheet-overlay" style="z-index:4100;"><div class="v2-sheet"><div style="width:36px;height:4px;background:#ccc;border-radius:2px;margin:10px auto 0;"></div><div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid #f0f0f0;flex-shrink:0;"><span id="woLeafTitle" style="font-weight:600;"></span><button type="button" onclick="document.getElementById(\'woLeafModal\').style.display=\'none\'" style="width:32px;height:32px;border:none;background:#f0f0f0;border-radius:50%;font-size:1.1em;cursor:pointer;">' + window.uiIcon('close') + '</button></div><div id="woLeafBody" style="padding:16px;overflow-y:auto;-webkit-overflow-scrolling:touch;touch-action:pan-y;flex:1;min-height:0;"></div><div style="padding:12px 16px;border-top:1px solid #f0f0f0;display:flex;gap:10px;flex-shrink:0;"><button type="button" onclick="document.getElementById(\'woLeafModal\').style.display=\'none\'" style="flex:1;padding:12px;border:1px solid #2D6A4F;border-radius:10px;font-size:0.95em;font-weight:600;cursor:pointer;background:#fff;color:#2D6A4F;">取消</button><button type="button" id="woLeafConfirmBtn" style="flex:1;padding:12px;border:none;border-radius:10px;font-size:0.95em;font-weight:600;cursor:pointer;background:#2D6A4F;color:#fff;">确定</button></div></div></div>';
+            '<div id="woCatModal" class="v2-sheet-overlay"><div class="v2-sheet"><div style="width:36px;height:4px;background:#ccc;border-radius:2px;margin:10px auto 0;"></div><div style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px 10px;border-bottom:1px solid #f0f0f0;flex-shrink:0;"><span style="font-weight:600;">选择工作类别</span><button type="button" data-ui-close aria-label="关闭选择器" onclick="document.getElementById(\'woCatModal\').style.display=\'none\'" style="width:32px;height:32px;border:none;background:#f0f0f0;border-radius:50%;font-size:1.1em;cursor:pointer;">' + window.uiIcon('close') + '</button></div><div style="padding:16px;overflow-y:auto;-webkit-overflow-scrolling:touch;touch-action:pan-y;flex:1;min-height:0;"><div style="font-size:0.85em;color:#999;margin-bottom:6px;">类别</div><div class="v2-chip-group" id="woCatPrimary"></div><div id="woCatSubDivider" style="display:none;border-top:1px solid #e0e0e0;margin:12px 0;"></div><div id="woCatSubLabel" style="display:none;font-size:0.85em;color:#999;margin-bottom:6px;">子类别</div><div class="v2-chip-group" id="woCatSub"></div></div></div></div>' +
+            '<div id="woTreeModal" class="v2-sheet-overlay"><div class="v2-sheet"><div style="width:36px;height:4px;background:#ccc;border-radius:2px;margin:10px auto 0;"></div><div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid #f0f0f0;flex-shrink:0;"><span style="font-weight:600;">工作内容</span><button type="button" data-ui-close aria-label="关闭选择器" onclick="document.getElementById(\'woTreeModal\').style.display=\'none\'" style="width:32px;height:32px;border:none;background:#f0f0f0;border-radius:50%;font-size:1.1em;cursor:pointer;">' + window.uiIcon('close') + '</button></div><div id="woBreadcrumb" class="v2-wo-bc"></div><div id="woSheetBody" style="flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;touch-action:pan-y;padding:8px 16px;min-height:0;"></div><div style="padding:12px 16px;border-top:1px solid #f0f0f0;flex-shrink:0;"><button type="button" data-ui-close aria-label="关闭选择器" onclick="document.getElementById(\'woTreeModal\').style.display=\'none\'" style="width:100%;padding:12px;border:none;border-radius:10px;font-size:0.95em;font-weight:600;cursor:pointer;background:#2D6A4F;color:#fff;">完成</button></div></div></div>' +
+            '<div id="woLeafModal" class="v2-sheet-overlay" style="z-index:4100;"><div class="v2-sheet"><div style="width:36px;height:4px;background:#ccc;border-radius:2px;margin:10px auto 0;"></div><div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid #f0f0f0;flex-shrink:0;"><span id="woLeafTitle" style="font-weight:600;"></span><button type="button" data-ui-close aria-label="关闭选择器" onclick="document.getElementById(\'woLeafModal\').style.display=\'none\'" style="width:32px;height:32px;border:none;background:#f0f0f0;border-radius:50%;font-size:1.1em;cursor:pointer;">' + window.uiIcon('close') + '</button></div><div id="woLeafBody" style="padding:16px;overflow-y:auto;-webkit-overflow-scrolling:touch;touch-action:pan-y;flex:1;min-height:0;"></div><div style="padding:12px 16px;border-top:1px solid #f0f0f0;display:flex;gap:10px;flex-shrink:0;"><button type="button" data-ui-close aria-label="关闭选择器" onclick="document.getElementById(\'woLeafModal\').style.display=\'none\'" style="flex:1;padding:12px;border:1px solid #2D6A4F;border-radius:10px;font-size:0.95em;font-weight:600;cursor:pointer;background:#fff;color:#2D6A4F;">取消</button><button type="button" id="woLeafConfirmBtn" style="flex:1;padding:12px;border:none;border-radius:10px;font-size:0.95em;font-weight:600;cursor:pointer;background:#2D6A4F;color:#fff;">确定</button></div></div></div>';
 
         // Move the bottom-sheet popups to <body> so they escape the modal container's
         // `transform`. On iOS Safari a transformed ancestor turns position:fixed into
@@ -2049,8 +2059,11 @@
         document.querySelector('[name="third_party_count"]').addEventListener('input', calcHours);
         calcHours();
 
-        document.querySelectorAll('#woModalForm .v2-chip-group .v2-chip').forEach(function (c) {
-            c.addEventListener('click', function () { c.closest('.v2-chip-group').querySelectorAll('.v2-chip').forEach(function (x) { x.classList.remove('active'); }); c.classList.add('active'); var inp = c.querySelector('input'); if (inp) inp.checked = true; if (inp && inp.name === 'is_pending_repair') { syncDifficultChips(); clearPendingRepairLeaves(); } });
+        document.querySelectorAll('#woModalForm .v2-chip input[type=radio]').forEach(function (input) {
+            input.addEventListener('change', function () {
+                setRadioChip(input.name, input.value);
+                if (input.name === 'is_pending_repair') { syncDifficultChips(); clearPendingRepairLeaves(); }
+            });
         });
 
         // Work-content drill-down picker (replaces the old fault chips).
@@ -2072,7 +2085,7 @@
             $('woCatSubDivider').style.display = '';
             catSub.innerHTML = '';
             items.forEach(function (it) {
-                var c = document.createElement('div'); c.className = 'v2-chip'; c.textContent = it.label;
+                var c = document.createElement('button'); c.type = 'button'; c.className = 'v2-chip'; c.textContent = it.label;
                 c.addEventListener('click', it.onClick);
                 catSub.appendChild(c);
             });
@@ -2097,7 +2110,7 @@
             _woCatNode = sub ? sub.id : root.id;
             if (prevCat && prevCat !== _woCatNode) clearWoContent();
             var node = sub || root;
-            setContentVisible(!!(node.children && node.children.length));
+            setContentVisible(node.value_type !== 'group' || !!node.children?.length);
             // Auto-fill a lone toggle leaf (e.g., 培训记录上传) — skip free-text placeholders.
             var kids = node.children || [];
             if (kids.length === 1 && kids[0].value_type === 'toggle' && kids[0].name.indexOf('填写') < 0) {
@@ -2159,7 +2172,7 @@
                 return (ia < 0 ? 999 : ia) - (ib < 0 ? 999 : ib);
             });
             orderedCats.forEach(function (r) {
-                var chip = document.createElement('div'); chip.className = 'v2-chip'; chip.textContent = r.name;
+                var chip = document.createElement('button'); chip.type = 'button'; chip.className = 'v2-chip'; chip.textContent = r.name;
                 chip.addEventListener('click', function () {
                     catPrimary.querySelectorAll('.v2-chip').forEach(function (x) { x.classList.remove('active'); });
                     chip.classList.add('active');
@@ -2287,7 +2300,7 @@
             '#woCatPrimary{display:flex;flex-wrap:wrap;gap:8px;}' +
             '#woCatPrimary .v2-chip{flex:1 1 calc(33.333% - 8px);justify-content:center;text-align:center;}' +
             '.v2-wo-bc{display:flex;align-items:center;flex-wrap:wrap;gap:4px;padding:8px 12px;border-bottom:1px solid #f0f0f0;font-size:0.82rem;color:#666;line-height:1.4;}' +
-            '.v2-wo-crumb{color:#2D6A4F;cursor:pointer;}' +
+            '.v2-wo-crumb{border:0;background:none;padding:2px;font:inherit;color:#2D6A4F;cursor:pointer;}' +
             '.v2-wo-sep{color:#ccc;}' +
             '.v2-wo-row{display:flex;align-items:center;gap:8px;width:100%;background:none;border:none;border-bottom:1px solid #f5f5f5;padding:13px 4px;font-size:0.95rem;color:#333;cursor:pointer;text-align:left;}' +
             '.v2-wo-row:hover{background:#f6f9f6;}' +
@@ -2443,7 +2456,7 @@
         _woPath.forEach(function (id, i) { crumbs.push({ up: i, name: ((_woNodeById[id] || {}).name) || '' }); });
         if (bc) {
             bc.innerHTML = crumbs.map(function (c, i) {
-                return (i ? '<span class="v2-wo-sep">' + window.uiIcon('chevron-right') + '</span>' : '') + '<span class="v2-wo-crumb" data-up="' + c.up + '">' + escHtml(c.name) + '</span>';
+                return (i ? '<span class="v2-wo-sep">' + window.uiIcon('chevron-right') + '</span>' : '') + '<button type="button" class="v2-wo-crumb" data-up="' + c.up + '">' + escHtml(c.name) + '</button>';
             }).join('');
             bc.querySelectorAll('.v2-wo-crumb').forEach(function (c) { c.addEventListener('click', function () { drillUpTo(parseInt(c.dataset.up, 10)); }); });
         }
@@ -2451,6 +2464,8 @@
         var cur = currentWoNode();
         var isPlannedRoot = !!(cur && cur.name === '计划性维修');
         var children = cur ? (cur.children || []) : _woRoots;
+        // A category may itself be a final count, text, status or toggle item.
+        if (cur && !children.length && cur.value_type !== 'group') children = [cur];
         var html = '';
         // Project selector at the 灌溉项目 section root.
         if (cur && cur.section === 'irrigation_project' && _woPath.length === 1 && !_woProject) {
@@ -2724,7 +2739,7 @@
             sheet.innerHTML = '<div class="v2-sheet"><div style="width:36px;height:4px;background:#ccc;border-radius:2px;margin:10px auto 0;"></div>' +
                 '<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid #f0f0f0;flex-shrink:0;">' +
                 '<span id="woMatSheetTitle" style="font-weight:600;"></span>' +
-                '<button type="button" id="woMatSheetClose" style="width:32px;height:32px;border:none;background:#f0f0f0;border-radius:50%;font-size:1.1em;cursor:pointer;">' + window.uiIcon('close') + '</button></div>' +
+                '<button type="button" data-ui-close aria-label="关闭选择器" id="woMatSheetClose" style="width:32px;height:32px;border:none;background:#f0f0f0;border-radius:50%;font-size:1.1em;cursor:pointer;">' + window.uiIcon('close') + '</button></div>' +
                 '<div id="woMatSheetBody" style="flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;touch-action:pan-y;padding:4px 0;min-height:0;"></div></div>';
             document.body.appendChild(sheet);
             sheet.addEventListener('click', function (e) { if (e.target === sheet) sheet.style.display = 'none'; });
@@ -2850,7 +2865,7 @@
         var dests = ['日常维护', '项目', '借用', '其他'];
         box.innerHTML = dests.map(function (d) {
             var on = (_woMatDest.subtype === d) ? ' active' : '';
-            return '<div class="v2-chip' + on + '" data-dest="' + d + '">' + d + '</div>';
+            return '<button type="button" class="v2-chip' + on + '" data-dest="' + d + '">' + d + '</button>';
         }).join('');
         box.querySelectorAll('.v2-chip').forEach(function (c) {
             c.addEventListener('click', function () {
@@ -2874,9 +2889,9 @@
                 _woMatDest.projectCat = curCat;
                 var projInCat = (_woProjects || []).filter(function (p) { return p.category === curCat; });
                 var html = '<div style="font-size:0.78em;color:#999;margin-bottom:3px;">类别</div><div class="v2-chip-group" id="woMatDestProjCats">' +
-                    catList.map(function (c) { return '<div class="v2-chip' + (c === curCat ? ' active' : '') + '" data-pcat="' + c + '">' + cats[c] + '</div>'; }).join('') + '</div>';
+                    catList.map(function (c) { return '<button type="button" class="v2-chip' + (c === curCat ? ' active' : '') + '" data-pcat="' + c + '">' + cats[c] + '</button>'; }).join('') + '</div>';
                 html += '<div style="font-size:0.78em;color:#999;margin:6px 0 3px;">项目</div><div class="v2-chip-group" id="woMatDestProjNames" style="flex-wrap:wrap;">' +
-                    projInCat.map(function (p) { return '<div class="v2-chip' + (p.id === _woMatDest.projectId ? ' active' : '') + '" data-pid="' + p.id + '">' + _esc(p.name) + '</div>'; }).join('') + '</div>';
+                    projInCat.map(function (p) { return '<button type="button" class="v2-chip' + (p.id === _woMatDest.projectId ? ' active' : '') + '" data-pid="' + p.id + '">' + _esc(p.name) + '</button>'; }).join('') + '</div>';
                 projBox.innerHTML = html;
                 projBox.querySelectorAll('#woMatDestProjCats .v2-chip').forEach(function (c) {
                     c.addEventListener('click', function () { _woMatDest.projectCat = c.dataset.pcat; _woMatDest.projectId = null; renderWoMatDestChips(); });
@@ -2925,7 +2940,7 @@
     function buildWaterRequestForm(data) {
         var body = $('wrModalBody'); if (!body) return;
         var typeChips = data.request_type_choices.map(function (item, i) {
-            return '<div class="v2-chip modal-req-chip' + (i === 0 ? ' active' : '') + '" data-val="' + item[0] + '">' + item[1] + '</div>';
+            return '<button type="button" class="v2-chip modal-req-chip' + (i === 0 ? ' active' : '') + '" data-val="' + item[0] + '">' + item[1] + '</button>';
         }).join('');
         body.innerHTML = '<form id="wrModalForm" style="display:contents;">' +
             '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;"><span style="font-size:0.85em;color:#888;">' + data.today + ' ' + data.now_time + '</span><span style="font-size:0.85em;color:#888;">' + data.user_name + '</span></div>' +
@@ -3113,7 +3128,7 @@
         _invData = data;  // cache for subtype/project/borrower lookups
 
         var ops = data.operations.map(function (o, i) {
-            return '<div class="v2-chip inv-op-chip' + (i === 0 ? ' active' : '') + '" data-val="' + o.op + '">' + o.label + '</div>';
+            return '<button type="button" class="v2-chip inv-op-chip' + (i === 0 ? ' active' : '') + '" data-val="' + o.op + '">' + o.label + '</button>';
         }).join('');
 
         body.innerHTML =
@@ -3128,11 +3143,11 @@
             '<div class="v2-fg"><div class="v2-form-row"><div><div class="v2-fl">日期</div><select name="date" id="invDate" class="v2-select">' + dateOptionsHTML(7, data.today) + '</select></div></div></div>' +
             '<div class="v2-fg" id="invOrderRow" style="display:none;"><div class="v2-fl">订单号</div><input type="text" name="order_no" id="invOrderNo" class="v2-input" list="invOrderList" placeholder="选择或输入采购订单号"><datalist id="invOrderList">' + (data.purchase_orders || []).map(function (o) { return '<option value="' + _esc(o) + '">'; }).join('') + '</datalist></div>' +
             '<div class="v2-fg" id="invProjCatRow" style="display:none;"><div class="v2-fl">项目类别</div><div class="v2-chip-group" id="invProjCatChips"></div><div class="v2-fl" style="margin-top:10px;">项目名称</div><div class="v2-chip-group" id="invProjNameChips"><div class="v2-chip" style="opacity:0.5;cursor:default;">先选类别</div></div></div>' +
-            '<div class="v2-fg" id="invConsumeModeRow" style="display:none;"><div class="v2-fl">消耗类型</div><div class="v2-chip-group"><div class="v2-chip inv-cmode-chip active" data-val="actual">实际消耗</div><div class="v2-chip inv-cmode-chip" data-val="estimated">预估消耗</div></div><div style="font-size:0.72em;color:#999;margin-top:4px;" id="invCmodeHint">实际消耗经经理确认后计入台账和库存；预估消耗仅作提醒。</div></div>' +
+            '<div class="v2-fg" id="invConsumeModeRow" style="display:none;"><div class="v2-fl">消耗类型</div><div class="v2-chip-group"><button type="button" class="v2-chip inv-cmode-chip active" data-val="actual">实际消耗</button><button type="button" class="v2-chip inv-cmode-chip" data-val="estimated">预估消耗</button></div><div style="font-size:0.72em;color:#999;margin-top:4px;" id="invCmodeHint">实际消耗经经理确认后计入台账和库存；预估消耗仅作提醒。</div></div>' +
             '<div class="v2-fg" id="invCpRow" style="display:none;"><div class="v2-fl">借用方</div><input type="text" name="counterparty" id="invCounterparty" class="v2-input" list="invBorrowerList" placeholder="选择或输入借用方"><datalist id="invBorrowerList">' + (data.borrowers || []).map(function (b) { return '<option value="' + _esc(b) + '">'; }).join('') + '</datalist></div>' +
             '<div class="v2-fg"><div class="v2-fl">物料清单</div>' +
                 '<div id="invCartList"></div>' +
-                '<div id="invAddTrigger" style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border:1px dashed #bbb;border-radius:8px;cursor:pointer;background:#fff;font-size:16px;margin-top:6px;"><span id="invAddLabel" style="color:#2D6A4F;">+ 添加物料</span><span style="font-size:0.8em;color:#999;">' + window.uiIcon('chevron-right') + '</span></div>' +
+                '<button type="button" aria-haspopup="dialog" id="invAddTrigger" style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border:1px dashed #bbb;border-radius:8px;cursor:pointer;background:#fff;font-size:16px;margin-top:6px;"><span id="invAddLabel" style="color:#2D6A4F;">+ 添加物料</span><span style="font-size:0.8em;color:#999;">' + window.uiIcon('chevron-right') + '</span></button>' +
             '</div>' +
             '<div class="v2-fg"><div class="v2-fl">备注</div><textarea name="remark" class="v2-textarea" placeholder="可选备注..." rows="2"></textarea></div>' +
             '<input type="hidden" name="lines" id="invLinesInput" value="[]"></form>';
@@ -3183,7 +3198,7 @@
         $('invSubLabel').textContent = (op === '入库') ? '来源类型' : '去向';
         $('invSubInput').value = subs[0] || '';
         $('invSubChips').innerHTML = subs.map(function (s, i) {
-            return '<div class="v2-chip inv-sub-chip' + (i === 0 ? ' active' : '') + '" data-val="' + s + '">' + s + '</div>';
+            return '<button type="button" class="v2-chip inv-sub-chip' + (i === 0 ? ' active' : '') + '" data-val="' + s + '">' + s + '</button>';
         }).join('');
         document.querySelectorAll('.inv-sub-chip').forEach(function (chip) {
             chip.addEventListener('click', function () {
@@ -3201,7 +3216,7 @@
         var box = $('invProjCatChips');
         if (!box) return;
         box.innerHTML = (_invData.project_categories || []).map(function (c) {
-            return '<div class="v2-chip inv-pcat-chip" data-val="' + _esc(c.code) + '">' + _esc(c.label) + '</div>';
+            return '<button type="button" class="v2-chip inv-pcat-chip" data-val="' + _esc(c.code) + '">' + _esc(c.label) + '</button>';
         }).join('');
         document.querySelectorAll('.inv-pcat-chip').forEach(function (chip) {
             chip.addEventListener('click', function () {
@@ -3226,7 +3241,7 @@
             return;
         }
         box.innerHTML = matches.map(function (p) {
-            return '<div class="v2-chip inv-pname-chip" data-val="' + p.id + '">' + _esc(p.name) + '</div>';
+            return '<button type="button" class="v2-chip inv-pname-chip" data-val="' + p.id + '">' + _esc(p.name) + '</button>';
         }).join('');
         document.querySelectorAll('.inv-pname-chip').forEach(function (chip) {
             chip.addEventListener('click', function () {
@@ -3258,9 +3273,9 @@
             return '<div class="inv-cart-row" style="display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid #eee;border-radius:8px;margin-bottom:6px;">' +
                 '<div style="flex:1;min-width:0;"><div style="font-size:0.9em;font-weight:500;">' + _esc(it.name) +
                 '</div><div style="font-size:0.72em;color:#999;">当前库存: <b style="color:#444;">' + it.stock + '</b></div></div>' +
-                '<input type="number" step="1" min="1" value="' + it.quantity + '" data-idx="' + idx + '" class="inv-qty-input" style="width:64px;padding:6px;border:1px solid #ddd;border-radius:6px;text-align:center;font-size:0.9em;">' +
+                '<input type="number" step="1" min="1" value="' + it.quantity + '" data-idx="' + idx + '" class="inv-qty-input" aria-label="物料数量" style="width:64px;padding:6px;border:1px solid #ddd;border-radius:6px;text-align:center;font-size:0.9em;">' +
                 '<span style="width:48px;text-align:center;font-size:0.85em;color:#666;">' + _esc(it.unit || '—') + '</span>' +
-                '<button type="button" data-idx="' + idx + '" class="inv-del-btn" style="background:#fee;border:none;border-radius:6px;width:28px;height:28px;color:#c0392b;cursor:pointer;font-size:0.9em;">' + window.uiIcon('close') + '</button>' +
+                '<button type="button" data-idx="' + idx + '" class="inv-del-btn" aria-label="移除物料" style="background:#fee;border:none;border-radius:6px;width:28px;height:28px;color:#c0392b;cursor:pointer;font-size:0.9em;">' + window.uiIcon('close') + '</button>' +
                 '</div>';
         }).join('');
         box.querySelectorAll('.inv-qty-input').forEach(function (inp) {
@@ -3290,7 +3305,7 @@
             sheet.id = 'invTreeSheet';
             sheet.className = 'v2-sheet-overlay';
             sheet.innerHTML = '<div class="v2-sheet"><div style="width:36px;height:4px;background:#ccc;border-radius:2px;margin:10px auto 0;"></div>' +
-                '<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid #f0f0f0;"><span id="invTreeTitle" style="font-weight:600;">选择物料</span><button type="button" id="invTreeClose" style="width:32px;height:32px;border:none;background:#f0f0f0;border-radius:50%;font-size:1.1em;cursor:pointer;">' + window.uiIcon('close') + '</button></div>' +
+                '<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid #f0f0f0;"><span id="invTreeTitle" style="font-weight:600;">选择物料</span><button type="button" data-ui-close aria-label="关闭选择器" id="invTreeClose" style="width:32px;height:32px;border:none;background:#f0f0f0;border-radius:50%;font-size:1.1em;cursor:pointer;">' + window.uiIcon('close') + '</button></div>' +
                 '<div id="invTreeBody" style="flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:8px 16px;min-height:0;"></div>' +
                 '<div style="padding:8px 16px 12px;border-top:1px solid #f0f0f0;"><button type="button" id="invTreeDone" style="width:100%;padding:12px;border:none;border-radius:10px;font-size:0.95em;font-weight:600;cursor:pointer;background:#2D6A4F;color:#fff;">完成</button></div></div>';
             document.body.appendChild(sheet);
@@ -3308,8 +3323,9 @@
         }
         nodes.forEach(function (n) {
             var isLeaf = n.node_type === 'part' || (!n.children || !n.children.length);
-            var row = document.createElement('div');
-            row.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:12px 10px;border-bottom:1px solid #f5f5f5;cursor:pointer;';
+            var row = document.createElement('button');
+            row.type = 'button';
+            row.style.cssText = 'display:flex;width:100%;border:0;background:none;text-align:left;align-items:center;justify-content:space-between;padding:12px 10px;border-bottom:1px solid #f5f5f5;cursor:pointer;';
             row.innerHTML = '<span style="font-size:0.95em;">' + (isLeaf ? '' + window.uiIcon('box') + ' ' : '' + window.uiIcon('folder') + ' ') + _esc(n.name) +
                 (isLeaf ? ' <span style="font-size:0.72em;color:#999;">库存 ' + (n.current_stock || 0) + '</span>' : '') + '</span>' +
                 (isLeaf ? '<span style="font-size:0.8em;color:#2D6A4F;font-weight:600;">+ 选择</span>' : '<span style="color:#bbb;">' + window.uiIcon('chevron-right') + '</span>');
@@ -3332,8 +3348,9 @@
 
         // Back button if not at root.
         if (path.length) {
-            var back = document.createElement('div');
-            back.style.cssText = 'padding:8px 10px;color:#2D6A4F;font-size:0.85em;cursor:pointer;';
+            var back = document.createElement('button');
+            back.type = 'button';
+            back.style.cssText = 'width:100%;border:0;background:none;text-align:left;padding:8px 10px;color:#2D6A4F;font-size:0.85em;cursor:pointer;';
             back.textContent = '‹ 返回';
             back.addEventListener('click', function () { _invOpenTreeSheet(path.slice(0, -1)); });
             tbody.insertBefore(back, tbody.firstChild);

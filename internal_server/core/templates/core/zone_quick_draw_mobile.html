@@ -199,9 +199,9 @@
     <link rel="stylesheet" href="{% static 'css/compact-ui.css' %}?v=20261023responsive">
     <link rel="stylesheet" href="{% static 'css/responsive-ui.css' %}?v=20261023responsive">
     <link rel="stylesheet" href="{% static 'css/page-ui.css' %}?v=20261024pages6">
-    <link rel="stylesheet" href="{% static 'css/modern-ui.css' %}?v=20261118mwg1">
-    <script src="{% static 'js/modern-ui.js' %}?v=20261118mwg1" defer></script>
-    <script src="{% static 'js/pwa.js' %}?v=20261024update" defer></script>
+    <link rel="stylesheet" href="{% static 'css/modern-ui.css' %}?v=20261118mwg2">
+    <script src="{% static 'js/modern-ui.js' %}?v=20261118mwg2" defer></script>
+    <script src="{% static 'js/pwa.js' %}?v=20261118mwg2" defer></script>
 </head>
 <body class="ui-system" data-page="zone_quick_draw_mobile">
 {% include 'core/_watermark.html' %}
@@ -913,7 +913,7 @@
                 } else { preview.style.display = 'block'; previewText.innerHTML = '<span style="color:var(--color-danger);">未找到匹配的区域</span>'; confirmBtn.disabled = true; }
             });
             input.addEventListener('keydown', function(e) {
-                if (e.key === 'Enter') { e.preventDefault(); const q = this.value.trim().toLowerCase(); const m = allZones.find(z => z.code.toLowerCase() === q); if (m) selectZone(m.id, m.code); }
+                if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); const q = this.value.trim().toLowerCase(); const m = allZones.find(z => z.code.toLowerCase() === q); if (m) selectZone(m.id, m.code); }
                 else if (e.key === 'Escape') { dropdown.style.display = 'none'; }
             });
             document.addEventListener('click', function(e) { if (!e.target.closest('.zone-input-wrap')) dropdown.style.display = 'none'; });

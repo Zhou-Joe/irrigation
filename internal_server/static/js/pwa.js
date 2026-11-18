@@ -84,13 +84,14 @@
     // its response may have been lost after the server already accepted it.
     function trackEdits(event) {
         var form = event.target.closest('form');
-        if (!form || form.id === 'pwaModuleSearch') return;
+        if (!form || form.id === 'pwaModuleSearch' || form.matches('.business-switch')) return;
         var method = (form.getAttribute('method') || 'get').toLowerCase();
         if (method === 'post' || /^(wo|wr|inv)ModalForm$/.test(form.id)) setDirty(true);
     }
     document.addEventListener('input', trackEdits);
     document.addEventListener('change', trackEdits);
     document.addEventListener('submit', function (event) {
+        if (event.target.matches('.business-switch')) return;
         var method = (event.target.getAttribute('method') || 'get').toLowerCase();
         if (method !== 'get' && !canSubmit()) { event.preventDefault(); event.stopImmediatePropagation(); return; }
         setDirty(false);

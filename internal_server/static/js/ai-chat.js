@@ -542,7 +542,7 @@
             if (!event.clipboardData.getData('text/plain')) event.preventDefault();
             addAttachments(files);
         });
-        input.addEventListener('keydown',event => { if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) { event.preventDefault(); send(); } });
+        input.addEventListener('keydown',event => { if (event.key === 'Enter' && !event.shiftKey && !event.isComposing && event.keyCode !== 229) { event.preventDefault(); send(); } });
         const box = byId('aiChatMessages'); box.addEventListener('scroll',() => { follow = box.scrollHeight-box.scrollTop-box.clientHeight < 80; byId('aiChatLatest').hidden = follow; },{passive:true});
         byId('aiChatLatest').onclick = () => { follow = true; scrollLatest(true); byId('aiChatLatest').hidden = true; };
         panel.addEventListener('keydown',event => {

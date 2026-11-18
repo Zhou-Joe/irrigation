@@ -64,12 +64,12 @@
         <!-- 植物筛选 -->
         {% if all_plant_names %}
         <div class="filter-dropdown-wrap">
-            <button type="button" class="filter-dropdown-toggle" id="plantDropdownBtn" onclick="togglePlantDropdown()">
+            <button type="button" class="filter-dropdown-toggle" id="plantDropdownBtn" data-filter-popover aria-expanded="false" aria-controls="plantDropdownPanel" onclick="togglePlantDropdown()">
                 <span>植物筛选</span>
                 <span class="filter-dropdown-count" id="plantFilterCount">全部</span>
                 <span class="filter-dropdown-arrow"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-chevron-down"/></svg></span>
             </button>
-            <div class="filter-dropdown-panel" id="plantDropdownPanel">
+            <div class="filter-dropdown-panel" id="plantDropdownPanel" hidden>
                 <label class="filter-dropdown-check">
                     <input type="checkbox" id="plantSelectAll" checked onchange="toggleAllPlants(this.checked)"> 全选
                 </label>
@@ -263,14 +263,14 @@
 </div>
 
 <!-- Sync Agent Status Indicator -->
-<div class="sync-agent-status" id="syncAgentStatus" style="display:none;" onclick="toggleSyncPanel()" title="点击查看详情">
+<button type="button" aria-controls="syncStatusPanel" aria-expanded="false" class="sync-agent-status" id="syncAgentStatus" style="display:none;" onclick="toggleSyncPanel()" title="点击查看详情">
     <span class="status-dot checking" id="syncDot"></span>
-    <div class="status-info">
+    <span class="status-info">
         <span class="status-label" id="syncLabel">同步代理</span>
         <span class="status-detail" id="syncDetail">检查中...</span>
-    </div>
+    </span>
     <span class="status-refresh" id="syncRefresh"></span>
-</div>
+</button>
 
 <!-- Expanded Sync Status Panel -->
 <div class="sync-status-panel" id="syncStatusPanel" style="display:none;">
@@ -342,17 +342,17 @@
 <!-- V2 Drawing Tool Bar (for water request) -->
 <div class="v2-draw-toolbar" id="v2DrawToolBar" style="display:none;">
     <div class="v2-draw-tabs">
-        <div class="v2-draw-tab active" data-tab="name" onclick="switchDrawTab('name')">通用名称</div>
-        <div class="v2-draw-tab" data-tab="draw" onclick="switchDrawTab('draw')">绘图框选</div>
+        <button type="button" class="v2-draw-tab active" data-tab="name" onclick="switchDrawTab('name')">通用名称</button>
+        <button type="button" class="v2-draw-tab" data-tab="draw" onclick="switchDrawTab('draw')">绘图框选</button>
     </div>
     <div class="v2-draw-content active" id="v2TabName">
         <div id="wrNameChips" class="v2-chip-group" style="gap:4px;flex-wrap:wrap;max-height:30vh;max-height:30dvh;overflow-y:auto;-webkit-overflow-scrolling:touch;"></div>
     </div>
     <div class="v2-draw-content" id="v2TabDraw">
         <div class="v2-chip-group" style="gap:5px;justify-content:center;">
-            <div class="v2-chip modal-draw-chip" data-tool="rect" onclick="activateModalDrawTool('rect')">矩形</div>
-            <div class="v2-chip modal-draw-chip" data-tool="circle" onclick="activateModalDrawTool('circle')">圆形</div>
-            <div class="v2-chip modal-draw-chip" data-tool="polygon" onclick="activateModalDrawTool('polygon')">多边形</div>
+            <button type="button" class="v2-chip modal-draw-chip" data-tool="rect" onclick="activateModalDrawTool('rect')">矩形</button>
+            <button type="button" class="v2-chip modal-draw-chip" data-tool="circle" onclick="activateModalDrawTool('circle')">圆形</button>
+            <button type="button" class="v2-chip modal-draw-chip" data-tool="polygon" onclick="activateModalDrawTool('polygon')">多边形</button>
         </div>
         <div id="v2DrawHint" style="font-size:0.78em;color:#888;margin-top:4px;">选择绘制工具后在地图上绘制</div>
     </div>
@@ -361,9 +361,9 @@
 <!-- V2 Workorder Zone Selection Bar (3 tabs: search / common-name / map) -->
 <div class="v2-draw-toolbar" id="v2WoSelectBar" style="display:none;">
     <div class="v2-draw-tabs">
-        <div class="v2-draw-tab active" data-tab="search" onclick="switchWoSelectTab('search')">搜索</div>
-        <div class="v2-draw-tab" data-tab="name" onclick="switchWoSelectTab('name')">通用名称</div>
-        <div class="v2-draw-tab" data-tab="map" onclick="switchWoSelectTab('map')">地图点选</div>
+        <button type="button" class="v2-draw-tab active" data-tab="search" onclick="switchWoSelectTab('search')">搜索</button>
+        <button type="button" class="v2-draw-tab" data-tab="name" onclick="switchWoSelectTab('name')">通用名称</button>
+        <button type="button" class="v2-draw-tab" data-tab="map" onclick="switchWoSelectTab('map')">地图点选</button>
     </div>
     <div class="v2-draw-content active" id="woTabSearch">
         <input id="woZoneSearchInput" class="wo-zone-search-input" type="text" placeholder="输入区域编号或名称..." autocomplete="off">
@@ -378,7 +378,7 @@
 </div>
 
 <!-- V2 Toast -->
-<div id="v2ModalToast"></div>
+<div id="v2ModalToast" role="status" aria-live="polite" aria-atomic="true"></div>
 
 <!-- Zone data is now loaded async from /api/zones-payload/ (gzip + browser cache)
      instead of inlined here. The empty element is kept so map.js's legacy fallback
@@ -404,7 +404,7 @@
 </script>
 {% endif %}</div>{% endblock %}
 
-{% block extra_js %}<div id="dashboardScripts" hidden>{% if pest_mode %}{{ pest_map_style|json_script:'pest-map-style' }}<script>window.MAP_STYLE_CONFIG=JSON.parse(document.getElementById('pest-map-style').textContent);</script><script src="{% static 'vendor/leaflet/leaflet.js' %}"></script><script src="{% static 'operations/map-actions.js' %}?v=20261108fixes2"></script><script src="{% static 'js/map-runtime.js' %}?v=20261117pestalign1"></script><script src="{% static 'operations/map-markers.js' %}?v=20261112equipment1"></script><script src="{% static 'operations/location-picker.js' %}?v=20261112equipment1"></script><script src="{% static 'operations/workorder-chips.js' %}?v=20261117formui"></script><script src="{% static 'operations/map-location-create.js' %}?v=20261112equipment1"></script><script src="{% static 'operations/workorder-media.js' %}?v=20261117formui"></script><script src="{% static 'operations/work-parameters.js' %}?v=20261117pestalign1"></script><script src="{% static 'operations/pest-map.js' %}?v=20261117pestalign1"></script>{% else %}
+{% block extra_js %}<div id="dashboardScripts" hidden>{% if pest_mode %}{{ pest_map_style|json_script:'pest-map-style' }}<script>window.MAP_STYLE_CONFIG=JSON.parse(document.getElementById('pest-map-style').textContent);</script><script src="{% static 'vendor/leaflet/leaflet.js' %}"></script><script src="{% static 'operations/map-actions.js' %}?v=20261108fixes2"></script><script src="{% static 'js/map-runtime.js' %}?v=20261117pestalign1"></script><script src="{% static 'operations/map-markers.js' %}?v=20261112equipment1"></script><script src="{% static 'operations/location-picker.js' %}?v=20261112equipment1"></script><script src="{% static 'operations/workorder-chips.js' %}?v=20261117formui"></script><script src="{% static 'operations/map-location-create.js' %}?v=20261112equipment1"></script><script src="{% static 'operations/workorder-media.js' %}?v=20261117formui"></script><script src="{% static 'operations/work-parameters.js' %}?v=20261118mwg2"></script><script src="{% static 'operations/pest-map.js' %}?v=20261118mwg2"></script>{% else %}
 <!-- Leaflet JS -->
 <script src="{% static 'vendor/leaflet/leaflet.js' %}?v=1.9.4"></script>
 <script src="{% static 'operations/map-markers.js' %}?v=20261112equipment1"></script>
@@ -418,7 +418,7 @@
 <!-- Custom Map JS -->
 <script src="{% static 'js/map-runtime.js' %}?v=20261117pestalign1"></script>
 <script src="{% static 'js/map.js' %}?v=20261117pestalign1"></script>
-<script src="{% static 'js/dashboard-modal.js' %}?v=20261118mwg1"></script>
+<script src="{% static 'js/dashboard-modal.js' %}?v=20261118mwg2"></script>
 <script>
 // Override the notification popup's PM-task "填写" handler: on the dashboard we
 // can open the assigned PM task directly; other pages navigate with its GWO id.
@@ -433,7 +433,7 @@ window.fillPmTask = function (gwoId) {
 </script>
 <!-- Dashboard JS — pass Django URL to external script -->
 <script>window.HISTORY_URL = '{% url "core:work_reports" %}';</script>
-<script src="{% static 'js/dashboard.js' %}?v=20261108fixes2"></script>
+<script src="{% static 'js/dashboard.js' %}?v=20261118mwg2"></script>
 {% endif %}<script src="{% static 'js/announcement-popup.js' %}?v=20261117pestalign"></script><!-- AI data-analyst chat widget (deferred: non-blocking load, auto-mounts on DOMContentLoaded) -->
 {% if can_use_ai %}
 <script defer src="{% static 'vendor/marked/marked.min.js' %}?v=12.0.2"></script>
@@ -442,6 +442,6 @@ window.fillPmTask = function (gwoId) {
 <script defer src="{% static 'js/genie_arrival.js' %}?v=20261107engenie1"></script>
 <script defer src="{% static 'js/inventory-move.js' %}?v=20261112quotes1"></script>
 <script defer src="{% static 'js/inventory-quotes.js' %}?v=20261116chatconfirm1"></script>
-<script defer data-quotes-enabled="{% if not pest_mode and is_admin %}yes{% else %}no{% endif %}" src="{% static 'js/ai-chat.js' %}?v=20261116chatconfirm1" data-mascot-base="{% static 'ai/engenie/' %}"></script>
+<script defer data-quotes-enabled="{% if not pest_mode and is_admin %}yes{% else %}no{% endif %}" src="{% static 'js/ai-chat.js' %}?v=20261118mwg2" data-mascot-base="{% static 'ai/engenie/' %}"></script>
 {% endif %}
 </div>{% endblock %}

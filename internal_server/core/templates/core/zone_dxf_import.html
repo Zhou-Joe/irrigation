@@ -46,12 +46,13 @@
 
     /* ── Upload ── */
     .upload-zone {
+        display:block; width:100%; font:inherit; color:inherit; background:transparent;
         border: 2px dashed var(--color-surface-dark); border-radius: 10px;
         padding: 24px; text-align: center; cursor: pointer; transition: border-color 0.2s, background 0.2s;
     }
     .upload-zone:hover { border-color: var(--color-primary); background: rgba(45,106,79,0.04); }
     .upload-zone.dragover { border-color: var(--color-primary); background: rgba(45,106,79,0.08); }
-    .upload-zone p { margin: 6px 0 0; font-size: 0.82rem; color: var(--color-text-secondary); }
+    .upload-zone .upload-prompt { display:block; margin: 6px 0 0; font-size: 0.82rem; color: var(--color-text-secondary); }
     .upload-icon { font-size: 2rem; color: var(--color-primary); }
     input[type="file"].dxf-input { display: none; }
 
@@ -193,10 +194,10 @@
                     <div class="panel-title">
                         <span class="step-badge">1</span> 上传 DXF 文件
                     </div>
-                    <div class="upload-zone" id="uploadZone" onclick="document.getElementById('dxfFileInput').click()">
-                        <div class="upload-icon"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-file"/></svg></div>
-                        <p>点击或拖拽上传 .dxf 文件</p>
-                    </div>
+                    <button type="button" class="upload-zone" id="uploadZone" onclick="document.getElementById('dxfFileInput').click()">
+                        <span class="upload-icon"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-file"/></svg></span>
+                        <span class="upload-prompt">点击或拖拽上传 .dxf 文件</span>
+                    </button>
                     <input type="file" id="dxfFileInput" class="dxf-input" accept=".dxf">
                     <div id="uploadStatus"></div>
                 </div>

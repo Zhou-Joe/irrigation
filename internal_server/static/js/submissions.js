@@ -4,44 +4,144 @@
     const uid = document.querySelector('.pwa-bottom-nav[data-user-id]')?.dataset.userId;
     if (!uid) return;
     const prefix = 'irrigation-submission-' + uid + '-';
+    const memory = new Map();
     let storage;
-    try { storage = window.sessionStorage; } catch (_) {
-        const values = new Map();
-        storage = {getItem:key=>values.get(key),setItem:(key,value)=>values.set(key,value),removeItem:key=>values.delete(key)};
-    }
+    try { storage = window.sessionStorage; } catch (_) {}
     const nativeFetch = window.fetch.bind(window);
     const routes = {'/mobile/workorder/v2/':'workorder','/mobile/inventory/v2/':'inventory','/mobile/water-request/v2/':'water_request'};
-    const read = kind => {try{return JSON.parse(storage.getItem(prefix+kind));}catch(_){return null;}};
-    const save = (kind,value) => {try{if(value)storage.setItem(prefix+kind,JSON.stringify(value));else storage.removeItem(prefix+kind);}catch(_){}};
-    const uuid = () => crypto.randomUUID ? crypto.randomUUID() : '10000000-1000-4000-8000-100000000000'.replace(/[018]/g,c=>(c^crypto.getRandomValues(new Uint8Array(1))[0]&15>>c/4).toString(16));
-    function notice(kind, pending) {
-        let banner=document.getElementById('submissionUncertain');
-        if(!banner){banner=document.createElement('div');banner.id='submissionUncertain';banner.setAttribute('role','status');banner.style.cssText='position:fixed;left:12px;right:12px;bottom:calc(76px + env(safe-area-inset-bottom));z-index:15000;background:#fff7df;color:#554512;padding:12px;border:1px solid #dbc88a;border-radius:10px;font:14px system-ui';document.body.append(banner);}
-        banner.replaceChildren(document.createTextNode('上次提交结果待确认，当前内容已保留。 '));
-        const check=document.createElement('button');check.type='button';check.className='btn-sm btn-secondary';check.textContent='核对结果';banner.append(check);
-        check.onclick=async()=>{check.disabled=true;try{const data=await nativeFetch('/api/submissions/'+pending.key+'/',{credentials:'same-origin'}).then(r=>r.json());
-            if(data.found){pending.state='saved';save(kind,pending);banner.replaceChildren(document.createTextNode('上次内容已保存。请先查看记录，避免重复填写。 '));const link=document.createElement('a');link.textContent='查看记录';link.href=kind==='inventory'?'/inventory/manage/':kind==='water_request'?'/requests/':'/work-reports/';banner.append(link);}
-            else banner.prepend(document.createTextNode('暂未查到完成结果，可用原内容重试。 '));
-        }catch(_){banner.prepend(document.createTextNode('网络尚未恢复。 '));}finally{check.disabled=false;}};
-    }
-    window.IrrigationSubmissions={begin(kind){const previous=read(kind);if(previous?.state==='saved')save(kind,null);else if(previous?.state==='uncertain')notice(kind,previous);}};
-    window.fetch=async function(input,init={}) {
-        const url=new URL(typeof input==='string'?input:input.url,location.href), kind=routes[url.pathname];
-        if(!kind || url.origin!==location.origin || (init.method||'GET').toUpperCase()!=='POST' || !(init.body instanceof FormData))return nativeFetch(input,init);
-        const signature=JSON.stringify(Array.from(init.body.entries()).filter(([k])=>!['csrfmiddlewaretoken','submission_key'].includes(k)).map(([k,v])=>[k,v instanceof File?[v.name,v.size,v.lastModified]:v]));
-        let pending=read(kind);
-        if(pending?.state==='uncertain' && pending.signature!==signature){notice(kind,pending);return new Response(JSON.stringify({success:false,message:'上次提交结果尚未确认；本次修改未提交。请先核对结果。'}),{status:409,headers:{'Content-Type':'application/json'}});}
-        if(!pending || pending.signature!==signature)pending={key:uuid(),signature,state:'sending'};
-        save(kind,pending);
-        const headers=new Headers(init.headers||{});headers.set('X-Submission-Key',pending.key);
+    const forms = new Map();
+    const sending = new Set();
+    function read(kind) {
+        if (memory.has(kind)) return memory.get(kind);
         try {
-            const response=await nativeFetch(input,{...init,headers});
-            let result;try{result=await response.clone().json();}catch(_){pending.state='uncertain';save(kind,pending);notice(kind,pending);return response;}
-            if(result.success){pending.state='saved';save(kind,pending);document.getElementById('submissionUncertain')?.remove();clearDraft(kind);}
-            else if(result.uncertain || response.status>=500){pending.state='uncertain';save(kind,pending);notice(kind,pending);}
-            else save(kind,null);
+            const value = JSON.parse(storage?.getItem(prefix + kind) || 'null');
+            memory.set(kind, value);
+            return value;
+        } catch (_) { return null; }
+    }
+    function save(kind, value) {
+        memory.set(kind, value);
+        try {
+            if (value) storage?.setItem(prefix + kind, JSON.stringify(value));
+            else storage?.removeItem(prefix + kind);
+        } catch (_) {}
+    }
+    const uuid = () => crypto.randomUUID ? crypto.randomUUID() : '10000000-1000-4000-8000-100000000000'.replace(/[018]/g,c=>(c^crypto.getRandomValues(new Uint8Array(1))[0]&15>>c/4).toString(16));
+    function scope(kind, team) {
+        if (kind !== 'workorder') return kind;
+        // Older tabs stored irrigation and pest receipts under the same name.
+        const legacy = read(kind);
+        if (legacy?.signature) {
+            const fields = new Map(JSON.parse(legacy.signature));
+            if (fields.has('catalog') && fields.get('team')) {
+                const target = 'pest-workorder-' + fields.get('team');
+                if (!read(target)) save(target, legacy);
+                save(kind, null);
+            }
+        }
+        return team ? 'pest-workorder-' + team : kind;
+    }
+    function notice(kind, pending) {
+        let banner = document.getElementById('submissionUncertain');
+        if (!banner) {
+            banner = document.createElement('div');
+            banner.id = 'submissionUncertain';
+            banner.setAttribute('role', 'status');
+        }
+        banner.dataset.kind = kind;
+        const form = forms.get(kind);
+        const container = form?.isConnected && form.closest('.v2-modal-container');
+        const footer = container?.querySelector?.('.v2-modal-footer');
+        if (footer) footer.before(banner);
+        else if (form?.isConnected) form.prepend(banner);
+        else document.body.append(banner);
+        const message = document.createTextNode('上次提交结果待确认，当前内容已保留。 ');
+        const check = document.createElement('button');
+        check.type = 'button';
+        check.className = 'btn-sm btn-secondary';
+        check.textContent = '核对结果';
+        banner.replaceChildren(message, check);
+        check.onclick = async () => {
+            check.disabled = true;
+            const current = () => read(kind) === pending && pending.state === 'uncertain' && !sending.has(kind) && banner.contains(check);
+            try {
+                const response = await nativeFetch('/api/submissions/' + pending.key + '/', {credentials:'same-origin', cache:'no-store'});
+                if (!response.ok) throw Error();
+                const data = await response.json();
+                if (!current()) return;
+                if (data.found === true) {
+                    save(kind, {...pending, state:'saved'});
+                    const link = document.createElement('a');
+                    link.textContent = '查看记录';
+                    link.href = data.kind === 'pest-workorder' ? '/work-reports/' + data.result.report_id + '/' :
+                        kind === 'inventory' ? '/inventory/manage/' : kind === 'water_request' ? '/requests/' : '/work-reports/';
+                    banner.replaceChildren(document.createTextNode('上次内容已保存。 '), link);
+                } else if (data.found === false) {
+                    // A late commit must still collide with this same key on retry.
+                    save(kind, {...pending, state:'checked-missing'});
+                    banner.replaceChildren(document.createTextNode('暂未查到已保存的记录，可以修改内容并重试。'));
+                } else throw Error();
+            } catch (_) {
+                if (current()) message.textContent = '核对失败，请恢复连接或重新登录后再核对。 ';
+            } finally { check.disabled = false; }
+        };
+    }
+    function begin(kind, form) {
+        kind = scope(kind, form?.elements.namedItem('catalog') && form.elements.namedItem('team')?.value);
+        if (form) forms.set(kind, form);
+        let pending = read(kind);
+        if (pending?.state === 'sending' && !sending.has(kind)) {
+            pending = {...pending, state:'uncertain'};
+            save(kind, pending);
+        }
+        if (pending?.state === 'uncertain') notice(kind, pending);
+        else {
+            if (pending?.state === 'saved') save(kind, null);
+            document.getElementById('submissionUncertain')?.remove();
+        }
+    }
+    window.IrrigationSubmissions = {begin};
+    window.fetch = async function(input, init = {}) {
+        const url = new URL(typeof input === 'string' ? input : input.url, location.href);
+        const route = routes[url.pathname];
+        if (!route || url.origin !== location.origin || (init.method || 'GET').toUpperCase() !== 'POST' || !(init.body instanceof FormData)) return nativeFetch(input, init);
+        const body = init.body;
+        const kind = scope(route, body.has('catalog') && body.get('team'));
+        const signature = JSON.stringify(Array.from(body.entries()).filter(([key]) => !['csrfmiddlewaretoken','submission_key'].includes(key)).map(([key,v]) => [key,v instanceof File ? [v.name,v.size,v.lastModified] : v]));
+        const formKey = body.get('submission_key');
+        const previous = read(kind);
+        const conflict = message => new Response(JSON.stringify({success:false, message}), {status:409, headers:{'Content-Type':'application/json'}});
+        if (sending.has(kind)) return conflict('正在提交，请等候当前结果。');
+        if (previous?.state === 'uncertain' && previous.signature !== signature) {
+            notice(kind, previous);
+            return conflict('本次修改尚未提交，请先核对上次提交结果。');
+        }
+        const retry = previous && (['uncertain','checked-missing'].includes(previous.state) ||
+            previous.signature === signature && (!formKey || previous.formKey === formKey));
+        const pending = {key:retry ? previous.key : formKey || uuid(), formKey, signature, state:'sending'};
+        sending.add(kind);
+        save(kind, pending);
+        const headers = new Headers(init.headers || {});
+        headers.set('X-Submission-Key', pending.key);
+        const uncertain = () => {
+            pending.state = 'uncertain';
+            save(kind, pending);
+            notice(kind, pending);
+        };
+        try {
+            const response = await nativeFetch(input, {...init, headers});
+            let result;
+            try { result = await response.clone().json(); } catch (_) { uncertain(); return response; }
+            if (response.ok && result.success) {
+                save(kind, {...pending, state:'saved'});
+                const banner = document.getElementById('submissionUncertain');
+                if (banner?.dataset.kind === kind) banner.remove();
+                if (route === kind) clearDraft(kind);
+            } else if (result.uncertain || response.status >= 500) uncertain();
+            else save(kind, null);
             return response;
-        } catch(error) {pending.state='uncertain';save(kind,pending);notice(kind,pending);throw error;}
+        } catch (error) { uncertain(); throw error; }
+        finally { sending.delete(kind); }
     };
     const formKinds={woModalForm:'workorder',invModalForm:'inventory',wrModalForm:'water_request'};
     const draftPrefix='irrigation-text-draft-'+uid+'-';
@@ -62,12 +162,15 @@
         const link=event.target.closest('a[href]');
         if(!link || new URL(link.href,location.href).pathname!=='/logout/')return;
         clearTimeout(timer);
-        Object.values(formKinds).forEach(kind=>{clearDraft(kind);save(kind,null);});
+        Object.values(formKinds).forEach(clearDraft);
+        try { Object.keys(storage || {}).filter(key => key.startsWith(prefix)).forEach(key => storage.removeItem(key)); } catch (_) {}
+        for (const kind of memory.keys()) save(kind, null);
     });
     document.addEventListener('irrigation:form-open',event=>{
-        const kind=event.detail?.kind;window.IrrigationSubmissions.begin(kind);
+        const kind=event.detail?.kind;
         const form=document.getElementById(Object.keys(formKinds).find(id=>formKinds[id]===kind));
         if(!form)return;
+        begin(kind, form);
         form.dataset.draftDisabled=event.detail?.editing?'true':'false';
         if(event.detail?.editing)return;
         let draft;try{draft=JSON.parse(localStorage.getItem(draftPrefix+kind));}catch(_){}

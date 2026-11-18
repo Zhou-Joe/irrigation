@@ -1284,7 +1284,7 @@ window.showToast = function(msg, type) {
         });
 
         input.addEventListener('keydown', function(e) {
-            if (e.key === 'Enter') {
+            if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229) {
                 e.preventDefault();
                 const query = this.value.trim().toLowerCase();
                 const match = allZones.find(z => z.code.toLowerCase() === query);

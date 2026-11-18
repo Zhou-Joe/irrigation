@@ -145,7 +145,7 @@
 .sh-dropdown { position: relative; }
 .sh-dropdown-menu { display: none; position: absolute; top: calc(100% + 4px); left: 0; background: #fff; border: 1px solid #e0e0e0; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.12); z-index: 2000; min-width: 140px; overflow: hidden; }
 .sh-dropdown-menu.open { display: block; }
-.sh-dropdown-item { padding: 8px 14px; font-size: 0.82rem; cursor: pointer; color: #555; white-space: nowrap; }
+.sh-dropdown-item { display:block; width:100%; border:0; background:#fff; text-align:left; padding: 8px 14px; font-size: 0.82rem; cursor: pointer; color: #555; white-space: nowrap; }
 .sh-dropdown-item:hover { background: var(--color-surface-alt); }
 .sh-dropdown-item.active { color: var(--color-primary); font-weight: 600; background: #e8f5e9; }
 
@@ -159,7 +159,7 @@
 {# Worker multi-select. #}
 #shWorkerMenu { min-width: 160px; max-height: 280px; overflow-y: auto; }
 .sh-worker-actions { display: flex; gap: 12px; padding: 6px 14px; border-bottom: 1px solid #eee; font-size: 0.78rem; }
-.sh-worker-actions a { color: var(--color-primary); cursor: pointer; font-weight: 600; }
+.sh-worker-actions button { border:0; background:none; font:inherit; color: var(--color-primary); cursor: pointer; font-weight: 600; }
 .sh-worker-item { display: flex; align-items: center; gap: 6px; padding: 6px 14px; font-size: 0.82rem; cursor: pointer; color: #555; }
 .sh-worker-item:hover { background: var(--color-surface-alt); }
 .sh-worker-item input { width: 14px; height: 14px; accent-color: var(--color-primary); }
@@ -264,10 +264,10 @@ table.excel-preview tbody tr:hover td { background:#e8f5e9; }
                 </div>
                 <button class="sh-date-btn" onclick="applyDateRange()">查询</button>
                 <div class="sh-presets">
-                    <a class="sh-preset" data-days="7">近7天</a>
-                    <a class="sh-preset" data-days="30">近30天</a>
-                    <a class="sh-preset" data-days="90">近90天</a>
-                    <a class="sh-preset" data-days="0">本月</a>
+                    <button type="button" class="sh-preset" data-days="7">近7天</button>
+                    <button type="button" class="sh-preset" data-days="30">近30天</button>
+                    <button type="button" class="sh-preset" data-days="90">近90天</button>
+                    <button type="button" class="sh-preset" data-days="0">本月</button>
                     {% if is_admin %}
                     <a class="sh-export-btn" href="{% url 'core:work_reports_excel' %}?{{ request.GET.urlencode }}"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-download"/></svg> Excel</a>
                     {% endif %}
@@ -281,13 +281,13 @@ table.excel-preview tbody tr:hover td { background:#e8f5e9; }
             <div class="sh-ctrl-section">
                 <div class="sh-ctrl-label">指标</div>
                 <div class="sh-ctrl-row">
-                    <div class="sh-pill active" data-metric="reports" onclick="switchStatsHeatMetric('reports')">工单数</div>
+                    <button type="button" class="sh-pill active" aria-pressed="true" data-metric="reports" onclick="switchStatsHeatMetric('reports')">工单数</button>
                     <div class="sh-dropdown">
-                        <div class="sh-pill" id="statsHoursPill" data-metric="hours" onclick="toggleHoursDropdown(event)">总工时 ▾</div>
+                        <button type="button" class="sh-pill" id="statsHoursPill" data-filter-popover aria-controls="statsHoursMenu" aria-expanded="false" data-metric="hours" onclick="toggleHoursDropdown(event)">总工时 ▾</button>
                         <div class="sh-dropdown-menu" id="statsHoursMenu">
-                            <div class="sh-dropdown-item active" data-sub="hours" onclick="selectHoursMetric(event,'hours')">总工时</div>
-                            <div class="sh-dropdown-item" data-sub="team_hours" onclick="selectHoursMetric(event,'team_hours')">灌溉组工时</div>
-                            <div class="sh-dropdown-item" data-sub="third_hours" onclick="selectHoursMetric(event,'third_hours')">第三方工时</div>
+                            <button type="button" class="sh-dropdown-item active" aria-pressed="true" data-sub="hours" onclick="selectHoursMetric(event,'hours')">总工时</button>
+                            <button type="button" class="sh-dropdown-item" aria-pressed="false" data-sub="team_hours" onclick="selectHoursMetric(event,'team_hours')">灌溉组工时</button>
+                            <button type="button" class="sh-dropdown-item" aria-pressed="false" data-sub="third_hours" onclick="selectHoursMetric(event,'third_hours')">第三方工时</button>
                         </div>
                     </div>
                 </div>
@@ -300,11 +300,11 @@ table.excel-preview tbody tr:hover td { background:#e8f5e9; }
                     <label class="sh-filter"><input type="checkbox" id="filterDifficult" onchange="toggleHeatFilter()">疑难</label>
                     <label class="sh-filter"><input type="checkbox" id="filterPending" onchange="toggleHeatFilter()">待修</label>
                     <div class="sh-dropdown">
-                        <div class="sh-pill" id="statsWorkerPill" onclick="toggleWorkerDropdown(event)">创建人 ▾</div>
+                        <button type="button" class="sh-pill" id="statsWorkerPill" data-filter-popover aria-controls="statsWorkerMenu" aria-expanded="false" onclick="toggleWorkerDropdown(event)">创建人 ▾</button>
                         <div class="sh-dropdown-menu" id="statsWorkerMenu">
                             <div class="sh-worker-actions">
-                                <a onclick="selectAllWorkers(event)">全选</a>
-                                <a onclick="clearAllWorkers(event)">清空</a>
+                                <button type="button" onclick="selectAllWorkers(event)">全选</button>
+                                <button type="button" onclick="clearAllWorkers(event)">清空</button>
                             </div>
                             <div id="statsWorkerList"></div>
                         </div>
@@ -316,9 +316,9 @@ table.excel-preview tbody tr:hover td { background:#e8f5e9; }
             <div class="sh-ctrl-section">
                 <div class="sh-ctrl-label">颗粒度</div>
                 <div class="sh-ctrl-row">
-                    <div class="sh-gran-pill" data-gran="land" onclick="switchHeatGranularity('land')">Land</div>
-                    <div class="sh-gran-pill" data-gran="name" onclick="switchHeatGranularity('name')">通用名称</div>
-                    <div class="sh-gran-pill active" data-gran="zone" onclick="switchHeatGranularity('zone')">Zone</div>
+                    <button type="button" class="sh-gran-pill" aria-pressed="false" data-gran="land" onclick="switchHeatGranularity('land')">Land</button>
+                    <button type="button" class="sh-gran-pill" aria-pressed="false" data-gran="name" onclick="switchHeatGranularity('name')">通用名称</button>
+                    <button type="button" class="sh-gran-pill active" aria-pressed="true" data-gran="zone" onclick="switchHeatGranularity('zone')">Zone</button>
                 </div>
             </div>
 
@@ -674,8 +674,8 @@ function applyDateRange() {
         });
     });
 })();
-document.getElementById('dateFrom').addEventListener('keydown', function(e){ if(e.key==='Enter') applyDateRange(); });
-document.getElementById('dateTo').addEventListener('keydown', function(e){ if(e.key==='Enter') applyDateRange(); });
+document.getElementById('dateFrom').addEventListener('keydown', function(e){ if(e.key==='Enter' && !e.isComposing && e.keyCode!==229) { e.preventDefault(); applyDateRange(); } });
+document.getElementById('dateTo').addEventListener('keydown', function(e){ if(e.key==='Enter' && !e.isComposing && e.keyCode!==229) { e.preventDefault(); applyDateRange(); } });
 document.getElementById('dateFrom').addEventListener('change', function(){ document.getElementById('dateTo').min = this.value; });
 document.getElementById('dateTo').addEventListener('change', function(){ document.getElementById('dateFrom').max = this.value; });
 function applyZoneFilter(val) {
@@ -688,5 +688,5 @@ function applyZoneFilter(val) {
 </script>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="{% static 'js/stats-heatmap.js' %}?v=7"></script>
+<script src="{% static 'js/stats-heatmap.js' %}?v=20261118mwg2"></script>
 {% endblock %}

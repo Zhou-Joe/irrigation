@@ -1,25 +1,16 @@
 /* Real browser regressions. Run with Playwright on NODE_PATH:
  * node --test internal_server/scripts/tests/modern-ui.browser.cjs
- * Starts a local fixture server; no business database or external requests. */
+ * Loads isolated HTML fixtures directly into the browser. */
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
-const http = require('node:http');
 const {chromium} = require('playwright');
 const assets = path.resolve(__dirname, '../../static');
 let browser;
-let server, origin;
-const documents = new Map();
 test.before(async () => {
-    server = http.createServer((request, response) => {
-        response.writeHead(200, {'Content-Type': 'text/html; charset=utf-8'});
-        response.end(documents.get(request.url) || '');
-    });
-    await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
-    origin = 'http://127.0.0.1:' + server.address().port;
     browser = await chromium.launch({channel: process.env.UI_TEST_BROWSER || 'chrome', headless: true});
 });
-test.after(async () => { await browser?.close(); await new Promise(resolve => server.close(resolve)); });
+test.after(async () => { await browser?.close(); });
 async function fixture(t, html, options = {}) {
     const context = await browser.newContext({viewport: {width: 1100, height: 800}, ...options});
     t.after(() => context.close());
@@ -35,9 +26,7 @@ async function fixture(t, html, options = {}) {
         .wr-detail{display:none}.wr-card.open .wr-detail{display:block}
         .v2-modal-container{position:fixed;top:100px;left:100px;background:white;padding:20px}
     </style></head><body class="ui-system"><main>${html}</main></body></html>`;
-    const url = '/fixture-' + documents.size;
-    documents.set(url, htmlDocument);
-    await page.goto(origin + url, {waitUntil:'domcontentloaded'});
+    await page.goto('data:text/html;charset=utf-8,' + encodeURIComponent(htmlDocument), {waitUntil:'commit', timeout:30000});
     await page.locator('main').waitFor({state:'attached'});
     await page.addStyleTag({path: path.join(assets, 'css/modern-ui.css')});
     return {page, context, async start() { await page.addScriptTag({path: path.join(assets, 'js/modern-ui.js')}); }};
@@ -211,4 +200,39 @@ test('touch layouts retain OS select pickers, large controls and bounded growing
     assert.equal(last.width, first.width);
     assert.equal(await note.evaluate(field => getComputedStyle(field).fontSize), '16px');
     assert.equal(await note.evaluate(field => getComputedStyle(field).transitionDuration), '1e-05s');
+});
+
+test('a form can veto Escape while saving and close normally on the next attempt',async t=>{
+    const {page,start}=await fixture(t,`<button id="open" onclick="document.getElementById('overlay').classList.add('open')">填写</button>
+    <div class="app-mask" id="overlay"><div class="app-dialog"><h2>工单</h2><label>备注<input value="原内容"></label>
+    <button type="button" data-ui-close onclick="if(!window.busy)this.closest('.app-mask').classList.remove('open')">关闭</button></div></div>`);
+    await start();
+    await page.locator('#open').click();
+    await page.evaluate(()=>window.busy=true);
+    await page.keyboard.press('Escape');
+    assert.equal(await page.locator('dialog:modal input').inputValue(),'原内容');
+    await page.evaluate(()=>window.busy=false);
+    await page.keyboard.press('Escape');
+    await page.waitForFunction(()=>!document.querySelector('dialog:modal'));
+    await page.locator('#open').click();
+    assert.equal(await page.locator('dialog:modal input').inputValue(),'原内容');
+});
+
+test('checkbox filter uses an anchored nonmodal popover and restores focus on Escape', async t=>{
+    const {page,start}=await fixture(t,`<button type="button" id="plantDropdownBtn" data-filter-popover aria-expanded="false" aria-controls="plantDropdownPanel">植物筛选</button>
+        <div id="plantDropdownPanel" hidden><label><input type="checkbox">草坪</label></div>`);
+    await start();
+    const trigger=page.getByRole('button',{name:'植物筛选'});
+    const option=page.getByRole('checkbox',{name:'草坪'});
+    await trigger.focus();
+    await trigger.press('Enter');
+    await option.waitFor();
+    assert.equal(await trigger.getAttribute('aria-expanded'),'true');
+    const rects=await trigger.evaluate(button=>[button.getBoundingClientRect().bottom,document.getElementById('plantDropdownPanel').getBoundingClientRect().top]);
+    assert.ok(Math.abs(rects[1]-rects[0])<10);
+    await page.keyboard.press('Tab');await page.keyboard.press('Space');
+    assert.ok(await option.isChecked());
+    await page.keyboard.press('Escape');await option.waitFor({state:'hidden'});
+    assert.equal(await trigger.getAttribute('aria-expanded'),'false');
+    assert.ok(await trigger.evaluate(button=>document.activeElement===button));
 });

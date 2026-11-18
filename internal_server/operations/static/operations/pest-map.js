@@ -63,9 +63,43 @@
         byId('pestPickDone').onclick=finishPick;byId('pestPickList').onclick=()=>{finishPick();picker.open();};byId('pestPickClear').onclick=()=>{picker.state.clear();picker.sync();changed();selectStyle();byId('pestPickInfo').textContent='已选 0 个地点';};
         function closeForm(){if(busy)return false;formGeneration++;picking=false;picker?.destroy();picker=null;media?.destroy();media=null;parameters?.destroy();parameters=null;byId('pestPickActions').hidden=true;byId('pestPickInfo').hidden=true;byId('woModalContainer').hidden=true;byId('woModalContainer').classList.remove('open');byId('woModalBackdrop').hidden=true;dirty=false;window.IrrigationPWA?.markClean();selectStyle();return true;}
         async function openForm(ids=[],source={}){if(!canSubmit||busy||creator.busy())return;creator.close();if(picker&&!closeForm())return;const generation=++formGeneration;const container=byId('woModalContainer');container.hidden=false;container.classList.add('open');byId('woModalBackdrop').hidden=false;byId('woModalBody').textContent='正在加载作业内容…';byId('woSubmitBtn').disabled=true;byId('pestSubmitStatus').textContent='';dirty=false;
-            try{const response=await fetch('/api/modal/workorder-data/?'+new URLSearchParams(source),{credentials:'same-origin',cache:'no-store'}),data=await response.json();if(effects.stopped||generation!==formGeneration)return;if(!response.ok)throw Error(data.error||'加载失败');byId('pestFormTitle').textContent=data.form_title||'植保作业工单';byId('woModalBody').innerHTML=data.form_html;const form=byId('pestWorkorderForm');const selectionChanged=()=>{parameters?.sync();changed();};window.FOSWorkorderChips.mount(form,JSON.parse(form.querySelector('#pest-work-tree').textContent),JSON.parse(form.querySelector('#pest-preset-nodes').textContent),selectionChanged);picker=window.FOSLocationPicker.mount(form,JSON.parse(form.querySelector('#pest-location-options').textContent),ids.length?ids:JSON.parse(form.querySelector('#pest-preset-places').textContent),selectionChanged,enterMap);media=window.FOSWorkorderMedia.mount(form,changed);const parameterData=form.querySelector('#pest-parameter-schema');if(parameterData&&window.FOSWorkParameters)parameters=window.FOSWorkParameters.mount(form,JSON.parse(parameterData.textContent),changed);form.oninput=changed;form.onchange=changed;form.onsubmit=event=>{event.preventDefault();submit();};byId('woSubmitBtn').disabled=false;if(!ids.length&&!form.querySelector('[name=locations]'))picker.open();}
+            try{const response=await fetch('/api/modal/workorder-data/?'+new URLSearchParams(source),{credentials:'same-origin',cache:'no-store'}),data=await response.json();if(effects.stopped||generation!==formGeneration)return;if(!response.ok)throw Error(data.error||'加载失败');byId('pestFormTitle').textContent=data.form_title||'植保作业工单';byId('woModalBody').innerHTML=data.form_html;const form=byId('pestWorkorderForm');window.IrrigationSubmissions?.begin('workorder',form);const selectionChanged=()=>{parameters?.sync();changed();};window.FOSWorkorderChips.mount(form,JSON.parse(form.querySelector('#pest-work-tree').textContent),JSON.parse(form.querySelector('#pest-preset-nodes').textContent),selectionChanged);picker=window.FOSLocationPicker.mount(form,JSON.parse(form.querySelector('#pest-location-options').textContent),ids.length?ids:JSON.parse(form.querySelector('#pest-preset-places').textContent),selectionChanged,enterMap);media=window.FOSWorkorderMedia.mount(form,changed);const parameterData=form.querySelector('#pest-parameter-schema');if(parameterData&&window.FOSWorkParameters)parameters=window.FOSWorkParameters.mount(form,JSON.parse(parameterData.textContent),changed);form.oninput=changed;form.onchange=changed;form.onsubmit=event=>{event.preventDefault();submit();};byId('woSubmitBtn').disabled=false;if(!ids.length&&!form.querySelector('[name=locations]'))picker.open();}
             catch(error){if(!effects.stopped&&generation===formGeneration)byId('woModalBody').textContent=error.message;}}
-        async function submit(){const form=byId('pestWorkorderForm');if(busy||!form||!form.reportValidity())return;if(!form.querySelector('[name=locations]')){byId('pestSubmitStatus').textContent='请选择作业地点。';picker.open();return;}if(!form.querySelector('[name=nodes]')){byId('pestSubmitStatus').textContent='请选择工作内容。';return;}busy=true;byId('woSubmitBtn').disabled=true;byId('pestSubmitStatus').textContent='正在提交…';try{const response=await fetch('/mobile/workorder/v2/',{method:'POST',credentials:'same-origin',body:new FormData(form),headers:{'X-Requested-With':'XMLHttpRequest'}}),data=await response.json();if(!response.ok||!data.success)throw Error(data.message||'提交失败');busy=false;dirty=false;closeForm();window.IrrigationPWA?.markClean();notice(data.number+' 已提交。');await refresh();}catch(error){if(!effects.stopped)byId('pestSubmitStatus').textContent=error.message;}finally{busy=false;if(byId('woSubmitBtn'))byId('woSubmitBtn').disabled=false;}}
+        async function submit() {
+            const form=byId('pestWorkorderForm');
+            if(busy || !form || !form.reportValidity()) return;
+            const status=byId('pestSubmitStatus');
+            if(!form.querySelector('[name=locations]')) {status.textContent='请选择作业地点。';picker.open();return;}
+            if(!form.querySelector('[name=nodes]')) {status.textContent='请选择工作内容。';return;}
+            const controls=[byId('woSubmitBtn'),byId('pestChangePlaces'),byId('pestCloseWorkorder')];
+            const body=new FormData(form);
+            busy=true;
+            form.inert=true;
+            form.setAttribute('aria-busy','true');
+            controls.forEach(button=>button.disabled=true);
+            status.textContent='正在提交…';
+            let saved;
+            try {
+                const response=await fetch('/mobile/workorder/v2/', {
+                    method:'POST',credentials:'same-origin',body,headers:{'X-Requested-With':'XMLHttpRequest'}
+                });
+                saved=await response.json();
+                if(!response.ok || !saved.success) throw Error(saved.message || '提交失败');
+            } catch(error) {
+                if(!effects.stopped) status.textContent=error.message;
+                return;
+            } finally {
+                busy=false;
+                form.inert=false;
+                form.removeAttribute('aria-busy');
+                controls.forEach(button=>button.disabled=false);
+            }
+            if(!effects.stopped) {
+                closeForm();
+                notice(saved.number+' 已提交。');
+                refresh();
+            }
+        }
         byId('pestCloseWorkorder').onclick=()=>closeForm();byId('woModalBackdrop').onclick=()=>closeForm();byId('woSubmitBtn').onclick=submit;byId('pestChangePlaces').onclick=()=>picker?.open();
         window.FOSPestMap={refresh,busy:()=>busy||creator.busy(),dirty:()=>dirty,updateRole(data){closeForm();creator.close();canSubmit=data?.value==='yes';canManage=data?.manager==='yes';window.FOSMapActions.setItems(actions());},destroy(){effects.destroy();creator.destroy();picker?.destroy();media?.destroy();parameters?.destroy();window.FOSMapActions.destroy();map.remove();}};
         window.quickWorkorder=ids=>openForm(ids);effects.listen(window,'focus',()=>{if(!busy&&!dirty)refresh();});effects.listen(window,'pageshow',event=>{if(event.persisted)refresh();});

@@ -1,4 +1,4 @@
-/* Refresh business-dependent components in place; never navigate/reload the document. */
+/* Keep the map mounted when possible. Recover an interrupted switch from the server. */
 (function () {
     'use strict';
     let changing=false;
@@ -56,16 +56,31 @@
         event.preventDefault();if(changing)return;
         const previous=form.dataset.currentBusiness||form.querySelector('select').value;
         if(window.FOSPestMap?.busy?.()||window.FOSWorkorderModalLifecycle?.busy?.()||document.querySelector('form[data-busy]')){form.querySelector('select').value=previous;notify(form,'正在保存，请完成后再切换。');return;}
+        if (window.IrrigationPWA && !window.IrrigationPWA.canSubmit()) {form.querySelector('select').value=previous;return;}
+        if ((window.IrrigationPWA?.hasUnsavedChanges() || window.FOSPestMap?.dirty()) &&
+            !window.confirm('当前页面有尚未保存的内容。确定放弃这些修改并切换业务吗？')) {
+            form.querySelector('select').value=previous;
+            return;
+        }
         // Capture the chosen value before disabling the native select.
         const payload=new FormData(form);changing=true;setBusy(true);
+        document.body.inert=true;
+        let recovering=false;
         try {
             const response=await fetch(form.getAttribute('action'),{method:'POST',credentials:'same-origin',body:payload,headers:{'X-Requested-With':'XMLHttpRequest'}});
-            const result=await response.json();if(!response.ok||!result.success)throw Error(result.message||result.error||'切换失败');
+            if (response.status >= 400 && response.status < 500) {
+                form.querySelector('select').value=previous;
+                const rejection=await response.json().catch(()=>({}));
+                notify(form,rejection.error||'切换失败，请检查当前账号的业务权限。');
+                return;
+            }
+            const result=await response.json();
+            if(!response.ok||!result.success)throw Error('切换结果待核对');
             const page=await fetch('/',{credentials:'same-origin',cache:'no-store',headers:{'X-Requested-With':'XMLHttpRequest'}});
             if(!page.ok)throw Error('视图暂不可用，请重试切换。');
             const doc=new DOMParser().parseFromString(await page.text(),'text/html'),next=doc.getElementById('dashboardWorkspace');
             let current=document.getElementById('dashboardWorkspace');
-            if(!next)throw Error('地图组件不可用，请重试。');
+            if(!next || next.dataset.business!==result.business)throw Error('地图组件不可用，请重试。');
             for(const style of doc.querySelectorAll('head link[rel="stylesheet"],head style')){
                 const present=style.tagName==='LINK'?[...document.querySelectorAll('head link[rel="stylesheet"]')].some(s=>s.href===style.href):[...document.querySelectorAll('head style')].some(s=>s.textContent===style.textContent);
                 if(!present)document.head.append(document.importNode(style,true));
@@ -118,7 +133,17 @@
                     }
             }
             window.IrrigationPWA?.markClean();
-        } catch(error){if(form.isConnected)form.querySelector('select').value=previous;notify(form,error.message||'切换未完成，请重试。');}
-        finally{window.AIChat?.afterWorkspaceChange?.();changing=false;setBusy(false);}
+        } catch (_) {
+            recovering=true;
+            window.IrrigationPWA?.markClean();
+            window.location.replace('/');
+        } finally {
+            if (!recovering) {
+                document.body.inert=false;
+                changing=false;
+                setBusy(false);
+                window.AIChat?.afterWorkspaceChange?.();
+            }
+        }
     });
 })();

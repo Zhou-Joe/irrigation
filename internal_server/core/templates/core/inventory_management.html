@@ -1444,7 +1444,7 @@ function _poNodePath(id) {
 }
 
 document.getElementById('poSearch').addEventListener('input', poApplyFilter);
-document.getElementById('poSearch').addEventListener('keydown', function(e) { if (e.key === 'Enter') { var u=new URL(location.href);u.searchParams.set('po_q',this.value);u.searchParams.delete('orders_page');location.assign(u.href); } });
+document.getElementById('poSearch').addEventListener('keydown', function(e) { if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); var u=new URL(location.href);u.searchParams.set('po_q',this.value);u.searchParams.delete('orders_page');location.assign(u.href); } });
 document.getElementById('poAddTrigger').addEventListener('click', function () { poOpenTreeSheet([]); });
 document.getElementById('poMask').addEventListener('click', function (e) {
     if (e.target === this) poCloseModal();

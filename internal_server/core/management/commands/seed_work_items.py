@@ -8,10 +8,11 @@ Idempotent: upserts by ``code``. Run after the new models are migrated:
 Parsing lives in core.workorder_tree_parser (pure function, no Django).
 """
 
-import os
+from pathlib import Path
 
 from django.conf import settings
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
+from django.db import transaction
 
 from core.models import WorkItem
 from core.workorder_tree_parser import parse_workorder_tree
@@ -23,7 +24,6 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument(
             '--file',
-            default=str(settings.BASE_DIR.parent / '现场作业记录.md'),
             help='Path to the markdown spec (default: <repo>/现场作业记录.md)',
         )
         parser.add_argument(
@@ -32,11 +32,18 @@ class Command(BaseCommand):
             help='Delete all existing WorkItem rows before seeding (dev only).',
         )
 
+    @transaction.atomic
     def handle(self, *args, **options):
-        path = options['file']
-        if not os.path.exists(path):
-            self.stderr.write(self.style.ERROR(f'Spec file not found: {path}'))
-            return
+        path = Path(options['file'] or settings.BASE_DIR.parent / '现场作业记录.md')
+        if not path.is_file():
+            if not options['file'] and not options['clear'] and self._ensure_pm_item():
+                self.stdout.write('已核对现有目录中的 PM 作业项。完整导入需提供现场作业记录.md。')
+                return
+            raise CommandError(f'Spec file not found: {path}')
+
+        rows = parse_workorder_tree(path.read_text(encoding='utf-8'))
+        if not rows:
+            raise CommandError(f'No work items found in {path}')
 
         if options['clear']:
             from core.models import WorkReportEntry
@@ -48,9 +55,6 @@ class Command(BaseCommand):
                 return
             deleted, _ = WorkItem.objects.all().delete()
             self.stdout.write(f'Cleared {deleted} existing WorkItem rows.')
-
-        text = open(path, encoding='utf-8').read()
-        rows = parse_workorder_tree(text)
 
         created = updated = 0
         cache = {}  # code -> WorkItem
@@ -79,17 +83,22 @@ class Command(BaseCommand):
             else:
                 updated += 1
 
-        parent = WorkItem.objects.filter(code='1.2').first()
-        if parent:
-            WorkItem.objects.update_or_create(code='1.2.pm', defaults={
-                'parent': parent, 'name_zh': 'PM作业计划', 'name_en': 'PM Job Plan',
-                'order': 999, 'section': 'routine_maint', 'value_type': 'text',
-                'is_project_scoped': False, 'active': True,
-            })
+        self._ensure_pm_item()
         self.stdout.write(self.style.SUCCESS(
             f'WorkItem: {created} created, {updated} updated ({len(rows)} total).'
         ))
         self._print_breakdown()
+
+    def _ensure_pm_item(self):
+        parent = WorkItem.objects.filter(code='1.2').first()
+        if parent is None:
+            return False
+        WorkItem.objects.update_or_create(code='1.2.pm', defaults={
+            'parent': parent, 'name_zh': 'PM作业计划', 'name_en': 'PM Job Plan',
+            'order': 999, 'section': 'routine_maint', 'value_type': 'text',
+            'is_project_scoped': False, 'active': True,
+        })
+        return True
 
     def _print_breakdown(self):
         from django.db.models import Count

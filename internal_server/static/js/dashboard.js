@@ -420,10 +420,22 @@
 
     // ── Plant Filter ──
 
-    function togglePlantDropdown() {
+    function setPlantDropdown(open) {
         var panel = document.getElementById('plantDropdownPanel');
-        panel.classList.toggle('open');
+        if (!panel || panel.hasAttribute('popover')) return;
+        panel.hidden = !open;
+        panel.classList.toggle('open', open);
+        document.getElementById('plantDropdownBtn').setAttribute('aria-expanded', String(open));
     }
+    function togglePlantDropdown() {
+        setPlantDropdown(document.getElementById('plantDropdownPanel').hidden);
+    }
+    effects.listen(document, 'keydown', function (event) {
+        var panel = document.getElementById('plantDropdownPanel');
+        if (event.key !== 'Escape' || !panel || panel.hasAttribute('popover') || panel.hidden) return;
+        setPlantDropdown(false);
+        if (panel.parentElement.contains(event.target)) document.getElementById('plantDropdownBtn').focus();
+    });
 
     function toggleAllPlants(checked) {
         document.querySelectorAll('.plant-check').forEach(function (cb) {
@@ -469,8 +481,7 @@
         var wrap = document.getElementById('plantDropdownBtn');
         wrap = wrap ? wrap.parentElement : null;
         if (wrap && !wrap.contains(e.target)) {
-            var panel = document.getElementById('plantDropdownPanel');
-            if (panel) panel.classList.remove('open');
+            setPlantDropdown(false);
         }
     });
 
@@ -516,6 +527,7 @@
     function toggleSyncPanel() {
         syncPanelOpen = !syncPanelOpen;
         var panel = document.getElementById('syncStatusPanel');
+        document.getElementById('syncAgentStatus').setAttribute('aria-expanded', String(syncPanelOpen));
         if (syncPanelOpen) {
             panel.classList.add('show');
             updateSyncPanel();
