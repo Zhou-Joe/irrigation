@@ -112,7 +112,7 @@
         const status = el('div', 'ivq-status'); status.setAttribute('role', 'status'); status.setAttribute('aria-live', 'polite');
         const pause = el('p', 'ivq-pause', '报价操作已暂停，请切回灌溉业务后继续。'); pause.hidden = true;
         const source = el('form', 'ivq-source'), sourceFields = el('fieldset');
-        const review = el('form', 'ivq-review'); review.hidden = true;
+        const review = el('form', 'ivq-review'); review.hidden = true; review.noValidate = true;
         const result = el('div', 'ivq-result'); result.hidden = true;
         card.append(title, status, pause, source, review, result); host.append(card);
         const state = {phase:'source', controller:null, payload:null, token:null, key:null, rows:[], catalog:[],
@@ -121,6 +121,10 @@
         let disposed = false, selectedFile = file, lastMessage = '', savedResult = null;
         const notify = () => { if (!disposed) { onChange(); onBusy(); } };
         function setStatus(message, kind = '') {
+            // Keep submission feedback beside the button even on a long, scrolled chat card.
+            const atButton = !review.hidden && confirmButton && ['busy','error'].includes(kind);
+            if (atButton) confirmButton.before(status);
+            else card.insertBefore(status, pause);
             lastMessage = message;
             status.className = 'ivq-status' + (kind ? ' is-' + kind : ''); status.replaceChildren();
             if (kind === 'busy') { const spinner = el('span', 'ai-spin-ring'); spinner.setAttribute('aria-hidden', 'true'); status.append(spinner); }
@@ -241,10 +245,13 @@
             const existing = state.rows.filter(row => row.action === 'existing' && row.category_id).length, fresh = state.rows.filter(row => row.action === 'new').length;
             const pending = state.rows.filter(unresolved).length, skipped = state.rows.filter(row => row.action === 'skip').length;
             summary.textContent = '共 ' + state.rows.length + ' 行 · 匹配现有 ' + existing + ' · 新建 ' + fresh + ' · 待选择 ' + pending + ' · 跳过 ' + skipped;
-            if (confirmButton && !['uncertain','saving','checking'].includes(state.phase)) confirmButton.textContent = '确认写入 ' + (existing + fresh) + ' 项';
+            const supplierToConfirm = state.supplierChoice === 'pending' && supplier?.value.trim();
+            if (confirmButton && !['uncertain','saving','checking'].includes(state.phase)) {
+                confirmButton.textContent = (supplierToConfirm ? '确认使用「' + supplierToConfirm + '」并写入 ' : '确认写入 ') + (existing + fresh) + ' 项';
+            }
             if (readiness) {
                 const missing = [];
-                if (state.supplierChoice === 'pending' || !supplier.value.trim()) missing.push('选择历史供应商，或明确按填写的名称记录');
+                if (!supplier.value.trim()) missing.push('填写供应商名称');
                 if (destination?.value === 'order') {
                     if (!orderNumber.value.trim()) missing.push('填写灌溉订单编号');
                     if (state.rows.some(row=>row.action !== 'skip' && !/^[1-9]\d{0,8}$/.test(row.quantity || ''))) missing.push('填写计划采购数量');
@@ -276,10 +283,11 @@
             function close() { options.hidden = true; supplier.setAttribute('aria-expanded','false'); supplier.removeAttribute('aria-activedescendant'); active = -1; }
             function feedback(reason = '') {
                 status.textContent = state.supplierChoice === 'existing' ? '复用历史名称：' + state.supplierName + (reason ? ' · ' + reason : '') :
-                    state.supplierChoice === 'new' ? '将按填写的名称记录：' + supplier.value.trim() : '待选择：可复用历史供应商，或明确按填写的名称记录。';
+                    state.supplierChoice === 'new' ? '将按填写的名称记录：' + supplier.value.trim() : '可选择历史供应商，或在最后一步确认使用填写的名称。';
                 status.dataset.choice = state.supplierChoice; countSummary();
             }
             function choose(choice) {
+                clearCorrection();
                 if (choice.item) { supplier.value = choice.item.name; state.supplierChoice = 'existing'; state.supplierName = choice.item.name; }
                 else { state.supplierChoice = 'new'; state.supplierName = ''; }
                 feedback(choice.item?.reason || ''); close(); supplier.focus();
@@ -375,7 +383,7 @@
             };
             quoteDate.oninput = orderNumber.oninput = countSummary;
             syncTarget(); countSummary();
-            review.onsubmit = event => { event.preventDefault(); confirm(); };
+            review.onsubmit = event => { event.preventDefault(); confirm({fromButton:true}); };
         }
         function renderRow(row, index) {
             const article = el('article', 'ivq-row'); article.dataset.action = row.action;
@@ -397,6 +405,7 @@
                 }
             }
             function choosePart(candidate) {
+                clearCorrection();
                 row.action = 'existing'; row.category_id = candidate.id; action.value = 'existing';
                 renderBody(); countSummary(); notify(); action.focus();
             }
@@ -451,6 +460,7 @@
                 matchLabel.append(el('span', '', row.action === 'existing' ? '匹配系统部件' : '新部件的上级目录（可选）'));
                 matchLabel.append(picker(state.catalog.filter(item => row.action === 'existing' ? item.node_type === 'part' : item.node_type !== 'part'), row.action === 'existing' ? row.category_id : row.parent_id,
                     {label:row.action === 'existing' ? '搜索现有部件' : '搜索上级目录', root:row.action === 'new', limit:row.action === 'new' ? 30 : 5, preferred:row.candidates.map(item => String(item.id)), onSelect(item) {
+                        clearCorrection();
                         if (row.action === 'existing') row.category_id = item ? item.id : '';
                         else row.parent_id = item ? item.id : '';
                         const previous = body.querySelector('.ivq-selected-part'); previous?.remove();
@@ -477,20 +487,57 @@
             action.onchange = () => { row.action = action.value; renderBody(); countSummary(); notify(); };
             renderBody(); article.append(heading, sourcePath, sourceInfo, body); return article;
         }
-        function snapshot() {
-            if (!review.reportValidity()) { setStatus('请先补全报价卡片中的必填项，再确认写入。', 'error'); return null; }
-            if (!supplier.value.trim() || state.supplierChoice === 'pending') { setStatus('请先选择历史供应商，或明确按填写的名称记录。','error'); supplier.focus(); return null; }
-            const rows = state.rows.filter(row => row.action !== 'skip');
-            if (!rows.length) { setStatus('请至少保留一项报价。', 'error'); return null; }
-            for (const row of rows) {
-                const index = state.rows.indexOf(row) + 1;
-                if (row.action === 'pending') { setStatus('第 ' + index + ' 行仍待选择，请匹配、新建或跳过。','error'); review.querySelectorAll('.ivq-row-heading select')[index - 1]?.focus(); return null; }
-                if (row.action === 'existing' && !row.category_id) { setStatus('第 ' + index + ' 行尚未选择现有部件。', 'error'); return null; }
-                if (row.action === 'new' && !row.name.trim()) { setStatus('请填写第 ' + index + ' 行的新部件名称。', 'error'); return null; }
+        const correction = el('span', 'ui-field-error');
+        correction.id = 'ivq-correction-' + (++sequence);
+        let correctionField = null;
+        function clearCorrection() {
+            if (!correctionField) return;
+            const ids = (correctionField.getAttribute('aria-describedby') || '').split(/\s+/).filter(id => id && id !== correction.id);
+            if (ids.length) correctionField.setAttribute('aria-describedby', ids.join(' '));
+            else correctionField.removeAttribute('aria-describedby');
+            correction.remove();
+            correctionField = null;
+            status.replaceChildren();
+        }
+        for (const event of ['input','change']) review.addEventListener(event, clearCorrection);
+        function needsCorrection(message, control) {
+            setStatus(message, 'error');
+            if (control) {
+                correctionField = control;
+                correction.textContent = message;
+                control.after(correction);
+                control.setAttribute('aria-describedby', [control.getAttribute('aria-describedby'), correction.id].filter(Boolean).join(' '));
+                control.focus();
+                control.scrollIntoView({block:'nearest'});
+                if (!control.validity.valid) control.reportValidity();
+            }
+            return null;
+        }
+        function snapshot(fromButton) {
+            clearCorrection();
+            if (!supplier.value.trim()) return needsCorrection('请填写供应商名称。', supplier);
+            if (state.supplierChoice === 'pending' && !fromButton) {
+                return needsCorrection('请选择历史供应商，或点击卡片上的按钮确认使用填写的名称。', supplier);
+            }
+            if (destination.value === 'order' && !orderNumber.value.trim()) return needsCorrection('请填写灌溉订单编号。', orderNumber);
+            if (!quoteDate.validity.valid) return needsCorrection(destination.value === 'order' ? '请填写有效的采购日期。' : '请填写有效的报价日期。', quoteDate);
+            const articles = review.querySelectorAll('.ivq-row');
+            if (state.rows.every(row => row.action === 'skip')) return needsCorrection('请至少保留一项物料。', articles[0].querySelector('select'));
+            for (const [i, row] of state.rows.entries()) {
+                if (row.action === 'skip') continue;
+                const article = articles[i], prefix = '第 ' + (i + 1) + ' 行';
+                if (row.action === 'pending') return needsCorrection(prefix + '仍待选择，请匹配、新建或跳过。', article.querySelector('select'));
+                if (row.action === 'existing' && !row.category_id) return needsCorrection(prefix + '尚未选择现有部件。', article.querySelector('[role=combobox]'));
+                if (row.action === 'new' && !row.name.trim()) return needsCorrection(prefix + '请填写新部件名称。', article.querySelector('.ivq-row-fields input[required]'));
+                if (destination.value === 'order' && !/^[1-9]\d{0,8}$/.test(row.quantity || '')) {
+                    return needsCorrection(prefix + '请填写 1 到 999999999 之间的整数采购数量。', article.querySelector('[data-order-quantity] input'));
+                }
                 if (row.unit_price.trim() && (!/^\d{1,10}(?:\.\d{1,2})?$/.test(row.unit_price.trim()) || Number(row.unit_price.trim()) > 9999999999.99)) {
-                    setStatus('第 ' + index + ' 行单价须为 0～9,999,999,999.99，最多两位小数；也可留空。', 'error'); return null;
+                    return needsCorrection(prefix + '单价最多保留两位小数，金额范围为 0 到 9,999,999,999.99，也可留空。', article.querySelector('input[inputmode=decimal]'));
                 }
             }
+            const invalid = review.querySelector('input:invalid, select:invalid');
+            if (invalid) return needsCorrection(invalid.validationMessage, invalid);
             return {destination:destination.value, order_number:orderNumber.value.trim(), token:state.token, submission_key:state.key, supplier:state.supplierChoice === 'existing' ? state.supplierName : supplier.value.trim(), quote_date:quoteDate.value, confirmed:'yes',
                 items:JSON.stringify(state.rows.map(row => ({quantity:row.quantity, row_id:row.row_id, action:row.action, category_id:row.category_id || '', parent_id:row.parent_id || '', name:row.name.trim(), code:row.code.trim(), unit:row.unit.trim(), unit_price:row.unit_price.trim()})))};
         }
@@ -542,14 +589,14 @@
                 if (!disposed && state.phase === 'checking') { phase('review'); setStatus('确认状态暂时无法读取；提交时会按原编号核对，避免重复写入。'); }
             } finally { if (!disposed) { syncEnabled(); notify(); } }
         }
-        async function confirm() {
+        async function confirm({fromButton = false} = {}) {
             if (!enabled || state.phase === 'saving') return;
             const retry = state.phase === 'uncertain';
-            if (state.phase !== 'uncertain') { if (state.phase !== 'review') return; state.payload = snapshot(); }
+            if (state.phase !== 'uncertain') { if (state.phase !== 'review') return; state.payload = snapshot(fromButton); }
             if (!state.payload) return;
             const body = new FormData(); Object.entries(state.payload).forEach(([key, value]) => body.append(key, value));
             phase('saving'); syncEnabled(); confirmButton.disabled = true;
-            confirmButton.textContent = '正在确认写入…'; setStatus('正在确认报价，请稍候…', 'busy');
+            confirmButton.textContent = '正在确认写入…'; setStatus(state.payload.destination === 'order' ? '正在创建采购订单…' : '正在保存报价…', 'busy');
             try {
                 let data = null;
                 if (retry || restore) {
@@ -566,7 +613,8 @@
                 if (disposed) return;
                 phase(error.uncertain ? 'uncertain' : 'review');
                 setStatus(error.uncertain ? '连接中断，写入结果尚未确定。已保留本次内容和提交编号，请点“重试确认结果”，避免重新导入。' : error.message || '未能保存，请核对后再确认。', 'error');
-                confirmButton.textContent = error.uncertain ? '重试确认结果' : '确认写入';
+                if (error.uncertain) confirmButton.textContent = '重试确认结果';
+                else countSummary();
                 if (!error.uncertain) state.payload = null;
                 return {success:false, uncertain:!!error.uncertain, message:lastMessage};
             } finally { if (!disposed) { confirmButton.disabled = !enabled; syncEnabled(); notify(); } }

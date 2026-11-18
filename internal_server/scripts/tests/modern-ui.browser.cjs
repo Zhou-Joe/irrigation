@@ -242,3 +242,43 @@ test('checkbox filter uses an anchored nonmodal popover and restores focus on Es
     assert.equal(await trigger.getAttribute('aria-expanded'),'false');
     assert.ok(await trigger.evaluate(button=>document.activeElement===button));
 });
+
+test('the final EnGenie order button confirms the named supplier and reports validation and save failures', async t => {
+    const {page, start} = await fixture(t, '<div id="aiChatPanel"><div id="card"></div></div>');
+    await start();
+    await page.addScriptTag({path:path.join(assets, 'js/inventory-quotes.js')});
+    await page.evaluate(() => {
+        window.posts = [];
+        window.fetch = async (url, {body}) => {
+            if (url !== '/inventory/quotes/confirm/') throw Error('Unexpected URL');
+            window.posts.push(Object.fromEntries(body));
+            if (window.posts.length === 1) return Response.json({success:false, message:'订单编号已存在'}, {status:409});
+            return Response.json({success:true, order_id:23, order_number:'PO-2', message:'采购订单 PO-2 已创建'});
+        };
+        const catalog = [1,2].map(id => ({id, name:'部件'+id, node_type:'part'}));
+        window.EnGenieQuotes.mount({host:document.getElementById('card'), threadId:'test', draft:{
+            token:'draft', submission_key:'key', destination:'order', order_number:'PO-1', supplier:'测试供应商',
+            catalog, items:catalog.map(item => ({row_id:String(item.id), name:item.name, category_id:item.id, quantity:'2'}))
+        }});
+    });
+    const form=page.locator('.ivq-review'), button=form.getByRole('button',{name:'确认使用「测试供应商」并写入 2 项'});
+    const chat=await page.evaluate(() => window.EnGenieQuotes.confirmFromChat('确认', 'test'));
+    assert.equal(chat.success, false);
+    await button.click();
+    const date=form.getByLabel('采购日期');
+    assert.ok(await date.evaluate(field => document.activeElement === field));
+    assert.match(await form.locator('.ivq-status').textContent(), /采购日期/);
+    assert.equal(await page.evaluate(() => window.posts.length), 0);
+    await date.fill('2026-11-19');
+    await button.click();
+    await form.getByText('订单编号已存在', {exact:true}).waitFor();
+    assert.ok(await button.evaluate(b => b.previousElementSibling.classList.contains('ivq-status')));
+    await form.getByLabel('灌溉订单编号').fill('PO-2');
+    await button.click();
+    await page.getByRole('link',{name:'查看采购订单：PO-2'}).waitFor();
+    const posts=await page.evaluate(() => window.posts);
+    assert.equal(posts.length,2);
+    assert.equal(posts[1].supplier,'测试供应商');
+    assert.equal(JSON.parse(posts[1].items).length,2);
+    assert.equal(posts[1].submission_key,posts[0].submission_key);
+});
