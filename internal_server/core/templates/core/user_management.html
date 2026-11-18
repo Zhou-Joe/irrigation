@@ -1459,6 +1459,7 @@ function editUser(btn) {
     document.getElementById('edit_active').dataset.initial = String(document.getElementById('edit_active').checked);
     document.getElementById('edit_worker_type_group').hidden = editProfileType !== 'worker'||row.dataset.administrator==='yes';
     document.getElementById('edit_worker_type').value = row.dataset.workerType || 'irrigation';
+    document.getElementById('edit_worker_type').dataset.initial = document.getElementById('edit_worker_type').value;
 
     var deptGroup = document.getElementById('dept_group');
     if (editProfileType === 'manager'||editProfileType==='account'||row.dataset.administrator==='yes') {
@@ -1629,7 +1630,10 @@ function saveEdit() {
         data.append('active', String(active.checked));
     }
     if (editProfileType === 'worker' && document.getElementById('admin_business_group').hidden) {
-        data.append('worker_type', document.getElementById('edit_worker_type').value);
+        var workerType = document.getElementById('edit_worker_type');
+        if (workerType.value !== workerType.dataset.initial) {
+            data.append('worker_type', workerType.value);
+        }
     }
     if (editProfileType !== 'manager' && document.getElementById('dept_group').style.display!=='none') {
         var department = document.getElementById('edit_department');
