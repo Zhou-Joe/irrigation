@@ -292,3 +292,52 @@ test('locate failure restores the button and offers retry with a useful permissi
     assert.match(h.elements.mapLocationMessage.textContent,/定位权限未开启/);
     assert.equal(typeof h.elements.mapLocationRetry.onclick,'function');
 });
+
+test('pest sidebar targets recorded geometry, then visible references, without inventing a pin', () => {
+    const window = {IrrigationMapRuntime:runtime, FOSMapMarkers:require('../../operations/static/operations/map-markers.js')};
+    const source = path.resolve(__dirname, '../../operations/static/operations/map-geography.js');
+    vm.runInNewContext(fs.readFileSync(source, 'utf8'), {window});
+    const center = [31.145,121.656], parent = {id:'1',kind:'building',name:'观测楼',center:{lat:center[0],lng:center[1]}};
+    const child = {id:'2',parent_id:'1',kind:'floor',name:'二层'};
+    const boundary = [[31.144,121.655],[31.146,121.655],[31.145,121.657]];
+    const polygon = {id:'3',kind:'zone',name:'草甸',boundary:[boundary]};
+    const missing = {id:'4',kind:'room',name:'二层',parent_id:'hidden'};
+    const garden = {id:'5',kind:'zone',name:'花园'};
+    const ambiguous = {id:'6',kind:'building',name:'观景台'};
+    const places = [parent,child,polygon,missing,garden,ambiguous];
+    const views = window.FOSMapGeography.pestViews(places, {
+        region_labels:[{name:'花园',center}],
+        area_labels:[{land:'北区',name:'观景台',center},{land:'南区',name:'观景台',center:[31.155,121.655]}]
+    });
+    const locate = p => JSON.parse(JSON.stringify(views.target(p)));
+    assert.deepEqual(locate(parent).points,[center]);
+    assert.deepEqual(locate(polygon).points,[boundary]);
+    assert.equal(locate(child).reference,'观测楼');
+    assert.equal(views.shapes.get(child.id).mode,'none');
+    assert.equal(locate(garden).reference,'花园');
+    assert.equal(locate(missing),null);
+    assert.equal(locate(ambiguous),null);
+});
+
+test('park watermarks add fine names at zoom 19 and remove them again on zoom out', () => {
+    const window = {IrrigationMapRuntime:runtime}, drawn = [], events = {};
+    const L = {
+        layerGroup:()=>({addTo(){return this;},clearLayers(){drawn.length=0;}}),
+        divIcon:options=>options, marker:(center,options)=>({addTo(){drawn.push(options);}})
+    };
+    const map = {zoom:18,createPane:()=>({style:{}}),on:(event,fn)=>{events[event]=fn;},
+        getZoom(){return this.zoom;},getBounds:()=>({pad:()=>({contains:()=>true})}),
+        latLngToContainerPoint:()=>({x:100,y:130})};
+    const source = path.resolve(__dirname, '../../operations/static/operations/map-geography.js');
+    vm.runInNewContext(fs.readFileSync(source, 'utf8'), {window,L,document:{createElement:()=>({style:{}})}});
+    const update = window.FOSMapGeography.watermarks(map);
+    const center = [31.145,121.656];
+    update({region_labels:[{name:'北区',center}],area_labels:[{land:'北区',name:'湖畔',center}]});
+    const names = () => drawn.map(marker=>marker.icon.html.textContent);
+    assert.deepEqual(names(),['北区']);
+    map.zoom=19; events.moveend(); events.moveend();
+    assert.deepEqual(names(),['北区','湖畔']);
+    assert.ok(drawn.every(marker=>!marker.interactive&&!marker.keyboard));
+    map.zoom=18; events.moveend();
+    assert.deepEqual(names(),['北区']);
+});

@@ -78,16 +78,18 @@ def pest_dashboard(request):
 
 @require_GET
 def pest_map_data(request):
-    from .map_reference import region_labels
+    from .map_reference import map_labels
     member = require_member(request)
     if member.team.business.code != 'pest-control':
         raise PermissionDenied
-    result = []
-    for location in visible_locations(member.team):
-        result.append({**location_map_data(location), 'shared':location.owner_team_id != member.team_id})
+    locations = list(visible_locations(member.team))
+    visible_ids = {place.pk for place in locations}
+    result = [{**location_map_data(place), 'shared': place.owner_team_id != member.team_id,
+               'parent_id': str(place.parent_id) if place.parent_id in visible_ids else None}
+              for place in locations]
     from .planning import task_scope
     pending=task_scope(request,member).filter(status='pending',scheduled_date__lte=timezone.localdate()).count()
-    response = JsonResponse({'business':'pest-control', 'locations':result,'pending_tasks':pending,'region_labels':region_labels(),
+    response = JsonResponse({'business':'pest-control', 'locations':result,'pending_tasks':pending,**map_labels(),
         'records':[{'id':r.pk, 'number':r.display_number, 'date':r.date.isoformat(),
                     'locations':[str(p.pk) for p in r.pest_data.locations.all()]}
                    for r in records(request)[:50].prefetch_related('pest_data__locations')]})

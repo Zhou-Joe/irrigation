@@ -1,25 +1,75 @@
 {% extends 'operations/landscaping/base.html' %}{% load static %}
 {% block title %}绿化总览{% endblock %}
+{% block green_classes %}ops-page green-page green-map-home{% endblock %}
 {% block green_attributes %}id="dashboardWorkspace" data-ai="no" data-quotes-enabled="no"{% endblock %}
-{% block green_head %}<link rel="stylesheet" href="{% static 'vendor/leaflet/leaflet.css' %}"><link rel="stylesheet" href="{% static 'css/announcement-popup.css' %}?v=20261117pestalign1">{% endblock %}
+{% block green_head %}
+<link rel="stylesheet" href="{% static 'vendor/leaflet/leaflet.css' %}?v=1.9.4">
+<link rel="stylesheet" href="{% static 'css/announcement-popup.css' %}?v=20261117pestalign1">
+<link rel="stylesheet" href="{% static 'operations/map-home.css' %}?v=20261118maps1">
+{% endblock %}
 {% block green_content %}
 {{ announcements|json_script:'announcements-data' }}{% include 'core/_announcement_popup.html' %}
-<header class="app-head"><div><h1>绿化总览</h1><p class="app-subtitle">按区域查看树木与绿地，跟进植物档案和日常养护。</p></div><div class="op-actions">{% if can_manage %}<a class="btn-sm" href="{% url 'operations:green_asset_new' %}">新建档案</a>{% endif %}{% if can_write %}<a class="btn-sm btn-primary" href="{% url 'operations:green_workorder_new' %}">新建养护工单</a>{% endif %}</div></header>
-<section class="green-metrics" aria-label="绿化数据概览">
-<a href="{% url 'operations:green_assets' %}?kind=tree"><span>树木档案</span><strong>{{ tree_count }}</strong><small>逐棵管理</small></a>
-<a href="{% url 'operations:green_assets' %}"><span>绿地区块</span><strong>{{ green_count }}</strong><small>灌木 · 地被 · 花坛 · 草坪</small></a>
-<a href="{% url 'operations:green_species' %}"><span>植物种类</span><strong>{{ species_count }}</strong><small>辨识与特别关注植物</small></a>
-<a href="{% url 'operations:green_workorders' %}?period=all"><span>养护待办</span><strong>{{ pending_count }}</strong><small>待处理 · 处理中 · 待复核</small></a>
-</section>
-<div class="green-overview">
-<section class="op-card green-map-card"><div class="op-title-row"><h2>植物与区域地图</h2><a href="{% url 'operations:locations' %}">区域管理 ›</a></div>
-<form id="greenMapFilters" class="green-map-filters"><label><span class="pwa-sr-only">档案类型</span><select name="kind"><option value="">全部类型</option value="tree">树木</option><option value="shrub">灌木</option><option value="groundcover">地被</option><option value="flowerbed">花坛</option><option value="lawn">草坪</option></select></label><label><input type="checkbox" name="special" value="1"> 特别关注植物</label><button class="btn-sm" type="submit">筛选</button></form>
-<div id="greenMap" class="green-map" data-endpoint="{% url 'operations:green_map_data' %}" aria-label="绿化区域与植物分布地图"></div><p id="greenMapStatus" class="op-muted" role="status">正在加载区域和植物档案…</p>
-<div class="green-map-legend"><span><i class="tree"></i>树木</span><span><i class="patch"></i>绿地区块</span><span><i class="risk"></i>高风险标记</span></div></section>
-<aside class="green-side">
-<section class="op-card"><h2>数据待完善</h2><a class="green-link-row" href="{% url 'operations:green_assets' %}?position=missing"><span>待补充坐标</span><strong>{{ unpositioned }}</strong></a><a class="green-link-row" href="{% url 'operations:green_assets' %}?risk=high"><span>人工标记高风险</span><strong>{{ high_risk }}</strong></a><p class="op-muted">未定位的档案保留在列表中，补充实测坐标后显示到地图。</p></section>
-<section class="op-card"><div class="op-title-row"><h2>养护待办</h2><a href="{% url 'operations:green_workorders' %}?period=all">全部 ›</a></div>{% for item in upcoming %}<a class="green-task" href="{% url 'operations:green_workorder' item.pk %}"><strong>{{ item.title }}</strong><small>{{ item.scheduled_date|date:'m-d' }} · {{ item.get_status_display }}</small></a>{% empty %}<p class="green-empty-small">暂无待办。可从树木或绿地档案发起养护工单。</p>{% endfor %}</section>
-<section class="op-card"><h2>植物信息</h2><a class="green-link-row" href="{% url 'operations:green_species' %}?special=1">特别关注花草 <span>›</span></a><a class="green-link-row" href="{% url 'operations:green_species' %}?identification=pending">待辨识植物 <span>›</span></a>{% if can_manage %}<a class="green-link-row" href="{% url 'operations:green_deliveries' %}">供应商交付台账 <span>›</span></a>{% endif %}</section>
-</aside></div>
+<div class="green-map-shell">
+    <aside id="greenSidebar" aria-labelledby="greenSidebarTitle">
+        <div id="greenPanel">
+            <header class="green-panel-head">
+                <h1 id="greenSidebarTitle">绿化总览</h1>
+                <button type="button" id="greenSidebarClose" aria-label="收起绿化侧栏" title="收起绿化侧栏"><svg class="ui-icon" aria-hidden="true"><use href="#pwa-close"/></svg></button>
+            </header>
+            <div class="green-panel-body">
+                <section aria-label="绿化数据概览" class="green-panel-metrics">
+                    <a href="{% url 'operations:green_assets' %}?kind=tree">树木档案<strong>{{ tree_count }}</strong></a>
+                    <a href="{% url 'operations:green_assets' %}">绿地区块<strong>{{ green_count }}</strong></a>
+                    <a href="{% url 'operations:green_species' %}">植物种类<strong>{{ species_count }}</strong></a>
+                    <a href="{% url 'operations:green_workorders' %}?period=all">养护待办<strong>{{ pending_count }}</strong></a>
+                </section>
+                {% if can_manage or can_write %}<div class="op-actions">
+                    {% if can_manage %}<a class="btn-sm" href="{% url 'operations:green_asset_new' %}">新建档案</a>{% endif %}
+                    {% if can_write %}<a class="btn-sm btn-primary" href="{% url 'operations:green_workorder_new' %}">新建养护工单</a>{% endif %}
+                </div>{% endif %}
+                <section class="green-panel-section">
+                    <h2>植物档案</h2>
+                    <form id="greenMapFilters" class="green-panel-filters" role="search" aria-label="筛选地图上的植物">
+                        <label for="greenMapSearch" class="pwa-sr-only">搜索植物名称或编号</label>
+                        <input type="search" id="greenMapSearch" name="q" placeholder="搜索名称或编号">
+                        <label class="pwa-sr-only" for="greenMapKind">档案类型</label>
+                        <select id="greenMapKind" name="kind"><option value="">全部类型</option><option value="tree">树木</option><option value="shrub">灌木</option><option value="groundcover">地被</option><option value="flowerbed">花坛</option><option value="lawn">草坪</option></select>
+                        <label class="green-special"><input type="checkbox" name="special" value="1"> 特别关注植物</label>
+                        <button class="btn-sm" type="submit">筛选</button>
+                    </form>
+                    <ul class="green-asset-list" id="greenAssetList" aria-label="筛选结果"></ul>
+                    <button id="greenMoreAssets" type="button" class="btn-sm" hidden>显示更多档案</button>
+                </section>
+                <details class="green-panel-section"><summary>养护待办</summary>
+                    {% for item in upcoming %}<a class="green-task" href="{% url 'operations:green_workorder' item.pk %}"><strong>{{ item.title }}</strong><small>{{ item.scheduled_date|date:'m-d' }} · {{ item.get_status_display }}</small></a>{% empty %}<p class="op-muted">暂无养护待办。</p>{% endfor %}
+                    <a class="green-link-row" href="{% url 'operations:green_workorders' %}?period=all">查看全部养护工单</a>
+                </details>
+                <details class="green-panel-section"><summary>档案与区域管理</summary>
+                    <a class="green-link-row" href="{% url 'operations:locations' %}">区域管理</a>
+                    <a class="green-link-row" href="{% url 'operations:green_assets' %}?position=missing">待补充坐标<strong>{{ unpositioned }}</strong></a>
+                    <a class="green-link-row" href="{% url 'operations:green_assets' %}?risk=high">人工标记高风险<strong>{{ high_risk }}</strong></a>
+                    <a class="green-link-row" href="{% url 'operations:green_species' %}?special=1">特别关注花草</a>
+                    <a class="green-link-row" href="{% url 'operations:green_species' %}?identification=pending">待辨识植物</a>
+                    {% if can_manage %}<a class="green-link-row" href="{% url 'operations:green_deliveries' %}">供应商交付台账</a>{% endif %}
+                </details>
+            </div>
+        </div>
+    </aside>
+    <section class="green-map-stage" aria-label="植物与区域地图">
+        <div id="greenMap" data-endpoint="{% url 'operations:green_map_data' %}" aria-label="绿化区域与植物分布地图"></div>
+        <button id="greenSidebarOpen" type="button" aria-controls="greenSidebar" aria-expanded="true"><svg class="ui-icon" aria-hidden="true"><use href="#pwa-layers"/></svg>绿化侧栏</button>
+        <div class="green-map-key">
+            <div class="green-map-legend" aria-label="地图图例"><span><i class="tree"></i>树木</span><span><i class="patch"></i>绿地区块</span><span><i class="risk"></i>高风险</span></div>
+            <span id="greenMapStatus" role="status">正在加载区域和植物档案…</span>
+        </div>
+    </section>
+    <dialog id="greenDrawer" aria-labelledby="greenSidebarTitle"></dialog>
+</div>
 {% endblock %}
-{% block green_scripts %}<div id="dashboardScripts" hidden><script src="{% static 'vendor/leaflet/leaflet.js' %}"></script><script src="{% static 'js/map-runtime.js' %}?v=20261117pestalign1"></script><script src="{% static 'operations/landscaping-map.js' %}?v=20261117green1"></script><script src="{% static 'js/announcement-popup.js' %}?v=20261117pestalign"></script></div>{% endblock %}
+{% block green_scripts %}<div id="dashboardScripts" hidden>
+<script src="{% static 'vendor/leaflet/leaflet.js' %}"></script>
+<script src="{% static 'js/map-runtime.js' %}?v=20261117pestalign1"></script>
+<script src="{% static 'operations/map-geography.js' %}?v=20261118maps1"></script>
+<script src="{% static 'operations/landscaping-map.js' %}?v=20261118maps1"></script>
+<script src="{% static 'js/announcement-popup.js' %}?v=20261117pestalign"></script>
+</div>{% endblock %}

@@ -10,7 +10,7 @@ from django.utils import timezone
 from openpyxl import load_workbook
 
 from core.models import (Announcement,Crew,EmailReportConfig,EmailDeliveryProfile,ManagerProfile,
-                         RegistrationRequest,WorkReport,Worker,Land,WeatherData)
+                         RegistrationRequest,WorkReport,Worker,Land,Zone,WeatherData)
 from . import tests as fixtures
 from .models import AdministratorScope,Location,Membership,PestWorkData,ReferenceCatalog,ReferenceNode,Team
 from .work_parameters import definitions,form_schema,applicable_fields
@@ -81,6 +81,36 @@ class PestAlignmentTests(TestCase):
         data=self.client.get('/api/zones-payload/').json()
         self.assertEqual(data['region_labels'][0]['name'],'二级大区');self.assertAlmostEqual(data['region_labels'][0]['center'][0],31.145333,places=5)
         self.assertNotIn('private-irrigation-note',json.dumps(data))
+
+    def test_area_watermarks_follow_land_and_keep_duplicate_names_in_separate_regions(self):
+        from django.urls import reverse
+        lands = [Land.objects.create(name=name) for name in ('北园', '南园')]
+        for i, (land, name, lat) in enumerate([
+            (lands[0], '步道', 31.144), (lands[0], '步道', 31.146),
+            (lands[1], '步道', 31.153), (lands[0], '北园', 31.147),
+        ]):
+            Zone.objects.create(name=name, code=f'INTERNAL-{i}', land=land,
+                                boundary_points=[[lat, 121.65], [lat, 121.651], [lat, 121.652]])
+        payload = self.client.get('/api/zones-payload/').json()
+        areas = [a for a in payload['area_labels'] if a['land'] in ('北园', '南园')]
+        self.assertEqual([(a['land'], a['name']) for a in areas], [('北园', '步道'), ('南园', '步道')])
+        self.assertAlmostEqual(areas[0]['center'][0], 31.145)
+        self.assertEqual(areas[0]['bounds'][0][0], 31.144)
+        self.assertNotIn('INTERNAL-', json.dumps(areas))
+        green = Team.objects.get(code='landscaping')
+        Membership.objects.create(user=self.pm, team=green, role='field')
+        self.client.post('/ops/switch/', {'business':'landscaping'})
+        green_data = self.client.get(reverse('operations:green_map_data')).json()
+        self.assertEqual(green_data['area_labels'], payload['area_labels'])
+
+    def test_sidebar_location_can_only_reference_a_parent_already_visible_to_the_team(self):
+        floor = Location.objects.create(owner_team=self.pt, parent=self.building, name='观测楼二层', kind='floor')
+        hidden = Location.objects.create(owner_team=self.it, name='不可见上级')
+        room = Location.objects.create(owner_team=self.pt, parent=hidden, name='独立房间', kind='room')
+        places = {p['id']: p for p in self.client.get('/api/zones-payload/').json()['locations']}
+        self.assertEqual(places[str(floor.pk)]['parent_id'], str(self.building.pk))
+        self.assertIsNone(places[str(room.pk)]['parent_id'])
+        self.assertNotIn(str(hidden.pk), places)
 
     def test_user_management_uses_all_five_shared_tabs_with_business_owned_data(self):
         Announcement.objects.create(title='灌溉专用通知',body='private');Announcement.objects.create(title='植保通知',body='pest',business_team=self.pt)

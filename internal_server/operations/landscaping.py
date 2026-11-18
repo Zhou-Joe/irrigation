@@ -96,7 +96,7 @@ def dashboard(request):
 @require_GET
 def map_data(request):
     member = green_member(request)
-    from .map_reference import region_labels
+    from .map_reference import map_labels
     places = [location_map_data(p) for p in visible_locations(member.team)]
     assets = [{'id': a.pk, 'code': a.code, 'name': a.name, 'kind': a.kind, 'kind_label': a.get_kind_display(),
                'risk': a.risk, 'risk_label': a.get_risk_display(),
@@ -104,7 +104,7 @@ def map_data(request):
                'url': reverse('operations:green_asset', args=[a.pk])}
               for a in asset_query(request, member)]
     response = JsonResponse({'business': 'landscaping', 'locations': places, 'assets': assets,
-                             'region_labels': region_labels()})
+                             **map_labels()})
     response['Cache-Control'] = 'private, no-store'
     return response
 

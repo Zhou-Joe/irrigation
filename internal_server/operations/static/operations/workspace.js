@@ -103,14 +103,19 @@
             const same=current.dataset.business===next.dataset.business&&current.dataset.mounted!=='no'&&!!mounted;
             updateShell(doc);
             if(!same) {
-                const map=window._map;window.FOSMapInitialView=map?{center:map.getCenter(),zoom:map.getZoom()}:null;
+                const map=window._map;
+                // Leaflet finishes a CSS zoom on a timer that still needs its map pane.
+                if (map?.getPane?.('mapPane')?.classList.contains('leaflet-zoom-anim')) {
+                    await new Promise(resolve => map.once('zoomend', resolve));
+                }
+                window.FOSMapInitialView=map?{center:map.getCenter(),zoom:map.getZoom()}:null;
                 window.FOSLandscapingMap?.destroy();window.FOSPestMap?.destroy();window.FOSWorkorderModalLifecycle?.destroy();window.FOSDashboardLifecycle?.destroy();window.FOSMapLifecycle?.destroy();window.FOSMapActions?.destroy();
                 window.FOSLandscapingMap=null;
                 window.FOSPestMap=window.FOSMapLifecycle=window.FOSDashboardLifecycle=window.FOSWorkorderModalLifecycle=null;
                 window._map=null;
                 window.zonesData=[];window._zoneById={};window._dashboardZonesLayer=null;
                 const replacement=document.importNode(next,true);replacement.dataset.mounted='no';current.replaceWith(replacement);await runScripts(doc);replacement.dataset.mounted='yes';
-                if(window.FOSMapInitialView&&window._map)window._map.setView(window.FOSMapInitialView.center,window.FOSMapInitialView.zoom);
+                if(window.FOSMapInitialView&&window._map)window._map.setView(window.FOSMapInitialView.center,window.FOSMapInitialView.zoom,{animate:false});
                 window.FOSMapInitialView=null;
             } else {
                 // The map stays mounted, but account capabilities may have

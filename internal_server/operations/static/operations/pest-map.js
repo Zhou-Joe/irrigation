@@ -12,9 +12,8 @@
         L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:22,maxNativeZoom:19,attribution:'Esri'}).addTo(map);
         L.control.zoom({zoomInText:window.uiIcon('plus'),zoomOutText:window.uiIcon('minus')}).addTo(map);
         const groups=Object.fromEntries(['shared','zones','buildings','monitoring','traps','beehives','records'].map(k=>[k,L.layerGroup().addTo(map)]));
-        const watermarks=L.layerGroup().addTo(map);let regionLabels=[];
-        function renderRegionLabels(){watermarks.clearLayers();const size=runtime.landLabelSize(map.getZoom(),window.MAP_STYLE_CONFIG?.label?.fontSize||25);for(const item of regionLabels){if(!runtime.withinPark(item.center))continue;const text=document.createElement('span');text.textContent=item.name;text.style.cssText='display:block;transform:translate(-50%,-50%);width:max-content;font-size:'+size+'px;color:rgba(255,255,255,.55);font-weight:700;text-shadow:0 0 8px rgba(0,0,0,.3);pointer-events:none';L.marker(item.center,{interactive:false,icon:L.divIcon({className:'zone-watermark',html:text.outerHTML,iconSize:[0,0]})}).addTo(watermarks);}}
-        map.on('zoomend',renderRegionLabels);
+        const updateWatermarks = window.FOSMapGeography.watermarks(map, window.MAP_STYLE_CONFIG?.label?.fontSize || 25);
+        let views, selectedId = null;
         const visible=new Set(Object.keys(groups));let locations=[],recent=[],initialized=!!initial,dirty=false,busy=false,picker=null,media=null,parameters=null,picking=false,gpsMarker=null,formGeneration=0;
         const shapes=new Map();
         const notice=message=>{const el=byId('pestMapNotice');if(el)el.textContent=message;};
@@ -23,38 +22,133 @@
         function changed(){parameters?.sync();dirty=true;window.IrrigationPWA?.markDirty();}
         function actions(){return [...(canSubmit?[{icon:'clipboard',label:'工单提交',action:()=>openForm()}]:[]),...(canManage?[{icon:'plus',label:'新增地点/设施',action:()=>creator.open()},{icon:'layers',label:'区域管理',url:'/ops/locations/'}]:[]),{icon:'folder',label:'历史记录',url:'/work-reports/'}];}
         function popup(p){const div=document.createElement('div');div.className='pest-place-popup';const title=document.createElement('h3');title.textContent=p.name;const detail=document.createElement('p');detail.textContent=[p.code,p.kind_label,p.source].filter(Boolean).join(' · ');div.append(title,detail);if(canSubmit){const button=document.createElement('button');button.textContent='创建工单';button.onclick=()=>openForm([p.id]);div.append(button);}return div;}
-        function selectStyle(){for(const [id,layers] of shapes)for(const layer of layers){const active=picking&&picker?.state.has(id);layer.setStyle?.({weight:active?4:2,fillOpacity:active?.35:.18});layer.getElement?.()?.classList.toggle('op-location-pin-selected',!!active);}}
+        function selectStyle() {
+            for (const [id, layers] of shapes) {
+                const active = picking ? picker?.state.has(id) : id === selectedId;
+                for (const layer of layers) {
+                    layer.setStyle?.({weight: active ? 4 : 2, fillOpacity: active ? .35 : .18});
+                    layer.getElement?.()?.classList.toggle('op-location-pin-selected', !!active);
+                }
+            }
+        }
         function pick(p){picker.state.toggle(p.id);picker.sync();changed();selectStyle();byId('pestPickInfo').textContent=`已选 ${picker.state.selected().length} 个地点`;}
-        function focus(p){if(creator.active()){if(p.center){map.panTo(p.center);creator.pick({lat:p.center[0],lng:p.center[1]});}return;}if(picking){pick(p);return;}if(p.center){map.flyTo(p.center,19);L.popup().setLatLng(p.center).setContent(popup(p)).openOn(map);}else if(canSubmit)openForm([p.id]);}
+        function focus(place, row) {
+            const shape = views.shapes.get(place.id);
+            if (creator.active()) {
+                if (runtime.withinPark(shape?.center)) {
+                    const [lat, lng] = shape.center;
+                    map.panTo([lat, lng]);
+                    creator.pick({lat, lng});
+                    revealMap();
+                } else notice(place.name + '尚未标注坐标，请在地图上选点。');
+                return;
+            }
+            if (picking) { pick(place); return; }
+            selectedId = place.id;
+            byId('pestLocationList').querySelector('[aria-current]')?.removeAttribute('aria-current');
+            row.setAttribute('aria-current', 'location');
+            selectStyle();
+            revealMap();
+            map.closePopup();
+            map.stop();
+            const view = views.target(place);
+            if (!view) { notice(place.name + '尚未标注坐标，暂无可定位的区域。'); return; }
+            const bounds = L.latLngBounds(view.points);
+            const options = {maxZoom: view.maxZoom, padding: [28, 28], animate: false};
+            window.FOSMapGeography.afterZoom(map, () => {
+                if (effects.stopped || selectedId !== place.id) return;
+                if (bounds.getNorthEast().equals(bounds.getSouthWest())) map.setView(bounds.getCenter(), view.maxZoom, options);
+                else map.fitBounds(bounds, options);
+            });
+            notice(view.reference ? place.name + '尚无独立坐标，已显示' + view.reference + '的参考范围。' : '已定位到' + place.name);
+        }
         function render(){
             Object.values(groups).forEach(group=>group.clearLayers());shapes.clear();
             const q=byId('zoneSearch').value.trim().toLowerCase(),kind=byId('pestMapKind').value,list=byId('pestLocationList');list.replaceChildren();const points=[];
             for(const p of locations){if(q&&!(p.name+' '+p.code).toLowerCase().includes(q)||kind&&p.kind!==kind)continue;const key=layerKey(p),equipment=equipmentLayer(p);if(!visible.has(key)||(equipment&&!visible.has(equipment)))continue;
-                const row=document.createElement('button');row.type='button';row.className='pest-location-row';const symbol=document.createElement('span');symbol.className='op-kind-icon';symbol.style.color=markers.descriptor(p.kind).color;symbol.append(markers.glyph(p.kind));const name=document.createElement('strong');name.textContent=p.name;const sub=document.createElement('small');sub.textContent=[p.code,p.kind_label,p.shared?'共享地点':'本团队'].filter(Boolean).join(' · ');row.append(symbol,name,sub);row.onclick=()=>focus(p);list.append(row);
-                const rings=runtime.boundaryRings(p.boundary),shape=markers.presentation(p,rings),layers=[];
+                const shape = views.shapes.get(p.id), rings = shape.rings, layers = [];
+                const row = document.createElement('button');
+                row.type = 'button';
+                row.className = 'pest-location-row';
+                const symbol = document.createElement('span');
+                symbol.className = 'op-kind-icon';
+                symbol.style.color = markers.descriptor(p.kind).color;
+                symbol.append(markers.glyph(p.kind));
+                const name = document.createElement('strong'), sub = document.createElement('small');
+                name.textContent = p.name;
+                const unplaced = shape.mode !== 'boundary' && !runtime.withinPark(shape.center);
+                sub.textContent = [p.code, p.kind_label, p.shared ? '共享地点' : '本团队', unplaced ? '待补坐标' : '']
+                    .filter(Boolean).join(' · ');
+                row.append(symbol, name, sub);
+                if (p.id === selectedId) row.setAttribute('aria-current', 'location');
+                row.onclick = () => focus(p, row);
+                list.append(row);
                 if(shape.mode==='boundary')for(const ring of rings){layers.push(L.polygon(ring,{color:markers.descriptor(p.kind).color,weight:2,fillOpacity:.18}).addTo(groups[key]));points.push(...ring);}
-                else if(shape.mode==='pin'){layers.push(markers.marker(L,p,shape.center).addTo(groups[key]));points.push(shape.center);}
+                else if(shape.mode==='pin'&&runtime.withinPark(shape.center)){layers.push(markers.marker(L,p,shape.center).addTo(groups[key]));points.push(shape.center);}
                 for(const layer of layers)layer.on('click',event=>{if(creator.pick(event.latlng)){L.DomEvent.stopPropagation(event);return;}if(picking){L.DomEvent.stopPropagation(event);pick(p);}else L.popup().setLatLng(event.latlng||p.center).setContent(popup(p)).openOn(map);});shapes.set(p.id,layers);
             }
             if(!list.children.length){const empty=document.createElement('p');empty.textContent='暂无符合条件的地点';list.append(empty);}
             byId('zoneCount').textContent=locations.length+' 个地点';
-            if(!initialized&&points.length){map.fitBounds(L.latLngBounds(points).pad(.2),{maxZoom:18});initialized=true;}
-            for(const record of recent)for(const id of record.locations){const p=locations.find(item=>item.id===id);if(!p?.center||!shapes.has(id))continue;const link=document.createElement('a');link.href='/work-reports/'+record.id+'/';link.textContent=record.number+' · '+record.date;L.circleMarker(p.center,{radius:5,color:'#69549a',fillOpacity:.9,weight:2}).bindPopup(link).addTo(groups.records);}
+            if(!initialized&&points.length){map.fitBounds(L.latLngBounds(points).pad(.2),{maxZoom:18,animate:false});initialized=true;}
+            for(const record of recent)for(const id of record.locations){const p=locations.find(item=>item.id===id);if(!runtime.withinPark(p?.center)||!shapes.has(id))continue;const link=document.createElement('a');link.href='/work-reports/'+record.id+'/';link.textContent=record.number+' · '+record.date;L.circleMarker(p.center,{radius:5,color:'#69549a',fillOpacity:.9,weight:2}).bindPopup(link).addTo(groups.records);}
             selectStyle();
         }
-        async function refresh(){try{const data=await runtime.fetchJSON('/api/zones-payload/',{cache:'no-store'});if(effects.stopped)return;if(data.business!=='pest-control'){notice('当前团队已变化，请使用顶部视图选择更新。');return;}const badge=document.querySelector('.top-nav-notif[href*="tab=tasks"] .notif-count');if(badge){badge.textContent=data.pending_tasks>99?'99+':String(data.pending_tasks||0);badge.classList.toggle('show',!!data.pending_tasks);}locations=data.locations;recent=data.records;regionLabels=data.region_labels||[];renderRegionLabels();render();notice('植保地图 · '+locations.length+' 个授权地点');}catch(_){if(!effects.stopped)notice('地图数据暂不可用，请重试。');}}
+        let geography = {}, refreshId = 0;
+        async function refresh() {
+            const request = ++refreshId;
+            try {
+                const data = await runtime.fetchJSON('/api/zones-payload/', {cache:'no-store'});
+                if (effects.stopped || request !== refreshId) return;
+                if (data.business !== 'pest-control') {
+                    notice('当前团队已变化，请使用顶部视图选择更新。');
+                    return;
+                }
+                const badge = document.querySelector('.top-nav-notif[href*="tab=tasks"] .notif-count');
+                if (badge) {
+                    badge.textContent = data.pending_tasks > 99 ? '99+' : String(data.pending_tasks || 0);
+                    badge.classList.toggle('show', !!data.pending_tasks);
+                }
+                locations = data.locations;
+                recent = data.records;
+                geography = {region_labels:data.region_labels, area_labels:data.area_labels};
+                views = window.FOSMapGeography.pestViews(locations, geography);
+                updateWatermarks(geography);
+                render();
+                if (!selectedId) notice('植保地图 · ' + locations.length + ' 个授权地点');
+            } catch (error) {
+                if (!effects.stopped && request === refreshId) notice('地图数据暂不可用，请重试。');
+            }
+        }
         const creator=window.FOSMapLocationCreate.mount({map,panel:byId('mapLocationCreate'),markers,L,
             onOpen(){if(!closeForm())return false;initialized=true;byId('zoneSearch').value='';byId('pestMapKind').value='';render();},
-            async onSaved(item){const key=layerKey(item);visible.add(key);map.addLayer(groups[key]);const checkbox=document.querySelector('[data-pest-layer="'+key+'"]');if(checkbox)checkbox.checked=true;locations=locations.filter(p=>p.id!==item.id).concat({...item,kind_label:markers.descriptor(item.kind).label,map_display:'pin',boundary:[],center:[Number(item.latitude),Number(item.longitude)],shared:false,source:'图钉标注'});render();await refresh();}});
+            async onSaved(item){const key=layerKey(item);visible.add(key);map.addLayer(groups[key]);const checkbox=document.querySelector('[data-pest-layer="'+key+'"]');if(checkbox)checkbox.checked=true;locations=locations.filter(p=>p.id!==item.id).concat({...item,kind_label:markers.descriptor(item.kind).label,map_display:'pin',boundary:[],center:[Number(item.latitude),Number(item.longitude)],shared:false,source:'图钉标注'});views=window.FOSMapGeography.pestViews(locations,geography);render();await refresh();}});
         map.on('click',event=>creator.pick(event.latlng));
         document.querySelectorAll('[data-pest-layer]').forEach(input=>input.onchange=()=>{const key=input.dataset.pestLayer;if(input.checked){visible.add(key);map.addLayer(groups[key]);}else{visible.delete(key);map.removeLayer(groups[key]);}render();});
         byId('mapLayerToggleBtn').onclick=()=>{const el=byId('mapLayerBody');el.hidden=!el.hidden;};
         byId('filterToggleBtn').onclick=()=>{const el=byId('pestFilterPanel');el.hidden=!el.hidden;};
         byId('pestMapKind').onchange=render;byId('zoneSearch').oninput=render;
-        function sidebar(){const collapsed=byId('sidebar').classList.toggle('collapsed');byId('sidebarExpandBtn').classList.toggle('visible',collapsed);byId('mobileOverlay').classList.toggle('visible',!collapsed&&matchMedia('(max-width:768px)').matches);effects.timeout(()=>map.invalidateSize(),300);}
-        byId('pestSidebarClose').onclick=sidebar;byId('sidebarExpandBtn').onclick=sidebar;
-        byId('mobileOverlay').onclick=sidebar;
-        if(matchMedia('(max-width:768px)').matches){byId('sidebar').classList.add('collapsed');byId('sidebarExpandBtn').classList.add('visible');}
+        const phone = matchMedia('(max-width:768px)');
+        function setSidebar(open, moveFocus = false) {
+            const sidebar = byId('sidebar'), trigger = byId('sidebarExpandBtn');
+            sidebar.classList.toggle('collapsed', !open);
+            sidebar.inert = !open;
+            trigger.classList.toggle('visible', !open);
+            trigger.setAttribute('aria-expanded', String(open));
+            byId('mobileOverlay').classList.toggle('visible', open && phone.matches);
+            if (moveFocus) (open ? byId('pestSidebarClose') : trigger).focus({preventScroll:true});
+            effects.timeout(() => map.invalidateSize(), 300);
+        }
+        function revealMap() {
+            if (phone.matches && !byId('sidebar').inert) setSidebar(false, true);
+        }
+        byId('pestSidebarClose').onclick = () => setSidebar(false, true);
+        byId('sidebarExpandBtn').onclick = () => setSidebar(true, true);
+        byId('mobileOverlay').onclick = () => setSidebar(false, true);
+        effects.listen(phone, 'change', () => setSidebar(!phone.matches));
+        effects.listen(byId('sidebar'), 'keydown', event => {
+            if (event.key === 'Escape') setSidebar(false, true);
+        });
+        setSidebar(!phone.matches);
         const locate=L.control({position:'topright'});locate.onAdd=()=>{const button=L.DomUtil.create('button','locate-btn map-tool-btn');button.type='button';button.title='定位我';button.innerHTML=window.uiIcon('pin');L.DomEvent.disableClickPropagation(button);button.onclick=async()=>{button.disabled=true;notice('正在定位…');try{const p=await runtime.requestLocation(navigator.geolocation);if(effects.stopped)return;if(!runtime.withinPark([p.coords.latitude,p.coords.longitude])){notice('当前位置在地图显示范围外。');return;}if(gpsMarker)map.removeLayer(gpsMarker);gpsMarker=L.marker([p.coords.latitude,p.coords.longitude]).addTo(map);map.flyTo(gpsMarker.getLatLng(),18);notice('已定位，精度约 '+Math.round(p.coords.accuracy)+' 米。');}catch(_){notice('定位未成功，请检查定位权限或手机定位服务。');}finally{button.disabled=false;}};return button;};locate.addTo(map);
         window.FOSMapActions.mount(actions());
         const legend=document.createElement('div');legend.className='op-marker-legend';legend.setAttribute('aria-label','图钉类型');for(const kind of markers.kinds||['zone','building','floor','room','monitoring','trap_cage','beehive','other']){const item=document.createElement('span'),icon=markers.glyph(kind);icon.style.color=markers.descriptor(kind).color;item.append(icon,document.createTextNode(markers.descriptor(kind).label));legend.append(item);}byId('mapLayerBody').append(legend);

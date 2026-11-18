@@ -1,7 +1,7 @@
 {% extends 'core/base.html' %}{% load static %}
 {% block title %}绿化{% endblock %}
 {% block extra_ui_css %}<link rel="stylesheet" href="{% static 'operations/workspace.css' %}?v=20261111management1"><link rel="stylesheet" href="{% static 'operations/landscaping.css' %}?v=20261117green1">{% block green_head %}{% endblock %}{% endblock %}
-{% block content %}<main class="app-wrap wide ops-page green-page" data-business="landscaping" data-ops-page {% block green_attributes %}{% endblock %}>
+{% block content %}<main class="{% block green_classes %}app-wrap wide ops-page green-page{% endblock %}" data-business="landscaping" data-ops-page {% block green_attributes %}{% endblock %}>
 {% for message in messages %}<div class="msg {% if message.tags == 'error' %}msg-error{% else %}msg-success{% endif %}" role="status">{{ message }}</div>{% endfor %}
 {% block green_content %}{% endblock %}
 </main>{% endblock %}

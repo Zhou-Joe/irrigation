@@ -32,6 +32,7 @@
 {% endblock %}
 
 {% block extra_ui_css %}
+{% if pest_mode %}<link rel="stylesheet" href="{% static 'operations/map-home.css' %}?v=20261118maps1">{% endif %}
 <link rel="stylesheet" href="{% static 'css/ai-chat.css' %}?v=20261112attachments1">
 <link rel="stylesheet" href="{% static 'css/inventory-quotes.css' %}?v=20261113candidates1">
 <link rel="stylesheet" href="{% static 'css/inventory-move.css' %}?v=20261112quotes1">
@@ -404,7 +405,7 @@
 </script>
 {% endif %}</div>{% endblock %}
 
-{% block extra_js %}<div id="dashboardScripts" hidden>{% if pest_mode %}{{ pest_map_style|json_script:'pest-map-style' }}<script>window.MAP_STYLE_CONFIG=JSON.parse(document.getElementById('pest-map-style').textContent);</script><script src="{% static 'vendor/leaflet/leaflet.js' %}"></script><script src="{% static 'operations/map-actions.js' %}?v=20261108fixes2"></script><script src="{% static 'js/map-runtime.js' %}?v=20261117pestalign1"></script><script src="{% static 'operations/map-markers.js' %}?v=20261112equipment1"></script><script src="{% static 'operations/location-picker.js' %}?v=20261112equipment1"></script><script src="{% static 'operations/workorder-chips.js' %}?v=20261117formui"></script><script src="{% static 'operations/map-location-create.js' %}?v=20261112equipment1"></script><script src="{% static 'operations/workorder-media.js' %}?v=20261117formui"></script><script src="{% static 'operations/work-parameters.js' %}?v=20261118mwg2"></script><script src="{% static 'operations/pest-map.js' %}?v=20261118mwg2"></script>{% else %}
+{% block extra_js %}<div id="dashboardScripts" hidden>{% if pest_mode %}{{ pest_map_style|json_script:'pest-map-style' }}<script>window.MAP_STYLE_CONFIG=JSON.parse(document.getElementById('pest-map-style').textContent);</script><script src="{% static 'vendor/leaflet/leaflet.js' %}"></script><script src="{% static 'operations/map-actions.js' %}?v=20261108fixes2"></script><script src="{% static 'js/map-runtime.js' %}?v=20261117pestalign1"></script><script src="{% static 'operations/map-geography.js' %}?v=20261118maps1"></script><script src="{% static 'operations/map-markers.js' %}?v=20261112equipment1"></script><script src="{% static 'operations/location-picker.js' %}?v=20261112equipment1"></script><script src="{% static 'operations/workorder-chips.js' %}?v=20261117formui"></script><script src="{% static 'operations/map-location-create.js' %}?v=20261112equipment1"></script><script src="{% static 'operations/workorder-media.js' %}?v=20261117formui"></script><script src="{% static 'operations/work-parameters.js' %}?v=20261118mwg2"></script><script src="{% static 'operations/pest-map.js' %}?v=20261118maps1"></script>{% else %}
 <!-- Leaflet JS -->
 <script src="{% static 'vendor/leaflet/leaflet.js' %}?v=1.9.4"></script>
 <script src="{% static 'operations/map-markers.js' %}?v=20261112equipment1"></script>

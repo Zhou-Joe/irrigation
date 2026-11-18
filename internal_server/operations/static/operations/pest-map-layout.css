@@ -16,3 +16,6 @@
     #mapContainer[data-business="pest-control"] .sidebar-expand-btn.visible{display:flex!important;top:12px;bottom:auto;left:12px;transform:none;z-index:1100}
     #dashboardWorkspace[data-business="pest-control"] #mobileOverlay.visible{display:block!important;position:fixed;inset:var(--pwa-header-height,52px) 0 var(--pwa-nav-height,0px);z-index:1500;background:#173c354d}
 }
+
+.pest-location-row[aria-current="location"]{background:#e0eee2;box-shadow:inset 4px 0 #2d6a4f}
+#mapContainer[data-business="pest-control"] .pest-map-notice{pointer-events:none}

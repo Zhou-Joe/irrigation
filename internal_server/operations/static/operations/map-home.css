@@ -1,0 +1,45 @@
+.park-watermark { pointer-events: none; }
+.park-watermark span {
+    display: block;
+    width: max-content;
+    white-space: nowrap;
+    font: 700 1rem/1.1 var(--font-body, sans-serif);
+    color: rgb(255 255 255 / .57);
+    text-shadow: 0 1px 6px rgb(0 0 0 / .38);
+}
+.park-watermark-area span { color: rgb(255 255 255 / .76); font-weight: 600; }
+
+.green-map-home { --green-sidebar-width: 330px; display: flex; flex-direction: column; height: calc(100vh - 52px); height: calc(100dvh - 52px); }
+.green-map-shell { position: relative; display: flex; flex: 1; min-height: 0; isolation: isolate; }
+#greenSidebar { flex: 0 0 var(--green-sidebar-width); min-width: 0; border-right: 1px solid #d0dbd1; }
+#greenPanel { height: 100%; display: flex; flex-direction: column; background: var(--color-surface-alt, #f7f5ef); color: var(--color-text-primary); }
+.green-panel-head { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 15px 16px; background: var(--color-primary, #1b4332); color: white; }
+.green-panel-head h1 { margin: 0; color: inherit; font: 650 1.2rem/1.3 var(--font-body); }
+#greenSidebarClose, #greenSidebarOpen { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; gap: 8px; padding: 0 10px; border: 1px solid #c8d4cb; border-radius: 8px; background: #fff; color: #214a35; font: inherit; cursor: pointer; }
+#greenSidebarClose { width: 44px; color: white; border-color: #ffffff55; background: #ffffff15; }
+#greenSidebarOpen { position: absolute; z-index: 450; inset: 12px auto auto 12px; box-shadow: 0 2px 9px #162a2433; }
+.green-map-home :is(#greenSidebar, #greenSidebarOpen, #greenMoreAssets)[hidden] { display: none; }
+.green-panel-body { padding: 14px; flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.green-panel-metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; margin-bottom: 12px; }
+.green-panel-metrics a { display: flex; align-items: center; justify-content: space-between; gap: 4px; min-height: 43px; padding: 0 10px; background: white; border: 1px solid #d9e2d8; border-radius: 8px; text-decoration: none; }
+.green-panel-metrics strong { font-size: 1.15rem; font-variant-numeric: tabular-nums; }
+.green-panel-section { margin-top: 14px; padding-top: 12px; border-top: 1px solid #d6dfd6; }
+.green-panel-section summary { padding: 6px 0; cursor: pointer; font-weight: 650; }
+.green-panel-filters { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; }
+.green-panel-filters input[type="search"], .green-panel-filters select { width: 100%; min-width: 0; min-height: 42px; font: inherit; background: white; border: 1px solid #becdc0; border-radius: 7px; padding: 6px 8px; }
+.green-special { display: flex; align-items: center; gap: 5px; min-height: 42px; }
+.green-asset-list { margin: 8px 0; padding: 0; list-style: none; }
+.green-asset-list :is(button,a) { display: grid; gap: 3px; width: 100%; min-height: 44px; padding: 8px 4px; box-sizing: border-box; border: 0; border-bottom: 1px solid #dbe3dc; background: transparent; color: #244534; font: inherit; text-align: start; text-decoration: none; cursor: pointer; overflow-wrap: anywhere; }
+.green-asset-list small { color: #526653; }
+.green-asset-list :is(button,a):hover { background: #e8f1e8; }
+.green-map-stage { position: relative; flex: 1; min-width: 0; background: #dfe8dd; }
+#greenMap { position: absolute; inset: 0; z-index: 0; }
+#greenMap .leaflet-popup-content a { display: block; margin-top: 5px; }
+.green-map-key { position: absolute; z-index: 420; left: 10px; bottom: 18px; max-width: calc(100% - 20px); box-sizing: border-box; padding: 8px 11px; border-radius: 7px; background: #fffffff0; color: #284637; font-size: .75rem; line-height: 1.5; pointer-events: none; }
+.green-map-key .green-map-legend { margin-bottom: 2px; }
+#greenDrawer { position: fixed; inset: var(--pwa-header-height) auto var(--pwa-nav-height) 0; margin: 0; padding: 0; border: 0; max-width: none; max-height: none; height: calc(100dvh - var(--pwa-header-height) - var(--pwa-nav-height)); width: min(var(--green-sidebar-width), 86vw); background: white; color: inherit; }
+#greenDrawer::backdrop { background: rgb(13 35 25 / .45); }
+@media (max-width: 768px) {
+    .green-map-home { height: calc(100vh - var(--pwa-header-height) - var(--pwa-nav-height)); height: calc(100dvh - var(--pwa-header-height) - var(--pwa-nav-height)); }
+    #greenSidebar { display: none; }
+}
