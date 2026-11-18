@@ -473,9 +473,9 @@ table.iv-ledger .lvl-tag.warn { background: #fdf6ec; color: #cc7722; }
     {# Reuse the same date-range filter to reload the page with a new window. #}
     <div class="iv-range">
       <label>记录范围:</label>
-      <input type="date" id="ivLedgerFrom" value="{{ date_from }}">
+      <input type="date" id="ivLedgerFrom" aria-label="库存记录开始日期" value="{{ date_from }}">
       <span>~</span>
-      <input type="date" id="ivLedgerTo" value="{{ date_to }}">
+      <input type="date" id="ivLedgerTo" aria-label="库存记录截止日期" value="{{ date_to }}">
       <button type="button" class="preset-pill" onclick="ivLedgerApply()">应用</button>
       <button type="button" class="preset-pill" onclick="ivLedgerPreset(30)">最近30天</button>
       <button type="button" class="preset-pill" onclick="ivLedgerPreset(90)">最近90天</button>
@@ -657,7 +657,7 @@ table.iv-ledger .lvl-tag.warn { background: #fdf6ec; color: #cc7722; }
 
     <div class="iv-manage-grid">
       <div class="iv-tree-side">
-        <input type="text" class="iv-search" id="ivSearchV2" placeholder="搜索物料名称…">
+        <input type="text" class="iv-search" id="ivSearchV2" aria-label="搜索库存目录中的物料" placeholder="搜索物料名称…">
         <div class="iv-tree-wrap"><div id="ivTreeV2"></div></div>
       </div>
       <div class="iv-detail-side" id="ivDetail">
@@ -670,7 +670,7 @@ table.iv-ledger .lvl-tag.warn { background: #fdf6ec; color: #cc7722; }
   {# ── Tab 4: 采购订单 ── #}
   <div class="app-tab-content {% if active_tab == 'orders' %}active{% endif %}" id="ivTabOrders">
     <div class="po-top">
-      <input type="text" id="poSearch" class="po-search" value="{{ po_query }}" placeholder="筛选本页；按 Enter 搜索全部订单">
+      <input type="text" id="poSearch" aria-label="搜索采购订单" class="po-search" value="{{ po_query }}" placeholder="筛选本页；按 Enter 搜索全部订单">
       <a href="{% url 'core:purchase_order_export_excel' %}" class="btn-sm btn-secondary"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-download"/></svg> 导出Excel</a>
       <button type="button" class="btn-sm btn-primary" onclick="poOpenCreate()" style="margin-left:auto;">+ 新建订单</button>
     </div>
@@ -751,16 +751,16 @@ table.iv-ledger .lvl-tag.warn { background: #fdf6ec; color: #cc7722; }
       <details class="card" style="padding:12px;margin:10px 0;">
         <summary>从 PO 表格导入物料</summary>
         <p>支持 XLSX/CSV。核对物料、数量、未税单价、计价单位和供应商后填入草稿，再保存订单。</p>
-        <input type="file" id="poImportFile" accept=".xlsx,.csv">
+        <input type="file" id="poImportFile" aria-label="导入采购订单表格" accept=".xlsx,.csv">
         <label class="iv-field">默认供应商（表格未提供时使用）<input id="poImportSupplier" class="iv-input" maxlength="200" placeholder="可选，仍可逐行修改" onchange="poImportPreview(false)"></label>
         <button type="button" class="btn-sm btn-secondary" onclick="poImportPreview(true)">读取表格</button>
         <div id="poImportStatus" role="status"></div><div id="poImportMapping"></div><div id="poImportRows" style="overflow:auto;"></div>
         <button type="button" id="poImportApply" class="btn-sm btn-primary" onclick="poImportApply()" hidden>填入订单草稿</button>
       </details>
       <div id="poPlannedList"></div>
-      <div id="poAddTrigger" style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border:1px dashed #bbb;border-radius:8px;cursor:pointer;background:#fff;font-size:.9rem;margin-top:6px;">
+      <button type="button" id="poAddTrigger" style="display:flex;align-items:center;justify-content:space-between;width:100%;padding:10px 12px;border:1px dashed #bbb;border-radius:8px;cursor:pointer;background:#fff;font:inherit;font-size:.9rem;margin-top:6px;">
         <span style="color:#2D6A4F;">+ 添加物料</span><span style="font-size:.8em;color:#999;">▶</span>
-      </div>
+      </button>
     </div>
     <div class="app-foot">
       <button type="button" class="btn-sm btn-secondary" style="flex:1;justify-content:center;" onclick="poCloseModal()">取消</button>
@@ -1488,9 +1488,9 @@ other pages stay jQuery-free; jsTree depends on it.{% endcomment %}
       <div class="iv-field" id="ivJstreePartFields" style="display:none;">
         <label>初始库存 / 最低库存 / 单位</label>
         <div style="display:flex; gap:6px;">
-          <input type="number" id="ivJstreeCurrent" placeholder="现有" style="flex:1;">
-          <input type="number" id="ivJstreeMin" placeholder="最低" style="flex:1;">
-          <input type="text" id="ivJstreeUnit" placeholder="单位" style="flex:1;">
+          <input type="number" id="ivJstreeCurrent" aria-label="初始库存数量" placeholder="现有" style="flex:1;">
+          <input type="number" id="ivJstreeMin" aria-label="最低库存数量" placeholder="最低" style="flex:1;">
+          <input type="text" id="ivJstreeUnit" aria-label="库存计量单位" placeholder="单位" style="flex:1;">
         </div>
       </div>
       <div class="iv-field" id="ivJstreeMainField" style="display:none;">
@@ -1557,7 +1557,7 @@ other pages stay jQuery-free; jsTree depends on it.{% endcomment %}
         <p style="font-size:.84rem;color:#6b7280;margin-bottom:10px;">
           选择导出的 Excel 文件（可编辑 库存/主材/单位/当前价格 列）。系统会按隐藏的编码列匹配部件，忽略历史价格明细行。
         </p>
-        <input type="file" id="ivImportFile" accept=".xlsx"
+        <input type="file" id="ivImportFile" aria-label="选择库存 Excel 文件" accept=".xlsx"
                style="font-size:.84rem;margin-bottom:10px;">
         <button type="button" class="btn-sm btn-primary" onclick="ivImportUpload()">上传预览</button>
       </div>

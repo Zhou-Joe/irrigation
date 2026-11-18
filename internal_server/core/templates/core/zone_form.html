@@ -107,7 +107,7 @@
                     <label for="boundary_color">边界颜色</label>
                     <div class="color-picker-wrapper">
                         <input type="color" id="boundary_color" name="boundary_color" value="{% if zone %}{{ zone.boundary_color }}{% else %}#52B788{% endif %}">
-                        <input type="text" id="boundary_color_text" value="{% if zone %}{{ zone.boundary_color }}{% else %}#52B788{% endif %}" pattern="^#[0-9A-Fa-f]{6}$" maxlength="7" class="color-text-input">
+                        <input type="text" id="boundary_color_text" aria-label="区域边界颜色（十六进制）" value="{% if zone %}{{ zone.boundary_color }}{% else %}#52B788{% endif %}" pattern="^#[0-9A-Fa-f]{6}$" maxlength="7" class="color-text-input">
                     </div>
                 </div>
 
@@ -450,8 +450,8 @@
             <div class="form-group full-width">
                 <label>灌溉设备维护记录</label>
                 <div class="zone-note-add" style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">
-                    <input type="date" id="equip_note_date" style="flex:0 0 160px;padding:7px 10px;border:1px solid var(--color-surface-dark);border-radius:6px;font-size:0.88em;">
-                    <input type="text" id="equip_note_content" placeholder="维护内容" style="flex:1;padding:7px 10px;border:1px solid var(--color-surface-dark);border-radius:6px;font-size:0.88em;">
+                    <input type="date" id="equip_note_date" aria-label="设备维护日期" style="flex:0 0 160px;padding:7px 10px;border:1px solid var(--color-surface-dark);border-radius:6px;font-size:0.88em;">
+                    <input type="text" id="equip_note_content" aria-label="设备维护内容" placeholder="维护内容" style="flex:1;padding:7px 10px;border:1px solid var(--color-surface-dark);border-radius:6px;font-size:0.88em;">
                     <button type="button" id="add_equip_note_btn" class="btn btn-primary btn-sm" style="flex:0 0 auto;padding:7px 16px;">添加</button>
                 </div>
                 <div id="equip_notes_list"></div>
@@ -461,8 +461,8 @@
             <div class="form-group full-width">
                 <label>灌溉管理记录</label>
                 <div class="zone-note-add" style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">
-                    <input type="date" id="irrig_note_date" style="flex:0 0 160px;padding:7px 10px;border:1px solid var(--color-surface-dark);border-radius:6px;font-size:0.88em;">
-                    <input type="text" id="irrig_note_content" placeholder="管理内容" style="flex:1;padding:7px 10px;border:1px solid var(--color-surface-dark);border-radius:6px;font-size:0.88em;">
+                    <input type="date" id="irrig_note_date" aria-label="灌溉管理日期" style="flex:0 0 160px;padding:7px 10px;border:1px solid var(--color-surface-dark);border-radius:6px;font-size:0.88em;">
+                    <input type="text" id="irrig_note_content" aria-label="灌溉管理内容" placeholder="管理内容" style="flex:1;padding:7px 10px;border:1px solid var(--color-surface-dark);border-radius:6px;font-size:0.88em;">
                     <button type="button" id="add_irrig_note_btn" class="btn btn-primary btn-sm" style="flex:0 0 auto;padding:7px 16px;">添加</button>
                 </div>
                 <div id="irrig_notes_list"></div>

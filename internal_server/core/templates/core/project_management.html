@@ -234,6 +234,7 @@
 <div class="app-wrap wide">
   <div class="app-head">
     <h1>项目管理</h1>
+    <button type="button" class="btn-sm btn-primary" onclick="pmOpenCreate()">+ 新建项目</button>
   </div>
 
   {% if messages %}
@@ -265,7 +266,6 @@
         <button type="submit" class="btn-sm btn-primary">筛选</button>
         <button type="button" class="btn-sm btn-secondary" onclick="pmClearFilter()">清除</button>
         <button type="button" class="btn-sm btn-secondary" onclick="pmExport()"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-download"/></svg> 导出Excel</button>
-        <button type="button" class="btn-sm btn-primary" onclick="pmOpenCreate()">+ 新建项目</button>
       </div>
     </form>
   </div>
@@ -273,7 +273,7 @@
     <div class="pm-filter-count">共 {{ total_projects }} 个项目{% if fq or fcat or fcompleted %}（已筛选）{% endif %}</div>
     <div class="pm-sort-bar">
       <span>排序</span>
-      <select id="pmSort" onchange="pmSortField(this.value)">
+      <select id="pmSort" aria-label="项目排序方式" onchange="pmSortField(this.value)">
         <option value="default">默认（类别/子类/名称）</option>
         <option value="name">项目名称</option>
         <option value="date">开工日期</option>

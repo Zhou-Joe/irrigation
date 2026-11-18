@@ -259,8 +259,8 @@ table.excel-preview tbody tr:hover td { background:#e8f5e9; }
             {# ── Date range ── #}
             <div class="sh-date-range">
                 <div class="sh-date-row">
-                    <input type="date" id="dateFrom" value="{{ from_param }}" max="{{ to_param }}">
-                    <input type="date" id="dateTo" value="{{ to_param }}" min="{{ from_param }}">
+                    <input type="date" id="dateFrom" aria-label="统计开始日期" value="{{ from_param }}" max="{{ to_param }}">
+                    <input type="date" id="dateTo" aria-label="统计截止日期" value="{{ to_param }}" min="{{ from_param }}">
                 </div>
                 <button class="sh-date-btn" onclick="applyDateRange()">查询</button>
                 <div class="sh-presets">

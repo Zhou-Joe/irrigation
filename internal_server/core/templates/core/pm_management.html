@@ -239,7 +239,7 @@
                     </div>
                 </div>
                 <div class="settings-card-body">
-                    <input type="text" id="jpSearch" placeholder="搜索 JobPlan 名称..." class="card-search">
+                    <input type="text" id="jpSearch" aria-label="搜索作业计划名称" placeholder="搜索 JobPlan 名称..." class="card-search">
                     {% if job_plans %}
                     <table class="card-table" id="jpTable">
                         <thead><tr><th>JobPlan名称</th><th>资产粒度</th><th>描述</th><th>关联PM数</th><th>状态</th><th>操作</th></tr></thead>
@@ -560,7 +560,7 @@
     {# ── Tab: 工单类型 (WorkItem tree, jsTree + mptt) ───────────────────── #}
     <div class="app-tab-content {% if active_tab == 'workitems' %}active{% endif %}" id="tabWorkitems">
         <div class="wj-tab-toolbar">
-            <input type="search" class="wj-search" id="wjSearch" placeholder="搜索节点名称…">
+            <input type="search" class="wj-search" id="wjSearch" aria-label="搜索工单类型节点" placeholder="搜索节点名称…">
             <button type="button" class="btn btn-sm btn-primary" onclick="wjOpenCreate(null)">+ 新建根节点</button>
             <span class="wj-hint">右键节点 → 新建/编辑/删除 · 拖动改父级 · 点节点 → 右侧显示详情与引用工单</span>
         </div>
@@ -663,7 +663,7 @@ window.pmSwitchTab = function(tab) {
     if (tab === 'completion') { loadOverdueChart(); }
     // Lazy-init jsTree the first time the 工单类型 tab opens (defer the AJAX
     // load + jQuery init until needed, so the page render stays fast).
-    if (tab === 'workitems' && !window._wjTreeInited) { window._wjTreeInited = true; wjInitTree(); }
+    if (tab === 'workitems' && !window._wjTreeInited && typeof wjInitTree === 'function') { window._wjTreeInited = true; wjInitTree(); }
 };
 // Restore tab from ?tab= on load.
 (function() {
@@ -1485,6 +1485,6 @@ document.addEventListener('click', function (e) {
   if (m && m.style.display !== 'none' && e.target === m) wjCloseModal();
 });
 // If landed directly on ?tab=workitems, init the tree immediately.
-if (document.querySelector('#tabWorkitems.active')) { wjInitTree(); }
+if (document.querySelector('#tabWorkitems.active') && !window._wjTreeInited) { window._wjTreeInited = true; wjInitTree(); }
 </script>
 {% endblock %}

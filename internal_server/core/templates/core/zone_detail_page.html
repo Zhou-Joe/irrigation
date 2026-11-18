@@ -194,8 +194,8 @@
         <div class="zd-card">
             <h2>备注</h2>
             <div class="zd-rform">
-                <input type="date" id="remark-date" value="{{ today }}" class="zd-input">
-                <input type="text" id="remark-content" placeholder="备注内容..." class="zd-input">
+                <input type="date" id="remark-date" aria-label="区域备注日期" value="{{ today }}" class="zd-input">
+                <input type="text" id="remark-content" aria-label="区域备注内容" placeholder="备注内容..." class="zd-input">
                 <button type="button" class="zd-btn zd-btn-primary" onclick="addRemark()">添加</button>
             </div>
             <div class="zd-notes" id="remarks-list">

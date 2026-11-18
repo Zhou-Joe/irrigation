@@ -279,7 +279,7 @@ body.presentation-mode .present-toggle-btn {
     <div class="cr-header">
         <h1>自定义报表</h1>
         <div class="dashboard-controls">
-            <select id="dashboardSelector" onchange="selectDashboard(this.value); renderAllCharts(); fetchChartData();">
+            <select id="dashboardSelector" aria-label="选择报表仪表盘" onchange="selectDashboard(this.value); renderAllCharts(); fetchChartData();">
             </select>
             <button class="btn-add-chart" onclick="createDashboard()" title="新建仪表盘">+ 新建</button>
             <button class="btn-add-chart" onclick="renameDashboard()" title="重命名" style="background:var(--color-text-muted);">重命名</button>
@@ -313,7 +313,7 @@ body.presentation-mode .present-toggle-btn {
                         <option value="doughnut">环形图</option>
                         <option value="table">表格</option>
                     </select>
-                    <select id="barMode" style="display:none;min-width:80px;font-size:0.875rem;">
+                    <select id="barMode" aria-label="柱状图排列方式" style="display:none;min-width:80px;font-size:0.875rem;">
                         <option value="stacked">堆叠</option>
                         <option value="grouped">分组</option>
                     </select>
@@ -326,19 +326,19 @@ body.presentation-mode .present-toggle-btn {
             <div class="builder-group">
                 <label>起始日期</label>
                 <div style="display:flex;gap:4px;align-items:center;">
-                    <select id="dateMode">
+                    <select id="dateMode" aria-label="起始日期设置方式">
                         <option value="relative">最近</option>
                         <option value="fixed">固定日期</option>
                     </select>
-                    <input type="number" id="dateDays" min="1" max="3650" value="30" style="width:60px;padding:8px 4px;border:1px solid var(--color-surface-dark);border-radius:var(--radius-sm);font-size:0.875rem;">
+                    <input type="number" id="dateDays" aria-label="最近天数" min="1" max="3650" value="30" style="width:60px;padding:8px 4px;border:1px solid var(--color-surface-dark);border-radius:var(--radius-sm);font-size:0.875rem;">
                     <span id="dateDaysLabel" style="font-size:0.8rem;color:var(--color-text-muted);white-space:nowrap;">天</span>
-                    <input type="date" id="dateFrom" style="display:none;">
+                    <input type="date" id="dateFrom" aria-label="图表起始日期" style="display:none;">
                 </div>
             </div>
             <div class="builder-group">
                 <label>截止日期</label>
                 <div style="display:flex;gap:4px;align-items:center;">
-                    <input type="date" id="dateTo">
+                    <input type="date" id="dateTo" aria-label="图表截止日期">
                     <label style="font-size:0.75rem;white-space:nowrap;display:flex;align-items:center;gap:2px;">
                         <input type="checkbox" id="dateToNow"> 至今
                     </label>

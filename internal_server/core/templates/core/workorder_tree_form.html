@@ -234,7 +234,7 @@
         <!-- New uploads. Live preview via FileReader so the user sees picks before save. -->
         <div class="wo-photo-upload">
           <div class="wo-photo-sec">上传新照片 / 视频</div>
-          <input type="file" id="wo-photo-input" name="report_photos" accept="image/*,video/*" multiple>
+          <input type="file" id="wo-photo-input" aria-label="上传工单现场照片" name="report_photos" accept="image/*,video/*" multiple>
           <div class="wo-photo-grid" id="wo-photo-new"></div>
         </div>
         <input type="hidden" name="report_photos_remove" id="report-photos-remove" value="">
@@ -250,7 +250,7 @@
 
   <!-- global search -->
   <div class="wo-search">
-    <input type="search" id="wo-search-input" placeholder="搜索工作内容（喷头 / 主管 / 维保…）" autocomplete="off">
+    <input type="search" id="wo-search-input" aria-label="搜索工作内容" placeholder="搜索工作内容（喷头 / 主管 / 维保…）" autocomplete="off">
     <div class="wo-results" id="wo-search-results" hidden></div>
   </div>
 

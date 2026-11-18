@@ -1990,8 +1990,11 @@
         // accumulate on each reopen).
         ['woCatModal', 'woTreeModal', 'woLeafModal'].forEach(function (id) {
             // Drop any stale sheet left on <body> from a prior open.
-            var stale = document.body.querySelector('#' + id);
-            if (stale && stale.parentNode === document.body) stale.remove();
+            document.querySelectorAll('#' + id).forEach(function (stale) {
+                var host = stale.closest('dialog.ui-modal-host');
+                if (host && host.dataset.uiOverlay === id) { host.close(); host.remove(); }
+                else if (stale.parentNode === document.body) stale.remove();
+            });
             var el = document.getElementById(id);
             if (el) document.body.appendChild(el);
         });

@@ -1,0 +1,257 @@
+/* Modern Web Guidance: enhance native controls; keep native mobile pickers and
+   normal server forms as the fallback. Shared by every application page. */
+.ui-system {
+    --ui-focus: #246b4a;
+    --ui-control-border: #7d8c80;
+    --ui-control-error: #a02e29;
+    accent-color: var(--color-primary-light, #2d6a4f);
+    scrollbar-color: #93a38f #f0f4ed;
+    scrollbar-width: thin;
+}
+.ui-system :is(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+    outline: 3px solid var(--ui-focus) !important;
+    outline-offset: 3px;
+}
+.ui-system .top-nav :focus-visible {
+    outline-color: #f0cd8f !important;
+    outline-offset: 2px;
+}
+.ui-system :is(input, select, textarea, button, [tabindex]) {
+    scroll-margin-block: calc(var(--pwa-header-height, 52px) + 16px) calc(var(--ui-bottom-inset, 0px) + 24px);
+}
+.ui-system :is(input, select, textarea):not([type="hidden"]):not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]) {
+    border-color: var(--ui-control-border);
+    transition: border-color 140ms ease, box-shadow 140ms ease, background-color 140ms ease;
+}
+.ui-system :is(input, select, textarea):disabled {
+    cursor: not-allowed;
+    opacity: .65;
+}
+.ui-system :is(.ff, .form-group, .pm-field, .jp-field, .crew-field, .wo-field, .op-field, .auth-field):focus-within > label {
+    color: var(--ui-focus);
+}
+.ui-system :is(input, select, textarea):is(:user-invalid, .ui-user-invalid) {
+    border-color: var(--ui-control-error) !important;
+    background-color: #fff5f3;
+}
+.ui-field-error {
+    display: block;
+    grid-column: 1 / -1;
+    flex-basis: 100%;
+    margin-block: 6px 0;
+    color: var(--ui-control-error);
+    font-size: .8125rem;
+    font-weight: 500;
+    line-height: 1.5;
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+.ui-field-error[hidden] { display: none; }
+.ui-skip-link {
+    position: fixed;
+    inset-block-start: 8px;
+    inset-inline-start: 12px;
+    z-index: 20000;
+    padding: 12px 18px;
+    border-radius: 8px;
+    background: #fff;
+    color: #1b4332;
+    box-shadow: 0 4px 20px #15362233;
+    transform: translateY(-160%);
+}
+.ui-skip-link:focus { transform: translateY(0); }
+.ui-visually-hidden {
+    position: absolute !important;
+    inline-size: 1px !important;
+    block-size: 1px !important;
+    padding: 0 !important;
+    margin: -1px !important;
+    overflow: hidden !important;
+    clip-path: inset(50%) !important;
+    white-space: nowrap !important;
+    border: 0 !important;
+}
+
+/* Opt in only for a fine pointer. Touch users keep the OS picker. Firefox and
+   older browsers keep the existing <select>, including keyboard/form behavior. */
+@supports (appearance: base-select) {
+    @media (hover: hover) and (pointer: fine) {
+        .ui-system select.ui-select,
+        .ui-system select.ui-select::picker(select) { appearance: base-select; }
+        .ui-system select.ui-select {
+            align-items: center;
+            gap: 12px;
+            min-inline-size: 6rem;
+            max-inline-size: 100%;
+            min-block-size: 38px;
+            padding: 8px 12px;
+            border: 1px solid var(--ui-control-border);
+            border-radius: 8px;
+            background-image: none;
+            cursor: pointer;
+        }
+        .ui-system .business-switch select.ui-select { min-inline-size: 0; }
+        .ui-system select.ui-select::picker(select) {
+            max-block-size: min(22rem, 60dvh);
+            max-inline-size: calc(100vw - 24px);
+            padding: 6px;
+            margin-block: 5px;
+            border: 1px solid #bdcbbb;
+            border-radius: 12px;
+            background: #fff;
+            color: #253c2e;
+            box-shadow: 0 12px 32px #19352326;
+            font: 14px/1.5 var(--font-body);
+            scrollbar-width: thin;
+            overscroll-behavior: contain;
+        }
+        .ui-system select.ui-select::picker-icon {
+            color: #526859;
+            transition: rotate 140ms ease;
+        }
+        .ui-system select.ui-select:open::picker-icon { rotate: 180deg; }
+        .ui-system select.ui-select option {
+            gap: 10px;
+            min-block-size: 38px;
+            padding: 9px 12px;
+            border-radius: 6px;
+            white-space: normal;
+            overflow-wrap: anywhere;
+        }
+        .ui-system select.ui-select option:is(:hover, :focus) { background: #edf3e8; }
+        .ui-system select.ui-select option:checked { background: #e3eedf; color: #1b4332; font-weight: 600; }
+        .ui-system select.ui-select option:disabled { color: #7d877e; }
+        .ui-system select.ui-select option::checkmark { color: #246b4a; }
+    }
+}
+.ui-system textarea.ui-auto-size { box-sizing: border-box; resize: vertical; }
+@supports (field-sizing: content) {
+    .ui-system textarea.ui-auto-size {
+        field-sizing: content;
+        inline-size: 100%;
+        block-size: auto;
+        min-block-size: 5.5rem;
+        max-block-size: 20rem;
+        overflow-y: auto;
+    }
+}
+.ui-system details > summary { cursor: pointer; border-radius: 6px; }
+.ui-system details > summary::marker { color: var(--ui-focus); }
+.ui-system .ui-section-toggle {
+    display: flex;
+    align-items: center;
+    flex: 1;
+    justify-content: space-between;
+    gap: 8px;
+    inline-size: 100%;
+    min-block-size: 36px;
+    padding: 0;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: start;
+    cursor: pointer;
+}
+.ui-system .ui-card-toggle, .ui-system .wr-card.open .ui-card-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    inline-size: 100%;
+    min-block-size: 36px;
+    padding: 6px 12px;
+    border: 0;
+    border-block-start: 1px solid var(--ui-line);
+    background: #f6f9f2;
+    color: #385d42;
+    font: 500 .8125rem/1.5 var(--font-body);
+    cursor: pointer;
+}
+.ui-system .ui-card-toggle::after {
+    content: '';
+    inline-size: 6px;
+    block-size: 6px;
+    margin-block-end: 3px;
+    border-inline-end: 1.5px solid currentColor;
+    border-block-end: 1.5px solid currentColor;
+    rotate: 45deg;
+}
+.ui-system .ui-card-toggle[aria-expanded="true"]::after { rotate: 225deg; margin-block-end: 0; }
+@media (hover: hover) {
+    .ui-system :is(.btn, .btn-sm, .export-btn, .preset-pill, .pwa-module, .field-action):not(:disabled):hover {
+        box-shadow: 0 2px 8px #19352317;
+    }
+    .ui-system details > summary:hover { background-color: #edf3e880; }
+}
+.ui-system :is(.btn, .btn-sm, .export-btn, .preset-pill, .field-action):not(:disabled):active {
+    filter: brightness(.94);
+}
+
+/* Native dialogs contain keyboard focus and render above maps. Both containment
+   rules are needed; do not remove the document scrollbar to lock the page. */
+.ui-system dialog:modal { overscroll-behavior: contain; }
+.ui-system dialog::backdrop { overflow: hidden; overscroll-behavior: contain; }
+.ui-system dialog.ui-modal-host {
+    position: fixed;
+    inset: 0;
+    inline-size: 100%;
+    block-size: 100%;
+    max-inline-size: none;
+    max-block-size: none;
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    overflow: auto;
+}
+.ui-system dialog.ui-modal-host::backdrop { background: transparent; }
+.ui-system dialog.ui-modal-host[data-ui-split-modal]::backdrop { background: #122c224d; }
+.ui-system dialog.ui-modal-host:not([open]) { display: none; }
+.ui-system .ui-modal-host .v2-sheet-overlay { overscroll-behavior: contain; }
+.ui-system .ui-modal-host .app-dialog { inline-size: 100%; max-inline-size: 560px; }
+.ui-system .ui-modal-host .app-dialog.wide { max-inline-size: 680px; }
+.ui-system .ui-modal-host > :is(.app-mask, .modal-overlay, .iv-create-mask, .iv-modal-overlay, .wj-modal-overlay, .fu-modal-overlay, .rm-move-overlay, .notif-popup) {
+    box-sizing: border-box;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding-block: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-bottom));
+}
+.ui-system .ui-modal-host :is(.app-dialog, .modal, .iv-modal, .wj-modal, .fu-modal, .notif-card) {
+    max-block-size: calc(100dvh - 32px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+    overscroll-behavior: contain;
+}
+@media (prefers-reduced-motion: no-preference) {
+    .ui-modal-host[open] :is(.app-dialog, .modal, .iv-modal, .wj-modal, .fu-modal, .notif-card) {
+        animation: ui-panel-enter 160ms ease-out;
+    }
+    @keyframes ui-panel-enter {
+        from { opacity: 0; transform: translateY(8px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+}
+@media (pointer: coarse), (max-width: 768px) {
+    .ui-system :is(input, select, textarea):not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="hidden"]) {
+        min-block-size: 48px;
+        font-size: max(1rem, 1em) !important;
+    }
+    .ui-system :is(.btn, .btn-sm, .export-btn, .app-tab, .preset-pill, .ui-section-toggle, .ui-card-toggle, button[type="submit"]) { min-block-size: 48px; }
+    .ui-system details > summary { min-block-size: 44px; box-sizing: border-box; align-content: center; }
+    .ui-system :is(.check-inline, .cree-chk, .wo-chip, .ops-check-list label) { min-block-size: 44px; box-sizing: border-box; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .ui-system *, .ui-system *::before, .ui-system *::after {
+        animation-duration: .01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: .01ms !important;
+        scroll-behavior: auto !important;
+    }
+}
+@media (forced-colors: active) {
+    .ui-system :is(input, select, textarea):is(:user-invalid, .ui-user-invalid) { border: 2px solid LinkText !important; }
+    .ui-field-error { color: CanvasText; }
+    .ui-system :is(a, button, input, select, textarea, summary, [tabindex]):focus-visible { outline-color: Highlight !important; }
+}

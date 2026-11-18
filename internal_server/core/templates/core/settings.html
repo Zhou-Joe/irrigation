@@ -91,8 +91,8 @@
         {% if zones %}
         <!-- Consolidated filter toolbar -->
         <div class="filter-toolbar">
-            <input type="text" id="zoneSearch" placeholder="搜索区域..." class="card-search">
-            <select id="filterPatch" class="filter-select">
+            <input type="text" id="zoneSearch" aria-label="搜索区域" placeholder="搜索区域..." class="card-search">
+            <select id="filterPatch" aria-label="按片区筛选区域" class="filter-select">
                 <option value="">全部片区</option>
                 {% for group in grouped_zones %}
                 {% if group.type != 'orphan' %}
@@ -100,7 +100,7 @@
                 {% endif %}
                 {% endfor %}
             </select>
-            <select id="filterPriority" class="filter-select">
+            <select id="filterPriority" aria-label="按优先级筛选区域" class="filter-select">
                 <option value="">全部优先级</option>
                 <option value="critical">超级重点</option>
                 <option value="high">重点</option>
@@ -134,7 +134,7 @@
             <table class="zone-table" id="zoneTable">
                 <thead>
                     <tr>
-                        <th><input type="checkbox" id="zoneSelectAll" onclick="toggleZoneCheckboxes(this.checked)"></th>
+                        <th><input type="checkbox" id="zoneSelectAll" aria-label="全选当前列表中的区域" onclick="toggleZoneCheckboxes(this.checked)"></th>
                         <th>编号</th>
                         <th>名称</th>
                         <th>优先级</th>
@@ -470,7 +470,7 @@
         <div id="importStep1" style="padding:20px;">
             <p style="margin:0 0 12px;color:var(--color-text-secondary);font-size:0.9em;">选择导出的 Excel 文件（.xlsx），系统将对比数据库中的数据并显示变更。</p>
             <div style="display:flex;gap:12px;align-items:center;">
-                <input type="file" id="importFileInput" accept=".xlsx" style="flex:1;">
+                <input type="file" id="importFileInput" aria-label="选择区域导入 Excel 文件" accept=".xlsx" style="flex:1;">
                 <button type="button" id="importUploadBtn" class="btn btn-primary" onclick="uploadImportFile()">上传预览</button>
             </div>
             <div id="importLoading" style="display:none;margin-top:12px;color:var(--color-text-secondary);font-size:0.9em;">正在解析文件...</div>

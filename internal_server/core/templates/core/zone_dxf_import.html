@@ -250,7 +250,7 @@
                         <div id="suggestedZonesList"></div>
                     </div>
                     <div class="zone-input-wrapper" style="margin-top:10px;">
-                        <input type="text" class="zone-input" id="zoneCodeInput" placeholder="输入区域编号..." autocomplete="off">
+                        <input type="text" class="zone-input" id="zoneCodeInput" aria-label="查找区域编号" placeholder="输入区域编号..." autocomplete="off">
                         <div class="zone-dropdown" id="zoneDropdown"></div>
                     </div>
                     <button class="btn btn-primary btn-block" style="margin-top:8px;" id="assignBtn" onclick="assignSelectedShape()">分配到区域</button>
@@ -273,7 +273,7 @@
                 <!-- DXF Import History -->
                 <div class="panel">
                     <div class="panel-title"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-clipboard"/></svg> DXF导入记录</div>
-                    <select id="dxfHistorySelect" style="width:100%;padding:6px 8px;border:1px solid var(--color-surface-dark);border-radius:6px;font-size:0.82rem;background:var(--color-surface);" onchange="showDxfHistory()">
+                    <select id="dxfHistorySelect" aria-label="选择 DXF 导入记录" style="width:100%;padding:6px 8px;border:1px solid var(--color-surface-dark);border-radius:6px;font-size:0.82rem;background:var(--color-surface);" onchange="showDxfHistory()">
                         <option value="">-- 选择已导入的区域 --</option>
                     </select>
                     <div id="dxfHistoryInfo" style="margin-top:6px;"></div>

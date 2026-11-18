@@ -158,7 +158,7 @@
                     <label style="display:flex;align-items:center;gap:4px;font-size:0.82rem;color:var(--color-text-secondary);">
                         颜色
                         <input type="color" id="boundary_color" value="#52B788" style="width:28px;height:24px;padding:0;border:none;cursor:pointer;">
-                        <input type="text" id="boundary_color_text" value="#52B788" style="width:70px;font-size:0.8rem;padding:2px 4px;border:1px solid var(--color-surface-dark);border-radius:4px;" pattern="^#[0-9A-Fa-f]{6}$" maxlength="7">
+                        <input type="text" id="boundary_color_text" aria-label="区域边界颜色（十六进制）" value="#52B788" style="width:70px;font-size:0.8rem;padding:2px 4px;border:1px solid var(--color-surface-dark);border-radius:4px;" pattern="^#[0-9A-Fa-f]{6}$" maxlength="7">
                     </label>
                 </div>
             </div>
@@ -202,7 +202,7 @@
         <div class="batch-sidebar">
             <div class="sidebar-card">
                 <h3>选择片区</h3>
-                <select id="patchSelect" class="sidebar-select">
+                <select id="patchSelect" aria-label="所属片区" class="sidebar-select">
                     <option value="">-- 请选择片区 --</option>
                     {% for patch in patches %}
                     <option value="{{ patch.id }}">{{ patch.name }} ({{ patch.code }})</option>
