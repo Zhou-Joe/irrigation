@@ -126,6 +126,9 @@ def user_rows(request,rows):
     if current:
         for member in Membership.objects.filter(team__business=current.team.business).select_related('team__business').order_by('active','pk'):
             member_map[member.user_id]=member
+    # A person stays enabled while ANY business membership is active; only an
+    # explicit disable (account or every membership) marks them inactive.
+    enabled=set(Membership.objects.filter(active=True,team__active=True,team__business__active=True).values_list('user_id',flat=True))
     seen=set();result=[]
     for row in rows:
         identifier=row['user_id']
@@ -139,7 +142,7 @@ def user_rows(request,rows):
             row.update(can_edit=editable_account(request,user),is_administrator=administrator(user),
                        admin_business=grant.business.code if grant and grant.business_id else 'general')
             if administrator(user):row['role_display']=grant.business.name+'管理员' if grant and grant.business_id else '通用管理员'
-            elif user.pk in member_map:row['active']=row['active'] and member_map[user.pk].active
+            elif user.pk in member_map:row['active']=row['active'] and (member_map[user.pk].active or user.pk in enabled)
         else:row['can_edit']=is_general(request.user)
         result.append(row)
     for user in people.values():
@@ -149,6 +152,6 @@ def user_rows(request,rows):
         label=(grant.business.name+'管理员' if grant and grant.business_id else '通用管理员') if admin else dict(Membership.display_role_choices(member.team.business.code)).get(member.role,'成员')
         result.append(dict(profile_type='account',profile_id=user.pk,user_id=user.pk,username=user.username,
             full_name=user.get_full_name() or user.username,employee_id='',phone='',department='',role='manager' if admin else {'manager':'manager','field':'field_worker','viewer':'dept_user','requester':'dept_user'}[member.role],
-            role_display=label,active=user.is_active and (member.active if member and not admin else True),
+            role_display=label,active=user.is_active and (admin or not member or member.active or user.pk in enabled),
             can_edit=editable_account(request,user),is_administrator=admin,admin_business=grant.business.code if grant and grant.business_id else 'general',drawn_zones=0))
     return sorted(result,key=lambda item:item['full_name'])
