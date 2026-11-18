@@ -6,7 +6,7 @@
 {% block nav_irrigation_m %}active{% endblock %}
 
 {% block extra_css %}
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<link rel="stylesheet" href="{% static 'vendor/leaflet/leaflet.css' %}?v=1.9.4" />
 <style>
 .irrig-scope-note { margin:0 0 12px;font-size:13px;color:var(--color-text-muted); }
 .irrig-scope-note strong { color:var(--color-primary); }
@@ -1071,7 +1071,7 @@
 {{ ccu_navigation|json_script:"initial-ccu-navigation" }}
 <script src="{% static 'js/irrigation-scope.js' %}?v=20261027ccu1"></script>
 <script src="{% static 'js/irrigation-colors.js' %}?v=20261027quantile1"></script>
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="{% static 'vendor/leaflet/leaflet.js' %}?v=1.9.4"></script>
 <script src="{% static 'js/irrig-heatmap.js' %}?v=20261027quantile1"></script>
 <script>
 function toggleExportMenu(event) {

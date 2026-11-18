@@ -1845,17 +1845,7 @@
                 const dia = v.diameter || 20;
                 const size = Math.max(13, Math.min(18, 9 + dia / 10));
                 const watered = !!v.watered_today;
-                // Watered: solid green diamond. Not watered: hollow gray (white fill, gray border).
-                const fill = watered ? '#2D6A4F' : '#ffffff';
-                const border = watered ? '#ffffff' : '#5a5a5a';
-                const ring = watered ? '#52B788' : '#8a8a8a';
-                const vm = L.marker(pt, {
-                    icon: L.divIcon({
-                        className: 'pipe-valve-marker',
-                        html: `<div style="width:${size}px;height:${size}px;background:${fill};border:2.5px solid ${ring};border-radius:50%;box-shadow:0 0 0 1.5px ${border},0 1px 4px rgba(0,0,0,0.5);"></div>`,
-                        iconSize: [size, size], iconAnchor: [size / 2, size / 2]
-                    })
-                });
+                const vm = L.marker(pt, window.IrrigationValveIcons.options(v.valve_type, {watered, size:Math.max(16,size)}));
                 // Zone label: "名称 代号" (e.g. "BOH 1-1-1"); fall back to whichever exists.
                 const zLabel = [v.zone_name, v.zone_code].filter(x => x).join(' ') || '查看区域';
                 const zLink = v.zone_id ? `<a href="/zone/${v.zone_id}/detail/" style="color:#1B4332;">${escapeHtml(zLabel)} ↗</a>` : '无';
@@ -1921,9 +1911,15 @@
                 }).bindTooltip(escapeHtml(symbol.name)).addTo(cadSymbolsLayerGroup));
             });
             (batch.unmatched_valves || []).forEach(valve => {
-                L.circleMarker([valve.lat, valve.lng], {
-                    radius: 6, color: '#a65d00', fillColor: '#ffc65a', fillOpacity: 1
-                }).bindPopup(`<b>待挂接设备 · ${escapeHtml(valve.block)}</b><div>${escapeHtml(valve.reason)}</div><small>${escapeHtml(batch.name + ' · ' + valve.source_id)}</small>`)
+                const edit = document.getElementById('pipelineEditorLink');
+                const url = edit ? new URL(edit.href) : null;
+                if (url) {
+                    url.searchParams.set('batch',batch.batch_id);
+                    url.searchParams.set('source',valve.source_id);
+                }
+                const kind = window.IrrigationValveIcons.label(valve.type);
+                L.marker([valve.lat,valve.lng],window.IrrigationValveIcons.options(valve.type,{pending:true}))
+                    .bindPopup(`<b>待挂接 · ${escapeHtml(kind)} · ${escapeHtml(valve.block)}</b><div>此设备尚未关联管道，可选择目标管线后挂接。区域编号可另行选择。</div><small>${escapeHtml(batch.name+' · '+valve.source_id)}</small>${url ? '<div><a href="'+escapeHtml(url.href)+'">地图挂接或调整位置</a></div>' : ''}`)
                     .addTo(cadUnmatchedLayerGroup);
             });
         });

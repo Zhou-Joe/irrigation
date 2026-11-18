@@ -314,7 +314,7 @@
                 <h2>{% include "core/_section_toggle.html" with control_id="pipelineIndicator" target_id="pipelineBody" label="管道管理" %} 管道管理</h2>
                 <div class="header-actions" onclick="event.stopPropagation()">
                     <a href="{% url 'core:pipeline_new' %}" class="btn btn-sm btn-primary" target="_blank">+ 新建</a>
-                    <a href="{% url 'core:pipeline_dxf_import' %}" class="btn btn-sm btn-secondary" target="_blank"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-upload"/></svg> DXF导入</a>
+                    <a class="btn btn-sm pdxf-btn pdxf-btn-secondary" href="{% url 'core:pipeline_editor' %}">电脑绘制与设备挂接</a> <a href="{% url 'core:pipeline_dxf_import' %}" class="btn btn-sm btn-secondary" target="_blank"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-upload"/></svg> DXF导入</a>
                 </div>
             </div>
             {% if pipelines or pipeline_batches %}

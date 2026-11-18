@@ -1037,6 +1037,9 @@ def _attach_valves(valves, block_specs, all_paths, to_latlng,
         spec = (block_specs or {}).get(v['block'])
         if not spec or not spec.get('include'):
             continue
+        vtype = spec.get('valve_type')
+        if vtype not in dict(PipeValve.VALVE_TYPE_CHOICES):
+            vtype = PipeValve.VALVE_SOLENOID
         best = None
         for (pi, si), a, b in grid.candidates(v['x'], v['y']):
             d = _dist_to_seg(v['x'], v['y'], a[0], a[1], b[0], b[1])
@@ -1044,7 +1047,7 @@ def _attach_valves(valves, block_specs, all_paths, to_latlng,
                 best = (d, pi)
         if best is None:
             skipped_valves += 1
-            unmatched.append(dict(v, block=v.get('display_name',v['block']),
+            unmatched.append(dict(v, block=v.get('display_name',v['block']), valve_type=vtype,
                                   reason='距所选管线超过 1.5 m，待人工挂接'))
             continue
         _, pi = best
@@ -1062,8 +1065,6 @@ def _attach_valves(valves, block_specs, all_paths, to_latlng,
             if hit:
                 name = hit[1][:50]   # PipeValve.name 上限 50
                 labeled_valves += 1
-        vtype = spec.get('valve_type') if spec.get('valve_type') in \
-            dict(PipeValve.VALVE_TYPE_CHOICES) else PipeValve.VALVE_SOLENOID
         zid = zone_of(lat, lng)
         station_id = None
         vdia = diameter   # 默认继承所在管线的管径
@@ -1275,37 +1276,59 @@ def import_dxf_pipelines(layer_specs, block_specs, uploaded_file=None,
 
 def build_cad_reference_payload():
     """Independent, retained CAD reference/annotation/unmatched-asset overlays."""
-    from core.models import PipelineImportBatch
+    from core.models import PipelineImportBatch, PipeValve
+    from .pipeline_editor import batch_projection, pending_feature
+    placed = defaultdict(dict)
+    for attrs, point_value, pipe_batch in PipeValve.objects.exclude(source_attributes={}).values_list(
+            'source_attributes', 'point', 'pipeline__import_batch_id'):
+        if attrs.get('source_id') and point_value and isinstance(point_value[0], dict):
+            placed[attrs.get('cad_batch_id') or pipe_batch][attrs['source_id']] = point_value[0]
     result = []
     for batch in PipelineImportBatch.objects.exclude(source_geometry={}):
-        snapshot = batch.applied_calibration or batch.calibration_snapshot
-        if not snapshot:
+        point = batch_projection(batch)
+        if point is None:
             continue
-        fn, _ = _local_to_latlng_fn(snapshot)
-        if fn is None:
-            continue
-        off_lat, off_lng = batch.import_options.get('offset', [0, 0])
-        def point(x, y, precision=6):
-            lat, lng = fn(x, y)
-            return {'lat': round(lat + off_lat, precision), 'lng': round(lng + off_lng, precision)}
         source = batch.source_geometry
         from .dxf_symbols import inline_text
         recognized=source.get('recognized_shapes',[])
+        offsets = {v['source_id']:v['manual_offset'] for v in source.get('unmatched_valves', [])
+                   if v.get('manual_offset') and v.get('source_id')}
+        for device in [*source.get('valves', []), *recognized]:
+            sid = device.get('source_id') or device.get('id')
+            current = placed[batch.pk].get(sid)
+            if current:
+                base = point(device['x'], device['y'])
+                offsets[sid] = [current[k]-base[k] for k in ('lat','lng')]
+        def shifted(x, y, precision, sid):
+            pos = point(x, y, precision)
+            while sid:
+                if sid in offsets:
+                    dy, dx = offsets[sid]
+                    return {'lat':round(pos['lat']+dy,precision), 'lng':round(pos['lng']+dx,precision)}
+                sid = sid.rpartition('/')[0]
+            return pos
+        def layer_path(name, bucket, index, path):
+            if not name.startswith(INSERT_EXPLODE_PREFIX):
+                return [point(x,y) for x,y in path]
+            entities = bucket.get('entities', [])
+            sid = entities[index].get('source_id','') if index < len(entities) else ''
+            return [shifted(x,y,8,sid) for x,y in path]
+        label_shapes = {ref:shape['id'] for shape in recognized for ref in shape.get('label_refs',[])}
         removed={(ref['layer'],ref['index']) for shape in recognized for ref in shape['source_refs']}
         symbol_labels={ref for shape in recognized for ref in shape.get('label_refs',[])}|set(source.get('symbol_label_refs',[]))
         result.append({
             'batch_id': batch.id, 'name': batch.name,
             'layers': [{'layer': name, 'paths': [
-                [point(x, y, 8 if name.startswith(INSERT_EXPLODE_PREFIX) else 6) for x, y in path]
+                layer_path(name, bucket, index, path)
                 for index,path in enumerate(bucket['polys']) if (name,index) not in removed]}
                        for name, bucket in source.get('layers', {}).items()],
             'symbols':[{'id':shape['id'],'name':shape.get('text') or shape['template_name'],
-                'paths':[[point(x,y,8) for x,y in source['layers'][ref['layer']]['polys'][ref['index']]]
+                'paths':[[shifted(x,y,8,shape['id']) for x,y in source['layers'][ref['layer']]['polys'][ref['index']]]
                          for ref in shape['source_refs']]} for shape in recognized],
-            'labels': [dict(lb, **point(lb['x'], lb['y'],8 if inline_text(lb) or lb.get('source_id') in symbol_labels else 6),
+            'labels': [dict(lb, **shifted(lb['x'], lb['y'],8 if inline_text(lb) or lb.get('source_id') in symbol_labels else 6, label_shapes.get(lb.get('source_id'),lb.get('source_id'))),
                             inline_symbol=inline_text(lb) or lb.get('source_id') in symbol_labels)
                        for lb in source.get('labels', [])],
-            'unmatched_valves': [dict(v, **point(v['x'], v['y']))
+            'unmatched_valves': [pending_feature(batch, v, point)
                                  for v in source.get('unmatched_valves', [])],
             'unsupported': source.get('metadata', {}).get('diagnostics', []),
         })

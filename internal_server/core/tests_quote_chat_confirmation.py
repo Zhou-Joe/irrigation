@@ -30,6 +30,24 @@ class QuoteChatConfirmationTests(TestCase):
     def save(self):
         return self.client.post('/inventory/quotes/confirm/', self.payload)
 
+    def test_purchase_import_requires_quantity_and_creates_one_order_on_replay(self):
+        from .models import PurchaseOrder
+        row = json.loads(self.payload['items'])[0]
+        self.payload.update(destination='order', order_number='IR-145')
+        self.assertEqual(self.save().status_code, 400)
+        self.assertFalse(PurchaseOrder.objects.exists())
+        self.payload['items'] = json.dumps([{**row, 'quantity': 8}])
+        first = self.save()
+        self.assertEqual(first.status_code, 200, first.content)
+        self.assertEqual(self.save().json()['order_id'], first.json()['order_id'])
+        po = PurchaseOrder.objects.get(order_number='IR-145')
+        self.assertEqual(po.purchase_date.isoformat(), self.payload['quote_date'])
+        self.assertIsNone(po.received_date)
+        line = po.planned_lines.get()
+        self.assertEqual((line.category, line.quantity, line.supplier), (self.part, 8, 'Vendor A'))
+        self.assertEqual(str(line.unit_price), '12.50')
+        self.assertFalse(InventoryPriceRecord.objects.exists())
+
     def test_reviewed_save_and_retries_create_one_price_and_verified_chat_receipt(self):
         first, second = self.save(), self.save()
         self.assertEqual(first.status_code, 200, first.content)

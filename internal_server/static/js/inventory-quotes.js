@@ -117,6 +117,7 @@
         card.append(title, status, pause, source, review, result); host.append(card);
         const state = {phase:'source', controller:null, payload:null, token:null, key:null, rows:[], catalog:[],
             supplierChoice:'pending', supplierName:'', sourceMode:file ? 'file' : 'text'};
+        let destination, orderNumber;
         let disposed = false, selectedFile = file, lastMessage = '', savedResult = null;
         const notify = () => { if (!disposed) { onChange(); onBusy(); } };
         function setStatus(message, kind = '') {
@@ -132,8 +133,7 @@
             sourceFields.disabled = !enabled || state.phase === 'extracting';
             const fields = review.querySelector('fieldset');
             if (fields) fields.disabled = !enabled || ['saving','uncertain','checking'].includes(state.phase);
-            if (confirmButton) confirmButton.disabled = !enabled || state.phase === 'saving' || state.phase === 'checking' ||
-                state.phase !== 'uncertain' && (state.supplierChoice === 'pending' || !supplier?.value.trim() || state.rows.some(unresolved) || !state.rows.some(row => row.action !== 'skip'));
+            if (confirmButton) confirmButton.disabled = !enabled || ['saving', 'checking'].includes(state.phase);
         }
         async function request(url, body, signal) {
             let response;
@@ -245,6 +245,11 @@
             if (readiness) {
                 const missing = [];
                 if (state.supplierChoice === 'pending' || !supplier.value.trim()) missing.push('选择历史供应商，或明确按填写的名称记录');
+                if (destination?.value === 'order') {
+                    if (!orderNumber.value.trim()) missing.push('填写灌溉订单编号');
+                    if (state.rows.some(row=>row.action !== 'skip' && !/^[1-9]\d{0,8}$/.test(row.quantity || ''))) missing.push('填写计划采购数量');
+                }
+                if (!quoteDate?.value) missing.push('填写日期');
                 if (pending) missing.push('完成 ' + pending + ' 行部件匹配 / 新建 / 跳过选择');
                 if (!state.rows.some(row => row.action !== 'skip')) missing.push('至少保留一项报价');
                 readiness.textContent = missing.length ? '确认前请先' + missing.join('；') + '。' : '匹配选择已完成，核对价格与日期后可确认写入。';
@@ -324,16 +329,24 @@
         function renderReview(data) {
             review.replaceChildren(); review.hidden = false;
             const fields = el('fieldset'), meta = el('div', 'ivq-meta-grid');
-            quoteDate = input(data.quote_date, {type:'date', required:true});
+            destination = el('select');
+            destination.add(new Option('供应商报价', 'quote'));
+            destination.add(new Option('采购订单', 'order'));
+            destination.value = data.destination === 'order' ? 'order' : 'quote';
+            orderNumber = input(data.order_number || ''); orderNumber.maxLength = 100;
+            const numberField = field('灌溉订单编号', orderNumber);
+            quoteDate = input(destination.value === 'order' ? data.purchase_date : data.quote_date, {type:'date', required:true});
+            const dateField = field('日期', quoteDate);
+            meta.append(field('写入目标', destination), numberField);
             const supplierField = el('div','ivq-field'); supplierField.append(el('span','','供应商（必填）'),supplierControl(data));
-            meta.append(supplierField, field('报价日期（必填）', quoteDate)); fields.append(meta);
+            meta.append(supplierField, dateField); fields.append(meta);
             summary = el('p', 'ivq-summary'); fields.append(summary);
             if (Array.isArray(data.warnings) && data.warnings.length) {
                 const warning = el('details', 'ivq-warnings'); warning.open = true;
                 warning.append(el('summary', '', '提取提示 · ' + data.warnings.length));
                 const list = el('ul'); data.warnings.forEach(message => list.append(el('li', '', message))); warning.append(list); fields.append(warning);
             }
-            fields.append(el('p', 'ivq-hint', '优先核对推荐的现有部件与历史供应商。待选择项目须明确匹配、新建或跳过；新建时可选择上级目录。匹配部件只添加本次历史报价，不移动或改名，也不替换原报价单价。'));
+            const quoteHint = el('p', 'ivq-hint', '优先核对推荐的现有部件与历史供应商。待选择项目须明确匹配、新建或跳过；新建时可选择上级目录。匹配部件只添加本次历史报价，不移动或改名，也不替换原报价单价。'); fields.append(quoteHint);
             const rows = el('div', 'ivq-rows'); state.rows.forEach((row, index) => rows.append(renderRow(row, index))); fields.append(rows);
             const warning = el('p', 'ivq-commit-note', '请核对供应商、日期、部件与单价。下方按钮会正式新建部件并记录报价。');
             readiness = el('p','ivq-readiness'); readiness.setAttribute('role','status'); readiness.setAttribute('aria-live','polite');
@@ -342,6 +355,26 @@
             editSource.onclick = () => { review.hidden = true; source.hidden = false; phase('source'); setStatus('可更换报价内容并重新提取；原预览未写入。'); syncEnabled(); notify(); };
             discard.onclick = cancelDraft; actions.append(discard, editSource);
             fields.append(actions); review.append(fields, warning, readiness, confirmButton); countSummary();
+            const dates = {order:data.purchase_date || '', quote:data.quote_date || ''};
+            let previous = destination.value;
+            function syncTarget() {
+                const order = destination.value === 'order';
+                numberField.hidden = !order;
+                orderNumber.disabled = !order; orderNumber.required = order;
+                dateField.firstChild.textContent = order ? '采购日期（必填）' : '报价日期（必填）';
+                quoteHint.hidden = order;
+                title.querySelector('strong').textContent = order ? '采购订单导入' : '报价提取';
+                warning.textContent = order ? '确认后将创建采购订单和计划物料，库存数量保持原值。' : '确认后将记录供应商报价。';
+                review.querySelectorAll('[data-order-quantity]').forEach(label => {
+                    label.hidden = !order; label.querySelector('input').disabled = !order;
+                });
+            }
+            destination.onchange = () => {
+                dates[previous] = quoteDate.value; previous = destination.value;
+                quoteDate.value = dates[previous]; syncTarget(); countSummary();
+            };
+            quoteDate.oninput = orderNumber.oninput = countSummary;
+            syncTarget(); countSummary();
             review.onsubmit = event => { event.preventDefault(); confirm(); };
         }
         function renderRow(row, index) {
@@ -433,6 +466,12 @@
                 const unit = input(row.unit), price = input(row.unit_price);
                 unit.oninput = () => { row.unit = unit.value; }; price.inputMode = 'decimal'; price.placeholder = '如 12.50';
                 price.oninput = () => { row.unit_price = price.value; price.setCustomValidity(''); };
+                const qty = input(row.quantity || '', {type:'number',required:true});
+                qty.min = '1'; qty.max = '999999999'; qty.step = '1';
+                qty.oninput = () => { row.quantity = qty.value; countSummary(); };
+                const qtyField = field('计划采购数量', qty);
+                qtyField.dataset.orderQuantity = '';
+                qty.disabled = destination.value !== 'order'; qtyField.hidden = qty.disabled; fields.append(qtyField);
                 fields.append(field('单位', unit), field('单价（元，可留空）', price)); body.append(fields); updatePath();
             }
             action.onchange = () => { row.action = action.value; renderBody(); countSummary(); notify(); };
@@ -452,15 +491,18 @@
                     setStatus('第 ' + index + ' 行单价须为 0～9,999,999,999.99，最多两位小数；也可留空。', 'error'); return null;
                 }
             }
-            return {token:state.token, submission_key:state.key, supplier:state.supplierChoice === 'existing' ? state.supplierName : supplier.value.trim(), quote_date:quoteDate.value, confirmed:'yes',
-                items:JSON.stringify(state.rows.map(row => ({row_id:row.row_id, action:row.action, category_id:row.category_id || '', parent_id:row.parent_id || '', name:row.name.trim(), code:row.code.trim(), unit:row.unit.trim(), unit_price:row.unit_price.trim()})))};
+            return {destination:destination.value, order_number:orderNumber.value.trim(), token:state.token, submission_key:state.key, supplier:state.supplierChoice === 'existing' ? state.supplierName : supplier.value.trim(), quote_date:quoteDate.value, confirmed:'yes',
+                items:JSON.stringify(state.rows.map(row => ({quantity:row.quantity, row_id:row.row_id, action:row.action, category_id:row.category_id || '', parent_id:row.parent_id || '', name:row.name.trim(), code:row.code.trim(), unit:row.unit.trim(), unit_price:row.unit_price.trim()})))};
         }
         function displayResult(data, refresh = true) {
             savedResult = data;
             phase('success'); review.hidden = true; source.hidden = true; result.hidden = false; result.replaceChildren();
             setStatus(data.message || '报价已写入库存。', 'success');
             const created = Array.isArray(data.created_parts) ? data.created_parts : [];
-            result.append(el('p', 'ivq-summary', '新增部件 ' + (created.length || data.created_parts_count || 0) + ' · 添加报价 ' + (data.prices_added || 0) + ' · 已有报价 ' + (data.duplicate_prices || 0)));
+            if (data.order_id) {
+                const link = el('a', 'ivq-summary', '查看采购订单：' + data.order_number);
+                link.href = '/inventory/manage/?tab=orders'; result.append(link);
+            } else result.append(el('p', 'ivq-summary', '新增部件 ' + (created.length || data.created_parts_count || 0) + ' · 添加报价 ' + (data.prices_added || 0) + ' · 已有报价 ' + (data.duplicate_prices || 0)));
             const roots = created.filter(part => !part.parent_id);
             if (roots.length) {
                 result.append(el('p', 'ivq-hint', '以下部件创建时位于根层，可展开查看并关联目录。'));

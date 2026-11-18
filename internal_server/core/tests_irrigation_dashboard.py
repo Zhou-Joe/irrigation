@@ -50,17 +50,17 @@ class IrrigationDefaultWindowTests(TestCase):
         sync=datetime(2026,10,26,23,1,30,tzinfo=dt_timezone.utc)
         DataImportRun.objects.create(status='success',finished_at=sync)
         DataImportRun.objects.create(status='failed',finished_at=datetime(2026,10,27,0,0,tzinfo=dt_timezone.utc))
-        self.assertEqual(_irrig_default_window(),('20261026070130','20261027070130'))
+        self.assertEqual(_irrig_default_window(),('20261026080000','20261027080000'))
         request=RequestFactory().get('/irrigation/')
-        self.assertEqual(_irrig_window(request),('20261026070130','20261027070130','20261025230130','20261026230130'))
+        self.assertEqual(_irrig_window(request),('20261026080000','20261027080000','20261026000000','20261027000000'))
         user=User.objects.create_superuser('irrig-default','','test-only');self.client.force_login(user)
         page=self.client.get('/irrigation/')
-        self.assertEqual(page.context['default_window_dt'],('2026-10-26T07:01:30','2026-10-27T07:01:30'))
+        self.assertEqual(page.context['default_window_dt'],('2026-10-26T08:00:00','2026-10-27T08:00:00'))
 
     def test_without_import_history_falls_back_to_latest_available_runtime(self):
         ccu,_=Patch.objects.get_or_create(code='CCU3',defaults={'name':'TL'})
         MaxicomRuntime.objects.create(site=ccu,station_id_raw=9999,timestamp='20260911230159',run_time=1)
-        self.assertEqual(_irrig_default_window(),('20260911070159','20260912070159'))
+        self.assertEqual(_irrig_default_window(),('20260911080000','20260912080000'))
 
     def test_empty_installation_and_explicit_windows(self):
         with patch('core.views.timezone.now',return_value=datetime(2026,10,27,0,0,tzinfo=dt_timezone.utc)):

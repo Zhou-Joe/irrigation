@@ -1,0 +1,31 @@
+{% extends 'core/base.html' %}{% load static %}
+{% block title %}管网电脑绘制{% endblock %}
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'vendor/leaflet/leaflet.css' %}">
+<style>
+.pipe-editor{display:grid;grid-template-columns:minmax(250px,320px) 1fr;height:calc(100dvh - 52px);color:#203d30}
+.pipe-editor aside{padding:16px;overflow:auto;background:#f6f5ef}
+.pipe-editor h1{font-size:1.2rem}.pipe-editor label{display:grid;gap:4px;margin:12px 0}
+.pipe-editor :is(input,select,button){font:inherit;min-width:0;max-width:100%;padding:8px}
+.pipe-editor fieldset{border:0;padding:0;margin:0}.pipe-editor p{line-height:1.5}.pipe-editor [hidden]{display:none}
+#pipeCanvas{min-height:0;z-index:0}.pipe-editor .vertex-handle{background:white;border:2px solid #24679a;border-radius:50%}
+@media(max-width:768px){.pipe-editor{grid-template-columns:1fr;grid-template-rows:minmax(0,42%) 1fr;height:calc(100dvh - var(--pwa-header-height) - var(--pwa-nav-height))}}
+</style>
+{% endblock %}
+{% block content %}
+<main class="pipe-editor"><aside><h1>管网电脑绘制</h1>
+<fieldset id="pipeControls" disabled>{% csrf_token %}
+<label>查找管线或设备<input id="pipeSearch" type="search" placeholder="名称、编号或图纸来源"></label>
+<label>地图对象<select id="pipeObject"><option value="">选择管线或设备</option></select></label>
+<p id="editHint">点选地图对象，或从列表中选择。</p>
+<div id="pendingFields" hidden><label>挂接到管道<select id="targetPipe"><option value="">仅调整设备位置</option></select></label>
+<label>设备类型<select id="valveKind"><option value="">请选择</option>{% for value,name in valve_types %}<option value="{{ value }}">{{ name }}</option>{% endfor %}</select></label>
+<label>控制区域（可选）<select id="targetZone"><option value="">未指定</option></select></label></div>
+<button type="button" id="saveGeo" disabled>保存</button> <button type="button" id="resetGeo" disabled>撤销本次修改</button>
+</fieldset><p id="editStatus" role="status">正在加载管网…</p>
+<a href="{% url 'core:pipeline_new' %}">绘制新管道</a> · <a href="{% url 'core:dashboard' %}">返回首页</a>
+</aside><div id="pipeCanvas" aria-label="管网卫星地图"></div></main>
+{% endblock %}
+{% block extra_js %}<script src="{% static 'vendor/leaflet/leaflet.js' %}"></script>
+<script src="{% static 'js/valve-icons.js' %}?v=20261119fb1"></script>
+<script src="{% static 'js/pipeline-editor.js' %}?v=20261119fb1"></script>{% endblock %}

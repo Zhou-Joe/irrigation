@@ -1895,7 +1895,7 @@ def search_inventory_parts(query: str = '', code: str = '', supplier: str = '',
 @tool(response_format='content_and_artifact')
 def prepare_inventory_quote(attachment_id: str = '', attachment_ids: list[str] | None = None,
                              runtime: ToolRuntime = None) -> tuple[str, dict]:
-    """用户明确要求提取、匹配或导入报价时，准备人工确认卡片，绝不写业务数据库。
+    """用户明确要求提取、匹配或导入报价或采购订单时，准备人工确认卡片，绝不写业务数据库。
 
     attachment_id/attachment_ids必须是本对话附件ID。未传ID时使用本轮附件，或用户本轮原始文字。
     保留原单供应商、日期、部件及来源层级，优先推荐已有供应商与部件候选。
@@ -1953,6 +1953,8 @@ def prepare_inventory_quote(attachment_id: str = '', attachment_ids: list[str] |
         if len(document) > MAX_DOCUMENT:
             raise ValueError('本次报价全文合计超过 60,000 字，请拆分后处理。')
         draft = build_quote_draft(user, document, source, images=images)
+        question = ctx.get('original_question', '')
+        draft['destination'] = 'order' if '订单' in question and any(word in question for word in ('采购订单','导入订单','订单导入')) else 'quote'
         matched = sum(1 for row in draft['items'] if row.get('category_id') or row.get('suggested_category_id'))
         candidates = sum(1 for row in draft['items'] if row.get('candidates'))
         summary = {'status': 'awaiting_user_confirmation', 'items': len(draft['items']),
@@ -2102,7 +2104,7 @@ def build_agent():
         '- 本轮附件清单和开头摘录放在用户消息。使用 list_chat_attachments 查看本对话附件，用 read_chat_attachment 按ID分页读取完整内容；不要声称已读未提供的后半文档。\n'
         '- 图片由系统实际传入视觉消息；历史图片追问可先 read_chat_attachment 对应图片ID，系统会在下一次模型调用提供图片。只看元数据不能声称看过图。\n'
         '- CSV/XLSX/JSON 附件的 analysis_name 是私有计算工作区相对文件名，可用 run_python_code 的 pd.read_csv/read_excel 或 json 读取，不能猜测服务器路径。\n'
-        '- 用户明确要求提取、导入或匹配报价时才调用 prepare_inventory_quote；可先用 search_inventory_parts 按编码、名称、目录、供应商和报价日期查看真实部件及历史价格。\n'
+        '- 用户明确要求提取、导入或匹配报价、采购订单时调用 prepare_inventory_quote；可先用 search_inventory_parts 按编码、名称、目录、供应商和报价日期查看真实部件及历史价格。\n'
         '- prepare_inventory_quote 生成待确认卡片。用户核对并补全供应商、日期、部件选择后，可以点击卡片“确认写入”，也可以在当前对话明确输入“确认写入”或“确认保存报价”；聊天界面会通过同一个有权限校验的报价确认入口保存，成功后提供真实回执。对有权限的用户，不要把该流程误说成没有写入工具或只能分析；若服务端明确返回权限错误，则如实说明原因。\n'
         '- 正式保存由用户确认操作执行，不能用代码、HTTP或其他工具绕过；没有成功回执时不得声称已保存。存在待选择项时，说明需核对哪项并引导补全卡片；多份待确认报价须由用户选择对应卡片，不能猜测保存哪份。\n'
         '- 优先核对卡片中的已有供应商与部件候选及匹配理由；未确定项保持待选择，不能将其描述为默认新建。原报价层级只供核对，已有部件沿用系统目录；仅用户明确选择新建时，才使用其选择的目录或根层。缺失供应商、日期、金额不能猜。\n'

@@ -2,7 +2,7 @@
 {% load static %}
 {% block title %}导入管网 - 灌溉管理系统{% endblock %}
 {% block extra_css %}
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="{% static 'vendor/leaflet/leaflet.css' %}?v=1.9.4">
 <link rel="stylesheet" href="{% static 'css/dxf-import.css' %}?v=20261117symbols3">
 {% endblock %}
 {% block content %}
@@ -73,7 +73,7 @@
     <footer class="pdxf-footer"><div id="pdxfWorkflowHint" class="pdxf-muted" aria-live="polite">先上传并解析图纸</div><div class="pdxf-action-row"><button id="pdxfBackBtn" class="pdxf-btn pdxf-btn-secondary" onclick="pdxfGoStep(pdxfBatchMode ? 1 : pdxfStep-1)" hidden>上一步</button><button id="pdxfNextBtn" class="pdxf-btn pdxf-btn-primary" onclick="pdxfGoStep(pdxfStep+1)" disabled>下一步</button></div></footer>
   </aside>
   <main class="pdxf-workspace">
-    <div class="pdxf-workspace-head"><div><strong id="pdxfDrawingName">CAD 原图与地图</strong><span id="pdxfMapStatus">等待上传图纸</span></div><a class="pdxf-btn pdxf-btn-secondary" href="{% url 'core:settings' %}">管网管理</a></div>
+    <div class="pdxf-workspace-head"><div><strong id="pdxfDrawingName">CAD 原图与地图</strong><span id="pdxfMapStatus">等待上传图纸</span></div><a class="btn btn-sm pdxf-btn pdxf-btn-secondary" href="{% url 'core:pipeline_editor' %}">电脑绘制与设备挂接</a> <a class="pdxf-btn pdxf-btn-secondary" href="{% url 'core:settings' %}">管网管理</a></div>
     <div class="pdxf-map-tools" aria-label="预览显示"><label><input id="pdxfShowOverlay" type="checkbox" checked onchange="pdxfToggleOverlay()">CAD 叠图</label><label><input id="pdxfShowReference" type="checkbox" checked onchange="pdxfRefreshMap()">原图参考线</label><label><input id="pdxfShowDevices" type="checkbox" checked onchange="pdxfRefreshMap()">设备</label><label><input id="pdxfShowNotes" type="checkbox" onchange="pdxfRefreshMap()">标注（放大显示）</label><label><input id="pdxfShowExisting" type="checkbox" onchange="pdxfShowExisting()">已有管网（虚线）</label><label class="pdxf-opacity">叠图透明度<input id="pdxfOpacity" type="range" min="20" max="100" value="70" oninput="pdxfRefreshMap()"></label><button class="pdxf-btn pdxf-btn-secondary" onclick="pdxfFitDrawing()">查看全图</button><button class="pdxf-btn pdxf-btn-secondary" onclick="pdxfOpenOriginal()">查看 CAD 原图</button></div>
     <div class="pdxf-map-grid">
       <section class="pdxf-map-panel"><div class="pdxf-map-caption"><b>CAD + 卫星地图</b><span id="pdxfSatelliteHint">按当前预览直接导入，或选择精确对齐</span></div><div class="pdxf-map-area"><div id="pdxfMap"></div><div id="pdxfCadEmpty" class="pdxf-empty"><b>在地图上预览 CAD</b><span>解析后调整叠图位置，可直接导入，也可选择精确对齐。</span></div></div></section>
@@ -92,7 +92,7 @@
 </dialog>
 {% endblock %}
 {% block extra_js %}
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="{% static 'vendor/leaflet/leaflet.js' %}?v=1.9.4"></script>
 {{ pipeline_types|json_script:'pipeline-type-options' }}
 <script>
 window.__DXF__ = {urls: {

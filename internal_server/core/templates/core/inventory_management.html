@@ -740,7 +740,9 @@ table.iv-ledger .lvl-tag.warn { background: #fdf6ec; color: #cc7722; }
       <input type="text" id="poFpo_number" class="iv-input" placeholder="PO号（可选）" autocomplete="off">
       <label class="iv-field">PO未税金额</label>
       <input type="number" id="poFpo_amount_untaxed" class="iv-input" placeholder="金额（可选）" step="0.01" min="0">
-      <label class="iv-field">收货日期</label>
+      <label class="iv-field" for="poFpurchase_date">采购日期</label>
+      <input type="date" id="poFpurchase_date" class="iv-input">
+      <label class="iv-field" for="poFreceived_date">收货日期</label>
       <input type="date" id="poFreceived_date" class="iv-input">
       <label class="iv-field">项目名称</label>
       <select id="poFproject" class="iv-input"><option value="">— 不关联项目 —</option></select>
@@ -1126,7 +1128,7 @@ function poBuildRows(p) {
         '<td class="po-t-order">' + _poEsc(p.order_number) + stateChip + '</td>' +
         '<td>' + (p.po_number ? _poEsc(p.po_number) : '—') + '</td>' +
         '<td>' + _poEsc(p.project_name || '—') + '</td>' +
-        '<td>' + _poEsc(p.received_date || '—') + '</td>' +
+        '<td>' + _poEsc(p.received_date || '—') + (p.purchase_date ? '<small style="display:block">采购：' + _poEsc(p.purchase_date) + '</small>' : '') + '</td>' +
         '<td class="num">' + (p.po_amount_untaxed ? '¥' + _poEsc(p.po_amount_untaxed) : '—') + '</td>' +
         '<td class="num">' + (p.planned_lines ? p.planned_lines.length : 0) + '</td>' +
         '<td class="num">' + (p.txn_count || 0) + '</td>' +
@@ -1242,6 +1244,7 @@ function poOpenCreate() {
     document.getElementById('poForder_number').value = '';
     document.getElementById('poFpo_number').value = '';
     document.getElementById('poFpo_amount_untaxed').value = '';
+    document.getElementById('poFpurchase_date').value = '';
     document.getElementById('poFreceived_date').value = '';
     document.getElementById('poFproject').value = '';
     document.getElementById('poFproject_name').value = '';
@@ -1261,6 +1264,7 @@ function poOpenEdit(id) {
     document.getElementById('poForder_number').value = p.order_number;
     document.getElementById('poFpo_number').value = p.po_number;
     document.getElementById('poFpo_amount_untaxed').value = p.po_amount_untaxed;
+    document.getElementById('poFpurchase_date').value = p.purchase_date || '';
     document.getElementById('poFreceived_date').value = p.received_date || '';
     // Project: select the matching option and sync hidden fields.
     _poSelectProjectByName(p.project_name);
@@ -1281,6 +1285,7 @@ function poSubmit() {
     fd.append('order_number', order_number);
     fd.append('po_number', document.getElementById('poFpo_number').value.trim());
     fd.append('po_amount_untaxed', document.getElementById('poFpo_amount_untaxed').value.trim());
+    fd.append('purchase_date', document.getElementById('poFpurchase_date').value.trim());
     fd.append('received_date', document.getElementById('poFreceived_date').value.trim());
     fd.append('project_name', document.getElementById('poFproject_name').value.trim());
     fd.append('project_code', document.getElementById('poFproject_code').value.trim());

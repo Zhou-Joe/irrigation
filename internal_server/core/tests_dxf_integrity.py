@@ -349,6 +349,38 @@ class ImportIntegrityTests(TestCase):
         self.assertEqual(len(payload['cad_reference'][0]['unmatched_valves']), 1)
         self.assertEqual(payload['cad_reference'][0]['labels'][0]['text'], note.strip())
 
+    def test_move_then_attach_preserves_device_type_and_moves_its_visible_cad_block(self):
+        def build(doc):
+            doc.modelspace().add_line((18100,-10100),(18120,-10120),dxfattribs={'layer':'100'})
+            block=doc.blocks.new('tap'); block.add_circle((0,0),1)
+            doc.modelspace().add_blockref('tap',(18000,-10000))
+        data = self.analyze(drawing(build))
+        utils.import_dxf_pipelines({'100':{'include':True}}, {'tap':{'include':True,'valve_type':'qcv'}},
+            token=data['token'], preview_token=data['preview_token'], imported_by=self.user)
+        batch = PipelineImportBatch.objects.get()
+        pipe = batch.pipelines.get()
+        source = utils.build_cad_reference_payload()[0]
+        device = source['unmatched_valves'][0]
+        pos = {k:device[k] for k in ('lat','lng')}
+        url = f'/pipelines/edit/pending/{batch.pk}/'
+        moved = dict(pos, lat=round(pos['lat']+.0001,7))
+        body = dict(moved, original=json.dumps(pos), source_id=device['source_id'])
+        self.assertEqual(self.client.post(url,body).status_code,200)
+        self.assertEqual(self.client.post(url,body).status_code,409)
+        body.update(original=json.dumps(moved), pipeline=pipe.pk)
+        result = self.client.post(url,body)
+        self.assertEqual(result.status_code,200,result.content)
+        valve = pipe.valves.get()
+        self.assertEqual((valve.valve_type,valve.point),('qcv',[moved]))
+        self.assertEqual(self.client.post(url,body).status_code,409)
+        new = utils.build_cad_reference_payload()[0]
+        self.assertEqual(new['unmatched_valves'],[])
+        old_path=next(l['paths'][0] for l in source['layers'] if l['layer'].startswith('块·'))
+        new_path=next(l['paths'][0] for l in new['layers'] if l['layer'].startswith('块·'))
+        self.assertAlmostEqual(new_path[0]['lat']-old_path[0]['lat'],.0001,places=6)
+        page = self.client.get('/pipelines/edit/')
+        self.assertContains(page,'管网电脑绘制')
+
     def test_import_page_renders_batch_controls(self):
         batch = PipelineImportBatch.objects.create(name='Reviewed drawing')
         response = self.client.get('/pipelines/dxf/')

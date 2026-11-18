@@ -221,6 +221,8 @@ def _stream_via_queue(message: str, thread_id: str, user_id=None, attachments=No
                 answer = (f'报价已保存：新增 {int(result.get("created_parts_count", 0))} 个部件、'
                           f'{int(result.get("prices_added", 0))} 条供应商报价记录，'
                           f'跳过 {int(result.get("duplicate_prices", 0))} 条重复价格。')
+                if result.get('order_id'):
+                    answer = f'采购订单 {result["order_number"]} 已保存，可在库存管理的采购订单中查看。'
                 # Persist the verified outcome so later questions know the save
                 # succeeded. A fresh model call cannot contradict the receipt.
                 agent.update_state(config, {'messages': [human, AIMessage(content=answer,

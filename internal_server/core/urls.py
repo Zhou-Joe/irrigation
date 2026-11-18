@@ -49,6 +49,8 @@ router.register(r'regions', RegionViewSet)
 router.register(r'locations', LocationViewSet, basename='location')
 router.register(r'work-reports', WorkReportViewSet, basename='workreport')
 
+from . import pipeline_editor
+
 urlpatterns = [
     path('feedback/', feedback.board, name='feedback'),
     path('feedback/photos/<uuid:photo_id>/', feedback.photo, name='feedback_photo'),
@@ -127,6 +129,8 @@ urlpatterns = [
     path('pipelines/dxf/calibration/clear/', dxf_views.pipeline_dxf_calibration_clear, name='pipeline_dxf_calibration_clear'),
     path('pipelines/dxf/calibration/apply/', dxf_views.pipeline_dxf_calibration_apply, name='pipeline_dxf_calibration_apply'),
     path('pipelines/dxf/import/', dxf_views.pipeline_dxf_import_submit, name='pipeline_dxf_import_submit'),
+    path('pipelines/edit/', pipeline_editor.editor, name='pipeline_editor'),
+    path('pipelines/edit/pending/<int:batch_id>/', pipeline_editor.edit_pending, name='pipeline_edit_pending'),
     path('pipelines/edit/data/', dxf_views.pipeline_edit_data, name='pipeline_edit_data'),
     path('pipelines/edit/pipeline/<int:pipeline_id>/delete/', dxf_views.pipeline_edit_pipeline_delete, name='pipeline_edit_pipeline_delete'),
     path('pipelines/edit/pipeline/<int:pipeline_id>/geometry/', dxf_views.pipeline_edit_geometry, name='pipeline_edit_geometry'),

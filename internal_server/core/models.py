@@ -2038,6 +2038,7 @@ class PurchaseOrder(models.Model):
         'PO未税金额', max_digits=14, decimal_places=2, null=True, blank=True)
     project_name = models.CharField('项目名称', max_length=200, blank=True)
     project_code = models.CharField('项目code', max_length=100, blank=True)
+    purchase_date = models.DateField('采购日期', null=True, blank=True)
     received_date = models.DateField('收货日期', null=True, blank=True,
                                       help_text='采购订单的收货/到货日期')
     is_completed = models.BooleanField('已完成', default=False,

@@ -363,7 +363,8 @@ def pipeline_edit_data(request):
         })
     zones = [{'id': z.id, 'label': f'{z.code} {z.name}'}
              for z in Zone.objects.order_by('code')]
-    batch_calibrations = {
+    editor_mode = request.GET.get('editor') == '1'
+    batch_calibrations = {} if editor_mode else {
         str(b.id): active_calibration_info(b.applied_calibration or b.calibration_snapshot
                                           or calibration_snapshot(b.source_token or None))
         for b in PipelineImportBatch.objects.all()
@@ -377,7 +378,17 @@ def pipeline_edit_data(request):
             return JsonResponse({'success': False, 'error': '导入批次不存在'}, status=400)
         cad_source = batch.source_geometry or None
         cad_options = batch.import_options
-    return JsonResponse({'success': True, 'pipelines': pipes,
+    pending = []
+    if editor_mode:
+        from .pipeline_editor import batch_projection, pending_feature
+        for batch in PipelineImportBatch.objects.exclude(source_geometry={}).iterator(chunk_size=1):
+            project = batch_projection(batch)
+            if project:
+                for item in batch.source_geometry.get('unmatched_valves', []):
+                    feature = pending_feature(batch, item, project)
+                    pending.append({k:feature.get(k) for k in ('source_id','type','lat','lng','block')} |
+                                   {'batch_id':batch.pk, 'batch':batch.name})
+    return JsonResponse({'success': True, 'pending':pending, 'pipelines': pipes,
                          'valves': valves, 'zones': zones,
                          'batch_calibrations': batch_calibrations, 'cad_source': cad_source,
                          'cad_options': cad_options})
@@ -471,6 +482,14 @@ def pipeline_edit_geometry(request, pipeline_id):
 
     from .pipe_utils import detect_crossed_zones
     with _db_txn.atomic():
+        p = Pipeline.objects.select_for_update().get(pk=p.pk)
+        if 'original' in request.POST:
+            try:
+                original = _json.loads(request.POST['original'])
+            except ValueError:
+                return JsonResponse({'error':'原始坐标无效'}, status=400)
+            if p.line_points != original:
+                return JsonResponse({'error':'管线已更新，请刷新后重新编辑。'}, status=409)
         p.line_points = pts
         p.save(update_fields=['line_points'])
         zids = detect_crossed_zones(pts)
@@ -499,6 +518,25 @@ def pipeline_edit_valve_update(request, valve_id):
     if not v:
         return JsonResponse({'success': False, 'error': '阀门不存在'}, status=404)
 
+    if 'point' in request.POST:
+        import json
+        from django.db import transaction
+        try:
+            point = json.loads(request.POST['point'])
+            lat, lng = float(point['lat']), float(point['lng'])
+            original = json.loads(request.POST['original'])
+            if not (-90 <= lat <= 90 and -180 <= lng <= 180):
+                raise ValueError
+        except (ValueError, KeyError, TypeError):
+            return JsonResponse({'error':'设备坐标无效'}, status=400)
+        with transaction.atomic():
+            current = PipeValve.objects.select_for_update().get(pk=v.pk)
+            if current.point != original:
+                return JsonResponse({'error':'阀位已更新，请刷新后重新编辑。'}, status=409)
+            current.point = [{'lat':round(lat,7),'lng':round(lng,7)}]
+            current.save(update_fields=['point'])
+            transaction.on_commit(lambda: _invalidate_cached('dashboard:pipelines'))
+        return JsonResponse({'success':True})
     if 'name' in request.POST:
         v.name = (request.POST.get('name') or '').strip()[:50]
     if 'zone_id' in request.POST:

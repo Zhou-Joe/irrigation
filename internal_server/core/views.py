@@ -677,7 +677,7 @@ def _invalidate_cached(key):
     try:
         cache.delete(key)
         if key == 'dashboard:pipelines':
-            cache.delete('dashboard:cad-reference')
+            cache.delete('dashboard:cad-reference:v2')
             ver = cache.get('ref_map:ver') or 0
             cache.set('ref_map:ver', ver + 1, 30 * 86400)
     except Exception:
@@ -5152,7 +5152,7 @@ def pipelines_payload(request):
     """
     pipelines_list = _cached('dashboard:pipelines', 300, _build_pipelines_list_module)
     from .dxf_pipeline_utils import build_cad_reference_payload
-    reference = _cached('dashboard:cad-reference', 300, build_cad_reference_payload)
+    reference = _cached('dashboard:cad-reference:v2', 300, build_cad_reference_payload)
     return JsonResponse({'pipelines': pipelines_list, 'cad_reference': reference})
 
 
@@ -7371,8 +7371,8 @@ def _irrig_sync_days(request):
     return int(value)
 
 
-def _irrig_default_window(*, latest_data=None, days=1):
-    """Requested days ending at the latest successful import, in local time."""
+def _irrig_default_window(*, latest_data=None, days=1, sync_relative=False):
+    """Ordinary queries use the reporting day at 08:00; explicit sync presets use the import instant."""
     from core.models import DataImportRun
     from datetime import datetime
     synced = (DataImportRun.objects.filter(status='success', finished_at__isnull=False)
@@ -7383,6 +7383,8 @@ def _irrig_default_window(*, latest_data=None, days=1):
         latest_data = _irrig_data_span()[1] if latest_data is None else latest_data
         end = (datetime.strptime(latest_data, '%Y%m%d%H%M%S') if latest_data
                else timezone.localtime(timezone.now()).replace(microsecond=0))
+    if not sync_relative:
+        end = end.replace(hour=8, minute=0, second=0, microsecond=0)
     return ((end - timedelta(days=days)).strftime('%Y%m%d%H%M%S'),
             end.strftime('%Y%m%d%H%M%S'))
 
@@ -7393,7 +7395,7 @@ def _irrig_window(request, *, defaults=None):
     Returns local input strings and their UTC database bounds. Date-only inputs
     include the whole local day; minute inputs include second 00 through 59.
 
-    Default = 24 hours before the latest successful synchronization; sync_days
+    Default = 08:00 to 08:00 on the latest sync date; explicit sync_days
     can request 3, 7, 14 or 30 days. Before any success, use the latest runtime record
     (or the current local time when no records exist). Explicit inputs retain
     their existing inclusive second-boundary semantics.
@@ -7403,7 +7405,7 @@ def _irrig_window(request, *, defaults=None):
     """
     days = _irrig_sync_days(request)
     default_from, default_to = defaults or (('', '') if 'from' in request.GET and 'to' in request.GET
-                                             else _irrig_default_window(days=days))
+                                             else _irrig_default_window(days=days, sync_relative='sync_days' in request.GET))
     date_from = request.GET.get('from', default_from).strip()
     date_to = request.GET.get('to', default_to).strip()
     from core.irrig_time import runtime_window_bounds
@@ -7608,8 +7610,8 @@ def irrigation_dashboard(request):
 
     # Local irrigation-day inputs share their UTC conversion with the heatmap.
     sync_days = _irrig_sync_days(request)
-    selected_sync_days = sync_days if 'from' not in request.GET and 'to' not in request.GET else None
-    default_window = _irrig_default_window(latest_data=last_ts, days=sync_days)
+    selected_sync_days = sync_days if 'sync_days' in request.GET and 'from' not in request.GET and 'to' not in request.GET else None
+    default_window = _irrig_default_window(latest_data=last_ts, days=sync_days, sync_relative='sync_days' in request.GET)
     date_from, date_to, ts_from, ts_to = _irrig_window(request, defaults=default_window)
 
     # --- build the pivot ---
@@ -13030,6 +13032,7 @@ def _serialize_purchase_orders(pos):
                                   else f'{po.po_amount_untaxed:.2f}'),
             'project_name': po.project_name,
             'project_code': po.project_code,
+            'purchase_date': po.purchase_date.isoformat() if po.purchase_date else '',
             'received_date': po.received_date.isoformat() if po.received_date else '',
             'is_completed': po.is_completed,
             'created_at': timezone.localtime(po.created_at).strftime('%Y-%m-%d') if po.created_at else '',
@@ -13076,6 +13079,10 @@ def purchase_order_create(request):
             return JsonResponse({'success': False, 'message': 'PO未税金额格式无效'}, status=400)
     from datetime import date as _date
     received_date = None
+    try:
+        purchase_date = _date.fromisoformat(request.POST['purchase_date']) if request.POST.get('purchase_date') else None
+    except ValueError:
+        return JsonResponse({'success':False,'message':'采购日期格式无效'}, status=400)
     rd_raw = (request.POST.get('received_date') or '').strip()
     if rd_raw:
         try:
@@ -13089,7 +13096,7 @@ def purchase_order_create(request):
         po_amount_untaxed=amount,
         project_name=(request.POST.get('project_name') or '').strip(),
         project_code=(request.POST.get('project_code') or '').strip(),
-        received_date=received_date,
+        received_date=received_date, purchase_date=purchase_date,
     )
     _po_upsert_planned_lines(po, request.POST.get('lines'))
     # Auto-link the PO to the selected Project via the M2M-through table so it
@@ -13131,6 +13138,10 @@ def purchase_order_edit(request, po_id):
             return JsonResponse({'success': False, 'message': 'PO未税金额格式无效'}, status=400)
     from datetime import date as _date
     received_date = None
+    try:
+        purchase_date = _date.fromisoformat(request.POST['purchase_date']) if request.POST.get('purchase_date') else None
+    except ValueError:
+        return JsonResponse({'success':False,'message':'采购日期格式无效'}, status=400)
     rd_raw = (request.POST.get('received_date') or '').strip()
     if rd_raw:
         try:
@@ -13143,6 +13154,8 @@ def purchase_order_edit(request, po_id):
     po.po_amount_untaxed = amount
     po.project_name = (request.POST.get('project_name') or '').strip()
     po.project_code = (request.POST.get('project_code') or '').strip()
+    if 'purchase_date' in request.POST:
+        po.purchase_date = purchase_date
     po.received_date = received_date
     po.save()
     _po_upsert_planned_lines(po, request.POST.get('lines'))
