@@ -107,3 +107,14 @@ test('an older unresolved pest submission follows its team and does not block ot
     await h.window.fetch(endpoint,old);
     assert.equal(h.calls.length,3);assert.equal(h.calls[2].init.headers.get('X-Submission-Key'),key);
 });
+
+test('a validation error after a missing receipt retains the original key for the next correction',async()=>{
+    const h=harness({responses:[new Error('lost'),{found:false},{success:false,message:'invalid'},{success:true}]});
+    await assert.rejects(h.submit('原操作'));
+    await h.elements.submissionUncertain.children[1].onclick();
+    await h.submit('数值无效');
+    h.window.IrrigationSubmissions.begin('inventory');
+    await h.submit('修正的数值');
+    const keys=h.calls.filter(call=>call.init.method==='POST').map(call=>call.init.headers.get('X-Submission-Key'));
+    assert.equal(keys.length,3);assert.equal(new Set(keys).size,1);
+});

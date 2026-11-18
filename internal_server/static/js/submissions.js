@@ -138,7 +138,11 @@
                 if (banner?.dataset.kind === kind) banner.remove();
                 if (route === kind) clearDraft(kind);
             } else if (result.uncertain || response.status >= 500) uncertain();
-            else save(kind, null);
+            else if (previous && ['uncertain','checked-missing'].includes(previous.state)) {
+                // Validation rejects this attempt only. The earlier request may still arrive.
+                save(kind, previous);
+                if (previous.state === 'uncertain') notice(kind, previous);
+            } else save(kind, null);
             return response;
         } catch (error) { uncertain(); throw error; }
         finally { sending.delete(kind); }
