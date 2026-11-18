@@ -27,7 +27,13 @@ async function fixture(t, html, options = {}) {
         .v2-modal-container{position:fixed;top:100px;left:100px;background:white;padding:20px}
     </style></head><body class="ui-system"><main>${html}</main></body></html>`;
     await page.goto('data:text/html;charset=utf-8,' + encodeURIComponent(htmlDocument), {waitUntil:'commit', timeout:30000});
-    await page.locator('main').waitFor({state:'attached'});
+    const loaded = await page.evaluate(async () => {
+        if (document.readyState === 'loading') {
+            await new Promise(resolve => document.addEventListener('DOMContentLoaded', resolve, {once:true}));
+        }
+        return Boolean(document.querySelector('main'));
+    });
+    assert.ok(loaded, 'The browser did not load the fixture document');
     await page.addStyleTag({path: path.join(assets, 'css/modern-ui.css')});
     return {page, context, async start() { await page.addScriptTag({path: path.join(assets, 'js/modern-ui.js')}); }};
 }
