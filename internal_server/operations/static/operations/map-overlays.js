@@ -1,4 +1,4 @@
-/* HD imagery overlays: list rendering, fixed-scale image placement and manager dialog.
+/* HD imagery overlays: list rendering, proportional image placement and manager dialog.
    Factory: window.FOSMapOverlays({map, prepareMap}) → {layer, refresh, startCalibration, openManager, destroy} */
 (function (root) {
     'use strict';
@@ -93,7 +93,7 @@
             return overlays;
         }
 
-        /* ---- calibration: move and rotate the whole image ---- */
+        /* ---- calibration: move, rotate and scale the whole image ---- */
         function stopCalibration() {
             if (!calibrating) return;
             const state = calibrating;
@@ -140,7 +140,7 @@
                 return signed === -180 && degrees > 0 ? 180 : signed;
             };
             const originalAngle = saved ? direction(saved[1].subtract(saved[0])) : 0;
-            let angle = originalAngle, points = offsets.map(offset => center.add(offset));
+            let angle = originalAngle, scale = 1, points = offsets.map(offset => center.add(offset));
             let loaded = false, positioned = !!item.anchors, saving = false, conflict = false, panOnly = false;
             let gesture = null;
             const listeners = new AbortController();
@@ -157,6 +157,9 @@
             panel.className = 'hd-align-panel';
             panel.setAttribute('aria-label', '影像校准');
             panel.innerHTML = '<p data-message role="status"></p><div class="hd-adjustments">' +
+                '<div class="hd-image-size" role="group" aria-label="影像大小"><span>影像宽度</span>' +
+                '<button type="button" data-smaller aria-label="缩小影像">−</button><output data-width></output>' +
+                '<button type="button" data-larger aria-label="放大影像">+</button></div>' +
                 '<label>旋转 <input data-angle type="range" min="-180" max="180" step="0.1"><output data-degrees></output></label>' +
                 '<label>对照透明度 <input data-mix type="range" min="0" max="100" value="55"><output data-percent>55%</output></label></div>' +
                 '<div class="hd-placement-actions"><button type="button" data-pan aria-pressed="false">平移地图</button>' +
@@ -172,6 +175,7 @@
             function syncControls() {
                 el('save').disabled = !loaded || !positioned || saving || conflict || !!gesture;
                 el('angle').disabled = !loaded || saving || conflict;
+                el('smaller').disabled = el('larger').disabled = !loaded || saving || conflict || !!gesture;
                 el('cancel').disabled = saving;
                 el('pan').setAttribute('aria-pressed', String(panOnly));
                 editPane.classList.toggle('hd-editable', loaded && !panOnly && !saving && !conflict);
@@ -185,12 +189,27 @@
             function draw() {
                 const radians = (angle-originalAngle) * Math.PI/180;
                 const cos = Math.cos(radians), sin = Math.sin(radians);
-                points = offsets.map(({x,y}) => center.add([x*cos-y*sin, x*sin+y*cos]));
+                points = offsets.map(({x,y}) => center.add([(x*cos-y*sin)*scale, (x*sin+y*cos)*scale]));
                 image.reposition(...points.map(unproject));
                 positionGrip();
+                const width = map.distance(unproject(points[0]), unproject(points[1]));
+                el('width').textContent = Number(width.toFixed(width < 1 ? 2 : 1)) + ' 米';
                 el('angle').value = wrap(angle);
                 el('degrees').textContent = Number(wrap(angle).toFixed(1))+'°';
                 el('angle').setAttribute('aria-valuetext', el('degrees').textContent);
+            }
+            function resizeBy(factor, pivot) {
+                // Keep the image point under the pointer on the same map coordinate.
+                const nextScale = scale * factor;
+                const nextCenter = pivot.add(center.subtract(pivot).multiplyBy(factor));
+                const world = map.getPixelWorldBounds(referenceZoom);
+                const corners = [...points, points[1].add(points[2]).subtract(points[0])];
+                if (!corners.every(point => world.contains(pivot.add(point.subtract(pivot).multiplyBy(factor))))) return;
+                if (factor < 1 && map.distance(unproject(points[0]), unproject(points[1])) * factor < 0.01) return;
+                center = nextCenter;
+                scale = nextScale;
+                positioned = true;
+                draw(); syncControls();
             }
             function fit() {
                 const fourth = points[1].add(points[2]).subtract(points[0]);
@@ -251,6 +270,8 @@
             });
             window.addEventListener('blur', endBeforeZoom, {signal:listeners.signal});
             el('fit').onclick = fit;
+            el('smaller').onclick = () => resizeBy(1/1.1, center);
+            el('larger').onclick = () => resizeBy(1.1, center);
             el('pan').onclick = () => {panOnly = !panOnly; syncControls();};
             el('mix').oninput = event => {
                 image.setOpacity(Number(event.target.value)/100);
@@ -278,7 +299,7 @@
                     draw(); fit();
                 }
                 loaded = true; syncControls();
-                message('拖动影像移动，拖动 ↻ 旋转。用滚轮或地图缩放按钮对照细节。');
+                message('在影像上滚动鼠标滚轮可等比缩放影像。拖动移动，拖动 ↻ 旋转。用地图 ＋／− 或「平移地图」缩放底图。');
             });
             image.on('error', () => {
                 if (calibrating !== state) return;
@@ -287,6 +308,17 @@
             image.addTo(map);
             const rawImage = image.getElement().querySelector('img');
             rawImage.draggable = false; rawImage.classList.add('hd-placement-image');
+            rawImage.addEventListener('wheel', event => {
+                if (panOnly || event.ctrlKey) return;
+                const delta = L.DomEvent.getWheelDelta(event);
+                if (!delta) return;
+                event.preventDefault();
+                event.stopPropagation();
+                if (!loaded || saving || conflict || gesture) return;
+                // Normalize pixel, line and page wheels, including small trackpad deltas.
+                const factor = Math.exp(Math.max(-240, Math.min(240, delta)) / 600);
+                resizeBy(factor, mapPoint(event));
+            }, {passive:false, signal:listeners.signal});
             grip.addTo(map);
             draw(); fit();
             el('save').onclick = async () => {
@@ -368,7 +400,7 @@
                 '<label>影像文件（JPG/PNG/WebP，≤15MB）<input type="file" accept="image/jpeg,image/png,image/webp" data-file></label>' +
                 '<button type="button" class="v2-btn-submit" data-upload>上传</button></div>' +
                 '<details class="hd-source-scale"><summary>未校准原图的比例</summary><label>原图地面宽度（米，可选） <input data-ground-width type="number" min="0.01" max="40075017" step="any" placeholder="按底图 19 级像素"></label>' +
-                '<p>已知实测宽度时填写。留空按原图每像素对应 19 级底图一像素放置，移动和旋转会保持这个比例。</p></details>' +
+                '<p>已知实测宽度时填写。留空按原图每像素对应 19 级底图一像素放置，校准时可用滚轮按原图长宽比调整大小。</p></details>' +
                 '<p data-status role="status" style="min-height:1.2em"></p>' +
                 '<div class="ops-table-wrap"><table class="app-table"><thead><tr><th>名称</th><th>状态</th><th>显示</th><th>透明度</th><th>操作</th></tr></thead><tbody data-overlay-rows></tbody></table></div></div>';
             document.body.append(dialog);

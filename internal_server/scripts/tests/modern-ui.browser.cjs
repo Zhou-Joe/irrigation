@@ -289,7 +289,7 @@ test('the final EnGenie order button confirms the named supplier and reports val
     assert.equal(posts[1].submission_key,posts[0].submission_key);
 });
 
-test('HD imagery loads in view and retains its footprint through dragging, rotation, zoom and save', async t => {
+test('HD imagery resizes proportionally around the mouse, with independent map zoom and persistent placement', async t => {
     const {page} = await fixture(t, '<div data-hd-controls><input data-hd-visible type="checkbox" checked><button data-hd-manage>管理</button></div><div style="position:relative"><div id="map" style="height:500px;width:600px"></div></div>');
     const ops = path.resolve(assets, '../operations/static');
     await page.addStyleTag({path:path.join(assets, 'vendor/leaflet/leaflet.css')});
@@ -360,8 +360,8 @@ test('HD imagery loads in view and retains its footprint through dragging, rotat
     assert.equal(await page.locator('.leaflet-hdImagery-pane img').count(), 0);
     const current = () => page.evaluate(() => pose());
     const initial = await current();
-    const sameSize = state => {
-        for (const key of ['width','height','diagonal']) assert.ok(Math.abs(initial[key]-state[key]) < 1e-5, key);
+    const sameSize = (state, reference = initial) => {
+        for (const key of ['width','height','diagonal']) assert.ok(Math.abs(reference[key]-state[key]) < 1e-5, key);
     };
     const sameCenter = (a,b) => assert.ok(Math.hypot(a.center[0]-b.center[0],a.center[1]-b.center[1]) < 1e-5);
     const centerOf = async locator => {
@@ -380,13 +380,24 @@ test('HD imagery loads in view and retains its footprint through dragging, rotat
     await page.locator('[data-mix]').fill('47');
     assert.equal(await raw.evaluate(img => img.parentElement.style.opacity), '0.47');
     assert.equal(await save.isDisabled(), true);
+    const draftCenter = await centerOf(raw);
+    await page.mouse.move(draftCenter.x,draftCenter.y);
+    await page.mouse.wheel(0,-80);
+    await page.waitForFunction(() => !document.querySelector('[data-save]').disabled);
+    assert.ok((await current()).width>initial.width);
+    await page.locator('[data-cancel]').click();
+    await page.evaluate(() => imagery.startCalibration(4));
+    await grip.waitFor();
+    assert.equal(await save.isDisabled(),true);
+    const beforeDrag = await current();
+    sameSize(beforeDrag);
     const from = await centerOf(raw);
     await drag(from,{x:from.x+25,y:from.y+18});
     assert.equal(await save.isEnabled(), true);
     const moved = await current();
     sameSize(moved);
-    assert.deepEqual(moved.view,initial.view);
-    assert.ok(Math.hypot(moved.center[0]-initial.center[0],moved.center[1]-initial.center[1])>5);
+    assert.deepEqual(moved.view,beforeDrag.view);
+    assert.ok(Math.hypot(moved.center[0]-beforeDrag.center[0],moved.center[1]-beforeDrag.center[1])>5);
     const pivot = await centerOf(raw), handle = await centerOf(grip);
     const dx = handle.x-pivot.x, dy = handle.y-pivot.y;
     await drag(handle,{x:pivot.x-dy,y:pivot.y+dx});
@@ -394,38 +405,71 @@ test('HD imagery loads in view and retains its footprint through dragging, rotat
     sameCenter(rotated,moved);
     sameSize(rotated);
     assert.ok(Math.abs(rotated.angle-90)<2);
-    await page.mouse.move(pivot.x,pivot.y);
-    await page.mouse.wheel(0,-210);
+    const mouse = {x:pivot.x+27,y:pivot.y+13};
+    const anchor = await page.evaluate(({x,y}) => map.project(map.mouseEventToLatLng({clientX:x,clientY:y}),19),mouse);
+    await page.mouse.move(mouse.x,mouse.y);
+    async function wheelResize(delta) {
+        const before = await current();
+        const rawBox = await raw.boundingBox();
+        await page.mouse.wheel(0,delta);
+        await page.waitForFunction(({width,delta}) => delta<0 ? pose().width>width : pose().width<width,
+            {width:before.width,delta});
+        const after = await current();
+        const factor = after.width / before.width;
+        for (const key of ['height','diagonal']) assert.ok(Math.abs(after[key]/before[key]-factor)<1e-7);
+        for (const [axis,i] of [['x',0],['y',1]]) {
+            assert.ok(Math.abs(after.center[i]-anchor[axis]-(before.center[i]-anchor[axis])*factor)<1e-5);
+        }
+        assert.ok(Math.abs((await raw.boundingBox()).width/rawBox.width-factor)<0.02);
+        assert.ok(Math.abs(before.angle-after.angle)<1e-5);
+        return after;
+    }
+    await wheelResize(-120);
+    await wheelResize(40);
+    // A wheel event consumed by the image must not reach Leaflet's debounced map zoom.
+    await page.waitForTimeout(await page.evaluate(() => map.options.wheelDebounceTime+100));
+    const resized = await current();
+    assert.equal(resized.zoom,rotated.zoom);
+    assert.deepEqual(resized.view,rotated.view);
+    assert.ok(resized.width>rotated.width);
+    await page.locator('[data-smaller]').click();
+    assert.ok((await current()).width<resized.width);
+    await page.locator('[data-larger]').click();
+    sameSize(await current(),resized);
+    await page.locator('[data-pan]').click();
+    await page.mouse.move(mouse.x,mouse.y);
+    await page.mouse.wheel(0,-60);
     await page.waitForFunction(z => map.getZoom()>z, rotated.zoom);
-    sameSize(await current());
+    sameSize(await current(),resized);
     await page.locator('.leaflet-control-zoom-out').click();
     await page.waitForFunction(z => map.getZoom()===z, rotated.zoom);
-    await page.locator('[data-pan]').click();
     const pannedFrom = await centerOf(raw);
     await drag(pannedFrom,{x:pannedFrom.x-60,y:pannedFrom.y+15});
     await page.waitForFunction(v => !map.getCenter().equals(v), rotated.view);
-    sameCenter(await current(),rotated);
+    sameCenter(await current(),resized);
     await page.locator('[data-fit]').click();
     await page.locator('[data-pan]').click();
     await page.locator('[data-angle]').fill('-35.5');
     const adjusted = await current();
     assert.ok(Math.abs(adjusted.angle+35.5)<1e-5);
-    sameSize(adjusted);
-    sameCenter(adjusted,rotated);
+    sameSize(adjusted,resized);
+    sameCenter(adjusted,resized);
     await save.click();
     await save.waitFor({state:'detached'});
     assert.equal(await page.evaluate(() => lastVersion),'original');
     await page.evaluate(() => imagery.startCalibration(4));
     await grip.waitFor();
     const reopened = await current();
-    sameSize(reopened);
+    sameSize(reopened,resized);
     sameCenter(reopened,adjusted);
     assert.ok(Math.abs(reopened.angle-adjusted.angle)<1e-5);
     await page.locator('[data-angle]').fill('120');
+    await page.locator('[data-larger]').click();
     await page.locator('[data-cancel]').click();
     await page.evaluate(() => imagery.startCalibration(4));
     await grip.waitFor();
     assert.ok(Math.abs((await current()).angle-adjusted.angle)<1e-5);
+    sameSize(await current(),resized);
     // Existing surveys can already be skewed or mirrored. Preserve all three edges.
     await page.evaluate(() => imagery.startCalibration(1));
     await grip.waitFor();
