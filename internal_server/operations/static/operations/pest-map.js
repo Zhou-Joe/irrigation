@@ -12,6 +12,7 @@
         L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:22,maxNativeZoom:19,attribution:'Esri'}).addTo(map);
         L.control.zoom({zoomInText:window.uiIcon('plus'),zoomOutText:window.uiIcon('minus')}).addTo(map);
         const groups=Object.fromEntries(['shared','zones','buildings','monitoring','traps','beehives','records'].map(k=>[k,L.layerGroup().addTo(map)]));
+        const locationLayers=Object.values(groups);
         const overlays=window.FOSMapOverlays?window.FOSMapOverlays({map,canManage}):null;
         if(overlays)groups.overlays=overlays.layer;
         const updateWatermarks = window.FOSMapGeography.watermarks(map, window.MAP_STYLE_CONFIG?.label?.fontSize || 25);
@@ -65,7 +66,7 @@
             notice(view.reference ? place.name + '尚无独立坐标，已显示' + view.reference + '的参考范围。' : '已定位到' + place.name);
         }
         function render(){
-            Object.values(groups).forEach(group=>group.clearLayers());shapes.clear();
+            locationLayers.forEach(group=>group.clearLayers());shapes.clear();
             const q=byId('zoneSearch').value.trim().toLowerCase(),kind=byId('pestMapKind').value,list=byId('pestLocationList');list.replaceChildren();const points=[];
             for(const p of locations){if(q&&!(p.name+' '+p.code).toLowerCase().includes(q)||kind&&p.kind!==kind)continue;const key=layerKey(p),equipment=equipmentLayer(p);if(!visible.has(key)||(equipment&&!visible.has(equipment)))continue;
                 const shape = views.shapes.get(p.id), rings = shape.rings, layers = [];

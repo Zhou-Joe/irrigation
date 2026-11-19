@@ -1,4 +1,5 @@
 """HD imagery overlays pinned onto the team map by three draggable corner anchors."""
+import math
 from pathlib import Path
 
 from django.contrib.auth.decorators import login_required
@@ -34,16 +35,21 @@ def _parse_anchors(request):
         except (TypeError, ValueError):
             raise ValueError('角点坐标必须是数字。')
     for key in ('tl_lat', 'tr_lat', 'bl_lat'):
-        if not -90 <= values[key] <= 90:
+        if not -85.05112878 <= values[key] <= 85.05112878:
             raise ValueError('纬度超出范围。')
     for key in ('tl_lng', 'tr_lng', 'bl_lng'):
         if not -180 <= values[key] <= 180:
             raise ValueError('经度超出范围。')
-    tl = (values['tl_lat'], values['tl_lng'])
-    tr = (values['tr_lat'], values['tr_lng'])
-    bl = (values['bl_lat'], values['bl_lng'])
-    if tl == tr or tl == bl:
-        raise ValueError('三个角点不能重合，请在地图上拖开后再保存。')
+    # Validate in Web Mercator, the plane in which Leaflet draws both images.
+    def point(key):
+        lat = math.radians(values[key + '_lat'])
+        return math.radians(values[key + '_lng']), math.asinh(math.tan(lat))
+    a, b, c = (point(key) for key in ('tl', 'tr', 'bl'))
+    ux, uy = b[0] - a[0], b[1] - a[1]
+    vx, vy = c[0] - a[0], c[1] - a[1]
+    area = abs(ux * vy - uy * vx)
+    if area <= 1e-5 * math.hypot(ux, uy) * math.hypot(vx, vy):
+        raise ValueError('三个角点重合或接近直线，请分开选点后再保存。')
     return values
 
 
@@ -85,7 +91,7 @@ def upload(request):
     suffix = ALLOWED_TYPES.get(upload_file.content_type)
     if suffix is None:
         return JsonResponse({'success': False, 'message': '仅支持 JPG、PNG 或 WebP 影像。'}, status=400)
-    item = MapImageOverlay(name=name, created_by=request.user)
+    item = MapImageOverlay(name=name, created_by=request.user, opacity=1.0)
     item.image.save(upload_file.name, upload_file, save=False)
     try:
         with Image.open(item.image) as probe:

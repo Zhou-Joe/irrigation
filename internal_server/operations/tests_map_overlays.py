@@ -75,6 +75,8 @@ class MapOverlayTests(TestCase):
         item_id = response.json()['overlay']['id']
         coincident = {key: '31.1' for key in ('tl_lat', 'tl_lng', 'tr_lat', 'tr_lng', 'bl_lat', 'bl_lng')}
         self.assertEqual(self.client.post(f'/ops/map-overlays/{item_id}/calibrate/', coincident).status_code, 400)
+        collinear = {'tl_lat':31.1,'tr_lat':31.1,'bl_lat':31.1,'tl_lng':121.1,'tr_lng':121.2,'bl_lng':121.3}
+        self.assertEqual(self.client.post(f'/ops/map-overlays/{item_id}/calibrate/', collinear).status_code,400)
         self.assertFalse(MapImageOverlay.objects.get(pk=item_id).calibrated)
 
     def test_delete_removes_record_and_file(self):

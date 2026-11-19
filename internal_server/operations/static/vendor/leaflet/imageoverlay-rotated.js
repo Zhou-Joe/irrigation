@@ -60,7 +60,7 @@ L.ImageOverlay.Rotated = L.ImageOverlay.extend({
 				img.crossOrigin = '';
 			}
 
-			img.src = this._url;
+			// Assign the URL after installing load and error handlers.
 			this._rawImage = img;
 		}
 		L.DomUtil.addClass(img, 'leaflet-image-layer');
@@ -83,7 +83,11 @@ L.ImageOverlay.Rotated = L.ImageOverlay.extend({
 			this.fire('load');
 		}.bind(this);
 
-		img.alt = this.options.alt;
+		img.alt = this.options.alt || '';
+        img.style.maxWidth = 'none';
+        img.style.maxHeight = 'none';
+        img.onerror = () => this.fire('error');
+        if (this._url) img.src = this._url;
 	},
 
 
