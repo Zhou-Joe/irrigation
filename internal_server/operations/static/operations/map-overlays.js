@@ -226,8 +226,8 @@
         }
         function buildDialog() {
             dialog = document.createElement('dialog');
-            dialog.className = 'v2-modal-container';
-            dialog.style.maxWidth = '560px';
+            dialog.className = 'hd-manager';
+            dialog.setAttribute('aria-label','影像叠加管理');
             dialog.innerHTML =
                 '<div class="v2-modal-header"><h2>影像叠加管理</h2><button type="button" class="v2-modal-close" data-close aria-label="关闭">×</button></div>' +
                 '<div class="v2-modal-body"><div class="op-field"><label>名称<input class="v2-input" data-name placeholder="如：北区高清影像"></label>' +
