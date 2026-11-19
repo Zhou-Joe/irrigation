@@ -34,6 +34,7 @@ def page(request, template, **context):
     return render(request, 'operations/' + template + '.html', {
         'membership': member, 'memberships': memberships(request.user).order_by('team__name'),
         'can_manage': bool(member and (member.role == 'manager' or is_general(request.user))),
+        'can_create': bool(member),
         'has_irrigation': has_irrigation_access(request.user), **context})
 
 
@@ -139,7 +140,10 @@ def location_detail(request, pk):
 @login_required
 @require_http_methods(['GET', 'POST'])
 def location_edit(request, pk=None):
-    member = require_member(request, manager=True)
+    member = require_member(request)
+    # Any team member may add new places; editing existing metadata stays with managers.
+    if pk and member.role != 'manager' and not request.user.is_superuser:
+        raise PermissionDenied('编辑地点需要团队经理权限。')
     instance = get_object_or_404(Location, pk=pk, owner_team=member.team) if pk else Location(owner_team=member.team)
     form = LocationForm(request.POST if request.method == 'POST' else None, instance=instance,
                         parents=visible_locations(member.team).exclude(pk=instance.pk))

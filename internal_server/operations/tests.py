@@ -141,8 +141,9 @@ class WorkspaceTests(TestCase):
 
     def test_field_cannot_manage_and_csrf_required(self):
         self.client.force_login(self.field)
-        for path in ['/ops/team/','/ops/locations/new/']:
-            self.assertEqual(self.client.get(path).status_code,403)
+        self.assertEqual(self.client.get('/ops/team/').status_code,403)
+        # Frontline members may open the create form; team management stays manager-only.
+        self.assertEqual(self.client.get('/ops/locations/new/').status_code,200)
         csrf = Client(enforce_csrf_checks=True);csrf.force_login(self.pm)
         self.assertEqual(csrf.post('/ops/locations/new/', {'name':'CSRF','kind':'room'}).status_code,403)
 

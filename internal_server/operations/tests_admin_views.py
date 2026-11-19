@@ -83,7 +83,8 @@ class BusinessViewTests(TestCase):
         self.assertEqual(self.client.post('/ops/switch/',{'business':'irrigation'}).status_code,403)
         self.assertEqual(self.client.post('/ops/switch/',{'business':'pest-control','role':'manager'}).status_code,302)
         self.assertFalse(self.client.get('/').context['is_admin'])
-        self.assertEqual(self.client.get('/ops/locations/new/').status_code,403)
+        # Frontline members can create locations; role escalation stays blocked.
+        self.assertEqual(self.client.get('/ops/locations/new/').status_code,200)
         self.assertEqual(self.client.post('/ops/switch/',{'admin_view':f'{self.it.pk}:manager'}).status_code,400)
 
     def test_two_business_account_uses_its_existing_memberships_for_management_modules(self):
@@ -93,7 +94,8 @@ class BusinessViewTests(TestCase):
         page=self.client.get('/')
         self.assertFalse(page.context['is_admin'])
         self.assertNotIn('team',{m['name'] for m in page.context['pwa_modules']})
-        self.assertEqual(self.client.post('/ops/locations/batch/',{'team':self.pt.pk,'rows':'Denied'}).status_code,403)
+        # Field membership can still create places in its own team; management stays manager-only.
+        self.assertEqual(self.client.post('/ops/locations/batch/',{'team':self.pt.pk,'rows':'Denied'}).status_code,200)
         self.client.post('/ops/switch/',{'business':'irrigation'})
         self.assertTrue(self.client.get('/').context['is_admin'])
         self.client.post('/ops/switch/',{'business':'pest-control'})

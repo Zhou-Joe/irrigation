@@ -41,11 +41,12 @@ class LocationBatchTests(TestCase):
         self.assertTrue(Location.objects.filter(name='楼一',code='',latitude=None).exists())
         self.assertEqual(self.client.post('/ops/locations/batch/',self.payload(rows='\n'.join(['A']*501))).status_code,400)
 
-    def test_field_cannot_batch_create_or_share_and_stale_team_cannot_replay(self):
+    def test_field_can_batch_create_but_not_share_and_stale_team_cannot_replay(self):
         payload=self.payload(rows='Building')
         self.assertEqual(self.client.post('/ops/locations/batch/',payload).status_code,200)
         self.client.force_login(self.field)
-        self.assertEqual(self.client.post('/ops/locations/batch/',self.payload()).status_code,403)
+        # Frontline members create places in their own team; sharing stays manager-only.
+        self.assertEqual(self.client.post('/ops/locations/batch/',self.payload()).status_code,200)
         self.assertEqual(self.client.post('/ops/locations/batch-sharing/',{'team':self.pt.pk}).status_code,403)
         self.client.force_login(self.pm)
         member=Membership.objects.create(user=self.pm,team=self.it,role='manager')

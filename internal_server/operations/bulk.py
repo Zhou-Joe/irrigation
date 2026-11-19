@@ -26,6 +26,14 @@ def scope(request):
     return member,None
 
 
+def create_scope(request):
+    """Batch creation is open to every member; sharing keeps scope()."""
+    member=require_member(request)
+    if request.POST.get('team')!=str(member.team_id):
+        return member,failure('团队已变化，请重新打开批量操作。',409)
+    return member,None
+
+
 def parse_rows(request, member):
     text=request.POST.get('rows','')
     upload=request.FILES.get('file')
@@ -93,7 +101,7 @@ def parse_rows(request, member):
 @login_required
 @require_POST
 def create(request):
-    member,error=scope(request)
+    member,error=create_scope(request)
     if error:return error
     if request.POST.get('action')=='preview':return _create(request,preview=True)
     return _save(request)
@@ -104,7 +112,7 @@ def _save(request):return _create(request,preview=False)
 
 
 def _create(request,preview):
-    member=require_member(request,manager=True)
+    member=require_member(request)
     try:
         places,errors=parse_rows(request,member)
         if errors:return failure('请修正标出的行，尚未创建任何地点。',errors=errors)
