@@ -3,9 +3,13 @@
 .hd-calibrating .leaflet-map-pane > .leaflet-pane:not(.leaflet-tile-pane):not(.leaflet-hdPlacement-pane){visibility:hidden}
 .hd-align-panel:focus:not(:focus-visible){outline:none}
 .hd-align-panel{position:absolute;z-index:1050;left:50%;bottom:12px;transform:translateX(-50%);box-sizing:border-box;width:max-content;max-width:calc(100% - 24px);padding:10px 14px;border:1px solid #b9c9c0;border-radius:10px;background:white;color:#234535;box-shadow:0 2px 10px #173c352b;font:14px/1.4 var(--font-body,system-ui,sans-serif)}
-.hd-align-panel p{margin:0 0 6px}
+.hd-align-panel p{margin:0 0 6px}.hd-align-panel [data-field-error]{color:#9d302a}
 .hd-adjustments,.hd-placement-actions{display:flex;align-items:center;gap:8px 14px;flex-wrap:wrap}
-.hd-image-size{display:flex;align-items:center;gap:5px}.hd-image-size output{min-width:4.3em;text-align:center}.hd-image-size button{min-width:30px}
+.hd-precision{display:flex;align-items:center;gap:4px}
+.hd-precision button{min-width:30px}
+.hd-precision input[type=number]{box-sizing:border-box;width:7em;min-width:0;padding:5px 3px;border:1px solid #97aca1;border-radius:4px;background:#fff;color:inherit;font:inherit;font-variant-numeric:tabular-nums;text-align:center}
+.hd-precision input:user-invalid{border-color:#ae342c}
+.hd-precision input[data-degrees]{width:5.8em}
 .hd-adjustments label{display:flex;align-items:center;gap:5px;margin:0}
 .hd-adjustments input{width:86px;accent-color:#22533f}
 .hd-adjustments output{min-width:3.1em;font-variant-numeric:tabular-nums}
@@ -18,7 +22,7 @@
 .hd-editable .hd-placement-image,.hd-editable .hd-turn-handle{pointer-events:auto;cursor:grab;user-select:none;-webkit-user-select:none;-webkit-user-drag:none}
 .hd-dragging .hd-placement-image,.hd-dragging .hd-turn-handle{cursor:grabbing}
 .hd-source-scale{margin:10px 0}.hd-source-scale input{max-width:12em}
-@media(max-width:600px){.hd-align-panel{bottom:6px;max-width:calc(100% - 12px);padding:8px 10px;font-size:13px}.hd-adjustments{gap:3px 8px}.hd-adjustments input{width:64px}.hd-placement-actions button{min-height:36px}}
+@media(max-width:600px){.hd-align-panel{bottom:6px;max-width:calc(100% - 12px);padding:8px 10px;font-size:13px}.hd-adjustments{gap:3px 8px}.hd-adjustments input{width:64px}.hd-placement-actions button,.hd-precision button{min-height:36px}}
 .hd-manager{position:fixed;inset:0;margin:auto;box-sizing:border-box;width:min(620px,calc(100vw - 24px));max-height:85dvh;height:max-content;overflow:auto;border:1px solid #9cafa2;border-radius:12px;padding:0;background:white;color:#234535}
 .hd-manager::backdrop{background:#10271e88}.hd-manager .v2-modal-body{min-width:0;overflow:auto}.hd-manager .ops-table-wrap{max-width:100%;overflow:auto}.hd-manager input[type=file]{max-width:100%}
 

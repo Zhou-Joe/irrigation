@@ -98,10 +98,11 @@ L.ImageOverlay.Rotated = L.ImageOverlay.extend({
 			return;
 		}
 
-		// Project control points to container-pixel coordinates
-		var pxTopLeft    = this._map.latLngToLayerPoint(this._topLeft);
-		var pxTopRight   = this._map.latLngToLayerPoint(this._topRight);
-		var pxBottomLeft = this._map.latLngToLayerPoint(this._bottomLeft);
+		// Keep fractional layer pixels so fine placement changes reach the CSS transform.
+		var origin = this._map.getPixelOrigin();
+		var pxTopLeft    = this._map.project(this._topLeft).subtract(origin);
+		var pxTopRight   = this._map.project(this._topRight).subtract(origin);
+		var pxBottomLeft = this._map.project(this._bottomLeft).subtract(origin);
 
 		// Infer coordinate of bottom right
 		var pxBottomRight = pxTopRight.subtract(pxTopLeft).add(pxBottomLeft);

@@ -334,7 +334,8 @@ test('HD imagery resizes proportionally around the mouse, with independent map z
             });
             const [a,b,c] = [layer._topLeft,layer._topRight,layer._bottomLeft].map(ll => map.project(ll,19));
             const center = b.add(c).divideBy(2);
-            return {width:a.distanceTo(b),height:a.distanceTo(c),diagonal:b.distanceTo(c),
+            const metersPerPixel = map.distance(map.unproject(center,19),map.unproject(center.add([1,0]),19));
+            return {width:a.distanceTo(b),meters:a.distanceTo(b)*metersPerPixel,height:a.distanceTo(c),diagonal:b.distanceTo(c),
                 center:[center.x,center.y], zoom:map.getZoom(), view:map.getCenter(),
                 angle:Math.atan2(b.y-a.y,b.x-a.x)*180/Math.PI};
         };
@@ -470,6 +471,51 @@ test('HD imagery resizes proportionally around the mouse, with independent map z
     await grip.waitFor();
     assert.ok(Math.abs((await current()).angle-adjusted.angle)<1e-5);
     sameSize(await current(),resized);
+    const width = page.getByRole('spinbutton',{name:'影像宽度（米）'});
+    const degrees = page.getByRole('spinbutton',{name:'旋转角度（度）'});
+    const baseline = await current();
+    await width.fill('0');
+    assert.ok(await save.isDisabled());
+    assert.ok(await page.locator('[data-field-error]').isVisible());
+    sameSize(await current(),baseline);
+    await width.fill('75.43');
+    await degrees.fill('');
+    assert.ok(await save.isDisabled());
+    await degrees.fill('-12.34');
+    assert.ok(await save.isEnabled());
+    const exact = await current();
+    sameCenter(exact,baseline);
+    assert.ok(Math.abs(exact.meters-75.43)<1e-5 && Math.abs(exact.angle+12.34)<1e-6);
+    assert.ok(Math.abs(exact.width/exact.height-baseline.width/baseline.height)<1e-7);
+    const paintedWidth = () => raw.evaluate(img => {
+        const transform = new DOMMatrix(img.style.transform);
+        return img.naturalWidth*Math.hypot(transform.a,transform.b);
+    });
+    const beforePixels = await paintedWidth();
+    await page.locator('[data-larger]').click();
+    const afterPixels = await paintedWidth();
+    assert.ok(afterPixels>beforePixels && afterPixels-beforePixels<1,'subpixel adjustment paints immediately');
+    assert.equal(await width.inputValue(),'75.44');
+    await page.locator('[data-turn-left]').click();
+    assert.equal(await degrees.inputValue(),'-12.35');
+    assert.equal(await width.inputValue(),'75.44');
+    await degrees.press('ArrowUp');
+    assert.ok(Math.abs((await current()).angle+12.34)<1e-6);
+    await page.locator('[data-turn-right]').click();
+    assert.equal(await degrees.inputValue(),'-12.33');
+    await width.press('ArrowDown');
+    await save.click();
+    await save.waitFor({state:'detached'});
+    await page.evaluate(() => imagery.startCalibration(4));
+    await grip.waitFor();
+    assert.equal(await width.inputValue(),'75.43');
+    assert.equal(await degrees.inputValue(),'-12.33');
+    const restored = await current();
+    assert.ok(Math.abs(restored.meters-75.43)<1e-5 && Math.abs(restored.angle+12.33)<1e-6);
+    sameCenter(restored,baseline);
+    await degrees.fill('180');
+    await page.locator('[data-turn-right]').click();
+    assert.equal(await degrees.inputValue(),'-179.99');
     // Existing surveys can already be skewed or mirrored. Preserve all three edges.
     await page.evaluate(() => imagery.startCalibration(1));
     await grip.waitFor();

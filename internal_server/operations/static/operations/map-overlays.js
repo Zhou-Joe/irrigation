@@ -124,10 +124,13 @@
             const saved = item.anchors && ['tl', 'tr', 'bl'].map(key => project(item.anchors[key]));
             let center = saved ? saved[1].add(saved[2]).divideBy(2) : project(map.getCenter());
             const groundWidth = widthInput?.valueAsNumber;
+            // Measure ground width using the local map scale at the image centre.
+            function metersPerPixel() {
+                return map.distance(unproject(center), unproject(center.add([1, 0])));
+            }
             function sourceOffsets(width, height) {
                 if (groundWidth > 0) {
-                    const metersPerPixel = map.distance(unproject(center), unproject(center.add([1, 0])));
-                    const groundPixels = groundWidth / metersPerPixel;
+                    const groundPixels = groundWidth / metersPerPixel();
                     height = groundPixels * height / width;
                     width = groundPixels;
                 }
@@ -157,12 +160,17 @@
             panel.className = 'hd-align-panel';
             panel.setAttribute('aria-label', '影像校准');
             panel.innerHTML = '<p data-message role="status"></p><div class="hd-adjustments">' +
-                '<div class="hd-image-size" role="group" aria-label="影像大小"><span>影像宽度</span>' +
-                '<button type="button" data-smaller aria-label="缩小影像">−</button><output data-width></output>' +
-                '<button type="button" data-larger aria-label="放大影像">+</button></div>' +
-                '<label>旋转 <input data-angle type="range" min="-180" max="180" step="0.1"><output data-degrees></output></label>' +
+                '<div class="hd-precision" role="group" aria-label="影像宽度"><span>宽度（米）</span>' +
+                '<button type="button" data-smaller aria-label="宽度减少 0.01 米">−</button>' +
+                '<input data-width type="number" required min="0.01" max="40075017" step="0.01" aria-label="影像宽度（米）">' +
+                '<button type="button" data-larger aria-label="宽度增加 0.01 米">+</button></div>' +
+                '<div class="hd-precision" role="group" aria-label="影像旋转"><span>旋转（°）</span>' +
+                '<button type="button" data-turn-left aria-label="逆时针旋转 0.01 度">−</button>' +
+                '<input data-degrees type="number" required min="-180" max="180" step="0.01" aria-label="旋转角度（度）">' +
+                '<button type="button" data-turn-right aria-label="顺时针旋转 0.01 度">+</button>' +
+                '<input data-angle type="range" min="-180" max="180" step="0.01" aria-label="旋转角度滑杆"></div>' +
                 '<label>对照透明度 <input data-mix type="range" min="0" max="100" value="55"><output data-percent>55%</output></label></div>' +
-                '<div class="hd-placement-actions"><button type="button" data-pan aria-pressed="false">平移地图</button>' +
+                '<p data-field-error role="status" hidden></p><div class="hd-placement-actions"><button type="button" data-pan aria-pressed="false">平移地图</button>' +
                 '<button type="button" data-fit>回到影像</button><button type="button" data-cancel>取消</button>' +
                 '<button type="button" data-save>保存位置</button></div>';
             const stage = container.parentElement;
@@ -172,10 +180,15 @@
             panel.focus({preventScroll:true});
             const el = key => panel.querySelector('[data-'+key+']');
             const message = value => { el('message').textContent = value; };
+            const widthField = el('width'), rotationField = el('degrees');
+            const adjustments = panel.querySelectorAll('.hd-precision input, .hd-precision button');
             function syncControls() {
-                el('save').disabled = !loaded || !positioned || saving || conflict || !!gesture;
-                el('angle').disabled = !loaded || saving || conflict;
-                el('smaller').disabled = el('larger').disabled = !loaded || saving || conflict || !!gesture;
+                const busy = !loaded || saving || conflict || !!gesture;
+                for (const control of adjustments) control.disabled = busy;
+                const error = widthField.validationMessage || rotationField.validationMessage;
+                el('field-error').hidden = !error;
+                el('field-error').textContent = error;
+                el('save').disabled = busy || !positioned || !!error;
                 el('cancel').disabled = saving;
                 el('pan').setAttribute('aria-pressed', String(panOnly));
                 editPane.classList.toggle('hd-editable', loaded && !panOnly && !saving && !conflict);
@@ -186,30 +199,41 @@
                 const gap = 26 / map.getZoomScale(map.getZoom(), referenceZoom);
                 grip.setLatLng(unproject(top.add(outward.multiplyBy(gap / (outward.distanceTo([0,0]) || 1)))));
             }
-            function draw() {
+            function widthMeters() {
+                return offsets[0].distanceTo(offsets[1]) * scale * metersPerPixel();
+            }
+            function draw(editing) {
                 const radians = (angle-originalAngle) * Math.PI/180;
                 const cos = Math.cos(radians), sin = Math.sin(radians);
                 points = offsets.map(({x,y}) => center.add([(x*cos-y*sin)*scale, (x*sin+y*cos)*scale]));
                 image.reposition(...points.map(unproject));
                 positionGrip();
-                const width = map.distance(unproject(points[0]), unproject(points[1]));
-                el('width').textContent = Number(width.toFixed(width < 1 ? 2 : 1)) + ' 米';
+                if (!editing) {
+                    widthField.setCustomValidity('');
+                    widthField.value = widthMeters().toFixed(2);
+                    rotationField.value = wrap(angle).toFixed(2);
+                }
                 el('angle').value = wrap(angle);
-                el('degrees').textContent = Number(wrap(angle).toFixed(1))+'°';
-                el('angle').setAttribute('aria-valuetext', el('degrees').textContent);
+                el('angle').setAttribute('aria-valuetext', wrap(angle).toFixed(2)+'°');
             }
-            function resizeBy(factor, pivot) {
+            function resizeBy(factor, pivot, editing) {
                 // Keep the image point under the pointer on the same map coordinate.
                 const nextScale = scale * factor;
                 const nextCenter = pivot.add(center.subtract(pivot).multiplyBy(factor));
                 const world = map.getPixelWorldBounds(referenceZoom);
                 const corners = [...points, points[1].add(points[2]).subtract(points[0])];
-                if (!corners.every(point => world.contains(pivot.add(point.subtract(pivot).multiplyBy(factor))))) return;
-                if (factor < 1 && map.distance(unproject(points[0]), unproject(points[1])) * factor < 0.01) return;
+                if (!corners.every(point => world.contains(pivot.add(point.subtract(pivot).multiplyBy(factor))))) return false;
+                if (factor < 1 && widthMeters() * factor < 0.01 - 1e-9) return false;
                 center = nextCenter;
                 scale = nextScale;
                 positioned = true;
-                draw(); syncControls();
+                draw(editing); syncControls();
+                return true;
+            }
+            function setRotation(degrees, editing) {
+                angle = wrap(degrees);
+                positioned = true;
+                draw(editing); syncControls();
             }
             function fit() {
                 const fourth = points[1].add(points[2]).subtract(points[0]);
@@ -270,16 +294,39 @@
             });
             window.addEventListener('blur', endBeforeZoom, {signal:listeners.signal});
             el('fit').onclick = fit;
-            el('smaller').onclick = () => resizeBy(1/1.1, center);
-            el('larger').onclick = () => resizeBy(1.1, center);
+            const nudgeWidth = delta => {
+                const width = widthMeters();
+                resizeBy(Math.max(0.01, width + delta) / width, center);
+            };
+            el('smaller').onclick = () => nudgeWidth(-0.01);
+            el('larger').onclick = () => nudgeWidth(0.01);
+            el('turn-left').onclick = () => setRotation(angle - 0.01);
+            el('turn-right').onclick = () => setRotation(angle + 0.01);
+            widthField.oninput = () => {
+                widthField.setCustomValidity('');
+                if (widthField.validity.valid && !resizeBy(widthField.valueAsNumber / widthMeters(), center, widthField)) {
+                    widthField.setCustomValidity('此宽度超出地图范围。');
+                }
+                syncControls();
+            };
+            rotationField.oninput = () => {
+                if (rotationField.validity.valid) setRotation(rotationField.valueAsNumber, rotationField);
+                else syncControls();
+            };
+            for (const field of [widthField, rotationField]) {
+                field.onblur = () => {
+                    if (field.validity.valid) field.value = field.valueAsNumber.toFixed(2);
+                };
+                field.onkeydown = event => {
+                    if (event.key === 'Enter' && field.reportValidity()) field.blur();
+                };
+            }
             el('pan').onclick = () => {panOnly = !panOnly; syncControls();};
             el('mix').oninput = event => {
                 image.setOpacity(Number(event.target.value)/100);
                 el('percent').textContent = event.target.value+'%';
             };
-            el('angle').oninput = event => {
-                angle = Number(event.target.value); positioned = true; draw(); syncControls();
-            };
+            el('angle').oninput = event => setRotation(event.target.valueAsNumber);
             el('cancel').onclick = stopCalibration;
             const state = {id, cleanup() {
                 endGesture(); listeners.abort();
@@ -299,7 +346,7 @@
                     draw(); fit();
                 }
                 loaded = true; syncControls();
-                message('在影像上滚动鼠标滚轮可等比缩放影像。拖动移动，拖动 ↻ 旋转。用地图 ＋／− 或「平移地图」缩放底图。');
+                message('拖动影像移动，拖动 ↻ 旋转，滚轮等比缩放。宽度和角度可直接输入，＋／− 每次微调 0.01。');
             });
             image.on('error', () => {
                 if (calibrating !== state) return;
@@ -316,7 +363,7 @@
                 event.stopPropagation();
                 if (!loaded || saving || conflict || gesture) return;
                 // Normalize pixel, line and page wheels, including small trackpad deltas.
-                const factor = Math.exp(Math.max(-240, Math.min(240, delta)) / 600);
+                const factor = Math.exp(Math.max(-240, Math.min(240, delta)) / 2400);
                 resizeBy(factor, mapPoint(event));
             }, {passive:false, signal:listeners.signal});
             grip.addTo(map);
