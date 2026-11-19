@@ -315,3 +315,32 @@ class PestHistoryRecord(models.Model):
     class Meta:
         constraints = [models.UniqueConstraint(fields=['team', 'dataset', 'source_key'],
                                               name='ops_history_external_record')]
+
+
+class MapImageOverlay(models.Model):
+    """A georeferenced raster pinned onto the team map by three corner anchors.
+
+    Anchors map the image's top-left / top-right / bottom-left corners to
+    lat/lng, which is exactly what the rotated image-overlay renderer needs;
+    ``null`` anchors mean the image was uploaded but not calibrated yet.
+    """
+    name = models.CharField(max_length=100)
+    image = models.FileField(upload_to='map_overlays/')
+    width = models.PositiveIntegerField(default=0)
+    height = models.PositiveIntegerField(default=0)
+    tl_lat = models.FloatField(null=True, blank=True)
+    tl_lng = models.FloatField(null=True, blank=True)
+    tr_lat = models.FloatField(null=True, blank=True)
+    tr_lng = models.FloatField(null=True, blank=True)
+    bl_lat = models.FloatField(null=True, blank=True)
+    bl_lng = models.FloatField(null=True, blank=True)
+    opacity = models.FloatField(default=0.85)
+    active = models.BooleanField(default=True)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
+                                   null=True, related_name='map_overlays')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    @property
+    def calibrated(self):
+        return None not in (self.tl_lat, self.tl_lng, self.tr_lat, self.tr_lng,
+                            self.bl_lat, self.bl_lng)

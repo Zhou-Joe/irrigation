@@ -1,10 +1,16 @@
 from django.urls import path
-from . import views,bulk,management_views,team_visibility,workorder_media,landscaping
+from . import views,bulk,management_views,team_visibility,workorder_media,landscaping,map_overlays
 
 app_name = 'operations'
 urlpatterns = [
     path('', views.home, name='home'),
     path('switch/', views.switch, name='switch'),
+    path('map-overlays/', map_overlays.collection, name='map_overlay_list'),
+    path('map-overlays/new/', map_overlays.upload, name='map_overlay_upload'),
+    path('map-overlays/<int:pk>/image/', map_overlays.image, name='map_overlay_image'),
+    path('map-overlays/<int:pk>/calibrate/', map_overlays.calibrate, name='map_overlay_calibrate'),
+    path('map-overlays/<int:pk>/update/', map_overlays.update, name='map_overlay_update'),
+    path('map-overlays/<int:pk>/delete/', map_overlays.remove, name='map_overlay_delete'),
     path('locations/', views.locations, name='locations'),
     path('locations/new/', views.location_edit, name='location_new'),
     path('locations/batch/',bulk.create,name='location_batch'),

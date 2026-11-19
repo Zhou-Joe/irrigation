@@ -56,3 +56,8 @@
 .v2-direction-chip input:focus-visible+span{outline:3px solid #91bea1;outline-offset:3px}
 
 .pest-related-form-prompt{grid-column:1/-1;margin:0;padding:10px 12px;border-left:3px solid #2d6a4f;border-radius:6px;background:#edf5ef;color:#244d36;font-size:13px;line-height:1.6}
+
+/* HD imagery overlay anchors + calibration hint (map-overlays.js) */
+.overlay-anchor{background:#fff;border:2px solid #2d6a4f;border-radius:50%;box-shadow:0 1px 4px rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;font:600 11px/1 var(--font-body,system-ui,sans-serif);color:#1b4332;cursor:move}
+.overlay-calibrate-hint{top:auto;bottom:18px;background:rgba(27,67,50,.94);color:#fff;display:flex;gap:8px;align-items:center;z-index:900}
+.overlay-calibrate-hint button{white-space:nowrap}
