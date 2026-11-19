@@ -122,7 +122,7 @@ function mapHarness() {
         eachLayer(fn){[...this.layers].forEach(fn);} addTo(m){m.addLayer(this);return this;}
     }
     const groups=Array.from({length:6},()=>new Group());
-    const map={zoom:15,west:120,east:122,layers:new Set(groups),events:[],on(event,handler){this.events.push({event,handler});return this;},getZoom(){return this.zoom;},getBounds(){return {
+    const map={zoom:15,west:120,east:122,layers:new Set(groups),events:[],on(event,handler){this.events.push({event,handler});return this;},getZoom(){return this.zoom;},getMaxZoom(){return 22;},getBounds(){return {
         pad(){return this;},contains:p=>p.lng>=map.west&&p.lng<=map.east,intersects:()=>true
     };},hasLayer(l){return this.layers.has(l);},addLayer(l){this.layers.add(l);},removeLayer(l){this.layers.delete(l);}};
     const elements={map:{dataset:{}},zoneLoadingMessage:{textContent:''},zoneLoadingSpinner:{},zoneLoadingRetry:{},
@@ -135,18 +135,20 @@ function mapHarness() {
     const L={tileLayer:()=>({}),map:()=>map,control:{zoom:()=>({addTo(){}})},latLngBounds:()=>({contains:()=>true}),layerGroup:()=>new Group(),divIcon:o=>o,latLng:(lat,lng)=>({lat,lng}),
         marker:(p,o)=>new Layer(p,o),polygon:(p,o)=>new Layer(p,o),polyline:(p,o)=>new Layer(p,o)};
     let source=fs.readFileSync(path.join(__dirname,'../../static/js/map.js'),'utf8');
-    const hook=`window.__test={initMap,renderZones,loadZones,loadPipelines,renderCadReference,updateCadSymbolText,locateUser,updateLabelSizes,_cullLabelsToViewport,buildCardHtml,_refreshZonePolygons,
+    const hook=`window.__test={initMap,renderZones,loadZones,loadPipelines,renderPipelines,renderCadReference,updatePipeOverlayTiers,locateUser,updateLabelSizes,_cullLabelsToViewport,buildCardHtml,_refreshZonePolygons,
         labels:()=>zoneLabels, setState(m,g){map=m;[zonesLayerGroup,labelsLayerGroup,leaderLinesLayerGroup,ringLabelsLayerGroup,landmarksLayerGroup]=g;},
-        setCadState(g){[cadReferenceLayerGroup,cadSymbolsLayerGroup,cadNotesLayerGroup,cadUnmatchedLayerGroup]=g;}};`;
+        pipeType:code=>pipelineTypeGroups.get(code),
+        setCadState(g){pipelinesLayerGroup=L.layerGroup();[cadReferenceLayerGroup,cadSymbolsLayerGroup,cadNotesLayerGroup,cadUnmatchedLayerGroup]=g;}};`;
     source=source.replace(/\}\)\(\);\s*$/,hook+'})();');
     const context={window,document,L,localStorage:{getItem:()=>null,setItem(){}},console,setTimeout,clearTimeout,setInterval:()=>0,
         requestAnimationFrame:setImmediate,performance,Set,Map,CustomEvent:class{}};
     vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../../static/js/ui-icons.js'),'utf8'),context);
     vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../../operations/static/operations/map-actions.js'),'utf8'),context);
+    vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../../static/js/valve-icons.js'),'utf8'),context);
     vm.runInNewContext(source,context);
     window.__test.setState(map,groups);
-    const cad=Array.from({length:4},()=>new Group());cad[1].addTo(map);cad[3].addTo(map);
-    window.__test.setCadState(cad);
+    const cad=Array.from({length:4},()=>new Group());
+    window.__test.setCadState(cad);window.__test.updatePipeOverlayTiers();
     return {window,map,groups,cad,api:window.__test,context,elements};
 }
 function zone(id,patch=1,lng=121) {
@@ -158,7 +160,7 @@ test('map initialization registers CAD symbol zoom updates with Leaflet and load
     h.window.IrrigationMapRuntime.fetchJSON=async url=>{requested.push(url);return url.includes('zones')?[]:{pipelines:[],cad_reference:[]};};
     h.api.initMap();
     for(let i=0;i<10&&h.elements.map.dataset.zonesState==='loading';i++)await new Promise(setImmediate);
-    assert.ok(h.map.events.some(({event,handler})=>event==='zoomend'&&handler===h.api.updateCadSymbolText));
+    assert.ok(h.map.events.some(({event,handler})=>event==='zoomend'&&handler===h.api.updatePipeOverlayTiers));
     assert.deepEqual(requested,['/api/zones-payload/','/api/pipelines-payload/']);
     assert.equal(h.elements.map.dataset.zonesState,'ready');
 });
@@ -213,8 +215,30 @@ test('pipeline failure is visible and does not clear successfully drawn zones', 
     assert.equal(h.groups[0].layers.size,1);
     assert.equal(typeof h.elements.pipelineLoadingRetry.onclick,'function');
 });
+test('attached and pending valve icons enter at zone detail zoom and respect independent layer switches', () => {
+    const h=mapHarness(), pt={lat:31,lng:121};
+    h.map.zoom=17;
+    h.api.renderPipelines([{pipeline_type:'main',line_points:[pt,{lat:31.1,lng:121.1}],
+        valves:[{point:[pt],order:0,valve_type:'gate'}]}]);
+    h.api.renderCadReference([{name:'plan',unmatched_valves:[{...pt,block:'QCV',type:'qcv'}]}]);
+    const group=h.api.pipeType('main');
+    assert.equal(group.valveMarkers.layers.size,1);
+    assert.equal(h.cad[3].layers.size,1);
+    for (const [zoom,visible] of [[17,false],[18,true],[20,true],[17,false]]) {
+        h.map.zoom=zoom;h.api.updatePipeOverlayTiers();
+        assert.equal(group.hasLayer(group.valveMarkers),visible);
+        assert.equal(h.map.hasLayer(h.cad[3]),visible);
+        assert.equal(h.map.hasLayer(h.cad[1]),visible);
+        assert.equal(group.layers.size,visible?2:1); // pipe remains on its type layer
+    }
+    h.window.setLayerVisibility('cad_unmatched',false);
+    h.map.zoom=18;h.api.updatePipeOverlayTiers();
+    assert.equal(h.map.hasLayer(h.cad[3]),false);
+    assert.equal(group.hasLayer(group.valveMarkers),true);
+});
 test('CAD block outlines remain visible independently of unselected reference lines', () => {
     const h=mapHarness(),path=ring.map(([lat,lng])=>({lat,lng}));
+    h.map.zoom=18;h.api.updatePipeOverlayTiers();
     const batches=[{name:'Drawing <1>.dxf',layers:[
         {layer:'100',paths:[path]},{layer:'块·GV_50',paths:[path,path.slice(0,2)]}
     ]}];
@@ -232,7 +256,7 @@ test('CAD block outlines remain visible independently of unselected reference li
 });
 test('short symbol text and recognized polyline outlines follow the symbol layer independently of ordinary notes',()=>{
     const h=mapHarness(),path=ring.map(([lat,lng])=>({lat,lng}));
-    h.map.zoom=19;
+    h.map.zoom=19;h.api.updatePipeOverlayTiers();
     h.api.renderCadReference([{name:'WD drawing',layers:[],symbols:[{name:'Polyline valve',paths:[path]}],labels:[
         {text:'WD',lat:31,lng:121,inline_symbol:true},
         {text:'<svg onload=bad>',lat:31,lng:121,inline_symbol:true},
@@ -243,8 +267,8 @@ test('short symbol text and recognized polyline outlines follow the symbol layer
     const texts=[...h.cad[1].layers].filter(layer=>layer.options.icon);
     assert.ok(texts.some(layer=>layer.options.icon.html.includes('WD')));
     assert.ok(texts.some(layer=>layer.options.icon.html.includes('&lt;svg')));
-    h.map.zoom=16;h.api.updateCadSymbolText();
-    assert.ok(texts.every(layer=>layer.getElement().style.display==='none'));
+    h.map.zoom=17;h.api.updatePipeOverlayTiers();
+    assert.equal(h.map.hasLayer(h.cad[1]),false);
 });
 test('changing smoothing keeps popup metadata and never creates invisible overview labels', async () => {
     const h=mapHarness();const data={...zone(1),sprinkler_type:'Rotor',equipment_maintenance_notes:'[]',smooth_override:0};

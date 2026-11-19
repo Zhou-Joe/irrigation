@@ -13,5 +13,12 @@ window.IrrigationValveIcons = (() => {
             html:'<span aria-hidden="true" style="box-sizing:border-box;display:grid;place-items:center;width:100%;height:100%;font:bold 10px/1 sans-serif;border:2px '+(pending?'dashed':'solid')+' '+color+';border-radius:'+radius+';color:'+(watered?'white':color)+';background:'+(watered?'#216145':pending?'#ffedbd':'white')+';box-shadow:0 0 0 1px white;transform:rotate('+(diamond?45:0)+'deg)"><span style="transform:rotate('+(diamond?-45:0)+'deg)">'+glyph+'</span></span>'});
         return {icon,title:(pending?'待挂接 · ':'')+label,alt:label};
     }
-    return {options,label:type=>types[type]?.[0] || '未分类设备'};
+    // The third display tier begins when individual three-part zone codes appear.
+    const detailZoom = 18;
+    function syncLayer(map, layer, parent = map, enabled = true) {
+        const visible = enabled && map.getZoom() >= detailZoom;
+        if (visible && !parent.hasLayer(layer)) parent.addLayer(layer);
+        if (!visible && parent.hasLayer(layer)) parent.removeLayer(layer);
+    }
+    return {detailZoom, syncLayer, options,label:type=>types[type]?.[0] || '未分类设备'};
 })();

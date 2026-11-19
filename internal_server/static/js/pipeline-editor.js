@@ -6,6 +6,13 @@
     const map = L.map('pipeCanvas', {preferCanvas:true,maxZoom:22}).setView([31.145663,121.655407],16);
     L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxNativeZoom:19,maxZoom:22,attribution:'Esri'}).addTo(map);
     const base = L.layerGroup().addTo(map), edits = L.layerGroup().addTo(map);
+    const valves = L.layerGroup(), valveEdits = L.layerGroup();
+    function updateValveVisibility() {
+        icons.syncLayer(map, valves);
+        icons.syncLayer(map, valveEdits);
+    }
+    map.on('zoomend', updateValveVisibility);
+    updateValveVisibility();
     const items = new Map(), pipes = new Map();
     let selected = null, draft = [], dirty = false, busy = false;
     const pt = ll => ({lat: Number(ll.lat.toFixed(7)),lng:Number(ll.lng.toFixed(7))});
@@ -32,16 +39,16 @@
     }
     function show(item, zoom=true) {
         if (busy || dirty && !confirm('放弃尚未保存的修改？')) { list.value=selected?.key || ''; return; }
-        if (selected?.layer) base.addLayer(selected.layer);
+        if (selected?.layer) selected.parent.addLayer(selected.layer);
         pipes.forEach(p=>p.layer.setStyle({weight:3}));
-        selected = item; edits.clearLayers(); changed(false); fillList();
+        selected = item; edits.clearLayers(); valveEdits.clearLayers(); changed(false); fillList();
         el('pendingFields').hidden = item?.kind !== 'pending';
         target.value=''; el('targetZone').value=''; el('valveKind').value=item?.type || '';
         el('targetZone').disabled=el('valveKind').disabled=true; save.textContent='保存修改';
         if (!item) return;
         draft = item.points.map(coords);
         if (zoom) map.fitBounds(L.latLngBounds(draft),{maxZoom:20,padding:[30,30],animate:false});
-        base.removeLayer(item.layer);
+        item.parent.removeLayer(item.layer);
         if (item.kind==='pipe') {
             const line=L.polyline(draft,{weight:5,color:'#15815e'}).addTo(edits);
             draft.forEach((v,i)=>{
@@ -50,26 +57,26 @@
             });
             el('editHint').textContent='拖动白色顶点可局部修改管线。';
         } else {
-            const handle=L.marker(draft[0],{...icons.options(item.type,{pending:item.kind==='pending',size:25}),draggable:true,zIndexOffset:1200}).addTo(edits);
+            const handle=L.marker(draft[0],{...icons.options(item.type,{pending:item.kind==='pending',size:25}),draggable:true,zIndexOffset:1200}).addTo(valveEdits);
             handle.on('dragend',()=>{draft[0]=pt(handle.getLatLng());changed(true);});
             el('editHint').textContent=item.kind==='pending'?'拖动设备调整位置。点选地图上的目标管线或用下拉框选择，再保存挂接。':'拖动选中的阀门调整位置。重叠设备可从列表分别选择。';
         }
         status.textContent=item.label;
     }
     function add(item, layer) {
-        item.layer=layer;items.set(item.key,item);
+        item.layer=layer; item.parent = item.kind === 'pipe' ? base : valves; items.set(item.key,item);
         layer.bindTooltip(document.createTextNode(item.label));
         layer.on('click',()=>{
             if (busy) return;
             if (selected?.kind==='pending' && item.kind==='pipe') targetPipe(item.id);
             else show(item);
-        }).addTo(base);
+        }).addTo(item.parent);
     }
     async function load(focusKey) {
         const response=await fetch('/pipelines/edit/data/?editor=1',{cache:'no-store'});
         if (!response.ok) throw Error('管网加载失败，请刷新重试。');
         const data=await response.json();
-        edits.clearLayers();base.clearLayers();items.clear();pipes.clear();selected=null;changed(false);
+        edits.clearLayers();valveEdits.clearLayers();base.clearLayers();valves.clearLayers();items.clear();pipes.clear();selected=null;changed(false);
         const targets=[new Option('仅调整设备位置','')];
         for (const p of data.pipelines) {
             if (!p.line_points?.length) continue;

@@ -47,7 +47,8 @@
     let pipelinesVisible = true;
     let cadReferenceLayerGroup;
     let cadSymbolsLayerGroup;
-    let cadSymbolLabels = [];
+    let cadSymbolsEnabled = true;
+    let cadUnmatchedEnabled = true;
     let cadNotesLayerGroup;
     let cadUnmatchedLayerGroup;
     // Rendered valve markers + their tooltip content, so a zoomend handler can
@@ -296,10 +297,10 @@
         // Initialize pipelines layer group
         pipelinesLayerGroup = L.layerGroup().addTo(map);
         cadReferenceLayerGroup = L.layerGroup();
-        cadSymbolsLayerGroup = L.layerGroup().addTo(map);
-        map.on('zoomend',updateCadSymbolText);
+        cadSymbolsLayerGroup = L.layerGroup();
         cadNotesLayerGroup = L.layerGroup();
-        cadUnmatchedLayerGroup = L.layerGroup().addTo(map);
+        cadUnmatchedLayerGroup = L.layerGroup();
+        updatePipeOverlayTiers();
 
         // Initialize labels layer group (separate for independent layer control)
         labelsLayerGroup = L.layerGroup().addTo(map);
@@ -327,8 +328,8 @@
         // correct per-element display, then clears the zooming class so labels
         // reappear with the right layout (see _updateLabelSizesAndClearZoom wrapper).
         map.on('zoomend', updateLabelSizesDebounced);
-        map.on('zoomend', applyValveLabelMode);   // valve labels: auto at max zoom, hover below
-        map.on('zoomend', updatePipeOverlayTiers); // pipe overlays: valve dots from z17
+        map.on('zoomend', updatePipeOverlayTiers);
+        map.on('zoomend', () => applyValveLabelMode());
         // 最大层级平移后重排阀门常显 label（碰撞结果是视口相关的）；均防抖。
         let _valveRelayoutT = null;
         map.on('moveend', function () {
@@ -556,7 +557,7 @@
      */
     function getCodeForZoom(code, zoom) {
         const parts = code.split('-');
-        if (parts.length <= 1 || zoom >= 18) return code;
+        if (parts.length <= 1 || zoom >= window.IrrigationValveIcons.detailZoom) return code;
         if (zoom >= 17) return parts.slice(0, 2).join('-');
         return parts[0];
     }
@@ -1627,8 +1628,8 @@
         if (el.textContent && el.textContent.trim().length > 2) {
             try {
                 renderPipelines(JSON.parse(el.textContent));
-                applyValveLabelMode(true);
                 updatePipeOverlayTiers();
+                applyValveLabelMode(true);
             } catch (e) { console.error('pipelines inline parse failed', e); }
             return;
         }
@@ -1638,8 +1639,8 @@
                 if(destroyed)return;
                 renderPipelines(d.pipelines || []);
                 renderCadReference(d.cad_reference || []);
-                applyValveLabelMode(true);   // fresh markers — force rebind
-                updatePipeOverlayTiers();    // valve dots follow the current zoom
+                updatePipeOverlayTiers();
+                applyValveLabelMode(true);
             })
             .catch(err => {
                 if(destroyed)return;
@@ -1648,19 +1649,11 @@
             }).finally(() => { pipelinesLoading = false; });
     }
 
-    // Valve labels: permanent (auto-shown) at the max zoom level, hover-only
-    // below it — matches the zoom-tiered display used for zone watermarks and
-    // boundaries so valves don't clutter the map when zoomed out.
-    // Pipeline overlays follow the map's zoom tiers:
-    //   tier 1 (<17): park overview — valve dots hidden
-    //   tier 2 (>=17): pipe level — valve dots appear
-    //   tier 3 (max zoom): valve labels become permanent (applyValveLabelMode)
-    // CSS class toggles only — no per-marker work on zoom.
     function updatePipeOverlayTiers() {
-        if (!map) return;
-        const z = map.getZoom();
-        const c = map.getContainer();
-        c.classList.toggle('hide-pipe-valves', z < 17);
+        const {syncLayer} = window.IrrigationValveIcons;
+        for (const group of pipelineTypeGroups.values()) syncLayer(map, group.valveMarkers, group);
+        syncLayer(map, cadSymbolsLayerGroup, map, cadSymbolsEnabled);
+        syncLayer(map, cadUnmatchedLayerGroup, map, cadUnmatchedEnabled);
     }
 
     let _valveLabelMode = null;   // 'hover' | 'permanent' — 跨 zoom 不变则不重建
@@ -1829,6 +1822,7 @@
             let typeGroup = pipelineTypeGroups.get(pipeline.pipeline_type);
             if (!typeGroup) {
                 typeGroup = L.layerGroup();
+                typeGroup.valveMarkers = L.layerGroup();
                 pipelineTypeGroups.set(pipeline.pipeline_type, typeGroup);
                 if (!hiddenPipelineTypes.has(pipeline.pipeline_type)) pipelinesLayerGroup.addLayer(typeGroup);
             }
@@ -1871,7 +1865,7 @@
                 vm._tipContent = tipContent;   // for zoom-driven permanent toggle
                 vm._watered = watered;          // 未浇水阀门最大层级不常显 label（仍可悬停查看）
                 valveMarkersForLabels.push(vm);
-                typeGroup.addLayer(vm);
+                typeGroup.valveMarkers.addLayer(vm);
             });
         });
     }
@@ -1880,7 +1874,6 @@
         if(destroyed)return;
         cadReferenceLayerGroup.clearLayers();
         cadSymbolsLayerGroup.clearLayers();
-        cadSymbolLabels = [];
         cadNotesLayerGroup.clearLayers();
         cadUnmatchedLayerGroup.clearLayers();
         batches.forEach(batch => {
@@ -1896,14 +1889,13 @@
             });
             (batch.labels || []).forEach(note => {
                 const inline=!!note.inline_symbol;
-                const marker=L.marker([note.lat, note.lng], {
+                L.marker([note.lat, note.lng], {
                     icon: L.divIcon({ className: inline ? 'cad-symbol-text' : 'cad-note',iconSize:[0,0],
                         html: inline
                             ? `<span style="display:block;transform:translate(-50%,-50%);width:max-content;font-size:11px;font-weight:600;color:#80482f;white-space:nowrap;text-shadow:0 0 2px #fff,0 0 2px #fff;">${escapeHtml(note.text)}</span>`
                             : `<span style="font-size:10px;background:rgba(255,255,255,.85);white-space:nowrap;">${escapeHtml(note.text)}</span>` })
                 }).bindPopup(`<div style="white-space:pre-wrap;">${escapeHtml(note.text)}</div><small>${escapeHtml(batch.name + ' · ' + note.layer)}</small>`)
                     .addTo(inline ? cadSymbolsLayerGroup : cadNotesLayerGroup);
-                if(inline)cadSymbolLabels.push(marker);
             });
             (batch.symbols || []).forEach(symbol => {
                 (symbol.paths || []).forEach(path => L.polyline(path.map(p=>[p.lat,p.lng]),{
@@ -1923,12 +1915,6 @@
                     .addTo(cadUnmatchedLayerGroup);
             });
         });
-        updateCadSymbolText();
-    }
-
-    function updateCadSymbolText() {
-        const visible=map&&map.getZoom()>=18;
-        cadSymbolLabels.forEach(marker=>{const element=marker.getElement();if(element)element.style.display=visible?'':'none';});
     }
 
     // Minimal HTML-escape for user-entered strings placed into popups/tooltips.
@@ -2202,12 +2188,13 @@
             } else {
                 if (map.hasLayer(pipelinesLayerGroup)) map.removeLayer(pipelinesLayerGroup);
             }
-        } else if (layer === 'cad_reference' || layer === 'cad_symbols' || layer === 'cad_notes' || layer === 'cad_unmatched') {
-            const group = layer === 'cad_reference' ? cadReferenceLayerGroup
-                : layer === 'cad_symbols' ? cadSymbolsLayerGroup
-                : layer === 'cad_notes' ? cadNotesLayerGroup : cadUnmatchedLayerGroup;
+        } else if (layer === 'cad_symbols' || layer === 'cad_unmatched') {
+            if (layer === 'cad_symbols') cadSymbolsEnabled = visible;
+            else cadUnmatchedEnabled = visible;
+            updatePipeOverlayTiers();
+        } else if (layer === 'cad_reference' || layer === 'cad_notes') {
+            const group = layer === 'cad_reference' ? cadReferenceLayerGroup : cadNotesLayerGroup;
             if (visible) map.addLayer(group); else map.removeLayer(group);
-            if(layer==='cad_symbols')updateCadSymbolText();
         } else if (layer === 'landmarks') {
             if (visible) {
                 if (!map.hasLayer(landmarksLayerGroup)) {
