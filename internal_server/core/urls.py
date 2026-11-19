@@ -49,7 +49,7 @@ router.register(r'regions', RegionViewSet)
 router.register(r'locations', LocationViewSet, basename='location')
 router.register(r'work-reports', WorkReportViewSet, basename='workreport')
 
-from . import pipeline_editor
+from . import pipeline_editor, valve_shapes
 
 urlpatterns = [
     path('feedback/', feedback.board, name='feedback'),
@@ -129,6 +129,7 @@ urlpatterns = [
     path('pipelines/dxf/calibration/clear/', dxf_views.pipeline_dxf_calibration_clear, name='pipeline_dxf_calibration_clear'),
     path('pipelines/dxf/calibration/apply/', dxf_views.pipeline_dxf_calibration_apply, name='pipeline_dxf_calibration_apply'),
     path('pipelines/dxf/import/', dxf_views.pipeline_dxf_import_submit, name='pipeline_dxf_import_submit'),
+    path('pipelines/valve-shapes/', valve_shapes.editor, name='valve_shapes'),
     path('pipelines/edit/', pipeline_editor.editor, name='pipeline_editor'),
     path('pipelines/edit/pending/<int:batch_id>/', pipeline_editor.edit_pending, name='pipeline_edit_pending'),
     path('pipelines/edit/data/', dxf_views.pipeline_edit_data, name='pipeline_edit_data'),

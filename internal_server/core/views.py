@@ -677,7 +677,7 @@ def _invalidate_cached(key):
     try:
         cache.delete(key)
         if key == 'dashboard:pipelines':
-            cache.delete('dashboard:cad-reference:v2')
+            cache.delete('dashboard:cad-reference:v3')
             ver = cache.get('ref_map:ver') or 0
             cache.set('ref_map:ver', ver + 1, 30 * 86400)
     except Exception:
@@ -5152,8 +5152,9 @@ def pipelines_payload(request):
     """
     pipelines_list = _cached('dashboard:pipelines', 300, _build_pipelines_list_module)
     from .dxf_pipeline_utils import build_cad_reference_payload
-    reference = _cached('dashboard:cad-reference:v2', 300, build_cad_reference_payload)
-    return JsonResponse({'pipelines': pipelines_list, 'cad_reference': reference})
+    reference = _cached('dashboard:cad-reference:v3', 300, build_cad_reference_payload)
+    from .valve_shapes import library
+    return JsonResponse({'pipelines': pipelines_list, 'cad_reference': reference, 'valve_shapes': library()})
 
 
 @login_required(login_url='core:login')

@@ -351,7 +351,9 @@ def pipeline_edit_data(request):
             'batch_id': p.import_batch_id, 'source': p.source_label or '',
         })
     valves = []
-    for v in (PipeValve.objects.select_related('zone', 'station').order_by('id')):
+    from collections import defaultdict
+    attached = defaultdict(dict)
+    for v in PipeValve.objects.select_related('zone', 'station', 'pipeline').order_by('id'):
         valves.append({
             'id': v.id, 'pipeline_id': v.pipeline_id,
             'name': v.name or '', 'type': v.valve_type,
@@ -361,6 +363,9 @@ def pipeline_edit_data(request):
             'zone_id': v.zone_id, 'zone_label': (v.zone.code + ' ' + v.zone.name) if v.zone else '',
             'station_id': v.station_id,
         })
+        sid = v.source_attributes.get('source_id')
+        if sid:
+            attached[v.source_attributes.get('cad_batch_id') or v.pipeline.import_batch_id][v.pk] = (sid, valves[-1])
     zones = [{'id': z.id, 'label': f'{z.code} {z.name}'}
              for z in Zone.objects.order_by('code')]
     editor_mode = request.GET.get('editor') == '1'
@@ -381,14 +386,21 @@ def pipeline_edit_data(request):
     pending = []
     if editor_mode:
         from .pipeline_editor import batch_projection, pending_feature
+        from .valve_orientation import batch_poses
         for batch in PipelineImportBatch.objects.exclude(source_geometry={}).iterator(chunk_size=1):
             project = batch_projection(batch)
             if project:
-                for item in batch.source_geometry.get('unmatched_valves', []):
+                items = batch.source_geometry.get('unmatched_valves', [])
+                linked = attached[batch.pk].values()
+                poses = batch_poses(batch.source_geometry, project, {sid for sid, _ in linked} | {v.get('source_id') for v in items})
+                for sid, valve in linked:
+                    valve['orientation'] = poses.get(sid)
+                for item in items:
                     feature = pending_feature(batch, item, project)
                     pending.append({k:feature.get(k) for k in ('source_id','type','lat','lng','block')} |
-                                   {'batch_id':batch.pk, 'batch':batch.name})
-    return JsonResponse({'success': True, 'pending':pending, 'pipelines': pipes,
+                                   {'batch_id':batch.pk, 'batch':batch.name, 'orientation':poses.get(item.get('source_id'))})
+    from .valve_shapes import library
+    return JsonResponse({'success': True, 'valve_shapes':library() if editor_mode else {}, 'pending':pending, 'pipelines': pipes,
                          'valves': valves, 'zones': zones,
                          'batch_calibrations': batch_calibrations, 'cad_source': cad_source,
                          'cad_options': cad_options})

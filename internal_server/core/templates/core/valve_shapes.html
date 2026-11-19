@@ -1,0 +1,39 @@
+{% extends 'core/base.html' %}{% load static %}
+{% block title %}自定义阀门图案{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'css/valve-shapes.css' %}?v=20261119shapes1">{% endblock %}
+{% block content %}
+<main class="vs-page">
+    <a href="{% url 'core:settings' %}?tab=pipelines">返回管道管理</a>
+    <h1>自定义阀门图案</h1>
+    <div class="vs-layout">
+        <section class="vs-drawing" aria-label="绘图">
+            <div class="vs-toolbar" role="group" aria-label="绘图工具">
+                <button type="button" data-tool="pen" aria-pressed="true">自由画笔</button>
+                <button type="button" data-tool="line" aria-pressed="false">直线</button>
+                <button type="button" data-tool="circle" aria-pressed="false">圆形</button>
+                <button type="button" id="shapeUndo" disabled>撤销</button>
+            </div>
+            <p id="shapeInstructions">拖动绘制一笔。也可以用方向键移动光标，按空格开始或结束。</p>
+            <svg id="shapePad" viewBox="0 0 64 64" tabindex="0" role="group" aria-label="阀门图案画布" aria-describedby="shapeInstructions">
+                <defs><pattern id="shapeGrid" width="4" height="4" patternUnits="userSpaceOnUse"><path d="M4 0H0V4" fill="none" stroke="#dfe7e2" stroke-width=".15"/></pattern></defs>
+                <rect width="64" height="64" fill="url(#shapeGrid)"/>
+                <path d="M0 32H64M32 0V64" stroke="#9bb7aa" stroke-width=".28" stroke-dasharray="1.3 1"/>
+                <g id="shapeInk" fill="none" stroke="#204e44" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round"></g>
+                <circle id="shapeCursor" cx="32" cy="32" r="1" fill="#c06625" />
+            </svg>
+            <p>十字中心对应阀门位置，向右为图案的基准方向。</p>
+        </section>
+        <section class="vs-settings" aria-label="图案设置">{% csrf_token %}
+            <label>阀门类型<select id="shapeKind">{% for value,name in valve_types %}<option value="{{ value }}">{{ name }}</option>{% endfor %}</select></label>
+            <label>角度补偿（度）<input type="number" id="shapeOffset" min="-180" max="180" step="1" value="0"></label>
+            <h2>地图预览</h2>
+            <div class="vs-previews"><figure><span id="shapePreviewZero"></span><figcaption>基准方向</figcaption></figure><figure><span id="shapePreviewTurn"></span><figcaption>旋转 60°</figcaption></figure></div>
+            <p>保存后，同类阀门在灌溉首页和管网编辑地图上共用该图案。</p>
+            <div class="vs-actions"><button type="button" id="shapeDefault">恢复默认图标</button><button type="button" id="shapeSave" disabled>保存图案</button></div>
+            <p id="shapeStatus" role="status" aria-live="polite"></p>
+        </section>
+    </div>
+</main>
+{{ shapes|json_script:"shape-library" }}
+{% endblock %}
+{% block extra_js %}<script src="{% static 'js/valve-icons.js' %}?v=20261119shapes1"></script><script src="{% static 'js/valve-shapes.js' %}?v=20261119shapes1"></script>{% endblock %}

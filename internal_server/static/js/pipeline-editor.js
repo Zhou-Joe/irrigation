@@ -57,11 +57,13 @@
             });
             el('editHint').textContent='拖动白色顶点可局部修改管线。';
         } else {
-            const handle=L.marker(draft[0],{...icons.options(item.type,{pending:item.kind==='pending',size:25}),draggable:true,zIndexOffset:1200}).addTo(valveEdits);
+            const handle=L.marker(draft[0],{...icons.options(item.type,{pending:item.kind==='pending',size:25,orientation:item.orientation}),draggable:true,zIndexOffset:1200}).addTo(valveEdits);
             handle.on('dragend',()=>{draft[0]=pt(handle.getLatLng());changed(true);});
             el('editHint').textContent=item.kind==='pending'?'拖动设备调整位置。点选地图上的目标管线或用下拉框选择，再保存挂接。':'拖动选中的阀门调整位置。重叠设备可从列表分别选择。';
         }
-        status.textContent=item.label;
+        const source = item.orientation?.source;
+        const direction = source === 'block' ? '按 CAD 块方向对齐' : source === 'axis' ? '按轮廓主轴对齐（正反未定）' : '无可靠方向，使用绘制朝向';
+        status.textContent = item.kind === 'pipe' ? item.label : item.label + ' · ' + direction;
     }
     function add(item, layer) {
         item.layer=layer; item.parent = item.kind === 'pipe' ? base : valves; items.set(item.key,item);
@@ -76,6 +78,7 @@
         const response=await fetch('/pipelines/edit/data/?editor=1',{cache:'no-store'});
         if (!response.ok) throw Error('管网加载失败，请刷新重试。');
         const data=await response.json();
+        icons.configure(data.valve_shapes);
         edits.clearLayers();valveEdits.clearLayers();base.clearLayers();valves.clearLayers();items.clear();pipes.clear();selected=null;changed(false);
         const targets=[new Option('仅调整设备位置','')];
         for (const p of data.pipelines) {
@@ -89,12 +92,12 @@
         for (const v of data.valves) {
             if (!v.point?.length) continue;
             const label=icons.label(v.type)+' #'+v.id+' · '+(v.name || '未命名设备')+' · '+(pipes.get(v.pipeline_id)?.label || '');
-            add({key:'v'+v.id,kind:'valve',id:v.id,type:v.type,label,points:v.point},L.marker(v.point[0],icons.options(v.type)));
+            add({key:'v'+v.id,kind:'valve',id:v.id,type:v.type,orientation:v.orientation,label,points:v.point},L.marker(v.point[0],icons.options(v.type,{orientation:v.orientation})));
         }
         for (const v of data.pending) {
             if (!v.source_id) continue;
             const pos={lat:v.lat,lng:v.lng}, label='待挂接 · '+icons.label(v.type)+' · '+v.block+' · '+v.batch+' / '+v.source_id;
-            add({key:'u'+v.batch_id+':'+v.source_id,kind:'pending',batch:v.batch_id,sid:v.source_id,type:v.type,label,points:[pos]},L.marker(pos,icons.options(v.type,{pending:true})));
+            add({key:'u'+v.batch_id+':'+v.source_id,kind:'pending',batch:v.batch_id,sid:v.source_id,type:v.type,orientation:v.orientation,label,points:[pos]},L.marker(pos,icons.options(v.type,{pending:true,orientation:v.orientation})));
         }
         controls.disabled=false; busy=false;fillList();
         if (focusKey && items.has(focusKey)) show(items.get(focusKey));

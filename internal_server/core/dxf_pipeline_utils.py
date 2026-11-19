@@ -284,7 +284,7 @@ def _parse_dxf_geometry(content_bytes):
             pass
     diagnostics = []
     geometry = _collect_geometry(doc.modelspace(), diagnostics=diagnostics)
-    return (*geometry, {'file_hash': hashlib.sha256(content_bytes).hexdigest()[:32],
+    return (*geometry, {'valve_frame_version': 1, 'file_hash': hashlib.sha256(content_bytes).hexdigest()[:32],
                         'units': int(doc.header.get('$INSUNITS', 0)),
                         'dxf_version': doc.dxfversion, 'diagnostics': diagnostics})
 
@@ -310,7 +310,7 @@ def _parsed_from_cache_or_file(content_bytes):
     token = hashlib.sha256(content_bytes).hexdigest()[:32]
     key = PARSE_CACHE_KEY_PREFIX + token
     hit = cache.get(key)
-    if hit is not None:
+    if hit is not None and hit[3].get('valve_frame_version') == 1:
         return token, hit[0], hit[1], hit[2], hit[3]
     parsed = _parse_dxf_geometry(content_bytes)
     try:
@@ -543,6 +543,7 @@ def _explode_insert_geometry(insert, name, layers, depth=INSERT_EXPLODE_DEPTH,
 
 def _collect_geometry(msp, diagnostics=None):
     """Collect source geometry in WCS, retaining identity and unsupported reasons."""
+    from .valve_orientation import insert_frame
     layers, valves, labels = {}, [], []
     diagnostics = diagnostics if diagnostics is not None else []
     for e in msp:
@@ -559,7 +560,7 @@ def _collect_geometry(msp, diagnostics=None):
                     diagnostics.append({'source_id': sid, 'type': et, 'layer': layer,
                                         'reason': '块包含非有限坐标'})
                     continue
-                valves.append({'block': instance.dxf.name, 'layer': layer,
+                valves.append({'cad_frame': insert_frame(instance), 'block': instance.dxf.name, 'layer': layer,
                                'source_id': sid, 'x': float(pos.x), 'y': float(pos.y),
                                'attrs': {a.dxf.tag: a.dxf.text for a in instance.attribs}})
                 _explode_insert_geometry(instance, instance.dxf.name, layers,
@@ -1278,11 +1279,15 @@ def build_cad_reference_payload():
     """Independent, retained CAD reference/annotation/unmatched-asset overlays."""
     from core.models import PipelineImportBatch, PipeValve
     from .pipeline_editor import batch_projection, pending_feature
+    from .valve_orientation import batch_poses
     placed = defaultdict(dict)
-    for attrs, point_value, pipe_batch in PipeValve.objects.exclude(source_attributes={}).values_list(
-            'source_attributes', 'point', 'pipeline__import_batch_id'):
+    attached = defaultdict(dict)
+    for pk, attrs, point_value, pipe_batch in PipeValve.objects.exclude(source_attributes={}).values_list(
+            'pk', 'source_attributes', 'point', 'pipeline__import_batch_id'):
         if attrs.get('source_id') and point_value and isinstance(point_value[0], dict):
-            placed[attrs.get('cad_batch_id') or pipe_batch][attrs['source_id']] = point_value[0]
+            batch_id = attrs.get('cad_batch_id') or pipe_batch
+            placed[batch_id][attrs['source_id']] = point_value[0]
+            attached[batch_id][pk] = attrs['source_id']
     result = []
     for batch in PipelineImportBatch.objects.exclude(source_geometry={}):
         point = batch_projection(batch)
@@ -1290,6 +1295,8 @@ def build_cad_reference_payload():
             continue
         source = batch.source_geometry
         from .dxf_symbols import inline_text
+        pending = source.get('unmatched_valves', [])
+        poses = batch_poses(source, point, set(attached[batch.pk].values()) | {v.get('source_id') for v in pending})
         recognized=source.get('recognized_shapes',[])
         offsets = {v['source_id']:v['manual_offset'] for v in source.get('unmatched_valves', [])
                    if v.get('manual_offset') and v.get('source_id')}
@@ -1318,6 +1325,7 @@ def build_cad_reference_payload():
         symbol_labels={ref for shape in recognized for ref in shape.get('label_refs',[])}|set(source.get('symbol_label_refs',[]))
         result.append({
             'batch_id': batch.id, 'name': batch.name,
+            'attached_orientations': {pk: poses[sid] for pk, sid in attached[batch.pk].items() if sid in poses},
             'layers': [{'layer': name, 'paths': [
                 layer_path(name, bucket, index, path)
                 for index,path in enumerate(bucket['polys']) if (name,index) not in removed]}
@@ -1328,8 +1336,7 @@ def build_cad_reference_payload():
             'labels': [dict(lb, **shifted(lb['x'], lb['y'],8 if inline_text(lb) or lb.get('source_id') in symbol_labels else 6, label_shapes.get(lb.get('source_id'),lb.get('source_id'))),
                             inline_symbol=inline_text(lb) or lb.get('source_id') in symbol_labels)
                        for lb in source.get('labels', [])],
-            'unmatched_valves': [pending_feature(batch, v, point)
-                                 for v in source.get('unmatched_valves', [])],
+            'unmatched_valves': [dict(pending_feature(batch, v, point), orientation=poses.get(v.get('source_id'))) for v in pending],
             'unsupported': source.get('metadata', {}).get('diagnostics', []),
         })
     return result

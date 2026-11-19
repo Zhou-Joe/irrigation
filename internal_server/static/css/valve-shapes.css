@@ -1,0 +1,14 @@
+.vs-page{max-width:980px;margin:0 auto;padding:clamp(16px,4vw,42px);color:#243c33}
+.vs-page h1{font-size:clamp(1.45rem,3vw,2rem);margin:.5em 0 .8em}.vs-page h2{font-size:1rem;margin:0}
+.vs-layout{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(220px,1fr);gap:20px;align-items:start}
+.vs-drawing,.vs-settings{min-width:0;padding:18px;background:#fff;border:1px solid #d8e3dc;border-radius:12px}
+.vs-page p,.vs-previews figcaption{font-size:.86rem;color:#496456;line-height:1.5}
+.vs-toolbar,.vs-actions,.vs-previews{display:flex;gap:8px;flex-wrap:wrap}
+.vs-page button,.vs-page input,.vs-page select{font:inherit;padding:8px 10px;border-radius:7px;border:1px solid #a5b9ae;color:#294a3b;background:#fff}
+.vs-page button[aria-pressed=true],#shapeSave{background:#245942;color:white}.vs-page button:disabled{opacity:.5}
+#shapePad{display:block;width:100%;aspect-ratio:1;background:#f8faf8;border:1px solid #c7d7cd;touch-action:none;cursor:crosshair}
+#shapePad:focus-visible{outline:3px solid #39755c}#shapeCursor{visibility:hidden}#shapePad:focus-visible #shapeCursor{visibility:visible}
+.vs-settings{display:grid;gap:14px}.vs-settings label{display:grid;gap:5px;font-weight:600}.vs-settings p{margin:0}
+.vs-previews figure{display:grid;justify-items:center;gap:6px;margin:0;padding:12px;background:#f3f6f2;border-radius:7px;flex:1}
+.vs-previews figure>span{display:block;width:34px;height:34px}.vs-settings #shapeStatus{min-height:1.5em}
+@media(max-width:690px){.vs-layout{grid-template-columns:1fr}.vs-drawing,.vs-settings{padding:12px}}

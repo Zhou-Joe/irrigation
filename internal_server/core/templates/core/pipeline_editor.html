@@ -23,9 +23,9 @@
 <label>控制区域（可选）<select id="targetZone"><option value="">未指定</option></select></label></div>
 <button type="button" id="saveGeo" disabled>保存</button> <button type="button" id="resetGeo" disabled>撤销本次修改</button>
 </fieldset><p id="editStatus" role="status">正在加载管网…</p>
-<a href="{% url 'core:pipeline_new' %}">绘制新管道</a> · <a href="{% url 'core:dashboard' %}">返回首页</a>
+<a href="{% url 'core:valve_shapes' %}">自定义阀门图案</a> · <a href="{% url 'core:pipeline_new' %}">绘制新管道</a> · <a href="{% url 'core:dashboard' %}">返回首页</a>
 </aside><div id="pipeCanvas" aria-label="管网卫星地图"></div></main>
 {% endblock %}
 {% block extra_js %}<script src="{% static 'vendor/leaflet/leaflet.js' %}"></script>
-<script src="{% static 'js/valve-icons.js' %}?v=20261119valves1"></script>
-<script src="{% static 'js/pipeline-editor.js' %}?v=20261119valves1"></script>{% endblock %}
+<script src="{% static 'js/valve-icons.js' %}?v=20261119shapes1"></script>
+<script src="{% static 'js/pipeline-editor.js' %}?v=20261119shapes1"></script>{% endblock %}

@@ -2986,6 +2986,13 @@ class SiteCalibration(models.Model):
         return f'标定 #{self.id} · {len(self.points)}点 · {self.created_at:%Y-%m-%d %H:%M}'
 
 
+class ValveMapShape(models.Model):
+    valve_type = models.CharField(primary_key=True, max_length=20, choices=PipeValve.VALVE_TYPE_CHOICES)
+    paths = models.JSONField(default=list)
+    offset = models.SmallIntegerField(default=0)
+    revision = models.PositiveIntegerField(default=0)
+
+
 class DxfValveShapeTemplate(models.Model):
     """Reviewed, location-free CAD symbol examples shared by irrigation managers."""
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)

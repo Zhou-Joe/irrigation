@@ -1637,7 +1637,11 @@
         runtime.fetchJSON('/api/pipelines-payload/')
             .then(d => {
                 if(destroyed)return;
-                renderPipelines(d.pipelines || []);
+                const icons = window.IrrigationValveIcons;
+                icons.configure(d.valve_shapes);
+                icons.legend(document.getElementById('valveLegend'));
+                const attached = Object.assign({}, ...(d.cad_reference || []).map(batch => batch.attached_orientations));
+                renderPipelines(d.pipelines || [], attached);
                 renderCadReference(d.cad_reference || []);
                 updatePipeOverlayTiers();
                 applyValveLabelMode(true);
@@ -1720,7 +1724,7 @@
         else map.removeLayer(pipelinesLayerGroup);
     }
 
-    function renderPipelines(pipelines) {
+    function renderPipelines(pipelines, orientations = {}) {
         if(destroyed)return;
         pipelinesLayerGroup.clearLayers();
         pipelineTypeGroups.clear();
@@ -1839,7 +1843,7 @@
                 const dia = v.diameter || 20;
                 const size = Math.max(13, Math.min(18, 9 + dia / 10));
                 const watered = !!v.watered_today;
-                const vm = L.marker(pt, window.IrrigationValveIcons.options(v.valve_type, {watered, size:Math.max(16,size)}));
+                const vm = L.marker(pt, window.IrrigationValveIcons.options(v.valve_type, {watered, orientation:orientations[v.id], size:Math.max(16,size)}));
                 // Zone label: "名称 代号" (e.g. "BOH 1-1-1"); fall back to whichever exists.
                 const zLabel = [v.zone_name, v.zone_code].filter(x => x).join(' ') || '查看区域';
                 const zLink = v.zone_id ? `<a href="/zone/${v.zone_id}/detail/" style="color:#1B4332;">${escapeHtml(zLabel)} ↗</a>` : '无';
@@ -1910,7 +1914,7 @@
                     url.searchParams.set('source',valve.source_id);
                 }
                 const kind = window.IrrigationValveIcons.label(valve.type);
-                L.marker([valve.lat,valve.lng],window.IrrigationValveIcons.options(valve.type,{pending:true}))
+                L.marker([valve.lat,valve.lng],window.IrrigationValveIcons.options(valve.type,{pending:true,orientation:valve.orientation}))
                     .bindPopup(`<b>待挂接 · ${escapeHtml(kind)} · ${escapeHtml(valve.block)}</b><div>此设备尚未关联管道，可选择目标管线后挂接。区域编号可另行选择。</div><small>${escapeHtml(batch.name+' · '+valve.source_id)}</small>${url ? '<div><a href="'+escapeHtml(url.href)+'">地图挂接或调整位置</a></div>' : ''}`)
                     .addTo(cadUnmatchedLayerGroup);
             });

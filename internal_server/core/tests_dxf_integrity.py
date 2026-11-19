@@ -361,6 +361,7 @@ class ImportIntegrityTests(TestCase):
         pipe = batch.pipelines.get()
         source = utils.build_cad_reference_payload()[0]
         device = source['unmatched_valves'][0]
+        self.assertEqual(device['orientation']['source'], 'block')
         pos = {k:device[k] for k in ('lat','lng')}
         url = f'/pipelines/edit/pending/{batch.pk}/'
         moved = dict(pos, lat=round(pos['lat']+.0001,7))
@@ -375,6 +376,8 @@ class ImportIntegrityTests(TestCase):
         self.assertEqual(self.client.post(url,body).status_code,409)
         new = utils.build_cad_reference_payload()[0]
         self.assertEqual(new['unmatched_valves'],[])
+        self.assertEqual(new['attached_orientations'][valve.pk], device['orientation'])
+        self.assertEqual(self.client.get('/pipelines/edit/data/?editor=1').json()['valves'][0]['orientation'], device['orientation'])
         old_path=next(l['paths'][0] for l in source['layers'] if l['layer'].startswith('块·'))
         new_path=next(l['paths'][0] for l in new['layers'] if l['layer'].startswith('块·'))
         self.assertAlmostEqual(new_path[0]['lat']-old_path[0]['lat'],.0001,places=6)
