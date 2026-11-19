@@ -73,6 +73,7 @@ def pest_dashboard(request):
         'can_use_ai': can_use_assistant(request),
         'announcements':_unacked_announcements_for(request.user,member.team),'pest_map_style':MapStyleSettings.get_style(),
         'pest_mode':True, 'can_pest_submit':member.role in ('manager','field') or is_general(request.user),
+        'can_create': bool(member),
         'can_pest_manage':member.role=='manager' or is_general(request.user)})
 
 

@@ -3,7 +3,7 @@
     const ready=fn=>document.readyState==='loading'?document.addEventListener('DOMContentLoaded',fn,{once:true}):fn();
     ready(function () {
         const effects=window.FOSScopedEffects(),byId=id=>document.getElementById(id),runtime=window.IrrigationMapRuntime,markers=window.FOSMapMarkers;
-        let canSubmit=byId('pestCanSubmit').dataset.value==='yes',canManage=byId('pestCanSubmit').dataset.manager==='yes';
+        let canSubmit=byId('pestCanSubmit').dataset.value==='yes',canManage=byId('pestCanSubmit').dataset.manager==='yes',canCreate=byId('pestCanSubmit').dataset.create==='yes';
         const initial=window.FOSMapInitialView;
         const park=runtime.parkView();
         const map=L.map('map',{preferCanvas:true,zoomControl:false,maxBounds:park.bounds,maxBoundsViscosity:park.maxBoundsViscosity,minZoom:park.minZoom,maxZoom:park.maxZoom})
@@ -20,7 +20,7 @@
         const equipmentLayer=p=>p.kind==='trap_cage'?'traps':p.kind==='beehive'?'beehives':null;
         const layerKey=p=>p.shared?'shared':equipmentLayer(p)|| (p.kind==='monitoring'?'monitoring':['building','floor','room'].includes(p.kind)?'buildings':'zones');
         function changed(){parameters?.sync();dirty=true;window.IrrigationPWA?.markDirty();}
-        function actions(){return [...(canSubmit?[{icon:'clipboard',label:'工单提交',action:()=>openForm()}]:[]),...(canManage?[{icon:'plus',label:'新增地点/设施',action:()=>creator.open()},{icon:'layers',label:'区域管理',url:'/ops/locations/'}]:[]),{icon:'folder',label:'历史记录',url:'/work-reports/'}];}
+        function actions(){return [...(canSubmit?[{icon:'clipboard',label:'工单提交',action:()=>openForm()}]:[]),...(canCreate?[{icon:'plus',label:'新增地点/设施',action:()=>creator.open()}]:[]),...(canManage?[{icon:'layers',label:'区域管理',url:'/ops/locations/'}]:[]),{icon:'folder',label:'历史记录',url:'/work-reports/'}];}
         function popup(p){const div=document.createElement('div');div.className='pest-place-popup';const title=document.createElement('h3');title.textContent=p.name;const detail=document.createElement('p');detail.textContent=[p.code,p.kind_label,p.source].filter(Boolean).join(' · ');div.append(title,detail);if(canSubmit){const button=document.createElement('button');button.textContent='创建工单';button.onclick=()=>openForm([p.id]);div.append(button);}return div;}
         function selectStyle() {
             for (const [id, layers] of shapes) {
@@ -195,7 +195,7 @@
             }
         }
         byId('pestCloseWorkorder').onclick=()=>closeForm();byId('woModalBackdrop').onclick=()=>closeForm();byId('woSubmitBtn').onclick=submit;byId('pestChangePlaces').onclick=()=>picker?.open();
-        window.FOSPestMap={refresh,busy:()=>busy||creator.busy(),dirty:()=>dirty,updateRole(data){closeForm();creator.close();canSubmit=data?.value==='yes';canManage=data?.manager==='yes';window.FOSMapActions.setItems(actions());},destroy(){effects.destroy();creator.destroy();picker?.destroy();media?.destroy();parameters?.destroy();window.FOSMapActions.destroy();map.remove();}};
+        window.FOSPestMap={refresh,busy:()=>busy||creator.busy(),dirty:()=>dirty,updateRole(data){closeForm();creator.close();canSubmit=data?.value==='yes';canManage=data?.manager==='yes';canCreate=data?.create==='yes';window.FOSMapActions.setItems(actions());},destroy(){effects.destroy();creator.destroy();picker?.destroy();media?.destroy();parameters?.destroy();window.FOSMapActions.destroy();map.remove();}};
         window.quickWorkorder=ids=>openForm(ids);effects.listen(window,'focus',()=>{if(!busy&&!dirty)refresh();});effects.listen(window,'pageshow',event=>{if(event.persisted)refresh();});
         refresh();const incoming=new URL(location.href).searchParams;if(incoming.get('action')==='workorder'){const source={};for(const key of ['report_id','pest_task'])if(incoming.has(key))source[key]=incoming.get(key);openForm([],source);}
     });

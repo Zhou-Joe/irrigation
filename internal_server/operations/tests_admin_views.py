@@ -79,7 +79,8 @@ class BusinessViewTests(TestCase):
         page=self.client.get('/')
         self.assertEqual(page.context['business_choices'],[{'code':'pest-control','label':'植保'}])
         self.assertFalse(page.context['is_admin'])
-        self.assertNotContains(page,'id="mapLocationCreate"')
+        # Frontline members get the map create dialog without gaining manager rights.
+        self.assertContains(page,'id="mapLocationCreate"')
         self.assertEqual(self.client.post('/ops/switch/',{'business':'irrigation'}).status_code,403)
         self.assertEqual(self.client.post('/ops/switch/',{'business':'pest-control','role':'manager'}).status_code,302)
         self.assertFalse(self.client.get('/').context['is_admin'])
