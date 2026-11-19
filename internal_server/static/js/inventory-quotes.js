@@ -251,6 +251,7 @@
             }
             if (readiness) {
                 const missing = [];
+                if (!destination.value) missing.push('选择写入目标');
                 if (!supplier.value.trim()) missing.push('填写供应商名称');
                 if (destination?.value === 'order') {
                     if (!orderNumber.value.trim()) missing.push('填写灌溉订单编号');
@@ -338,9 +339,11 @@
             review.replaceChildren(); review.hidden = false;
             const fields = el('fieldset'), meta = el('div', 'ivq-meta-grid');
             destination = el('select');
+            if (data.destination === 'choose') destination.add(new Option('请选择写入目标', ''));
+            destination.required = true;
             destination.add(new Option('供应商报价', 'quote'));
             destination.add(new Option('采购订单', 'order'));
-            destination.value = data.destination === 'order' ? 'order' : 'quote';
+            destination.value = data.destination === 'choose' ? '' : (data.destination || (data.order_number && !data.quote_date ? 'order' : 'quote'));
             orderNumber = input(data.order_number || ''); orderNumber.maxLength = 100;
             const numberField = field('灌溉订单编号', orderNumber);
             quoteDate = input(destination.value === 'order' ? data.purchase_date : data.quote_date, {type:'date', required:true});
@@ -363,16 +366,17 @@
             editSource.onclick = () => { review.hidden = true; source.hidden = false; phase('source'); setStatus('可更换报价内容并重新提取；原预览未写入。'); syncEnabled(); notify(); };
             discard.onclick = cancelDraft; actions.append(discard, editSource);
             fields.append(actions); review.append(fields, warning, readiness, confirmButton); countSummary();
-            const dates = {order:data.purchase_date || '', quote:data.quote_date || ''};
+            const dates = {order:data.purchase_date || '', quote:data.quote_date || '', '':''};
             let previous = destination.value;
             function syncTarget() {
                 const order = destination.value === 'order';
                 numberField.hidden = !order;
                 orderNumber.disabled = !order; orderNumber.required = order;
+                dateField.hidden = !destination.value; quoteDate.disabled = !destination.value;
                 dateField.firstChild.textContent = order ? '采购日期（必填）' : '报价日期（必填）';
-                quoteHint.hidden = order;
-                title.querySelector('strong').textContent = order ? '采购订单导入' : '报价提取';
-                warning.textContent = order ? '确认后将创建采购订单和计划物料，库存数量保持原值。' : '确认后将记录供应商报价。';
+                quoteHint.hidden = destination.value !== 'quote';
+                title.querySelector('strong').textContent = !destination.value ? '导入物料' : order ? '采购订单导入' : '报价提取';
+                warning.textContent = !destination.value ? '请选择采购订单或供应商报价。' : order ? '确认后将创建采购订单和计划物料，库存数量保持原值。' : '确认后将记录供应商报价。';
                 review.querySelectorAll('[data-order-quantity]').forEach(label => {
                     label.hidden = !order; label.querySelector('input').disabled = !order;
                 });
@@ -515,6 +519,7 @@
         }
         function snapshot(fromButton) {
             clearCorrection();
+            if (!destination.value) return needsCorrection('请选择采购订单或供应商报价。', destination);
             if (!supplier.value.trim()) return needsCorrection('请填写供应商名称。', supplier);
             if (state.supplierChoice === 'pending' && !fromButton) {
                 return needsCorrection('请选择历史供应商，或点击卡片上的按钮确认使用填写的名称。', supplier);

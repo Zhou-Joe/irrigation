@@ -257,13 +257,19 @@ test('the final EnGenie order button confirms the named supplier and reports val
         };
         const catalog = [1,2].map(id => ({id, name:'部件'+id, node_type:'part'}));
         window.EnGenieQuotes.mount({host:document.getElementById('card'), threadId:'test', draft:{
-            token:'draft', submission_key:'key', destination:'order', order_number:'PO-1', supplier:'测试供应商',
+            token:'draft', submission_key:'key', destination:'choose', order_number:'PO-1', supplier:'测试供应商',
             catalog, items:catalog.map(item => ({row_id:String(item.id), name:item.name, category_id:item.id, quantity:'2'}))
         }});
     });
     const form=page.locator('.ivq-review'), button=form.getByRole('button',{name:'确认使用「测试供应商」并写入 2 项'});
     const chat=await page.evaluate(() => window.EnGenieQuotes.confirmFromChat('确认', 'test'));
     assert.equal(chat.success, false);
+    await button.click();
+    const target=form.getByLabel('写入目标');
+    assert.equal(await target.inputValue(),'');
+    assert.ok(await target.evaluate(field => document.activeElement === field));
+    assert.equal(await page.evaluate(() => window.posts.length), 0);
+    await target.selectOption('order');
     await button.click();
     const date=form.getByLabel('采购日期');
     assert.ok(await date.evaluate(field => document.activeElement === field));
@@ -281,4 +287,56 @@ test('the final EnGenie order button confirms the named supplier and reports val
     assert.equal(posts[1].supplier,'测试供应商');
     assert.equal(JSON.parse(posts[1].items).length,2);
     assert.equal(posts[1].submission_key,posts[0].submission_key);
+});
+
+test('HD imagery loads inside the viewport and drafts require a loaded image and an alignment', async t => {
+    const {page} = await fixture(t, '<div data-hd-controls><input data-hd-visible type="checkbox" checked><button data-hd-manage>管理</button></div><div style="position:relative"><div id="map" style="height:300px;width:400px"></div></div>');
+    const ops = path.resolve(assets, '../operations/static');
+    await page.addStyleTag({path:path.join(assets, 'vendor/leaflet/leaflet.css')});
+    await page.addScriptTag({path:path.join(assets, 'vendor/leaflet/leaflet.js')});
+    await page.addScriptTag({path:path.join(ops, 'vendor/leaflet/imageoverlay-rotated.js')});
+    await page.addScriptTag({path:path.join(ops, 'operations/map-overlays.js')});
+    const downloads = [];
+    let release;
+    const pending = new Promise(resolve => { release = resolve; });
+    await page.route('https://imagery.invalid/*', async route => {
+        const name = new URL(route.request().url()).pathname;
+        downloads.push(name);
+        if (name === '/draft') await pending;
+        await route.fulfill({contentType:'image/png', body:Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jGn8AAAAASUVORK5CYII=', 'base64')});
+    });
+    await page.evaluate(async () => {
+        const map = window.map = L.map('map', {zoomAnimation:false}).setView([31,121], 19);
+        const ll = (x,y) => {const p = map.containerPointToLatLng([x,y]);return [p.lat,p.lng];};
+        const image = (id, name, anchors) => ({id, name, anchors, calibrated:!!anchors, active:true,
+            opacity:1,width:300,height:200,calibration_version:'original',image_url:'https://imagery.invalid/'+name});
+        const items = [image(1,'near',{tl:ll(50,50),tr:ll(90,50),bl:ll(50,90)}),
+            image(2,'far',{tl:ll(850,50),tr:ll(890,50),bl:ll(850,90)}),
+            image(3,'diagonal',{tl:ll(-100,35),tr:ll(35,-100),bl:ll(-96,39)}),
+            image(4,'draft',null)];
+        window.farCenter = ll(870,70);
+        window.fetch = async () => Response.json({success:true,overlays:items});
+        window.imagery = FOSMapOverlays({map});
+        await window.imagery.refresh();
+    });
+    await page.waitForFunction(() => document.querySelector('.leaflet-hdImagery-pane img')?.naturalWidth);
+    assert.deepEqual(downloads, ['/near']);
+    await page.locator('[data-hd-visible]').uncheck();
+    await page.evaluate(() => map.setView(farCenter,19,{animate:false}));
+    assert.equal(await page.locator('.leaflet-hdImagery-pane img').count(), 0);
+    await page.locator('[data-hd-visible]').check();
+    await page.waitForFunction(() => document.querySelector('img[src$="/far"]')?.naturalWidth);
+    assert.deepEqual(downloads, ['/near','/far']);
+    await page.evaluate(() => imagery.startCalibration(4));
+    const save = page.locator('[data-save]');
+    assert.equal(await save.isDisabled(), true);
+    release();
+    await page.waitForFunction(() => !document.querySelector('[data-pairs]').disabled);
+    assert.equal(await save.isDisabled(), true);
+    const handle = await page.locator('.overlay-anchor').first().boundingBox();
+    await page.mouse.move(handle.x+15,handle.y+15);
+    await page.mouse.down();await page.mouse.move(handle.x+36,handle.y+30,{steps:5});await page.mouse.up();
+    assert.equal(await save.isEnabled(), true);
+    await page.locator('[data-cancel]').click();
+    await page.evaluate(() => imagery.destroy());
 });

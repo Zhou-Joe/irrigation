@@ -110,6 +110,7 @@ function mapHarness() {
         setLatLng(p){this.pos=point(p);return this;}
         getLatLng(){return this.pos||point(this.points);}
         setStyle(s){Object.assign(this.options,s);return this;}
+        setIcon(icon){this.options.icon=icon;return this;}
         on(){return this;} bindTooltip(t){this.tooltip=t;return this;} bindPopup(){return this;}
         closeTooltip(){} bringToFront(){} addTo(group){group.addLayer(this);return this;}
         getBounds(){return {getCenter:()=>({lat:31,lng:121})};}
@@ -166,6 +167,33 @@ test('overview loads the pipe summary and defers CAD until the first close-up', 
     await new Promise(setImmediate);
     assert.deepEqual(requested.filter(url=>url.endsWith('part=cad')),['/api/pipelines-payload/?part=cad']);
     assert.equal(h.elements.map.dataset.zonesState,'ready');
+});
+test('attached valves survive a CAD failure and pick up their orientation after retry', async () => {
+    const h = mapHarness(), pt = {lat:31,lng:121};
+    const pipe = {pipeline_type:'main',line_points:[pt,{lat:31.1,lng:121.1}],
+        valves:[{id:7,point:[pt],valve_type:'gate'}]};
+    let available = false;
+    h.window.IrrigationMapRuntime.fetchJSON = async url => {
+        if (url.endsWith('part=cad')) {
+            if (!available) throw Error('CAD unavailable');
+            return {cad_reference:[{attached_orientations:{7:{angle:35}}}]};
+        }
+        return {pipelines:[pipe],valve_shapes:{gate:{paths:[[[0,0],[64,64]]]}}};
+    };
+    h.api.loadPipelines();
+    await new Promise(setImmediate);
+    h.map.zoom = 20; h.api.updatePipeOverlayTiers();
+    await new Promise(setImmediate);
+    const group = h.api.pipeType('main').valveMarkers;
+    assert.equal(group.layers.size, 1);
+    const [marker] = group.layers;
+    assert.match(marker.options.icon.html, /rotate\(0\)/);
+    assert.equal(h.elements.pipelineLoadNotice.hidden, false);
+    available = true; h.elements.pipelineLoadingRetry.onclick();
+    await new Promise(setImmediate);
+    assert.ok(group.hasLayer(marker));
+    assert.match(marker.options.icon.html, /rotate\(35\)/);
+    assert.equal(h.elements.pipelineLoadNotice.hidden, true);
 });
 test('overview renders all boundaries while attaching zero hidden zone labels', async () => {
     const h=mapHarness();

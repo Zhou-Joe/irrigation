@@ -1,5 +1,5 @@
 /* HD imagery overlays: list rendering, three-corner calibration and manager dialog.
-   Factory: window.FOSMapOverlays({map, canManage}) → {layer, refresh, startCalibration, openManager, destroy} */
+   Factory: window.FOSMapOverlays({map, prepareMap}) → {layer, refresh, startCalibration, openManager, destroy} */
 (function (root) {
     'use strict';
     function csrfToken() {
@@ -11,7 +11,7 @@
             const response = await fetch(url, {method: 'POST', credentials: 'same-origin', body,
                 headers: {'X-CSRFToken': csrfToken(), 'X-Requested-With': 'XMLHttpRequest'}});
             const data = await response.json();
-            if (!response.ok) return {success:false, message:data.message || '保存失败，请重试。'};
+            if (!response.ok) return {success:false, status:response.status, message:data.message || '保存失败，请重试。'};
             return data;
         } catch {
             return {success:false, message:'未收到服务器确认。请检查网络后重试。'};
@@ -25,6 +25,24 @@
     }
     const cornerLabel = text => L.divIcon({className: 'overlay-anchor', html: '<span>' + text + '</span>',
         iconSize: [30, 30], iconAnchor: [15, 15]});
+    // The fourth corner is affine in projected map coordinates, including for rotated images.
+    function footprint(map, anchors) {
+        const [a, b, c] = [anchors.tl, anchors.tr, anchors.bl].map(ll => map.project(ll, 0));
+        const corners = [a, b, c, b.add(c).subtract(a)];
+        const bounds = L.bounds(corners);
+        // The viewport and image can also be separated along either image edge's normal.
+        const axes = [b, c].map(point => {
+            const nx = a.y - point.y, ny = point.x - a.x;
+            const distances = corners.map(p => p.x * nx + p.y * ny);
+            return {nx, ny, min:Math.min(...distances), max:Math.max(...distances)};
+        });
+        return view => bounds.intersects(view) && axes.every(({nx, ny, min, max}) => {
+            const x1 = view.min.x * nx, x2 = view.max.x * nx;
+            const y1 = view.min.y * ny, y2 = view.max.y * ny;
+            return Math.min(x1, x2) + Math.min(y1, y2) <= max &&
+                Math.max(x1, x2) + Math.max(y1, y2) >= min;
+        });
+    }
     function factory({map, prepareMap}) {
         const controls = document.querySelector('[data-hd-controls]');
         if (!controls) return null;
@@ -38,10 +56,15 @@
         let overlays = [], calibrating = null, dialog = null, disposed = false;
         let revision = 0;
 
-        const rasters = new Map();
+        const rasters = new Map(), footprints = new WeakMap();
         function render() {
             const visible = new Set();
-            overlays.filter(item => item.calibrated && item.active && item.id !== calibrating?.id).forEach(item => {
+            const bounds = map.getBounds();
+            const view = L.bounds(map.project(bounds.getNorthWest(), 0), map.project(bounds.getSouthEast(), 0));
+            for (const item of overlays) {
+                if (!toggle.checked || !item.calibrated || !item.active || item.id === calibrating?.id) continue;
+                if (!footprints.has(item.anchors)) footprints.set(item.anchors, footprint(map, item.anchors));
+                if (!footprints.get(item.anchors)(view)) continue;
                 visible.add(item.id);
                 const {tl, tr, bl} = item.anchors;
                 const existing = rasters.get(item.id);
@@ -52,10 +75,10 @@
                     existing.key = key;
                 } else {
                     const image = L.imageOverlay.rotated(item.image_url, tl, tr, bl,
-                        {opacity:item.opacity, interactive:false, pane:'hdImagery'}).addTo(layer);
+                        {opacity:item.opacity, interactive:false, pane:'hdImagery', zIndex:item.id}).addTo(layer);
                     rasters.set(item.id, {image, key});
                 }
-            });
+            }
             for (const [id, entry] of rasters) {
                 if (visible.has(id)) continue;
                 layer.removeLayer(entry.image);
@@ -104,7 +127,15 @@
                 map.fitBounds(L.latLngBounds([...handles.map(m=>m.getLatLng()),fourth]),{padding:[54,54],animate:false,maxZoom:22});
             };
             if (existing) zoomToImage();
-            handles.forEach(m => m.on('drag',()=>image.reposition(...handles.map(h=>h.getLatLng()))));
+            let loaded = false, positioned = !!existing, saving = false, conflict = false;
+            function syncButtons() {
+                el('save').disabled = !loaded || !positioned || saving || conflict;
+                el('pairs').disabled = !loaded || saving || conflict;
+            }
+            handles.forEach(marker => {
+                marker.on('drag', () => image.reposition(...handles.map(handle => handle.getLatLng())));
+                marker.on('dragend', () => { if (loaded) positioned = true; syncButtons(); });
+            });
             const host = map.getContainer().parentElement;
             const hint = document.createElement('section');
             hint.className = 'hd-align-panel';
@@ -121,7 +152,6 @@
             picker.className = 'hd-point-dialog'; picker.setAttribute('aria-label','选取原图地标');
             picker.innerHTML = '<p data-prompt></p><div class="hd-point-image"><img alt="待校准的原始高清影像"></div><button type="button" data-back>返回角点校准</button>';
             const photo = picker.querySelector('img');
-            photo.src = item.image_url;
             document.body.append(picker);
             const marks = [], ground = [];
             function restore() {
@@ -130,6 +160,7 @@
                 preview.addTo(map);ready();
             }
             function chooseImagePoint() {
+                if (!photo.hasAttribute('src')) photo.src = item.image_url;
                 picker.querySelector('[data-prompt]').textContent = '请选择第 '+(marks.length+1)+' 个地标，例如路口或建筑拐角。三个点应分散在图上。';
                 if (!picker.open) picker.showModal();
             }
@@ -139,6 +170,7 @@
                 preview.remove();el('tools').hidden=true;chooseImagePoint();
             };
             photo.onclick = event => {
+                if (!photo.complete || !photo.naturalWidth) return;
                 const r=photo.getBoundingClientRect();
                 const pt=L.point((event.clientX-r.left)/r.width,(event.clientY-r.top)/r.height);
                 if (marks.length===2 && Math.abs(determinant(marks[1].subtract(marks[0]),pt.subtract(marks[0])))<.005) {
@@ -171,6 +203,7 @@
                     return map.unproject(ground[0].add(dx.multiplyBy(determinant(p,v)/den)).add(dy.multiplyBy(determinant(u,p)/den)),19);
                 });
                 handles.forEach((h,i)=>h.setLatLng(corners[i]));image.reposition(...corners);
+                positioned = true; syncButtons();
                 restore();zoomToImage();message('三个地标已对齐。拖动透明度对照道路和屋角，确认后保存。');
             };
             picker.querySelector('[data-back]').onclick=restore;
@@ -180,18 +213,35 @@
             const state={id:item.id,cleanup(){
                 preview.remove();hint.remove();cross.remove();picker.remove();
             }};
-            calibrating=state;render();ready();
-            image.on('error',()=>{if(calibrating===state){message('高清影像未能加载，请取消并重新打开。');el('save').disabled=true;}});
+            calibrating=state;render();syncButtons();message('正在加载待校准的原图…');
+            image.on('load', () => {
+                if (calibrating !== state) return;
+                loaded = true; syncButtons(); ready();
+            });
+            image.on('error', () => {
+                if (calibrating !== state) return;
+                loaded = false; syncButtons(); message('高清影像未能加载，请取消并重新打开。');
+            });
             preview.addTo(map);
             el('save').onclick=async()=>{
+                if (!loaded || !positioned || saving || conflict) return;
+                saving = true;
+                handles.forEach(handle => handle.dragging.disable());
                 const body=new FormData();
+                body.set('calibration_version', item.calibration_version);
                 ['tl','tr','bl'].forEach((key,i)=>{
                     const p=handles[i].getLatLng();body.set(key+'_lat',p.lat);body.set(key+'_lng',p.lng);
                 });
                 hint.querySelectorAll('button,input').forEach(b=>b.disabled=true);
                 const data=await post('/ops/map-overlays/'+id+'/calibrate/',body);
                 if(calibrating!==state)return;
-                if(!data.success){hint.querySelectorAll('button,input').forEach(b=>b.disabled=false);message(data.message);return;}
+                if (!data.success) {
+                    saving = false; conflict = data.status === 409;
+                    hint.querySelectorAll('button,input').forEach(control => control.disabled = false);
+                    if (conflict) refresh();
+                    else handles.forEach(handle => handle.dragging.enable());
+                    syncButtons(); message(data.message); return;
+                }
                 ++revision;
                 Object.assign(item,data.overlay);stopCalibration();
             };
@@ -284,11 +334,12 @@
             refresh().then(renderDialog).then(() => { if (!disposed && !dialog.open) dialog.showModal(); });
         }
 
-        toggle.onchange = () => toggle.checked ? layer.addTo(map) : layer.remove();
+        map.on('moveend resize', render);
+        toggle.onchange = render;
         if (manage) manage.onclick = openManager;
         refresh();
         return {layer, refresh, startCalibration, openManager,
-                isCalibrating: () => !!calibrating, destroy() { disposed=true; toggle.onchange=null; if(manage) manage.onclick=null; stopCalibration(); layer.remove(); dialog?.remove(); }};
+                isCalibrating: () => !!calibrating, destroy() { disposed=true; map.off('moveend resize', render); toggle.onchange=null; if(manage) manage.onclick=null; stopCalibration(); layer.remove(); dialog?.remove(); }};
     }
     root.FOSMapOverlays = factory;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

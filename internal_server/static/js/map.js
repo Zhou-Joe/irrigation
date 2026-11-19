@@ -1674,6 +1674,7 @@
             if (destroyed) return;
             const batches = data.cad_reference || [];
             attachedOrientations = Object.assign({}, ...batches.map(b => b.attached_orientations));
+            for (const marker of valveMarkersForLabels) marker.updateCadOrientation();
             renderCadReference(batches);
             cadState = 'ready';
             const notice = document.getElementById('pipelineLoadNotice');
@@ -1692,7 +1693,7 @@
         const {syncLayer, detailZoom} = window.IrrigationValveIcons;
         if (map.getZoom() >= detailZoom || map.hasLayer(cadReferenceLayerGroup) || map.hasLayer(cadNotesLayerGroup)) loadCadDetails();
         for (const [code,group] of pipelineTypeGroups) {
-            const enabled = pipelinesVisible && !hiddenPipelineTypes.has(code) && (!overviewReady || cadState === 'ready');
+            const enabled = pipelinesVisible && !hiddenPipelineTypes.has(code);
             syncLayer(map, group.valveMarkers, group, enabled);
             group.valveDetails.sync(map, enabled);
         }
@@ -1890,7 +1891,12 @@
                     const dia = v.diameter || 20;
                     const size = Math.max(13, Math.min(18, 9 + dia / 10));
                     const watered = !!v.watered_today;
-                    const vm = L.marker(pt, window.IrrigationValveIcons.options(v.valve_type, {watered, orientation:attachedOrientations[v.id], size:Math.max(16,size)}));
+                    const iconOptions = () => window.IrrigationValveIcons.options(v.valve_type,
+                        {watered, orientation:attachedOrientations[v.id], size:Math.max(16,size)});
+                    const vm = L.marker(pt, iconOptions());
+                    vm.updateCadOrientation = () => {
+                        if (attachedOrientations[v.id]) vm.setIcon(iconOptions().icon);
+                    };
                     // Zone label: "名称 代号" (e.g. "BOH 1-1-1"); fall back to whichever exists.
                     const zLabel = [v.zone_name, v.zone_code].filter(x => x).join(' ') || '查看区域';
                     const zLink = v.zone_id ? `<a href="/zone/${v.zone_id}/detail/" style="color:#1B4332;">${escapeHtml(zLabel)} ↗</a>` : '无';

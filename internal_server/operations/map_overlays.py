@@ -1,4 +1,6 @@
 """HD imagery overlays pinned onto the team map by three draggable corner anchors."""
+import hashlib
+import json
 import math
 from pathlib import Path
 
@@ -6,6 +8,7 @@ from django.contrib.auth.decorators import login_required
 from django.db import transaction
 from django.http import FileResponse, Http404, JsonResponse
 from django.shortcuts import get_object_or_404
+from django.utils.cache import get_conditional_response
 from django.views.decorators.http import require_GET, require_POST
 from PIL import Image
 
@@ -16,6 +19,13 @@ from .models import MapImageOverlay
 MAX_UPLOAD_BYTES = 15 * 1024 * 1024
 ALLOWED_TYPES = {'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp'}
 
+ANCHOR_FIELDS = ('tl_lat', 'tl_lng', 'tr_lat', 'tr_lng', 'bl_lat', 'bl_lng')
+
+
+def _calibration_version(item):
+    coordinates = [getattr(item, field) for field in ANCHOR_FIELDS]
+    return hashlib.sha256(json.dumps(coordinates).encode()).hexdigest()
+
 
 def _payload(item):
     anchors = None
@@ -24,12 +34,13 @@ def _payload(item):
                    'bl': [item.bl_lat, item.bl_lng]}
     return {'id': item.pk, 'name': item.name, 'image_url': f'/ops/map-overlays/{item.pk}/image/',
             'width': item.width, 'height': item.height, 'opacity': item.opacity,
-            'active': item.active, 'calibrated': item.calibrated, 'anchors': anchors}
+            'active': item.active, 'calibrated': item.calibrated, 'anchors': anchors,
+            'calibration_version': _calibration_version(item)}
 
 
 def _parse_anchors(request):
     values = {}
-    for key in ('tl_lat', 'tl_lng', 'tr_lat', 'tr_lng', 'bl_lat', 'bl_lng'):
+    for key in ANCHOR_FIELDS:
         raw = request.POST.get(key, '')
         try:
             values[key] = float(raw)
@@ -71,9 +82,14 @@ def image(request, pk):
     path = Path(item.image.path)
     if not path.is_file():
         raise Http404
-    response = FileResponse(path.open('rb'), content_type='image/png' if path.suffix == '.png'
-                            else 'image/webp' if path.suffix == '.webp' else 'image/jpeg')
-    response['Cache-Control'] = 'private, max-age=86400'
+    stat = path.stat()
+    etag = f'"{item.pk:x}-{stat.st_mtime_ns:x}-{stat.st_size:x}"'
+    response = get_conditional_response(request, etag=etag)
+    if response is None:
+        response = FileResponse(path.open('rb'), content_type='image/png' if path.suffix == '.png'
+                                else 'image/webp' if path.suffix == '.webp' else 'image/jpeg')
+    response['ETag'] = etag
+    response['Cache-Control'] = 'private, no-cache'
     response['X-Content-Type-Options'] = 'nosniff'
     return response
 
@@ -124,11 +140,15 @@ def calibrate(request, pk):
         anchors = _parse_anchors(request)
     except ValueError as exc:
         return JsonResponse({'success': False, 'message': str(exc)}, status=400)
-    for key, value in anchors.items():
-        setattr(item, key, value)
-    item.save(update_fields=list(anchors))
-    item.refresh_from_db()
-    audit(request, member.team, 'overlay.calibrate', item.pk, name=item.name)
+    conflict = '校准版本已变化，请取消并重新打开影像管理，使用最新位置校准。'
+    if request.POST.get('calibration_version') != _calibration_version(item):
+        return JsonResponse({'success': False, 'message': conflict}, status=409)
+    previous = {key: getattr(item, key) for key in ANCHOR_FIELDS}
+    with transaction.atomic():
+        if not MapImageOverlay.objects.filter(pk=item.pk, **previous).update(**anchors):
+            return JsonResponse({'success': False, 'message': conflict}, status=409)
+        item.refresh_from_db()
+        audit(request, member.team, 'overlay.calibrate', item.pk, name=item.name)
     return JsonResponse({'success': True, 'message': '校准已保存。', 'overlay': _payload(item)})
 
 

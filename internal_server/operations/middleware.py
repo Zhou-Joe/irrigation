@@ -26,7 +26,9 @@ class BusinessAccessMiddleware:
                 if member and member.team.business.code == 'landscaping' and not green_allowed:
                     return JsonResponse({'error': '绿化功能待开发。', 'workspace_url': '/'}, status=403)
             response = self.get_response(request)
-            response['Cache-Control'] = 'private, no-store'
+            # Raster requests check membership before allowing private cache revalidation.
+            if getattr(getattr(request, 'resolver_match', None), 'url_name', None) != 'map_overlay_image' or response.status_code not in (200, 304):
+                response['Cache-Control'] = 'private, no-store'
             response['Vary'] = 'Cookie'
             return response
         if request.path.startswith(('/email-download/','/account-mail/')):

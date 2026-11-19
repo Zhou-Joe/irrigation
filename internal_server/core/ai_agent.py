@@ -12,9 +12,10 @@ import csv
 import json
 import logging
 import os
+import re
 from datetime import date, timedelta
 from functools import lru_cache
-from typing import TypedDict
+from typing import Literal, TypedDict
 
 from django.conf import settings
 from django.utils import timezone
@@ -1892,11 +1893,28 @@ def search_inventory_parts(query: str = '', code: str = '', supplier: str = '',
         return json.dumps({'error': _tool_error(exc, '库存查询未完成，请稍后重试。')}, ensure_ascii=False)
 
 
+def _inventory_import_destination(question, draft, requested=None):
+    order = re.search(r'订单|訂單|采购单|採購單|\b(?:orders?|p\.?o\.?)\b', question, re.I)
+    quote = re.search(r'报价|報價|询价|詢價|\b(?:quot(?:e|es|ation|ations)|rfq)\b', question, re.I)
+    if bool(order) != bool(quote):
+        inferred = 'order' if order else 'quote'
+        return inferred if requested in (None, inferred) else 'choose'
+    if requested in ('order', 'quote'):
+        return requested
+    if not order and not quote:
+        order_fields = bool(draft.get('order_number') or draft.get('purchase_date'))
+        quote_fields = bool(draft.get('quote_date'))
+        if order_fields != quote_fields:
+            return 'order' if order_fields else 'quote'
+    return 'choose'
+
+
 @tool(response_format='content_and_artifact')
 def prepare_inventory_quote(attachment_id: str = '', attachment_ids: list[str] | None = None,
-                             runtime: ToolRuntime = None) -> tuple[str, dict]:
+                             runtime: ToolRuntime = None, destination: Literal['quote', 'order'] | None = None) -> tuple[str, dict]:
     """用户明确要求提取、匹配或导入报价或采购订单时，准备人工确认卡片，绝不写业务数据库。
 
+    按用户要求填写 destination：建立采购订单用 order，记录供应商报价用 quote；目标不明确时留空供用户选择。
     attachment_id/attachment_ids必须是本对话附件ID。未传ID时使用本轮附件，或用户本轮原始文字。
     保留原单供应商、日期、部件及来源层级，优先推荐已有供应商与部件候选。
     未确定的项目由用户选择关联、新建或跳过；只有用户明确选择新建时才放入指定目录或根层。
@@ -1954,14 +1972,16 @@ def prepare_inventory_quote(attachment_id: str = '', attachment_ids: list[str] |
             raise ValueError('本次报价全文合计超过 60,000 字，请拆分后处理。')
         draft = build_quote_draft(user, document, source, images=images)
         question = ctx.get('original_question', '')
-        draft['destination'] = 'order' if '订单' in question and any(word in question for word in ('采购订单','导入订单','订单导入')) else 'quote'
+        draft['destination'] = _inventory_import_destination(question, draft, destination)
         matched = sum(1 for row in draft['items'] if row.get('category_id') or row.get('suggested_category_id'))
         candidates = sum(1 for row in draft['items'] if row.get('candidates'))
         summary = {'status': 'awaiting_user_confirmation', 'items': len(draft['items']),
                    'matched_parts': matched, 'unmatched_parts': len(draft['items']) - matched,
                    'parts_with_candidates': candidates, 'default_new_parts': 0,
                    'supplier': draft['supplier'], 'quote_date': draft['quote_date'],
-                   'message': '报价确认卡片已准备好。请用户核对供应商、日期与部件选择后，点击卡片确认，或在聊天中输入“确认写入”。待选择项不会默认新建。'}
+                   'destination': draft['destination'], 'order_number': draft.get('order_number'),
+                   'purchase_date': draft.get('purchase_date'),
+                   'message': '导入确认卡片已准备好。请用户核对供应商、日期与部件选择后，点击卡片确认，或在聊天中输入“确认写入”。待选择项不会默认新建。'}
         return json.dumps(summary, ensure_ascii=False), {'type': 'inventory_quote_draft', 'draft': draft}
     except Exception as exc:
         fallback = ('报价图片未成功识别，当前模型可能不支持图片；请改用支持视觉的模型，或粘贴报价文字。'

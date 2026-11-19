@@ -27,6 +27,19 @@ class QuoteChatConfirmationTests(TestCase):
         self.thread = f'u{self.user.pk}-abcdef12'
         AIConversation.objects.create(id=self.thread, owner=self.user)
 
+    def test_import_destination_follows_request_and_evidence(self):
+        from .ai_agent import _inventory_import_destination
+        order = {'order_number':'PO-12', 'purchase_date':'2026-11-19'}
+        for request in ('请导入这张订单', 'Import this purchase order', '导入这份采购单', 'Import PO #12'):
+            self.assertEqual(_inventory_import_destination(request, order), 'order', request)
+        self.assertEqual(_inventory_import_destination('导入报价', order), 'quote')
+        self.assertEqual(_inventory_import_destination('导入附件', order), 'order')
+        self.assertEqual(_inventory_import_destination('导入附件', {'quote_date':'2026-11-19'}), 'quote')
+        self.assertEqual(_inventory_import_destination('导入附件', {}), 'choose')
+        self.assertEqual(_inventory_import_destination('导入附件', {**order, 'quote_date':'2026-11-19'}), 'choose')
+        self.assertEqual(_inventory_import_destination('从报价生成订单', {}, 'order'), 'order')
+        self.assertEqual(_inventory_import_destination('Import this purchase order', order, 'quote'), 'choose')
+
     def save(self):
         return self.client.post('/inventory/quotes/confirm/', self.payload)
 

@@ -48,9 +48,11 @@ class MapOverlayTests(TestCase):
         self.assertEqual(self.client.post(f'/ops/map-overlays/{item_id}/delete/').status_code, 403)
 
     def test_calibration_persists_anchors_and_updates_visibility(self):
-        item_id = self.upload(self.pm).json()['overlay']['id']
+        item = self.upload(self.pm).json()['overlay']
+        item_id = item['id']
         anchors = {'tl_lat': '31.1', 'tl_lng': '121.1', 'tr_lat': '31.1', 'tr_lng': '121.2',
                    'bl_lat': '31.0', 'bl_lng': '121.1'}
+        anchors['calibration_version'] = item['calibration_version']
         response = self.client.post(f'/ops/map-overlays/{item_id}/calibrate/', anchors)
         self.assertEqual(response.status_code, 200, response.content)
         payload = self.client.get('/ops/map-overlays/').json()['overlays'][0]
@@ -72,13 +74,15 @@ class MapOverlayTests(TestCase):
         team = Team.objects.create(business=green, code='hd-green', name='绿化组')
         for field_team in (self.it, team):
             Membership.objects.create(user=self.field, team=field_team, role='field')
-        item_id = self.upload(self.im).json()['overlay']['id']
+        item = self.upload(self.im).json()['overlay']
+        item_id = item['id']
         anchors = {'tl_lat':31.1,'tl_lng':121.1,'tr_lat':31.1,'tr_lng':121.2,'bl_lat':31.0,'bl_lng':121.1}
         self.client.force_login(self.admin)
         session = self.client.session
         session['operations_business'] = 'landscaping'
         session.save()
         url = f'/ops/map-overlays/{item_id}/'
+        anchors['calibration_version'] = item['calibration_version']
         self.assertTrue(self.client.post(url+'calibrate/', anchors).json()['success'])
         for manager, user in ((True, self.admin), (False, self.field)):
             self.client.force_login(user)
@@ -99,6 +103,22 @@ class MapOverlayTests(TestCase):
                     self.assertEqual(self.client.get(url+'image/').status_code, 200)
                     response = self.client.post(url+'update/', {'opacity':'0.8'})
                     self.assertEqual(response.status_code, 200 if manager else 403)
+
+    def test_stale_and_unversioned_calibrations_preserve_latest_anchors(self):
+        item = self.upload(self.pm).json()['overlay']
+        url = item['image_url'].replace('/image/', '/calibrate/')
+        anchors = {'tl_lat':31.1, 'tl_lng':121.1, 'tr_lat':31.1, 'tr_lng':121.2, 'bl_lat':31, 'bl_lng':121.1}
+        first = self.client.post(url, {**anchors, 'calibration_version':item['calibration_version']}).json()['overlay']
+        self.assertNotEqual(first['calibration_version'], item['calibration_version'])
+        for stale in ({}, {'calibration_version':item['calibration_version']}):
+            self.assertEqual(self.client.post(url, {**anchors, 'tl_lat':31.2, **stale}).status_code, 409)
+        self.assertEqual(self.client.get('/ops/map-overlays/').json()['overlays'][0], first)
+        image = self.client.get(item['image_url'])
+        self.assertEqual(image['Cache-Control'], 'private, no-cache')
+        self.assertEqual(self.client.get(item['image_url'], HTTP_IF_NONE_MATCH=image['ETag']).status_code, 304)
+        self.client.post(item['image_url'].replace('/image/', '/update/'), {'active':'false'})
+        self.client.force_login(self.field)
+        self.assertEqual(self.client.get(item['image_url'], HTTP_IF_NONE_MATCH=image['ETag']).status_code, 404)
 
     def test_invalid_uploads_and_coincident_anchors_are_rejected(self):
         self.client.force_login(self.pm)
