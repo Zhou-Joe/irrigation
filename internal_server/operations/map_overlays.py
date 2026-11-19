@@ -10,6 +10,7 @@ from django.views.decorators.http import require_GET, require_POST
 from PIL import Image
 
 from .access import require_member, audit
+from .administration import is_general
 from .models import MapImageOverlay
 
 MAX_UPLOAD_BYTES = 15 * 1024 * 1024
@@ -53,12 +54,20 @@ def _parse_anchors(request):
     return values
 
 
+def _visible_items(request):
+    member = require_member(request)
+    items = MapImageOverlay.objects.order_by('pk')
+    if member.role == 'manager' or is_general(request.user):
+        return items
+    return items.filter(active=True, tl_lat__isnull=False, tl_lng__isnull=False,
+                        tr_lat__isnull=False, tr_lng__isnull=False, bl_lat__isnull=False, bl_lng__isnull=False)
+
+
 @login_required
 @require_GET
 def image(request, pk):
     """Serve overlay rasters behind login; /media/* stays blocked for pest members."""
-    require_member(request)
-    item = get_object_or_404(MapImageOverlay, pk=pk)
+    item = get_object_or_404(_visible_items(request), pk=pk)
     path = Path(item.image.path)
     if not path.is_file():
         raise Http404
@@ -73,8 +82,7 @@ def image(request, pk):
 @require_GET
 def collection(request):
     """Every member can view overlays; calibration and upload stay manager-only."""
-    require_member(request)
-    items = MapImageOverlay.objects.order_by('pk')
+    items = _visible_items(request)
     return JsonResponse({'success': True, 'overlays': [_payload(item) for item in items]})
 
 

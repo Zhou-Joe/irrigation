@@ -7,7 +7,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, override_settings
 from PIL import Image
 from . import tests as fixtures
-from .models import MapImageOverlay
+from .models import BusinessArea, MapImageOverlay, Membership, Team
 
 
 def png_bytes(width=8, height=6):
@@ -40,8 +40,8 @@ class MapOverlayTests(TestCase):
         self.client.force_login(self.field)
         listing = self.client.get('/ops/map-overlays/').json()
         self.assertTrue(listing['success'])
-        self.assertEqual(len(listing['overlays']), 1)
-        self.assertFalse(listing['overlays'][0]['calibrated'])
+        self.assertEqual(listing['overlays'], [])
+        self.assertEqual(self.client.get(f'/ops/map-overlays/{item_id}/image/').status_code, 404)
         anchors = {'tl_lat': '31.1', 'tl_lng': '121.1', 'tr_lat': '31.1', 'tr_lng': '121.2',
                    'bl_lat': '31.0', 'bl_lng': '121.1'}
         self.assertEqual(self.client.post(f'/ops/map-overlays/{item_id}/calibrate/', anchors).status_code, 403)
@@ -66,6 +66,39 @@ class MapOverlayTests(TestCase):
         payload = self.client.get('/ops/map-overlays/').json()['overlays'][0]
         self.assertFalse(payload['active'])
         self.assertEqual(payload['opacity'], 0.5)
+
+    def test_one_calibration_is_shared_by_all_three_home_maps(self):
+        green, _ = BusinessArea.objects.get_or_create(code='landscaping', defaults={'name':'绿化'})
+        team = Team.objects.create(business=green, code='hd-green', name='绿化组')
+        for field_team in (self.it, team):
+            Membership.objects.create(user=self.field, team=field_team, role='field')
+        item_id = self.upload(self.im).json()['overlay']['id']
+        anchors = {'tl_lat':31.1,'tl_lng':121.1,'tr_lat':31.1,'tr_lng':121.2,'bl_lat':31.0,'bl_lng':121.1}
+        self.client.force_login(self.admin)
+        session = self.client.session
+        session['operations_business'] = 'landscaping'
+        session.save()
+        url = f'/ops/map-overlays/{item_id}/'
+        self.assertTrue(self.client.post(url+'calibrate/', anchors).json()['success'])
+        for manager, user in ((True, self.admin), (False, self.field)):
+            self.client.force_login(user)
+            for business in ('irrigation', 'pest-control', 'landscaping'):
+                with self.subTest(manager=manager, business=business):
+                    session = self.client.session
+                    session['operations_business'] = business
+                    session.save()
+                    page = self.client.get('/')
+                    self.assertContains(page, 'data-hd-visible')
+                    if manager:
+                        self.assertContains(page, 'data-hd-manage')
+                    else:
+                        self.assertNotContains(page, 'data-hd-manage')
+                    records = self.client.get('/ops/map-overlays/').json()['overlays']
+                    self.assertEqual([row['id'] for row in records], [item_id])
+                    self.assertEqual(records[0]['anchors']['tl'], [31.1, 121.1])
+                    self.assertEqual(self.client.get(url+'image/').status_code, 200)
+                    response = self.client.post(url+'update/', {'opacity':'0.8'})
+                    self.assertEqual(response.status_code, 200 if manager else 403)
 
     def test_invalid_uploads_and_coincident_anchors_are_rejected(self):
         self.client.force_login(self.pm)

@@ -45,6 +45,9 @@
         syncSidebar();
         trigger.focus({preventScroll:true});
     }
+    const imagery = window.FOSMapOverlays?.({map, prepareMap() {
+        if (drawer.open) closeSidebar();
+    }});
     trigger.onclick = openSidebar;
     close.onclick = closeSidebar;
     drawer.onclose = () => {
@@ -162,6 +165,7 @@
         phone.removeEventListener('change', layout);
         form.removeEventListener('submit', submit);
         window.removeEventListener('pagehide', leave);
+        imagery?.destroy();
         map.remove();
     }
     function leave(event) {if (!event.persisted) destroy();}

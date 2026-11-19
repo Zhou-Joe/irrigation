@@ -13,8 +13,10 @@
         L.control.zoom({zoomInText:window.uiIcon('plus'),zoomOutText:window.uiIcon('minus')}).addTo(map);
         const groups=Object.fromEntries(['shared','zones','buildings','monitoring','traps','beehives','records'].map(k=>[k,L.layerGroup().addTo(map)]));
         const locationLayers=Object.values(groups);
-        const overlays=window.FOSMapOverlays?window.FOSMapOverlays({map,canManage}):null;
-        if(overlays)groups.overlays=overlays.layer;
+        const overlays = window.FOSMapOverlays?.({map, prepareMap() {
+            if (byId('mobileOverlay')?.classList.contains('visible')) byId('pestSidebarClose').click();
+            byId('mapLayerBody').hidden = true;
+        }});
         const updateWatermarks = window.FOSMapGeography.watermarks(map, window.MAP_STYLE_CONFIG?.label?.fontSize || 25);
         let views, selectedId = null;
         const visible=new Set(Object.keys(groups));let locations=[],recent=[],initialized=!!initial,dirty=false,busy=false,picker=null,media=null,parameters=null,picking=false,gpsMarker=null,formGeneration=0;
@@ -198,7 +200,7 @@
             }
         }
         byId('pestCloseWorkorder').onclick=()=>closeForm();byId('woModalBackdrop').onclick=()=>closeForm();byId('woSubmitBtn').onclick=submit;byId('pestChangePlaces').onclick=()=>picker?.open();
-        window.FOSPestMap={refresh,busy:()=>busy||creator.busy(),dirty:()=>dirty,openOverlays(){overlays?.openManager();},updateRole(data){closeForm();creator.close();canSubmit=data?.value==='yes';canManage=data?.manager==='yes';canCreate=data?.create==='yes';window.FOSMapActions.setItems(actions());},destroy(){effects.destroy();creator.destroy();picker?.destroy();media?.destroy();parameters?.destroy();overlays?.destroy();window.FOSMapActions.destroy();map.remove();}};
+        window.FOSPestMap={refresh,busy:()=>busy||creator.busy(),dirty:()=>dirty,updateRole(data){closeForm();creator.close();canSubmit=data?.value==='yes';canManage=data?.manager==='yes';canCreate=data?.create==='yes';window.FOSMapActions.setItems(actions());},destroy(){effects.destroy();creator.destroy();picker?.destroy();media?.destroy();parameters?.destroy();overlays?.destroy();window.FOSMapActions.destroy();map.remove();}};
         window.quickWorkorder=ids=>openForm(ids);effects.listen(window,'focus',()=>{if(!busy&&!dirty)refresh();});effects.listen(window,'pageshow',event=>{if(event.persisted)refresh();});
         refresh();const incoming=new URL(location.href).searchParams;if(incoming.get('action')==='workorder'){const source={};for(const key of ['report_id','pest_task'])if(incoming.has(key))source[key]=incoming.get(key);openForm([],source);}
     });

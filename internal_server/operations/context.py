@@ -14,6 +14,7 @@ def workspace(request):
     data={'workspace_membership':member,'business_choices':business_options(request.user),
           'active_business_key':f'business:{member.team_id}' if member else '',
           'location_kind_choices':Location.KINDS,
+          'can_manage_map_imagery':bool(member and (platform_admin or member.role=='manager')),
           'pest_mode':pest,'landscaping_mode':landscaping,'is_platform_admin':platform_admin,'multi_team_enabled':True,
           'business_selected':member.team.business.code if member else ''}
     if platform_admin:

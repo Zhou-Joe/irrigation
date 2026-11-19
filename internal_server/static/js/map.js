@@ -7,6 +7,7 @@
     'use strict';
     const effects=window.FOSScopedEffects();
     let destroyed=false;
+    let imagery;
     const runtime = window.IrrigationMapRuntime;
     let labelsVisible = true;
     let watermarkCache = null;
@@ -280,6 +281,11 @@
 
         // Expose map instance for external use (sidebar resize)
         window._map = map;
+        imagery = window.FOSMapOverlays?.({map, prepareMap() {
+            if (document.getElementById('mobileOverlay')?.classList.contains('visible')) window.toggleSidebar();
+            const panel = document.getElementById('mapLayerBody');
+            if (panel && panel.style.display !== 'none') window.toggleLayerPanel();
+        }});
         map.on('moveend', function () {
             const center = map.getCenter();
             try { window.sessionStorage.setItem(viewKey, JSON.stringify({center:[center.lat, center.lng], zoom:map.getZoom()})); } catch (_) {}
@@ -2305,5 +2311,5 @@
             if (landmarkLabels.length > 0) updateLabelSizes();
         } catch (e) {}
     }
-    window.FOSMapLifecycle={destroy(){destroyed=true;effects.destroy();style.remove();map?.remove();}};
+    window.FOSMapLifecycle={destroy(){destroyed=true;imagery?.destroy();effects.destroy();style.remove();map?.remove();}};
 })();

@@ -57,7 +57,7 @@
         const previous=form.dataset.currentBusiness||form.querySelector('select').value;
         if(window.FOSPestMap?.busy?.()||window.FOSWorkorderModalLifecycle?.busy?.()||document.querySelector('form[data-busy]')){form.querySelector('select').value=previous;notify(form,'正在保存，请完成后再切换。');return;}
         if (window.IrrigationPWA && !window.IrrigationPWA.canSubmit()) {form.querySelector('select').value=previous;return;}
-        if ((window.IrrigationPWA?.hasUnsavedChanges() || window.FOSPestMap?.dirty()) &&
+        if ((window.IrrigationPWA?.hasUnsavedChanges() || window.FOSPestMap?.dirty() || document.querySelector('.hd-align-panel')) &&
             !window.confirm('当前页面有尚未保存的内容。确定放弃这些修改并切换业务吗？')) {
             form.querySelector('select').value=previous;
             return;
@@ -100,7 +100,8 @@
                 history.replaceState(history.state,'','/');
             }
             const mounted=current.dataset.business==='landscaping'?window.FOSLandscapingMap:(current.dataset.business==='pest-control'?window.FOSPestMap:window.FOSDashboardLifecycle&&window.FOSMapLifecycle);
-            const same=current.dataset.business===next.dataset.business&&current.dataset.mounted!=='no'&&!!mounted;
+            const same=current.dataset.business===next.dataset.business&&current.dataset.mounted!=='no'&&!!mounted &&
+                !!current.querySelector('[data-hd-manage]')===!!next.querySelector('[data-hd-manage]');
             updateShell(doc);
             if(!same) {
                 const map=window._map;

@@ -25,7 +25,12 @@
     }
     const cornerLabel = text => L.divIcon({className: 'overlay-anchor', html: '<span>' + text + '</span>',
         iconSize: [30, 30], iconAnchor: [15, 15]});
-    function factory({map, canManage}) {
+    function factory({map, prepareMap}) {
+        const controls = document.querySelector('[data-hd-controls]');
+        if (!controls) return null;
+        const toggle = controls.querySelector('[data-hd-visible]');
+        const manage = controls.querySelector('[data-hd-manage]');
+        const canManage = !!manage;
         const layer = L.layerGroup().addTo(map);
         const pane = map.getPane('hdImagery') || map.createPane('hdImagery');
         pane.style.zIndex = '250';
@@ -33,12 +38,29 @@
         let overlays = [], calibrating = null, dialog = null, disposed = false;
         let revision = 0;
 
+        const rasters = new Map();
         function render() {
-            layer.clearLayers();
+            const visible = new Set();
             overlays.filter(item => item.calibrated && item.active && item.id !== calibrating?.id).forEach(item => {
-                L.imageOverlay.rotated(item.image_url, item.anchors.tl, item.anchors.tr, item.anchors.bl,
-                    {opacity: item.opacity, interactive: false, pane:'hdImagery'}).addTo(layer);
+                visible.add(item.id);
+                const {tl, tr, bl} = item.anchors;
+                const existing = rasters.get(item.id);
+                const key = [tl, tr, bl].join('|');
+                if (existing) {
+                    if (existing.key !== key) existing.image.reposition(tl, tr, bl);
+                    existing.image.setOpacity(item.opacity);
+                    existing.key = key;
+                } else {
+                    const image = L.imageOverlay.rotated(item.image_url, tl, tr, bl,
+                        {opacity:item.opacity, interactive:false, pane:'hdImagery'}).addTo(layer);
+                    rasters.set(item.id, {image, key});
+                }
             });
+            for (const [id, entry] of rasters) {
+                if (visible.has(id)) continue;
+                layer.removeLayer(entry.image);
+                rasters.delete(id);
+            }
         }
         async function refresh() {
             const request = ++revision;
@@ -69,10 +91,7 @@
             stopCalibration();
             const item = overlays.find(entry => entry.id === id);
             if (!item) return;
-            const drawer = document.getElementById('mobileOverlay');
-            if (drawer?.classList.contains('visible')) document.getElementById('pestSidebarClose')?.click();
-            const controls = document.getElementById('mapLayerBody');
-            if (controls) controls.hidden = true;
+            prepareMap?.();
             const existing = item.anchors;
             const points = existing ? [existing.tl,existing.tr,existing.bl] : defaultAnchors(item);
             const image = L.imageOverlay.rotated(item.image_url,...points,{opacity:.55,interactive:false,pane:'hdImagery'});
@@ -186,23 +205,26 @@
                 : '<span style="color:#B00020">未校准</span>';
             tr.innerHTML = '<td>' + item.name.replace(/[<>&]/g, '') + '</td><td>' + status + '</td>' +
                 '<td><label><input type="checkbox" data-active ' + (item.active ? 'checked' : '') + '>显示</label></td>' +
-                '<td><input type="range" min="0.1" max="1" step="0.05" value="' + item.opacity + '" data-opacity></td>' +
+                '<td><input type="range" min="0.1" max="1" step="0.05" value="' + item.opacity + '" aria-label="影像透明度" data-opacity></td>' +
                 '<td><button type="button" class="btn-sm btn-secondary" data-cal>校准</button> ' +
                 '<button type="button" class="btn-sm btn-secondary" data-del>删除</button></td>';
             tr.querySelector('[data-active]').onchange = async event => {
-                const body = new FormData(); body.set('active', String(event.target.checked));
+                const input = event.target;
+                const body = new FormData(); body.set('active', String(input.checked));
+                input.disabled = true;
                 const data = await post('/ops/map-overlays/' + item.id + '/update/', body);
-                if (data.success) { item.active = data.overlay.active; render(); } else statusText(data.message);
+                input.disabled = false;
+                if (data.success) { item.active = data.overlay.active; render(); }
+                else { input.checked = item.active; statusText(data.message); }
             };
-            let opacityTimer = null;
-            tr.querySelector('[data-opacity]').oninput = async event => {
-                clearTimeout(opacityTimer);
-                const value = event.target.value;
-                opacityTimer = setTimeout(async () => {
-                    const body = new FormData(); body.set('opacity', value);
-                    const data = await post('/ops/map-overlays/' + item.id + '/update/', body);
-                    if (data.success) { item.opacity = data.overlay.opacity; render(); } else statusText(data.message);
-                }, 400);
+            tr.querySelector('[data-opacity]').onchange = async event => {
+                const input = event.target;
+                const body = new FormData(); body.set('opacity', input.value);
+                input.disabled = true;
+                const data = await post('/ops/map-overlays/' + item.id + '/update/', body);
+                input.disabled = false;
+                if (data.success) { item.opacity = data.overlay.opacity; render(); }
+                else { input.value = item.opacity; statusText(data.message); }
             };
             tr.querySelector('[data-cal]').onclick = () => { dialog.close(); startCalibration(item.id); };
             tr.querySelector('[data-del]').onclick = async () => {
@@ -230,7 +252,7 @@
             dialog.setAttribute('aria-label','影像叠加管理');
             dialog.innerHTML =
                 '<div class="v2-modal-header"><h2>影像叠加管理</h2><button type="button" class="v2-modal-close" data-close aria-label="关闭">×</button></div>' +
-                '<div class="v2-modal-body"><div class="op-field"><label>名称<input class="v2-input" data-name placeholder="如：北区高清影像"></label>' +
+                '<div class="v2-modal-body"><p>已校准并启用的影像会显示在灌溉、植保和绿化地图上。</p><div class="op-field"><label>名称<input class="v2-input" data-name placeholder="如：北区高清影像"></label>' +
                 '<label>影像文件（JPG/PNG/WebP，≤15MB）<input type="file" accept="image/jpeg,image/png,image/webp" data-file></label>' +
                 '<button type="button" class="v2-btn-submit" data-upload>上传</button></div>' +
                 '<p data-status role="status" style="min-height:1.2em"></p>' +
@@ -262,9 +284,11 @@
             refresh().then(renderDialog).then(() => { if (!disposed && !dialog.open) dialog.showModal(); });
         }
 
+        toggle.onchange = () => toggle.checked ? layer.addTo(map) : layer.remove();
+        if (manage) manage.onclick = openManager;
         refresh();
         return {layer, refresh, startCalibration, openManager,
-                isCalibrating: () => !!calibrating, destroy() { disposed=true; stopCalibration(); layer.remove(); dialog?.remove(); }};
+                isCalibrating: () => !!calibrating, destroy() { disposed=true; toggle.onchange=null; if(manage) manage.onclick=null; stopCalibration(); layer.remove(); dialog?.remove(); }};
     }
     root.FOSMapOverlays = factory;
 })(typeof globalThis !== 'undefined' ? globalThis : this);
