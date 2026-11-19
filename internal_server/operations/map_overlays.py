@@ -1,4 +1,4 @@
-"""HD imagery overlays pinned onto the team map by three draggable corner anchors."""
+"""HD imagery placed on the shared map, stored as three geographic corners."""
 import hashlib
 import json
 import math
@@ -61,7 +61,7 @@ def _parse_anchors(request):
     vx, vy = c[0] - a[0], c[1] - a[1]
     area = abs(ux * vy - uy * vx)
     if area <= 1e-5 * math.hypot(ux, uy) * math.hypot(vx, vy):
-        raise ValueError('三个角点重合或接近直线，请分开选点后再保存。')
+        raise ValueError('影像范围无效，请检查原图的地面宽度后重新校准。')
     return values
 
 

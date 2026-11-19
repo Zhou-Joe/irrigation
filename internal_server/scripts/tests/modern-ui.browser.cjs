@@ -289,10 +289,11 @@ test('the final EnGenie order button confirms the named supplier and reports val
     assert.equal(posts[1].submission_key,posts[0].submission_key);
 });
 
-test('HD imagery loads inside the viewport and drafts require a loaded image and an alignment', async t => {
-    const {page} = await fixture(t, '<div data-hd-controls><input data-hd-visible type="checkbox" checked><button data-hd-manage>管理</button></div><div style="position:relative"><div id="map" style="height:300px;width:400px"></div></div>');
+test('HD imagery loads in view and retains its footprint through dragging, rotation, zoom and save', async t => {
+    const {page} = await fixture(t, '<div data-hd-controls><input data-hd-visible type="checkbox" checked><button data-hd-manage>管理</button></div><div style="position:relative"><div id="map" style="height:500px;width:600px"></div></div>');
     const ops = path.resolve(assets, '../operations/static');
     await page.addStyleTag({path:path.join(assets, 'vendor/leaflet/leaflet.css')});
+    await page.addStyleTag({path:path.join(ops, 'operations/map-overlays.css')});
     await page.addScriptTag({path:path.join(assets, 'vendor/leaflet/leaflet.js')});
     await page.addScriptTag({path:path.join(ops, 'vendor/leaflet/imageoverlay-rotated.js')});
     await page.addScriptTag({path:path.join(ops, 'operations/map-overlays.js')});
@@ -303,19 +304,40 @@ test('HD imagery loads inside the viewport and drafts require a loaded image and
         const name = new URL(route.request().url()).pathname;
         downloads.push(name);
         if (name === '/draft') await pending;
-        await route.fulfill({contentType:'image/png', body:Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jGn8AAAAASUVORK5CYII=', 'base64')});
+        await route.fulfill({contentType:'image/svg+xml', body:'<svg xmlns="http://www.w3.org/2000/svg" width="300" height="200"><rect width="300" height="200" fill="green"/></svg>'});
     });
     await page.evaluate(async () => {
         const map = window.map = L.map('map', {zoomAnimation:false}).setView([31,121], 19);
         const ll = (x,y) => {const p = map.containerPointToLatLng([x,y]);return [p.lat,p.lng];};
         const image = (id, name, anchors) => ({id, name, anchors, calibrated:!!anchors, active:true,
             opacity:1,width:300,height:200,calibration_version:'original',image_url:'https://imagery.invalid/'+name});
-        const items = [image(1,'near',{tl:ll(50,50),tr:ll(90,50),bl:ll(50,90)}),
+        const items = [image(1,'near',{tl:ll(50,50),tr:ll(10,54),bl:ll(67,92)}),
             image(2,'far',{tl:ll(850,50),tr:ll(890,50),bl:ll(850,90)}),
             image(3,'diagonal',{tl:ll(-100,35),tr:ll(35,-100),bl:ll(-96,39)}),
             image(4,'draft',null)];
         window.farCenter = ll(870,70);
-        window.fetch = async () => Response.json({success:true,overlays:items});
+        // The isolated data: document has no cookie jar.
+        Object.defineProperty(document, 'cookie', {value:''});
+        window.fetch = async (url, options) => {
+            if (options?.method !== 'POST') return Response.json({success:true, overlays:items});
+            const body = options.body;
+            window.lastVersion = body.get('calibration_version');
+            const anchors = Object.fromEntries(['tl','tr','bl'].map(key =>
+                [key, ['lat','lng'].map(axis => Number(body.get(key+'_'+axis)))]));
+            Object.assign(items[3], {anchors, calibrated:true, calibration_version:'saved'});
+            return Response.json({success:true, overlay:items[3]});
+        };
+        window.pose = () => {
+            let layer;
+            map.eachLayer(entry => {
+                if (entry.options.pane === 'hdPlacement' && entry.reposition) layer = entry;
+            });
+            const [a,b,c] = [layer._topLeft,layer._topRight,layer._bottomLeft].map(ll => map.project(ll,19));
+            const center = b.add(c).divideBy(2);
+            return {width:a.distanceTo(b),height:a.distanceTo(c),diagonal:b.distanceTo(c),
+                center:[center.x,center.y], zoom:map.getZoom(), view:map.getCenter(),
+                angle:Math.atan2(b.y-a.y,b.x-a.x)*180/Math.PI};
+        };
         window.imagery = FOSMapOverlays({map});
         await window.imagery.refresh();
     });
@@ -331,12 +353,85 @@ test('HD imagery loads inside the viewport and drafts require a loaded image and
     const save = page.locator('[data-save]');
     assert.equal(await save.isDisabled(), true);
     release();
-    await page.waitForFunction(() => !document.querySelector('[data-pairs]').disabled);
+    const raw = page.locator('.hd-placement-image');
+    const grip = page.locator('.hd-turn-handle');
+    await grip.waitFor();
     assert.equal(await save.isDisabled(), true);
-    const handle = await page.locator('.overlay-anchor').first().boundingBox();
-    await page.mouse.move(handle.x+15,handle.y+15);
-    await page.mouse.down();await page.mouse.move(handle.x+36,handle.y+30,{steps:5});await page.mouse.up();
+    assert.equal(await page.locator('.leaflet-hdImagery-pane img').count(), 0);
+    const current = () => page.evaluate(() => pose());
+    const initial = await current();
+    const sameSize = state => {
+        for (const key of ['width','height','diagonal']) assert.ok(Math.abs(initial[key]-state[key]) < 1e-5, key);
+    };
+    const sameCenter = (a,b) => assert.ok(Math.hypot(a.center[0]-b.center[0],a.center[1]-b.center[1]) < 1e-5);
+    const centerOf = async locator => {
+        const {x,y,width,height} = await locator.boundingBox();
+        return {x:x+width/2,y:y+height/2};
+    };
+    const drag = async (from,to) => {
+        await page.mouse.move(from.x,from.y);
+        await page.mouse.down();
+        await page.mouse.move(to.x,to.y,{steps:8});
+        await page.mouse.up();
+    };
+    assert.ok(Math.abs(initial.width-300)<1e-5 && Math.abs(initial.height-200)<1e-5);
+    await page.locator('[data-mix]').fill('0');
+    assert.equal(await raw.evaluate(img => img.parentElement.style.opacity), '0');
+    await page.locator('[data-mix]').fill('47');
+    assert.equal(await raw.evaluate(img => img.parentElement.style.opacity), '0.47');
+    assert.equal(await save.isDisabled(), true);
+    const from = await centerOf(raw);
+    await drag(from,{x:from.x+25,y:from.y+18});
     assert.equal(await save.isEnabled(), true);
+    const moved = await current();
+    sameSize(moved);
+    assert.deepEqual(moved.view,initial.view);
+    assert.ok(Math.hypot(moved.center[0]-initial.center[0],moved.center[1]-initial.center[1])>5);
+    const pivot = await centerOf(raw), handle = await centerOf(grip);
+    const dx = handle.x-pivot.x, dy = handle.y-pivot.y;
+    await drag(handle,{x:pivot.x-dy,y:pivot.y+dx});
+    const rotated = await current();
+    sameCenter(rotated,moved);
+    sameSize(rotated);
+    assert.ok(Math.abs(rotated.angle-90)<2);
+    await page.mouse.move(pivot.x,pivot.y);
+    await page.mouse.wheel(0,-210);
+    await page.waitForFunction(z => map.getZoom()>z, rotated.zoom);
+    sameSize(await current());
+    await page.locator('.leaflet-control-zoom-out').click();
+    await page.waitForFunction(z => map.getZoom()===z, rotated.zoom);
+    await page.locator('[data-pan]').click();
+    const pannedFrom = await centerOf(raw);
+    await drag(pannedFrom,{x:pannedFrom.x-60,y:pannedFrom.y+15});
+    await page.waitForFunction(v => !map.getCenter().equals(v), rotated.view);
+    sameCenter(await current(),rotated);
+    await page.locator('[data-fit]').click();
+    await page.locator('[data-pan]').click();
+    await page.locator('[data-angle]').fill('-35.5');
+    const adjusted = await current();
+    assert.ok(Math.abs(adjusted.angle+35.5)<1e-5);
+    sameSize(adjusted);
+    sameCenter(adjusted,rotated);
+    await save.click();
+    await save.waitFor({state:'detached'});
+    assert.equal(await page.evaluate(() => lastVersion),'original');
+    await page.evaluate(() => imagery.startCalibration(4));
+    await grip.waitFor();
+    const reopened = await current();
+    sameSize(reopened);
+    sameCenter(reopened,adjusted);
+    assert.ok(Math.abs(reopened.angle-adjusted.angle)<1e-5);
+    await page.locator('[data-angle]').fill('120');
     await page.locator('[data-cancel]').click();
+    await page.evaluate(() => imagery.startCalibration(4));
+    await grip.waitFor();
+    assert.ok(Math.abs((await current()).angle-adjusted.angle)<1e-5);
+    // Existing surveys can already be skewed or mirrored. Preserve all three edges.
+    await page.evaluate(() => imagery.startCalibration(1));
+    await grip.waitFor();
+    const legacy = await current();
+    await page.locator('[data-angle]').fill('30');
+    const turned = await current();
+    for (const key of ['width','height','diagonal']) assert.ok(Math.abs(legacy[key]-turned[key])<1e-5,key);
     await page.evaluate(() => imagery.destroy());
 });
