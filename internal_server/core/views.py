@@ -5150,11 +5150,16 @@ def pipelines_payload(request):
     线性增长）。登录即可读（一线也要看管道）。缓存键与 dashboard 共用，
     管线增删改的失效点自动覆盖两边。
     """
-    pipelines_list = _cached('dashboard:pipelines', 300, _build_pipelines_list_module)
-    from .dxf_pipeline_utils import build_cad_reference_payload
-    reference = _cached('dashboard:cad-reference:v3', 300, build_cad_reference_payload)
-    from .valve_shapes import library
-    return JsonResponse({'pipelines': pipelines_list, 'cad_reference': reference, 'valve_shapes': library()})
+    part = request.GET.get('part')
+    payload = {}
+    if part != 'cad':
+        from .valve_shapes import library
+        payload['pipelines'] = _cached('dashboard:pipelines', 300, _build_pipelines_list_module)
+        payload['valve_shapes'] = library()
+    if part != 'overview':
+        from .dxf_pipeline_utils import build_cad_reference_payload
+        payload['cad_reference'] = _cached('dashboard:cad-reference:v3', 300, build_cad_reference_payload)
+    return JsonResponse(payload)
 
 
 @login_required(login_url='core:login')

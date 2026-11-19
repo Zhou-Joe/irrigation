@@ -38,6 +38,18 @@ class MapDashboardTests(TestCase):
         self.assertNotContains(response, 'unpkg.com')
         self.assertNotContains(response, 'cdn.jsdelivr.net')
 
+    def test_overview_defers_cad_and_detail_skips_pipeline_build(self):
+        url = '/api/pipelines-payload/'
+        with patch('core.dxf_pipeline_utils.build_cad_reference_payload') as build_cad:
+            summary = self.client.get(url, {'part': 'overview'}).json()
+            self.assertEqual(set(summary), {'pipelines', 'valve_shapes'})
+            build_cad.assert_not_called()
+        with patch('core.views._build_pipelines_list_module') as build_pipes:
+            detail = self.client.get(url, {'part': 'cad'}).json()
+            self.assertEqual(set(detail), {'cad_reference'})
+            build_pipes.assert_not_called()
+        self.assertEqual(self.client.get(url).json(), {**summary, **detail})
+
     def test_sidebar_is_two_queries_and_excludes_geometry_and_histories(self):
         with self.assertNumQueries(2):
             zones = _build_dashboard_sidebar_zones()

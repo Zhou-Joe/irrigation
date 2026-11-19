@@ -53,14 +53,14 @@ test('individual pipeline layers can turn on after all layers are switched off',
   const irrigation={id:'irrigation'},flush={id:'flush'},children=new Set(),mapLayers=new Set(),inputs=[{checked:true},{checked:false}],master={};
   const group={addLayer:child=>children.add(child),removeLayer:child=>children.delete(child)};
   const scope={pipelineTypeGroups:new Map([['irrigation',irrigation],['flush',flush]]),hiddenPipelineTypes:new Set(['irrigation','flush']),
-    pipelinesLayerGroup:group,pipelinesVisible:false,document:{querySelectorAll:()=>inputs,getElementById:()=>master},
+    pipelinesLayerGroup:group,pipelinesVisible:false,viewportUpdates:0,updatePipeOverlayTiers(){scope.viewportUpdates++;},document:{querySelectorAll:()=>inputs,getElementById:()=>master},
     map:{addLayer:layer=>mapLayers.add(layer),removeLayer:layer=>mapLayers.delete(layer)}};
   vm.createContext(scope);vm.runInContext(source.slice(start,end),scope);
   scope.setPipelineTypeVisibility('irrigation',true);
   assert.equal(children.has(irrigation),true);assert.equal(children.has(flush),false);
   assert.equal(mapLayers.has(group),true);assert.equal(master.indeterminate,true);assert.equal(master.checked,false);
   inputs[0].checked=false;scope.setPipelineTypeVisibility('irrigation',false);
-  assert.equal(mapLayers.has(group),false);assert.equal(master.indeterminate,false);
+  assert.equal(mapLayers.has(group),false);assert.equal(master.indeterminate,false);assert.equal(scope.viewportUpdates,2);
 });
 
 test('changed template scripts compile with their real entry points',()=>{

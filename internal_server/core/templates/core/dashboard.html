@@ -203,7 +203,7 @@
                     <span>管道（全部）</span>
                 </label>
                 {% if is_admin %}<a id="pipelineEditorLink" href="{% url 'core:pipeline_editor' %}">电脑绘制与设备挂接</a>{% endif %}
-                <small>第三级起显示阀门：<span id="valveLegend">○ S 电磁阀　□ Q 取水阀　◇ G 闸阀</span>　虚线框表示待挂接</small>
+                <small>放大至 20 级显示阀门　<span id="valveLegend">○ S 电磁阀　□ Q 取水阀　◇ G 闸阀</span>　虚线框表示待挂接</small>
                 <div id="pipelineTypeLayers" style="padding-left:18px;"></div>
                 <label class="map-layer-item">
                     <input type="checkbox" checked onchange="toggleLayer('cad_symbols', this.checked)">
@@ -417,8 +417,8 @@
 <script id="pending-remarks" type="application/json">{{ pending_remarks_json|safe }}</script>
 <!-- Custom Map JS -->
 <script src="{% static 'js/map-runtime.js' %}?v=20261117pestalign1"></script>
-<script src="{% static 'js/valve-icons.js' %}?v=20261119shapes1"></script>
-<script src="{% static 'js/map.js' %}?v=20261119shapes1"></script>
+<script src="{% static 'js/valve-icons.js' %}?v=20261119detail2"></script>
+<script src="{% static 'js/map.js' %}?v=20261119detail2"></script>
 <script src="{% static 'js/dashboard-modal.js' %}?v=20261118mwg2"></script>
 <script>
 // Override the notification popup's PM-task "填写" handler: on the dashboard we

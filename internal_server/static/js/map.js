@@ -53,7 +53,12 @@
     let cadUnmatchedLayerGroup;
     // Rendered valve markers + their tooltip content, so a zoomend handler can
     // flip labels to permanent (auto-show) at max zoom, hover-only otherwise.
-    let valveMarkersForLabels = [];
+    const valveMarkersForLabels = new Set();
+    const symbolDetails = window.IrrigationValveIcons.viewportLayers();
+    const referenceDetails = window.IrrigationValveIcons.viewportLayers(0);
+    const noteDetails = window.IrrigationValveIcons.viewportLayers(0);
+    const pendingDetails = window.IrrigationValveIcons.viewportLayers();
+    let overviewReady = false, cadState = 'idle', attachedOrientations = {};
 
     // Zone label layers group (separate from boundaries for independent toggle)
     let labelsLayerGroup;
@@ -328,7 +333,7 @@
         // correct per-element display, then clears the zooming class so labels
         // reappear with the right layout (see _updateLabelSizesAndClearZoom wrapper).
         map.on('zoomend', updateLabelSizesDebounced);
-        map.on('zoomend', updatePipeOverlayTiers);
+        map.on('moveend', updatePipeOverlayTiers);
         map.on('zoomend', () => applyValveLabelMode());
         // 最大层级平移后重排阀门常显 label（碰撞结果是视口相关的）；均防抖。
         let _valveRelayoutT = null;
@@ -557,7 +562,7 @@
      */
     function getCodeForZoom(code, zoom) {
         const parts = code.split('-');
-        if (parts.length <= 1 || zoom >= window.IrrigationValveIcons.detailZoom) return code;
+        if (parts.length <= 1 || zoom >= 18) return code;
         if (zoom >= 17) return parts.slice(0, 2).join('-');
         return parts[0];
     }
@@ -1624,25 +1629,28 @@
         const notice = document.getElementById('pipelineLoadNotice');
         const retry = document.getElementById('pipelineLoadingRetry');
         if (notice) notice.hidden = true;
-        if (retry) retry.onclick = loadPipelines;
+        if (retry) retry.onclick = () => {
+            if (!overviewReady) loadPipelines();
+            else { cadState = 'idle'; loadCadDetails(); }
+        };
         if (el.textContent && el.textContent.trim().length > 2) {
             try {
                 renderPipelines(JSON.parse(el.textContent));
+                overviewReady = true;
                 updatePipeOverlayTiers();
                 applyValveLabelMode(true);
             } catch (e) { console.error('pipelines inline parse failed', e); }
             return;
         }
         pipelinesLoading = true;
-        runtime.fetchJSON('/api/pipelines-payload/')
+        runtime.fetchJSON('/api/pipelines-payload/?part=overview')
             .then(d => {
                 if(destroyed)return;
                 const icons = window.IrrigationValveIcons;
                 icons.configure(d.valve_shapes);
                 icons.legend(document.getElementById('valveLegend'));
-                const attached = Object.assign({}, ...(d.cad_reference || []).map(batch => batch.attached_orientations));
-                renderPipelines(d.pipelines || [], attached);
-                renderCadReference(d.cad_reference || []);
+                renderPipelines(d.pipelines || []);
+                overviewReady = true;
                 updatePipeOverlayTiers();
                 applyValveLabelMode(true);
             })
@@ -1653,11 +1661,41 @@
             }).finally(() => { pipelinesLoading = false; });
     }
 
+    function loadCadDetails() {
+        if (!overviewReady || cadState !== 'idle' || destroyed) return;
+        cadState = 'loading';
+        runtime.fetchJSON('/api/pipelines-payload/?part=cad').then(data => {
+            if (destroyed) return;
+            const batches = data.cad_reference || [];
+            attachedOrientations = Object.assign({}, ...batches.map(b => b.attached_orientations));
+            renderCadReference(batches);
+            cadState = 'ready';
+            const notice = document.getElementById('pipelineLoadNotice');
+            if (notice) notice.hidden = true;
+            updatePipeOverlayTiers();
+        }).catch(error => {
+            if (destroyed) return;
+            cadState = 'failed';
+            const notice = document.getElementById('pipelineLoadNotice');
+            if (notice) notice.hidden = false;
+            console.error('CAD detail load failed', error);
+        });
+    }
+
     function updatePipeOverlayTiers() {
-        const {syncLayer} = window.IrrigationValveIcons;
-        for (const group of pipelineTypeGroups.values()) syncLayer(map, group.valveMarkers, group);
+        const {syncLayer, detailZoom} = window.IrrigationValveIcons;
+        if (map.getZoom() >= detailZoom || map.hasLayer(cadReferenceLayerGroup) || map.hasLayer(cadNotesLayerGroup)) loadCadDetails();
+        for (const [code,group] of pipelineTypeGroups) {
+            const enabled = pipelinesVisible && !hiddenPipelineTypes.has(code) && (!overviewReady || cadState === 'ready');
+            syncLayer(map, group.valveMarkers, group, enabled);
+            group.valveDetails.sync(map, enabled);
+        }
         syncLayer(map, cadSymbolsLayerGroup, map, cadSymbolsEnabled);
         syncLayer(map, cadUnmatchedLayerGroup, map, cadUnmatchedEnabled);
+        symbolDetails.sync(map, cadSymbolsEnabled);
+        pendingDetails.sync(map, cadUnmatchedEnabled);
+        referenceDetails.sync(map, map.hasLayer(cadReferenceLayerGroup));
+        noteDetails.sync(map, map.hasLayer(cadNotesLayerGroup));
     }
 
     let _valveLabelMode = null;   // 'hover' | 'permanent' — 跨 zoom 不变则不重建
@@ -1722,13 +1760,14 @@
         if (master) { master.checked = checked === inputs.length && checked > 0; master.indeterminate = checked > 0 && checked < inputs.length; }
         if (pipelinesVisible) map.addLayer(pipelinesLayerGroup);
         else map.removeLayer(pipelinesLayerGroup);
+        updatePipeOverlayTiers();
     }
 
-    function renderPipelines(pipelines, orientations = {}) {
+    function renderPipelines(pipelines) {
         if(destroyed)return;
+        for (const group of pipelineTypeGroups.values()) group.valveDetails.clear();
         pipelinesLayerGroup.clearLayers();
         pipelineTypeGroups.clear();
-        valveMarkersForLabels = [];   // rebuilt as valve markers are created below
 
         const controls = document.getElementById('pipelineTypeLayers');
         if (controls) {
@@ -1827,6 +1866,7 @@
             if (!typeGroup) {
                 typeGroup = L.layerGroup();
                 typeGroup.valveMarkers = L.layerGroup();
+                typeGroup.valveDetails = window.IrrigationValveIcons.viewportLayers();
                 pipelineTypeGroups.set(pipeline.pipeline_type, typeGroup);
                 if (!hiddenPipelineTypes.has(pipeline.pipeline_type)) pipelinesLayerGroup.addLayer(typeGroup);
             }
@@ -1840,83 +1880,85 @@
                     ? (v.point[0].lat !== undefined ? [v.point[0].lat, v.point[0].lng] : [v.point[0][0], v.point[0][1]])
                     : null;
                 if (!pt) return;
-                const dia = v.diameter || 20;
-                const size = Math.max(13, Math.min(18, 9 + dia / 10));
-                const watered = !!v.watered_today;
-                const vm = L.marker(pt, window.IrrigationValveIcons.options(v.valve_type, {watered, orientation:orientations[v.id], size:Math.max(16,size)}));
-                // Zone label: "名称 代号" (e.g. "BOH 1-1-1"); fall back to whichever exists.
-                const zLabel = [v.zone_name, v.zone_code].filter(x => x).join(' ') || '查看区域';
-                const zLink = v.zone_id ? `<a href="/zone/${v.zone_id}/detail/" style="color:#1B4332;">${escapeHtml(zLabel)} ↗</a>` : '无';
-                const stLink = v.station_id ? `SAT 阀 #${v.station_id}` : '未关联 station';
-                // 最近灌溉: date(to minute) · minutes · depth(mm), each only if present.
-                const rtParts = [];
-                if (v.runtime_date) rtParts.push(escapeHtml(v.runtime_date));
-                if (v.runtime_minutes != null && v.runtime_minutes > 0) rtParts.push(v.runtime_minutes + ' 分钟');
-                if (v.depth_mm != null) rtParts.push(v.depth_mm + ' mm');
-                const runtime = rtParts.length ? rtParts.join(' · ') : '无记录';
-                vm.bindPopup(`
-                    <div class="popup-content">
-                        <h3>${escapeHtml(v.name || '阀门 #' + (v.order + 1))}</h3>
-                        <div>${escapeHtml(v.valve_type_display || v.valve_type || '阀门')}${v.diameter ? ' · ' + v.diameter + 'mm' : ''}</div>
-                        <div style="margin-top:6px;">控制区域: ${zLink}</div>
-                        <div>${stLink}</div>
-                        <div>最近灌溉: <b>${runtime}</b></div>
-                        ${v.notes ? `<div style="white-space:pre-wrap;">备注: ${escapeHtml(v.notes)}</div>` : ''}
-                    </div>
-                `);
-                const tipContent = escapeHtml((v.zone_name || '') + (v.zone_code ? ' ' + v.zone_code : '') || ('阀门 #' + (v.order + 1))) + (watered ? ' · 已浇水' : ' · 未浇水');
-                vm.bindTooltip(tipContent, { sticky: true, className: 'ref-tooltip' });
-                vm._tipContent = tipContent;   // for zoom-driven permanent toggle
-                vm._watered = watered;          // 未浇水阀门最大层级不常显 label（仍可悬停查看）
-                valveMarkersForLabels.push(vm);
-                typeGroup.valveMarkers.addLayer(vm);
+                typeGroup.valveDetails.add(typeGroup.valveMarkers, {lat:pt[0],lng:pt[1]}, () => {
+                    const dia = v.diameter || 20;
+                    const size = Math.max(13, Math.min(18, 9 + dia / 10));
+                    const watered = !!v.watered_today;
+                    const vm = L.marker(pt, window.IrrigationValveIcons.options(v.valve_type, {watered, orientation:attachedOrientations[v.id], size:Math.max(16,size)}));
+                    // Zone label: "名称 代号" (e.g. "BOH 1-1-1"); fall back to whichever exists.
+                    const zLabel = [v.zone_name, v.zone_code].filter(x => x).join(' ') || '查看区域';
+                    const zLink = v.zone_id ? `<a href="/zone/${v.zone_id}/detail/" style="color:#1B4332;">${escapeHtml(zLabel)} ↗</a>` : '无';
+                    const stLink = v.station_id ? `SAT 阀 #${v.station_id}` : '未关联 station';
+                    // 最近灌溉: date(to minute) · minutes · depth(mm), each only if present.
+                    const rtParts = [];
+                    if (v.runtime_date) rtParts.push(escapeHtml(v.runtime_date));
+                    if (v.runtime_minutes != null && v.runtime_minutes > 0) rtParts.push(v.runtime_minutes + ' 分钟');
+                    if (v.depth_mm != null) rtParts.push(v.depth_mm + ' mm');
+                    const runtime = rtParts.length ? rtParts.join(' · ') : '无记录';
+                    vm.bindPopup(`
+                        <div class="popup-content">
+                            <h3>${escapeHtml(v.name || '阀门 #' + (v.order + 1))}</h3>
+                            <div>${escapeHtml(v.valve_type_display || v.valve_type || '阀门')}${v.diameter ? ' · ' + v.diameter + 'mm' : ''}</div>
+                            <div style="margin-top:6px;">控制区域: ${zLink}</div>
+                            <div>${stLink}</div>
+                            <div>最近灌溉: <b>${runtime}</b></div>
+                            ${v.notes ? `<div style="white-space:pre-wrap;">备注: ${escapeHtml(v.notes)}</div>` : ''}
+                        </div>
+                    `);
+                    const tipContent = escapeHtml((v.zone_name || '') + (v.zone_code ? ' ' + v.zone_code : '') || ('阀门 #' + (v.order + 1))) + (watered ? ' · 已浇水' : ' · 未浇水');
+                    vm.bindTooltip(tipContent, { sticky: true, className: 'ref-tooltip', permanent:watered && map.getZoom() >= map.getMaxZoom() });
+                    vm._tipContent = tipContent;   // for zoom-driven permanent toggle
+                    vm._watered = watered;          // 未浇水阀门最大层级不常显 label（仍可悬停查看）
+                    valveMarkersForLabels.add(vm);
+                    return vm;
+                }, vm => valveMarkersForLabels.delete(vm));
             });
         });
     }
 
     function renderCadReference(batches) {
         if(destroyed)return;
-        cadReferenceLayerGroup.clearLayers();
-        cadSymbolsLayerGroup.clearLayers();
-        cadNotesLayerGroup.clearLayers();
-        cadUnmatchedLayerGroup.clearLayers();
+        symbolDetails.clear();
+        pendingDetails.clear();
+        referenceDetails.clear();
+        noteDetails.clear();
+        function registerPath(path, title, symbol) {
+            if (!path.length) return;
+            const create = () => L.polyline(path, {color:symbol ? '#ad6142' : '#d6a544',
+                weight:symbol ? 2 : 1.5, opacity:symbol ? .9 : .7}).bindTooltip(escapeHtml(title));
+            if (symbol) symbolDetails.add(cadSymbolsLayerGroup, L.latLngBounds(path), create);
+            else referenceDetails.add(cadReferenceLayerGroup, L.latLngBounds(path), create);
+        }
         batches.forEach(batch => {
             (batch.layers || []).forEach(layer => {
-                const symbol = layer.layer.startsWith('块·');
-                (layer.paths || []).forEach(path => {
-                    L.polyline(path.map(p => [p.lat, p.lng]), {
-                        color: symbol ? '#ad6142' : '#d6a544',
-                        weight: symbol ? 2 : 1.5, opacity: symbol ? 0.9 : 0.7
-                    }).bindTooltip(escapeHtml(batch.name + ' · ' + layer.layer))
-                        .addTo(symbol ? cadSymbolsLayerGroup : cadReferenceLayerGroup);
-                });
+                for (const path of layer.paths || []) registerPath(path, batch.name+' · '+layer.layer, layer.layer.startsWith('块·'));
             });
             (batch.labels || []).forEach(note => {
                 const inline=!!note.inline_symbol;
-                L.marker([note.lat, note.lng], {
+                const create = () => L.marker([note.lat, note.lng], {
                     icon: L.divIcon({ className: inline ? 'cad-symbol-text' : 'cad-note',iconSize:[0,0],
                         html: inline
                             ? `<span style="display:block;transform:translate(-50%,-50%);width:max-content;font-size:11px;font-weight:600;color:#80482f;white-space:nowrap;text-shadow:0 0 2px #fff,0 0 2px #fff;">${escapeHtml(note.text)}</span>`
                             : `<span style="font-size:10px;background:rgba(255,255,255,.85);white-space:nowrap;">${escapeHtml(note.text)}</span>` })
-                }).bindPopup(`<div style="white-space:pre-wrap;">${escapeHtml(note.text)}</div><small>${escapeHtml(batch.name + ' · ' + note.layer)}</small>`)
-                    .addTo(inline ? cadSymbolsLayerGroup : cadNotesLayerGroup);
+                }).bindPopup(`<div style="white-space:pre-wrap;">${escapeHtml(note.text)}</div><small>${escapeHtml(batch.name + ' · ' + note.layer)}</small>`);
+                if (inline) symbolDetails.add(cadSymbolsLayerGroup, note, create);
+                else noteDetails.add(cadNotesLayerGroup, note, create);
             });
             (batch.symbols || []).forEach(symbol => {
-                (symbol.paths || []).forEach(path => L.polyline(path.map(p=>[p.lat,p.lng]),{
-                    color:'#ad6142',weight:2,opacity:.9
-                }).bindTooltip(escapeHtml(symbol.name)).addTo(cadSymbolsLayerGroup));
+                for (const path of symbol.paths || []) registerPath(path, symbol.name, true);
             });
             (batch.unmatched_valves || []).forEach(valve => {
-                const edit = document.getElementById('pipelineEditorLink');
-                const url = edit ? new URL(edit.href) : null;
-                if (url) {
-                    url.searchParams.set('batch',batch.batch_id);
-                    url.searchParams.set('source',valve.source_id);
-                }
-                const kind = window.IrrigationValveIcons.label(valve.type);
-                L.marker([valve.lat,valve.lng],window.IrrigationValveIcons.options(valve.type,{pending:true,orientation:valve.orientation}))
-                    .bindPopup(`<b>待挂接 · ${escapeHtml(kind)} · ${escapeHtml(valve.block)}</b><div>此设备尚未关联管道，可选择目标管线后挂接。区域编号可另行选择。</div><small>${escapeHtml(batch.name+' · '+valve.source_id)}</small>${url ? '<div><a href="'+escapeHtml(url.href)+'">地图挂接或调整位置</a></div>' : ''}`)
-                    .addTo(cadUnmatchedLayerGroup);
+                pendingDetails.add(cadUnmatchedLayerGroup, valve, () => {
+                    const edit = document.getElementById('pipelineEditorLink');
+                    const url = edit ? new URL(edit.href) : null;
+                    if (url) {
+                        url.searchParams.set('batch',batch.batch_id);
+                        url.searchParams.set('source',valve.source_id);
+                    }
+                    const kind = window.IrrigationValveIcons.label(valve.type);
+                    return L.marker([valve.lat,valve.lng],window.IrrigationValveIcons.options(valve.type,{pending:true,orientation:valve.orientation}))
+                        .bindPopup(`<b>待挂接 · ${escapeHtml(kind)} · ${escapeHtml(valve.block)}</b><div>此设备尚未关联管道，可选择目标管线后挂接。区域编号可另行选择。</div><small>${escapeHtml(batch.name+' · '+valve.source_id)}</small>${url ? '<div><a href="'+escapeHtml(url.href)+'">地图挂接或调整位置</a></div>' : ''}`);
+                });
             });
         });
     }
@@ -2192,6 +2234,7 @@
             } else {
                 if (map.hasLayer(pipelinesLayerGroup)) map.removeLayer(pipelinesLayerGroup);
             }
+            updatePipeOverlayTiers();
         } else if (layer === 'cad_symbols' || layer === 'cad_unmatched') {
             if (layer === 'cad_symbols') cadSymbolsEnabled = visible;
             else cadUnmatchedEnabled = visible;
@@ -2199,6 +2242,7 @@
         } else if (layer === 'cad_reference' || layer === 'cad_notes') {
             const group = layer === 'cad_reference' ? cadReferenceLayerGroup : cadNotesLayerGroup;
             if (visible) map.addLayer(group); else map.removeLayer(group);
+            updatePipeOverlayTiers();
         } else if (layer === 'landmarks') {
             if (visible) {
                 if (!map.hasLayer(landmarksLayerGroup)) {

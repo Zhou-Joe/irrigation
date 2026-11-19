@@ -40,11 +40,46 @@ window.IrrigationValveIcons = (() => {
             host.append(icon,document.createTextNode(' '+label(type)+'　'));
         }
     }
-    const detailZoom = 18;
+    const detailZoom = 20;
+    // Keep descriptors cheap. Leaflet markers, paths and popups exist only while visible.
+    function viewportLayers(minZoom = detailZoom) {
+        const entries = [], active = new Map();
+        function remove(entry) {
+            const layer = active.get(entry);
+            entry.group.removeLayer(layer);
+            if (entry.discard) entry.discard(layer);
+            active.delete(entry);
+        }
+        return {
+            add(group, location, create, discard) {
+                const entry = {group, location, create, discard};
+                entries.push(entry);
+                return entry;
+            },
+            clear() {
+                for (const entry of active.keys()) remove(entry);
+                entries.length = 0;
+            },
+            sync(map, enabled, include) {
+                if (!enabled || map.getZoom() < minZoom) {
+                    for (const entry of active.keys()) remove(entry);
+                    return;
+                }
+                const view = map.getBounds().pad(0.12);
+                for (const entry of entries) {
+                    const loc = entry.location;
+                    const visible = (!include || include(entry)) &&
+                        (loc.getSouthWest ? view.intersects(loc) : view.contains(loc));
+                    if (visible && !active.has(entry)) active.set(entry, entry.create().addTo(entry.group));
+                    else if (!visible && active.has(entry)) remove(entry);
+                }
+            }
+        };
+    }
     function syncLayer(map, layer, parent = map, enabled = true) {
         const visible = enabled && map.getZoom() >= detailZoom;
         if (visible && !parent.hasLayer(layer)) parent.addLayer(layer);
         if (!visible && parent.hasLayer(layer)) parent.removeLayer(layer);
     }
-    return {detailZoom,syncLayer,options,label,configure,markup,legend};
+    return {detailZoom,viewportLayers,syncLayer,options,label,configure,markup,legend};
 })();

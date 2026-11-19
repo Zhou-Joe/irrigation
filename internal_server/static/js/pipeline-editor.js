@@ -7,14 +7,16 @@
     L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxNativeZoom:19,maxZoom:22,attribution:'Esri'}).addTo(map);
     const base = L.layerGroup().addTo(map), edits = L.layerGroup().addTo(map);
     const valves = L.layerGroup(), valveEdits = L.layerGroup();
+    const valveDetails = icons.viewportLayers();
+    const items = new Map(), pipes = new Map();
+    let selected = null, draft = [], dirty = false, busy = false;
     function updateValveVisibility() {
         icons.syncLayer(map, valves);
         icons.syncLayer(map, valveEdits);
+        valveDetails.sync(map, true, entry => entry !== selected?.detail);
     }
-    map.on('zoomend', updateValveVisibility);
+    map.on('moveend', updateValveVisibility);
     updateValveVisibility();
-    const items = new Map(), pipes = new Map();
-    let selected = null, draft = [], dirty = false, busy = false;
     const pt = ll => ({lat: Number(ll.lat.toFixed(7)),lng:Number(ll.lng.toFixed(7))});
     const coords = v => {const ll=L.latLng(v); return {lat:ll.lat,lng:ll.lng};};
     function changed(value) {
@@ -45,10 +47,11 @@
         el('pendingFields').hidden = item?.kind !== 'pending';
         target.value=''; el('targetZone').value=''; el('valveKind').value=item?.type || '';
         el('targetZone').disabled=el('valveKind').disabled=true; save.textContent='保存修改';
+        updateValveVisibility();
         if (!item) return;
         draft = item.points.map(coords);
         if (zoom) map.fitBounds(L.latLngBounds(draft),{maxZoom:20,padding:[30,30],animate:false});
-        item.parent.removeLayer(item.layer);
+        if (item.layer) item.parent.removeLayer(item.layer);
         if (item.kind==='pipe') {
             const line=L.polyline(draft,{weight:5,color:'#15815e'}).addTo(edits);
             draft.forEach((v,i)=>{
@@ -65,26 +68,35 @@
         const direction = source === 'block' ? '按 CAD 块方向对齐' : source === 'axis' ? '按轮廓主轴对齐（正反未定）' : '无可靠方向，使用绘制朝向';
         status.textContent = item.kind === 'pipe' ? item.label : item.label + ' · ' + direction;
     }
-    function add(item, layer) {
-        item.layer=layer; item.parent = item.kind === 'pipe' ? base : valves; items.set(item.key,item);
+    function bindItem(item, layer) {
         layer.bindTooltip(document.createTextNode(item.label));
         layer.on('click',()=>{
             if (busy) return;
             if (selected?.kind==='pending' && item.kind==='pipe') targetPipe(item.id);
             else show(item);
-        }).addTo(item.parent);
+        });
+        return layer;
+    }
+    function addValve(item) {
+        items.set(item.key,item);
+        const point = item.points[0];
+        item.detail = valveDetails.add(valves, point, () => bindItem(item,
+            L.marker(point, icons.options(item.type,{pending:item.kind==='pending',orientation:item.orientation}))));
     }
     async function load(focusKey) {
         const response=await fetch('/pipelines/edit/data/?editor=1',{cache:'no-store'});
         if (!response.ok) throw Error('管网加载失败，请刷新重试。');
         const data=await response.json();
         icons.configure(data.valve_shapes);
+        valveDetails.clear();
         edits.clearLayers();valveEdits.clearLayers();base.clearLayers();valves.clearLayers();items.clear();pipes.clear();selected=null;changed(false);
         const targets=[new Option('仅调整设备位置','')];
         for (const p of data.pipelines) {
             if (!p.line_points?.length) continue;
             const item={kind:'pipe',key:'p'+p.id,id:p.id,label:'管线 · '+p.code+' '+p.name,points:p.line_points};
-            add(item,L.polyline(item.points,{weight:3,color:p.color||'#a84a38'}));pipes.set(p.id,item);
+            item.parent = base;
+            item.layer = bindItem(item,L.polyline(item.points,{weight:3,color:p.color||'#a84a38'})).addTo(base);
+            items.set(item.key,item);pipes.set(p.id,item);
             targets.push(new Option(item.label,String(p.id)));
         }
         target.replaceChildren(...targets);
@@ -92,14 +104,14 @@
         for (const v of data.valves) {
             if (!v.point?.length) continue;
             const label=icons.label(v.type)+' #'+v.id+' · '+(v.name || '未命名设备')+' · '+(pipes.get(v.pipeline_id)?.label || '');
-            add({key:'v'+v.id,kind:'valve',id:v.id,type:v.type,orientation:v.orientation,label,points:v.point},L.marker(v.point[0],icons.options(v.type,{orientation:v.orientation})));
+            addValve({key:'v'+v.id,kind:'valve',id:v.id,type:v.type,orientation:v.orientation,label,points:v.point});
         }
         for (const v of data.pending) {
             if (!v.source_id) continue;
             const pos={lat:v.lat,lng:v.lng}, label='待挂接 · '+icons.label(v.type)+' · '+v.block+' · '+v.batch+' / '+v.source_id;
-            add({key:'u'+v.batch_id+':'+v.source_id,kind:'pending',batch:v.batch_id,sid:v.source_id,type:v.type,orientation:v.orientation,label,points:[pos]},L.marker(pos,icons.options(v.type,{pending:true,orientation:v.orientation})));
+            addValve({key:'u'+v.batch_id+':'+v.source_id,kind:'pending',batch:v.batch_id,sid:v.source_id,type:v.type,orientation:v.orientation,label,points:[pos]});
         }
-        controls.disabled=false; busy=false;fillList();
+        controls.disabled=false; busy=false;
         if (focusKey && items.has(focusKey)) show(items.get(focusKey));
         else {show(null);status.textContent='已加载 '+data.pipelines.length+' 条管线，'+data.valves.length+' 个已挂接设备，'+data.pending.length+' 个待挂接设备。';}
     }

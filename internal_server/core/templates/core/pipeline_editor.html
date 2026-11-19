@@ -17,7 +17,7 @@
 <fieldset id="pipeControls" disabled>{% csrf_token %}
 <label>查找管线或设备<input id="pipeSearch" type="search" placeholder="名称、编号或图纸来源"></label>
 <label>地图对象<select id="pipeObject"><option value="">选择管线或设备</option></select></label>
-<p id="editHint">点选地图对象，或从列表中选择。</p>
+<p id="editHint">阀门在 20 级起显示。从列表选择阀门可直接定位。</p>
 <div id="pendingFields" hidden><label>挂接到管道<select id="targetPipe"><option value="">仅调整设备位置</option></select></label>
 <label>设备类型<select id="valveKind"><option value="">请选择</option>{% for value,name in valve_types %}<option value="{{ value }}">{{ name }}</option>{% endfor %}</select></label>
 <label>控制区域（可选）<select id="targetZone"><option value="">未指定</option></select></label></div>
@@ -27,5 +27,5 @@
 </aside><div id="pipeCanvas" aria-label="管网卫星地图"></div></main>
 {% endblock %}
 {% block extra_js %}<script src="{% static 'vendor/leaflet/leaflet.js' %}"></script>
-<script src="{% static 'js/valve-icons.js' %}?v=20261119shapes1"></script>
-<script src="{% static 'js/pipeline-editor.js' %}?v=20261119shapes1"></script>{% endblock %}
+<script src="{% static 'js/valve-icons.js' %}?v=20261119detail2"></script>
+<script src="{% static 'js/pipeline-editor.js' %}?v=20261119detail2"></script>{% endblock %}
