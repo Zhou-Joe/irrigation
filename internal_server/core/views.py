@@ -5168,7 +5168,12 @@ def pipelines_payload(request):
     if part != 'overview':
         from .dxf_pipeline_utils import build_cad_reference_payload
         payload['cad_reference'] = _cached('dashboard:cad-reference:v3', 300, build_cad_reference_payload)
-    return JsonResponse(payload)
+    response = JsonResponse(payload)
+    # Bounded browser reuse: valve_shapes bypass the server cache, so without
+    # an explicit freshness limit a customized valve drawing could be served
+    # from a heuristic browser cache long after the editor saved it.
+    response['Cache-Control'] = 'private, max-age=60'
+    return response
 
 
 @login_required(login_url='core:login')
