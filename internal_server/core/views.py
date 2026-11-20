@@ -9037,15 +9037,22 @@ def _work_report_filters(request):
     work_item = (request.GET.get('work_item') or '').strip()
     if work_item and not work_item.isdigit():
         work_item = ''
+    # 区域工单 drill-in from the map zone popup: one zone code, or a comma list
+    # for the same-name 片区 group. Codes are validated against real zones so a
+    # bogus value simply yields no filter instead of an empty result page.
+    zone_codes = [code.strip() for code in (request.GET.get('zone') or '').split(',') if code.strip()]
+    if zone_codes and not Zone.objects.filter(code__in=zone_codes).exists():
+        zone_codes = []
 
     # Default to the most recent N days only when the user hasn't picked any
     # explicit start (neither a preset nor a manual date). This keeps the first
-    # page light; older records come in on demand via "加载更多".
-    if not date_from:
+    # page light; older records come in on demand via "加载更多". A zone drill-in
+    # wants the zone's whole history, so it skips the default window.
+    if not date_from and not zone_codes:
         today = timezone.localdate()
         date_from = (today - timedelta(days=WORK_REPORTS_DEFAULT_DAYS)).isoformat()
 
-    return date_from, date_to, land_id, worker_id, difficult, pending, before_id, sort, q, section, work_item
+    return date_from, date_to, land_id, worker_id, difficult, pending, before_id, sort, q, section, work_item, zone_codes
 
 
 @api_view(['GET'])
@@ -9727,17 +9734,23 @@ def work_reports_list(request):
     user = request.user
     admin = is_admin(user)
 
-    date_from, date_to, land_id, worker_id, difficult, pending, before_id, sort, q, section, work_item = _work_report_filters(request)
+    date_from, date_to, land_id, worker_id, difficult, pending, before_id, sort, q, section, work_item, zone_codes = _work_report_filters(request)
 
     qs = _scoped_work_reports_qs(user, admin, sort=sort)
     # distinct=True so the land/section M2M filters below (which JOIN the
     # through-table) don't multiply the comment count by the row count.
     qs = qs.annotate(comment_count=Count('comments', distinct=True))
 
-    # Apply filters (shared with the load-more endpoint).
-    qs = qs.filter(date__gte=date_from)
+    # Apply filters (shared with the load-more endpoint). date_from is only
+    # empty for the zone drill-in (区域工单), which shows the zone's whole history.
+    if date_from:
+        qs = qs.filter(date__gte=date_from)
     if date_to:
         qs = qs.filter(date__lte=date_to)
+    if zone_codes:
+        # 区域工单 drill-in: subquery so comment_count isn't multiplied and
+        # reports touching several grouped zones aren't duplicated.
+        qs = qs.filter(zones__in=Zone.objects.filter(code__in=zone_codes))
     if land_id:
         # Subquery (not a JOIN) so the comment_count annotation above isn't
         # multiplied by the number of matching zones.
@@ -9901,6 +9914,7 @@ def work_reports_list(request):
             'work_item': work_item,
             'sort': sort,
             'q': q,
+            'zone': ','.join(zone_codes),
         },
         'last_id': reports[-1].id if reports else None,
             'next_cursor': next_cursor,
@@ -10128,10 +10142,14 @@ def work_report_photos(request):
     if not admin:
         return JsonResponse({'reports': [], 'error': '无权限'}, status=403)
 
-    date_from, date_to, land_id, worker_id, difficult, pending, before_id, sort, q, section, work_item = _work_report_filters(request)
-    qs = _scoped_work_reports_qs(user, admin, sort=sort).filter(date__gte=date_from)
+    date_from, date_to, land_id, worker_id, difficult, pending, before_id, sort, q, section, work_item, zone_codes = _work_report_filters(request)
+    qs = _scoped_work_reports_qs(user, admin, sort=sort)
+    if date_from:
+        qs = qs.filter(date__gte=date_from)
     if date_to:
         qs = qs.filter(date__lte=date_to)
+    if zone_codes:
+        qs = qs.filter(zones__in=Zone.objects.filter(code__in=zone_codes))
     if land_id:
         qs = qs.filter(zones__in=Zone.objects.filter(land_id=land_id))
     if worker_id:

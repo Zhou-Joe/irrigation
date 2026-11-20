@@ -450,6 +450,14 @@
         {% endfor %}
     {% endif %}
 
+    {% if filters.zone %}
+    {# 区域工单 drill-in from the map zone popup: whole history for these zones. #}
+    <div class="msg msg-info" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+        <span>区域筛选：{{ filters.zone }}（显示该区域的全部工单）</span>
+        <a href="{% url 'core:work_reports' %}" style="font-weight:600;">清除</a>
+    </div>
+    {% endif %}
+
     <div class="app-tabs">
         <button type="button" class="app-tab {% if active_tab == 'workorders' or not active_tab %}active{% endif %}" data-tab="workorders" onclick="switchTab('workorders')">维修日志</button>
         <button type="button" class="app-tab {% if active_tab == 'pm' %}active{% endif %}" data-tab="pm" onclick="switchTab('pm')">
@@ -1961,6 +1969,7 @@ function loadMore() {
     if (currentFilter.section) params.set('section', currentFilter.section);
     if (currentFilter.work_item) params.set('work_item', currentFilter.work_item);
     if (currentFilter.q) params.set('q', currentFilter.q);
+    if (currentFilter.zone) params.set('zone', currentFilter.zone);
     if (currentFilter.sort) params.set('sort', currentFilter.sort);
 
     fetch('{% url "core:work_reports" %}?' + params.toString(), {
@@ -2007,6 +2016,7 @@ function loadMoreDups() {
     if (currentFilter.section) params.set('section', currentFilter.section);
     if (currentFilter.work_item) params.set('work_item', currentFilter.work_item);
     if (currentFilter.q) params.set('q', currentFilter.q);
+    if (currentFilter.zone) params.set('zone', currentFilter.zone);
     if (currentFilter.sort) params.set('sort', currentFilter.sort);
 
     fetch('{% url "core:work_reports" %}?' + params.toString(), {

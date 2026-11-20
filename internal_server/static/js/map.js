@@ -1306,7 +1306,7 @@
                 <div class="popup-footer">
                     <div class="popup-quick-actions">
                         <button class="popup-action-btn popup-action-primary" data-zone-code="${escapeHtml(zone.code)}" onclick="if(typeof window.quickWorkorder==='function')window.quickWorkorder([this.dataset.zoneCode])">${window.uiIcon('clipboard')} 创建工单</button>
-                        <button class="popup-action-btn popup-action-patch" data-zone-name="${escapeHtml(zone.name || '')}" data-zone-code="${escapeHtml(zone.code)}" onclick="window._quickPatchWorkorder(this)">${window.uiIcon('layers')} 片区工单</button>
+                        <button class="popup-action-btn popup-action-patch" data-zone-name="${escapeHtml(zone.name || '')}" data-zone-code="${escapeHtml(zone.code)}" onclick="window._zoneWorkorderList(this)" title="查看本区域（含同名片区）的全部工单">${window.uiIcon('folder')} 区域工单</button>
                     </div>
                     <button class="popup-detail-btn" onclick="window.location.href='/zone/${zone.id}/detail/'">查看区域详情</button>
                 </div>
@@ -1420,12 +1420,14 @@
     window.handleFieldToggle = handleFieldToggle;
 
     // Quick workorder from profile card — collect all zones sharing the same 通用名称 (zone.name)
-    window._quickPatchWorkorder = function (btn) {
+    // 区域工单: drill into the work-report list filtered to this zone, plus the
+    // same-name sibling zones that make up the same physical 片区. Work-order
+    // creation stays on the dedicated 创建工单 button.
+    window._zoneWorkorderList = function (btn) {
         var zoneName = btn.getAttribute('data-zone-name');
         var zoneCode = btn.getAttribute('data-zone-code');
         if (!zoneCode) return;
         var codes = [zoneCode];
-        // Group by common name (zone.name); if name is empty, fall back to just this zone
         if (zoneName && window.zonesData) {
             window.zonesData.forEach(function (zone) {
                 if (zone.name === zoneName && zone.code && !codes.includes(zone.code)) {
@@ -1433,7 +1435,7 @@
                 }
             });
         }
-        if (typeof window.quickWorkorder === 'function') window.quickWorkorder(codes);
+        window.location.href = '/work-reports/?zone=' + encodeURIComponent(codes.join(','));
     };
 
     window.handleSmoothCustomToggle = function(checked) {
