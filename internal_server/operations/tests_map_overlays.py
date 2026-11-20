@@ -93,10 +93,17 @@ class MapOverlayTests(TestCase):
                     session.save()
                     page = self.client.get('/')
                     self.assertContains(page, 'data-hd-visible')
+                    self.assertNotContains(page, 'data-hd-manage')
+                    settings_url = '/settings/' if business == 'irrigation' else '/ops/locations/'
+                    settings_page = self.client.get(settings_url)
+                    editor = self.client.get('/ops/locations/imagery/')
                     if manager:
-                        self.assertContains(page, 'data-hd-manage')
+                        self.assertContains(settings_page, '/ops/locations/imagery/')
+                        self.assertContains(editor, 'data-hd-manage')
+                        self.assertContains(editor, 'imageryMap')
                     else:
-                        self.assertNotContains(page, 'data-hd-manage')
+                        self.assertNotContains(settings_page, '/ops/locations/imagery/')
+                        self.assertEqual(editor.status_code, 403)
                     records = self.client.get('/ops/map-overlays/').json()['overlays']
                     self.assertEqual([row['id'] for row in records], [item_id])
                     self.assertEqual(records[0]['anchors']['tl'], [31.1, 121.1])

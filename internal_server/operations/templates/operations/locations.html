@@ -3,7 +3,7 @@
 {% block head %}{% include 'operations/_location_map_head.html' %}<link rel="stylesheet" href="{% static 'operations/location-management.css' %}?v=20261117locationdelete">{% endblock %}
 {% block ops_content %}
 <div class="ops-locations" data-location-layout data-location-mobile="list">
-  <header class="app-head loc-page-head"><div><h1>区域管理</h1><p class="app-subtitle">区域、建筑、诱捕笼与蜂箱，统一在地图上管理。</p></div>{% if can_create %}<div class="ops-actions"><button class="btn-sm btn-primary" type="button" data-map-create-open><svg class="ui-icon" aria-hidden="true"><use href="#pwa-plus"/></svg>在地图上连续新建</button></div>{% endif %}</header>
+  <header class="app-head loc-page-head"><div><h1>区域管理</h1><p class="app-subtitle">区域、建筑、诱捕笼与蜂箱，统一在地图上管理。</p></div><div class="ops-actions">{% if can_manage_map_imagery %}<a class="btn-sm btn-secondary" href="{% url 'operations:map_imagery_management' %}">影像管理</a>{% endif %}{% if can_create %}<button class="btn-sm btn-primary" type="button" data-map-create-open><svg class="ui-icon" aria-hidden="true"><use href="#pwa-plus"/></svg>在地图上连续新建</button>{% endif %}</div></header>
   <div id="locationControls">
   {% if can_manage %}<nav class="loc-scope-tabs" aria-label="区域可见范围"><a href="?scope=team" data-location-scope="team" class="{% if not is_location_catalog %}is-active{% endif %}" {% if not is_location_catalog %}aria-current="page"{% endif %}><svg class="ui-icon" aria-hidden="true"><use href="#pwa-users"/></svg>本团队可见</a><a href="?scope=catalog" data-location-scope="catalog" class="{% if is_location_catalog %}is-active{% endif %}" {% if is_location_catalog %}aria-current="page"{% endif %}><svg class="ui-icon" aria-hidden="true"><use href="#pwa-layers"/></svg>其他团队区域</a></nav>{% endif %}
   {% if is_location_catalog %}<div class="loc-catalog-note"><svg class="ui-icon" aria-hidden="true"><use href="#pwa-layers"/></svg><div><strong>为 {{ membership.team.name }} 选择可用地点</strong><p>可直接浏览各团队的区域、建筑与植保设施。在地图点选或列表勾选后，可批量加入或移出本团队，一线人员只查看本团队可见的地点。</p></div></div>{% endif %}
@@ -21,7 +21,7 @@
       <div class="loc-selection-summary"><strong>已选 <span data-map-selected-count>0</span> 个地点</strong><button type="button" data-map-selection-clear>清除</button></div>
       <div class="loc-selection-actions"><select data-map-selection-action aria-label="地图所选地点的可见范围操作"><option value="add">加入本团队</option><option value="remove">移出本团队</option></select><button type="button" class="btn-sm btn-primary" data-map-selection-apply>应用到本团队</button></div>
       <p data-map-batch-status role="status" aria-live="polite"></p>
-    </section>{% endif %}<p class="loc-map-status" id="opMapStatus" role="status">正在加载授权地点…</p><div class="loc-map-hint"><svg class="ui-icon" aria-hidden="true"><use href="#pwa-pin"/></svg><span>建筑、诱捕笼和蜂箱可直接点选位置，使用不同图钉区分，无需绘制边界。</span></div></section>
+    </section>{% endif %}<p class="loc-map-status" id="opMapStatus" role="status">正在加载授权地点…</p><div class="loc-map-hint"><svg class="ui-icon" aria-hidden="true"><use href="#pwa-pin"/></svg><span>建筑、诱捕笼和蜂箱可直接点选位置，使用不同图钉区分，无需绘制边界。</span></div>{% if pest_mode %}<details><summary>图钉图例</summary><div class="op-marker-legend" data-location-legend></div></details>{% endif %}</section>
     <section class="loc-list-pane" data-location-list-pane aria-label="地点列表"><div id="opLocationResults">{% include 'operations/_location_results.html' %}</div></section>
   </div>
 </div>

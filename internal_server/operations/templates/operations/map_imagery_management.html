@@ -1,0 +1,40 @@
+{% extends 'operations/base.html' %}{% load static %}
+{% block title %}影像管理 · 区域管理{% endblock %}
+{% block head %}
+<link rel="stylesheet" href="{% static 'vendor/leaflet/leaflet.css' %}">
+<link rel="stylesheet" href="{% static 'operations/map-overlays.css' %}?v=20261120layers1">
+{% endblock %}
+{% block ops_content %}
+<header class="app-head">
+    <div><a href="{% if business_selected == 'irrigation' %}{% url 'core:settings' %}{% else %}{% url 'operations:locations' %}{% endif %}">返回区域管理</a><h1>影像管理</h1></div>
+    <div class="hd-controls" data-hd-controls>
+        <label><input type="checkbox" data-hd-visible checked>显示高清影像</label>
+        <button type="button" data-hd-manage>上传与校准</button>
+    </div>
+</header>
+<section class="hd-management-stage" aria-label="影像校准地图"><div id="imageryMap" aria-label="卫星底图"></div></section>
+{% endblock %}
+{% block scripts %}
+<script src="{% static 'vendor/leaflet/leaflet.js' %}"></script>
+<script src="{% static 'js/map-runtime.js' %}?v=20261117pestalign1"></script>
+<script src="{% static 'vendor/leaflet/imageoverlay-rotated.js' %}?v=20261119fine1"></script>
+<script src="{% static 'operations/map-overlays.js' %}?v=20261119fine1"></script>
+<script>
+    (() => {
+        const park = IrrigationMapRuntime.parkView();
+        const map = L.map('imageryMap', {
+            maxBounds:park.bounds, maxBoundsViscosity:park.maxBoundsViscosity, minZoom:park.minZoom, maxZoom:park.maxZoom
+        }).setView(park.center, 17);
+        L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+            maxNativeZoom:19, maxZoom:park.maxZoom, attribution:'Esri'
+        }).addTo(map);
+        const imagery = FOSMapOverlays({map});
+        window.FOSImageryManagement = {destroy() {
+            imagery.destroy();
+            map.remove();
+            window.FOSImageryManagement = null;
+        }};
+        imagery.openManager();
+    })();
+</script>
+{% endblock %}

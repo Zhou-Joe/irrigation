@@ -10,7 +10,7 @@
 {% block extra_css %}
 <!-- Leaflet CSS -->
 <link rel="stylesheet" href="{% static 'vendor/leaflet/leaflet.css' %}?v=1.9.4" />
-<link rel="stylesheet" href="{% static 'css/dashboard.css' %}?v=20261023map4" /><link rel="stylesheet" href="{% static 'css/announcement-popup.css' %}?v=20261117pestalign1">
+<link rel="stylesheet" href="{% static 'css/dashboard.css' %}?v=20261120layers1" /><link rel="stylesheet" href="{% static 'css/announcement-popup.css' %}?v=20261117pestalign1">
 <link rel="stylesheet" href="{% static 'operations/map-markers.css' %}?v=20261108pins1">
 <link rel="stylesheet" href="{% static 'operations/map-location-create.css' %}?v=20261108fixes2">
 <!-- Dashboard JS needs Django URL, set before external scripts -->
@@ -29,7 +29,7 @@
 {% endblock %}
 
 {% block extra_ui_css %}
-{% if workspace_membership %}<link rel="stylesheet" href="{% static 'operations/map-overlays.css' %}?v=20261119fine1">{% endif %}
+{% if workspace_membership %}<link rel="stylesheet" href="{% static 'operations/map-overlays.css' %}?v=20261120layers1">{% endif %}
 {% if pest_mode %}<link rel="stylesheet" href="{% static 'operations/map-home.css' %}?v=20261118maps1">{% endif %}
 <link rel="stylesheet" href="{% static 'css/ai-chat.css' %}?v=20261112attachments1">
 <link rel="stylesheet" href="{% static 'css/inventory-quotes.css' %}?v=20261113candidates1">
@@ -37,7 +37,7 @@
 <link rel="stylesheet" href="{% static 'css/genie_arrival.css' %}?v=20261107engenie1">
 {% endblock %}
 
-{% block content %}<div id="dashboardWorkspace" data-quotes-enabled="{% if not pest_mode and is_admin %}yes{% else %}no{% endif %}" data-ai="{% if can_use_ai %}yes{% else %}no{% endif %}" data-business="{% if pest_mode %}pest-control{% else %}irrigation{% endif %}">{% include 'core/_announcement_popup.html' %}{% if pest_mode %}{{ announcements|json_script:'announcements-data' }}{% include 'operations/_pest_map.html' %}{% else %}
+{% block content %}<div id="dashboardWorkspace" data-manager="{% if can_manage_map_imagery %}yes{% else %}no{% endif %}" data-quotes-enabled="{% if not pest_mode and is_admin %}yes{% else %}no{% endif %}" data-ai="{% if can_use_ai %}yes{% else %}no{% endif %}" data-business="{% if pest_mode %}pest-control{% else %}irrigation{% endif %}">{% include 'core/_announcement_popup.html' %}{% if pest_mode %}{{ announcements|json_script:'announcements-data' }}{% include 'operations/_pest_map.html' %}{% else %}
 <!-- Map View Container -->
 <div class="mobile-overlay" id="mobileOverlay" onclick="toggleSidebar()"></div>
 
@@ -154,7 +154,7 @@
         <div class="mobile-btn-cluster" id="mobileBtnCluster">
             <div id="mobileLocateSlot"></div>
         </div>
-        <div id="map"></div>
+        <div id="map" data-pipeline-display-user="{{ request.user.pk }}"></div>
         <!-- Loading overlay shown while the zone payload (~5MB) is fetched/parsed.
              Removed once renderZones() completes (see map.js applyZones). -->
         <div id="zone-loading-overlay" role="status" aria-live="polite" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,0.6);z-index:500;pointer-events:none;">
@@ -165,9 +165,15 @@
             </div>
         </div>
         <style>@keyframes zspin{to{transform:rotate(360deg)}}</style>
+        <div class="map-data-notices">
         <div id="pipelineLoadNotice" class="map-data-notice" role="status" hidden>
             <span>管网加载失败，区域地图仍可使用。</span>
             <button type="button" id="pipelineLoadingRetry" class="btn-sm btn-primary">重试管网</button>
+        </div>
+        {% if multi_team_enabled %}<div id="sharedLocationNotice" class="map-data-notice" hidden>
+            <span id="sharedLocationStatus" role="status"></span>
+            <button type="button" id="sharedLocationRetry" class="btn-sm btn-secondary" hidden>重试共享地点</button>
+        </div>{% endif %}
         </div>
         <div id="mapLocationNotice" class="map-location-notice" role="status" aria-live="polite" hidden>
             <span id="mapLocationMessage"></span>
@@ -176,58 +182,16 @@
         </div>
         <!-- 地图图层控制 -->
         <div class="map-layer-panel" id="mapLayerPanel">
-            <button class="map-layer-toggle-btn map-tool-btn" id="mapLayerToggleBtn" onclick="toggleLayerPanel()" title="图层控制"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-layers"/></svg></button>
+            <button class="map-layer-toggle-btn map-tool-btn" id="mapLayerToggleBtn" onclick="toggleLayerPanel()" aria-expanded="false" aria-controls="mapLayerBody" aria-label="图层控制" title="图层控制"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-layers"/></svg></button>
             <div class="map-layer-body" id="mapLayerBody" style="display:none;">
                 <div class="map-layer-title">图层控制</div>
                 {% include 'operations/_map_imagery_controls.html' %}
-                {% if multi_team_enabled %}<label class="map-layer-item">
-                    <input type="checkbox" id="sharedLocationToggle" checked>
-                    <span class="map-layer-checkmark"></span><span>共享地点</span>
-                </label><div style="padding:0 8px 8px;font-size:12px;color:#607269"><span id="sharedLocationStatus" role="status"></span> <button id="sharedLocationRetry" type="button" class="btn-sm btn-secondary" hidden>重试</button></div>{% endif %}
-                <label class="map-layer-item">
-                    <input type="checkbox" checked onchange="toggleLayer('zones', this.checked)">
-                    <span class="map-layer-checkmark"></span>
-                    <span>区域边界</span>
-                </label>
-                <label class="map-layer-item">
-                    <input type="checkbox" checked onchange="toggleLayer('labels', this.checked)">
-                    <span class="map-layer-checkmark"></span>
-                    <span>区域标签</span>
-                </label>
-                <label class="map-layer-item">
-                    <input type="checkbox" onchange="toggleLayer('leader_lines', this.checked)">
-                    <span class="map-layer-checkmark"></span>
-                    <span>连线</span>
-                </label>
-                <label class="map-layer-item">
-                    <input type="checkbox" id="pipelineLayerAll" checked onchange="toggleLayer('pipelines', this.checked)">
-                    <span class="map-layer-checkmark"></span>
-                    <span>管道（全部）</span>
-                </label>
-                {% if is_admin %}<a id="pipelineEditorLink" href="{% url 'core:pipeline_editor' %}">电脑绘制与设备挂接</a>{% endif %}
-                <small>放大至 20 级显示阀门　<span id="valveLegend">○ S 电磁阀　□ Q 取水阀　◇ G 闸阀</span>　虚线框表示待挂接</small>
-                <div id="pipelineTypeLayers" style="padding-left:18px;"></div>
-                <label class="map-layer-item">
-                    <input type="checkbox" checked onchange="toggleLayer('cad_symbols', this.checked)">
-                    <span class="map-layer-checkmark"></span><span>CAD 块符号</span>
-                </label>
-                <label class="map-layer-item">
-                    <input type="checkbox" onchange="toggleLayer('cad_reference', this.checked)">
-                    <span class="map-layer-checkmark"></span><span>CAD 参考线</span>
-                </label>
-                <label class="map-layer-item">
-                    <input type="checkbox" onchange="toggleLayer('cad_notes', this.checked)">
-                    <span class="map-layer-checkmark"></span><span>CAD 标注</span>
-                </label>
-                <label class="map-layer-item">
-                    <input type="checkbox" checked onchange="toggleLayer('cad_unmatched', this.checked)">
-                    <span class="map-layer-checkmark"></span><span>待挂接设备</span>
-                </label>
-                <label class="map-layer-item">
-                    <input type="checkbox" onchange="toggleLayer('landmarks', this.checked)">
-                    <span class="map-layer-checkmark"></span>
-                    <span>地标区域</span>
-                </label>
+                {% if multi_team_enabled %}<label class="map-layer-item"><input type="checkbox" id="sharedLocationToggle" checked>共享地点</label>{% endif %}
+                <label class="map-layer-item"><input type="checkbox" checked onchange="toggleLayer('zones', this.checked)">区域边界</label>
+                <label class="map-layer-item"><input type="checkbox" checked onchange="toggleLayer('labels', this.checked)">区域标签</label>
+                <label class="map-layer-item"><input type="checkbox" onchange="toggleLayer('leader_lines', this.checked)">连线</label>
+                <label class="map-layer-item"><input type="checkbox" id="pipelineLayerAll" checked onchange="toggleLayer('pipelines', this.checked)">管道</label>
+                <label class="map-layer-item"><input type="checkbox" onchange="toggleLayer('landmarks', this.checked)">地标区域</label>
             </div>
         </div>
 
@@ -406,11 +370,11 @@
 </script>
 {% endif %}</div>{% endblock %}
 
-{% block extra_js %}<div id="dashboardScripts" hidden>{% if pest_mode %}{{ pest_map_style|json_script:'pest-map-style' }}<script>window.MAP_STYLE_CONFIG=JSON.parse(document.getElementById('pest-map-style').textContent);</script><script src="{% static 'vendor/leaflet/leaflet.js' %}"></script><script src="{% static 'operations/map-actions.js' %}?v=20261108fixes2"></script><script src="{% static 'js/map-runtime.js' %}?v=20261117pestalign1"></script><script src="{% static 'operations/map-geography.js' %}?v=20261118maps1"></script><script src="{% static 'operations/map-markers.js' %}?v=20261112equipment1"></script><script src="{% static 'operations/location-picker.js' %}?v=20261112equipment1"></script><script src="{% static 'operations/workorder-chips.js' %}?v=20261117formui"></script><script src="{% static 'operations/map-location-create.js' %}?v=20261112equipment1"></script><script src="{% static 'vendor/leaflet/imageoverlay-rotated.js' %}?v=20261119fine1"></script><script src="{% static 'operations/map-overlays.js' %}?v=20261119fine1"></script><script src="{% static 'operations/workorder-media.js' %}?v=20261117formui"></script><script src="{% static 'operations/work-parameters.js' %}?v=20261118mwg2"></script><script src="{% static 'operations/pest-map.js' %}?v=20261119shared1"></script>{% else %}
+{% block extra_js %}<div id="dashboardScripts" hidden>{% if pest_mode %}{{ pest_map_style|json_script:'pest-map-style' }}<script>window.MAP_STYLE_CONFIG=JSON.parse(document.getElementById('pest-map-style').textContent);</script><script src="{% static 'vendor/leaflet/leaflet.js' %}"></script><script src="{% static 'operations/map-actions.js' %}?v=20261108fixes2"></script><script src="{% static 'js/map-runtime.js' %}?v=20261117pestalign1"></script><script src="{% static 'operations/map-geography.js' %}?v=20261118maps1"></script><script src="{% static 'operations/map-markers.js' %}?v=20261112equipment1"></script><script src="{% static 'operations/location-picker.js' %}?v=20261112equipment1"></script><script src="{% static 'operations/workorder-chips.js' %}?v=20261117formui"></script><script src="{% static 'operations/map-location-create.js' %}?v=20261112equipment1"></script><script src="{% static 'vendor/leaflet/imageoverlay-rotated.js' %}?v=20261119fine1"></script><script src="{% static 'operations/map-overlays.js' %}?v=20261119fine1"></script><script src="{% static 'operations/workorder-media.js' %}?v=20261117formui"></script><script src="{% static 'operations/work-parameters.js' %}?v=20261118mwg2"></script><script src="{% static 'operations/pest-map.js' %}?v=20261120layers1"></script>{% else %}
 <!-- Leaflet JS -->
 <script src="{% static 'vendor/leaflet/leaflet.js' %}?v=1.9.4"></script>
 <script src="{% static 'operations/map-markers.js' %}?v=20261112equipment1"></script>
-<script src="{% static 'operations/shared-location-layer.js' %}?v=20261108fixes2"></script>
+<script src="{% static 'operations/shared-location-layer.js' %}?v=20261120layers1"></script>
 <!-- Map Config -->
 <script src="{% static 'operations/map-actions.js' %}?v=20261108fixes2"></script>
 <script src="{% static 'js/map-config.js' %}?v=20260908"></script>
@@ -421,7 +385,8 @@
 <!-- Custom Map JS -->
 <script src="{% static 'js/map-runtime.js' %}?v=20261117pestalign1"></script>
 <script src="{% static 'js/valve-icons.js' %}?v=20261119detail2"></script>
-<script src="{% static 'js/map.js' %}?v=20261119fix5"></script>
+<script src="{% static 'js/pipeline-display.js' %}?v=20261120layers1"></script>
+<script src="{% static 'js/map.js' %}?v=20261120layers1"></script>
 <script src="{% static 'js/dashboard-modal.js' %}?v=20261118mwg2"></script>
 <script>
 // Override the notification popup's PM-task "填写" handler: on the dashboard we
@@ -437,7 +402,7 @@ window.fillPmTask = function (gwoId) {
 </script>
 <!-- Dashboard JS — pass Django URL to external script -->
 <script>window.HISTORY_URL = '{% url "core:work_reports" %}';</script>
-<script src="{% static 'js/dashboard.js' %}?v=20261118mwg2"></script>
+<script src="{% static 'js/dashboard.js' %}?v=20261120layers1"></script>
 {% endif %}<script src="{% static 'js/announcement-popup.js' %}?v=20261117pestalign"></script><!-- AI data-analyst chat widget (deferred: non-blocking load, auto-mounts on DOMContentLoaded) -->
 {% if can_use_ai %}
 <script defer src="{% static 'vendor/marked/marked.min.js' %}?v=12.0.2"></script>

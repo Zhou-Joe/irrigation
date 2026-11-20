@@ -44,12 +44,11 @@
     // Pipeline layers group
     let pipelinesLayerGroup;
     const pipelineTypeGroups = new Map();
-    const hiddenPipelineTypes = new Set();
+    let pipeDisplay = {};
+    const showPipeDetail = option => window.IrrigationPipelineDisplay.enabled(pipeDisplay, option);
     let pipelinesVisible = true;
     let cadReferenceLayerGroup;
     let cadSymbolsLayerGroup;
-    let cadSymbolsEnabled = true;
-    let cadUnmatchedEnabled = true;
     let cadNotesLayerGroup;
     let cadUnmatchedLayerGroup;
     // Rendered valve markers + their tooltip content, so a zoomend handler can
@@ -311,7 +310,13 @@
         cadSymbolsLayerGroup = L.layerGroup();
         cadNotesLayerGroup = L.layerGroup();
         cadUnmatchedLayerGroup = L.layerGroup();
-        updatePipeOverlayTiers();
+        const displayUser = map.getContainer().dataset.pipelineDisplayUser;
+        const refreshDisplay = () => applyPipelineDisplay(window.IrrigationPipelineDisplay.read(displayUser));
+        effects.listen(window, 'storage', event => {
+            if (!event.key || event.key === window.IrrigationPipelineDisplay.key(displayUser)) refreshDisplay();
+        });
+        effects.listen(window, 'pageshow', event => { if (event.persisted) refreshDisplay(); });
+        refreshDisplay();
 
         // Initialize labels layer group (separate for independent layer control)
         labelsLayerGroup = L.layerGroup().addTo(map);
@@ -1654,7 +1659,6 @@
                 if(destroyed)return;
                 const icons = window.IrrigationValveIcons;
                 icons.configure(d.valve_shapes);
-                icons.legend(document.getElementById('valveLegend'));
                 renderPipelines(d.pipelines || []);
                 overviewReady = true;
                 updatePipeOverlayTiers();
@@ -1689,20 +1693,35 @@
         });
     }
 
+    function applyPipelineDisplay(values) {
+        pipeDisplay = values;
+        for (const [code, group] of pipelineTypeGroups) {
+            if (showPipeDetail('type:' + code)) pipelinesLayerGroup.addLayer(group);
+            else pipelinesLayerGroup.removeLayer(group);
+        }
+        updatePipeOverlayTiers();
+    }
+
     function updatePipeOverlayTiers() {
         const {syncLayer, detailZoom} = window.IrrigationValveIcons;
-        if (map.getZoom() >= detailZoom || map.hasLayer(cadReferenceLayerGroup) || map.hasLayer(cadNotesLayerGroup)) loadCadDetails();
-        for (const [code,group] of pipelineTypeGroups) {
-            const enabled = pipelinesVisible && !hiddenPipelineTypes.has(code);
+        const symbols = pipelinesVisible && showPipeDetail('cad_symbols');
+        const pending = pipelinesVisible && showPipeDetail('cad_unmatched');
+        const reference = pipelinesVisible && showPipeDetail('cad_reference');
+        const notes = pipelinesVisible && showPipeDetail('cad_notes');
+        if ((pipelinesVisible && map.getZoom() >= detailZoom) || reference || notes) loadCadDetails();
+        for (const [code, group] of pipelineTypeGroups) {
+            const enabled = pipelinesVisible && showPipeDetail('valves') && showPipeDetail('type:' + code);
             syncLayer(map, group.valveMarkers, group, enabled);
             group.valveDetails.sync(map, enabled);
         }
-        syncLayer(map, cadSymbolsLayerGroup, map, cadSymbolsEnabled);
-        syncLayer(map, cadUnmatchedLayerGroup, map, cadUnmatchedEnabled);
-        symbolDetails.sync(map, cadSymbolsEnabled);
-        pendingDetails.sync(map, cadUnmatchedEnabled);
-        referenceDetails.sync(map, map.hasLayer(cadReferenceLayerGroup));
-        noteDetails.sync(map, map.hasLayer(cadNotesLayerGroup));
+        if (reference) map.addLayer(cadReferenceLayerGroup); else map.removeLayer(cadReferenceLayerGroup);
+        if (notes) map.addLayer(cadNotesLayerGroup); else map.removeLayer(cadNotesLayerGroup);
+        syncLayer(map, cadSymbolsLayerGroup, map, symbols);
+        syncLayer(map, cadUnmatchedLayerGroup, map, pending);
+        symbolDetails.sync(map, symbols);
+        pendingDetails.sync(map, pending);
+        referenceDetails.sync(map, reference);
+        noteDetails.sync(map, notes);
     }
 
     let _valveLabelMode = null;   // 'hover' | 'permanent' — 跨 zoom 不变则不重建
@@ -1756,40 +1775,12 @@
      * per-valve markers (colored by whether the valve's Maxicom station watered
      * on the latest irrigation day).
      */
-    function setPipelineTypeVisibility(code, visible) {
-        const group = pipelineTypeGroups.get(code);
-        if (visible) { hiddenPipelineTypes.delete(code); if (group) pipelinesLayerGroup.addLayer(group); }
-        else { hiddenPipelineTypes.add(code); if (group) pipelinesLayerGroup.removeLayer(group); }
-        const inputs = Array.from(document.querySelectorAll('#pipelineTypeLayers input'));
-        const checked = inputs.filter(input => input.checked).length;
-        pipelinesVisible = checked > 0;
-        const master = document.getElementById('pipelineLayerAll');
-        if (master) { master.checked = checked === inputs.length && checked > 0; master.indeterminate = checked > 0 && checked < inputs.length; }
-        if (pipelinesVisible) map.addLayer(pipelinesLayerGroup);
-        else map.removeLayer(pipelinesLayerGroup);
-        updatePipeOverlayTiers();
-    }
-
     function renderPipelines(pipelines) {
         if(destroyed)return;
         for (const group of pipelineTypeGroups.values()) group.valveDetails.clear();
         pipelinesLayerGroup.clearLayers();
         pipelineTypeGroups.clear();
 
-        const controls = document.getElementById('pipelineTypeLayers');
-        if (controls) {
-            controls.replaceChildren();
-            const kinds = new Map(pipelines.map(pipe => [pipe.pipeline_type, pipe.pipeline_type_display]));
-            kinds.forEach((name, code) => {
-                if (!pipelinesVisible) hiddenPipelineTypes.add(code);
-                const label = document.createElement('label'); label.className = 'map-layer-item';
-                const input = document.createElement('input'); input.type = 'checkbox'; input.checked = !hiddenPipelineTypes.has(code);
-                input.addEventListener('change', () => setPipelineTypeVisibility(code, input.checked));
-                const check = document.createElement('span'); check.className = 'map-layer-checkmark';
-                const title = document.createElement('span'); title.textContent = name;
-                label.append(input, check, title); controls.appendChild(label);
-            });
-        }
         pipelines.forEach(pipeline => {
             if (!pipeline.line_points || pipeline.line_points.length < 2) {
                 return;
@@ -1875,7 +1866,7 @@
                 typeGroup.valveMarkers = L.layerGroup();
                 typeGroup.valveDetails = window.IrrigationValveIcons.viewportLayers();
                 pipelineTypeGroups.set(pipeline.pipeline_type, typeGroup);
-                if (!hiddenPipelineTypes.has(pipeline.pipeline_type)) pipelinesLayerGroup.addLayer(typeGroup);
+                if (showPipeDetail('type:' + pipeline.pipeline_type)) pipelinesLayerGroup.addLayer(typeGroup);
             }
             typeGroup.addLayer(polyline);
 
@@ -2233,27 +2224,10 @@
             syncMultiBoundaryDisplay(labelsVisible && z >= LABEL_MIN_ZOOM, z);
         } else if (layer === 'pipelines') {
             pipelinesVisible = visible;
-            hiddenPipelineTypes.clear();
-            pipelineTypeGroups.forEach((group, code) => {
-                if (visible) pipelinesLayerGroup.addLayer(group);
-                else { hiddenPipelineTypes.add(code); pipelinesLayerGroup.removeLayer(group); }
-            });
-            const master = document.getElementById('pipelineLayerAll');
-            if (master) { master.checked = visible; master.indeterminate = false; }
-            document.querySelectorAll('#pipelineTypeLayers input').forEach(input => { input.checked = visible; });
-            if (visible) {
-                if (!map.hasLayer(pipelinesLayerGroup)) map.addLayer(pipelinesLayerGroup);
-            } else {
-                if (map.hasLayer(pipelinesLayerGroup)) map.removeLayer(pipelinesLayerGroup);
-            }
+            if (visible) map.addLayer(pipelinesLayerGroup); else map.removeLayer(pipelinesLayerGroup);
             updatePipeOverlayTiers();
-        } else if (layer === 'cad_symbols' || layer === 'cad_unmatched') {
-            if (layer === 'cad_symbols') cadSymbolsEnabled = visible;
-            else cadUnmatchedEnabled = visible;
-            updatePipeOverlayTiers();
-        } else if (layer === 'cad_reference' || layer === 'cad_notes') {
-            const group = layer === 'cad_reference' ? cadReferenceLayerGroup : cadNotesLayerGroup;
-            if (visible) map.addLayer(group); else map.removeLayer(group);
+        } else if (['valves','cad_symbols','cad_reference','cad_notes','cad_unmatched'].includes(layer)) {
+            pipeDisplay[layer] = visible;
             updatePipeOverlayTiers();
         } else if (layer === 'landmarks') {
             if (visible) {

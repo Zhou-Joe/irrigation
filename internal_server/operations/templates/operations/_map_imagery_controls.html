@@ -1,4 +1,1 @@
-{% if workspace_membership %}<div class="hd-controls" data-hd-controls>
-    <label><input type="checkbox" data-hd-visible checked>高清影像</label>
-    {% if can_manage_map_imagery %}<button type="button" data-hd-manage>影像管理</button>{% endif %}
-</div>{% endif %}
+{% if workspace_membership %}<label class="map-layer-item" data-hd-controls><input type="checkbox" data-hd-visible checked>高清影像</label>{% endif %}

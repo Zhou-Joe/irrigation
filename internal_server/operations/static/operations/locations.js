@@ -2,6 +2,16 @@
     'use strict';
     const el=document.querySelector('[data-location-map]');if(!el)return;
     const status=document.getElementById('opMapStatus'),runtime=window.IrrigationMapRuntime,markers=window.FOSMapMarkers;
+    const legend = document.querySelector('[data-location-legend]');
+    if (legend) {
+        for (const kind of markers.kinds) {
+            const entry = document.createElement('span'), icon = markers.glyph(kind);
+            const {color, label} = markers.descriptor(kind);
+            icon.style.color = color;
+            entry.append(icon, document.createTextNode(label));
+            legend.append(entry);
+        }
+    }
     const layout=document.querySelector('[data-location-layout]');
     const map=L.map(el,{preferCanvas:true}).setView([31.143,121.658],17),layers=L.layerGroup().addTo(map);
     L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{attribution:'Esri',maxZoom:22,maxNativeZoom:19}).addTo(map);

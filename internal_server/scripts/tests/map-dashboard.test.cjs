@@ -123,7 +123,7 @@ function mapHarness() {
         eachLayer(fn){[...this.layers].forEach(fn);} addTo(m){m.addLayer(this);return this;}
     }
     const groups=Array.from({length:6},()=>new Group());
-    const map={zoom:15,west:120,east:122,layers:new Set(groups),events:[],on(event,handler){this.events.push({event,handler});return this;},getZoom(){return this.zoom;},getMaxZoom(){return 22;},getBounds(){return {
+    const map={getContainer:()=>elements.map,zoom:15,west:120,east:122,layers:new Set(groups),events:[],on(event,handler){this.events.push({event,handler});return this;},getZoom(){return this.zoom;},getMaxZoom(){return 22;},getBounds(){return {
         pad(){return this;},contains:p=>p.lng>=map.west&&p.lng<=map.east,intersects:()=>true
     };},hasLayer(l){return this.layers.has(l);},addLayer(l){this.layers.add(l);},removeLayer(l){this.layers.delete(l);}};
     const elements={map:{dataset:{}},zoneLoadingMessage:{textContent:''},zoneLoadingSpinner:{},zoneLoadingRetry:{},
@@ -136,9 +136,9 @@ function mapHarness() {
     const L={tileLayer:()=>({}),map:()=>map,control:{zoom:()=>({addTo(){}})},latLngBounds:()=>({contains:()=>true,getSouthWest:()=>({lat:31,lng:121})}),layerGroup:()=>new Group(),divIcon:o=>o,latLng:(lat,lng)=>({lat,lng}),
         marker:(p,o)=>new Layer(p,o),polygon:(p,o)=>new Layer(p,o),polyline:(p,o)=>new Layer(p,o)};
     let source=fs.readFileSync(path.join(__dirname,'../../static/js/map.js'),'utf8');
-    const hook=`window.__test={initMap,renderZones,loadZones,loadPipelines,renderPipelines,renderCadReference,updatePipeOverlayTiers,locateUser,updateLabelSizes,_cullLabelsToViewport,buildCardHtml,_refreshZonePolygons,
+    const hook=`window.__test={initMap,renderZones,loadZones,loadPipelines,renderPipelines,renderCadReference,applyPipelineDisplay,updatePipeOverlayTiers,locateUser,updateLabelSizes,_cullLabelsToViewport,buildCardHtml,_refreshZonePolygons,
         labels:()=>zoneLabels, setState(m,g){map=m;[zonesLayerGroup,labelsLayerGroup,leaderLinesLayerGroup,ringLabelsLayerGroup,landmarksLayerGroup]=g;},
-        pipeType:code=>pipelineTypeGroups.get(code),
+        pipeType:code=>pipelineTypeGroups.get(code), pipes:()=>pipelinesLayerGroup,
         setCadState(g){pipelinesLayerGroup=L.layerGroup();[cadReferenceLayerGroup,cadSymbolsLayerGroup,cadNotesLayerGroup,cadUnmatchedLayerGroup]=g;}};`;
     source=source.replace(/\}\)\(\);\s*$/,hook+'})();');
     const context={window,document,L,localStorage:{getItem:()=>null,setItem(){}},console,setTimeout,clearTimeout,setInterval:()=>0,
@@ -146,6 +146,7 @@ function mapHarness() {
     vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../../static/js/ui-icons.js'),'utf8'),context);
     vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../../operations/static/operations/map-actions.js'),'utf8'),context);
     vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../../static/js/valve-icons.js'),'utf8'),context);
+    vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../../static/js/pipeline-display.js'),'utf8'),context);
     vm.runInNewContext(source,context);
     window.__test.setState(map,groups);
     const cad=Array.from({length:4},()=>new Group());
@@ -268,6 +269,26 @@ test('attached and pending valve icons enter at zoom 20 and respect independent 
     h.map.zoom=20;h.api.updatePipeOverlayTiers();
     assert.equal(h.map.hasLayer(h.cad[3]),false);
     assert.equal(group.hasLayer(group.valveMarkers),true);
+});
+test('the home pipe checkbox restores only the types and details selected in area management', () => {
+    const h=mapHarness(), pt={lat:31,lng:121};
+    const pipe = code => ({pipeline_type:code,line_points:[pt,{lat:31.01,lng:121.01}],
+        valves:[{point:[pt],order:0,valve_type:'gate'}]});
+    h.map.zoom=20;
+    h.api.applyPipelineDisplay({'type:flush':false,cad_notes:true,cad_symbols:false});
+    h.api.renderPipelines([pipe('irrigation'),pipe('flush')]);
+    h.api.updatePipeOverlayTiers();
+    h.window.setLayerVisibility('pipelines',false);
+    assert.ok(!h.map.hasLayer(h.api.pipes()));
+    assert.ok(h.cad.every(layer=>!h.map.hasLayer(layer)));
+    h.window.setLayerVisibility('pipelines',true);
+    assert.ok(h.map.hasLayer(h.api.pipes()));
+    assert.ok(h.api.pipes().hasLayer(h.api.pipeType('irrigation')));
+    assert.ok(!h.api.pipes().hasLayer(h.api.pipeType('flush')));
+    assert.ok(h.map.hasLayer(h.cad[2]) && !h.map.hasLayer(h.cad[1]));
+    h.api.applyPipelineDisplay({valves:false,'type:irrigation':false});
+    assert.ok(h.api.pipes().hasLayer(h.api.pipeType('flush')));
+    assert.ok(!h.api.pipeType('flush').hasLayer(h.api.pipeType('flush').valveMarkers));
 });
 test('CAD block outlines remain visible independently of unselected reference lines', () => {
     const h=mapHarness(),path=ring.map(([lat,lng])=>({lat,lng}));

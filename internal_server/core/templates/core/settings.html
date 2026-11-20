@@ -12,6 +12,10 @@
 /* Tab bar for the settings page. The shared .app-tabs has max-width:480px which
    is fine for 3 tabs but cramped for 5 — widen it and allow wrapping so the
    labels stay legible on phones. */
+.pipeline-display {margin-bottom:12px;padding:14px}
+.pipeline-display summary {cursor:pointer;font-weight:600}
+.pipeline-display fieldset {margin:10px 0;padding:8px;border:1px solid #d7e2da}
+.pipeline-display label {display:inline-flex;align-items:center;gap:5px;padding:5px 9px}
 .app-tabs.settings-tabs { max-width: none; flex-wrap: wrap; border-radius: 12px; }
 .app-tabs.settings-tabs .app-tab { flex: 0 1 auto; padding: 9px 14px; }
 @media (max-width: 560px) {
@@ -26,6 +30,7 @@
         <div class="header-content">
             <h1>区域管理</h1>
             <p class="subtitle">管理灌溉区域和系统配置</p>
+            {% if can_manage_map_imagery %}<a class="btn-sm btn-secondary" href="{% url 'operations:map_imagery_management' %}">影像管理</a>{% endif %}
             {% if multi_team_enabled and is_admin %}<a class="btn-sm btn-secondary" href="{% url 'operations:locations' %}?scope=catalog" style="margin-top:8px">团队区域与共享</a>{% endif %}
         </div>
     </div>
@@ -308,13 +313,14 @@
 
     <!-- 管道管理 -->
     <div class="app-tab-content" id="tabPipelines">
+    {% include 'core/_pipeline_display.html' %}
     <div class="settings-grid">
         <div class="settings-card">
             <div class="settings-card-header" onclick="toggleCardBody(this, 'pipelineBody', 'pipelineIndicator')">
                 <h2>{% include "core/_section_toggle.html" with control_id="pipelineIndicator" target_id="pipelineBody" label="管道管理" %} 管道管理</h2>
                 <div class="header-actions" onclick="event.stopPropagation()">
                     <a href="{% url 'core:pipeline_new' %}" class="btn btn-sm btn-primary" target="_blank">+ 新建</a>
-                    <a class="btn btn-sm btn-secondary" href="{% url 'core:valve_shapes' %}">自定义阀门图案</a> <a class="btn btn-sm pdxf-btn pdxf-btn-secondary" href="{% url 'core:pipeline_editor' %}">电脑绘制与设备挂接</a> <a href="{% url 'core:pipeline_dxf_import' %}" class="btn btn-sm btn-secondary" target="_blank"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-upload"/></svg> DXF导入</a>
+                    {% if can_edit_pipelines %}<a class="btn btn-sm btn-secondary" href="{% url 'core:valve_shapes' %}">自定义阀门图案</a> <a class="btn btn-sm pdxf-btn pdxf-btn-secondary" href="{% url 'core:pipeline_editor' %}">电脑绘制与设备挂接</a>{% endif %} <a href="{% url 'core:pipeline_dxf_import' %}" class="btn btn-sm btn-secondary" target="_blank"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#pwa-upload"/></svg> DXF导入</a>
                 </div>
             </div>
             {% if pipelines or pipeline_batches %}
@@ -501,6 +507,9 @@
 {% endblock %}
 
 {% block extra_js %}
+{{ map_valve_shapes|json_script:"map-valve-shapes" }}
+<script src="{% static 'js/valve-icons.js' %}?v=20261119detail2"></script>
+<script src="{% static 'js/pipeline-display.js' %}?v=20261120layers1"></script>
 <script>
 // Generic card collapse toggle
 window.toggleCardBody = function(header, bodyId, indicatorId) {

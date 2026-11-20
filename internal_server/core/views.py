@@ -201,8 +201,8 @@ def _build_grouped_zones(zones_qs=None, group_by='patch'):
             'soil_moisture': z.soil_moisture,
             'equipment_maintenance_notes': z.equipment_maintenance_notes,
             'irrigation_management_notes': z.irrigation_management_notes,
-            'has_remarks': bool(z.remarks and json.loads(z.remarks)) if z.remarks else False,
-            'has_confirmed_remarks': bool(z.confirmed_remarks and json.loads(z.confirmed_remarks)) if z.confirmed_remarks else False,
+            'has_remarks': bool(_safe_remark_items(z.remarks)),
+            'has_confirmed_remarks': bool(_safe_remark_items(z.confirmed_remarks)),
             'plant_names': list(z.plants.values_list('name', flat=True)),
         })
 
@@ -2536,6 +2536,12 @@ def settings_page(request):
     from .models import Satellite
     satellites = Satellite.objects.all().order_by('code')
 
+    from .valve_shapes import library as valve_shape_library
+    from .pipeline_management import type_options
+    from .dxf_views import _pipeline_dxf_gate
+    display_types = {kind['code']: kind['name'] for kind in type_options()}
+    for pipe in pipelines:
+        display_types.setdefault(pipe.pipeline_type, pipe.pipeline_type)
     context = {
         'zones': zones,
         'grouped_zones': grouped_zones_data,
@@ -2544,6 +2550,9 @@ def settings_page(request):
         'all_plant_names': all_plant_names,
         'status_choices': Zone.STATUS_CHOICES,
         'pipelines': pipelines,
+        'map_valve_shapes': valve_shape_library(),
+        'pipeline_display_types': display_types,
+        'can_edit_pipelines': _pipeline_dxf_gate(request.user),
         'pipeline_batches': pipeline_batches,
         'site_patches': site_patches,
         'patch_zone_counts': patch_zone_counts,

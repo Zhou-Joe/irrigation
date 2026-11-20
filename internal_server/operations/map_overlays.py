@@ -7,9 +7,10 @@ from pathlib import Path
 from django.contrib.auth.decorators import login_required
 from django.db import transaction
 from django.http import FileResponse, Http404, JsonResponse
-from django.shortcuts import get_object_or_404
+from django.shortcuts import get_object_or_404, render
 from django.utils.cache import get_conditional_response
 from django.views.decorators.http import require_GET, require_POST
+from django.views.decorators.csrf import ensure_csrf_cookie
 from PIL import Image
 
 from .access import require_member, audit
@@ -72,6 +73,14 @@ def _visible_items(request):
         return items
     return items.filter(active=True, tl_lat__isnull=False, tl_lng__isnull=False,
                         tr_lat__isnull=False, tr_lng__isnull=False, bl_lat__isnull=False, bl_lng__isnull=False)
+
+
+@login_required
+@require_GET
+@ensure_csrf_cookie
+def management(request):
+    require_member(request, manager=True)
+    return render(request, 'operations/map_imagery_management.html')
 
 
 @login_required

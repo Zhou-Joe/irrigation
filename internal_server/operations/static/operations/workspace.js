@@ -95,13 +95,14 @@
                 }
                 // Management pages use the same shell; mount the destination map
                 // and its styles in place instead of redirecting the document.
+                window.FOSImageryManagement?.destroy();
                 window.FOSLocationMap?.destroy?.();
                 window.FOSLocationEditor?.destroyAll?.();
                 history.replaceState(history.state,'','/');
             }
             const mounted=current.dataset.business==='landscaping'?window.FOSLandscapingMap:(current.dataset.business==='pest-control'?window.FOSPestMap:window.FOSDashboardLifecycle&&window.FOSMapLifecycle);
             const same=current.dataset.business===next.dataset.business&&current.dataset.mounted!=='no'&&!!mounted &&
-                !!current.querySelector('[data-hd-manage]')===!!next.querySelector('[data-hd-manage]');
+                current.dataset.manager===next.dataset.manager;
             updateShell(doc);
             if(!same) {
                 const map=window._map;

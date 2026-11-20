@@ -12,6 +12,7 @@ urlpatterns = [
     path('map-overlays/<int:pk>/update/', map_overlays.update, name='map_overlay_update'),
     path('map-overlays/<int:pk>/delete/', map_overlays.remove, name='map_overlay_delete'),
     path('locations/', views.locations, name='locations'),
+    path('locations/imagery/', map_overlays.management, name='map_imagery_management'),
     path('locations/new/', views.location_edit, name='location_new'),
     path('locations/batch/',bulk.create,name='location_batch'),
     path('locations/batch-sharing/',bulk.share,name='location_batch_sharing'),

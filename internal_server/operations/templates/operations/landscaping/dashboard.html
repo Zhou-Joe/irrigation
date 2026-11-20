@@ -1,9 +1,9 @@
 {% extends 'operations/landscaping/base.html' %}{% load static %}
 {% block title %}绿化总览{% endblock %}
 {% block green_classes %}ops-page green-page green-map-home{% endblock %}
-{% block green_attributes %}id="dashboardWorkspace" data-ai="no" data-quotes-enabled="no"{% endblock %}
+{% block green_attributes %}id="dashboardWorkspace" data-manager="{% if can_manage_map_imagery %}yes{% else %}no{% endif %}" data-ai="no" data-quotes-enabled="no"{% endblock %}
 {% block green_head %}
-<link rel="stylesheet" href="{% static 'operations/map-overlays.css' %}?v=20261119fine1">
+<link rel="stylesheet" href="{% static 'operations/map-overlays.css' %}?v=20261120layers1">
 <link rel="stylesheet" href="{% static 'vendor/leaflet/leaflet.css' %}?v=1.9.4">
 <link rel="stylesheet" href="{% static 'css/announcement-popup.css' %}?v=20261117pestalign1">
 <link rel="stylesheet" href="{% static 'operations/map-home.css' %}?v=20261118maps1">

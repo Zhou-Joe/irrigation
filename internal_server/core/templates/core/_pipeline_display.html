@@ -1,0 +1,17 @@
+<details class="settings-card pipeline-display" data-pipeline-display-settings data-pipeline-display-user="{{ request.user.pk }}">
+    <summary>管网图层与阀门细节</summary>
+    <p>这些选项用于当前账号在本浏览器的灌溉首页。</p>
+    <fieldset><legend>管道类型</legend>
+        {% for code, name in pipeline_display_types.items %}<label><input type="checkbox" data-pipe-option="type:{{ code }}" checked> {{ name }}</label>{% endfor %}
+    </fieldset>
+    <fieldset><legend>设备与 CAD 图层</legend>
+        <label><input type="checkbox" data-pipe-option="valves" checked> 已挂接阀门</label>
+        <label><input type="checkbox" data-pipe-option="cad_unmatched" checked> 待挂接设备</label>
+        <label><input type="checkbox" data-pipe-option="cad_symbols" checked> CAD 块符号</label>
+        <label><input type="checkbox" data-pipe-option="cad_reference"> CAD 参考线</label>
+        <label><input type="checkbox" data-pipe-option="cad_notes"> CAD 标注</label>
+    </fieldset>
+    <p>放大至 <span data-valve-detail-zoom>20</span> 级显示阀门，虚线框表示待挂接设备。</p>
+    <div data-valve-legend aria-label="阀门图例"></div>
+    <p role="status" data-pipe-status hidden></p>
+</details>

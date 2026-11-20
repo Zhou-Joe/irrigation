@@ -31,3 +31,6 @@
 .hd-controls input{accent-color:#24583d}
 .hd-controls button{font:inherit;color:#24583d;border:1px solid #adbbaf;background:#fff;border-radius:6px;padding:4px 8px;cursor:pointer}
 .green-panel-section .hd-controls{padding-inline:0}
+
+.hd-management-stage{position:relative;height:calc(100dvh - 190px);min-height:340px}
+#imageryMap{height:100%;width:100%}

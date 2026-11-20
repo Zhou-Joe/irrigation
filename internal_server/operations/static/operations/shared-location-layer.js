@@ -4,6 +4,7 @@
     window.FOSSharedLocationLayer={mount({map,checkbox,status,retry}){
         if(!map||!checkbox)return null;
         const effects=window.FOSScopedEffects(),group=L.layerGroup(),markers=window.FOSMapMarkers;
+        const notice = status.parentElement;
         let generation=0;
         markers.enableLabels(map);
         function popup(place){
@@ -12,7 +13,7 @@
         }
         async function refresh(){
             if(effects.stopped||!checkbox.checked)return;
-            const current=++generation;status.textContent='正在加载共享地点…';retry.hidden=true;
+            const current=++generation;status.textContent='正在加载共享地点…';retry.hidden=true;notice.hidden=true;
             try{
                 const data=await window.IrrigationMapRuntime.fetchJSON('/ops/locations.geojson?shared=1',{cache:'no-store'});
                 if(effects.stopped||current!==generation||!checkbox.checked)return;
@@ -25,12 +26,12 @@
                     }else if(shape.mode==='pin'){markers.marker(L,place,shape.center).bindPopup(body).addTo(group);count++;}
                 }
                 status.textContent=count?'已显示 '+count+' 个共享地点':'暂无已定位的共享地点';
-            }catch(error){if(!effects.stopped&&current===generation){group.clearLayers();status.textContent='共享地点加载失败';retry.hidden=false;}}
+            }catch(error){if(!effects.stopped&&current===generation){group.clearLayers();status.textContent='共享地点加载失败';retry.hidden=false;notice.hidden=false;}}
         }
         function toggle(){
             generation++;
             if(checkbox.checked){if(!map.hasLayer(group))map.addLayer(group);refresh();}
-            else{group.clearLayers();if(map.hasLayer(group))map.removeLayer(group);status.textContent='共享地点已隐藏';retry.hidden=true;}
+            else{group.clearLayers();if(map.hasLayer(group))map.removeLayer(group);status.textContent='共享地点已隐藏';retry.hidden=true;notice.hidden=true;}
         }
         effects.listen(checkbox,'change',toggle);effects.listen(retry,'click',refresh);effects.listen(window,'focus',refresh);
         effects.listen(window,'pageshow',event=>{if(event.persisted)refresh();});

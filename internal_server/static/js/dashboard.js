@@ -410,6 +410,7 @@
         var isOpen = body.style.display !== 'none';
         body.style.display = isOpen ? 'none' : '';
         btn.classList.toggle('active', !isOpen);
+        btn.setAttribute('aria-expanded', String(!isOpen));
     }
 
     function toggleLayer(layer, visible) {
